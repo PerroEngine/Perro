@@ -2828,165 +2828,112 @@ impl Graphics {
         }
     }
 
-    /// Run a minimal egui frame that draws a full-screen test color (to verify the egui pass draws to screen).
-    fn run_egui_test_frame(&self) -> egui::FullOutput {
-        let w = self.surface_config.width as f32;
-        let h = self.surface_config.height as f32;
-        let mut raw_input = egui::RawInput::default();
-        raw_input.screen_rect = Some(egui::Rect::from_min_size(
-            egui::Pos2::ZERO,
-            egui::vec2(w, h),
-        ));
-        if let Some(vp) = raw_input.viewports.get_mut(&egui::ViewportId::ROOT) {
-            // If you have a real window scale factor, set it here instead of 1.0.
-            vp.native_pixels_per_point = Some(1.0);
-        }
-        self.egui_context.run(raw_input, |ctx| {
-            let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h));
-            let layer_id = egui::LayerId::background();
-            let painter = ctx.layer_painter(layer_id);
-            // Bright green = we're drawing; if you see black, the pass isn't writing
-            painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(0, 255, 0));
-        })
-    }
+
 
     /// Render egui UI output to the screen
     /// Must be called after the main render pass, before end_frame
-    pub fn render_egui(&mut self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
-        // Temporary debug hook: flip to true to force a full-screen green test frame.
-        const FORCE_TEST_FRAME: bool = false;
-        println!("[EGUI] render_egui called");
+  pub fn render_egui(
+    &mut self, 
+    encoder: &mut wgpu::CommandEncoder, 
+    view: &wgpu::TextureView
+) {
+    println!("[EGUI] render_egui called");
 
-        // Ensure renderer is initialized first
-        self.ensure_egui_renderer();
+    self.ensure_egui_renderer();
 
-        // If forced, clear the swapchain to bright green and return (verifies render pass writes).
-        if FORCE_TEST_FRAME {
-            let rpass_descriptor = wgpu::RenderPassDescriptor {
-                label: Some("egui_force_test_clear"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 1.0,
-                            b: 0.0,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            };
-            let _rpass = encoder.begin_render_pass(&rpass_descriptor);
-            return;
-        }
-
-        // Use real UI output or fall back to test frame (full-screen green) so we can verify the pass draws
-        if self.egui_integration.last_output.is_none() {
-            println!("🎨 [EGUI] No last_output — drawing test frame (green screen) to verify pass");
-            let test_output = self.run_egui_test_frame();
-            self.egui_integration.last_output = Some(test_output);
-        }
-
-        let full_output = self.egui_integration.last_output.as_ref().unwrap();
-        println!(
-            "🎨 [EGUI] full_output shapes={} textures_set={} textures_free={}",
-            full_output.shapes.len(),
-            full_output.textures_delta.set.len(),
-            full_output.textures_delta.free.len()
-        );
-
-        // Update textures if needed
-        if let Some(renderer) = &mut self.egui_renderer {
-            for (id, image_delta) in &full_output.textures_delta.set {
-                renderer.update_texture(&self.device, &self.queue, *id, image_delta);
-            }
-
-            for id in &full_output.textures_delta.free {
-                renderer.free_texture(id);
-            }
-        } else {
-            println!("🎨 [EGUI] Renderer not initialized, skipping render");
-            return;
-        }
-
-        let screen_descriptor = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [self.surface_config.width, self.surface_config.height],
-            pixels_per_point: full_output.pixels_per_point,
-        };
-
-        let mut paint_jobs = self.egui_context.tessellate(
-            full_output.shapes.clone(),
-            full_output.pixels_per_point,
-        );
-        println!("🎨 [EGUI] paint_jobs={}", paint_jobs.len());
-
-        // If no shapes (e.g. UI not ready), use test frame so we still draw something
-        if paint_jobs.is_empty() {
-            println!("🎨 [EGUI] No shapes — drawing test frame (green screen) to verify pass");
-            let test_output = self.run_egui_test_frame();
-            self.egui_integration.last_output = Some(test_output);
-            let full_output = self.egui_integration.last_output.as_ref().unwrap();
-            paint_jobs = self.egui_context.tessellate(
-                full_output.shapes.clone(),
-                full_output.pixels_per_point,
-            );
-        }
-
-        if paint_jobs.is_empty() {
-            println!("🎨 [EGUI] Still no paint jobs after test frame, skipping render");
-            return;
-        }
-
-        // Update buffers first
-        if let Some(renderer) = &mut self.egui_renderer {
-            renderer.update_buffers(
-                &self.device,
-                &self.queue,
-                encoder,
-                &paint_jobs,
-                &screen_descriptor,
-            );
-
-            // Create render pass for egui and render
-            println!(
-                "🎨 [EGUI] Drawing {} paint job(s) to screen (size {}x{})",
-                paint_jobs.len(),
-                screen_descriptor.size_in_pixels[0],
-                screen_descriptor.size_in_pixels[1]
-            );
-            let rpass_descriptor = wgpu::RenderPassDescriptor {
-                label: Some("egui_render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        // Change from Load to Clear with transparent or your background color
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.1,
-                            b: 0.15,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            };
-
-            // egui-wgpu requires RenderPass<'static>; forget_lifetime is the intended API
-            let rpass = encoder.begin_render_pass(&rpass_descriptor);
-            let mut rpass_static = rpass.forget_lifetime();
-            renderer.render(&mut rpass_static, &paint_jobs, &screen_descriptor);
-        }
+    // Use real UI output
+    if self.egui_integration.last_output.is_none() {
+        println!("⚠️ [EGUI] No last_output, skipping render");
+        return;
     }
+
+    let full_output = self.egui_integration.last_output.as_ref().unwrap();
+    println!(
+        "🎨 [EGUI] full_output shapes={} textures_set={} textures_free={}",
+        full_output.shapes.len(),
+        full_output.textures_delta.set.len(),
+        full_output.textures_delta.free.len()
+    );
+
+    let Some(renderer) = &mut self.egui_renderer else {
+        println!("🎨 [EGUI] Renderer not initialized, skipping render");
+        return;
+    };
+
+    // Update textures
+    for (id, image_delta) in &full_output.textures_delta.set {
+        renderer.update_texture(&self.device, &self.queue, *id, image_delta);
+    }
+    for id in &full_output.textures_delta.free {
+        renderer.free_texture(id);
+    }
+
+    let pixels_per_point = full_output.pixels_per_point.max(1.0);
+    println!(
+        "🎨 [EGUI] pixels_per_point={} surface_px={}x{}",
+        pixels_per_point,
+        self.surface_config.width,
+        self.surface_config.height
+    );
+
+    let screen_descriptor = egui_wgpu::ScreenDescriptor {
+        size_in_pixels: [self.surface_config.width, self.surface_config.height],
+        pixels_per_point,
+    };
+
+
+
+    // Tessellate shapes
+    let mut shapes = full_output.shapes.clone();
+
+    
+
+    let paint_jobs = self.egui_context.tessellate(shapes, pixels_per_point);
+    
+    println!("🎨 [EGUI] paint_jobs={}", paint_jobs.len());
+
+    if paint_jobs.is_empty() {
+        println!("⚠️ [EGUI] No paint jobs, skipping render");
+        return;
+    }
+
+    // Update buffers
+    renderer.update_buffers(
+        &self.device,
+        &self.queue,
+        encoder,
+        &paint_jobs,
+        &screen_descriptor,
+    );
+
+    // Create render pass - CHANGED: Clear to transparent, not Load
+    println!(
+        "🎨 [EGUI] Drawing {} paint job(s) to screen (size {}x{})",
+        paint_jobs.len(),
+        screen_descriptor.size_in_pixels[0],
+        screen_descriptor.size_in_pixels[1]
+    );
+    
+    let rpass_descriptor = wgpu::RenderPassDescriptor {
+        label: Some("egui_render_pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                // Keep main pass contents; egui should overlay.
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+            depth_slice: None,
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    };
+
+    let rpass = encoder.begin_render_pass(&rpass_descriptor);
+    let mut rpass_static = rpass.forget_lifetime();
+    renderer.render(&mut rpass_static, &paint_jobs, &screen_descriptor);
+}
 }
 

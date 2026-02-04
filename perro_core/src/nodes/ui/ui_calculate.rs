@@ -4,13 +4,14 @@ use std::collections::HashMap;
 use crate::{
     Graphics,
     fur_ast::FurAnchor,
+    nodes::ui::apply_fur::{build_ui_elements_from_fur, parse_fur_file},
     structs2d::{Transform2D, Vector2},
     ui_element::{BaseElement, UIElement},
     ui_node::UINode,
 };
 
 fn render_ui_node(ui_node: &mut UINode, gfx: &mut Graphics) {
-    // Check if fur_path has changed or if elements need to be loaded
+    // Reload FUR if the path changed, but always continue with layout/render.
     {
         let current_fur_path_str = ui_node.fur_path.as_ref().map(|fp| fp.as_ref().to_string());
         let loaded_fur_path_str = ui_node
@@ -29,9 +30,27 @@ fn render_ui_node(ui_node: &mut UINode, gfx: &mut Graphics) {
             .unwrap_or(false);
 
         if needs_load {
-            if current_fur_path_str.is_some() {
-                // FUR file needs to be loaded, elements not ready yet
-                return;
+            println!("🔄 Reloading FUR file: {}", current_fur_path_str.as_ref().unwrap());
+            if let Some(path) = current_fur_path_str.as_deref() {
+                match parse_fur_file(path) {
+                    Ok(ast) => {
+                        let elements: Vec<crate::fur_ast::FurElement> = ast
+                            .into_iter()
+                            .filter_map(|node| {
+                                if let crate::fur_ast::FurNode::Element(elem) = node {
+                                    Some(elem)
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        build_ui_elements_from_fur(ui_node, &elements);
+                        ui_node.loaded_fur_path = ui_node.fur_path.clone();
+                    }
+                    Err(e) => {
+                        eprintln!("⚠️ Failed to load FUR file {}: {}", path, e);
+                    }
+                }
             }
         }
     }
@@ -65,25 +84,35 @@ fn render_ui_node(ui_node: &mut UINode, gfx: &mut Graphics) {
     // Run egui frame and render UI
     if let (Some(elements), Some(root_ids)) = (&ui_node.elements, &ui_node.root_ids) {
         let virtual_size = Vector2::new(gfx.virtual_width, gfx.virtual_height);
-        let screen_size = Vector2::new(
+        let screen_size_pixels = Vector2::new(
             gfx.surface_config.width as f32,
             gfx.surface_config.height as f32,
+        );
+        let pixels_per_point = gfx.window().scale_factor() as f32;
+        let screen_size_points = Vector2::new(
+            screen_size_pixels.x / pixels_per_point,
+            screen_size_pixels.y / pixels_per_point,
         );
         
         let mut raw_input = egui::RawInput::default();
         raw_input.screen_rect = Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,
-            egui::vec2(screen_size.x, screen_size.y),
+            egui::vec2(screen_size_points.x, screen_size_points.y),
         ));
+        if !raw_input.viewports.contains_key(&egui::ViewportId::ROOT) {
+            raw_input.viewports.insert(
+                egui::ViewportId::ROOT,
+                egui::ViewportInfo::default(),
+            );
+        }
         if let Some(vp) = raw_input.viewports.get_mut(&egui::ViewportId::ROOT) {
-            // If you have a real window scale factor, set it here instead of 1.0.
-            vp.native_pixels_per_point = Some(1.0);
+            vp.native_pixels_per_point = Some(pixels_per_point);
         }
         
         let integration = &mut gfx.egui_integration;
         let screen_rect = egui::Rect::from_min_size(
             egui::Pos2::ZERO,
-            egui::vec2(screen_size.x, screen_size.y),
+            egui::vec2(screen_size_points.x, screen_size_points.y),
         );
 
         let full_output = gfx.egui_context.run(raw_input, |ctx| {
@@ -97,7 +126,7 @@ fn render_ui_node(ui_node: &mut UINode, gfx: &mut Graphics) {
                         elements,
                         root_ids,
                         virtual_size,
-                        screen_size,
+                        screen_size_points,
                         ui,
                         &mut None,
                     );

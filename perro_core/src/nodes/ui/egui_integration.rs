@@ -12,7 +12,7 @@ use crate::{
         ui_text::UIText,
     },
 };
-use egui::{Button, Color32, FontId, Rect, Stroke, Ui};
+use egui::{Color32, FontId, Rect, Stroke, Ui};
 use std::collections::HashMap;
 
 /// Converts Perro Color to egui Color32
@@ -115,6 +115,7 @@ fn transform_to_rect(
     
     rect
 }
+
 /// State tracked per element for egui rendering
 #[derive(Default)]
 pub struct ElementState {
@@ -130,11 +131,11 @@ pub enum ElementEvent {
     ButtonPressed(UIElementID, bool),   // element_id, is_pressed
 }
 
-/// Main egui integration manager (context lives on Graphics so we can run it and mutably use integration in the same frame).
+/// Main egui integration manager
 pub struct EguiIntegration {
     pub element_states: HashMap<UIElementID, ElementState>,
     pub events: Vec<ElementEvent>,
-    pub last_output: Option<egui::FullOutput>, // Store last frame's output for rendering
+    pub last_output: Option<egui::FullOutput>,
 }
 
 impl EguiIntegration {
@@ -147,8 +148,6 @@ impl EguiIntegration {
     }
 
     /// Render a UIElement tree using egui
-    /// elements: Map of all UI elements
-    /// root_ids: IDs of root elements to render
     pub fn render_element_tree(
         &mut self,
         elements: &std::collections::HashMap<UIElementID, UIElement>,
@@ -163,6 +162,7 @@ impl EguiIntegration {
             elements.len(),
             root_ids.len()
         );
+        
         // Render root elements
         for &root_id in root_ids {
             if let Some(element) = elements.get(&root_id) {
@@ -222,7 +222,7 @@ impl EguiIntegration {
         }
     }
 
-    /// Render a Panel (wraps egui Frame) with children
+    /// Render a Panel with children - PAINT BEFORE SCOPE
     pub fn render_panel_with_children(
         &mut self,
         panel: &UIPanel,
@@ -237,6 +237,7 @@ impl EguiIntegration {
             panel.base.name,
             panel.base.id
         );
+        
         let rect = transform_to_rect(
             &panel.base.global_transform,
             &panel.base.size,
@@ -244,6 +245,7 @@ impl EguiIntegration {
             virtual_size,
             screen_size,
         );
+        
         let bg_color = panel
             .props
             .background_color
@@ -256,22 +258,11 @@ impl EguiIntegration {
             .unwrap_or(Color32::TRANSPARENT);
 
         let rounding = corner_radius_to_egui(&panel.props.corner_radius, &rect, panel.base.size);
-        // println!(
-        //     "🎨 [EGUI] panel id={} name='{}' rect min={:?} max={:?} bg={:?} border={:?} rounding={:?} (virtual={:?} screen={:?})",
-        //     panel.base.id,
-        //     panel.base.name,
-        //     rect.min,
-        //     rect.max,
-        //     bg_color,
-        //     border_color,
-        //     rounding,
-        //     virtual_size,
-        //     screen_size
-        // );
 
-        // Draw background + border directly to avoid egui layout side-effects.
+        // PAINT DIRECTLY TO PARENT UI (before creating scope)
         let bg_color = apply_opacity(bg_color, panel.props.opacity);
         let border_color = apply_opacity(border_color, panel.props.opacity);
+        
         if bg_color != Color32::TRANSPARENT {
             ui.painter().rect_filled(rect, rounding, bg_color);
         }
@@ -284,6 +275,7 @@ impl EguiIntegration {
             );
         }
 
+        // NOW create scope for children
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
             ui.set_clip_rect(rect);
             ui.set_opacity(panel.props.opacity);
@@ -322,14 +314,20 @@ impl EguiIntegration {
         );
 
         let (pos, align) = match text.props.align {
-            crate::ui_elements::ui_text::TextFlow::Start => (rect.left_center(), egui::Align2::LEFT_CENTER),
-            crate::ui_elements::ui_text::TextFlow::Center => (rect.center(), egui::Align2::CENTER_CENTER),
-            crate::ui_elements::ui_text::TextFlow::End => (rect.right_center(), egui::Align2::RIGHT_CENTER),
+            crate::ui_elements::ui_text::TextFlow::Start => {
+                (rect.left_center(), egui::Align2::LEFT_CENTER)
+            }
+            crate::ui_elements::ui_text::TextFlow::Center => {
+                (rect.center(), egui::Align2::CENTER_CENTER)
+            }
+            crate::ui_elements::ui_text::TextFlow::End => {
+                (rect.right_center(), egui::Align2::RIGHT_CENTER)
+            }
         };
         ui.painter().text(pos, align, &text.props.content, font_id, color);
     }
 
-    /// Render Button (clickable panel) with children and signal support
+    /// Render Button with children - PAINT BEFORE SCOPE
     pub fn render_button_with_children(
         &mut self,
         button: &UIButton,
@@ -344,6 +342,7 @@ impl EguiIntegration {
             button.base.name,
             button.base.id
         );
+        
         let rect = transform_to_rect(
             &button.base.global_transform,
             &button.base.size,
@@ -351,13 +350,10 @@ impl EguiIntegration {
             virtual_size,
             screen_size,
         );
+        
         let base_bg = button.props.background_color;
-        let hover_bg = button
-            .hover_color
-            .or(base_bg.map(|c| c.lighten(0.08)));
-        let pressed_bg = button
-            .pressed_color
-            .or(base_bg.map(|c| c.darken(0.12)));
+        let hover_bg = button.hover_color.or(base_bg.map(|c| c.lighten(0.08)));
+        let pressed_bg = button.pressed_color.or(base_bg.map(|c| c.darken(0.12)));
 
         let base_border = button.props.border_color;
         let hover_border = button
@@ -373,64 +369,69 @@ impl EguiIntegration {
             .unwrap_or(Color32::TRANSPARENT);
         let rounding = corner_radius_to_egui(&button.props.corner_radius, &rect, button.base.size);
 
+        // Create interaction OUTSIDE scope using ui.interact
+        let interact_id = ui.make_persistent_id(format!("button_{}", button.base.id));
+        let response = ui.interact(rect, interact_id, egui::Sense::click());
+
+        // Update colors based on interaction state
+        let is_pressed = response.is_pointer_button_down_on();
+        if is_pressed {
+            if let Some(c) = pressed_bg {
+                bg_color = color_to_egui(c);
+            }
+            if let Some(c) = pressed_border {
+                border_color = color_to_egui(c);
+            }
+        } else if response.hovered() {
+            if let Some(c) = hover_bg {
+                bg_color = color_to_egui(c);
+            }
+            if let Some(c) = hover_border {
+                border_color = color_to_egui(c);
+            }
+        }
+
+        // Apply opacity
+        let bg_color = apply_opacity(bg_color, button.props.opacity);
+        let border_color = apply_opacity(border_color, button.props.opacity);
+
+        // PAINT DIRECTLY TO PARENT UI (before creating scope)
+        if bg_color != Color32::TRANSPARENT {
+            ui.painter().rect_filled(rect, rounding, bg_color);
+        }
+        if button.props.border_thickness > 0.0 && border_color != Color32::TRANSPARENT {
+            ui.painter().rect_stroke(
+                rect,
+                rounding,
+                Stroke::new(button.props.border_thickness, border_color),
+                egui::StrokeKind::Inside,
+            );
+        }
+
+        // Handle events
+        if response.clicked() {
+            println!(
+                "[UI] button clicked id={} name='{}'",
+                button.base.id,
+                button.base.name
+            );
+            self.events.push(ElementEvent::ButtonClicked(
+                button.base.id,
+                button.base.name.clone(),
+            ));
+        }
+        if response.hovered() {
+            self.events.push(ElementEvent::ButtonHovered(button.base.id, true));
+        }
+        if response.contains_pointer() {
+            self.events.push(ElementEvent::ButtonPressed(
+                button.base.id,
+                ui.input(|i| i.pointer.primary_down()),
+            ));
+        }
+
+        // NOW create scope for children
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-            let response = ui
-                .add_sized(rect.size(), Button::new("").frame(false))
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
-
-            let is_pressed = response.is_pointer_button_down_on();
-            if is_pressed {
-                if let Some(c) = pressed_bg {
-                    bg_color = color_to_egui(c);
-                }
-                if let Some(c) = pressed_border {
-                    border_color = color_to_egui(c);
-                }
-            } else if response.hovered() {
-                if let Some(c) = hover_bg {
-                    bg_color = color_to_egui(c);
-                }
-                if let Some(c) = hover_border {
-                    border_color = color_to_egui(c);
-                }
-            }
-
-            let bg_color = apply_opacity(bg_color, button.props.opacity);
-            let border_color = apply_opacity(border_color, button.props.opacity);
-
-            if bg_color != Color32::TRANSPARENT {
-                ui.painter().rect_filled(rect, rounding, bg_color);
-            }
-            if button.props.border_thickness > 0.0 && border_color != Color32::TRANSPARENT {
-                ui.painter().rect_stroke(
-                    rect,
-                    rounding,
-                    Stroke::new(button.props.border_thickness, border_color),
-                    egui::StrokeKind::Inside,
-                );
-            }
-
-            if response.clicked() {
-                println!(
-                    "[UI] button clicked id={} name='{}'",
-                    button.base.id,
-                    button.base.name
-                );
-                self.events.push(ElementEvent::ButtonClicked(
-                    button.base.id,
-                    button.base.name.clone(),
-                ));
-            }
-            if response.hovered() {
-                self.events.push(ElementEvent::ButtonHovered(button.base.id, true));
-            }
-            if response.contains_pointer() {
-                self.events.push(ElementEvent::ButtonPressed(
-                    button.base.id,
-                    ui.input(|i| i.pointer.primary_down()),
-                ));
-            }
-
             ui.set_clip_rect(rect);
             ui.set_opacity(button.props.opacity);
             for &child_id in button.get_children() {
@@ -447,7 +448,6 @@ impl EguiIntegration {
             }
         });
     }
-
 
     /// Clear events (call after processing)
     pub fn clear_events(&mut self) {
