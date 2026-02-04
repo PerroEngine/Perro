@@ -2824,7 +2824,7 @@ impl Graphics {
                 },
             );
             self.egui_renderer = Some(renderer);
-            log::info!("🎨 [EGUI] Renderer initialized");
+            println!("🎨 [EGUI] Renderer initialized");
         }
     }
 
@@ -2832,7 +2832,15 @@ impl Graphics {
     fn run_egui_test_frame(&self) -> egui::FullOutput {
         let w = self.surface_config.width as f32;
         let h = self.surface_config.height as f32;
-        let raw_input = egui::RawInput::default();
+        let mut raw_input = egui::RawInput::default();
+        raw_input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(w, h),
+        ));
+        if let Some(vp) = raw_input.viewports.get_mut(&egui::ViewportId::ROOT) {
+            // If you have a real window scale factor, set it here instead of 1.0.
+            vp.native_pixels_per_point = Some(1.0);
+        }
         self.egui_context.run(raw_input, |ctx| {
             let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h));
             let layer_id = egui::LayerId::background();
@@ -2852,14 +2860,46 @@ impl Graphics {
         // Ensure renderer is initialized first
         self.ensure_egui_renderer();
 
+        // If forced, clear the swapchain to bright green and return (verifies render pass writes).
+        if FORCE_TEST_FRAME {
+            let rpass_descriptor = wgpu::RenderPassDescriptor {
+                label: Some("egui_force_test_clear"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.0,
+                            g: 1.0,
+                            b: 0.0,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            };
+            let _rpass = encoder.begin_render_pass(&rpass_descriptor);
+            return;
+        }
+
         // Use real UI output or fall back to test frame (full-screen green) so we can verify the pass draws
-        if FORCE_TEST_FRAME || self.egui_integration.last_output.is_none() {
-            log::info!("🎨 [EGUI] No last_output — drawing test frame (green screen) to verify pass");
+        if self.egui_integration.last_output.is_none() {
+            println!("🎨 [EGUI] No last_output — drawing test frame (green screen) to verify pass");
             let test_output = self.run_egui_test_frame();
             self.egui_integration.last_output = Some(test_output);
         }
 
         let full_output = self.egui_integration.last_output.as_ref().unwrap();
+        println!(
+            "🎨 [EGUI] full_output shapes={} textures_set={} textures_free={}",
+            full_output.shapes.len(),
+            full_output.textures_delta.set.len(),
+            full_output.textures_delta.free.len()
+        );
 
         // Update textures if needed
         if let Some(renderer) = &mut self.egui_renderer {
@@ -2871,34 +2911,35 @@ impl Graphics {
                 renderer.free_texture(id);
             }
         } else {
-            log::warn!("🎨 [EGUI] Renderer not initialized, skipping render");
+            println!("🎨 [EGUI] Renderer not initialized, skipping render");
             return;
         }
 
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [self.surface_config.width, self.surface_config.height],
-            pixels_per_point: self.egui_context.pixels_per_point(),
+            pixels_per_point: full_output.pixels_per_point,
         };
 
         let mut paint_jobs = self.egui_context.tessellate(
             full_output.shapes.clone(),
-            self.egui_context.pixels_per_point(),
+            full_output.pixels_per_point,
         );
+        println!("🎨 [EGUI] paint_jobs={}", paint_jobs.len());
 
         // If no shapes (e.g. UI not ready), use test frame so we still draw something
         if paint_jobs.is_empty() {
-            log::info!("🎨 [EGUI] No shapes — drawing test frame (green screen) to verify pass");
+            println!("🎨 [EGUI] No shapes — drawing test frame (green screen) to verify pass");
             let test_output = self.run_egui_test_frame();
             self.egui_integration.last_output = Some(test_output);
             let full_output = self.egui_integration.last_output.as_ref().unwrap();
             paint_jobs = self.egui_context.tessellate(
                 full_output.shapes.clone(),
-                self.egui_context.pixels_per_point(),
+                full_output.pixels_per_point,
             );
         }
 
         if paint_jobs.is_empty() {
-            log::warn!("🎨 [EGUI] Still no paint jobs after test frame, skipping render");
+            println!("🎨 [EGUI] Still no paint jobs after test frame, skipping render");
             return;
         }
 
@@ -2913,7 +2954,7 @@ impl Graphics {
             );
 
             // Create render pass for egui and render
-            log::debug!(
+            println!(
                 "🎨 [EGUI] Drawing {} paint job(s) to screen (size {}x{})",
                 paint_jobs.len(),
                 screen_descriptor.size_in_pixels[0],
@@ -2925,7 +2966,13 @@ impl Graphics {
                     view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load, // Load existing content (don't clear)
+                        // Change from Load to Clear with transparent or your background color
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.1,
+                            b: 0.15,
+                            a: 1.0,
+                        }),
                         store: wgpu::StoreOp::Store,
                     },
                     depth_slice: None,
@@ -2942,3 +2989,4 @@ impl Graphics {
         }
     }
 }
+

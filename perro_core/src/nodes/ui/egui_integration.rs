@@ -68,52 +68,53 @@ fn transform_to_rect(
     virtual_size: Vector2,
     screen_size: Vector2,
 ) -> Rect {
-    println!("🔍 transform_to_rect: pos={:?} size={:?} pivot={:?} scale={:?}", 
-             transform.position, size, pivot, transform.scale);
-    
     let pos = transform.position;
-    let scaled_size = Vector2::new(size.x * transform.scale.x, size.y * transform.scale.y);
-
-    println!("   scaled_size={:?}", scaled_size);
-
-    // Calculate bounds from pivot point
-    // In Perro's Y-up system: top has highest Y, bottom has lowest Y
-    // Pivot (0.5, 0.5) means center, (0, 0) means bottom-left, (1, 1) means top-right
-    let min_x = pos.x - scaled_size.x * pivot.x;
-    let max_x = pos.x + scaled_size.x * (1.0 - pivot.x);
-    let max_y = pos.y + scaled_size.y * (1.0 - pivot.y); // Top (highest Y in Y-up)
-    let min_y = pos.y - scaled_size.y * pivot.y; // Bottom (lowest Y in Y-up)
-
-    println!("   virtual bounds: min_x={} max_x={} min_y={} max_y={}", min_x, max_x, min_y, max_y);
-
-    let scale_x = if virtual_size.x == 0.0 {
-        1.0
-    } else {
-        screen_size.x / virtual_size.x
-    };
-    let scale_y = if virtual_size.y == 0.0 {
-        1.0
-    } else {
-        screen_size.y / virtual_size.y
-    };
-
-    // Convert to egui coordinates (top-left origin, Y-down) in screen points
-    // The position is already in centered virtual space (-hw to +hw, -hh to +hh)
-    // We need to convert to top-left origin (0 to screen_size)
-    let min = egui::pos2(
-        (min_x + virtual_size.x * 0.5) * scale_x,
-        (virtual_size.y * 0.5 - max_y) * scale_y,
-    );
-    let max = egui::pos2(
-        (max_x + virtual_size.x * 0.5) * scale_x,
-        (virtual_size.y * 0.5 - min_y) * scale_y,
+    let scaled_size = Vector2::new(
+        size.x * transform.scale.x,
+        size.y * transform.scale.y
     );
 
-    println!("   screen rect: min={:?} max={:?}", min, max);
+    let min_x_ui = pos.x - scaled_size.x * pivot.x;
+    let max_x_ui = pos.x + scaled_size.x * (1.0 - pivot.x);
+    let min_y_ui = pos.y - scaled_size.y * pivot.y;
+    let max_y_ui = pos.y + scaled_size.y * (1.0 - pivot.y);
 
-    Rect::from_min_max(min, max)
+    let half_virtual_w = virtual_size.x * 0.5;
+    let half_virtual_h = virtual_size.y * 0.5;
+    
+    let min_x_virtual = min_x_ui + half_virtual_w;
+    let max_x_virtual = max_x_ui + half_virtual_w;
+    let min_y_virtual = -max_y_ui + half_virtual_h;
+    let max_y_virtual = -min_y_ui + half_virtual_h;
+
+    let scale_x = screen_size.x / virtual_size.x;
+    let scale_y = screen_size.y / virtual_size.y;
+    
+    let screen_min_x = min_x_virtual * scale_x;
+    let screen_max_x = max_x_virtual * scale_x;
+    let screen_min_y = min_y_virtual * scale_y;
+    let screen_max_y = max_y_virtual * scale_y;
+
+    let rect = Rect::from_min_max(
+        egui::pos2(screen_min_x, screen_min_y),
+        egui::pos2(screen_max_x, screen_max_y),
+    );
+    
+    let center_x_virtual = (min_x_virtual + max_x_virtual) * 0.5;
+    let center_y_virtual = (min_y_virtual + max_y_virtual) * 0.5;
+    let center_x_screen = (screen_min_x + screen_max_x) * 0.5;
+    let center_y_screen = (screen_min_y + screen_max_y) * 0.5;
+    
+    println!(
+        "🔍 ui({:.1},{:.1}) -> virt_center({:.1},{:.1}) -> screen_center({:.1},{:.1}) size={:.1}x{:.1}",
+        pos.x, pos.y,
+        center_x_virtual, center_y_virtual,
+        center_x_screen, center_y_screen,
+        rect.width(), rect.height()
+    );
+    
+    rect
 }
-
 /// State tracked per element for egui rendering
 #[derive(Default)]
 pub struct ElementState {
@@ -255,18 +256,18 @@ impl EguiIntegration {
             .unwrap_or(Color32::TRANSPARENT);
 
         let rounding = corner_radius_to_egui(&panel.props.corner_radius, &rect, panel.base.size);
-        println!(
-            "🎨 [EGUI] panel id={} name='{}' rect min={:?} max={:?} bg={:?} border={:?} rounding={:?} (virtual={:?} screen={:?})",
-            panel.base.id,
-            panel.base.name,
-            rect.min,
-            rect.max,
-            bg_color,
-            border_color,
-            rounding,
-            virtual_size,
-            screen_size
-        );
+        // println!(
+        //     "🎨 [EGUI] panel id={} name='{}' rect min={:?} max={:?} bg={:?} border={:?} rounding={:?} (virtual={:?} screen={:?})",
+        //     panel.base.id,
+        //     panel.base.name,
+        //     rect.min,
+        //     rect.max,
+        //     bg_color,
+        //     border_color,
+        //     rounding,
+        //     virtual_size,
+        //     screen_size
+        // );
 
         // Draw background + border directly to avoid egui layout side-effects.
         let bg_color = apply_opacity(bg_color, panel.props.opacity);

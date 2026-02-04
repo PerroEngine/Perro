@@ -70,13 +70,15 @@ fn render_ui_node(ui_node: &mut UINode, gfx: &mut Graphics) {
             gfx.surface_config.height as f32,
         );
         
-        let raw_input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(screen_size.x, screen_size.y),
-            )),
-            ..Default::default()
-        };
+        let mut raw_input = egui::RawInput::default();
+        raw_input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(screen_size.x, screen_size.y),
+        ));
+        if let Some(vp) = raw_input.viewports.get_mut(&egui::ViewportId::ROOT) {
+            // If you have a real window scale factor, set it here instead of 1.0.
+            vp.native_pixels_per_point = Some(1.0);
+        }
         
         let integration = &mut gfx.egui_integration;
         let screen_rect = egui::Rect::from_min_size(
@@ -85,12 +87,12 @@ fn render_ui_node(ui_node: &mut UINode, gfx: &mut Graphics) {
         );
 
         let full_output = gfx.egui_context.run(raw_input, |ctx| {
-            egui::Area::new(egui::Id::new("perro_ui"))
-                .fixed_pos(screen_rect.min)
-                .default_size(screen_rect.size())
+            // Use CentralPanel instead of Area for full-screen UI
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
-                    ui.set_min_size(screen_rect.size());
                     ui.set_clip_rect(screen_rect);
+                    
                     integration.render_element_tree(
                         elements,
                         root_ids,
