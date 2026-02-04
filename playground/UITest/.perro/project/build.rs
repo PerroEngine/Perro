@@ -121,15 +121,15 @@ BEGIN
     END
 END
 "#,
-    build_number,
-    icon_str,
-    major, minor, patch, build_number,
-    major, minor, patch, build_number,
-    name,
-    version_display,
-    name,
-    version_display,
-    name
+        build_number,
+        icon_str,
+        major, minor, patch, build_number,
+        major, minor, patch, build_number,
+        name,
+        version_display,
+        name,
+        version_display,
+        name
 );
 
             fs::write(&rc_path, rc_content).expect("Failed to write .rc file");
@@ -6224,10 +6224,11 @@ fn convert_any_image_to_ico(input_path: &Path, ico_path: &Path, log_path: &Path)
         .decode()
         .expect("Failed to decode image");
 
-    let sizes = [16, 32, 48, 256];
+    let sizes = [(16, "icon_16x16.png"), (32, "icon_16x16@2x.png"), (32, "icon_32x32.png"), (64, "icon_32x32@2x.png"), (128, "icon_128x128.png"), (256, "icon_128x128@2x.png"), (256, "icon_256x256.png"), (512, "icon_256x256@2x.png"), (512, "icon_512x512.png"), (1024, "icon_512x512@2x.png")];
+
     let mut icon_dir = IconDir::new(ResourceType::Icon);
 
-    for size in sizes {
+    for (size, _filename) in sizes {
         let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
         let rgba = resized.into_rgba8();
         let icon_image =
@@ -6318,27 +6319,18 @@ fn convert_to_icns(input_path: &Path, icns_path: &Path, log_path: &Path) {
 
     for (size, filename) in sizes {
         let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
-        let output_path = temp_iconset.join(filename);
-        resized.save(&output_path).expect("Failed to save icon size");
+        let out_path = temp_iconset.join(filename);
+        resized.save(&out_path).expect("Failed to write PNG in iconset");
+        log(log_path, &format!("✔ Added {}x{} to iconset", size, size));
     }
 
-    let output = Command::new("iconutil")
-        .args(&["-c", "icns", "-o"])
-        .arg(icns_path)
-        .arg(&temp_iconset)
-        .output();
-
-    match output {
-        Ok(result) if result.status.success() => {
-            log(log_path, &format!("✔ Created ICNS: {}", icns_path.display()));
-        }
-        _ => {
-            log(log_path, "⚠ iconutil failed, fallback to PNG copy");
-            fs::copy(input_path, icns_path.with_extension("png")).ok();
-        }
-    }
-
+    let status = Command::new("iconutil")
+        .args(["-c", "icns", temp_iconset.to_str().expect("iconset path"), "-o", icns_path.to_str().expect("icns path")])
+        .status()
+        .expect("iconutil not found (macOS only)");
+    if !status.success() { panic!("iconutil failed"); }
     let _ = fs::remove_dir_all(&temp_iconset);
+    log(log_path, &format!("✔ ICNS saved: {}", icns_path.display()));
 }
 
 #[cfg(target_os = "linux")]
@@ -6387,30 +6379,13 @@ fn setup_linux_desktop(icon_path: &Path, project_root: &Path, log_path: &Path, n
 
     let icon_name = format!("{}", name.to_lowercase().replace(" ", "_"));
     let icon_dest = project_root.join(format!("{}.png", icon_name));
-    let _ = fs::copy(&actual_icon_path, &icon_dest);
-    if actual_icon_path.file_name().and_then(|n| n.to_str()) == Some("default-icon-temp.png") {
-        let _ = fs::remove_file(&actual_icon_path); // Clean up temp file
-    }
-    if actual_icon_path.file_name().and_then(|n| n.to_str()) == Some("default-icon-temp.png") {
-        let _ = fs::remove_file(&actual_icon_path); // Clean up temp file
+
+    // Copy icon to destination
+    if fs::copy(&actual_icon_path, &icon_dest).is_err() {
+        log(log_path, "⚠ Failed to copy icon to destination");
     }
 
-    // Also try to install to user's local icon directory for better file manager support
-    if let Ok(home) = std::env::var("HOME") {
-        let local_icons_dir = PathBuf::from(&home).join(".local/share/icons/hicolor/256x256/apps");
-        if let Err(_) = fs::create_dir_all(&local_icons_dir) {
-            // Silently fail if we can't create the directory
-        } else {
-            let system_icon_path = local_icons_dir.join(format!("{}.png", icon_name));
-            if let Ok(_) = fs::copy(&actual_icon_path, &system_icon_path) {
-                log(log_path, &format!("✔ Installed icon to system location: {}", system_icon_path.display()));
-            }
-        }
-    }
-
-    let desktop_path = project_root.join(format!("{}.desktop", icon_name));
-    // Use just the icon name (without path/extension) so file managers can find it
-    // They'll look in standard icon directories
+    // Create desktop file
     let desktop_content = format!(
         r#"[Desktop Entry]
 Name={}
@@ -6423,10 +6398,10 @@ StartupNotify=true
 Engine=Perro
 EngineWebsite=https://perroengine.com
 "#,
-        name, icon_name, icon_name, version
+        name, binary_name, icon_name, version
     );
 
-    fs::write(&desktop_path, desktop_content).expect("Failed to write .desktop file");
+    fs::write(appdir.join("usr/share/applications").join(format!("{}.desktop", icon_name)), &desktop_content).expect("Failed to write desktop file");
     log(log_path, &format!("✔ Created Linux desktop files: {}, {}", icon_dest.display(), desktop_path.display()));
 }
 

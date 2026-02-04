@@ -6,6 +6,8 @@ use crate::{
 };
 use wgpu::{Device, Queue, RenderPass};
 
+// i am pretty sure we dont use this anymore we use egui integration
+
 pub struct RendererUI {}
 
 impl RendererUI {

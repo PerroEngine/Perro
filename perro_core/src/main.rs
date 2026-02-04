@@ -520,7 +520,7 @@ fn main() {
         .and_then(|i| args.get(i + 1))
         .unwrap_or_else(|| {
             eprintln!("❌ Missing required flag: --path <path or --editor or --test or --test_transpiler>");
-            eprintln!("   Or use: perro new <project_name> [path]");
+            eprintln!("   Or use: new <project_name> [path]");
             eprintln!(
                 "   Or use: cargo run -p perro_core -- --path <path> --scripts (compile only)"
             );

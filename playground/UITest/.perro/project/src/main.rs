@@ -41,8 +41,10 @@ fn main() {
             scenes: &static_assets::scenes::PERRO_SCENES,
             fur: &static_assets::fur::PERRO_FUR,
             textures: &static_assets::textures::PERRO_TEXTURES,
+            meshes: &static_assets::meshes::PERRO_MESHES,
         },
         script_registry: scripts::get_script_registry(),
         global_registry_order: scripts::get_global_registry_order(),
+        global_registry_names: scripts::get_global_registry_names(),
     }, runtime_params);
 }
