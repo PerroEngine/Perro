@@ -291,14 +291,8 @@ impl Variable {
             Type::DynNode => ("__NODE__", "NodeType".to_owned()), // DynNode is NodeID at runtime, same as Node types
             Type::UIElement(_) | Type::DynUIElement => ("__UI_ELEMENT__", "Option<UIElementID>".to_owned()), // always Option<UIElementID>, like Texture/Mesh
             Type::UIElementType => ("as_str", ".parse::<UIElementType>().unwrap()".into()),
-            Type::EngineStruct(es) => {
-                use crate::engine_structs::EngineStruct;
-                match es {
-                    EngineStruct::Texture => ("__CUSTOM__", "Option<TextureID>".to_string()), // Texture is Option<TextureID>, use custom deserialization
-                    EngineStruct::Mesh => ("__CUSTOM__", "Option<MeshID>".to_string()), // Mesh is Option<MeshID>, use custom deserialization
-                    EngineStruct::SceneRef => ("__CUSTOM__", "SceneRef".to_string()),
-                    _ => ("__ENGINE_STRUCT__", "EngineStruct".to_owned()), // Other engine structs use the generic method
-                }
+            Type::EngineStruct(es) => { ("__CUSTOM__", es.to_str().to_string()) 
+        
             }
         }
     }

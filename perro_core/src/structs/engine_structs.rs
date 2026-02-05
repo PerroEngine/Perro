@@ -35,6 +35,22 @@ impl EngineStruct {
         }
     }
 
+    pub fn to_str(&self) -> &str {
+        match self {
+            EngineStruct::Vector2 => "Vector2",
+            EngineStruct::Vector3 => "Vector3",
+            EngineStruct::Transform2D => "Transform2D",
+            EngineStruct::Transform3D => "Transform3D",
+            EngineStruct::Color => "Color",
+            EngineStruct::Rect => "Rect",
+            EngineStruct::Quaternion => "Quaternion",
+            EngineStruct::Shape2D => "Shape2D",
+            EngineStruct::Texture => "Option<TextureID>",
+            EngineStruct::Mesh => "Option<MeshID>",
+            EngineStruct::SceneRef => "SceneRef",
+        }
+    }
+
     /// Check if a type name is an engine struct
     pub fn is_engine_struct(type_name: &str) -> bool {
         Self::from_string(type_name).is_some()
