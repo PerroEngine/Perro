@@ -13,6 +13,7 @@ use crate::api::ScriptApi;
 use crate::fur_ast::FurElement;
 use crate::node_registry::SceneNode;
 use crate::scripting::app_command::AppCommand;
+use crate::manifest::Project;
 
 /// Bitflags to track which lifecycle methods are implemented by a script
 /// This allows the engine to skip calling methods that are not implemented,
@@ -223,6 +224,18 @@ pub trait SceneAccess {
         parent_id: NodeID,
         gfx: &mut crate::rendering::Graphics,
     ) -> anyhow::Result<NodeID>;
+
+    /// Merge a SceneData into the scene using the provided Project reference.
+    /// Default falls back to merge_scene_data when a project override isn't needed.
+    fn merge_scene_data_with_project(
+        &mut self,
+        data: SceneData,
+        parent_id: NodeID,
+        gfx: &mut crate::rendering::Graphics,
+        _project: &mut Project,
+    ) -> anyhow::Result<NodeID> {
+        self.merge_scene_data(data, parent_id, gfx)
+    }
 
     /// Get the root node id for the current scene.
     fn get_root_id(&self) -> NodeID;

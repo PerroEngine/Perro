@@ -248,15 +248,14 @@ pub fn implement_script_boilerplate_internal(
                         }},"
                     ).unwrap();
                 } else if accessor == "__NODE__" {
-                    // Node variables - try u32 first (from JSON number), then string parsing
+                    // Node variables - parse u64 or string NodeID (same as apply table)
                     writeln!(
                         set_entries,
                         "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
-                            if let Some(v) = val.as_u64().map(|n| n as u32) {{
-                                script.{renamed_name} = NodeID::from_u32(v);
-                                return Some(());
-                            }} else if let Some(vNodeType) = val.as_str().and_then(|s| perro_core::NodeID::parse_str(s).ok()) {{
-                                script.{renamed_name} = vNodeType;
+                            if let Some(id) = val.as_u64().map(perro_core::NodeID::from_u64)
+                                .or_else(|| val.as_str().and_then(|s| perro_core::NodeID::parse_str(s).ok()))
+                            {{
+                                script.{renamed_name} = id;
                                 return Some(());
                             }}
                             None

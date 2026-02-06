@@ -1,5 +1,5 @@
-@script Shape extends Node
+@script Shape extends ShapeInstance2D
 
-on init() {
-    Console.print("hello there root")
+on update() {
+    self.transform.position.y -= Time.get_delta() * 50
 }

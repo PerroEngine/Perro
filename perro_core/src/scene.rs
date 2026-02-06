@@ -1003,7 +1003,19 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             if let Ok(ctor) = game_scene.provider.load_ctor(identifier.as_str()) {
                 let boxed = game_scene.instantiate_script(ctor, global_id);
                 let handle = Rc::new(UnsafeCell::new(boxed));
+
+
+            let flags = unsafe { (*handle.get()).script_flags() };
+
                 game_scene.scripts.insert(global_id, handle);
+
+                
+            if flags.has_update() && !game_scene.scripts_with_update.contains(&global_id) {
+                game_scene.scripts_with_update.push(global_id);
+            }
+            if flags.has_fixed_update() && !game_scene.scripts_with_fixed_update.contains(&global_id) {
+                game_scene.scripts_with_fixed_update.push(global_id);
+            }
 
                 let project_ref = game_scene.project.clone();
                 let mut project_borrow = project_ref.borrow_mut();
@@ -1053,6 +1065,26 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         other: SceneData,
         parent_id: NodeID,
         gfx: &mut crate::rendering::Graphics,
+    ) -> anyhow::Result<NodeID> {
+        self.merge_scene_data_internal(other, parent_id, gfx, None)
+    }
+
+    pub fn merge_scene_data_with_project(
+        &mut self,
+        other: SceneData,
+        parent_id: NodeID,
+        gfx: &mut crate::rendering::Graphics,
+        project: &mut Project,
+    ) -> anyhow::Result<NodeID> {
+        self.merge_scene_data_internal(other, parent_id, gfx, Some(project))
+    }
+
+    fn merge_scene_data_internal(
+        &mut self,
+        other: SceneData,
+        parent_id: NodeID,
+        gfx: &mut crate::rendering::Graphics,
+        mut project_override: Option<&mut Project>,
     ) -> anyhow::Result<NodeID> {
         use std::time::Instant;
 
@@ -1150,9 +1182,16 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                             parent_type,
                         )));
                     }
-                    if let Some(parent_node) = self.nodes.get_mut(pnew) {
-                        parent_node.add_child(*new_id);
-                    }
+                      let mut added = false;
+                      if let Some(parent_node) = self.nodes.get_mut(pnew) {
+                          parent_node.add_child(*new_id);
+                          added = true;
+                      }
+                      if added {
+                          // Keep Node2D/Node3D child caches in sync for newly merged nodes.
+                          self.update_node2d_children_cache_on_add(pnew, *new_id);
+                          self.update_node3d_children_cache_on_add(pnew, *new_id);
+                      }
                 }
             } else if *key == root_key && !skip_root {
                 let parent_type = self
@@ -1160,15 +1199,15 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                     .get(parent_id)
                     .map(|n| n.get_type())
                     .unwrap_or(crate::node_registry::NodeType::Node);
-                if let Some(node) = self.nodes.get_mut(*new_id) {
-                    node.set_parent(Some(crate::nodes::node::ParentType::new(
-                        parent_id,
-                        parent_type,
-                    )));
-                }
-                parent_children.entry(parent_id).or_default().push(*new_id);
-            }
-        }
+                  if let Some(node) = self.nodes.get_mut(*new_id) {
+                      node.set_parent(Some(crate::nodes::node::ParentType::new(
+                          parent_id,
+                          parent_type,
+                      )));
+                  }
+                  parent_children.entry(parent_id).or_default().push(*new_id);
+              }
+          }
 
         // Remap script_exp_vars NodeRef(scene_key) → NodeRef(new arena ID)
         use crate::nodes::node::ScriptExpVarValue;
@@ -1248,14 +1287,21 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         }
 
         if let Some(children_of_game_parent) = parent_children.get(&parent_id) {
-            if let Some(game_parent) = self.nodes.get_mut(parent_id) {
-                for child_id in children_of_game_parent {
-                    if !game_parent.get_children().contains(child_id) {
-                        game_parent.add_child(*child_id);
-                    }
-                }
-            }
-        }
+              let mut to_add: Vec<NodeID> = Vec::new();
+              if let Some(game_parent) = self.nodes.get_mut(parent_id) {
+                  for child_id in children_of_game_parent {
+                      if !game_parent.get_children().contains(child_id) {
+                          game_parent.add_child(*child_id);
+                          to_add.push(*child_id);
+                      }
+                  }
+              }
+              for child_id in to_add {
+                  // Keep Node2D/Node3D child caches in sync for newly merged nodes.
+                  self.update_node2d_children_cache_on_add(parent_id, child_id);
+                  self.update_node3d_children_cache_on_add(parent_id, child_id);
+              }
+          }
 
         for id in &inserted_ids {
             self.mark_transform_dirty_recursive(*id);
@@ -1294,6 +1340,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                         nested_scene_data,
                         parent_node_id,
                         gfx,
+                        project_override.as_deref_mut(),
                     ) {
                         eprintln!("⚠️ Error merging nested scene '{}': {}", scene_path, e);
                     }
@@ -1377,43 +1424,78 @@ impl<P: ScriptProvider + 'static> Scene<P> {
 
         // Initialize scripts
         if !script_targets.is_empty() {
-            let project_ref = self.project.clone();
-            let mut project_borrow = project_ref.borrow_mut();
             let now = Instant::now();
             let dt = self
                 .last_scene_update
                 .map(|prev| now.duration_since(prev).as_secs_f32())
                 .unwrap_or(0.0);
 
-            for (id, script_path) in script_targets {
-                let ident = script_path_to_identifier(&script_path)
-                    .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
-                let ctor = self.ctor(&ident)?;
-                let boxed = self.instantiate_script(ctor, id);
-                let handle = Rc::new(UnsafeCell::new(boxed));
+            if let Some(project) = project_override.as_deref_mut() {
+                for (id, script_path) in script_targets {
+                    let ident = script_path_to_identifier(&script_path)
+                        .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
+                    let ctor = self.ctor(&ident)?;
+                    let boxed = self.instantiate_script(ctor, id);
+                    let handle = Rc::new(UnsafeCell::new(boxed));
 
-                // Check flags and add to appropriate vectors
-                let flags = unsafe { (*handle.get()).script_flags() };
+                    // Check flags and add to appropriate vectors
+                    let flags = unsafe { (*handle.get()).script_flags() };
 
-                if flags.has_update() && !self.scripts_with_update.contains(&id) {
-                    self.scripts_with_update.push(id);
+                    if flags.has_update() && !self.scripts_with_update.contains(&id) {
+                        self.scripts_with_update.push(id);
+                    }
+                    if flags.has_fixed_update() && !self.scripts_with_fixed_update.contains(&id) {
+                        self.scripts_with_fixed_update.push(id);
+                    }
+
+                    self.scripts.insert(id, handle);
+                    self.scripts_dirty = true;
+
+                    let mut api = ScriptApi::new(dt, self, project, gfx);
+                    api.apply_exposed_vars_from_node(id);
+                    api.call_init(id);
+
+                    // After script initialization, ensure renderable nodes are marked for rerender
+                    // (old system would have called mark_dirty() here)
+                    if let Some(node) = self.nodes.get(id) {
+                        if node.is_renderable() {
+                            self.needs_rerender.insert(id);
+                        }
+                    }
                 }
-                if flags.has_fixed_update() && !self.scripts_with_fixed_update.contains(&id) {
-                    self.scripts_with_fixed_update.push(id);
-                }
+            } else {
+                let project_ref = self.project.clone();
+                let mut project_borrow = project_ref.borrow_mut();
+                for (id, script_path) in script_targets {
+                    let ident = script_path_to_identifier(&script_path)
+                        .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
+                    let ctor = self.ctor(&ident)?;
+                    let boxed = self.instantiate_script(ctor, id);
+                    let handle = Rc::new(UnsafeCell::new(boxed));
 
-                self.scripts.insert(id, handle);
-                self.scripts_dirty = true;
+                    // Check flags and add to appropriate vectors
+                    let flags = unsafe { (*handle.get()).script_flags() };
 
-                let mut api = ScriptApi::new(dt, self, &mut *project_borrow, gfx);
-                api.apply_exposed_vars_from_node(id);
-                api.call_init(id);
+                    if flags.has_update() && !self.scripts_with_update.contains(&id) {
+                        self.scripts_with_update.push(id);
+                    }
+                    if flags.has_fixed_update() && !self.scripts_with_fixed_update.contains(&id) {
+                        self.scripts_with_fixed_update.push(id);
+                    }
 
-                // After script initialization, ensure renderable nodes are marked for rerender
-                // (old system would have called mark_dirty() here)
-                if let Some(node) = self.nodes.get(id) {
-                    if node.is_renderable() {
-                        self.needs_rerender.insert(id);
+                    self.scripts.insert(id, handle);
+                    self.scripts_dirty = true;
+
+                    let mut api = ScriptApi::new(dt, self, &mut *project_borrow, gfx);
+                    api.apply_exposed_vars_from_node(id);
+                    api.call_init(id);
+
+                    // After script initialization, ensure renderable nodes are marked for rerender
+                    // (old system would have called mark_dirty() here)
+                    if let Some(node) = self.nodes.get(id) {
+                        if node.is_renderable() {
+                            self.needs_rerender.insert(id);
+                        }
                     }
                 }
             }
@@ -1436,6 +1518,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         other: SceneData,
         replacement_root_id: NodeID,
         gfx: &mut crate::rendering::Graphics,
+        mut project_override: Option<&mut Project>,
     ) -> anyhow::Result<()> {
         use crate::ids::NodeID;
         let subscene_root_key = other.root_key;
@@ -1627,43 +1710,82 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             .collect();
 
         if !script_targets.is_empty() {
-            let project_ref = self.project.clone();
-            let mut project_borrow = project_ref.borrow_mut();
             let now = std::time::Instant::now();
             let dt = self
                 .last_scene_update
                 .map(|prev| now.duration_since(prev).as_secs_f32())
                 .unwrap_or(0.0);
 
-            for (id, script_path) in script_targets {
-                if let Ok(ident) = script_path_to_identifier(&script_path) {
-                    if let Ok(ctor) = self.ctor(&ident) {
-                        let boxed = self.instantiate_script(ctor, id);
-                        let handle = Rc::new(UnsafeCell::new(boxed));
+            if let Some(project) = project_override.as_deref_mut() {
+                for (id, script_path) in script_targets {
+                    if let Ok(ident) = script_path_to_identifier(&script_path) {
+                        if let Ok(ctor) = self.ctor(&ident) {
+                            let boxed = self.instantiate_script(ctor, id);
+                            let handle = Rc::new(UnsafeCell::new(boxed));
 
-                        // Check flags and add to appropriate vectors
-                        let flags = unsafe { (*handle.get()).script_flags() };
+                            // Check flags and add to appropriate vectors
+                            let flags = unsafe { (*handle.get()).script_flags() };
 
-                        if flags.has_update() && !self.scripts_with_update.contains(&id) {
-                            self.scripts_with_update.push(id);
+                            if flags.has_update() && !self.scripts_with_update.contains(&id) {
+                                self.scripts_with_update.push(id);
+                            }
+                            if flags.has_fixed_update()
+                                && !self.scripts_with_fixed_update.contains(&id)
+                            {
+                                self.scripts_with_fixed_update.push(id);
+                            }
+
+                            self.scripts.insert(id, handle);
+                            self.scripts_dirty = true;
+
+                            let mut api = ScriptApi::new(dt, self, project, gfx);
+                            api.apply_exposed_vars_from_node(id);
+                            api.call_init(id);
+
+                            // After script initialization, ensure renderable nodes are marked for rerender
+                            // (old system would have called mark_dirty() here)
+                            if let Some(node) = self.nodes.get(id) {
+                                if node.is_renderable() {
+                                    self.needs_rerender.insert(id);
+                                }
+                            }
                         }
-                        if flags.has_fixed_update() && !self.scripts_with_fixed_update.contains(&id)
-                        {
-                            self.scripts_with_fixed_update.push(id);
-                        }
+                    }
+                }
+            } else {
+                let project_ref = self.project.clone();
+                let mut project_borrow = project_ref.borrow_mut();
+                for (id, script_path) in script_targets {
+                    if let Ok(ident) = script_path_to_identifier(&script_path) {
+                        if let Ok(ctor) = self.ctor(&ident) {
+                            let boxed = self.instantiate_script(ctor, id);
+                            let handle = Rc::new(UnsafeCell::new(boxed));
 
-                        self.scripts.insert(id, handle);
-                        self.scripts_dirty = true;
+                            // Check flags and add to appropriate vectors
+                            let flags = unsafe { (*handle.get()).script_flags() };
 
-                        let mut api = ScriptApi::new(dt, self, &mut *project_borrow, gfx);
-                        api.apply_exposed_vars_from_node(id);
-                        api.call_init(id);
+                            if flags.has_update() && !self.scripts_with_update.contains(&id) {
+                                self.scripts_with_update.push(id);
+                            }
+                            if flags.has_fixed_update()
+                                && !self.scripts_with_fixed_update.contains(&id)
+                            {
+                                self.scripts_with_fixed_update.push(id);
+                            }
 
-                        // After script initialization, ensure renderable nodes are marked for rerender
-                        // (old system would have called mark_dirty() here)
-                        if let Some(node) = self.nodes.get(id) {
-                            if node.is_renderable() {
-                                self.needs_rerender.insert(id);
+                            self.scripts.insert(id, handle);
+                            self.scripts_dirty = true;
+
+                            let mut api = ScriptApi::new(dt, self, &mut *project_borrow, gfx);
+                            api.apply_exposed_vars_from_node(id);
+                            api.call_init(id);
+
+                            // After script initialization, ensure renderable nodes are marked for rerender
+                            // (old system would have called mark_dirty() here)
+                            if let Some(node) = self.nodes.get(id) {
+                                if node.is_renderable() {
+                                    self.needs_rerender.insert(id);
+                                }
                             }
                         }
                     }
@@ -1690,6 +1812,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                     nested_scene_data,
                     parent_node_id,
                     gfx,
+                    project_override.as_deref_mut(),
                 ) {
                     eprintln!("⚠️ Error merging nested scene '{}': {}", scene_path, e);
                 }
@@ -4209,6 +4332,16 @@ impl<P: ScriptProvider + 'static> SceneAccess for Scene<P> {
         Self::merge_scene_data(self, data, parent_id, gfx)
     }
 
+    fn merge_scene_data_with_project(
+        &mut self,
+        data: SceneData,
+        parent_id: NodeID,
+        gfx: &mut crate::rendering::Graphics,
+        project: &mut Project,
+    ) -> anyhow::Result<NodeID> {
+        Self::merge_scene_data_with_project(self, data, parent_id, gfx, project)
+    }
+
     fn get_root_id(&self) -> NodeID {
         self.root_id
     }
@@ -4533,7 +4666,18 @@ impl Scene<DllScriptProvider> {
             if let Ok(ctor) = game_scene.provider.load_ctor(identifier.as_str()) {
                 let boxed = game_scene.instantiate_script(ctor, global_id);
                 let handle = Rc::new(UnsafeCell::new(boxed));
+                let flags = unsafe { (*handle.get()).script_flags() };
+              
+
                 game_scene.scripts.insert(global_id, handle);
+
+                 
+                if flags.has_update() && !game_scene.scripts_with_update.contains(&global_id) {
+                     game_scene.scripts_with_update.push(global_id);
+                }
+                if flags.has_fixed_update() && !game_scene.scripts_with_fixed_update.contains(&global_id) {
+                    game_scene.scripts_with_fixed_update.push(global_id);
+                }
 
                 let project_ref = game_scene.project.clone();
                 let mut project_borrow = project_ref.borrow_mut();

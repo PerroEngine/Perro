@@ -256,19 +256,43 @@ pub(crate) fn generate_rust_args(
                     }
                 }
             }
-            // Only add .expect() when the argument is actually Option<NodeID>/UuidOption (e.g. get_node result).
+            // Only add .expect() when the argument is actually Option<NodeID>/ (e.g. get_node result).
             // Do NOT add for concrete NodeIDs: callback params (c: CollisionShape2D), globals (NodeID::from_u32), self.id.
             if let Some(expected_types) = expected_arg_types {
                 if let Some(expect_ty) = expected_types.get(i) {
                     let actual_ty = script.infer_expr_type(a, current_func);
                     if matches!(expect_ty, Type::DynNode)
-                        && matches!(a, Expr::Ident(name) if !is_concrete_node_id_arg(script, current_func, name, &code_raw, actual_ty.as_ref()))
                         && !code_raw.is_empty()
                         && code_raw != "self.id"
                         && code_raw != "self"
                         && !code_raw.contains(".expect(")
+                        && !code_raw.contains(".unwrap(")
                     {
-                        code_raw = format!("{}.expect(\"Child node not found\")", code_raw);
+                        let is_option_node = matches!(actual_ty.as_ref(), Some(Type::Option(inner)) if matches!(inner.as_ref(), Type::DynNode))
+                            || matches!(actual_ty.as_ref(), Some(Type::Custom(name)) if name == "UuidOption");
+                        let is_get_child_by_name_call = matches!(
+                            a,
+                            Expr::ApiCall(
+                                crate::call_modules::CallModule::NodeMethod(
+                                    crate::structs::engine_registry::NodeMethodRef::GetChildByName
+                                ),
+                                _
+                            )
+                        );
+                        let is_ident_needing_unwrap = matches!(
+                            a,
+                            Expr::Ident(name)
+                                if !is_concrete_node_id_arg(
+                                    script,
+                                    current_func,
+                                    name,
+                                    &code_raw,
+                                    actual_ty.as_ref()
+                                )
+                        );
+                        if is_option_node || is_ident_needing_unwrap || is_get_child_by_name_call {
+                            code_raw = format!("{}.expect(\"Child node not found\")", code_raw);
+                        }
                     }
                 }
             }

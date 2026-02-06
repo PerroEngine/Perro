@@ -4336,7 +4336,20 @@ impl Expr {
                         inner_code.clone()
                     }
 
+                    // Option<NodeID> to NodeID (explicit cast means non-optional)
+                    (Some(Type::Option(inner)), Type::Node(_))
+                        if matches!(inner.as_ref(), Type::DynNode | Type::Node(_)) =>
+                    {
+                        format!("{}.expect(\"Node not found\")", inner_code)
+                    }
                     // NodeID to specific node type (e.g., get_parent() as Sprite2D)
+                    (Some(Type::Option(inner)), Type::Custom(to_name))
+                        if is_node_type(to_name)
+                            && matches!(inner.as_ref(), Type::DynNode | Type::Node(_)) =>
+                    {
+                        // Option<NodeID> to specific node type: unwrap (explicit cast means non-optional)
+                        format!("{}.unwrap()", inner_code)
+                    }
                     (Some(Type::DynNode), Type::Custom(to_name)) if is_node_type(to_name) => {
                         // Cast from NodeID (from get_parent() or other methods) to specific node type
                         // Casting to a node type just returns the UUID - property access will use read_node/mutate_node

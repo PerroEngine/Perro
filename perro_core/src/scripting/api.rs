@@ -1170,7 +1170,7 @@ impl SceneApi {
             .expect("Graphics required for Scene.instantiate");
 
         api.scene
-            .merge_scene_data(data, parent_id, gfx)
+            .merge_scene_data_with_project(data, parent_id, gfx, api.project)
             .unwrap_or_else(|e| panic!("Scene failed to merge: {} ({})", path, e))
     }
 }

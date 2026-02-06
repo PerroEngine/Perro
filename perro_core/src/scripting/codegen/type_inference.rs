@@ -80,6 +80,18 @@ impl Script {
             (Type::Option(inner), Type::DynNode) if matches!(inner.as_ref(), Type::DynNode) => {
                 return format!("{}.expect(\"Child node not found\")", expr);
             }
+            // Option<NodeID> -> concrete node type (e.g. instantiate() as Node2D)
+            (Type::Option(inner), Type::Node(_))
+                if matches!(inner.as_ref(), Type::DynNode | Type::Node(_)) =>
+            {
+                return format!("{}.expect(\"Node not found\")", expr);
+            }
+            (Type::Option(inner), Type::Custom(name))
+                if matches!(inner.as_ref(), Type::DynNode | Type::Node(_))
+                    && crate::scripting::codegen::is_node_type(name) =>
+            {
+                return format!("{}.expect(\"Node not found\")", expr);
+            }
             // UuidOption (script name for Option<NodeID>) -> NodeID
             (Type::Custom(name), Type::DynNode) if name == "UuidOption" => {
                 return format!("{}.expect(\"Child node not found\")", expr);
