@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "perro_core",
+]
+
+resolver = "3"
