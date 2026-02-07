@@ -1,0 +1,12 @@
+[package]
+name = "perro_io"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dirs = "6.0.0"
+zstd = "0.13.3"
+rand = "0.9.2"
+walkdir = "2.5.0"
+aes-gcm = "0.10"
+memmap2 = "0.9.9"
