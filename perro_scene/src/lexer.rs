@@ -16,6 +16,9 @@ pub enum Token {
     Slash, // /
     Newline,
     Eof,
+
+    True,
+    False,
 }
 
 pub struct Lexer<'a> {

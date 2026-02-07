@@ -1,10 +1,17 @@
 pub mod lexer;
 pub mod parser;
-pub mod scene;
+pub mod runtime_scene;
+pub mod static_scene;
 
 pub use lexer::*;
 pub use parser::*;
-pub use scene::*;
+pub use runtime_scene::*;
+
+// Re-export static scene types with different names to avoid confusion
+pub use static_scene::{
+    Scene as StaticScene, SceneKey as StaticSceneKey, SceneNodeDataEntry as StaticNodeData,
+    SceneNodeEntry as StaticNodeEntry, SceneValue as StaticSceneValue,
+};
 
 #[cfg(test)]
 mod tests {
@@ -44,28 +51,31 @@ mod tests {
         print!("{:#?}", scene);
 
         // root
-        assert_eq!(scene.root, Some(SceneKey("main".to_string())));
-
-        //root var count
-        assert_eq!(scene.vars.len(), 1);
+        assert_eq!(scene.root.as_deref(), Some("main"));
 
         // node count
         assert_eq!(scene.nodes.len(), 2);
 
         // main node
-        let main = scene.nodes.get(&SceneKey("main".to_string())).unwrap();
+        let main = scene.nodes.iter().find(|n| n.key == "main").unwrap();
         assert_eq!(main.name.as_deref(), Some("Root Node"));
 
         // player node
-        let player = scene.nodes.get(&SceneKey("player".to_string())).unwrap();
-        assert_eq!(player.parent, Some(SceneKey("main".to_string())));
+        let player = scene.nodes.iter().find(|n| n.key == "player").unwrap();
+        assert_eq!(player.parent.as_deref(), Some("main"));
 
         // Sprite2D
         assert_eq!(player.data.ty, "Sprite2D");
 
         // texture field
-        match player.data.fields.get("texture").unwrap() {
-            SceneValue::Str(s) => assert_eq!(s, "res://player.png"),
+        let texture = player
+            .data
+            .fields
+            .iter()
+            .find(|(k, _)| k == "texture")
+            .unwrap();
+        match &texture.1 {
+            RuntimeValue::Str(s) => assert_eq!(s, "res://player.png"),
             _ => panic!("texture should be string"),
         }
 
@@ -74,8 +84,9 @@ mod tests {
         assert_eq!(base.ty, "Node2D");
 
         // position field
-        match base.fields.get("position").unwrap() {
-            SceneValue::Vec2 { x, y } => assert_eq!((*x, *y), (10.0, 5.0)),
+        let position = base.fields.iter().find(|(k, _)| k == "position").unwrap();
+        match &position.1 {
+            RuntimeValue::Vec2 { x, y } => assert_eq!((*x, *y), (10.0, 5.0)),
             _ => panic!("position should be Vec2"),
         }
     }
@@ -125,40 +136,38 @@ mod tests {
         print!("{:#?}", scene);
 
         // root
-        assert_eq!(scene.root, Some(SceneKey("main".to_string())));
-
-        // variables
-        assert_eq!(scene.vars.len(), 4);
-
-        match scene.vars.get("shared_texture").unwrap() {
-            SceneValue::Str(s) => assert_eq!(s, "res://shared.png"),
-            _ => panic!("shared_texture should be string"),
-        }
-
-        match scene.vars.get("spawn_pos").unwrap() {
-            SceneValue::Vec2 { x, y } => assert_eq!((*x, *y), (10.0, 5.0)),
-            _ => panic!("spawn_pos should be Vec2"),
-        }
+        assert_eq!(scene.root.as_deref(), Some("main"));
 
         // node count
         assert_eq!(scene.nodes.len(), 3);
 
-        let player = scene.nodes.get(&SceneKey("player".to_string())).unwrap();
-
-        let enemy = scene.nodes.get(&SceneKey("enemy".to_string())).unwrap();
+        let player = scene.nodes.iter().find(|n| n.key == "player").unwrap();
+        let enemy = scene.nodes.iter().find(|n| n.key == "enemy").unwrap();
 
         // both nodes are Sprite2D
         assert_eq!(player.data.ty, "Sprite2D");
         assert_eq!(enemy.data.ty, "Sprite2D");
 
         // both reference the same resolved texture
-        match player.data.fields.get("texture").unwrap() {
-            SceneValue::Str(s) => assert_eq!(s, "res://shared.png"),
+        let player_texture = player
+            .data
+            .fields
+            .iter()
+            .find(|(k, _)| k == "texture")
+            .unwrap();
+        match &player_texture.1 {
+            RuntimeValue::Str(s) => assert_eq!(s, "res://shared.png"),
             _ => panic!("player texture should resolve to string"),
         }
 
-        match enemy.data.fields.get("texture").unwrap() {
-            SceneValue::Str(s) => assert_eq!(s, "res://shared.png"),
+        let enemy_texture = enemy
+            .data
+            .fields
+            .iter()
+            .find(|(k, _)| k == "texture")
+            .unwrap();
+        match &enemy_texture.1 {
+            RuntimeValue::Str(s) => assert_eq!(s, "res://shared.png"),
             _ => panic!("enemy texture should resolve to string"),
         }
 
@@ -167,9 +176,166 @@ mod tests {
         assert_eq!(base.ty, "Node2D");
 
         // position resolved from @spawn_pos
-        match base.fields.get("position").unwrap() {
-            SceneValue::Vec2 { x, y } => assert_eq!((*x, *y), (10.0, 5.0)),
+        let position = base.fields.iter().find(|(k, _)| k == "position").unwrap();
+        match &position.1 {
+            RuntimeValue::Vec2 { x, y } => assert_eq!((*x, *y), (10.0, 5.0)),
             _ => panic!("position should resolve to Vec2"),
         }
+
+        // enemy parent should be resolved to "player"
+        assert_eq!(enemy.parent.as_deref(), Some("player"));
+    }
+
+    #[test]
+    fn static_scene_equivalent_to_parsed() {
+        // Define a static scene manually
+        const MAIN_FIELDS: &[(&str, StaticSceneValue)] =
+            &[("position", StaticSceneValue::Vec2 { x: 0.0, y: 0.0 })];
+
+        const PLAYER_BASE_FIELDS: &[(&str, StaticSceneValue)] = &[
+            ("position", StaticSceneValue::Vec2 { x: 10.0, y: 5.0 }),
+            ("rotation", StaticSceneValue::F32(12.0)),
+        ];
+
+        const PLAYER_BASE_DATA: StaticNodeData = StaticNodeData {
+            ty: "Node2D",
+            fields: PLAYER_BASE_FIELDS,
+            base: None,
+        };
+
+        const PLAYER_FIELDS: &[(&str, StaticSceneValue)] =
+            &[("texture", StaticSceneValue::Str("res://player.png"))];
+
+        const STATIC_SCENE: StaticScene = StaticScene {
+            nodes: &[
+                StaticNodeEntry {
+                    key: StaticSceneKey("main"),
+                    name: Some("Root Node"),
+                    parent: None,
+                    script: None,
+                    data: StaticNodeData {
+                        ty: "Node2D",
+                        fields: MAIN_FIELDS,
+                        base: None,
+                    },
+                },
+                StaticNodeEntry {
+                    key: StaticSceneKey("player"),
+                    name: Some("Player"),
+                    parent: Some(StaticSceneKey("main")),
+                    script: None,
+                    data: StaticNodeData {
+                        ty: "Sprite2D",
+                        fields: PLAYER_FIELDS,
+                        base: Some(&PLAYER_BASE_DATA),
+                    },
+                },
+            ],
+            root: Some(StaticSceneKey("main")),
+        };
+
+        // Parse the same scene
+        let src = r#"
+        @root = main
+        @texture = "res://player.png"
+
+        [main]
+        name = "Root Node"
+
+        [Node2D]
+            position = (0, 0)
+        [/Node2D]
+        [/main]
+
+        [player]
+        parent = @root
+        name = "Player"
+
+        [Sprite2D]
+            texture = @texture
+
+            [Node2D]
+                position = (10, 5)
+                rotation = 12
+            [/Node2D]
+        [/Sprite2D]
+        [/player]
+    "#;
+
+        let parser = Parser::new(src);
+        let runtime_scene = parser.parse_scene();
+
+        println!("Static Scene: {:#?}", STATIC_SCENE);
+        println!("Parsed Runtime Scene: {:#?}", runtime_scene);
+
+        // Compare static and runtime scenes
+        assert_eq!(STATIC_SCENE.nodes.len(), runtime_scene.nodes.len());
+        assert_eq!(
+            STATIC_SCENE.root.map(|k| k.0),
+            runtime_scene.root.as_deref()
+        );
+
+        // Compare main node
+        let static_main = &STATIC_SCENE.nodes[0];
+        let runtime_main = runtime_scene
+            .nodes
+            .iter()
+            .find(|n| n.key == "main")
+            .unwrap();
+
+        assert_eq!(static_main.key.0, runtime_main.key);
+        assert_eq!(static_main.name, runtime_main.name.as_deref());
+        assert_eq!(static_main.data.ty, runtime_main.data.ty);
+        assert_eq!(
+            static_main.data.fields.len(),
+            runtime_main.data.fields.len()
+        );
+
+        // Compare player node
+        let static_player = &STATIC_SCENE.nodes[1];
+        let runtime_player = runtime_scene
+            .nodes
+            .iter()
+            .find(|n| n.key == "player")
+            .unwrap();
+
+        assert_eq!(static_player.key.0, runtime_player.key);
+        assert_eq!(static_player.name, runtime_player.name.as_deref());
+        assert_eq!(
+            static_player.parent.map(|p| p.0),
+            runtime_player.parent.as_deref()
+        );
+        assert_eq!(static_player.data.ty, runtime_player.data.ty);
+
+        // Compare texture field
+        let static_texture = static_player
+            .data
+            .fields
+            .iter()
+            .find(|(k, _)| *k == "texture")
+            .unwrap();
+        let runtime_texture = runtime_player
+            .data
+            .fields
+            .iter()
+            .find(|(k, _)| k == "texture")
+            .unwrap();
+
+        match (static_texture.1, &runtime_texture.1) {
+            (StaticSceneValue::Str(s), RuntimeValue::Str(r)) => assert_eq!(s, r.as_str()),
+            _ => panic!("texture mismatch"),
+        }
+
+        // Compare base
+        assert!(static_player.data.base.is_some());
+        assert!(runtime_player.data.base.is_some());
+
+        let static_base = static_player.data.base.unwrap();
+        let runtime_base = runtime_player.data.base.as_ref().unwrap();
+
+        assert_eq!(static_base.ty, runtime_base.ty);
+        assert_eq!(static_base.fields.len(), runtime_base.fields.len());
+
+        println!("✅ Static scene matches parsed runtime scene!");
     }
 }
