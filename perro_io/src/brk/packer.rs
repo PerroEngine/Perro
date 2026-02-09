@@ -1,18 +1,15 @@
-use aes_gcm::aead::Aead;
-use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
-use rand::RngCore;
+use flate2::write::DeflateEncoder;
+use flate2::Compression;
 use std::{
-    fs::{self, File},
+    fs::File,
     io::{self, Seek, SeekFrom, Write},
     path::Path,
 };
-use walkdir::WalkDir;
-use zstd::encode_all;
 
 use super::common::{
-    BRK_MAGIC, BrkEntryMeta, BrkHeader, FLAG_COMPRESSED, FLAG_ENCRYPTED, write_header,
-    write_index_entry,
+    BRK_MAGIC, BrkEntryMeta, BrkHeader, FLAG_COMPRESSED, write_header, write_index_entry,
 };
+
 
 // Scripts (compiled into binary)
 const SKIP_SCRIPT_EXT: &[&str] = &["pup"];
@@ -20,7 +17,7 @@ const SKIP_SCRIPT_EXT: &[&str] = &["pup"];
 // Scene and UI data (compiled into scenes.rs and fur.rs)
 const SKIP_SCENE_FUR_EXT: &[&str] = &["scn", "fur"];
 
-// Images are pre-decoded + Zstd-compressed into .ptex static assets
+// Images are pre-decoded + compressed into .ptex static assets
 const SKIP_IMAGES: &[&str] = &[
     "png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba",
 ];
@@ -47,7 +44,6 @@ pub fn build_brk(
     output: &Path,
     res_dir: &Path,
     _project_root: &Path,
-    key: &[u8; 32],
 ) -> io::Result<()> {
     let mut file = File::create(output)?;
 
@@ -61,104 +57,68 @@ pub fn build_brk(
     write_header(&mut file, &header)?;
 
     let mut entries = Vec::new();
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
 
-    // ZSTD compression level (1-22)
-    const COMPRESSION_LEVEL: i32 = 15;
+    // DEFLATE compression level (0-9, where 9 is best compression)
+    const COMPRESSION_LEVEL: Compression = Compression::best();
 
-    // Helper closure to process data (compress, then encrypt if needed)
-    let process_data = |mut data: Vec<u8>,
-                        should_compress: bool|
-     -> io::Result<(Vec<u8>, u32, [u8; 12], [u8; 16], u64)> {
+    // Helper to process data (compress if beneficial)
+    let process_data = |mut data: Vec<u8>, should_compress: bool| 
+        -> io::Result<(Vec<u8>, u32, u64)> 
+    {
         let original_data_len = data.len() as u64;
         let mut flags = 0;
-        let mut nonce = [0u8; 12];
-        let mut tag = [0u8; 16];
 
-        // --- COMPRESSION STEP ---
         if should_compress && original_data_len > 0 {
-            // Only compress if flagged and not empty
-            let compressed_data = encode_all(&*data, COMPRESSION_LEVEL).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("ZSTD compression failed: {}", e),
-                )
-            })?;
-
-            rand::rng().fill_bytes(&mut nonce);
-            let nonce_obj = Nonce::from_slice(&nonce);
-            let encrypted = cipher
-                .encrypt(nonce_obj, &*data)
-                .map_err(|_| io::Error::new(io::ErrorKind::Other, "Encryption failed"))?;
-            let (ciphertext, gcm_tag) = encrypted.split_at(encrypted.len() - 16);
-            data = ciphertext.to_vec();
-            tag.copy_from_slice(gcm_tag);
-            flags |= FLAG_ENCRYPTED;
-
-            // Only use compressed data if it's actually smaller.
-            // Zstd has a header, so very tiny files might get slightly larger.
-            if compressed_data.len() < data.len() {
-                data = compressed_data;
+            let mut encoder = DeflateEncoder::new(Vec::new(), COMPRESSION_LEVEL);
+            encoder.write_all(&data)?;
+            let compressed = encoder.finish()?;
+            
+            // Only use compressed data if it's actually smaller
+            if compressed.len() < data.len() {
+                data = compressed;
                 flags |= FLAG_COMPRESSED;
             }
         }
 
-        Ok((data, flags, nonce, tag, original_data_len))
+        Ok((data, flags, original_data_len))
     };
 
-    for entry in WalkDir::new(res_dir) {
-        let entry = entry?;
-        if entry.file_type().is_file() {
-            let path = entry.path();
+    // Collect all files using our walk utility
+    let file_entries = crate::collect_files(res_dir, res_dir)?;
 
-            // Skip extensions that are statically compiled
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if should_skip(ext) {
-                    continue;
-                }
-            }
-
-            let rel = path
-                .strip_prefix(res_dir)
-                .unwrap()
-                .to_string_lossy()
-                .to_string();
-
-            // Read file data (no more minification since .scn and .fur are skipped)
-            let data = fs::read(path)?;
-
-            // Always try Zstd; we only keep compressed data when it's smaller (see process_data).
-            // Things that are preprocessed (textures → rgb8, meshes → pmesh) are static assets and skipped above.
-            let should_compress = true;
-
-            let (processed_data, flags, nonce, tag, original_size) =
-                process_data(data, should_compress)?;
-
-            let offset = file.seek(SeekFrom::Current(0))?;
-            file.write_all(&processed_data)?;
-            let size = processed_data.len() as u64;
-
-            entries.push(BrkEntry {
-                path: format!("res/{}", rel.replace("\\", "/")),
-                meta: BrkEntryMeta {
-                    offset,
-                    size,
-                    original_size,
-                    flags,
-                    nonce,
-                    tag,
-                },
-            });
+    for (rel_path, data) in file_entries {
+        // Skip extensions that are statically compiled
+        if should_skip(&rel_path) {
+            continue;
         }
+
+        // Always try compression; we only keep it if smaller
+        let should_compress = true;
+
+        let (processed_data, flags, original_size) = process_data(data, should_compress)?;
+
+        let offset = file.stream_position()?;
+        file.write_all(&processed_data)?;
+        let size = processed_data.len() as u64;
+
+        entries.push(BrkEntry {
+            path: format!("res/{}", rel_path.replace("\\", "/")),
+            meta: BrkEntryMeta {
+                offset,
+                size,
+                original_size,
+                flags,
+            },
+        });
     }
 
-    // 3. Write index
-    let index_offset = file.seek(SeekFrom::Current(0))?;
+    // Write index
+    let index_offset = file.stream_position()?;
     for e in &entries {
         write_index_entry(&mut file, &e.path, &e.meta)?;
     }
 
-    // 4. Rewrite header with correct counts
+    // Rewrite header with correct counts
     file.seek(SeekFrom::Start(0))?;
     let header = BrkHeader {
         magic: BRK_MAGIC,

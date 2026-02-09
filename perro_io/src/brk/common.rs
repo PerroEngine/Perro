@@ -2,8 +2,7 @@ use std::io::{self, Read, Write};
 
 pub const BRK_MAGIC: [u8; 4] = *b"BRK1";
 
-pub const FLAG_COMPRESSED: u32 = 1; // Bit 0: Data is ZSTD compressed
-pub const FLAG_ENCRYPTED: u32 = 2; // Bit 1: Data is AES-GCM encrypted
+pub const FLAG_COMPRESSED: u32 = 1; // Bit 0: Data is DEFLATE compressed
 
 /// Archive header
 #[derive(Debug, Clone, Copy)]
@@ -18,11 +17,9 @@ pub struct BrkHeader {
 #[derive(Debug, Clone)]
 pub struct BrkEntryMeta {
     pub offset: u64,
-    pub size: u64, // Actual size in the archive (compressed if FLAG_COMPRESSED)
-    pub original_size: u64,
+    pub size: u64,           // Actual size in archive (compressed if FLAG_COMPRESSED)
+    pub original_size: u64,  // Original uncompressed size
     pub flags: u32,
-    pub nonce: [u8; 12],
-    pub tag: [u8; 16],
 }
 
 fn read_exact_array<const N: usize, R: Read>(reader: &mut R) -> io::Result<[u8; N]> {
@@ -70,14 +67,12 @@ pub fn read_index_entry<R: Read>(reader: &mut R) -> io::Result<(String, BrkEntry
     let mut path_buf = vec![0u8; path_len];
     reader.read_exact(&mut path_buf)?;
     let path = String::from_utf8(path_buf)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Index path is not valid UTF-8"))?;
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8 path"))?;
 
     let offset = read_u64(reader)?;
     let size = read_u64(reader)?;
     let original_size = read_u64(reader)?;
     let flags = read_u32(reader)?;
-    let nonce = read_exact_array::<12, _>(reader)?;
-    let tag = read_exact_array::<16, _>(reader)?;
 
     Ok((
         path,
@@ -86,8 +81,6 @@ pub fn read_index_entry<R: Read>(reader: &mut R) -> io::Result<(String, BrkEntry
             size,
             original_size,
             flags,
-            nonce,
-            tag,
         },
     ))
 }
@@ -101,7 +94,7 @@ pub fn write_index_entry<W: Write>(
     if path_bytes.len() > u16::MAX as usize {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "Index path is too long",
+            "Path too long",
         ));
     }
 
@@ -112,7 +105,5 @@ pub fn write_index_entry<W: Write>(
     writer.write_all(&meta.size.to_le_bytes())?;
     writer.write_all(&meta.original_size.to_le_bytes())?;
     writer.write_all(&meta.flags.to_le_bytes())?;
-    writer.write_all(&meta.nonce)?;
-    writer.write_all(&meta.tag)?;
     Ok(())
 }
