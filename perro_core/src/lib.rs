@@ -1,6 +1,3 @@
-pub mod ids;
-pub use ids::*;
-
 pub mod nodes;
 pub use nodes::*;
 
@@ -12,11 +9,11 @@ mod tests {
     use super::*;
     use crate::Transform2D;
     use crate::Vector2;
-    use crate::ids::NodeID;
     use crate::mesh_instance_3d::MeshInstance3D;
     use crate::node_2d::node_2d::Node2D;
     use crate::node_3d::node_3d::Node3D;
     use crate::sprite_2d::Sprite2D;
+    use perro_ids::NodeID;
     use std::borrow::Cow;
 
     #[test]
@@ -65,7 +62,6 @@ mod tests {
                 visible: true,
                 z_index: 1,
             },
-            texture_path: Some("assets/player.png".into()),
             texture_id: None,
         }));
         sprite.id = NodeID::new(3);
@@ -82,8 +78,6 @@ mod tests {
         // Create a MeshInstance3D (contains Node3D as base)
         let mut mesh = SceneNode::new(SceneNodeData::MeshInstance3D(MeshInstance3D {
             base: Node3D::default(),
-            mesh_path: Some("assets/character.mesh".into()),
-            material_path: None,
             mesh_id: None,
             material_id: None,
         }));
@@ -135,7 +129,6 @@ mod tests {
 
         let mut sprite = SceneNode::new(SceneNodeData::Sprite2D(Sprite2D {
             base: Node2D::new(),
-            texture_path: Some("player.png".into()),
             texture_id: None,
         }));
         sprite.id = NodeID::new(3);

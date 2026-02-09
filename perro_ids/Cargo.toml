@@ -1,10 +1,6 @@
 [package]
-name = "perro_core"
+name = "perro_ids"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_ids = "0.1.0"
-
-glam = "0.31.0"
-

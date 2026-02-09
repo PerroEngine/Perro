@@ -1,9 +1,7 @@
-use std::{
-    borrow::Cow,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
-use crate::{TextureID, node_2d::node_2d::Node2D};
+use crate::node_2d::node_2d::Node2D;
+use perro_ids::TextureID;
 
 impl Deref for Sprite2D {
     type Target = Node2D;
@@ -21,7 +19,6 @@ impl DerefMut for Sprite2D {
 #[derive(Clone, Debug, Default)]
 pub struct Sprite2D {
     pub base: Node2D,
-    pub texture_path: Option<Cow<'static, str>>,
     pub texture_id: Option<TextureID>,
 }
 
@@ -29,7 +26,6 @@ impl Sprite2D {
     pub fn new() -> Self {
         Self {
             base: Node2D::new(),
-            texture_path: None,
             texture_id: None,
         }
     }

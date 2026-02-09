@@ -22,7 +22,6 @@ pub enum Token {
 }
 
 pub struct Lexer<'a> {
-    src: &'a str,
     chars: std::str::Chars<'a>,
     peek: Option<char>,
 }
@@ -31,7 +30,7 @@ impl<'a> Lexer<'a> {
     pub fn new(src: &'a str) -> Self {
         let mut chars = src.chars();
         let peek = chars.next();
-        Self { src, chars, peek }
+        Self { chars, peek }
     }
 
     fn bump(&mut self) -> Option<char> {

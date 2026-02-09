@@ -1,8 +1,8 @@
-use crate::ids::NodeID;
 use crate::mesh_instance_3d::MeshInstance3D;
 use crate::node_2d::node_2d::Node2D;
 use crate::node_3d::node_3d::Node3D;
 use crate::sprite_2d::Sprite2D;
+use perro_ids::NodeID;
 use std::borrow::Cow;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

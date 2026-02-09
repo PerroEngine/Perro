@@ -1,0 +1,8 @@
+[package]
+name = "perro_variant"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+perro_core = "0.1.0"
+perro_ids = "0.1.0"

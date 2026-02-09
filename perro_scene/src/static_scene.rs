@@ -34,38 +34,3 @@ pub enum SceneValue {
     Str(&'static str),
     Key(SceneKey),
 }
-
-const EXAMPLE_SCENE: Scene = Scene {
-    nodes: &[
-        SceneNodeEntry {
-            key: SceneKey("player"),
-            name: Some("Player"),
-            parent: None,
-            script: Some("res://player.gd"),
-            data: SceneNodeDataEntry {
-                ty: "Sprite2D",
-                fields: &[
-                    ("position", SceneValue::Vec2 { x: 100.0, y: 50.0 }),
-                    ("health", SceneValue::I32(100)),
-                    ("speed", SceneValue::F32(200.0)),
-                ],
-                base: None,
-            },
-        },
-        SceneNodeEntry {
-            key: SceneKey("enemy"),
-            name: Some("Enemy"),
-            parent: Some(SceneKey("player")),
-            script: Some("res://enemy.gd"),
-            data: SceneNodeDataEntry {
-                ty: "CharacterBody2D",
-                fields: &[
-                    ("position", SceneValue::Vec2 { x: 0.0, y: 0.0 }),
-                    ("scale", SceneValue::Vec2 { x: 1.0, y: 1.0 }),
-                ],
-                base: None,
-            },
-        },
-    ],
-    root: Some(SceneKey("player")),
-};

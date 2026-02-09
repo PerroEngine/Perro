@@ -233,11 +233,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
+name = "perro_api"
+version = "0.1.0"
+dependencies = [
+ "perro_ids",
+]
+
+[[package]]
 name = "perro_core"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "perro_ids",
 ]
+
+[[package]]
+name = "perro_ids"
+version = "0.1.0"
 
 [[package]]
 name = "perro_io"
@@ -254,6 +266,23 @@ dependencies = [
 [[package]]
 name = "perro_scene"
 version = "0.1.0"
+
+[[package]]
+name = "perro_scripting"
+version = "0.1.0"
+dependencies = [
+ "perro_api",
+ "perro_ids",
+ "perro_variant",
+]
+
+[[package]]
+name = "perro_variant"
+version = "0.1.0"
+dependencies = [
+ "perro_core",
+ "perro_ids",
+]
 
 [[package]]
 name = "pkg-config"

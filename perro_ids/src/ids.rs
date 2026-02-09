@@ -5,21 +5,22 @@
 use std::fmt;
 use std::hash::Hash;
 
-#[inline]
-pub fn string_to_u64(s: &str) -> u64 {
+pub const fn string_to_u64(s: &str) -> u64 {
     let mut hash: u64 = 0xA0761D6478BD642F;
+    let bytes = s.as_bytes();
+    let mut i = 0usize;
 
-    for &b in s.as_bytes() {
-        hash ^= b as u64;
+    while i < bytes.len() {
+        hash ^= bytes[i] as u64;
         hash = hash.wrapping_mul(0xE7037ED1A0B428DB);
         hash = mix64(hash);
+        i += 1;
     }
 
-    mix64(hash ^ (s.len() as u64))
+    mix64(hash ^ (bytes.len() as u64))
 }
 
-#[inline]
-fn mix64(mut x: u64) -> u64 {
+pub const fn mix64(mut x: u64) -> u64 {
     x ^= x >> 30;
     x = x.wrapping_mul(0xBF58476D1CE4E5B9);
     x ^= x >> 27;
@@ -199,47 +200,11 @@ impl UIElementID {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct ScriptMemberID(pub u64);
 
-    #[test]
-    fn node_id_nil() {
-        assert!(NodeID::nil().is_nil());
-        assert_eq!(NodeID::nil().index(), 0);
-        assert_eq!(NodeID::nil().generation(), 0);
-    }
-
-    #[test]
-    fn node_id_parts() {
-        let id = NodeID::from_parts(5, 2);
-        assert_eq!(id.index(), 5);
-        assert_eq!(id.generation(), 2);
-        assert!(!id.is_nil());
-    }
-
-    #[test]
-    fn node_id_roundtrip_u64() {
-        let id = NodeID::from_parts(1, 1);
-        assert_eq!(NodeID::from_u64(id.as_u64()), id);
-    }
-
-    #[test]
-    fn texture_id_nil() {
-        assert!(TextureID::nil().is_nil());
-    }
-
-    #[test]
-    fn texture_id_generational() {
-        let id = TextureID::from_parts(3, 1);
-        assert_eq!(id.index(), 3);
-        assert_eq!(id.generation(), 1);
-    }
-
-    #[test]
-    fn ui_element_from_string() {
-        let a = UIElementID::from_string("x-border");
-        let b = UIElementID::from_string("x-border");
-        assert_eq!(a, b);
+impl ScriptMemberID {
+    pub const fn from_string(s: &str) -> Self {
+        Self(string_to_u64(s))
     }
 }

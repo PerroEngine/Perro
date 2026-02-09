@@ -1,4 +1,9 @@
-use std::{fs::{self, File}, io::{self, Read, Seek, Write}, path::PathBuf, sync::RwLock};
+use std::{
+    fs::{self, File},
+    io::{self, Read, Seek, Write},
+    path::PathBuf,
+    sync::RwLock,
+};
 
 use crate::brk::archive::{BrkArchive, BrkFile};
 

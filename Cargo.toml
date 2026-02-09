@@ -1,6 +1,6 @@
 [workspace]
-members = [
-    "perro_core", "perro_io", "perro_scene",
+members = ["perro_api",
+    "perro_core", "perro_ids", "perro_io", "perro_scene", "perro_scripting", "perro_variant",
 ]
 
 resolver = "3"
@@ -8,4 +8,8 @@ resolver = "3"
 [patch.crates-io]
 perro_core = {path = "perro_core"}
 perro_scene = {path = "perro_scene"}
+perro_ids = {path = "perro_ids"}
 perro_io = {path = "perro_io"}
+perro_api = {path = "perro_api"}
+perro_scripting = {path = "perro_scripting"}
+perro_variant = {path="perro_variant"}

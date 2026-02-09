@@ -2,7 +2,7 @@ use crate::Vector2;
 use glam::{Mat3, Vec3};
 
 /// A 2D transformation consisting of position, rotation, and scale.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform2D {
     pub position: Vector2,
     pub scale: Vector2,

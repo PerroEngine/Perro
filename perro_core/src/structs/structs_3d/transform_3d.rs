@@ -1,7 +1,7 @@
 use crate::{Quaternion, Vector3};
 use glam::Mat4;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform3D {
     pub position: Vector3,
     pub scale: Vector3,
