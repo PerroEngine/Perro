@@ -17,7 +17,7 @@ pub type BrkEntry = BrkEntryMeta;
 
 /// Archive data source
 #[derive(Clone)]
-pub enum BrkData {
+pub enum BrkData { 
     Bytes(Arc<[u8]>), // for include_bytes!
     Mmap(Arc<Mmap>),  // for disk files
 }
