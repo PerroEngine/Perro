@@ -9,21 +9,17 @@ pub fn data_dir() -> Option<PathBuf> {
     {
         std::env::var_os("APPDATA").map(PathBuf::from)
     }
-    
+
     #[cfg(target_os = "macos")]
     {
-        std::env::var_os("HOME")
-            .map(|h| PathBuf::from(h).join("Library/Application Support"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"))
     }
-    
+
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         std::env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|h| PathBuf::from(h).join(".local/share"))
-            })
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
     }
 }
 
@@ -36,21 +32,17 @@ pub fn data_local_dir() -> Option<PathBuf> {
     {
         std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
     }
-    
+
     #[cfg(target_os = "macos")]
     {
-        std::env::var_os("HOME")
-            .map(|h| PathBuf::from(h).join("Library/Application Support"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"))
     }
-    
+
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         std::env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|h| PathBuf::from(h).join(".local/share"))
-            })
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
     }
 }
 
@@ -63,21 +55,17 @@ pub fn config_dir() -> Option<PathBuf> {
     {
         std::env::var_os("APPDATA").map(PathBuf::from)
     }
-    
+
     #[cfg(target_os = "macos")]
     {
-        std::env::var_os("HOME")
-            .map(|h| PathBuf::from(h).join("Library/Application Support"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"))
     }
-    
+
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|h| PathBuf::from(h).join(".config"))
-            })
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
     }
 }
 
@@ -90,21 +78,17 @@ pub fn cache_dir() -> Option<PathBuf> {
     {
         std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
     }
-    
+
     #[cfg(target_os = "macos")]
     {
-        std::env::var_os("HOME")
-            .map(|h| PathBuf::from(h).join("Library/Caches"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Caches"))
     }
-    
+
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         std::env::var_os("XDG_CACHE_HOME")
             .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|h| PathBuf::from(h).join(".cache"))
-            })
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
     }
 }
 
@@ -117,7 +101,7 @@ pub fn home_dir() -> Option<PathBuf> {
     {
         std::env::var_os("USERPROFILE").map(PathBuf::from)
     }
-    
+
     #[cfg(not(target_os = "windows"))]
     {
         std::env::var_os("HOME").map(PathBuf::from)
@@ -131,24 +115,19 @@ pub fn home_dir() -> Option<PathBuf> {
 pub fn document_dir() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
-        std::env::var_os("USERPROFILE")
-            .map(|p| PathBuf::from(p).join("Documents"))
+        std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("Documents"))
     }
-    
+
     #[cfg(target_os = "macos")]
     {
-        std::env::var_os("HOME")
-            .map(|h| PathBuf::from(h).join("Documents"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Documents"))
     }
-    
+
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         std::env::var_os("XDG_DOCUMENTS_DIR")
             .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|h| PathBuf::from(h).join("Documents"))
-            })
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Documents")))
     }
 }
 
@@ -159,24 +138,19 @@ pub fn document_dir() -> Option<PathBuf> {
 pub fn download_dir() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
-        std::env::var_os("USERPROFILE")
-            .map(|p| PathBuf::from(p).join("Downloads"))
+        std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("Downloads"))
     }
-    
+
     #[cfg(target_os = "macos")]
     {
-        std::env::var_os("HOME")
-            .map(|h| PathBuf::from(h).join("Downloads"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Downloads"))
     }
-    
+
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         std::env::var_os("XDG_DOWNLOAD_DIR")
             .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|h| PathBuf::from(h).join("Downloads"))
-            })
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Downloads")))
     }
 }
 
@@ -187,24 +161,19 @@ pub fn download_dir() -> Option<PathBuf> {
 pub fn desktop_dir() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
-        std::env::var_os("USERPROFILE")
-            .map(|p| PathBuf::from(p).join("Desktop"))
+        std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("Desktop"))
     }
-    
+
     #[cfg(target_os = "macos")]
     {
-        std::env::var_os("HOME")
-            .map(|h| PathBuf::from(h).join("Desktop"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Desktop"))
     }
-    
+
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         std::env::var_os("XDG_DESKTOP_DIR")
             .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|h| PathBuf::from(h).join("Desktop"))
-            })
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Desktop")))
     }
 }
 

@@ -5,7 +5,10 @@ use std::{
     sync::RwLock,
 };
 
-use crate::{brk::archive::{BrkArchive, BrkFile}, data_local_dir};
+use crate::{
+    brk::archive::{BrkArchive, BrkFile},
+    data_local_dir,
+};
 
 /// Trait alias for Read + Seek
 pub trait ReadSeek: Read + Seek {}
@@ -56,7 +59,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
                 ProjectRoot::Brk { name, .. } => name.as_str(),
             })
             .expect("Project root not set");
-        
+
         let base = data_local_dir()
             .unwrap_or_else(|| std::env::temp_dir())
             .join(app_name);
@@ -96,7 +99,10 @@ pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
             if let Some(archive) = BRK_ARCHIVE.read().unwrap().as_ref() {
                 archive.read_file(&virtual_path)
             } else {
-                Err(io::Error::new(io::ErrorKind::Other, "BRK archive not loaded"))
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "BRK archive not loaded",
+                ))
             }
         }
     }
@@ -114,7 +120,10 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
                 let file: BrkFile = archive.stream_file(&virtual_path)?;
                 Ok(Box::new(file))
             } else {
-                Err(io::Error::new(io::ErrorKind::Other, "BRK archive not loaded"))
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "BRK archive not loaded",
+                ))
             }
         }
     }
@@ -130,8 +139,9 @@ pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
             let mut file = File::create(pb)?;
             file.write_all(data)
         }
-        ResolvedPath::Brk(_) => {
-            Err(io::Error::new(io::ErrorKind::Other, "Cannot save to BRK archive"))
-        }
+        ResolvedPath::Brk(_) => Err(io::Error::new(
+            io::ErrorKind::Other,
+            "Cannot save to BRK archive",
+        )),
     }
 }

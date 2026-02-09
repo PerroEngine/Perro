@@ -36,7 +36,9 @@ impl BrkArchive {
 
     /// Read a file fully into memory
     pub fn read_file(&self, path: &str) -> io::Result<Vec<u8>> {
-        let entry = self.index.get(path)
+        let entry = self
+            .index
+            .get(path)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
 
         let start = entry.offset as usize;
@@ -48,11 +50,15 @@ impl BrkArchive {
             let mut decoder = DeflateDecoder::new(&data_buf[..]);
             let mut decompressed = Vec::with_capacity(entry.original_size as usize);
             decoder.read_to_end(&mut decompressed)?;
-            
+
             if decompressed.len() as u64 != entry.original_size {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Size mismatch: expected {}, got {}", entry.original_size, decompressed.len()),
+                    format!(
+                        "Size mismatch: expected {}, got {}",
+                        entry.original_size,
+                        decompressed.len()
+                    ),
                 ));
             }
             data_buf = decompressed;
@@ -63,7 +69,9 @@ impl BrkArchive {
 
     /// Get a direct slice (only works for uncompressed files)
     pub fn get_file_slice(&self, path: &str) -> io::Result<&[u8]> {
-        let entry = self.index.get(path)
+        let entry = self
+            .index
+            .get(path)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
 
         if entry.flags & FLAG_COMPRESSED != 0 {
@@ -80,7 +88,9 @@ impl BrkArchive {
 
     /// Stream a file (only works for uncompressed files)
     pub fn stream_file(&self, path: &str) -> io::Result<BrkFile> {
-        let entry = self.index.get(path)
+        let entry = self
+            .index
+            .get(path)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
 
         if entry.flags & FLAG_COMPRESSED != 0 {
@@ -115,7 +125,7 @@ impl Read for BrkFile {
         let start = self.entry.offset as usize;
         let end = (self.entry.offset + self.entry.size) as usize;
         let data = &self.data[start..end];
-        
+
         let remaining = &data[self.pos as usize..];
         let amt = remaining.len().min(buf.len());
         buf[..amt].copy_from_slice(&remaining[..amt]);

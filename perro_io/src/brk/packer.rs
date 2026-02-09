@@ -1,5 +1,5 @@
-use flate2::write::DeflateEncoder;
 use flate2::Compression;
+use flate2::write::DeflateEncoder;
 use std::{
     fs::File,
     io::{self, Seek, SeekFrom, Write},
@@ -9,7 +9,6 @@ use std::{
 use super::common::{
     BRK_MAGIC, BrkEntryMeta, BrkHeader, FLAG_COMPRESSED, write_header, write_index_entry,
 };
-
 
 // Scripts (compiled into binary)
 const SKIP_SCRIPT_EXT: &[&str] = &["pup"];
@@ -40,11 +39,7 @@ struct BrkEntry {
 }
 
 /// Build a `.brk` archive
-pub fn build_brk(
-    output: &Path,
-    res_dir: &Path,
-    _project_root: &Path,
-) -> io::Result<()> {
+pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path) -> io::Result<()> {
     let mut file = File::create(output)?;
 
     // Write placeholder header
@@ -62,26 +57,25 @@ pub fn build_brk(
     const COMPRESSION_LEVEL: Compression = Compression::best();
 
     // Helper to process data (compress if beneficial)
-    let process_data = |mut data: Vec<u8>, should_compress: bool| 
-        -> io::Result<(Vec<u8>, u32, u64)> 
-    {
-        let original_data_len = data.len() as u64;
-        let mut flags = 0;
+    let process_data =
+        |mut data: Vec<u8>, should_compress: bool| -> io::Result<(Vec<u8>, u32, u64)> {
+            let original_data_len = data.len() as u64;
+            let mut flags = 0;
 
-        if should_compress && original_data_len > 0 {
-            let mut encoder = DeflateEncoder::new(Vec::new(), COMPRESSION_LEVEL);
-            encoder.write_all(&data)?;
-            let compressed = encoder.finish()?;
-            
-            // Only use compressed data if it's actually smaller
-            if compressed.len() < data.len() {
-                data = compressed;
-                flags |= FLAG_COMPRESSED;
+            if should_compress && original_data_len > 0 {
+                let mut encoder = DeflateEncoder::new(Vec::new(), COMPRESSION_LEVEL);
+                encoder.write_all(&data)?;
+                let compressed = encoder.finish()?;
+
+                // Only use compressed data if it's actually smaller
+                if compressed.len() < data.len() {
+                    data = compressed;
+                    flags |= FLAG_COMPRESSED;
+                }
             }
-        }
 
-        Ok((data, flags, original_data_len))
-    };
+            Ok((data, flags, original_data_len))
+        };
 
     // Collect all files using our walk utility
     let file_entries = crate::collect_files(res_dir, res_dir)?;

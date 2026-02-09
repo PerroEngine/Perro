@@ -85,13 +85,7 @@ impl Number {
     }
 }
 
-/// Engine “rich JSON” Variant.
-/// Organized by category to remain extensible.
-///
-/// - Keep `Number` separate.
-/// - Keep engine handles separate (IDs).
-/// - Keep math primitives separate.
-/// - Keep containers separate (Array/Object).
+/// A flexible, type-safe variant type for dynamic data storage and interchange.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Variant {
     // --- Nullary ---

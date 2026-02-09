@@ -17,8 +17,8 @@ pub struct BrkHeader {
 #[derive(Debug, Clone)]
 pub struct BrkEntryMeta {
     pub offset: u64,
-    pub size: u64,           // Actual size in archive (compressed if FLAG_COMPRESSED)
-    pub original_size: u64,  // Original uncompressed size
+    pub size: u64,          // Actual size in archive (compressed if FLAG_COMPRESSED)
+    pub original_size: u64, // Original uncompressed size
     pub flags: u32,
 }
 
@@ -92,10 +92,7 @@ pub fn write_index_entry<W: Write>(
 ) -> io::Result<()> {
     let path_bytes = path.as_bytes();
     if path_bytes.len() > u16::MAX as usize {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Path too long",
-        ));
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "Path too long"));
     }
 
     let path_len = path_bytes.len() as u16;
