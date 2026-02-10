@@ -6,21 +6,21 @@ use perro_variant::Variant;
 pub type ScriptConstructor<R> = extern "C" fn() -> *mut dyn ScriptObject<R>;
 
 pub trait ScriptLifecycle<R: RuntimeAPI + ?Sized> {
-    fn init(&mut self, api: &mut API<'_, R>);
-    fn update(&mut self, api: &mut API<'_, R>);
-    fn fixed_update(&mut self, api: &mut API<'_, R>);
+    fn init(&self, api: &API<'_, R>);
+    fn update(&self, api: &API<'_, R>);
+    fn fixed_update(&self, api: &API<'_, R>);
 }
 
 pub trait ScriptObject<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
-    fn internal_init(&mut self, api: &mut API<'_, R>) {
+    fn internal_init(&self, api: &API<'_, R>) {
         self.init(api);
     }
 
-    fn internal_update(&mut self, api: &mut API<'_, R>) {
+    fn internal_update(&self, api: &API<'_, R>) {
         self.update(api);
     }
 
-    fn internal_fixed_update(&mut self, api: &mut API<'_, R>) {
+    fn internal_fixed_update(&self, api: &API<'_, R>) {
         self.fixed_update(api);
     }
 
@@ -30,15 +30,20 @@ pub trait ScriptObject<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
     fn set_id(&mut self, id: NodeID);
 
     fn get_var(&self, var_id: ScriptMemberID) -> Variant;
-    fn set_var(&mut self, var_id: ScriptMemberID, value: Variant);
+    fn set_var(&self, var_id: ScriptMemberID, value: Variant);
 
-    fn apply_exposed_vars(&mut self, vars: &[(ScriptMemberID, Variant)]) {
+    fn apply_exposed_vars(&self, vars: &[(ScriptMemberID, Variant)]) {
         for (var_id, value) in vars {
             self.set_var(*var_id, value.clone());
         }
     }
 
-    fn call_method(&mut self, method_id: ScriptMemberID, params: &[Variant]) -> Variant;
+    fn call_method(
+        &self,
+        method_id: ScriptMemberID,
+        api: &API<'_, R>,
+        params: &[Variant],
+    ) -> Variant;
 
     fn attributes_of(&self, member: &str) -> Vec<String>;
     fn members_with(&self, attribute: &str) -> Vec<String>;

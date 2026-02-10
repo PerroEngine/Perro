@@ -6,27 +6,27 @@ pub trait RuntimeAPI: TimeAPI + NodeAPI + ScriptAPI {}
 impl<T> RuntimeAPI for T where T: TimeAPI + NodeAPI + ScriptAPI {}
 
 pub struct API<'rt, R: RuntimeAPI + ?Sized> {
-    rt: &'rt mut R,
+    rt: &'rt R,
 }
 
 #[allow(non_snake_case)]
 impl<'rt, R: RuntimeAPI + ?Sized> API<'rt, R> {
-    pub fn new(rt: &'rt mut R) -> Self {
+    pub fn new(rt: &'rt R) -> Self {
         Self { rt }
     }
 
     #[inline]
-    pub fn Time(&mut self) -> TimeModule<'_, R> {
+    pub fn Time(&self) -> TimeModule<'_, R> {
         TimeModule::new(self.rt)
     }
 
     #[inline]
-    pub fn Nodes(&mut self) -> NodeModule<'_, R> {
+    pub fn Nodes(&self) -> NodeModule<'_, R> {
         NodeModule::new(self.rt)
     }
 
     #[inline]
-    pub fn Scripts(&mut self) -> ScriptModule<'_, R> {
+    pub fn Scripts(&self) -> ScriptModule<'_, R> {
         ScriptModule::new(self.rt)
     }
 

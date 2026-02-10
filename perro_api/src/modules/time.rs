@@ -3,11 +3,11 @@ pub trait TimeAPI {
 }
 
 pub struct TimeModule<'rt, R: TimeAPI + ?Sized> {
-    rt: &'rt mut R,
+    rt: &'rt R,
 }
 
 impl<'rt, R: TimeAPI + ?Sized> TimeModule<'rt, R> {
-    pub fn new(rt: &'rt mut R) -> Self {
+    pub fn new(rt: &'rt R) -> Self {
         Self { rt }
     }
 

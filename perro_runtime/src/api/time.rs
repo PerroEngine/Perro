@@ -4,6 +4,6 @@ use crate::Runtime;
 
 impl TimeAPI for Runtime {
     fn get_delta(&self) -> f32 {
-        self.delta_time
+        self.delta_time.get()
     }
 }

@@ -1,12 +1,14 @@
 use ahash::AHashMap;
-use perro_api::{API, api::RuntimeAPI};
+use perro_api::api::RuntimeAPI;
 use perro_ids::NodeID;
 use perro_scripting::ScriptObject;
+use std::{cell::RefCell, rc::Rc};
 
 type IdMap = AHashMap<NodeID, usize>;
+type ScriptCell<R> = Rc<RefCell<Box<dyn ScriptObject<R>>>>;
 
 pub struct ScriptCollection<R: RuntimeAPI + ?Sized> {
-    scripts: Vec<Box<dyn ScriptObject<R>>>,
+    scripts: Vec<ScriptCell<R>>,
     ids: Vec<NodeID>,
     index: IdMap,
 
@@ -43,9 +45,9 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         }
     }
 
-    pub fn get_script_mut(&mut self, id: NodeID) -> Option<&mut dyn ScriptObject<R>> {
+    pub fn get_script_rc(&self, id: NodeID) -> Option<ScriptCell<R>> {
         let &i = self.index.get(&id)?;
-        Some(self.scripts[i].as_mut())
+        Some(Rc::clone(&self.scripts[i]))
     }
 
     pub fn insert(&mut self, id: NodeID, mut obj: Box<dyn ScriptObject<R>>) {
@@ -54,17 +56,13 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
 
         if let Some(&i) = self.index.get(&id) {
             // replace in-place
-            self.scripts[i] = obj;
+            *self.scripts[i].borrow_mut() = obj;
             self.rebuild_schedules_for_id(id, i, flags);
-            if flags.has_init() {
-                // Need to pass api here - you'll need to change insert signature
-                // Or defer init until next update_all
-            }
             return;
         }
 
         let i = self.scripts.len();
-        self.scripts.push(obj);
+        self.scripts.push(Rc::new(RefCell::new(obj)));
         self.ids.push(id);
         self.index.insert(id, i);
 
@@ -78,10 +76,9 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
             self.fixed.push(i);
             self.fixed_pos.insert(i, pos);
         }
-        // Defer init - can't call without API
     }
 
-    pub fn remove(&mut self, id: NodeID) -> Option<Box<dyn ScriptObject<R>>> {
+    pub fn remove(&mut self, id: NodeID) -> Option<ScriptCell<R>> {
         let i = self.index.remove(&id)?;
         self.remove_from_schedules_by_index(i);
 
@@ -163,7 +160,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
             self.fixed_pos.insert(i, pos);
         }
 
-        self.scripts[i].set_id(id);
+        self.scripts[i].borrow_mut().set_id(id);
     }
 }
 
