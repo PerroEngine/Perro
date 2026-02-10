@@ -144,6 +144,7 @@ define_generational_id!(
 );
 
 impl NodeID {
+    pub const ROOT: NodeID = Self::new(1);
     /// Parse hex string (8 or 16 chars, optional 0x prefix) into NodeID.
     pub fn parse_str(s: &str) -> Result<Self, String> {
         let s = s.strip_prefix("0x").unwrap_or(s).replace('-', "");

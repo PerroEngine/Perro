@@ -11,6 +11,10 @@ pub struct API<'rt, R: RuntimeAPI + ?Sized> {
 
 #[allow(non_snake_case)]
 impl<'rt, R: RuntimeAPI + ?Sized> API<'rt, R> {
+    pub fn new(rt: &'rt mut R) -> Self {
+        Self { rt }
+    }
+
     #[inline]
     pub fn Time(&mut self) -> TimeModule<'_, R> {
         TimeModule::new(self.rt)

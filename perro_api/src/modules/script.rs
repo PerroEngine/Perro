@@ -1,7 +1,11 @@
-use perro_ids::ScriptMemberID;
+use perro_ids::{NodeID, ScriptMemberID};
 use perro_variant::Variant;
 
 pub trait ScriptAPI {
+    fn call_script_update(&mut self, id: NodeID);
+    fn call_script_fixed_update(&mut self, id: NodeID);
+    fn call_script_init(&mut self, id: NodeID);
+
     fn get_var(&mut self, member: ScriptMemberID) -> Variant;
     fn set_var(&mut self, member: ScriptMemberID, value: Variant);
 
@@ -15,6 +19,18 @@ pub struct ScriptModule<'rt, R: ScriptAPI + ?Sized> {
 impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
     pub fn new(rt: &'rt mut R) -> Self {
         Self { rt }
+    }
+
+    pub fn call_script_init(&mut self, id: NodeID) {
+        self.rt.call_script_init(id);
+    }
+
+    pub fn call_script_update(&mut self, id: NodeID) {
+        self.rt.call_script_update(id);
+    }
+
+    pub fn call_script_fixed_update(&mut self, id: NodeID) {
+        self.rt.call_script_fixed_update(id);
     }
 
     pub fn get_var(&mut self, member: ScriptMemberID) -> Variant {

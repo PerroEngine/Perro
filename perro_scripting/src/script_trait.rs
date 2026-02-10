@@ -1,26 +1,27 @@
+use perro_api::{API, api::RuntimeAPI};
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_variant::Variant;
 
 #[allow(improper_ctypes_definitions)]
-pub type ScriptConstructor = extern "C" fn() -> *mut dyn ScriptObject;
+pub type ScriptConstructor<R> = extern "C" fn() -> *mut dyn ScriptObject<R>;
 
-pub trait ScriptLifecycle {
-    fn init(&mut self);
-    fn update(&mut self);
-    fn fixed_update(&mut self);
+pub trait ScriptLifecycle<R: RuntimeAPI + ?Sized> {
+    fn init(&mut self, api: &mut API<'_, R>);
+    fn update(&mut self, api: &mut API<'_, R>);
+    fn fixed_update(&mut self, api: &mut API<'_, R>);
 }
 
-pub trait ScriptObject: ScriptLifecycle {
-    fn internal_init(&mut self) {
-        self.init();
+pub trait ScriptObject<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
+    fn internal_init(&mut self, api: &mut API<'_, R>) {
+        self.init(api);
     }
 
-    fn internal_update(&mut self) {
-        self.update();
+    fn internal_update(&mut self, api: &mut API<'_, R>) {
+        self.update(api);
     }
 
-    fn internal_fixed_update(&mut self) {
-        self.fixed_update();
+    fn internal_fixed_update(&mut self, api: &mut API<'_, R>) {
+        self.fixed_update(api);
     }
 
     fn script_flags(&self) -> ScriptFlags;

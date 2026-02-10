@@ -1,0 +1,15 @@
+[package]
+name = "perro_runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ahash = "0.8"
+
+perro_ids = "0.1.0"
+perro_core = "0.1.0"
+perro_api = "0.1.0"
+perro_scripting = "0.1.0"
+perro_io = "0.1.0"
+perro_scene = "0.1.0"
+perro_variant = "0.1.0"

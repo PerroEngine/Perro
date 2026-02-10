@@ -1,5 +1,5 @@
 pub trait TimeAPI {
-    fn get_time_delta(&self) -> f32;
+    fn get_delta(&self) -> f32;
 }
 
 pub struct TimeModule<'rt, R: TimeAPI + ?Sized> {
@@ -12,9 +12,11 @@ impl<'rt, R: TimeAPI + ?Sized> TimeModule<'rt, R> {
     }
 
     pub fn get_delta(&self) -> f32 {
-        self.rt.get_time_delta()
+        self.rt.get_delta()
     }
+}
 
+impl<'rt, R: TimeAPI + ?Sized> TimeModule<'rt, R> {
     pub fn get_unix_time(&self) -> f64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

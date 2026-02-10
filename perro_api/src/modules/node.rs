@@ -24,4 +24,8 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
     pub fn mutate_node<T, F>(&mut self, id: NodeID, f: F) {
         self.rt.mutate_node::<T, F>(id, f);
     }
+
+    pub fn read_node<T, V: Clone + Default>(&self, node_id: NodeID, f: impl FnOnce(&T) -> V) -> V {
+        self.rt.read_node::<T, V>(node_id, f)
+    }
 }
