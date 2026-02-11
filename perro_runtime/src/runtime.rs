@@ -1,11 +1,14 @@
-use perro_api::API;
-
-use crate::{script_collection::ScriptCollection, NodeArena};
+use crate::{NodeArena, script_collection::ScriptCollection};
 
 pub struct Runtime {
     pub nodes: NodeArena,
     pub scripts: ScriptCollection<Self>,
-    pub delta_time: f32,
+    pub time: Timing,
+}
+
+pub struct Timing {
+    pub delta: f32,
+    pub elapsed: f32,
 }
 
 impl Runtime {
@@ -13,15 +16,18 @@ impl Runtime {
         Self {
             nodes: NodeArena::new(),
             scripts: ScriptCollection::new(),
-            delta_time: 0.0,
+            time: Timing {
+                delta: (0.0),
+                elapsed: (0.0),
+            },
         }
     }
 
     pub fn update(&mut self, delta_time: f32) {
-        self.delta_time = delta_time;
+        self.time.delta = delta_time;
         let script_ids = self.scripts.get_update_ids();
         for id in script_ids {
-           perro_api::modules::ScriptAPI::call_update(self, id);
+            perro_api::sub_apis::ScriptAPI::call_update(self, id);
         }
     }
 }

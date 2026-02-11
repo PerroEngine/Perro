@@ -1,4 +1,4 @@
 pub mod api;
-pub mod modules;
+pub mod sub_apis;
 
 pub use api::API;

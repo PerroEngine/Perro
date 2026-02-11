@@ -1,8 +1,8 @@
 [package]
-name = "perro_api"
+name = "perro_modules"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_ids = "0.1.0"
+serde_json = "1.0.149"
 perro_variant = "0.1.0"

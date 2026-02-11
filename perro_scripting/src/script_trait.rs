@@ -1,4 +1,4 @@
-use perro_api::{api::RuntimeAPI, API};
+use perro_api::{API, api::RuntimeAPI};
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_variant::Variant;
 
@@ -42,7 +42,6 @@ pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
     fn members_with(&self, attribute: &str) -> Vec<String>;
     fn has_attribute(&self, member: &str, attribute: &str) -> bool;
 }
-
 
 /// Bitflags to track which lifecycle methods are implemented by a script
 /// This allows the engine to skip calling methods that are not implemented,

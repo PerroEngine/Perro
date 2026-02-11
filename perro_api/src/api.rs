@@ -1,6 +1,4 @@
-use crate::modules::{
-    JSONModule, NodeAPI, NodeModule, ScriptAPI, ScriptModule, TimeAPI, TimeModule,
-};
+use crate::sub_apis::{NodeAPI, NodeModule, ScriptAPI, ScriptModule, TimeAPI, TimeModule};
 
 pub trait RuntimeAPI: TimeAPI + NodeAPI + ScriptAPI {}
 impl<T> RuntimeAPI for T where T: TimeAPI + NodeAPI + ScriptAPI {}
@@ -28,10 +26,5 @@ impl<'rt, R: RuntimeAPI + ?Sized> API<'rt, R> {
     #[inline]
     pub fn Scripts(&mut self) -> ScriptModule<'_, R> {
         ScriptModule::new(self.rt)
-    }
-
-    #[inline]
-    pub fn Json(&self) -> JSONModule {
-        JSONModule::new()
     }
 }

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use perro_core::structs::*;
 use perro_ids::*;
+use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Number {
@@ -465,5 +466,148 @@ impl From<BTreeMap<Arc<str>, Variant>> for Variant {
     #[inline]
     fn from(v: BTreeMap<Arc<str>, Variant>) -> Self {
         Variant::Object(v)
+    }
+}
+
+// -------------------- JSON conversion --------------------
+
+impl Variant {
+    pub fn from_json_value(value: JsonValue) -> Self {
+        match value {
+            JsonValue::Null => Variant::Null,
+            JsonValue::Bool(v) => Variant::Bool(v),
+            JsonValue::Number(v) => {
+                if let Some(i) = v.as_i64() {
+                    Variant::from(i)
+                } else if let Some(u) = v.as_u64() {
+                    Variant::from(u)
+                } else if let Some(f) = v.as_f64() {
+                    Variant::from(f)
+                } else {
+                    Variant::Null
+                }
+            }
+            JsonValue::String(v) => Variant::from(v),
+            JsonValue::Array(values) => {
+                Variant::Array(values.into_iter().map(Variant::from_json_value).collect())
+            }
+            JsonValue::Object(object) => Variant::Object(
+                object
+                    .into_iter()
+                    .map(|(k, v)| (Arc::<str>::from(k), Variant::from_json_value(v)))
+                    .collect::<BTreeMap<Arc<str>, Variant>>(),
+            ),
+        }
+    }
+
+    pub fn to_json_value(&self) -> JsonValue {
+        match self {
+            Variant::Null => JsonValue::Null,
+            Variant::Bool(v) => JsonValue::Bool(*v),
+            Variant::Number(v) => number_to_json_value(*v),
+            Variant::String(v) => JsonValue::String(v.as_ref().to_string()),
+            Variant::Bytes(v) => JsonValue::Array(
+                v.iter()
+                    .map(|b| JsonValue::Number(JsonNumber::from(*b)))
+                    .collect(),
+            ),
+            Variant::NodeID(v) => JsonValue::Number(JsonNumber::from(v.as_u64())),
+            Variant::TextureID(v) => JsonValue::Number(JsonNumber::from(v.as_u64())),
+            Variant::Vector2(v) => {
+                let mut map = JsonMap::new();
+                map.insert("x".to_string(), float_to_json(v.x as f64));
+                map.insert("y".to_string(), float_to_json(v.y as f64));
+                JsonValue::Object(map)
+            }
+            Variant::Vector3(v) => {
+                let mut map = JsonMap::new();
+                map.insert("x".to_string(), float_to_json(v.x as f64));
+                map.insert("y".to_string(), float_to_json(v.y as f64));
+                map.insert("z".to_string(), float_to_json(v.z as f64));
+                JsonValue::Object(map)
+            }
+            Variant::Transform2D(v) => {
+                let mut position = JsonMap::new();
+                position.insert("x".to_string(), float_to_json(v.position.x as f64));
+                position.insert("y".to_string(), float_to_json(v.position.y as f64));
+
+                let mut scale = JsonMap::new();
+                scale.insert("x".to_string(), float_to_json(v.scale.x as f64));
+                scale.insert("y".to_string(), float_to_json(v.scale.y as f64));
+
+                let mut map = JsonMap::new();
+                map.insert("position".to_string(), JsonValue::Object(position));
+                map.insert("scale".to_string(), JsonValue::Object(scale));
+                map.insert("rotation".to_string(), float_to_json(v.rotation as f64));
+                JsonValue::Object(map)
+            }
+            Variant::Transform3D(v) => {
+                let mut position = JsonMap::new();
+                position.insert("x".to_string(), float_to_json(v.position.x as f64));
+                position.insert("y".to_string(), float_to_json(v.position.y as f64));
+                position.insert("z".to_string(), float_to_json(v.position.z as f64));
+
+                let mut scale = JsonMap::new();
+                scale.insert("x".to_string(), float_to_json(v.scale.x as f64));
+                scale.insert("y".to_string(), float_to_json(v.scale.y as f64));
+                scale.insert("z".to_string(), float_to_json(v.scale.z as f64));
+
+                let mut rotation = JsonMap::new();
+                rotation.insert("x".to_string(), float_to_json(v.rotation.x as f64));
+                rotation.insert("y".to_string(), float_to_json(v.rotation.y as f64));
+                rotation.insert("z".to_string(), float_to_json(v.rotation.z as f64));
+                rotation.insert("w".to_string(), float_to_json(v.rotation.w as f64));
+
+                let mut map = JsonMap::new();
+                map.insert("position".to_string(), JsonValue::Object(position));
+                map.insert("scale".to_string(), JsonValue::Object(scale));
+                map.insert("rotation".to_string(), JsonValue::Object(rotation));
+                JsonValue::Object(map)
+            }
+            Variant::Quaternion(v) => {
+                let mut map = JsonMap::new();
+                map.insert("x".to_string(), float_to_json(v.x as f64));
+                map.insert("y".to_string(), float_to_json(v.y as f64));
+                map.insert("z".to_string(), float_to_json(v.z as f64));
+                map.insert("w".to_string(), float_to_json(v.w as f64));
+                JsonValue::Object(map)
+            }
+            Variant::Array(v) => JsonValue::Array(v.iter().map(Variant::to_json_value).collect()),
+            Variant::Object(v) => JsonValue::Object(
+                v.iter()
+                    .map(|(k, v)| (k.as_ref().to_string(), v.to_json_value()))
+                    .collect::<JsonMap<String, JsonValue>>(),
+            ),
+        }
+    }
+}
+
+fn number_to_json_value(number: Number) -> JsonValue {
+    match number {
+        Number::I8(v) => JsonValue::Number(JsonNumber::from(v)),
+        Number::I16(v) => JsonValue::Number(JsonNumber::from(v)),
+        Number::I32(v) => JsonValue::Number(JsonNumber::from(v)),
+        Number::I64(v) => JsonValue::Number(JsonNumber::from(v)),
+        Number::I128(v) => match i64::try_from(v) {
+            Ok(v) => JsonValue::Number(JsonNumber::from(v)),
+            Err(_) => JsonValue::String(v.to_string()),
+        },
+        Number::U8(v) => JsonValue::Number(JsonNumber::from(v)),
+        Number::U16(v) => JsonValue::Number(JsonNumber::from(v)),
+        Number::U32(v) => JsonValue::Number(JsonNumber::from(v)),
+        Number::U64(v) => JsonValue::Number(JsonNumber::from(v)),
+        Number::U128(v) => match u64::try_from(v) {
+            Ok(v) => JsonValue::Number(JsonNumber::from(v)),
+            Err(_) => JsonValue::String(v.to_string()),
+        },
+        Number::F32(v) => float_to_json(v as f64),
+        Number::F64(v) => float_to_json(v),
+    }
+}
+
+fn float_to_json(value: f64) -> JsonValue {
+    match JsonNumber::from_f64(value) {
+        Some(v) => JsonValue::Number(v),
+        None => JsonValue::Null,
     }
 }

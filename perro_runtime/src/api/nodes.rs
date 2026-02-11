@@ -1,4 +1,4 @@
-use perro_api::modules::NodeAPI;
+use perro_api::sub_apis::NodeAPI;
 
 use crate::Runtime;
 

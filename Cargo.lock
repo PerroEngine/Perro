@@ -103,9 +103,7 @@ name = "perro_api"
 version = "0.1.0"
 dependencies = [
  "perro_ids",
- "perro_io",
  "perro_variant",
- "serde_json",
 ]
 
 [[package]]
@@ -125,6 +123,14 @@ name = "perro_io"
 version = "0.1.0"
 dependencies = [
  "flate2",
+]
+
+[[package]]
+name = "perro_modules"
+version = "0.1.0"
+dependencies = [
+ "perro_variant",
+ "serde_json",
 ]
 
 [[package]]
@@ -160,6 +166,7 @@ version = "0.1.0"
 dependencies = [
  "perro_core",
  "perro_ids",
+ "serde_json",
 ]
 
 [[package]]

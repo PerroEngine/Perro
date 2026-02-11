@@ -1,4 +1,4 @@
-use perro_api::{API, modules::ScriptAPI};
+use perro_api::{API, sub_apis::ScriptAPI};
 use perro_ids::NodeID;
 use perro_variant::Variant;
 

@@ -1,6 +1,6 @@
 [workspace]
 members = ["perro_api",
-    "perro_core", "perro_ids", "perro_io", "perro_runtime", "perro_scene", "perro_scripting", "perro_variant",
+    "perro_core", "perro_ids", "perro_io", "perro_modules", "perro_runtime", "perro_scene", "perro_scripting", "perro_variant",
 ]
 
 resolver = "3"
@@ -14,3 +14,4 @@ perro_api = {path = "perro_api"}
 perro_scripting = {path = "perro_scripting"}
 perro_variant = {path="perro_variant"}
 perro_runtime = {path="perro_runtime"}
+perro_modules = {path="perro_modules"}
