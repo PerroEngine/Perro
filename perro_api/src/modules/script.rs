@@ -5,8 +5,8 @@ pub trait ScriptAPI {
     fn call_init(&self, id: NodeID);
     fn call_update(&self, id: NodeID);
     fn call_fixed_update(&self, id: NodeID);
-    fn get_var(&self, member: ScriptMemberID) -> Variant;
-    fn set_var(&self, member: ScriptMemberID, value: Variant);
+    fn get_var(&self, script_id: NodeID, member: ScriptMemberID) -> Variant;
+    fn set_var(&self, script_id: NodeID, member: ScriptMemberID, value: Variant);
 
     fn call_method(
         &self,
@@ -37,12 +37,12 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
         self.rt.call_fixed_update(id);
     }
 
-    pub fn get_var(&self, member: ScriptMemberID) -> Variant {
-        self.rt.get_var(member)
+    pub fn get_var(&self, script_id: NodeID, member: ScriptMemberID) -> Variant {
+        self.rt.get_var(script_id, member)
     }
 
-    pub fn set_var(&self, member: ScriptMemberID, value: Variant) {
-        self.rt.set_var(member, value);
+    pub fn set_var(&self, script_id: NodeID, member: ScriptMemberID, value: Variant) {
+        self.rt.set_var(script_id, member, value);
     }
 
     pub fn call_method(

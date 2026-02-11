@@ -1,14 +1,18 @@
 use ahash::AHashMap;
 use perro_api::api::RuntimeAPI;
 use perro_ids::NodeID;
-use perro_scripting::ScriptObject;
-use std::{cell::RefCell, rc::Rc};
+use perro_scripting::{ScriptBehavior, ScriptState};
+use std::sync::Arc;
 
 type IdMap = AHashMap<NodeID, usize>;
-type ScriptCell<R> = Rc<RefCell<Box<dyn ScriptObject<R>>>>;
+
+pub struct ScriptInstance<R: RuntimeAPI + ?Sized> {
+    pub behavior: Arc<dyn ScriptBehavior<R>>,
+    pub state: Option<Box<dyn ScriptState>>,
+}
 
 pub struct ScriptCollection<R: RuntimeAPI + ?Sized> {
-    scripts: Vec<ScriptCell<R>>,
+    instances: Vec<ScriptInstance<R>>,
     ids: Vec<NodeID>,
     index: IdMap,
 
@@ -23,7 +27,7 @@ pub struct ScriptCollection<R: RuntimeAPI + ?Sized> {
 impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     pub fn new() -> Self {
         Self {
-            scripts: Vec::new(),
+            instances: Vec::new(),
             ids: Vec::new(),
             index: AHashMap::default(),
             update: Vec::new(),
@@ -35,7 +39,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            scripts: Vec::with_capacity(capacity),
+            instances: Vec::with_capacity(capacity),
             ids: Vec::with_capacity(capacity),
             index: AHashMap::with_capacity(capacity),
             update: Vec::with_capacity(capacity),
@@ -45,24 +49,40 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         }
     }
 
-    pub fn get_script_rc(&self, id: NodeID) -> Option<ScriptCell<R>> {
+    pub fn get_instance(&self, id: NodeID) -> Option<&ScriptInstance<R>> {
         let &i = self.index.get(&id)?;
-        Some(Rc::clone(&self.scripts[i]))
+        self.instances.get(i)
     }
 
-    pub fn insert(&mut self, id: NodeID, mut obj: Box<dyn ScriptObject<R>>) {
-        obj.set_id(id);
-        let flags = obj.script_flags();
+    pub fn get_instance_mut(&mut self, id: NodeID) -> Option<&mut ScriptInstance<R>> {
+        let &i = self.index.get(&id)?;
+        self.instances.get_mut(i)
+    }
+
+    pub fn insert(
+        &mut self,
+        id: NodeID,
+        behavior: Arc<dyn ScriptBehavior<R>>,
+        mut state: Box<dyn ScriptState>,
+    ) {
+        state.set_id(id);
+        let flags = behavior.script_flags();
 
         if let Some(&i) = self.index.get(&id) {
             // replace in-place
-            *self.scripts[i].borrow_mut() = obj;
-            self.rebuild_schedules_for_id(id, i, flags);
+            self.instances[i] = ScriptInstance {
+                behavior,
+                state: Some(state),
+            };
+            self.rebuild_schedules_for_index(i, flags);
             return;
         }
 
-        let i = self.scripts.len();
-        self.scripts.push(Rc::new(RefCell::new(obj)));
+        let i = self.instances.len();
+        self.instances.push(ScriptInstance {
+            behavior,
+            state: Some(state),
+        });
         self.ids.push(id);
         self.index.insert(id, i);
 
@@ -78,15 +98,15 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         }
     }
 
-    pub fn remove(&mut self, id: NodeID) -> Option<ScriptCell<R>> {
+    pub fn remove(&mut self, id: NodeID) -> Option<ScriptInstance<R>> {
         let i = self.index.remove(&id)?;
         self.remove_from_schedules_by_index(i);
 
-        let last = self.scripts.len() - 1;
-        self.scripts.swap(i, last);
+        let last = self.instances.len() - 1;
+        self.instances.swap(i, last);
         self.ids.swap(i, last);
 
-        let removed = self.scripts.pop().unwrap();
+        let removed = self.instances.pop().unwrap();
         let removed_id = self.ids.pop().unwrap();
         debug_assert!(removed_id == id);
 
@@ -117,6 +137,31 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         self.fixed.iter().map(|&i| self.ids[i]).collect()
     }
 
+    pub fn take_state(
+        &mut self,
+        id: NodeID,
+    ) -> Option<(Arc<dyn ScriptBehavior<R>>, Box<dyn ScriptState>)> {
+        let &i = self.index.get(&id)?;
+        let instance = self.instances.get_mut(i)?;
+        let state = instance.state.take()?;
+        let behavior = Arc::clone(&instance.behavior);
+        Some((behavior, state))
+    }
+
+    pub fn put_state(&mut self, id: NodeID, state: Box<dyn ScriptState>) -> bool {
+        let Some(&i) = self.index.get(&id) else {
+            return false;
+        };
+        let Some(instance) = self.instances.get_mut(i) else {
+            return false;
+        };
+        if instance.state.is_some() {
+            return false;
+        }
+        instance.state = Some(state);
+        true
+    }
+
     fn remove_from_schedules_by_index(&mut self, i: usize) {
         // Remove from update schedule
         if let Some(pos) = self.update_pos.remove(&i) {
@@ -141,12 +186,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         }
     }
 
-    fn rebuild_schedules_for_id(
-        &mut self,
-        id: NodeID,
-        i: usize,
-        flags: perro_scripting::ScriptFlags,
-    ) {
+    fn rebuild_schedules_for_index(&mut self, i: usize, flags: perro_scripting::ScriptFlags) {
         self.remove_from_schedules_by_index(i);
 
         if flags.has_update() {
@@ -159,8 +199,6 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
             self.fixed.push(i);
             self.fixed_pos.insert(i, pos);
         }
-
-        self.scripts[i].borrow_mut().set_id(id);
     }
 }
 

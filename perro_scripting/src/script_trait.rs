@@ -1,40 +1,25 @@
-use perro_api::{API, api::RuntimeAPI};
+use perro_api::{api::RuntimeAPI, API};
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_variant::Variant;
 
 #[allow(improper_ctypes_definitions)]
-pub type ScriptConstructor<R> = extern "C" fn() -> *mut dyn ScriptObject<R>;
+pub type ScriptConstructor<R> = extern "C" fn() -> *mut dyn ScriptBehavior<R>;
 
 pub trait ScriptLifecycle<R: RuntimeAPI + ?Sized> {
-    fn init(&self, api: &API<'_, R>);
-    fn update(&self, api: &API<'_, R>);
-    fn fixed_update(&self, api: &API<'_, R>);
+    fn init(&self, api: &API<'_, R>, state: &mut dyn ScriptState);
+    fn update(&self, api: &API<'_, R>, state: &mut dyn ScriptState);
+    fn fixed_update(&self, api: &API<'_, R>, state: &mut dyn ScriptState);
 }
 
-pub trait ScriptObject<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
-    fn internal_init(&self, api: &API<'_, R>) {
-        self.init(api);
-    }
-
-    fn internal_update(&self, api: &API<'_, R>) {
-        self.update(api);
-    }
-
-    fn internal_fixed_update(&self, api: &API<'_, R>) {
-        self.fixed_update(api);
-    }
-
+pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
     fn script_flags(&self) -> ScriptFlags;
 
-    fn get_id(&self) -> NodeID;
-    fn set_id(&mut self, id: NodeID);
+    fn get_var(&self, state: &dyn ScriptState, var_id: ScriptMemberID) -> Variant;
+    fn set_var(&self, state: &mut dyn ScriptState, var_id: ScriptMemberID, value: Variant);
 
-    fn get_var(&self, var_id: ScriptMemberID) -> Variant;
-    fn set_var(&self, var_id: ScriptMemberID, value: Variant);
-
-    fn apply_exposed_vars(&self, vars: &[(ScriptMemberID, Variant)]) {
+    fn apply_exposed_vars(&self, state: &mut dyn ScriptState, vars: &[(ScriptMemberID, Variant)]) {
         for (var_id, value) in vars {
-            self.set_var(*var_id, value.clone());
+            self.set_var(state, *var_id, value.clone());
         }
     }
 
@@ -42,12 +27,18 @@ pub trait ScriptObject<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
         &self,
         method_id: ScriptMemberID,
         api: &API<'_, R>,
+        state: &mut dyn ScriptState,
         params: &[Variant],
     ) -> Variant;
 
     fn attributes_of(&self, member: &str) -> Vec<String>;
     fn members_with(&self, attribute: &str) -> Vec<String>;
     fn has_attribute(&self, member: &str, attribute: &str) -> bool;
+}
+
+pub trait ScriptState {
+    fn id(&self) -> NodeID;
+    fn set_id(&mut self, id: NodeID);
 }
 
 /// Bitflags to track which lifecycle methods are implemented by a script
