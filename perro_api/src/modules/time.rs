@@ -3,21 +3,21 @@ pub trait TimeAPI {
 }
 
 pub struct TimeModule<'rt, R: TimeAPI + ?Sized> {
-    rt: &'rt R,
+    rt: &'rt mut R,
 }
 
 impl<'rt, R: TimeAPI + ?Sized> TimeModule<'rt, R> {
-    pub fn new(rt: &'rt R) -> Self {
+    pub fn new(rt: &'rt mut R) -> Self {
         Self { rt }
     }
 
-    pub fn get_delta(&self) -> f32 {
+    pub fn get_delta(&mut self) -> f32 {
         self.rt.get_delta()
     }
 }
 
 impl<'rt, R: TimeAPI + ?Sized> TimeModule<'rt, R> {
-    pub fn get_unix_time(&self) -> f64 {
+    pub fn get_unix_time(&mut self) -> f64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

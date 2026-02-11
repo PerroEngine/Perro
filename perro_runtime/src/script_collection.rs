@@ -9,6 +9,8 @@ type IdMap = AHashMap<NodeID, usize>;
 pub struct ScriptInstance<R: RuntimeAPI + ?Sized> {
     pub behavior: Arc<dyn ScriptBehavior<R>>,
     pub state: Option<Box<dyn ScriptState>>,
+    reentry_snapshot: Option<Box<dyn ScriptState>>,
+    pending_merges: Vec<Box<dyn ScriptState>>,
 }
 
 pub struct ScriptCollection<R: RuntimeAPI + ?Sized> {
@@ -73,6 +75,8 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
             self.instances[i] = ScriptInstance {
                 behavior,
                 state: Some(state),
+                reentry_snapshot: None,
+                pending_merges: Vec::new(),
             };
             self.rebuild_schedules_for_index(i, flags);
             return;
@@ -82,6 +86,8 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         self.instances.push(ScriptInstance {
             behavior,
             state: Some(state),
+            reentry_snapshot: None,
+            pending_merges: Vec::new(),
         });
         self.ids.push(id);
         self.index.insert(id, i);
@@ -144,11 +150,26 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         let &i = self.index.get(&id)?;
         let instance = self.instances.get_mut(i)?;
         let state = instance.state.take()?;
+        instance.reentry_snapshot = Some(state.clone_box());
         let behavior = Arc::clone(&instance.behavior);
         Some((behavior, state))
     }
 
-    pub fn put_state(&mut self, id: NodeID, state: Box<dyn ScriptState>) -> bool {
+    pub fn take_reentry_clone(
+        &mut self,
+        id: NodeID,
+    ) -> Option<(Arc<dyn ScriptBehavior<R>>, Box<dyn ScriptState>)> {
+        let &i = self.index.get(&id)?;
+        let instance = self.instances.get_mut(i)?;
+        if instance.state.is_some() {
+            return None;
+        }
+        let snapshot = instance.reentry_snapshot.as_ref()?;
+        let behavior = Arc::clone(&instance.behavior);
+        Some((behavior, snapshot.clone_box()))
+    }
+
+    pub fn push_reentry_result(&mut self, id: NodeID, state: Box<dyn ScriptState>) -> bool {
         let Some(&i) = self.index.get(&id) else {
             return false;
         };
@@ -158,6 +179,24 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         if instance.state.is_some() {
             return false;
         }
+        instance.pending_merges.push(state);
+        true
+    }
+
+    pub fn put_state(&mut self, id: NodeID, mut state: Box<dyn ScriptState>) -> bool {
+        let Some(&i) = self.index.get(&id) else {
+            return false;
+        };
+        let Some(instance) = self.instances.get_mut(i) else {
+            return false;
+        };
+        if instance.state.is_some() {
+            return false;
+        }
+        for pending in instance.pending_merges.drain(..) {
+            state.merge_from(pending.as_ref());
+        }
+        instance.reentry_snapshot = None;
         instance.state = Some(state);
         true
     }

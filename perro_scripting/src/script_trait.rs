@@ -5,10 +5,17 @@ use perro_variant::Variant;
 #[allow(improper_ctypes_definitions)]
 pub type ScriptConstructor<R> = extern "C" fn() -> *mut dyn ScriptBehavior<R>;
 
+pub trait ScriptState {
+    fn id(&self) -> NodeID;
+    fn set_id(&mut self, id: NodeID);
+    fn clone_box(&self) -> Box<dyn ScriptState>;
+    fn merge_from(&mut self, other: &dyn ScriptState);
+}
+
 pub trait ScriptLifecycle<R: RuntimeAPI + ?Sized> {
-    fn init(&self, api: &API<'_, R>, state: &mut dyn ScriptState);
-    fn update(&self, api: &API<'_, R>, state: &mut dyn ScriptState);
-    fn fixed_update(&self, api: &API<'_, R>, state: &mut dyn ScriptState);
+    fn init(&self, api: &mut API<'_, R>, state: &mut dyn ScriptState);
+    fn update(&self, api: &mut API<'_, R>, state: &mut dyn ScriptState);
+    fn fixed_update(&self, api: &mut API<'_, R>, state: &mut dyn ScriptState);
 }
 
 pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
@@ -26,7 +33,7 @@ pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
     fn call_method(
         &self,
         method_id: ScriptMemberID,
-        api: &API<'_, R>,
+        api: &mut API<'_, R>,
         state: &mut dyn ScriptState,
         params: &[Variant],
     ) -> Variant;
@@ -36,10 +43,6 @@ pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
     fn has_attribute(&self, member: &str, attribute: &str) -> bool;
 }
 
-pub trait ScriptState {
-    fn id(&self) -> NodeID;
-    fn set_id(&mut self, id: NodeID);
-}
 
 /// Bitflags to track which lifecycle methods are implemented by a script
 /// This allows the engine to skip calling methods that are not implemented,
