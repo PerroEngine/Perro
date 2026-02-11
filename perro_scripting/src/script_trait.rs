@@ -1,6 +1,7 @@
 use perro_api::{API, api::RuntimeAPI};
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_variant::Variant;
+use std::any::Any;
 
 #[allow(improper_ctypes_definitions)]
 pub type ScriptConstructor<R> = extern "C" fn() -> *mut dyn ScriptBehavior<R>;
@@ -8,14 +9,14 @@ pub type ScriptConstructor<R> = extern "C" fn() -> *mut dyn ScriptBehavior<R>;
 pub trait ScriptState {
     fn id(&self) -> NodeID;
     fn set_id(&mut self, id: NodeID);
-    fn clone_box(&self) -> Box<dyn ScriptState>;
-    fn merge_from(&mut self, other: &dyn ScriptState);
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 pub trait ScriptLifecycle<R: RuntimeAPI + ?Sized> {
-    fn init(&self, api: &mut API<'_, R>, state: &mut dyn ScriptState);
-    fn update(&self, api: &mut API<'_, R>, state: &mut dyn ScriptState);
-    fn fixed_update(&self, api: &mut API<'_, R>, state: &mut dyn ScriptState);
+    fn init(&self, api: &mut API<'_, R>, self_id: NodeID);
+    fn update(&self, api: &mut API<'_, R>, self_id: NodeID);
+    fn fixed_update(&self, api: &mut API<'_, R>, self_id: NodeID);
 }
 
 pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
@@ -34,7 +35,7 @@ pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
         &self,
         method_id: ScriptMemberID,
         api: &mut API<'_, R>,
-        state: &mut dyn ScriptState,
+        self_id: NodeID,
         params: &[Variant],
     ) -> Variant;
 

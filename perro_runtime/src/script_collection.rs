@@ -8,9 +8,7 @@ type IdMap = AHashMap<NodeID, usize>;
 
 pub struct ScriptInstance<R: RuntimeAPI + ?Sized> {
     pub behavior: Arc<dyn ScriptBehavior<R>>,
-    pub state: Option<Box<dyn ScriptState>>,
-    reentry_snapshot: Option<Box<dyn ScriptState>>,
-    pending_merges: Vec<Box<dyn ScriptState>>,
+    pub state: Box<dyn ScriptState>,
 }
 
 pub struct ScriptCollection<R: RuntimeAPI + ?Sized> {
@@ -74,9 +72,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
             // replace in-place
             self.instances[i] = ScriptInstance {
                 behavior,
-                state: Some(state),
-                reentry_snapshot: None,
-                pending_merges: Vec::new(),
+                state,
             };
             self.rebuild_schedules_for_index(i, flags);
             return;
@@ -85,9 +81,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         let i = self.instances.len();
         self.instances.push(ScriptInstance {
             behavior,
-            state: Some(state),
-            reentry_snapshot: None,
-            pending_merges: Vec::new(),
+            state,
         });
         self.ids.push(id);
         self.index.insert(id, i);
@@ -143,62 +137,42 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         self.fixed.iter().map(|&i| self.ids[i]).collect()
     }
 
-    pub fn take_state(
-        &mut self,
-        id: NodeID,
-    ) -> Option<(Arc<dyn ScriptBehavior<R>>, Box<dyn ScriptState>)> {
+    pub fn with_state<T: 'static, V, F>(&self, id: NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&T) -> V,
+    {
+        let &i = self.index.get(&id)?;
+        let instance = self.instances.get(i)?;
+        let state = instance.state.as_any().downcast_ref::<T>()?;
+        Some(f(state))
+    }
+
+    pub fn with_state_dyn<V, F>(&self, id: NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&dyn ScriptState) -> V,
+    {
+        let &i = self.index.get(&id)?;
+        let instance = self.instances.get(i)?;
+        Some(f(instance.state.as_ref()))
+    }
+
+    pub fn with_state_mut<T: 'static, V, F>(&mut self, id: NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&mut T) -> V,
+    {
         let &i = self.index.get(&id)?;
         let instance = self.instances.get_mut(i)?;
-        let state = instance.state.take()?;
-        instance.reentry_snapshot = Some(state.clone_box());
-        let behavior = Arc::clone(&instance.behavior);
-        Some((behavior, state))
+        let state = instance.state.as_any_mut().downcast_mut::<T>()?;
+        Some(f(state))
     }
 
-    pub fn take_reentry_clone(
-        &mut self,
-        id: NodeID,
-    ) -> Option<(Arc<dyn ScriptBehavior<R>>, Box<dyn ScriptState>)> {
+    pub fn with_state_mut_dyn<V, F>(&mut self, id: NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&mut dyn ScriptState) -> V,
+    {
         let &i = self.index.get(&id)?;
         let instance = self.instances.get_mut(i)?;
-        if instance.state.is_some() {
-            return None;
-        }
-        let snapshot = instance.reentry_snapshot.as_ref()?;
-        let behavior = Arc::clone(&instance.behavior);
-        Some((behavior, snapshot.clone_box()))
-    }
-
-    pub fn push_reentry_result(&mut self, id: NodeID, state: Box<dyn ScriptState>) -> bool {
-        let Some(&i) = self.index.get(&id) else {
-            return false;
-        };
-        let Some(instance) = self.instances.get_mut(i) else {
-            return false;
-        };
-        if instance.state.is_some() {
-            return false;
-        }
-        instance.pending_merges.push(state);
-        true
-    }
-
-    pub fn put_state(&mut self, id: NodeID, mut state: Box<dyn ScriptState>) -> bool {
-        let Some(&i) = self.index.get(&id) else {
-            return false;
-        };
-        let Some(instance) = self.instances.get_mut(i) else {
-            return false;
-        };
-        if instance.state.is_some() {
-            return false;
-        }
-        for pending in instance.pending_merges.drain(..) {
-            state.merge_from(pending.as_ref());
-        }
-        instance.reentry_snapshot = None;
-        instance.state = Some(state);
-        true
+        Some(f(instance.state.as_mut()))
     }
 
     fn remove_from_schedules_by_index(&mut self, i: usize) {

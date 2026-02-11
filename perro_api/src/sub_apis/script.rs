@@ -5,6 +5,12 @@ pub trait ScriptAPI {
     fn call_init(&mut self, id: NodeID);
     fn call_update(&mut self, id: NodeID);
     fn call_fixed_update(&mut self, id: NodeID);
+    fn with_state<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&T) -> V;
+    fn with_state_mut<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&mut T) -> V;
     fn get_var(&mut self, script_id: NodeID, member: ScriptMemberID) -> Variant;
     fn set_var(&mut self, script_id: NodeID, member: ScriptMemberID, value: Variant);
 
@@ -35,6 +41,20 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
 
     pub fn call_fixed_update(&mut self, id: NodeID) {
         self.rt.call_fixed_update(id);
+    }
+
+    pub fn with_state<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&T) -> V,
+    {
+        self.rt.with_state(script_id, f)
+    }
+
+    pub fn with_state_mut<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&mut T) -> V,
+    {
+        self.rt.with_state_mut(script_id, f)
     }
 
     pub fn get_var(&mut self, script_id: NodeID, member: ScriptMemberID) -> Variant {
