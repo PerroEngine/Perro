@@ -6,11 +6,11 @@ pub struct Scene {
 
 #[derive(Debug, Copy, Clone)]
 pub struct SceneNodeEntry {
+    pub data: SceneNodeDataEntry,
     pub key: SceneKey,
     pub name: Option<&'static str>,
     pub parent: Option<SceneKey>,
     pub script: Option<&'static str>,
-    pub data: SceneNodeDataEntry,
 }
 
 #[derive(Debug, Copy, Clone)]

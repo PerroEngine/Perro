@@ -49,14 +49,9 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         }
     }
 
-    pub fn get_instance(&self, id: NodeID) -> Option<&ScriptInstance<R>> {
+    pub(crate) fn get_instance(&self, id: NodeID) -> Option<&ScriptInstance<R>> {
         let &i = self.index.get(&id)?;
         self.instances.get(i)
-    }
-
-    pub fn get_instance_mut(&mut self, id: NodeID) -> Option<&mut ScriptInstance<R>> {
-        let &i = self.index.get(&id)?;
-        self.instances.get_mut(i)
     }
 
     pub fn insert(
@@ -129,15 +124,21 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         Some(removed)
     }
 
-    pub fn get_update_ids(&self) -> Vec<NodeID> {
-        self.update.iter().map(|&i| self.ids[i]).collect()
+    pub(crate) fn append_update_ids(&self, out: &mut Vec<NodeID>) {
+        out.reserve(self.update.len());
+        for &i in &self.update {
+            out.push(self.ids[i]);
+        }
     }
 
-    pub fn get_fixed_update_ids(&self) -> Vec<NodeID> {
-        self.fixed.iter().map(|&i| self.ids[i]).collect()
+    pub(crate) fn append_fixed_update_ids(&self, out: &mut Vec<NodeID>) {
+        out.reserve(self.fixed.len());
+        for &i in &self.fixed {
+            out.push(self.ids[i]);
+        }
     }
 
-    pub fn with_state<T: 'static, V, F>(&self, id: NodeID, f: F) -> Option<V>
+    pub(crate) fn with_state<T: 'static, V, F>(&self, id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&T) -> V,
     {
@@ -147,7 +148,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         Some(f(state))
     }
 
-    pub fn with_state_dyn<V, F>(&self, id: NodeID, f: F) -> Option<V>
+    pub(crate) fn with_state_dyn<V, F>(&self, id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&dyn ScriptState) -> V,
     {
@@ -156,7 +157,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         Some(f(instance.state.as_ref()))
     }
 
-    pub fn with_state_mut<T: 'static, V, F>(&mut self, id: NodeID, f: F) -> Option<V>
+    pub(crate) fn with_state_mut<T: 'static, V, F>(&mut self, id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&mut T) -> V,
     {
@@ -166,7 +167,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         Some(f(state))
     }
 
-    pub fn with_state_mut_dyn<V, F>(&mut self, id: NodeID, f: F) -> Option<V>
+    pub(crate) fn with_state_mut_dyn<V, F>(&mut self, id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&mut dyn ScriptState) -> V,
     {

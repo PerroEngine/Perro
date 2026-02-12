@@ -21,12 +21,12 @@ macro_rules! define_scene_nodes {
     ) => {
         #[derive(Clone, Debug)]
         pub struct SceneNode {
+            pub data: SceneNodeData,
             pub id: NodeID,
             pub name: Cow<'static, str>,
-            pub parent: Option<NodeID>,
+            pub parent: NodeID,
             pub children: Option<Cow<'static, [NodeID]>>,
             pub script: Option<Cow<'static, str>>,
-            pub data: SceneNodeData,
         }
 
         #[derive(Clone, Debug)]
@@ -50,11 +50,15 @@ macro_rules! define_scene_nodes {
                 Self {
                     id: NodeID::nil(),
                     name: Cow::Borrowed("Node"),
-                    parent: None,
+                    parent: NodeID::nil(),
                     children: None,
                     script: None,
                     data,
                 }
+            }
+
+            pub fn has_parent(&self) -> bool {
+                !self.parent.is_nil()
             }
 
             pub fn node_type(&self) -> NodeType {

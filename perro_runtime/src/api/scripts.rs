@@ -5,17 +5,8 @@ use std::sync::Arc;
 
 use crate::Runtime;
 
-impl ScriptAPI for Runtime {
-    fn call_init(&mut self, id: NodeID) {
-        let behavior = match self.scripts.get_instance(id) {
-            Some(instance) => Arc::clone(&instance.behavior),
-            None => return,
-        };
-        let mut api = API::new(self);
-        behavior.init(&mut api, id);
-    }
-
-    fn call_update(&mut self, id: NodeID) {
+impl Runtime {
+    pub(crate) fn call_update_script(&mut self, id: NodeID) {
         let behavior = match self.scripts.get_instance(id) {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return,
@@ -26,7 +17,7 @@ impl ScriptAPI for Runtime {
         }
     }
 
-    fn call_fixed_update(&mut self, id: NodeID) {
+    pub(crate) fn call_fixed_update_script(&mut self, id: NodeID) {
         let behavior = match self.scripts.get_instance(id) {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return,
@@ -36,7 +27,9 @@ impl ScriptAPI for Runtime {
             behavior.fixed_update(&mut api, id);
         }
     }
+}
 
+impl ScriptAPI for Runtime {
     fn with_state<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&T) -> V,

@@ -8,11 +8,11 @@ pub struct RuntimeScene {
 
 #[derive(Debug, Clone)]
 pub struct RuntimeNodeEntry {
+    pub data: RuntimeNodeData,
     pub key: String,
     pub name: Option<String>,
     pub parent: Option<String>,
     pub script: Option<String>,
-    pub data: RuntimeNodeData,
 }
 
 #[derive(Debug, Clone)]

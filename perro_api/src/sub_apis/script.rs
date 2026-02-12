@@ -2,9 +2,6 @@ use perro_ids::{NodeID, ScriptMemberID};
 use perro_variant::Variant;
 
 pub trait ScriptAPI {
-    fn call_init(&mut self, id: NodeID);
-    fn call_update(&mut self, id: NodeID);
-    fn call_fixed_update(&mut self, id: NodeID);
     fn with_state<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&T) -> V;
@@ -29,18 +26,6 @@ pub struct ScriptModule<'rt, R: ScriptAPI + ?Sized> {
 impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
     pub fn new(rt: &'rt mut R) -> Self {
         Self { rt }
-    }
-
-    pub fn call_init(&mut self, id: NodeID) {
-        self.rt.call_init(id);
-    }
-
-    pub fn call_update(&mut self, id: NodeID) {
-        self.rt.call_update(id);
-    }
-
-    pub fn call_fixed_update(&mut self, id: NodeID) {
-        self.rt.call_fixed_update(id);
     }
 
     pub fn with_state<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>

@@ -1,6 +1,6 @@
 [workspace]
 members = ["perro_api",
-    "perro_core", "perro_ids", "perro_io", "perro_modules", "perro_runtime", "perro_scene", "perro_scripting", "perro_variant",
+    "perro_app", "perro_core", "perro_dev_runner", "perro_graphics", "perro_ids", "perro_io", "perro_modules", "perro_render_bridge", "perro_runtime", "perro_scene", "perro_scripting", "perro_variant",
 ]
 
 resolver = "3"
@@ -15,3 +15,18 @@ perro_scripting = {path = "perro_scripting"}
 perro_variant = {path="perro_variant"}
 perro_runtime = {path="perro_runtime"}
 perro_modules = {path="perro_modules"}
+perro_render_bridge = {path="perro_render_bridge"}
+perro_graphics = {path="perro_graphics"}
+perro_app = {path="perro_app"}
+perro_dev_runner = {path="perro_dev_runner"}
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+incremental = false
+debug = false
+debug-assertions = false
+overflow-checks = false

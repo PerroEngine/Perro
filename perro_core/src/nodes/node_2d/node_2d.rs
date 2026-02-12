@@ -3,8 +3,8 @@ use crate::Transform2D;
 #[derive(Clone, Debug, Default)]
 pub struct Node2D {
     pub transform: Transform2D,
-    pub visible: bool,
     pub z_index: i32,
+    pub visible: bool,
 }
 
 impl Node2D {

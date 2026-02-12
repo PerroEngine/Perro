@@ -1,0 +1,8 @@
+[package]
+name = "perro_graphics"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+perro_ids = "0.1.0"
+perro_render_bridge = "0.1.0"

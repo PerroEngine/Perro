@@ -19,14 +19,14 @@ impl DerefMut for Sprite2D {
 #[derive(Clone, Debug, Default)]
 pub struct Sprite2D {
     pub base: Node2D,
-    pub texture_id: Option<TextureID>,
+    pub texture_id: TextureID,
 }
 
 impl Sprite2D {
     pub fn new() -> Self {
         Self {
             base: Node2D::new(),
-            texture_id: None,
+            texture_id: TextureID::nil(),
         }
     }
 }

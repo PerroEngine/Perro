@@ -42,7 +42,7 @@ mod tests {
         }));
         node_2d.id = NodeID::new(2);
         node_2d.name = Cow::Borrowed("Player");
-        node_2d.parent = Some(NodeID::new(1));
+        node_2d.parent = NodeID::new(1);
 
         println!("=== Node2D ===");
         println!("{:#?}", node_2d);
@@ -62,11 +62,11 @@ mod tests {
                 visible: true,
                 z_index: 1,
             },
-            texture_id: None,
+            texture_id: perro_ids::TextureID::nil(),
         }));
         sprite.id = NodeID::new(3);
         sprite.name = Cow::Borrowed("PlayerSprite");
-        sprite.parent = Some(NodeID::new(2));
+        sprite.parent = NodeID::new(2);
 
         println!("=== Sprite2D ===");
         println!("{:#?}", sprite);
@@ -78,8 +78,8 @@ mod tests {
         // Create a MeshInstance3D (contains Node3D as base)
         let mut mesh = SceneNode::new(SceneNodeData::MeshInstance3D(MeshInstance3D {
             base: Node3D::default(),
-            mesh_id: None,
-            material_id: None,
+            mesh_id: perro_ids::MeshID::nil(),
+            material_id: perro_ids::MaterialID::nil(),
         }));
         mesh.id = NodeID::new(4);
         mesh.name = Cow::Borrowed("Character");
@@ -125,15 +125,15 @@ mod tests {
         let mut player = SceneNode::new(SceneNodeData::Node2D(Node2D::new()));
         player.id = NodeID::new(2);
         player.name = Cow::Borrowed("Player");
-        player.parent = Some(root.id);
+        player.parent = root.id;
 
         let mut sprite = SceneNode::new(SceneNodeData::Sprite2D(Sprite2D {
             base: Node2D::new(),
-            texture_id: None,
+            texture_id: perro_ids::TextureID::nil(),
         }));
         sprite.id = NodeID::new(3);
         sprite.name = Cow::Borrowed("Sprite");
-        sprite.parent = Some(player.id);
+        sprite.parent = player.id;
 
         root.add_child(player.id);
         player.add_child(sprite.id);
