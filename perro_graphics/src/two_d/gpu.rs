@@ -6,6 +6,10 @@ use winit::window::Window;
 
 const VIRTUAL_WIDTH: f32 = 1920.0;
 const VIRTUAL_HEIGHT: f32 = 1080.0;
+// Linear-space clear color for sRGB hex #1C1817.
+const CLEAR_R: f64 = 0.011612245179743885;
+const CLEAR_G: f64 = 0.009134058702220787;
+const CLEAR_B: f64 = 0.008568125618069307;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -298,9 +302,9 @@ impl Gpu2D {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.08,
-                            g: 0.09,
-                            b: 0.11,
+                            r: CLEAR_R,
+                            g: CLEAR_G,
+                            b: CLEAR_B,
                             a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,

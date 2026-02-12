@@ -4,29 +4,45 @@ use crate::{
     runtime_project::{ProviderMode, RuntimeProject},
 };
 use ahash::{AHashMap, AHashSet};
-use perro_core::{SceneNodeData, Spatial};
+use perro_core::Spatial;
 use perro_ids::{NodeID, TextureID};
-use perro_render_bridge::{
-    Command2D, RenderCommand, RenderEvent, RenderRequestID, ResourceCommand, Rect2DCommand,
-};
+use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
 use std::sync::Arc;
+
+mod render_2d;
+
+#[derive(Clone, Copy)]
+enum Render2DInput {
+    Sprite {
+        node_id: NodeID,
+        visible: bool,
+        texture_id: TextureID,
+    },
+}
 
 pub struct Runtime {
     pub time: Timing,
     provider_mode: ProviderMode,
+    project: Option<Arc<RuntimeProject>>,
+
+    // Core world state
     pub nodes: NodeArena,
     pub scripts: ScriptCollection<Self>,
-    project: Option<Arc<RuntimeProject>>,
     schedules: ScriptSchedules,
-    sprite_states: Vec<(NodeID, bool, TextureID)>,
-    visible_sprite_nodes: AHashSet<NodeID>,
-    prev_visible_sprite_nodes: AHashSet<NodeID>,
-    retained_sprite_textures: AHashMap<NodeID, TextureID>,
-    removed_sprite_nodes: Vec<NodeID>,
-    debug_draw_rect: bool,
-    debug_rect_was_active: bool,
     render: RenderState,
     dirty: DirtyState,
+    traversal_stack: Vec<NodeID>,
+
+    // 2D extraction caches
+    render_2d_inputs: Vec<Render2DInput>,
+    visible_render_2d_nodes: AHashSet<NodeID>,
+    prev_visible_render_2d_nodes: AHashSet<NodeID>,
+    retained_sprite_textures: AHashMap<NodeID, TextureID>,
+    removed_render_2d_nodes: Vec<NodeID>,
+
+    // Debug render toggles
+    debug_draw_rect: bool,
+    debug_rect_was_active: bool,
 }
 
 pub struct Timing {
@@ -142,50 +158,50 @@ impl RenderState {
 
 /// Runtime-side dirty tracking for downstream systems (rendering, transform propagation).
 struct DirtyState {
-    rerender_nodes: AHashSet<NodeID>,
-    dirty_2d_transforms: AHashSet<NodeID>,
-    dirty_3d_transforms: AHashSet<NodeID>,
+    node_flags: AHashMap<NodeID, u8>,
 }
 
 impl DirtyState {
+    const FLAG_RERENDER: u8 = 1 << 0;
+    const FLAG_DIRTY_2D_TRANSFORM: u8 = 1 << 1;
+    const FLAG_DIRTY_3D_TRANSFORM: u8 = 1 << 2;
+
     fn new() -> Self {
         Self {
-            rerender_nodes: AHashSet::default(),
-            dirty_2d_transforms: AHashSet::default(),
-            dirty_3d_transforms: AHashSet::default(),
+            node_flags: AHashMap::default(),
         }
     }
 
     fn mark_rerender(&mut self, id: NodeID) {
-        self.rerender_nodes.insert(id);
+        self.mark(id, Self::FLAG_RERENDER);
     }
 
     fn mark_transform(&mut self, id: NodeID, spatial: Spatial) {
         match spatial {
             Spatial::TwoD => {
-                self.dirty_2d_transforms.insert(id);
+                self.mark(id, Self::FLAG_DIRTY_2D_TRANSFORM);
             }
             Spatial::ThreeD => {
-                self.dirty_3d_transforms.insert(id);
+                self.mark(id, Self::FLAG_DIRTY_3D_TRANSFORM);
             }
             Spatial::None => {}
         }
     }
 
+    #[inline]
+    fn mark(&mut self, id: NodeID, flag: u8) {
+        self.node_flags
+            .entry(id)
+            .and_modify(|flags| *flags |= flag)
+            .or_insert(flag);
+    }
+
     fn clear(&mut self) {
-        self.rerender_nodes.clear();
-        self.dirty_2d_transforms.clear();
-        self.dirty_3d_transforms.clear();
+        self.node_flags.clear();
     }
 }
 
 impl Runtime {
-    const DEBUG_RECT_NODE_ID: NodeID = NodeID::from_parts(u32::MAX, 0);
-
-    fn sprite_texture_request_id(node: NodeID) -> RenderRequestID {
-        RenderRequestID::new((node.as_u64() << 8) | 0x2D)
-    }
-
     pub fn new() -> Self {
         Self {
             time: Timing {
@@ -196,17 +212,18 @@ impl Runtime {
             provider_mode: ProviderMode::Dynamic,
             nodes: NodeArena::new(),
             scripts: ScriptCollection::new(),
-            project: None,
             schedules: ScriptSchedules::new(),
-            sprite_states: Vec::new(),
-            visible_sprite_nodes: AHashSet::default(),
-            prev_visible_sprite_nodes: AHashSet::default(),
-            retained_sprite_textures: AHashMap::default(),
-            removed_sprite_nodes: Vec::new(),
-            debug_draw_rect: false,
-            debug_rect_was_active: false,
+            project: None,
             render: RenderState::new(),
             dirty: DirtyState::new(),
+            traversal_stack: Vec::new(),
+            render_2d_inputs: Vec::new(),
+            visible_render_2d_nodes: AHashSet::default(),
+            prev_visible_render_2d_nodes: AHashSet::default(),
+            retained_sprite_textures: AHashMap::default(),
+            removed_render_2d_nodes: Vec::new(),
+            debug_draw_rect: false,
+            debug_rect_was_active: false,
         }
     }
 
@@ -229,123 +246,14 @@ impl Runtime {
     pub fn update(&mut self, delta_time: f32) {
         self.time.delta = delta_time;
         self.schedules.snapshot_update(&self.scripts);
-
-        let mut i = 0;
-        while i < self.schedules.update_ids.len() {
-            let id = self.schedules.update_ids[i];
-            self.call_update_script(id);
-            i += 1;
-        }
+        self.run_update_schedule();
     }
 
     #[inline]
     pub fn fixed_update(&mut self, fixed_delta_time: f32) {
         self.time.fixed_delta = fixed_delta_time;
         self.schedules.snapshot_fixed(&self.scripts);
-
-        let mut i = 0;
-        while i < self.schedules.fixed_ids.len() {
-            let id = self.schedules.fixed_ids[i];
-            self.call_fixed_update_script(id);
-            i += 1;
-        }
-    }
-
-    pub fn extract_render_2d_commands(&mut self) {
-        let mut sprite_states = std::mem::take(&mut self.sprite_states);
-        sprite_states.clear();
-        let mut visible_now = std::mem::take(&mut self.visible_sprite_nodes);
-        visible_now.clear();
-        self.removed_sprite_nodes.clear();
-        for (id, node) in self.nodes.iter() {
-            if let SceneNodeData::Sprite2D(sprite) = &node.data {
-                sprite_states.push((id, sprite.visible, sprite.texture_id));
-            }
-        }
-
-        for (node_id, visible, mut texture_id) in sprite_states.iter().copied() {
-            if !visible {
-                continue;
-            }
-
-            if texture_id.is_nil() {
-                let request = Self::sprite_texture_request_id(node_id);
-                if let Some(result) = self.take_render_result(request) {
-                    match result {
-                        RuntimeRenderResult::Texture(id) => {
-                            texture_id = id;
-                            if let Some(node) = self.nodes.get_mut(node_id) {
-                                if let SceneNodeData::Sprite2D(sprite) = &mut node.data {
-                                    sprite.texture_id = id;
-                                }
-                            }
-                        }
-                        RuntimeRenderResult::Failed(_) => {}
-                        RuntimeRenderResult::Mesh(_) | RuntimeRenderResult::Material(_) => {}
-                    }
-                }
-            }
-
-            if texture_id.is_nil() {
-                let request = Self::sprite_texture_request_id(node_id);
-                if !self.render.is_inflight(request) {
-                    self.render.mark_inflight(request);
-                    self.queue_render_command(RenderCommand::Resource(ResourceCommand::CreateTexture {
-                        request,
-                        owner: node_id,
-                    }));
-                }
-                continue;
-            }
-
-            let needs_upsert = self
-                .retained_sprite_textures
-                .get(&node_id)
-                .is_none_or(|cached| *cached != texture_id);
-            if needs_upsert {
-                self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertTexture {
-                    texture: texture_id,
-                    node: node_id,
-                }));
-                self.retained_sprite_textures.insert(node_id, texture_id);
-            }
-            visible_now.insert(node_id);
-        }
-
-        for node in self.prev_visible_sprite_nodes.iter().copied() {
-            if !visible_now.contains(&node) {
-                self.removed_sprite_nodes.push(node);
-            }
-        }
-        while let Some(node) = self.removed_sprite_nodes.pop() {
-            self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
-            self.retained_sprite_textures.remove(&node);
-        }
-
-        if self.debug_draw_rect && !self.debug_rect_was_active {
-            self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertRect {
-                node: Self::DEBUG_RECT_NODE_ID,
-                rect: Rect2DCommand {
-                    center: [0.0, 0.0],
-                    size: [120.0, 120.0],
-                    color: [1.0, 0.2, 0.2, 1.0],
-                    z_index: 0,
-                },
-            }));
-            self.debug_rect_was_active = true;
-        } else if self.debug_rect_was_active {
-            self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode {
-                node: Self::DEBUG_RECT_NODE_ID,
-            }));
-            self.debug_rect_was_active = false;
-        }
-
-        std::mem::swap(&mut self.prev_visible_sprite_nodes, &mut visible_now);
-        visible_now.clear();
-        self.visible_sprite_nodes = visible_now;
-
-        sprite_states.clear();
-        self.sprite_states = sprite_states;
+        self.run_fixed_schedule();
     }
 
     #[inline]
@@ -383,7 +291,9 @@ impl Runtime {
     }
 
     pub fn mark_transform_dirty_recursive(&mut self, root: NodeID) {
-        let mut stack = vec![root];
+        let mut stack = std::mem::take(&mut self.traversal_stack);
+        stack.clear();
+        stack.push(root);
         while let Some(id) = stack.pop() {
             let Some(node) = self.nodes.get(id) else {
                 continue;
@@ -391,6 +301,25 @@ impl Runtime {
 
             self.dirty.mark_transform(id, node.spatial());
             stack.extend(node.children_slice().iter().copied());
+        }
+        self.traversal_stack = stack;
+    }
+
+    fn run_update_schedule(&mut self) {
+        let mut i = 0;
+        while i < self.schedules.update_ids.len() {
+            let id = self.schedules.update_ids[i];
+            self.call_update_script(id);
+            i += 1;
+        }
+    }
+
+    fn run_fixed_schedule(&mut self) {
+        let mut i = 0;
+        while i < self.schedules.fixed_ids.len() {
+            let id = self.schedules.fixed_ids[i];
+            self.call_fixed_update_script(id);
+            i += 1;
         }
     }
 
