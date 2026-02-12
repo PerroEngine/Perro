@@ -1,5 +1,5 @@
 use perro_app::{entry, winit_runner::WinitRunner};
-use perro_graphics::NullGraphics;
+use perro_graphics::PerroGraphics;
 use perro_runtime::RuntimeProject;
 use std::{env, path::PathBuf};
 
@@ -36,7 +36,7 @@ fn main() {
         i += 1;
     }
 
-    let graphics = NullGraphics::new();
+    let graphics = PerroGraphics::new();
     let app = entry::create_dev_app(graphics, project);
 
     WinitRunner::new().run(app, &name);

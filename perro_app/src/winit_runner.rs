@@ -110,6 +110,9 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             let window = event_loop
                 .create_window(attrs)
                 .expect("failed to create winit window");
+            let initial_size = window.inner_size();
+            self.app
+                .resize_surface(initial_size.width, initial_size.height);
             self.window = Some(window);
             let now = Instant::now();
             self.last_frame_start = now;
@@ -130,6 +133,15 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
         event: WindowEvent,
     ) {
         match event {
+            WindowEvent::Resized(size) => {
+                self.app.resize_surface(size.width, size.height);
+            }
+            WindowEvent::ScaleFactorChanged { .. } => {
+                if let Some(window) = &self.window {
+                    let size = window.inner_size();
+                    self.app.resize_surface(size.width, size.height);
+                }
+            }
             WindowEvent::RedrawRequested => {
                 let mut now = Instant::now();
                 if let Some(target) = target_frame_duration(self.fps_cap) {

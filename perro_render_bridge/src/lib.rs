@@ -24,7 +24,11 @@ pub enum RenderCommand {
         request: RenderRequestID,
         owner: NodeID,
     },
-    Draw {
+    Draw2DTexture {
+        texture: TextureID,
+        node: NodeID,
+    },
+    Draw3D {
         mesh: MeshID,
         material: MaterialID,
         node: NodeID,

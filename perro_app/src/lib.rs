@@ -40,14 +40,19 @@ impl<B: GraphicsBackend> App<B> {
 
     #[inline]
     pub fn present(&mut self) {
+        self.runtime.extract_render_2d_commands();
         self.runtime.drain_render_commands(&mut self.command_buffer);
         self.graphics.submit_many(self.command_buffer.drain(..));
 
-        self.graphics.drain_events(&mut self.event_buffer);
-        self.runtime
-            .apply_render_events(self.event_buffer.drain(..));
-
         self.graphics.draw_frame();
+
+        self.graphics.drain_events(&mut self.event_buffer);
+        self.runtime.apply_render_events(self.event_buffer.drain(..));
+    }
+
+    #[inline]
+    pub fn resize_surface(&mut self, width: u32, height: u32) {
+        self.graphics.resize(width, height);
     }
 
     pub fn frame(&mut self, delta_time: f32) {

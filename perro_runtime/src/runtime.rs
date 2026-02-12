@@ -4,8 +4,8 @@ use crate::{
     runtime_project::{ProviderMode, RuntimeProject},
 };
 use ahash::{AHashMap, AHashSet};
-use perro_core::Spatial;
-use perro_ids::NodeID;
+use perro_core::{SceneNodeData, Spatial};
+use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
 use std::sync::Arc;
 
@@ -73,6 +73,7 @@ impl ScriptSchedules {
 struct RenderState {
     pending_commands: Vec<RenderCommand>,
     resolved_requests: AHashMap<RenderRequestID, RuntimeRenderResult>,
+    inflight_requests: AHashSet<RenderRequestID>,
 }
 
 impl RenderState {
@@ -80,6 +81,7 @@ impl RenderState {
         Self {
             pending_commands: Vec::new(),
             resolved_requests: AHashMap::default(),
+            inflight_requests: AHashSet::default(),
         }
     }
 
@@ -94,18 +96,22 @@ impl RenderState {
     fn apply_event(&mut self, event: RenderEvent) {
         match event {
             RenderEvent::MeshCreated { request, id } => {
+                self.inflight_requests.remove(&request);
                 self.resolved_requests
                     .insert(request, RuntimeRenderResult::Mesh(id));
             }
             RenderEvent::TextureCreated { request, id } => {
+                self.inflight_requests.remove(&request);
                 self.resolved_requests
                     .insert(request, RuntimeRenderResult::Texture(id));
             }
             RenderEvent::MaterialCreated { request, id } => {
+                self.inflight_requests.remove(&request);
                 self.resolved_requests
                     .insert(request, RuntimeRenderResult::Material(id));
             }
             RenderEvent::Failed { request, reason } => {
+                self.inflight_requests.remove(&request);
                 self.resolved_requests
                     .insert(request, RuntimeRenderResult::Failed(reason));
             }
@@ -114,6 +120,14 @@ impl RenderState {
 
     fn take_result(&mut self, request: RenderRequestID) -> Option<RuntimeRenderResult> {
         self.resolved_requests.remove(&request)
+    }
+
+    fn is_inflight(&self, request: RenderRequestID) -> bool {
+        self.inflight_requests.contains(&request)
+    }
+
+    fn mark_inflight(&mut self, request: RenderRequestID) {
+        self.inflight_requests.insert(request);
     }
 }
 
@@ -157,6 +171,10 @@ impl DirtyState {
 }
 
 impl Runtime {
+    fn sprite_texture_request_id(node: NodeID) -> RenderRequestID {
+        RenderRequestID::new((node.as_u64() << 8) | 0x2D)
+    }
+
     pub fn new() -> Self {
         Self {
             time: Timing {
@@ -212,6 +230,56 @@ impl Runtime {
             let id = self.schedules.fixed_ids[i];
             self.call_fixed_update_script(id);
             i += 1;
+        }
+    }
+
+    pub fn extract_render_2d_commands(&mut self) {
+        let mut sprite_states: Vec<(NodeID, bool, TextureID)> = Vec::new();
+        for (id, node) in self.nodes.iter() {
+            if let SceneNodeData::Sprite2D(sprite) = &node.data {
+                sprite_states.push((id, sprite.visible, sprite.texture_id));
+            }
+        }
+
+        for (node_id, visible, mut texture_id) in sprite_states {
+            if !visible {
+                continue;
+            }
+
+            if texture_id.is_nil() {
+                let request = Self::sprite_texture_request_id(node_id);
+                if let Some(result) = self.take_render_result(request) {
+                    match result {
+                        RuntimeRenderResult::Texture(id) => {
+                            texture_id = id;
+                            if let Some(node) = self.nodes.get_mut(node_id) {
+                                if let SceneNodeData::Sprite2D(sprite) = &mut node.data {
+                                    sprite.texture_id = id;
+                                }
+                            }
+                        }
+                        RuntimeRenderResult::Failed(_) => {}
+                        RuntimeRenderResult::Mesh(_) | RuntimeRenderResult::Material(_) => {}
+                    }
+                }
+            }
+
+            if texture_id.is_nil() {
+                let request = Self::sprite_texture_request_id(node_id);
+                if !self.render.is_inflight(request) {
+                    self.render.mark_inflight(request);
+                    self.queue_render_command(RenderCommand::CreateTexture {
+                        request,
+                        owner: node_id,
+                    });
+                }
+                continue;
+            }
+
+            self.queue_render_command(RenderCommand::Draw2DTexture {
+                texture: texture_id,
+                node: node_id,
+            });
         }
     }
 
