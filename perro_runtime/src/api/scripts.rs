@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::Runtime;
 
 impl Runtime {
+    #[inline(always)]
     pub(crate) fn call_update_script(&mut self, id: NodeID) {
         let behavior = match self.scripts.get_instance(id) {
             Some(instance) => Arc::clone(&instance.behavior),
@@ -17,6 +18,7 @@ impl Runtime {
         }
     }
 
+    #[inline(always)]
     pub(crate) fn call_fixed_update_script(&mut self, id: NodeID) {
         let behavior = match self.scripts.get_instance(id) {
             Some(instance) => Arc::clone(&instance.behavior),

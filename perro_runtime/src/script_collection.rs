@@ -131,11 +131,21 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         }
     }
 
+    #[inline]
+    pub(crate) fn update_schedule_len(&self) -> usize {
+        self.update.len()
+    }
+
     pub(crate) fn append_fixed_update_ids(&self, out: &mut Vec<NodeID>) {
         out.reserve(self.fixed.len());
         for &i in &self.fixed {
             out.push(self.ids[i]);
         }
+    }
+
+    #[inline]
+    pub(crate) fn fixed_schedule_len(&self) -> usize {
+        self.fixed.len()
     }
 
     pub(crate) fn with_state<T: 'static, V, F>(&self, id: NodeID, f: F) -> Option<V>

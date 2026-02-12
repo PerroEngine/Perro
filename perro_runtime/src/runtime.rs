@@ -9,16 +9,17 @@ use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
 use std::sync::Arc;
 
 pub struct Runtime {
+    pub time: Timing,
+    provider_mode: ProviderMode,
     pub nodes: NodeArena,
     pub scripts: ScriptCollection<Self>,
-    pub time: Timing,
     project: Option<Arc<RuntimeProject>>,
-    provider_mode: ProviderMode,
     schedules: ScriptSchedules,
     render: RenderState,
 }
 
 pub struct Timing {
+    pub fixed_delta: f32,
     pub delta: f32,
     pub elapsed: f32,
 }
@@ -30,6 +31,7 @@ struct ScriptSchedules {
 }
 
 impl ScriptSchedules {
+    #[inline]
     fn new() -> Self {
         Self {
             update_ids: Vec::new(),
@@ -41,6 +43,11 @@ impl ScriptSchedules {
         &mut self,
         scripts: &ScriptCollection<R>,
     ) {
+        let needed = scripts.update_schedule_len();
+        if self.update_ids.capacity() < needed {
+            self.update_ids
+                .reserve_exact(needed - self.update_ids.capacity());
+        }
         self.update_ids.clear();
         scripts.append_update_ids(&mut self.update_ids);
     }
@@ -49,6 +56,11 @@ impl ScriptSchedules {
         &mut self,
         scripts: &ScriptCollection<R>,
     ) {
+        let needed = scripts.fixed_schedule_len();
+        if self.fixed_ids.capacity() < needed {
+            self.fixed_ids
+                .reserve_exact(needed - self.fixed_ids.capacity());
+        }
         self.fixed_ids.clear();
         scripts.append_fixed_update_ids(&mut self.fixed_ids);
     }
@@ -106,14 +118,15 @@ impl RenderState {
 impl Runtime {
     pub fn new() -> Self {
         Self {
-            nodes: NodeArena::new(),
-            scripts: ScriptCollection::new(),
             time: Timing {
+                fixed_delta: 0.0,
                 delta: 0.0,
                 elapsed: 0.0,
             },
-            project: None,
             provider_mode: ProviderMode::Dynamic,
+            nodes: NodeArena::new(),
+            scripts: ScriptCollection::new(),
+            project: None,
             schedules: ScriptSchedules::new(),
             render: RenderState::new(),
         }
@@ -134,6 +147,7 @@ impl Runtime {
         self.provider_mode
     }
 
+    #[inline]
     pub fn update(&mut self, delta_time: f32) {
         self.time.delta = delta_time;
         self.schedules.snapshot_update(&self.scripts);
@@ -146,8 +160,9 @@ impl Runtime {
         }
     }
 
-    pub fn fixed_update(&mut self, delta_time: f32) {
-        self.time.delta = delta_time;
+    #[inline]
+    pub fn fixed_update(&mut self, fixed_delta_time: f32) {
+        self.time.fixed_delta = fixed_delta_time;
         self.schedules.snapshot_fixed(&self.scripts);
 
         let mut i = 0;

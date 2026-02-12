@@ -7,6 +7,10 @@ impl TimeAPI for Runtime {
         self.time.delta
     }
 
+    fn get_fixed_delta(&self) -> f32 {
+        self.time.fixed_delta
+    }
+
     fn get_elapsed(&self) -> f32 {
         self.time.elapsed
     }

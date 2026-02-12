@@ -23,9 +23,23 @@ impl<B: GraphicsBackend> App<B> {
         Self::new(Runtime::new(), graphics)
     }
 
-    pub fn frame(&mut self, delta_time: f32) {
-        self.runtime.update(delta_time);
+    #[inline]
+    pub fn set_elapsed_time(&mut self, elapsed_time: f32) {
+        self.runtime.time.elapsed = elapsed_time;
+    }
 
+    #[inline]
+    pub fn update_runtime(&mut self, delta_time: f32) {
+        self.runtime.update(delta_time);
+    }
+
+    #[inline]
+    pub fn fixed_update_runtime(&mut self, fixed_delta_time: f32) {
+        self.runtime.fixed_update(fixed_delta_time);
+    }
+
+    #[inline]
+    pub fn present(&mut self) {
         self.runtime.drain_render_commands(&mut self.command_buffer);
         self.graphics
             .submit_many(self.command_buffer.drain(..));
@@ -35,6 +49,11 @@ impl<B: GraphicsBackend> App<B> {
             .apply_render_events(self.event_buffer.drain(..));
 
         self.graphics.draw_frame();
+    }
+
+    pub fn frame(&mut self, delta_time: f32) {
+        self.update_runtime(delta_time);
+        self.present();
     }
 }
 
