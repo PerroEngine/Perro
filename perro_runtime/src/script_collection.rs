@@ -65,19 +65,13 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
 
         if let Some(&i) = self.index.get(&id) {
             // replace in-place
-            self.instances[i] = ScriptInstance {
-                behavior,
-                state,
-            };
+            self.instances[i] = ScriptInstance { behavior, state };
             self.rebuild_schedules_for_index(i, flags);
             return;
         }
 
         let i = self.instances.len();
-        self.instances.push(ScriptInstance {
-            behavior,
-            state,
-        });
+        self.instances.push(ScriptInstance { behavior, state });
         self.ids.push(id);
         self.index.insert(id, i);
 

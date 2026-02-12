@@ -51,11 +51,13 @@ impl RenderBridge for NullGraphics {
             }
             RenderCommand::CreateTexture { request, .. } => {
                 let id = self.alloc_texture();
-                self.events.push(RenderEvent::TextureCreated { request, id });
+                self.events
+                    .push(RenderEvent::TextureCreated { request, id });
             }
             RenderCommand::CreateMaterial { request, .. } => {
                 let id = self.alloc_material();
-                self.events.push(RenderEvent::MaterialCreated { request, id });
+                self.events
+                    .push(RenderEvent::MaterialCreated { request, id });
             }
             RenderCommand::Draw { .. } => {
                 // Intentionally no-op in null backend.

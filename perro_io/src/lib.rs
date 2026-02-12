@@ -12,18 +12,23 @@ mod tests {
     use std::collections::HashMap;
     use std::fs;
     use std::io::{self, Cursor, Seek, SeekFrom};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use crate::brk::archive::BrkArchive;
     use crate::brk::common::{read_header, read_index_entry};
     use crate::brk::packer::build_brk;
 
+    static TEST_DIR_SEQ: AtomicU64 = AtomicU64::new(0);
+
     fn temp_test_dir() -> std::path::PathBuf {
+        let seq = TEST_DIR_SEQ.fetch_add(1, Ordering::Relaxed);
+        let pid = std::process::id();
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("perro_io_test_{nonce}"))
+        std::env::temp_dir().join(format!("perro_io_test_{pid}_{nonce}_{seq}"))
     }
 
     fn print_compression_stats(

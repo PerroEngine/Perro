@@ -41,8 +41,7 @@ impl<B: GraphicsBackend> App<B> {
     #[inline]
     pub fn present(&mut self) {
         self.runtime.drain_render_commands(&mut self.command_buffer);
-        self.graphics
-            .submit_many(self.command_buffer.drain(..));
+        self.graphics.submit_many(self.command_buffer.drain(..));
 
         self.graphics.drain_events(&mut self.event_buffer);
         self.runtime

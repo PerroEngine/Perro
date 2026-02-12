@@ -125,6 +125,29 @@ macro_rules! define_scene_nodes {
                     .map(|cow| cow.as_ref())
                     .unwrap_or(&[])
             }
+
+            pub fn with_typed_ref<T: NodeTypeDispatch, R>(
+                &self,
+                f: impl FnOnce(&T) -> R,
+            ) -> Option<R> {
+                T::with_ref(&self.data, f)
+            }
+
+            pub fn with_typed_mut<T: NodeTypeDispatch, R>(
+                &mut self,
+                f: impl FnOnce(&mut T) -> R,
+            ) -> Option<R> {
+                T::with_mut(&mut self.data, f)
+            }
+        }
+
+        pub trait NodeTypeDispatch: Sized {
+            const NODE_TYPE: NodeType;
+            const SPATIAL: Spatial;
+
+            fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R>;
+            fn with_mut<R>(data: &mut SceneNodeData, f: impl FnOnce(&mut Self) -> R)
+                -> Option<R>;
         }
 
         impl Default for NodeType {
@@ -184,6 +207,68 @@ macro_rules! define_scene_nodes {
                 )
             }
         }
+
+        $(impl From<$ty_2d> for SceneNodeData {
+            fn from(value: $ty_2d) -> Self {
+                SceneNodeData::$variant_2d(value)
+            }
+        })*
+
+        $(impl From<$ty_3d> for SceneNodeData {
+            fn from(value: $ty_3d) -> Self {
+                SceneNodeData::$variant_3d(value)
+            }
+        })*
+
+        impl From<SceneNodeData> for SceneNode {
+            fn from(value: SceneNodeData) -> Self {
+                SceneNode::new(value)
+            }
+        }
+
+        $(impl NodeTypeDispatch for $ty_2d {
+            const NODE_TYPE: NodeType = NodeType::$variant_2d;
+            const SPATIAL: Spatial = Spatial::TwoD;
+
+            fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
+                match data {
+                    SceneNodeData::$variant_2d(inner) => Some(f(inner)),
+                    _ => None,
+                }
+            }
+
+            fn with_mut<R>(
+                data: &mut SceneNodeData,
+                f: impl FnOnce(&mut Self) -> R,
+            ) -> Option<R> {
+                match data {
+                    SceneNodeData::$variant_2d(inner) => Some(f(inner)),
+                    _ => None,
+                }
+            }
+        })*
+
+        $(impl NodeTypeDispatch for $ty_3d {
+            const NODE_TYPE: NodeType = NodeType::$variant_3d;
+            const SPATIAL: Spatial = Spatial::ThreeD;
+
+            fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
+                match data {
+                    SceneNodeData::$variant_3d(inner) => Some(f(inner)),
+                    _ => None,
+                }
+            }
+
+            fn with_mut<R>(
+                data: &mut SceneNodeData,
+                f: impl FnOnce(&mut Self) -> R,
+            ) -> Option<R> {
+                match data {
+                    SceneNodeData::$variant_3d(inner) => Some(f(inner)),
+                    _ => None,
+                }
+            }
+        })*
     };
 }
 
@@ -202,5 +287,72 @@ define_scene_nodes! {
     3d: {
         Node3D => Node3D,
         MeshInstance3D => MeshInstance3D,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn with_typed_ref_returns_some_for_matching_type() {
+        let scene = SceneNode::new(SceneNodeData::Node2D(Node2D::new()));
+        let visible = scene.with_typed_ref::<Node2D, _>(|n| n.visible);
+        assert_eq!(visible, Some(true));
+    }
+
+    #[test]
+    fn with_typed_ref_returns_none_for_mismatched_type() {
+        let scene = SceneNode::new(SceneNodeData::Node2D(Node2D::new()));
+        let value = scene.with_typed_ref::<Node3D, _>(|_| 1usize);
+        assert_eq!(value, None);
+    }
+
+    #[test]
+    fn with_typed_mut_applies_mutation_for_matching_type() {
+        let mut scene = SceneNode::new(SceneNodeData::Node2D(Node2D::new()));
+
+        let result = scene.with_typed_mut::<Node2D, _>(|n| {
+            n.z_index = 42;
+        });
+
+        assert!(result.is_some());
+        let z_index = scene.with_typed_ref::<Node2D, _>(|n| n.z_index);
+        assert_eq!(z_index, Some(42));
+    }
+
+    #[test]
+    fn with_typed_mut_returns_none_for_mismatched_type() {
+        let mut scene = SceneNode::new(SceneNodeData::Node2D(Node2D::new()));
+
+        let result = scene.with_typed_mut::<Node3D, _>(|_| {});
+        assert!(result.is_none());
+
+        let z_index = scene.with_typed_ref::<Node2D, _>(|n| n.z_index);
+        assert_eq!(z_index, Some(0));
+    }
+
+    #[test]
+    fn node_type_dispatch_constants_match_expected_variants() {
+        assert_eq!(<Node2D as NodeTypeDispatch>::NODE_TYPE, NodeType::Node2D);
+        assert_eq!(<Node2D as NodeTypeDispatch>::SPATIAL, Spatial::TwoD);
+
+        assert_eq!(
+            <MeshInstance3D as NodeTypeDispatch>::NODE_TYPE,
+            NodeType::MeshInstance3D
+        );
+        assert_eq!(
+            <MeshInstance3D as NodeTypeDispatch>::SPATIAL,
+            Spatial::ThreeD
+        );
+    }
+
+    #[test]
+    fn from_impls_convert_payload_to_scene_node_data_and_scene_node() {
+        let data: SceneNodeData = Node2D::new().into();
+        assert!(matches!(data, SceneNodeData::Node2D(_)));
+
+        let scene: SceneNode = data.into();
+        assert!(matches!(scene.data, SceneNodeData::Node2D(_)));
     }
 }

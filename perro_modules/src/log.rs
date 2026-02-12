@@ -46,7 +46,12 @@ fn format_error(message: impl Display, with_color: bool) -> String {
     format_prefixed("ERROR", RED, message, with_color)
 }
 
-fn format_prefixed(level: &str, color_code: &str, message: impl Display, with_color: bool) -> String {
+fn format_prefixed(
+    level: &str,
+    color_code: &str,
+    message: impl Display,
+    with_color: bool,
+) -> String {
     if with_color {
         format!("\x1b[{color_code}m[{level}]\x1b[0m {message}")
     } else {
@@ -75,17 +80,25 @@ mod tests {
 
     #[test]
     fn format_info_with_color() {
-        assert_eq!(format_info("hello", true), "\u{1b}[96m[INFO]\u{1b}[0m hello");
+        assert_eq!(
+            format_info("hello", true),
+            "\u{1b}[96m[INFO]\u{1b}[0m hello"
+        );
     }
 
     #[test]
     fn format_warn_with_color() {
-        assert_eq!(format_warn("careful", true), "\u{1b}[93m[WARN]\u{1b}[0m careful");
+        assert_eq!(
+            format_warn("careful", true),
+            "\u{1b}[93m[WARN]\u{1b}[0m careful"
+        );
     }
 
     #[test]
     fn format_error_with_color() {
-        assert_eq!(format_error("boom", true), "\u{1b}[91m[ERROR]\u{1b}[0m boom");
+        assert_eq!(
+            format_error("boom", true),
+            "\u{1b}[91m[ERROR]\u{1b}[0m boom"
+        );
     }
-
 }

@@ -2,7 +2,10 @@ use crate::App;
 use perro_graphics::GraphicsBackend;
 use perro_runtime::{ProviderMode, Runtime, RuntimeProject};
 
-pub fn create_runtime_from_project(project: RuntimeProject, provider_mode: ProviderMode) -> Runtime {
+pub fn create_runtime_from_project(
+    project: RuntimeProject,
+    provider_mode: ProviderMode,
+) -> Runtime {
     Runtime::from_project(project, provider_mode)
 }
 
@@ -19,7 +22,10 @@ pub fn create_app_from_project<B: GraphicsBackend>(
     project: RuntimeProject,
     provider_mode: ProviderMode,
 ) -> App<B> {
-    App::new(create_runtime_from_project(project, provider_mode), graphics)
+    App::new(
+        create_runtime_from_project(project, provider_mode),
+        graphics,
+    )
 }
 
 pub fn create_dev_app<B: GraphicsBackend>(graphics: B, project: RuntimeProject) -> App<B> {

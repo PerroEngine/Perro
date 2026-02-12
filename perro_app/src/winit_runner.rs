@@ -25,11 +25,7 @@ fn target_frame_duration(fps_cap: f32) -> Option<Duration> {
         return None;
     }
     let d = Duration::from_secs_f64(secs);
-    if d.is_zero() {
-        None
-    } else {
-        Some(d)
-    }
+    if d.is_zero() { None } else { Some(d) }
 }
 
 pub struct WinitRunner;

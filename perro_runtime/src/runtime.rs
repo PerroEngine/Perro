@@ -3,7 +3,8 @@ use crate::{
     render_result::RuntimeRenderResult,
     runtime_project::{ProviderMode, RuntimeProject},
 };
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
+use perro_core::Spatial;
 use perro_ids::NodeID;
 use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
 use std::sync::Arc;
@@ -16,6 +17,7 @@ pub struct Runtime {
     project: Option<Arc<RuntimeProject>>,
     schedules: ScriptSchedules,
     render: RenderState,
+    dirty: DirtyState,
 }
 
 pub struct Timing {
@@ -115,6 +117,45 @@ impl RenderState {
     }
 }
 
+/// Runtime-side dirty tracking for downstream systems (rendering, transform propagation).
+struct DirtyState {
+    rerender_nodes: AHashSet<NodeID>,
+    dirty_2d_transforms: AHashSet<NodeID>,
+    dirty_3d_transforms: AHashSet<NodeID>,
+}
+
+impl DirtyState {
+    fn new() -> Self {
+        Self {
+            rerender_nodes: AHashSet::default(),
+            dirty_2d_transforms: AHashSet::default(),
+            dirty_3d_transforms: AHashSet::default(),
+        }
+    }
+
+    fn mark_rerender(&mut self, id: NodeID) {
+        self.rerender_nodes.insert(id);
+    }
+
+    fn mark_transform(&mut self, id: NodeID, spatial: Spatial) {
+        match spatial {
+            Spatial::TwoD => {
+                self.dirty_2d_transforms.insert(id);
+            }
+            Spatial::ThreeD => {
+                self.dirty_3d_transforms.insert(id);
+            }
+            Spatial::None => {}
+        }
+    }
+
+    fn clear(&mut self) {
+        self.rerender_nodes.clear();
+        self.dirty_2d_transforms.clear();
+        self.dirty_3d_transforms.clear();
+    }
+}
+
 impl Runtime {
     pub fn new() -> Self {
         Self {
@@ -129,6 +170,7 @@ impl Runtime {
             project: None,
             schedules: ScriptSchedules::new(),
             render: RenderState::new(),
+            dirty: DirtyState::new(),
         }
     }
 
@@ -196,6 +238,26 @@ impl Runtime {
 
     pub fn take_render_result(&mut self, request: RenderRequestID) -> Option<RuntimeRenderResult> {
         self.render.take_result(request)
+    }
+
+    pub fn mark_needs_rerender(&mut self, id: NodeID) {
+        self.dirty.mark_rerender(id);
+    }
+
+    pub fn mark_transform_dirty_recursive(&mut self, root: NodeID) {
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            let Some(node) = self.nodes.get(id) else {
+                continue;
+            };
+
+            self.dirty.mark_transform(id, node.spatial());
+            stack.extend(node.children_slice().iter().copied());
+        }
+    }
+
+    pub fn clear_dirty_flags(&mut self) {
+        self.dirty.clear();
     }
 }
 
