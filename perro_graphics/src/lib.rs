@@ -1,5 +1,5 @@
 mod backend;
-mod renderer_2d;
 mod resources;
+pub mod two_d;
 
 pub use backend::{GraphicsBackend, PerroGraphics};

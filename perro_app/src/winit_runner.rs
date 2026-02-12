@@ -1,5 +1,6 @@
 use crate::App;
 use perro_graphics::GraphicsBackend;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::{
     event::WindowEvent,
@@ -7,7 +8,7 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
-const DEFAULT_FPS_CAP: f32 = 120.0;
+const DEFAULT_FPS_CAP: f32 = 60.0;
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 8;
 const LOG_INTERVAL_SECONDS: f32 = 2.5;
@@ -52,7 +53,9 @@ impl WinitRunner {
     ) {
         let event_loop = EventLoop::new().expect("failed to create winit event loop");
         let mut state = RunnerState::new(app, title, fps_cap, fixed_timestep);
-        let _ = event_loop.run_app(&mut state);
+        event_loop
+            .run_app(&mut state)
+            .expect("winit event loop failed");
     }
 
     pub fn event_loop_type_name() -> &'static str {
@@ -69,7 +72,7 @@ impl Default for WinitRunner {
 struct RunnerState<B: GraphicsBackend> {
     app: App<B>,
     title: String,
-    window: Option<Window>,
+    window: Option<Arc<Window>>,
     last_frame_start: Instant,
     next_frame_deadline: Instant,
     run_start: Instant,
@@ -107,9 +110,10 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
             let attrs = WindowAttributes::default().with_title(self.title.clone());
-            let window = event_loop
+            let window = Arc::new(event_loop
                 .create_window(attrs)
-                .expect("failed to create winit window");
+                .expect("failed to create winit window"));
+            self.app.attach_window(window.clone());
             let initial_size = window.inner_size();
             self.app
                 .resize_surface(initial_size.width, initial_size.height);
@@ -129,9 +133,17 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
-        _window_id: winit::window::WindowId,
+        window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
+        if self
+            .window
+            .as_ref()
+            .is_some_and(|window| window.id() != window_id)
+        {
+            return;
+        }
+
         match event {
             WindowEvent::Resized(size) => {
                 self.app.resize_surface(size.width, size.height);
@@ -242,7 +254,10 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
         }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if event_loop.exiting() {
+            return;
+        }
         if let Some(window) = &self.window {
             window.request_redraw();
         }

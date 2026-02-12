@@ -10,6 +10,31 @@ impl RenderRequestID {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Camera2DState {
+    pub position: [f32; 2],
+    pub rotation_radians: f32,
+    pub zoom: f32,
+}
+
+impl Default for Camera2DState {
+    fn default() -> Self {
+        Self {
+            position: [0.0, 0.0],
+            rotation_radians: 0.0,
+            zoom: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Rect2DCommand {
+    pub center: [f32; 2],
+    pub size: [f32; 2],
+    pub color: [f32; 4],
+    pub z_index: i32,
+}
+
 #[derive(Debug, Clone)]
 pub enum RenderCommand {
     CreateMesh {
@@ -27,6 +52,13 @@ pub enum RenderCommand {
     Draw2DTexture {
         texture: TextureID,
         node: NodeID,
+    },
+    Draw2DRect {
+        node: NodeID,
+        rect: Rect2DCommand,
+    },
+    SetCamera2D {
+        camera: Camera2DState,
     },
     Draw3D {
         mesh: MeshID,

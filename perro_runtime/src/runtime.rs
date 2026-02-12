@@ -6,7 +6,7 @@ use crate::{
 use ahash::{AHashMap, AHashSet};
 use perro_core::{SceneNodeData, Spatial};
 use perro_ids::{NodeID, TextureID};
-use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
+use perro_render_bridge::{Rect2DCommand, RenderCommand, RenderEvent, RenderRequestID};
 use std::sync::Arc;
 
 pub struct Runtime {
@@ -16,6 +16,8 @@ pub struct Runtime {
     pub scripts: ScriptCollection<Self>,
     project: Option<Arc<RuntimeProject>>,
     schedules: ScriptSchedules,
+    sprite_states: Vec<(NodeID, bool, TextureID)>,
+    debug_draw_rect: bool,
     render: RenderState,
     dirty: DirtyState,
 }
@@ -187,6 +189,8 @@ impl Runtime {
             scripts: ScriptCollection::new(),
             project: None,
             schedules: ScriptSchedules::new(),
+            sprite_states: Vec::new(),
+            debug_draw_rect: false,
             render: RenderState::new(),
             dirty: DirtyState::new(),
         }
@@ -234,14 +238,15 @@ impl Runtime {
     }
 
     pub fn extract_render_2d_commands(&mut self) {
-        let mut sprite_states: Vec<(NodeID, bool, TextureID)> = Vec::new();
+        let mut sprite_states = std::mem::take(&mut self.sprite_states);
+        sprite_states.clear();
         for (id, node) in self.nodes.iter() {
             if let SceneNodeData::Sprite2D(sprite) = &node.data {
                 sprite_states.push((id, sprite.visible, sprite.texture_id));
             }
         }
 
-        for (node_id, visible, mut texture_id) in sprite_states {
+        for (node_id, visible, mut texture_id) in sprite_states.iter().copied() {
             if !visible {
                 continue;
             }
@@ -281,6 +286,26 @@ impl Runtime {
                 node: node_id,
             });
         }
+
+        if self.debug_draw_rect {
+            self.queue_render_command(RenderCommand::Draw2DRect {
+                node: NodeID::ROOT,
+                rect: Rect2DCommand {
+                    center: [0.0, 0.0],
+                    size: [120.0, 120.0],
+                    color: [1.0, 0.2, 0.2, 1.0],
+                    z_index: 0,
+                },
+            });
+        }
+
+        sprite_states.clear();
+        self.sprite_states = sprite_states;
+    }
+
+    #[inline]
+    pub fn set_debug_draw_rect(&mut self, enabled: bool) {
+        self.debug_draw_rect = enabled;
     }
 
     pub fn queue_render_command(&mut self, command: RenderCommand) {

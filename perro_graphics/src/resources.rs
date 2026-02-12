@@ -1,51 +1,112 @@
 use perro_ids::{MaterialID, MeshID, TextureID};
-use std::collections::HashSet;
+
+#[derive(Default)]
+struct SlotArena {
+    generations: Vec<u32>,
+    occupied: Vec<bool>,
+    free_slots: Vec<usize>,
+}
+
+impl SlotArena {
+    #[inline]
+    fn create_parts(&mut self) -> (u32, u32) {
+        if let Some(slot) = self.free_slots.pop() {
+            self.generations[slot] = self.generations[slot].wrapping_add(1);
+            self.occupied[slot] = true;
+            return ((slot + 1) as u32, self.generations[slot]);
+        }
+
+        let slot = self.generations.len();
+        self.generations.push(0);
+        self.occupied.push(true);
+        ((slot + 1) as u32, 0)
+    }
+
+    #[inline]
+    fn contains_parts(&self, index: u32, generation: u32) -> bool {
+        if index == 0 {
+            return false;
+        }
+        let idx = index as usize;
+        if idx == 0 {
+            return false;
+        }
+        let slot = idx - 1;
+        self.occupied.get(slot).copied().unwrap_or(false)
+            && self.generations.get(slot).copied() == Some(generation)
+    }
+
+    #[cfg(test)]
+    #[inline]
+    fn remove_parts(&mut self, index: u32, generation: u32) -> bool {
+        if !self.contains_parts(index, generation) {
+            return false;
+        }
+        let slot = index as usize - 1;
+        self.occupied[slot] = false;
+        self.free_slots.push(slot);
+        true
+    }
+}
 
 #[derive(Default)]
 pub struct ResourceStore {
-    next_mesh_index: u32,
-    next_texture_index: u32,
-    next_material_index: u32,
-    live_meshes: HashSet<MeshID>,
-    live_textures: HashSet<TextureID>,
-    live_materials: HashSet<MaterialID>,
+    meshes: SlotArena,
+    textures: SlotArena,
+    materials: SlotArena,
 }
 
 impl ResourceStore {
     pub fn new() -> Self {
-        Self {
-            next_mesh_index: 1,
-            next_texture_index: 1,
-            next_material_index: 1,
-            live_meshes: HashSet::new(),
-            live_textures: HashSet::new(),
-            live_materials: HashSet::new(),
-        }
+        Self::default()
     }
 
+    #[inline]
     pub fn create_mesh(&mut self) -> MeshID {
-        let id = MeshID::from_parts(self.next_mesh_index, 0);
-        self.next_mesh_index = self.next_mesh_index.saturating_add(1);
-        self.live_meshes.insert(id);
-        id
+        let (index, generation) = self.meshes.create_parts();
+        MeshID::from_parts(index, generation)
     }
 
+    #[inline]
     pub fn create_texture(&mut self) -> TextureID {
-        let id = TextureID::from_parts(self.next_texture_index, 0);
-        self.next_texture_index = self.next_texture_index.saturating_add(1);
-        self.live_textures.insert(id);
-        id
+        let (index, generation) = self.textures.create_parts();
+        TextureID::from_parts(index, generation)
     }
 
+    #[inline]
     pub fn create_material(&mut self) -> MaterialID {
-        let id = MaterialID::from_parts(self.next_material_index, 0);
-        self.next_material_index = self.next_material_index.saturating_add(1);
-        self.live_materials.insert(id);
-        id
+        let (index, generation) = self.materials.create_parts();
+        MaterialID::from_parts(index, generation)
     }
-    
+
     #[inline]
     pub fn has_texture(&self, id: TextureID) -> bool {
-        self.live_textures.contains(&id)
+        self.textures.contains_parts(id.index(), id.generation())
+    }
+
+    #[cfg(test)]
+    #[inline]
+    fn remove_texture_for_test(&mut self, id: TextureID) -> bool {
+        self.textures.remove_parts(id.index(), id.generation())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ResourceStore;
+
+    #[test]
+    fn texture_slot_reuse_bumps_generation() {
+        let mut store = ResourceStore::new();
+        let first = store.create_texture();
+        assert!(store.has_texture(first));
+        assert!(store.remove_texture_for_test(first));
+        assert!(!store.has_texture(first));
+
+        let second = store.create_texture();
+        assert_eq!(first.index(), second.index());
+        assert_ne!(first.generation(), second.generation());
+        assert!(!store.has_texture(first));
+        assert!(store.has_texture(second));
     }
 }

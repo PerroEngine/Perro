@@ -1,9 +1,17 @@
-use crate::{renderer_2d::Renderer2D, resources::ResourceStore};
+use crate::{
+    resources::ResourceStore,
+    two_d::{
+        gpu::Gpu2D,
+        renderer::{RectInstanceGpu, Renderer2D},
+    },
+};
 use perro_render_bridge::{RenderBridge, RenderCommand, RenderEvent};
+use std::sync::Arc;
+use winit::window::Window;
 
 pub trait GraphicsBackend: RenderBridge {
-    #[inline]
-    fn resize(&mut self, _width: u32, _height: u32) {}
+    fn attach_window(&mut self, window: Arc<Window>);
+    fn resize(&mut self, width: u32, height: u32);
 
     fn draw_frame(&mut self);
 }
@@ -28,6 +36,8 @@ pub struct PerroGraphics {
     frame: FrameState,
     resources: ResourceStore,
     renderer_2d: Renderer2D,
+    gpu: Option<Gpu2D>,
+    rect_instances: Vec<RectInstanceGpu>,
     events: Vec<RenderEvent>,
     viewport: (u32, u32),
 }
@@ -38,6 +48,8 @@ impl PerroGraphics {
             frame: FrameState::default(),
             resources: ResourceStore::new(),
             renderer_2d: Renderer2D::new(),
+            gpu: None,
+            rect_instances: Vec::new(),
             events: Vec::new(),
             viewport: (0, 0),
         }
@@ -60,11 +72,14 @@ impl PerroGraphics {
                     self.events
                         .push(RenderEvent::MaterialCreated { request, id });
                 }
-                RenderCommand::Draw2DTexture {
-                    texture,
-                    node,
-                } => {
-                    self.renderer_2d.queue_texture(texture, node);
+                RenderCommand::Draw2DTexture { texture, .. } => {
+                    self.renderer_2d.queue_texture(texture);
+                }
+                RenderCommand::Draw2DRect { rect, .. } => {
+                    self.renderer_2d.queue_rect(rect);
+                }
+                RenderCommand::SetCamera2D { camera } => {
+                    self.renderer_2d.set_camera(camera);
                 }
                 RenderCommand::Draw3D { .. } => {
                     // 3D renderer is intentionally not active in the minimal backend yet.
@@ -79,19 +94,49 @@ impl RenderBridge for PerroGraphics {
         self.frame.queue(command);
     }
 
+    fn submit_many<I>(&mut self, commands: I)
+    where
+        I: IntoIterator<Item = RenderCommand>,
+    {
+        self.frame.pending_commands.extend(commands);
+    }
+
     fn drain_events(&mut self, out: &mut Vec<RenderEvent>) {
         out.append(&mut self.events);
     }
 }
 
 impl GraphicsBackend for PerroGraphics {
+    fn attach_window(&mut self, window: Arc<Window>) {
+        if self.gpu.is_none() {
+            let mut gpu = Gpu2D::new(window);
+            if let Some(gpu_ref) = gpu.as_mut() {
+                let [vw, vh] = Gpu2D::virtual_size();
+                self.renderer_2d.set_virtual_viewport(vw, vh);
+                gpu_ref.resize(self.viewport.0.max(1), self.viewport.1.max(1));
+            }
+            self.gpu = gpu;
+        }
+    }
+
     fn resize(&mut self, width: u32, height: u32) {
         self.viewport = (width, height);
+        self.renderer_2d.set_viewport(width, height);
+        if let Some(gpu) = &mut self.gpu {
+            gpu.resize(width.max(1), height.max(1));
+        }
     }
 
     fn draw_frame(&mut self) {
         let commands = self.frame.take_pending();
         self.process_commands(commands);
-        let _stats = self.renderer_2d.flush(&self.resources);
+        let camera = self
+            .renderer_2d
+            .prepare_frame(&self.resources, &mut self.rect_instances)
+            .0;
+
+        if let Some(gpu) = &mut self.gpu {
+            gpu.render(camera, &self.rect_instances);
+        }
     }
 }

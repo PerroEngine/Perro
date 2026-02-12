@@ -1,6 +1,8 @@
 use perro_graphics::GraphicsBackend;
 use perro_render_bridge::RenderEvent;
 use perro_runtime::Runtime;
+use std::sync::Arc;
+use winit::window::Window;
 
 pub struct App<B: GraphicsBackend> {
     pub runtime: Runtime,
@@ -26,6 +28,16 @@ impl<B: GraphicsBackend> App<B> {
     #[inline]
     pub fn set_elapsed_time(&mut self, elapsed_time: f32) {
         self.runtime.time.elapsed = elapsed_time;
+    }
+
+    #[inline]
+    pub fn set_debug_draw_rect(&mut self, enabled: bool) {
+        self.runtime.set_debug_draw_rect(enabled);
+    }
+
+    #[inline]
+    pub fn attach_window(&mut self, window: Arc<Window>) {
+        self.graphics.attach_window(window);
     }
 
     #[inline]
