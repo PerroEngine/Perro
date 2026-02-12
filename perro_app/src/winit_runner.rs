@@ -13,7 +13,6 @@ const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 8;
 const LOG_INTERVAL_SECONDS: f32 = 2.5;
 const FPS_CAP_COMPENSATION: f32 = 1.01;
-const SPIN_TAIL_THRESHOLD: Duration = Duration::from_micros(500);
 
 #[inline]
 fn target_frame_duration(fps_cap: f32) -> Option<Duration> {
@@ -78,6 +77,8 @@ struct RunnerState<B: GraphicsBackend> {
     run_start: Instant,
     batch_start: Instant,
     batch_work: Duration,
+    batch_runtime_update: Duration,
+    batch_present: Duration,
     batch_sim_delta_seconds: f64,
     fixed_timestep: Option<f32>,
     fps_cap: f32,
@@ -101,6 +102,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
             batch_frames: 0,
             batch_start: now,
             batch_work: Duration::ZERO,
+            batch_runtime_update: Duration::ZERO,
+            batch_present: Duration::ZERO,
             batch_sim_delta_seconds: 0.0,
         }
     }
@@ -126,6 +129,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             self.batch_start = now;
             self.batch_frames = 0;
             self.batch_work = Duration::ZERO;
+            self.batch_runtime_update = Duration::ZERO;
+            self.batch_present = Duration::ZERO;
             self.batch_sim_delta_seconds = 0.0;
         }
     }
@@ -155,27 +160,19 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 }
             }
             WindowEvent::RedrawRequested => {
-                let mut now = Instant::now();
+                let now = Instant::now();
                 if let Some(target) = target_frame_duration(self.fps_cap) {
                     if self.next_frame_deadline <= self.last_frame_start {
                         self.next_frame_deadline = self.last_frame_start + target;
                     }
 
                     if now < self.next_frame_deadline {
-                        let remaining = self.next_frame_deadline - now;
-                        if remaining > SPIN_TAIL_THRESHOLD {
-                            std::thread::sleep(remaining - SPIN_TAIL_THRESHOLD);
-                        }
-                        while Instant::now() < self.next_frame_deadline {
-                            std::hint::spin_loop();
-                        }
-                        now = Instant::now();
+                        // Skip this redraw without blocking event handling; we'll request another
+                        // redraw in about_to_wait and render once the deadline is reached.
+                        return;
                     }
 
-                    self.next_frame_deadline += target;
-                    while self.next_frame_deadline <= now {
-                        self.next_frame_deadline += target;
-                    }
+                    self.next_frame_deadline = now + target;
                 } else {
                     // Uncapped mode for tiny/invalid frame targets.
                     self.next_frame_deadline = now;
@@ -190,11 +187,16 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 let mut simulated_delta_seconds = frame_delta.as_secs_f64();
 
                 let work_start = Instant::now();
+                let mut runtime_update_duration = Duration::ZERO;
+                let present_start;
+                let present_duration;
                 if let Some(step) = self.fixed_timestep {
                     self.fixed_accumulator += frame_delta.as_secs_f32();
                     let mut steps = 0u32;
                     while self.fixed_accumulator >= step && steps < MAX_FIXED_STEPS_PER_FRAME {
+                        let update_start = Instant::now();
                         self.app.fixed_update_runtime(step);
+                        runtime_update_duration += update_start.elapsed();
                         self.fixed_accumulator -= step;
                         steps += 1;
                     }
@@ -202,10 +204,17 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                         // Drop excess accumulated time to avoid spiral-of-death behavior.
                         self.fixed_accumulator = 0.0;
                     }
+                    present_start = Instant::now();
                     self.app.present();
+                    present_duration = present_start.elapsed();
                     simulated_delta_seconds = step as f64 * steps as f64;
                 } else {
-                    self.app.frame(frame_delta.as_secs_f32());
+                    let update_start = Instant::now();
+                    self.app.update_runtime(frame_delta.as_secs_f32());
+                    runtime_update_duration = update_start.elapsed();
+                    present_start = Instant::now();
+                    self.app.present();
+                    present_duration = present_start.elapsed();
                 }
                 let work_duration = work_start.elapsed();
 
@@ -213,29 +222,32 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
 
                 self.batch_frames = self.batch_frames.saturating_add(1);
                 self.batch_work += work_duration;
+                self.batch_runtime_update += runtime_update_duration;
+                self.batch_present += present_duration;
                 self.batch_sim_delta_seconds += simulated_delta_seconds;
 
                 let batch_elapsed_secs = frame_end.duration_since(self.batch_start).as_secs_f32();
                 if batch_elapsed_secs >= LOG_INTERVAL_SECONDS && self.batch_frames > 0 {
-                    let batch_elapsed = frame_end.duration_since(self.batch_start);
-                    let capped_fps = self.batch_frames as f32 / batch_elapsed.as_secs_f32();
                     let work_ms = self.batch_work.as_secs_f64() * 1_000.0;
                     let avg_work_us = (work_ms * 1_000.0) / self.batch_frames as f64;
+                    let runtime_update_us = self.batch_runtime_update.as_secs_f64() * 1_000_000.0;
+                    let avg_runtime_update_ns =
+                        self.batch_runtime_update.as_nanos() as f64 / self.batch_frames as f64;
+                    let present_ms = self.batch_present.as_secs_f64() * 1_000.0;
+                    let avg_present_us = (present_ms * 1_000.0) / self.batch_frames as f64;
                     let loop_fps = if self.batch_work.is_zero() {
                         f64::INFINITY
                     } else {
                         self.batch_frames as f64 / self.batch_work.as_secs_f64()
                     };
-                    let delta_ms = frame_delta.as_secs_f64() * 1000.0;
-                    let avg_sim_delta_ms =
-                        (self.batch_sim_delta_seconds * 1000.0) / self.batch_frames as f64;
 
                     println!(
-                        "delta: {:.3}ms | sim_avg: {:.3}ms | capped_fps: {:.2} | {} loops work: {:.3}ms total ({:.3}us avg, {:.1} uncapped eq)",
-                        delta_ms,
-                        avg_sim_delta_ms,
-                        capped_fps,
+                        "{} loops | update: {:.3}us total ({:.1}ns avg) | present: {:.3}ms total ({:.3}us avg) | total: {:.3}ms total ({:.3}us avg, {:.1} uncapped eq)",
                         self.batch_frames,
+                        runtime_update_us,
+                        avg_runtime_update_ns,
+                        present_ms,
+                        avg_present_us,
                         work_ms,
                         avg_work_us,
                         loop_fps
@@ -243,6 +255,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
 
                     self.batch_frames = 0;
                     self.batch_work = Duration::ZERO;
+                    self.batch_runtime_update = Duration::ZERO;
+                    self.batch_present = Duration::ZERO;
                     self.batch_sim_delta_seconds = 0.0;
                     self.batch_start = frame_end;
                 }

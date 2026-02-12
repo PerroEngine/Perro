@@ -21,6 +21,7 @@ pub struct Runtime {
     sprite_states: Vec<(NodeID, bool, TextureID)>,
     visible_sprite_nodes: AHashSet<NodeID>,
     prev_visible_sprite_nodes: AHashSet<NodeID>,
+    retained_sprite_textures: AHashMap<NodeID, TextureID>,
     removed_sprite_nodes: Vec<NodeID>,
     debug_draw_rect: bool,
     debug_rect_was_active: bool,
@@ -179,6 +180,8 @@ impl DirtyState {
 }
 
 impl Runtime {
+    const DEBUG_RECT_NODE_ID: NodeID = NodeID::from_parts(u32::MAX, 0);
+
     fn sprite_texture_request_id(node: NodeID) -> RenderRequestID {
         RenderRequestID::new((node.as_u64() << 8) | 0x2D)
     }
@@ -198,6 +201,7 @@ impl Runtime {
             sprite_states: Vec::new(),
             visible_sprite_nodes: AHashSet::default(),
             prev_visible_sprite_nodes: AHashSet::default(),
+            retained_sprite_textures: AHashMap::default(),
             removed_sprite_nodes: Vec::new(),
             debug_draw_rect: false,
             debug_rect_was_active: false,
@@ -294,10 +298,17 @@ impl Runtime {
                 continue;
             }
 
-            self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertTexture {
-                texture: texture_id,
-                node: node_id,
-            }));
+            let needs_upsert = self
+                .retained_sprite_textures
+                .get(&node_id)
+                .is_none_or(|cached| *cached != texture_id);
+            if needs_upsert {
+                self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertTexture {
+                    texture: texture_id,
+                    node: node_id,
+                }));
+                self.retained_sprite_textures.insert(node_id, texture_id);
+            }
             visible_now.insert(node_id);
         }
 
@@ -308,11 +319,12 @@ impl Runtime {
         }
         while let Some(node) = self.removed_sprite_nodes.pop() {
             self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+            self.retained_sprite_textures.remove(&node);
         }
 
-        if self.debug_draw_rect {
+        if self.debug_draw_rect && !self.debug_rect_was_active {
             self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertRect {
-                node: NodeID::ROOT,
+                node: Self::DEBUG_RECT_NODE_ID,
                 rect: Rect2DCommand {
                     center: [0.0, 0.0],
                     size: [120.0, 120.0],
@@ -323,7 +335,7 @@ impl Runtime {
             self.debug_rect_was_active = true;
         } else if self.debug_rect_was_active {
             self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode {
-                node: NodeID::ROOT,
+                node: Self::DEBUG_RECT_NODE_ID,
             }));
             self.debug_rect_was_active = false;
         }

@@ -25,6 +25,7 @@ pub struct Gpu2D {
     instance_capacity: usize,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    last_camera: Option<Camera2DUniform>,
 }
 
 impl Gpu2D {
@@ -218,6 +219,7 @@ impl Gpu2D {
             instance_capacity,
             camera_buffer,
             camera_bind_group,
+            last_camera: None,
         })
     }
 
@@ -243,8 +245,11 @@ impl Gpu2D {
         self.window_handle.id();
 
         self.ensure_instance_capacity(upload.draw_count);
-        self.queue
-            .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
+        if self.last_camera != Some(camera) {
+            self.queue
+                .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
+            self.last_camera = Some(camera);
+        }
         if upload.full_reupload {
             if !rects.is_empty() {
                 self.queue

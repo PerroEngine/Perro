@@ -25,8 +25,7 @@ pub struct Renderer2DStats {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Zeroable, Pod)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
 pub struct Camera2DUniform {
     pub view: [[f32; 4]; 4],
     pub ndc_scale: [f32; 2],
