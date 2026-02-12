@@ -219,9 +219,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 if batch_elapsed_secs >= LOG_INTERVAL_SECONDS && self.batch_frames > 0 {
                     let batch_elapsed = frame_end.duration_since(self.batch_start);
                     let capped_fps = self.batch_frames as f32 / batch_elapsed.as_secs_f32();
-                    let work_us = self.batch_work.as_secs_f64() * 1_000_000.0;
-                    let avg_work_us = work_us / self.batch_frames as f64;
-                    let avg_work_ns = avg_work_us * 1_000.0;
+                    let work_ms = self.batch_work.as_secs_f64() * 1_000.0;
+                    let avg_work_us = (work_ms * 1_000.0) / self.batch_frames as f64;
                     let loop_fps = if self.batch_work.is_zero() {
                         f64::INFINITY
                     } else {
@@ -232,14 +231,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                         (self.batch_sim_delta_seconds * 1000.0) / self.batch_frames as f64;
 
                     println!(
-                        "delta: {:.3}ms | sim_avg: {:.3}ms | capped_fps: {:.2} | {} loops work: {:.2}us total ({:.3}us avg | {:.1}ns avg, {:.1} uncapped eq)",
+                        "delta: {:.3}ms | sim_avg: {:.3}ms | capped_fps: {:.2} | {} loops work: {:.3}ms total ({:.3}us avg, {:.1} uncapped eq)",
                         delta_ms,
                         avg_sim_delta_ms,
                         capped_fps,
                         self.batch_frames,
-                        work_us,
+                        work_ms,
                         avg_work_us,
-                        avg_work_ns,
                         loop_fps
                     );
 

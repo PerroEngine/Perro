@@ -6,7 +6,9 @@ use crate::{
 use ahash::{AHashMap, AHashSet};
 use perro_core::{SceneNodeData, Spatial};
 use perro_ids::{NodeID, TextureID};
-use perro_render_bridge::{Rect2DCommand, RenderCommand, RenderEvent, RenderRequestID};
+use perro_render_bridge::{
+    Command2D, RenderCommand, RenderEvent, RenderRequestID, ResourceCommand, Rect2DCommand,
+};
 use std::sync::Arc;
 
 pub struct Runtime {
@@ -17,7 +19,11 @@ pub struct Runtime {
     project: Option<Arc<RuntimeProject>>,
     schedules: ScriptSchedules,
     sprite_states: Vec<(NodeID, bool, TextureID)>,
+    visible_sprite_nodes: AHashSet<NodeID>,
+    prev_visible_sprite_nodes: AHashSet<NodeID>,
+    removed_sprite_nodes: Vec<NodeID>,
     debug_draw_rect: bool,
+    debug_rect_was_active: bool,
     render: RenderState,
     dirty: DirtyState,
 }
@@ -190,7 +196,11 @@ impl Runtime {
             project: None,
             schedules: ScriptSchedules::new(),
             sprite_states: Vec::new(),
+            visible_sprite_nodes: AHashSet::default(),
+            prev_visible_sprite_nodes: AHashSet::default(),
+            removed_sprite_nodes: Vec::new(),
             debug_draw_rect: false,
+            debug_rect_was_active: false,
             render: RenderState::new(),
             dirty: DirtyState::new(),
         }
@@ -240,6 +250,9 @@ impl Runtime {
     pub fn extract_render_2d_commands(&mut self) {
         let mut sprite_states = std::mem::take(&mut self.sprite_states);
         sprite_states.clear();
+        let mut visible_now = std::mem::take(&mut self.visible_sprite_nodes);
+        visible_now.clear();
+        self.removed_sprite_nodes.clear();
         for (id, node) in self.nodes.iter() {
             if let SceneNodeData::Sprite2D(sprite) = &node.data {
                 sprite_states.push((id, sprite.visible, sprite.texture_id));
@@ -273,22 +286,32 @@ impl Runtime {
                 let request = Self::sprite_texture_request_id(node_id);
                 if !self.render.is_inflight(request) {
                     self.render.mark_inflight(request);
-                    self.queue_render_command(RenderCommand::CreateTexture {
+                    self.queue_render_command(RenderCommand::Resource(ResourceCommand::CreateTexture {
                         request,
                         owner: node_id,
-                    });
+                    }));
                 }
                 continue;
             }
 
-            self.queue_render_command(RenderCommand::Draw2DTexture {
+            self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertTexture {
                 texture: texture_id,
                 node: node_id,
-            });
+            }));
+            visible_now.insert(node_id);
+        }
+
+        for node in self.prev_visible_sprite_nodes.iter().copied() {
+            if !visible_now.contains(&node) {
+                self.removed_sprite_nodes.push(node);
+            }
+        }
+        while let Some(node) = self.removed_sprite_nodes.pop() {
+            self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
         }
 
         if self.debug_draw_rect {
-            self.queue_render_command(RenderCommand::Draw2DRect {
+            self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertRect {
                 node: NodeID::ROOT,
                 rect: Rect2DCommand {
                     center: [0.0, 0.0],
@@ -296,8 +319,18 @@ impl Runtime {
                     color: [1.0, 0.2, 0.2, 1.0],
                     z_index: 0,
                 },
-            });
+            }));
+            self.debug_rect_was_active = true;
+        } else if self.debug_rect_was_active {
+            self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode {
+                node: NodeID::ROOT,
+            }));
+            self.debug_rect_was_active = false;
         }
+
+        std::mem::swap(&mut self.prev_visible_sprite_nodes, &mut visible_now);
+        visible_now.clear();
+        self.visible_sprite_nodes = visible_now;
 
         sprite_states.clear();
         self.sprite_states = sprite_states;

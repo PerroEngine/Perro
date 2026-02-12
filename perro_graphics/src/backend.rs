@@ -2,10 +2,12 @@ use crate::{
     resources::ResourceStore,
     two_d::{
         gpu::Gpu2D,
-        renderer::{RectInstanceGpu, Renderer2D},
+        renderer::Renderer2D,
     },
 };
-use perro_render_bridge::{RenderBridge, RenderCommand, RenderEvent};
+use perro_render_bridge::{
+    Command2D, Command3D, RenderBridge, RenderCommand, RenderEvent, ResourceCommand,
+};
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -37,7 +39,6 @@ pub struct PerroGraphics {
     resources: ResourceStore,
     renderer_2d: Renderer2D,
     gpu: Option<Gpu2D>,
-    rect_instances: Vec<RectInstanceGpu>,
     events: Vec<RenderEvent>,
     viewport: (u32, u32),
 }
@@ -49,7 +50,6 @@ impl PerroGraphics {
             resources: ResourceStore::new(),
             renderer_2d: Renderer2D::new(),
             gpu: None,
-            rect_instances: Vec::new(),
             events: Vec::new(),
             viewport: (0, 0),
         }
@@ -58,32 +58,41 @@ impl PerroGraphics {
     fn process_commands(&mut self, commands: Vec<RenderCommand>) {
         for command in commands {
             match command {
-                RenderCommand::CreateMesh { request, .. } => {
-                    let id = self.resources.create_mesh();
-                    self.events.push(RenderEvent::MeshCreated { request, id });
-                }
-                RenderCommand::CreateTexture { request, .. } => {
-                    let id = self.resources.create_texture();
-                    self.events
-                        .push(RenderEvent::TextureCreated { request, id });
-                }
-                RenderCommand::CreateMaterial { request, .. } => {
-                    let id = self.resources.create_material();
-                    self.events
-                        .push(RenderEvent::MaterialCreated { request, id });
-                }
-                RenderCommand::Draw2DTexture { texture, .. } => {
-                    self.renderer_2d.queue_texture(texture);
-                }
-                RenderCommand::Draw2DRect { rect, .. } => {
-                    self.renderer_2d.queue_rect(rect);
-                }
-                RenderCommand::SetCamera2D { camera } => {
-                    self.renderer_2d.set_camera(camera);
-                }
-                RenderCommand::Draw3D { .. } => {
-                    // 3D renderer is intentionally not active in the minimal backend yet.
-                }
+                RenderCommand::Resource(resource_cmd) => match resource_cmd {
+                    ResourceCommand::CreateMesh { request, .. } => {
+                        let id = self.resources.create_mesh();
+                        self.events.push(RenderEvent::MeshCreated { request, id });
+                    }
+                    ResourceCommand::CreateTexture { request, .. } => {
+                        let id = self.resources.create_texture();
+                        self.events
+                            .push(RenderEvent::TextureCreated { request, id });
+                    }
+                    ResourceCommand::CreateMaterial { request, .. } => {
+                        let id = self.resources.create_material();
+                        self.events
+                            .push(RenderEvent::MaterialCreated { request, id });
+                    }
+                },
+                RenderCommand::TwoD(cmd_2d) => match cmd_2d {
+                    Command2D::UpsertTexture { texture, node } => {
+                        self.renderer_2d.queue_texture(node, texture);
+                    }
+                    Command2D::UpsertRect { node, rect } => {
+                        self.renderer_2d.queue_rect(node, rect);
+                    }
+                    Command2D::RemoveNode { node } => {
+                        self.renderer_2d.remove_node(node);
+                    }
+                    Command2D::SetCamera { camera } => {
+                        self.renderer_2d.set_camera(camera);
+                    }
+                },
+                RenderCommand::ThreeD(cmd_3d) => match cmd_3d {
+                    Command3D::Draw { .. } => {
+                        // 3D renderer is intentionally not active in the minimal backend yet.
+                    }
+                },
             }
         }
     }
@@ -130,13 +139,12 @@ impl GraphicsBackend for PerroGraphics {
     fn draw_frame(&mut self) {
         let commands = self.frame.take_pending();
         self.process_commands(commands);
-        let camera = self
+        let (camera, _stats, upload) = self
             .renderer_2d
-            .prepare_frame(&self.resources, &mut self.rect_instances)
-            .0;
+            .prepare_frame(&self.resources);
 
         if let Some(gpu) = &mut self.gpu {
-            gpu.render(camera, &self.rect_instances);
+            gpu.render(camera, self.renderer_2d.retained_rects(), &upload);
         }
     }
 }

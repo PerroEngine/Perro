@@ -1,4 +1,4 @@
-use super::renderer::{Camera2DUniform, RectInstanceGpu};
+use super::renderer::{Camera2DUniform, RectInstanceGpu, RectUploadPlan};
 use super::shaders::create_rect_shader_module;
 use bytemuck::{Pod, Zeroable};
 use std::sync::Arc;
@@ -233,16 +233,36 @@ impl Gpu2D {
         self.surface.configure(&self.device, &self.config);
     }
 
-    pub fn render(&mut self, camera: Camera2DUniform, rects: &[RectInstanceGpu]) {
+    pub fn render(
+        &mut self,
+        camera: Camera2DUniform,
+        rects: &[RectInstanceGpu],
+        upload: &RectUploadPlan,
+    ) {
         // Keep window alive for the full surface lifetime.
         self.window_handle.id();
 
-        self.ensure_instance_capacity(rects.len());
+        self.ensure_instance_capacity(upload.draw_count);
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
-        if !rects.is_empty() {
-            self.queue
-                .write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(rects));
+        if upload.full_reupload {
+            if !rects.is_empty() {
+                self.queue
+                    .write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(rects));
+            }
+        } else {
+            let stride = std::mem::size_of::<RectInstanceGpu>() as u64;
+            for range in &upload.dirty_ranges {
+                if range.start >= range.end || range.end > rects.len() {
+                    continue;
+                }
+                let offset = range.start as u64 * stride;
+                self.queue.write_buffer(
+                    &self.instance_buffer,
+                    offset,
+                    bytemuck::cast_slice(&rects[range.clone()]),
+                );
+            }
         }
 
         let frame = match self.surface.get_current_texture() {
@@ -291,7 +311,7 @@ impl Gpu2D {
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
             pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            pass.draw(0..6, 0..rects.len() as u32);
+            pass.draw(0..6, 0..upload.draw_count as u32);
         }
 
         self.queue.submit(Some(encoder.finish()));

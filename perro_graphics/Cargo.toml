@@ -4,11 +4,21 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-wgpu = { version = "28.0.0", default-features = false, features = ["std", "vulkan", "dx12", "metal", "wgsl"] }
 bytemuck = { version = "1.24.0", features = ["derive"] }
 pollster = "0.4.0"
-winit = "0.30.12"
 
 perro_ids = "0.1.0"
 perro_render_bridge = "0.1.0"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+wgpu = { version = "28.0.0", default-features = false, features = ["std", "dx12", "vulkan", "wgsl"] }
+winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+wgpu = { version = "28.0.0", default-features = false, features = ["std", "vulkan", "wgsl"] }
+winit = { version = "0.30.12", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+wgpu = { version = "28.0.0", default-features = false, features = ["std", "metal", "wgsl"] }
+winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
 

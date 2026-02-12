@@ -7,4 +7,12 @@ edition = "2024"
 perro_runtime = "0.1.0"
 perro_graphics = "0.1.0"
 perro_render_bridge = "0.1.0"
-winit = "0.30"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = { version = "0.30.12", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }

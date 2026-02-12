@@ -36,7 +36,7 @@ pub struct Rect2DCommand {
 }
 
 #[derive(Debug, Clone)]
-pub enum RenderCommand {
+pub enum ResourceCommand {
     CreateMesh {
         request: RenderRequestID,
         owner: NodeID,
@@ -49,22 +49,40 @@ pub enum RenderCommand {
         request: RenderRequestID,
         owner: NodeID,
     },
-    Draw2DTexture {
+}
+
+#[derive(Debug, Clone)]
+pub enum Command2D {
+    UpsertTexture {
         texture: TextureID,
         node: NodeID,
     },
-    Draw2DRect {
+    UpsertRect {
         node: NodeID,
         rect: Rect2DCommand,
     },
-    SetCamera2D {
+    RemoveNode {
+        node: NodeID,
+    },
+    SetCamera {
         camera: Camera2DState,
     },
-    Draw3D {
+}
+
+#[derive(Debug, Clone)]
+pub enum Command3D {
+    Draw {
         mesh: MeshID,
         material: MaterialID,
         node: NodeID,
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum RenderCommand {
+    Resource(ResourceCommand),
+    TwoD(Command2D),
+    ThreeD(Command3D),
 }
 
 #[derive(Debug, Clone)]
