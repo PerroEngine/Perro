@@ -7,11 +7,11 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
-const DEFAULT_FPS_CAP: f32 = 144.0;
+const DEFAULT_FPS_CAP: f32 = 120.0;
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 8;
 const LOG_INTERVAL_SECONDS: f32 = 2.5;
-const FPS_CAP_COMPENSATION: f32 = 1.0;
+const FPS_CAP_COMPENSATION: f32 = 1.01;
 const SPIN_TAIL_THRESHOLD: Duration = Duration::from_micros(500);
 
 #[inline]

@@ -19,12 +19,7 @@ fn main() {
         .map(PathBuf::from)
         .unwrap_or_else(current_dir_fallback);
 
-    let name = parse_flag_value(&args, "--name").unwrap_or_else(|| {
-        root.file_name()
-            .and_then(|s| s.to_str())
-            .map(str::to_owned)
-            .unwrap_or_else(|| "Perro Project".to_string())
-    });
+    let name = parse_flag_value(&args, "--name").unwrap_or_else(|| "Perro Project".to_string());
 
     let mut project = RuntimeProject::new(name.clone(), root);
 

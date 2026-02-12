@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+wgpu = { version = "28.0.0", default-features = false, features = ["std", "vulkan", "dx12", "metal", "wgsl"] }
+
 perro_ids = "0.1.0"
 perro_render_bridge = "0.1.0"
+

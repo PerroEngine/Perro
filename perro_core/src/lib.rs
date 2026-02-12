@@ -142,4 +142,66 @@ mod tests {
         println!("Player -> {:?}", player.children_slice());
         println!("Sprite parent: {:?}", sprite.parent);
     }
+
+    #[test]
+    fn with_typed_ref_returns_some_for_matching_type() {
+        let scene = SceneNode::new(SceneNodeData::Node2D(Node2D::new()));
+        let visible = scene.with_typed_ref::<Node2D, _>(|n| n.visible);
+        assert_eq!(visible, Some(true));
+    }
+
+    #[test]
+    fn with_typed_ref_returns_none_for_mismatched_type() {
+        let scene = SceneNode::new(SceneNodeData::Node2D(Node2D::new()));
+        let value = scene.with_typed_ref::<Node3D, _>(|_| 1usize);
+        assert_eq!(value, None);
+    }
+
+    #[test]
+    fn with_typed_mut_applies_mutation_for_matching_type() {
+        let mut scene = SceneNode::new(SceneNodeData::Node2D(Node2D::new()));
+
+        let result = scene.with_typed_mut::<Node2D, _>(|n| {
+            n.z_index = 42;
+        });
+
+        assert!(result.is_some());
+        let z_index = scene.with_typed_ref::<Node2D, _>(|n| n.z_index);
+        assert_eq!(z_index, Some(42));
+    }
+
+    #[test]
+    fn with_typed_mut_returns_none_for_mismatched_type() {
+        let mut scene = SceneNode::new(SceneNodeData::Node2D(Node2D::new()));
+
+        let result = scene.with_typed_mut::<Node3D, _>(|_| {});
+        assert!(result.is_none());
+
+        let z_index = scene.with_typed_ref::<Node2D, _>(|n| n.z_index);
+        assert_eq!(z_index, Some(0));
+    }
+
+    #[test]
+    fn node_type_dispatch_constants_match_expected_variants() {
+        assert_eq!(<Node2D as NodeTypeDispatch>::NODE_TYPE, NodeType::Node2D);
+        assert_eq!(<Node2D as NodeTypeDispatch>::SPATIAL, Spatial::TwoD);
+
+        assert_eq!(
+            <MeshInstance3D as NodeTypeDispatch>::NODE_TYPE,
+            NodeType::MeshInstance3D
+        );
+        assert_eq!(
+            <MeshInstance3D as NodeTypeDispatch>::SPATIAL,
+            Spatial::ThreeD
+        );
+    }
+
+    #[test]
+    fn from_impls_convert_payload_to_scene_node_data_and_scene_node() {
+        let data: SceneNodeData = Node2D::new().into();
+        assert!(matches!(data, SceneNodeData::Node2D(_)));
+
+        let scene: SceneNode = data.into();
+        assert!(matches!(scene.data, SceneNodeData::Node2D(_)));
+    }
 }
