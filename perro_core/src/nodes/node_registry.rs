@@ -6,6 +6,7 @@ use perro_ids::NodeID;
 use std::borrow::Cow;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
 pub enum Spatial {
     None,
     TwoD,
@@ -39,6 +40,7 @@ macro_rules! define_scene_nodes {
         }
 
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        #[repr(u8)]
         pub enum NodeType {
             $($base_variant,)*
             $($variant_2d,)*
