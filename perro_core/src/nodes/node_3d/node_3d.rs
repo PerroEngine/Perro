@@ -7,7 +7,7 @@ pub struct Node3D {
 }
 
 impl Node3D {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             transform: Transform3D::IDENTITY,
             visible: true,

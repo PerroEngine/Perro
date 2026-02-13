@@ -8,7 +8,7 @@ pub struct Node2D {
 }
 
 impl Node2D {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             transform: Transform2D::IDENTITY,
             visible: true,

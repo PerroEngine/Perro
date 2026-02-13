@@ -10,15 +10,7 @@ use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
 use std::sync::Arc;
 
 mod render_2d;
-
-#[derive(Clone, Copy)]
-enum Render2DInput {
-    Sprite {
-        node_id: NodeID,
-        visible: bool,
-        texture_id: TextureID,
-    },
-}
+mod render_3d;
 
 pub struct Runtime {
     pub time: Timing,
@@ -33,16 +25,10 @@ pub struct Runtime {
     dirty: DirtyState,
     traversal_stack: Vec<NodeID>,
 
-    // 2D extraction caches
-    render_2d_inputs: Vec<Render2DInput>,
-    visible_render_2d_nodes: AHashSet<NodeID>,
-    prev_visible_render_2d_nodes: AHashSet<NodeID>,
-    retained_sprite_textures: AHashMap<NodeID, TextureID>,
-    removed_render_2d_nodes: Vec<NodeID>,
 
-    // Debug render toggles
-    debug_draw_rect: bool,
-    debug_rect_was_active: bool,
+    render_2d: Render2DState,
+    render_3d: Render3DState,
+    debug: DebugRenderState,
 }
 
 pub struct Timing {
@@ -161,6 +147,52 @@ struct DirtyState {
     node_flags: AHashMap<NodeID, u8>,
 }
 
+struct Render2DState {
+    traversal_ids: Vec<NodeID>,
+    visible_now: AHashSet<NodeID>,
+    prev_visible: AHashSet<NodeID>,
+    retained_sprite_textures: AHashMap<NodeID, TextureID>,
+    removed_nodes: Vec<NodeID>,
+}
+
+impl Render2DState {
+    fn new() -> Self {
+        Self {
+            traversal_ids: Vec::new(),
+            visible_now: AHashSet::default(),
+            prev_visible: AHashSet::default(),
+            retained_sprite_textures: AHashMap::default(),
+            removed_nodes: Vec::new(),
+        }
+    }
+}
+
+struct Render3DState {
+    traversal_ids: Vec<NodeID>,
+}
+
+impl Render3DState {
+    fn new() -> Self {
+        Self {
+            traversal_ids: Vec::new(),
+        }
+    }
+}
+
+struct DebugRenderState {
+    draw_rect: bool,
+    rect_was_active: bool,
+}
+
+impl DebugRenderState {
+    fn new() -> Self {
+        Self {
+            draw_rect: false,
+            rect_was_active: false,
+        }
+    }
+}
+
 impl DirtyState {
     const FLAG_RERENDER: u8 = 1 << 0;
     const FLAG_DIRTY_2D_TRANSFORM: u8 = 1 << 1;
@@ -217,13 +249,9 @@ impl Runtime {
             render: RenderState::new(),
             dirty: DirtyState::new(),
             traversal_stack: Vec::new(),
-            render_2d_inputs: Vec::new(),
-            visible_render_2d_nodes: AHashSet::default(),
-            prev_visible_render_2d_nodes: AHashSet::default(),
-            retained_sprite_textures: AHashMap::default(),
-            removed_render_2d_nodes: Vec::new(),
-            debug_draw_rect: false,
-            debug_rect_was_active: false,
+            render_2d: Render2DState::new(),
+            render_3d: Render3DState::new(),
+            debug: DebugRenderState::new(),
         }
     }
 
@@ -258,7 +286,7 @@ impl Runtime {
 
     #[inline]
     pub fn set_debug_draw_rect(&mut self, enabled: bool) {
-        self.debug_draw_rect = enabled;
+        self.debug.draw_rect = enabled;
     }
 
     pub fn queue_render_command(&mut self, command: RenderCommand) {

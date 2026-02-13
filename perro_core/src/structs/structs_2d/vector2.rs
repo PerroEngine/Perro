@@ -25,19 +25,19 @@ impl Vector2 {
     pub const ONE: Self = Self { x: 1.0, y: 1.0 };
 
     /// Creates a new 2D vector
-    pub fn new(x: f32, y: f32) -> Self {
+    pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
 
     // Helper to convert to glam for operations
     #[inline(always)]
-    fn to_glam(self) -> Vec2 {
+    const fn to_glam(self) -> Vec2 {
         Vec2::new(self.x, self.y)
     }
 
     // Helper to create from glam
     #[inline(always)]
-    fn from_glam(v: Vec2) -> Self {
+    const fn from_glam(v: Vec2) -> Self {
         Self { x: v.x, y: v.y }
     }
 

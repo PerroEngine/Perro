@@ -9,7 +9,7 @@ pub struct MeshInstance3D {
 }
 
 impl MeshInstance3D {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             base: Node3D::new(),
             mesh_id: MeshID::nil(),

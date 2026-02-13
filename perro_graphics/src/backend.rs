@@ -6,8 +6,9 @@ use crate::{
     },
 };
 use perro_render_bridge::{
-    Command2D, Command3D, RenderBridge, RenderCommand, RenderEvent, ResourceCommand,
+    Camera3DState, Command2D, Command3D, RenderBridge, RenderCommand, RenderEvent, ResourceCommand,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -41,6 +42,8 @@ pub struct PerroGraphics {
     gpu: Option<Gpu2D>,
     events: Vec<RenderEvent>,
     viewport: (u32, u32),
+    retained_3d_draws: HashMap<perro_ids::NodeID, (perro_ids::MeshID, perro_ids::MaterialID)>,
+    retained_3d_camera: Option<Camera3DState>,
 }
 
 impl PerroGraphics {
@@ -52,6 +55,8 @@ impl PerroGraphics {
             gpu: None,
             events: Vec::new(),
             viewport: (0, 0),
+            retained_3d_draws: HashMap::new(),
+            retained_3d_camera: None,
         }
     }
 
@@ -75,8 +80,8 @@ impl PerroGraphics {
                     }
                 },
                 RenderCommand::TwoD(cmd_2d) => match cmd_2d {
-                    Command2D::UpsertTexture { texture, node } => {
-                        self.renderer_2d.queue_texture(node, texture);
+                    Command2D::UpsertSprite { node, sprite } => {
+                        self.renderer_2d.queue_sprite(node, sprite);
                     }
                     Command2D::UpsertRect { node, rect } => {
                         self.renderer_2d.queue_rect(node, rect);
@@ -89,8 +94,15 @@ impl PerroGraphics {
                     }
                 },
                 RenderCommand::ThreeD(cmd_3d) => match cmd_3d {
-                    Command3D::Draw { .. } => {
-                        // 3D renderer is intentionally not active in the minimal backend yet.
+                    Command3D::Draw {
+                        mesh,
+                        material,
+                        node,
+                    } => {
+                        self.retained_3d_draws.insert(node, (mesh, material));
+                    }
+                    Command3D::SetCamera { camera } => {
+                        self.retained_3d_camera = Some(camera);
                     }
                 },
             }
@@ -146,5 +158,133 @@ impl GraphicsBackend for PerroGraphics {
         if let Some(gpu) = &mut self.gpu {
             gpu.render(camera, self.renderer_2d.retained_rects(), &upload);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PerroGraphics;
+    use crate::backend::GraphicsBackend;
+    use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
+    use perro_render_bridge::{
+        Camera3DState, Command2D, Command3D, RenderBridge, RenderCommand, ResourceCommand,
+        Sprite2DCommand,
+    };
+
+    #[test]
+    fn sprite_texture_upsert_is_accepted_after_texture_creation() {
+        let mut graphics = PerroGraphics::new();
+        let request = perro_render_bridge::RenderRequestID::new(99);
+        let node = NodeID::from_parts(1, 0);
+
+        graphics.submit(RenderCommand::Resource(ResourceCommand::CreateTexture {
+            request,
+            owner: node,
+        }));
+        graphics.draw_frame();
+
+        let mut events = Vec::new();
+        graphics.drain_events(&mut events);
+        let created = events
+            .into_iter()
+            .find_map(|event| match event {
+                perro_render_bridge::RenderEvent::TextureCreated { id, .. } => Some(id),
+                _ => None,
+            })
+            .expect("texture creation event should exist");
+
+        graphics.submit(RenderCommand::TwoD(Command2D::UpsertSprite {
+            node,
+            sprite: Sprite2DCommand {
+                texture: created,
+                model: [[1.0, 0.0, 10.0], [0.0, 1.0, 5.0], [0.0, 0.0, 1.0]],
+                z_index: 2,
+            },
+        }));
+        graphics.draw_frame();
+
+        assert_eq!(
+            graphics.renderer_2d.retained_sprite(node),
+            Some(Sprite2DCommand {
+                texture: created,
+                model: [[1.0, 0.0, 10.0], [0.0, 1.0, 5.0], [0.0, 0.0, 1.0]],
+                z_index: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn draw_3d_updates_retained_state_per_node() {
+        let mut graphics = PerroGraphics::new();
+        let node_a = NodeID::from_parts(10, 0);
+        let node_b = NodeID::from_parts(11, 0);
+
+        graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
+            mesh: MeshID::from_parts(1, 0),
+            material: MaterialID::from_parts(2, 0),
+            node: node_a,
+        }));
+        graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
+            mesh: MeshID::from_parts(3, 0),
+            material: MaterialID::from_parts(4, 0),
+            node: node_a,
+        }));
+        graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
+            mesh: MeshID::from_parts(5, 0),
+            material: MaterialID::from_parts(6, 0),
+            node: node_b,
+        }));
+        graphics.draw_frame();
+
+        assert_eq!(graphics.retained_3d_draws.len(), 2);
+        assert_eq!(
+            graphics.retained_3d_draws.get(&node_a).copied(),
+            Some((MeshID::from_parts(3, 0), MaterialID::from_parts(4, 0)))
+        );
+        assert_eq!(
+            graphics.retained_3d_draws.get(&node_b).copied(),
+            Some((MeshID::from_parts(5, 0), MaterialID::from_parts(6, 0)))
+        );
+    }
+
+    #[test]
+    fn set_camera_3d_updates_retained_camera_state() {
+        let mut graphics = PerroGraphics::new();
+        graphics.submit(RenderCommand::ThreeD(Command3D::SetCamera {
+            camera: Camera3DState {
+                position: [1.0, 2.0, 3.0],
+                rotation: [0.0, 0.5, 0.0, 0.8660254],
+                zoom: 1.25,
+            },
+        }));
+        graphics.draw_frame();
+
+        assert_eq!(
+            graphics.retained_3d_camera,
+            Some(Camera3DState {
+                position: [1.0, 2.0, 3.0],
+                rotation: [0.0, 0.5, 0.0, 0.8660254],
+                zoom: 1.25,
+            })
+        );
+    }
+
+    #[test]
+    fn rejected_sprite_texture_does_not_update_retained_binding() {
+        let mut graphics = PerroGraphics::new();
+        let node = NodeID::from_parts(2, 0);
+        let missing = TextureID::from_parts(999, 0);
+
+        graphics.submit(RenderCommand::TwoD(Command2D::UpsertSprite {
+            node,
+            sprite: Sprite2DCommand {
+                texture: missing,
+                model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                z_index: 0,
+            },
+        }));
+        graphics.draw_frame();
+
+        assert_eq!(graphics.renderer_2d.retained_sprite(node), None);
     }
 }

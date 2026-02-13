@@ -53,6 +53,7 @@ impl<B: GraphicsBackend> App<B> {
     #[inline]
     pub fn present(&mut self) {
         self.runtime.extract_render_2d_commands();
+        self.runtime.extract_render_3d_commands();
         self.runtime.drain_render_commands(&mut self.command_buffer);
         self.graphics.submit_many(self.command_buffer.drain(..));
 

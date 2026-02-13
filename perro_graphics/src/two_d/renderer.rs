@@ -1,13 +1,13 @@
 use crate::resources::ResourceStore;
 use bytemuck::{Pod, Zeroable};
-use perro_ids::{NodeID, TextureID};
-use perro_render_bridge::{Camera2DState, Rect2DCommand};
+use perro_ids::NodeID;
+use perro_render_bridge::{Camera2DState, Rect2DCommand, Sprite2DCommand};
 use std::{collections::HashMap, ops::Range};
 
 #[derive(Debug, Clone, Copy)]
-struct DrawPacket {
+struct SpritePacket {
     node: NodeID,
-    texture: TextureID,
+    sprite: Sprite2DCommand,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -53,7 +53,7 @@ pub const DEFAULT_VIRTUAL_HEIGHT: f32 = 1080.0;
 
 #[derive(Default)]
 pub struct Renderer2D {
-    queued_draws: Vec<DrawPacket>,
+    queued_sprites: Vec<SpritePacket>,
     queued_rects: Vec<RectPacket>,
     camera: Camera2DState,
     viewport: (u32, u32),
@@ -63,13 +63,13 @@ pub struct Renderer2D {
     node_to_rect_index: HashMap<NodeID, usize>,
     rect_dirty_ranges: Vec<Range<usize>>,
     rect_structure_dirty: bool,
-    retained_textures: HashMap<NodeID, TextureID>,
+    retained_sprites: HashMap<NodeID, Sprite2DCommand>,
 }
 
 impl Renderer2D {
     pub fn new() -> Self {
         Self {
-            queued_draws: Vec::new(),
+            queued_sprites: Vec::new(),
             queued_rects: Vec::new(),
             camera: Camera2DState::default(),
             viewport: (0, 0),
@@ -79,7 +79,7 @@ impl Renderer2D {
             node_to_rect_index: HashMap::new(),
             rect_dirty_ranges: Vec::new(),
             rect_structure_dirty: false,
-            retained_textures: HashMap::new(),
+            retained_sprites: HashMap::new(),
         }
     }
 
@@ -111,8 +111,8 @@ impl Renderer2D {
         }
     }
 
-    pub fn queue_texture(&mut self, node: NodeID, texture: TextureID) {
-        self.queued_draws.push(DrawPacket { node, texture });
+    pub fn queue_sprite(&mut self, node: NodeID, sprite: Sprite2DCommand) {
+        self.queued_sprites.push(SpritePacket { node, sprite });
     }
 
     pub fn queue_rect(&mut self, node: NodeID, rect: Rect2DCommand) {
@@ -125,7 +125,7 @@ impl Renderer2D {
 
     pub fn remove_node(&mut self, node: NodeID) {
         self.remove_retained_rect(node);
-        self.retained_textures.remove(&node);
+        self.retained_sprites.remove(&node);
     }
 
     fn apply_queued_rect_updates(&mut self) -> Renderer2DStats {
@@ -158,11 +158,11 @@ impl Renderer2D {
         stats
     }
 
-    fn flush_texture_packets(&mut self, resources: &ResourceStore) -> Renderer2DStats {
+    fn flush_sprite_packets(&mut self, resources: &ResourceStore) -> Renderer2DStats {
         let mut stats = Renderer2DStats::default();
-        for DrawPacket { node, texture } in self.queued_draws.drain(..) {
-            if resources.has_texture(texture) {
-                self.retained_textures.insert(node, texture);
+        for SpritePacket { node, sprite } in self.queued_sprites.drain(..) {
+            if resources.has_texture(sprite.texture) {
+                self.retained_sprites.insert(node, sprite);
                 stats.accepted_draws = stats.accepted_draws.saturating_add(1);
             } else {
                 stats.rejected_draws = stats.rejected_draws.saturating_add(1);
@@ -175,7 +175,7 @@ impl Renderer2D {
         &mut self,
         resources: &ResourceStore,
     ) -> (Camera2DUniform, Renderer2DStats, RectUploadPlan) {
-        let mut stats = self.flush_texture_packets(resources);
+        let mut stats = self.flush_sprite_packets(resources);
         let rect_stats = self.apply_queued_rect_updates();
         stats.accepted_rects = rect_stats.accepted_rects;
         stats.rejected_rects = rect_stats.rejected_rects;
@@ -185,6 +185,14 @@ impl Renderer2D {
 
     pub fn retained_rects(&self) -> &[RectInstanceGpu] {
         &self.retained_rects
+    }
+
+    pub fn retained_sprite(&self, node: NodeID) -> Option<Sprite2DCommand> {
+        self.retained_sprites.get(&node).copied()
+    }
+
+    pub fn retained_sprite_count(&self) -> usize {
+        self.retained_sprites.len()
     }
 
     fn upsert_retained_rect(&mut self, node: NodeID, rect: RectInstanceGpu) {
@@ -306,4 +314,92 @@ fn coalesce_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     }
     merged.push(current);
     merged
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RectInstanceGpu, Renderer2D};
+    use crate::resources::ResourceStore;
+    use perro_ids::{NodeID, TextureID};
+    use perro_render_bridge::{Rect2DCommand, Sprite2DCommand};
+
+    #[test]
+    fn texture_upsert_requires_existing_resource() {
+        let mut renderer = Renderer2D::new();
+        let mut resources = ResourceStore::new();
+        let node = NodeID::from_parts(2, 0);
+        let missing = TextureID::from_parts(10, 0);
+        renderer.queue_sprite(
+            node,
+            Sprite2DCommand {
+                texture: missing,
+                model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                z_index: 0,
+            },
+        );
+        let (_, stats, _) = renderer.prepare_frame(&resources);
+        assert_eq!(stats.accepted_draws, 0);
+        assert_eq!(stats.rejected_draws, 1);
+        assert_eq!(renderer.retained_sprite(node), None);
+
+        let loaded = resources.create_texture();
+        renderer.queue_sprite(
+            node,
+            Sprite2DCommand {
+                texture: loaded,
+                model: [[1.0, 0.0, 2.0], [0.0, 1.0, 3.0], [0.0, 0.0, 1.0]],
+                z_index: 1,
+            },
+        );
+        let (_, stats, _) = renderer.prepare_frame(&resources);
+        assert_eq!(stats.accepted_draws, 1);
+        assert_eq!(stats.rejected_draws, 0);
+        assert_eq!(
+            renderer.retained_sprite(node),
+            Some(Sprite2DCommand {
+                texture: loaded,
+                model: [[1.0, 0.0, 2.0], [0.0, 1.0, 3.0], [0.0, 0.0, 1.0]],
+                z_index: 1,
+            })
+        );
+        assert_eq!(renderer.retained_sprite_count(), 1);
+    }
+
+    #[test]
+    fn rect_upload_plan_tracks_incremental_updates() {
+        let mut renderer = Renderer2D::new();
+        let resources = ResourceStore::new();
+        let node = NodeID::from_parts(5, 0);
+        let rect = Rect2DCommand {
+            center: [0.0, 0.0],
+            size: [32.0, 32.0],
+            color: [1.0, 0.0, 0.0, 1.0],
+            z_index: 1,
+        };
+
+        renderer.queue_rect(node, rect);
+        let (_, _, first_plan) = renderer.prepare_frame(&resources);
+        assert!(first_plan.full_reupload);
+        assert_eq!(first_plan.draw_count, 1);
+
+        renderer.queue_rect(
+            node,
+            Rect2DCommand {
+                color: [0.0, 1.0, 0.0, 1.0],
+                ..rect
+            },
+        );
+        let (_, _, second_plan) = renderer.prepare_frame(&resources);
+        assert!(!second_plan.full_reupload);
+        assert_eq!(second_plan.dirty_ranges, vec![0..1]);
+        assert_eq!(
+            renderer.retained_rects()[0],
+            RectInstanceGpu {
+                center: [0.0, 0.0],
+                size: [32.0, 32.0],
+                color: [0.0, 1.0, 0.0, 1.0],
+                z_index: 1,
+            }
+        );
+    }
 }

@@ -38,19 +38,19 @@ impl Vector3 {
     };
 
     /// Creates a new 3D vector
-    pub fn new(x: f32, y: f32, z: f32) -> Self {
+    pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
     }
 
     // Helper to convert to glam for operations
     #[inline(always)]
-    fn to_glam(self) -> Vec3 {
+    const fn to_glam(self) -> Vec3 {
         Vec3::new(self.x, self.y, self.z)
     }
 
     // Helper to create from glam
     #[inline(always)]
-    fn from_glam(v: Vec3) -> Self {
+    const fn from_glam(v: Vec3) -> Self {
         Self {
             x: v.x,
             y: v.y,

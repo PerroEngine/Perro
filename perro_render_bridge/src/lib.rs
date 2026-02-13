@@ -17,6 +17,23 @@ pub struct Camera2DState {
     pub zoom: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Camera3DState {
+    pub position: [f32; 3],
+    pub rotation: [f32; 4],
+    pub zoom: f32,
+}
+
+impl Default for Camera3DState {
+    fn default() -> Self {
+        Self {
+            position: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            zoom: 1.0,
+        }
+    }
+}
+
 impl Default for Camera2DState {
     fn default() -> Self {
         Self {
@@ -32,6 +49,13 @@ pub struct Rect2DCommand {
     pub center: [f32; 2],
     pub size: [f32; 2],
     pub color: [f32; 4],
+    pub z_index: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Sprite2DCommand {
+    pub texture: TextureID,
+    pub model: [[f32; 3]; 3],
     pub z_index: i32,
 }
 
@@ -53,9 +77,9 @@ pub enum ResourceCommand {
 
 #[derive(Debug, Clone)]
 pub enum Command2D {
-    UpsertTexture {
-        texture: TextureID,
+    UpsertSprite {
         node: NodeID,
+        sprite: Sprite2DCommand,
     },
     UpsertRect {
         node: NodeID,
@@ -75,6 +99,9 @@ pub enum Command3D {
         mesh: MeshID,
         material: MaterialID,
         node: NodeID,
+    },
+    SetCamera {
+        camera: Camera3DState,
     },
 }
 

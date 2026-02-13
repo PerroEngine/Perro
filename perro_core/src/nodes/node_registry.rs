@@ -1,3 +1,5 @@
+use crate::camera_2d::Camera2D;
+use crate::camera_3d::Camera3D;
 use crate::mesh_instance_3d::MeshInstance3D;
 use crate::node_2d::node_2d::Node2D;
 use crate::node_3d::node_3d::Node3D;
@@ -48,7 +50,7 @@ macro_rules! define_scene_nodes {
         }
 
         impl SceneNode {
-            pub fn new(data: SceneNodeData) -> Self {
+            pub const fn new(data: SceneNodeData) -> Self {
                 Self {
                     id: NodeID::nil(),
                     name: Cow::Borrowed("Node"),
@@ -59,11 +61,11 @@ macro_rules! define_scene_nodes {
                 }
             }
 
-            pub fn has_parent(&self) -> bool {
+            pub const fn has_parent(&self) -> bool {
                 !self.parent.is_nil()
             }
 
-            pub fn node_type(&self) -> NodeType {
+            pub const fn node_type(&self) -> NodeType {
                 match &self.data {
                     $(
                         SceneNodeData::$base_variant { .. } =>
@@ -80,7 +82,7 @@ macro_rules! define_scene_nodes {
                 }
             }
 
-            pub fn spatial(&self) -> Spatial {
+            pub const fn spatial(&self) -> Spatial {
                 match &self.data {
                     $(
                         SceneNodeData::$base_variant { .. } => Spatial::None,
@@ -90,15 +92,15 @@ macro_rules! define_scene_nodes {
                 }
             }
 
-            pub fn is_2d(&self) -> bool {
-                self.spatial() == Spatial::TwoD
+            pub const fn is_2d(&self) -> bool {
+                matches!(self.spatial(), Spatial::TwoD)
             }
 
-            pub fn is_3d(&self) -> bool {
-                self.spatial() == Spatial::ThreeD
+            pub const fn is_3d(&self) -> bool {
+                matches!(self.spatial(), Spatial::ThreeD)
             }
 
-            pub fn is_spatial(&self) -> bool {
+            pub const fn is_spatial(&self) -> bool {
                 matches!(self.spatial(), Spatial::TwoD | Spatial::ThreeD)
             }
 
@@ -176,7 +178,7 @@ macro_rules! define_scene_nodes {
         }
 
         impl NodeType {
-            pub fn as_str(&self) -> &'static str {
+            pub const fn as_str(&self) -> &'static str {
                 match self {
                     $(NodeType::$base_variant => stringify!($base_variant),)*
                     $(NodeType::$variant_2d => stringify!($variant_2d),)*
@@ -283,9 +285,11 @@ define_scene_nodes! {
     2d: {
         Node2D => Node2D,
         Sprite2D => Sprite2D,
+        Camera2D => Camera2D
     }
     3d: {
         Node3D => Node3D,
         MeshInstance3D => MeshInstance3D,
+        Camera3D => Camera3D
     }
 }
