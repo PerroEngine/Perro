@@ -75,7 +75,8 @@ impl<B: GraphicsBackend> App<B> {
         self.graphics.draw_frame();
 
         self.graphics.drain_events(&mut self.event_buffer);
-        self.runtime.apply_render_events(self.event_buffer.drain(..));
+        self.runtime
+            .apply_render_events(self.event_buffer.drain(..));
     }
 
     #[inline]

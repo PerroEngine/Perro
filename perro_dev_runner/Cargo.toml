@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 perro_app = "0.1.0"
 perro_graphics = "0.1.0"
+perro_project = "0.1.0"
 perro_runtime = "0.1.0"

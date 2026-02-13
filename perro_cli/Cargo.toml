@@ -1,0 +1,7 @@
+[package]
+name = "perro_cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+perro_project = "0.1.0"

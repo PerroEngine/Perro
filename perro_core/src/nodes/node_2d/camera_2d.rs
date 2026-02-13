@@ -19,7 +19,7 @@ impl DerefMut for Camera2D {
 pub struct Camera2D {
     pub base: Node2D,
     pub zoom: f32,
-    pub active: bool
+    pub active: bool,
 }
 
 impl Camera2D {
@@ -27,7 +27,7 @@ impl Camera2D {
         Self {
             base: Node2D::new(),
             zoom: 0f32,
-            active: false
+            active: false,
         }
     }
 }

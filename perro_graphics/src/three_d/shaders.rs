@@ -7,4 +7,3 @@ pub fn create_mesh_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
         source: wgpu::ShaderSource::Wgsl(MESH_INSTANCED_WGSL.into()),
     })
 }
-

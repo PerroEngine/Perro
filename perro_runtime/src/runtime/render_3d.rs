@@ -1,7 +1,9 @@
 use super::Runtime;
 use perro_core::SceneNodeData;
 use perro_ids::{MaterialID, MeshID, NodeID};
-use perro_render_bridge::{Camera3DState, Command3D, RenderCommand, RenderRequestID, ResourceCommand};
+use perro_render_bridge::{
+    Camera3DState, Command3D, RenderCommand, RenderRequestID, ResourceCommand,
+};
 
 impl Runtime {
     const DEBUG_MESH_NODE_ID: NodeID = NodeID::from_parts(u32::MAX - 1, 0);
@@ -50,14 +52,12 @@ impl Runtime {
             }
 
             let mesh_data = self.nodes.get(node_id).and_then(|node| match &node.data {
-                SceneNodeData::MeshInstance3D(mesh) => {
-                    Some((
-                        mesh.base.visible,
-                        mesh.mesh_id,
-                        mesh.material_id,
-                        mesh.base.transform.to_mat4().to_cols_array_2d(),
-                    ))
-                }
+                SceneNodeData::MeshInstance3D(mesh) => Some((
+                    mesh.base.visible,
+                    mesh.mesh_id,
+                    mesh.material_id,
+                    mesh.base.transform.to_mat4().to_cols_array_2d(),
+                )),
                 _ => None,
             });
             let Some((visible, mesh_id, material_id, model)) = mesh_data else {
@@ -173,10 +173,12 @@ impl Runtime {
             if mesh_id.is_nil() {
                 if !self.render.is_inflight(request) {
                     self.render.mark_inflight(request);
-                    self.queue_render_command(RenderCommand::Resource(ResourceCommand::CreateMesh {
-                        request,
-                        owner: node_id,
-                    }));
+                    self.queue_render_command(RenderCommand::Resource(
+                        ResourceCommand::CreateMesh {
+                            request,
+                            owner: node_id,
+                        },
+                    ));
                 }
                 return None;
             }
@@ -220,7 +222,9 @@ impl Runtime {
 #[cfg(test)]
 mod tests {
     use super::Runtime;
-    use perro_core::{SceneNode, SceneNodeData, camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D};
+    use perro_core::{
+        SceneNode, SceneNodeData, camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D,
+    };
     use perro_ids::{MaterialID, MeshID};
     use perro_render_bridge::{Command3D, RenderCommand, RenderEvent, ResourceCommand};
 
@@ -389,17 +393,19 @@ mod tests {
         });
         runtime.extract_render_3d_commands();
         let third = collect_commands(&mut runtime);
-        assert!(third.iter().any(|cmd| matches!(
-            cmd,
-            RenderCommand::ThreeD(Command3D::Draw { .. })
-        )));
+        assert!(
+            third
+                .iter()
+                .any(|cmd| matches!(cmd, RenderCommand::ThreeD(Command3D::Draw { .. })))
+        );
 
         runtime.set_debug_draw_mesh(false);
         runtime.extract_render_3d_commands();
         let fourth = collect_commands(&mut runtime);
-        assert!(fourth.iter().any(|cmd| matches!(
-            cmd,
-            RenderCommand::ThreeD(Command3D::RemoveNode { .. })
-        )));
+        assert!(
+            fourth
+                .iter()
+                .any(|cmd| matches!(cmd, RenderCommand::ThreeD(Command3D::RemoveNode { .. })))
+        );
     }
 }

@@ -25,7 +25,6 @@ pub struct Runtime {
     dirty: DirtyState,
     traversal_stack: Vec<NodeID>,
 
-
     render_2d: Render2DState,
     render_3d: Render3DState,
     debug: DebugRenderState,

@@ -143,10 +143,10 @@ impl Renderer2D {
                 self.upsert_retained_rect(
                     node,
                     RectInstanceGpu {
-                    center: rect.center,
-                    size: rect.size,
-                    color: rect.color,
-                    z_index: rect.z_index,
+                        center: rect.center,
+                        size: rect.size,
+                        color: rect.color,
+                        z_index: rect.z_index,
                     },
                 );
                 stats.accepted_rects = stats.accepted_rects.saturating_add(1);
@@ -278,7 +278,10 @@ fn ndc_scale(viewport: (u32, u32), virtual_size: [f32; 2], zoom: f32) -> [f32; 2
     let scale = sx.min(sy);
     let world_to_window = scale * zoom;
 
-    [(2.0 * world_to_window) / width, (2.0 * world_to_window) / height]
+    [
+        (2.0 * world_to_window) / width,
+        (2.0 * world_to_window) / height,
+    ]
 }
 
 #[inline]

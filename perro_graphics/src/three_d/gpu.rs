@@ -93,7 +93,13 @@ impl Gpu3D {
             bind_group_layouts: &[&camera_bgl],
             immediate_size: 0,
         });
-        let pipeline = create_pipeline(device, &pipeline_layout, &shader, color_format, sample_count);
+        let pipeline = create_pipeline(
+            device,
+            &pipeline_layout,
+            &shader,
+            color_format,
+            sample_count,
+        );
 
         let (vertices, indices) = cube_geometry();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -175,8 +181,7 @@ impl Gpu3D {
             color_format,
             sample_count,
         );
-        let (depth_texture, depth_view) =
-            create_depth_texture(device, width, height, sample_count);
+        let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
         self.depth_texture = depth_texture;
         self.depth_view = depth_view;
         self.depth_size = (width.max(1), height.max(1));
@@ -454,38 +459,106 @@ fn color_from_material(index: u32, generation: u32) -> [f32; 4] {
 
 fn cube_geometry() -> ([MeshVertex; 24], [u16; 36]) {
     let vertices = [
-        MeshVertex { pos: [-0.5, -0.5, 0.5], normal: [0.0, 0.0, 1.0] },
-        MeshVertex { pos: [0.5, -0.5, 0.5], normal: [0.0, 0.0, 1.0] },
-        MeshVertex { pos: [0.5, 0.5, 0.5], normal: [0.0, 0.0, 1.0] },
-        MeshVertex { pos: [-0.5, 0.5, 0.5], normal: [0.0, 0.0, 1.0] },
-        MeshVertex { pos: [0.5, -0.5, -0.5], normal: [0.0, 0.0, -1.0] },
-        MeshVertex { pos: [-0.5, -0.5, -0.5], normal: [0.0, 0.0, -1.0] },
-        MeshVertex { pos: [-0.5, 0.5, -0.5], normal: [0.0, 0.0, -1.0] },
-        MeshVertex { pos: [0.5, 0.5, -0.5], normal: [0.0, 0.0, -1.0] },
-        MeshVertex { pos: [-0.5, -0.5, -0.5], normal: [-1.0, 0.0, 0.0] },
-        MeshVertex { pos: [-0.5, -0.5, 0.5], normal: [-1.0, 0.0, 0.0] },
-        MeshVertex { pos: [-0.5, 0.5, 0.5], normal: [-1.0, 0.0, 0.0] },
-        MeshVertex { pos: [-0.5, 0.5, -0.5], normal: [-1.0, 0.0, 0.0] },
-        MeshVertex { pos: [0.5, -0.5, 0.5], normal: [1.0, 0.0, 0.0] },
-        MeshVertex { pos: [0.5, -0.5, -0.5], normal: [1.0, 0.0, 0.0] },
-        MeshVertex { pos: [0.5, 0.5, -0.5], normal: [1.0, 0.0, 0.0] },
-        MeshVertex { pos: [0.5, 0.5, 0.5], normal: [1.0, 0.0, 0.0] },
-        MeshVertex { pos: [-0.5, 0.5, 0.5], normal: [0.0, 1.0, 0.0] },
-        MeshVertex { pos: [0.5, 0.5, 0.5], normal: [0.0, 1.0, 0.0] },
-        MeshVertex { pos: [0.5, 0.5, -0.5], normal: [0.0, 1.0, 0.0] },
-        MeshVertex { pos: [-0.5, 0.5, -0.5], normal: [0.0, 1.0, 0.0] },
-        MeshVertex { pos: [-0.5, -0.5, -0.5], normal: [0.0, -1.0, 0.0] },
-        MeshVertex { pos: [0.5, -0.5, -0.5], normal: [0.0, -1.0, 0.0] },
-        MeshVertex { pos: [0.5, -0.5, 0.5], normal: [0.0, -1.0, 0.0] },
-        MeshVertex { pos: [-0.5, -0.5, 0.5], normal: [0.0, -1.0, 0.0] },
+        MeshVertex {
+            pos: [-0.5, -0.5, 0.5],
+            normal: [0.0, 0.0, 1.0],
+        },
+        MeshVertex {
+            pos: [0.5, -0.5, 0.5],
+            normal: [0.0, 0.0, 1.0],
+        },
+        MeshVertex {
+            pos: [0.5, 0.5, 0.5],
+            normal: [0.0, 0.0, 1.0],
+        },
+        MeshVertex {
+            pos: [-0.5, 0.5, 0.5],
+            normal: [0.0, 0.0, 1.0],
+        },
+        MeshVertex {
+            pos: [0.5, -0.5, -0.5],
+            normal: [0.0, 0.0, -1.0],
+        },
+        MeshVertex {
+            pos: [-0.5, -0.5, -0.5],
+            normal: [0.0, 0.0, -1.0],
+        },
+        MeshVertex {
+            pos: [-0.5, 0.5, -0.5],
+            normal: [0.0, 0.0, -1.0],
+        },
+        MeshVertex {
+            pos: [0.5, 0.5, -0.5],
+            normal: [0.0, 0.0, -1.0],
+        },
+        MeshVertex {
+            pos: [-0.5, -0.5, -0.5],
+            normal: [-1.0, 0.0, 0.0],
+        },
+        MeshVertex {
+            pos: [-0.5, -0.5, 0.5],
+            normal: [-1.0, 0.0, 0.0],
+        },
+        MeshVertex {
+            pos: [-0.5, 0.5, 0.5],
+            normal: [-1.0, 0.0, 0.0],
+        },
+        MeshVertex {
+            pos: [-0.5, 0.5, -0.5],
+            normal: [-1.0, 0.0, 0.0],
+        },
+        MeshVertex {
+            pos: [0.5, -0.5, 0.5],
+            normal: [1.0, 0.0, 0.0],
+        },
+        MeshVertex {
+            pos: [0.5, -0.5, -0.5],
+            normal: [1.0, 0.0, 0.0],
+        },
+        MeshVertex {
+            pos: [0.5, 0.5, -0.5],
+            normal: [1.0, 0.0, 0.0],
+        },
+        MeshVertex {
+            pos: [0.5, 0.5, 0.5],
+            normal: [1.0, 0.0, 0.0],
+        },
+        MeshVertex {
+            pos: [-0.5, 0.5, 0.5],
+            normal: [0.0, 1.0, 0.0],
+        },
+        MeshVertex {
+            pos: [0.5, 0.5, 0.5],
+            normal: [0.0, 1.0, 0.0],
+        },
+        MeshVertex {
+            pos: [0.5, 0.5, -0.5],
+            normal: [0.0, 1.0, 0.0],
+        },
+        MeshVertex {
+            pos: [-0.5, 0.5, -0.5],
+            normal: [0.0, 1.0, 0.0],
+        },
+        MeshVertex {
+            pos: [-0.5, -0.5, -0.5],
+            normal: [0.0, -1.0, 0.0],
+        },
+        MeshVertex {
+            pos: [0.5, -0.5, -0.5],
+            normal: [0.0, -1.0, 0.0],
+        },
+        MeshVertex {
+            pos: [0.5, -0.5, 0.5],
+            normal: [0.0, -1.0, 0.0],
+        },
+        MeshVertex {
+            pos: [-0.5, -0.5, 0.5],
+            normal: [0.0, -1.0, 0.0],
+        },
     ];
     let indices = [
-        0, 1, 2, 0, 2, 3,
-        4, 5, 6, 4, 6, 7,
-        8, 9, 10, 8, 10, 11,
-        12, 13, 14, 12, 14, 15,
-        16, 17, 18, 16, 18, 19,
-        20, 21, 22, 20, 22, 23,
+        0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11, 12, 13, 14, 12, 14, 15, 16, 17,
+        18, 16, 18, 19, 20, 21, 22, 20, 22, 23,
     ];
     (vertices, indices)
 }

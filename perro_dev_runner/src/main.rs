@@ -1,5 +1,6 @@
 use perro_app::{entry, winit_runner::WinitRunner};
 use perro_graphics::PerroGraphics;
+use perro_project::resolve_local_path;
 use perro_runtime::RuntimeProject;
 use std::{env, path::PathBuf};
 
@@ -14,14 +15,23 @@ fn current_dir_fallback() -> PathBuf {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    let local_root = current_dir_fallback();
 
     let root = parse_flag_value(&args, "--path")
-        .map(PathBuf::from)
-        .unwrap_or_else(current_dir_fallback);
+        .map(|p| resolve_local_path(&p, &local_root))
+        .unwrap_or_else(|| local_root.clone());
 
-    let name = parse_flag_value(&args, "--name").unwrap_or_else(|| "Perro Project".to_string());
+    let fallback_name =
+        parse_flag_value(&args, "--name").unwrap_or_else(|| "Perro Project".to_string());
 
-    let mut project = RuntimeProject::new(name.clone(), root);
+    let mut project = RuntimeProject::from_project_dir_with_default_name(&root, &fallback_name)
+        .unwrap_or_else(|err| {
+            panic!(
+                "failed to load project at `{}`: {err}",
+                root.to_string_lossy()
+            )
+        });
+    let window_title = project.config.name.clone();
 
     // Minimal runtime params passthrough: --param key=value (repeatable)
     let mut i = 0usize;
@@ -41,5 +51,5 @@ fn main() {
     app.set_debug_draw_rect(false);
     app.set_debug_draw_mesh(true);
 
-    WinitRunner::new().run(app, &name);
+    WinitRunner::new().run(app, &window_title);
 }

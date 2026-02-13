@@ -1,8 +1,5 @@
 use crate::{
-    gpu::Gpu,
-    resources::ResourceStore,
-    three_d::renderer::Renderer3D,
-    two_d::renderer::Renderer2D,
+    gpu::Gpu, resources::ResourceStore, three_d::renderer::Renderer3D, two_d::renderer::Renderer2D,
 };
 use perro_render_bridge::{
     Command2D, Command3D, RenderBridge, RenderCommand, RenderEvent, ResourceCommand,
@@ -173,9 +170,7 @@ impl GraphicsBackend for PerroGraphics {
     fn draw_frame(&mut self) {
         let commands = self.frame.take_pending();
         self.process_commands(commands);
-        let (camera_2d, _stats, upload) = self
-            .renderer_2d
-            .prepare_frame(&self.resources);
+        let (camera_2d, _stats, upload) = self.renderer_2d.prepare_frame(&self.resources);
         let (camera_3d, _stats_3d) = self.renderer_3d.prepare_frame(&self.resources);
         let draws_3d: Vec<_> = self.renderer_3d.retained_draws().collect();
 
@@ -196,7 +191,10 @@ mod tests {
     use super::PerroGraphics;
     use crate::backend::GraphicsBackend;
     use perro_ids::{NodeID, TextureID};
-    use perro_render_bridge::{Camera3DState, Command2D, Command3D, RenderBridge, RenderCommand, ResourceCommand, Sprite2DCommand};
+    use perro_render_bridge::{
+        Camera3DState, Command2D, Command3D, RenderBridge, RenderCommand, ResourceCommand,
+        Sprite2DCommand,
+    };
 
     #[test]
     fn sprite_texture_upsert_is_accepted_after_texture_creation() {

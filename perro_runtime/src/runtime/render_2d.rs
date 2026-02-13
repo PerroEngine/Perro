@@ -34,7 +34,14 @@ impl Runtime {
                 _ => None,
             });
             if let Some((visible, texture_id, model, z_index)) = sprite_data {
-                self.emit_sprite_2d(node_id, visible, texture_id, model, z_index, &mut visible_now);
+                self.emit_sprite_2d(
+                    node_id,
+                    visible,
+                    texture_id,
+                    model,
+                    z_index,
+                    &mut visible_now,
+                );
             }
 
             let camera_data = self.nodes.get(node_id).and_then(|node| match &node.data {
@@ -128,7 +135,8 @@ impl Runtime {
                         }
                     }
                     crate::RuntimeRenderResult::Failed(_) => {}
-                    crate::RuntimeRenderResult::Mesh(_) | crate::RuntimeRenderResult::Material(_) => {}
+                    crate::RuntimeRenderResult::Mesh(_)
+                    | crate::RuntimeRenderResult::Material(_) => {}
                 }
             }
         }
@@ -137,10 +145,12 @@ impl Runtime {
             let request = Self::sprite_texture_request_id(node_id);
             if !self.render.is_inflight(request) {
                 self.render.mark_inflight(request);
-                self.queue_render_command(RenderCommand::Resource(ResourceCommand::CreateTexture {
-                    request,
-                    owner: node_id,
-                }));
+                self.queue_render_command(RenderCommand::Resource(
+                    ResourceCommand::CreateTexture {
+                        request,
+                        owner: node_id,
+                    },
+                ));
             }
             return None;
         }
@@ -247,7 +257,10 @@ mod tests {
             RenderCommand::TwoD(Command2D::UpsertSprite { node, .. }) if node == node_id
         ));
 
-        let node = runtime.nodes.get_mut(node_id).expect("sprite node must exist");
+        let node = runtime
+            .nodes
+            .get_mut(node_id)
+            .expect("sprite node must exist");
         if let SceneNodeData::Sprite2D(sprite) = &mut node.data {
             sprite.visible = false;
         }

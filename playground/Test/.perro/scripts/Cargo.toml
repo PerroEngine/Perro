@@ -1,0 +1,15 @@
+[workspace]
+
+[package]
+name = "scripts"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+perro_ids = "0.1.0"
+perro_scripting = "0.1.0"
+perro_api = "0.1.0"
+perro_core = "0.1.0"

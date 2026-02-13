@@ -3,8 +3,10 @@ use perro_graphics::GraphicsBackend;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::{
+    dpi::{PhysicalPosition, PhysicalSize, Position, Size},
     event::WindowEvent,
     event_loop::{ActiveEventLoop, EventLoop},
+    monitor::MonitorHandle,
     window::{Window, WindowAttributes},
 };
 
@@ -112,10 +114,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
 impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<B> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
-            let attrs = WindowAttributes::default().with_title(self.title.clone());
-            let window = Arc::new(event_loop
-                .create_window(attrs)
-                .expect("failed to create winit window"));
+            let attrs = window_attributes(event_loop, self.app.runtime.project(), &self.title);
+            let window = Arc::new(
+                event_loop
+                    .create_window(attrs)
+                    .expect("failed to create winit window"),
+            );
             self.app.attach_window(window.clone());
             let initial_size = window.inner_size();
             self.app
@@ -274,4 +278,69 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             window.request_redraw();
         }
     }
+}
+
+fn window_attributes(
+    event_loop: &ActiveEventLoop,
+    project: Option<&perro_runtime::RuntimeProject>,
+    fallback_title: &str,
+) -> WindowAttributes {
+    let title = project
+        .map(|project| project.config.name.as_str())
+        .unwrap_or(fallback_title)
+        .to_string();
+
+    let mut attrs = WindowAttributes::default().with_title(title);
+    let Some(project) = project else {
+        return attrs;
+    };
+
+    let desired = PhysicalSize::new(project.config.virtual_width, project.config.virtual_height);
+    if desired.width == 0 || desired.height == 0 {
+        return attrs;
+    }
+
+    let Some(monitor) = pick_monitor(event_loop) else {
+        return attrs.with_inner_size(Size::Physical(desired));
+    };
+
+    let max_width = ((monitor.size().width as f32) * 0.95f32).floor() as u32;
+    let max_height = ((monitor.size().height as f32) * 0.95f32).floor() as u32;
+    let fitted = fit_aspect(desired, max_width.max(1), max_height.max(1));
+    let centered = center_position(&monitor, fitted);
+
+    attrs = attrs.with_inner_size(Size::Physical(fitted));
+    attrs.with_position(Position::Physical(centered))
+}
+
+fn pick_monitor(event_loop: &ActiveEventLoop) -> Option<MonitorHandle> {
+    event_loop
+        .primary_monitor()
+        .or_else(|| event_loop.available_monitors().next())
+}
+
+fn fit_aspect(desired: PhysicalSize<u32>, max_width: u32, max_height: u32) -> PhysicalSize<u32> {
+    if desired.width <= max_width && desired.height <= max_height {
+        return desired;
+    }
+
+    let scale = f32::min(
+        max_width as f32 / desired.width as f32,
+        max_height as f32 / desired.height as f32,
+    );
+    let width = ((desired.width as f32) * scale).floor().max(1.0) as u32;
+    let height = ((desired.height as f32) * scale).floor().max(1.0) as u32;
+    PhysicalSize::new(width, height)
+}
+
+fn center_position(
+    monitor: &MonitorHandle,
+    window_size: PhysicalSize<u32>,
+) -> PhysicalPosition<i32> {
+    let monitor_pos = monitor.position();
+    let monitor_size = monitor.size();
+
+    let x = monitor_pos.x + ((monitor_size.width as i32 - window_size.width as i32) / 2);
+    let y = monitor_pos.y + ((monitor_size.height as i32 - window_size.height as i32) / 2);
+    PhysicalPosition::new(x, y)
 }

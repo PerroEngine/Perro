@@ -1,0 +1,9 @@
+@root = main
+
+[main]
+name = "World"
+
+[Node2D]
+    position = (0, 0)
+[/Node2D]
+[/main]
