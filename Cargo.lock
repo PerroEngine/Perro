@@ -1154,6 +1154,7 @@ name = "perro_graphics"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "glam",
  "perro_ids",
  "perro_render_bridge",
  "pollster",

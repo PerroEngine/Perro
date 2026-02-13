@@ -5,7 +5,7 @@ use crate::{
 };
 use ahash::{AHashMap, AHashSet};
 use perro_core::Spatial;
-use perro_ids::{NodeID, TextureID};
+use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
 use std::sync::Arc;
 
@@ -182,6 +182,10 @@ impl Render3DState {
 struct DebugRenderState {
     draw_rect: bool,
     rect_was_active: bool,
+    draw_mesh: bool,
+    mesh_was_active: bool,
+    debug_mesh_id: MeshID,
+    debug_material_id: MaterialID,
 }
 
 impl DebugRenderState {
@@ -189,6 +193,10 @@ impl DebugRenderState {
         Self {
             draw_rect: false,
             rect_was_active: false,
+            draw_mesh: false,
+            mesh_was_active: false,
+            debug_mesh_id: MeshID::nil(),
+            debug_material_id: MaterialID::nil(),
         }
     }
 }
@@ -287,6 +295,11 @@ impl Runtime {
     #[inline]
     pub fn set_debug_draw_rect(&mut self, enabled: bool) {
         self.debug.draw_rect = enabled;
+    }
+
+    #[inline]
+    pub fn set_debug_draw_mesh(&mut self, enabled: bool) {
+        self.debug.draw_mesh = enabled;
     }
 
     pub fn queue_render_command(&mut self, command: RenderCommand) {

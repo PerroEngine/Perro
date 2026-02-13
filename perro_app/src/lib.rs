@@ -36,6 +36,21 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn set_debug_draw_mesh(&mut self, enabled: bool) {
+        self.runtime.set_debug_draw_mesh(enabled);
+    }
+
+    #[inline]
+    pub fn set_smoothing(&mut self, enabled: bool) {
+        self.graphics.set_smoothing(enabled);
+    }
+
+    #[inline]
+    pub fn set_smoothing_samples(&mut self, samples: u32) {
+        self.graphics.set_smoothing_samples(samples);
+    }
+
+    #[inline]
     pub fn attach_window(&mut self, window: Arc<Window>) {
         self.graphics.attach_window(window);
     }

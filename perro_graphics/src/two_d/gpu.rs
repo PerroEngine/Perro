@@ -1,15 +1,10 @@
 use super::renderer::{Camera2DUniform, RectInstanceGpu, RectUploadPlan};
 use super::shaders::create_rect_shader_module;
 use bytemuck::{Pod, Zeroable};
-use std::sync::Arc;
-use winit::window::Window;
+use wgpu::util::DeviceExt;
 
 const VIRTUAL_WIDTH: f32 = 1920.0;
 const VIRTUAL_HEIGHT: f32 = 1080.0;
-// Linear-space clear color for sRGB hex #1C1817.
-const CLEAR_R: f64 = 0.011612245179743885;
-const CLEAR_G: f64 = 0.009134058702220787;
-const CLEAR_B: f64 = 0.008568125618069307;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -18,11 +13,7 @@ struct QuadVertex {
 }
 
 pub struct Gpu2D {
-    window_handle: Arc<Window>,
-    surface: wgpu::Surface<'static>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
+    camera_bgl: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
@@ -33,60 +24,12 @@ pub struct Gpu2D {
 }
 
 impl Gpu2D {
-    pub fn new(window: Arc<Window>) -> Option<Self> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-        let surface = instance.create_surface(window.clone()).ok()?;
-
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
-        }))
-        .ok()?;
-
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("perro_device"),
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::default(),
-            experimental_features: wgpu::ExperimentalFeatures::disabled(),
-            memory_hints: wgpu::MemoryHints::Performance,
-            trace: wgpu::Trace::default(),
-        }))
-        .ok()?;
-
-        let caps = surface.get_capabilities(&adapter);
-        let format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(caps.formats[0]);
-
-        let present_mode = if caps.present_modes.contains(&wgpu::PresentMode::Fifo) {
-            wgpu::PresentMode::Fifo
-        } else {
-            caps.present_modes[0]
-        };
-
-        let alpha_mode = caps.alpha_modes[0];
-        let size = window.inner_size();
-        let width = size.width.max(1);
-        let height = size.height.max(1);
-
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
-            width,
-            height,
-            present_mode,
-            alpha_mode,
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
-        surface.configure(&device, &config);
-
-        let shader = create_rect_shader_module(&device);
-
+    pub fn new(
+        device: &wgpu::Device,
+        color_format: wgpu::TextureFormat,
+        sample_count: u32,
+    ) -> Self {
+        let shader = create_rect_shader_module(device);
         let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_camera2d_bgl"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -118,74 +61,8 @@ impl Gpu2D {
                 resource: camera_buffer.as_entire_binding(),
             }],
         });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_rect_pipeline_layout"),
-            bind_group_layouts: &[&camera_bgl],
-            immediate_size: 0,
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_rect_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<QuadVertex>() as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x2,
-                        }],
-                    },
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<RectInstanceGpu>() as u64,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &[
-                            wgpu::VertexAttribute {
-                                offset: 0,
-                                shader_location: 1,
-                                format: wgpu::VertexFormat::Float32x2,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 8,
-                                shader_location: 2,
-                                format: wgpu::VertexFormat::Float32x2,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 16,
-                                shader_location: 3,
-                                format: wgpu::VertexFormat::Float32x4,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 32,
-                                shader_location: 4,
-                                format: wgpu::VertexFormat::Sint32,
-                            },
-                        ],
-                    },
-                ],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let pipeline =
+            create_rect_pipeline(device, &camera_bgl, &shader, color_format, sample_count);
 
         let quad = [
             QuadVertex { pos: [-0.5, -0.5] },
@@ -195,13 +72,11 @@ impl Gpu2D {
             QuadVertex { pos: [0.5, 0.5] },
             QuadVertex { pos: [-0.5, 0.5] },
         ];
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("perro_quad_vertices"),
-            size: std::mem::size_of_val(&quad) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
+            contents: bytemuck::cast_slice(&quad),
+            usage: wgpu::BufferUsages::VERTEX,
         });
-        queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&quad));
 
         let instance_capacity = 256usize;
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -211,12 +86,8 @@ impl Gpu2D {
             mapped_at_creation: false,
         });
 
-        Some(Self {
-            window_handle: window,
-            surface,
-            device,
-            queue,
-            config,
+        Self {
+            camera_bgl,
             pipeline,
             vertex_buffer,
             instance_buffer,
@@ -224,40 +95,41 @@ impl Gpu2D {
             camera_buffer,
             camera_bind_group,
             last_camera: None,
-        })
+        }
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        if width == 0 || height == 0 {
-            return;
-        }
-        if self.config.width == width && self.config.height == height {
-            return;
-        }
-        self.config.width = width;
-        self.config.height = height;
-        self.surface.configure(&self.device, &self.config);
-    }
-
-    pub fn render(
+    pub fn set_sample_count(
         &mut self,
+        device: &wgpu::Device,
+        color_format: wgpu::TextureFormat,
+        sample_count: u32,
+    ) {
+        let shader = create_rect_shader_module(device);
+        self.pipeline = create_rect_pipeline(
+            device,
+            &self.camera_bgl,
+            &shader,
+            color_format,
+            sample_count,
+        );
+    }
+
+    pub fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
         camera: Camera2DUniform,
         rects: &[RectInstanceGpu],
         upload: &RectUploadPlan,
     ) {
-        // Keep window alive for the full surface lifetime.
-        self.window_handle.id();
-
-        self.ensure_instance_capacity(upload.draw_count);
+        self.ensure_instance_capacity(device, upload.draw_count);
         if self.last_camera != Some(camera) {
-            self.queue
-                .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
+            queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
             self.last_camera = Some(camera);
         }
         if upload.full_reupload {
             if !rects.is_empty() {
-                self.queue
-                    .write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(rects));
+                queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(rects));
             }
         } else {
             let stride = std::mem::size_of::<RectInstanceGpu>() as u64;
@@ -266,68 +138,46 @@ impl Gpu2D {
                     continue;
                 }
                 let offset = range.start as u64 * stride;
-                self.queue.write_buffer(
+                queue.write_buffer(
                     &self.instance_buffer,
                     offset,
                     bytemuck::cast_slice(&rects[range.clone()]),
                 );
             }
         }
-
-        let frame = match self.surface.get_current_texture() {
-            Ok(frame) => frame,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                self.surface.configure(&self.device, &self.config);
-                return;
-            }
-            Err(wgpu::SurfaceError::OutOfMemory) => return,
-            Err(wgpu::SurfaceError::Timeout) => return,
-            Err(wgpu::SurfaceError::Other) => return,
-        };
-
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("perro_main_encoder"),
-            });
-
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("perro_rect_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: CLEAR_R,
-                            g: CLEAR_G,
-                            b: CLEAR_B,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            pass.draw(0..6, 0..upload.draw_count as u32);
-        }
-
-        self.queue.submit(Some(encoder.finish()));
-        frame.present();
     }
 
-    fn ensure_instance_capacity(&mut self, needed: usize) {
+    pub fn render_pass(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        color_view: &wgpu::TextureView,
+        resolve_target: Option<&wgpu::TextureView>,
+        draw_count: u32,
+    ) {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("perro_rect_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: color_view,
+                resolve_target,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        pass.draw(0..6, 0..draw_count);
+    }
+
+    fn ensure_instance_capacity(&mut self, device: &wgpu::Device, needed: usize) {
         if needed <= self.instance_capacity {
             return;
         }
@@ -335,7 +185,7 @@ impl Gpu2D {
         while new_capacity < needed {
             new_capacity *= 2;
         }
-        self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+        self.instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_rect_instances"),
             size: (new_capacity * std::mem::size_of::<RectInstanceGpu>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
@@ -347,4 +197,84 @@ impl Gpu2D {
     pub fn virtual_size() -> [f32; 2] {
         [VIRTUAL_WIDTH, VIRTUAL_HEIGHT]
     }
+}
+
+fn create_rect_pipeline(
+    device: &wgpu::Device,
+    camera_bgl: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
+    format: wgpu::TextureFormat,
+    sample_count: u32,
+) -> wgpu::RenderPipeline {
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("perro_rect_pipeline_layout"),
+        bind_group_layouts: &[camera_bgl],
+        immediate_size: 0,
+    });
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("perro_rect_pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            buffers: &[
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<QuadVertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[wgpu::VertexAttribute {
+                        offset: 0,
+                        shader_location: 0,
+                        format: wgpu::VertexFormat::Float32x2,
+                    }],
+                },
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<RectInstanceGpu>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 8,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 16,
+                            shader_location: 3,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 32,
+                            shader_location: 4,
+                            format: wgpu::VertexFormat::Sint32,
+                        },
+                    ],
+                },
+            ],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: sample_count.max(1),
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview_mask: None,
+        cache: None,
+    })
 }

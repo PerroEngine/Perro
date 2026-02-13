@@ -38,7 +38,8 @@ fn main() {
 
     let graphics = PerroGraphics::new();
     let mut app = entry::create_dev_app(graphics, project);
-    app.set_debug_draw_rect(true);
+    app.set_debug_draw_rect(false);
+    app.set_debug_draw_mesh(true);
 
     WinitRunner::new().run(app, &name);
 }

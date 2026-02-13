@@ -99,9 +99,13 @@ pub enum Command3D {
         mesh: MeshID,
         material: MaterialID,
         node: NodeID,
+        model: [[f32; 4]; 4],
     },
     SetCamera {
         camera: Camera3DState,
+    },
+    RemoveNode {
+        node: NodeID,
     },
 }
 

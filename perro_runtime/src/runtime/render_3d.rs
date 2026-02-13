@@ -4,12 +4,22 @@ use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_render_bridge::{Camera3DState, Command3D, RenderCommand, RenderRequestID, ResourceCommand};
 
 impl Runtime {
+    const DEBUG_MESH_NODE_ID: NodeID = NodeID::from_parts(u32::MAX - 1, 0);
+
     fn mesh_request_id(node: NodeID) -> RenderRequestID {
         RenderRequestID::new((node.as_u64() << 8) | 0x3E)
     }
 
     fn material_request_id(node: NodeID) -> RenderRequestID {
         RenderRequestID::new((node.as_u64() << 8) | 0x3F)
+    }
+
+    fn debug_mesh_request_id() -> RenderRequestID {
+        RenderRequestID::new((Self::DEBUG_MESH_NODE_ID.as_u64() << 8) | 0xE3)
+    }
+
+    fn debug_material_request_id() -> RenderRequestID {
+        RenderRequestID::new((Self::DEBUG_MESH_NODE_ID.as_u64() << 8) | 0xE4)
     }
 
     pub fn extract_render_3d_commands(&mut self) {
@@ -41,11 +51,16 @@ impl Runtime {
 
             let mesh_data = self.nodes.get(node_id).and_then(|node| match &node.data {
                 SceneNodeData::MeshInstance3D(mesh) => {
-                    Some((mesh.base.visible, mesh.mesh_id, mesh.material_id))
+                    Some((
+                        mesh.base.visible,
+                        mesh.mesh_id,
+                        mesh.material_id,
+                        mesh.base.transform.to_mat4().to_cols_array_2d(),
+                    ))
                 }
                 _ => None,
             });
-            let Some((visible, mesh_id, material_id)) = mesh_data else {
+            let Some((visible, mesh_id, material_id, model)) = mesh_data else {
                 continue;
             };
             if !visible {
@@ -61,11 +76,75 @@ impl Runtime {
                 mesh,
                 material,
                 node: node_id,
+                model,
             }));
         }
 
+        self.update_debug_mesh_state();
+
         traversal_ids.clear();
         self.render_3d.traversal_ids = traversal_ids;
+    }
+
+    fn update_debug_mesh_state(&mut self) {
+        if !self.debug.draw_mesh {
+            if self.debug.mesh_was_active {
+                self.queue_render_command(RenderCommand::ThreeD(Command3D::RemoveNode {
+                    node: Self::DEBUG_MESH_NODE_ID,
+                }));
+                self.debug.mesh_was_active = false;
+            }
+            return;
+        }
+
+        if self.debug.debug_mesh_id.is_nil() {
+            let request = Self::debug_mesh_request_id();
+            if let Some(result) = self.take_render_result(request) {
+                if let crate::RuntimeRenderResult::Mesh(id) = result {
+                    self.debug.debug_mesh_id = id;
+                }
+            }
+            if self.debug.debug_mesh_id.is_nil() && !self.render.is_inflight(request) {
+                self.render.mark_inflight(request);
+                self.queue_render_command(RenderCommand::Resource(ResourceCommand::CreateMesh {
+                    request,
+                    owner: Self::DEBUG_MESH_NODE_ID,
+                }));
+                return;
+            }
+        }
+
+        if self.debug.debug_material_id.is_nil() {
+            let request = Self::debug_material_request_id();
+            if let Some(result) = self.take_render_result(request) {
+                if let crate::RuntimeRenderResult::Material(id) = result {
+                    self.debug.debug_material_id = id;
+                }
+            }
+            if self.debug.debug_material_id.is_nil() && !self.render.is_inflight(request) {
+                self.render.mark_inflight(request);
+                self.queue_render_command(RenderCommand::Resource(
+                    ResourceCommand::CreateMaterial {
+                        request,
+                        owner: Self::DEBUG_MESH_NODE_ID,
+                    },
+                ));
+                return;
+            }
+        }
+
+        self.queue_render_command(RenderCommand::ThreeD(Command3D::Draw {
+            mesh: self.debug.debug_mesh_id,
+            material: self.debug.debug_material_id,
+            node: Self::DEBUG_MESH_NODE_ID,
+            model: [
+                [0.70710677, 0.0, -0.70710677, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.70710677, 0.0, 0.70710677, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        }));
+        self.debug.mesh_was_active = true;
     }
 
     fn resolve_mesh_instance_assets(
@@ -212,7 +291,12 @@ mod tests {
         assert_eq!(third.len(), 1);
         assert!(matches!(
             third[0],
-            RenderCommand::ThreeD(Command3D::Draw { node, mesh, material })
+            RenderCommand::ThreeD(Command3D::Draw {
+                node,
+                mesh,
+                material,
+                ..
+            })
             if node == node_id && mesh == mesh_id && material == material_id
         ));
     }
@@ -271,6 +355,51 @@ mod tests {
                 if camera.position == [6.0, 7.0, 8.0]
                     && camera.rotation == [0.1, 0.2, 0.3, 0.9]
                     && camera.zoom == 1.75
+        )));
+    }
+
+    #[test]
+    fn debug_mesh_requests_then_draws_then_removes() {
+        let mut runtime = Runtime::new();
+        runtime.set_debug_draw_mesh(true);
+
+        runtime.extract_render_3d_commands();
+        let first = collect_commands(&mut runtime);
+        let mesh_req = match first.first() {
+            Some(RenderCommand::Resource(ResourceCommand::CreateMesh { request, .. })) => *request,
+            _ => panic!("expected debug mesh create request"),
+        };
+
+        runtime.apply_render_event(RenderEvent::MeshCreated {
+            request: mesh_req,
+            id: MeshID::from_parts(20, 0),
+        });
+        runtime.extract_render_3d_commands();
+        let second = collect_commands(&mut runtime);
+        let mat_req = match second.first() {
+            Some(RenderCommand::Resource(ResourceCommand::CreateMaterial { request, .. })) => {
+                *request
+            }
+            _ => panic!("expected debug material create request"),
+        };
+
+        runtime.apply_render_event(RenderEvent::MaterialCreated {
+            request: mat_req,
+            id: MaterialID::from_parts(30, 0),
+        });
+        runtime.extract_render_3d_commands();
+        let third = collect_commands(&mut runtime);
+        assert!(third.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::ThreeD(Command3D::Draw { .. })
+        )));
+
+        runtime.set_debug_draw_mesh(false);
+        runtime.extract_render_3d_commands();
+        let fourth = collect_commands(&mut runtime);
+        assert!(fourth.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::ThreeD(Command3D::RemoveNode { .. })
         )));
     }
 }

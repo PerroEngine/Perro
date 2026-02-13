@@ -1,20 +1,20 @@
 use crate::{
+    gpu::Gpu,
     resources::ResourceStore,
-    two_d::{
-        gpu::Gpu2D,
-        renderer::Renderer2D,
-    },
+    three_d::renderer::Renderer3D,
+    two_d::renderer::Renderer2D,
 };
 use perro_render_bridge::{
-    Camera3DState, Command2D, Command3D, RenderBridge, RenderCommand, RenderEvent, ResourceCommand,
+    Command2D, Command3D, RenderBridge, RenderCommand, RenderEvent, ResourceCommand,
 };
-use std::collections::HashMap;
 use std::sync::Arc;
 use winit::window::Window;
 
 pub trait GraphicsBackend: RenderBridge {
     fn attach_window(&mut self, window: Arc<Window>);
     fn resize(&mut self, width: u32, height: u32);
+    fn set_smoothing(&mut self, enabled: bool);
+    fn set_smoothing_samples(&mut self, samples: u32);
 
     fn draw_frame(&mut self);
 }
@@ -39,11 +39,12 @@ pub struct PerroGraphics {
     frame: FrameState,
     resources: ResourceStore,
     renderer_2d: Renderer2D,
-    gpu: Option<Gpu2D>,
+    renderer_3d: Renderer3D,
+    gpu: Option<Gpu>,
     events: Vec<RenderEvent>,
     viewport: (u32, u32),
-    retained_3d_draws: HashMap<perro_ids::NodeID, (perro_ids::MeshID, perro_ids::MaterialID)>,
-    retained_3d_camera: Option<Camera3DState>,
+    smoothing_enabled: bool,
+    smoothing_samples: u32,
 }
 
 impl PerroGraphics {
@@ -52,11 +53,12 @@ impl PerroGraphics {
             frame: FrameState::default(),
             resources: ResourceStore::new(),
             renderer_2d: Renderer2D::new(),
+            renderer_3d: Renderer3D::new(),
             gpu: None,
             events: Vec::new(),
             viewport: (0, 0),
-            retained_3d_draws: HashMap::new(),
-            retained_3d_camera: None,
+            smoothing_enabled: true,
+            smoothing_samples: 4,
         }
     }
 
@@ -98,11 +100,15 @@ impl PerroGraphics {
                         mesh,
                         material,
                         node,
+                        model,
                     } => {
-                        self.retained_3d_draws.insert(node, (mesh, material));
+                        self.renderer_3d.queue_draw(node, mesh, material, model);
                     }
                     Command3D::SetCamera { camera } => {
-                        self.retained_3d_camera = Some(camera);
+                        self.renderer_3d.set_camera(camera);
+                    }
+                    Command3D::RemoveNode { node } => {
+                        self.renderer_3d.remove_node(node);
                     }
                 },
             }
@@ -130,9 +136,9 @@ impl RenderBridge for PerroGraphics {
 impl GraphicsBackend for PerroGraphics {
     fn attach_window(&mut self, window: Arc<Window>) {
         if self.gpu.is_none() {
-            let mut gpu = Gpu2D::new(window);
+            let mut gpu = Gpu::new(window, self.smoothing_samples);
             if let Some(gpu_ref) = gpu.as_mut() {
-                let [vw, vh] = Gpu2D::virtual_size();
+                let [vw, vh] = Gpu::virtual_size();
                 self.renderer_2d.set_virtual_viewport(vw, vh);
                 gpu_ref.resize(self.viewport.0.max(1), self.viewport.1.max(1));
             }
@@ -148,15 +154,39 @@ impl GraphicsBackend for PerroGraphics {
         }
     }
 
+    fn set_smoothing(&mut self, enabled: bool) {
+        self.smoothing_enabled = enabled;
+        self.smoothing_samples = if enabled { 4 } else { 1 };
+        if let Some(gpu) = &mut self.gpu {
+            gpu.set_smoothing_samples(self.smoothing_samples);
+        }
+    }
+
+    fn set_smoothing_samples(&mut self, samples: u32) {
+        self.smoothing_samples = samples;
+        self.smoothing_enabled = samples > 1;
+        if let Some(gpu) = &mut self.gpu {
+            gpu.set_smoothing_samples(samples);
+        }
+    }
+
     fn draw_frame(&mut self) {
         let commands = self.frame.take_pending();
         self.process_commands(commands);
-        let (camera, _stats, upload) = self
+        let (camera_2d, _stats, upload) = self
             .renderer_2d
             .prepare_frame(&self.resources);
+        let (camera_3d, _stats_3d) = self.renderer_3d.prepare_frame(&self.resources);
+        let draws_3d: Vec<_> = self.renderer_3d.retained_draws().collect();
 
         if let Some(gpu) = &mut self.gpu {
-            gpu.render(camera, self.renderer_2d.retained_rects(), &upload);
+            gpu.render(
+                camera_3d,
+                &draws_3d,
+                camera_2d,
+                self.renderer_2d.retained_rects(),
+                &upload,
+            );
         }
     }
 }
@@ -165,11 +195,8 @@ impl GraphicsBackend for PerroGraphics {
 mod tests {
     use super::PerroGraphics;
     use crate::backend::GraphicsBackend;
-    use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
-    use perro_render_bridge::{
-        Camera3DState, Command2D, Command3D, RenderBridge, RenderCommand, ResourceCommand,
-        Sprite2DCommand,
-    };
+    use perro_ids::{NodeID, TextureID};
+    use perro_render_bridge::{Camera3DState, Command2D, Command3D, RenderBridge, RenderCommand, ResourceCommand, Sprite2DCommand};
 
     #[test]
     fn sprite_texture_upsert_is_accepted_after_texture_creation() {
@@ -219,31 +246,85 @@ mod tests {
         let node_a = NodeID::from_parts(10, 0);
         let node_b = NodeID::from_parts(11, 0);
 
-        graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
-            mesh: MeshID::from_parts(1, 0),
-            material: MaterialID::from_parts(2, 0),
-            node: node_a,
+        graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
+            request: perro_render_bridge::RenderRequestID::new(1001),
+            owner: node_a,
         }));
-        graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
-            mesh: MeshID::from_parts(3, 0),
-            material: MaterialID::from_parts(4, 0),
-            node: node_a,
+        graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
+            request: perro_render_bridge::RenderRequestID::new(1002),
+            owner: node_a,
         }));
-        graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
-            mesh: MeshID::from_parts(5, 0),
-            material: MaterialID::from_parts(6, 0),
-            node: node_b,
+        graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
+            request: perro_render_bridge::RenderRequestID::new(1003),
+            owner: node_b,
+        }));
+        graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
+            request: perro_render_bridge::RenderRequestID::new(1004),
+            owner: node_b,
         }));
         graphics.draw_frame();
 
-        assert_eq!(graphics.retained_3d_draws.len(), 2);
+        let mut events = Vec::new();
+        graphics.drain_events(&mut events);
+        let mut created_meshes = Vec::new();
+        let mut created_materials = Vec::new();
+        for event in events {
+            match event {
+                perro_render_bridge::RenderEvent::MeshCreated { id, .. } => created_meshes.push(id),
+                perro_render_bridge::RenderEvent::MaterialCreated { id, .. } => {
+                    created_materials.push(id)
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(created_meshes.len(), 2);
+        assert_eq!(created_materials.len(), 2);
+
+        let model_a = [
+            [1.0, 0.0, 0.0, 2.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let model_b = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 3.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+
+        graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
+            mesh: created_meshes[0],
+            material: created_materials[0],
+            node: node_a,
+            model: model_a,
+        }));
+        graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
+            mesh: created_meshes[1],
+            material: created_materials[1],
+            node: node_b,
+            model: model_b,
+        }));
+        graphics.draw_frame();
+
+        assert_eq!(graphics.renderer_3d.retained_draw_count(), 2);
         assert_eq!(
-            graphics.retained_3d_draws.get(&node_a).copied(),
-            Some((MeshID::from_parts(3, 0), MaterialID::from_parts(4, 0)))
+            graphics.renderer_3d.retained_draw(node_a),
+            Some(crate::three_d::renderer::Draw3DInstance {
+                node: node_a,
+                mesh: created_meshes[0],
+                material: created_materials[0],
+                model: model_a,
+            })
         );
         assert_eq!(
-            graphics.retained_3d_draws.get(&node_b).copied(),
-            Some((MeshID::from_parts(5, 0), MaterialID::from_parts(6, 0)))
+            graphics.renderer_3d.retained_draw(node_b),
+            Some(crate::three_d::renderer::Draw3DInstance {
+                node: node_b,
+                mesh: created_meshes[1],
+                material: created_materials[1],
+                model: model_b,
+            })
         );
     }
 
@@ -260,12 +341,12 @@ mod tests {
         graphics.draw_frame();
 
         assert_eq!(
-            graphics.retained_3d_camera,
-            Some(Camera3DState {
+            graphics.renderer_3d.camera(),
+            Camera3DState {
                 position: [1.0, 2.0, 3.0],
                 rotation: [0.0, 0.5, 0.0, 0.8660254],
                 zoom: 1.25,
-            })
+            }
         );
     }
 

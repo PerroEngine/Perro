@@ -84,6 +84,16 @@ impl ResourceStore {
         self.textures.contains_parts(id.index(), id.generation())
     }
 
+    #[inline]
+    pub fn has_mesh(&self, id: MeshID) -> bool {
+        self.meshes.contains_parts(id.index(), id.generation())
+    }
+
+    #[inline]
+    pub fn has_material(&self, id: MaterialID) -> bool {
+        self.materials.contains_parts(id.index(), id.generation())
+    }
+
     #[cfg(test)]
     #[inline]
     fn remove_texture_for_test(&mut self, id: TextureID) -> bool {
