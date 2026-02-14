@@ -1,0 +1,13 @@
+[workspace]
+
+[package]
+name = "perro_project"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+perro_ids = "0.1.0"
+perro_scripting = "0.1.0"
+perro_api = "0.1.0"
+perro_core = "0.1.0"
+scripts = { path = "../scripts" }

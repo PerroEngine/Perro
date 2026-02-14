@@ -1,0 +1,7 @@
+[project]
+name = "Perro Project"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"

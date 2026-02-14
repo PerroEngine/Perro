@@ -6,31 +6,17 @@ use std::any::Any;
 #[allow(improper_ctypes_definitions)]
 pub type ScriptConstructor<R> = extern "C" fn() -> *mut dyn ScriptBehavior<R>;
 
-pub trait ScriptState {
-    fn id(&self) -> NodeID;
-    fn set_id(&mut self, id: NodeID);
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-}
-
 pub trait ScriptLifecycle<R: RuntimeAPI + ?Sized> {
-    fn init(&self, api: &mut API<'_, R>, self_id: NodeID);
-    fn update(&self, api: &mut API<'_, R>, self_id: NodeID);
-    fn fixed_update(&self, api: &mut API<'_, R>, self_id: NodeID);
+    fn init(&self, _api: &mut API<'_, R>, _self_id: NodeID) {}
+    fn update(&self, _api: &mut API<'_, R>, _self_id: NodeID) {}
+    fn fixed_update(&self, _api: &mut API<'_, R>, _self_id: NodeID) {}
 }
 
 pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
     fn script_flags(&self) -> ScriptFlags;
-
-    fn get_var(&self, state: &dyn ScriptState, var_id: ScriptMemberID) -> Variant;
-    fn set_var(&self, state: &mut dyn ScriptState, var_id: ScriptMemberID, value: Variant);
-
-    fn apply_exposed_vars(&self, state: &mut dyn ScriptState, vars: &[(ScriptMemberID, Variant)]) {
-        for (var_id, value) in vars {
-            self.set_var(state, *var_id, value.clone());
-        }
-    }
-
+    fn get_var(&self, state: &dyn Any, var_id: ScriptMemberID) -> Variant;
+    fn set_var(&self, state: &mut dyn Any, var_id: ScriptMemberID, value: Variant);
+    fn apply_exposed_vars(&self, state: &mut dyn Any, vars: &[(ScriptMemberID, Variant)]);
     fn call_method(
         &self,
         method_id: ScriptMemberID,
@@ -38,15 +24,12 @@ pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
         self_id: NodeID,
         params: &[Variant],
     ) -> Variant;
-
     fn attributes_of(&self, member: &str) -> Vec<String>;
     fn members_with(&self, attribute: &str) -> Vec<String>;
     fn has_attribute(&self, member: &str, attribute: &str) -> bool;
 }
 
-/// Bitflags to track which lifecycle methods are implemented by a script
-/// This allows the engine to skip calling methods that are not implemented,
-/// reducing overhead significantly when scripts only implement a subset of methods
+/// Bitflags to track which lifecycle methods are implemented by a script.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScriptFlags(u8);
 

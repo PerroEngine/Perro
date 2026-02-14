@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fmt::{Display, Formatter},
     fs,
     path::{Path, PathBuf},
@@ -107,6 +108,7 @@ pub fn create_new_project(project_root: &Path, project_name: &str) -> Result<(),
     ensure_project_layout(project_root)?;
     ensure_project_toml(project_root, project_name)?;
     ensure_project_scaffold(project_root, project_name)?;
+    ensure_source_overrides(project_root)?;
     Ok(())
 }
 
@@ -138,6 +140,7 @@ pub fn bootstrap_project(
     ensure_project_toml(project_root, default_name)?;
     let config = load_project_toml(project_root)?;
     ensure_project_scaffold(project_root, &config.name)?;
+    ensure_source_overrides(project_root)?;
     Ok(config)
 }
 
@@ -150,6 +153,7 @@ pub fn ensure_project_layout(root: &Path) -> std::io::Result<()> {
 
 pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Result<()> {
     let res_dir = root.join("res");
+    let res_scripts_dir = res_dir.join("scripts");
     let perro_dir = root.join(".perro");
     let project_crate = perro_dir.join("project");
     let scripts_crate = perro_dir.join("scripts");
@@ -157,20 +161,27 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     let scripts_src = scripts_crate.join("src");
 
     fs::create_dir_all(&res_dir)?;
+    fs::create_dir_all(&res_scripts_dir)?;
     fs::create_dir_all(&project_src)?;
     fs::create_dir_all(&scripts_src)?;
 
     let crate_name = crate_name_from_project_name(project_name);
+    let deps_for_project = engine_deps_for_dir(&project_crate);
+    let deps_for_scripts = engine_deps_for_dir(&scripts_crate);
 
     write_if_missing(root.join(".gitignore"), &default_gitignore())?;
     write_if_missing(res_dir.join("main.scn"), &default_main_scene())?;
     write_if_missing(
+        res_scripts_dir.join("script.rs"),
+        &default_script_example_rs(),
+    )?;
+    write_if_missing(
         project_crate.join("Cargo.toml"),
-        &default_project_crate_toml(&crate_name),
+        &default_project_crate_toml(&crate_name, &deps_for_project),
     )?;
     write_if_missing(
         scripts_crate.join("Cargo.toml"),
-        &default_scripts_crate_toml(),
+        &default_scripts_crate_toml(&deps_for_scripts),
     )?;
     write_if_missing(project_src.join("main.rs"), &default_project_main_rs())?;
     write_if_missing(scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
@@ -361,15 +372,53 @@ name = "World"
     .to_string()
 }
 
-fn default_gitignore() -> String {
-    r#"target/
-/.perro/project/target/
-/.perro/scripts/target/
+fn default_script_example_rs() -> String {
+    r#"use perro_api::prelude::*;
+use perro_core::prelude::*;
+use perro_ids::prelude::*;
+use perro_scripting::prelude::*;
+
+///@State
+#[derive(Default)]
+pub struct ExampleState {
+    speed: f32,
+}
+
+///@Script
+pub struct ExampleScript;
+
+impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
+    fn init(&self, api: &mut API<'_, R>, self_id: NodeID) {
+        let _origin = Vector2::new(0.0, 0.0);
+        let _ = api
+            .Scripts()
+            .with_state_mut::<ExampleState, _, _>(self_id, |state| {
+                state.speed = 240.0;
+            });
+    }
+
+    fn update(&self, api: &mut API<'_, R>, self_id: NodeID) {
+        let dt = api.Time().get_delta();
+        let _ = api
+            .Scripts()
+            .with_state_mut::<ExampleState, _, _>(self_id, |state| {
+                state.speed += dt;
+            });
+    }
+
+    fn fixed_update(&self, _api: &mut API<'_, R>, _self_id: NodeID) {}
+}
 "#
     .to_string()
 }
 
-fn default_project_crate_toml(crate_name: &str) -> String {
+fn default_gitignore() -> String {
+    r#"target/
+"#
+    .to_string()
+}
+
+fn default_project_crate_toml(crate_name: &str, deps: &EngineDeps) -> String {
     format!(
         r#"[workspace]
 
@@ -379,17 +428,24 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_ids = "0.1.0"
-perro_scripting = "0.1.0"
-perro_api = "0.1.0"
-perro_core = "0.1.0"
+perro_app = {{ path = "{perro_app}" }}
+perro_ids = {{ path = "{perro_ids}" }}
+perro_scripting = {{ path = "{perro_scripting}" }}
+perro_api = {{ path = "{perro_api}" }}
+perro_core = {{ path = "{perro_core}" }}
 scripts = {{ path = "../scripts" }}
-"#
+ "#,
+        perro_app = deps.perro_app,
+        perro_ids = deps.perro_ids,
+        perro_scripting = deps.perro_scripting,
+        perro_api = deps.perro_api,
+        perro_core = deps.perro_core
     )
 }
 
-fn default_scripts_crate_toml() -> String {
-    r#"[workspace]
+fn default_scripts_crate_toml(deps: &EngineDeps) -> String {
+    format!(
+        r#"[workspace]
 
 [package]
 name = "scripts"
@@ -400,17 +456,75 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-perro_ids = "0.1.0"
-perro_scripting = "0.1.0"
-perro_api = "0.1.0"
-perro_core = "0.1.0"
-"#
-    .to_string()
+perro_ids = {{ path = "{perro_ids}" }}
+perro_scripting = {{ path = "{perro_scripting}" }}
+perro_api = {{ path = "{perro_api}" }}
+perro_core = {{ path = "{perro_core}" }}
+"#,
+        perro_ids = deps.perro_ids,
+        perro_scripting = deps.perro_scripting,
+        perro_api = deps.perro_api,
+        perro_core = deps.perro_core
+    )
+}
+
+struct EngineDeps {
+    perro_app: String,
+    perro_ids: String,
+    perro_scripting: String,
+    perro_api: String,
+    perro_core: String,
+}
+
+fn engine_deps_for_dir(from_dir: &Path) -> EngineDeps {
+    let engine_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."));
+    let from_abs = from_dir
+        .canonicalize()
+        .unwrap_or_else(|_| from_dir.to_path_buf());
+
+    EngineDeps {
+        perro_app: rel_path(&from_abs, &engine_root.join("perro_app")),
+        perro_ids: rel_path(&from_abs, &engine_root.join("perro_ids")),
+        perro_scripting: rel_path(&from_abs, &engine_root.join("perro_scripting")),
+        perro_api: rel_path(&from_abs, &engine_root.join("perro_api")),
+        perro_core: rel_path(&from_abs, &engine_root.join("perro_core")),
+    }
+}
+
+fn rel_path(from: &Path, to: &Path) -> String {
+    let from_components: Vec<_> = from.components().collect();
+    let to_components: Vec<_> = to.components().collect();
+    let common = from_components
+        .iter()
+        .zip(to_components.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+
+    let mut out = PathBuf::new();
+    for _ in common..from_components.len() {
+        out.push("..");
+    }
+    for c in &to_components[common..] {
+        out.push(c.as_os_str());
+    }
+    out.to_string_lossy().replace('\\', "/")
 }
 
 fn default_project_main_rs() -> String {
-    r#"fn main() {
-    println!("Perro project bootstrap binary");
+    r#"use std::path::PathBuf;
+
+fn project_root() -> PathBuf {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+    root.canonicalize().unwrap_or(root)
+}
+
+fn main() {
+    let root = project_root();
+    perro_app::entry::run_dev_project_from_path(&root, "Perro Project")
+        .expect("failed to run project");
 }
 "#
     .to_string()
@@ -421,6 +535,127 @@ fn default_scripts_lib_rs() -> String {
 pub extern "C" fn perro_scripts_init() {}
 "#
     .to_string()
+}
+
+pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
+    let project_manifest = project_root
+        .join(".perro")
+        .join("project")
+        .join("Cargo.toml");
+    let scripts_manifest = project_root
+        .join(".perro")
+        .join("scripts")
+        .join("Cargo.toml");
+    ensure_patch_block_in_manifest(&project_manifest)?;
+    ensure_patch_block_in_manifest(&scripts_manifest)?;
+    Ok(())
+}
+
+fn ensure_patch_block_in_manifest(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let src = fs::read_to_string(path)?;
+    let overrides = source_overrides_block_for_manifest(&src);
+    let stripped = strip_patch_crates_io(&src);
+    let mut out = stripped.trim_end().to_string();
+    if !overrides.is_empty() {
+        out.push_str("\n\n");
+        out.push_str(&overrides);
+        out.push('\n');
+    }
+    fs::write(path, out)
+}
+
+fn strip_patch_crates_io(src: &str) -> String {
+    let mut out = String::new();
+    let mut in_patch = false;
+
+    for line in src.lines() {
+        let trimmed = line.trim();
+        let is_header = trimmed.starts_with('[') && trimmed.ends_with(']');
+        if is_header && trimmed == "[patch.crates-io]" {
+            in_patch = true;
+            continue;
+        }
+        if in_patch && is_header {
+            in_patch = false;
+        }
+        if !in_patch {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+fn source_overrides_block_for_manifest(manifest_src: &str) -> String {
+    let engine_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."));
+
+    let Some(mut crates) = direct_perro_deps_from_manifest(manifest_src) else {
+        return String::new();
+    };
+    expand_transitive_perro_deps(&engine_root, &mut crates);
+    if crates.is_empty() {
+        return String::new();
+    }
+
+    let mut lines = Vec::new();
+    lines.push("[patch.crates-io]".to_string());
+    for crate_name in crates {
+        let path = path_for_toml(&engine_root.join(&crate_name));
+        lines.push(format!("{crate_name} = {{ path = \"{path}\" }}"));
+    }
+    lines.join("\n")
+}
+
+fn direct_perro_deps_from_manifest(src: &str) -> Option<BTreeSet<String>> {
+    let value: Value = src.parse::<Value>().ok()?;
+    let mut out = BTreeSet::new();
+    collect_perro_dep_keys(value.get("dependencies"), &mut out);
+    collect_perro_dep_keys(value.get("build-dependencies"), &mut out);
+    collect_perro_dep_keys(value.get("dev-dependencies"), &mut out);
+    Some(out)
+}
+
+fn collect_perro_dep_keys(table: Option<&Value>, out: &mut BTreeSet<String>) {
+    let Some(table) = table.and_then(Value::as_table) else {
+        return;
+    };
+    for key in table.keys() {
+        if key.starts_with("perro_") {
+            out.insert(key.to_string());
+        }
+    }
+}
+
+fn expand_transitive_perro_deps(engine_root: &Path, crates: &mut BTreeSet<String>) {
+    let mut queue: Vec<String> = crates.iter().cloned().collect();
+    while let Some(crate_name) = queue.pop() {
+        let manifest = engine_root.join(&crate_name).join("Cargo.toml");
+        let Ok(src) = fs::read_to_string(manifest) else {
+            continue;
+        };
+        let Some(extra) = direct_perro_deps_from_manifest(&src) else {
+            continue;
+        };
+        for dep in extra {
+            if crates.insert(dep.clone()) {
+                queue.push(dep);
+            }
+        }
+    }
+}
+
+fn path_for_toml(path: &Path) -> String {
+    let mut s = path.to_string_lossy().replace('\\', "/");
+    if let Some(stripped) = s.strip_prefix("//?/") {
+        s = stripped.to_string();
+    }
+    s
 }
 
 #[cfg(test)]

@@ -2,6 +2,10 @@ pub mod ids;
 
 pub use ids::*;
 
+pub mod prelude {
+    pub use crate::ids::*;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,14 +1,15 @@
 use ahash::AHashMap;
 use perro_api::api::RuntimeAPI;
 use perro_ids::NodeID;
-use perro_scripting::{ScriptBehavior, ScriptState};
+use perro_scripting::ScriptBehavior;
+use std::any::Any;
 use std::sync::Arc;
 
 type IdMap = AHashMap<NodeID, usize>;
 
 pub struct ScriptInstance<R: RuntimeAPI + ?Sized> {
     pub behavior: Arc<dyn ScriptBehavior<R>>,
-    pub state: Box<dyn ScriptState>,
+    pub state: Box<dyn Any>,
 }
 
 pub struct ScriptCollection<R: RuntimeAPI + ?Sized> {
@@ -58,9 +59,8 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         &mut self,
         id: NodeID,
         behavior: Arc<dyn ScriptBehavior<R>>,
-        mut state: Box<dyn ScriptState>,
+        state: Box<dyn Any>,
     ) {
-        state.set_id(id);
         let flags = behavior.script_flags();
 
         if let Some(&i) = self.index.get(&id) {
@@ -148,13 +148,13 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     {
         let &i = self.index.get(&id)?;
         let instance = self.instances.get(i)?;
-        let state = instance.state.as_any().downcast_ref::<T>()?;
+        let state = (instance.state.as_ref() as &dyn Any).downcast_ref::<T>()?;
         Some(f(state))
     }
 
     pub(crate) fn with_state_dyn<V, F>(&self, id: NodeID, f: F) -> Option<V>
     where
-        F: FnOnce(&dyn ScriptState) -> V,
+        F: FnOnce(&dyn Any) -> V,
     {
         let &i = self.index.get(&id)?;
         let instance = self.instances.get(i)?;
@@ -167,13 +167,13 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     {
         let &i = self.index.get(&id)?;
         let instance = self.instances.get_mut(i)?;
-        let state = instance.state.as_any_mut().downcast_mut::<T>()?;
+        let state = (instance.state.as_mut() as &mut dyn Any).downcast_mut::<T>()?;
         Some(f(state))
     }
 
     pub(crate) fn with_state_mut_dyn<V, F>(&mut self, id: NodeID, f: F) -> Option<V>
     where
-        F: FnOnce(&mut dyn ScriptState) -> V,
+        F: FnOnce(&mut dyn Any) -> V,
     {
         let &i = self.index.get(&id)?;
         let instance = self.instances.get_mut(i)?;

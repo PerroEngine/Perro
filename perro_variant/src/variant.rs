@@ -172,6 +172,22 @@ impl Variant {
     }
 
     #[inline]
+    pub fn as_f32(&self) -> Option<f32> {
+        match *self {
+            Variant::Number(Number::F32(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_f64(&self) -> Option<f64> {
+        match *self {
+            Variant::Number(Number::F64(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Variant::String(s) => Some(s),

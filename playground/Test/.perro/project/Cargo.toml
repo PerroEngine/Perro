@@ -6,8 +6,23 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_ids = "0.1.0"
-perro_scripting = "0.1.0"
-perro_api = "0.1.0"
-perro_core = "0.1.0"
+perro_app = { path = "../../../../perro_app" }
+perro_ids = { path = "../../../../perro_ids" }
+perro_scripting = { path = "../../../../perro_scripting" }
+perro_api = { path = "../../../../perro_api" }
+perro_core = { path = "../../../../perro_core" }
 scripts = { path = "../scripts" }
+
+[patch.crates-io]
+perro_api = { path = "D:/Rust/Perro/perro_api" }
+perro_app = { path = "D:/Rust/Perro/perro_app" }
+perro_core = { path = "D:/Rust/Perro/perro_core" }
+perro_graphics = { path = "D:/Rust/Perro/perro_graphics" }
+perro_ids = { path = "D:/Rust/Perro/perro_ids" }
+perro_io = { path = "D:/Rust/Perro/perro_io" }
+perro_project = { path = "D:/Rust/Perro/perro_project" }
+perro_render_bridge = { path = "D:/Rust/Perro/perro_render_bridge" }
+perro_runtime = { path = "D:/Rust/Perro/perro_runtime" }
+perro_scene = { path = "D:/Rust/Perro/perro_scene" }
+perro_scripting = { path = "D:/Rust/Perro/perro_scripting" }
+perro_variant = { path = "D:/Rust/Perro/perro_variant" }

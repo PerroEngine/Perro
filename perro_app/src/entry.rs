@@ -1,6 +1,8 @@
 use crate::App;
-use perro_graphics::GraphicsBackend;
-use perro_runtime::{ProviderMode, Runtime, RuntimeProject};
+use crate::winit_runner::WinitRunner;
+use perro_graphics::{GraphicsBackend, PerroGraphics};
+use perro_runtime::{ProjectLoadError, ProviderMode, Runtime, RuntimeProject};
+use std::path::Path;
 
 pub fn create_runtime_from_project(
     project: RuntimeProject,
@@ -34,4 +36,18 @@ pub fn create_dev_app<B: GraphicsBackend>(graphics: B, project: RuntimeProject) 
 
 pub fn create_static_app<B: GraphicsBackend>(graphics: B, project: RuntimeProject) -> App<B> {
     create_app_from_project(graphics, project, ProviderMode::Static)
+}
+
+pub fn run_dev_project_from_path(
+    project_root: &Path,
+    default_name: &str,
+) -> Result<(), ProjectLoadError> {
+    let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
+    let window_title = project.config.name.clone();
+    let graphics = PerroGraphics::new();
+    let mut app = create_dev_app(graphics, project);
+    app.set_debug_draw_rect(false);
+    app.set_debug_draw_mesh(true);
+    WinitRunner::new().run(app, &window_title);
+    Ok(())
 }

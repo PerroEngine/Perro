@@ -4,6 +4,11 @@ pub use nodes::*;
 pub mod structs;
 pub use structs::*;
 
+pub mod prelude {
+    pub use crate::nodes::*;
+    pub use crate::structs::*;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
