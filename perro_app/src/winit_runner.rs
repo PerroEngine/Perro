@@ -125,6 +125,9 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             let initial_size = window.inner_size();
             self.app
                 .resize_surface(initial_size.width, initial_size.height);
+            // Draw once before showing the window to avoid a white first-frame flash.
+            self.app.present();
+            window.set_visible(true);
             self.window = Some(window);
             let now = Instant::now();
             self.last_frame_start = now;
@@ -279,7 +282,9 @@ fn window_attributes(
         .unwrap_or(fallback_title)
         .to_string();
 
-    let mut attrs = WindowAttributes::default().with_title(title);
+    let mut attrs = WindowAttributes::default()
+        .with_title(title)
+        .with_visible(false);
     let Some(project) = project else {
         return attrs;
     };
