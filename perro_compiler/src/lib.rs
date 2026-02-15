@@ -67,10 +67,13 @@ pub fn compile_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError
     ensure_source_overrides(project_root)?;
     let copied = sync_scripts(project_root)?;
     let scripts_crate = project_root.join(".perro").join("scripts");
-    let target_dir = project_root.join("target");
+    let target_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("target");
 
     let status = Command::new("cargo")
         .arg("build")
+        .arg("--release")
         .env("CARGO_TARGET_DIR", target_dir)
         .current_dir(scripts_crate)
         .status()?;

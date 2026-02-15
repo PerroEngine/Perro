@@ -53,7 +53,8 @@ impl RuntimeProject {
         default_name: &str,
     ) -> Result<Self, ProjectLoadError> {
         let root = project_root.into();
-        let config = perro_project::bootstrap_project(&root, default_name)?;
+        let _ = default_name;
+        let config = perro_project::load_project_toml(&root)?;
         Ok(Self {
             name: config.name.clone(),
             root,

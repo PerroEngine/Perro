@@ -15,6 +15,7 @@ const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 8;
 const LOG_INTERVAL_SECONDS: f32 = 2.5;
 const FPS_CAP_COMPENSATION: f32 = 1.01;
+const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
 
 #[inline]
 fn target_frame_duration(fps_cap: f32) -> Option<Duration> {
@@ -234,27 +235,15 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 if batch_elapsed_secs >= LOG_INTERVAL_SECONDS && self.batch_frames > 0 {
                     let work_ms = self.batch_work.as_secs_f64() * 1_000.0;
                     let avg_work_us = (work_ms * 1_000.0) / self.batch_frames as f64;
-                    let runtime_update_us = self.batch_runtime_update.as_secs_f64() * 1_000_000.0;
                     let avg_runtime_update_ns =
                         self.batch_runtime_update.as_nanos() as f64 / self.batch_frames as f64;
                     let present_ms = self.batch_present.as_secs_f64() * 1_000.0;
                     let avg_present_us = (present_ms * 1_000.0) / self.batch_frames as f64;
-                    let loop_fps = if self.batch_work.is_zero() {
-                        f64::INFINITY
-                    } else {
-                        self.batch_frames as f64 / self.batch_work.as_secs_f64()
-                    };
+                   
 
                     println!(
-                        "{} loops | update: {:.3}us total ({:.1}ns avg) | present: {:.3}ms total ({:.3}us avg) | total: {:.3}ms total ({:.3}us avg, {:.1} uncapped eq)",
-                        self.batch_frames,
-                        runtime_update_us,
-                        avg_runtime_update_ns,
-                        present_ms,
-                        avg_present_us,
-                        work_ms,
-                        avg_work_us,
-                        loop_fps
+                        "update: ({:.1}ns avg) | frame present:  ({:.3}us avg) | total: ({:.3}us avg)",
+                        avg_runtime_update_ns, avg_present_us, avg_work_us,
                     );
 
                     self.batch_frames = 0;
@@ -304,8 +293,10 @@ fn window_attributes(
         return attrs.with_inner_size(Size::Physical(desired));
     };
 
-    let max_width = ((monitor.size().width as f32) * 0.95f32).floor() as u32;
-    let max_height = ((monitor.size().height as f32) * 0.95f32).floor() as u32;
+    let max_width =
+        ((monitor.size().width as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
+    let max_height =
+        ((monitor.size().height as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
     let fitted = fit_aspect(desired, max_width.max(1), max_height.max(1));
     let centered = center_position(&monitor, fitted);
 

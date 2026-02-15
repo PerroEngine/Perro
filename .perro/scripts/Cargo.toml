@@ -13,3 +13,10 @@ perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
 perro_api = "0.1.0"
 perro_core = "0.1.0"
+
+[patch.crates-io]
+perro_api = { path = "C:/Users/super/Perro/perro_api" }
+perro_core = { path = "C:/Users/super/Perro/perro_core" }
+perro_ids = { path = "C:/Users/super/Perro/perro_ids" }
+perro_scripting = { path = "C:/Users/super/Perro/perro_scripting" }
+perro_variant = { path = "C:/Users/super/Perro/perro_variant" }

@@ -1,1 +1,4 @@
 target/
+.perro/project/embedded_assets/
+.perro/project/static_assets/
+.perro/scripts/src/

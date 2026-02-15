@@ -6,23 +6,26 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_app = { path = "../../../../perro_app" }
-perro_ids = { path = "../../../../perro_ids" }
-perro_scripting = { path = "../../../../perro_scripting" }
-perro_api = { path = "../../../../perro_api" }
-perro_core = { path = "../../../../perro_core" }
+perro_app = "0.1.0"
+perro_ids = "0.1.0"
+perro_scripting = "0.1.0"
+perro_api = "0.1.0"
+perro_core = "0.1.0"
 scripts = { path = "../scripts" }
 
 [patch.crates-io]
-perro_api = { path = "D:/Rust/Perro/perro_api" }
-perro_app = { path = "D:/Rust/Perro/perro_app" }
-perro_core = { path = "D:/Rust/Perro/perro_core" }
-perro_graphics = { path = "D:/Rust/Perro/perro_graphics" }
-perro_ids = { path = "D:/Rust/Perro/perro_ids" }
-perro_io = { path = "D:/Rust/Perro/perro_io" }
-perro_project = { path = "D:/Rust/Perro/perro_project" }
-perro_render_bridge = { path = "D:/Rust/Perro/perro_render_bridge" }
-perro_runtime = { path = "D:/Rust/Perro/perro_runtime" }
-perro_scene = { path = "D:/Rust/Perro/perro_scene" }
-perro_scripting = { path = "D:/Rust/Perro/perro_scripting" }
-perro_variant = { path = "D:/Rust/Perro/perro_variant" }
+perro_api = { path = "C:/Users/super/Perro/perro_api" }
+perro_app = { path = "C:/Users/super/Perro/perro_app" }
+perro_compiler = { path = "C:/Users/super/Perro/perro_compiler" }
+perro_core = { path = "C:/Users/super/Perro/perro_core" }
+perro_dev_runner = { path = "C:/Users/super/Perro/perro_dev_runner" }
+perro_graphics = { path = "C:/Users/super/Perro/perro_graphics" }
+perro_ids = { path = "C:/Users/super/Perro/perro_ids" }
+perro_io = { path = "C:/Users/super/Perro/perro_io" }
+perro_modules = { path = "C:/Users/super/Perro/perro_modules" }
+perro_project = { path = "C:/Users/super/Perro/perro_project" }
+perro_render_bridge = { path = "C:/Users/super/Perro/perro_render_bridge" }
+perro_runtime = { path = "C:/Users/super/Perro/perro_runtime" }
+perro_scene = { path = "C:/Users/super/Perro/perro_scene" }
+perro_scripting = { path = "C:/Users/super/Perro/perro_scripting" }
+perro_variant = { path = "C:/Users/super/Perro/perro_variant" }

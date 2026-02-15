@@ -51,3 +51,15 @@ pub fn run_dev_project_from_path(
     WinitRunner::new().run(app, &window_title);
     Ok(())
 }
+
+pub fn run_static_project_from_path(
+    project_root: &Path,
+    default_name: &str,
+) -> Result<(), ProjectLoadError> {
+    let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
+    let window_title = project.config.name.clone();
+    let graphics = PerroGraphics::new();
+    let app = create_static_app(graphics, project);
+    WinitRunner::new().run(app, &window_title);
+    Ok(())
+}
