@@ -1197,6 +1197,9 @@ dependencies = [
 [[package]]
 name = "perro_scene"
 version = "0.1.0"
+dependencies = [
+ "perro_core",
+]
 
 [[package]]
 name = "perro_scripting"

@@ -10,7 +10,8 @@ pub use runtime_scene::*;
 // Re-export static scene types with different names to avoid confusion
 pub use static_scene::{
     Scene as StaticScene, SceneKey as StaticSceneKey, SceneNodeDataEntry as StaticNodeData,
-    SceneNodeEntry as StaticNodeEntry, SceneValue as StaticSceneValue,
+    SceneNodeEntry as StaticNodeEntry, SceneNodeType as StaticNodeType,
+    SceneValue as StaticSceneValue,
 };
 
 #[cfg(test)]
@@ -198,7 +199,7 @@ mod tests {
         ];
 
         const PLAYER_BASE_DATA: StaticNodeData = StaticNodeData {
-            ty: "Node2D",
+            ty: StaticNodeType::Node2D,
             fields: PLAYER_BASE_FIELDS,
             base: None,
         };
@@ -215,7 +216,7 @@ mod tests {
                     parent: None,
                     script: None,
                     data: StaticNodeData {
-                        ty: "Node2D",
+                        ty: StaticNodeType::Node2D,
                         fields: MAIN_FIELDS,
                         base: None,
                     },
@@ -227,7 +228,7 @@ mod tests {
                     parent: Some(StaticSceneKey("main")),
                     script: None,
                     data: StaticNodeData {
-                        ty: "Sprite2D",
+                        ty: StaticNodeType::Sprite2D,
                         fields: PLAYER_FIELDS,
                         base: Some(&PLAYER_BASE_DATA),
                     },
@@ -287,7 +288,7 @@ mod tests {
 
         assert_eq!(static_main.key.0, runtime_main.key);
         assert_eq!(static_main.name, runtime_main.name.as_deref());
-        assert_eq!(static_main.data.ty, runtime_main.data.ty);
+        assert_eq!(static_main.data.ty.as_str(), runtime_main.data.ty);
         assert_eq!(
             static_main.data.fields.len(),
             runtime_main.data.fields.len()
@@ -307,7 +308,7 @@ mod tests {
             static_player.parent.map(|p| p.0),
             runtime_player.parent.as_deref()
         );
-        assert_eq!(static_player.data.ty, runtime_player.data.ty);
+        assert_eq!(static_player.data.ty.as_str(), runtime_player.data.ty);
 
         // Compare texture field
         let static_texture = static_player
@@ -335,7 +336,7 @@ mod tests {
         let static_base = static_player.data.base.unwrap();
         let runtime_base = runtime_player.data.base.as_ref().unwrap();
 
-        assert_eq!(static_base.ty, runtime_base.ty);
+        assert_eq!(static_base.ty.as_str(), runtime_base.ty);
         assert_eq!(static_base.fields.len(), runtime_base.fields.len());
 
         println!("✅ Static scene matches parsed runtime scene!");

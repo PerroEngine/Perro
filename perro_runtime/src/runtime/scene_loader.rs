@@ -8,7 +8,7 @@ use perro_ids::NodeID;
 use perro_io::{ProjectRoot, load_asset, set_project_root};
 use perro_scene::{
     Parser, RuntimeNodeData, RuntimeNodeEntry, RuntimeScene, RuntimeValue, StaticNodeData,
-    StaticNodeEntry, StaticScene, StaticSceneValue,
+    StaticNodeEntry, StaticNodeType, StaticScene, StaticSceneValue,
 };
 use std::{borrow::Cow, collections::HashMap, time::{Duration, Instant}};
 
@@ -59,30 +59,35 @@ impl Runtime {
         let mode_label;
         let mut source_load = None;
         let mut parse = None;
-        let node_insert_start = Instant::now();
+        let node_insert;
         match self.provider_mode {
             ProviderMode::Dynamic => {
                 mode_label = "dynamic";
                 let (runtime_scene, load_stats) = load_runtime_scene_from_disk(&main_scene_path)?;
                 source_load = Some(load_stats.source_load);
                 parse = Some(load_stats.parse);
+                let node_insert_start = Instant::now();
                 insert_runtime_scene_nodes(self, runtime_scene)?;
+                node_insert = node_insert_start.elapsed();
             }
             ProviderMode::Static => match static_lookup.and_then(|lookup| lookup(&main_scene_path)) {
                 Some(scene) => {
                     mode_label = "static";
-                    insert_static_scene_nodes(self, scene)?
+                    let node_insert_start = Instant::now();
+                    insert_static_scene_nodes(self, scene)?;
+                    node_insert = node_insert_start.elapsed();
                 }
                 None => {
                     mode_label = "static_fallback_dynamic";
                     let (runtime_scene, load_stats) = load_runtime_scene_from_disk(&main_scene_path)?;
                     source_load = Some(load_stats.source_load);
                     parse = Some(load_stats.parse);
+                    let node_insert_start = Instant::now();
                     insert_runtime_scene_nodes(self, runtime_scene)?;
+                    node_insert = node_insert_start.elapsed();
                 }
             },
         }
-        let node_insert = node_insert_start.elapsed();
         let stats = SceneLoadStats {
             mode_label,
             source_load,
@@ -153,43 +158,6 @@ fn print_scene_tree(runtime: &Runtime, node_id: NodeID, indent: &str) {
     }
 }
 
-fn runtime_node_entry_from_static(node: &StaticNodeEntry) -> RuntimeNodeEntry {
-    RuntimeNodeEntry {
-        data: runtime_node_data_from_static(&node.data),
-        key: node.key.0.to_string(),
-        name: node.name.map(str::to_string),
-        parent: node.parent.map(|key| key.0.to_string()),
-        script: node.script.map(str::to_string),
-    }
-}
-
-fn runtime_node_data_from_static(data: &StaticNodeData) -> RuntimeNodeData {
-    RuntimeNodeData {
-        ty: data.ty.to_string(),
-        fields: data
-            .fields
-            .iter()
-            .map(|(name, value)| ((*name).to_string(), runtime_value_from_static(*value)))
-            .collect(),
-        base: data
-            .base
-            .map(|base| Box::new(runtime_node_data_from_static(base))),
-    }
-}
-
-fn runtime_value_from_static(value: StaticSceneValue) -> RuntimeValue {
-    match value {
-        StaticSceneValue::Bool(v) => RuntimeValue::Bool(v),
-        StaticSceneValue::I32(v) => RuntimeValue::I32(v),
-        StaticSceneValue::F32(v) => RuntimeValue::F32(v),
-        StaticSceneValue::Vec2 { x, y } => RuntimeValue::Vec2 { x, y },
-        StaticSceneValue::Vec3 { x, y, z } => RuntimeValue::Vec3 { x, y, z },
-        StaticSceneValue::Vec4 { x, y, z, w } => RuntimeValue::Vec4 { x, y, z, w },
-        StaticSceneValue::Str(v) => RuntimeValue::Str(v.to_string()),
-        StaticSceneValue::Key(key) => RuntimeValue::Key(key.0.to_string()),
-    }
-}
-
 struct PendingNode {
     key: String,
     parent_key: Option<String>,
@@ -214,26 +182,22 @@ fn insert_static_scene_nodes(runtime: &mut Runtime, scene: &'static StaticScene)
         key_order.push(key);
     }
 
-    let mut edges = Vec::new();
     for static_node in scene.nodes {
-        let parent_id = *key_to_id
+        let child_id = *key_to_id
             .get(static_node.key.0)
             .ok_or_else(|| format!("node key `{}` not found", static_node.key.0))?;
-        for child_key in static_node.children {
-            let child_id = *key_to_id.get(child_key.0).ok_or_else(|| {
-                format!(
-                    "child node key `{}` not found while linking parent `{}`",
-                    child_key.0, static_node.key.0
-                )
-            })?;
-            if let Some(child) = runtime.nodes.get_mut(child_id) {
-                child.parent = parent_id;
-            }
-            edges.push((parent_id, child_id));
+        let Some(parent_key) = static_node.parent else {
+            continue;
+        };
+        let parent_id = *key_to_id.get(parent_key.0).ok_or_else(|| {
+            format!(
+                "parent node key `{}` not found while linking child `{}`",
+                parent_key.0, static_node.key.0
+            )
+        })?;
+        if let Some(child) = runtime.nodes.get_mut(child_id) {
+            child.parent = parent_id;
         }
-    }
-
-    for (parent_id, child_id) in edges {
         if let Some(parent) = runtime.nodes.get_mut(parent_id) {
             parent.add_child(child_id);
         }
@@ -401,8 +365,14 @@ fn insert_runtime_scene_nodes(runtime: &mut Runtime, scene: RuntimeScene) -> Res
 }
 
 fn scene_node_from_static_entry(entry: &StaticNodeEntry) -> Result<SceneNode, String> {
-    let runtime_entry = runtime_node_entry_from_static(entry);
-    scene_node_from_runtime_entry(&runtime_entry)
+    let mut node = SceneNode::new(scene_node_data_from_static(&entry.data)?);
+    if let Some(name) = entry.name {
+        node.name = Cow::Borrowed(name);
+    }
+    if let Some(script) = entry.script {
+        node.script = Some(Cow::Borrowed(script));
+    }
+    Ok(node)
 }
 
 fn scene_node_from_runtime_entry(entry: &RuntimeNodeEntry) -> Result<SceneNode, String> {
@@ -467,6 +437,72 @@ fn scene_node_data_from_runtime(data: &RuntimeNodeData) -> Result<SceneNodeData,
         }
         other => Err(format!("unsupported scene node type `{other}`")),
     }
+}
+
+fn scene_node_data_from_static(data: &StaticNodeData) -> Result<SceneNodeData, String> {
+    match data.ty {
+        StaticNodeType::Node => Ok(SceneNodeData::Node),
+        StaticNodeType::Node2D => {
+            let mut node = Node2D::new();
+            apply_node_2d_data_static(&mut node, data);
+            Ok(SceneNodeData::Node2D(node))
+        }
+        StaticNodeType::Sprite2D => {
+            let mut node = Sprite2D::new();
+            if let Some(base) = data.base {
+                apply_node_2d_data_static(&mut node.base, base);
+            }
+            apply_node_2d_fields_static(&mut node.base, data.fields);
+            apply_sprite_2d_fields_static(&mut node, data.fields);
+            Ok(SceneNodeData::Sprite2D(node))
+        }
+        StaticNodeType::Camera2D => {
+            let mut node = Camera2D::new();
+            if let Some(base) = data.base {
+                apply_node_2d_data_static(&mut node.base, base);
+            }
+            apply_node_2d_fields_static(&mut node.base, data.fields);
+            apply_camera_2d_fields_static(&mut node, data.fields);
+            Ok(SceneNodeData::Camera2D(node))
+        }
+        StaticNodeType::Node3D => {
+            let mut node = Node3D::new();
+            apply_node_3d_data_static(&mut node, data);
+            Ok(SceneNodeData::Node3D(node))
+        }
+        StaticNodeType::MeshInstance3D => {
+            let mut node = MeshInstance3D::new();
+            if let Some(base) = data.base {
+                apply_node_3d_data_static(&mut node.base, base);
+            }
+            apply_node_3d_fields_static(&mut node.base, data.fields);
+            apply_mesh_instance_3d_fields_static(&mut node, data.fields);
+            Ok(SceneNodeData::MeshInstance3D(node))
+        }
+        StaticNodeType::Camera3D => {
+            let mut node = Camera3D::new();
+            if let Some(base) = data.base {
+                apply_node_3d_data_static(&mut node.base, base);
+            }
+            apply_node_3d_fields_static(&mut node.base, data.fields);
+            apply_camera_3d_fields_static(&mut node, data.fields);
+            Ok(SceneNodeData::Camera3D(node))
+        }
+    }
+}
+
+fn apply_node_2d_data_static(target: &mut Node2D, data: &StaticNodeData) {
+    if let Some(base) = data.base {
+        apply_node_2d_data_static(target, base);
+    }
+    apply_node_2d_fields_static(target, data.fields);
+}
+
+fn apply_node_3d_data_static(target: &mut Node3D, data: &StaticNodeData) {
+    if let Some(base) = data.base {
+        apply_node_3d_data_static(target, base);
+    }
+    apply_node_3d_fields_static(target, data.fields);
 }
 
 fn apply_node_2d_data(target: &mut Node2D, data: &RuntimeNodeData) {
@@ -605,6 +641,131 @@ fn apply_camera_3d_fields(node: &mut Camera3D, fields: &[(String, RuntimeValue)]
     }
 }
 
+fn apply_node_2d_fields_static(node: &mut Node2D, fields: &[(&str, StaticSceneValue)]) {
+    for (name, value) in fields {
+        match *name {
+            "position" => {
+                if let Some(v) = as_vec2_static(value) {
+                    node.transform.position = v;
+                }
+            }
+            "scale" => {
+                if let Some(v) = as_vec2_static(value) {
+                    node.transform.scale = v;
+                }
+            }
+            "rotation" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.transform.rotation = v;
+                }
+            }
+            "z_index" => {
+                if let Some(v) = as_i32_static(value) {
+                    node.z_index = v;
+                }
+            }
+            "visible" => {
+                if let Some(v) = as_bool_static(value) {
+                    node.visible = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_sprite_2d_fields_static(_node: &mut Sprite2D, _fields: &[(&str, StaticSceneValue)]) {}
+
+fn apply_camera_2d_fields_static(node: &mut Camera2D, fields: &[(&str, StaticSceneValue)]) {
+    for (name, value) in fields {
+        match *name {
+            "zoom" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.zoom = v;
+                }
+            }
+            "active" => {
+                if let Some(v) = as_bool_static(value) {
+                    node.active = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_node_3d_fields_static(node: &mut Node3D, fields: &[(&str, StaticSceneValue)]) {
+    for (name, value) in fields {
+        match *name {
+            "position" => {
+                if let Some(v) = as_vec3_static(value) {
+                    node.transform.position = v;
+                }
+            }
+            "scale" => {
+                if let Some(v) = as_vec3_static(value) {
+                    node.transform.scale = v;
+                }
+            }
+            "rotation" => {
+                if let Some(v) = as_quat_static(value) {
+                    node.transform.rotation = v;
+                }
+            }
+            "visible" => {
+                if let Some(v) = as_bool_static(value) {
+                    node.visible = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_mesh_instance_3d_fields_static(
+    node: &mut MeshInstance3D,
+    fields: &[(&str, StaticSceneValue)],
+) {
+    for (name, value) in fields {
+        match *name {
+            "mesh" => {
+                if let Some(v) = as_mesh_source_static(value) {
+                    node.mesh = Some(Cow::Owned(v));
+                }
+            }
+            "mesh_id" => {
+                if let Some(v) = as_u64_static(value) {
+                    node.mesh_id = perro_ids::MeshID::from_u64(v);
+                }
+            }
+            "material_id" => {
+                if let Some(v) = as_u64_static(value) {
+                    node.material_id = perro_ids::MaterialID::from_u64(v);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_camera_3d_fields_static(node: &mut Camera3D, fields: &[(&str, StaticSceneValue)]) {
+    for (name, value) in fields {
+        match *name {
+            "zoom" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.zoom = v;
+                }
+            }
+            "active" => {
+                if let Some(v) = as_bool_static(value) {
+                    node.active = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn as_bool(value: &RuntimeValue) -> Option<bool> {
     match value {
         RuntimeValue::Bool(v) => Some(*v),
@@ -662,6 +823,67 @@ fn as_mesh_source(value: &RuntimeValue) -> Option<String> {
     match value {
         RuntimeValue::Str(v) => Some(v.clone()),
         RuntimeValue::Key(v) => Some(v.clone()),
+        _ => None,
+    }
+}
+
+fn as_bool_static(value: &StaticSceneValue) -> Option<bool> {
+    match value {
+        StaticSceneValue::Bool(v) => Some(*v),
+        _ => None,
+    }
+}
+
+fn as_i32_static(value: &StaticSceneValue) -> Option<i32> {
+    match value {
+        StaticSceneValue::I32(v) => Some(*v),
+        StaticSceneValue::F32(v) => Some(*v as i32),
+        _ => None,
+    }
+}
+
+fn as_u64_static(value: &StaticSceneValue) -> Option<u64> {
+    match value {
+        StaticSceneValue::I32(v) => (*v >= 0).then_some(*v as u64),
+        StaticSceneValue::F32(v) => (*v >= 0.0).then_some(*v as u64),
+        StaticSceneValue::Str(v) => v.parse::<u64>().ok(),
+        _ => None,
+    }
+}
+
+fn as_f32_static(value: &StaticSceneValue) -> Option<f32> {
+    match value {
+        StaticSceneValue::F32(v) => Some(*v),
+        StaticSceneValue::I32(v) => Some(*v as f32),
+        _ => None,
+    }
+}
+
+fn as_vec2_static(value: &StaticSceneValue) -> Option<Vector2> {
+    match value {
+        StaticSceneValue::Vec2 { x, y } => Some(Vector2::new(*x, *y)),
+        _ => None,
+    }
+}
+
+fn as_vec3_static(value: &StaticSceneValue) -> Option<Vector3> {
+    match value {
+        StaticSceneValue::Vec3 { x, y, z } => Some(Vector3::new(*x, *y, *z)),
+        _ => None,
+    }
+}
+
+fn as_quat_static(value: &StaticSceneValue) -> Option<Quaternion> {
+    match value {
+        StaticSceneValue::Vec4 { x, y, z, w } => Some(Quaternion::new(*x, *y, *z, *w)),
+        _ => None,
+    }
+}
+
+fn as_mesh_source_static(value: &StaticSceneValue) -> Option<String> {
+    match value {
+        StaticSceneValue::Str(v) => Some((*v).to_string()),
+        StaticSceneValue::Key(v) => Some(v.0.to_string()),
         _ => None,
     }
 }

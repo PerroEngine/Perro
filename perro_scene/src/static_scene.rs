@@ -1,3 +1,5 @@
+pub type SceneNodeType = perro_core::NodeType;
+
 #[derive(Debug)]
 pub struct Scene {
     pub nodes: &'static [SceneNodeEntry],
@@ -16,7 +18,7 @@ pub struct SceneNodeEntry {
 
 #[derive(Debug, Copy, Clone)]
 pub struct SceneNodeDataEntry {
-    pub ty: &'static str,
+    pub ty: SceneNodeType,
     pub fields: &'static [(&'static str, SceneValue)],
     pub base: Option<&'static SceneNodeDataEntry>,
 }
