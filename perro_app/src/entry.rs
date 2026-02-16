@@ -45,9 +45,7 @@ pub fn run_dev_project_from_path(
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
     let window_title = project.config.name.clone();
     let graphics = PerroGraphics::new();
-    let mut app = create_dev_app(graphics, project);
-    app.set_debug_draw_rect(false);
-    app.set_debug_draw_mesh(true);
+    let app = create_dev_app(graphics, project);
     WinitRunner::new().run(app, &window_title);
     Ok(())
 }

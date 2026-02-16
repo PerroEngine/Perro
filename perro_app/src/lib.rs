@@ -31,16 +31,6 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
-    pub fn set_debug_draw_rect(&mut self, enabled: bool) {
-        self.runtime.set_debug_draw_rect(enabled);
-    }
-
-    #[inline]
-    pub fn set_debug_draw_mesh(&mut self, enabled: bool) {
-        self.runtime.set_debug_draw_mesh(enabled);
-    }
-
-    #[inline]
     pub fn set_smoothing(&mut self, enabled: bool) {
         self.graphics.set_smoothing(enabled);
     }

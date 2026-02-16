@@ -1,7 +1,37 @@
+@root = main
+
 [main]
 name = "World"
 
-[Node2D]
-    position = (0, 0)
-[/Node2D]
+[Node3D]
+    position = (0, 0, 0)
+[/Node3D]
 [/main]
+
+[cube]
+parent = @root
+name = "Cube"
+
+[MeshInstance3D]
+    mesh = __cube__
+
+    [Node3D]
+        position = (0, 0, 0)
+       rotation = (0, 0.2826834, 0.1, 0.9238795)
+    [/Node3D]
+[/MeshInstance3D]
+[/cube]
+
+[camera]
+parent = @root
+name = "Camera"
+
+[Camera3D]
+    active = true
+    zoom = 1.0
+
+    [Node3D]
+        position = (0, 0, 5)
+    [/Node3D]
+[/Camera3D]
+[/camera]

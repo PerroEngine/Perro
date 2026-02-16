@@ -3,13 +3,10 @@ use ahash::AHashSet;
 use perro_core::SceneNodeData;
 use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{
-    Camera2DState, Command2D, Rect2DCommand, RenderCommand, RenderRequestID, ResourceCommand,
-    Sprite2DCommand,
+    Camera2DState, Command2D, RenderCommand, RenderRequestID, ResourceCommand, Sprite2DCommand,
 };
 
 impl Runtime {
-    const DEBUG_RECT_NODE_ID: NodeID = NodeID::from_parts(u32::MAX, 0);
-
     fn sprite_texture_request_id(node: NodeID) -> RenderRequestID {
         RenderRequestID::new((node.as_u64() << 8) | 0x2D)
     }
@@ -60,7 +57,6 @@ impl Runtime {
             }
         }
         self.remove_no_longer_visible_render_2d_nodes(&visible_now);
-        self.update_debug_rect_state();
 
         std::mem::swap(&mut self.render_2d.prev_visible, &mut visible_now);
         visible_now.clear();
@@ -167,26 +163,6 @@ impl Runtime {
         while let Some(node) = self.render_2d.removed_nodes.pop() {
             self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
             self.render_2d.retained_sprite_textures.remove(&node);
-        }
-    }
-
-    fn update_debug_rect_state(&mut self) {
-        if self.debug.draw_rect && !self.debug.rect_was_active {
-            self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertRect {
-                node: Self::DEBUG_RECT_NODE_ID,
-                rect: Rect2DCommand {
-                    center: [0.0, 0.0],
-                    size: [120.0, 120.0],
-                    color: [1.0, 0.2, 0.2, 1.0],
-                    z_index: 0,
-                },
-            }));
-            self.debug.rect_was_active = true;
-        } else if !self.debug.draw_rect && self.debug.rect_was_active {
-            self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode {
-                node: Self::DEBUG_RECT_NODE_ID,
-            }));
-            self.debug.rect_was_active = false;
         }
     }
 }

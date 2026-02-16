@@ -1,4 +1,5 @@
 use std::{collections::BTreeMap, path::PathBuf};
+use perro_scene::StaticScene;
 
 pub use perro_project::{
     ProjectConfig as RuntimeProjectConfig, ProjectError as ProjectLoadError, StaticProjectConfig,
@@ -14,6 +15,8 @@ pub enum ProviderMode {
     Static,
 }
 
+pub type StaticSceneLookup = fn(&str) -> Option<&'static StaticScene>;
+
 /// Immutable project boot data owned by the runtime.
 #[derive(Debug, Clone)]
 pub struct RuntimeProject {
@@ -21,6 +24,7 @@ pub struct RuntimeProject {
     pub root: PathBuf,
     pub config: RuntimeProjectConfig,
     pub runtime_params: BTreeMap<String, String>,
+    pub static_scene_lookup: Option<StaticSceneLookup>,
 }
 
 impl RuntimeProject {
@@ -31,6 +35,7 @@ impl RuntimeProject {
             root: root.into(),
             config: perro_project::ProjectConfig::default_for_name(name),
             runtime_params: BTreeMap::new(),
+            static_scene_lookup: None,
         }
     }
 
@@ -41,6 +46,7 @@ impl RuntimeProject {
             root: root.into(),
             config,
             runtime_params: BTreeMap::new(),
+            static_scene_lookup: None,
         }
     }
 
@@ -60,11 +66,17 @@ impl RuntimeProject {
             root,
             config,
             runtime_params: BTreeMap::new(),
+            static_scene_lookup: None,
         })
     }
 
     pub fn with_param(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.runtime_params.insert(key.into(), value.into());
+        self
+    }
+
+    pub fn with_static_scene_lookup(mut self, lookup: StaticSceneLookup) -> Self {
+        self.static_scene_lookup = Some(lookup);
         self
     }
 }

@@ -5,12 +5,13 @@ use crate::{
 };
 use ahash::{AHashMap, AHashSet};
 use perro_core::Spatial;
-use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
+use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
 use std::sync::Arc;
 
 mod render_2d;
 mod render_3d;
+mod scene_loader;
 
 pub struct Runtime {
     pub time: Timing,
@@ -27,7 +28,6 @@ pub struct Runtime {
 
     render_2d: Render2DState,
     render_3d: Render3DState,
-    debug: DebugRenderState,
 }
 
 pub struct Timing {
@@ -178,28 +178,6 @@ impl Render3DState {
     }
 }
 
-struct DebugRenderState {
-    draw_rect: bool,
-    rect_was_active: bool,
-    draw_mesh: bool,
-    mesh_was_active: bool,
-    debug_mesh_id: MeshID,
-    debug_material_id: MaterialID,
-}
-
-impl DebugRenderState {
-    fn new() -> Self {
-        Self {
-            draw_rect: false,
-            rect_was_active: false,
-            draw_mesh: false,
-            mesh_was_active: false,
-            debug_mesh_id: MeshID::nil(),
-            debug_material_id: MaterialID::nil(),
-        }
-    }
-}
-
 impl DirtyState {
     const FLAG_RERENDER: u8 = 1 << 0;
     const FLAG_DIRTY_2D_TRANSFORM: u8 = 1 << 1;
@@ -258,7 +236,6 @@ impl Runtime {
             traversal_stack: Vec::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
-            debug: DebugRenderState::new(),
         }
     }
 
@@ -266,6 +243,9 @@ impl Runtime {
         let mut runtime = Self::new();
         runtime.project = Some(Arc::new(project));
         runtime.provider_mode = provider_mode;
+        if let Err(err) = runtime.load_boot_scene() {
+            panic!("failed to load boot scene: {err}");
+        }
         runtime
     }
 
@@ -289,16 +269,6 @@ impl Runtime {
         self.time.fixed_delta = fixed_delta_time;
         self.schedules.snapshot_fixed(&self.scripts);
         self.run_fixed_schedule();
-    }
-
-    #[inline]
-    pub fn set_debug_draw_rect(&mut self, enabled: bool) {
-        self.debug.draw_rect = enabled;
-    }
-
-    #[inline]
-    pub fn set_debug_draw_mesh(&mut self, enabled: bool) {
-        self.debug.draw_mesh = enabled;
     }
 
     pub fn queue_render_command(&mut self, command: RenderCommand) {
