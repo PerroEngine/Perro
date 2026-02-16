@@ -4,6 +4,7 @@ use perro_ids::NodeID;
 pub struct NodeArena {
     nodes: Vec<Option<SceneNode>>,
     generations: Vec<u32>,
+    free_indices: Vec<usize>,
 }
 
 impl NodeArena {
@@ -16,6 +17,7 @@ impl NodeArena {
         Self {
             nodes,
             generations,
+            free_indices: Vec::new(),
         }
     }
 
@@ -28,18 +30,17 @@ impl NodeArena {
         Self {
             nodes,
             generations,
+            free_indices: Vec::new(),
         }
     }
 
     /// Insert a node, returns NodeID with index and generation
     pub fn insert(&mut self, node: SceneNode) -> NodeID {
-        // Try to find a free slot first
-        for (index, slot) in self.nodes.iter_mut().enumerate().skip(1) {
-            if slot.is_none() {
-                *slot = Some(node);
-                let generation = self.generations[index];
-                return NodeID::from_parts(index as u32, generation);
-            }
+        // Reuse a previously freed slot in O(1).
+        if let Some(index) = self.free_indices.pop() {
+            self.nodes[index] = Some(node);
+            let generation = self.generations[index];
+            return NodeID::from_parts(index as u32, generation);
         }
 
         // No free slots, push to end
@@ -83,9 +84,13 @@ impl NodeArena {
             return None;
         }
 
-        self.generations[id.index() as usize] =
-            self.generations[id.index() as usize].wrapping_add(1);
-        self.nodes[id.index() as usize].take()
+        let index = id.index() as usize;
+        self.generations[index] = self.generations[index].wrapping_add(1);
+        let removed = self.nodes[index].take();
+        if removed.is_some() {
+            self.free_indices.push(index);
+        }
+        removed
     }
 
     /// Check if a NodeID is still valid
@@ -122,6 +127,7 @@ impl NodeArena {
     pub fn clear(&mut self) {
         self.nodes.clear();
         self.generations.clear();
+        self.free_indices.clear();
         self.nodes.push(None);
         self.generations.push(0);
     }

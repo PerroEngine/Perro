@@ -120,24 +120,24 @@ fn load_runtime_scene_from_disk(path: &str) -> Result<(RuntimeScene, RuntimeScen
 
 fn debug_print_scene_load(runtime: &Runtime, path: &str, stats: SceneLoadStats) {
     println!(
-        "[scene-load] mode={} path={} total_ms={:.3} source_ms={} parse_ms={} insert_ms={:.3}",
+        "[scene-load] mode={} path={} total_us={:.3} source_us={} parse_us={} insert_us={:.3}",
         stats.mode_label,
         path,
-        as_ms(stats.total_excluding_debug_print),
+        as_us(stats.total_excluding_debug_print),
         fmt_duration(stats.source_load),
         fmt_duration(stats.parse),
-        as_ms(stats.node_insert),
+        as_us(stats.node_insert),
     );
     print_scene_tree(runtime, NodeID::ROOT, "");
 }
 
-fn as_ms(duration: Duration) -> f64 {
-    duration.as_secs_f64() * 1_000.0
+fn as_us(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1_000_000.0
 }
 
 fn fmt_duration(duration: Option<Duration>) -> String {
     duration
-        .map(|value| format!("{:.3}", as_ms(value)))
+        .map(|value| format!("{:.3}", as_us(value)))
         .unwrap_or_else(|| "n/a".to_string())
 }
 

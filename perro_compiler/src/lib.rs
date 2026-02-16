@@ -4,7 +4,7 @@ use perro_project::{ensure_source_overrides, load_project_toml};
 use perro_scene::{Parser, RuntimeNodeData, RuntimeValue};
 use std::{
     collections::HashMap,
-    fmt::{Display, Formatter},
+    fmt::{Display, Formatter, Write as _},
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -259,7 +259,7 @@ fn generate_static_scenes(project_root: &Path) -> Result<(), CompilerError> {
     lookup.push_str("pub static SCENE_MAP: phf::Map<&'static str, &'static StaticScene> = phf_map! {\n");
     for p in &scene_paths {
         let id = sanitize_ident(p);
-        lookup.push_str(&format!("    \"{}\" => &SCENE_{},\n", escape_str(p), id));
+        let _ = writeln!(lookup, "    \"{}\" => &SCENE_{},", escape_str(p), id);
     }
     lookup.push_str("};\n\n");
     lookup.push_str("pub fn lookup_scene(path: &str) -> Option<&'static StaticScene> {\n");
@@ -304,39 +304,34 @@ fn emit_static_scene_const(
     let mut node_entries = String::new();
     let mut uses_empty_keys = false;
     let mut uses_empty_fields = false;
-    let mut children_by_parent: HashMap<&str, Vec<&str>> = HashMap::new();
-    for node in &scene.nodes {
+    let mut children_by_parent: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (child_index, node) in scene.nodes.iter().enumerate() {
         if let Some(parent) = &node.parent {
             children_by_parent
                 .entry(parent.as_str())
                 .or_default()
-                .push(node.key.as_str());
+                .push(child_index);
         }
     }
 
     for (index, node) in scene.nodes.iter().enumerate() {
-        let children = children_by_parent
-            .get(node.key.as_str())
-            .cloned()
-            .unwrap_or_default();
-        let children_ref = if children.is_empty() {
+        let children_ref = if let Some(children) = children_by_parent.get(node.key.as_str()) {
+            if children.is_empty() {
+                uses_empty_keys = true;
+                "EMPTY_SCENE_KEYS".to_string()
+            } else {
+                let children_name = format!("CHILDREN_{}_{}", scene_ident, index);
+                let _ = writeln!(out, "const {children_name}: &[StaticSceneKey] = &[");
+                for &child_index in children {
+                    let child_key = &scene.nodes[child_index].key;
+                    let _ = writeln!(out, "    StaticSceneKey(\"{}\"),", escape_str(child_key));
+                }
+                out.push_str("];\n");
+                children_name
+            }
+        } else {
             uses_empty_keys = true;
             "EMPTY_SCENE_KEYS".to_string()
-        } else {
-            let children_name = format!("CHILDREN_{}_{}", scene_ident, index);
-            let mut children_entries = String::new();
-            for child in children {
-                children_entries.push_str(&format!(
-                    "    StaticSceneKey(\"{}\"),\n",
-                    escape_str(child)
-                ));
-            }
-            out.push_str(&format!(
-                "const {children_name}: &[StaticSceneKey] = &[\n{children_entries}];\n",
-                children_name = children_name,
-                children_entries = children_entries
-            ));
-            children_name
         };
 
         let data_const = emit_node_data_consts(
@@ -397,19 +392,11 @@ fn emit_node_data_consts(
         "EMPTY_SCENE_FIELDS".to_string()
     } else {
         let fields_name = format!("FIELDS_{}_{}", scene_ident, idx);
-        let mut fields = String::new();
+        let _ = writeln!(out, "const {fields_name}: &[(&str, StaticSceneValue)] = &[");
         for (name, value) in &data.fields {
-            fields.push_str(&format!(
-                "    (\"{}\", {}),\n",
-                escape_str(name),
-                emit_value(value)
-            ));
+            let _ = writeln!(out, "    (\"{}\", {}),", escape_str(name), emit_value(value));
         }
-        out.push_str(&format!(
-            "const {fields_name}: &[(&str, StaticSceneValue)] = &[\n{fields}];\n",
-            fields_name = fields_name,
-            fields = fields
-        ));
+        out.push_str("];\n");
         fields_name
     };
 
@@ -421,13 +408,10 @@ fn emit_node_data_consts(
         "None".to_string()
     };
 
-    out.push_str(&format!(
-        "const {data_name}: StaticNodeData = StaticNodeData {{ ty: {ty}, fields: {fields_ref}, base: {base_ref} }};\n",
-        data_name = data_name,
-        ty = ty,
-        fields_ref = fields_ref,
-        base_ref = base_ref
-    ));
+    let _ = writeln!(
+        out,
+        "const {data_name}: StaticNodeData = StaticNodeData {{ ty: {ty}, fields: {fields_ref}, base: {base_ref} }};"
+    );
     Ok(data_name)
 }
 
