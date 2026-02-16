@@ -411,8 +411,8 @@ impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
 
 fn default_gitignore() -> String {
     r#"target/
-.perro/project/embedded_assets/
-.perro/project/static_assets/
+.perro/project/embeddeds/
+.perro/project/static/
 .perro/scripts/src/
 "#
     .to_string()
@@ -433,7 +433,20 @@ perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
 perro_api = "0.1.0"
 perro_core = "0.1.0"
+perro_scene = "0.1.0"
+phf = {{ version = "0.11", features = ["macros"] }}
 scripts = {{ path = "../scripts" }}
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+incremental = true
+debug = false
+debug-assertions = false
+overflow-checks = false
  "#
     )
 }

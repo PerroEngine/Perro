@@ -44,13 +44,14 @@ impl Runtime {
             let mesh_data = self.nodes.get(node_id).and_then(|node| match &node.data {
                 SceneNodeData::MeshInstance3D(mesh) => Some((
                     mesh.base.visible,
+                    mesh.mesh.as_deref().map(str::to_owned),
                     mesh.mesh_id,
                     mesh.material_id,
                     mesh.base.transform.to_mat4().to_cols_array_2d(),
                 )),
                 _ => None,
             });
-            let Some((visible, mesh_id, material_id, model)) = mesh_data else {
+            let Some((visible, mesh_source, mesh_id, material_id, model)) = mesh_data else {
                 continue;
             };
             if !visible {
@@ -58,7 +59,7 @@ impl Runtime {
             }
 
             let Some((mesh, material)) =
-                self.resolve_mesh_instance_assets(node_id, mesh_id, material_id)
+                self.resolve_mesh_instance_assets(node_id, mesh_source, mesh_id, material_id)
             else {
                 continue;
             };
@@ -77,10 +78,15 @@ impl Runtime {
     fn resolve_mesh_instance_assets(
         &mut self,
         node_id: NodeID,
+        mesh_source: Option<String>,
         mut mesh_id: MeshID,
         mut material_id: MaterialID,
     ) -> Option<(MeshID, MaterialID)> {
         if mesh_id.is_nil() {
+            let source = mesh_source?.trim().to_string();
+            if source.is_empty() {
+                return None;
+            }
             let request = Self::mesh_request_id(node_id);
             if let Some(result) = self.take_render_result(request) {
                 match result {
@@ -104,6 +110,7 @@ impl Runtime {
                         ResourceCommand::CreateMesh {
                             request,
                             owner: node_id,
+                            source,
                         },
                     ));
                 }
@@ -162,9 +169,26 @@ mod tests {
     }
 
     #[test]
+    fn mesh_instance_without_mesh_source_requests_nothing() {
+        let mut runtime = Runtime::new();
+        let mut mesh = MeshInstance3D::new();
+        mesh.mesh = None;
+        mesh.mesh_id = MeshID::nil();
+        mesh.material_id = MaterialID::nil();
+        runtime
+            .nodes
+            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+
+        runtime.extract_render_3d_commands();
+        let first = collect_commands(&mut runtime);
+        assert!(first.is_empty());
+    }
+
+    #[test]
     fn mesh_instance_requests_missing_assets_once_until_events_arrive() {
         let mut runtime = Runtime::new();
         let mut mesh = MeshInstance3D::new();
+        mesh.mesh = Some("__cube__".into());
         mesh.mesh_id = MeshID::nil();
         mesh.material_id = MaterialID::nil();
         let node_id = runtime
@@ -175,8 +199,9 @@ mod tests {
         let first = collect_commands(&mut runtime);
         assert_eq!(first.len(), 1);
         assert!(matches!(
-            first[0],
-            RenderCommand::Resource(ResourceCommand::CreateMesh { owner, .. }) if owner == node_id
+            &first[0],
+            RenderCommand::Resource(ResourceCommand::CreateMesh { owner, source, .. })
+                if *owner == node_id && source == "__cube__"
         ));
 
         runtime.extract_render_3d_commands();
@@ -190,7 +215,10 @@ mod tests {
         let node_id = runtime
             .nodes
             .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
-                MeshInstance3D::new(),
+                MeshInstance3D {
+                    mesh: Some("__cube__".into()),
+                    ..MeshInstance3D::new()
+                },
             )));
 
         runtime.extract_render_3d_commands();
@@ -238,7 +266,10 @@ mod tests {
         let inserted = runtime
             .nodes
             .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
-                MeshInstance3D::new(),
+                MeshInstance3D {
+                    mesh: Some("__cube__".into()),
+                    ..MeshInstance3D::new()
+                },
             )));
 
         runtime.extract_render_3d_commands();

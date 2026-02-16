@@ -1,4 +1,5 @@
 use perro_ids::{MaterialID, MeshID, TextureID};
+use std::collections::HashMap;
 
 #[derive(Default)]
 struct SlotArena {
@@ -54,6 +55,7 @@ pub struct ResourceStore {
     meshes: SlotArena,
     textures: SlotArena,
     materials: SlotArena,
+    mesh_by_source: HashMap<String, MeshID>,
 }
 
 impl ResourceStore {
@@ -62,9 +64,14 @@ impl ResourceStore {
     }
 
     #[inline]
-    pub fn create_mesh(&mut self) -> MeshID {
+    pub fn create_mesh(&mut self, source: &str) -> MeshID {
+        if let Some(id) = self.mesh_by_source.get(source).copied() {
+            return id;
+        }
         let (index, generation) = self.meshes.create_parts();
-        MeshID::from_parts(index, generation)
+        let id = MeshID::from_parts(index, generation);
+        self.mesh_by_source.insert(source.to_string(), id);
+        id
     }
 
     #[inline]

@@ -9,6 +9,7 @@ pub struct SceneNodeEntry {
     pub data: SceneNodeDataEntry,
     pub key: SceneKey,
     pub name: Option<&'static str>,
+    pub children: &'static [SceneKey],
     pub parent: Option<SceneKey>,
     pub script: Option<&'static str>,
 }

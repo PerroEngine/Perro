@@ -34,18 +34,8 @@ strip = "none"
 overflow-checks = false
 
 [patch.crates-io]
-perro_api = { path = "C:/Users/super/Perro/perro_api" }
-perro_app = { path = "C:/Users/super/Perro/perro_app" }
-perro_compiler = { path = "C:/Users/super/Perro/perro_compiler" }
-perro_core = { path = "C:/Users/super/Perro/perro_core" }
-perro_dev_runner = { path = "C:/Users/super/Perro/perro_dev_runner" }
-perro_graphics = { path = "C:/Users/super/Perro/perro_graphics" }
-perro_ids = { path = "C:/Users/super/Perro/perro_ids" }
-perro_io = { path = "C:/Users/super/Perro/perro_io" }
-perro_modules = { path = "C:/Users/super/Perro/perro_modules" }
-perro_project = { path = "C:/Users/super/Perro/perro_project" }
-perro_render_bridge = { path = "C:/Users/super/Perro/perro_render_bridge" }
-perro_runtime = { path = "C:/Users/super/Perro/perro_runtime" }
-perro_scene = { path = "C:/Users/super/Perro/perro_scene" }
-perro_scripting = { path = "C:/Users/super/Perro/perro_scripting" }
-perro_variant = { path = "C:/Users/super/Perro/perro_variant" }
+perro_api = { path = "../../../../perro_api" }
+perro_core = { path = "../../../../perro_core" }
+perro_ids = { path = "../../../../perro_ids" }
+perro_scripting = { path = "../../../../perro_scripting" }
+perro_variant = { path = "../../../../perro_variant" }

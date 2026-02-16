@@ -61,3 +61,39 @@ pub fn run_static_project_from_path(
     WinitRunner::new().run(app, &window_title);
     Ok(())
 }
+
+pub fn run_static_embedded_project(
+    project_root: &Path,
+    default_name: &str,
+    project_name: &'static str,
+    main_scene: &'static str,
+    icon: &'static str,
+    virtual_width: u32,
+    virtual_height: u32,
+    assets_brk: &'static [u8],
+    scene_lookup: perro_runtime::StaticSceneLookup,
+) -> Result<(), ProjectLoadError> {
+    let mut project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)
+        .unwrap_or_else(|_| {
+            RuntimeProject::from_static(
+                perro_runtime::StaticProjectConfig::new(
+                    project_name,
+                    main_scene,
+                    icon,
+                    virtual_width,
+                    virtual_height,
+                ),
+                project_root.to_path_buf(),
+            )
+        });
+
+    project = project
+        .with_static_scene_lookup(scene_lookup)
+        .with_brk_bytes(assets_brk);
+
+    let window_title = project.config.name.clone();
+    let graphics = PerroGraphics::new();
+    let app = create_static_app(graphics, project);
+    WinitRunner::new().run(app, &window_title);
+    Ok(())
+}

@@ -83,6 +83,7 @@ mod tests {
         // Create a MeshInstance3D (contains Node3D as base)
         let mut mesh = SceneNode::new(SceneNodeData::MeshInstance3D(MeshInstance3D {
             base: Node3D::default(),
+            mesh: None,
             mesh_id: perro_ids::MeshID::nil(),
             material_id: perro_ids::MaterialID::nil(),
         }));

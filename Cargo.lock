@@ -1135,6 +1135,10 @@ dependencies = [
 [[package]]
 name = "perro_cli"
 version = "0.1.0"
+dependencies = [
+ "perro_compiler",
+ "perro_project",
+]
 
 [[package]]
 name = "perro_compiler"
@@ -1142,6 +1146,7 @@ version = "0.1.0"
 dependencies = [
  "perro_io",
  "perro_project",
+ "perro_scene",
 ]
 
 [[package]]

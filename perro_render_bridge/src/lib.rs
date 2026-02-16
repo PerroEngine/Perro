@@ -64,6 +64,7 @@ pub enum ResourceCommand {
     CreateMesh {
         request: RenderRequestID,
         owner: NodeID,
+        source: String,
     },
     CreateTexture {
         request: RenderRequestID,

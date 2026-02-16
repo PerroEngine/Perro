@@ -25,6 +25,7 @@ pub struct RuntimeProject {
     pub config: RuntimeProjectConfig,
     pub runtime_params: BTreeMap<String, String>,
     pub static_scene_lookup: Option<StaticSceneLookup>,
+    pub brk_bytes: Option<&'static [u8]>,
 }
 
 impl RuntimeProject {
@@ -36,6 +37,7 @@ impl RuntimeProject {
             config: perro_project::ProjectConfig::default_for_name(name),
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
+            brk_bytes: None,
         }
     }
 
@@ -47,6 +49,7 @@ impl RuntimeProject {
             config,
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
+            brk_bytes: None,
         }
     }
 
@@ -67,6 +70,7 @@ impl RuntimeProject {
             config,
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
+            brk_bytes: None,
         })
     }
 
@@ -77,6 +81,11 @@ impl RuntimeProject {
 
     pub fn with_static_scene_lookup(mut self, lookup: StaticSceneLookup) -> Self {
         self.static_scene_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_brk_bytes(mut self, brk_bytes: &'static [u8]) -> Self {
+        self.brk_bytes = Some(brk_bytes);
         self
     }
 }

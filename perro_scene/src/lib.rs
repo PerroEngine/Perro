@@ -211,6 +211,7 @@ mod tests {
                 StaticNodeEntry {
                     key: StaticSceneKey("main"),
                     name: Some("Root Node"),
+                    children: &[StaticSceneKey("player")],
                     parent: None,
                     script: None,
                     data: StaticNodeData {
@@ -222,6 +223,7 @@ mod tests {
                 StaticNodeEntry {
                     key: StaticSceneKey("player"),
                     name: Some("Player"),
+                    children: &[],
                     parent: Some(StaticSceneKey("main")),
                     script: None,
                     data: StaticNodeData {

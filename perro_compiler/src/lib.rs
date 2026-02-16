@@ -1,6 +1,9 @@
+use perro_io::brk::build_brk;
 use perro_io::walkdir::walk_dir;
-use perro_project::ensure_source_overrides;
+use perro_project::{ensure_source_overrides, load_project_toml};
+use perro_scene::{Parser, RuntimeNodeData, RuntimeValue};
 use std::{
+    collections::HashMap,
     fmt::{Display, Formatter},
     fs,
     path::{Path, PathBuf},
@@ -11,6 +14,7 @@ use std::{
 pub enum CompilerError {
     Io(std::io::Error),
     CargoFailed(i32),
+    SceneParse(String),
 }
 
 impl Display for CompilerError {
@@ -18,6 +22,7 @@ impl Display for CompilerError {
         match self {
             Self::Io(err) => write!(f, "{err}"),
             Self::CargoFailed(code) => write!(f, "cargo build failed with exit code {code}"),
+            Self::SceneParse(msg) => write!(f, "{msg}"),
         }
     }
 }
@@ -83,6 +88,337 @@ pub fn compile_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError
     }
 
     Ok(copied)
+}
+
+pub fn compile_project_bundle(project_root: &Path) -> Result<(), CompilerError> {
+    ensure_source_overrides(project_root)?;
+    let _ = compile_scripts(project_root)?;
+    generate_static_scenes(project_root)?;
+    generate_embedded_main(project_root)?;
+    generate_assets_brk(project_root)?;
+    build_project_crate(project_root)?;
+    Ok(())
+}
+
+fn generate_assets_brk(project_root: &Path) -> Result<(), CompilerError> {
+    let embedded_dir = project_root.join(".perro").join("embedded");
+    fs::create_dir_all(&embedded_dir)?;
+    let output = embedded_dir.join("assets.brk");
+    let res_dir = project_root.join("res");
+    build_brk(&output, &res_dir, project_root)?;
+    Ok(())
+}
+
+fn build_project_crate(project_root: &Path) -> Result<(), CompilerError> {
+    let project_crate = project_root.join(".perro").join("project");
+    let target_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("target");
+    let status = Command::new("cargo")
+        .arg("build")
+        .arg("--release")
+        .env("CARGO_TARGET_DIR", target_dir)
+        .current_dir(project_crate)
+        .status()?;
+
+    if !status.success() {
+        return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
+    }
+    Ok(())
+}
+
+fn ensure_project_dependency_line(
+    project_root: &Path,
+    crate_name: &str,
+    dependency_line: &str,
+) -> Result<(), CompilerError> {
+    let manifest_path = project_root.join(".perro").join("project").join("Cargo.toml");
+    let mut src = fs::read_to_string(&manifest_path)?;
+
+    // Only treat entries inside [dependencies] as satisfying this check.
+    let mut in_dependencies = false;
+    for line in src.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_dependencies = trimmed == "[dependencies]";
+            continue;
+        }
+        if !in_dependencies {
+            continue;
+        }
+        if trimmed.starts_with(&format!("{crate_name} "))
+            || trimmed.starts_with(&format!("{crate_name}="))
+        {
+            return Ok(());
+        }
+    }
+
+    if let Some(idx) = src.find("[dependencies]") {
+        let insert_pos = src[idx..]
+            .find('\n')
+            .map(|off| idx + off + 1)
+            .unwrap_or(src.len());
+        src.insert_str(insert_pos, &format!("{dependency_line}\n"));
+        fs::write(manifest_path, src)?;
+    }
+    Ok(())
+}
+
+fn generate_embedded_main(project_root: &Path) -> Result<(), CompilerError> {
+    let cfg = load_project_toml(project_root)
+        .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    let project_src = project_root.join(".perro").join("project").join("src");
+    fs::create_dir_all(project_src.join("static"))?;
+    ensure_project_dependency_line(project_root, "perro_scene", "perro_scene = \"0.1.0\"")?;
+    ensure_project_dependency_line(
+        project_root,
+        "phf",
+        "phf = { version = \"0.11\", features = [\"macros\"] }",
+    )?;
+
+    let main_src = format!(
+        "#[path = \"static/mod.rs\"]\n\
+mod static_assets;\n\n\
+static ASSETS_BRK: &[u8] = include_bytes!(\"../../embedded/assets.brk\");\n\n\
+fn project_root() -> std::path::PathBuf {{\n\
+    if let Ok(exe) = std::env::current_exe() {{\n\
+        if let Some(exe_dir) = exe.parent() {{\n\
+            for dir in exe_dir.ancestors() {{\n\
+                if dir.join(\"project.toml\").exists() {{\n\
+                    return dir.to_path_buf();\n\
+                }}\n\
+            }}\n\
+            return exe_dir.to_path_buf();\n\
+        }}\n\
+    }}\n\
+    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(\".\"))\n\
+}}\n\n\
+fn main() {{\n\
+    let root = project_root();\n\
+    perro_app::entry::run_static_embedded_project(\n\
+        &root,\n\
+        \"{default_name}\",\n\
+        \"{name}\",\n\
+        \"{main_scene}\",\n\
+        \"{icon}\",\n\
+        {w},\n\
+        {h},\n\
+        ASSETS_BRK,\n\
+        static_assets::scenes::lookup_scene,\n\
+    ).expect(\"failed to run embedded static project\");\n\
+}}\n",
+        default_name = cfg.name,
+        name = escape_str(&cfg.name),
+        main_scene = escape_str(&cfg.main_scene),
+        icon = escape_str(&cfg.icon),
+        w = cfg.virtual_width,
+        h = cfg.virtual_height
+    );
+    fs::write(project_src.join("main.rs"), main_src)?;
+    Ok(())
+}
+
+fn generate_static_scenes(project_root: &Path) -> Result<(), CompilerError> {
+    let res_dir = project_root.join("res");
+    let static_dir = project_root.join(".perro").join("project").join("src").join("static");
+    fs::create_dir_all(&static_dir)?;
+
+    let mut scene_paths = Vec::<String>::new();
+    let mut scene_defs = String::new();
+
+    if res_dir.exists() {
+        walk_dir(&res_dir, &mut |path| {
+            if path.extension().and_then(|e| e.to_str()) != Some("scn") {
+                return Ok(());
+            }
+            let rel = path.strip_prefix(&res_dir).unwrap().to_string_lossy().replace('\\', "/");
+            let res_path = format!("res://{rel}");
+            let src = fs::read_to_string(path)?;
+            let parsed = std::panic::catch_unwind(|| Parser::new(&src).parse_scene())
+                .map_err(|_| std::io::Error::other(format!("failed to parse scene: {res_path}")))?;
+            let emitted = emit_static_scene_const(&res_path, &parsed)
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+            scene_defs.push_str(&emitted);
+            scene_paths.push(res_path);
+            Ok(())
+        })?;
+    }
+
+    scene_paths.sort();
+    let mut lookup = String::new();
+    lookup.push_str("pub static SCENE_MAP: phf::Map<&'static str, &'static StaticScene> = phf_map! {\n");
+    for p in &scene_paths {
+        let id = sanitize_ident(p);
+        lookup.push_str(&format!("    \"{}\" => &SCENE_{},\n", escape_str(p), id));
+    }
+    lookup.push_str("};\n\n");
+    lookup.push_str("pub fn lookup_scene(path: &str) -> Option<&'static StaticScene> {\n");
+    lookup.push_str("    SCENE_MAP.get(path).copied()\n");
+    lookup.push_str("}\n");
+
+    let scenes_src = format!(
+        "// Auto-generated by perro_compiler. Do not edit.\n\
+use phf::phf_map;\n\
+use perro_scene::{{StaticNodeData, StaticNodeEntry, StaticScene, StaticSceneKey, StaticSceneValue}};\n\n\
+{scene_defs}\n\
+{lookup}"
+    );
+    fs::write(static_dir.join("scenes.rs"), scenes_src)?;
+    fs::write(
+        static_dir.join("mod.rs"),
+        "pub mod scenes;\n",
+    )?;
+    Ok(())
+}
+
+fn emit_static_scene_const(path: &str, scene: &perro_scene::RuntimeScene) -> Result<String, CompilerError> {
+    let scene_ident = sanitize_ident(path);
+    let mut out = String::new();
+    let mut counter = 0usize;
+    let mut node_entries = String::new();
+    let mut children_by_parent: HashMap<&str, Vec<&str>> = HashMap::new();
+    for node in &scene.nodes {
+        if let Some(parent) = &node.parent {
+            children_by_parent
+                .entry(parent.as_str())
+                .or_default()
+                .push(node.key.as_str());
+        }
+    }
+
+    for (index, node) in scene.nodes.iter().enumerate() {
+        let children_name = format!("CHILDREN_{}_{}", scene_ident, index);
+        let children = children_by_parent
+            .get(node.key.as_str())
+            .cloned()
+            .unwrap_or_default();
+        let mut children_entries = String::new();
+        for child in children {
+            children_entries.push_str(&format!(
+                "    StaticSceneKey(\"{}\"),\n",
+                escape_str(child)
+            ));
+        }
+        out.push_str(&format!(
+            "const {children_name}: &[StaticSceneKey] = &[\n{children_entries}];\n",
+            children_name = children_name,
+            children_entries = children_entries
+        ));
+
+        let data_const = emit_node_data_consts(&mut out, &scene_ident, &node.data, &mut counter);
+        node_entries.push_str(&format!(
+            "    StaticNodeEntry {{ key: StaticSceneKey(\"{key}\"), name: {name}, children: {children}, parent: {parent}, script: {script}, data: {data} }},\n",
+            key = escape_str(&node.key),
+            name = opt_static_str(&node.name),
+            children = children_name,
+            parent = match &node.parent {
+                Some(p) => format!("Some(StaticSceneKey(\"{}\"))", escape_str(p)),
+                None => "None".to_string(),
+            },
+            script = opt_static_str(&node.script),
+            data = data_const,
+        ));
+    }
+
+    out.push_str(&format!(
+        "const NODES_{id}: &[StaticNodeEntry] = &[\n{entries}];\n\n",
+        id = scene_ident,
+        entries = node_entries
+    ));
+    out.push_str(&format!(
+        "pub static SCENE_{id}: StaticScene = StaticScene {{ nodes: NODES_{id}, root: {root} }};\n\n",
+        id = scene_ident,
+        root = match &scene.root {
+            Some(r) => format!("Some(StaticSceneKey(\"{}\"))", escape_str(r)),
+            None => "None".to_string(),
+        }
+    ));
+
+    Ok(out)
+}
+
+fn emit_node_data_consts(
+    out: &mut String,
+    scene_ident: &str,
+    data: &RuntimeNodeData,
+    counter: &mut usize,
+) -> String {
+    let idx = *counter;
+    *counter += 1;
+    let data_name = format!("DATA_{}_{}", scene_ident, idx);
+    let fields_name = format!("FIELDS_{}_{}", scene_ident, idx);
+
+    let mut fields = String::new();
+    for (name, value) in &data.fields {
+        fields.push_str(&format!(
+            "    (\"{}\", {}),\n",
+            escape_str(name),
+            emit_value(value)
+        ));
+    }
+    out.push_str(&format!(
+        "const {fields_name}: &[(&str, StaticSceneValue)] = &[\n{fields}];\n",
+        fields_name = fields_name,
+        fields = fields
+    ));
+
+    let base_ref = if let Some(base) = &data.base {
+        let base_name = emit_node_data_consts(out, scene_ident, base, counter);
+        format!("Some(&{base_name})")
+    } else {
+        "None".to_string()
+    };
+
+    out.push_str(&format!(
+        "const {data_name}: StaticNodeData = StaticNodeData {{ ty: \"{ty}\", fields: {fields_name}, base: {base_ref} }};\n",
+        data_name = data_name,
+        ty = escape_str(&data.ty),
+        fields_name = fields_name,
+        base_ref = base_ref
+    ));
+    data_name
+}
+
+fn emit_value(value: &RuntimeValue) -> String {
+    match value {
+        RuntimeValue::Bool(v) => format!("StaticSceneValue::Bool({v})"),
+        RuntimeValue::I32(v) => format!("StaticSceneValue::I32({v})"),
+        RuntimeValue::F32(v) => format!("StaticSceneValue::F32({v:?})"),
+        RuntimeValue::Vec2 { x, y } => {
+            format!("StaticSceneValue::Vec2 {{ x: {x:?}, y: {y:?} }}")
+        }
+        RuntimeValue::Vec3 { x, y, z } => {
+            format!("StaticSceneValue::Vec3 {{ x: {x:?}, y: {y:?}, z: {z:?} }}")
+        }
+        RuntimeValue::Vec4 { x, y, z, w } => format!(
+            "StaticSceneValue::Vec4 {{ x: {x:?}, y: {y:?}, z: {z:?}, w: {w:?} }}"
+        ),
+        RuntimeValue::Str(s) => format!("StaticSceneValue::Str(\"{}\")", escape_str(s)),
+        RuntimeValue::Key(s) => format!("StaticSceneValue::Key(StaticSceneKey(\"{}\"))", escape_str(s)),
+    }
+}
+
+fn escape_str(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn opt_static_str(v: &Option<String>) -> String {
+    match v {
+        Some(s) => format!("Some(\"{}\")", escape_str(s)),
+        None => "None".to_string(),
+    }
+}
+
+fn sanitize_ident(path: &str) -> String {
+    let mut out = String::new();
+    for c in path.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_uppercase());
+        } else {
+            out.push('_');
+        }
+    }
+    out
 }
 
 fn write_scripts_lib(scripts_src: &Path, copied: &[String]) -> Result<(), CompilerError> {

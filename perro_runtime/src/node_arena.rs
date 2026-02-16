@@ -8,23 +8,33 @@ pub struct NodeArena {
 
 impl NodeArena {
     pub fn new() -> Self {
+        // Reserve index 0 as invalid/nil sentinel so first real node ID is 1.
+        let mut nodes = Vec::with_capacity(2);
+        let mut generations = Vec::with_capacity(2);
+        nodes.push(None);
+        generations.push(0);
         Self {
-            nodes: Vec::with_capacity(1),
-            generations: Vec::with_capacity(1),
+            nodes,
+            generations,
         }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
+        // +1 for reserved nil sentinel slot at index 0.
+        let mut nodes = Vec::with_capacity(capacity.saturating_add(1));
+        let mut generations = Vec::with_capacity(capacity.saturating_add(1));
+        nodes.push(None);
+        generations.push(0);
         Self {
-            nodes: Vec::with_capacity(capacity),
-            generations: Vec::with_capacity(capacity),
+            nodes,
+            generations,
         }
     }
 
     /// Insert a node, returns NodeID with index and generation
     pub fn insert(&mut self, node: SceneNode) -> NodeID {
         // Try to find a free slot first
-        for (index, slot) in self.nodes.iter_mut().enumerate() {
+        for (index, slot) in self.nodes.iter_mut().enumerate().skip(1) {
             if slot.is_none() {
                 *slot = Some(node);
                 let generation = self.generations[index];
@@ -41,7 +51,9 @@ impl NodeArena {
 
     /// Get a node by ID, returns None if generation doesn't match
     pub fn get(&self, id: NodeID) -> Option<&SceneNode> {
-        if id.index() >= self.nodes.len() as u32
+        if id.is_nil()
+            || id.index() == 0
+            || id.index() >= self.nodes.len() as u32
             || self.generations[id.index() as usize] != id.generation()
         {
             return None;
@@ -51,7 +63,9 @@ impl NodeArena {
 
     /// Get mutable reference to a node
     pub fn get_mut(&mut self, id: NodeID) -> Option<&mut SceneNode> {
-        if id.index() >= self.nodes.len() as u32
+        if id.is_nil()
+            || id.index() == 0
+            || id.index() >= self.nodes.len() as u32
             || self.generations[id.index() as usize] != id.generation()
         {
             return None;
@@ -61,7 +75,9 @@ impl NodeArena {
 
     /// Remove a node, bumping the generation counter
     pub fn remove(&mut self, id: NodeID) -> Option<SceneNode> {
-        if id.index() >= self.nodes.len() as u32
+        if id.is_nil()
+            || id.index() == 0
+            || id.index() >= self.nodes.len() as u32
             || self.generations[id.index() as usize] != id.generation()
         {
             return None;
@@ -74,14 +90,16 @@ impl NodeArena {
 
     /// Check if a NodeID is still valid
     pub fn contains(&self, id: NodeID) -> bool {
-        id.index() < self.nodes.len() as u32
+        !id.is_nil()
+            && id.index() != 0
+            && id.index() < self.nodes.len() as u32
             && self.generations[id.index() as usize] == id.generation()
             && self.nodes[id.index() as usize].is_some()
     }
 
     /// Iterator over all valid nodes
     pub fn iter(&self) -> impl Iterator<Item = (NodeID, &SceneNode)> {
-        self.nodes.iter().enumerate().filter_map(|(index, node)| {
+        self.nodes.iter().enumerate().skip(1).filter_map(|(index, node)| {
             node.as_ref()
                 .map(|n| (NodeID::from_parts(index as u32, self.generations[index]), n))
         })
@@ -93,6 +111,7 @@ impl NodeArena {
             .iter_mut()
             .zip(self.generations.iter())
             .enumerate()
+            .skip(1)
             .filter_map(|(index, (node, &generation))| {
                 node.as_mut()
                     .map(|n| (NodeID::from_parts(index as u32, generation), n))
@@ -103,6 +122,8 @@ impl NodeArena {
     pub fn clear(&mut self) {
         self.nodes.clear();
         self.generations.clear();
+        self.nodes.push(None);
+        self.generations.push(0);
     }
 
     /// Number of active nodes

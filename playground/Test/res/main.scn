@@ -1,7 +1,7 @@
 @root = main
 
 [main]
-name = "World"
+name = "Wod"
 
 [Node3D]
     position = (0, 0, 0)
@@ -13,7 +13,7 @@ parent = @root
 name = "Cube"
 
 [MeshInstance3D]
-    mesh = __cube__
+    mesh = "__cube__"
 
     [Node3D]
         position = (0, 0, 0)

@@ -1,14 +1,33 @@
-use std::path::PathBuf;
+#[path = "static/mod.rs"]
+mod static_assets;
 
-fn project_root() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.to_path_buf()))
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+static ASSETS_BRK: &[u8] = include_bytes!("../../embedded/assets.brk");
+
+fn project_root() -> std::path::PathBuf {
+if let Ok(exe) = std::env::current_exe() {
+if let Some(exe_dir) = exe.parent() {
+for dir in exe_dir.ancestors() {
+if dir.join("project.toml").exists() {
+return dir.to_path_buf();
+}
+}
+return exe_dir.to_path_buf();
+}
+}
+std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
 }
 
 fn main() {
-    let root = project_root();
-    perro_app::entry::run_static_project_from_path(&root, "Perro Project")
-        .expect("failed to run project");
+let root = project_root();
+perro_app::entry::run_static_embedded_project(
+&root,
+"Test",
+"Test",
+"res://main.scn",
+"res://icon.png",
+1920,
+1080,
+ASSETS_BRK,
+static_assets::scenes::lookup_scene,
+).expect("failed to run embedded static project");
 }

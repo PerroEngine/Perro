@@ -10,11 +10,20 @@ use perro_scene::{
     Parser, RuntimeNodeData, RuntimeNodeEntry, RuntimeScene, RuntimeValue, StaticNodeData,
     StaticNodeEntry, StaticScene, StaticSceneValue,
 };
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, time::{Duration, Instant}};
+
+struct SceneLoadStats {
+    mode_label: &'static str,
+    source_load: Option<Duration>,
+    parse: Option<Duration>,
+    node_insert: Duration,
+    total_excluding_debug_print: Duration,
+}
 
 impl Runtime {
     pub(crate) fn load_boot_scene(&mut self) -> Result<(), String> {
-        let (project_root, project_name, main_scene_path, static_lookup) = {
+        let boot_start = Instant::now();
+        let (project_root, project_name, main_scene_path, static_lookup, brk_bytes) = {
             let project = self
                 .project()
                 .ok_or_else(|| "Runtime project is not set".to_string())?;
@@ -23,42 +32,124 @@ impl Runtime {
                 project.config.name.clone(),
                 project.config.main_scene.clone(),
                 project.static_scene_lookup,
+                project.brk_bytes,
             )
         };
 
-        set_project_root(ProjectRoot::Disk {
-            root: project_root,
-            name: project_name,
-        });
-
-        let runtime_scene = match self.provider_mode {
-            ProviderMode::Dynamic => load_runtime_scene_from_disk(&main_scene_path)?,
-            ProviderMode::Static => match static_lookup.and_then(|lookup| lookup(&main_scene_path)) {
-                Some(scene) => runtime_scene_from_static_scene(scene),
-                None => load_runtime_scene_from_disk(&main_scene_path)?,
-            },
-        };
+        if self.provider_mode == ProviderMode::Static {
+            if let Some(data) = brk_bytes {
+                set_project_root(ProjectRoot::Brk {
+                    data,
+                    name: project_name,
+                });
+            } else {
+                set_project_root(ProjectRoot::Disk {
+                    root: project_root,
+                    name: project_name,
+                });
+            }
+        } else {
+            set_project_root(ProjectRoot::Disk {
+                root: project_root,
+                name: project_name,
+            });
+        }
 
         self.nodes.clear();
-        insert_runtime_scene_nodes(self, runtime_scene)
+        let mode_label;
+        let mut source_load = None;
+        let mut parse = None;
+        let node_insert_start = Instant::now();
+        match self.provider_mode {
+            ProviderMode::Dynamic => {
+                mode_label = "dynamic";
+                let (runtime_scene, load_stats) = load_runtime_scene_from_disk(&main_scene_path)?;
+                source_load = Some(load_stats.source_load);
+                parse = Some(load_stats.parse);
+                insert_runtime_scene_nodes(self, runtime_scene)?;
+            }
+            ProviderMode::Static => match static_lookup.and_then(|lookup| lookup(&main_scene_path)) {
+                Some(scene) => {
+                    mode_label = "static";
+                    insert_static_scene_nodes(self, scene)?
+                }
+                None => {
+                    mode_label = "static_fallback_dynamic";
+                    let (runtime_scene, load_stats) = load_runtime_scene_from_disk(&main_scene_path)?;
+                    source_load = Some(load_stats.source_load);
+                    parse = Some(load_stats.parse);
+                    insert_runtime_scene_nodes(self, runtime_scene)?;
+                }
+            },
+        }
+        let node_insert = node_insert_start.elapsed();
+        let stats = SceneLoadStats {
+            mode_label,
+            source_load,
+            parse,
+            node_insert,
+            total_excluding_debug_print: boot_start.elapsed(),
+        };
+        debug_print_scene_load(self, &main_scene_path, stats);
+        Ok(())
     }
 }
 
-fn load_runtime_scene_from_disk(path: &str) -> Result<RuntimeScene, String> {
-    let bytes = load_asset(path).map_err(|err| format!("failed to load scene `{path}`: {err}"))?;
-    let source = std::str::from_utf8(&bytes)
-        .map_err(|err| format!("scene `{path}` is not valid UTF-8: {err}"))?;
-    Ok(Parser::new(source).parse_scene())
+struct RuntimeSceneLoadStats {
+    source_load: Duration,
+    parse: Duration,
 }
 
-fn runtime_scene_from_static_scene(scene: &'static StaticScene) -> RuntimeScene {
-    RuntimeScene {
-        nodes: scene
-            .nodes
-            .iter()
-            .map(runtime_node_entry_from_static)
-            .collect(),
-        root: scene.root.map(|key| key.0.to_string()),
+fn load_runtime_scene_from_disk(path: &str) -> Result<(RuntimeScene, RuntimeSceneLoadStats), String> {
+    let source_load_start = Instant::now();
+    let bytes = load_asset(path).map_err(|err| format!("failed to load scene `{path}`: {err}"))?;
+    let source_load = source_load_start.elapsed();
+
+    let source = std::str::from_utf8(&bytes)
+        .map_err(|err| format!("scene `{path}` is not valid UTF-8: {err}"))?;
+    let parse_start = Instant::now();
+    let scene = Parser::new(source).parse_scene();
+    let parse = parse_start.elapsed();
+    Ok((scene, RuntimeSceneLoadStats { source_load, parse }))
+}
+
+fn debug_print_scene_load(runtime: &Runtime, path: &str, stats: SceneLoadStats) {
+    println!(
+        "[scene-load] mode={} path={} total_ms={:.3} source_ms={} parse_ms={} insert_ms={:.3}",
+        stats.mode_label,
+        path,
+        as_ms(stats.total_excluding_debug_print),
+        fmt_duration(stats.source_load),
+        fmt_duration(stats.parse),
+        as_ms(stats.node_insert),
+    );
+    print_scene_tree(runtime, NodeID::ROOT, "");
+}
+
+fn as_ms(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1_000.0
+}
+
+fn fmt_duration(duration: Option<Duration>) -> String {
+    duration
+        .map(|value| format!("{:.3}", as_ms(value)))
+        .unwrap_or_else(|| "n/a".to_string())
+}
+
+fn print_scene_tree(runtime: &Runtime, node_id: NodeID, indent: &str) {
+    let Some(node) = runtime.nodes.get(node_id) else {
+        return;
+    };
+    println!(
+        "{}- {} [{}] ({})",
+        indent,
+        node.name.as_ref(),
+        node_id,
+        node.node_type(),
+    );
+    let child_indent = format!("{indent}  ");
+    for child_id in node.children_slice() {
+        print_scene_tree(runtime, *child_id, &child_indent);
     }
 }
 
@@ -105,8 +196,108 @@ struct PendingNode {
     node: SceneNode,
 }
 
+fn insert_static_scene_nodes(runtime: &mut Runtime, scene: &'static StaticScene) -> Result<(), String> {
+    let mut engine_root = SceneNode::new(SceneNodeData::Node);
+    engine_root.name = Cow::Borrowed("Root");
+    let engine_root_id = runtime.nodes.insert(engine_root);
+
+    let mut key_to_id: HashMap<&str, NodeID> = HashMap::with_capacity(scene.nodes.len());
+    let mut key_order: Vec<&str> = Vec::with_capacity(scene.nodes.len());
+    for static_node in scene.nodes {
+        let key = static_node.key.0;
+        if key_to_id.contains_key(key) {
+            return Err(format!("duplicate scene key `{key}`"));
+        }
+        let node = scene_node_from_static_entry(static_node)?;
+        let id = runtime.nodes.insert(node);
+        key_to_id.insert(key, id);
+        key_order.push(key);
+    }
+
+    let mut edges = Vec::new();
+    for static_node in scene.nodes {
+        let parent_id = *key_to_id
+            .get(static_node.key.0)
+            .ok_or_else(|| format!("node key `{}` not found", static_node.key.0))?;
+        for child_key in static_node.children {
+            let child_id = *key_to_id.get(child_key.0).ok_or_else(|| {
+                format!(
+                    "child node key `{}` not found while linking parent `{}`",
+                    child_key.0, static_node.key.0
+                )
+            })?;
+            if let Some(child) = runtime.nodes.get_mut(child_id) {
+                child.parent = parent_id;
+            }
+            edges.push((parent_id, child_id));
+        }
+    }
+
+    for (parent_id, child_id) in edges {
+        if let Some(parent) = runtime.nodes.get_mut(parent_id) {
+            parent.add_child(child_id);
+        }
+    }
+
+    let root_key_opt = scene.root.map(|key| key.0);
+    if let Some(root_key) = root_key_opt {
+        if !key_to_id.contains_key(root_key) {
+            return Err(format!("scene root `{root_key}` not found in node list"));
+        }
+    }
+
+    let mut top_level_roots: Vec<NodeID> = Vec::new();
+    for key in &key_order {
+        let Some(&id) = key_to_id.get(*key) else {
+            continue;
+        };
+        let Some(node) = runtime.nodes.get(id) else {
+            continue;
+        };
+        if node.parent.is_nil() {
+            top_level_roots.push(id);
+        }
+    }
+
+    if top_level_roots.is_empty() {
+        return Err("boot scene produced no top-level root nodes".to_string());
+    }
+
+    let primary_root = if let Some(root_key) = root_key_opt {
+        *key_to_id
+            .get(root_key)
+            .ok_or_else(|| format!("scene root `{root_key}` not found in node list"))?
+    } else {
+        top_level_roots[0]
+    };
+
+    let mut attach_order = Vec::with_capacity(top_level_roots.len());
+    attach_order.push(primary_root);
+    for id in top_level_roots {
+        if id != primary_root {
+            attach_order.push(id);
+        }
+    }
+
+    for root_id in &attach_order {
+        if let Some(root_node) = runtime.nodes.get_mut(*root_id) {
+            root_node.parent = engine_root_id;
+        }
+        if let Some(engine_root_node) = runtime.nodes.get_mut(engine_root_id) {
+            engine_root_node.add_child(*root_id);
+        }
+    }
+
+    Ok(())
+}
+
 fn insert_runtime_scene_nodes(runtime: &mut Runtime, scene: RuntimeScene) -> Result<(), String> {
     let RuntimeScene { nodes, root } = scene;
+
+    let mut engine_root = SceneNode::new(SceneNodeData::Node);
+    engine_root.name = Cow::Borrowed("Root");
+    let engine_root_id = runtime.nodes.insert(engine_root);
+
     let mut pending_nodes = Vec::with_capacity(nodes.len());
     for entry in nodes {
         pending_nodes.push(PendingNode {
@@ -117,6 +308,7 @@ fn insert_runtime_scene_nodes(runtime: &mut Runtime, scene: RuntimeScene) -> Res
     }
 
     let mut key_to_id: HashMap<String, NodeID> = HashMap::with_capacity(pending_nodes.len());
+    let mut key_order: Vec<String> = Vec::with_capacity(pending_nodes.len());
     let mut parent_pairs = Vec::with_capacity(pending_nodes.len());
 
     for pending in pending_nodes {
@@ -128,11 +320,13 @@ fn insert_runtime_scene_nodes(runtime: &mut Runtime, scene: RuntimeScene) -> Res
         if let Some(parent_key) = pending.parent_key {
             parent_pairs.push((pending.key.clone(), parent_key));
         }
+        key_order.push(pending.key.clone());
         key_to_id.insert(pending.key, node_id);
     }
 
-    if let Some(root_key) = root {
-        if !key_to_id.contains_key(&root_key) {
+    let root_key_opt = root;
+    if let Some(root_key) = &root_key_opt {
+        if !key_to_id.contains_key(root_key.as_str()) {
             return Err(format!("scene root `{root_key}` not found in node list"));
         }
     }
@@ -144,7 +338,11 @@ fn insert_runtime_scene_nodes(runtime: &mut Runtime, scene: RuntimeScene) -> Res
             .ok_or_else(|| format!("child node key `{child_key}` not found"))?;
         let parent_id = *key_to_id
             .get(&parent_key)
-            .ok_or_else(|| format!("parent node key `{parent_key}` not found"))?;
+            .ok_or_else(|| {
+                format!(
+                    "parent node key `{parent_key}` not found while linking child `{child_key}`"
+                )
+            })?;
 
         if let Some(child) = runtime.nodes.get_mut(child_id) {
             child.parent = parent_id;
@@ -158,7 +356,53 @@ fn insert_runtime_scene_nodes(runtime: &mut Runtime, scene: RuntimeScene) -> Res
         }
     }
 
+    let mut top_level_roots: Vec<NodeID> = Vec::new();
+    for key in &key_order {
+        let Some(&id) = key_to_id.get(key) else {
+            continue;
+        };
+        let Some(node) = runtime.nodes.get(id) else {
+            continue;
+        };
+        if node.parent.is_nil() {
+            top_level_roots.push(id);
+        }
+    }
+
+    if top_level_roots.is_empty() {
+        return Err("boot scene produced no top-level root nodes".to_string());
+    }
+
+    let primary_root = if let Some(root_key) = root_key_opt.as_deref() {
+        *key_to_id
+            .get(root_key)
+            .ok_or_else(|| format!("scene root `{root_key}` not found in node list"))?
+    } else {
+        top_level_roots[0]
+    };
+
+    let mut attach_order = Vec::with_capacity(top_level_roots.len());
+    attach_order.push(primary_root);
+    for id in top_level_roots {
+        if id != primary_root {
+            attach_order.push(id);
+        }
+    }
+
+    for root_id in &attach_order {
+        if let Some(root_node) = runtime.nodes.get_mut(*root_id) {
+            root_node.parent = engine_root_id;
+        }
+        if let Some(engine_root_node) = runtime.nodes.get_mut(engine_root_id) {
+            engine_root_node.add_child(*root_id);
+        }
+    }
     Ok(())
+}
+
+fn scene_node_from_static_entry(entry: &StaticNodeEntry) -> Result<SceneNode, String> {
+    let runtime_entry = runtime_node_entry_from_static(entry);
+    scene_node_from_runtime_entry(&runtime_entry)
 }
 
 fn scene_node_from_runtime_entry(entry: &RuntimeNodeEntry) -> Result<SceneNode, String> {
@@ -323,6 +567,11 @@ fn apply_node_3d_fields(node: &mut Node3D, fields: &[(String, RuntimeValue)]) {
 fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[(String, RuntimeValue)]) {
     for (name, value) in fields {
         match name.as_str() {
+            "mesh" => {
+                if let Some(v) = as_mesh_source(value) {
+                    node.mesh = Some(Cow::Owned(v));
+                }
+            }
             "mesh_id" => {
                 if let Some(v) = as_u64(value) {
                     node.mesh_id = perro_ids::MeshID::from_u64(v);
@@ -405,6 +654,14 @@ fn as_vec3(value: &RuntimeValue) -> Option<Vector3> {
 fn as_quat(value: &RuntimeValue) -> Option<Quaternion> {
     match value {
         RuntimeValue::Vec4 { x, y, z, w } => Some(Quaternion::new(*x, *y, *z, *w)),
+        _ => None,
+    }
+}
+
+fn as_mesh_source(value: &RuntimeValue) -> Option<String> {
+    match value {
+        RuntimeValue::Str(v) => Some(v.clone()),
+        RuntimeValue::Key(v) => Some(v.clone()),
         _ => None,
     }
 }

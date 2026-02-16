@@ -63,8 +63,16 @@ impl PerroGraphics {
         for command in commands {
             match command {
                 RenderCommand::Resource(resource_cmd) => match resource_cmd {
-                    ResourceCommand::CreateMesh { request, .. } => {
-                        let id = self.resources.create_mesh();
+                    ResourceCommand::CreateMesh {
+                        request, source, ..
+                    } => {
+                        // `__cube__` is a built-in sentinel; all other values are treated as asset paths.
+                        let normalized = if source == "__cube__" {
+                            "__cube__"
+                        } else {
+                            source.as_str()
+                        };
+                        let id = self.resources.create_mesh(normalized);
                         self.events.push(RenderEvent::MeshCreated { request, id });
                     }
                     ResourceCommand::CreateTexture { request, .. } => {
@@ -247,6 +255,7 @@ mod tests {
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
             request: perro_render_bridge::RenderRequestID::new(1001),
             owner: node_a,
+            source: "__cube__".to_string(),
         }));
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
             request: perro_render_bridge::RenderRequestID::new(1002),
@@ -255,6 +264,7 @@ mod tests {
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
             request: perro_render_bridge::RenderRequestID::new(1003),
             owner: node_b,
+            source: "res://mesh/cube.glb".to_string(),
         }));
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
             request: perro_render_bridge::RenderRequestID::new(1004),

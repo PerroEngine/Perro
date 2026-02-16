@@ -89,7 +89,11 @@ impl<'a> Lexer<'a> {
                 while matches!(self.peek, Some(p) if p.is_alphanumeric() || p == '_') {
                     s.push(self.bump().unwrap());
                 }
-                Token::Ident(s)
+                match s.as_str() {
+                    "true" => Token::True,
+                    "false" => Token::False,
+                    _ => Token::Ident(s),
+                }
             }
 
             _ => self.next_token(),
