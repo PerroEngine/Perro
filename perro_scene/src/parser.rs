@@ -251,6 +251,8 @@ impl<'a> Parser<'a> {
                     self.expect(Token::RBracket);
                     assert_eq!(end, key);
 
+                    let name = name.or_else(|| Some(key.clone()));
+
                     nodes.push(RuntimeNodeEntry {
                         key,
                         name,

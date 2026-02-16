@@ -188,6 +188,34 @@ mod tests {
     }
 
     #[test]
+    fn parse_scene_defaults_node_name_to_key() {
+        let src = r#"
+        @root = main
+
+        [main]
+        [Node2D]
+            position = (0, 0)
+        [/Node2D]
+        [/main]
+
+        [bob]
+        parent = @root
+        [Sprite2D]
+            texture = "res://icon.png"
+        [/Sprite2D]
+        [/bob]
+        "#;
+
+        let scene = Parser::new(src).parse_scene();
+
+        let main = scene.nodes.iter().find(|n| n.key == "main").unwrap();
+        let bob = scene.nodes.iter().find(|n| n.key == "bob").unwrap();
+
+        assert_eq!(main.name.as_deref(), Some("main"));
+        assert_eq!(bob.name.as_deref(), Some("bob"));
+    }
+
+    #[test]
     fn static_scene_equivalent_to_parsed() {
         // Define a static scene manually
         const MAIN_FIELDS: &[(&str, StaticSceneValue)] =

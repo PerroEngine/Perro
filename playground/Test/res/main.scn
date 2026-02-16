@@ -1,7 +1,6 @@
 @root = main
 
 [main]
-name = "Wod"
 
 [Node3D]
     position = (0, 0, 0)
@@ -10,7 +9,6 @@ name = "Wod"
 
 [cube]
 parent = @root
-name = "Cube"
 
 [MeshInstance3D]
     mesh = "__cube__"
@@ -24,7 +22,6 @@ name = "Cube"
 
 [camera]
 parent = @root
-name = "Camera"
 
 [Camera3D]
     active = true

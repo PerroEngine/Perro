@@ -359,7 +359,6 @@ fn default_main_scene() -> String {
     r#"@root = main
 
 [main]
-name = "World"
 
 [Node2D]
     position = (0, 0)
