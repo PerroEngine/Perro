@@ -479,6 +479,14 @@ debug = false
 strip = "none"
 overflow-checks = false
 panic = "abort"
+
+[profile.dev.package."*"]
+opt-level = 2
+incremental = true
+codegen-units = 64
+debug = false
+strip = "none"
+overflow-checks = false
 "#
     )
 }

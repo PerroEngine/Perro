@@ -110,7 +110,7 @@ impl Runtime {
 
 fn debug_print_scene_load(runtime: &Runtime, path: &str, stats: SceneLoadStats) {
     println!(
-        "[scene-load] mode={} path={} total_us={:.3} source_us={} parse_us={} insert_us={:.3}",
+        "[scene_load] mode={} path={} total_us={:.3} source_us={} parse_us={} insert_us={:.3}",
         stats.mode_label,
         path,
         as_us(stats.total_excluding_debug_print),
