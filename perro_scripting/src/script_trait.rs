@@ -14,6 +14,9 @@ pub trait ScriptLifecycle<R: RuntimeAPI + ?Sized> {
 
 pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
     fn script_flags(&self) -> ScriptFlags;
+    fn create_state(&self) -> Box<dyn Any> {
+        Box::new(())
+    }
     fn get_var(&self, state: &dyn Any, var_id: ScriptMemberID) -> Variant;
     fn set_var(&self, state: &mut dyn Any, var_id: ScriptMemberID, value: Variant);
     fn apply_exposed_vars(&self, state: &mut dyn Any, vars: &[(ScriptMemberID, Variant)]);

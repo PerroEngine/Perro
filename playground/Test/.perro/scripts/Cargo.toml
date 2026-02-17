@@ -14,6 +14,7 @@ perro_scripting = "0.1.0"
 perro_api = "0.1.0"
 perro_core = "0.1.0"
 perro_variant = "0.1.0"
+perro_runtime = "0.1.0"
 
 [profile.dev]
 opt-level = 0
@@ -37,5 +38,10 @@ overflow-checks = false
 perro_api = { path = "../../../../perro_api" }
 perro_core = { path = "../../../../perro_core" }
 perro_ids = { path = "../../../../perro_ids" }
+perro_io = { path = "../../../../perro_io" }
+perro_project = { path = "../../../../perro_project" }
+perro_render_bridge = { path = "../../../../perro_render_bridge" }
+perro_runtime = { path = "../../../../perro_runtime" }
+perro_scene = { path = "../../../../perro_scene" }
 perro_scripting = { path = "../../../../perro_scripting" }
 perro_variant = { path = "../../../../perro_variant" }

@@ -49,7 +49,7 @@ const FIELDS_RES___MAIN_SCN_4: &[(&str, StaticSceneValue)] = &[
 const DATA_RES___MAIN_SCN_4: StaticNodeData = StaticNodeData { ty: StaticNodeType::Node3D, fields: FIELDS_RES___MAIN_SCN_4, base: None };
 const DATA_RES___MAIN_SCN_3: StaticNodeData = StaticNodeData { ty: StaticNodeType::Camera3D, fields: FIELDS_RES___MAIN_SCN_3, base: Some(&DATA_RES___MAIN_SCN_4) };
 const NODES_RES___MAIN_SCN: &[StaticNodeEntry] = &[
-    StaticNodeEntry { key: StaticSceneKey("main"), name: Some("main"), children: CHILDREN_RES___MAIN_SCN_0, parent: None, script: None, data: DATA_RES___MAIN_SCN_0 },
+    StaticNodeEntry { key: StaticSceneKey("main"), name: Some("main"), children: CHILDREN_RES___MAIN_SCN_0, parent: None, script: Some("res://scripts/script.rs"), data: DATA_RES___MAIN_SCN_0 },
     StaticNodeEntry { key: StaticSceneKey("cube"), name: Some("cube"), children: EMPTY_SCENE_KEYS, parent: Some(StaticSceneKey("main")), script: None, data: DATA_RES___MAIN_SCN_1 },
     StaticNodeEntry { key: StaticSceneKey("camera"), name: Some("camera"), children: EMPTY_SCENE_KEYS, parent: Some(StaticSceneKey("main")), script: None, data: DATA_RES___MAIN_SCN_3 },
 ];

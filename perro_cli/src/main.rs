@@ -1,4 +1,4 @@
-use perro_compiler::compile_project_bundle;
+use perro_compiler::{compile_project_bundle, compile_scripts};
 use perro_project::create_new_project;
 use std::env;
 use std::path::{Path, PathBuf};
@@ -141,28 +141,9 @@ fn build_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
-    let crate_dir = project_dir.join(".perro").join("scripts");
-
-    if !crate_dir.exists() {
-        return Err(format!("missing scripts crate directory: {}", crate_dir.display()));
-    }
-
-    let target_dir = workspace_root().join("target");
-    let status = Command::new("cargo")
-        .arg("build")
-        .env("CARGO_TARGET_DIR", &target_dir)
-        .current_dir(&crate_dir)
-        .status()
-        .map_err(|err| format!("failed to run cargo build in {}: {err}", crate_dir.display()))?;
-
-    if !status.success() {
-        return Err(format!(
-            "cargo build failed in {} with exit code {:?}",
-            crate_dir.display(),
-            status.code()
-        ));
-    }
-    Ok(())
+    compile_scripts(&project_dir)
+        .map(|_| ())
+        .map_err(|err| format!("scripts pipeline failed for {}: {err}", project_dir.display()))
 }
 
 fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
@@ -171,6 +152,11 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .unwrap_or_else(|| cwd.to_path_buf());
     let project_name =
         parse_flag_value(args, "--name").unwrap_or_else(|| DEFAULT_PROJECT_NAME.to_string());
+
+    compile_scripts(&project_dir)
+        .map(|_| ())
+        .map_err(|err| format!("scripts pipeline failed for {}: {err}", project_dir.display()))?;
+
     let root = workspace_root();
 
     let status = Command::new("cargo")

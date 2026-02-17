@@ -1,7 +1,7 @@
 #[path = "static/mod.rs"]
 mod static_assets;
 
-static ASSETS_BRK: &[u8] = include_bytes!("../../embedded/assets.brk");
+static ASSETS_BRK: &[u8] = include_bytes!("../embedded/assets.brk");
 
 fn project_root() -> std::path::PathBuf {
 if let Ok(exe) = std::env::current_exe() {
@@ -29,5 +29,6 @@ perro_app::entry::run_static_embedded_project(
 1080,
 ASSETS_BRK,
 static_assets::scenes::lookup_scene,
+Some(scripts::SCRIPT_REGISTRY),
 ).expect("failed to run embedded static project");
 }

@@ -410,8 +410,8 @@ impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
 
 fn default_gitignore() -> String {
     r#"target/
-.perro/project/embeddeds/
-.perro/project/static/
+.perro/project/embedded/
+.perro/project/src/static/
 .perro/scripts/src/
 "#
     .to_string()
@@ -468,6 +468,7 @@ perro_scripting = "0.1.0"
 perro_api = "0.1.0"
 perro_core = "0.1.0"
 perro_variant = "0.1.0"
+perro_runtime = "0.1.0"
 
 [profile.dev]
 opt-level = 0
@@ -534,7 +535,7 @@ fn main() {
 }
 
 fn default_scripts_lib_rs() -> String {
-    r#"#[no_mangle]
+    r#"#[unsafe(no_mangle)]
 pub extern "C" fn perro_scripts_init() {}
 "#
     .to_string()

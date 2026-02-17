@@ -4,9 +4,11 @@ use crate::{
     runtime_project::{ProviderMode, RuntimeProject},
 };
 use ahash::{AHashMap, AHashSet};
+use libloading::Library;
 use perro_core::Spatial;
 use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
+use perro_scripting::ScriptConstructor;
 use std::sync::Arc;
 
 mod render_2d;
@@ -28,6 +30,8 @@ pub struct Runtime {
 
     render_2d: Render2DState,
     render_3d: Render3DState,
+    script_library: Option<Library>,
+    dynamic_script_registry: AHashMap<String, ScriptConstructor<Runtime>>,
 }
 
 pub struct Timing {
@@ -236,13 +240,30 @@ impl Runtime {
             traversal_stack: Vec::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
+            script_library: None,
+            dynamic_script_registry: AHashMap::default(),
         }
     }
 
     pub fn from_project(project: RuntimeProject, provider_mode: ProviderMode) -> Self {
+        Self::from_project_with_script_registry(project, provider_mode, None)
+    }
+
+    pub fn from_project_with_script_registry(
+        project: RuntimeProject,
+        provider_mode: ProviderMode,
+        script_registry: Option<&'static [(&'static str, ScriptConstructor<Self>)]>,
+    ) -> Self {
         let mut runtime = Self::new();
         runtime.project = Some(Arc::new(project));
         runtime.provider_mode = provider_mode;
+        if let Some(entries) = script_registry {
+            for (path, ctor) in entries {
+                runtime
+                    .dynamic_script_registry
+                    .insert((*path).to_string(), *ctor);
+            }
+        }
         if let Err(err) = runtime.load_boot_scene() {
             panic!("failed to load boot scene: {err}");
         }

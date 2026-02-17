@@ -29,7 +29,15 @@ impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
             .with_state_mut::<ExampleState, _, _>(self_id, |state| {
                 state.speed += dt;
             });
+            self.say_hi(api, self_id);
     }
 
     fn fixed_update(&self, _api: &mut API<'_, R>, _self_id: NodeID) {}
+}
+
+impl ExampleScript {
+    fn say_hi<R: RuntimeAPI + ?Sized>(&self, api: &mut API<'_, R>, _self_id: NodeID) {
+        let time = api.Time().get_delta();
+        println!("Hi! fps: {}", 1.0/time);
+    }
 }

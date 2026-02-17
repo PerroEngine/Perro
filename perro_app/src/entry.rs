@@ -2,6 +2,7 @@ use crate::App;
 use crate::winit_runner::WinitRunner;
 use perro_graphics::{GraphicsBackend, PerroGraphics};
 use perro_runtime::{ProjectLoadError, ProviderMode, Runtime, RuntimeProject};
+use perro_scripting::ScriptConstructor;
 use std::path::Path;
 
 pub fn create_runtime_from_project(
@@ -72,6 +73,7 @@ pub fn run_static_embedded_project(
     virtual_height: u32,
     assets_brk: &'static [u8],
     scene_lookup: perro_runtime::StaticSceneLookup,
+    static_script_registry: Option<&'static [(&'static str, ScriptConstructor<Runtime>)]>,
 ) -> Result<(), ProjectLoadError> {
     let mut project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)
         .unwrap_or_else(|_| {
@@ -93,7 +95,9 @@ pub fn run_static_embedded_project(
 
     let window_title = project.config.name.clone();
     let graphics = PerroGraphics::new();
-    let app = create_static_app(graphics, project);
+    let runtime =
+        Runtime::from_project_with_script_registry(project, ProviderMode::Static, static_script_registry);
+    let app = App::new(runtime, graphics);
     WinitRunner::new().run(app, &window_title);
     Ok(())
 }

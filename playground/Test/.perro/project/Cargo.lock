@@ -1129,6 +1129,7 @@ dependencies = [
  "perro_graphics",
  "perro_render_bridge",
  "perro_runtime",
+ "perro_scripting",
  "winit",
 ]
 
@@ -1183,6 +1184,7 @@ name = "perro_runtime"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "libloading",
  "perro_api",
  "perro_core",
  "perro_ids",
@@ -1514,6 +1516,7 @@ dependencies = [
  "perro_api",
  "perro_core",
  "perro_ids",
+ "perro_runtime",
  "perro_scripting",
  "perro_variant",
 ]
