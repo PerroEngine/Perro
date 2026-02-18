@@ -17,9 +17,17 @@ impl Runtime {
             .ok_or_else(|| "Runtime project is not set".to_string())?
             .root
             .clone();
+        let project_name = self
+            .project()
+            .ok_or_else(|| "Runtime project is not set".to_string())?
+            .config
+            .name
+            .clone();
 
         match self.provider_mode {
-            ProviderMode::Dynamic => self.ensure_dynamic_script_registry_loaded(&project_root)?,
+            ProviderMode::Dynamic => {
+                self.ensure_dynamic_script_registry_loaded(&project_root, &project_name)?
+            }
             ProviderMode::Static => {
                 if self.dynamic_script_registry.is_empty() {
                     return Ok(());
@@ -51,7 +59,11 @@ impl Runtime {
         Ok(())
     }
 
-    fn ensure_dynamic_script_registry_loaded(&mut self, _project_root: &Path) -> Result<(), String> {
+    fn ensure_dynamic_script_registry_loaded(
+        &mut self,
+        project_root: &Path,
+        project_name: &str,
+    ) -> Result<(), String> {
         if !self.dynamic_script_registry.is_empty() {
             return Ok(());
         }
@@ -68,6 +80,8 @@ impl Runtime {
 
         unsafe {
             type InitFn = unsafe extern "C" fn();
+            type SetProjectRootFn =
+                unsafe extern "C" fn(*const u8, usize, *const u8, usize) -> bool;
             type RegistryLenFn = unsafe extern "C" fn() -> usize;
             type RegistryGetFn = unsafe extern "C" fn(
                 usize,
@@ -78,6 +92,23 @@ impl Runtime {
 
             if let Ok(init) = library.get::<InitFn>(b"perro_scripts_init") {
                 init();
+            }
+            if let Ok(set_project_root) =
+                library.get::<SetProjectRootFn>(b"perro_scripts_set_project_root")
+            {
+                let root = project_root.to_string_lossy();
+                let ok = set_project_root(
+                    root.as_bytes().as_ptr(),
+                    root.len(),
+                    project_name.as_bytes().as_ptr(),
+                    project_name.len(),
+                );
+                if !ok {
+                    return Err(
+                        "scripts dylib rejected project root injection via `perro_scripts_set_project_root`"
+                            .to_string(),
+                    );
+                }
             }
 
             let registry_len = *library

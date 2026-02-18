@@ -495,6 +495,29 @@ fn write_scripts_lib(scripts_src: &Path, copied: &[String]) -> Result<(), Compil
     out.push_str("];\n");
     out.push_str(
         "\n#[unsafe(no_mangle)]\n\
+pub extern \"C\" fn perro_scripts_set_project_root(\n\
+    root_ptr: *const u8,\n\
+    root_len: usize,\n\
+    name_ptr: *const u8,\n\
+    name_len: usize,\n\
+) -> bool {\n\
+    if root_ptr.is_null() || name_ptr.is_null() {\n\
+        return false;\n\
+    }\n\
+    let root_bytes = unsafe { std::slice::from_raw_parts(root_ptr, root_len) };\n\
+    let name_bytes = unsafe { std::slice::from_raw_parts(name_ptr, name_len) };\n\
+    let Ok(root) = std::str::from_utf8(root_bytes) else {\n\
+        return false;\n\
+    };\n\
+    let Ok(name) = std::str::from_utf8(name_bytes) else {\n\
+        return false;\n\
+    };\n\
+    perro_modules::file::set_project_root_disk(root, name);\n\
+    true\n\
+}\n",
+    );
+    out.push_str(
+        "\n#[unsafe(no_mangle)]\n\
 pub extern \"C\" fn perro_script_registry_len() -> usize {\n\
     SCRIPT_REGISTRY.len()\n\
 }\n",

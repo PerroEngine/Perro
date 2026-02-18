@@ -33,6 +33,7 @@ perro_core = { path = "../../../../perro_core" }
 perro_graphics = { path = "../../../../perro_graphics" }
 perro_ids = { path = "../../../../perro_ids" }
 perro_io = { path = "../../../../perro_io" }
+perro_modules = { path = "../../../../perro_modules" }
 perro_project = { path = "../../../../perro_project" }
 perro_render_bridge = { path = "../../../../perro_render_bridge" }
 perro_runtime = { path = "../../../../perro_runtime" }

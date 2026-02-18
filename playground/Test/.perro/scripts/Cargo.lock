@@ -159,6 +159,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "perro_modules"
+version = "0.1.0"
+dependencies = [
+ "perro_io",
+ "perro_variant",
+ "serde_json",
+]
+
+[[package]]
 name = "perro_project"
 version = "0.1.0"
 dependencies = [
@@ -245,6 +254,7 @@ dependencies = [
  "perro_api",
  "perro_core",
  "perro_ids",
+ "perro_modules",
  "perro_runtime",
  "perro_scripting",
  "perro_variant",

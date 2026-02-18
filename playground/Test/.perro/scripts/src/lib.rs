@@ -11,6 +11,28 @@ pub static SCRIPT_REGISTRY: &[(&str, ScriptConstructor<Runtime>)] = &[
 ];
 
 #[unsafe(no_mangle)]
+pub extern "C" fn perro_scripts_set_project_root(
+root_ptr: *const u8,
+root_len: usize,
+name_ptr: *const u8,
+name_len: usize,
+) -> bool {
+if root_ptr.is_null() || name_ptr.is_null() {
+return false;
+}
+let root_bytes = unsafe { std::slice::from_raw_parts(root_ptr, root_len) };
+let name_bytes = unsafe { std::slice::from_raw_parts(name_ptr, name_len) };
+let Ok(root) = std::str::from_utf8(root_bytes) else {
+return false;
+};
+let Ok(name) = std::str::from_utf8(name_bytes) else {
+return false;
+};
+perro_modules::file::set_project_root_disk(root, name);
+true
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn perro_script_registry_len() -> usize {
 SCRIPT_REGISTRY.len()
 }

@@ -372,6 +372,7 @@ fn default_script_example_rs() -> String {
     r#"use perro_api::prelude::*;
 use perro_core::prelude::*;
 use perro_ids::prelude::*;
+use perro_modules::prelude::*;
 use perro_scripting::prelude::*;
 
 ///@State
@@ -386,6 +387,7 @@ pub struct ExampleScript;
 impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
     fn init(&self, api: &mut API<'_, R>, self_id: NodeID) {
         let _origin = Vector2::new(0.0, 0.0);
+        LogMod::info("Script initialized!");
         let _ = api
             .Scripts()
             .with_state_mut::<ExampleState, _, _>(self_id, |state| {
@@ -467,6 +469,7 @@ perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
 perro_api = "0.1.0"
 perro_core = "0.1.0"
+perro_modules = "0.1.0"
 perro_variant = "0.1.0"
 perro_runtime = "0.1.0"
 
@@ -558,9 +561,44 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
         .join(".perro")
         .join("scripts")
         .join("Cargo.toml");
+    ensure_scripts_manifest_deps(&scripts_manifest)?;
     ensure_patch_block_in_manifest(&project_manifest)?;
     ensure_patch_block_in_manifest(&scripts_manifest)?;
     Ok(())
+}
+
+fn ensure_scripts_manifest_deps(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let src = fs::read_to_string(path)?;
+    let Ok(mut value) = src.parse::<Value>() else {
+        return Ok(());
+    };
+    let Some(root) = value.as_table_mut() else {
+        return Ok(());
+    };
+
+    let deps = root
+        .entry("dependencies")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(deps_table) = deps.as_table_mut() else {
+        return Ok(());
+    };
+
+    if deps_table.contains_key("perro_modules") {
+        return Ok(());
+    }
+
+    deps_table.insert(
+        "perro_modules".to_string(),
+        Value::String("0.1.0".to_string()),
+    );
+
+    let rendered = toml::to_string(&value)
+        .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
+    fs::write(path, rendered)
 }
 
 fn ensure_patch_block_in_manifest(path: &Path) -> std::io::Result<()> {
@@ -621,6 +659,13 @@ fn source_overrides_block_for_manifest(manifest_path: &Path, manifest_src: &str)
     let Some(mut crates) = direct_perro_deps_from_manifest(manifest_src) else {
         return String::new();
     };
+    let mut visited = BTreeSet::new();
+    collect_perro_deps_from_local_path_deps(
+        manifest_path,
+        manifest_src,
+        &mut crates,
+        &mut visited,
+    );
     expand_transitive_perro_deps(&engine_root, &mut crates);
     if crates.is_empty() {
         return String::new();
@@ -635,6 +680,31 @@ fn source_overrides_block_for_manifest(manifest_path: &Path, manifest_src: &str)
     lines.join("\n")
 }
 
+fn collect_perro_deps_from_local_path_deps(
+    manifest_path: &Path,
+    manifest_src: &str,
+    crates: &mut BTreeSet<String>,
+    visited: &mut BTreeSet<PathBuf>,
+) {
+    let Some(manifest_dir) = manifest_path.parent() else {
+        return;
+    };
+    for rel_path in local_path_dependencies_from_manifest(manifest_src) {
+        let dep_manifest = manifest_dir.join(rel_path).join("Cargo.toml");
+        let dep_manifest = dep_manifest.canonicalize().unwrap_or(dep_manifest);
+        if !visited.insert(dep_manifest.clone()) {
+            continue;
+        }
+        let Ok(dep_src) = fs::read_to_string(&dep_manifest) else {
+            continue;
+        };
+        if let Some(extra) = direct_perro_deps_from_manifest(&dep_src) {
+            crates.extend(extra);
+        }
+        collect_perro_deps_from_local_path_deps(&dep_manifest, &dep_src, crates, visited);
+    }
+}
+
 fn direct_perro_deps_from_manifest(src: &str) -> Option<BTreeSet<String>> {
     let value: Value = src.parse::<Value>().ok()?;
     let mut out = BTreeSet::new();
@@ -642,6 +712,17 @@ fn direct_perro_deps_from_manifest(src: &str) -> Option<BTreeSet<String>> {
     collect_perro_dep_keys(value.get("build-dependencies"), &mut out);
     collect_perro_dep_keys(value.get("dev-dependencies"), &mut out);
     Some(out)
+}
+
+fn local_path_dependencies_from_manifest(src: &str) -> Vec<String> {
+    let Ok(value) = src.parse::<Value>() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    collect_local_path_deps(value.get("dependencies"), &mut out);
+    collect_local_path_deps(value.get("build-dependencies"), &mut out);
+    collect_local_path_deps(value.get("dev-dependencies"), &mut out);
+    out
 }
 
 fn collect_perro_dep_keys(table: Option<&Value>, out: &mut BTreeSet<String>) {
@@ -652,6 +733,21 @@ fn collect_perro_dep_keys(table: Option<&Value>, out: &mut BTreeSet<String>) {
         if key.starts_with("perro_") {
             out.insert(key.to_string());
         }
+    }
+}
+
+fn collect_local_path_deps(table: Option<&Value>, out: &mut Vec<String>) {
+    let Some(table) = table.and_then(Value::as_table) else {
+        return;
+    };
+    for dep in table.values() {
+        let Some(dep_table) = dep.as_table() else {
+            continue;
+        };
+        let Some(path) = dep_table.get("path").and_then(Value::as_str) else {
+            continue;
+        };
+        out.push(path.to_string());
     }
 }
 

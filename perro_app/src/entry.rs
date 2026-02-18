@@ -65,7 +65,7 @@ pub fn run_static_project_from_path(
 
 pub fn run_static_embedded_project(
     project_root: &Path,
-    default_name: &str,
+    _default_name: &str,
     project_name: &'static str,
     main_scene: &'static str,
     icon: &'static str,
@@ -75,19 +75,16 @@ pub fn run_static_embedded_project(
     scene_lookup: perro_runtime::StaticSceneLookup,
     static_script_registry: Option<&'static [(&'static str, ScriptConstructor<Runtime>)]>,
 ) -> Result<(), ProjectLoadError> {
-    let mut project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)
-        .unwrap_or_else(|_| {
-            RuntimeProject::from_static(
-                perro_runtime::StaticProjectConfig::new(
-                    project_name,
-                    main_scene,
-                    icon,
-                    virtual_width,
-                    virtual_height,
-                ),
-                project_root.to_path_buf(),
-            )
-        });
+    let mut project = RuntimeProject::from_static(
+        perro_runtime::StaticProjectConfig::new(
+            project_name,
+            main_scene,
+            icon,
+            virtual_width,
+            virtual_height,
+        ),
+        project_root.to_path_buf(),
+    );
 
     project = project
         .with_static_scene_lookup(scene_lookup)

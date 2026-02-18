@@ -1194,6 +1194,7 @@ dependencies = [
 name = "perro_modules"
 version = "0.1.0"
 dependencies = [
+ "perro_io",
  "perro_variant",
  "serde_json",
 ]
