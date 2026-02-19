@@ -1,7 +1,6 @@
 @root = main
 
 [main]
-script = "res://scripts/script.rs"
 [Node3D]
     position = (0, 0, 0)
 [/Node3D]
@@ -9,6 +8,7 @@ script = "res://scripts/script.rs"
 
 [cube]
 parent = @root
+script = "res://scripts/script.rs"
 
 [MeshInstance3D]
     mesh = "__cube__"
