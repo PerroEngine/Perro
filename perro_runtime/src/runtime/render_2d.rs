@@ -27,8 +27,8 @@ impl Runtime {
                 SceneNodeData::Sprite2D(sprite) => Some((
                     sprite.visible,
                     sprite.texture_id,
-                    sprite.base.transform.to_mat3().to_cols_array_2d(),
-                    sprite.base.z_index,
+                    sprite.transform.to_mat3().to_cols_array_2d(),
+                    sprite.z_index,
                 )),
                 _ => None,
             });
@@ -46,10 +46,10 @@ impl Runtime {
             let camera_data = self.nodes.get(node_id).and_then(|node| match &node.data {
                 SceneNodeData::Camera2D(camera) if camera.active => Some(Camera2DState {
                     position: [
-                        camera.base.transform.position.x,
-                        camera.base.transform.position.y,
+                        camera.transform.position.x,
+                        camera.transform.position.y,
                     ],
-                    rotation_radians: camera.base.transform.rotation,
+                    rotation_radians: camera.transform.rotation,
                     zoom: camera.zoom,
                 }),
                 _ => None,
@@ -142,11 +142,18 @@ impl Runtime {
         if texture_id.is_nil() {
             let request = Self::sprite_texture_request_id(node_id);
             if !self.render.is_inflight(request) {
+                let source = self
+                    .render_2d
+                    .texture_sources
+                    .get(&node_id)
+                    .cloned()
+                    .unwrap_or_else(|| "__default__".to_string());
                 self.render.mark_inflight(request);
                 self.queue_render_command(RenderCommand::Resource(
                     ResourceCommand::CreateTexture {
                         request,
                         owner: node_id,
+                        source,
                     },
                 ));
             }
@@ -192,10 +199,15 @@ mod tests {
         runtime.extract_render_2d_commands();
         let first = collect_commands(&mut runtime);
         assert_eq!(first.len(), 1);
-        let request = match first[0] {
-            RenderCommand::Resource(ResourceCommand::CreateTexture { request, owner }) => {
-                assert_eq!(owner, node_id);
-                request
+        let request = match &first[0] {
+            RenderCommand::Resource(ResourceCommand::CreateTexture {
+                request,
+                owner,
+                source,
+            }) => {
+                assert_eq!(*owner, node_id);
+                assert_eq!(source, "__default__");
+                *request
             }
             _ => panic!("expected CreateTexture"),
         };
@@ -258,9 +270,9 @@ mod tests {
         let mut camera = Camera2D::new();
         camera.active = true;
         camera.zoom = 2.0;
-        camera.base.transform.position.x = 128.0;
-        camera.base.transform.position.y = -32.0;
-        camera.base.transform.rotation = 0.5;
+        camera.transform.position.x = 128.0;
+        camera.transform.position.y = -32.0;
+        camera.transform.rotation = 0.5;
         runtime
             .nodes
             .insert(SceneNode::new(SceneNodeData::Camera2D(camera)));

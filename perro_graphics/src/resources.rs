@@ -56,6 +56,7 @@ pub struct ResourceStore {
     textures: SlotArena,
     materials: SlotArena,
     mesh_by_source: HashMap<String, MeshID>,
+    texture_by_source: HashMap<String, TextureID>,
 }
 
 impl ResourceStore {
@@ -75,9 +76,14 @@ impl ResourceStore {
     }
 
     #[inline]
-    pub fn create_texture(&mut self) -> TextureID {
+    pub fn create_texture(&mut self, source: &str) -> TextureID {
+        if let Some(id) = self.texture_by_source.get(source).copied() {
+            return id;
+        }
         let (index, generation) = self.textures.create_parts();
-        TextureID::from_parts(index, generation)
+        let id = TextureID::from_parts(index, generation);
+        self.texture_by_source.insert(source.to_string(), id);
+        id
     }
 
     #[inline]
@@ -115,12 +121,12 @@ mod tests {
     #[test]
     fn texture_slot_reuse_bumps_generation() {
         let mut store = ResourceStore::new();
-        let first = store.create_texture();
+        let first = store.create_texture("__tmp_a__");
         assert!(store.has_texture(first));
         assert!(store.remove_texture_for_test(first));
         assert!(!store.has_texture(first));
 
-        let second = store.create_texture();
+        let second = store.create_texture("__tmp_b__");
         assert_eq!(first.index(), second.index());
         assert_ne!(first.generation(), second.generation());
         assert!(!store.has_texture(first));

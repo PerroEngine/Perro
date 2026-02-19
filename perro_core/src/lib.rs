@@ -83,7 +83,6 @@ mod tests {
         // Create a MeshInstance3D (contains Node3D as base)
         let mut mesh = SceneNode::new(SceneNodeData::MeshInstance3D(MeshInstance3D {
             base: Node3D::default(),
-            mesh: None,
             mesh_id: perro_ids::MeshID::nil(),
             material_id: perro_ids::MaterialID::nil(),
         }));
@@ -114,9 +113,9 @@ mod tests {
         // Show how Sprite2D inherits Node2D properties
         if let SceneNodeData::Sprite2D(sprite_data) = &sprite.data {
             println!("=== Sprite2D Base Properties ===");
-            println!("Position: {:?}", sprite_data.base.transform.position);
-            println!("Visible: {}", sprite_data.base.visible);
-            println!("Z-Index: {}", sprite_data.base.z_index);
+            println!("Position: {:?}", sprite_data.transform.position);
+            println!("Visible: {}", sprite_data.visible);
+            println!("Z-Index: {}", sprite_data.z_index);
         }
     }
 

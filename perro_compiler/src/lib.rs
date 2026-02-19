@@ -613,13 +613,13 @@ impl<R: RuntimeAPI + ?Sized> ScriptBehavior<R> for {script_ty} {{
 {get_var_body}
     }}
 
-    fn set_var(&self, state: &mut dyn std::any::Any, var_id: ScriptMemberID, value: Variant) {{
+    fn set_var(&self, state: &mut dyn std::any::Any, var_id: ScriptMemberID, value: &Variant) {{
 {set_var_body}
     }}
 
     fn apply_exposed_vars(&self, state: &mut dyn std::any::Any, vars: &[(ScriptMemberID, Variant)]) {{
         for (var_id, value) in vars {{
-            <Self as ScriptBehavior<R>>::set_var(self, state, *var_id, value.clone());
+            <Self as ScriptBehavior<R>>::set_var(self, state, *var_id, value);
         }}
     }}
 
@@ -633,11 +633,11 @@ impl<R: RuntimeAPI + ?Sized> ScriptBehavior<R> for {script_ty} {{
         Variant::Null
     }}
 
-    fn attributes_of(&self, member: &str) -> Vec<String> {{
+    fn attributes_of(&self, member: &str) -> &'static [&'static str] {{
 {attr_of_body}
     }}
 
-    fn members_with(&self, attribute: &str) -> Vec<String> {{
+    fn members_with(&self, attribute: &str) -> &'static [&'static str] {{
 {members_with_body}
     }}
 
@@ -962,37 +962,31 @@ fn generate_set_var_body(state_ty: &str, fields: &[StateField]) -> String {
 
 fn generate_attributes_of_body(fields: &[StateField]) -> String {
     if fields.is_empty() {
-        return "        Vec::new()".to_string();
+        return "        &[]".to_string();
     }
     let mut out = String::new();
     out.push_str("        match member {\n");
     for field in fields {
-        out.push_str(&format!(
-            "            \"{}\" => vec![\"export\".to_string()],\n",
-            field.name
-        ));
+        out.push_str(&format!("            \"{}\" => &[\"export\"],\n", field.name));
     }
-    out.push_str("            _ => Vec::new(),\n");
+    out.push_str("            _ => &[],\n");
     out.push_str("        }");
     out
 }
 
 fn generate_members_with_body(fields: &[StateField]) -> String {
     if fields.is_empty() {
-        return "        Vec::new()".to_string();
+        return "        &[]".to_string();
     }
     let mut out = String::new();
     out.push_str("        if attribute == \"export\" {\n");
-    out.push_str("            return vec![\n");
+    out.push_str("            return &[\n");
     for field in fields {
-        out.push_str(&format!(
-            "                \"{}\".to_string(),\n",
-            field.name
-        ));
+        out.push_str(&format!("                \"{}\",\n", field.name));
     }
     out.push_str("            ];\n");
     out.push_str("        }\n");
-    out.push_str("        Vec::new()");
+    out.push_str("        &[]");
     out
 }
 

@@ -75,8 +75,10 @@ impl PerroGraphics {
                         let id = self.resources.create_mesh(normalized);
                         self.events.push(RenderEvent::MeshCreated { request, id });
                     }
-                    ResourceCommand::CreateTexture { request, .. } => {
-                        let id = self.resources.create_texture();
+                    ResourceCommand::CreateTexture {
+                        request, source, ..
+                    } => {
+                        let id = self.resources.create_texture(source.as_str());
                         self.events
                             .push(RenderEvent::TextureCreated { request, id });
                     }
@@ -213,6 +215,7 @@ mod tests {
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateTexture {
             request,
             owner: node,
+            source: "__default__".to_string(),
         }));
         graphics.draw_frame();
 

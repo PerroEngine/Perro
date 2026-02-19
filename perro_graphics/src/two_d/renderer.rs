@@ -345,7 +345,7 @@ mod tests {
         assert_eq!(stats.rejected_draws, 1);
         assert_eq!(renderer.retained_sprite(node), None);
 
-        let loaded = resources.create_texture();
+        let loaded = resources.create_texture("__test__");
         renderer.queue_sprite(
             node,
             Sprite2DCommand {

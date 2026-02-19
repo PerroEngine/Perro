@@ -16,4 +16,3 @@ pub use runtime_project::{
     default_project_toml, ensure_project_layout, ensure_project_toml, load_project_toml,
     parse_project_toml,
 };
-pub use script_collection::ScriptCollection;

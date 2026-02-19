@@ -18,7 +18,7 @@ pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
         Box::new(())
     }
     fn get_var(&self, state: &dyn Any, var_id: ScriptMemberID) -> Variant;
-    fn set_var(&self, state: &mut dyn Any, var_id: ScriptMemberID, value: Variant);
+    fn set_var(&self, state: &mut dyn Any, var_id: ScriptMemberID, value: &Variant);
     fn apply_exposed_vars(&self, state: &mut dyn Any, vars: &[(ScriptMemberID, Variant)]);
     fn call_method(
         &self,
@@ -27,8 +27,8 @@ pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
         self_id: NodeID,
         params: &[Variant],
     ) -> Variant;
-    fn attributes_of(&self, member: &str) -> Vec<String>;
-    fn members_with(&self, attribute: &str) -> Vec<String>;
+    fn attributes_of(&self, member: &str) -> &'static [&'static str];
+    fn members_with(&self, attribute: &str) -> &'static [&'static str];
     fn has_attribute(&self, member: &str, attribute: &str) -> bool;
 }
 

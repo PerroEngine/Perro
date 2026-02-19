@@ -25,15 +25,15 @@ impl Runtime {
             let camera_data = self.nodes.get(node_id).and_then(|node| match &node.data {
                 SceneNodeData::Camera3D(camera) if camera.active => Some(Camera3DState {
                     position: [
-                        camera.base.transform.position.x,
-                        camera.base.transform.position.y,
-                        camera.base.transform.position.z,
+                        camera.transform.position.x,
+                        camera.transform.position.y,
+                        camera.transform.position.z,
                     ],
                     rotation: [
-                        camera.base.transform.rotation.x,
-                        camera.base.transform.rotation.y,
-                        camera.base.transform.rotation.z,
-                        camera.base.transform.rotation.w,
+                        camera.transform.rotation.x,
+                        camera.transform.rotation.y,
+                        camera.transform.rotation.z,
+                        camera.transform.rotation.w,
                     ],
                     zoom: camera.zoom,
                 }),
@@ -45,15 +45,14 @@ impl Runtime {
 
             let mesh_data = self.nodes.get(node_id).and_then(|node| match &node.data {
                 SceneNodeData::MeshInstance3D(mesh) => Some((
-                    mesh.base.visible,
-                    mesh.mesh.as_deref().map(str::to_owned),
+                    mesh.visible,
                     mesh.mesh_id,
                     mesh.material_id,
-                    mesh.base.transform.to_mat4().to_cols_array_2d(),
+                    mesh.transform.to_mat4().to_cols_array_2d(),
                 )),
                 _ => None,
             });
-            let Some((visible, mesh_source, mesh_id, material_id, model)) = mesh_data else {
+            let Some((visible, mesh_id, material_id, model)) = mesh_data else {
                 continue;
             };
             if !visible {
@@ -61,7 +60,7 @@ impl Runtime {
             }
 
             let Some((mesh, material)) =
-                self.resolve_mesh_instance_assets(node_id, mesh_source, mesh_id, material_id)
+                self.resolve_mesh_instance_assets(node_id, mesh_id, material_id)
             else {
                 continue;
             };
@@ -80,15 +79,10 @@ impl Runtime {
     fn resolve_mesh_instance_assets(
         &mut self,
         node_id: NodeID,
-        mesh_source: Option<String>,
         mut mesh_id: MeshID,
         mut material_id: MaterialID,
     ) -> Option<(MeshID, MaterialID)> {
         if mesh_id.is_nil() {
-            let source = mesh_source?.trim().to_string();
-            if source.is_empty() {
-                return None;
-            }
             let request = Self::mesh_request_id(node_id);
             if let Some(result) = self.take_render_result(request) {
                 match result {
@@ -106,6 +100,15 @@ impl Runtime {
                 }
             }
             if mesh_id.is_nil() {
+                let source = self
+                    .render_3d
+                    .mesh_sources
+                    .get(&node_id)?
+                    .trim()
+                    .to_string();
+                if source.is_empty() {
+                    return None;
+                }
                 if !self.render.is_inflight(request) {
                     self.render.mark_inflight(request);
                     self.queue_render_command(RenderCommand::Resource(
@@ -174,7 +177,6 @@ mod tests {
     fn mesh_instance_without_mesh_source_requests_nothing() {
         let mut runtime = Runtime::new();
         let mut mesh = MeshInstance3D::new();
-        mesh.mesh = None;
         mesh.mesh_id = MeshID::nil();
         mesh.material_id = MaterialID::nil();
         runtime
@@ -190,12 +192,15 @@ mod tests {
     fn mesh_instance_requests_missing_assets_once_until_events_arrive() {
         let mut runtime = Runtime::new();
         let mut mesh = MeshInstance3D::new();
-        mesh.mesh = Some("__cube__".into());
         mesh.mesh_id = MeshID::nil();
         mesh.material_id = MaterialID::nil();
         let node_id = runtime
             .nodes
             .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+        runtime
+            .render_3d
+            .mesh_sources
+            .insert(node_id, "__cube__".to_string());
 
         runtime.extract_render_3d_commands();
         let first = collect_commands(&mut runtime);
@@ -217,11 +222,12 @@ mod tests {
         let node_id = runtime
             .nodes
             .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
-                MeshInstance3D {
-                    mesh: Some("__cube__".into()),
-                    ..MeshInstance3D::new()
-                },
+                MeshInstance3D::new(),
             )));
+        runtime
+            .render_3d
+            .mesh_sources
+            .insert(node_id, "__cube__".to_string());
 
         runtime.extract_render_3d_commands();
         let first = collect_commands(&mut runtime);
@@ -268,11 +274,12 @@ mod tests {
         let inserted = runtime
             .nodes
             .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
-                MeshInstance3D {
-                    mesh: Some("__cube__".into()),
-                    ..MeshInstance3D::new()
-                },
+                MeshInstance3D::new(),
             )));
+        runtime
+            .render_3d
+            .mesh_sources
+            .insert(inserted, "__cube__".to_string());
 
         runtime.extract_render_3d_commands();
         let first = collect_commands(&mut runtime);
@@ -300,13 +307,13 @@ mod tests {
         let mut camera = Camera3D::new();
         camera.active = true;
         camera.zoom = 1.75;
-        camera.base.transform.position.x = 6.0;
-        camera.base.transform.position.y = 7.0;
-        camera.base.transform.position.z = 8.0;
-        camera.base.transform.rotation.x = 0.1;
-        camera.base.transform.rotation.y = 0.2;
-        camera.base.transform.rotation.z = 0.3;
-        camera.base.transform.rotation.w = 0.9;
+        camera.transform.position.x = 6.0;
+        camera.transform.position.y = 7.0;
+        camera.transform.position.z = 8.0;
+        camera.transform.rotation.x = 0.1;
+        camera.transform.rotation.y = 0.2;
+        camera.transform.rotation.z = 0.3;
+        camera.transform.rotation.w = 0.9;
         runtime
             .nodes
             .insert(SceneNode::new(SceneNodeData::Camera3D(camera)));

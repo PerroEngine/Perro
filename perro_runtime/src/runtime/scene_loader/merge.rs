@@ -23,16 +23,30 @@ pub(super) fn merge_prepared_scene(
     let mut parent_pairs = Vec::with_capacity(nodes.len());
 
     for pending in nodes {
-        if key_to_id.contains_key(&pending.key) {
-            return Err(format!("duplicate scene key `{}`", pending.key));
+        let super::prepare::PendingNode {
+            key,
+            parent_key,
+            node,
+            texture_source,
+            mesh_source,
+        } = pending;
+
+        if key_to_id.contains_key(&key) {
+            return Err(format!("duplicate scene key `{}`", key));
         }
 
-        let node_id = runtime.nodes.insert(pending.node);
-        if let Some(parent_key) = pending.parent_key {
-            parent_pairs.push((pending.key.clone(), parent_key));
+        let node_id = runtime.nodes.insert(node);
+        if let Some(source) = texture_source {
+            runtime.render_2d.texture_sources.insert(node_id, source);
         }
-        key_order.push(pending.key.clone());
-        key_to_id.insert(pending.key, node_id);
+        if let Some(source) = mesh_source {
+            runtime.render_3d.mesh_sources.insert(node_id, source);
+        }
+        if let Some(parent_key) = parent_key {
+            parent_pairs.push((key.clone(), parent_key));
+        }
+        key_order.push(key.clone());
+        key_to_id.insert(key, node_id);
     }
 
     if let Some(root_key) = root_key.as_deref() {

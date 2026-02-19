@@ -361,7 +361,7 @@ mod tests {
         assert!(static_player.data.base.is_some());
         assert!(runtime_player.data.base.is_some());
 
-        let static_base = static_player.data.base.unwrap();
+        let static_base = static_player.data.base.as_ref().unwrap();
         let runtime_base = runtime_player.data.base.as_ref().unwrap();
 
         assert_eq!(static_base.ty.as_str(), runtime_base.ty);

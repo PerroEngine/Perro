@@ -7,13 +7,13 @@ use std::sync::Arc;
 
 type IdMap = AHashMap<NodeID, usize>;
 
-pub struct ScriptInstance<R: RuntimeAPI + ?Sized> {
-    pub behavior: Arc<dyn ScriptBehavior<R>>,
-    pub state_type: TypeId,
-    pub state: Box<dyn Any>,
+pub(crate) struct ScriptInstance<R: RuntimeAPI + ?Sized> {
+    pub(crate) behavior: Arc<dyn ScriptBehavior<R>>,
+    pub(crate) state_type: TypeId,
+    pub(crate) state: Box<dyn Any>,
 }
 
-pub struct ScriptCollection<R: RuntimeAPI + ?Sized> {
+pub(crate) struct ScriptCollection<R: RuntimeAPI + ?Sized> {
     instances: Vec<ScriptInstance<R>>,
     ids: Vec<NodeID>,
     index: IdMap,
@@ -27,7 +27,7 @@ pub struct ScriptCollection<R: RuntimeAPI + ?Sized> {
 }
 
 impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             instances: Vec::new(),
             ids: Vec::new(),
@@ -39,24 +39,42 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         }
     }
 
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            instances: Vec::with_capacity(capacity),
-            ids: Vec::with_capacity(capacity),
-            index: AHashMap::with_capacity(capacity),
-            update: Vec::with_capacity(capacity),
-            fixed: Vec::with_capacity(capacity),
-            update_pos: AHashMap::with_capacity(capacity),
-            fixed_pos: AHashMap::with_capacity(capacity),
-        }
-    }
-
     pub(crate) fn get_instance(&self, id: NodeID) -> Option<&ScriptInstance<R>> {
         let &i = self.index.get(&id)?;
         self.instances.get(i)
     }
 
-    pub fn insert(
+    #[inline]
+    pub(crate) fn get_instance_scheduled_indexed(
+        &self,
+        instance_index: usize,
+        id: NodeID,
+    ) -> Option<&ScriptInstance<R>> {
+        if self.ids.get(instance_index).copied() != Some(id) {
+            return None;
+        }
+        self.instances.get(instance_index)
+    }
+
+    #[inline]
+    pub(crate) fn with_instance<V, F>(&self, id: NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&ScriptInstance<R>) -> V,
+    {
+        let &i = self.index.get(&id)?;
+        Some(f(self.instances.get(i)?))
+    }
+
+    #[inline]
+    pub(crate) fn with_instance_mut<V, F>(&mut self, id: NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&mut ScriptInstance<R>) -> V,
+    {
+        let &i = self.index.get(&id)?;
+        Some(f(self.instances.get_mut(i)?))
+    }
+
+    pub(crate) fn insert(
         &mut self,
         id: NodeID,
         behavior: Arc<dyn ScriptBehavior<R>>,
@@ -97,7 +115,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         }
     }
 
-    pub fn remove(&mut self, id: NodeID) -> Option<ScriptInstance<R>> {
+    pub(crate) fn remove(&mut self, id: NodeID) -> Option<ScriptInstance<R>> {
         let i = self.index.remove(&id)?;
         self.remove_from_schedules_by_index(i);
 
@@ -128,10 +146,9 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         Some(removed)
     }
 
-    pub(crate) fn append_update_ids(&self, out: &mut Vec<NodeID>) {
-        out.reserve(self.update.len());
+    pub(crate) fn append_update_slots(&self, out: &mut Vec<(usize, NodeID)>) {
         for &i in &self.update {
-            out.push(self.ids[i]);
+            out.push((i, self.ids[i]));
         }
     }
 
@@ -140,10 +157,9 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         self.update.len()
     }
 
-    pub(crate) fn append_fixed_update_ids(&self, out: &mut Vec<NodeID>) {
-        out.reserve(self.fixed.len());
+    pub(crate) fn append_fixed_update_slots(&self, out: &mut Vec<(usize, NodeID)>) {
         for &i in &self.fixed {
-            out.push(self.ids[i]);
+            out.push((i, self.ids[i]));
         }
     }
 
@@ -169,15 +185,6 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         Some(f(state))
     }
 
-    pub(crate) fn with_state_dyn<V, F>(&self, id: NodeID, f: F) -> Option<V>
-    where
-        F: FnOnce(&dyn Any) -> V,
-    {
-        let &i = self.index.get(&id)?;
-        let instance = self.instances.get(i)?;
-        Some(f(instance.state.as_ref()))
-    }
-
     pub(crate) fn with_state_mut<T: 'static, V, F>(&mut self, id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&mut T) -> V,
@@ -193,15 +200,6 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         // this cast valid for the full lifetime of the instance's state object.
         let state = unsafe { &mut *(instance.state.as_mut() as *mut dyn Any as *mut T) };
         Some(f(state))
-    }
-
-    pub(crate) fn with_state_mut_dyn<V, F>(&mut self, id: NodeID, f: F) -> Option<V>
-    where
-        F: FnOnce(&mut dyn Any) -> V,
-    {
-        let &i = self.index.get(&id)?;
-        let instance = self.instances.get_mut(i)?;
-        Some(f(instance.state.as_mut()))
     }
 
     fn remove_from_schedules_by_index(&mut self, i: usize) {

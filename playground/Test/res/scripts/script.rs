@@ -1,9 +1,11 @@
+#![allow(unused_imports)]
 use perro_api::prelude::*;
 use perro_core::prelude::*;
 use perro_ids::prelude::*;
-#[allow(unused_imports)]
 use perro_modules::prelude::*;
 use perro_scripting::prelude::*;
+
+type SelfNodeType = MeshInstance3D;
 
 ///@State
 #[derive(Default)]
@@ -32,9 +34,9 @@ impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
                 state.speed
             })
             .unwrap_or_default();
-        api.Nodes().mutate::<MeshInstance3D, _>(self_id, |mesh| {
-            mesh.base.transform.rotation.rotate_y(dt * speed);
-            mesh.base.transform.rotation.rotate_z(dt * speed / 2.0);
+        api.Nodes().mutate::<SelfNodeType, _>(self_id, |mesh| {
+            mesh.transform.rotation.rotate_y(dt * speed);
+            mesh.transform.rotation.rotate_z(dt * speed / 2.0);
         });
     }
 

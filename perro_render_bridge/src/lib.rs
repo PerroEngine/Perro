@@ -69,6 +69,7 @@ pub enum ResourceCommand {
     CreateTexture {
         request: RenderRequestID,
         owner: NodeID,
+        source: String,
     },
     CreateMaterial {
         request: RenderRequestID,

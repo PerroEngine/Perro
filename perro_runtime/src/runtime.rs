@@ -1,7 +1,8 @@
 use crate::{
-    NodeArena, ScriptCollection,
+    NodeArena,
     render_result::RuntimeRenderResult,
     runtime_project::{ProviderMode, RuntimeProject},
+    script_collection::ScriptCollection,
 };
 use ahash::{AHashMap, AHashSet};
 use libloading::Library;
@@ -22,7 +23,7 @@ pub struct Runtime {
 
     // Core world state
     pub nodes: NodeArena,
-    pub scripts: ScriptCollection<Self>,
+    pub(crate) scripts: ScriptCollection<Self>,
     schedules: ScriptSchedules,
     render: RenderState,
     dirty: DirtyState,
@@ -45,16 +46,16 @@ pub struct Timing {
 
 /// Scratch buffers used to snapshot script update/fixed schedules without allocating each frame.
 struct ScriptSchedules {
-    update_ids: Vec<NodeID>,
-    fixed_ids: Vec<NodeID>,
+    update_slots: Vec<(usize, NodeID)>,
+    fixed_slots: Vec<(usize, NodeID)>,
 }
 
 impl ScriptSchedules {
     #[inline]
     fn new() -> Self {
         Self {
-            update_ids: Vec::new(),
-            fixed_ids: Vec::new(),
+            update_slots: Vec::new(),
+            fixed_slots: Vec::new(),
         }
     }
 
@@ -63,12 +64,12 @@ impl ScriptSchedules {
         scripts: &ScriptCollection<R>,
     ) {
         let needed = scripts.update_schedule_len();
-        if self.update_ids.capacity() < needed {
-            self.update_ids
-                .reserve_exact(needed - self.update_ids.capacity());
+        if self.update_slots.capacity() < needed {
+            self.update_slots
+                .reserve_exact(needed - self.update_slots.capacity());
         }
-        self.update_ids.clear();
-        scripts.append_update_ids(&mut self.update_ids);
+        self.update_slots.clear();
+        scripts.append_update_slots(&mut self.update_slots);
     }
 
     fn snapshot_fixed<R: perro_api::api::RuntimeAPI + ?Sized>(
@@ -76,12 +77,12 @@ impl ScriptSchedules {
         scripts: &ScriptCollection<R>,
     ) {
         let needed = scripts.fixed_schedule_len();
-        if self.fixed_ids.capacity() < needed {
-            self.fixed_ids
-                .reserve_exact(needed - self.fixed_ids.capacity());
+        if self.fixed_slots.capacity() < needed {
+            self.fixed_slots
+                .reserve_exact(needed - self.fixed_slots.capacity());
         }
-        self.fixed_ids.clear();
-        scripts.append_fixed_update_ids(&mut self.fixed_ids);
+        self.fixed_slots.clear();
+        scripts.append_fixed_update_slots(&mut self.fixed_slots);
     }
 }
 
@@ -161,6 +162,7 @@ struct Render2DState {
     visible_now: AHashSet<NodeID>,
     prev_visible: AHashSet<NodeID>,
     retained_sprite_textures: AHashMap<NodeID, TextureID>,
+    texture_sources: AHashMap<NodeID, String>,
     removed_nodes: Vec<NodeID>,
 }
 
@@ -171,6 +173,7 @@ impl Render2DState {
             visible_now: AHashSet::default(),
             prev_visible: AHashSet::default(),
             retained_sprite_textures: AHashMap::default(),
+            texture_sources: AHashMap::default(),
             removed_nodes: Vec::new(),
         }
     }
@@ -178,12 +181,14 @@ impl Render2DState {
 
 struct Render3DState {
     traversal_ids: Vec<NodeID>,
+    mesh_sources: AHashMap<NodeID, String>,
 }
 
 impl Render3DState {
     fn new() -> Self {
         Self {
             traversal_ids: Vec::new(),
+            mesh_sources: AHashMap::default(),
         }
     }
 }
@@ -426,18 +431,18 @@ impl Runtime {
 
     fn run_update_schedule(&mut self) {
         let mut i = 0;
-        while i < self.schedules.update_ids.len() {
-            let id = self.schedules.update_ids[i];
-            self.call_update_script(id);
+        while i < self.schedules.update_slots.len() {
+            let (instance_index, id) = self.schedules.update_slots[i];
+            self.call_update_script_scheduled(instance_index, id);
             i += 1;
         }
     }
 
     fn run_fixed_schedule(&mut self) {
         let mut i = 0;
-        while i < self.schedules.fixed_ids.len() {
-            let id = self.schedules.fixed_ids[i];
-            self.call_fixed_update_script(id);
+        while i < self.schedules.fixed_slots.len() {
+            let (instance_index, id) = self.schedules.fixed_slots[i];
+            self.call_fixed_update_script_scheduled(instance_index, id);
             i += 1;
         }
     }
