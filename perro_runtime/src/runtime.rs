@@ -26,7 +26,10 @@ pub struct Runtime {
     schedules: ScriptSchedules,
     render: RenderState,
     dirty: DirtyState,
+    pending_transform_roots: Vec<NodeID>,
     traversal_stack: Vec<NodeID>,
+    transform_visit_flags: Vec<u8>,
+    transform_visit_indices: Vec<u32>,
 
     render_2d: Render2DState,
     render_3d: Render3DState,
@@ -147,7 +150,10 @@ impl RenderState {
 
 /// Runtime-side dirty tracking for downstream systems (rendering, transform propagation).
 struct DirtyState {
-    node_flags: AHashMap<NodeID, u8>,
+    node_flags: Vec<u8>,
+    dirty_indices: Vec<u32>,
+    pending_transform_roots: Vec<NodeID>,
+    pending_transform_root_flags: Vec<u8>,
 }
 
 struct Render2DState {
@@ -189,7 +195,10 @@ impl DirtyState {
 
     fn new() -> Self {
         Self {
-            node_flags: AHashMap::default(),
+            node_flags: Vec::new(),
+            dirty_indices: Vec::new(),
+            pending_transform_roots: Vec::new(),
+            pending_transform_root_flags: Vec::new(),
         }
     }
 
@@ -209,16 +218,54 @@ impl DirtyState {
         }
     }
 
+    fn mark_transform_root(&mut self, id: NodeID) {
+        let index = id.index() as usize;
+        if self.pending_transform_root_flags.len() <= index {
+            self.pending_transform_root_flags.resize(index + 1, 0);
+        }
+        if self.pending_transform_root_flags[index] == 0 {
+            self.pending_transform_root_flags[index] = 1;
+            self.pending_transform_roots.push(id);
+        }
+    }
+
+    fn take_pending_transform_roots(&mut self, out: &mut Vec<NodeID>) {
+        out.clear();
+        out.extend(self.pending_transform_roots.drain(..));
+        for id in out.iter().copied() {
+            let index = id.index() as usize;
+            if index < self.pending_transform_root_flags.len() {
+                self.pending_transform_root_flags[index] = 0;
+            }
+        }
+    }
+
     #[inline]
     fn mark(&mut self, id: NodeID, flag: u8) {
-        self.node_flags
-            .entry(id)
-            .and_modify(|flags| *flags |= flag)
-            .or_insert(flag);
+        let index = id.index() as usize;
+        if self.node_flags.len() <= index {
+            self.node_flags.resize(index + 1, 0);
+        }
+        let entry = &mut self.node_flags[index];
+        if *entry == 0 {
+            self.dirty_indices.push(index as u32);
+        }
+        *entry |= flag;
     }
 
     fn clear(&mut self) {
-        self.node_flags.clear();
+        for &index in &self.dirty_indices {
+            let i = index as usize;
+            if i < self.node_flags.len() {
+                self.node_flags[i] = 0;
+            }
+        }
+        self.dirty_indices.clear();
+
+        self.pending_transform_roots.clear();
+        for v in &mut self.pending_transform_root_flags {
+            *v = 0;
+        }
     }
 }
 
@@ -237,7 +284,10 @@ impl Runtime {
             project: None,
             render: RenderState::new(),
             dirty: DirtyState::new(),
+            pending_transform_roots: Vec::new(),
             traversal_stack: Vec::new(),
+            transform_visit_flags: Vec::new(),
+            transform_visit_indices: Vec::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
             script_library: None,
@@ -322,18 +372,56 @@ impl Runtime {
     }
 
     pub fn mark_transform_dirty_recursive(&mut self, root: NodeID) {
+        self.dirty.mark_transform_root(root);
+    }
+
+    pub(crate) fn propagate_pending_transform_dirty(&mut self) {
+        let mut roots = std::mem::take(&mut self.pending_transform_roots);
+        self.dirty.take_pending_transform_roots(&mut roots);
+        if roots.is_empty() {
+            self.pending_transform_roots = roots;
+            return;
+        }
+
         let mut stack = std::mem::take(&mut self.traversal_stack);
         stack.clear();
-        stack.push(root);
-        while let Some(id) = stack.pop() {
-            let Some(node) = self.nodes.get(id) else {
-                continue;
-            };
 
-            self.dirty.mark_transform(id, node.spatial());
-            stack.extend(node.children_slice().iter().copied());
+        for root in roots.iter().copied() {
+            if self.nodes.get(root).is_none() {
+                continue;
+            }
+            stack.push(root);
+            while let Some(id) = stack.pop() {
+                let index = id.index() as usize;
+                if self.transform_visit_flags.len() <= index {
+                    self.transform_visit_flags.resize(index + 1, 0);
+                }
+                if self.transform_visit_flags[index] != 0 {
+                    continue;
+                }
+                self.transform_visit_flags[index] = 1;
+                self.transform_visit_indices.push(index as u32);
+
+                let Some(node) = self.nodes.get(id) else {
+                    continue;
+                };
+                self.dirty.mark_transform(id, node.spatial());
+                stack.extend(node.children_slice().iter().copied());
+            }
         }
+
+        for &index in &self.transform_visit_indices {
+            let i = index as usize;
+            if i < self.transform_visit_flags.len() {
+                self.transform_visit_flags[i] = 0;
+            }
+        }
+        self.transform_visit_indices.clear();
+
+        stack.clear();
         self.traversal_stack = stack;
+        roots.clear();
+        self.pending_transform_roots = roots;
     }
 
     fn run_update_schedule(&mut self) {

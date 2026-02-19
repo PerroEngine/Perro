@@ -2,13 +2,14 @@ use ahash::AHashMap;
 use perro_api::api::RuntimeAPI;
 use perro_ids::NodeID;
 use perro_scripting::ScriptBehavior;
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::sync::Arc;
 
 type IdMap = AHashMap<NodeID, usize>;
 
 pub struct ScriptInstance<R: RuntimeAPI + ?Sized> {
     pub behavior: Arc<dyn ScriptBehavior<R>>,
+    pub state_type: TypeId,
     pub state: Box<dyn Any>,
 }
 
@@ -62,16 +63,25 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         state: Box<dyn Any>,
     ) {
         let flags = behavior.script_flags();
+        let state_type = state.as_ref().type_id();
 
         if let Some(&i) = self.index.get(&id) {
             // replace in-place
-            self.instances[i] = ScriptInstance { behavior, state };
+            self.instances[i] = ScriptInstance {
+                behavior,
+                state_type,
+                state,
+            };
             self.rebuild_schedules_for_index(i, flags);
             return;
         }
 
         let i = self.instances.len();
-        self.instances.push(ScriptInstance { behavior, state });
+        self.instances.push(ScriptInstance {
+            behavior,
+            state_type,
+            state,
+        });
         self.ids.push(id);
         self.index.insert(id, i);
 
@@ -148,7 +158,14 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     {
         let &i = self.index.get(&id)?;
         let instance = self.instances.get(i)?;
-        let state = (instance.state.as_ref() as &dyn Any).downcast_ref::<T>()?;
+        if instance.state_type != TypeId::of::<T>() {
+            return None;
+        }
+
+        // SAFETY:
+        // `state_type` is set from the concrete boxed value at insertion/replacement.
+        // If it matches `TypeId::of::<T>()`, the data pointer is guaranteed to point to `T`.
+        let state = unsafe { &*(instance.state.as_ref() as *const dyn Any as *const T) };
         Some(f(state))
     }
 
@@ -167,7 +184,14 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     {
         let &i = self.index.get(&id)?;
         let instance = self.instances.get_mut(i)?;
-        let state = (instance.state.as_mut() as &mut dyn Any).downcast_mut::<T>()?;
+        if instance.state_type != TypeId::of::<T>() {
+            return None;
+        }
+
+        // SAFETY:
+        // `state_type` tracks the concrete type stored in `state`; matching `T` makes
+        // this cast valid for the full lifetime of the instance's state object.
+        let state = unsafe { &mut *(instance.state.as_mut() as *mut dyn Any as *mut T) };
         Some(f(state))
     }
 

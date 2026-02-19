@@ -12,6 +12,8 @@ impl Runtime {
     }
 
     pub fn extract_render_2d_commands(&mut self) {
+        self.propagate_pending_transform_dirty();
+
         let mut traversal_ids = std::mem::take(&mut self.render_2d.traversal_ids);
         traversal_ids.clear();
         traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));

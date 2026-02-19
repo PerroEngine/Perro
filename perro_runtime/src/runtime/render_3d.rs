@@ -15,6 +15,8 @@ impl Runtime {
     }
 
     pub fn extract_render_3d_commands(&mut self) {
+        self.propagate_pending_transform_dirty();
+
         let mut traversal_ids = std::mem::take(&mut self.render_3d.traversal_ids);
         traversal_ids.clear();
         traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
