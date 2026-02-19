@@ -1,11 +1,8 @@
-use ahash::AHashMap;
 use perro_api::api::RuntimeAPI;
 use perro_ids::NodeID;
 use perro_scripting::ScriptBehavior;
 use std::any::{Any, TypeId};
 use std::sync::Arc;
-
-type IdMap = AHashMap<NodeID, usize>;
 
 pub(crate) struct ScriptInstance<R: RuntimeAPI + ?Sized> {
     pub(crate) behavior: Arc<dyn ScriptBehavior<R>>,
@@ -16,14 +13,15 @@ pub(crate) struct ScriptInstance<R: RuntimeAPI + ?Sized> {
 pub(crate) struct ScriptCollection<R: RuntimeAPI + ?Sized> {
     instances: Vec<ScriptInstance<R>>,
     ids: Vec<NodeID>,
-    index: IdMap,
+    // NodeID.index() -> instance index. Lookup validates full NodeID equality.
+    index: Vec<Option<usize>>,
 
     update: Vec<usize>,
     fixed: Vec<usize>,
 
-    // Reverse indices for O(1) schedule updates
-    update_pos: AHashMap<usize, usize>,
-    fixed_pos: AHashMap<usize, usize>,
+    // instance index -> schedule position
+    update_pos: Vec<Option<usize>>,
+    fixed_pos: Vec<Option<usize>>,
 }
 
 impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
@@ -31,16 +29,16 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         Self {
             instances: Vec::new(),
             ids: Vec::new(),
-            index: AHashMap::default(),
+            index: Vec::new(),
             update: Vec::new(),
             fixed: Vec::new(),
-            update_pos: AHashMap::default(),
-            fixed_pos: AHashMap::default(),
+            update_pos: Vec::new(),
+            fixed_pos: Vec::new(),
         }
     }
 
     pub(crate) fn get_instance(&self, id: NodeID) -> Option<&ScriptInstance<R>> {
-        let &i = self.index.get(&id)?;
+        let i = self.instance_index_for_id(id)?;
         self.instances.get(i)
     }
 
@@ -61,7 +59,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     where
         F: FnOnce(&ScriptInstance<R>) -> V,
     {
-        let &i = self.index.get(&id)?;
+        let i = self.instance_index_for_id(id)?;
         Some(f(self.instances.get(i)?))
     }
 
@@ -70,7 +68,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     where
         F: FnOnce(&mut ScriptInstance<R>) -> V,
     {
-        let &i = self.index.get(&id)?;
+        let i = self.instance_index_for_id(id)?;
         Some(f(self.instances.get_mut(i)?))
     }
 
@@ -83,8 +81,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         let flags = behavior.script_flags();
         let state_type = state.as_ref().type_id();
 
-        if let Some(&i) = self.index.get(&id) {
-            // replace in-place
+        if let Some(i) = self.instance_index_for_id(id) {
             self.instances[i] = ScriptInstance {
                 behavior,
                 state_type,
@@ -94,6 +91,15 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
             return;
         }
 
+        // If this slot maps to a stale generation, remove that stale instance first.
+        let slot = id.index() as usize;
+        if let Some(Some(existing_i)) = self.index.get(slot).copied() {
+            if self.ids.get(existing_i).copied() != Some(id) {
+                let stale_id = self.ids[existing_i];
+                let _ = self.remove(stale_id);
+            }
+        }
+
         let i = self.instances.len();
         self.instances.push(ScriptInstance {
             behavior,
@@ -101,22 +107,23 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
             state,
         });
         self.ids.push(id);
-        self.index.insert(id, i);
+        self.set_index_slot(slot, Some(i));
 
         if flags.has_update() {
             let pos = self.update.len();
             self.update.push(i);
-            self.update_pos.insert(i, pos);
+            Self::set_reverse_slot(&mut self.update_pos, i, Some(pos));
         }
         if flags.has_fixed_update() {
             let pos = self.fixed.len();
             self.fixed.push(i);
-            self.fixed_pos.insert(i, pos);
+            Self::set_reverse_slot(&mut self.fixed_pos, i, Some(pos));
         }
     }
 
     pub(crate) fn remove(&mut self, id: NodeID) -> Option<ScriptInstance<R>> {
-        let i = self.index.remove(&id)?;
+        let i = self.instance_index_for_id(id)?;
+        self.set_index_slot(id.index() as usize, None);
         self.remove_from_schedules_by_index(i);
 
         let last = self.instances.len() - 1;
@@ -128,18 +135,16 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         debug_assert!(removed_id == id);
 
         if i != last {
-            // moved entry now at i
             let moved_id = self.ids[i];
-            self.index.insert(moved_id, i);
+            self.set_index_slot(moved_id.index() as usize, Some(i));
 
-            // O(1) schedule updates
-            if let Some(pos) = self.update_pos.remove(&last) {
+            if let Some(pos) = Self::take_reverse_slot(&mut self.update_pos, last) {
                 self.update[pos] = i;
-                self.update_pos.insert(i, pos);
+                Self::set_reverse_slot(&mut self.update_pos, i, Some(pos));
             }
-            if let Some(pos) = self.fixed_pos.remove(&last) {
+            if let Some(pos) = Self::take_reverse_slot(&mut self.fixed_pos, last) {
                 self.fixed[pos] = i;
-                self.fixed_pos.insert(i, pos);
+                Self::set_reverse_slot(&mut self.fixed_pos, i, Some(pos));
             }
         }
 
@@ -172,15 +177,12 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     where
         F: FnOnce(&T) -> V,
     {
-        let &i = self.index.get(&id)?;
+        let i = self.instance_index_for_id(id)?;
         let instance = self.instances.get(i)?;
         if instance.state_type != TypeId::of::<T>() {
             return None;
         }
 
-        // SAFETY:
-        // `state_type` is set from the concrete boxed value at insertion/replacement.
-        // If it matches `TypeId::of::<T>()`, the data pointer is guaranteed to point to `T`.
         let state = unsafe { &*(instance.state.as_ref() as *const dyn Any as *const T) };
         Some(f(state))
     }
@@ -189,39 +191,49 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     where
         F: FnOnce(&mut T) -> V,
     {
-        let &i = self.index.get(&id)?;
+        let i = self.instance_index_for_id(id)?;
         let instance = self.instances.get_mut(i)?;
         if instance.state_type != TypeId::of::<T>() {
             return None;
         }
 
-        // SAFETY:
-        // `state_type` tracks the concrete type stored in `state`; matching `T` makes
-        // this cast valid for the full lifetime of the instance's state object.
         let state = unsafe { &mut *(instance.state.as_mut() as *mut dyn Any as *mut T) };
         Some(f(state))
     }
 
+    #[inline]
+    fn instance_index_for_id(&self, id: NodeID) -> Option<usize> {
+        let slot = id.index() as usize;
+        let i = (*self.index.get(slot)?)?;
+        (self.ids.get(i).copied() == Some(id)).then_some(i)
+    }
+
+    #[inline]
+    fn set_index_slot(&mut self, slot: usize, value: Option<usize>) {
+        if self.index.len() <= slot {
+            self.index.resize(slot + 1, None);
+        }
+        self.index[slot] = value;
+    }
+
     fn remove_from_schedules_by_index(&mut self, i: usize) {
-        // Remove from update schedule
-        if let Some(pos) = self.update_pos.remove(&i) {
+        if let Some(pos) = Self::take_reverse_slot(&mut self.update_pos, i) {
             let last_pos = self.update.len() - 1;
             self.update.swap_remove(pos);
 
             if pos != last_pos {
                 let moved_idx = self.update[pos];
-                self.update_pos.insert(moved_idx, pos);
+                Self::set_reverse_slot(&mut self.update_pos, moved_idx, Some(pos));
             }
         }
 
-        // Remove from fixed schedule
-        if let Some(pos) = self.fixed_pos.remove(&i) {
+        if let Some(pos) = Self::take_reverse_slot(&mut self.fixed_pos, i) {
             let last_pos = self.fixed.len() - 1;
             self.fixed.swap_remove(pos);
 
             if pos != last_pos {
                 let moved_idx = self.fixed[pos];
-                self.fixed_pos.insert(moved_idx, pos);
+                Self::set_reverse_slot(&mut self.fixed_pos, moved_idx, Some(pos));
             }
         }
     }
@@ -232,13 +244,29 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         if flags.has_update() {
             let pos = self.update.len();
             self.update.push(i);
-            self.update_pos.insert(i, pos);
+            Self::set_reverse_slot(&mut self.update_pos, i, Some(pos));
         }
         if flags.has_fixed_update() {
             let pos = self.fixed.len();
             self.fixed.push(i);
-            self.fixed_pos.insert(i, pos);
+            Self::set_reverse_slot(&mut self.fixed_pos, i, Some(pos));
         }
+    }
+
+    #[inline]
+    fn set_reverse_slot(slots: &mut Vec<Option<usize>>, index: usize, value: Option<usize>) {
+        if slots.len() <= index {
+            slots.resize(index + 1, None);
+        }
+        slots[index] = value;
+    }
+
+    #[inline]
+    fn take_reverse_slot(slots: &mut [Option<usize>], index: usize) -> Option<usize> {
+        if index >= slots.len() {
+            return None;
+        }
+        slots[index].take()
     }
 }
 
