@@ -56,6 +56,7 @@ pub struct ResourceStore {
     textures: SlotArena,
     materials: SlotArena,
     mesh_by_source: HashMap<String, MeshID>,
+    mesh_source_by_id: HashMap<MeshID, String>,
     texture_by_source: HashMap<String, TextureID>,
 }
 
@@ -72,6 +73,7 @@ impl ResourceStore {
         let (index, generation) = self.meshes.create_parts();
         let id = MeshID::from_parts(index, generation);
         self.mesh_by_source.insert(source.to_string(), id);
+        self.mesh_source_by_id.insert(id, source.to_string());
         id
     }
 
@@ -100,6 +102,11 @@ impl ResourceStore {
     #[inline]
     pub fn has_mesh(&self, id: MeshID) -> bool {
         self.meshes.contains_parts(id.index(), id.generation())
+    }
+
+    #[inline]
+    pub fn mesh_source(&self, id: MeshID) -> Option<&str> {
+        self.mesh_source_by_id.get(&id).map(String::as_str)
     }
 
     #[inline]

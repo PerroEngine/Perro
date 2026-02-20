@@ -31,11 +31,10 @@ const FIELDS_RES___MAIN_SCN_0: &[(&str, StaticSceneValue)] = &[
 ];
 const DATA_RES___MAIN_SCN_0: StaticNodeData = StaticNodeData { ty: StaticNodeType::Node3D, fields: FIELDS_RES___MAIN_SCN_0, base: None };
 const FIELDS_RES___MAIN_SCN_1: &[(&str, StaticSceneValue)] = &[
-    ("mesh", StaticSceneValue::Str("__cube__")),
+    ("mesh", StaticSceneValue::Str("__cylinder__")),
 ];
 const FIELDS_RES___MAIN_SCN_2: &[(&str, StaticSceneValue)] = &[
     ("position", StaticSceneValue::Vec3 { x: 0.0, y: 0.0, z: 0.0 }),
-    ("rotation", StaticSceneValue::Vec4 { x: 0.0, y: 0.2826834, z: 0.1, w: 0.9238795 }),
 ];
 const DATA_RES___MAIN_SCN_2: StaticNodeData = StaticNodeData { ty: StaticNodeType::Node3D, fields: FIELDS_RES___MAIN_SCN_2, base: None };
 const DATA_RES___MAIN_SCN_1: StaticNodeData = StaticNodeData { ty: StaticNodeType::MeshInstance3D, fields: FIELDS_RES___MAIN_SCN_1, base: Some(&DATA_RES___MAIN_SCN_2) };

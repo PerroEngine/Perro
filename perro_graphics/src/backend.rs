@@ -66,13 +66,7 @@ impl PerroGraphics {
                     ResourceCommand::CreateMesh {
                         request, source, ..
                     } => {
-                        // `__cube__` is a built-in sentinel; all other values are treated as asset paths.
-                        let normalized = if source == "__cube__" {
-                            "__cube__"
-                        } else {
-                            source.as_str()
-                        };
-                        let id = self.resources.create_mesh(normalized);
+                        let id = self.resources.create_mesh(source.as_str());
                         self.events.push(RenderEvent::MeshCreated { request, id });
                     }
                     ResourceCommand::CreateTexture {
@@ -186,6 +180,7 @@ impl GraphicsBackend for PerroGraphics {
 
         if let Some(gpu) = &mut self.gpu {
             gpu.render(
+                &self.resources,
                 camera_3d,
                 &draws_3d,
                 camera_2d,

@@ -1,4 +1,5 @@
 use crate::{
+    resources::ResourceStore,
     three_d::{gpu::Gpu3D, renderer::Draw3DInstance},
     two_d::{
         gpu::Gpu2D,
@@ -147,6 +148,7 @@ impl Gpu {
 
     pub fn render(
         &mut self,
+        resources: &ResourceStore,
         camera_3d: Camera3DState,
         draws_3d: &[Draw3DInstance],
         camera_2d: Camera2DUniform,
@@ -161,6 +163,7 @@ impl Gpu {
         self.three_d.prepare(
             &self.device,
             &self.queue,
+            resources,
             camera_3d,
             draws_3d,
             self.config.width,

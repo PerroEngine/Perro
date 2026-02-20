@@ -11,11 +11,10 @@ parent = @root
 script = "res://scripts/script.rs"
 
 [MeshInstance3D]
-    mesh = "__cube__"
+    mesh = "__cylinder__"
 
     [Node3D]
         position = (0, 0, 0)
-       rotation = (0, 0.2826834, 0.1, 0.9238795)
     [/Node3D]
 [/MeshInstance3D]
 [/cube]

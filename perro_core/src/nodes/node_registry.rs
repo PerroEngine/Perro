@@ -4,6 +4,7 @@ use crate::mesh_instance_3d::MeshInstance3D;
 use crate::node_2d::node_2d::Node2D;
 use crate::node_3d::node_3d::Node3D;
 use crate::sprite_2d::Sprite2D;
+use crate::{Transform2D, Transform3D};
 use perro_ids::NodeID;
 use std::borrow::Cow;
 
@@ -15,12 +16,19 @@ pub enum Spatial {
     ThreeD,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Renderable {
+    False,
+    True,
+}
+
 #[macro_export]
 macro_rules! define_scene_nodes {
     (
         base: { $($base_variant:ident $(=> $base_ty:ty)?),* $(,)? }
-        2d: { $($variant_2d:ident => $ty_2d:ty),* $(,)? }
-        3d: { $($variant_3d:ident => $ty_3d:ty),* $(,)? }
+        2d: { $($variant_2d:ident => ($ty_2d:ty, $renderable_2d:expr)),* $(,)? }
+        3d: { $($variant_3d:ident => ($ty_3d:ty, $renderable_3d:expr)),* $(,)? }
     ) => {
         #[derive(Clone, Debug)]
         pub struct SceneNode {
@@ -146,10 +154,17 @@ macro_rules! define_scene_nodes {
         pub trait NodeTypeDispatch: Sized {
             const NODE_TYPE: NodeType;
             const SPATIAL: Spatial;
+            const RENDERABLE: Renderable;
+            type TransformSnapshot: Copy + PartialEq;
 
             fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R>;
             fn with_mut<R>(data: &mut SceneNodeData, f: impl FnOnce(&mut Self) -> R)
                 -> Option<R>;
+
+            #[inline]
+            fn snapshot_transform(_value: &Self) -> Option<Self::TransformSnapshot> {
+                None
+            }
         }
 
         impl Default for NodeType {
@@ -231,6 +246,8 @@ macro_rules! define_scene_nodes {
         $(impl NodeTypeDispatch for $ty_2d {
             const NODE_TYPE: NodeType = NodeType::$variant_2d;
             const SPATIAL: Spatial = Spatial::TwoD;
+            const RENDERABLE: Renderable = $renderable_2d;
+            type TransformSnapshot = Transform2D;
 
             fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
                 match data {
@@ -247,12 +264,19 @@ macro_rules! define_scene_nodes {
                     SceneNodeData::$variant_2d(inner) => Some(f(inner)),
                     _ => None,
                 }
+            }
+
+            #[inline]
+            fn snapshot_transform(value: &Self) -> Option<Self::TransformSnapshot> {
+                Some(value.transform)
             }
         })*
 
         $(impl NodeTypeDispatch for $ty_3d {
             const NODE_TYPE: NodeType = NodeType::$variant_3d;
             const SPATIAL: Spatial = Spatial::ThreeD;
+            const RENDERABLE: Renderable = $renderable_3d;
+            type TransformSnapshot = Transform3D;
 
             fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
                 match data {
@@ -269,6 +293,11 @@ macro_rules! define_scene_nodes {
                     SceneNodeData::$variant_3d(inner) => Some(f(inner)),
                     _ => None,
                 }
+            }
+
+            #[inline]
+            fn snapshot_transform(value: &Self) -> Option<Self::TransformSnapshot> {
+                Some(value.transform)
             }
         })*
     };
@@ -283,13 +312,13 @@ define_scene_nodes! {
         Node,
     }
     2d: {
-        Node2D => Node2D,
-        Sprite2D => Sprite2D,
-        Camera2D => Camera2D
+        Node2D => (Node2D, Renderable::False),
+        Sprite2D => (Sprite2D, Renderable::True),
+        Camera2D => (Camera2D, Renderable::True)
     }
     3d: {
-        Node3D => Node3D,
-        MeshInstance3D => MeshInstance3D,
-        Camera3D => Camera3D
+        Node3D => (Node3D, Renderable::False),
+        MeshInstance3D => (MeshInstance3D, Renderable::True),
+        Camera3D => (Camera3D, Renderable::True)
     }
 }

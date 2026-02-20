@@ -1,5 +1,5 @@
 use perro_api::sub_apis::NodeAPI;
-use perro_core::{NodeTypeDispatch, SceneNode, SceneNodeData, Spatial};
+use perro_core::{NodeTypeDispatch, Renderable, SceneNode, SceneNodeData};
 
 use crate::Runtime;
 
@@ -20,24 +20,36 @@ impl NodeAPI for Runtime {
             return;
         }
 
-        {
+        let transform_changed = {
             let Some(node) = self.nodes.get_mut(id) else {
                 return;
             };
 
-            let result = node.with_typed_mut::<T, _>(f);
-            if result.is_none() {
-                panic!(
-                    "Node {} is not of expected type {:?} (actual: {:?})",
-                    id,
-                    T::NODE_TYPE,
-                    node.node_type()
-                );
+            let mut changed = false;
+            let result = node.with_typed_mut::<T, _>(|typed| {
+                let before = T::snapshot_transform(typed);
+                f(typed);
+                let after = T::snapshot_transform(typed);
+                changed = before != after;
+            });
+            match result {
+                Some(()) => {}
+                None => {
+                    panic!(
+                        "Node {} is not of expected type {:?} (actual: {:?})",
+                        id,
+                        T::NODE_TYPE,
+                        node.node_type()
+                    );
+                }
             }
-        }
+            changed
+        };
 
-        self.mark_needs_rerender(id);
-        if !matches!(T::SPATIAL, Spatial::None) {
+        if matches!(T::RENDERABLE, Renderable::True) {
+            self.mark_needs_rerender(id);
+        }
+        if transform_changed {
             self.mark_transform_dirty_recursive(id);
         }
     }
