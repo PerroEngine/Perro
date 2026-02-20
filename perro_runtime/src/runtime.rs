@@ -48,6 +48,8 @@ pub struct Timing {
 struct ScriptSchedules {
     update_slots: Vec<(usize, NodeID)>,
     fixed_slots: Vec<(usize, NodeID)>,
+    update_epoch: u64,
+    fixed_epoch: u64,
 }
 
 impl ScriptSchedules {
@@ -56,6 +58,8 @@ impl ScriptSchedules {
         Self {
             update_slots: Vec::new(),
             fixed_slots: Vec::new(),
+            update_epoch: u64::MAX,
+            fixed_epoch: u64::MAX,
         }
     }
 
@@ -63,26 +67,36 @@ impl ScriptSchedules {
         &mut self,
         scripts: &ScriptCollection<R>,
     ) {
+        let epoch = scripts.schedule_epoch();
+        if self.update_epoch == epoch {
+            return;
+        }
+
         let needed = scripts.update_schedule_len();
         if self.update_slots.capacity() < needed {
-            self.update_slots
-                .reserve_exact(needed - self.update_slots.capacity());
+            self.update_slots.reserve(needed - self.update_slots.capacity());
         }
         self.update_slots.clear();
         scripts.append_update_slots(&mut self.update_slots);
+        self.update_epoch = epoch;
     }
 
     fn snapshot_fixed<R: perro_api::api::RuntimeAPI + ?Sized>(
         &mut self,
         scripts: &ScriptCollection<R>,
     ) {
+        let epoch = scripts.schedule_epoch();
+        if self.fixed_epoch == epoch {
+            return;
+        }
+
         let needed = scripts.fixed_schedule_len();
         if self.fixed_slots.capacity() < needed {
-            self.fixed_slots
-                .reserve_exact(needed - self.fixed_slots.capacity());
+            self.fixed_slots.reserve(needed - self.fixed_slots.capacity());
         }
         self.fixed_slots.clear();
         scripts.append_fixed_update_slots(&mut self.fixed_slots);
+        self.fixed_epoch = epoch;
     }
 }
 
@@ -267,9 +281,11 @@ impl DirtyState {
         }
         self.dirty_indices.clear();
 
-        self.pending_transform_roots.clear();
-        for v in &mut self.pending_transform_root_flags {
-            *v = 0;
+        for id in self.pending_transform_roots.drain(..) {
+            let index = id.index() as usize;
+            if index < self.pending_transform_root_flags.len() {
+                self.pending_transform_root_flags[index] = 0;
+            }
         }
     }
 }

@@ -22,6 +22,7 @@ pub(crate) struct ScriptCollection<R: RuntimeAPI + ?Sized> {
     // instance index -> schedule position
     update_pos: Vec<Option<usize>>,
     fixed_pos: Vec<Option<usize>>,
+    schedule_epoch: u64,
 }
 
 impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
@@ -34,6 +35,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
             fixed: Vec::new(),
             update_pos: Vec::new(),
             fixed_pos: Vec::new(),
+            schedule_epoch: 0,
         }
     }
 
@@ -88,6 +90,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
                 state,
             };
             self.rebuild_schedules_for_index(i, flags);
+            self.bump_schedule_epoch();
             return;
         }
 
@@ -119,6 +122,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
             self.fixed.push(i);
             Self::set_reverse_slot(&mut self.fixed_pos, i, Some(pos));
         }
+        self.bump_schedule_epoch();
     }
 
     pub(crate) fn remove(&mut self, id: NodeID) -> Option<ScriptInstance<R>> {
@@ -148,6 +152,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
             }
         }
 
+        self.bump_schedule_epoch();
         Some(removed)
     }
 
@@ -171,6 +176,11 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     #[inline]
     pub(crate) fn fixed_schedule_len(&self) -> usize {
         self.fixed.len()
+    }
+
+    #[inline]
+    pub(crate) fn schedule_epoch(&self) -> u64 {
+        self.schedule_epoch
     }
 
     pub(crate) fn with_state<T: 'static, V, F>(&self, id: NodeID, f: F) -> Option<V>
@@ -267,6 +277,11 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
             return None;
         }
         slots[index].take()
+    }
+
+    #[inline]
+    fn bump_schedule_epoch(&mut self) {
+        self.schedule_epoch = self.schedule_epoch.wrapping_add(1);
     }
 }
 

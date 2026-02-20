@@ -30,7 +30,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
         let dt = api.Time().get_delta();
         let speed = api
             .Scripts()
-            .with_state_mut::<ExampleState, _, _>(self_id, |state| {
+            .with_state::<ExampleState, _, _>(self_id, |state| {
                 state.speed
             })
             .unwrap_or_default();
