@@ -1,6 +1,8 @@
 use crate::resources::ResourceStore;
 use perro_ids::{MaterialID, MeshID, NodeID};
-use perro_render_bridge::{Camera3DState, PointLight3DState, RayLight3DState, SpotLight3DState};
+use perro_render_bridge::{
+    AmbientLight3DState, Camera3DState, PointLight3DState, RayLight3DState, SpotLight3DState,
+};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -19,6 +21,7 @@ pub struct Renderer3DStats {
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Lighting3DState {
+    pub ambient_light: Option<AmbientLight3DState>,
     pub ray_light: Option<RayLight3DState>,
     pub point_lights: [Option<PointLight3DState>; MAX_POINT_LIGHTS],
     pub spot_lights: [Option<SpotLight3DState>; MAX_SPOT_LIGHTS],
@@ -30,6 +33,7 @@ pub const MAX_SPOT_LIGHTS: usize = 8;
 pub struct Renderer3D {
     queued_draws: Vec<Draw3DInstance>,
     retained_draws: HashMap<NodeID, Draw3DInstance>,
+    ambient_lights: HashMap<NodeID, AmbientLight3DState>,
     ray_lights: HashMap<NodeID, RayLight3DState>,
     point_lights: HashMap<NodeID, PointLight3DState>,
     spot_lights: HashMap<NodeID, SpotLight3DState>,
@@ -62,9 +66,14 @@ impl Renderer3D {
 
     pub fn remove_node(&mut self, node: NodeID) {
         self.retained_draws.remove(&node);
+        self.ambient_lights.remove(&node);
         self.ray_lights.remove(&node);
         self.point_lights.remove(&node);
         self.spot_lights.remove(&node);
+    }
+
+    pub fn set_ambient_light(&mut self, node: NodeID, light: AmbientLight3DState) {
+        self.ambient_lights.insert(node, light);
     }
 
     pub fn set_ray_light(&mut self, node: NodeID, light: RayLight3DState) {
@@ -95,6 +104,9 @@ impl Renderer3D {
         }
 
         let mut lighting = Lighting3DState::default();
+        if let Some((_, ambient)) = self.ambient_lights.iter().next() {
+            lighting.ambient_light = Some(*ambient);
+        }
         if let Some((_, ray)) = self.ray_lights.iter().next() {
             lighting.ray_light = Some(*ray);
         }
@@ -134,6 +146,7 @@ impl Default for Renderer3D {
         Self {
             queued_draws: Vec::new(),
             retained_draws: HashMap::new(),
+            ambient_lights: HashMap::new(),
             ray_lights: HashMap::new(),
             point_lights: HashMap::new(),
             spot_lights: HashMap::new(),

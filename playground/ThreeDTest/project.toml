@@ -1,5 +1,5 @@
 [project]
-name = "Test"
+name = "ThreeDTest"
 main_scene = "res://main.scn"
 icon = "res://icon.png"
 

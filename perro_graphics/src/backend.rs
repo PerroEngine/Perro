@@ -108,6 +108,9 @@ impl PerroGraphics {
                     Command3D::SetCamera { camera } => {
                         self.renderer_3d.set_camera(camera);
                     }
+                    Command3D::SetAmbientLight { node, light } => {
+                        self.renderer_3d.set_ambient_light(node, light);
+                    }
                     Command3D::SetRayLight { node, light } => {
                         self.renderer_3d.set_ray_light(node, light);
                     }

@@ -21,8 +21,8 @@ fn main() {
 let root = project_root();
 perro_app::entry::run_static_embedded_project(
 &root,
-"Test",
-"Test",
+"ThreeDTest",
+"ThreeDTest",
 "res://main.scn",
 "res://icon.png",
 1920,

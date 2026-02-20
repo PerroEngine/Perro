@@ -1,5 +1,6 @@
 // parser.rs - Parse into runtime types
 use crate::{Lexer, RuntimeNodeData, RuntimeNodeEntry, RuntimeScene, RuntimeValue, Token};
+use perro_core::Quaternion;
 use std::collections::HashMap;
 
 pub struct Parser<'a> {
@@ -172,6 +173,7 @@ impl<'a> Parser<'a> {
             }
         }
 
+        normalize_node_fields_for_type(&ty, &mut fields);
         RuntimeNodeData { ty, fields, base }
     }
 
@@ -274,5 +276,57 @@ impl<'a> Parser<'a> {
         let mut parser = Parser::new(self.src);
         parser.vars = vars;
         parser.parse_scene_inner()
+    }
+}
+
+fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<(String, RuntimeValue)>) {
+    if ty != "Node3D" {
+        return;
+    }
+
+    let mut rotation_present = false;
+    let mut rotation_deg_xyz = None;
+
+    for (name, value) in fields.iter_mut() {
+        if name == "rotation" {
+            rotation_present = true;
+            if let RuntimeValue::Vec3 { x, y, z } = value.clone() {
+                *value = euler_xyz_radians_to_quat_value(x, y, z);
+            }
+            continue;
+        }
+
+        if name == "rotation_deg" {
+            if let RuntimeValue::Vec3 { x, y, z } = value.clone() {
+                rotation_deg_xyz = Some((x, y, z));
+            }
+            continue;
+        }
+    }
+
+    if !rotation_present {
+        if let Some((x_deg, y_deg, z_deg)) = rotation_deg_xyz {
+            fields.push((
+                "rotation".to_string(),
+                euler_xyz_radians_to_quat_value(
+                    x_deg.to_radians(),
+                    y_deg.to_radians(),
+                    z_deg.to_radians(),
+                ),
+            ));
+        }
+    }
+
+    fields.retain(|(name, _)| name != "rotation_deg");
+}
+
+fn euler_xyz_radians_to_quat_value(x: f32, y: f32, z: f32) -> RuntimeValue {
+    let mut rotation = Quaternion::IDENTITY;
+    rotation.rotate_xyz(x, y, z);
+    RuntimeValue::Vec4 {
+        x: rotation.x,
+        y: rotation.y,
+        z: rotation.z,
+        w: rotation.w,
     }
 }

@@ -216,6 +216,72 @@ mod tests {
     }
 
     #[test]
+    fn parse_node3d_rotation_deg_as_quaternion() {
+        let src = r#"
+        @root = main
+
+        [main]
+        [Node3D]
+            rotation_deg = (0, 180, 0)
+        [/Node3D]
+        [/main]
+        "#;
+
+        let scene = Parser::new(src).parse_scene();
+        let main = scene.nodes.iter().find(|n| n.key == "main").unwrap();
+        assert_eq!(main.data.ty, "Node3D");
+        let rotation = main
+            .data
+            .fields
+            .iter()
+            .find(|(k, _)| k == "rotation")
+            .unwrap();
+        match &rotation.1 {
+            RuntimeValue::Vec4 { y, w, .. } => {
+                assert!((*y - 1.0).abs() < 1.0e-4);
+                assert!(w.abs() < 1.0e-4);
+            }
+            _ => panic!("rotation should be quaternion vec4"),
+        }
+        assert!(
+            main.data
+                .fields
+                .iter()
+                .all(|(k, _)| k != "rotation_deg")
+        );
+    }
+
+    #[test]
+    fn parse_node3d_rotation_euler_radians_as_quaternion() {
+        let src = r#"
+        @root = main
+
+        [main]
+        [Node3D]
+            rotation = (0, 3.1415927, 0)
+        [/Node3D]
+        [/main]
+        "#;
+
+        let scene = Parser::new(src).parse_scene();
+        let main = scene.nodes.iter().find(|n| n.key == "main").unwrap();
+        assert_eq!(main.data.ty, "Node3D");
+        let rotation = main
+            .data
+            .fields
+            .iter()
+            .find(|(k, _)| k == "rotation")
+            .unwrap();
+        match &rotation.1 {
+            RuntimeValue::Vec4 { y, w, .. } => {
+                assert!((*y - 1.0).abs() < 1.0e-4);
+                assert!(w.abs() < 1.0e-4);
+            }
+            _ => panic!("rotation should be quaternion vec4"),
+        }
+    }
+
+    #[test]
     fn static_scene_equivalent_to_parsed() {
         // Define a static scene manually
         const MAIN_FIELDS: &[(&str, StaticSceneValue)] =

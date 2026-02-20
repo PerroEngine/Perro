@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use perro_api::prelude::*;
 use perro_core::prelude::*;
 use perro_ids::prelude::*;
@@ -18,7 +17,6 @@ pub struct ExampleScript;
 
 impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
     fn init(&self, api: &mut API<'_, R>, self_id: NodeID) {
-        let _origin = Vector2::new(0.0, 0.0);
         let _ = api
             .Scripts()
             .with_state_mut::<ExampleState, _, _>(self_id, |state| {

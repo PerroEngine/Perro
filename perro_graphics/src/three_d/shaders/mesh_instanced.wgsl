@@ -22,6 +22,7 @@ struct Scene3D {
     view_proj: mat4x4<f32>,
     ambient_and_counts: vec4<f32>,
     camera_pos: vec4<f32>,
+    ambient_color: vec4<f32>,
     ray_light: RayLightGpu,
     point_lights: array<PointLightGpu, MAX_POINT_LIGHTS>,
     spot_lights: array<SpotLightGpu, MAX_SPOT_LIGHTS>,
@@ -173,7 +174,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         light_rgb += brdf_pbr(albedo, n, v, l, roughness, metallic, radiance);
     }
 
-    let ambient = albedo * scene.ambient_and_counts.x * ao;
+    let ambient = albedo * scene.ambient_color.xyz * scene.ambient_color.w * ao;
     let color = ambient + light_rgb + albedo * emissive;
     return vec4<f32>(color, in.color.a);
 }

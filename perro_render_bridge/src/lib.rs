@@ -25,6 +25,12 @@ pub struct Camera3DState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AmbientLight3DState {
+    pub color: [f32; 3],
+    pub intensity: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RayLight3DState {
     pub direction: [f32; 3],
     pub color: [f32; 3],
@@ -131,6 +137,10 @@ pub enum Command3D {
     },
     SetCamera {
         camera: Camera3DState,
+    },
+    SetAmbientLight {
+        node: NodeID,
+        light: AmbientLight3DState,
     },
     SetRayLight {
         node: NodeID,

@@ -20,6 +20,7 @@ struct Scene3DUniform {
     view_proj: [[f32; 4]; 4],
     ambient_and_counts: [f32; 4],
     camera_pos: [f32; 4],
+    ambient_color: [f32; 4],
     ray_light: RayLightGpu,
     point_lights: [PointLightGpu; MAX_POINT_LIGHTS],
     spot_lights: [SpotLightGpu; MAX_SPOT_LIGHTS],
@@ -541,8 +542,9 @@ fn build_scene_uniform(
 ) -> Scene3DUniform {
     let mut scene = Scene3DUniform {
         view_proj: compute_view_proj(camera, width, height),
-        ambient_and_counts: [0.14, 0.0, 0.0, 0.0],
+        ambient_and_counts: [0.0, 0.0, 0.0, 0.0],
         camera_pos: [camera.position[0], camera.position[1], camera.position[2], 0.0],
+        ambient_color: [1.0, 1.0, 1.0, 0.0],
         ray_light: RayLightGpu {
             direction: [0.0, 0.0, -1.0, 0.0],
             color_intensity: [1.0, 1.0, 1.0, 0.0],
@@ -558,6 +560,15 @@ fn build_scene_uniform(
             inner_cos_pad: [1.0, 0.0, 0.0, 0.0],
         }; MAX_SPOT_LIGHTS],
     };
+
+    if let Some(ambient) = lighting.ambient_light {
+        scene.ambient_color = [
+            ambient.color[0].max(0.0),
+            ambient.color[1].max(0.0),
+            ambient.color[2].max(0.0),
+            ambient.intensity.max(0.0),
+        ];
+    }
 
     if let Some(ray) = lighting.ray_light {
         let dir = Vec3::from(ray.direction).normalize_or_zero();

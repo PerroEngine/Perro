@@ -21,15 +21,16 @@ script = "res://scripts/script.rs"
 
 [camera]
 parent = @root
+script = "res://scripts/camera.rs"
 
-[Camera3D]
-    active = true
-    zoom = 1.0
+    [Camera3D]
+        active = true
+        zoom = 1.0
 
-    [Node3D]
-        position = (0, 0, 5)
-    [/Node3D]
-[/Camera3D]
+        [Node3D]
+            position = (0, 0, 5)
+        [/Node3D]
+    [/Camera3D]
 [/camera]
 
 [sun]
@@ -37,12 +38,21 @@ parent = @root
 
 [RayLight3D]
     color = (1.0, 0.98, 0.92)
-    intensity = 0.9
+    intensity = 1.0
     active = true
 
     [Node3D]
         position = (0, 0, 0)
+        rotation_deg = (0, 1, 0)
     [/Node3D]
 [/RayLight3D]
 [/sun]
 
+[ambient]
+parent = @root
+
+[AmbientLight3D]
+    color = (1.0, 1.0, 1.0)
+    intensity = 0.3
+[/AmbientLight3D]
+[/ambient]

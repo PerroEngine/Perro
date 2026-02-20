@@ -1673,20 +1673,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "test"
-version = "0.1.0"
-dependencies = [
- "perro_api",
- "perro_app",
- "perro_core",
- "perro_ids",
- "perro_scene",
- "perro_scripting",
- "phf",
- "scripts",
-]
-
-[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1724,6 +1710,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "threedtest"
+version = "0.1.0"
+dependencies = [
+ "perro_api",
+ "perro_app",
+ "perro_core",
+ "perro_ids",
+ "perro_scene",
+ "perro_scripting",
+ "phf",
+ "scripts",
 ]
 
 [[package]]
