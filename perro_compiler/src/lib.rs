@@ -920,11 +920,9 @@ fn generate_member_consts(fields: &[StateField]) -> String {
 fn generate_get_var_body(state_ty: &str, fields: &[StateField]) -> String {
     let mut out = String::new();
     out.push_str(&format!(
-        "        let Some(state) = state.downcast_ref::<{state_ty}>() else {{\n"
+        "        let state = unsafe {{ &*(state as *const dyn std::any::Any as *const {state_ty}) }};\n"
     ));
-    out.push_str("            return Variant::Null;\n");
-    out.push_str("        };\n");
-
+    out.push_str("        match var_id {\n");
     for field in fields {
         let const_name = member_const_name(&field.name);
         let access = match field_kind(&field.ty).unwrap() {
@@ -932,48 +930,112 @@ fn generate_get_var_body(state_ty: &str, fields: &[StateField]) -> String {
             _ => format!("state.{}", field.name),
         };
         out.push_str(&format!(
-            "        if var_id == {const_name} {{\n            return Variant::from({access});\n        }}\n"
+            "            id if id == {const_name} => Variant::from({access}),\n"
         ));
     }
-
-    out.push_str("        Variant::Null");
+    out.push_str("            _ => Variant::Null,\n");
+    out.push_str("        }");
     out
 }
 
 fn generate_set_var_body(state_ty: &str, fields: &[StateField]) -> String {
     let mut out = String::new();
     out.push_str(&format!(
-        "        let Some(state) = state.downcast_mut::<{state_ty}>() else {{\n"
+        "        let state = unsafe {{ &mut *(state as *mut dyn std::any::Any as *mut {state_ty}) }};\n"
     ));
-    out.push_str("            return;\n");
-    out.push_str("        };\n");
-
+    out.push_str("        match var_id {\n");
     for field in fields {
         let const_name = member_const_name(&field.name);
         let ty = normalize_type(&field.ty);
-        let set_expr = match field_kind(&field.ty).unwrap() {
-            FieldKind::Bool => "value.as_bool()".to_string(),
-            FieldKind::SignedInt => format!(
-                "value.as_number().and_then(|n| n.as_i64_lossy()).and_then(|n| <{ty}>::try_from(n).ok())"
+        let assign_block = match field_kind(&field.ty).unwrap() {
+            FieldKind::Bool => format!(
+                "if let Some(v) = value.as_bool() {{\n                    state.{} = v;\n                }}",
+                field.name
             ),
-            FieldKind::UnsignedInt => format!(
-                "value.as_number().and_then(|n| n.as_i64_lossy()).and_then(|n| <{ty}>::try_from(n).ok())"
+            FieldKind::SignedInt => exact_signed_assign_block(&ty, &field.name),
+            FieldKind::UnsignedInt => exact_unsigned_assign_block(&ty, &field.name),
+            FieldKind::Float32 => format!(
+                "if let Some(v) = value.as_f32() {{\n                    state.{} = v;\n                }}",
+                field.name
             ),
-            FieldKind::Float32 => {
-                "value.as_f32()".to_string()
-            }
-            FieldKind::Float64 => "value.as_f64()".to_string(),
-            FieldKind::String => "value.as_str().map(|s| s.to_string())".to_string(),
-            FieldKind::ArcStr => "value.as_str().map(std::sync::Arc::<str>::from)".to_string(),
-            FieldKind::NodeID => "value.as_node().or_else(|| value.as_number().and_then(|n| n.as_i64_lossy()).and_then(|n| u64::try_from(n).ok()).map(perro_ids::NodeID::from_u64)).or_else(|| value.as_str().and_then(|s| perro_ids::NodeID::parse_str(s).ok()))".to_string(),
-            FieldKind::TextureID => "value.as_texture().or_else(|| value.as_number().and_then(|n| n.as_i64_lossy()).and_then(|n| u64::try_from(n).ok()).map(perro_ids::TextureID::from_u64)).or_else(|| value.as_str().and_then(|s| perro_ids::TextureID::parse_str(s).ok()))".to_string(),
+            FieldKind::Float64 => format!(
+                "if let Some(v) = value.as_f64() {{\n                    state.{} = v;\n                }}",
+                field.name
+            ),
+            FieldKind::String => format!(
+                "if let Some(v) = value.as_str().map(|s| s.to_string()) {{\n                    state.{} = v;\n                }}",
+                field.name
+            ),
+            FieldKind::ArcStr => format!(
+                "if let Some(v) = value.as_str().map(std::sync::Arc::<str>::from) {{\n                    state.{} = v;\n                }}",
+                field.name
+            ),
+            FieldKind::NodeID => format!(
+                "if let Some(v) = value.as_node().or_else(|| value.as_number().and_then(|n| n.as_i64_lossy()).and_then(|n| u64::try_from(n).ok()).map(perro_ids::NodeID::from_u64)).or_else(|| value.as_str().and_then(|s| perro_ids::NodeID::parse_str(s).ok())) {{\n                    state.{} = v;\n                }}",
+                field.name
+            ),
+            FieldKind::TextureID => format!(
+                "if let Some(v) = value.as_texture().or_else(|| value.as_number().and_then(|n| n.as_i64_lossy()).and_then(|n| u64::try_from(n).ok()).map(perro_ids::TextureID::from_u64)).or_else(|| value.as_str().and_then(|s| perro_ids::TextureID::parse_str(s).ok())) {{\n                    state.{} = v;\n                }}",
+                field.name
+            ),
         };
         out.push_str(&format!(
-            "        if var_id == {const_name} {{\n            if let Some(v) = {set_expr} {{\n                state.{} = v;\n            }}\n            return;\n        }}\n",
-            field.name
+            "            id if id == {const_name} => {{\n                {assign_block}\n            }}\n"
         ));
     }
+    out.push_str("            _ => {}\n");
+    out.push_str("        }\n");
     out
+}
+
+fn exact_signed_assign_block(ty: &str, field_name: &str) -> String {
+    match ty {
+        "i8" => format!(
+            "if let Some(perro_variant::Number::I8(v)) = value.as_number() {{\n                    state.{field_name} = v;\n                }}"
+        ),
+        "i16" => format!(
+            "if let Some(perro_variant::Number::I16(v)) = value.as_number() {{\n                    state.{field_name} = v;\n                }}"
+        ),
+        "i32" => format!(
+            "if let Some(perro_variant::Number::I32(v)) = value.as_number() {{\n                    state.{field_name} = v;\n                }}"
+        ),
+        "i64" => format!(
+            "if let Some(perro_variant::Number::I64(v)) = value.as_number() {{\n                    state.{field_name} = v;\n                }}"
+        ),
+        "i128" => format!(
+            "if let Some(perro_variant::Number::I128(v)) = value.as_number() {{\n                    state.{field_name} = v;\n                }}"
+        ),
+        // Number has no isize variant; accept only I64 then checked cast.
+        "isize" => format!(
+            "if let Some(perro_variant::Number::I64(v)) = value.as_number() {{\n                    if let Ok(v) = <isize>::try_from(v) {{\n                        state.{field_name} = v;\n                    }}\n                }}"
+        ),
+        _ => String::new(),
+    }
+}
+
+fn exact_unsigned_assign_block(ty: &str, field_name: &str) -> String {
+    match ty {
+        "u8" => format!(
+            "if let Some(perro_variant::Number::U8(v)) = value.as_number() {{\n                    state.{field_name} = v;\n                }}"
+        ),
+        "u16" => format!(
+            "if let Some(perro_variant::Number::U16(v)) = value.as_number() {{\n                    state.{field_name} = v;\n                }}"
+        ),
+        "u32" => format!(
+            "if let Some(perro_variant::Number::U32(v)) = value.as_number() {{\n                    state.{field_name} = v;\n                }}"
+        ),
+        "u64" => format!(
+            "if let Some(perro_variant::Number::U64(v)) = value.as_number() {{\n                    state.{field_name} = v;\n                }}"
+        ),
+        "u128" => format!(
+            "if let Some(perro_variant::Number::U128(v)) = value.as_number() {{\n                    state.{field_name} = v;\n                }}"
+        ),
+        // Number has no usize variant; accept only U64 then checked cast.
+        "usize" => format!(
+            "if let Some(perro_variant::Number::U64(v)) = value.as_number() {{\n                    if let Ok(v) = <usize>::try_from(v) {{\n                        state.{field_name} = v;\n                    }}\n                }}"
+        ),
+        _ => String::new(),
+    }
 }
 
 fn generate_attributes_of_body(fields: &[StateField]) -> String {

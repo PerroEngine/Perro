@@ -10,6 +10,7 @@ type SelfNodeType = MeshInstance3D;
 #[derive(Default)]
 pub struct ExampleState {
     speed: f32,
+    bob: i32
 }
 
 ///@Script
