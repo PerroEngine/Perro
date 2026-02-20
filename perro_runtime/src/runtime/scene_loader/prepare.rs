@@ -10,6 +10,7 @@ use perro_scene::{
     Parser, RuntimeNodeData, RuntimeNodeEntry, RuntimeScene, RuntimeValue, StaticNodeData,
     StaticNodeEntry, StaticNodeType, StaticScene, StaticSceneValue,
 };
+use perro_render_bridge::Material3D;
 use std::{borrow::Cow, time::{Duration, Instant}};
 
 pub(super) struct RuntimeSceneLoadStats {
@@ -34,6 +35,8 @@ pub(super) struct PendingNode {
     pub(super) node: SceneNode,
     pub(super) texture_source: Option<String>,
     pub(super) mesh_source: Option<String>,
+    pub(super) material_source: Option<String>,
+    pub(super) material_inline: Option<Material3D>,
 }
 
 pub(super) fn load_runtime_scene_from_disk(
@@ -56,7 +59,8 @@ pub(super) fn prepare_static_scene(scene: &'static StaticScene) -> Result<Prepar
     let mut scripts = Vec::new();
 
     for static_node in scene.nodes {
-        let (mut node, texture_source, mesh_source) = scene_node_from_static_entry(static_node)?;
+        let (mut node, texture_source, mesh_source, material_source, material_inline) =
+            scene_node_from_static_entry(static_node)?;
         if let Some(script) = static_node.script {
             scripts.push(PendingScript {
                 node_key: static_node.key.0.to_string(),
@@ -70,6 +74,8 @@ pub(super) fn prepare_static_scene(scene: &'static StaticScene) -> Result<Prepar
             node,
             texture_source,
             mesh_source,
+            material_source,
+            material_inline,
         });
     }
 
@@ -86,7 +92,8 @@ pub(super) fn prepare_runtime_scene(scene: RuntimeScene) -> Result<PreparedScene
     let mut scripts = Vec::new();
 
     for entry in nodes {
-        let (mut node, texture_source, mesh_source) = scene_node_from_runtime_entry(&entry)?;
+        let (mut node, texture_source, mesh_source, material_source, material_inline) =
+            scene_node_from_runtime_entry(&entry)?;
         if let Some(script) = entry.script {
             scripts.push(PendingScript {
                 node_key: entry.key.clone(),
@@ -100,6 +107,8 @@ pub(super) fn prepare_runtime_scene(scene: RuntimeScene) -> Result<PreparedScene
             node,
             texture_source,
             mesh_source,
+            material_source,
+            material_inline,
         });
     }
 
@@ -111,7 +120,16 @@ pub(super) fn prepare_runtime_scene(scene: RuntimeScene) -> Result<PreparedScene
 }
 fn scene_node_from_static_entry(
     entry: &StaticNodeEntry,
-) -> Result<(SceneNode, Option<String>, Option<String>), String> {
+) -> Result<
+    (
+        SceneNode,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<Material3D>,
+    ),
+    String,
+> {
     let mut node = SceneNode::new(scene_node_data_from_static(&entry.data)?);
     if let Some(name) = entry.name {
         node.name = Cow::Borrowed(name);
@@ -120,13 +138,40 @@ fn scene_node_from_static_entry(
         node.script = Some(Cow::Borrowed(script));
     }
     let texture_source = extract_texture_source_static(&entry.data);
-    let mesh_source = extract_mesh_source_static(&entry.data);
-    Ok((node, texture_source, mesh_source))
+    let mesh_source_explicit = extract_mesh_source_static(&entry.data);
+    let material_source_explicit = extract_material_source_static(&entry.data);
+    let material_inline = extract_material_inline_static(&entry.data);
+    let model_source = extract_model_source_static(&entry.data);
+    let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref() {
+        (
+            Some(format!("{model}:mesh=0")),
+            Some(format!("{model}:mat=0")),
+            None,
+        )
+    } else {
+        (mesh_source_explicit, material_source_explicit, material_inline)
+    };
+    Ok((
+        node,
+        texture_source,
+        mesh_source,
+        material_source,
+        material_inline,
+    ))
 }
 
 fn scene_node_from_runtime_entry(
     entry: &RuntimeNodeEntry,
-) -> Result<(SceneNode, Option<String>, Option<String>), String> {
+) -> Result<
+    (
+        SceneNode,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<Material3D>,
+    ),
+    String,
+> {
     let mut node = SceneNode::new(scene_node_data_from_runtime(&entry.data)?);
     if let Some(name) = &entry.name {
         node.name = Cow::Owned(name.clone());
@@ -135,8 +180,26 @@ fn scene_node_from_runtime_entry(
         node.script = Some(Cow::Owned(script.clone()));
     }
     let texture_source = extract_texture_source(&entry.data);
-    let mesh_source = extract_mesh_source(&entry.data);
-    Ok((node, texture_source, mesh_source))
+    let mesh_source_explicit = extract_mesh_source(&entry.data);
+    let material_source_explicit = extract_material_source(&entry.data);
+    let material_inline = extract_material_inline(&entry.data);
+    let model_source = extract_model_source(&entry.data);
+    let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref() {
+        (
+            Some(format!("{model}:mesh=0")),
+            Some(format!("{model}:mat=0")),
+            None,
+        )
+    } else {
+        (mesh_source_explicit, material_source_explicit, material_inline)
+    };
+    Ok((
+        node,
+        texture_source,
+        mesh_source,
+        material_source,
+        material_inline,
+    ))
 }
 
 fn scene_node_data_from_runtime(data: &RuntimeNodeData) -> Result<SceneNodeData, String> {
@@ -887,6 +950,14 @@ fn as_asset_source(value: &RuntimeValue) -> Option<String> {
     }
 }
 
+fn as_color4(value: &RuntimeValue) -> Option<[f32; 4]> {
+    match value {
+        RuntimeValue::Vec4 { x, y, z, w } => Some([*x, *y, *z, *w]),
+        RuntimeValue::Vec3 { x, y, z } => Some([*x, *y, *z, 1.0]),
+        _ => None,
+    }
+}
+
 fn extract_texture_source(data: &RuntimeNodeData) -> Option<String> {
     if data.ty != "Sprite2D" {
         return None;
@@ -903,6 +974,82 @@ fn extract_mesh_source(data: &RuntimeNodeData) -> Option<String> {
     data.fields
         .iter()
         .find_map(|(name, value)| (name == "mesh").then(|| as_asset_source(value)).flatten())
+}
+
+fn extract_material_source(data: &RuntimeNodeData) -> Option<String> {
+    if data.ty != "MeshInstance3D" {
+        return None;
+    }
+    data.fields.iter().find_map(|(name, value)| {
+        (name == "material")
+            .then(|| as_asset_source(value))
+            .flatten()
+    })
+}
+
+fn extract_material_inline(data: &RuntimeNodeData) -> Option<Material3D> {
+    if data.ty != "MeshInstance3D" {
+        return None;
+    }
+    data.fields.iter().find_map(|(name, value)| {
+        if name != "material" {
+            return None;
+        }
+        match value {
+            RuntimeValue::Object(entries) => material_from_runtime_object(entries),
+            _ => None,
+        }
+    })
+}
+
+fn extract_model_source(data: &RuntimeNodeData) -> Option<String> {
+    if data.ty != "MeshInstance3D" {
+        return None;
+    }
+    data.fields
+        .iter()
+        .find_map(|(name, value)| (name == "model").then(|| as_asset_source(value)).flatten())
+}
+
+fn material_from_runtime_object(entries: &[(String, RuntimeValue)]) -> Option<Material3D> {
+    let mut material = Material3D::default();
+    let mut any = false;
+    for (name, value) in entries {
+        match name.as_str() {
+            "roughness" => {
+                if let Some(v) = as_f32(value) {
+                    material.roughness = v;
+                    any = true;
+                }
+            }
+            "metallic" => {
+                if let Some(v) = as_f32(value) {
+                    material.metallic = v;
+                    any = true;
+                }
+            }
+            "ao" => {
+                if let Some(v) = as_f32(value) {
+                    material.ao = v;
+                    any = true;
+                }
+            }
+            "emissive" => {
+                if let Some(v) = as_f32(value) {
+                    material.emissive = v;
+                    any = true;
+                }
+            }
+            "base_color" | "albedo" | "color" => {
+                if let Some(color) = as_color4(value) {
+                    material.base_color = color;
+                    any = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    any.then_some(material)
 }
 
 // Static value parsers
@@ -958,6 +1105,14 @@ fn as_asset_source_static(value: &StaticSceneValue) -> Option<String> {
     }
 }
 
+fn as_color4_static(value: &StaticSceneValue) -> Option<[f32; 4]> {
+    match value {
+        StaticSceneValue::Vec4 { x, y, z, w } => Some([*x, *y, *z, *w]),
+        StaticSceneValue::Vec3 { x, y, z } => Some([*x, *y, *z, 1.0]),
+        _ => None,
+    }
+}
+
 fn extract_texture_source_static(data: &StaticNodeData) -> Option<String> {
     if data.ty != StaticNodeType::Sprite2D {
         return None;
@@ -976,4 +1131,80 @@ fn extract_mesh_source_static(data: &StaticNodeData) -> Option<String> {
     data.fields
         .iter()
         .find_map(|(name, value)| (*name == "mesh").then(|| as_asset_source_static(value)).flatten())
+}
+
+fn extract_material_source_static(data: &StaticNodeData) -> Option<String> {
+    if data.ty != StaticNodeType::MeshInstance3D {
+        return None;
+    }
+    data.fields.iter().find_map(|(name, value)| {
+        (*name == "material")
+            .then(|| as_asset_source_static(value))
+            .flatten()
+    })
+}
+
+fn extract_material_inline_static(data: &StaticNodeData) -> Option<Material3D> {
+    if data.ty != StaticNodeType::MeshInstance3D {
+        return None;
+    }
+    data.fields.iter().find_map(|(name, value)| {
+        if *name != "material" {
+            return None;
+        }
+        match value {
+            StaticSceneValue::Object(entries) => material_from_static_object(entries),
+            _ => None,
+        }
+    })
+}
+
+fn extract_model_source_static(data: &StaticNodeData) -> Option<String> {
+    if data.ty != StaticNodeType::MeshInstance3D {
+        return None;
+    }
+    data.fields
+        .iter()
+        .find_map(|(name, value)| (*name == "model").then(|| as_asset_source_static(value)).flatten())
+}
+
+fn material_from_static_object(entries: &[(&str, StaticSceneValue)]) -> Option<Material3D> {
+    let mut material = Material3D::default();
+    let mut any = false;
+    for (name, value) in entries {
+        match *name {
+            "roughness" => {
+                if let Some(v) = as_f32_static(value) {
+                    material.roughness = v;
+                    any = true;
+                }
+            }
+            "metallic" => {
+                if let Some(v) = as_f32_static(value) {
+                    material.metallic = v;
+                    any = true;
+                }
+            }
+            "ao" => {
+                if let Some(v) = as_f32_static(value) {
+                    material.ao = v;
+                    any = true;
+                }
+            }
+            "emissive" => {
+                if let Some(v) = as_f32_static(value) {
+                    material.emissive = v;
+                    any = true;
+                }
+            }
+            "base_color" | "albedo" | "color" => {
+                if let Some(color) = as_color4_static(value) {
+                    material.base_color = color;
+                    any = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    any.then_some(material)
 }

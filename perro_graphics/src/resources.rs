@@ -1,4 +1,5 @@
 use perro_ids::{MaterialID, MeshID, TextureID};
+use perro_render_bridge::Material3D;
 use std::collections::HashMap;
 
 #[derive(Default)]
@@ -58,6 +59,9 @@ pub struct ResourceStore {
     mesh_by_source: HashMap<String, MeshID>,
     mesh_source_by_id: HashMap<MeshID, String>,
     texture_by_source: HashMap<String, TextureID>,
+    material_by_id: HashMap<MaterialID, Material3D>,
+    material_by_source: HashMap<String, MaterialID>,
+    material_source_by_id: HashMap<MaterialID, String>,
 }
 
 impl ResourceStore {
@@ -89,9 +93,21 @@ impl ResourceStore {
     }
 
     #[inline]
-    pub fn create_material(&mut self) -> MaterialID {
+    pub fn create_material(&mut self, material: Material3D, source: Option<&str>) -> MaterialID {
+        if let Some(source) = source {
+            if let Some(id) = self.material_by_source.get(source).copied() {
+                return id;
+            }
+        }
         let (index, generation) = self.materials.create_parts();
-        MaterialID::from_parts(index, generation)
+        let id = MaterialID::from_parts(index, generation);
+        self.material_by_id.insert(id, material);
+        if let Some(source) = source {
+            let source = source.to_string();
+            self.material_by_source.insert(source.clone(), id);
+            self.material_source_by_id.insert(id, source);
+        }
+        id
     }
 
     #[inline]
@@ -114,6 +130,11 @@ impl ResourceStore {
         self.materials.contains_parts(id.index(), id.generation())
     }
 
+    #[inline]
+    pub fn material(&self, id: MaterialID) -> Option<Material3D> {
+        self.material_by_id.get(&id).copied()
+    }
+
     #[cfg(test)]
     #[inline]
     fn remove_texture_for_test(&mut self, id: TextureID) -> bool {
@@ -124,6 +145,7 @@ impl ResourceStore {
 #[cfg(test)]
 mod tests {
     use super::ResourceStore;
+    use perro_render_bridge::Material3D;
 
     #[test]
     fn texture_slot_reuse_bumps_generation() {
@@ -138,5 +160,20 @@ mod tests {
         assert_ne!(first.generation(), second.generation());
         assert!(!store.has_texture(first));
         assert!(store.has_texture(second));
+    }
+
+    #[test]
+    fn material_source_reuses_existing_id() {
+        let mut store = ResourceStore::new();
+        let mat = Material3D::default();
+        let first = store.create_material(mat, Some("res://materials/base.pmat"));
+        let second = store.create_material(
+            Material3D {
+                roughness: 1.0,
+                ..Material3D::default()
+            },
+            Some("res://materials/base.pmat"),
+        );
+        assert_eq!(first, second);
     }
 }

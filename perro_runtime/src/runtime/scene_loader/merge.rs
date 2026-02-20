@@ -29,6 +29,8 @@ pub(super) fn merge_prepared_scene(
             node,
             texture_source,
             mesh_source,
+            material_source,
+            material_inline,
         } = pending;
 
         if key_to_id.contains_key(&key) {
@@ -41,6 +43,12 @@ pub(super) fn merge_prepared_scene(
         }
         if let Some(source) = mesh_source {
             runtime.render_3d.mesh_sources.insert(node_id, source);
+        }
+        if let Some(source) = material_source {
+            runtime.render_3d.material_sources.insert(node_id, source);
+        }
+        if let Some(material) = material_inline {
+            runtime.render_3d.material_overrides.insert(node_id, material);
         }
         if let Some(parent_key) = parent_key {
             parent_pairs.push((key.clone(), parent_key));

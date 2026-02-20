@@ -29,6 +29,7 @@ perro_app::entry::run_static_embedded_project(
 1080,
 ASSETS_BRK,
 static_assets::scenes::lookup_scene,
+static_assets::materials::lookup_material,
 Some(scripts::SCRIPT_REGISTRY),
 ).expect("failed to run embedded static project");
 }

@@ -435,7 +435,6 @@ perro_scripting = "0.1.0"
 perro_api = "0.1.0"
 perro_core = "0.1.0"
 perro_scene = "0.1.0"
-phf = {{ version = "0.11", features = ["macros"] }}
 scripts = {{ path = "../scripts" }}
 
 [profile.release]

@@ -73,6 +73,7 @@ pub fn run_static_embedded_project(
     virtual_height: u32,
     assets_brk: &'static [u8],
     scene_lookup: perro_runtime::StaticSceneLookup,
+    material_lookup: perro_runtime::StaticMaterialLookup,
     static_script_registry: Option<&'static [(&'static str, ScriptConstructor<Runtime>)]>,
 ) -> Result<(), ProjectLoadError> {
     let mut project = RuntimeProject::from_static(
@@ -88,6 +89,7 @@ pub fn run_static_embedded_project(
 
     project = project
         .with_static_scene_lookup(scene_lookup)
+        .with_static_material_lookup(material_lookup)
         .with_brk_bytes(assets_brk);
 
     let window_title = project.config.name.clone();

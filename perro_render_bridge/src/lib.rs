@@ -56,6 +56,27 @@ pub struct SpotLight3DState {
     pub outer_angle_radians: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Material3D {
+    pub base_color: [f32; 4],
+    pub roughness: f32,
+    pub metallic: f32,
+    pub ao: f32,
+    pub emissive: f32,
+}
+
+impl Default for Material3D {
+    fn default() -> Self {
+        Self {
+            base_color: [0.85, 0.85, 0.85, 1.0],
+            roughness: 0.5,
+            metallic: 0.0,
+            ao: 1.0,
+            emissive: 0.0,
+        }
+    }
+}
+
 impl Default for Camera3DState {
     fn default() -> Self {
         Self {
@@ -106,6 +127,8 @@ pub enum ResourceCommand {
     CreateMaterial {
         request: RenderRequestID,
         owner: NodeID,
+        material: Material3D,
+        source: Option<String>,
     },
 }
 

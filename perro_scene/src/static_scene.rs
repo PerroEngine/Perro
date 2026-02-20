@@ -36,4 +36,5 @@ pub enum SceneValue {
     Vec4 { x: f32, y: f32, z: f32, w: f32 },
     Str(&'static str),
     Key(SceneKey),
+    Object(&'static [(&'static str, SceneValue)]),
 }

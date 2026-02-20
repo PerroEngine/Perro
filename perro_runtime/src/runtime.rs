@@ -8,7 +8,7 @@ use ahash::{AHashMap, AHashSet};
 use libloading::Library;
 use perro_core::Spatial;
 use perro_ids::{NodeID, TextureID};
-use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
+use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
 use perro_scripting::ScriptConstructor;
 use std::sync::Arc;
 
@@ -196,6 +196,8 @@ impl Render2DState {
 struct Render3DState {
     traversal_ids: Vec<NodeID>,
     mesh_sources: AHashMap<NodeID, String>,
+    material_sources: AHashMap<NodeID, String>,
+    material_overrides: AHashMap<NodeID, Material3D>,
 }
 
 impl Render3DState {
@@ -203,6 +205,8 @@ impl Render3DState {
         Self {
             traversal_ids: Vec::new(),
             mesh_sources: AHashMap::default(),
+            material_sources: AHashMap::default(),
+            material_overrides: AHashMap::default(),
         }
     }
 }

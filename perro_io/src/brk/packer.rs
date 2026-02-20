@@ -11,7 +11,7 @@ use super::common::{
 };
 
 // Scripts (compiled into binary)
-const SKIP_SCRIPT_EXT: &[&str] = &["pup"];
+const SKIP_SCRIPT_EXT: &[&str] = &["rs"];
 
 // Scene and UI data (compiled into scenes.rs and fur.rs)
 const SKIP_SCENE_FUR_EXT: &[&str] = &["scn", "fur"];
@@ -24,12 +24,16 @@ const SKIP_IMAGES: &[&str] = &[
 // Models are converted to pmesh (static assets) in release
 const SKIP_MODELS: &[&str] = &["glb", "gltf"];
 
+// Resources compiled into static runtime tables
+const SKIP_RESOURCES: &[&str] = &["pmat"];
+
 fn should_skip(path: &str) -> bool {
     let ext = path.rsplit('.').next().unwrap_or("");
     SKIP_SCRIPT_EXT.contains(&ext)
         || SKIP_SCENE_FUR_EXT.contains(&ext)
         || SKIP_IMAGES.contains(&ext)
         || SKIP_MODELS.contains(&ext)
+        || SKIP_RESOURCES.contains(&ext)
 }
 
 #[derive(Debug, Clone)]
@@ -123,4 +127,17 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path) -> io::Res
     write_header(&mut file, &header)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_skip;
+
+    #[test]
+    fn pmat_is_skipped_as_compiled_resource() {
+        assert!(should_skip("materials/mat.pmat"));
+        assert!(should_skip("scene/main.scn"));
+        assert!(should_skip("mesh/robot.glb"));
+        assert!(!should_skip("audio/music.ogg"));
+    }
 }

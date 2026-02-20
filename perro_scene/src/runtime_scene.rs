@@ -32,4 +32,5 @@ pub enum RuntimeValue {
     Vec4 { x: f32, y: f32, z: f32, w: f32 },
     Str(String),
     Key(String),
+    Object(Vec<(String, RuntimeValue)>),
 }

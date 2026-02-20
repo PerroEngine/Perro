@@ -135,6 +135,45 @@ impl<'a> Parser<'a> {
                 RuntimeValue::Bool(false)
             }
 
+            Token::LBrace => {
+                self.advance();
+                let mut entries = Vec::new();
+                loop {
+                    if self.current == Token::RBrace {
+                        self.advance();
+                        break;
+                    }
+
+                    let key = match &self.current {
+                        Token::Ident(name) => {
+                            let out = name.clone();
+                            self.advance();
+                            out
+                        }
+                        Token::String(name) => {
+                            let out = name.clone();
+                            self.advance();
+                            out
+                        }
+                        other => panic!("Expected object key, got {:?}", other),
+                    };
+                    self.expect(Token::Colon);
+                    let value = self.parse_value();
+                    entries.push((key, value));
+
+                    if self.current == Token::Comma {
+                        self.advance();
+                        continue;
+                    }
+                    if self.current == Token::RBrace {
+                        self.advance();
+                        break;
+                    }
+                    panic!("Expected ',' or '}}' in object literal, got {:?}", self.current);
+                }
+                RuntimeValue::Object(entries)
+            }
+
             _ => panic!("Invalid value token {:?}", self.current),
         }
     }
@@ -276,6 +315,14 @@ impl<'a> Parser<'a> {
         let mut parser = Parser::new(self.src);
         parser.vars = vars;
         parser.parse_scene_inner()
+    }
+
+    pub fn parse_value_literal(mut self) -> RuntimeValue {
+        let value = self.parse_value();
+        if self.current != Token::Eof {
+            panic!("Expected end of value, got {:?}", self.current);
+        }
+        value
     }
 }
 

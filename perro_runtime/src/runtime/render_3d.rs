@@ -1,9 +1,11 @@
 use super::Runtime;
 use perro_core::SceneNodeData;
 use perro_ids::{MaterialID, MeshID, NodeID};
+use perro_io::load_asset;
+use perro_scene::{Parser, RuntimeValue};
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, Command3D, PointLight3DState, RayLight3DState,
-    RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
+    AmbientLight3DState, Camera3DState, Command3D, Material3D, PointLight3DState,
+    RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
 };
 
 impl Runtime {
@@ -224,12 +226,27 @@ impl Runtime {
                 }
             }
             if material_id.is_nil() {
+                let source = self.render_3d.material_sources.get(&node_id).cloned();
+                let material = self
+                    .render_3d
+                    .material_overrides
+                    .get(&node_id)
+                    .copied()
+                    .or_else(|| {
+                        self.render_3d
+                            .material_sources
+                            .get(&node_id)
+                            .and_then(|source| load_material_from_source(self, source))
+                    })
+                    .unwrap_or_else(Material3D::default);
                 if !self.render.is_inflight(request) {
                     self.render.mark_inflight(request);
                     self.queue_render_command(RenderCommand::Resource(
                         ResourceCommand::CreateMaterial {
                             request,
                             owner: node_id,
+                            material,
+                            source,
                         },
                     ));
                 }
@@ -267,6 +284,151 @@ fn quaternion_forward(rotation: perro_core::Quaternion) -> [f32; 3] {
         [fx * inv_len, fy * inv_len, fz * inv_len]
     } else {
         [0.0, 0.0, -1.0]
+    }
+}
+
+fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material3D> {
+    let source = source.trim();
+    if source.is_empty() {
+        return None;
+    }
+
+    let (path, fragment) = split_source_fragment(source);
+    if path.ends_with(".pmat") {
+        if let Some(lookup) = runtime
+            .project()
+            .and_then(|project| project.static_material_lookup)
+        {
+            if let Some(material) = lookup(path).copied() {
+                return Some(material);
+            }
+        }
+        return load_pmat(path);
+    }
+
+    if path.ends_with(".glb") || path.ends_with(".gltf") {
+        let index = parse_fragment_index(fragment, &["mat", "material"]).unwrap_or(0);
+        return Some(material_from_glb_index(index));
+    }
+
+    None
+}
+
+fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
+    let Some((path, selector)) = source.rsplit_once(':') else {
+        return (source, None);
+    };
+    if path.is_empty() {
+        return (source, None);
+    }
+    if !selector.contains('=') {
+        return (source, None);
+    }
+    if selector.contains('/') || selector.contains('\\') {
+        return (source, None);
+    }
+    (path, Some(selector))
+}
+
+fn parse_fragment_index(fragment: Option<&str>, keys: &[&str]) -> Option<u32> {
+    let fragment = fragment?;
+    for segment in fragment.split('&') {
+        let (key, value) = segment.split_once('=')?;
+        let key = key.trim();
+        let value = value.trim();
+        if keys.iter().any(|candidate| *candidate == key) {
+            if let Ok(parsed) = value.parse::<u32>() {
+                return Some(parsed);
+            }
+        }
+    }
+    None
+}
+
+fn material_from_glb_index(index: u32) -> Material3D {
+    let mut x = index ^ 0x9E37_79B9;
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7FEB_352D);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846C_A68B);
+    x ^= x >> 16;
+
+    let r = ((x & 0xFF) as f32 / 255.0) * 0.65 + 0.2;
+    let g = (((x >> 8) & 0xFF) as f32 / 255.0) * 0.65 + 0.2;
+    let b = (((x >> 16) & 0xFF) as f32 / 255.0) * 0.65 + 0.2;
+    Material3D {
+        base_color: [r, g, b, 1.0],
+        roughness: 0.5,
+        metallic: 0.0,
+        ao: 1.0,
+        emissive: 0.0,
+    }
+}
+
+fn load_pmat(source: &str) -> Option<Material3D> {
+    let bytes = load_asset(source).ok()?;
+    let text = std::str::from_utf8(&bytes).ok()?;
+    let value = std::panic::catch_unwind(|| Parser::new(text).parse_value_literal()).ok()?;
+    material_from_runtime_value(&value)
+}
+
+fn material_from_runtime_value(value: &RuntimeValue) -> Option<Material3D> {
+    let RuntimeValue::Object(entries) = value else {
+        return None;
+    };
+    let mut out = Material3D::default();
+    let mut any = false;
+    for (name, value) in entries {
+        match name.as_str() {
+            "roughness" => {
+                if let Some(v) = runtime_as_f32(value) {
+                    out.roughness = v;
+                    any = true;
+                }
+            }
+            "metallic" => {
+                if let Some(v) = runtime_as_f32(value) {
+                    out.metallic = v;
+                    any = true;
+                }
+            }
+            "ao" => {
+                if let Some(v) = runtime_as_f32(value) {
+                    out.ao = v;
+                    any = true;
+                }
+            }
+            "emissive" => {
+                if let Some(v) = runtime_as_f32(value) {
+                    out.emissive = v;
+                    any = true;
+                }
+            }
+            "base_color" | "albedo" | "color" => {
+                if let Some(color) = runtime_as_color4(value) {
+                    out.base_color = color;
+                    any = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    any.then_some(out)
+}
+
+fn runtime_as_f32(value: &RuntimeValue) -> Option<f32> {
+    match value {
+        RuntimeValue::F32(v) => Some(*v),
+        RuntimeValue::I32(v) => Some(*v as f32),
+        _ => None,
+    }
+}
+
+fn runtime_as_color4(value: &RuntimeValue) -> Option<[f32; 4]> {
+    match value {
+        RuntimeValue::Vec4 { x, y, z, w } => Some([*x, *y, *z, *w]),
+        RuntimeValue::Vec3 { x, y, z } => Some([*x, *y, *z, 1.0]),
+        _ => None,
     }
 }
 

@@ -76,8 +76,13 @@ impl PerroGraphics {
                         self.events
                             .push(RenderEvent::TextureCreated { request, id });
                     }
-                    ResourceCommand::CreateMaterial { request, .. } => {
-                        let id = self.resources.create_material();
+                    ResourceCommand::CreateMaterial {
+                        request,
+                        material,
+                        source,
+                        ..
+                    } => {
+                        let id = self.resources.create_material(material, source.as_deref());
                         self.events
                             .push(RenderEvent::MaterialCreated { request, id });
                     }
@@ -210,8 +215,8 @@ mod tests {
     use crate::backend::GraphicsBackend;
     use perro_ids::{NodeID, TextureID};
     use perro_render_bridge::{
-        Camera3DState, Command2D, Command3D, RenderBridge, RenderCommand, ResourceCommand,
-        Sprite2DCommand,
+        Camera3DState, Command2D, Command3D, Material3D, RenderBridge, RenderCommand,
+        ResourceCommand, Sprite2DCommand,
     };
 
     #[test]
@@ -271,6 +276,8 @@ mod tests {
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
             request: perro_render_bridge::RenderRequestID::new(1002),
             owner: node_a,
+            material: Material3D::default(),
+            source: None,
         }));
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
             request: perro_render_bridge::RenderRequestID::new(1003),
@@ -280,6 +287,8 @@ mod tests {
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
             request: perro_render_bridge::RenderRequestID::new(1004),
             owner: node_b,
+            material: Material3D::default(),
+            source: None,
         }));
         graphics.draw_frame();
 

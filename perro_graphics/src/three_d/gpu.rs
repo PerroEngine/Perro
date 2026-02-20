@@ -6,7 +6,7 @@ use crate::resources::ResourceStore;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3};
 use mesh_presets::build_builtin_mesh_buffer;
-use perro_render_bridge::Camera3DState;
+use perro_render_bridge::{Camera3DState, Material3D};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
@@ -273,17 +273,22 @@ impl Gpu3D {
         for draw in draws {
             let source = resources.mesh_source(draw.mesh).unwrap_or("__cube__");
             let mesh = self.mesh_ranges.get(source).copied().unwrap_or(default_mesh);
+            let material = resources
+                .material(draw.material)
+                .unwrap_or_else(Material3D::default);
             let instance = self.staged_instances.len() as u32;
             self.staged_instances.push(InstanceGpu {
                 model_0: draw.model[0],
                 model_1: draw.model[1],
                 model_2: draw.model[2],
                 model_3: draw.model[3],
-                color: color_from_material(draw.material.index(), draw.material.generation()),
-                pbr_params: pbr_params_from_material(
-                    draw.material.index(),
-                    draw.material.generation(),
-                ),
+                color: material.base_color,
+                pbr_params: [
+                    material.roughness,
+                    material.metallic,
+                    material.ao,
+                    material.emissive,
+                ],
             });
             if let Some(batch) = self.draw_batches.last_mut() {
                 if batch.mesh.index_start == mesh.index_start
@@ -634,36 +639,4 @@ fn build_scene_uniform(
     scene.ambient_and_counts[2] = spot_count;
 
     scene
-}
-
-fn color_from_material(index: u32, generation: u32) -> [f32; 4] {
-    let mut x = index ^ (generation.rotate_left(16));
-    x ^= x >> 17;
-    x = x.wrapping_mul(0xed5ad4bb);
-    x ^= x >> 11;
-    x = x.wrapping_mul(0xac4c1b51);
-    x ^= x >> 15;
-
-    let r = ((x & 0xFF) as f32 / 255.0) * 0.55 + 0.35;
-    let g = (((x >> 8) & 0xFF) as f32 / 255.0) * 0.55 + 0.35;
-    let b = (((x >> 16) & 0xFF) as f32 / 255.0) * 0.55 + 0.35;
-    [r, g, b, 1.0]
-}
-
-fn pbr_params_from_material(index: u32, generation: u32) -> [f32; 4] {
-    let mut x = index.rotate_left(7) ^ generation.rotate_left(19);
-    x ^= x >> 16;
-    x = x.wrapping_mul(0x7feb352d);
-    x ^= x >> 15;
-    x = x.wrapping_mul(0x846ca68b);
-    x ^= x >> 16;
-
-    let n0 = (x & 0xFF) as f32 / 255.0;
-    let n1 = ((x >> 8) & 0xFF) as f32 / 255.0;
-
-    let roughness = 0.25 + n0 * 0.65;
-    let metallic = n1 * 0.2;
-    let ao = 1.0;
-    let emissive = 0.0;
-    [roughness, metallic, ao, emissive]
 }

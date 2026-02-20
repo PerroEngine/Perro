@@ -6,7 +6,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-phf = { version = "0.11", features = ["macros"] }
+perro_render_bridge = "0.1.0"
 perro_app = "0.1.0"
 perro_ids = "0.1.0"
 perro_scripting = "0.1.0"

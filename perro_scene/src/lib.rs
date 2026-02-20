@@ -282,6 +282,39 @@ mod tests {
     }
 
     #[test]
+    fn parse_object_literal_and_variable_reference() {
+        let src = r#"
+        @root = main
+        @mat = { roughness: 1.0, metallic: 0.2, base_color: (0.2, 0.3, 0.4, 1.0) }
+
+        [main]
+        [MeshInstance3D]
+            model = "res://models/robot.glb"
+            material = @mat
+        [/MeshInstance3D]
+        [/main]
+        "#;
+
+        let scene = Parser::new(src).parse_scene();
+        let main = scene.nodes.iter().find(|n| n.key == "main").unwrap();
+        assert_eq!(main.data.ty, "MeshInstance3D");
+        let material = main
+            .data
+            .fields
+            .iter()
+            .find(|(name, _)| name == "material")
+            .unwrap();
+        match &material.1 {
+            RuntimeValue::Object(entries) => {
+                assert!(entries.iter().any(|(k, _)| k == "roughness"));
+                assert!(entries.iter().any(|(k, _)| k == "metallic"));
+                assert!(entries.iter().any(|(k, _)| k == "base_color"));
+            }
+            _ => panic!("expected material object"),
+        }
+    }
+
+    #[test]
     fn static_scene_equivalent_to_parsed() {
         // Define a static scene manually
         const MAIN_FIELDS: &[(&str, StaticSceneValue)] =
