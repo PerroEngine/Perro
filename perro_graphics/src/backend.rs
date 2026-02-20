@@ -108,6 +108,15 @@ impl PerroGraphics {
                     Command3D::SetCamera { camera } => {
                         self.renderer_3d.set_camera(camera);
                     }
+                    Command3D::SetRayLight { node, light } => {
+                        self.renderer_3d.set_ray_light(node, light);
+                    }
+                    Command3D::SetPointLight { node, light } => {
+                        self.renderer_3d.set_point_light(node, light);
+                    }
+                    Command3D::SetSpotLight { node, light } => {
+                        self.renderer_3d.set_spot_light(node, light);
+                    }
                     Command3D::RemoveNode { node } => {
                         self.renderer_3d.remove_node(node);
                     }
@@ -175,13 +184,14 @@ impl GraphicsBackend for PerroGraphics {
         let commands = self.frame.take_pending();
         self.process_commands(commands);
         let (camera_2d, _stats, upload) = self.renderer_2d.prepare_frame(&self.resources);
-        let (camera_3d, _stats_3d) = self.renderer_3d.prepare_frame(&self.resources);
+        let (camera_3d, _stats_3d, lighting_3d) = self.renderer_3d.prepare_frame(&self.resources);
         let draws_3d: Vec<_> = self.renderer_3d.retained_draws().collect();
 
         if let Some(gpu) = &mut self.gpu {
             gpu.render(
                 &self.resources,
                 camera_3d,
+                &lighting_3d,
                 &draws_3d,
                 camera_2d,
                 self.renderer_2d.retained_rects(),

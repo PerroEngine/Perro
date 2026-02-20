@@ -2,7 +2,8 @@ use super::Runtime;
 use perro_core::SceneNodeData;
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_render_bridge::{
-    Camera3DState, Command3D, RenderCommand, RenderRequestID, ResourceCommand,
+    Camera3DState, Command3D, PointLight3DState, RayLight3DState, RenderCommand, RenderRequestID,
+    ResourceCommand, SpotLight3DState,
 };
 
 impl Runtime {
@@ -41,6 +42,72 @@ impl Runtime {
             });
             if let Some(camera) = camera_data {
                 self.queue_render_command(RenderCommand::ThreeD(Command3D::SetCamera { camera }));
+            }
+
+            let ray_light_data = self.nodes.get(node_id).and_then(|node| match &node.data {
+                SceneNodeData::RayLight3D(light) if light.active && light.visible => {
+                    Some(RayLight3DState {
+                        direction: quaternion_forward(light.transform.rotation),
+                        color: light.color,
+                        intensity: light.intensity.max(0.0),
+                    })
+                }
+                _ => None,
+            });
+            if let Some(light) = ray_light_data {
+                self.queue_render_command(RenderCommand::ThreeD(Command3D::SetRayLight {
+                    node: node_id,
+                    light,
+                }));
+            }
+
+            let point_light_data = self.nodes.get(node_id).and_then(|node| match &node.data {
+                SceneNodeData::PointLight3D(light) if light.active && light.visible => {
+                    Some(PointLight3DState {
+                        position: [
+                            light.transform.position.x,
+                            light.transform.position.y,
+                            light.transform.position.z,
+                        ],
+                        color: light.color,
+                        intensity: light.intensity.max(0.0),
+                        range: light.range.max(0.001),
+                    })
+                }
+                _ => None,
+            });
+            if let Some(light) = point_light_data {
+                self.queue_render_command(RenderCommand::ThreeD(Command3D::SetPointLight {
+                    node: node_id,
+                    light,
+                }));
+            }
+
+            let spot_light_data = self.nodes.get(node_id).and_then(|node| match &node.data {
+                SceneNodeData::SpotLight3D(light) if light.active && light.visible => {
+                    Some(SpotLight3DState {
+                        position: [
+                            light.transform.position.x,
+                            light.transform.position.y,
+                            light.transform.position.z,
+                        ],
+                        direction: quaternion_forward(light.transform.rotation),
+                        color: light.color,
+                        intensity: light.intensity.max(0.0),
+                        range: light.range.max(0.001),
+                        inner_angle_radians: light.inner_angle_radians.max(0.0),
+                        outer_angle_radians: light
+                            .outer_angle_radians
+                            .max(light.inner_angle_radians),
+                    })
+                }
+                _ => None,
+            });
+            if let Some(light) = spot_light_data {
+                self.queue_render_command(RenderCommand::ThreeD(Command3D::SetSpotLight {
+                    node: node_id,
+                    light,
+                }));
             }
 
             let mesh_data = self.nodes.get(node_id).and_then(|node| match &node.data {
@@ -158,11 +225,31 @@ impl Runtime {
     }
 }
 
+fn quaternion_forward(rotation: perro_core::Quaternion) -> [f32; 3] {
+    let x = rotation.x;
+    let y = rotation.y;
+    let z = rotation.z;
+    let w = rotation.w;
+
+    let fx = -(2.0 * (x * z + w * y));
+    let fy = -(2.0 * (y * z - w * x));
+    let fz = -(1.0 - 2.0 * (x * x + y * y));
+
+    let len_sq = fx * fx + fy * fy + fz * fz;
+    if len_sq > 1.0e-6 {
+        let inv_len = len_sq.sqrt().recip();
+        [fx * inv_len, fy * inv_len, fz * inv_len]
+    } else {
+        [0.0, 0.0, -1.0]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Runtime;
     use perro_core::{
         SceneNode, SceneNodeData, camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D,
+        ray_light_3d::RayLight3D,
     };
     use perro_ids::{MaterialID, MeshID};
     use perro_render_bridge::{Command3D, RenderCommand, RenderEvent, ResourceCommand};
@@ -326,6 +413,26 @@ mod tests {
                 if camera.position == [6.0, 7.0, 8.0]
                     && camera.rotation == [0.1, 0.2, 0.3, 0.9]
                     && camera.zoom == 1.75
+        )));
+    }
+
+    #[test]
+    fn active_ray_light_3d_emits_set_ray_light_command() {
+        let mut runtime = Runtime::new();
+        let mut light = RayLight3D::new();
+        light.color = [0.8, 0.7, 0.6];
+        light.intensity = 2.5;
+        light.active = true;
+        runtime
+            .nodes
+            .insert(SceneNode::new(SceneNodeData::RayLight3D(light)));
+
+        runtime.extract_render_3d_commands();
+        let commands = collect_commands(&mut runtime);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::ThreeD(Command3D::SetRayLight { light, .. })
+                if light.color == [0.8, 0.7, 0.6] && light.intensity == 2.5
         )));
     }
 }

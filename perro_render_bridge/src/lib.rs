@@ -24,6 +24,32 @@ pub struct Camera3DState {
     pub zoom: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RayLight3DState {
+    pub direction: [f32; 3],
+    pub color: [f32; 3],
+    pub intensity: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PointLight3DState {
+    pub position: [f32; 3],
+    pub color: [f32; 3],
+    pub intensity: f32,
+    pub range: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpotLight3DState {
+    pub position: [f32; 3],
+    pub direction: [f32; 3],
+    pub color: [f32; 3],
+    pub intensity: f32,
+    pub range: f32,
+    pub inner_angle_radians: f32,
+    pub outer_angle_radians: f32,
+}
+
 impl Default for Camera3DState {
     fn default() -> Self {
         Self {
@@ -105,6 +131,18 @@ pub enum Command3D {
     },
     SetCamera {
         camera: Camera3DState,
+    },
+    SetRayLight {
+        node: NodeID,
+        light: RayLight3DState,
+    },
+    SetPointLight {
+        node: NodeID,
+        light: PointLight3DState,
+    },
+    SetSpotLight {
+        node: NodeID,
+        light: SpotLight3DState,
     },
     RemoveNode {
         node: NodeID,

@@ -2,6 +2,7 @@ use perro_core::{
     Quaternion, SceneNode, SceneNodeData, Vector2, Vector3,
     camera_2d::Camera2D, camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D,
     node_2d::node_2d::Node2D, node_3d::node_3d::Node3D, sprite_2d::Sprite2D,
+    point_light_3d::PointLight3D, ray_light_3d::RayLight3D, spot_light_3d::SpotLight3D,
 };
 use perro_io::load_asset;
 use perro_scene::{
@@ -146,6 +147,9 @@ fn scene_node_data_from_runtime(data: &RuntimeNodeData) -> Result<SceneNodeData,
         "Node3D" => Ok(SceneNodeData::Node3D(build_runtime_node_3d(data))),
         "MeshInstance3D" => Ok(SceneNodeData::MeshInstance3D(build_runtime_mesh_instance_3d(data))),
         "Camera3D" => Ok(SceneNodeData::Camera3D(build_runtime_camera_3d(data))),
+        "RayLight3D" => Ok(SceneNodeData::RayLight3D(build_runtime_ray_light_3d(data))),
+        "PointLight3D" => Ok(SceneNodeData::PointLight3D(build_runtime_point_light_3d(data))),
+        "SpotLight3D" => Ok(SceneNodeData::SpotLight3D(build_runtime_spot_light_3d(data))),
         other => Err(format!("unsupported scene node type `{other}`")),
     }
 }
@@ -161,6 +165,11 @@ fn scene_node_data_from_static(data: &StaticNodeData) -> Result<SceneNodeData, S
             Ok(SceneNodeData::MeshInstance3D(build_static_mesh_instance_3d(data)))
         }
         StaticNodeType::Camera3D => Ok(SceneNodeData::Camera3D(build_static_camera_3d(data))),
+        StaticNodeType::RayLight3D => Ok(SceneNodeData::RayLight3D(build_static_ray_light_3d(data))),
+        StaticNodeType::PointLight3D => {
+            Ok(SceneNodeData::PointLight3D(build_static_point_light_3d(data)))
+        }
+        StaticNodeType::SpotLight3D => Ok(SceneNodeData::SpotLight3D(build_static_spot_light_3d(data))),
     }
 }
 
@@ -217,6 +226,36 @@ fn build_runtime_camera_3d(data: &RuntimeNodeData) -> Camera3D {
     node
 }
 
+fn build_runtime_ray_light_3d(data: &RuntimeNodeData) -> RayLight3D {
+    let mut node = RayLight3D::new();
+    if let Some(base) = &data.base {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_ray_light_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_runtime_point_light_3d(data: &RuntimeNodeData) -> PointLight3D {
+    let mut node = PointLight3D::new();
+    if let Some(base) = &data.base {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_point_light_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_runtime_spot_light_3d(data: &RuntimeNodeData) -> SpotLight3D {
+    let mut node = SpotLight3D::new();
+    if let Some(base) = &data.base {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_spot_light_3d_fields(&mut node, &data.fields);
+    node
+}
+
 // Static node builders (grouped by spatial domain)
 fn build_static_node_2d(data: &StaticNodeData) -> Node2D {
     let mut node = Node2D::new();
@@ -267,6 +306,36 @@ fn build_static_camera_3d(data: &StaticNodeData) -> Camera3D {
     }
     apply_node_3d_fields_static(&mut node, data.fields);
     apply_camera_3d_fields_static(&mut node, data.fields);
+    node
+}
+
+fn build_static_ray_light_3d(data: &StaticNodeData) -> RayLight3D {
+    let mut node = RayLight3D::new();
+    if let Some(base) = data.base {
+        apply_node_3d_data_static(&mut node, base);
+    }
+    apply_node_3d_fields_static(&mut node, data.fields);
+    apply_ray_light_3d_fields_static(&mut node, data.fields);
+    node
+}
+
+fn build_static_point_light_3d(data: &StaticNodeData) -> PointLight3D {
+    let mut node = PointLight3D::new();
+    if let Some(base) = data.base {
+        apply_node_3d_data_static(&mut node, base);
+    }
+    apply_node_3d_fields_static(&mut node, data.fields);
+    apply_point_light_3d_fields_static(&mut node, data.fields);
+    node
+}
+
+fn build_static_spot_light_3d(data: &StaticNodeData) -> SpotLight3D {
+    let mut node = SpotLight3D::new();
+    if let Some(base) = data.base {
+        apply_node_3d_data_static(&mut node, base);
+    }
+    apply_node_3d_fields_static(&mut node, data.fields);
+    apply_spot_light_3d_fields_static(&mut node, data.fields);
     node
 }
 
@@ -401,6 +470,95 @@ fn apply_camera_3d_fields(node: &mut Camera3D, fields: &[(String, RuntimeValue)]
     }
 }
 
+fn apply_ray_light_3d_fields(node: &mut RayLight3D, fields: &[(String, RuntimeValue)]) {
+    for (name, value) in fields {
+        match name.as_str() {
+            "color" => {
+                if let Some(v) = as_vec3(value) {
+                    node.color = [v.x, v.y, v.z];
+                }
+            }
+            "intensity" => {
+                if let Some(v) = as_f32(value) {
+                    node.intensity = v;
+                }
+            }
+            "active" => {
+                if let Some(v) = as_bool(value) {
+                    node.active = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_point_light_3d_fields(node: &mut PointLight3D, fields: &[(String, RuntimeValue)]) {
+    for (name, value) in fields {
+        match name.as_str() {
+            "color" => {
+                if let Some(v) = as_vec3(value) {
+                    node.color = [v.x, v.y, v.z];
+                }
+            }
+            "intensity" => {
+                if let Some(v) = as_f32(value) {
+                    node.intensity = v;
+                }
+            }
+            "range" => {
+                if let Some(v) = as_f32(value) {
+                    node.range = v;
+                }
+            }
+            "active" => {
+                if let Some(v) = as_bool(value) {
+                    node.active = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_spot_light_3d_fields(node: &mut SpotLight3D, fields: &[(String, RuntimeValue)]) {
+    for (name, value) in fields {
+        match name.as_str() {
+            "color" => {
+                if let Some(v) = as_vec3(value) {
+                    node.color = [v.x, v.y, v.z];
+                }
+            }
+            "intensity" => {
+                if let Some(v) = as_f32(value) {
+                    node.intensity = v;
+                }
+            }
+            "range" => {
+                if let Some(v) = as_f32(value) {
+                    node.range = v;
+                }
+            }
+            "inner_angle_radians" => {
+                if let Some(v) = as_f32(value) {
+                    node.inner_angle_radians = v;
+                }
+            }
+            "outer_angle_radians" => {
+                if let Some(v) = as_f32(value) {
+                    node.outer_angle_radians = v;
+                }
+            }
+            "active" => {
+                if let Some(v) = as_bool(value) {
+                    node.active = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 // Static field application: 2D
 fn apply_node_2d_fields_static(node: &mut Node2D, fields: &[(&str, StaticSceneValue)]) {
     for (name, value) in fields {
@@ -496,6 +654,98 @@ fn apply_camera_3d_fields_static(node: &mut Camera3D, fields: &[(&str, StaticSce
             "zoom" => {
                 if let Some(v) = as_f32_static(value) {
                     node.zoom = v;
+                }
+            }
+            "active" => {
+                if let Some(v) = as_bool_static(value) {
+                    node.active = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_ray_light_3d_fields_static(node: &mut RayLight3D, fields: &[(&str, StaticSceneValue)]) {
+    for (name, value) in fields {
+        match *name {
+            "color" => {
+                if let Some(v) = as_vec3_static(value) {
+                    node.color = [v.x, v.y, v.z];
+                }
+            }
+            "intensity" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.intensity = v;
+                }
+            }
+            "active" => {
+                if let Some(v) = as_bool_static(value) {
+                    node.active = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_point_light_3d_fields_static(
+    node: &mut PointLight3D,
+    fields: &[(&str, StaticSceneValue)],
+) {
+    for (name, value) in fields {
+        match *name {
+            "color" => {
+                if let Some(v) = as_vec3_static(value) {
+                    node.color = [v.x, v.y, v.z];
+                }
+            }
+            "intensity" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.intensity = v;
+                }
+            }
+            "range" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.range = v;
+                }
+            }
+            "active" => {
+                if let Some(v) = as_bool_static(value) {
+                    node.active = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_spot_light_3d_fields_static(node: &mut SpotLight3D, fields: &[(&str, StaticSceneValue)]) {
+    for (name, value) in fields {
+        match *name {
+            "color" => {
+                if let Some(v) = as_vec3_static(value) {
+                    node.color = [v.x, v.y, v.z];
+                }
+            }
+            "intensity" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.intensity = v;
+                }
+            }
+            "range" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.range = v;
+                }
+            }
+            "inner_angle_radians" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.inner_angle_radians = v;
+                }
+            }
+            "outer_angle_radians" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.outer_angle_radians = v;
                 }
             }
             "active" => {

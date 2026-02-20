@@ -11,7 +11,7 @@ parent = @root
 script = "res://scripts/script.rs"
 
 [MeshInstance3D]
-    mesh = "__cone__"
+    mesh = "__cylinder__"
 
     [Node3D]
         position = (0, 0, 0)
@@ -31,3 +31,18 @@ parent = @root
     [/Node3D]
 [/Camera3D]
 [/camera]
+
+[sun]
+parent = @root
+
+[RayLight3D]
+    color = (1.0, 0.98, 0.92)
+    intensity = 0.9
+    active = true
+
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/RayLight3D]
+[/sun]
+

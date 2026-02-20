@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize, Position, Size},
     event::WindowEvent,
-    event_loop::{ActiveEventLoop, EventLoop},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     monitor::MonitorHandle,
     window::{Window, WindowAttributes},
 };
@@ -110,10 +110,102 @@ impl<B: GraphicsBackend> RunnerState<B> {
             batch_sim_delta_seconds: 0.0,
         }
     }
+
+    fn step_frame(&mut self, now: Instant) {
+        if let Some(target) = target_frame_duration(self.fps_cap) {
+            if self.next_frame_deadline <= self.last_frame_start {
+                self.next_frame_deadline = self.last_frame_start + target;
+            }
+
+            if now < self.next_frame_deadline {
+                return;
+            }
+
+            self.next_frame_deadline = now + target;
+        } else {
+            // Uncapped mode for tiny/invalid frame targets.
+            self.next_frame_deadline = now;
+        }
+
+        let frame_start = now;
+        let frame_delta = frame_start.duration_since(self.last_frame_start);
+        self.last_frame_start = frame_start;
+
+        let elapsed_since_start = frame_start.duration_since(self.run_start);
+        self.app.set_elapsed_time(elapsed_since_start.as_secs_f32());
+        let mut simulated_delta_seconds = frame_delta.as_secs_f64();
+
+        let work_start = Instant::now();
+        let mut runtime_update_duration = Duration::ZERO;
+        let present_duration;
+        if let Some(step) = self.fixed_timestep {
+            self.fixed_accumulator += frame_delta.as_secs_f32();
+            let mut steps = 0u32;
+            while self.fixed_accumulator >= step && steps < MAX_FIXED_STEPS_PER_FRAME {
+                let update_start = Instant::now();
+                self.app.fixed_update_runtime(step);
+                runtime_update_duration += update_start.elapsed();
+                self.fixed_accumulator -= step;
+                steps += 1;
+            }
+            if steps == MAX_FIXED_STEPS_PER_FRAME && self.fixed_accumulator >= step {
+                // Drop excess accumulated time to avoid spiral-of-death behavior.
+                self.fixed_accumulator = 0.0;
+            }
+            let present_start = Instant::now();
+            self.app.present();
+            present_duration = present_start.elapsed();
+            simulated_delta_seconds = step as f64 * steps as f64;
+        } else {
+            let update_start = Instant::now();
+            self.app.update_runtime(frame_delta.as_secs_f32());
+            runtime_update_duration = update_start.elapsed();
+            let present_start = Instant::now();
+            self.app.present();
+            present_duration = present_start.elapsed();
+        }
+        let work_duration = work_start.elapsed();
+
+        let frame_end = Instant::now();
+
+        self.batch_frames = self.batch_frames.saturating_add(1);
+        self.batch_work += work_duration;
+        self.batch_runtime_update += runtime_update_duration;
+        self.batch_present += present_duration;
+        self.batch_sim_delta_seconds += simulated_delta_seconds;
+
+        let batch_elapsed_secs = frame_end.duration_since(self.batch_start).as_secs_f32();
+        if batch_elapsed_secs >= LOG_INTERVAL_SECONDS && self.batch_frames > 0 {
+            let work_ms = self.batch_work.as_secs_f64() * 1_000.0;
+            let avg_work_us = (work_ms * 1_000.0) / self.batch_frames as f64;
+            let avg_runtime_update_ns =
+                self.batch_runtime_update.as_nanos() as f64 / self.batch_frames as f64;
+            let present_ms = self.batch_present.as_secs_f64() * 1_000.0;
+            let avg_present_us = (present_ms * 1_000.0) / self.batch_frames as f64;
+
+            println!(
+                "update: ({:.1}ns avg) | frame present:  ({:.3}us avg) | total: ({:.3}us avg)",
+                avg_runtime_update_ns, avg_present_us, avg_work_us,
+            );
+
+            self.batch_frames = 0;
+            self.batch_work = Duration::ZERO;
+            self.batch_runtime_update = Duration::ZERO;
+            self.batch_present = Duration::ZERO;
+            self.batch_sim_delta_seconds = 0.0;
+            self.batch_start = frame_end;
+        }
+
+        // Keep a continuous redraw chain like the legacy runner.
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
 }
 
 impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<B> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        event_loop.set_control_flow(ControlFlow::Poll);
         if self.window.is_none() {
             let attrs = window_attributes(event_loop, self.app.runtime.project(), &self.title);
             let window = Arc::new(
@@ -161,6 +253,10 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             WindowEvent::Resized(size) => {
                 self.app.resize_surface(size.width, size.height);
             }
+            WindowEvent::Moved(_) => {
+                // On Windows title-bar drag can suppress redraw cadence; tick on move events too.
+                self.step_frame(Instant::now());
+            }
             WindowEvent::ScaleFactorChanged { .. } => {
                 if let Some(window) = &self.window {
                     let size = window.inner_size();
@@ -168,94 +264,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 }
             }
             WindowEvent::RedrawRequested => {
-                let now = Instant::now();
-                if let Some(target) = target_frame_duration(self.fps_cap) {
-                    if self.next_frame_deadline <= self.last_frame_start {
-                        self.next_frame_deadline = self.last_frame_start + target;
-                    }
-
-                    if now < self.next_frame_deadline {
-                        // Skip this redraw without blocking event handling; we'll request another
-                        // redraw in about_to_wait and render once the deadline is reached.
-                        return;
-                    }
-
-                    self.next_frame_deadline = now + target;
-                } else {
-                    // Uncapped mode for tiny/invalid frame targets.
-                    self.next_frame_deadline = now;
-                }
-
-                let frame_start = now;
-                let frame_delta = frame_start.duration_since(self.last_frame_start);
-                self.last_frame_start = frame_start;
-
-                let elapsed_since_start = frame_start.duration_since(self.run_start);
-                self.app.set_elapsed_time(elapsed_since_start.as_secs_f32());
-                let mut simulated_delta_seconds = frame_delta.as_secs_f64();
-
-                let work_start = Instant::now();
-                let mut runtime_update_duration = Duration::ZERO;
-                let present_start;
-                let present_duration;
-                if let Some(step) = self.fixed_timestep {
-                    self.fixed_accumulator += frame_delta.as_secs_f32();
-                    let mut steps = 0u32;
-                    while self.fixed_accumulator >= step && steps < MAX_FIXED_STEPS_PER_FRAME {
-                        let update_start = Instant::now();
-                        self.app.fixed_update_runtime(step);
-                        runtime_update_duration += update_start.elapsed();
-                        self.fixed_accumulator -= step;
-                        steps += 1;
-                    }
-                    if steps == MAX_FIXED_STEPS_PER_FRAME && self.fixed_accumulator >= step {
-                        // Drop excess accumulated time to avoid spiral-of-death behavior.
-                        self.fixed_accumulator = 0.0;
-                    }
-                    present_start = Instant::now();
-                    self.app.present();
-                    present_duration = present_start.elapsed();
-                    simulated_delta_seconds = step as f64 * steps as f64;
-                } else {
-                    let update_start = Instant::now();
-                    self.app.update_runtime(frame_delta.as_secs_f32());
-                    runtime_update_duration = update_start.elapsed();
-                    present_start = Instant::now();
-                    self.app.present();
-                    present_duration = present_start.elapsed();
-                }
-                let work_duration = work_start.elapsed();
-
-                let frame_end = Instant::now();
-
-                self.batch_frames = self.batch_frames.saturating_add(1);
-                self.batch_work += work_duration;
-                self.batch_runtime_update += runtime_update_duration;
-                self.batch_present += present_duration;
-                self.batch_sim_delta_seconds += simulated_delta_seconds;
-
-                let batch_elapsed_secs = frame_end.duration_since(self.batch_start).as_secs_f32();
-                if batch_elapsed_secs >= LOG_INTERVAL_SECONDS && self.batch_frames > 0 {
-                    let work_ms = self.batch_work.as_secs_f64() * 1_000.0;
-                    let avg_work_us = (work_ms * 1_000.0) / self.batch_frames as f64;
-                    let avg_runtime_update_ns =
-                        self.batch_runtime_update.as_nanos() as f64 / self.batch_frames as f64;
-                    let present_ms = self.batch_present.as_secs_f64() * 1_000.0;
-                    let avg_present_us = (present_ms * 1_000.0) / self.batch_frames as f64;
-                   
-
-                    println!(
-                        "update: ({:.1}ns avg) | frame present:  ({:.3}us avg) | total: ({:.3}us avg)",
-                        avg_runtime_update_ns, avg_present_us, avg_work_us,
-                    );
-
-                    self.batch_frames = 0;
-                    self.batch_work = Duration::ZERO;
-                    self.batch_runtime_update = Duration::ZERO;
-                    self.batch_present = Duration::ZERO;
-                    self.batch_sim_delta_seconds = 0.0;
-                    self.batch_start = frame_end;
-                }
+                self.step_frame(Instant::now());
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}

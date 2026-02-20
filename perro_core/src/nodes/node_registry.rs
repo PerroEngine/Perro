@@ -3,6 +3,9 @@ use crate::camera_3d::Camera3D;
 use crate::mesh_instance_3d::MeshInstance3D;
 use crate::node_2d::node_2d::Node2D;
 use crate::node_3d::node_3d::Node3D;
+use crate::point_light_3d::PointLight3D;
+use crate::ray_light_3d::RayLight3D;
+use crate::spot_light_3d::SpotLight3D;
 use crate::sprite_2d::Sprite2D;
 use crate::{Transform2D, Transform3D};
 use perro_ids::NodeID;
@@ -319,6 +322,9 @@ define_scene_nodes! {
     3d: {
         Node3D => (Node3D, Renderable::False),
         MeshInstance3D => (MeshInstance3D, Renderable::True),
-        Camera3D => (Camera3D, Renderable::True)
+        Camera3D => (Camera3D, Renderable::True),
+        RayLight3D => (RayLight3D, Renderable::True),
+        PointLight3D => (PointLight3D, Renderable::True),
+        SpotLight3D => (SpotLight3D, Renderable::True)
     }
 }

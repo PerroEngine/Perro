@@ -1,4 +1,7 @@
-use super::{renderer::Draw3DInstance, shaders::create_mesh_shader_module};
+use super::{
+    renderer::{Draw3DInstance, Lighting3DState, MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS},
+    shaders::create_mesh_shader_module,
+};
 use crate::resources::ResourceStore;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3};
@@ -13,8 +16,36 @@ const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
-struct Camera3DUniform {
+struct Scene3DUniform {
     view_proj: [[f32; 4]; 4],
+    ambient_and_counts: [f32; 4],
+    camera_pos: [f32; 4],
+    ray_light: RayLightGpu,
+    point_lights: [PointLightGpu; MAX_POINT_LIGHTS],
+    spot_lights: [SpotLightGpu; MAX_SPOT_LIGHTS],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+struct RayLightGpu {
+    direction: [f32; 4],
+    color_intensity: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+struct PointLightGpu {
+    position_range: [f32; 4],
+    color_intensity: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+struct SpotLightGpu {
+    position_range: [f32; 4],
+    direction_outer_cos: [f32; 4],
+    color_intensity: [f32; 4],
+    inner_cos_pad: [f32; 4],
 }
 
 #[repr(C)]
@@ -32,6 +63,7 @@ struct InstanceGpu {
     model_2: [f32; 4],
     model_3: [f32; 4],
     color: [f32; 4],
+    pbr_params: [f32; 4], // roughness, metallic, ao, emissive
 }
 
 pub struct Gpu3D {
@@ -43,7 +75,7 @@ pub struct Gpu3D {
     instance_capacity: usize,
     staged_instances: Vec<InstanceGpu>,
     draw_batches: Vec<DrawBatch>,
-    last_camera: Option<Camera3DUniform>,
+    last_scene: Option<Scene3DUniform>,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     mesh_ranges: HashMap<&'static str, MeshRange>,
@@ -80,12 +112,12 @@ impl Gpu3D {
             label: Some("perro_camera3d_bgl"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
                     min_binding_size: Some(
-                        std::num::NonZeroU64::new(std::mem::size_of::<Camera3DUniform>() as u64)
+                        std::num::NonZeroU64::new(std::mem::size_of::<Scene3DUniform>() as u64)
                             .expect("camera uniform size must be non-zero"),
                     ),
                 },
@@ -94,7 +126,7 @@ impl Gpu3D {
         });
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_camera3d_buffer"),
-            size: std::mem::size_of::<Camera3DUniform>() as u64,
+            size: std::mem::size_of::<Scene3DUniform>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -151,7 +183,7 @@ impl Gpu3D {
             instance_capacity,
             staged_instances: Vec::new(),
             draw_batches: Vec::new(),
-            last_camera: None,
+            last_scene: None,
             vertex_buffer,
             index_buffer,
             mesh_ranges,
@@ -213,6 +245,7 @@ impl Gpu3D {
         queue: &wgpu::Queue,
         resources: &ResourceStore,
         camera: Camera3DState,
+        lighting: &Lighting3DState,
         draws: &[Draw3DInstance],
         width: u32,
         height: u32,
@@ -220,12 +253,10 @@ impl Gpu3D {
         self.resize(device, width, height);
         self.ensure_instance_capacity(device, draws.len());
 
-        let uniform = Camera3DUniform {
-            view_proj: compute_view_proj(camera, width, height),
-        };
-        if self.last_camera != Some(uniform) {
+        let uniform = build_scene_uniform(camera, lighting, width, height);
+        if self.last_scene != Some(uniform) {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
-            self.last_camera = Some(uniform);
+            self.last_scene = Some(uniform);
         }
 
         self.staged_instances.clear();
@@ -248,6 +279,10 @@ impl Gpu3D {
                 model_2: draw.model[2],
                 model_3: draw.model[3],
                 color: color_from_material(draw.material.index(), draw.material.generation()),
+                pbr_params: pbr_params_from_material(
+                    draw.material.index(),
+                    draw.material.generation(),
+                ),
             });
             if let Some(batch) = self.draw_batches.last_mut() {
                 if batch.mesh.index_start == mesh.index_start
@@ -420,6 +455,11 @@ fn create_pipeline(
                             shader_location: 6,
                             format: wgpu::VertexFormat::Float32x4,
                         },
+                        wgpu::VertexAttribute {
+                            offset: 80,
+                            shader_location: 7,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
                     ],
                 },
             ],
@@ -493,6 +533,98 @@ fn compute_view_proj(camera: Camera3DState, width: u32, height: u32) -> [[f32; 4
     (proj * view).to_cols_array_2d()
 }
 
+fn build_scene_uniform(
+    camera: Camera3DState,
+    lighting: &Lighting3DState,
+    width: u32,
+    height: u32,
+) -> Scene3DUniform {
+    let mut scene = Scene3DUniform {
+        view_proj: compute_view_proj(camera, width, height),
+        ambient_and_counts: [0.14, 0.0, 0.0, 0.0],
+        camera_pos: [camera.position[0], camera.position[1], camera.position[2], 0.0],
+        ray_light: RayLightGpu {
+            direction: [0.0, 0.0, -1.0, 0.0],
+            color_intensity: [1.0, 1.0, 1.0, 0.0],
+        },
+        point_lights: [PointLightGpu {
+            position_range: [0.0, 0.0, 0.0, 1.0],
+            color_intensity: [0.0, 0.0, 0.0, 0.0],
+        }; MAX_POINT_LIGHTS],
+        spot_lights: [SpotLightGpu {
+            position_range: [0.0, 0.0, 0.0, 1.0],
+            direction_outer_cos: [0.0, 0.0, -1.0, -1.0],
+            color_intensity: [0.0, 0.0, 0.0, 0.0],
+            inner_cos_pad: [1.0, 0.0, 0.0, 0.0],
+        }; MAX_SPOT_LIGHTS],
+    };
+
+    if let Some(ray) = lighting.ray_light {
+        let dir = Vec3::from(ray.direction).normalize_or_zero();
+        scene.ray_light = RayLightGpu {
+            direction: [dir.x, dir.y, dir.z, 0.0],
+            color_intensity: [
+                ray.color[0].max(0.0),
+                ray.color[1].max(0.0),
+                ray.color[2].max(0.0),
+                ray.intensity.max(0.0),
+            ],
+        };
+        scene.ambient_and_counts[3] = 1.0;
+    }
+
+    let mut point_count = 0.0f32;
+    for (dst, src) in scene
+        .point_lights
+        .iter_mut()
+        .zip(lighting.point_lights.iter().flatten())
+    {
+        dst.position_range = [
+            src.position[0],
+            src.position[1],
+            src.position[2],
+            src.range.max(0.001),
+        ];
+        dst.color_intensity = [
+            src.color[0].max(0.0),
+            src.color[1].max(0.0),
+            src.color[2].max(0.0),
+            src.intensity.max(0.0),
+        ];
+        point_count += 1.0;
+    }
+    scene.ambient_and_counts[1] = point_count;
+
+    let mut spot_count = 0.0f32;
+    for (dst, src) in scene
+        .spot_lights
+        .iter_mut()
+        .zip(lighting.spot_lights.iter().flatten())
+    {
+        let dir = Vec3::from(src.direction).normalize_or_zero();
+        let inner = src.inner_angle_radians.max(0.0);
+        let outer = src.outer_angle_radians.max(inner + 1.0e-4);
+        dst.position_range = [
+            src.position[0],
+            src.position[1],
+            src.position[2],
+            src.range.max(0.001),
+        ];
+        dst.direction_outer_cos = [dir.x, dir.y, dir.z, outer.cos()];
+        dst.color_intensity = [
+            src.color[0].max(0.0),
+            src.color[1].max(0.0),
+            src.color[2].max(0.0),
+            src.intensity.max(0.0),
+        ];
+        dst.inner_cos_pad = [inner.cos(), 0.0, 0.0, 0.0];
+        spot_count += 1.0;
+    }
+    scene.ambient_and_counts[2] = spot_count;
+
+    scene
+}
+
 fn color_from_material(index: u32, generation: u32) -> [f32; 4] {
     let mut x = index ^ (generation.rotate_left(16));
     x ^= x >> 17;
@@ -505,4 +637,22 @@ fn color_from_material(index: u32, generation: u32) -> [f32; 4] {
     let g = (((x >> 8) & 0xFF) as f32 / 255.0) * 0.55 + 0.35;
     let b = (((x >> 16) & 0xFF) as f32 / 255.0) * 0.55 + 0.35;
     [r, g, b, 1.0]
+}
+
+fn pbr_params_from_material(index: u32, generation: u32) -> [f32; 4] {
+    let mut x = index.rotate_left(7) ^ generation.rotate_left(19);
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7feb352d);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846ca68b);
+    x ^= x >> 16;
+
+    let n0 = (x & 0xFF) as f32 / 255.0;
+    let n1 = ((x >> 8) & 0xFF) as f32 / 255.0;
+
+    let roughness = 0.25 + n0 * 0.65;
+    let metallic = n1 * 0.2;
+    let ao = 1.0;
+    let emissive = 0.0;
+    [roughness, metallic, ao, emissive]
 }
