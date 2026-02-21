@@ -294,15 +294,19 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
     }
 
     let (path, fragment) = split_source_fragment(source);
-    if path.ends_with(".pmat") {
-        if let Some(lookup) = runtime
-            .project()
-            .and_then(|project| project.static_material_lookup)
-        {
-            if let Some(material) = lookup(path).copied() {
-                return Some(material);
-            }
+    if let Some(lookup) = runtime
+        .project()
+        .and_then(|project| project.static_material_lookup)
+    {
+        if let Some(material) = lookup(source).copied() {
+            return Some(material);
         }
+        if let Some(material) = lookup(path).copied() {
+            return Some(material);
+        }
+    }
+
+    if path.ends_with(".pmat") {
         return load_pmat(path);
     }
 
@@ -321,22 +325,21 @@ fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
     if path.is_empty() {
         return (source, None);
     }
-    if !selector.contains('=') {
-        return (source, None);
-    }
     if selector.contains('/') || selector.contains('\\') {
         return (source, None);
     }
-    (path, Some(selector))
+    if selector.contains('[') && selector.ends_with(']') {
+        return (path, Some(selector));
+    }
+    (source, None)
 }
 
 fn parse_fragment_index(fragment: Option<&str>, keys: &[&str]) -> Option<u32> {
     let fragment = fragment?;
-    for segment in fragment.split('&') {
-        let (key, value) = segment.split_once('=')?;
-        let key = key.trim();
-        let value = value.trim();
-        if keys.iter().any(|candidate| *candidate == key) {
+    if let Some((name, rest)) = fragment.split_once('[') {
+        let name = name.trim();
+        if keys.iter().any(|candidate| *candidate == name) {
+            let value = rest.strip_suffix(']')?.trim();
             if let Ok(parsed) = value.parse::<u32>() {
                 return Some(parsed);
             }

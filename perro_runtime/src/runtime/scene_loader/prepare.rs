@@ -144,8 +144,8 @@ fn scene_node_from_static_entry(
     let model_source = extract_model_source_static(&entry.data);
     let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref() {
         (
-            Some(format!("{model}:mesh=0")),
-            Some(format!("{model}:mat=0")),
+            Some(format!("{model}:mesh[0]")),
+            Some(format!("{model}:mat[0]")),
             None,
         )
     } else {
@@ -186,8 +186,8 @@ fn scene_node_from_runtime_entry(
     let model_source = extract_model_source(&entry.data);
     let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref() {
         (
-            Some(format!("{model}:mesh=0")),
-            Some(format!("{model}:mat=0")),
+            Some(format!("{model}:mesh[0]")),
+            Some(format!("{model}:mat[0]")),
             None,
         )
     } else {

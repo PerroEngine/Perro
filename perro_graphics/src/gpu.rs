@@ -1,5 +1,5 @@
 use crate::{
-    backend::StaticTextureLookup,
+    backend::{StaticMeshLookup, StaticTextureLookup},
     resources::ResourceStore,
     three_d::{gpu::Gpu3D, renderer::{Draw3DInstance, Lighting3DState}},
     two_d::{
@@ -162,6 +162,7 @@ impl Gpu {
         upload_2d: &RectUploadPlan,
         sprites_2d: &[Sprite2DCommand],
         static_texture_lookup: Option<StaticTextureLookup>,
+        static_mesh_lookup: Option<StaticMeshLookup>,
     ) {
         // Keep window alive for the full surface lifetime.
         self.window_handle.id();
@@ -185,6 +186,7 @@ impl Gpu {
             draws_3d,
             self.config.width,
             self.config.height,
+            static_mesh_lookup,
         );
 
         let frame = match self.surface.get_current_texture() {

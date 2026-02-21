@@ -14,6 +14,10 @@ return dir.to_path_buf();
 return exe_dir.to_path_buf();
 }
 }
+let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+if root.join("project.toml").exists() {
+return root.canonicalize().unwrap_or(root);
+}
 std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
 }
 
@@ -30,6 +34,7 @@ perro_app::entry::run_static_embedded_project(
 ASSETS_BRK,
 static_assets::scenes::lookup_scene,
 static_assets::materials::lookup_material,
+static_assets::textures::lookup_texture,
 Some(scripts::SCRIPT_REGISTRY),
 ).expect("failed to run embedded static project");
 }

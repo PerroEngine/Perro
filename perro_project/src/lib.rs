@@ -195,6 +195,7 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         project_static_src.join("textures.rs"),
         &default_static_textures_rs(),
     )?;
+    write_if_missing(project_static_src.join("meshes.rs"), &default_static_meshes_rs())?;
     write_if_missing(project_embedded.join("assets.brk"), "")?;
     write_if_missing(scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
 
@@ -567,6 +568,7 @@ fn main() {
         ASSETS_BRK,
         static_assets::scenes::lookup_scene,
         static_assets::materials::lookup_material,
+        static_assets::meshes::lookup_mesh,
         static_assets::textures::lookup_texture,
         Some(scripts::SCRIPT_REGISTRY),
     ).expect("failed to run embedded static project");
@@ -576,7 +578,7 @@ fn main() {
 }
 
 fn default_static_mod_rs() -> String {
-    "pub mod scenes;\npub mod materials;\npub mod textures;\n".to_string()
+    "pub mod scenes;\npub mod materials;\npub mod meshes;\npub mod textures;\n".to_string()
 }
 
 fn default_static_scenes_rs() -> String {
@@ -601,6 +603,16 @@ pub fn lookup_material(_path: &str) -> Option<&'static Material3D> {
 
 fn default_static_textures_rs() -> String {
     r#"pub fn lookup_texture(_path: &str) -> Option<&'static [u8]> {
+    None
+}
+"#
+    .to_string()
+}
+
+fn default_static_meshes_rs() -> String {
+    r#"#![allow(dead_code)]
+
+pub fn lookup_mesh(_path: &str) -> Option<&'static [u8]> {
     None
 }
 "#

@@ -2,10 +2,12 @@ use super::{
     renderer::{Draw3DInstance, Lighting3DState, MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS},
     shaders::create_mesh_shader_module,
 };
+use crate::backend::StaticMeshLookup;
 use crate::resources::ResourceStore;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3};
 use mesh_presets::build_builtin_mesh_buffer;
+use perro_io::{decompress_zlib, load_asset};
 use perro_render_bridge::{Camera3DState, Material3D};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
@@ -77,9 +79,12 @@ pub struct Gpu3D {
     staged_instances: Vec<InstanceGpu>,
     draw_batches: Vec<DrawBatch>,
     last_scene: Option<Scene3DUniform>,
+    mesh_vertices: Vec<MeshVertex>,
+    mesh_indices: Vec<u32>,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
-    mesh_ranges: HashMap<&'static str, MeshRange>,
+    builtin_mesh_ranges: HashMap<&'static str, MeshRange>,
+    custom_mesh_ranges: HashMap<String, MeshRange>,
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
     depth_size: (u32, u32),
@@ -98,6 +103,14 @@ struct DrawBatch {
     mesh: MeshRange,
     instance_start: u32,
     instance_count: u32,
+}
+
+const PMESH_MAGIC: &[u8; 5] = b"PMESH";
+
+#[derive(Clone)]
+struct DecodedMesh {
+    vertices: Vec<MeshVertex>,
+    indices: Vec<u32>,
 }
 
 impl Gpu3D {
@@ -153,16 +166,16 @@ impl Gpu3D {
             sample_count,
         );
 
-        let (vertices, indices, mesh_ranges) = build_builtin_mesh_buffer();
+        let (vertices, indices, builtin_mesh_ranges) = build_builtin_mesh_buffer();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("perro_builtin_mesh_vertices"),
             contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("perro_builtin_mesh_indices"),
             contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
         });
 
         let instance_capacity = 256usize;
@@ -185,9 +198,12 @@ impl Gpu3D {
             staged_instances: Vec::new(),
             draw_batches: Vec::new(),
             last_scene: None,
+            mesh_vertices: vertices,
+            mesh_indices: indices,
             vertex_buffer,
             index_buffer,
-            mesh_ranges,
+            builtin_mesh_ranges,
+            custom_mesh_ranges: HashMap::new(),
             depth_texture,
             depth_view,
             depth_size: (width.max(1), height.max(1)),
@@ -250,6 +266,7 @@ impl Gpu3D {
         draws: &[Draw3DInstance],
         width: u32,
         height: u32,
+        static_mesh_lookup: Option<StaticMeshLookup>,
     ) {
         self.resize(device, width, height);
         self.ensure_instance_capacity(device, draws.len());
@@ -266,13 +283,15 @@ impl Gpu3D {
         self.draw_batches.reserve(draws.len());
 
         let default_mesh = self
-            .mesh_ranges
+            .builtin_mesh_ranges
             .get("__cube__")
             .copied()
             .expect("cube mesh preset must exist");
         for draw in draws {
             let source = resources.mesh_source(draw.mesh).unwrap_or("__cube__");
-            let mesh = self.mesh_ranges.get(source).copied().unwrap_or(default_mesh);
+            let mesh = self
+                .resolve_mesh_range(device, queue, source, static_mesh_lookup)
+                .unwrap_or(default_mesh);
             let material = resources
                 .material(draw.material)
                 .unwrap_or_else(Material3D::default);
@@ -351,7 +370,7 @@ impl Gpu3D {
         pass.set_bind_group(0, &self.camera_bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-        pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         for batch in &self.draw_batches {
             let start = batch.mesh.index_start;
             let end = start + batch.mesh.index_count;
@@ -376,6 +395,189 @@ impl Gpu3D {
         });
         self.instance_capacity = new_capacity;
     }
+
+    fn resolve_mesh_range(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        source: &str,
+        static_mesh_lookup: Option<StaticMeshLookup>,
+    ) -> Option<MeshRange> {
+        if let Some(range) = self.builtin_mesh_ranges.get(source).copied() {
+            return Some(range);
+        }
+        if let Some(range) = self.custom_mesh_ranges.get(source).copied() {
+            return Some(range);
+        }
+        let decoded = load_mesh_from_source(source, static_mesh_lookup)?;
+        let range = self.append_mesh_data(device, queue, source, decoded)?;
+        self.custom_mesh_ranges.insert(source.to_string(), range);
+        Some(range)
+    }
+
+    fn append_mesh_data(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        _source: &str,
+        decoded: DecodedMesh,
+    ) -> Option<MeshRange> {
+        if decoded.vertices.is_empty() || decoded.indices.is_empty() {
+            return None;
+        }
+        let base_vertex = self.mesh_vertices.len() as u32;
+        let index_start = self.mesh_indices.len() as u32;
+        let index_count = decoded.indices.len() as u32;
+
+        self.mesh_vertices.extend_from_slice(&decoded.vertices);
+        self.mesh_indices.extend(decoded.indices.iter().copied().map(|idx| idx + base_vertex));
+
+        self.vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("perro_mesh_vertices"),
+            contents: bytemuck::cast_slice(&self.mesh_vertices),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+        self.index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("perro_mesh_indices"),
+            contents: bytemuck::cast_slice(&self.mesh_indices),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        });
+        // Queue is intentionally unused: we rebuild immutable buffers for now.
+        let _ = queue;
+
+        Some(MeshRange {
+            index_start,
+            index_count,
+            base_vertex: 0,
+        })
+    }
+}
+
+fn load_mesh_from_source(
+    source: &str,
+    static_mesh_lookup: Option<StaticMeshLookup>,
+) -> Option<DecodedMesh> {
+    if let Some(lookup) = static_mesh_lookup {
+        if let Some(bytes) = lookup(source) {
+            if let Some(decoded) = decode_pmesh(bytes) {
+                return Some(decoded);
+            }
+        }
+    }
+
+    let (path, fragment) = split_source_fragment(source);
+    if path.ends_with(".pmesh") {
+        let bytes = load_asset(path).ok()?;
+        return decode_pmesh(&bytes);
+    }
+    if path.ends_with(".glb") || path.ends_with(".gltf") {
+        let mesh_index = parse_fragment_index(fragment, "mesh").unwrap_or(0);
+        let bytes = load_asset(path).ok()?;
+        return decode_gltf_mesh(&bytes, mesh_index as usize);
+    }
+    None
+}
+
+fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
+    let Some((path, selector)) = source.rsplit_once(':') else {
+        return (source, None);
+    };
+    if path.is_empty() || selector.contains('/') || selector.contains('\\') {
+        return (source, None);
+    }
+    if selector.contains('[') && selector.ends_with(']') {
+        return (path, Some(selector));
+    }
+    (source, None)
+}
+
+fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {
+    let fragment = fragment?;
+    let (name, rest) = fragment.split_once('[')?;
+    if name.trim() != key {
+        return None;
+    }
+    let value = rest.strip_suffix(']')?.trim();
+    value.parse::<u32>().ok()
+}
+
+fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
+    if bytes.len() < 25 || &bytes[0..5] != PMESH_MAGIC {
+        return None;
+    }
+    let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
+    if version != 1 {
+        return None;
+    }
+    let vertex_count = u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize;
+    let index_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
+    let _material_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
+    let raw_len = u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize;
+    let raw = decompress_zlib(&bytes[25..]).ok()?;
+    if raw.len() != raw_len {
+        return None;
+    }
+
+    let vertex_bytes = vertex_count.checked_mul(24)?;
+    let index_bytes = index_count.checked_mul(4)?;
+    if raw.len() < vertex_bytes + index_bytes {
+        return None;
+    }
+
+    let mut vertices = Vec::with_capacity(vertex_count);
+    for i in 0..vertex_count {
+        let off = i * 24;
+        vertices.push(MeshVertex {
+            pos: [
+                f32::from_le_bytes(raw[off..off + 4].try_into().ok()?),
+                f32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?),
+                f32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?),
+            ],
+            normal: [
+                f32::from_le_bytes(raw[off + 12..off + 16].try_into().ok()?),
+                f32::from_le_bytes(raw[off + 16..off + 20].try_into().ok()?),
+                f32::from_le_bytes(raw[off + 20..off + 24].try_into().ok()?),
+            ],
+        });
+    }
+
+    let mut indices = Vec::with_capacity(index_count);
+    let index_start = vertex_bytes;
+    for i in 0..index_count {
+        let off = index_start + i * 4;
+        indices.push(u32::from_le_bytes(raw[off..off + 4].try_into().ok()?));
+    }
+    Some(DecodedMesh { vertices, indices })
+}
+
+fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> {
+    let (doc, buffers, _images) = gltf::import_slice(bytes).ok()?;
+    let mesh = doc.meshes().nth(mesh_index)?;
+    let primitive = mesh.primitives().next()?;
+    let reader = primitive.reader(|buffer| buffers.get(buffer.index()).map(|b| b.0.as_slice()));
+
+    let positions = reader.read_positions()?;
+    let normals: Vec<[f32; 3]> = reader
+        .read_normals()
+        .map(|iter| iter.collect())
+        .unwrap_or_default();
+    let mut vertices = Vec::new();
+    for (i, position) in positions.enumerate() {
+        vertices.push(MeshVertex {
+            pos: position,
+            normal: normals.get(i).copied().unwrap_or([0.0, 1.0, 0.0]),
+        });
+    }
+    if vertices.is_empty() {
+        return None;
+    }
+
+    let indices = if let Some(idx) = reader.read_indices() {
+        idx.into_u32().collect()
+    } else {
+        (0..vertices.len() as u32).collect()
+    };
+    Some(DecodedMesh { vertices, indices })
 }
 
 fn create_depth_texture(

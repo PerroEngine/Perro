@@ -12,11 +12,12 @@ parent = @root
 script = "res://scripts/script.rs"
 
 [MeshInstance3D]
-    mesh = "__cylinder__"
-    material = "res://materials/mat copy.pmat"
+    mesh = "res://models/2Noses.glb:mesh[1]"
+    material = @default_mat
 
     [Node3D]
         position = (0, 0, 0)
+        scale = (15,15,15)
     [/Node3D]
 [/MeshInstance3D]
 [/cube]

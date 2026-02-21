@@ -7,3 +7,4 @@ edition = "2024"
 perro_io = "0.1.0"
 perro_scene = "0.1.0"
 image = { version = "0.25.9", default-features = true }
+gltf = "1.4.1"

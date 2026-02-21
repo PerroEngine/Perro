@@ -1,10 +1,12 @@
 mod error;
 mod materials;
+mod meshes;
 mod scenes;
 mod textures;
 
 pub use error::StaticPipelineError;
 pub use materials::generate_static_materials;
+pub use meshes::generate_static_meshes;
 pub use scenes::generate_static_scenes;
 pub use textures::generate_static_textures;
 
@@ -44,7 +46,7 @@ pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineErro
     fs::create_dir_all(&static_dir)?;
     fs::write(
         static_dir.join("mod.rs"),
-        "pub mod scenes;\npub mod materials;\npub mod textures;\n",
+        "pub mod scenes;\npub mod materials;\npub mod meshes;\npub mod textures;\n",
     )?;
     Ok(())
 }

@@ -95,6 +95,8 @@ pub fn compile_project_bundle(project_root: &Path) -> Result<(), CompilerError> 
         .map_err(|err| CompilerError::SceneParse(format!("scene static generation failed: {err}")))?;
     perro_static_pipeline::generate_static_materials(project_root)
         .map_err(|err| CompilerError::SceneParse(format!("material static generation failed: {err}")))?;
+    perro_static_pipeline::generate_static_meshes(project_root)
+        .map_err(|err| CompilerError::SceneParse(format!("mesh static generation failed: {err}")))?;
     perro_static_pipeline::generate_static_textures(project_root)
         .map_err(|err| CompilerError::SceneParse(format!("texture static generation failed: {err}")))?;
     perro_static_pipeline::write_static_mod_rs(project_root)
@@ -215,6 +217,7 @@ fn main() {{\n\
         ASSETS_BRK,\n\
         static_assets::scenes::lookup_scene,\n\
         static_assets::materials::lookup_material,\n\
+        static_assets::meshes::lookup_mesh,\n\
         static_assets::textures::lookup_texture,\n\
         Some(scripts::SCRIPT_REGISTRY),\n\
     ).expect(\"failed to run embedded static project\");\n\

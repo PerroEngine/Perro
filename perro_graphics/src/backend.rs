@@ -8,6 +8,7 @@ use std::sync::Arc;
 use winit::window::Window;
 
 pub type StaticTextureLookup = fn(path: &str) -> Option<&'static [u8]>;
+pub type StaticMeshLookup = fn(path: &str) -> Option<&'static [u8]>;
 
 pub trait GraphicsBackend: RenderBridge {
     fn attach_window(&mut self, window: Arc<Window>);
@@ -45,6 +46,7 @@ pub struct PerroGraphics {
     smoothing_enabled: bool,
     smoothing_samples: u32,
     static_texture_lookup: Option<StaticTextureLookup>,
+    static_mesh_lookup: Option<StaticMeshLookup>,
 }
 
 impl PerroGraphics {
@@ -60,11 +62,17 @@ impl PerroGraphics {
             smoothing_enabled: true,
             smoothing_samples: 4,
             static_texture_lookup: None,
+            static_mesh_lookup: None,
         }
     }
 
     pub fn with_static_texture_lookup(mut self, lookup: StaticTextureLookup) -> Self {
         self.static_texture_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_static_mesh_lookup(mut self, lookup: StaticMeshLookup) -> Self {
+        self.static_mesh_lookup = Some(lookup);
         self
     }
 
@@ -216,6 +224,7 @@ impl GraphicsBackend for PerroGraphics {
                 &upload,
                 &sprites_2d,
                 self.static_texture_lookup,
+                self.static_mesh_lookup,
             );
         }
     }

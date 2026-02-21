@@ -26,7 +26,7 @@ impl From<MeshVertex> for MeshVertexKey {
     }
 }
 
-pub(super) fn build_builtin_mesh_buffer() -> (Vec<MeshVertex>, Vec<u16>, HashMap<&'static str, MeshRange>) {
+pub(super) fn build_builtin_mesh_buffer() -> (Vec<MeshVertex>, Vec<u32>, HashMap<&'static str, MeshRange>) {
     const ROUND_SEGMENTS: u32 = 36;
     const SPHERE_LATITUDE_BANDS: u32 = 24;
     const CAPSULE_HEMISPHERE_BANDS: u32 = 14;
@@ -71,7 +71,7 @@ pub(super) fn build_builtin_mesh_buffer() -> (Vec<MeshVertex>, Vec<u16>, HashMap
     (all_vertices, all_indices, ranges)
 }
 
-fn deduplicate_mesh((vertices, indices): (Vec<MeshVertex>, Vec<u16>)) -> (Vec<MeshVertex>, Vec<u16>) {
+fn deduplicate_mesh((vertices, indices): (Vec<MeshVertex>, Vec<u16>)) -> (Vec<MeshVertex>, Vec<u32>) {
     let mut unique_vertices = Vec::with_capacity(vertices.len());
     let mut remap = vec![0u16; vertices.len()];
     let mut vertex_to_index = HashMap::with_capacity(vertices.len());
@@ -93,7 +93,7 @@ fn deduplicate_mesh((vertices, indices): (Vec<MeshVertex>, Vec<u16>)) -> (Vec<Me
 
     let remapped_indices = indices
         .into_iter()
-        .map(|index| remap[index as usize])
+        .map(|index| remap[index as usize] as u32)
         .collect();
     (unique_vertices, remapped_indices)
 }

@@ -12,6 +12,7 @@ perro_ids = "0.1.0"
 perro_render_bridge = "0.1.0"
 perro_io = "0.1.0"
 image = { version = "0.25.8", default-features = true }
+gltf = "1.4.1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 wgpu = { version = "28.0.0", default-features = false, features = ["std", "dx12", "vulkan", "wgsl"] }

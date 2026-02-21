@@ -1,7 +1,7 @@
 use crate::{StaticPipelineError, res_dir, static_dir};
 use perro_io::walkdir::walk_dir;
 use perro_scene::{Parser, RuntimeValue};
-use std::{collections::HashMap, fmt::Write as _, fs, path::Path};
+use std::{collections::HashMap, fmt::Write as _, fs, io, path::Path};
 
 pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
@@ -11,22 +11,28 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
     let mut materials: Vec<(String, MaterialLiteral)> = Vec::new();
     if res_dir.exists() {
         walk_dir(&res_dir, &mut |path| {
-            if path.extension().and_then(|e| e.to_str()) != Some("pmat") {
-                return Ok(());
-            }
             let rel = path.strip_prefix(&res_dir).unwrap().to_string_lossy().replace('\\', "/");
             let res_path = format!("res://{rel}");
-            let src = fs::read_to_string(path)?;
-            let parsed = std::panic::catch_unwind(|| Parser::new(&src).parse_value_literal())
-                .map_err(|_| {
-                    std::io::Error::other(format!("failed to parse material: {res_path}"))
-                })?;
-            let material = material_from_runtime_value(&parsed).ok_or_else(|| {
-                std::io::Error::other(format!(
-                    "material `{res_path}` must be an object with at least one valid field"
-                ))
-            })?;
-            materials.push((res_path, material));
+            match path.extension().and_then(|e| e.to_str()) {
+                Some("pmat") => {
+                    let src = fs::read_to_string(path)?;
+                    let parsed = std::panic::catch_unwind(|| Parser::new(&src).parse_value_literal())
+                        .map_err(|_| {
+                            std::io::Error::other(format!("failed to parse material: {res_path}"))
+                        })?;
+                    let material = material_from_runtime_value(&parsed).ok_or_else(|| {
+                        std::io::Error::other(format!(
+                            "material `{res_path}` must be an object with at least one valid field"
+                        ))
+                    })?;
+                    materials.push((res_path, material));
+                }
+                Some("glb") | Some("gltf") => {
+                    let mut gltf_materials = materials_from_gltf_file(path, &res_path)?;
+                    materials.append(&mut gltf_materials);
+                }
+                _ => {}
+            }
             Ok(())
         })?;
     }
@@ -189,4 +195,44 @@ fn runtime_as_color4(value: &RuntimeValue) -> Option<[f32; 4]> {
 
 fn escape_str(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn materials_from_gltf_file(path: &Path, res_path: &str) -> io::Result<Vec<(String, MaterialLiteral)>> {
+    let (doc, _buffers, _images) = gltf::import(path).map_err(|err| {
+        io::Error::other(format!("failed to import model `{res_path}` for materials: {err}"))
+    })?;
+
+    let mut out = Vec::<(String, MaterialLiteral)>::new();
+    for (index, material) in doc.materials().enumerate() {
+        let pbr = material.pbr_metallic_roughness();
+        let base_color = pbr.base_color_factor();
+        let emissive_factor = material.emissive_factor();
+        let derived = MaterialLiteral {
+            base_color,
+            roughness: pbr.roughness_factor(),
+            metallic: pbr.metallic_factor(),
+            ao: material
+                .occlusion_texture()
+                .map(|occ| occ.strength())
+                .unwrap_or(1.0),
+            emissive: emissive_factor
+                .iter()
+                .copied()
+                .fold(0.0_f32, f32::max),
+        };
+        out.push((format!("{res_path}:mat[{index}]"), derived));
+    }
+    if out.is_empty() {
+        out.push((
+            format!("{res_path}:mat[0]"),
+            MaterialLiteral {
+                base_color: [0.85, 0.85, 0.85, 1.0],
+                roughness: 0.5,
+                metallic: 0.0,
+                ao: 1.0,
+                emissive: 0.0,
+            },
+        ));
+    }
+    Ok(out)
 }
