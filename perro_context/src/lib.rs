@@ -88,6 +88,13 @@ macro_rules! call_method {
 }
 
 #[macro_export]
+macro_rules! params {
+    ($($value:expr),* $(,)?) => {
+        &[$(::perro_variant::Variant::from($value)),*]
+    };
+}
+
+#[macro_export]
 macro_rules! delta_time {
     ($ctx:expr) => {
         $ctx.Time().get_delta()
@@ -114,7 +121,7 @@ pub mod prelude {
     pub use crate::{
         attach_script, call_method, create_node, delta_time, detach_script, elapsed_time,
         fixed_delta_time, get_var, mutate_meta, mutate_node, read_meta, read_node, set_var,
-        with_state, with_state_mut,
+        with_state, with_state_mut, params,
     };
 }
 
@@ -261,6 +268,7 @@ mod tests {
         let _value = get_var!(&mut ctx, id, member);
         set_var!(&mut ctx, id, member, perro_variant::Variant::Null);
         let _result = call_method!(&mut ctx, id, member, &[]);
+        let _result2 = call_method!(&mut ctx, id, member, params![1_i32, "abc"]);
 
         let dt = delta_time!(&mut ctx);
         let fdt = fixed_delta_time!(&mut ctx);

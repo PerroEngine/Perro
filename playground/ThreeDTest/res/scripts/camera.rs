@@ -23,16 +23,14 @@ impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for CameraScript {
             state.job = 123;
             state.job
         }).unwrap_or_default();
-            LogMod::info(format!("CameraScript init called, set job to {j}"));
-        call_method!(ctx, NodeID(4), ScriptMemberID::from_string("bob"), &[7123.into(), "bodsasb".into()]);
-           let j2 = with_state!(ctx, CameraState, self_id, |state| {
-            state.job
-        }).unwrap_or_default();
-            LogMod::info(format!("re-entrant job to {j2}"));
     }
 
     fn update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
         let dt = delta_time!(ctx);
+        call_method!(ctx, NodeID(4), ScriptMemberID::from_string("bob"), params![7123_i32, "bodsasb"]);
+           let j2 = with_state!(ctx, CameraState, self_id, |state| {
+            state.job
+        }).unwrap_or_default();
 
     }
 
@@ -41,11 +39,9 @@ impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for CameraScript {
 
 impl CameraScript {
     pub fn bob<R: RuntimeAPI + ?Sized>(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID, param1: i32, j: &str) {
-        LogMod::info(format!("re-entrant bob method called with param1: {param1} and j: {j}"));
         let j = with_state_mut!(ctx, CameraState, self_id, |state| {
             state.job += 1;
             state.job
         }).unwrap_or_default();
-        LogMod::info(format!("incremented job to {j}"));
     }
 }
