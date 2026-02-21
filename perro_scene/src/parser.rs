@@ -169,7 +169,10 @@ impl<'a> Parser<'a> {
                         self.advance();
                         break;
                     }
-                    panic!("Expected ',' or '}}' in object literal, got {:?}", self.current);
+                    panic!(
+                        "Expected ',' or '}}' in object literal, got {:?}",
+                        self.current
+                    );
                 }
                 RuntimeValue::Object(entries)
             }

@@ -1,4 +1,4 @@
-use perro_api::prelude::*;
+use perro_context::prelude::*;
 use perro_core::prelude::*;
 use perro_ids::prelude::*;
 use perro_modules::prelude::*;
@@ -17,27 +17,20 @@ pub struct ExampleState {
 pub struct ExampleScript;
 
 impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
-    fn init(&self, api: &mut API<'_, R>, self_id: NodeID) {
-        let _ = api
-            .Scripts()
-            .with_state_mut::<ExampleState, _, _>(self_id, |state| {
-                state.speed = 5.0;
-            });
-    }
-
-    fn update(&self, api: &mut API<'_, R>, self_id: NodeID) {
-        let dt = api.Time().get_delta();
-        let speed = api
-            .Scripts()
-            .with_state::<ExampleState, _, _>(self_id, |state| {
-                state.speed
-            })
-            .unwrap_or_default();
-        api.Nodes().mutate::<SelfNodeType, _>(self_id, |mesh| {
-            mesh.transform.rotation.rotate_y(dt * speed);
-            mesh.transform.rotation.rotate_z(dt * speed / 2.0);
+    fn init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+        let _ = with_state_mut!(ctx, ExampleState, self_id, |state| {
+            state.speed = 5.0;
         });
     }
 
-    fn fixed_update(&self, _api: &mut API<'_, R>, _self_id: NodeID) {}
+    fn update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+        let dt = delta_time!(ctx);
+        let speed = with_state!(ctx, ExampleState, self_id, |state| state.speed).unwrap_or_default();
+        mutate_node!(ctx, SelfNodeType, self_id, |mesh| {
+            mesh.scale.x += dt * speed;
+            mesh.rotation.rotate_z(dt * speed / 2.0);
+        });
+    }
+
+    fn fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
 }

@@ -10,7 +10,7 @@ perro_render_bridge = "0.1.0"
 perro_app = "0.1.0"
 perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
-perro_api = "0.1.0"
+perro_context = "0.1.0"
 perro_core = "0.1.0"
 perro_scene = "0.1.0"
 scripts = { path = "../scripts" }
@@ -27,7 +27,7 @@ debug-assertions = false
 overflow-checks = false
 
 [patch.crates-io]
-perro_api = { path = "../../../../perro_api" }
+perro_context = { path = "../../../../perro_context" }
 perro_app = { path = "../../../../perro_app" }
 perro_core = { path = "../../../../perro_core" }
 perro_graphics = { path = "../../../../perro_graphics" }

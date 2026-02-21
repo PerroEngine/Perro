@@ -1,8 +1,11 @@
-use super::common::push_index_triangle_outward;
 use super::super::MeshVertex;
+use super::common::push_index_triangle_outward;
 use glam::Vec3;
 
-pub(super) fn geometry(longitude_segments: u32, latitude_segments: u32) -> (Vec<MeshVertex>, Vec<u16>) {
+pub(super) fn geometry(
+    longitude_segments: u32,
+    latitude_segments: u32,
+) -> (Vec<MeshVertex>, Vec<u16>) {
     let lon = longitude_segments.max(3);
     let lat = latitude_segments.max(2);
     let mut vertices = Vec::new();

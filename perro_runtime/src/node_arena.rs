@@ -104,10 +104,14 @@ impl NodeArena {
 
     /// Iterator over all valid nodes
     pub fn iter(&self) -> impl Iterator<Item = (NodeID, &SceneNode)> {
-        self.nodes.iter().enumerate().skip(1).filter_map(|(index, node)| {
-            node.as_ref()
-                .map(|n| (NodeID::from_parts(index as u32, self.generations[index]), n))
-        })
+        self.nodes
+            .iter()
+            .enumerate()
+            .skip(1)
+            .filter_map(|(index, node)| {
+                node.as_ref()
+                    .map(|n| (NodeID::from_parts(index as u32, self.generations[index]), n))
+            })
     }
 
     /// Mutable iterator

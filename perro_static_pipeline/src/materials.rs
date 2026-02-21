@@ -11,15 +11,22 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
     let mut materials: Vec<(String, MaterialLiteral)> = Vec::new();
     if res_dir.exists() {
         walk_dir(&res_dir, &mut |path| {
-            let rel = path.strip_prefix(&res_dir).unwrap().to_string_lossy().replace('\\', "/");
+            let rel = path
+                .strip_prefix(&res_dir)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
             let res_path = format!("res://{rel}");
             match path.extension().and_then(|e| e.to_str()) {
                 Some("pmat") => {
                     let src = fs::read_to_string(path)?;
-                    let parsed = std::panic::catch_unwind(|| Parser::new(&src).parse_value_literal())
-                        .map_err(|_| {
-                            std::io::Error::other(format!("failed to parse material: {res_path}"))
-                        })?;
+                    let parsed =
+                        std::panic::catch_unwind(|| Parser::new(&src).parse_value_literal())
+                            .map_err(|_| {
+                                std::io::Error::other(format!(
+                                    "failed to parse material: {res_path}"
+                                ))
+                            })?;
                     let material = material_from_runtime_value(&parsed).ok_or_else(|| {
                         std::io::Error::other(format!(
                             "material `{res_path}` must be an object with at least one valid field"
@@ -75,7 +82,11 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
             material.emissive_factor[2],
             material.alpha_mode,
             material.alpha_cutoff,
-            if material.double_sided { "true" } else { "false" },
+            if material.double_sided {
+                "true"
+            } else {
+                "false"
+            },
             material.normal_scale,
             material.base_color_texture,
             material.metallic_roughness_texture,
@@ -350,9 +361,14 @@ fn escape_str(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-fn materials_from_gltf_file(path: &Path, res_path: &str) -> io::Result<Vec<(String, MaterialLiteral)>> {
+fn materials_from_gltf_file(
+    path: &Path,
+    res_path: &str,
+) -> io::Result<Vec<(String, MaterialLiteral)>> {
     let (doc, _buffers, _images) = gltf::import(path).map_err(|err| {
-        io::Error::other(format!("failed to import model `{res_path}` for materials: {err}"))
+        io::Error::other(format!(
+            "failed to import model `{res_path}` for materials: {err}"
+        ))
     })?;
 
     let mut out = Vec::<(String, MaterialLiteral)>::new();

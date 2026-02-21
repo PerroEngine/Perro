@@ -98,8 +98,11 @@ pub fn run_static_embedded_project(
     let graphics = PerroGraphics::new()
         .with_static_mesh_lookup(mesh_lookup)
         .with_static_texture_lookup(texture_lookup);
-    let runtime =
-        Runtime::from_project_with_script_registry(project, ProviderMode::Static, static_script_registry);
+    let runtime = Runtime::from_project_with_script_registry(
+        project,
+        ProviderMode::Static,
+        static_script_registry,
+    );
     let app = App::new(runtime, graphics);
     WinitRunner::new().run(app, &window_title);
     Ok(())

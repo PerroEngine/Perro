@@ -45,10 +45,7 @@ impl Runtime {
 
             let camera_data = self.nodes.get(node_id).and_then(|node| match &node.data {
                 SceneNodeData::Camera2D(camera) if camera.active => Some(Camera2DState {
-                    position: [
-                        camera.transform.position.x,
-                        camera.transform.position.y,
-                    ],
+                    position: [camera.transform.position.x, camera.transform.position.y],
                     rotation_radians: camera.transform.rotation,
                     zoom: camera.zoom,
                 }),

@@ -126,8 +126,12 @@ fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
         parse_flag_value(args, "--name").unwrap_or_else(|| DEFAULT_PROJECT_NAME.to_string());
     let project_dir = base_dir.join(sanitize_project_dir_name(&project_name));
 
-    create_new_project(&project_dir, &project_name)
-        .map_err(|err| format!("failed to create project at {}: {err}", project_dir.display()))?;
+    create_new_project(&project_dir, &project_name).map_err(|err| {
+        format!(
+            "failed to create project at {}: {err}",
+            project_dir.display()
+        )
+    })?;
 
     println!(
         "created project `{}` at {}",
@@ -141,9 +145,12 @@ fn build_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
-    compile_scripts(&project_dir)
-        .map(|_| ())
-        .map_err(|err| format!("scripts pipeline failed for {}: {err}", project_dir.display()))
+    compile_scripts(&project_dir).map(|_| ()).map_err(|err| {
+        format!(
+            "scripts pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })
 }
 
 fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
@@ -153,9 +160,12 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_name =
         parse_flag_value(args, "--name").unwrap_or_else(|| DEFAULT_PROJECT_NAME.to_string());
 
-    compile_scripts(&project_dir)
-        .map(|_| ())
-        .map_err(|err| format!("scripts pipeline failed for {}: {err}", project_dir.display()))?;
+    compile_scripts(&project_dir).map(|_| ()).map_err(|err| {
+        format!(
+            "scripts pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })?;
 
     let root = workspace_root();
 
@@ -171,7 +181,12 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .arg(project_name)
         .current_dir(&root)
         .status()
-        .map_err(|err| format!("failed to run perro_dev_runner from {}: {err}", root.display()))?;
+        .map_err(|err| {
+            format!(
+                "failed to run perro_dev_runner from {}: {err}",
+                root.display()
+            )
+        })?;
 
     if !status.success() {
         return Err(format!(
@@ -190,6 +205,10 @@ fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
-    compile_project_bundle(&project_dir)
-        .map_err(|err| format!("project pipeline failed for {}: {err}", project_dir.display()))
+    compile_project_bundle(&project_dir).map_err(|err| {
+        format!(
+            "project pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })
 }

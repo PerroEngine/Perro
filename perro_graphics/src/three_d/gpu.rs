@@ -434,7 +434,8 @@ impl Gpu3D {
         let index_count = decoded.indices.len() as u32;
 
         self.mesh_vertices.extend_from_slice(&decoded.vertices);
-        self.mesh_indices.extend(decoded.indices.iter().copied().map(|idx| idx + base_vertex));
+        self.mesh_indices
+            .extend(decoded.indices.iter().copied().map(|idx| idx + base_vertex));
 
         self.vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("perro_mesh_vertices"),
@@ -754,7 +755,12 @@ fn build_scene_uniform(
     let mut scene = Scene3DUniform {
         view_proj: compute_view_proj(camera, width, height),
         ambient_and_counts: [0.0, 0.0, 0.0, 0.0],
-        camera_pos: [camera.position[0], camera.position[1], camera.position[2], 0.0],
+        camera_pos: [
+            camera.position[0],
+            camera.position[1],
+            camera.position[2],
+            0.0,
+        ],
         ambient_color: [1.0, 1.0, 1.0, 0.0],
         ray_light: RayLightGpu {
             direction: [0.0, 0.0, -1.0, 0.0],

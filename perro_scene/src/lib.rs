@@ -243,12 +243,7 @@ mod tests {
             }
             _ => panic!("rotation should be quaternion vec4"),
         }
-        assert!(
-            main.data
-                .fields
-                .iter()
-                .all(|(k, _)| k != "rotation_deg")
-        );
+        assert!(main.data.fields.iter().all(|(k, _)| k != "rotation_deg"));
     }
 
     #[test]

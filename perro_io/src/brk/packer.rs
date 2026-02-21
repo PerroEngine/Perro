@@ -4,10 +4,10 @@ use std::{
     path::Path,
 };
 
-use crate::compress_deflate_best;
 use super::common::{
     BRK_MAGIC, BrkEntryMeta, BrkHeader, FLAG_COMPRESSED, write_header, write_index_entry,
 };
+use crate::compress_deflate_best;
 
 // Scripts (compiled into binary)
 const SKIP_SCRIPT_EXT: &[&str] = &["rs"];
@@ -24,7 +24,7 @@ const SKIP_IMAGES: &[&str] = &[
 const SKIP_MODELS: &[&str] = &["glb", "gltf"];
 
 // Resources compiled into static runtime tables
-const SKIP_RESOURCES: &[&str] = &["pmat", "pmesh"];
+const SKIP_RESOURCES: &[&str] = &["pmat"];
 
 fn should_skip(path: &str) -> bool {
     let ext = path.rsplit('.').next().unwrap_or("");

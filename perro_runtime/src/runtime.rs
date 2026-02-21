@@ -63,7 +63,7 @@ impl ScriptSchedules {
         }
     }
 
-    fn snapshot_update<R: perro_api::api::RuntimeAPI + ?Sized>(
+    fn snapshot_update<R: perro_context::api::RuntimeAPI + ?Sized>(
         &mut self,
         scripts: &ScriptCollection<R>,
     ) {
@@ -74,14 +74,15 @@ impl ScriptSchedules {
 
         let needed = scripts.update_schedule_len();
         if self.update_slots.capacity() < needed {
-            self.update_slots.reserve(needed - self.update_slots.capacity());
+            self.update_slots
+                .reserve(needed - self.update_slots.capacity());
         }
         self.update_slots.clear();
         scripts.append_update_slots(&mut self.update_slots);
         self.update_epoch = epoch;
     }
 
-    fn snapshot_fixed<R: perro_api::api::RuntimeAPI + ?Sized>(
+    fn snapshot_fixed<R: perro_context::api::RuntimeAPI + ?Sized>(
         &mut self,
         scripts: &ScriptCollection<R>,
     ) {
@@ -92,7 +93,8 @@ impl ScriptSchedules {
 
         let needed = scripts.fixed_schedule_len();
         if self.fixed_slots.capacity() < needed {
-            self.fixed_slots.reserve(needed - self.fixed_slots.capacity());
+            self.fixed_slots
+                .reserve(needed - self.fixed_slots.capacity());
         }
         self.fixed_slots.clear();
         scripts.append_fixed_update_slots(&mut self.fixed_slots);

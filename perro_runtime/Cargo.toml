@@ -9,7 +9,7 @@ libloading = "0.8"
 
 perro_ids = "0.1.0"
 perro_core = "0.1.0"
-perro_api = "0.1.0"
+perro_context = "0.1.0"
 perro_scripting = "0.1.0"
 perro_io = "0.1.0"
 perro_scene = "0.1.0"

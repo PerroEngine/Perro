@@ -2,8 +2,7 @@ use crate::{StaticPipelineError, embedded_dir, res_dir, static_dir};
 use perro_io::{compress_zlib_best, walkdir::walk_dir};
 use std::{
     fmt::Write as _,
-    fs,
-    io,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -133,11 +132,8 @@ fn build_gltf_mesh_entries(
         let Some(primitive) = mesh.primitives().next() else {
             continue;
         };
-        let reader = primitive.reader(|buffer| {
-            buffers
-                .get(buffer.index())
-                .map(|data| data.0.as_slice())
-        });
+        let reader =
+            primitive.reader(|buffer| buffers.get(buffer.index()).map(|data| data.0.as_slice()));
 
         let Some(positions) = reader.read_positions() else {
             continue;
@@ -190,10 +186,7 @@ fn material_from_gltf(material: gltf::Material<'_>) -> PackedMaterial {
             .occlusion_texture()
             .map(|occ| occ.strength())
             .unwrap_or(1.0),
-        emissive: emissive_factor
-            .iter()
-            .copied()
-            .fold(0.0_f32, f32::max),
+        emissive: emissive_factor.iter().copied().fold(0.0_f32, f32::max),
     }
 }
 

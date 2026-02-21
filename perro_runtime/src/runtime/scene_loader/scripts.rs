@@ -1,5 +1,5 @@
 use crate::{Runtime, runtime_project::ProviderMode};
-use perro_api::API;
+use perro_context::RuntimeContext;
 use perro_scripting::{ScriptBehavior, ScriptConstructor};
 use std::{
     fs,
@@ -36,12 +36,17 @@ impl Runtime {
         }
 
         for (id, script_path) in script_nodes {
-            let ctor = *self.dynamic_script_registry.get(&script_path).ok_or_else(|| {
-                format!("script `{script_path}` is not present in the dynamic script registry")
-            })?;
+            let ctor = *self
+                .dynamic_script_registry
+                .get(&script_path)
+                .ok_or_else(|| {
+                    format!("script `{script_path}` is not present in the dynamic script registry")
+                })?;
             let raw = ctor();
             if raw.is_null() {
-                return Err(format!("script constructor returned null for `{script_path}`"));
+                return Err(format!(
+                    "script constructor returned null for `{script_path}`"
+                ));
             }
 
             let behavior: Box<dyn ScriptBehavior<Self>> = unsafe { Box::from_raw(raw) };
@@ -51,8 +56,8 @@ impl Runtime {
             self.scripts.insert(id, Arc::clone(&behavior), state);
 
             if flags.has_init() {
-                let mut api = API::new(self);
-                behavior.init(&mut api, id);
+                let mut ctx = RuntimeContext::new(self);
+                behavior.init(&mut ctx, id);
             }
         }
 
@@ -135,9 +140,7 @@ impl Runtime {
                 }
                 let bytes = std::slice::from_raw_parts(ptr, len);
                 let path = std::str::from_utf8(bytes)
-                    .map_err(|err| {
-                        format!("scripts registry entry {i} path is not UTF-8: {err}")
-                    })?
+                    .map_err(|err| format!("scripts registry entry {i} path is not UTF-8: {err}"))?
                     .to_string();
                 self.dynamic_script_registry
                     .insert(path, ctor.assume_init());
@@ -165,8 +168,12 @@ fn resolve_scripts_dylib_path() -> Result<PathBuf, String> {
     if deps_dir.exists() {
         let prefix = scripts_dylib_prefix();
         let suffix = scripts_dylib_suffix();
-        let entries = fs::read_dir(&deps_dir)
-            .map_err(|err| format!("failed to scan `{}` for scripts dylib: {err}", deps_dir.display()))?;
+        let entries = fs::read_dir(&deps_dir).map_err(|err| {
+            format!(
+                "failed to scan `{}` for scripts dylib: {err}",
+                deps_dir.display()
+            )
+        })?;
         for entry in entries.flatten() {
             let path = entry.path();
             let Some(name) = path.file_name().and_then(|v| v.to_str()) else {

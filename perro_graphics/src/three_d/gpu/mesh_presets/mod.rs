@@ -2,6 +2,7 @@ use super::{MeshRange, MeshVertex};
 use std::collections::HashMap;
 
 mod capsule;
+mod common;
 mod cone;
 mod cube;
 mod cylinder;
@@ -9,7 +10,6 @@ mod sphere;
 mod square_pyramid;
 mod tri_prism;
 mod triangular_pyramid;
-mod common;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct MeshVertexKey {
@@ -26,21 +26,28 @@ impl From<MeshVertex> for MeshVertexKey {
     }
 }
 
-pub(super) fn build_builtin_mesh_buffer() -> (Vec<MeshVertex>, Vec<u32>, HashMap<&'static str, MeshRange>) {
+pub(super) fn build_builtin_mesh_buffer()
+-> (Vec<MeshVertex>, Vec<u32>, HashMap<&'static str, MeshRange>) {
     const ROUND_SEGMENTS: u32 = 36;
     const SPHERE_LATITUDE_BANDS: u32 = 24;
     const CAPSULE_HEMISPHERE_BANDS: u32 = 14;
 
     let presets = [
         ("__cube__", deduplicate_mesh(cube::geometry())),
-        ("__tri_pyr__", deduplicate_mesh(triangular_pyramid::geometry())),
+        (
+            "__tri_pyr__",
+            deduplicate_mesh(triangular_pyramid::geometry()),
+        ),
         ("__sq_pyr__", deduplicate_mesh(square_pyramid::geometry())),
         (
             "__sphere__",
             deduplicate_mesh(sphere::geometry(ROUND_SEGMENTS, SPHERE_LATITUDE_BANDS)),
         ),
         ("__tri_prism__", deduplicate_mesh(tri_prism::geometry())),
-        ("__cylinder__", deduplicate_mesh(cylinder::geometry(ROUND_SEGMENTS))),
+        (
+            "__cylinder__",
+            deduplicate_mesh(cylinder::geometry(ROUND_SEGMENTS)),
+        ),
         ("__cone__", deduplicate_mesh(cone::geometry(ROUND_SEGMENTS))),
         (
             "__capsule__",
@@ -71,7 +78,9 @@ pub(super) fn build_builtin_mesh_buffer() -> (Vec<MeshVertex>, Vec<u32>, HashMap
     (all_vertices, all_indices, ranges)
 }
 
-fn deduplicate_mesh((vertices, indices): (Vec<MeshVertex>, Vec<u16>)) -> (Vec<MeshVertex>, Vec<u32>) {
+fn deduplicate_mesh(
+    (vertices, indices): (Vec<MeshVertex>, Vec<u16>),
+) -> (Vec<MeshVertex>, Vec<u32>) {
     let mut unique_vertices = Vec::with_capacity(vertices.len());
     let mut remap = vec![0u16; vertices.len()];
     let mut vertex_to_index = HashMap::with_capacity(vertices.len());

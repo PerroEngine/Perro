@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
-perro_api = "0.1.0"
+perro_context = "0.1.0"
 perro_core = "0.1.0"
 perro_modules = "0.1.0"
 perro_variant = "0.1.0"
@@ -36,7 +36,7 @@ strip = "none"
 overflow-checks = false
 
 [patch.crates-io]
-perro_api = { path = "../../../../perro_api" }
+perro_context = { path = "../../../../perro_context" }
 perro_core = { path = "../../../../perro_core" }
 perro_ids = { path = "../../../../perro_ids" }
 perro_io = { path = "../../../../perro_io" }

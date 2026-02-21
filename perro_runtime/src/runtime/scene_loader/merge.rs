@@ -48,7 +48,10 @@ pub(super) fn merge_prepared_scene(
             runtime.render_3d.material_sources.insert(node_id, source);
         }
         if let Some(material) = material_inline {
-            runtime.render_3d.material_overrides.insert(node_id, material);
+            runtime
+                .render_3d
+                .material_overrides
+                .insert(node_id, material);
         }
         if let Some(parent_key) = parent_key {
             parent_pairs.push((key.clone(), parent_key));
@@ -69,9 +72,7 @@ pub(super) fn merge_prepared_scene(
             .get(&child_key)
             .ok_or_else(|| format!("child node key `{child_key}` not found"))?;
         let parent_id = *key_to_id.get(&parent_key).ok_or_else(|| {
-            format!(
-                "parent node key `{parent_key}` not found while linking child `{child_key}`"
-            )
+            format!("parent node key `{parent_key}` not found while linking child `{child_key}`")
         })?;
 
         if let Some(child) = runtime.nodes.get_mut(child_id) {

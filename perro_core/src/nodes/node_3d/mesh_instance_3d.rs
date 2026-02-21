@@ -1,7 +1,6 @@
 use crate::node_3d::node_3d::Node3D;
 use perro_ids::{MaterialID, MeshID};
-use std::{ops::{Deref, DerefMut}};
-
+use std::ops::{Deref, DerefMut};
 
 impl Deref for MeshInstance3D {
     type Target = Node3D;

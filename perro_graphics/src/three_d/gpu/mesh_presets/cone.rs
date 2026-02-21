@@ -1,5 +1,5 @@
-use super::common::push_triangle;
 use super::super::MeshVertex;
+use super::common::push_triangle;
 
 pub(super) fn geometry(segments: u32) -> (Vec<MeshVertex>, Vec<u16>) {
     let seg = segments.max(3);

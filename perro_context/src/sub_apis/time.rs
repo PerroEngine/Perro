@@ -25,12 +25,3 @@ impl<'rt, R: TimeAPI + ?Sized> TimeModule<'rt, R> {
         self.rt.get_elapsed()
     }
 }
-
-impl<'rt, R: TimeAPI + ?Sized> TimeModule<'rt, R> {
-    pub fn get_unix_time(&mut self) -> f64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64()
-    }
-}

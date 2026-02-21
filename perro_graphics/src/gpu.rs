@@ -1,7 +1,10 @@
 use crate::{
     backend::{StaticMeshLookup, StaticTextureLookup},
     resources::ResourceStore,
-    three_d::{gpu::Gpu3D, renderer::{Draw3DInstance, Lighting3DState}},
+    three_d::{
+        gpu::Gpu3D,
+        renderer::{Draw3DInstance, Lighting3DState},
+    },
     two_d::{
         gpu::Gpu2D,
         renderer::{Camera2DUniform, RectInstanceGpu, RectUploadPlan},

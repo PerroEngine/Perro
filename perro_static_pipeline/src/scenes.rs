@@ -18,7 +18,11 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
             if path.extension().and_then(|e| e.to_str()) != Some("scn") {
                 return Ok(());
             }
-            let rel = path.strip_prefix(&res_dir).unwrap().to_string_lossy().replace('\\', "/");
+            let rel = path
+                .strip_prefix(&res_dir)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
             let res_path = format!("res://{rel}");
             let src = fs::read_to_string(path)?;
             let parsed = std::panic::catch_unwind(|| Parser::new(&src).parse_scene())
@@ -39,7 +43,12 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
     lookup.push_str("    match path {\n");
     for p in &scene_paths {
         let id = sanitize_ident(p);
-        let _ = writeln!(lookup, "        \"{}\" => Some(&SCENE_{}),", escape_str(p), id);
+        let _ = writeln!(
+            lookup,
+            "        \"{}\" => Some(&SCENE_{}),",
+            escape_str(p),
+            id
+        );
     }
     lookup.push_str("        _ => None,\n");
     lookup.push_str("    }\n");
@@ -239,12 +248,15 @@ fn emit_value_with_consts(
         RuntimeValue::Vec3 { x, y, z } => {
             format!("StaticSceneValue::Vec3 {{ x: {x:?}, y: {y:?}, z: {z:?} }}")
         }
-        RuntimeValue::Vec4 { x, y, z, w } => format!(
-            "StaticSceneValue::Vec4 {{ x: {x:?}, y: {y:?}, z: {z:?}, w: {w:?} }}"
-        ),
+        RuntimeValue::Vec4 { x, y, z, w } => {
+            format!("StaticSceneValue::Vec4 {{ x: {x:?}, y: {y:?}, z: {z:?}, w: {w:?} }}")
+        }
         RuntimeValue::Str(s) => format!("StaticSceneValue::Str(\"{}\")", escape_str(s)),
         RuntimeValue::Key(s) => {
-            format!("StaticSceneValue::Key(StaticSceneKey(\"{}\"))", escape_str(s))
+            format!(
+                "StaticSceneValue::Key(StaticSceneKey(\"{}\"))",
+                escape_str(s)
+            )
         }
         RuntimeValue::Object(entries) => {
             let idx = *counter;
@@ -253,8 +265,14 @@ fn emit_value_with_consts(
             let mut nested_consts = String::new();
             let mut object_entries = String::new();
             for (name, value) in entries {
-                let nested = emit_value_with_consts(&mut nested_consts, scene_ident, value, counter);
-                let _ = writeln!(object_entries, "    (\"{}\", {}),", escape_str(name), nested);
+                let nested =
+                    emit_value_with_consts(&mut nested_consts, scene_ident, value, counter);
+                let _ = writeln!(
+                    object_entries,
+                    "    (\"{}\", {}),",
+                    escape_str(name),
+                    nested
+                );
             }
             out.push_str(&nested_consts);
             let _ = writeln!(out, "const {object_name}: &[(&str, StaticSceneValue)] = &[");

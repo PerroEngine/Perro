@@ -11,8 +11,7 @@ pub use perro_project::{bootstrap_project, create_new_project};
 pub use render_result::RuntimeRenderResult;
 pub use runtime::Runtime;
 pub use runtime_project::{
-    ProjectLoadError, ProviderMode, RuntimeProject, RuntimeProjectConfig, StaticProjectConfig,
-    StaticMaterialLookup, StaticSceneLookup,
-    default_project_toml, ensure_project_layout, ensure_project_toml, load_project_toml,
-    parse_project_toml,
+    ProjectLoadError, ProviderMode, RuntimeProject, RuntimeProjectConfig, StaticMaterialLookup,
+    StaticProjectConfig, StaticSceneLookup, default_project_toml, ensure_project_layout,
+    ensure_project_toml, load_project_toml, parse_project_toml,
 };

@@ -1,4 +1,7 @@
-use std::{io, path::{Path, PathBuf}};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 use perro_io::{ProjectRoot, load_asset, save_asset, set_project_root};
 

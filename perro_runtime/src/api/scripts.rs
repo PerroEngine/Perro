@@ -1,4 +1,4 @@
-use perro_api::{API, sub_apis::ScriptAPI};
+use perro_context::{RuntimeContext, sub_apis::ScriptAPI};
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_variant::Variant;
 use std::sync::Arc;
@@ -8,26 +8,28 @@ use crate::Runtime;
 impl Runtime {
     #[inline(always)]
     pub(crate) fn call_update_script_scheduled(&mut self, instance_index: usize, id: NodeID) {
-        let behavior = match self.scripts.get_instance_scheduled_indexed(instance_index, id) {
+        let behavior = match self
+            .scripts
+            .get_instance_scheduled_indexed(instance_index, id)
+        {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return,
         };
-        let mut api = API::new(self);
-        behavior.update(&mut api, id);
+        let mut ctx = RuntimeContext::new(self);
+        behavior.update(&mut ctx, id);
     }
 
     #[inline(always)]
-    pub(crate) fn call_fixed_update_script_scheduled(
-        &mut self,
-        instance_index: usize,
-        id: NodeID,
-    ) {
-        let behavior = match self.scripts.get_instance_scheduled_indexed(instance_index, id) {
+    pub(crate) fn call_fixed_update_script_scheduled(&mut self, instance_index: usize, id: NodeID) {
+        let behavior = match self
+            .scripts
+            .get_instance_scheduled_indexed(instance_index, id)
+        {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return,
         };
-        let mut api = API::new(self);
-        behavior.fixed_update(&mut api, id);
+        let mut ctx = RuntimeContext::new(self);
+        behavior.fixed_update(&mut ctx, id);
     }
 }
 
@@ -59,13 +61,11 @@ impl ScriptAPI for Runtime {
     }
 
     fn set_var(&mut self, script_id: NodeID, member: ScriptMemberID, value: Variant) {
-        let _ = self
-            .scripts
-            .with_instance_mut(script_id, |instance| {
-                instance
-                    .behavior
-                    .set_var(instance.state.as_mut(), member, &value);
-            });
+        let _ = self.scripts.with_instance_mut(script_id, |instance| {
+            instance
+                .behavior
+                .set_var(instance.state.as_mut(), member, &value);
+        });
     }
 
     fn call_method(
@@ -78,7 +78,7 @@ impl ScriptAPI for Runtime {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return Variant::Null,
         };
-        let mut api = API::new(self);
-        behavior.call_method(method_id, &mut api, script_id, params)
+        let mut ctx = RuntimeContext::new(self);
+        behavior.call_method(method_id, &mut ctx, script_id, params)
     }
 }

@@ -27,7 +27,11 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
                 return Ok(());
             }
 
-            let rel = path.strip_prefix(&res_dir).unwrap().to_string_lossy().replace('\\', "/");
+            let rel = path
+                .strip_prefix(&res_dir)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
             let res_path = format!("res://{rel}");
             let file_bytes = fs::read(path)?;
             let image = image::load_from_memory(&file_bytes).map_err(|err| {

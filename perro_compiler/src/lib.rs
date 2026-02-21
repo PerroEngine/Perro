@@ -91,14 +91,18 @@ pub fn compile_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError
 pub fn compile_project_bundle(project_root: &Path) -> Result<(), CompilerError> {
     ensure_source_overrides(project_root)?;
     let _ = compile_scripts(project_root)?;
-    perro_static_pipeline::generate_static_scenes(project_root)
-        .map_err(|err| CompilerError::SceneParse(format!("scene static generation failed: {err}")))?;
-    perro_static_pipeline::generate_static_materials(project_root)
-        .map_err(|err| CompilerError::SceneParse(format!("material static generation failed: {err}")))?;
-    perro_static_pipeline::generate_static_meshes(project_root)
-        .map_err(|err| CompilerError::SceneParse(format!("mesh static generation failed: {err}")))?;
-    perro_static_pipeline::generate_static_textures(project_root)
-        .map_err(|err| CompilerError::SceneParse(format!("texture static generation failed: {err}")))?;
+    perro_static_pipeline::generate_static_scenes(project_root).map_err(|err| {
+        CompilerError::SceneParse(format!("scene static generation failed: {err}"))
+    })?;
+    perro_static_pipeline::generate_static_materials(project_root).map_err(|err| {
+        CompilerError::SceneParse(format!("material static generation failed: {err}"))
+    })?;
+    perro_static_pipeline::generate_static_meshes(project_root).map_err(|err| {
+        CompilerError::SceneParse(format!("mesh static generation failed: {err}"))
+    })?;
+    perro_static_pipeline::generate_static_textures(project_root).map_err(|err| {
+        CompilerError::SceneParse(format!("texture static generation failed: {err}"))
+    })?;
     perro_static_pipeline::write_static_mod_rs(project_root)
         .map_err(|err| CompilerError::SceneParse(format!("static mod generation failed: {err}")))?;
     generate_embedded_main(project_root)?;
@@ -139,7 +143,10 @@ fn ensure_project_dependency_line(
     crate_name: &str,
     dependency_line: &str,
 ) -> Result<(), CompilerError> {
-    let manifest_path = project_root.join(".perro").join("project").join("Cargo.toml");
+    let manifest_path = project_root
+        .join(".perro")
+        .join("project")
+        .join("Cargo.toml");
     let mut src = fs::read_to_string(&manifest_path)?;
 
     // Only treat entries inside [dependencies] as satisfying this check.
@@ -392,7 +399,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptBehavior<R> for {script_ty} {{
     fn call_method(
         &self,
         _method_id: ScriptMemberID,
-        _api: &mut API<'_, R>,
+        _ctx: &mut RuntimeContext<'_, R>,
         _self_id: NodeID,
         _params: &[Variant],
     ) -> Variant {{
@@ -679,9 +686,7 @@ fn generate_member_consts(fields: &[StateField]) -> String {
 
 fn generate_get_var_body(state_ty: &str, fields: &[StateField]) -> String {
     if fields.is_empty() {
-        return String::from(
-            "           Variant::Null"
-        );
+        return String::from("           Variant::Null");
     }
 
     let mut out = String::new();
@@ -706,9 +711,7 @@ fn generate_get_var_body(state_ty: &str, fields: &[StateField]) -> String {
 
 fn generate_set_var_body(state_ty: &str, fields: &[StateField]) -> String {
     if fields.is_empty() {
-        return String::from(
-            ""
-        );
+        return String::from("");
     }
 
     let mut out = String::new();
@@ -817,7 +820,10 @@ fn generate_attributes_of_body(fields: &[StateField]) -> String {
     let mut out = String::new();
     out.push_str("        match member {\n");
     for field in fields {
-        out.push_str(&format!("            \"{}\" => &[\"export\"],\n", field.name));
+        out.push_str(&format!(
+            "            \"{}\" => &[\"export\"],\n",
+            field.name
+        ));
     }
     out.push_str("            _ => &[],\n");
     out.push_str("        }");

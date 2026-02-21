@@ -2,11 +2,11 @@ use super::Runtime;
 use perro_core::SceneNodeData;
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_io::load_asset;
-use perro_scene::{Parser, RuntimeValue};
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, Command3D, Material3D, PointLight3DState,
-    RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
+    AmbientLight3DState, Camera3DState, Command3D, Material3D, PointLight3DState, RayLight3DState,
+    RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
 };
+use perro_scene::{Parser, RuntimeValue};
 
 impl Runtime {
     fn mesh_request_id(node: NodeID) -> RenderRequestID {

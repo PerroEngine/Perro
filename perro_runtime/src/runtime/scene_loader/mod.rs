@@ -85,7 +85,8 @@ impl Runtime {
                 script_nodes = merge_prepared_scene(self, prepared)?;
                 node_insert = node_insert_start.elapsed();
             }
-            ProviderMode::Static => match static_lookup.and_then(|lookup| lookup(&main_scene_path)) {
+            ProviderMode::Static => match static_lookup.and_then(|lookup| lookup(&main_scene_path))
+            {
                 Some(scene) => {
                     mode_label = "static";
                     let prepared = prepare_static_scene(scene)?;
@@ -95,7 +96,8 @@ impl Runtime {
                 }
                 None => {
                     mode_label = "static_fallback_dynamic";
-                    let (runtime_scene, load_stats) = load_runtime_scene_from_disk(&main_scene_path)?;
+                    let (runtime_scene, load_stats) =
+                        load_runtime_scene_from_disk(&main_scene_path)?;
                     source_load = Some(load_stats.source_load);
                     parse = Some(load_stats.parse);
                     let prepared = prepare_runtime_scene(runtime_scene)?;

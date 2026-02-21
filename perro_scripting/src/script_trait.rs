@@ -1,4 +1,4 @@
-use perro_api::{API, api::RuntimeAPI};
+use perro_context::{RuntimeContext, api::RuntimeAPI};
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_variant::Variant;
 use std::any::Any;
@@ -7,9 +7,9 @@ use std::any::Any;
 pub type ScriptConstructor<R> = extern "C" fn() -> *mut dyn ScriptBehavior<R>;
 
 pub trait ScriptLifecycle<R: RuntimeAPI + ?Sized> {
-    fn init(&self, _api: &mut API<'_, R>, _self_id: NodeID) {}
-    fn update(&self, _api: &mut API<'_, R>, _self_id: NodeID) {}
-    fn fixed_update(&self, _api: &mut API<'_, R>, _self_id: NodeID) {}
+    fn init(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
 }
 
 pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
@@ -23,7 +23,7 @@ pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
     fn call_method(
         &self,
         method_id: ScriptMemberID,
-        api: &mut API<'_, R>,
+        ctx: &mut RuntimeContext<'_, R>,
         self_id: NodeID,
         params: &[Variant],
     ) -> Variant;

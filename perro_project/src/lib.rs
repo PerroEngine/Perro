@@ -184,9 +184,15 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         scripts_crate.join("Cargo.toml"),
         &default_scripts_crate_toml(),
     )?;
-    write_if_missing(project_src.join("main.rs"), &default_project_main_rs(project_name))?;
+    write_if_missing(
+        project_src.join("main.rs"),
+        &default_project_main_rs(project_name),
+    )?;
     write_if_missing(project_static_src.join("mod.rs"), &default_static_mod_rs())?;
-    write_if_missing(project_static_src.join("scenes.rs"), &default_static_scenes_rs())?;
+    write_if_missing(
+        project_static_src.join("scenes.rs"),
+        &default_static_scenes_rs(),
+    )?;
     write_if_missing(
         project_static_src.join("materials.rs"),
         &default_static_materials_rs(),
@@ -195,7 +201,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         project_static_src.join("textures.rs"),
         &default_static_textures_rs(),
     )?;
-    write_if_missing(project_static_src.join("meshes.rs"), &default_static_meshes_rs())?;
+    write_if_missing(
+        project_static_src.join("meshes.rs"),
+        &default_static_meshes_rs(),
+    )?;
     write_if_missing(project_embedded.join("assets.brk"), "")?;
     write_if_missing(scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
 
@@ -385,7 +394,7 @@ fn default_main_scene() -> String {
 }
 
 fn default_script_example_rs() -> String {
-    r#"use perro_api::prelude::*;
+    r#"use perro_context::prelude::*;
 use perro_core::prelude::*;
 use perro_ids::prelude::*;
 use perro_modules::prelude::*;
@@ -403,26 +412,26 @@ pub struct ExampleState {
 pub struct ExampleScript;
 
 impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
-    fn init(&self, api: &mut API<'_, R>, self_id: NodeID) {
+    fn init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
         let _origin = Vector2::new(0.0, 0.0);
         LogMod::info("Script initialized!");
-        let _ = api
+        let _ = ctx
             .Scripts()
             .with_state_mut::<ExampleState, _, _>(self_id, |state| {
                 state.speed = 240.0;
             });
     }
 
-    fn update(&self, api: &mut API<'_, R>, self_id: NodeID) {
-        let dt = api.Time().get_delta();
-        let _ = api
+    fn update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+        let dt = delta_time!(ctx);
+        let _ = ctx
             .Scripts()
             .with_state_mut::<ExampleState, _, _>(self_id, |state| {
                 state.speed += dt;
             });
     }
 
-    fn fixed_update(&self, _api: &mut API<'_, R>, _self_id: NodeID) {}
+    fn fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
 }
 "#
     .to_string()
@@ -450,7 +459,7 @@ edition = "2024"
 perro_app = "0.1.0"
 perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
-perro_api = "0.1.0"
+perro_context = "0.1.0"
 perro_core = "0.1.0"
 perro_scene = "0.1.0"
 perro_render_bridge = "0.1.0"
@@ -485,7 +494,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
-perro_api = "0.1.0"
+perro_context = "0.1.0"
 perro_core = "0.1.0"
 perro_modules = "0.1.0"
 perro_variant = "0.1.0"
@@ -739,12 +748,7 @@ fn source_overrides_block_for_manifest(manifest_path: &Path, manifest_src: &str)
         return String::new();
     };
     let mut visited = BTreeSet::new();
-    collect_perro_deps_from_local_path_deps(
-        manifest_path,
-        manifest_src,
-        &mut crates,
-        &mut visited,
-    );
+    collect_perro_deps_from_local_path_deps(manifest_path, manifest_src, &mut crates, &mut visited);
     expand_transitive_perro_deps(&engine_root, &mut crates);
     if crates.is_empty() {
         return String::new();

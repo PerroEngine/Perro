@@ -1,17 +1,19 @@
 use perro_core::{
-    Quaternion, SceneNode, SceneNodeData, Vector2, Vector3,
-    ambient_light_3d::AmbientLight3D,
+    Quaternion, SceneNode, SceneNodeData, Vector2, Vector3, ambient_light_3d::AmbientLight3D,
     camera_2d::Camera2D, camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D,
-    node_2d::node_2d::Node2D, node_3d::node_3d::Node3D, sprite_2d::Sprite2D,
-    point_light_3d::PointLight3D, ray_light_3d::RayLight3D, spot_light_3d::SpotLight3D,
+    node_2d::node_2d::Node2D, node_3d::node_3d::Node3D, point_light_3d::PointLight3D,
+    ray_light_3d::RayLight3D, spot_light_3d::SpotLight3D, sprite_2d::Sprite2D,
 };
 use perro_io::load_asset;
+use perro_render_bridge::Material3D;
 use perro_scene::{
     Parser, RuntimeNodeData, RuntimeNodeEntry, RuntimeScene, RuntimeValue, StaticNodeData,
     StaticNodeEntry, StaticNodeType, StaticScene, StaticSceneValue,
 };
-use perro_render_bridge::Material3D;
-use std::{borrow::Cow, time::{Duration, Instant}};
+use std::{
+    borrow::Cow,
+    time::{Duration, Instant},
+};
 
 pub(super) struct RuntimeSceneLoadStats {
     pub(super) source_load: Duration,
@@ -142,14 +144,19 @@ fn scene_node_from_static_entry(
     let material_source_explicit = extract_material_source_static(&entry.data);
     let material_inline = extract_material_inline_static(&entry.data);
     let model_source = extract_model_source_static(&entry.data);
-    let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref() {
+    let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref()
+    {
         (
             Some(format!("{model}:mesh[0]")),
             Some(format!("{model}:mat[0]")),
             None,
         )
     } else {
-        (mesh_source_explicit, material_source_explicit, material_inline)
+        (
+            mesh_source_explicit,
+            material_source_explicit,
+            material_inline,
+        )
     };
     Ok((
         node,
@@ -184,14 +191,19 @@ fn scene_node_from_runtime_entry(
     let material_source_explicit = extract_material_source(&entry.data);
     let material_inline = extract_material_inline(&entry.data);
     let model_source = extract_model_source(&entry.data);
-    let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref() {
+    let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref()
+    {
         (
             Some(format!("{model}:mesh[0]")),
             Some(format!("{model}:mat[0]")),
             None,
         )
     } else {
-        (mesh_source_explicit, material_source_explicit, material_inline)
+        (
+            mesh_source_explicit,
+            material_source_explicit,
+            material_inline,
+        )
     };
     Ok((
         node,
@@ -209,12 +221,20 @@ fn scene_node_data_from_runtime(data: &RuntimeNodeData) -> Result<SceneNodeData,
         "Sprite2D" => Ok(SceneNodeData::Sprite2D(build_runtime_sprite_2d(data))),
         "Camera2D" => Ok(SceneNodeData::Camera2D(build_runtime_camera_2d(data))),
         "Node3D" => Ok(SceneNodeData::Node3D(build_runtime_node_3d(data))),
-        "MeshInstance3D" => Ok(SceneNodeData::MeshInstance3D(build_runtime_mesh_instance_3d(data))),
+        "MeshInstance3D" => Ok(SceneNodeData::MeshInstance3D(
+            build_runtime_mesh_instance_3d(data),
+        )),
         "Camera3D" => Ok(SceneNodeData::Camera3D(build_runtime_camera_3d(data))),
-        "AmbientLight3D" => Ok(SceneNodeData::AmbientLight3D(build_runtime_ambient_light_3d(data))),
+        "AmbientLight3D" => Ok(SceneNodeData::AmbientLight3D(
+            build_runtime_ambient_light_3d(data),
+        )),
         "RayLight3D" => Ok(SceneNodeData::RayLight3D(build_runtime_ray_light_3d(data))),
-        "PointLight3D" => Ok(SceneNodeData::PointLight3D(build_runtime_point_light_3d(data))),
-        "SpotLight3D" => Ok(SceneNodeData::SpotLight3D(build_runtime_spot_light_3d(data))),
+        "PointLight3D" => Ok(SceneNodeData::PointLight3D(build_runtime_point_light_3d(
+            data,
+        ))),
+        "SpotLight3D" => Ok(SceneNodeData::SpotLight3D(build_runtime_spot_light_3d(
+            data,
+        ))),
         other => Err(format!("unsupported scene node type `{other}`")),
     }
 }
@@ -226,18 +246,22 @@ fn scene_node_data_from_static(data: &StaticNodeData) -> Result<SceneNodeData, S
         StaticNodeType::Sprite2D => Ok(SceneNodeData::Sprite2D(build_static_sprite_2d(data))),
         StaticNodeType::Camera2D => Ok(SceneNodeData::Camera2D(build_static_camera_2d(data))),
         StaticNodeType::Node3D => Ok(SceneNodeData::Node3D(build_static_node_3d(data))),
-        StaticNodeType::MeshInstance3D => {
-            Ok(SceneNodeData::MeshInstance3D(build_static_mesh_instance_3d(data)))
-        }
+        StaticNodeType::MeshInstance3D => Ok(SceneNodeData::MeshInstance3D(
+            build_static_mesh_instance_3d(data),
+        )),
         StaticNodeType::Camera3D => Ok(SceneNodeData::Camera3D(build_static_camera_3d(data))),
-        StaticNodeType::AmbientLight3D => {
-            Ok(SceneNodeData::AmbientLight3D(build_static_ambient_light_3d(data)))
+        StaticNodeType::AmbientLight3D => Ok(SceneNodeData::AmbientLight3D(
+            build_static_ambient_light_3d(data),
+        )),
+        StaticNodeType::RayLight3D => {
+            Ok(SceneNodeData::RayLight3D(build_static_ray_light_3d(data)))
         }
-        StaticNodeType::RayLight3D => Ok(SceneNodeData::RayLight3D(build_static_ray_light_3d(data))),
-        StaticNodeType::PointLight3D => {
-            Ok(SceneNodeData::PointLight3D(build_static_point_light_3d(data)))
+        StaticNodeType::PointLight3D => Ok(SceneNodeData::PointLight3D(
+            build_static_point_light_3d(data),
+        )),
+        StaticNodeType::SpotLight3D => {
+            Ok(SceneNodeData::SpotLight3D(build_static_spot_light_3d(data)))
         }
-        StaticNodeType::SpotLight3D => Ok(SceneNodeData::SpotLight3D(build_static_spot_light_3d(data))),
     }
 }
 
@@ -990,9 +1014,11 @@ fn extract_texture_source(data: &RuntimeNodeData) -> Option<String> {
     if data.ty != "Sprite2D" {
         return None;
     }
-    data.fields
-        .iter()
-        .find_map(|(name, value)| (name == "texture").then(|| as_asset_source(value)).flatten())
+    data.fields.iter().find_map(|(name, value)| {
+        (name == "texture")
+            .then(|| as_asset_source(value))
+            .flatten()
+    })
 }
 
 fn extract_mesh_source(data: &RuntimeNodeData) -> Option<String> {
@@ -1251,9 +1277,11 @@ fn extract_mesh_source_static(data: &StaticNodeData) -> Option<String> {
     if data.ty != StaticNodeType::MeshInstance3D {
         return None;
     }
-    data.fields
-        .iter()
-        .find_map(|(name, value)| (*name == "mesh").then(|| as_asset_source_static(value)).flatten())
+    data.fields.iter().find_map(|(name, value)| {
+        (*name == "mesh")
+            .then(|| as_asset_source_static(value))
+            .flatten()
+    })
 }
 
 fn extract_material_source_static(data: &StaticNodeData) -> Option<String> {
@@ -1286,9 +1314,11 @@ fn extract_model_source_static(data: &StaticNodeData) -> Option<String> {
     if data.ty != StaticNodeType::MeshInstance3D {
         return None;
     }
-    data.fields
-        .iter()
-        .find_map(|(name, value)| (*name == "model").then(|| as_asset_source_static(value)).flatten())
+    data.fields.iter().find_map(|(name, value)| {
+        (*name == "model")
+            .then(|| as_asset_source_static(value))
+            .flatten()
+    })
 }
 
 fn material_from_static_object(entries: &[(&str, StaticSceneValue)]) -> Option<Material3D> {

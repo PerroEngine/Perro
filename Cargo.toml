@@ -1,5 +1,5 @@
 [workspace]
-members = ["perro_api",
+members = ["perro_context",
     "perro_app", "perro_cli", "perro_compiler", "perro_core", "perro_dev_runner", "perro_graphics", "perro_ids", "perro_io", "perro_modules", "perro_project", "perro_render_bridge", "perro_runtime", "perro_scene", "perro_scripting", "perro_static_pipeline", "perro_variant",
 ]
 
@@ -10,7 +10,7 @@ perro_core = {path = "perro_core"}
 perro_scene = {path = "perro_scene"}
 perro_ids = {path = "perro_ids"}
 perro_io = {path = "perro_io"}
-perro_api = {path = "perro_api"}
+perro_context = {path = "perro_context"}
 perro_scripting = {path = "perro_scripting"}
 perro_variant = {path="perro_variant"}
 perro_runtime = {path="perro_runtime"}

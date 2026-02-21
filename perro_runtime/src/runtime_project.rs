@@ -1,6 +1,6 @@
-use std::{collections::BTreeMap, path::PathBuf};
 use perro_render_bridge::Material3D;
 use perro_scene::StaticScene;
+use std::{collections::BTreeMap, path::PathBuf};
 
 pub use perro_project::{
     ProjectConfig as RuntimeProjectConfig, ProjectError as ProjectLoadError, StaticProjectConfig,

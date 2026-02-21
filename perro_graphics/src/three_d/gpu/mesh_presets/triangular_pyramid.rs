@@ -1,5 +1,5 @@
-use super::common::push_triangle;
 use super::super::MeshVertex;
+use super::common::push_triangle;
 
 pub(super) fn geometry() -> (Vec<MeshVertex>, Vec<u16>) {
     let mut vertices = Vec::new();

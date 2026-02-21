@@ -1,5 +1,5 @@
 [package]
-name = "perro_api"
+name = "perro_context"
 version = "0.1.0"
 edition = "2024"
 
