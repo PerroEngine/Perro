@@ -6,8 +6,7 @@ use perro_scripting::prelude::*;
 
 type SelfNodeType = Node2D;
 
-///@State
-#[derive(Default)]
+#[state]
 pub struct ExampleState {
     speed: f32,
 }

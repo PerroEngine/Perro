@@ -6,19 +6,16 @@ use perro_scripting::prelude::*;
 
 type SelfNodeType = MeshInstance3D;
 
-///@State
-#[derive(Default)]
+#[state]
 pub struct ExampleState {
+    #[default = 5.0]
     speed: f32,
+    #[default = 422]
     bob: i32
 }
 
 lifecycle!({
     fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
-        with_state_mut!(ctx, ExampleState, self_id, |state| {
-            state.speed = 5.0;
-            state.bob = 422;
-        });
     }
 
     fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {

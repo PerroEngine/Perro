@@ -6,9 +6,9 @@ use perro_scripting::prelude::*;
 
 type SelfNodeType = Camera3D;
 
-///@State
-#[derive(Default)]
+#[state]
 pub struct CameraState {
+    #[default = 5]
     job: i32
 }
 
@@ -16,13 +16,10 @@ const SPEED: f32 = 5.0;
 
 lifecycle!({
     fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
-       let j = get_var!(ctx, NodeID(3), smid!("bob"))
-        .as_i32()
-        .unwrap_or_default();
 
-        with_state_mut!(ctx, CameraState, self_id, |state| {
-            state.job = j;
-        });
+        let j = with_state!(ctx, CameraState, self_id, |state| {
+            state.job
+        }).unwrap_or_default();
         log_info!(j);
     }
 
