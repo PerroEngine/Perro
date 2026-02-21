@@ -195,6 +195,10 @@ impl Renderer2D {
         self.retained_sprites.len()
     }
 
+    pub fn retained_sprites(&self) -> impl Iterator<Item = Sprite2DCommand> + '_ {
+        self.retained_sprites.values().copied()
+    }
+
     fn upsert_retained_rect(&mut self, node: NodeID, rect: RectInstanceGpu) {
         if let Some(&idx) = self.node_to_rect_index.get(&node) {
             if self.retained_rects[idx] != rect {

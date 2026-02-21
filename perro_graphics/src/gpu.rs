@@ -1,4 +1,5 @@
 use crate::{
+    backend::StaticTextureLookup,
     resources::ResourceStore,
     three_d::{gpu::Gpu3D, renderer::{Draw3DInstance, Lighting3DState}},
     two_d::{
@@ -6,7 +7,7 @@ use crate::{
         renderer::{Camera2DUniform, RectInstanceGpu, RectUploadPlan},
     },
 };
-use perro_render_bridge::Camera3DState;
+use perro_render_bridge::{Camera3DState, Sprite2DCommand};
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -27,6 +28,7 @@ pub struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    render_format: wgpu::TextureFormat,
     sample_count: u32,
     msaa_color: Option<MsaaColorTarget>,
     two_d: Gpu2D,
@@ -56,12 +58,13 @@ impl Gpu {
         .ok()?;
 
         let caps = surface.get_capabilities(&adapter);
-        let format = caps
+        let surface_format = caps
             .formats
             .iter()
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
+        let render_format = surface_format;
         let present_mode = if caps.present_modes.contains(&wgpu::PresentMode::Fifo) {
             wgpu::PresentMode::Fifo
         } else {
@@ -74,7 +77,7 @@ impl Gpu {
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
+            format: surface_format,
             width,
             height,
             present_mode,
@@ -85,9 +88,10 @@ impl Gpu {
         surface.configure(&device, &config);
 
         let sample_count = normalize_sample_count(smoothing_samples);
-        let two_d = Gpu2D::new(&device, format, sample_count);
-        let three_d = Gpu3D::new(&device, format, sample_count, width, height);
-        let msaa_color = create_msaa_color_target(&device, format, width, height, sample_count);
+        let two_d = Gpu2D::new(&device, render_format, sample_count);
+        let three_d = Gpu3D::new(&device, render_format, sample_count, width, height);
+        let msaa_color =
+            create_msaa_color_target(&device, render_format, width, height, sample_count);
 
         Some(Self {
             window_handle: window,
@@ -95,6 +99,7 @@ impl Gpu {
             device,
             queue,
             config,
+            render_format,
             sample_count,
             msaa_color,
             two_d,
@@ -115,7 +120,7 @@ impl Gpu {
         self.three_d.resize(&self.device, width, height);
         self.msaa_color = create_msaa_color_target(
             &self.device,
-            self.config.format,
+            self.render_format,
             width,
             height,
             self.sample_count,
@@ -129,17 +134,17 @@ impl Gpu {
         }
         self.sample_count = sample_count;
         self.two_d
-            .set_sample_count(&self.device, self.config.format, sample_count);
+            .set_sample_count(&self.device, self.render_format, sample_count);
         self.three_d.set_sample_count(
             &self.device,
-            self.config.format,
+            self.render_format,
             sample_count,
             self.config.width,
             self.config.height,
         );
         self.msaa_color = create_msaa_color_target(
             &self.device,
-            self.config.format,
+            self.render_format,
             self.config.width,
             self.config.height,
             sample_count,
@@ -155,12 +160,22 @@ impl Gpu {
         camera_2d: Camera2DUniform,
         rects_2d: &[RectInstanceGpu],
         upload_2d: &RectUploadPlan,
+        sprites_2d: &[Sprite2DCommand],
+        static_texture_lookup: Option<StaticTextureLookup>,
     ) {
         // Keep window alive for the full surface lifetime.
         self.window_handle.id();
 
-        self.two_d
-            .prepare(&self.device, &self.queue, camera_2d, rects_2d, upload_2d);
+        self.two_d.prepare(
+            &self.device,
+            &self.queue,
+            resources,
+            camera_2d,
+            rects_2d,
+            upload_2d,
+            sprites_2d,
+            static_texture_lookup,
+        );
         self.three_d.prepare(
             &self.device,
             &self.queue,

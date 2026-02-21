@@ -1,0 +1,42 @@
+[workspace]
+
+[package]
+name = "twodtest"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+perro_render_bridge = "0.1.0"
+perro_app = "0.1.0"
+perro_ids = "0.1.0"
+perro_scripting = "0.1.0"
+perro_api = "0.1.0"
+perro_core = "0.1.0"
+perro_scene = "0.1.0"
+scripts = { path = "../scripts" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+incremental = true
+debug = false
+debug-assertions = false
+overflow-checks = false
+
+[patch.crates-io]
+perro_api = { path = "../../../../perro_api" }
+perro_app = { path = "../../../../perro_app" }
+perro_core = { path = "../../../../perro_core" }
+perro_graphics = { path = "../../../../perro_graphics" }
+perro_ids = { path = "../../../../perro_ids" }
+perro_io = { path = "../../../../perro_io" }
+perro_modules = { path = "../../../../perro_modules" }
+perro_project = { path = "../../../../perro_project" }
+perro_render_bridge = { path = "../../../../perro_render_bridge" }
+perro_runtime = { path = "../../../../perro_runtime" }
+perro_scene = { path = "../../../../perro_scene" }
+perro_scripting = { path = "../../../../perro_scripting" }
+perro_variant = { path = "../../../../perro_variant" }

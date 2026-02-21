@@ -15,7 +15,7 @@ pub(super) fn merge_prepared_scene(
     } = prepared;
 
     let mut engine_root = SceneNode::new(SceneNodeData::Node);
-    engine_root.name = Cow::Borrowed("Root");
+    engine_root.name = Cow::Borrowed("Game Root");
     let engine_root_id = runtime.nodes.insert(engine_root);
 
     let mut key_to_id: HashMap<String, NodeID> = HashMap::with_capacity(nodes.len());

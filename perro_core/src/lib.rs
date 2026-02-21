@@ -26,7 +26,7 @@ mod tests {
         // Create a base Node
         let mut root = SceneNode::new(SceneNodeData::Node);
         root.id = NodeID::new(1);
-        root.name = Cow::Borrowed("Root");
+        root.name = Cow::Borrowed("Game Root");
 
         println!("=== Base Node ===");
         println!("{:#?}", root);

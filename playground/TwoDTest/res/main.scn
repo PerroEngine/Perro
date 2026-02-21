@@ -1,0 +1,8 @@
+@root = main
+
+[main]
+
+[Sprite2D]
+texture = "res://images/perro.png"
+[/Sprite2D]
+[/main]

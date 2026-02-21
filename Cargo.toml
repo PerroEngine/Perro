@@ -1,6 +1,6 @@
 [workspace]
 members = ["perro_api",
-    "perro_app", "perro_cli", "perro_compiler", "perro_core", "perro_dev_runner", "perro_graphics", "perro_ids", "perro_io", "perro_modules", "perro_project", "perro_render_bridge", "perro_runtime", "perro_scene", "perro_scripting", "perro_variant",
+    "perro_app", "perro_cli", "perro_compiler", "perro_core", "perro_dev_runner", "perro_graphics", "perro_ids", "perro_io", "perro_modules", "perro_project", "perro_render_bridge", "perro_runtime", "perro_scene", "perro_scripting", "perro_static_pipeline", "perro_variant",
 ]
 
 resolver = "3"
@@ -22,6 +22,7 @@ perro_app = {path="perro_app"}
 perro_cli = {path="perro_cli"}
 perro_compiler = {path="perro_compiler"}
 perro_dev_runner = {path="perro_dev_runner"}
+perro_static_pipeline = {path="perro_static_pipeline"}
 
 [profile.release]
 opt-level = 2

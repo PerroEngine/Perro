@@ -7,6 +7,8 @@ use perro_render_bridge::{
 use std::sync::Arc;
 use winit::window::Window;
 
+pub type StaticTextureLookup = fn(path: &str) -> Option<&'static [u8]>;
+
 pub trait GraphicsBackend: RenderBridge {
     fn attach_window(&mut self, window: Arc<Window>);
     fn resize(&mut self, width: u32, height: u32);
@@ -42,6 +44,7 @@ pub struct PerroGraphics {
     viewport: (u32, u32),
     smoothing_enabled: bool,
     smoothing_samples: u32,
+    static_texture_lookup: Option<StaticTextureLookup>,
 }
 
 impl PerroGraphics {
@@ -56,7 +59,13 @@ impl PerroGraphics {
             viewport: (0, 0),
             smoothing_enabled: true,
             smoothing_samples: 4,
+            static_texture_lookup: None,
         }
+    }
+
+    pub fn with_static_texture_lookup(mut self, lookup: StaticTextureLookup) -> Self {
+        self.static_texture_lookup = Some(lookup);
+        self
     }
 
     fn process_commands(&mut self, commands: Vec<RenderCommand>) {
@@ -194,6 +203,7 @@ impl GraphicsBackend for PerroGraphics {
         let (camera_2d, _stats, upload) = self.renderer_2d.prepare_frame(&self.resources);
         let (camera_3d, _stats_3d, lighting_3d) = self.renderer_3d.prepare_frame(&self.resources);
         let draws_3d: Vec<_> = self.renderer_3d.retained_draws().collect();
+        let sprites_2d: Vec<_> = self.renderer_2d.retained_sprites().collect();
 
         if let Some(gpu) = &mut self.gpu {
             gpu.render(
@@ -204,6 +214,8 @@ impl GraphicsBackend for PerroGraphics {
                 camera_2d,
                 self.renderer_2d.retained_rects(),
                 &upload,
+                &sprites_2d,
+                self.static_texture_lookup,
             );
         }
     }

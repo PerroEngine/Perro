@@ -1,0 +1,4 @@
+target/
+.perro/project/embedded/
+.perro/project/src/static/
+.perro/scripts/src/

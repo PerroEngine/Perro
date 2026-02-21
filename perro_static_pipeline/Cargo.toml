@@ -1,10 +1,9 @@
 [package]
-name = "perro_compiler"
+name = "perro_static_pipeline"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 perro_io = "0.1.0"
-perro_project = "0.1.0"
 perro_scene = "0.1.0"
-perro_static_pipeline = "0.1.0"
+image = { version = "0.25.9", default-features = true }

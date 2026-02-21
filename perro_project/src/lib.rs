@@ -158,11 +158,15 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     let project_crate = perro_dir.join("project");
     let scripts_crate = perro_dir.join("scripts");
     let project_src = project_crate.join("src");
+    let project_static_src = project_src.join("static");
+    let project_embedded = project_crate.join("embedded");
     let scripts_src = scripts_crate.join("src");
 
     fs::create_dir_all(&res_dir)?;
     fs::create_dir_all(&res_scripts_dir)?;
     fs::create_dir_all(&project_src)?;
+    fs::create_dir_all(&project_static_src)?;
+    fs::create_dir_all(&project_embedded)?;
     fs::create_dir_all(&scripts_src)?;
 
     let crate_name = crate_name_from_project_name(project_name);
@@ -180,7 +184,18 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         scripts_crate.join("Cargo.toml"),
         &default_scripts_crate_toml(),
     )?;
-    write_if_missing(project_src.join("main.rs"), &default_project_main_rs())?;
+    write_if_missing(project_src.join("main.rs"), &default_project_main_rs(project_name))?;
+    write_if_missing(project_static_src.join("mod.rs"), &default_static_mod_rs())?;
+    write_if_missing(project_static_src.join("scenes.rs"), &default_static_scenes_rs())?;
+    write_if_missing(
+        project_static_src.join("materials.rs"),
+        &default_static_materials_rs(),
+    )?;
+    write_if_missing(
+        project_static_src.join("textures.rs"),
+        &default_static_textures_rs(),
+    )?;
+    write_if_missing(project_embedded.join("assets.brk"), "")?;
     write_if_missing(scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
 
     Ok(())
@@ -375,6 +390,8 @@ use perro_ids::prelude::*;
 use perro_modules::prelude::*;
 use perro_scripting::prelude::*;
 
+type SelfNodeType = Node2D;
+
 ///@State
 #[derive(Default)]
 pub struct ExampleState {
@@ -435,6 +452,7 @@ perro_scripting = "0.1.0"
 perro_api = "0.1.0"
 perro_core = "0.1.0"
 perro_scene = "0.1.0"
+perro_render_bridge = "0.1.0"
 scripts = {{ path = "../scripts" }}
 
 [profile.release]
@@ -512,10 +530,13 @@ fn rel_path(from: &Path, to: &Path) -> String {
     out.to_string_lossy().replace('\\', "/")
 }
 
-fn default_project_main_rs() -> String {
-    r#"use std::path::PathBuf;
+fn default_project_main_rs(project_name: &str) -> String {
+    r#"#[path = "static/mod.rs"]
+mod static_assets;
 
-fn project_root() -> PathBuf {
+static ASSETS_BRK: &[u8] = include_bytes!("../embedded/assets.brk");
+
+fn project_root() -> std::path::PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
             for dir in exe_dir.ancestors() {
@@ -526,26 +547,73 @@ fn project_root() -> PathBuf {
             return exe_dir.to_path_buf();
         }
     }
-
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
     if root.join("project.toml").exists() {
         return root.canonicalize().unwrap_or(root);
     }
-
-    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
 }
 
 fn main() {
     let root = project_root();
-    perro_app::entry::run_static_project_from_path(&root, "Perro Project")
-        .expect("failed to run project");
+    perro_app::entry::run_static_embedded_project(
+        &root,
+        "__PROJECT_NAME__",
+        "__PROJECT_NAME__",
+        "res://main.scn",
+        "res://icon.png",
+        1920,
+        1080,
+        ASSETS_BRK,
+        static_assets::scenes::lookup_scene,
+        static_assets::materials::lookup_material,
+        static_assets::textures::lookup_texture,
+        Some(scripts::SCRIPT_REGISTRY),
+    ).expect("failed to run embedded static project");
+}
+"#
+    .replace("__PROJECT_NAME__", project_name)
+}
+
+fn default_static_mod_rs() -> String {
+    "pub mod scenes;\npub mod materials;\npub mod textures;\n".to_string()
+}
+
+fn default_static_scenes_rs() -> String {
+    r#"use perro_scene::StaticScene;
+
+pub fn lookup_scene(_path: &str) -> Option<&'static StaticScene> {
+    None
+}
+"#
+    .to_string()
+}
+
+fn default_static_materials_rs() -> String {
+    r#"use perro_render_bridge::Material3D;
+
+pub fn lookup_material(_path: &str) -> Option<&'static Material3D> {
+    None
+}
+"#
+    .to_string()
+}
+
+fn default_static_textures_rs() -> String {
+    r#"pub fn lookup_texture(_path: &str) -> Option<&'static [u8]> {
+    None
 }
 "#
     .to_string()
 }
 
 fn default_scripts_lib_rs() -> String {
-    r#"#[unsafe(no_mangle)]
+    r#"use perro_runtime::Runtime;
+use perro_scripting::ScriptConstructor;
+
+pub static SCRIPT_REGISTRY: &[(&str, ScriptConstructor<Runtime>)] = &[];
+
+#[unsafe(no_mangle)]
 pub extern "C" fn perro_scripts_init() {}
 "#
     .to_string()

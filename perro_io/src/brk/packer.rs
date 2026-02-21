@@ -1,11 +1,10 @@
-use flate2::Compression;
-use flate2::write::DeflateEncoder;
 use std::{
     fs::File,
     io::{self, Seek, SeekFrom, Write},
     path::Path,
 };
 
+use crate::compress_deflate_best;
 use super::common::{
     BRK_MAGIC, BrkEntryMeta, BrkHeader, FLAG_COMPRESSED, write_header, write_index_entry,
 };
@@ -57,9 +56,6 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path) -> io::Res
 
     let mut entries = Vec::new();
 
-    // DEFLATE compression level (0-9, where 9 is best compression)
-    const COMPRESSION_LEVEL: Compression = Compression::best();
-
     // Helper to process data (compress if beneficial)
     let process_data =
         |mut data: Vec<u8>, should_compress: bool| -> io::Result<(Vec<u8>, u32, u64)> {
@@ -67,9 +63,7 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path) -> io::Res
             let mut flags = 0;
 
             if should_compress && original_data_len > 0 {
-                let mut encoder = DeflateEncoder::new(Vec::new(), COMPRESSION_LEVEL);
-                encoder.write_all(&data)?;
-                let compressed = encoder.finish()?;
+                let compressed = compress_deflate_best(&data)?;
 
                 // Only use compressed data if it's actually smaller
                 if compressed.len() < data.len() {

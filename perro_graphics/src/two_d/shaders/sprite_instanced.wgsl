@@ -41,7 +41,8 @@ fn mat3_to_mat4(t0: vec3<f32>, t1: vec3<f32>, t2: vec3<f32>) -> mat4x4<f32> {
 @vertex
 fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     let model = mat3_to_mat4(inst.transform_0, inst.transform_1, inst.transform_2);
-    let world = model * vec4<f32>(v.local_pos, 0.0, 1.0);
+    let tex_size = vec2<f32>(textureDimensions(tex_color));
+    let world = model * vec4<f32>(v.local_pos * tex_size, 0.0, 1.0);
     let view = camera.view * world;
     let ndc_xy = view.xy * camera.ndc_scale;
     let depth = 1.0 - f32(inst.z_index) * 0.001;
