@@ -176,7 +176,7 @@ mod tests {
         let first = store.create_material(mat, Some("res://materials/base.pmat"));
         let second = store.create_material(
             Material3D {
-                roughness: 1.0,
+                roughness_factor: 1.0,
                 ..Material3D::default()
             },
             Some("res://materials/base.pmat"),

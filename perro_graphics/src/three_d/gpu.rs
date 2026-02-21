@@ -66,7 +66,7 @@ struct InstanceGpu {
     model_2: [f32; 4],
     model_3: [f32; 4],
     color: [f32; 4],
-    pbr_params: [f32; 4], // roughness, metallic, ao, emissive
+    pbr_params: [f32; 4], // roughness, metallic, occlusion_strength, emissive_strength
 }
 
 pub struct Gpu3D {
@@ -301,12 +301,16 @@ impl Gpu3D {
                 model_1: draw.model[1],
                 model_2: draw.model[2],
                 model_3: draw.model[3],
-                color: material.base_color,
+                color: material.base_color_factor,
                 pbr_params: [
-                    material.roughness,
-                    material.metallic,
-                    material.ao,
-                    material.emissive,
+                    material.roughness_factor,
+                    material.metallic_factor,
+                    material.occlusion_strength,
+                    material
+                        .emissive_factor
+                        .iter()
+                        .copied()
+                        .fold(0.0_f32, f32::max),
                 ],
             });
             if let Some(batch) = self.draw_batches.last_mut() {

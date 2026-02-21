@@ -172,11 +172,20 @@ fn emit_node_data_consts(
         "EMPTY_SCENE_FIELDS".to_string()
     } else {
         let fields_name = format!("FIELDS_{}_{}", scene_ident, idx);
-        let _ = writeln!(out, "const {fields_name}: &[(&str, StaticSceneValue)] = &[");
+        let mut nested_consts = String::new();
+        let mut field_entries = String::new();
         for (name, value) in &data.fields {
-            let emitted = emit_value_with_consts(out, scene_ident, value, counter);
-            let _ = writeln!(out, "    (\"{}\", {}),", escape_str(name), emitted);
+            let emitted = emit_value_with_consts(&mut nested_consts, scene_ident, value, counter);
+            let _ = writeln!(
+                field_entries,
+                "    (\"{}\", {}),",
+                escape_str(name),
+                emitted
+            );
         }
+        out.push_str(&nested_consts);
+        let _ = writeln!(out, "const {fields_name}: &[(&str, StaticSceneValue)] = &[");
+        out.push_str(&field_entries);
         out.push_str("];\n");
         fields_name
     };
@@ -241,11 +250,15 @@ fn emit_value_with_consts(
             let idx = *counter;
             *counter += 1;
             let object_name = format!("OBJECT_{}_{}", scene_ident, idx);
-            let _ = writeln!(out, "const {object_name}: &[(&str, StaticSceneValue)] = &[");
+            let mut nested_consts = String::new();
+            let mut object_entries = String::new();
             for (name, value) in entries {
-                let nested = emit_value_with_consts(out, scene_ident, value, counter);
-                let _ = writeln!(out, "    (\"{}\", {}),", escape_str(name), nested);
+                let nested = emit_value_with_consts(&mut nested_consts, scene_ident, value, counter);
+                let _ = writeln!(object_entries, "    (\"{}\", {}),", escape_str(name), nested);
             }
+            out.push_str(&nested_consts);
+            let _ = writeln!(out, "const {object_name}: &[(&str, StaticSceneValue)] = &[");
+            out.push_str(&object_entries);
             out.push_str("];\n");
             format!("StaticSceneValue::Object({object_name})")
         }

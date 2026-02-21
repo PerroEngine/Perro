@@ -58,21 +58,42 @@ pub struct SpotLight3DState {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Material3D {
-    pub base_color: [f32; 4],
-    pub roughness: f32,
-    pub metallic: f32,
-    pub ao: f32,
-    pub emissive: f32,
+    pub base_color_factor: [f32; 4],
+    pub roughness_factor: f32,
+    pub metallic_factor: f32,
+    pub occlusion_strength: f32,
+    pub emissive_factor: [f32; 3],
+    pub alpha_mode: u32, // 0=OPAQUE, 1=MASK, 2=BLEND
+    pub alpha_cutoff: f32,
+    pub double_sided: bool,
+    pub normal_scale: f32,
+    // Texture slot indices (glTF material-local index or NONE).
+    pub base_color_texture: u32,
+    pub metallic_roughness_texture: u32,
+    pub normal_texture: u32,
+    pub occlusion_texture: u32,
+    pub emissive_texture: u32,
 }
+
+pub const MATERIAL_TEXTURE_NONE: u32 = u32::MAX;
 
 impl Default for Material3D {
     fn default() -> Self {
         Self {
-            base_color: [0.85, 0.85, 0.85, 1.0],
-            roughness: 0.5,
-            metallic: 0.0,
-            ao: 1.0,
-            emissive: 0.0,
+            base_color_factor: [0.85, 0.85, 0.85, 1.0],
+            roughness_factor: 0.5,
+            metallic_factor: 0.0,
+            occlusion_strength: 1.0,
+            emissive_factor: [0.0, 0.0, 0.0],
+            alpha_mode: 0,
+            alpha_cutoff: 0.5,
+            double_sided: false,
+            normal_scale: 1.0,
+            base_color_texture: MATERIAL_TEXTURE_NONE,
+            metallic_roughness_texture: MATERIAL_TEXTURE_NONE,
+            normal_texture: MATERIAL_TEXTURE_NONE,
+            occlusion_texture: MATERIAL_TEXTURE_NONE,
+            emissive_texture: MATERIAL_TEXTURE_NONE,
         }
     }
 }

@@ -942,6 +942,34 @@ fn as_quat(value: &RuntimeValue) -> Option<Quaternion> {
     }
 }
 
+fn as_texture_index(value: &RuntimeValue) -> Option<u32> {
+    match value {
+        RuntimeValue::Object(entries) => entries.iter().find_map(|(name, inner)| {
+            if name != "index" {
+                return None;
+            }
+            match inner {
+                RuntimeValue::I32(v) if *v >= 0 => Some(*v as u32),
+                _ => None,
+            }
+        }),
+        _ => None,
+    }
+}
+
+fn as_alpha_mode(value: &RuntimeValue) -> Option<u32> {
+    match value {
+        RuntimeValue::Str(s) => match s.as_str() {
+            "OPAQUE" => Some(0),
+            "MASK" => Some(1),
+            "BLEND" => Some(2),
+            _ => None,
+        },
+        RuntimeValue::I32(v) if (0..=2).contains(v) => Some(*v as u32),
+        _ => None,
+    }
+}
+
 fn as_asset_source(value: &RuntimeValue) -> Option<String> {
     match value {
         RuntimeValue::Str(v) => Some(v.clone()),
@@ -1014,42 +1042,109 @@ fn extract_model_source(data: &RuntimeNodeData) -> Option<String> {
 fn material_from_runtime_object(entries: &[(String, RuntimeValue)]) -> Option<Material3D> {
     let mut material = Material3D::default();
     let mut any = false;
+    apply_runtime_material_entries(entries, &mut material, &mut any);
+    any.then_some(material)
+}
+
+fn apply_runtime_material_entries(
+    entries: &[(String, RuntimeValue)],
+    material: &mut Material3D,
+    any: &mut bool,
+) {
     for (name, value) in entries {
         match name.as_str() {
-            "roughness" => {
+            "roughnessFactor" => {
                 if let Some(v) = as_f32(value) {
-                    material.roughness = v;
-                    any = true;
+                    material.roughness_factor = v;
+                    *any = true;
                 }
             }
-            "metallic" => {
+            "metallicFactor" => {
                 if let Some(v) = as_f32(value) {
-                    material.metallic = v;
-                    any = true;
+                    material.metallic_factor = v;
+                    *any = true;
                 }
             }
-            "ao" => {
+            "occlusionStrength" => {
                 if let Some(v) = as_f32(value) {
-                    material.ao = v;
-                    any = true;
+                    material.occlusion_strength = v;
+                    *any = true;
                 }
             }
-            "emissive" => {
-                if let Some(v) = as_f32(value) {
-                    material.emissive = v;
-                    any = true;
-                }
-            }
-            "base_color" | "albedo" | "color" => {
+            "emissiveFactor" => {
                 if let Some(color) = as_color4(value) {
-                    material.base_color = color;
-                    any = true;
+                    material.emissive_factor = [color[0], color[1], color[2]];
+                    *any = true;
+                }
+            }
+            "baseColorFactor" => {
+                if let Some(color) = as_color4(value) {
+                    material.base_color_factor = color;
+                    *any = true;
+                }
+            }
+            "normalScale" => {
+                if let Some(v) = as_f32(value) {
+                    material.normal_scale = v;
+                    *any = true;
+                }
+            }
+            "alphaCutoff" => {
+                if let Some(v) = as_f32(value) {
+                    material.alpha_cutoff = v;
+                    *any = true;
+                }
+            }
+            "alphaMode" => {
+                if let Some(mode) = as_alpha_mode(value) {
+                    material.alpha_mode = mode;
+                    *any = true;
+                }
+            }
+            "doubleSided" => {
+                if let Some(v) = as_bool(value) {
+                    material.double_sided = v;
+                    *any = true;
+                }
+            }
+            "baseColorTexture" => {
+                if let Some(index) = as_texture_index(value) {
+                    material.base_color_texture = index;
+                    *any = true;
+                }
+            }
+            "metallicRoughnessTexture" => {
+                if let Some(index) = as_texture_index(value) {
+                    material.metallic_roughness_texture = index;
+                    *any = true;
+                }
+            }
+            "normalTexture" => {
+                if let Some(index) = as_texture_index(value) {
+                    material.normal_texture = index;
+                    *any = true;
+                }
+            }
+            "occlusionTexture" => {
+                if let Some(index) = as_texture_index(value) {
+                    material.occlusion_texture = index;
+                    *any = true;
+                }
+            }
+            "emissiveTexture" => {
+                if let Some(index) = as_texture_index(value) {
+                    material.emissive_texture = index;
+                    *any = true;
+                }
+            }
+            "pbrMetallicRoughness" => {
+                if let RuntimeValue::Object(inner) = value {
+                    apply_runtime_material_entries(inner, material, any);
                 }
             }
             _ => {}
         }
     }
-    any.then_some(material)
 }
 
 // Static value parsers
@@ -1093,6 +1188,34 @@ fn as_vec3_static(value: &StaticSceneValue) -> Option<Vector3> {
 fn as_quat_static(value: &StaticSceneValue) -> Option<Quaternion> {
     match value {
         StaticSceneValue::Vec4 { x, y, z, w } => Some(Quaternion::new(*x, *y, *z, *w)),
+        _ => None,
+    }
+}
+
+fn as_texture_index_static(value: &StaticSceneValue) -> Option<u32> {
+    match value {
+        StaticSceneValue::Object(entries) => entries.iter().find_map(|(name, inner)| {
+            if *name != "index" {
+                return None;
+            }
+            match inner {
+                StaticSceneValue::I32(v) if *v >= 0 => Some(*v as u32),
+                _ => None,
+            }
+        }),
+        _ => None,
+    }
+}
+
+fn as_alpha_mode_static(value: &StaticSceneValue) -> Option<u32> {
+    match value {
+        StaticSceneValue::Str(s) => match *s {
+            "OPAQUE" => Some(0),
+            "MASK" => Some(1),
+            "BLEND" => Some(2),
+            _ => None,
+        },
+        StaticSceneValue::I32(v) if (0..=2).contains(v) => Some(*v as u32),
         _ => None,
     }
 }
@@ -1171,40 +1294,107 @@ fn extract_model_source_static(data: &StaticNodeData) -> Option<String> {
 fn material_from_static_object(entries: &[(&str, StaticSceneValue)]) -> Option<Material3D> {
     let mut material = Material3D::default();
     let mut any = false;
+    apply_static_material_entries(entries, &mut material, &mut any);
+    any.then_some(material)
+}
+
+fn apply_static_material_entries(
+    entries: &[(&str, StaticSceneValue)],
+    material: &mut Material3D,
+    any: &mut bool,
+) {
     for (name, value) in entries {
         match *name {
-            "roughness" => {
+            "roughnessFactor" => {
                 if let Some(v) = as_f32_static(value) {
-                    material.roughness = v;
-                    any = true;
+                    material.roughness_factor = v;
+                    *any = true;
                 }
             }
-            "metallic" => {
+            "metallicFactor" => {
                 if let Some(v) = as_f32_static(value) {
-                    material.metallic = v;
-                    any = true;
+                    material.metallic_factor = v;
+                    *any = true;
                 }
             }
-            "ao" => {
+            "occlusionStrength" => {
                 if let Some(v) = as_f32_static(value) {
-                    material.ao = v;
-                    any = true;
+                    material.occlusion_strength = v;
+                    *any = true;
                 }
             }
-            "emissive" => {
-                if let Some(v) = as_f32_static(value) {
-                    material.emissive = v;
-                    any = true;
-                }
-            }
-            "base_color" | "albedo" | "color" => {
+            "emissiveFactor" => {
                 if let Some(color) = as_color4_static(value) {
-                    material.base_color = color;
-                    any = true;
+                    material.emissive_factor = [color[0], color[1], color[2]];
+                    *any = true;
+                }
+            }
+            "baseColorFactor" => {
+                if let Some(color) = as_color4_static(value) {
+                    material.base_color_factor = color;
+                    *any = true;
+                }
+            }
+            "normalScale" => {
+                if let Some(v) = as_f32_static(value) {
+                    material.normal_scale = v;
+                    *any = true;
+                }
+            }
+            "alphaCutoff" => {
+                if let Some(v) = as_f32_static(value) {
+                    material.alpha_cutoff = v;
+                    *any = true;
+                }
+            }
+            "alphaMode" => {
+                if let Some(mode) = as_alpha_mode_static(value) {
+                    material.alpha_mode = mode;
+                    *any = true;
+                }
+            }
+            "doubleSided" => {
+                if let Some(v) = as_bool_static(value) {
+                    material.double_sided = v;
+                    *any = true;
+                }
+            }
+            "baseColorTexture" => {
+                if let Some(index) = as_texture_index_static(value) {
+                    material.base_color_texture = index;
+                    *any = true;
+                }
+            }
+            "metallicRoughnessTexture" => {
+                if let Some(index) = as_texture_index_static(value) {
+                    material.metallic_roughness_texture = index;
+                    *any = true;
+                }
+            }
+            "normalTexture" => {
+                if let Some(index) = as_texture_index_static(value) {
+                    material.normal_texture = index;
+                    *any = true;
+                }
+            }
+            "occlusionTexture" => {
+                if let Some(index) = as_texture_index_static(value) {
+                    material.occlusion_texture = index;
+                    *any = true;
+                }
+            }
+            "emissiveTexture" => {
+                if let Some(index) = as_texture_index_static(value) {
+                    material.emissive_texture = index;
+                    *any = true;
+                }
+            }
+            "pbrMetallicRoughness" => {
+                if let StaticSceneValue::Object(inner) = value {
+                    apply_static_material_entries(inner, material, any);
                 }
             }
             _ => {}
         }
     }
-    any.then_some(material)
 }

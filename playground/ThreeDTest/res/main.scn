@@ -1,5 +1,4 @@
 @root = main
-@default_mat = { roughness: 0.5, metallic: 1.0, base_color: (0.82, 0.82, 0.82, 1.0) }
 
 [main]
 [Node3D]
@@ -13,7 +12,7 @@ script = "res://scripts/script.rs"
 
 [MeshInstance3D]
     mesh = "res://models/2Noses.glb:mesh[1]"
-    material = @default_mat
+    material = "res://materials/mat.pmat"
 
     [Node3D]
         position = (0, 0, 0)

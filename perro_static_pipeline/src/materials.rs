@@ -62,15 +62,26 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
         let const_name = format!("MATERIAL_{}", index);
         let _ = writeln!(
             out,
-            "static {const_name}: Material3D = Material3D {{ base_color: [{:.6}, {:.6}, {:.6}, {:.6}], roughness: {:.6}, metallic: {:.6}, ao: {:.6}, emissive: {:.6} }};",
-            material.base_color[0],
-            material.base_color[1],
-            material.base_color[2],
-            material.base_color[3],
-            material.roughness,
-            material.metallic,
-            material.ao,
-            material.emissive
+            "static {const_name}: Material3D = Material3D {{ base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}], roughness_factor: {:.6}, metallic_factor: {:.6}, occlusion_strength: {:.6}, emissive_factor: [{:.6}, {:.6}, {:.6}], alpha_mode: {}, alpha_cutoff: {:.6}, double_sided: {}, normal_scale: {:.6}, base_color_texture: {}, metallic_roughness_texture: {}, normal_texture: {}, occlusion_texture: {}, emissive_texture: {} }};",
+            material.base_color_factor[0],
+            material.base_color_factor[1],
+            material.base_color_factor[2],
+            material.base_color_factor[3],
+            material.roughness_factor,
+            material.metallic_factor,
+            material.occlusion_strength,
+            material.emissive_factor[0],
+            material.emissive_factor[1],
+            material.emissive_factor[2],
+            material.alpha_mode,
+            material.alpha_cutoff,
+            if material.double_sided { "true" } else { "false" },
+            material.normal_scale,
+            material.base_color_texture,
+            material.metallic_roughness_texture,
+            material.normal_texture,
+            material.occlusion_texture,
+            material.emissive_texture
         );
     }
     out.push('\n');
@@ -94,35 +105,66 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
 
 #[derive(Clone, Copy)]
 struct MaterialLiteral {
-    base_color: [f32; 4],
-    roughness: f32,
-    metallic: f32,
-    ao: f32,
-    emissive: f32,
+    base_color_factor: [f32; 4],
+    roughness_factor: f32,
+    metallic_factor: f32,
+    occlusion_strength: f32,
+    emissive_factor: [f32; 3],
+    alpha_mode: u32,
+    alpha_cutoff: f32,
+    double_sided: bool,
+    normal_scale: f32,
+    base_color_texture: u32,
+    metallic_roughness_texture: u32,
+    normal_texture: u32,
+    occlusion_texture: u32,
+    emissive_texture: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct MaterialKey {
-    base_color: [u32; 4],
-    roughness: u32,
-    metallic: u32,
-    ao: u32,
-    emissive: u32,
+    base_color_factor: [u32; 4],
+    roughness_factor: u32,
+    metallic_factor: u32,
+    occlusion_strength: u32,
+    emissive_factor: [u32; 3],
+    alpha_mode: u32,
+    alpha_cutoff: u32,
+    double_sided: bool,
+    normal_scale: u32,
+    base_color_texture: u32,
+    metallic_roughness_texture: u32,
+    normal_texture: u32,
+    occlusion_texture: u32,
+    emissive_texture: u32,
 }
 
 impl From<MaterialLiteral> for MaterialKey {
     fn from(value: MaterialLiteral) -> Self {
         Self {
-            base_color: [
-                value.base_color[0].to_bits(),
-                value.base_color[1].to_bits(),
-                value.base_color[2].to_bits(),
-                value.base_color[3].to_bits(),
+            base_color_factor: [
+                value.base_color_factor[0].to_bits(),
+                value.base_color_factor[1].to_bits(),
+                value.base_color_factor[2].to_bits(),
+                value.base_color_factor[3].to_bits(),
             ],
-            roughness: value.roughness.to_bits(),
-            metallic: value.metallic.to_bits(),
-            ao: value.ao.to_bits(),
-            emissive: value.emissive.to_bits(),
+            roughness_factor: value.roughness_factor.to_bits(),
+            metallic_factor: value.metallic_factor.to_bits(),
+            occlusion_strength: value.occlusion_strength.to_bits(),
+            emissive_factor: [
+                value.emissive_factor[0].to_bits(),
+                value.emissive_factor[1].to_bits(),
+                value.emissive_factor[2].to_bits(),
+            ],
+            alpha_mode: value.alpha_mode,
+            alpha_cutoff: value.alpha_cutoff.to_bits(),
+            double_sided: value.double_sided,
+            normal_scale: value.normal_scale.to_bits(),
+            base_color_texture: value.base_color_texture,
+            metallic_roughness_texture: value.metallic_roughness_texture,
+            normal_texture: value.normal_texture,
+            occlusion_texture: value.occlusion_texture,
+            emissive_texture: value.emissive_texture,
         }
     }
 }
@@ -132,55 +174,166 @@ fn material_from_runtime_value(value: &RuntimeValue) -> Option<MaterialLiteral> 
         return None;
     };
     let mut out = MaterialLiteral {
-        base_color: [0.85, 0.85, 0.85, 1.0],
-        roughness: 0.5,
-        metallic: 0.0,
-        ao: 1.0,
-        emissive: 0.0,
+        base_color_factor: [0.85, 0.85, 0.85, 1.0],
+        roughness_factor: 0.5,
+        metallic_factor: 0.0,
+        occlusion_strength: 1.0,
+        emissive_factor: [0.0, 0.0, 0.0],
+        alpha_mode: 0,
+        alpha_cutoff: 0.5,
+        double_sided: false,
+        normal_scale: 1.0,
+        base_color_texture: u32::MAX,
+        metallic_roughness_texture: u32::MAX,
+        normal_texture: u32::MAX,
+        occlusion_texture: u32::MAX,
+        emissive_texture: u32::MAX,
     };
     let mut any = false;
+    apply_runtime_material_entries(entries, &mut out, &mut any);
+    any.then_some(out)
+}
+
+fn apply_runtime_material_entries(
+    entries: &[(String, RuntimeValue)],
+    out: &mut MaterialLiteral,
+    any: &mut bool,
+) {
     for (name, value) in entries {
         match name.as_str() {
-            "roughness" => {
+            "roughnessFactor" => {
                 if let Some(v) = runtime_as_f32(value) {
-                    out.roughness = v;
-                    any = true;
+                    out.roughness_factor = v;
+                    *any = true;
                 }
             }
-            "metallic" => {
+            "metallicFactor" => {
                 if let Some(v) = runtime_as_f32(value) {
-                    out.metallic = v;
-                    any = true;
+                    out.metallic_factor = v;
+                    *any = true;
                 }
             }
-            "ao" => {
+            "occlusionStrength" => {
                 if let Some(v) = runtime_as_f32(value) {
-                    out.ao = v;
-                    any = true;
+                    out.occlusion_strength = v;
+                    *any = true;
                 }
             }
-            "emissive" => {
-                if let Some(v) = runtime_as_f32(value) {
-                    out.emissive = v;
-                    any = true;
+            "emissiveFactor" => {
+                if let Some(v) = runtime_as_color4(value) {
+                    out.emissive_factor = [v[0], v[1], v[2]];
+                    *any = true;
                 }
             }
-            "base_color" | "albedo" | "color" => {
+            "baseColorFactor" => {
                 if let Some(color) = runtime_as_color4(value) {
-                    out.base_color = color;
-                    any = true;
+                    out.base_color_factor = color;
+                    *any = true;
+                }
+            }
+            "normalScale" => {
+                if let Some(v) = runtime_as_f32(value) {
+                    out.normal_scale = v;
+                    *any = true;
+                }
+            }
+            "alphaCutoff" => {
+                if let Some(v) = runtime_as_f32(value) {
+                    out.alpha_cutoff = v;
+                    *any = true;
+                }
+            }
+            "alphaMode" => {
+                if let Some(mode) = runtime_as_alpha_mode(value) {
+                    out.alpha_mode = mode;
+                    *any = true;
+                }
+            }
+            "doubleSided" => {
+                if let Some(v) = runtime_as_bool(value) {
+                    out.double_sided = v;
+                    *any = true;
+                }
+            }
+            "baseColorTexture" => {
+                if let Some(index) = runtime_as_texture_index(value) {
+                    out.base_color_texture = index;
+                    *any = true;
+                }
+            }
+            "metallicRoughnessTexture" => {
+                if let Some(index) = runtime_as_texture_index(value) {
+                    out.metallic_roughness_texture = index;
+                    *any = true;
+                }
+            }
+            "normalTexture" => {
+                if let Some(index) = runtime_as_texture_index(value) {
+                    out.normal_texture = index;
+                    *any = true;
+                }
+            }
+            "occlusionTexture" => {
+                if let Some(index) = runtime_as_texture_index(value) {
+                    out.occlusion_texture = index;
+                    *any = true;
+                }
+            }
+            "emissiveTexture" => {
+                if let Some(index) = runtime_as_texture_index(value) {
+                    out.emissive_texture = index;
+                    *any = true;
+                }
+            }
+            "pbrMetallicRoughness" => {
+                if let RuntimeValue::Object(inner) = value {
+                    apply_runtime_material_entries(inner, out, any);
                 }
             }
             _ => {}
         }
     }
-    any.then_some(out)
 }
 
 fn runtime_as_f32(value: &RuntimeValue) -> Option<f32> {
     match value {
         RuntimeValue::F32(v) => Some(*v),
         RuntimeValue::I32(v) => Some(*v as f32),
+        _ => None,
+    }
+}
+
+fn runtime_as_bool(value: &RuntimeValue) -> Option<bool> {
+    match value {
+        RuntimeValue::Bool(v) => Some(*v),
+        _ => None,
+    }
+}
+
+fn runtime_as_texture_index(value: &RuntimeValue) -> Option<u32> {
+    match value {
+        RuntimeValue::Object(entries) => entries.iter().find_map(|(name, inner)| {
+            if name != "index" {
+                return None;
+            }
+            match inner {
+                RuntimeValue::I32(v) if *v >= 0 => Some(*v as u32),
+                _ => None,
+            }
+        }),
+        _ => None,
+    }
+}
+
+fn runtime_as_alpha_mode(value: &RuntimeValue) -> Option<u32> {
+    match value {
+        RuntimeValue::Str(s) => match s.as_str() {
+            "OPAQUE" => Some(0),
+            "MASK" => Some(1),
+            "BLEND" => Some(2),
+            _ => None,
+        },
+        RuntimeValue::I32(v) if (0..=2).contains(v) => Some(*v as u32),
         _ => None,
     }
 }
@@ -208,17 +361,45 @@ fn materials_from_gltf_file(path: &Path, res_path: &str) -> io::Result<Vec<(Stri
         let base_color = pbr.base_color_factor();
         let emissive_factor = material.emissive_factor();
         let derived = MaterialLiteral {
-            base_color,
-            roughness: pbr.roughness_factor(),
-            metallic: pbr.metallic_factor(),
-            ao: material
+            base_color_factor: base_color,
+            roughness_factor: pbr.roughness_factor(),
+            metallic_factor: pbr.metallic_factor(),
+            occlusion_strength: material
                 .occlusion_texture()
                 .map(|occ| occ.strength())
                 .unwrap_or(1.0),
-            emissive: emissive_factor
-                .iter()
-                .copied()
-                .fold(0.0_f32, f32::max),
+            emissive_factor,
+            alpha_mode: match material.alpha_mode() {
+                gltf::material::AlphaMode::Opaque => 0,
+                gltf::material::AlphaMode::Mask => 1,
+                gltf::material::AlphaMode::Blend => 2,
+            },
+            alpha_cutoff: material.alpha_cutoff().unwrap_or(0.5),
+            double_sided: material.double_sided(),
+            normal_scale: material
+                .normal_texture()
+                .map(|normal| normal.scale())
+                .unwrap_or(1.0),
+            base_color_texture: pbr
+                .base_color_texture()
+                .map(|tex| tex.texture().index() as u32)
+                .unwrap_or(u32::MAX),
+            metallic_roughness_texture: pbr
+                .metallic_roughness_texture()
+                .map(|tex| tex.texture().index() as u32)
+                .unwrap_or(u32::MAX),
+            normal_texture: material
+                .normal_texture()
+                .map(|tex| tex.texture().index() as u32)
+                .unwrap_or(u32::MAX),
+            occlusion_texture: material
+                .occlusion_texture()
+                .map(|tex| tex.texture().index() as u32)
+                .unwrap_or(u32::MAX),
+            emissive_texture: material
+                .emissive_texture()
+                .map(|tex| tex.texture().index() as u32)
+                .unwrap_or(u32::MAX),
         };
         out.push((format!("{res_path}:mat[{index}]"), derived));
     }
@@ -226,11 +407,20 @@ fn materials_from_gltf_file(path: &Path, res_path: &str) -> io::Result<Vec<(Stri
         out.push((
             format!("{res_path}:mat[0]"),
             MaterialLiteral {
-                base_color: [0.85, 0.85, 0.85, 1.0],
-                roughness: 0.5,
-                metallic: 0.0,
-                ao: 1.0,
-                emissive: 0.0,
+                base_color_factor: [0.85, 0.85, 0.85, 1.0],
+                roughness_factor: 0.5,
+                metallic_factor: 0.0,
+                occlusion_strength: 1.0,
+                emissive_factor: [0.0, 0.0, 0.0],
+                alpha_mode: 0,
+                alpha_cutoff: 0.5,
+                double_sided: false,
+                normal_scale: 1.0,
+                base_color_texture: u32::MAX,
+                metallic_roughness_texture: u32::MAX,
+                normal_texture: u32::MAX,
+                occlusion_texture: u32::MAX,
+                emissive_texture: u32::MAX,
             },
         ));
     }

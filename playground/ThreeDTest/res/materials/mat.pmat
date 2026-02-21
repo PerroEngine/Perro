@@ -1,1 +1,20 @@
-{ roughness: 0.5, metallic: 1.0, base_color: (0.82, 0.82, 0.82, 1.0) }
+{
+    pbrMetallicRoughness: {
+        baseColorFactor: (0.1, 0.85, 0.25, 1.0),
+        metallicFactor: 0.0,
+        roughnessFactor: 0.5,
+        baseColorTexture: { index: 0 },
+        metallicRoughnessTexture: { index: 1 }
+    },
+
+    normalTexture: { index: 2 },
+    occlusionStrength: 1.0,
+    occlusionTexture: { index: 3 },
+    emissiveTexture: { index: 4 },
+    emissiveFactor: (0.0, 0.0, 0.0),
+    normalScale: 1.0,
+
+    alphaMode: "OPAQUE",
+    alphaCutoff: 0.5,
+    doubleSided: false
+}
