@@ -102,9 +102,36 @@ mod tests {
     fn test_variant_as_number() {
         let v = Variant::Number(Number::I32(42));
         assert_eq!(v.as_number(), Some(Number::I32(42)));
+        assert_eq!(v.as_i32(), Some(42));
+        assert_eq!(v.as_i64(), None);
 
         let v2 = Variant::Bool(true);
         assert_eq!(v2.as_number(), None);
+        assert_eq!(v2.as_i32(), None);
+    }
+
+    #[test]
+    fn test_variant_exact_numeric_accessors() {
+        assert_eq!(Variant::from(1i8).as_i8(), Some(1));
+        assert_eq!(Variant::from(2i16).as_i16(), Some(2));
+        assert_eq!(Variant::from(3i32).as_i32(), Some(3));
+        assert_eq!(Variant::from(4i64).as_i64(), Some(4));
+        assert_eq!(Variant::from(5i128).as_i128(), Some(5));
+
+        assert_eq!(Variant::from(6u8).as_u8(), Some(6));
+        assert_eq!(Variant::from(7u16).as_u16(), Some(7));
+        assert_eq!(Variant::from(8u32).as_u32(), Some(8));
+        assert_eq!(Variant::from(9u64).as_u64(), Some(9));
+        assert_eq!(Variant::from(10u128).as_u128(), Some(10));
+
+        assert_eq!(Variant::from(3.5f32).as_f32(), Some(3.5));
+        assert_eq!(Variant::from(7.5f64).as_f64(), Some(7.5));
+
+        // Exact typed accessors intentionally do not coerce across numeric variants.
+        let n = Variant::from(42i32);
+        assert_eq!(n.as_i64(), None);
+        assert_eq!(n.as_f32(), None);
+        assert_eq!(n.as_u32(), None);
     }
 
     #[test]

@@ -20,7 +20,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
     fn init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
         with_state_mut!(ctx, ExampleState, self_id, |state| {
             state.speed = 5.0;
-            state.bob = 42;
+            state.bob = 422;
         });
     }
 

@@ -19,10 +19,14 @@ const SPEED: f32 = 5.0;
 
 impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for CameraScript {
     fn init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
-        let j = with_state_mut!(ctx, CameraState, self_id, |state| {
-            state.job = 123;
-            state.job
-        }).unwrap_or_default();
+       let j = get_var!(ctx, NodeID(3), ScriptMemberID::from_string("bob"))
+        .as_i32()
+        .unwrap_or_default();
+
+        with_state_mut!(ctx, CameraState, self_id, |state| {
+            state.job = j;
+        });
+        log_info!(j);
     }
 
     fn update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {

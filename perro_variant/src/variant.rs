@@ -231,6 +231,86 @@ impl Variant {
     }
 
     #[inline]
+    pub fn as_i8(&self) -> Option<i8> {
+        match *self {
+            Variant::Number(Number::I8(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_i16(&self) -> Option<i16> {
+        match *self {
+            Variant::Number(Number::I16(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_i32(&self) -> Option<i32> {
+        match *self {
+            Variant::Number(Number::I32(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_i64(&self) -> Option<i64> {
+        match *self {
+            Variant::Number(Number::I64(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_i128(&self) -> Option<i128> {
+        match *self {
+            Variant::Number(Number::I128(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_u8(&self) -> Option<u8> {
+        match *self {
+            Variant::Number(Number::U8(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_u16(&self) -> Option<u16> {
+        match *self {
+            Variant::Number(Number::U16(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_u32(&self) -> Option<u32> {
+        match *self {
+            Variant::Number(Number::U32(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_u64(&self) -> Option<u64> {
+        match *self {
+            Variant::Number(Number::U64(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_u128(&self) -> Option<u128> {
+        match *self {
+            Variant::Number(Number::U128(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn as_f32(&self) -> Option<f32> {
         match *self {
             Variant::Number(Number::F32(v)) => Some(v),

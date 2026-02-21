@@ -18,7 +18,7 @@ pub struct ExampleScript;
 impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
     fn init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
         let _origin = Vector2::new(0.0, 0.0);
-        LogMod::info("Script initialized!");
+        log_info!("Script initialized!");
         let _ = ctx
             .Scripts()
             .with_state_mut::<ExampleState, _, _>(self_id, |state| {
