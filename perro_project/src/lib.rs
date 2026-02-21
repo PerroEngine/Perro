@@ -400,38 +400,90 @@ use perro_ids::prelude::*;
 use perro_modules::prelude::*;
 use perro_scripting::prelude::*;
 
+// Script is authored against a node type. This default template uses Node2D.
 type SelfNodeType = Node2D;
 
+// State is data-only. Keeping state separate from behavior makes cross-calls memory safe
+// and helps the runtime handle recursion/re-entrancy without borrowing issues.
 #[state]
 pub struct ExampleState {
-    speed: f32,
+    #[default = 5]
+    count: i32,
 }
 
-///@Script
-pub struct ExampleScript;
+const SPEED: f32 = 5.0;
 
-impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
+lifecycle!({
+    // Lifecycle methods are engine entry points. They are called by the runtime.
+    // `ctx` is the main interface into the engine core to access runtime data/scripts and nodes.
+    // `self_id` is the NodeID handle of the node this script is attached to.
     fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
-        let _origin = Vector2::new(0.0, 0.0);
-        log_info!("Script initialized!");
-        let _ = ctx
-            .Scripts()
-            .with_state_mut::<ExampleState, _, _>(self_id, |state| {
-                state.speed = 240.0;
-            });
+        // local-state access using with_state!/with_state_mut!.
+        let count = with_state!(ctx, ExampleState, self_id, |state| {
+            state.count
+        }).unwrap_or_default();
+        log_info!(count);
     }
 
     fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
         let dt = delta_time!(ctx);
-        let _ = ctx
-            .Scripts()
-            .with_state_mut::<ExampleState, _, _>(self_id, |state| {
-                state.speed += dt;
-            });
+        // Regular Rust method calls are for internal methods.
+        self.bump_count(ctx, self_id);
+
+        // Local node mutation: use context + expected node type + node id + closure.
+        // Here we mutate the attached node via `self_id`.
+        mutate_node!(ctx, SelfNodeType, self_id, |node| {
+            node.position.x += dt * SPEED;
+        });
+
+        // You can also pass another NodeID with another node type if that id maps
+        // to that type at runtime.
+        // Example:
+        // mutate_node!(ctx, MeshInstance3D, enemy_id, |mesh| { mesh.scale.x += 1.0; });
+        // If unsure, check node type first (for example with read_meta! + match).
+
+        // call_method! can invoke methods through the script interface by member id.
+        // Here we call our own script through self_id for demonstration.
+        call_method!(ctx, self_id, smid!("test"), params![7123_i32, "bodsasb"]);
+        set_var!(ctx, self_id, smid!("count"), 77_i32.into());
+        let remote_count = get_var!(ctx, self_id, smid!("count"));
+        log_info!(remote_count);
+        // For local/internal behavior and local state, prefer direct methods plus
+        // with_state!/with_state_mut! (for example self.bump_count(...)).
+        // That is simpler and more performant than call_method!/get_var!/set_var!.
+
+        // Typical NodeID lookup is runtime-dependent. NodeID is a handle, not the node value.
+        // if let Some(enemy_id) = find_node!(ctx, "enemy") {
+        //     // Cross-script call on another script instance:
+        //     call_method!(ctx, enemy_id, smid!("test"), params![1_i32, "ping"]);
+        //
+        //     // Mutate enemy node directly if you know its runtime node type:
+        //     mutate_node!(ctx, MeshInstance3D, enemy_id, |enemy| {
+        //         enemy.scale.x += 0.1;
+        //     });
+        //
+        //     // If type is uncertain, check metadata/type first, then branch/match.
+        // }
     }
 
     fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
-}
+});
+
+methods!({
+    // methods! defines callable behavior methods (local or cross-script via call_method!)...
+    fn bump_count(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+        //  Use `with_state_mut!` for mutable access to state
+        with_state_mut!(ctx, ExampleState, self_id, |state| {
+            state.count += 1;
+        });
+    }
+
+    fn test(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID, param1: i32, msg: &str) {
+        log_info!(param1);
+        log_info!(msg);
+        self.bump_count(ctx, self_id);
+    }
+});
 "#
     .to_string()
 }
