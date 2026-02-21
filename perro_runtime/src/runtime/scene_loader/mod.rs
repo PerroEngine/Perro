@@ -53,8 +53,16 @@ impl Runtime {
             });
         }
 
+        let mut existing_script_ids = Vec::new();
+        self.scripts.append_instance_ids(&mut existing_script_ids);
+        for id in existing_script_ids {
+            let _ = self.remove_script_instance(id);
+        }
+
         self.nodes.clear();
         self.scripts = Default::default();
+        self.pending_start_scripts.clear();
+        self.pending_start_flags.clear();
         self.render_2d.traversal_ids.clear();
         self.render_2d.visible_now.clear();
         self.render_2d.prev_visible.clear();

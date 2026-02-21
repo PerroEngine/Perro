@@ -88,6 +88,20 @@ macro_rules! call_method {
 }
 
 #[macro_export]
+macro_rules! smid {
+    ($name:expr) => {
+        ::perro_ids::ScriptMemberID::from_string($name)
+    };
+}
+
+#[macro_export]
+macro_rules! sid {
+    ($name:expr) => {
+        ::perro_ids::ScriptMemberID::from_string($name)
+    };
+}
+
+#[macro_export]
 macro_rules! params {
     ($($value:expr),* $(,)?) => {
         &[$(::perro_variant::Variant::from($value)),*]
@@ -120,8 +134,8 @@ pub mod prelude {
     pub use crate::sub_apis::{NodeAPI, NodeModule, ScriptAPI, ScriptModule, TimeAPI, TimeModule};
     pub use crate::{
         attach_script, call_method, create_node, delta_time, detach_script, elapsed_time,
-        fixed_delta_time, get_var, mutate_meta, mutate_node, read_meta, read_node, set_var,
-        with_state, with_state_mut, params,
+        fixed_delta_time, get_var, mutate_meta, mutate_node, params, read_meta, read_node, set_var,
+        sid, smid, with_state, with_state_mut,
     };
 }
 
@@ -264,7 +278,9 @@ mod tests {
         assert_eq!(top, 0_i32);
         assert!(!attach_script!(&mut ctx, id, "res://scripts/a.rs"));
         assert!(!detach_script!(&mut ctx, id));
-        let member = perro_ids::ScriptMemberID::from_string("x");
+        let member = smid!("x");
+        let member_alias = sid!("x");
+        assert_eq!(member, member_alias);
         let _value = get_var!(&mut ctx, id, member);
         set_var!(&mut ctx, id, member, perro_variant::Variant::Null);
         let _result = call_method!(&mut ctx, id, member, &[]);

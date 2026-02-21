@@ -7,6 +7,60 @@ use crate::Runtime;
 
 impl Runtime {
     #[inline(always)]
+    pub(crate) fn queue_start_script(&mut self, id: NodeID) {
+        let slot = id.index() as usize;
+        if self.pending_start_flags.len() <= slot {
+            self.pending_start_flags.resize(slot + 1, None);
+        }
+        if self.pending_start_flags[slot] == Some(id) {
+            return;
+        }
+        self.pending_start_flags[slot] = Some(id);
+        self.pending_start_scripts.push(id);
+    }
+
+    #[inline(always)]
+    pub(crate) fn unqueue_start_script(&mut self, id: NodeID) {
+        let slot = id.index() as usize;
+        if slot < self.pending_start_flags.len() && self.pending_start_flags[slot] == Some(id) {
+            self.pending_start_flags[slot] = None;
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn call_start_script(&mut self, id: NodeID) {
+        let (behavior, flags) = match self.scripts.get_instance(id) {
+            Some(instance) => (Arc::clone(&instance.behavior), instance.behavior.script_flags()),
+            None => return,
+        };
+        if !flags.has_start() {
+            return;
+        }
+        let mut ctx = RuntimeContext::new(self);
+        behavior.on_start(&mut ctx, id);
+    }
+
+    #[inline(always)]
+    pub(crate) fn call_removed_script(&mut self, id: NodeID) {
+        let (behavior, flags) = match self.scripts.get_instance(id) {
+            Some(instance) => (Arc::clone(&instance.behavior), instance.behavior.script_flags()),
+            None => return,
+        };
+        if !flags.has_removed() {
+            return;
+        }
+        let mut ctx = RuntimeContext::new(self);
+        behavior.on_removed(&mut ctx, id);
+    }
+
+    #[inline(always)]
+    pub(crate) fn remove_script_instance(&mut self, id: NodeID) -> bool {
+        self.call_removed_script(id);
+        self.unqueue_start_script(id);
+        self.scripts.remove(id).is_some()
+    }
+
+    #[inline(always)]
     pub(crate) fn call_update_script_scheduled(&mut self, instance_index: usize, id: NodeID) {
         let behavior = match self
             .scripts
@@ -16,7 +70,7 @@ impl Runtime {
             None => return,
         };
         let mut ctx = RuntimeContext::new(self);
-        behavior.update(&mut ctx, id);
+        behavior.on_update(&mut ctx, id);
     }
 
     #[inline(always)]
@@ -29,7 +83,7 @@ impl Runtime {
             None => return,
         };
         let mut ctx = RuntimeContext::new(self);
-        behavior.fixed_update(&mut ctx, id);
+        behavior.on_fixed_update(&mut ctx, id);
     }
 }
 
@@ -66,11 +120,11 @@ impl ScriptAPI for Runtime {
     }
 
     fn detach_script(&mut self, node_id: NodeID) -> bool {
-        self.scripts.remove(node_id).is_some()
+        self.remove_script_instance(node_id)
     }
 
     fn remove_script(&mut self, script_id: NodeID) -> bool {
-        self.scripts.remove(script_id).is_some()
+        self.remove_script_instance(script_id)
     }
 
     fn get_var(&mut self, script_id: NodeID, member: ScriptMemberID) -> Variant {

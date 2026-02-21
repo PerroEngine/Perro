@@ -12,14 +12,11 @@ pub struct CameraState {
     job: i32
 }
 
-///@Script
-pub struct CameraScript;
-
 const SPEED: f32 = 5.0;
 
-impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for CameraScript {
-    fn init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
-       let j = get_var!(ctx, NodeID(3), ScriptMemberID::from_string("bob"))
+lifecycle!({
+    fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+       let j = get_var!(ctx, NodeID(3), smid!("bob"))
         .as_i32()
         .unwrap_or_default();
 
@@ -29,23 +26,23 @@ impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for CameraScript {
         log_info!(j);
     }
 
-    fn update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+    fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
         let dt = delta_time!(ctx);
-        call_method!(ctx, NodeID(4), ScriptMemberID::from_string("bob"), params![7123_i32, "bodsasb"]);
+        call_method!(ctx, NodeID(4), smid!("bob"), params![7123_i32, "bodsasb"]);
            let j2 = with_state!(ctx, CameraState, self_id, |state| {
             state.job
         }).unwrap_or_default();
 
     }
 
-    fn fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
-}
+    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+});
 
-impl CameraScript {
-    pub fn bob<R: RuntimeAPI + ?Sized>(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID, param1: i32, j: &str) {
+methods!({
+    fn bob(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID, param1: i32, j: &str) {
         let j = with_state_mut!(ctx, CameraState, self_id, |state| {
             state.job += 1;
             state.job
         }).unwrap_or_default();
     }
-}
+});

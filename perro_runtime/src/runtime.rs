@@ -25,6 +25,8 @@ pub struct Runtime {
     pub nodes: NodeArena,
     pub(crate) scripts: ScriptCollection<Self>,
     schedules: ScriptSchedules,
+    pub(crate) pending_start_scripts: Vec<NodeID>,
+    pub(crate) pending_start_flags: Vec<Option<NodeID>>,
     render: RenderState,
     dirty: DirtyState,
     pending_transform_roots: Vec<NodeID>,
@@ -308,6 +310,8 @@ impl Runtime {
             nodes: NodeArena::new(),
             scripts: ScriptCollection::new(),
             schedules: ScriptSchedules::new(),
+            pending_start_scripts: Vec::new(),
+            pending_start_flags: Vec::new(),
             project: None,
             render: RenderState::new(),
             dirty: DirtyState::new(),
@@ -358,6 +362,7 @@ impl Runtime {
     #[inline]
     pub fn update(&mut self, delta_time: f32) {
         self.time.delta = delta_time;
+        self.run_start_schedule();
         self.schedules.snapshot_update(&self.scripts);
         self.run_update_schedule();
     }
@@ -467,6 +472,25 @@ impl Runtime {
             self.call_fixed_update_script_scheduled(instance_index, id);
             i += 1;
         }
+    }
+
+    fn run_start_schedule(&mut self) {
+        let mut queued = std::mem::take(&mut self.pending_start_scripts);
+        for id in queued.drain(..) {
+            let slot = id.index() as usize;
+            let still_pending = self
+                .pending_start_flags
+                .get(slot)
+                .copied()
+                .flatten()
+                == Some(id);
+            if !still_pending {
+                continue;
+            }
+            self.pending_start_flags[slot] = None;
+            self.call_start_script(id);
+        }
+        self.pending_start_scripts = queued;
     }
 
     pub fn clear_dirty_flags(&mut self) {

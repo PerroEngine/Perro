@@ -343,9 +343,11 @@ fn transpile_frontend_script(source: &str) -> String {
         format!("<{script_ty} as Default>::default()")
     };
 
-    let has_init = source.contains("fn init(");
-    let has_update = source.contains("fn update(");
-    let has_fixed = source.contains("fn fixed_update(");
+    let has_init = source.contains("fn on_init(");
+    let has_start = source.contains("fn on_start(");
+    let has_update = source.contains("fn on_update(");
+    let has_fixed = source.contains("fn on_fixed_update(");
+    let has_removed = source.contains("fn on_removed(");
     let user_methods = parse_inherent_methods(&source, &script_ty);
     let state_fields = parse_struct_fields(&source, &state_ty);
     let exposed_fields = supported_fields(&state_fields);
@@ -354,11 +356,17 @@ fn transpile_frontend_script(source: &str) -> String {
     if has_init {
         flags.push_str(" | ScriptFlags::HAS_INIT");
     }
+    if has_start {
+        flags.push_str(" | ScriptFlags::HAS_START");
+    }
     if has_update {
         flags.push_str(" | ScriptFlags::HAS_UPDATE");
     }
     if has_fixed {
         flags.push_str(" | ScriptFlags::HAS_FIXED_UPDATE");
+    }
+    if has_removed {
+        flags.push_str(" | ScriptFlags::HAS_REMOVED");
     }
 
     let member_consts = generate_member_consts(&exposed_fields, &user_methods);
@@ -390,12 +398,6 @@ impl<R: RuntimeAPI + ?Sized> ScriptBehavior<R> for {script_ty} {{
 
     fn set_var(&self, state: &mut dyn std::any::Any, var_id: ScriptMemberID, value: &Variant) {{
 {set_var_body}
-    }}
-
-    fn apply_exposed_vars(&self, state: &mut dyn std::any::Any, vars: &[(ScriptMemberID, Variant)]) {{
-        for (var_id, value) in vars {{
-            <Self as ScriptBehavior<R>>::set_var(self, state, *var_id, value);
-        }}
     }}
 
     fn call_method(
@@ -717,14 +719,14 @@ fn generate_member_consts(fields: &[StateField], methods: &[ScriptMethod]) -> St
     for field in fields {
         let const_name = member_const_name(&field.name);
         out.push_str(&format!(
-            "const {const_name}: ScriptMemberID = ScriptMemberID::from_string(\"{}\");\n",
+            "const {const_name}: ScriptMemberID = smid!(\"{}\");\n",
             field.name
         ));
     }
     for method in methods {
         let const_name = method_const_name(&method.name);
         out.push_str(&format!(
-            "const {const_name}: ScriptMemberID = ScriptMemberID::from_string(\"{}\");\n",
+            "const {const_name}: ScriptMemberID = smid!(\"{}\");\n",
             method.name
         ));
         if !method.takes_raw_params {
@@ -845,8 +847,121 @@ fn parse_inherent_methods(source: &str, struct_name: &str) -> Vec<ScriptMethod> 
         i += 1;
     }
 
+    methods.extend(parse_methods_macro_methods(source, struct_name));
     methods.sort_by(|a, b| a.name.cmp(&b.name));
     methods.dedup_by(|a, b| a.name == b.name);
+    methods
+}
+
+fn parse_methods_macro_methods(source: &str, struct_name: &str) -> Vec<ScriptMethod> {
+    let mut methods = Vec::new();
+    let needle = "methods!(";
+    let mut search_from = 0usize;
+
+    while search_from < source.len() {
+        let Some(rel) = source[search_from..].find(needle) else {
+            break;
+        };
+        let start = search_from + rel;
+        let open_paren = start + "methods!".len();
+        let Some(close_paren) = find_matching_delim(source, open_paren, '(', ')') else {
+            break;
+        };
+
+        let inner = &source[open_paren + 1..close_paren];
+        if let Some((target_name, body)) = parse_methods_macro_inner(inner) {
+            if target_name == struct_name {
+                methods.extend(parse_methods_block_signatures(body));
+            }
+        }
+
+        search_from = close_paren + 1;
+    }
+
+    methods
+}
+
+fn find_matching_delim(source: &str, open_index: usize, open: char, close: char) -> Option<usize> {
+    let mut depth = 0_i32;
+    for (idx, c) in source.char_indices().skip(open_index) {
+        if c == open {
+            depth += 1;
+        } else if c == close {
+            depth -= 1;
+            if depth == 0 {
+                return Some(idx);
+            }
+        }
+    }
+    None
+}
+
+fn parse_methods_macro_inner(inner: &str) -> Option<(String, &str)> {
+    let trimmed = inner.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if trimmed.starts_with('{') {
+        let body = extract_brace_block(trimmed)?;
+        return Some(("Script".to_string(), body));
+    }
+
+    let mut target = String::new();
+    for c in trimmed.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            target.push(c);
+        } else {
+            break;
+        }
+    }
+    if target.is_empty() {
+        return None;
+    }
+
+    let rest = trimmed[target.len()..].trim_start();
+    if !rest.starts_with('{') {
+        return None;
+    }
+    let body = extract_brace_block(rest)?;
+    Some((target, body))
+}
+
+fn extract_brace_block(s: &str) -> Option<&str> {
+    if !s.starts_with('{') {
+        return None;
+    }
+    let mut depth = 0_i32;
+    let mut end = None;
+    for (i, c) in s.char_indices() {
+        if c == '{' {
+            depth += 1;
+        } else if c == '}' {
+            depth -= 1;
+            if depth == 0 {
+                end = Some(i);
+                break;
+            }
+        }
+    }
+    let end = end?;
+    Some(&s[1..end])
+}
+
+fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
+    let mut methods = Vec::new();
+    let mut depth = 0_i32;
+
+    for line in body.lines() {
+        let l = strip_line_comment(line);
+        if depth == 0 {
+            if let Some(method) = parse_script_method_signature(l.trim()) {
+                methods.push(method);
+            }
+        }
+        depth += brace_delta(l);
+    }
+
     methods
 }
 

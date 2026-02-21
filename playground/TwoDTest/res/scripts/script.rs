@@ -16,7 +16,7 @@ pub struct ExampleState {
 pub struct ExampleScript;
 
 impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
-    fn init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+    fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
         let _origin = Vector2::new(0.0, 0.0);
         log_info!("Script initialized!");
         let _ = ctx
@@ -26,7 +26,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
             });
     }
 
-    fn update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+    fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
         let dt = delta_time!(ctx);
         let _ = ctx
             .Scripts()
@@ -35,5 +35,5 @@ impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
             });
     }
 
-    fn fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
 }

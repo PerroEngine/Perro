@@ -70,11 +70,17 @@ impl Runtime {
         let behavior: Arc<dyn ScriptBehavior<Self>> = behavior.into();
         let state = behavior.create_state();
         let flags = behavior.script_flags();
+        if self.scripts.get_instance(node_id).is_some() {
+            self.remove_script_instance(node_id);
+        }
         self.scripts.insert(node_id, Arc::clone(&behavior), state);
 
         if flags.has_init() {
             let mut ctx = RuntimeContext::new(self);
-            behavior.init(&mut ctx, node_id);
+            behavior.on_init(&mut ctx, node_id);
+        }
+        if flags.has_start() {
+            self.queue_start_script(node_id);
         }
 
         Ok(())

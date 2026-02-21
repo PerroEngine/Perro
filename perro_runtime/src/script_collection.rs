@@ -173,6 +173,10 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         }
     }
 
+    pub(crate) fn append_instance_ids(&self, out: &mut Vec<NodeID>) {
+        out.extend(self.ids.iter().copied());
+    }
+
     #[inline]
     pub(crate) fn fixed_schedule_len(&self) -> usize {
         self.fixed.len()
