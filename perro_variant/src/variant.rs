@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::sync::Arc;
 
 use perro_core::structs::*;
@@ -86,6 +87,25 @@ impl Number {
     }
 }
 
+impl fmt::Display for Number {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Number::I8(v) => write!(f, "{v}"),
+            Number::I16(v) => write!(f, "{v}"),
+            Number::I32(v) => write!(f, "{v}"),
+            Number::I64(v) => write!(f, "{v}"),
+            Number::I128(v) => write!(f, "{v}"),
+            Number::U8(v) => write!(f, "{v}"),
+            Number::U16(v) => write!(f, "{v}"),
+            Number::U32(v) => write!(f, "{v}"),
+            Number::U64(v) => write!(f, "{v}"),
+            Number::U128(v) => write!(f, "{v}"),
+            Number::F32(v) => write!(f, "{v}"),
+            Number::F64(v) => write!(f, "{v}"),
+        }
+    }
+}
+
 /// A flexible, type-safe variant type for dynamic data storage and interchange.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Variant {
@@ -117,6 +137,45 @@ pub enum Variant {
     // Deterministic ordering by default (better diffs, stable serialization).
     // If you want raw speed, swap to HashMap.
     Object(BTreeMap<Arc<str>, Variant>),
+}
+
+impl fmt::Display for Variant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Variant::Null => write!(f, "null"),
+            Variant::Bool(v) => write!(f, "{v}"),
+            Variant::Number(v) => write!(f, "{v}"),
+            Variant::String(v) => write!(f, "{:?}", v.as_ref()),
+            Variant::Bytes(v) => write!(f, "<bytes:{}>", v.len()),
+            Variant::NodeID(v) => write!(f, "{v}"),
+            Variant::TextureID(v) => write!(f, "{v}"),
+            Variant::Vector2(v) => write!(f, "{v:?}"),
+            Variant::Vector3(v) => write!(f, "{v:?}"),
+            Variant::Transform2D(v) => write!(f, "{v:?}"),
+            Variant::Transform3D(v) => write!(f, "{v:?}"),
+            Variant::Quaternion(v) => write!(f, "{v:?}"),
+            Variant::Array(values) => {
+                write!(f, "[")?;
+                for (i, value) in values.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{value}")?;
+                }
+                write!(f, "]")
+            }
+            Variant::Object(map) => {
+                write!(f, "{{")?;
+                for (i, (key, value)) in map.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{:?}: {}", key.as_ref(), value)?;
+                }
+                write!(f, "}}")
+            }
+        }
+    }
 }
 
 // -------------------- Constructors --------------------

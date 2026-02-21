@@ -18,8 +18,9 @@ pub struct ExampleScript;
 
 impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
     fn init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
-        let _ = with_state_mut!(ctx, ExampleState, self_id, |state| {
+        with_state_mut!(ctx, ExampleState, self_id, |state| {
             state.speed = 5.0;
+            state.bob = 42;
         });
     }
 
@@ -30,7 +31,10 @@ impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for ExampleScript {
             mesh.scale.x += dt * speed;
             mesh.rotation.rotate_z(dt * speed / 2.0);
         });
+
     }
 
     fn fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
 }
+
+

@@ -1584,15 +1584,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
-name = "perro_api"
-version = "0.1.0"
-dependencies = [
- "perro_core",
- "perro_ids",
- "perro_variant",
-]
-
-[[package]]
 name = "perro_app"
 version = "0.1.0"
 dependencies = [
@@ -1601,6 +1592,15 @@ dependencies = [
  "perro_runtime",
  "perro_scripting",
  "winit",
+]
+
+[[package]]
+name = "perro_context"
+version = "0.1.0"
+dependencies = [
+ "perro_core",
+ "perro_ids",
+ "perro_variant",
 ]
 
 [[package]]
@@ -1667,7 +1667,7 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "libloading",
- "perro_api",
+ "perro_context",
  "perro_core",
  "perro_ids",
  "perro_io",
@@ -1689,7 +1689,7 @@ dependencies = [
 name = "perro_scripting"
 version = "0.1.0"
 dependencies = [
- "perro_api",
+ "perro_context",
  "perro_ids",
  "perro_variant",
 ]
@@ -2102,7 +2102,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 name = "scripts"
 version = "0.1.0"
 dependencies = [
- "perro_api",
+ "perro_context",
  "perro_core",
  "perro_ids",
  "perro_modules",
@@ -2305,8 +2305,8 @@ dependencies = [
 name = "threedtest"
 version = "0.1.0"
 dependencies = [
- "perro_api",
  "perro_app",
+ "perro_context",
  "perro_core",
  "perro_ids",
  "perro_render_bridge",

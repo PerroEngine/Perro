@@ -48,6 +48,27 @@ impl ScriptAPI for Runtime {
         self.scripts.with_state_mut(script_id, f)
     }
 
+    fn attach_script(&mut self, node_id: NodeID, script_path: &str) -> bool {
+        let Some(project) = self.project() else {
+            return false;
+        };
+        let project_root = project.root.clone();
+        let project_name = project.config.name.clone();
+
+        if self
+            .ensure_dynamic_script_registry_loaded(&project_root, &project_name)
+            .is_err()
+        {
+            return false;
+        }
+
+        self.attach_script_instance(node_id, script_path).is_ok()
+    }
+
+    fn detach_script(&mut self, node_id: NodeID) -> bool {
+        self.scripts.remove(node_id).is_some()
+    }
+
     fn remove_script(&mut self, script_id: NodeID) -> bool {
         self.scripts.remove(script_id).is_some()
     }

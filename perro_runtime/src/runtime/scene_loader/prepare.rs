@@ -61,14 +61,13 @@ pub(super) fn prepare_static_scene(scene: &'static StaticScene) -> Result<Prepar
     let mut scripts = Vec::new();
 
     for static_node in scene.nodes {
-        let (mut node, texture_source, mesh_source, material_source, material_inline) =
+        let (node, texture_source, mesh_source, material_source, material_inline) =
             scene_node_from_static_entry(static_node)?;
         if let Some(script) = static_node.script {
             scripts.push(PendingScript {
                 node_key: static_node.key.0.to_string(),
                 script_path: script.to_string(),
             });
-            node.script = None;
         }
         nodes.push(PendingNode {
             key: static_node.key.0.to_string(),
@@ -94,14 +93,13 @@ pub(super) fn prepare_runtime_scene(scene: RuntimeScene) -> Result<PreparedScene
     let mut scripts = Vec::new();
 
     for entry in nodes {
-        let (mut node, texture_source, mesh_source, material_source, material_inline) =
+        let (node, texture_source, mesh_source, material_source, material_inline) =
             scene_node_from_runtime_entry(&entry)?;
         if let Some(script) = entry.script {
             scripts.push(PendingScript {
                 node_key: entry.key.clone(),
                 script_path: script,
             });
-            node.script = None;
         }
         prepared_nodes.push(PendingNode {
             key: entry.key,
@@ -135,9 +133,6 @@ fn scene_node_from_static_entry(
     let mut node = SceneNode::new(scene_node_data_from_static(&entry.data)?);
     if let Some(name) = entry.name {
         node.name = Cow::Borrowed(name);
-    }
-    if let Some(script) = entry.script {
-        node.script = Some(Cow::Borrowed(script));
     }
     let texture_source = extract_texture_source_static(&entry.data);
     let mesh_source_explicit = extract_mesh_source_static(&entry.data);
@@ -182,9 +177,6 @@ fn scene_node_from_runtime_entry(
     let mut node = SceneNode::new(scene_node_data_from_runtime(&entry.data)?);
     if let Some(name) = &entry.name {
         node.name = Cow::Owned(name.clone());
-    }
-    if let Some(script) = &entry.script {
-        node.script = Some(Cow::Owned(script.clone()));
     }
     let texture_source = extract_texture_source(&entry.data);
     let mesh_source_explicit = extract_mesh_source(&entry.data);

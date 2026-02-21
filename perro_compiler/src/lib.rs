@@ -346,6 +346,7 @@ fn transpile_frontend_script(source: &str) -> String {
     let has_init = source.contains("fn init(");
     let has_update = source.contains("fn update(");
     let has_fixed = source.contains("fn fixed_update(");
+    let user_methods = parse_inherent_methods(&source, &script_ty);
     let state_fields = parse_struct_fields(&source, &state_ty);
     let exposed_fields = supported_fields(&state_fields);
 
@@ -360,9 +361,10 @@ fn transpile_frontend_script(source: &str) -> String {
         flags.push_str(" | ScriptFlags::HAS_FIXED_UPDATE");
     }
 
-    let member_consts = generate_member_consts(&exposed_fields);
+    let member_consts = generate_member_consts(&exposed_fields, &user_methods);
     let get_var_body = generate_get_var_body(&state_ty, &exposed_fields);
     let set_var_body = generate_set_var_body(&state_ty, &exposed_fields);
+    let call_method_body = generate_call_method_body(&user_methods);
     let attr_of_body = generate_attributes_of_body(&exposed_fields);
     let members_with_body = generate_members_with_body(&exposed_fields);
     let has_attr_body = generate_has_attribute_body(&exposed_fields);
@@ -398,12 +400,12 @@ impl<R: RuntimeAPI + ?Sized> ScriptBehavior<R> for {script_ty} {{
 
     fn call_method(
         &self,
-        _method_id: ScriptMemberID,
-        _ctx: &mut RuntimeContext<'_, R>,
-        _self_id: NodeID,
-        _params: &[Variant],
+        method_id: ScriptMemberID,
+        ctx: &mut RuntimeContext<'_, R>,
+        self_id: NodeID,
+        params: &[Variant],
     ) -> Variant {{
-        Variant::Null
+{call_method_body}
     }}
 
     fn attributes_of(&self, member: &str) -> &'static [&'static str] {{
@@ -668,8 +670,34 @@ fn member_const_name(field_name: &str) -> String {
     out
 }
 
-fn generate_member_consts(fields: &[StateField]) -> String {
-    if fields.is_empty() {
+fn method_const_name(method_name: &str) -> String {
+    let mut out = String::from("__PERRO_METHOD_");
+    for c in method_name.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_uppercase());
+        } else {
+            out.push('_');
+        }
+    }
+    out
+}
+
+#[derive(Clone, Debug)]
+struct ScriptMethod {
+    name: String,
+    takes_raw_params: bool,
+    params: Vec<ScriptMethodParam>,
+    returns_variant: bool,
+}
+
+#[derive(Clone, Debug)]
+struct ScriptMethodParam {
+    name: String,
+    ty: String,
+}
+
+fn generate_member_consts(fields: &[StateField], methods: &[ScriptMethod]) -> String {
+    if fields.is_empty() && methods.is_empty() {
         return String::new();
     }
 
@@ -681,7 +709,314 @@ fn generate_member_consts(fields: &[StateField]) -> String {
             field.name
         ));
     }
+    for method in methods {
+        let const_name = method_const_name(&method.name);
+        out.push_str(&format!(
+            "const {const_name}: ScriptMemberID = ScriptMemberID::from_string(\"{}\");\n",
+            method.name
+        ));
+    }
     out
+}
+
+fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
+    if methods.is_empty() {
+        return "        let _ = (method_id, ctx, self_id, params);\n        Variant::Null".to_string();
+    }
+
+    let mut out = String::new();
+    out.push_str("        match method_id {\n");
+    for method in methods {
+        let const_name = method_const_name(&method.name);
+        let call = if method.takes_raw_params {
+            format!("self.{}(ctx, self_id, params)", method.name)
+        } else if method.params.is_empty() {
+            format!("self.{}(ctx, self_id)", method.name)
+        } else {
+            let args = method
+                .params
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("self.{}(ctx, self_id, {args})", method.name)
+        };
+
+        let mut prelude = String::new();
+        let mut supported = true;
+        if !method.takes_raw_params && !method.params.is_empty() {
+            for (i, param) in method.params.iter().enumerate() {
+                if let Some(binding) = generate_call_param_binding(i, param) {
+                    prelude.push_str("                ");
+                    prelude.push_str(&binding);
+                    prelude.push('\n');
+                } else {
+                    supported = false;
+                    break;
+                }
+            }
+        }
+
+        if !supported {
+            out.push_str(&format!(
+                "            {const_name} => {{\n                let _ = (ctx, self_id, params);\n                Variant::Null\n            }}\n"
+            ));
+            continue;
+        }
+
+        if method.returns_variant {
+            out.push_str(&format!(
+                "            {const_name} => {{\n{prelude}                {call}\n            }}\n"
+            ));
+        } else {
+            out.push_str(&format!(
+                "            {const_name} => {{\n{prelude}                {call};\n                Variant::Null\n            }}\n"
+            ));
+        }
+    }
+    out.push_str("            _ => Variant::Null,\n");
+    out.push_str("        }");
+    out
+}
+
+fn parse_inherent_methods(source: &str, struct_name: &str) -> Vec<ScriptMethod> {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut methods = Vec::new();
+    let mut i = 0usize;
+
+    while i < lines.len() {
+        let line = strip_line_comment(lines[i]).trim();
+        if !line.starts_with("impl") {
+            i += 1;
+            continue;
+        }
+
+        if line.contains(" for ") || !line.contains(struct_name) {
+            i += 1;
+            continue;
+        }
+
+        let mut depth = brace_delta(line);
+        let mut opened = line.contains('{');
+        i += 1;
+
+        while i < lines.len() {
+            let l = strip_line_comment(lines[i]);
+            if opened && depth == 1 {
+                if let Some(method) = parse_script_method_signature(l.trim()) {
+                    methods.push(method);
+                }
+            }
+
+            if !opened && l.contains('{') {
+                opened = true;
+            }
+            depth += brace_delta(l);
+            if opened && depth <= 0 {
+                break;
+            }
+            i += 1;
+        }
+        i += 1;
+    }
+
+    methods.sort_by(|a, b| a.name.cmp(&b.name));
+    methods.dedup_by(|a, b| a.name == b.name);
+    methods
+}
+
+fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
+    let line = line.trim_start_matches("pub ").trim_start();
+    if !line.starts_with("fn ") {
+        return None;
+    }
+
+    if !line.contains("&self") || !line.contains("ctx") || !line.contains("self_id") {
+        return None;
+    }
+
+    let rest = line.trim_start_matches("fn ").trim_start();
+    let mut name = String::new();
+    for c in rest.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            name.push(c);
+        } else {
+            break;
+        }
+    }
+    if name.is_empty() {
+        None
+    } else {
+        let params_sig = extract_fn_params_segment(line)?;
+        let mut takes_raw_params = false;
+        let mut params = Vec::new();
+
+        for raw in split_top_level_commas(params_sig) {
+            let token = raw.trim();
+            if token.is_empty()
+                || token == "&self"
+                || token == "self"
+                || token == "&mut self"
+                || token == "mut self"
+            {
+                continue;
+            }
+
+            let Some((name_part, ty_part)) = token.split_once(':') else {
+                continue;
+            };
+            let param_name = name_part.trim();
+            let param_ty = ty_part.trim();
+            if param_name == "ctx" || param_name == "self_id" {
+                continue;
+            }
+
+            let normalized = normalize_type(param_ty);
+            let is_raw_params = param_name == "params"
+                && (normalized == "&[Variant]" || normalized == "&[perro_variant::Variant]");
+            if is_raw_params {
+                takes_raw_params = true;
+                continue;
+            }
+
+            params.push(ScriptMethodParam {
+                name: param_name.to_string(),
+                ty: param_ty.to_string(),
+            });
+        }
+
+        if takes_raw_params && !params.is_empty() {
+            return None;
+        }
+
+        let returns_variant =
+            line.contains("-> Variant") || line.contains("->perro_variant::Variant");
+        Some(ScriptMethod {
+            name,
+            takes_raw_params,
+            params,
+            returns_variant,
+        })
+    }
+}
+
+fn extract_fn_params_segment(line: &str) -> Option<&str> {
+    let start = line.find('(')?;
+    let mut depth = 0_i32;
+    let mut end = None;
+    for (i, c) in line.char_indices().skip(start) {
+        if c == '(' {
+            depth += 1;
+        } else if c == ')' {
+            depth -= 1;
+            if depth == 0 {
+                end = Some(i);
+                break;
+            }
+        }
+    }
+    let end = end?;
+    Some(&line[start + 1..end])
+}
+
+fn split_top_level_commas(s: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut depth_angle = 0_i32;
+    let mut depth_paren = 0_i32;
+    let mut depth_bracket = 0_i32;
+    let mut start = 0usize;
+    for (i, c) in s.char_indices() {
+        match c {
+            '<' => depth_angle += 1,
+            '>' => depth_angle -= 1,
+            '(' => depth_paren += 1,
+            ')' => depth_paren -= 1,
+            '[' => depth_bracket += 1,
+            ']' => depth_bracket -= 1,
+            ',' if depth_angle == 0 && depth_paren == 0 && depth_bracket == 0 => {
+                out.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start <= s.len() {
+        out.push(&s[start..]);
+    }
+    out
+}
+
+fn generate_call_param_binding(index: usize, param: &ScriptMethodParam) -> Option<String> {
+    let ty = normalize_type(&param.ty);
+    let name = &param.name;
+    let get = format!("params.get({index})");
+    let line = match ty.as_str() {
+        "bool" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_bool()) else {{ return Variant::Null; }};"
+        ),
+        "i8" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_number()).and_then(|n| if let perro_variant::Number::I8(v) = n {{ Some(v) }} else {{ None }}) else {{ return Variant::Null; }};"
+        ),
+        "i16" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_number()).and_then(|n| if let perro_variant::Number::I16(v) = n {{ Some(v) }} else {{ None }}) else {{ return Variant::Null; }};"
+        ),
+        "i32" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_number()).and_then(|n| if let perro_variant::Number::I32(v) = n {{ Some(v) }} else {{ None }}) else {{ return Variant::Null; }};"
+        ),
+        "i64" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_number()).and_then(|n| if let perro_variant::Number::I64(v) = n {{ Some(v) }} else {{ None }}) else {{ return Variant::Null; }};"
+        ),
+        "i128" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_number()).and_then(|n| if let perro_variant::Number::I128(v) = n {{ Some(v) }} else {{ None }}) else {{ return Variant::Null; }};"
+        ),
+        "isize" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_number()).and_then(|n| if let perro_variant::Number::I64(v) = n {{ isize::try_from(v).ok() }} else {{ None }}) else {{ return Variant::Null; }};"
+        ),
+        "u8" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_number()).and_then(|n| if let perro_variant::Number::U8(v) = n {{ Some(v) }} else {{ None }}) else {{ return Variant::Null; }};"
+        ),
+        "u16" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_number()).and_then(|n| if let perro_variant::Number::U16(v) = n {{ Some(v) }} else {{ None }}) else {{ return Variant::Null; }};"
+        ),
+        "u32" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_number()).and_then(|n| if let perro_variant::Number::U32(v) = n {{ Some(v) }} else {{ None }}) else {{ return Variant::Null; }};"
+        ),
+        "u64" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_number()).and_then(|n| if let perro_variant::Number::U64(v) = n {{ Some(v) }} else {{ None }}) else {{ return Variant::Null; }};"
+        ),
+        "u128" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_number()).and_then(|n| if let perro_variant::Number::U128(v) = n {{ Some(v) }} else {{ None }}) else {{ return Variant::Null; }};"
+        ),
+        "usize" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_number()).and_then(|n| if let perro_variant::Number::U64(v) = n {{ usize::try_from(v).ok() }} else {{ None }}) else {{ return Variant::Null; }};"
+        ),
+        "f32" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_f32()) else {{ return Variant::Null; }};"
+        ),
+        "f64" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_f64()) else {{ return Variant::Null; }};"
+        ),
+        "String" | "std::string::String" | "alloc::string::String" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_str().map(|s| s.to_string())) else {{ return Variant::Null; }};"
+        ),
+        "&str" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_str()) else {{ return Variant::Null; }};"
+        ),
+        "Arc<str>" | "std::sync::Arc<str>" | "alloc::sync::Arc<str>" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_str().map(std::sync::Arc::<str>::from)) else {{ return Variant::Null; }};"
+        ),
+        "NodeID" | "perro_ids::NodeID" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_node()) else {{ return Variant::Null; }};"
+        ),
+        "TextureID" | "perro_ids::TextureID" => format!(
+            "let Some({name}) = {get}.and_then(|v| v.as_texture()) else {{ return Variant::Null; }};"
+        ),
+        "Variant" | "perro_variant::Variant" => format!(
+            "let Some({name}) = {get}.cloned() else {{ return Variant::Null; }};"
+        ),
+        _ => return None,
+    };
+    Some(line)
 }
 
 fn generate_get_var_body(state_ty: &str, fields: &[StateField]) -> String {

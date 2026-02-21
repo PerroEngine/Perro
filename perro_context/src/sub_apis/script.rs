@@ -8,6 +8,8 @@ pub trait ScriptAPI {
     fn with_state_mut<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&mut T) -> V;
+    fn attach_script(&mut self, node_id: NodeID, script_path: &str) -> bool;
+    fn detach_script(&mut self, node_id: NodeID) -> bool;
     fn remove_script(&mut self, script_id: NodeID) -> bool;
     fn get_var(&mut self, script_id: NodeID, member: ScriptMemberID) -> Variant;
     fn set_var(&mut self, script_id: NodeID, member: ScriptMemberID, value: Variant);
@@ -41,6 +43,14 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
         F: FnOnce(&mut T) -> V,
     {
         self.rt.with_state_mut(script_id, f)
+    }
+
+    pub fn attach(&mut self, node_id: NodeID, script_path: &str) -> bool {
+        self.rt.attach_script(node_id, script_path)
+    }
+
+    pub fn detach(&mut self, node_id: NodeID) -> bool {
+        self.rt.detach_script(node_id)
     }
 
     pub fn remove(&mut self, script_id: NodeID) -> bool {

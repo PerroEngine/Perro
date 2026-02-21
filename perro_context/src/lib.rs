@@ -32,6 +32,62 @@ macro_rules! read_node {
 }
 
 #[macro_export]
+macro_rules! create_node {
+    ($ctx:expr, $node_ty:ty) => {
+        $ctx.Nodes().create::<$node_ty>()
+    };
+}
+
+#[macro_export]
+macro_rules! mutate_meta {
+    ($ctx:expr, $id:expr, $f:expr) => {
+        $ctx.Nodes().mutate_meta($id, $f)
+    };
+}
+
+#[macro_export]
+macro_rules! read_meta {
+    ($ctx:expr, $id:expr, $f:expr) => {
+        $ctx.Nodes().read_meta($id, $f)
+    };
+}
+
+#[macro_export]
+macro_rules! attach_script {
+    ($ctx:expr, $id:expr, $path:expr) => {
+        $ctx.Scripts().attach($id, $path)
+    };
+}
+
+#[macro_export]
+macro_rules! detach_script {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Scripts().detach($id)
+    };
+}
+
+#[macro_export]
+macro_rules! get_var {
+    ($ctx:expr, $id:expr, $member:expr) => {
+        $ctx.Scripts().get_var($id, $member)
+    };
+}
+
+#[macro_export]
+macro_rules! set_var {
+    ($ctx:expr, $id:expr, $member:expr, $value:expr) => {
+        $ctx.Scripts().set_var($id, $member, $value)
+    };
+}
+
+#[macro_export]
+macro_rules! call_method {
+    ($ctx:expr, $id:expr, $method:expr, $params:expr) => {
+        $ctx.Scripts().call_method($id, $method, $params)
+    };
+}
+
+#[macro_export]
 macro_rules! delta_time {
     ($ctx:expr) => {
         $ctx.Time().get_delta()
@@ -56,8 +112,9 @@ pub mod prelude {
     pub use crate::api::{RuntimeAPI, RuntimeContext};
     pub use crate::sub_apis::{NodeAPI, NodeModule, ScriptAPI, ScriptModule, TimeAPI, TimeModule};
     pub use crate::{
-        delta_time, elapsed_time, fixed_delta_time, mutate_node, read_node, with_state,
-        with_state_mut,
+        attach_script, call_method, create_node, delta_time, detach_script, elapsed_time,
+        fixed_delta_time, get_var, mutate_meta, mutate_node, read_meta, read_node, set_var,
+        with_state, with_state_mut,
     };
 }
 
@@ -105,6 +162,20 @@ mod tests {
         {
             V::default()
         }
+
+        fn mutate_meta<F>(&mut self, _id: NodeID, _f: F)
+        where
+            F: FnOnce(&mut perro_core::SceneNode),
+        {
+        }
+
+        fn read_meta<V: Clone + Default>(
+            &mut self,
+            _node_id: NodeID,
+            _f: impl FnOnce(&perro_core::SceneNode) -> V,
+        ) -> V {
+            V::default()
+        }
     }
 
     impl ScriptAPI for DummyRuntime {
@@ -120,6 +191,14 @@ mod tests {
             F: FnOnce(&mut T) -> V,
         {
             self.state.downcast_mut::<T>().map(f)
+        }
+
+        fn attach_script(&mut self, _node_id: NodeID, _script_path: &str) -> bool {
+            false
+        }
+
+        fn detach_script(&mut self, _node_id: NodeID) -> bool {
+            false
         }
 
         fn remove_script(&mut self, _script_id: NodeID) -> bool {
@@ -169,9 +248,19 @@ mod tests {
         let updated = with_state!(&mut ctx, i32, id, |state| *state);
         assert_eq!(updated, Some(12));
 
+        let _new_node = create_node!(&mut ctx, Node2D);
         mutate_node!(&mut ctx, Node2D, id, |_node| {});
         let value = read_node!(&mut ctx, Node2D, id, |_node| 99_i32);
         assert_eq!(value, 0_i32);
+        mutate_meta!(&mut ctx, id, |_node| {});
+        let top = read_meta!(&mut ctx, id, |_node| 7_i32);
+        assert_eq!(top, 0_i32);
+        assert!(!attach_script!(&mut ctx, id, "res://scripts/a.rs"));
+        assert!(!detach_script!(&mut ctx, id));
+        let member = perro_ids::ScriptMemberID::from_string("x");
+        let _value = get_var!(&mut ctx, id, member);
+        set_var!(&mut ctx, id, member, perro_variant::Variant::Null);
+        let _result = call_method!(&mut ctx, id, member, &[]);
 
         let dt = delta_time!(&mut ctx);
         let fdt = fixed_delta_time!(&mut ctx);

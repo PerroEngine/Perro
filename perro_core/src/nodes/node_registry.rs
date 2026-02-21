@@ -41,7 +41,6 @@ macro_rules! define_scene_nodes {
             pub name: Cow<'static, str>,
             pub parent: NodeID,
             pub children: Option<Cow<'static, [NodeID]>>,
-            pub script: Option<Cow<'static, str>>,
         }
 
         #[derive(Clone, Debug)]
@@ -68,7 +67,6 @@ macro_rules! define_scene_nodes {
                     name: Cow::Borrowed("Node"),
                     parent: NodeID::nil(),
                     children: None,
-                    script: None,
                     data,
                 }
             }

@@ -36,35 +36,51 @@ impl Runtime {
         }
 
         for (id, script_path) in script_nodes {
-            let ctor = *self
-                .dynamic_script_registry
-                .get(&script_path)
-                .ok_or_else(|| {
-                    format!("script `{script_path}` is not present in the dynamic script registry")
-                })?;
-            let raw = ctor();
-            if raw.is_null() {
-                return Err(format!(
-                    "script constructor returned null for `{script_path}`"
-                ));
-            }
-
-            let behavior: Box<dyn ScriptBehavior<Self>> = unsafe { Box::from_raw(raw) };
-            let behavior: Arc<dyn ScriptBehavior<Self>> = behavior.into();
-            let state = behavior.create_state();
-            let flags = behavior.script_flags();
-            self.scripts.insert(id, Arc::clone(&behavior), state);
-
-            if flags.has_init() {
-                let mut ctx = RuntimeContext::new(self);
-                behavior.init(&mut ctx, id);
-            }
+            self.attach_script_instance(id, &script_path)?;
         }
 
         Ok(())
     }
 
-    fn ensure_dynamic_script_registry_loaded(
+    pub(crate) fn attach_script_instance(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        script_path: &str,
+    ) -> Result<(), String> {
+        if node_id.is_nil() || self.nodes.get(node_id).is_none() {
+            return Err(format!(
+                "node `{node_id}` not found for script `{script_path}`"
+            ));
+        }
+
+        let ctor = *self
+            .dynamic_script_registry
+            .get(script_path)
+            .ok_or_else(|| {
+                format!("script `{script_path}` is not present in the dynamic script registry")
+            })?;
+        let raw = ctor();
+        if raw.is_null() {
+            return Err(format!(
+                "script constructor returned null for `{script_path}`"
+            ));
+        }
+
+        let behavior: Box<dyn ScriptBehavior<Self>> = unsafe { Box::from_raw(raw) };
+        let behavior: Arc<dyn ScriptBehavior<Self>> = behavior.into();
+        let state = behavior.create_state();
+        let flags = behavior.script_flags();
+        self.scripts.insert(node_id, Arc::clone(&behavior), state);
+
+        if flags.has_init() {
+            let mut ctx = RuntimeContext::new(self);
+            behavior.init(&mut ctx, node_id);
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn ensure_dynamic_script_registry_loaded(
         &mut self,
         project_root: &Path,
         project_name: &str,

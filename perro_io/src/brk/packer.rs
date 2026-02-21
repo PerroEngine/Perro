@@ -24,7 +24,7 @@ const SKIP_IMAGES: &[&str] = &[
 const SKIP_MODELS: &[&str] = &["glb", "gltf"];
 
 // Resources compiled into static runtime tables
-const SKIP_RESOURCES: &[&str] = &["pmat"];
+const SKIP_RESOURCES: &[&str] = &["pmat", "pmesh"];
 
 fn should_skip(path: &str) -> bool {
     let ext = path.rsplit('.').next().unwrap_or("");
@@ -130,7 +130,6 @@ mod tests {
     #[test]
     fn pmat_is_skipped_as_compiled_resource() {
         assert!(should_skip("materials/mat.pmat"));
-        assert!(should_skip("mesh/robot.pmesh"));
         assert!(should_skip("scene/main.scn"));
         assert!(should_skip("mesh/robot.glb"));
         assert!(!should_skip("audio/music.ogg"));

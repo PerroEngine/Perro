@@ -72,4 +72,31 @@ impl NodeAPI for Runtime {
 
         node.with_typed_ref::<T, _>(f).unwrap_or_default()
     }
+
+    fn mutate_meta<F>(&mut self, id: perro_ids::NodeID, f: F)
+    where
+        F: FnOnce(&mut SceneNode),
+    {
+        if id.is_nil() {
+            return;
+        }
+        let Some(node) = self.nodes.get_mut(id) else {
+            return;
+        };
+        f(node);
+    }
+
+    fn read_meta<V: Clone + Default>(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        f: impl FnOnce(&SceneNode) -> V,
+    ) -> V {
+        if node_id.is_nil() {
+            return V::default();
+        }
+        let Some(node) = self.nodes.get(node_id) else {
+            return V::default();
+        };
+        f(node)
+    }
 }
