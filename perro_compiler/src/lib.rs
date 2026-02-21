@@ -982,51 +982,46 @@ fn inject_default_impl_after_state_struct(
         return source.to_string();
     }
 
-    let lines: Vec<&str> = source.lines().collect();
-    let mut start = None;
-    for (i, line) in lines.iter().enumerate() {
-        if parse_struct_name(line.trim()) == Some(state_ty.to_string()) {
-            start = Some(i);
-            break;
-        }
-    }
-    let Some(start_idx) = start else {
+    let needle = format!("struct {state_ty}");
+    let Some(struct_pos) = source.find(&needle) else {
         return format!("{source}\n{state_default_impl}\n");
     };
 
-    let mut end_idx = start_idx;
-    let mut opened = false;
-    let mut depth = 0_i32;
-    for (i, line) in lines.iter().enumerate().skip(start_idx) {
-        let l = strip_line_comment(line);
-        if !opened {
-            if l.contains('{') {
-                opened = true;
-            } else if l.trim_end().ends_with(';') {
-                end_idx = i;
-                break;
-            }
+    let Some(after_struct) = source[struct_pos..].find('{').map(|o| struct_pos + o) else {
+        if let Some(semi_pos) = source[struct_pos..].find(';').map(|o| struct_pos + o + 1) {
+            return format!(
+                "{}\n\n{}\n{}",
+                &source[..semi_pos],
+                state_default_impl,
+                &source[semi_pos..]
+            );
         }
-        if opened {
-            depth += brace_delta(l);
-            if depth <= 0 {
-                end_idx = i;
+        return format!("{source}\n{state_default_impl}\n");
+    };
+
+    let mut depth = 0_i32;
+    let mut end_brace = None;
+    for (off, c) in source[after_struct..].char_indices() {
+        if c == '{' {
+            depth += 1;
+        } else if c == '}' {
+            depth -= 1;
+            if depth == 0 {
+                end_brace = Some(after_struct + off + c.len_utf8());
                 break;
             }
         }
     }
 
-    let mut out = String::new();
-    for (i, line) in lines.iter().enumerate() {
-        out.push_str(line);
-        out.push('\n');
-        if i == end_idx {
-            out.push('\n');
-            out.push_str(state_default_impl);
-            out.push('\n');
-        }
-    }
-    out
+    let Some(insert_pos) = end_brace else {
+        return format!("{source}\n{state_default_impl}\n");
+    };
+    format!(
+        "{}\n\n{}\n{}",
+        &source[..insert_pos],
+        state_default_impl,
+        &source[insert_pos..]
+    )
 }
 
 fn has_explicit_default_impl(source: &str, state_ty: &str) -> bool {
