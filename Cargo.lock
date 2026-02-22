@@ -1717,7 +1717,17 @@ version = "0.1.0"
 dependencies = [
  "perro_context",
  "perro_ids",
+ "perro_scripting_macros",
  "perro_variant",
+]
+
+[[package]]
+name = "perro_scripting_macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

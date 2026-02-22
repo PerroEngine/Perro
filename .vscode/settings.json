@@ -8,6 +8,9 @@
   "rust-analyzer.diagnostics.enable": true,
   "rust-analyzer.procMacro.enable": true,
   "rust-analyzer.cargo.buildScripts.enable": true,
+  "rust-analyzer.cargo.extraEnv": {
+    "RUSTFLAGS": "--cfg rust_analyzer"
+  },
   "rust-analyzer.checkOnSave": true,
   "rust-analyzer.check.command": "check",
   "rust-analyzer.vfs.extraIncludes": [

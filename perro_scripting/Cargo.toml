@@ -7,3 +7,4 @@ edition = "2024"
 perro_ids = "0.1.0"
 perro_context = "0.1.0"
 perro_variant = "0.1.0"
+perro_scripting_macros = { path = "../perro_scripting_macros", version = "0.1.0" }

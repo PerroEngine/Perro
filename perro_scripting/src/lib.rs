@@ -1,5 +1,6 @@
 pub mod script_trait;
 pub use script_trait::*;
+pub use perro_scripting_macros::State;
 
 #[macro_export]
 macro_rules! lifecycle {
@@ -65,6 +66,7 @@ macro_rules! __methods_internal {
 pub mod prelude {
     pub use crate::lifecycle;
     pub use crate::methods;
+    pub use crate::State;
     pub use crate::script_trait::{
         ScriptBehavior, ScriptConstructor, ScriptFlags, ScriptLifecycle,
     };

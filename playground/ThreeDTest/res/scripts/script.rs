@@ -14,6 +14,7 @@ pub struct ExampleState {
     bob: i32
 }
 
+
 lifecycle!({
     fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
 
