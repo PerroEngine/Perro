@@ -1,7 +1,7 @@
 @root = main
 
 [main]
-
+script = "res://scripts/script.rs"
 [Sprite2D]
 texture = "res://images/perro.png"
 [/Sprite2D]
