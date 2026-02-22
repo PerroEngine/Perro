@@ -1,6 +1,7 @@
-use perro_compiler::{compile_project_bundle, compile_scripts};
-use perro_project::create_new_project;
+use perro_compiler::{compile_project_bundle, compile_scripts, sync_scripts};
+use perro_project::{create_new_project, default_script_empty_rs, default_script_example_rs};
 use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -38,6 +39,12 @@ fn main() {
 }
 
 fn legacy_flag_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    if args.iter().any(|a| a == "--script-new") {
+        return script_new_command(args, cwd);
+    }
+    if args.iter().any(|a| a == "--script-template") {
+        return script_template_command(args, cwd);
+    }
     if args.iter().any(|a| a == "--dev") {
         return dev_command(args, cwd);
     }
@@ -64,11 +71,25 @@ fn print_usage() {
     eprintln!("  perro_cli project [--path <project_dir>] # full static project bundle + build");
     eprintln!("  perro_cli dev [--path <project_dir>] [--name <project_name>]");
     eprintln!("  perro_cli run [--path <project_dir>]     # alias for build scripts");
+    eprintln!("  perro_cli --path <project_dir|res|res/scripts> --script-new [<name.rs|res://scripts/name.rs>]");
+    eprintln!(
+        "  perro_cli --path <project_dir|res|res/scripts> --script-template [<name.rs|res://scripts/name.rs>]"
+    );
 }
 
 fn parse_flag_value(args: &[String], flag: &str) -> Option<String> {
     let idx = args.iter().position(|a| a == flag)?;
     args.get(idx + 1).cloned()
+}
+
+fn parse_optional_flag_value(args: &[String], flag: &str) -> Option<String> {
+    let idx = args.iter().position(|a| a == flag)?;
+    let value = args.get(idx + 1)?;
+    if value.starts_with('-') {
+        None
+    } else {
+        Some(value.clone())
+    }
 }
 
 fn resolve_local_path(input: &str, local_root: &Path) -> PathBuf {
@@ -211,4 +232,144 @@ fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
             project_dir.display()
         )
     })
+}
+
+fn script_new_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    create_script_command(args, cwd, &default_script_empty_rs())
+}
+
+fn script_template_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    create_script_command(args, cwd, &default_script_example_rs())
+}
+
+fn create_script_command(args: &[String], cwd: &Path, contents: &str) -> Result<(), String> {
+    let base_path = parse_flag_value(args, "--path")
+        .map(|p| resolve_local_path(&p, cwd))
+        .unwrap_or_else(|| cwd.to_path_buf());
+    let (project_dir, scripts_dir) = resolve_script_roots_for_create(&base_path)?;
+    let script_name = parse_optional_flag_value(args, "--script-new")
+        .or_else(|| parse_optional_flag_value(args, "--script-template"))
+        .unwrap_or_else(|| "script.rs".to_string());
+    let rel_script = normalize_script_rel_path(&script_name)?;
+    let script_path = scripts_dir.join(&rel_script);
+
+    if script_path.exists() {
+        return Err(format!(
+            "script already exists at {} (refusing to overwrite)",
+            script_path.display()
+        ));
+    }
+
+    if let Some(parent) = script_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| {
+            format!(
+                "failed to create script directory {}: {err}",
+                parent.display()
+            )
+        })?;
+    }
+
+    fs::write(&script_path, contents).map_err(|err| {
+        format!(
+            "failed to write script at {}: {err}",
+            script_path.display()
+        )
+    })?;
+
+    sync_scripts(&project_dir).map_err(|err| {
+        format!(
+            "script created, but failed to sync generated scripts for {}: {err}",
+            project_dir.display()
+        )
+    })?;
+
+    println!("created script at {}", script_path.display());
+    Ok(())
+}
+
+fn resolve_script_roots_for_create(path: &Path) -> Result<(PathBuf, PathBuf), String> {
+    let path = path
+        .canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf());
+
+    // `--path` can point at project root, `res`, or `res/scripts`.
+    if path.join("project.toml").exists() {
+        let scripts_dir = path.join("res").join("scripts");
+        return Ok((path, scripts_dir));
+    }
+
+    if path.file_name().is_some_and(|n| n == "res") {
+        let Some(project_dir) = path.parent() else {
+            return Err(format!(
+                "invalid --path `{}` (could not resolve project root)",
+                path.display()
+            ));
+        };
+        if project_dir.join("project.toml").exists() {
+            return Ok((project_dir.to_path_buf(), path.join("scripts")));
+        }
+    }
+
+    if path.file_name().is_some_and(|n| n == "scripts") {
+        let Some(res_dir) = path.parent() else {
+            return Err(format!(
+                "invalid --path `{}` (could not resolve res directory)",
+                path.display()
+            ));
+        };
+        if !res_dir.file_name().is_some_and(|n| n == "res") {
+            return Err(format!(
+                "invalid --path `{}` (expected `res/scripts`)",
+                path.display()
+            ));
+        }
+        let Some(project_dir) = res_dir.parent() else {
+            return Err(format!(
+                "invalid --path `{}` (could not resolve project root)",
+                path.display()
+            ));
+        };
+        if project_dir.join("project.toml").exists() {
+            return Ok((project_dir.to_path_buf(), path));
+        }
+    }
+
+    Err(format!(
+        "invalid --path `{}` for script creation. Use project root, `res`, or `res/scripts`.",
+        path.display()
+    ))
+}
+
+fn normalize_script_rel_path(input: &str) -> Result<PathBuf, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err("script name/path cannot be empty".to_string());
+    }
+
+    let mut rel = if let Some(stripped) = trimmed.strip_prefix("res://") {
+        stripped.to_string()
+    } else if let Some(stripped) = trimmed.strip_prefix("res/") {
+        stripped.to_string()
+    } else if let Some(stripped) = trimmed.strip_prefix("scripts/") {
+        stripped.to_string()
+    } else {
+        trimmed.to_string()
+    };
+    rel = rel.replace('\\', "/");
+
+    if rel.starts_with('/') {
+        rel = rel.trim_start_matches('/').to_string();
+    }
+    if rel.contains("..") {
+        return Err("script path cannot contain `..` segments".to_string());
+    }
+    if !rel.ends_with(".rs") {
+        rel.push_str(".rs");
+    }
+
+    let path = PathBuf::from(rel);
+    if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return Err("script path cannot contain parent-directory segments".to_string());
+    }
+    Ok(path)
 }

@@ -39,20 +39,6 @@ macro_rules! create_node {
 }
 
 #[macro_export]
-macro_rules! with_node_meta_mut {
-    ($ctx:expr, $id:expr, $f:expr) => {
-        $ctx.Nodes().with_node_meta_mut($id, $f)
-    };
-}
-
-#[macro_export]
-macro_rules! with_node_meta {
-    ($ctx:expr, $id:expr, $f:expr) => {
-        $ctx.Nodes().with_node_meta($id, $f)
-    };
-}
-
-#[macro_export]
 macro_rules! get_node_name {
     ($ctx:expr, $id:expr) => {
         $ctx.Nodes().get_node_name($id)
@@ -177,8 +163,8 @@ pub mod prelude {
     pub use crate::{
         attach_script, call_method, create_node, delta_time, detach_script, elapsed_time, fixed_delta_time,
         get_node_children_ids, get_node_name, get_node_parent_id, get_var, params, reparent,
-        reparent_multi, set_node_name, set_var, sid, smid, with_node, with_node_meta,
-        with_node_meta_mut, with_node_mut, with_state, with_state_mut,
+        reparent_multi, set_node_name, set_var, sid, smid, with_node, with_node_mut, with_state,
+        with_state_mut,
     };
 }
 
@@ -229,20 +215,6 @@ mod tests {
         where
             T: perro_core::NodeTypeDispatch,
         {
-            V::default()
-        }
-
-        fn with_node_meta_mut<F>(&mut self, _id: NodeID, _f: F)
-        where
-            F: FnOnce(&mut perro_core::SceneNode),
-        {
-        }
-
-        fn with_node_meta<V: Clone + Default>(
-            &mut self,
-            _node_id: NodeID,
-            _f: impl FnOnce(&perro_core::SceneNode) -> V,
-        ) -> V {
             V::default()
         }
 
@@ -351,9 +323,6 @@ mod tests {
         with_node_mut!(&mut ctx, Node2D, id, |_node| {});
         let value = with_node!(&mut ctx, Node2D, id, |_node| 99_i32);
         assert_eq!(value, 0_i32);
-        with_node_meta_mut!(&mut ctx, id, |_node| {});
-        let top = with_node_meta!(&mut ctx, id, |_node| 7_i32);
-        assert_eq!(top, 0_i32);
         assert_eq!(get_node_name!(&mut ctx, id), None);
         assert!(!set_node_name!(&mut ctx, id, "player"));
         assert_eq!(get_node_parent_id!(&mut ctx, id), None);

@@ -37,7 +37,7 @@ macro_rules! __methods_internal {
     (
         $(#[$meta:meta])*
         $vis:vis fn $name:ident(
-            &self,
+            &$self_ident:ident,
             $ctx:ident : &mut RuntimeContext<'_, R>,
             $self_id:ident : NodeID
             $(, $arg:ident : $arg_ty:ty )* $(,)?
@@ -46,7 +46,7 @@ macro_rules! __methods_internal {
     ) => {
         $(#[$meta])*
         $vis fn $name<R: RuntimeAPI + ?Sized>(
-            &self,
+            &$self_ident,
             $ctx: &mut RuntimeContext<'_, R>,
             $self_id: NodeID
             $(, $arg : $arg_ty )*

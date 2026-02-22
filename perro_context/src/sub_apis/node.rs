@@ -1,4 +1,4 @@
-use perro_core::{NodeTypeDispatch, SceneNode, SceneNodeData};
+use perro_core::{NodeTypeDispatch, SceneNodeData};
 use perro_ids::NodeID;
 use std::borrow::Cow;
 
@@ -15,16 +15,6 @@ pub trait NodeAPI {
     fn with_node<T, V: Clone + Default>(&mut self, node_id: NodeID, f: impl FnOnce(&T) -> V) -> V
     where
         T: NodeTypeDispatch;
-
-    fn with_node_meta_mut<F>(&mut self, id: NodeID, f: F)
-    where
-        F: FnOnce(&mut SceneNode);
-
-    fn with_node_meta<V: Clone + Default>(
-        &mut self,
-        node_id: NodeID,
-        f: impl FnOnce(&SceneNode) -> V,
-    ) -> V;
 
     fn get_node_name(&mut self, node_id: NodeID) -> Option<Cow<'static, str>>;
 
@@ -76,21 +66,6 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         T: NodeTypeDispatch,
     {
         self.rt.with_node::<T, V>(node_id, f)
-    }
-
-    pub fn with_node_meta_mut<F>(&mut self, id: NodeID, f: F)
-    where
-        F: FnOnce(&mut SceneNode),
-    {
-        self.rt.with_node_meta_mut(id, f);
-    }
-
-    pub fn with_node_meta<V: Clone + Default>(
-        &mut self,
-        node_id: NodeID,
-        f: impl FnOnce(&SceneNode) -> V,
-    ) -> V {
-        self.rt.with_node_meta(node_id, f)
     }
 
     pub fn get_node_name(&mut self, node_id: NodeID) -> Option<Cow<'static, str>> {

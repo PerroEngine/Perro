@@ -399,7 +399,7 @@ fn default_main_scene() -> String {
     .to_string()
 }
 
-fn default_script_example_rs() -> String {
+pub fn default_script_example_rs() -> String {
     r#"use perro_context::prelude::*;
 use perro_core::prelude::*;
 use perro_ids::prelude::*;
@@ -425,6 +425,8 @@ lifecycle!({
     // Lifecycle methods are engine entry points. They are called by the runtime.
     // `ctx` is the main interface into the engine core to access runtime data/scripts and nodes.
     // `self_id` is the NodeID handle of the node this script is attached to.
+
+    // init is called when the script instance is created. This can be used for one-time setup. State is initialized
     fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
         // with_state! gives read-only state access and returns data from the closure.
         // with_state_mut! gives mutable state access; it can mutate and optionally return data.
@@ -434,8 +436,10 @@ lifecycle!({
         log_info!(count);
     }
 
+    // on_all_init is called after all scripts have had on_init called. This can be used for setup that requires other scripts to be initialized.
     fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
 
+    // on_update is called every frame. This is where most behavior logic goes.
     fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
         let dt = delta_time!(ctx);
         // Regular Rust method calls are for internal methods.
@@ -461,9 +465,12 @@ lifecycle!({
         // let _ok = reparent!(ctx, NodeID::new(10), self_id);
         // let _moved = reparent_multi!(ctx, NodeID::new(10), [NodeID::new(11), NodeID::new(12)]);
         //
-        // If you need full SceneNode metadata access beyond these helpers,
-        // with_node_meta!/with_node_meta_mut! are still available.
-
+        // Script attachment helpers:
+        // let _attached = attach_script!(ctx, self_id, "res://scripts/other.rs");
+        // let _detached = detach_script!(ctx, self_id);
+        // `attach_script!` takes a target node id + script path.
+        // `detach_script!` takes a node/script id and removes the attached script instance.
+        //
         // call_method! can invoke methods through the script interface by member id.
         // Here we call our own script through self_id for demonstration.
         call_method!(ctx, self_id, smid!("test"), params![7123_i32, "bodsasb"]);
@@ -491,8 +498,10 @@ lifecycle!({
         // }
     }
 
+    // on_fixed_update is called on a fixed timestep, independent of frame rate. This is useful for physics and other deterministic updates.
     fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
 
+    // on_removal is called when the script instance is removed from a node or the node is removed from the scene. This can be used for cleanup.
     fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
 });
 
@@ -510,6 +519,37 @@ methods!({
         log_info!(msg);
         self.bump_count(ctx, self_id);
     }
+});
+"#
+    .to_string()
+}
+
+pub fn default_script_empty_rs() -> String {
+    r#"use perro_context::prelude::*;
+use perro_core::prelude::*;
+use perro_ids::prelude::*;
+use perro_modules::prelude::*;
+use perro_scripting::prelude::*;
+
+type SelfNodeType = Node2D;
+
+#[State]
+pub struct EmptyState {}
+
+lifecycle!({
+    fn on_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+
+    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+
+    fn on_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+
+    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+
+    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+});
+
+methods!({
+    fn default_method(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
 });
 "#
     .to_string()
