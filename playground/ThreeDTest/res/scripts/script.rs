@@ -16,6 +16,7 @@ pub struct ExampleState {
 
 lifecycle!({
     fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+
     }
 
     fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {

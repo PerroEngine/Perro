@@ -1,6 +1,15 @@
 {
   "rust-analyzer.cargo.targetDir": "${workspaceFolder}/target",
-  "rust-analyzer.linkedProjects": ["Cargo.toml"],
+  "rust-analyzer.linkedProjects": [
+    "Cargo.toml",
+    "playground/ThreeDTest/.perro/scripts/Cargo.toml",
+    "playground/TwoDTest/.perro/scripts/Cargo.toml"
+  ],
+  "rust-analyzer.diagnostics.enable": true,
+  "rust-analyzer.procMacro.enable": true,
+  "rust-analyzer.cargo.buildScripts.enable": true,
+  "rust-analyzer.checkOnSave": true,
+  "rust-analyzer.check.command": "check",
   "rust-analyzer.vfs.extraIncludes": [
     "${workspaceFolder}/playground/ThreeDTest/res/scripts",
     "${workspaceFolder}/playground/TwoDTest/res/scripts"

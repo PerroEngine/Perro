@@ -253,12 +253,14 @@ fn write_scripts_lib(scripts_src: &Path, copied: &[String]) -> Result<(), Compil
 
     for rel in copied {
         let module = module_name_from_rel(rel);
-        out.push_str("#[cfg(rust_analyzer)]\n");
-        out.push_str(&format!("#[path = \"../../../res/{rel}\"]\n"));
-        out.push_str(&format!("pub mod {module};\n\n"));
-        out.push_str("#[cfg(not(rust_analyzer))]\n");
         out.push_str(&format!("#[path = \"{rel}\"]\n"));
         out.push_str(&format!("pub mod {module};\n\n"));
+        out.push_str("#[cfg(rust_analyzer)]\n");
+        out.push_str(&format!("mod __ra_{module} {{\n"));
+        out.push_str(&format!(
+            "    include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/../../res/{rel}\"));\n"
+        ));
+        out.push_str("}\n\n");
     }
 
     out.push_str("pub static SCRIPT_REGISTRY: &[(&str, ScriptConstructor<Runtime>)] = &[\n");
