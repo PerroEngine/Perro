@@ -18,16 +18,16 @@ macro_rules! with_state_mut {
 }
 
 #[macro_export]
-macro_rules! mutate_node {
+macro_rules! with_node_mut {
     ($ctx:expr, $node_ty:ty, $id:expr, $f:expr) => {
-        $ctx.Nodes().mutate::<$node_ty, _>($id, $f)
+        $ctx.Nodes().with_node_mut::<$node_ty, _, _>($id, $f)
     };
 }
 
 #[macro_export]
-macro_rules! read_node {
+macro_rules! with_node {
     ($ctx:expr, $node_ty:ty, $id:expr, $f:expr) => {
-        $ctx.Nodes().read::<$node_ty, _>($id, $f)
+        $ctx.Nodes().with_node::<$node_ty, _>($id, $f)
     };
 }
 
@@ -39,16 +39,16 @@ macro_rules! create_node {
 }
 
 #[macro_export]
-macro_rules! mutate_meta {
+macro_rules! with_node_meta_mut {
     ($ctx:expr, $id:expr, $f:expr) => {
-        $ctx.Nodes().mutate_meta($id, $f)
+        $ctx.Nodes().with_node_meta_mut($id, $f)
     };
 }
 
 #[macro_export]
-macro_rules! read_meta {
+macro_rules! with_node_meta {
     ($ctx:expr, $id:expr, $f:expr) => {
-        $ctx.Nodes().read_meta($id, $f)
+        $ctx.Nodes().with_node_meta($id, $f)
     };
 }
 
@@ -134,8 +134,8 @@ pub mod prelude {
     pub use crate::sub_apis::{NodeAPI, NodeModule, ScriptAPI, ScriptModule, TimeAPI, TimeModule};
     pub use crate::{
         attach_script, call_method, create_node, delta_time, detach_script, elapsed_time,
-        fixed_delta_time, get_var, mutate_meta, mutate_node, params, read_meta, read_node, set_var,
-        sid, smid, with_state, with_state_mut,
+        fixed_delta_time, get_var, params, set_var, sid, smid, with_node, with_node_meta,
+        with_node_meta_mut, with_node_mut, with_state, with_state_mut,
     };
 }
 
@@ -170,27 +170,32 @@ mod tests {
             NodeID::nil()
         }
 
-        fn mutate<T, F>(&mut self, _id: NodeID, _f: F)
+        fn with_node_mut<T, V, F>(&mut self, _id: NodeID, _f: F) -> Option<V>
         where
             T: perro_core::NodeTypeDispatch,
-            F: FnOnce(&mut T),
+            F: FnOnce(&mut T) -> V,
         {
+            None
         }
 
-        fn read<T, V: Clone + Default>(&mut self, _node_id: NodeID, _f: impl FnOnce(&T) -> V) -> V
+        fn with_node<T, V: Clone + Default>(
+            &mut self,
+            _node_id: NodeID,
+            _f: impl FnOnce(&T) -> V,
+        ) -> V
         where
             T: perro_core::NodeTypeDispatch,
         {
             V::default()
         }
 
-        fn mutate_meta<F>(&mut self, _id: NodeID, _f: F)
+        fn with_node_meta_mut<F>(&mut self, _id: NodeID, _f: F)
         where
             F: FnOnce(&mut perro_core::SceneNode),
         {
         }
 
-        fn read_meta<V: Clone + Default>(
+        fn with_node_meta<V: Clone + Default>(
             &mut self,
             _node_id: NodeID,
             _f: impl FnOnce(&perro_core::SceneNode) -> V,
@@ -270,11 +275,11 @@ mod tests {
         assert_eq!(updated, Some(12));
 
         let _new_node = create_node!(&mut ctx, Node2D);
-        mutate_node!(&mut ctx, Node2D, id, |_node| {});
-        let value = read_node!(&mut ctx, Node2D, id, |_node| 99_i32);
+        with_node_mut!(&mut ctx, Node2D, id, |_node| {});
+        let value = with_node!(&mut ctx, Node2D, id, |_node| 99_i32);
         assert_eq!(value, 0_i32);
-        mutate_meta!(&mut ctx, id, |_node| {});
-        let top = read_meta!(&mut ctx, id, |_node| 7_i32);
+        with_node_meta_mut!(&mut ctx, id, |_node| {});
+        let top = with_node_meta!(&mut ctx, id, |_node| 7_i32);
         assert_eq!(top, 0_i32);
         assert!(!attach_script!(&mut ctx, id, "res://scripts/a.rs"));
         assert!(!detach_script!(&mut ctx, id));

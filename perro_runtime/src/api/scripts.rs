@@ -33,29 +33,29 @@ impl Runtime {
             Some(instance) => (Arc::clone(&instance.behavior), instance.behavior.script_flags()),
             None => return,
         };
-        if !flags.has_start() {
+        if !flags.has_all_init() {
             return;
         }
         let mut ctx = RuntimeContext::new(self);
-        behavior.on_start(&mut ctx, id);
+        behavior.on_all_init(&mut ctx, id);
     }
 
     #[inline(always)]
-    pub(crate) fn call_removed_script(&mut self, id: NodeID) {
+    pub(crate) fn call_removal_script(&mut self, id: NodeID) {
         let (behavior, flags) = match self.scripts.get_instance(id) {
             Some(instance) => (Arc::clone(&instance.behavior), instance.behavior.script_flags()),
             None => return,
         };
-        if !flags.has_removed() {
+        if !flags.has_removal() {
             return;
         }
         let mut ctx = RuntimeContext::new(self);
-        behavior.on_removed(&mut ctx, id);
+        behavior.on_removal(&mut ctx, id);
     }
 
     #[inline(always)]
     pub(crate) fn remove_script_instance(&mut self, id: NodeID) -> bool {
-        self.call_removed_script(id);
+        self.call_removal_script(id);
         self.unqueue_start_script(id);
         self.scripts.remove(id).is_some()
     }

@@ -6,20 +6,20 @@ pub trait NodeAPI {
     where
         T: Default + Into<SceneNodeData>;
 
-    fn mutate<T, F>(&mut self, id: NodeID, f: F)
+    fn with_node_mut<T, V, F>(&mut self, id: NodeID, f: F) -> Option<V>
     where
         T: NodeTypeDispatch,
-        F: FnOnce(&mut T);
+        F: FnOnce(&mut T) -> V;
 
-    fn read<T, V: Clone + Default>(&mut self, node_id: NodeID, f: impl FnOnce(&T) -> V) -> V
+    fn with_node<T, V: Clone + Default>(&mut self, node_id: NodeID, f: impl FnOnce(&T) -> V) -> V
     where
         T: NodeTypeDispatch;
 
-    fn mutate_meta<F>(&mut self, id: NodeID, f: F)
+    fn with_node_meta_mut<F>(&mut self, id: NodeID, f: F)
     where
         F: FnOnce(&mut SceneNode);
 
-    fn read_meta<V: Clone + Default>(
+    fn with_node_meta<V: Clone + Default>(
         &mut self,
         node_id: NodeID,
         f: impl FnOnce(&SceneNode) -> V,
@@ -42,33 +42,37 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.create::<T>()
     }
 
-    pub fn mutate<T, F>(&mut self, id: NodeID, f: F)
+    pub fn with_node_mut<T, V, F>(&mut self, id: NodeID, f: F) -> Option<V>
     where
         T: NodeTypeDispatch,
-        F: FnOnce(&mut T),
+        F: FnOnce(&mut T) -> V,
     {
-        self.rt.mutate::<T, F>(id, f);
+        self.rt.with_node_mut::<T, V, F>(id, f)
     }
 
-    pub fn read<T, V: Clone + Default>(&mut self, node_id: NodeID, f: impl FnOnce(&T) -> V) -> V
+    pub fn with_node<T, V: Clone + Default>(
+        &mut self,
+        node_id: NodeID,
+        f: impl FnOnce(&T) -> V,
+    ) -> V
     where
         T: NodeTypeDispatch,
     {
-        self.rt.read::<T, V>(node_id, f)
+        self.rt.with_node::<T, V>(node_id, f)
     }
 
-    pub fn mutate_meta<F>(&mut self, id: NodeID, f: F)
+    pub fn with_node_meta_mut<F>(&mut self, id: NodeID, f: F)
     where
         F: FnOnce(&mut SceneNode),
     {
-        self.rt.mutate_meta(id, f);
+        self.rt.with_node_meta_mut(id, f);
     }
 
-    pub fn read_meta<V: Clone + Default>(
+    pub fn with_node_meta<V: Clone + Default>(
         &mut self,
         node_id: NodeID,
         f: impl FnOnce(&SceneNode) -> V,
     ) -> V {
-        self.rt.read_meta(node_id, f)
+        self.rt.with_node_meta(node_id, f)
     }
 }

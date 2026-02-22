@@ -79,7 +79,7 @@ impl Runtime {
             let mut ctx = RuntimeContext::new(self);
             behavior.on_init(&mut ctx, node_id);
         }
-        if flags.has_start() {
+        if flags.has_all_init() {
             self.queue_start_script(node_id);
         }
 

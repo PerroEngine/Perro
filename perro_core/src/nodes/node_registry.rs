@@ -75,6 +75,35 @@ macro_rules! define_scene_nodes {
                 !self.parent.is_nil()
             }
 
+            pub fn get_name(&self) -> &str {
+                self.name.as_ref()
+            }
+
+            pub fn set_name<S>(&mut self, name: S)
+            where
+                S: Into<Cow<'static, str>>,
+            {
+                self.name = name.into();
+            }
+
+            pub const fn get_parent_id(&self) -> NodeID {
+                self.parent
+            }
+
+            pub fn get_children_ids(&self) -> &[NodeID] {
+                self.children
+                    .as_ref()
+                    .map(|cow| cow.as_ref())
+                    .unwrap_or(&[])
+            }
+
+            pub fn set_children_ids<C>(&mut self, children: Option<C>)
+            where
+                C: Into<Cow<'static, [NodeID]>>,
+            {
+                self.children = children.map(Into::into);
+            }
+
             pub const fn node_type(&self) -> NodeType {
                 match &self.data {
                     $(
@@ -132,10 +161,7 @@ macro_rules! define_scene_nodes {
             }
 
             pub fn children_slice(&self) -> &[NodeID] {
-                self.children
-                    .as_ref()
-                    .map(|cow| cow.as_ref())
-                    .unwrap_or(&[])
+                self.get_children_ids()
             }
 
             pub fn with_typed_ref<T: NodeTypeDispatch, R>(

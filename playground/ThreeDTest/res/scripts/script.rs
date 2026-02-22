@@ -20,17 +20,24 @@ lifecycle!({
 
     }
 
+    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+
     fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
         let dt = delta_time!(ctx);
-        let speed = with_state!(ctx, ExampleState, self_id, |state| state.speed).unwrap_or_default();
-        mutate_node!(ctx, SelfNodeType, self_id, |mesh| {
+        let speed = with_state!(ctx, ExampleState, self_id, |state| {
+            state.speed
+        }).unwrap_or_default();
+        let b = with_node_mut!(ctx, SelfNodeType, self_id, |mesh| {
             mesh.scale.x += dt * speed;
             mesh.rotation.rotate_z(dt * speed / 2.0);
-        });
-
+            mesh.position
+        }).unwrap_or_default();
     }
 
     fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+
+    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
 });
+
 
 

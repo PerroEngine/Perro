@@ -352,11 +352,11 @@ fn transpile_frontend_script(source: &str) -> String {
         format!("<{script_ty} as Default>::default()")
     };
 
-    let has_init = source.contains("fn on_init(");
-    let has_start = source.contains("fn on_start(");
-    let has_update = source.contains("fn on_update(");
-    let has_fixed = source.contains("fn on_fixed_update(");
-    let has_removed = source.contains("fn on_removed(");
+    let has_init = has_nonempty_lifecycle_method(&source, "on_init");
+    let has_start = has_nonempty_lifecycle_method(&source, "on_all_init");
+    let has_update = has_nonempty_lifecycle_method(&source, "on_update");
+    let has_fixed = has_nonempty_lifecycle_method(&source, "on_fixed_update");
+    let has_removal = has_nonempty_lifecycle_method(&source, "on_removal");
     let user_methods = parse_inherent_methods(&stripped_source, &script_ty);
     let state_fields = parse_struct_fields(&source, &state_ty);
     let exposed_fields = supported_fields(&state_fields);
@@ -366,7 +366,7 @@ fn transpile_frontend_script(source: &str) -> String {
         flags.push_str(" | ScriptFlags::HAS_INIT");
     }
     if has_start {
-        flags.push_str(" | ScriptFlags::HAS_START");
+        flags.push_str(" | ScriptFlags::HAS_ALL_INIT");
     }
     if has_update {
         flags.push_str(" | ScriptFlags::HAS_UPDATE");
@@ -374,8 +374,8 @@ fn transpile_frontend_script(source: &str) -> String {
     if has_fixed {
         flags.push_str(" | ScriptFlags::HAS_FIXED_UPDATE");
     }
-    if has_removed {
-        flags.push_str(" | ScriptFlags::HAS_REMOVED");
+    if has_removal {
+        flags.push_str(" | ScriptFlags::HAS_REMOVAL");
     }
 
     let member_consts = generate_member_consts(&exposed_fields, &user_methods);
@@ -472,6 +472,92 @@ fn parse_marked_struct_name(source: &str, marker: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn has_nonempty_lifecycle_method(source: &str, method_name: &str) -> bool {
+    let needle = format!("fn {method_name}(");
+    let mut search_from = 0usize;
+
+    while search_from < source.len() {
+        let Some(rel) = source[search_from..].find(&needle) else {
+            break;
+        };
+        let fn_start = search_from + rel;
+        let Some(body) = extract_method_body_from_fn_start(source, fn_start) else {
+            search_from = fn_start + needle.len();
+            continue;
+        };
+
+        if method_signature_looks_like_lifecycle(source, fn_start, body.start)
+            && block_has_non_comment_tokens(&source[body.start + 1..body.end])
+        {
+            return true;
+        }
+
+        search_from = body.end + 1;
+    }
+
+    false
+}
+
+fn extract_method_body_from_fn_start(source: &str, fn_start: usize) -> Option<std::ops::Range<usize>> {
+    let after_fn = &source[fn_start..];
+    let sig_open_rel = after_fn.find('(')?;
+    let sig_open = fn_start + sig_open_rel;
+    let sig_close = find_matching_delim(source, sig_open, '(', ')')?;
+    let body_start_rel = source[sig_close + 1..].find('{')?;
+    let body_start = sig_close + 1 + body_start_rel;
+    let body_end = find_matching_delim(source, body_start, '{', '}')?;
+    Some(body_start..body_end)
+}
+
+fn method_signature_looks_like_lifecycle(source: &str, fn_start: usize, body_start: usize) -> bool {
+    let sig = &source[fn_start..body_start];
+    sig.contains("&self") && sig.contains("RuntimeContext") && sig.contains("NodeID")
+}
+
+fn block_has_non_comment_tokens(block: &str) -> bool {
+    let bytes = block.as_bytes();
+    let mut i = 0usize;
+
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b.is_ascii_whitespace() {
+            i += 1;
+            continue;
+        }
+
+        if b == b'/' && i + 1 < bytes.len() {
+            let next = bytes[i + 1];
+            if next == b'/' {
+                i += 2;
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            if next == b'*' {
+                i += 2;
+                let mut depth = 1_i32;
+                while i + 1 < bytes.len() && depth > 0 {
+                    if bytes[i] == b'/' && bytes[i + 1] == b'*' {
+                        depth += 1;
+                        i += 2;
+                    } else if bytes[i] == b'*' && bytes[i + 1] == b'/' {
+                        depth -= 1;
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+                continue;
+            }
+        }
+
+        return true;
+    }
+
+    false
 }
 
 fn parse_named_struct(source: &str, expected: &str) -> Option<String> {

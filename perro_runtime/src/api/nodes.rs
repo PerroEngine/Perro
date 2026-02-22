@@ -11,39 +11,32 @@ impl NodeAPI for Runtime {
         self.nodes.insert(SceneNode::new(T::default().into()))
     }
 
-    fn mutate<T, F>(&mut self, id: perro_ids::NodeID, f: F)
+    fn with_node_mut<T, V, F>(&mut self, id: perro_ids::NodeID, f: F) -> Option<V>
     where
         T: NodeTypeDispatch,
-        F: FnOnce(&mut T),
+        F: FnOnce(&mut T) -> V,
     {
         if id.is_nil() {
-            return;
+            return None;
         }
 
-        let transform_changed = {
+        let (transform_changed, value) = {
             let Some(node) = self.nodes.get_mut(id) else {
-                return;
+                return None;
             };
 
             let mut changed = false;
+            let mut value = None;
             let result = node.with_typed_mut::<T, _>(|typed| {
                 let before = T::snapshot_transform(typed);
-                f(typed);
+                value = Some(f(typed));
                 let after = T::snapshot_transform(typed);
                 changed = before != after;
             });
-            match result {
-                Some(()) => {}
-                None => {
-                    panic!(
-                        "Node {} is not of expected type {:?} (actual: {:?})",
-                        id,
-                        T::NODE_TYPE,
-                        node.node_type()
-                    );
-                }
+            if result.is_none() {
+                return None;
             }
-            changed
+            (changed, value)
         };
 
         if matches!(T::RENDERABLE, Renderable::True) {
@@ -52,9 +45,10 @@ impl NodeAPI for Runtime {
         if transform_changed {
             self.mark_transform_dirty_recursive(id);
         }
+        value
     }
 
-    fn read<T, V: Clone + Default>(
+    fn with_node<T, V: Clone + Default>(
         &mut self,
         node_id: perro_ids::NodeID,
         f: impl FnOnce(&T) -> V,
@@ -73,7 +67,7 @@ impl NodeAPI for Runtime {
         node.with_typed_ref::<T, _>(f).unwrap_or_default()
     }
 
-    fn mutate_meta<F>(&mut self, id: perro_ids::NodeID, f: F)
+    fn with_node_meta_mut<F>(&mut self, id: perro_ids::NodeID, f: F)
     where
         F: FnOnce(&mut SceneNode),
     {
@@ -86,7 +80,7 @@ impl NodeAPI for Runtime {
         f(node);
     }
 
-    fn read_meta<V: Clone + Default>(
+    fn with_node_meta<V: Clone + Default>(
         &mut self,
         node_id: perro_ids::NodeID,
         f: impl FnOnce(&SceneNode) -> V,

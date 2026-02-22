@@ -426,29 +426,48 @@ lifecycle!({
     // `ctx` is the main interface into the engine core to access runtime data/scripts and nodes.
     // `self_id` is the NodeID handle of the node this script is attached to.
     fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
-        // local-state access using with_state!/with_state_mut!.
+        // with_state! gives read-only state access and returns data from the closure.
+        // with_state_mut! gives mutable state access; it can mutate and optionally return data.
         let count = with_state!(ctx, ExampleState, self_id, |state| {
             state.count
         }).unwrap_or_default();
         log_info!(count);
     }
 
+    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+
     fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
         let dt = delta_time!(ctx);
         // Regular Rust method calls are for internal methods.
         self.bump_count(ctx, self_id);
 
-        // Local node mutation: use context + expected node type + node id + closure.
+        // with_node! gives read-only typed node access and returns data from the closure.
+        // with_node_mut! gives mutable typed node access; it can mutate and optionally return data.
         // Here we mutate the attached node via `self_id`.
-        mutate_node!(ctx, SelfNodeType, self_id, |node| {
+        with_node_mut!(ctx, SelfNodeType, self_id, |node| {
             node.position.x += dt * SPEED;
         });
 
         // You can also pass another NodeID with another node type if that id maps
         // to that type at runtime.
         // Example:
-        // mutate_node!(ctx, MeshInstance3D, enemy_id, |mesh| { mesh.scale.x += 1.0; });
-        // If unsure, check node type first (for example with read_meta! + match).
+        // with_node_mut!(ctx, MeshInstance3D, enemy_id, |mesh| { mesh.scale.x += 1.0; });
+        // If unsure, check node type first (for example with_node_meta! + match).
+        //
+        // Node metadata helpers operate on the top-level SceneNode wrapper, not the typed node payload.
+        // SceneNode shape:
+        //     name: Cow<'static, str>,
+        //     parent: NodeID,
+        //     children: Option<Cow<'static, [NodeID]>>,
+        // }
+
+        // - with_node_meta! is read-only (returns data from SceneNode).
+        // - with_node_meta_mut! is mutable (can mutate SceneNode metadata and optionally return data).
+        // Example:
+        // let node_type = with_node_meta!(ctx, self_id, |meta| meta.node_type());
+        // with_node_meta_mut!(ctx, self_id, |meta| {
+        //     meta.name = "Player".to_string();
+        // });
 
         // call_method! can invoke methods through the script interface by member id.
         // Here we call our own script through self_id for demonstration.
@@ -458,6 +477,9 @@ lifecycle!({
         log_info!(remote_count);
         // For local/internal behavior and local state, prefer direct methods plus
         // with_state!/with_state_mut! (for example self.bump_count(...)).
+        // Read-only helpers (`with_state!`, `with_node!`, `with_node_meta!`) are for non-mutable access.
+        // Mutable helpers (`with_state_mut!`, `with_node_mut!`, `with_node_meta_mut!`) can mutate and
+        // can return a value if you need one; ignoring the return is also fine.
         // That is simpler and more performant than call_method!/get_var!/set_var!.
 
         // Typical NodeID lookup is runtime-dependent. NodeID is a handle, not the node value.
@@ -466,7 +488,7 @@ lifecycle!({
         //     call_method!(ctx, enemy_id, smid!("test"), params![1_i32, "ping"]);
         //
         //     // Mutate enemy node directly if you know its runtime node type:
-        //     mutate_node!(ctx, MeshInstance3D, enemy_id, |enemy| {
+        //     with_node_mut!(ctx, MeshInstance3D, enemy_id, |enemy| {
         //         enemy.scale.x += 0.1;
         //     });
         //
@@ -475,6 +497,8 @@ lifecycle!({
     }
 
     fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+
+    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
 });
 
 methods!({
