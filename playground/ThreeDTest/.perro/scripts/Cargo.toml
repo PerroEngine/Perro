@@ -1,39 +1,43 @@
-[workspace]
-
-[package]
-name = "scripts"
-version = "0.1.0"
-edition = "2024"
+[dependencies]
+perro_context = "0.1.0"
+perro_core = "0.1.0"
+perro_ids = "0.1.0"
+perro_modules = "0.1.0"
+perro_runtime = "0.1.0"
+perro_scripting = "0.1.0"
+perro_variant = "0.1.0"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[dependencies]
-perro_ids = "0.1.0"
-perro_scripting = "0.1.0"
-perro_context = "0.1.0"
-perro_core = "0.1.0"
-perro_modules = "0.1.0"
-perro_variant = "0.1.0"
-perro_runtime = "0.1.0"
+[lints.rust.unexpected_cfgs]
+check-cfg = ["cfg(rust_analyzer)"]
+level = "warn"
+
+[package]
+edition = "2024"
+name = "scripts"
+version = "0.1.0"
 
 [profile.dev]
-opt-level = 0
-incremental = true
 codegen-units = 256
-lto = false
 debug = false
-strip = "none"
+incremental = true
+lto = false
+opt-level = 0
 overflow-checks = false
 panic = "abort"
+strip = "none"
 
 [profile.dev.package."*"]
-opt-level = 2
-incremental = true
 codegen-units = 64
 debug = false
-strip = "none"
+incremental = true
+opt-level = 2
 overflow-checks = false
+strip = "none"
+
+[workspace]
 
 [patch.crates-io]
 perro_context = { path = "../../../../perro_context" }

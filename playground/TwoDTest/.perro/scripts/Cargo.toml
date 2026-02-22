@@ -35,6 +35,9 @@ debug = false
 strip = "none"
 overflow-checks = false
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rust_analyzer)"] }
+
 [patch.crates-io]
 perro_context = { path = "../../../../perro_context" }
 perro_core = { path = "../../../../perro_core" }

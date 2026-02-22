@@ -253,6 +253,10 @@ fn write_scripts_lib(scripts_src: &Path, copied: &[String]) -> Result<(), Compil
 
     for rel in copied {
         let module = module_name_from_rel(rel);
+        out.push_str("#[cfg(rust_analyzer)]\n");
+        out.push_str(&format!("#[path = \"../../../res/{rel}\"]\n"));
+        out.push_str(&format!("pub mod {module};\n\n"));
+        out.push_str("#[cfg(not(rust_analyzer))]\n");
         out.push_str(&format!("#[path = \"{rel}\"]\n"));
         out.push_str(&format!("pub mod {module};\n\n"));
     }
@@ -455,7 +459,7 @@ fn strip_transpiler_attributes(source: &str) -> String {
     let mut out = String::new();
     for line in source.lines() {
         let t = line.trim();
-        if t == "#[state]" || t.starts_with("#[default") {
+        if t == "#[State]" || t.starts_with("#[default") {
             continue;
         }
         out.push_str(line);
@@ -937,10 +941,14 @@ fn is_attribute_line_named(line: &str, attribute_name: &str) -> bool {
         return false;
     };
     let inner = inner.trim();
-    inner == attribute_name
-        || inner
-            .strip_prefix(attribute_name)
-            .is_some_and(|rest| rest.starts_with('('))
+    if inner.eq_ignore_ascii_case(attribute_name) {
+        return true;
+    }
+    if let Some(open) = inner.find('(') {
+        let name = inner[..open].trim();
+        return name.eq_ignore_ascii_case(attribute_name);
+    }
+    false
 }
 
 fn generate_state_default_impl(source: &str, state_ty: &str, state_fields: &[StateField]) -> String {

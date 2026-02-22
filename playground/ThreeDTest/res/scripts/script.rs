@@ -6,7 +6,7 @@ use perro_scripting::prelude::*;
 
 type SelfNodeType = MeshInstance3D;
 
-#[state]
+#[State]
 pub struct ExampleState {
     #[default = 5.0]
     speed: f32,

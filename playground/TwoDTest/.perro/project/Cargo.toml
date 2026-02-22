@@ -27,8 +27,8 @@ debug-assertions = false
 overflow-checks = false
 
 [patch.crates-io]
-perro_context = { path = "../../../../perro_context" }
 perro_app = { path = "../../../../perro_app" }
+perro_context = { path = "../../../../perro_context" }
 perro_core = { path = "../../../../perro_core" }
 perro_graphics = { path = "../../../../perro_graphics" }
 perro_ids = { path = "../../../../perro_ids" }

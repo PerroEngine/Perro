@@ -6,7 +6,7 @@ use perro_scripting::prelude::*;
 
 type SelfNodeType = Camera3D;
 
-#[state]
+#[State]
 pub struct CameraState {
     #[default = 5]
     job: i32

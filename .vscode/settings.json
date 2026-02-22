@@ -1,0 +1,8 @@
+{
+  "rust-analyzer.cargo.targetDir": "${workspaceFolder}/target",
+  "rust-analyzer.linkedProjects": ["Cargo.toml"],
+  "rust-analyzer.vfs.extraIncludes": [
+    "${workspaceFolder}/playground/ThreeDTest/res/scripts",
+    "${workspaceFolder}/playground/TwoDTest/res/scripts"
+  ]
+}

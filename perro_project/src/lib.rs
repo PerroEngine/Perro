@@ -161,6 +161,7 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     let project_static_src = project_src.join("static");
     let project_embedded = project_crate.join("embedded");
     let scripts_src = scripts_crate.join("src");
+    let vscode_dir = root.join(".vscode");
 
     fs::create_dir_all(&res_dir)?;
     fs::create_dir_all(&res_scripts_dir)?;
@@ -168,6 +169,7 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     fs::create_dir_all(&project_static_src)?;
     fs::create_dir_all(&project_embedded)?;
     fs::create_dir_all(&scripts_src)?;
+    fs::create_dir_all(&vscode_dir)?;
 
     let crate_name = crate_name_from_project_name(project_name);
     write_if_missing(root.join(".gitignore"), &default_gitignore())?;
@@ -207,6 +209,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     )?;
     write_if_missing(project_embedded.join("assets.brk"), "")?;
     write_if_missing(scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
+    write_if_missing(
+        vscode_dir.join("settings.json"),
+        &default_vscode_settings_json(),
+    )?;
 
     Ok(())
 }
@@ -405,7 +411,9 @@ type SelfNodeType = Node2D;
 
 // State is data-only. Keeping state separate from behavior makes cross-calls memory safe
 // and helps the runtime handle recursion/re-entrancy without borrowing issues.
-#[state]
+
+// Define state struct with #[State] and use #[default = _] for default values on initialization.
+#[State]
 pub struct ExampleState {
     #[default = 5]
     count: i32,
@@ -568,6 +576,9 @@ codegen-units = 64
 debug = false
 strip = "none"
 overflow-checks = false
+
+[lints.rust]
+unexpected_cfgs = {{ level = "warn", check-cfg = ["cfg(rust_analyzer)"] }}
 "#
     )
 }
@@ -691,6 +702,17 @@ pub extern "C" fn perro_scripts_init() {}
     .to_string()
 }
 
+fn default_vscode_settings_json() -> String {
+    r#"{
+  "rust-analyzer.linkedProjects": [
+    ".perro/scripts/Cargo.toml",
+    ".perro/project/Cargo.toml"
+  ]
+}
+"#
+    .to_string()
+}
+
 pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
     let project_manifest = project_root
         .join(".perro")
@@ -701,6 +723,7 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
         .join("scripts")
         .join("Cargo.toml");
     ensure_scripts_manifest_deps(&scripts_manifest)?;
+    ensure_scripts_manifest_rust_analyzer_cfg(&scripts_manifest)?;
     ensure_patch_block_in_manifest(&project_manifest)?;
     ensure_patch_block_in_manifest(&scripts_manifest)?;
     Ok(())
@@ -740,6 +763,22 @@ fn ensure_scripts_manifest_deps(path: &Path) -> std::io::Result<()> {
     fs::write(path, rendered)
 }
 
+fn ensure_scripts_manifest_rust_analyzer_cfg(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let src = fs::read_to_string(path)?;
+    if src.contains("cfg(rust_analyzer)") {
+        return Ok(());
+    }
+    let mut out = src.trim_end().to_string();
+    out.push_str(
+        "\n\n[lints.rust]\nunexpected_cfgs = { level = \"warn\", check-cfg = [\"cfg(rust_analyzer)\"] }\n",
+    );
+    fs::write(path, out)
+}
+
 fn ensure_patch_block_in_manifest(path: &Path) -> std::io::Result<()> {
     if !path.exists() {
         return Ok(());
@@ -763,7 +802,9 @@ fn strip_patch_crates_io(src: &str) -> String {
     for line in src.lines() {
         let trimmed = line.trim();
         let is_header = trimmed.starts_with('[') && trimmed.ends_with(']');
-        if is_header && trimmed == "[patch.crates-io]" {
+        let is_patch_header =
+            is_header && (trimmed == "[patch.crates-io]" || trimmed.starts_with("[patch.crates-io."));
+        if is_patch_header {
             in_patch = true;
             continue;
         }
