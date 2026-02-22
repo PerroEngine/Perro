@@ -49,4 +49,5 @@ perro_render_bridge = { path = "../../../../perro_render_bridge" }
 perro_runtime = { path = "../../../../perro_runtime" }
 perro_scene = { path = "../../../../perro_scene" }
 perro_scripting = { path = "../../../../perro_scripting" }
+perro_scripting_macros = { path = "../../../../perro_scripting_macros" }
 perro_variant = { path = "../../../../perro_variant" }
