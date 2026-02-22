@@ -452,22 +452,17 @@ lifecycle!({
         // to that type at runtime.
         // Example:
         // with_node_mut!(ctx, MeshInstance3D, enemy_id, |mesh| { mesh.scale.x += 1.0; });
-        // If unsure, check node type first (for example with_node_meta! + match).
         //
-        // Node metadata helpers operate on the top-level SceneNode wrapper, not the typed node payload.
-        // SceneNode shape:
-        //     name: Cow<'static, str>,
-        //     parent: NodeID,
-        //     children: Option<Cow<'static, [NodeID]>>,
-        // }
-
-        // - with_node_meta! is read-only (returns data from SceneNode).
-        // - with_node_meta_mut! is mutable (can mutate SceneNode metadata and optionally return data).
-        // Example:
-        // let node_type = with_node_meta!(ctx, self_id, |meta| meta.node_type());
-        // with_node_meta_mut!(ctx, self_id, |meta| {
-        //     meta.name = "Player".to_string();
-        // });
+        // For common hierarchy/identity operations, prefer dedicated helper macros:
+        // let name = get_node_name!(ctx, self_id).unwrap_or_default();
+        // let parent = get_node_parent_id!(ctx, self_id).unwrap_or(NodeID::nil());
+        // let children = get_node_children_ids!(ctx, self_id).unwrap_or_default();
+        // let _renamed = set_node_name!(ctx, self_id, "Player");
+        // let _ok = reparent!(ctx, NodeID::new(10), self_id);
+        // let _moved = reparent_multi!(ctx, NodeID::new(10), [NodeID::new(11), NodeID::new(12)]);
+        //
+        // If you need full SceneNode metadata access beyond these helpers,
+        // with_node_meta!/with_node_meta_mut! are still available.
 
         // call_method! can invoke methods through the script interface by member id.
         // Here we call our own script through self_id for demonstration.
@@ -477,8 +472,8 @@ lifecycle!({
         log_info!(remote_count);
         // For local/internal behavior and local state, prefer direct methods plus
         // with_state!/with_state_mut! (for example self.bump_count(...)).
-        // Read-only helpers (`with_state!`, `with_node!`, `with_node_meta!`) are for non-mutable access.
-        // Mutable helpers (`with_state_mut!`, `with_node_mut!`, `with_node_meta_mut!`) can mutate and
+        // Read-only helpers (`with_state!`, `with_node!`) are for non-mutable access.
+        // Mutable helpers (`with_state_mut!`, `with_node_mut!`) can mutate and
         // can return a value if you need one; ignoring the return is also fine.
         // That is simpler and more performant than call_method!/get_var!/set_var!.
 

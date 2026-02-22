@@ -53,6 +53,48 @@ macro_rules! with_node_meta {
 }
 
 #[macro_export]
+macro_rules! get_node_name {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_node_name($id)
+    };
+}
+
+#[macro_export]
+macro_rules! set_node_name {
+    ($ctx:expr, $id:expr, $name:expr) => {
+        $ctx.Nodes().set_node_name($id, $name)
+    };
+}
+
+#[macro_export]
+macro_rules! get_node_parent_id {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_node_parent_id($id)
+    };
+}
+
+#[macro_export]
+macro_rules! get_node_children_ids {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_node_children_ids($id)
+    };
+}
+
+#[macro_export]
+macro_rules! reparent {
+    ($ctx:expr, $parent_id:expr, $child_id:expr) => {
+        $ctx.Nodes().reparent($parent_id, $child_id)
+    };
+}
+
+#[macro_export]
+macro_rules! reparent_multi {
+    ($ctx:expr, $parent_id:expr, $child_ids:expr) => {
+        $ctx.Nodes().reparent_multi($parent_id, $child_ids)
+    };
+}
+
+#[macro_export]
 macro_rules! attach_script {
     ($ctx:expr, $id:expr, $path:expr) => {
         $ctx.Scripts().attach($id, $path)
@@ -133,8 +175,9 @@ pub mod prelude {
     pub use crate::api::{RuntimeAPI, RuntimeContext};
     pub use crate::sub_apis::{NodeAPI, NodeModule, ScriptAPI, ScriptModule, TimeAPI, TimeModule};
     pub use crate::{
-        attach_script, call_method, create_node, delta_time, detach_script, elapsed_time,
-        fixed_delta_time, get_var, params, set_var, sid, smid, with_node, with_node_meta,
+        attach_script, call_method, create_node, delta_time, detach_script, elapsed_time, fixed_delta_time,
+        get_node_children_ids, get_node_name, get_node_parent_id, get_var, params, reparent,
+        reparent_multi, set_node_name, set_var, sid, smid, with_node, with_node_meta,
         with_node_meta_mut, with_node_mut, with_state, with_state_mut,
     };
 }
@@ -201,6 +244,36 @@ mod tests {
             _f: impl FnOnce(&perro_core::SceneNode) -> V,
         ) -> V {
             V::default()
+        }
+
+        fn get_node_name(&mut self, _node_id: NodeID) -> Option<std::borrow::Cow<'static, str>> {
+            None
+        }
+
+        fn set_node_name<S>(&mut self, _node_id: NodeID, _name: S) -> bool
+        where
+            S: Into<std::borrow::Cow<'static, str>>,
+        {
+            false
+        }
+
+        fn get_node_parent_id(&mut self, _node_id: NodeID) -> Option<NodeID> {
+            None
+        }
+
+        fn get_node_children_ids(&mut self, _node_id: NodeID) -> Option<Vec<NodeID>> {
+            None
+        }
+
+        fn reparent(&mut self, _parent_id: NodeID, _child_id: NodeID) -> bool {
+            false
+        }
+
+        fn reparent_multi<I>(&mut self, _parent_id: NodeID, _child_ids: I) -> usize
+        where
+            I: IntoIterator<Item = NodeID>,
+        {
+            0
         }
     }
 
@@ -281,6 +354,12 @@ mod tests {
         with_node_meta_mut!(&mut ctx, id, |_node| {});
         let top = with_node_meta!(&mut ctx, id, |_node| 7_i32);
         assert_eq!(top, 0_i32);
+        assert_eq!(get_node_name!(&mut ctx, id), None);
+        assert!(!set_node_name!(&mut ctx, id, "player"));
+        assert_eq!(get_node_parent_id!(&mut ctx, id), None);
+        assert_eq!(get_node_children_ids!(&mut ctx, id), None);
+        assert!(!reparent!(&mut ctx, NodeID::new(1), id));
+        assert_eq!(reparent_multi!(&mut ctx, NodeID::new(1), [id]), 0);
         assert!(!attach_script!(&mut ctx, id, "res://scripts/a.rs"));
         assert!(!detach_script!(&mut ctx, id));
         let member = smid!("x");

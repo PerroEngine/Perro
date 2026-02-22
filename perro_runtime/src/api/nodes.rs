@@ -1,5 +1,6 @@
 use perro_context::sub_apis::NodeAPI;
 use perro_core::{NodeTypeDispatch, Renderable, SceneNode, SceneNodeData};
+use std::borrow::Cow;
 
 use crate::Runtime;
 
@@ -92,5 +93,86 @@ impl NodeAPI for Runtime {
             return V::default();
         };
         f(node)
+    }
+
+    fn get_node_name(&mut self, node_id: perro_ids::NodeID) -> Option<Cow<'static, str>> {
+        self.nodes.get(node_id).map(|node| node.name.clone())
+    }
+
+    fn set_node_name<S>(&mut self, node_id: perro_ids::NodeID, name: S) -> bool
+    where
+        S: Into<Cow<'static, str>>,
+    {
+        let Some(node) = self.nodes.get_mut(node_id) else {
+            return false;
+        };
+        node.set_name(name);
+        true
+    }
+
+    fn get_node_parent_id(&mut self, node_id: perro_ids::NodeID) -> Option<perro_ids::NodeID> {
+        self.nodes.get(node_id).map(|node| node.get_parent_id())
+    }
+
+    fn get_node_children_ids(&mut self, node_id: perro_ids::NodeID) -> Option<Vec<perro_ids::NodeID>> {
+        self.nodes
+            .get(node_id)
+            .map(|node| node.get_children_ids().to_vec())
+    }
+
+    fn reparent(&mut self, parent_id: perro_ids::NodeID, child_id: perro_ids::NodeID) -> bool {
+        if child_id.is_nil() {
+            return false;
+        }
+        if !parent_id.is_nil() && self.nodes.get(parent_id).is_none() {
+            return false;
+        }
+
+        let old_parent = match self.nodes.get(child_id) {
+            Some(node) => node.get_parent_id(),
+            None => return false,
+        };
+
+        if old_parent == parent_id {
+            return true;
+        }
+
+        if !old_parent.is_nil() {
+            if let Some(parent) = self.nodes.get_mut(old_parent) {
+                parent.remove_child(child_id);
+            }
+        }
+
+        if let Some(child) = self.nodes.get_mut(child_id) {
+            child.parent = parent_id;
+        } else {
+            return false;
+        }
+
+        if !parent_id.is_nil() {
+            if let Some(parent) = self.nodes.get_mut(parent_id) {
+                if !parent.get_children_ids().contains(&child_id) {
+                    parent.add_child(child_id);
+                }
+            } else {
+                return false;
+            }
+        }
+
+        self.mark_transform_dirty_recursive(child_id);
+        true
+    }
+
+    fn reparent_multi<I>(&mut self, parent_id: perro_ids::NodeID, child_ids: I) -> usize
+    where
+        I: IntoIterator<Item = perro_ids::NodeID>,
+    {
+        let mut updated = 0_usize;
+        for child_id in child_ids {
+            if self.reparent(parent_id, child_id) {
+                updated += 1;
+            }
+        }
+        updated
     }
 }
