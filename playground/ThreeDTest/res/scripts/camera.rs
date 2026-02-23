@@ -26,8 +26,8 @@ lifecycle!({
 
     fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
         let dt = delta_time!(ctx);
-        call_method!(ctx, NodeID(4), smid!("bob"), params![7123_i32, "bodsasb"]);
-           let j2 = with_state!(ctx, CameraState, self_id, |state| {
+        call_method!(ctx, NodeID(4), func_id!("bob"), params![7123_i32, "bodsasb"]);
+        let j2 = with_state!(ctx, CameraState, self_id, |state| {
             state.job
         }).unwrap_or_default();
 

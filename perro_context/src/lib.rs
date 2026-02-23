@@ -130,9 +130,37 @@ macro_rules! sid {
 }
 
 #[macro_export]
+macro_rules! var_id {
+    ($name:expr) => {
+        ::perro_ids::ScriptMemberID::from_string($name)
+    };
+}
+
+#[macro_export]
+macro_rules! func_id {
+    ($name:expr) => {
+        ::perro_ids::ScriptMemberID::from_string($name)
+    };
+}
+
+#[macro_export]
+macro_rules! method_id {
+    ($name:expr) => {
+        ::perro_ids::ScriptMemberID::from_string($name)
+    };
+}
+
+#[macro_export]
 macro_rules! params {
     ($($value:expr),* $(,)?) => {
         &[$(::perro_variant::Variant::from($value)),*]
+    };
+}
+
+#[macro_export]
+macro_rules! variant {
+    ($value:expr) => {
+        ::perro_variant::Variant::from($value)
     };
 }
 
@@ -162,9 +190,9 @@ pub mod prelude {
     pub use crate::sub_apis::{NodeAPI, NodeModule, ScriptAPI, ScriptModule, TimeAPI, TimeModule};
     pub use crate::{
         attach_script, call_method, create_node, delta_time, detach_script, elapsed_time, fixed_delta_time,
-        get_node_children_ids, get_node_name, get_node_parent_id, get_var, params, reparent,
-        reparent_multi, set_node_name, set_var, sid, smid, with_node, with_node_mut, with_state,
-        with_state_mut,
+        func_id, get_node_children_ids, get_node_name, get_node_parent_id, get_var, method_id, params,
+        reparent, reparent_multi, set_node_name, set_var, sid, smid, var_id, variant, with_node,
+        with_node_mut, with_state, with_state_mut,
     };
 }
 
@@ -331,12 +359,19 @@ mod tests {
         assert_eq!(reparent_multi!(&mut ctx, NodeID::new(1), [id]), 0);
         assert!(!attach_script!(&mut ctx, id, "res://scripts/a.rs"));
         assert!(!detach_script!(&mut ctx, id));
-        let member = smid!("x");
+        let member = var_id!("x");
         let member_alias = sid!("x");
+        let var_member = var_id!("x");
+        let method_member = method_id!("x");
+        let func_member = func_id!("x");
         assert_eq!(member, member_alias);
+        assert_eq!(member, var_member);
+        assert_eq!(member, method_member);
+        assert_eq!(member, func_member);
         let _value = get_var!(&mut ctx, id, member);
-        set_var!(&mut ctx, id, member, perro_variant::Variant::Null);
-        let _result = call_method!(&mut ctx, id, member, &[]);
+        set_var!(&mut ctx, id, member, variant!(perro_variant::Variant::Null));
+        set_var!(&mut ctx, id, member, variant!(77_i32));
+        let _result = call_method!(&mut ctx, id, method_member, &[]);
         let _result2 = call_method!(&mut ctx, id, member, params![1_i32, "abc"]);
 
         let dt = delta_time!(&mut ctx);

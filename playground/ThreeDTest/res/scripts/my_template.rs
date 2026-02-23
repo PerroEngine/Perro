@@ -71,9 +71,9 @@ lifecycle!({
         //
         // call_method! can invoke methods through the script interface by member id.
         // Here we call our own script through self_id for demonstration.
-        call_method!(ctx, self_id, smid!("test"), params![7123_i32, "bodsasb"]);
-        set_var!(ctx, self_id, smid!("count"), 77_i32.into());
-        let remote_count = get_var!(ctx, self_id, smid!("count"));
+        call_method!(ctx, self_id, func_id!("test"), params![7123_i32, "bodsasb"]);
+        set_var!(ctx, self_id, var_id!("count"), 77_i32.into());
+        let remote_count = get_var!(ctx, self_id, var_id!("count"));
         log_info!(remote_count);
         // For local/internal behavior and local state, prefer direct methods plus
         // with_state!/with_state_mut! (for example self.bump_count(...)).
@@ -85,7 +85,7 @@ lifecycle!({
         // Typical NodeID lookup is runtime-dependent. NodeID is a handle, not the node value.
         // if let Some(enemy_id) = find_node!(ctx, "enemy") {
         //     // Cross-script call on another script instance:
-        //     call_method!(ctx, enemy_id, smid!("test"), params![1_i32, "ping"]);
+        //     call_method!(ctx, enemy_id, func_id!("test"), params![1_i32, "ping"]);
         //
         //     // Mutate enemy node directly if you know its runtime node type:
         //     with_node_mut!(ctx, MeshInstance3D, enemy_id, |enemy| {

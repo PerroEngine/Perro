@@ -17,7 +17,7 @@ pub struct ExampleState {
 
 lifecycle!({
     fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
-
+        set_var!(ctx, self_id, var_id!("speed"), variant!(12.0));
     }
 
     fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
@@ -27,6 +27,7 @@ lifecycle!({
         let speed = with_state!(ctx, ExampleState, self_id, |state| {
             state.speed
         }).unwrap_or_default();
+        log_info!(format!("Speed: {}", speed));
         let b = with_node_mut!(ctx, SelfNodeType, self_id, |mesh| {
             mesh.scale.x += dt * speed;
             mesh.rotation.rotate_z(dt * speed / 2.0);

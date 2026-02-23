@@ -818,14 +818,14 @@ fn generate_member_consts(fields: &[StateField], methods: &[ScriptMethod]) -> St
     for field in fields {
         let const_name = member_const_name(&field.name);
         out.push_str(&format!(
-            "const {const_name}: ScriptMemberID = smid!(\"{}\");\n",
+            "const {const_name}: ScriptMemberID = var_id!(\"{}\");\n",
             field.name
         ));
     }
     for method in methods {
         let const_name = method_const_name(&method.name);
         out.push_str(&format!(
-            "const {const_name}: ScriptMemberID = smid!(\"{}\");\n",
+            "const {const_name}: ScriptMemberID = func_id!(\"{}\");\n",
             method.name
         ));
         if !method.takes_raw_params {
