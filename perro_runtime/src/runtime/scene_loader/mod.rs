@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 
 mod merge;
 mod prepare;
-mod scripts;
 
 use merge::merge_prepared_scene;
 use prepare::{load_runtime_scene_from_disk, prepare_runtime_scene, prepare_static_scene};

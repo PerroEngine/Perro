@@ -9,7 +9,7 @@ use std::{
 };
 
 impl Runtime {
-    pub(super) fn attach_scene_scripts(
+    pub(crate) fn attach_scene_scripts(
         &mut self,
         script_nodes: Vec<(perro_ids::NodeID, String)>,
     ) -> Result<(), String> {
@@ -25,7 +25,7 @@ impl Runtime {
             .name
             .clone();
 
-        match self.provider_mode {
+        match self.provider_mode() {
             ProviderMode::Dynamic => {
                 self.ensure_dynamic_script_registry_loaded(&project_root, &project_name)?
             }

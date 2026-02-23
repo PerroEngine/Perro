@@ -1,10 +1,8 @@
 use crate::{
-    NodeArena,
-    resource_api::RuntimeResourceApi,
+    cns::{NodeArena, ScriptCollection, SignalConnection, SignalRegistry},
     render_result::RuntimeRenderResult,
+    rs_ctx::RuntimeResourceApi,
     runtime_project::{ProviderMode, RuntimeProject},
-    signal_registry::{SignalConnection, SignalRegistry},
-    script_collection::ScriptCollection,
 };
 use ahash::{AHashMap, AHashSet};
 use libloading::Library;
@@ -40,8 +38,8 @@ pub struct Runtime {
     render_3d: Render3DState,
     pub(crate) signals: SignalRegistry,
     pub(crate) signal_emit_scratch: Vec<SignalConnection>,
-    script_library: Option<Library>,
-    dynamic_script_registry: AHashMap<String, ScriptConstructor<Runtime, RuntimeResourceApi>>,
+    pub(crate) script_library: Option<Library>,
+    pub(crate) dynamic_script_registry: AHashMap<String, ScriptConstructor<Runtime, RuntimeResourceApi>>,
     pub(crate) resource_api: Arc<RuntimeResourceApi>,
 }
 
