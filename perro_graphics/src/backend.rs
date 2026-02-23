@@ -84,15 +84,19 @@ impl PerroGraphics {
             match command {
                 RenderCommand::Resource(resource_cmd) => match resource_cmd {
                     ResourceCommand::CreateMesh {
-                        request, source, ..
+                        request,
+                        source,
+                        reserved,
                     } => {
-                        let id = self.resources.create_mesh(source.as_str());
+                        let id = self.resources.create_mesh(source.as_str(), reserved);
                         self.events.push(RenderEvent::MeshCreated { request, id });
                     }
                     ResourceCommand::CreateTexture {
-                        request, source, ..
+                        request,
+                        source,
+                        reserved,
                     } => {
-                        let id = self.resources.create_texture(source.as_str());
+                        let id = self.resources.create_texture(source.as_str(), reserved);
                         self.events
                             .push(RenderEvent::TextureCreated { request, id });
                     }
@@ -100,11 +104,31 @@ impl PerroGraphics {
                         request,
                         material,
                         source,
-                        ..
+                        reserved,
                     } => {
-                        let id = self.resources.create_material(material, source.as_deref());
+                        let id =
+                            self.resources
+                                .create_material(material, source.as_deref(), reserved);
                         self.events
                             .push(RenderEvent::MaterialCreated { request, id });
+                    }
+                    ResourceCommand::SetMeshReserved { id, reserved } => {
+                        self.resources.set_mesh_reserved(id, reserved);
+                    }
+                    ResourceCommand::SetTextureReserved { id, reserved } => {
+                        self.resources.set_texture_reserved(id, reserved);
+                    }
+                    ResourceCommand::SetMaterialReserved { id, reserved } => {
+                        self.resources.set_material_reserved(id, reserved);
+                    }
+                    ResourceCommand::DropMesh { id } => {
+                        self.resources.drop_mesh(id);
+                    }
+                    ResourceCommand::DropTexture { id } => {
+                        self.resources.drop_texture(id);
+                    }
+                    ResourceCommand::DropMaterial { id } => {
+                        self.resources.drop_material(id);
                     }
                 },
                 RenderCommand::TwoD(cmd_2d) => match cmd_2d {
@@ -215,6 +239,16 @@ impl GraphicsBackend for PerroGraphics {
         let (camera_3d, _stats_3d, lighting_3d) = self.renderer_3d.prepare_frame(&self.resources);
         let draws_3d: Vec<_> = self.renderer_3d.retained_draws().collect();
         let sprites_2d: Vec<_> = self.renderer_2d.retained_sprites().collect();
+        self.resources.reset_ref_counts();
+        for sprite in &sprites_2d {
+            self.resources.mark_texture_used(sprite.texture);
+        }
+        for draw in &draws_3d {
+            self.resources.mark_mesh_used(draw.mesh);
+            self.resources.mark_material_used(draw.material);
+        }
+        self.resources
+            .gc_unused(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
 
         if let Some(gpu) = &mut self.gpu {
             gpu.render(RenderFrame {
@@ -252,6 +286,7 @@ mod tests {
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateTexture {
             request,
             source: "__default__".to_string(),
+            reserved: false,
         }));
         graphics.draw_frame();
 
@@ -294,20 +329,24 @@ mod tests {
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
             request: perro_render_bridge::RenderRequestID::new(1001),
             source: "__cube__".to_string(),
+            reserved: false,
         }));
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
             request: perro_render_bridge::RenderRequestID::new(1002),
             material: Material3D::default(),
             source: None,
+            reserved: false,
         }));
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
             request: perro_render_bridge::RenderRequestID::new(1003),
             source: "res://mesh/cube.glb".to_string(),
+            reserved: false,
         }));
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
             request: perro_render_bridge::RenderRequestID::new(1004),
             material: Material3D::default(),
             source: None,
+            reserved: false,
         }));
         graphics.draw_frame();
 

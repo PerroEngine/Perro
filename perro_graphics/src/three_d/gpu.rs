@@ -281,6 +281,8 @@ impl Gpu3D {
             height,
             static_mesh_lookup,
         } = frame;
+        self.custom_mesh_ranges
+            .retain(|source, _| resources.has_mesh_source(source));
         self.resize(device, width, height);
         self.ensure_instance_capacity(device, draws.len());
 

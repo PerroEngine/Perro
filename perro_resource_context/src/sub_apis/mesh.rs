@@ -2,6 +2,8 @@ use perro_ids::MeshID;
 
 pub trait MeshAPI {
     fn load_mesh(&self, source: &str) -> MeshID;
+    fn reserve_mesh(&self, source: &str) -> MeshID;
+    fn drop_mesh(&self, source: &str) -> bool;
 }
 
 pub struct MeshModule<'res, R: MeshAPI + ?Sized> {
@@ -16,6 +18,16 @@ impl<'res, R: MeshAPI + ?Sized> MeshModule<'res, R> {
     #[inline]
     pub fn load<S: AsRef<str>>(&self, source: S) -> MeshID {
         self.api.load_mesh(source.as_ref())
+    }
+
+    #[inline]
+    pub fn reserve<S: AsRef<str>>(&self, source: S) -> MeshID {
+        self.api.reserve_mesh(source.as_ref())
+    }
+
+    #[inline]
+    pub fn drop<S: AsRef<str>>(&self, source: S) -> bool {
+        self.api.drop_mesh(source.as_ref())
     }
 }
 

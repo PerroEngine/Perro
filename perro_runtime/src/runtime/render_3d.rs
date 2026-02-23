@@ -199,6 +199,7 @@ impl Runtime {
                         ResourceCommand::CreateMesh {
                             request,
                             source,
+                            reserved: false,
                         },
                     ));
                 }
@@ -243,6 +244,7 @@ impl Runtime {
                             request,
                             material,
                             source,
+                            reserved: false,
                         },
                     ));
                 }

@@ -149,6 +149,7 @@ impl Runtime {
                     ResourceCommand::CreateTexture {
                         request,
                         source,
+                        reserved: false,
                     },
                 ));
             }
@@ -198,8 +199,10 @@ mod tests {
             RenderCommand::Resource(ResourceCommand::CreateTexture {
                 request,
                 source,
+                reserved,
             }) => {
                 assert_eq!(source, "__default__");
+                assert!(!reserved);
                 *request
             }
             _ => panic!("expected CreateTexture"),

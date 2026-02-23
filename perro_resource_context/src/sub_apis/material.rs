@@ -4,6 +4,8 @@ use perro_render_bridge::Material3D;
 pub trait MaterialAPI {
     fn load_material_source(&self, source: &str) -> MaterialID;
     fn create_material(&self, material: Material3D) -> MaterialID;
+    fn reserve_material_source(&self, source: &str) -> MaterialID;
+    fn drop_material_source(&self, source: &str) -> bool;
 }
 
 pub struct MaterialModule<'res, R: MaterialAPI + ?Sized> {
@@ -23,6 +25,16 @@ impl<'res, R: MaterialAPI + ?Sized> MaterialModule<'res, R> {
     #[inline]
     pub fn create(&self, material: Material3D) -> MaterialID {
         self.api.create_material(material)
+    }
+
+    #[inline]
+    pub fn reserve<S: AsRef<str>>(&self, source: S) -> MaterialID {
+        self.api.reserve_material_source(source.as_ref())
+    }
+
+    #[inline]
+    pub fn drop<S: AsRef<str>>(&self, source: S) -> bool {
+        self.api.drop_material_source(source.as_ref())
     }
 }
 

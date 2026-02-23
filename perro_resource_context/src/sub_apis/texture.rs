@@ -2,6 +2,8 @@ use perro_ids::TextureID;
 
 pub trait TextureAPI {
     fn load_texture(&self, source: &str) -> TextureID;
+    fn reserve_texture(&self, source: &str) -> TextureID;
+    fn drop_texture(&self, source: &str) -> bool;
 }
 
 pub struct TextureModule<'res, R: TextureAPI + ?Sized> {
@@ -16,6 +18,16 @@ impl<'res, R: TextureAPI + ?Sized> TextureModule<'res, R> {
     #[inline]
     pub fn load<S: AsRef<str>>(&self, source: S) -> TextureID {
         self.api.load_texture(source.as_ref())
+    }
+
+    #[inline]
+    pub fn reserve<S: AsRef<str>>(&self, source: S) -> TextureID {
+        self.api.reserve_texture(source.as_ref())
+    }
+
+    #[inline]
+    pub fn drop<S: AsRef<str>>(&self, source: S) -> bool {
+        self.api.drop_texture(source.as_ref())
     }
 }
 

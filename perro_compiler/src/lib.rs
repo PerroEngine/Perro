@@ -443,7 +443,9 @@ impl<RT: RuntimeAPI + ?Sized, RS: perro_resource_context::api::ResourceAPI + ?Si
 
 #[allow(improper_ctypes_definitions)]
 pub extern "C" fn perro_create_script() -> *mut dyn ScriptBehavior<perro_runtime::Runtime, perro_runtime::RuntimeResourceApi> {{
-    Box::into_raw(Box::new({script_ctor_expr}))
+    let script: Box<dyn ScriptBehavior<perro_runtime::Runtime, perro_runtime::RuntimeResourceApi>> =
+        Box::new({script_ctor_expr});
+    Box::into_raw(script)
 }}
 "#
     )

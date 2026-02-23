@@ -276,6 +276,8 @@ impl Gpu2D {
             sprites,
             static_texture_lookup,
         } = frame;
+        self.sprite_textures
+            .retain(|texture_id, _| resources.has_texture(*texture_id));
         self.ensure_rect_instance_capacity(device, upload.draw_count);
         self.ensure_sprite_instance_capacity(device, sprites.len());
         if self.last_camera != Some(camera) {

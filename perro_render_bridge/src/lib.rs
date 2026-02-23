@@ -138,15 +138,39 @@ pub enum ResourceCommand {
     CreateMesh {
         request: RenderRequestID,
         source: String,
+        reserved: bool,
     },
     CreateTexture {
         request: RenderRequestID,
         source: String,
+        reserved: bool,
     },
     CreateMaterial {
         request: RenderRequestID,
         material: Material3D,
         source: Option<String>,
+        reserved: bool,
+    },
+    SetMeshReserved {
+        id: MeshID,
+        reserved: bool,
+    },
+    SetTextureReserved {
+        id: TextureID,
+        reserved: bool,
+    },
+    SetMaterialReserved {
+        id: MaterialID,
+        reserved: bool,
+    },
+    DropMesh {
+        id: MeshID,
+    },
+    DropTexture {
+        id: TextureID,
+    },
+    DropMaterial {
+        id: MaterialID,
     },
 }
 
