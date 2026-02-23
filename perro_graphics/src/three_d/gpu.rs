@@ -8,7 +8,7 @@ use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3};
 use mesh_presets::build_builtin_mesh_buffer;
 use perro_io::{decompress_zlib, load_asset};
-use perro_render_bridge::{Camera3DState, Material3D};
+use perro_render_bridge::Camera3DState;
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
@@ -89,6 +89,16 @@ pub struct Gpu3D {
     depth_view: wgpu::TextureView,
     depth_size: (u32, u32),
     sample_count: u32,
+}
+
+pub struct Prepare3D<'a> {
+    pub resources: &'a ResourceStore,
+    pub camera: Camera3DState,
+    pub lighting: &'a Lighting3DState,
+    pub draws: &'a [Draw3DInstance],
+    pub width: u32,
+    pub height: u32,
+    pub static_mesh_lookup: Option<StaticMeshLookup>,
 }
 
 #[derive(Clone, Copy)]
@@ -260,14 +270,17 @@ impl Gpu3D {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        resources: &ResourceStore,
-        camera: Camera3DState,
-        lighting: &Lighting3DState,
-        draws: &[Draw3DInstance],
-        width: u32,
-        height: u32,
-        static_mesh_lookup: Option<StaticMeshLookup>,
+        frame: Prepare3D<'_>,
     ) {
+        let Prepare3D {
+            resources,
+            camera,
+            lighting,
+            draws,
+            width,
+            height,
+            static_mesh_lookup,
+        } = frame;
         self.resize(device, width, height);
         self.ensure_instance_capacity(device, draws.len());
 
@@ -294,7 +307,7 @@ impl Gpu3D {
                 .unwrap_or(default_mesh);
             let material = resources
                 .material(draw.material)
-                .unwrap_or_else(Material3D::default);
+                .unwrap_or_default();
             let instance = self.staged_instances.len() as u32;
             self.staged_instances.push(InstanceGpu {
                 model_0: draw.model[0],
@@ -313,8 +326,8 @@ impl Gpu3D {
                         .fold(0.0_f32, f32::max),
                 ],
             });
-            if let Some(batch) = self.draw_batches.last_mut() {
-                if batch.mesh.index_start == mesh.index_start
+            if let Some(batch) = self.draw_batches.last_mut()
+                && batch.mesh.index_start == mesh.index_start
                     && batch.mesh.index_count == mesh.index_count
                     && batch.mesh.base_vertex == mesh.base_vertex
                     && batch.instance_start + batch.instance_count == instance
@@ -322,7 +335,6 @@ impl Gpu3D {
                     batch.instance_count += 1;
                     continue;
                 }
-            }
             self.draw_batches.push(DrawBatch {
                 mesh,
                 instance_start: instance,
@@ -462,13 +474,11 @@ fn load_mesh_from_source(
     source: &str,
     static_mesh_lookup: Option<StaticMeshLookup>,
 ) -> Option<DecodedMesh> {
-    if let Some(lookup) = static_mesh_lookup {
-        if let Some(bytes) = lookup(source) {
-            if let Some(decoded) = decode_pmesh(bytes) {
+    if let Some(lookup) = static_mesh_lookup
+        && let Some(bytes) = lookup(source)
+            && let Some(decoded) = decode_pmesh(bytes) {
                 return Some(decoded);
             }
-        }
-    }
 
     let (path, fragment) = split_source_fragment(source);
     if path.ends_with(".pmesh") {

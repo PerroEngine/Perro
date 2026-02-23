@@ -96,12 +96,11 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
 
         // If this slot maps to a stale generation, remove that stale instance first.
         let slot = id.index() as usize;
-        if let Some(Some(existing_i)) = self.index.get(slot).copied() {
-            if self.ids.get(existing_i).copied() != Some(id) {
+        if let Some(Some(existing_i)) = self.index.get(slot).copied()
+            && self.ids.get(existing_i).copied() != Some(id) {
                 let stale_id = self.ids[existing_i];
                 let _ = self.remove(stale_id);
             }
-        }
 
         let i = self.instances.len();
         self.instances.push(ScriptInstance {

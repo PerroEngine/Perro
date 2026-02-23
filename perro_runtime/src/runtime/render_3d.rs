@@ -173,11 +173,10 @@ impl Runtime {
                 match result {
                     crate::RuntimeRenderResult::Mesh(id) => {
                         mesh_id = id;
-                        if let Some(node) = self.nodes.get_mut(node_id) {
-                            if let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data {
+                        if let Some(node) = self.nodes.get_mut(node_id)
+                            && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data {
                                 mesh_instance.mesh_id = id;
                             }
-                        }
                     }
                     crate::RuntimeRenderResult::Failed(_)
                     | crate::RuntimeRenderResult::Texture(_)
@@ -214,11 +213,10 @@ impl Runtime {
                 match result {
                     crate::RuntimeRenderResult::Material(id) => {
                         material_id = id;
-                        if let Some(node) = self.nodes.get_mut(node_id) {
-                            if let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data {
+                        if let Some(node) = self.nodes.get_mut(node_id)
+                            && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data {
                                 mesh_instance.material_id = id;
                             }
-                        }
                     }
                     crate::RuntimeRenderResult::Failed(_)
                     | crate::RuntimeRenderResult::Texture(_)
@@ -338,7 +336,7 @@ fn parse_fragment_index(fragment: Option<&str>, keys: &[&str]) -> Option<u32> {
     let fragment = fragment?;
     if let Some((name, rest)) = fragment.split_once('[') {
         let name = name.trim();
-        if keys.iter().any(|candidate| *candidate == name) {
+        if keys.contains(&name) {
             let value = rest.strip_suffix(']')?.trim();
             if let Ok(parsed) = value.parse::<u32>() {
                 return Some(parsed);

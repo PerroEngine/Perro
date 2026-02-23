@@ -7,6 +7,12 @@ pub struct NodeArena {
     free_indices: Vec<usize>,
 }
 
+impl Default for NodeArena {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NodeArena {
     pub fn new() -> Self {
         // Reserve index 0 as invalid/nil sentinel so first real node ID is 1.

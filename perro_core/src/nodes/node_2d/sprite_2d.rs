@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::node_2d::node_2d::Node2D;
+use crate::node_2d::Node2D;
 use perro_ids::TextureID;
 
 impl Deref for Sprite2D {
@@ -30,3 +30,4 @@ impl Sprite2D {
         }
     }
 }
+

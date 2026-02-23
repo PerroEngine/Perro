@@ -261,7 +261,7 @@ impl DirtyState {
 
     fn take_pending_transform_roots(&mut self, out: &mut Vec<NodeID>) {
         out.clear();
-        out.extend(self.pending_transform_roots.drain(..));
+        out.append(&mut self.pending_transform_roots);
         for id in out.iter().copied() {
             let index = id.index() as usize;
             if index < self.pending_transform_root_flags.len() {

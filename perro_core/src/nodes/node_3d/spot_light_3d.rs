@@ -1,4 +1,4 @@
-use crate::node_3d::node_3d::Node3D;
+use crate::node_3d::Node3D;
 use std::ops::{Deref, DerefMut};
 
 impl Deref for SpotLight3D {
@@ -45,3 +45,4 @@ impl Default for SpotLight3D {
         Self::new()
     }
 }
+

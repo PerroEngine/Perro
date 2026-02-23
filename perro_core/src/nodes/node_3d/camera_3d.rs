@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::node_3d::node_3d::Node3D;
+use crate::node_3d::Node3D;
 
 impl Deref for Camera3D {
     type Target = Node3D;
@@ -31,3 +31,4 @@ impl Camera3D {
         }
     }
 }
+

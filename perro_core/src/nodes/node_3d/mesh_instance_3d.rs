@@ -1,4 +1,4 @@
-use crate::node_3d::node_3d::Node3D;
+use crate::node_3d::Node3D;
 use perro_ids::{MaterialID, MeshID};
 use std::ops::{Deref, DerefMut};
 
@@ -31,3 +31,4 @@ impl MeshInstance3D {
         }
     }
 }
+

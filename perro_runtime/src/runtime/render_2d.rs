@@ -123,11 +123,10 @@ impl Runtime {
                 match result {
                     crate::RuntimeRenderResult::Texture(id) => {
                         texture_id = id;
-                        if let Some(node) = self.nodes.get_mut(node_id) {
-                            if let SceneNodeData::Sprite2D(sprite) = &mut node.data {
+                        if let Some(node) = self.nodes.get_mut(node_id)
+                            && let SceneNodeData::Sprite2D(sprite) = &mut node.data {
                                 sprite.texture_id = id;
                             }
-                        }
                     }
                     crate::RuntimeRenderResult::Failed(_) => {}
                     crate::RuntimeRenderResult::Mesh(_)

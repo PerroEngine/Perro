@@ -598,8 +598,7 @@ overflow-checks = false
 }
 
 fn default_scripts_crate_toml() -> String {
-    format!(
-        r#"[workspace]
+    r#"[workspace]
 
 [package]
 name = "scripts"
@@ -637,9 +636,8 @@ strip = "none"
 overflow-checks = false
 
 [lints.rust]
-unexpected_cfgs = {{ level = "warn", check-cfg = ["cfg(rust_analyzer)"] }}
-"#
-    )
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rust_analyzer)"] }
+"#.to_string()
 }
 
 fn rel_path(from: &Path, to: &Path) -> String {
@@ -687,21 +685,20 @@ fn project_root() -> std::path::PathBuf {
 
 fn main() {
     let root = project_root();
-    perro_app::entry::run_static_embedded_project(
-        &root,
-        "__PROJECT_NAME__",
-        "__PROJECT_NAME__",
-        "res://main.scn",
-        "res://icon.png",
-        1920,
-        1080,
-        ASSETS_BRK,
-        static_assets::scenes::lookup_scene,
-        static_assets::materials::lookup_material,
-        static_assets::meshes::lookup_mesh,
-        static_assets::textures::lookup_texture,
-        Some(scripts::SCRIPT_REGISTRY),
-    ).expect("failed to run embedded static project");
+    perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedProject {
+        project_root: &root,
+        project_name: "__PROJECT_NAME__",
+        main_scene: "res://main.scn",
+        icon: "res://icon.png",
+        virtual_width: 1920,
+        virtual_height: 1080,
+        assets_brk: ASSETS_BRK,
+        scene_lookup: static_assets::scenes::lookup_scene,
+        material_lookup: static_assets::materials::lookup_material,
+        mesh_lookup: static_assets::meshes::lookup_mesh,
+        texture_lookup: static_assets::textures::lookup_texture,
+        static_script_registry: Some(scripts::SCRIPT_REGISTRY),
+    }).expect("failed to run embedded static project");
 }
 "#
     .replace("__PROJECT_NAME__", project_name)

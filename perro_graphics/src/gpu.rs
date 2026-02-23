@@ -2,11 +2,11 @@ use crate::{
     backend::{StaticMeshLookup, StaticTextureLookup},
     resources::ResourceStore,
     three_d::{
-        gpu::Gpu3D,
+        gpu::{Gpu3D, Prepare3D},
         renderer::{Draw3DInstance, Lighting3DState},
     },
     two_d::{
-        gpu::Gpu2D,
+        gpu::{Gpu2D, Prepare2D},
         renderer::{Camera2DUniform, RectInstanceGpu, RectUploadPlan},
     },
 };
@@ -36,6 +36,19 @@ pub struct Gpu {
     msaa_color: Option<MsaaColorTarget>,
     two_d: Gpu2D,
     three_d: Gpu3D,
+}
+
+pub struct RenderFrame<'a> {
+    pub resources: &'a ResourceStore,
+    pub camera_3d: Camera3DState,
+    pub lighting_3d: &'a Lighting3DState,
+    pub draws_3d: &'a [Draw3DInstance],
+    pub camera_2d: Camera2DUniform,
+    pub rects_2d: &'a [RectInstanceGpu],
+    pub upload_2d: &'a RectUploadPlan,
+    pub sprites_2d: &'a [Sprite2DCommand],
+    pub static_texture_lookup: Option<StaticTextureLookup>,
+    pub static_mesh_lookup: Option<StaticMeshLookup>,
 }
 
 impl Gpu {
@@ -154,42 +167,46 @@ impl Gpu {
         );
     }
 
-    pub fn render(
-        &mut self,
-        resources: &ResourceStore,
-        camera_3d: Camera3DState,
-        lighting_3d: &Lighting3DState,
-        draws_3d: &[Draw3DInstance],
-        camera_2d: Camera2DUniform,
-        rects_2d: &[RectInstanceGpu],
-        upload_2d: &RectUploadPlan,
-        sprites_2d: &[Sprite2DCommand],
-        static_texture_lookup: Option<StaticTextureLookup>,
-        static_mesh_lookup: Option<StaticMeshLookup>,
-    ) {
+    pub fn render(&mut self, frame: RenderFrame<'_>) {
+        let RenderFrame {
+            resources,
+            camera_3d,
+            lighting_3d,
+            draws_3d,
+            camera_2d,
+            rects_2d,
+            upload_2d,
+            sprites_2d,
+            static_texture_lookup,
+            static_mesh_lookup,
+        } = frame;
         // Keep window alive for the full surface lifetime.
         self.window_handle.id();
 
         self.two_d.prepare(
             &self.device,
             &self.queue,
-            resources,
-            camera_2d,
-            rects_2d,
-            upload_2d,
-            sprites_2d,
-            static_texture_lookup,
+            Prepare2D {
+                resources,
+                camera: camera_2d,
+                rects: rects_2d,
+                upload: upload_2d,
+                sprites: sprites_2d,
+                static_texture_lookup,
+            },
         );
         self.three_d.prepare(
             &self.device,
             &self.queue,
-            resources,
-            camera_3d,
-            lighting_3d,
-            draws_3d,
-            self.config.width,
-            self.config.height,
-            static_mesh_lookup,
+            Prepare3D {
+                resources,
+                camera: camera_3d,
+                lighting: lighting_3d,
+                draws: draws_3d,
+                width: self.config.width,
+                height: self.config.height,
+                static_mesh_lookup,
+            },
         );
 
         let frame = match self.surface.get_current_texture() {

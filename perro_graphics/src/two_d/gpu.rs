@@ -69,6 +69,15 @@ pub struct Gpu2D {
     last_camera: Option<Camera2DUniform>,
 }
 
+pub struct Prepare2D<'a> {
+    pub resources: &'a ResourceStore,
+    pub camera: Camera2DUniform,
+    pub rects: &'a [RectInstanceGpu],
+    pub upload: &'a RectUploadPlan,
+    pub sprites: &'a [Sprite2DCommand],
+    pub static_texture_lookup: Option<StaticTextureLookup>,
+}
+
 impl Gpu2D {
     pub fn new(
         device: &wgpu::Device,
@@ -257,13 +266,16 @@ impl Gpu2D {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        resources: &ResourceStore,
-        camera: Camera2DUniform,
-        rects: &[RectInstanceGpu],
-        upload: &RectUploadPlan,
-        sprites: &[Sprite2DCommand],
-        static_texture_lookup: Option<StaticTextureLookup>,
+        frame: Prepare2D<'_>,
     ) {
+        let Prepare2D {
+            resources,
+            camera,
+            rects,
+            upload,
+            sprites,
+            static_texture_lookup,
+        } = frame;
         self.ensure_rect_instance_capacity(device, upload.draw_count);
         self.ensure_sprite_instance_capacity(device, sprites.len());
         if self.last_camera != Some(camera) {
@@ -310,14 +322,13 @@ impl Gpu2D {
                 transform_2: sprite.model[2],
                 z_index: sprite.z_index,
             });
-            if let Some(batch) = self.sprite_batches.last_mut() {
-                if batch.texture == sprite.texture
+            if let Some(batch) = self.sprite_batches.last_mut()
+                && batch.texture == sprite.texture
                     && batch.instance_start + batch.instance_count == idx
                 {
                     batch.instance_count += 1;
                     continue;
                 }
-            }
             self.sprite_batches.push(SpriteBatch {
                 texture: sprite.texture,
                 instance_start: idx,

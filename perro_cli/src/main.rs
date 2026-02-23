@@ -317,7 +317,7 @@ fn resolve_script_roots_for_create(path: &Path) -> Result<(PathBuf, PathBuf), St
                 path.display()
             ));
         };
-        if !res_dir.file_name().is_some_and(|n| n == "res") {
+        if res_dir.file_name().is_none_or(|n| n != "res") {
             return Err(format!(
                 "invalid --path `{}` (expected `res/scripts`)",
                 path.display()

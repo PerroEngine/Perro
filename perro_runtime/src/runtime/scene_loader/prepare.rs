@@ -1,7 +1,7 @@
 use perro_core::{
     Quaternion, SceneNode, SceneNodeData, Vector2, Vector3, ambient_light_3d::AmbientLight3D,
     camera_2d::Camera2D, camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D,
-    node_2d::node_2d::Node2D, node_3d::node_3d::Node3D, point_light_3d::PointLight3D,
+    node_2d::Node2D, node_3d::Node3D, point_light_3d::PointLight3D,
     ray_light_3d::RayLight3D, spot_light_3d::SpotLight3D, sprite_2d::Sprite2D,
 };
 use perro_io::load_asset;
@@ -40,6 +40,14 @@ pub(super) struct PendingNode {
     pub(super) material_source: Option<String>,
     pub(super) material_inline: Option<Material3D>,
 }
+
+type SceneNodeExtraction = (
+    SceneNode,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<Material3D>,
+);
 
 pub(super) fn load_runtime_scene_from_disk(
     path: &str,
@@ -120,16 +128,7 @@ pub(super) fn prepare_runtime_scene(scene: RuntimeScene) -> Result<PreparedScene
 }
 fn scene_node_from_static_entry(
     entry: &StaticNodeEntry,
-) -> Result<
-    (
-        SceneNode,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Option<Material3D>,
-    ),
-    String,
-> {
+) -> Result<SceneNodeExtraction, String> {
     let mut node = SceneNode::new(scene_node_data_from_static(&entry.data)?);
     if let Some(name) = entry.name {
         node.name = Cow::Borrowed(name);
@@ -164,16 +163,7 @@ fn scene_node_from_static_entry(
 
 fn scene_node_from_runtime_entry(
     entry: &RuntimeNodeEntry,
-) -> Result<
-    (
-        SceneNode,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Option<Material3D>,
-    ),
-    String,
-> {
+) -> Result<SceneNodeExtraction, String> {
     let mut node = SceneNode::new(scene_node_data_from_runtime(&entry.data)?);
     if let Some(name) = &entry.name {
         node.name = Cow::Owned(name.clone());
@@ -1420,3 +1410,4 @@ fn apply_static_material_entries(
         }
     }
 }
+

@@ -75,8 +75,7 @@ impl BrkArchive {
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
 
         if entry.flags & FLAG_COMPRESSED != 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 "Cannot get slice of compressed file (use read_file)",
             ));
         }
@@ -94,8 +93,7 @@ impl BrkArchive {
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
 
         if entry.flags & FLAG_COMPRESSED != 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 "Streaming compressed files not supported (use read_file)",
             ));
         }

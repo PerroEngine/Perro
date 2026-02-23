@@ -1,4 +1,4 @@
-use crate::node_3d::node_3d::Node3D;
+use crate::node_3d::Node3D;
 use std::ops::{Deref, DerefMut};
 
 impl Deref for RayLight3D {
@@ -39,3 +39,4 @@ impl Default for RayLight3D {
         Self::new()
     }
 }
+

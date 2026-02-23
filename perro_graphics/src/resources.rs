@@ -96,11 +96,10 @@ impl ResourceStore {
 
     #[inline]
     pub fn create_material(&mut self, material: Material3D, source: Option<&str>) -> MaterialID {
-        if let Some(source) = source {
-            if let Some(id) = self.material_by_source.get(source).copied() {
+        if let Some(source) = source
+            && let Some(id) = self.material_by_source.get(source).copied() {
                 return id;
             }
-        }
         let (index, generation) = self.materials.create_parts();
         let id = MaterialID::from_parts(index, generation);
         self.material_by_id.insert(id, material);

@@ -213,23 +213,21 @@ fn project_root() -> std::path::PathBuf {{\n\
 }}\n\n\
 fn main() {{\n\
     let root = project_root();\n\
-    perro_app::entry::run_static_embedded_project(\n\
-        &root,\n\
-        \"{default_name}\",\n\
-        \"{name}\",\n\
-        \"{main_scene}\",\n\
-        \"{icon}\",\n\
-        {w},\n\
-        {h},\n\
-        ASSETS_BRK,\n\
-        static_assets::scenes::lookup_scene,\n\
-        static_assets::materials::lookup_material,\n\
-        static_assets::meshes::lookup_mesh,\n\
-        static_assets::textures::lookup_texture,\n\
-        Some(scripts::SCRIPT_REGISTRY),\n\
-    ).expect(\"failed to run embedded static project\");\n\
+    perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedProject {{\n\
+        project_root: &root,\n\
+        project_name: \"{name}\",\n\
+        main_scene: \"{main_scene}\",\n\
+        icon: \"{icon}\",\n\
+        virtual_width: {w},\n\
+        virtual_height: {h},\n\
+        assets_brk: ASSETS_BRK,\n\
+        scene_lookup: static_assets::scenes::lookup_scene,\n\
+        material_lookup: static_assets::materials::lookup_material,\n\
+        mesh_lookup: static_assets::meshes::lookup_mesh,\n\
+        texture_lookup: static_assets::textures::lookup_texture,\n\
+        static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\
+    }}).expect(\"failed to run embedded static project\");\n\
 }}\n",
-        default_name = cfg.name,
         name = escape_str(&cfg.name),
         main_scene = escape_str(&cfg.main_scene),
         icon = escape_str(&cfg.icon),
@@ -572,22 +570,20 @@ fn block_has_non_comment_tokens(block: &str) -> bool {
 
 fn parse_named_struct(source: &str, expected: &str) -> Option<String> {
     for line in source.lines() {
-        if let Some(name) = parse_struct_name(line.trim()) {
-            if name == expected {
+        if let Some(name) = parse_struct_name(line.trim())
+            && name == expected {
                 return Some(name);
             }
-        }
     }
     None
 }
 
 fn first_non_state_struct(source: &str, state_ty: &str) -> Option<String> {
     for line in source.lines() {
-        if let Some(name) = parse_struct_name(line.trim()) {
-            if name != state_ty {
+        if let Some(name) = parse_struct_name(line.trim())
+            && name != state_ty {
                 return Some(name);
             }
-        }
     }
     None
 }
@@ -661,11 +657,10 @@ fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<StateField> {
                 opened = true;
                 depth = 1;
                 let rest = &line[pos + 1..];
-                if depth == 1 {
-                    if let Some(field) = parse_field_line(rest) {
+                if depth == 1
+                    && let Some(field) = parse_field_line(rest) {
                         fields.push(field);
                     }
-                }
                 depth += brace_delta(rest);
                 if depth <= 0 {
                     break;
@@ -675,11 +670,10 @@ fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<StateField> {
             continue;
         }
 
-        if depth == 1 {
-            if let Some(field) = parse_field_line(line) {
+        if depth == 1
+            && let Some(field) = parse_field_line(line) {
                 fields.push(field);
             }
-        }
         depth += brace_delta(line);
         if depth <= 0 {
             break;
@@ -938,11 +932,10 @@ fn parse_inherent_methods(source: &str, struct_name: &str) -> Vec<ScriptMethod> 
 
         while i < lines.len() {
             let l = strip_line_comment(lines[i]);
-            if opened && depth == 1 {
-                if let Some(method) = parse_script_method_signature(l.trim()) {
+            if opened && depth == 1
+                && let Some(method) = parse_script_method_signature(l.trim()) {
                     methods.push(method);
                 }
-            }
 
             if !opened && l.contains('{') {
                 opened = true;
@@ -1017,11 +1010,10 @@ fn parse_methods_macro_methods(source: &str, struct_name: &str) -> Vec<ScriptMet
         };
 
         let inner = &source[open_paren + 1..close_paren];
-        if let Some((target_name, body)) = parse_methods_macro_inner(inner) {
-            if target_name == struct_name {
+        if let Some((target_name, body)) = parse_methods_macro_inner(inner)
+            && target_name == struct_name {
                 methods.extend(parse_methods_block_signatures(body));
             }
-        }
 
         search_from = close_paren + 1;
     }
@@ -1102,11 +1094,10 @@ fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
 
     for line in body.lines() {
         let l = strip_line_comment(line);
-        if depth == 0 {
-            if let Some(method) = parse_script_method_signature(l.trim()) {
+        if depth == 0
+            && let Some(method) = parse_script_method_signature(l.trim()) {
                 methods.push(method);
             }
-        }
         depth += brace_delta(l);
     }
 

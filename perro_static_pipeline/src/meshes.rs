@@ -195,10 +195,9 @@ fn encode_pmesh(
     indices: &[u32],
     materials: &[PackedMaterial],
 ) -> io::Result<Vec<u8>> {
-    let mut raw = Vec::<u8>::new();
-    raw.reserve(
+    let mut raw = Vec::<u8>::with_capacity(
         vertices.len() * (6 * std::mem::size_of::<f32>())
-            + indices.len() * std::mem::size_of::<u32>()
+            + std::mem::size_of_val(indices)
             + materials.len() * (8 * std::mem::size_of::<f32>()),
     );
 

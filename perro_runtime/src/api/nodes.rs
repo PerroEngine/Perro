@@ -22,9 +22,7 @@ impl NodeAPI for Runtime {
         }
 
         let (transform_changed, value) = {
-            let Some(node) = self.nodes.get_mut(id) else {
-                return None;
-            };
+            let node = self.nodes.get_mut(id)?;
 
             let mut changed = false;
             let mut value = None;
@@ -34,9 +32,7 @@ impl NodeAPI for Runtime {
                 let after = T::snapshot_transform(typed);
                 changed = before != after;
             });
-            if result.is_none() {
-                return None;
-            }
+            result?;
             (changed, value)
         };
 
@@ -110,11 +106,10 @@ impl NodeAPI for Runtime {
             return true;
         }
 
-        if !old_parent.is_nil() {
-            if let Some(parent) = self.nodes.get_mut(old_parent) {
+        if !old_parent.is_nil()
+            && let Some(parent) = self.nodes.get_mut(old_parent) {
                 parent.remove_child(child_id);
             }
-        }
 
         if let Some(child) = self.nodes.get_mut(child_id) {
             child.parent = parent_id;

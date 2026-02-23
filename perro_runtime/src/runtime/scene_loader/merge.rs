@@ -60,11 +60,10 @@ pub(super) fn merge_prepared_scene(
         key_to_id.insert(key, node_id);
     }
 
-    if let Some(root_key) = root_key.as_deref() {
-        if !key_to_id.contains_key(root_key) {
+    if let Some(root_key) = root_key.as_deref()
+        && !key_to_id.contains_key(root_key) {
             return Err(format!("scene root `{root_key}` not found in node list"));
         }
-    }
 
     let mut edges = Vec::with_capacity(parent_pairs.len());
     for (child_key, parent_key) in parent_pairs {

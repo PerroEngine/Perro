@@ -1,5 +1,8 @@
 use crate::{
-    gpu::Gpu, resources::ResourceStore, three_d::renderer::Renderer3D, two_d::renderer::Renderer2D,
+    gpu::{Gpu, RenderFrame},
+    resources::ResourceStore,
+    three_d::renderer::Renderer3D,
+    two_d::renderer::Renderer2D,
 };
 use perro_render_bridge::{
     Command2D, Command3D, RenderBridge, RenderCommand, RenderEvent, ResourceCommand,
@@ -214,18 +217,18 @@ impl GraphicsBackend for PerroGraphics {
         let sprites_2d: Vec<_> = self.renderer_2d.retained_sprites().collect();
 
         if let Some(gpu) = &mut self.gpu {
-            gpu.render(
-                &self.resources,
+            gpu.render(RenderFrame {
+                resources: &self.resources,
                 camera_3d,
-                &lighting_3d,
-                &draws_3d,
+                lighting_3d: &lighting_3d,
+                draws_3d: &draws_3d,
                 camera_2d,
-                self.renderer_2d.retained_rects(),
-                &upload,
-                &sprites_2d,
-                self.static_texture_lookup,
-                self.static_mesh_lookup,
-            );
+                rects_2d: self.renderer_2d.retained_rects(),
+                upload_2d: &upload,
+                sprites_2d: &sprites_2d,
+                static_texture_lookup: self.static_texture_lookup,
+                static_mesh_lookup: self.static_mesh_lookup,
+            });
         }
     }
 }

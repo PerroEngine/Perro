@@ -196,7 +196,7 @@ impl UIElementID {
         }
     }
 
-    pub fn to_string(self) -> String {
+    pub fn to_hex_string(self) -> String {
         format!("{:016x}", self.0)
     }
 }

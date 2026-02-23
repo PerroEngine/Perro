@@ -1,4 +1,4 @@
-use crate::node_3d::node_3d::Node3D;
+use crate::node_3d::Node3D;
 use std::ops::{Deref, DerefMut};
 
 impl Deref for PointLight3D {
@@ -41,3 +41,4 @@ impl Default for PointLight3D {
         Self::new()
     }
 }
+

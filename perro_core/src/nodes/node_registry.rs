@@ -2,8 +2,8 @@ use crate::ambient_light_3d::AmbientLight3D;
 use crate::camera_2d::Camera2D;
 use crate::camera_3d::Camera3D;
 use crate::mesh_instance_3d::MeshInstance3D;
-use crate::node_2d::node_2d::Node2D;
-use crate::node_3d::node_3d::Node3D;
+use crate::node_2d::Node2D;
+use crate::node_3d::Node3D;
 use crate::point_light_3d::PointLight3D;
 use crate::ray_light_3d::RayLight3D;
 use crate::spot_light_3d::SpotLight3D;
@@ -354,3 +354,4 @@ define_scene_nodes! {
         SpotLight3D => (SpotLight3D, Renderable::True)
     }
 }
+

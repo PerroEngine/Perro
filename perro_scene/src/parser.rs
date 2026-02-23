@@ -354,8 +354,8 @@ fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<(String, RuntimeVal
         }
     }
 
-    if !rotation_present {
-        if let Some((x_deg, y_deg, z_deg)) = rotation_deg_xyz {
+    if !rotation_present
+        && let Some((x_deg, y_deg, z_deg)) = rotation_deg_xyz {
             fields.push((
                 "rotation".to_string(),
                 euler_xyz_radians_to_quat_value(
@@ -365,7 +365,6 @@ fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<(String, RuntimeVal
                 ),
             ));
         }
-    }
 
     fields.retain(|(name, _)| name != "rotation_deg");
 }

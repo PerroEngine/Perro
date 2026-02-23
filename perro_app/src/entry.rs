@@ -63,45 +63,48 @@ pub fn run_static_project_from_path(
     Ok(())
 }
 
+pub struct StaticEmbeddedProject<'a> {
+    pub project_root: &'a Path,
+    pub project_name: &'static str,
+    pub main_scene: &'static str,
+    pub icon: &'static str,
+    pub virtual_width: u32,
+    pub virtual_height: u32,
+    pub assets_brk: &'static [u8],
+    pub scene_lookup: perro_runtime::StaticSceneLookup,
+    pub material_lookup: perro_runtime::StaticMaterialLookup,
+    pub mesh_lookup: perro_graphics::StaticMeshLookup,
+    pub texture_lookup: perro_graphics::StaticTextureLookup,
+    pub static_script_registry: Option<&'static [(&'static str, ScriptConstructor<Runtime>)]>,
+}
+
 pub fn run_static_embedded_project(
-    project_root: &Path,
-    _default_name: &str,
-    project_name: &'static str,
-    main_scene: &'static str,
-    icon: &'static str,
-    virtual_width: u32,
-    virtual_height: u32,
-    assets_brk: &'static [u8],
-    scene_lookup: perro_runtime::StaticSceneLookup,
-    material_lookup: perro_runtime::StaticMaterialLookup,
-    mesh_lookup: perro_graphics::StaticMeshLookup,
-    texture_lookup: perro_graphics::StaticTextureLookup,
-    static_script_registry: Option<&'static [(&'static str, ScriptConstructor<Runtime>)]>,
+    input: StaticEmbeddedProject<'_>,
 ) -> Result<(), ProjectLoadError> {
     let mut project = RuntimeProject::from_static(
         perro_runtime::StaticProjectConfig::new(
-            project_name,
-            main_scene,
-            icon,
-            virtual_width,
-            virtual_height,
+            input.project_name,
+            input.main_scene,
+            input.icon,
+            input.virtual_width,
+            input.virtual_height,
         ),
-        project_root.to_path_buf(),
+        input.project_root.to_path_buf(),
     );
 
     project = project
-        .with_static_scene_lookup(scene_lookup)
-        .with_static_material_lookup(material_lookup)
-        .with_brk_bytes(assets_brk);
+        .with_static_scene_lookup(input.scene_lookup)
+        .with_static_material_lookup(input.material_lookup)
+        .with_brk_bytes(input.assets_brk);
 
     let window_title = project.config.name.clone();
     let graphics = PerroGraphics::new()
-        .with_static_mesh_lookup(mesh_lookup)
-        .with_static_texture_lookup(texture_lookup);
+        .with_static_mesh_lookup(input.mesh_lookup)
+        .with_static_texture_lookup(input.texture_lookup);
     let runtime = Runtime::from_project_with_script_registry(
         project,
         ProviderMode::Static,
-        static_script_registry,
+        input.static_script_registry,
     );
     let app = App::new(runtime, graphics);
     WinitRunner::new().run(app, &window_title);
