@@ -27,14 +27,47 @@ impl SignalAPI for Runtime {
 
     fn emit_signal(&mut self, signal_id: SignalID, params: &[Variant]) -> usize {
         let emit_start = Instant::now();
+        let connection_count = self.signals.signal_connection_count(signal_id);
+        let mut calls = 0usize;
+        let mut missing_scripts = 0usize;
+
+        if let Some(connection) = self.signals.single_signal_connection(signal_id) {
+            let lookup_from_emit_ns = emit_start.elapsed().as_nanos();
+            let behavior = self
+                .scripts
+                .get_instance(connection.script_id)
+                .map(|instance| Arc::clone(&instance.behavior));
+            let first_call_from_emit_ns = emit_start.elapsed().as_nanos();
+            if let Some(behavior) = behavior {
+                let mut ctx = RuntimeContext::new(self);
+                let _ = behavior.call_method(
+                    connection.method_id,
+                    &mut ctx,
+                    connection.script_id,
+                    params,
+                );
+                calls = 1;
+            } else {
+                missing_scripts = 1;
+            }
+            println!(
+                "[signal.emit] signal={} params={} connections={} calls={} missing_scripts={} lookup_from_emit_ns={} first_call_from_emit_ns={}",
+                signal_id.as_u64(),
+                params.len(),
+                connection_count,
+                calls,
+                missing_scripts,
+                lookup_from_emit_ns,
+                first_call_from_emit_ns,
+            );
+            return calls;
+        }
 
         let mut pending = std::mem::take(&mut self.signal_emit_scratch);
         pending.clear();
         self.signals.copy_signal_connections(signal_id, &mut pending);
         let lookup_from_emit_ns = emit_start.elapsed().as_nanos();
 
-        let mut calls = 0usize;
-        let mut missing_scripts = 0usize;
         let mut first_call_from_emit_ns: Option<u128> = None;
         for connection in pending.iter().copied() {
             let behavior = match self.scripts.get_instance(connection.script_id) {
@@ -59,7 +92,7 @@ impl SignalAPI for Runtime {
             "[signal.emit] signal={} params={} connections={} calls={} missing_scripts={} lookup_from_emit_ns={} first_call_from_emit_ns={}",
             signal_id.as_u64(),
             params.len(),
-            pending.len(),
+            connection_count,
             calls,
             missing_scripts,
             lookup_from_emit_ns,
