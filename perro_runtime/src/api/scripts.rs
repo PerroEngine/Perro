@@ -1,4 +1,7 @@
-use perro_context::{RuntimeContext, sub_apis::ScriptAPI};
+use perro_context::{
+    RuntimeContext,
+    sub_apis::{Attribute, Member, ScriptAPI},
+};
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_variant::Variant;
 use std::sync::Arc;
@@ -156,5 +159,29 @@ impl ScriptAPI for Runtime {
         };
         let mut ctx = RuntimeContext::new(self);
         behavior.call_method(method_id, &mut ctx, script_id, params)
+    }
+
+    fn attributes_of(&mut self, script_id: NodeID, member: &str) -> &'static [Attribute] {
+        let behavior = match self.scripts.get_instance(script_id) {
+            Some(instance) => Arc::clone(&instance.behavior),
+            None => return &[],
+        };
+        behavior.attributes_of(member)
+    }
+
+    fn members_with(&mut self, script_id: NodeID, attribute: &str) -> &'static [Member] {
+        let behavior = match self.scripts.get_instance(script_id) {
+            Some(instance) => Arc::clone(&instance.behavior),
+            None => return &[],
+        };
+        behavior.members_with(attribute)
+    }
+
+    fn has_attribute(&mut self, script_id: NodeID, member: &str, attribute: &str) -> bool {
+        let behavior = match self.scripts.get_instance(script_id) {
+            Some(instance) => Arc::clone(&instance.behavior),
+            None => return false,
+        };
+        behavior.has_attribute(member, attribute)
     }
 }

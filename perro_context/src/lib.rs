@@ -116,6 +116,27 @@ macro_rules! call_method {
 }
 
 #[macro_export]
+macro_rules! attributes_of {
+    ($ctx:expr, $id:expr, $member:expr) => {
+        $ctx.Scripts().attributes_of($id, $member)
+    };
+}
+
+#[macro_export]
+macro_rules! members_with {
+    ($ctx:expr, $id:expr, $attribute:expr) => {
+        $ctx.Scripts().members_with($id, $attribute)
+    };
+}
+
+#[macro_export]
+macro_rules! has_attribute {
+    ($ctx:expr, $id:expr, $member:expr, $attribute:expr) => {
+        $ctx.Scripts().has_attribute($id, $member, $attribute)
+    };
+}
+
+#[macro_export]
 macro_rules! connect_signal {
     ($ctx:expr, $script_id:expr, $signal_id:expr, $function_id:expr) => {
         $ctx.Signals()
@@ -184,6 +205,20 @@ macro_rules! sig_id {
 }
 
 #[macro_export]
+macro_rules! member {
+    ($name:expr) => {
+        ::perro_context::sub_apis::Member::new($name)
+    };
+}
+
+#[macro_export]
+macro_rules! attribute {
+    ($value:expr) => {
+        ::perro_context::sub_apis::Attribute::new($value)
+    };
+}
+
+#[macro_export]
 macro_rules! params {
     ($($value:expr),* $(,)?) => {
         &[$(::perro_variant::Variant::from($value)),*]
@@ -221,14 +256,15 @@ macro_rules! elapsed_time {
 pub mod prelude {
     pub use crate::api::{RuntimeAPI, RuntimeContext};
     pub use crate::sub_apis::{
-        NodeAPI, NodeModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule, TimeAPI, TimeModule,
+        Attribute, IntoScriptMemberID, Member, NodeAPI, NodeModule, ScriptAPI, ScriptModule,
+        SignalAPI, SignalModule, TimeAPI, TimeModule,
     };
     pub use crate::{
-        attach_script, call_method, connect_signal, create_node, delta_time, detach_script,
-        disconnect_signal, elapsed_time, emit_signal, fixed_delta_time, func_id, get_node_children_ids,
-        get_node_name, get_node_parent_id, get_var, method_id, params, reparent, reparent_multi,
-        set_node_name, set_var, sid, sig_id, smid, var_id, variant, with_node, with_node_mut,
-        with_state, with_state_mut,
+        attach_script, attributes_of, call_method, connect_signal, create_node, delta_time,
+        detach_script, disconnect_signal, elapsed_time, emit_signal, fixed_delta_time, func_id,
+        get_node_children_ids, get_node_name, get_node_parent_id, get_var, has_attribute, method_id,
+        member, members_with, params, reparent, reparent_multi, set_node_name, set_var, sid, sig_id,
+        smid, var_id, variant, with_node, with_node_mut, with_state, with_state_mut, attribute,
     };
 }
 
@@ -364,6 +400,31 @@ mod tests {
         ) -> perro_variant::Variant {
             perro_variant::Variant::Null
         }
+
+        fn attributes_of(
+            &mut self,
+            _script_id: NodeID,
+            _member: &str,
+        ) -> &'static [Attribute] {
+            &[]
+        }
+
+        fn members_with(
+            &mut self,
+            _script_id: NodeID,
+            _attribute: &str,
+        ) -> &'static [Member] {
+            &[]
+        }
+
+        fn has_attribute(
+            &mut self,
+            _script_id: NodeID,
+            _member: &str,
+            _attribute: &str,
+        ) -> bool {
+            false
+        }
     }
 
     impl SignalAPI for DummyRuntime {
@@ -442,6 +503,9 @@ mod tests {
         set_var!(&mut ctx, id, member, variant!(77_i32));
         let _result = call_method!(&mut ctx, id, method_member, &[]);
         let _result2 = call_method!(&mut ctx, id, member, params![1_i32, "abc"]);
+        let _attrs = attributes_of!(&mut ctx, id, "speed");
+        let _members = members_with!(&mut ctx, id, "export");
+        let _has = has_attribute!(&mut ctx, id, "speed", "export");
         assert!(connect_signal!(
             &mut ctx,
             id,

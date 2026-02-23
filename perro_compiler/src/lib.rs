@@ -419,15 +419,25 @@ impl<R: RuntimeAPI + ?Sized> ScriptBehavior<R> for {script_ty} {{
 {call_method_body}
     }}
 
-    fn attributes_of(&self, member: &str) -> &'static [&'static str] {{
+    fn attributes_of(
+        &self,
+        member: &str,
+    ) -> &'static [Attribute] {{
 {attr_of_body}
     }}
 
-    fn members_with(&self, attribute: &str) -> &'static [&'static str] {{
+    fn members_with(
+        &self,
+        attribute: &str,
+    ) -> &'static [Member] {{
 {members_with_body}
     }}
 
-    fn has_attribute(&self, member: &str, attribute: &str) -> bool {{
+    fn has_attribute(
+        &self,
+        member: &str,
+        attribute: &str,
+    ) -> bool {{
 {has_attr_body}
     }}
 }}
@@ -1430,10 +1440,11 @@ fn generate_attributes_of_body(fields: &[StateField]) -> String {
         return "        &[]".to_string();
     }
     let mut out = String::new();
+    out.push_str("        const __PERRO_EXPORT_ATTRIBUTES: &[Attribute] = &[attribute!(\"export\")];\n");
     out.push_str("        match member {\n");
     for field in fields {
         out.push_str(&format!(
-            "            \"{}\" => &[\"export\"],\n",
+            "            \"{}\" => __PERRO_EXPORT_ATTRIBUTES,\n",
             field.name
         ));
     }
@@ -1447,12 +1458,13 @@ fn generate_members_with_body(fields: &[StateField]) -> String {
         return "        &[]".to_string();
     }
     let mut out = String::new();
-    out.push_str("        if attribute == \"export\" {\n");
-    out.push_str("            return &[\n");
+    out.push_str("        const __PERRO_EXPORT_MEMBERS: &[Member] = &[\n");
     for field in fields {
-        out.push_str(&format!("                \"{}\",\n", field.name));
+        out.push_str(&format!("            member!(\"{}\"),\n", field.name));
     }
-    out.push_str("            ];\n");
+    out.push_str("        ];\n");
+    out.push_str("        if attribute == \"export\" {\n");
+    out.push_str("            return __PERRO_EXPORT_MEMBERS;\n");
     out.push_str("        }\n");
     out.push_str("        &[]");
     out

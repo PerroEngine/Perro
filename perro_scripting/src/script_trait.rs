@@ -1,4 +1,5 @@
 use perro_context::{RuntimeContext, api::RuntimeAPI};
+use perro_context::sub_apis::{Attribute, Member};
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_variant::Variant;
 use std::any::Any;
@@ -33,9 +34,19 @@ pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
         self_id: NodeID,
         params: &[Variant],
     ) -> Variant;
-    fn attributes_of(&self, member: &str) -> &'static [&'static str];
-    fn members_with(&self, attribute: &str) -> &'static [&'static str];
-    fn has_attribute(&self, member: &str, attribute: &str) -> bool;
+    fn attributes_of(
+        &self,
+        member: &str,
+    ) -> &'static [Attribute];
+    fn members_with(
+        &self,
+        attribute: &str,
+    ) -> &'static [Member];
+    fn has_attribute(
+        &self,
+        member: &str,
+        attribute: &str,
+    ) -> bool;
 }
 
 /// Bitflags to track which lifecycle methods are implemented by a script.
