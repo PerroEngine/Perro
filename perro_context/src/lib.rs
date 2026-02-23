@@ -116,6 +116,32 @@ macro_rules! call_method {
 }
 
 #[macro_export]
+macro_rules! connect_signal {
+    ($ctx:expr, $script_id:expr, $signal_id:expr, $function_id:expr) => {
+        $ctx.Signals()
+            .connect($script_id, $signal_id, $function_id)
+    };
+}
+
+#[macro_export]
+macro_rules! disconnect_signal {
+    ($ctx:expr, $script_id:expr, $signal_id:expr, $function_id:expr) => {
+        $ctx.Signals()
+            .disconnect($script_id, $signal_id, $function_id)
+    };
+}
+
+#[macro_export]
+macro_rules! emit_signal {
+    ($ctx:expr, $signal_id:expr, $params:expr) => {
+        $ctx.Signals().emit($signal_id, $params)
+    };
+    ($ctx:expr, $signal_id:expr) => {
+        $ctx.Signals().emit($signal_id, &[])
+    };
+}
+
+#[macro_export]
 macro_rules! smid {
     ($name:expr) => {
         ::perro_ids::ScriptMemberID::from_string($name)
@@ -147,6 +173,13 @@ macro_rules! func_id {
 macro_rules! method_id {
     ($name:expr) => {
         ::perro_ids::ScriptMemberID::from_string($name)
+    };
+}
+
+#[macro_export]
+macro_rules! sig_id {
+    ($name:expr) => {
+        ::perro_ids::SignalID::from_string($name)
     };
 }
 
@@ -187,12 +220,15 @@ macro_rules! elapsed_time {
 
 pub mod prelude {
     pub use crate::api::{RuntimeAPI, RuntimeContext};
-    pub use crate::sub_apis::{NodeAPI, NodeModule, ScriptAPI, ScriptModule, TimeAPI, TimeModule};
+    pub use crate::sub_apis::{
+        NodeAPI, NodeModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule, TimeAPI, TimeModule,
+    };
     pub use crate::{
-        attach_script, call_method, create_node, delta_time, detach_script, elapsed_time, fixed_delta_time,
-        func_id, get_node_children_ids, get_node_name, get_node_parent_id, get_var, method_id, params,
-        reparent, reparent_multi, set_node_name, set_var, sid, smid, var_id, variant, with_node,
-        with_node_mut, with_state, with_state_mut,
+        attach_script, call_method, connect_signal, create_node, delta_time, detach_script,
+        disconnect_signal, elapsed_time, emit_signal, fixed_delta_time, func_id, get_node_children_ids,
+        get_node_name, get_node_parent_id, get_var, method_id, params, reparent, reparent_multi,
+        set_node_name, set_var, sid, sig_id, smid, var_id, variant, with_node, with_node_mut,
+        with_state, with_state_mut,
     };
 }
 
@@ -330,6 +366,34 @@ mod tests {
         }
     }
 
+    impl SignalAPI for DummyRuntime {
+        fn connect_signal(
+            &mut self,
+            _script_id: NodeID,
+            _signal_id: perro_ids::SignalID,
+            _function_id: perro_ids::ScriptMemberID,
+        ) -> bool {
+            true
+        }
+
+        fn disconnect_signal(
+            &mut self,
+            _script_id: NodeID,
+            _signal_id: perro_ids::SignalID,
+            _function_id: perro_ids::ScriptMemberID,
+        ) -> bool {
+            true
+        }
+
+        fn emit_signal(
+            &mut self,
+            _signal_id: perro_ids::SignalID,
+            _params: &[perro_variant::Variant],
+        ) -> usize {
+            1
+        }
+    }
+
     #[test]
     fn script_macros_typecheck_and_forward() {
         let mut rt = DummyRuntime {
@@ -364,15 +428,34 @@ mod tests {
         let var_member = var_id!("x");
         let method_member = method_id!("x");
         let func_member = func_id!("x");
+        let signal_member = sig_id!("on_test");
         assert_eq!(member, member_alias);
         assert_eq!(member, var_member);
         assert_eq!(member, method_member);
         assert_eq!(member, func_member);
+        assert_eq!(
+            signal_member,
+            perro_ids::SignalID::from_string("on_test")
+        );
         let _value = get_var!(&mut ctx, id, member);
         set_var!(&mut ctx, id, member, variant!(perro_variant::Variant::Null));
         set_var!(&mut ctx, id, member, variant!(77_i32));
         let _result = call_method!(&mut ctx, id, method_member, &[]);
         let _result2 = call_method!(&mut ctx, id, member, params![1_i32, "abc"]);
+        assert!(connect_signal!(
+            &mut ctx,
+            id,
+            sig_id!("on_test"),
+            method_id!("handle")
+        ));
+        assert!(disconnect_signal!(
+            &mut ctx,
+            id,
+            sig_id!("on_test"),
+            method_id!("handle")
+        ));
+        assert_eq!(emit_signal!(&mut ctx, sig_id!("on_test"), params![1_i32]), 1);
+        assert_eq!(emit_signal!(&mut ctx, sig_id!("on_test")), 1);
 
         let dt = delta_time!(&mut ctx);
         let fdt = fixed_delta_time!(&mut ctx);

@@ -1,7 +1,9 @@
-use crate::sub_apis::{NodeAPI, NodeModule, ScriptAPI, ScriptModule, TimeAPI, TimeModule};
+use crate::sub_apis::{
+    NodeAPI, NodeModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule, TimeAPI, TimeModule,
+};
 
-pub trait RuntimeAPI: TimeAPI + NodeAPI + ScriptAPI {}
-impl<T> RuntimeAPI for T where T: TimeAPI + NodeAPI + ScriptAPI {}
+pub trait RuntimeAPI: TimeAPI + NodeAPI + ScriptAPI + SignalAPI {}
+impl<T> RuntimeAPI for T where T: TimeAPI + NodeAPI + ScriptAPI + SignalAPI {}
 
 pub struct RuntimeContext<'rt, R: RuntimeAPI + ?Sized> {
     rt: &'rt mut R,
@@ -26,5 +28,10 @@ impl<'rt, R: RuntimeAPI + ?Sized> RuntimeContext<'rt, R> {
     #[inline]
     pub fn Scripts(&mut self) -> ScriptModule<'_, R> {
         ScriptModule::new(self.rt)
+    }
+
+    #[inline]
+    pub fn Signals(&mut self) -> SignalModule<'_, R> {
+        SignalModule::new(self.rt)
     }
 }

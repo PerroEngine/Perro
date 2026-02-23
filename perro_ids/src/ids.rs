@@ -201,6 +201,13 @@ impl UIElementID {
     }
 }
 
+impl SignalID {
+    /// Deterministic ID from signal name. Uses hash; generation 0.
+    pub const fn from_string(s: &str) -> Self {
+        Self::from_u64(string_to_u64(s))
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ScriptMemberID(pub u64);
 

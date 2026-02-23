@@ -2,6 +2,7 @@ use crate::{
     NodeArena,
     render_result::RuntimeRenderResult,
     runtime_project::{ProviderMode, RuntimeProject},
+    signal_registry::{SignalConnection, SignalRegistry},
     script_collection::ScriptCollection,
 };
 use ahash::{AHashMap, AHashSet};
@@ -36,6 +37,8 @@ pub struct Runtime {
 
     render_2d: Render2DState,
     render_3d: Render3DState,
+    pub(crate) signals: SignalRegistry,
+    pub(crate) signal_emit_scratch: Vec<SignalConnection>,
     script_library: Option<Library>,
     dynamic_script_registry: AHashMap<String, ScriptConstructor<Runtime>>,
 }
@@ -321,6 +324,8 @@ impl Runtime {
             transform_visit_indices: Vec::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
+            signals: SignalRegistry::new(),
+            signal_emit_scratch: Vec::new(),
             script_library: None,
             dynamic_script_registry: AHashMap::default(),
         }

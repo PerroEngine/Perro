@@ -92,4 +92,13 @@ mod tests {
         assert_ne!(a, b);
         assert_ne!(a, c);
     }
+
+    #[test]
+    fn signal_id_from_string_deterministic() {
+        let a = SignalID::from_string("on_damage");
+        let b = SignalID::from_string("on_damage");
+        let c = SignalID::from_string("on_heal");
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
 }

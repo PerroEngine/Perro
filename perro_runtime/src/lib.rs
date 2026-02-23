@@ -2,6 +2,7 @@ mod node_arena;
 mod render_result;
 mod runtime;
 mod runtime_project;
+mod signal_registry;
 mod script_collection;
 
 pub mod api;

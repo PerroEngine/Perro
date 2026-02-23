@@ -57,6 +57,7 @@ impl Runtime {
     pub(crate) fn remove_script_instance(&mut self, id: NodeID) -> bool {
         self.call_removal_script(id);
         self.unqueue_start_script(id);
+        self.signals.disconnect_script(id);
         self.scripts.remove(id).is_some()
     }
 
