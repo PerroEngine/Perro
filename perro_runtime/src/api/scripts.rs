@@ -150,7 +150,7 @@ impl ScriptAPI for Runtime {
     fn call_method(
         &mut self,
         script_id: NodeID,
-        method_id: ScriptMemberID,
+        method: ScriptMemberID,
         params: &[Variant],
     ) -> Variant {
         let behavior = match self.scripts.get_instance(script_id) {
@@ -158,7 +158,7 @@ impl ScriptAPI for Runtime {
             None => return Variant::Null,
         };
         let mut ctx = RuntimeContext::new(self);
-        behavior.call_method(method_id, &mut ctx, script_id, params)
+        behavior.call_method(method, &mut ctx, script_id, params)
     }
 
     fn attributes_of(&mut self, script_id: NodeID, member: &str) -> &'static [Attribute] {
@@ -185,3 +185,6 @@ impl ScriptAPI for Runtime {
         behavior.has_attribute(member, attribute)
     }
 }
+
+
+

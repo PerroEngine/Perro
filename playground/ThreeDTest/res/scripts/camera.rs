@@ -14,36 +14,39 @@ pub struct CameraState {
 
 
 lifecycle!({
-    fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+    fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, node: NodeID) {
 
-        let j = with_state!(ctx, CameraState, self_id, |state| {
+        let j = with_state!(ctx, CameraState, node, |state| {
             state.job
         }).unwrap_or_default();
         log_info!(j);
     }
 
-    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
 
-    fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+    fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, node: NodeID) {
         let dt = delta_time!(ctx);
-        call_method!(ctx, NodeID(4), func_id!("bob"), params![7123_i32, "bodsasb"]);
-        let j2 = with_state!(ctx, CameraState, self_id, |state| {
+        call_method!(ctx, NodeID(4), func!("bob"), params![7123_i32, "bodsasb"]);
+        let j2 = with_state!(ctx, CameraState, node, |state| {
             state.job
         }).unwrap_or_default();
 
     }
 
-    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
 
-    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
 });
 
 methods!({
-    fn bob(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID, param1: i32, j: &str) {
-        let j = with_state_mut!(ctx, CameraState, self_id, |state| {
+    fn bob(&self, ctx: &mut RuntimeContext<'_, R>, node: NodeID, param1: i32, j: &str) {
+        let j = with_state_mut!(ctx, CameraState, node, |state| {
             state.job += 1.0;
             state.job
         }).unwrap_or_default();
     }
 });
+
+
+
 

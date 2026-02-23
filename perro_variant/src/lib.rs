@@ -136,16 +136,16 @@ mod tests {
 
     #[test]
     fn test_variant_as_node() {
-        let node_id = NodeID::from_u32(123);
-        let v = Variant::NodeID(node_id);
-        assert_eq!(v.as_node(), Some(node_id));
+        let node = NodeID::from_u32(123);
+        let v = Variant::NodeID(node);
+        assert_eq!(v.as_node(), Some(node));
     }
 
     #[test]
     fn test_variant_as_texture() {
-        let tex_id = TextureID::from_u32(456);
-        let v = Variant::TextureID(tex_id);
-        assert_eq!(v.as_texture(), Some(tex_id));
+        let tex = TextureID::from_u32(456);
+        let v = Variant::TextureID(tex);
+        assert_eq!(v.as_texture(), Some(tex));
     }
 
     #[test]
@@ -335,3 +335,4 @@ mod tests {
         assert_eq!(s1, s2);
     }
 }
+

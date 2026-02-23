@@ -399,13 +399,13 @@ impl Gpu2D {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         resources: &ResourceStore,
-        texture_id: TextureID,
+        texture_key: TextureID,
         static_texture_lookup: Option<StaticTextureLookup>,
     ) -> bool {
-        if self.sprite_textures.contains_key(&texture_id) {
+        if self.sprite_textures.contains_key(&texture_key) {
             return true;
         }
-        let Some(source) = resources.texture_source(texture_id) else {
+        let Some(source) = resources.texture_source(texture_key) else {
             return false;
         };
 
@@ -440,7 +440,7 @@ impl Gpu2D {
             (rgba.into_raw(), w.max(1), h.max(1))
         };
 
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
+        let gpu_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("perro_sprite_texture"),
             size: wgpu::Extent3d {
                 width,
@@ -456,7 +456,7 @@ impl Gpu2D {
         });
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
-                texture: &texture,
+                texture: &gpu_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -473,7 +473,7 @@ impl Gpu2D {
                 depth_or_array_layers: 1,
             },
         );
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = gpu_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("perro_sprite_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -499,9 +499,9 @@ impl Gpu2D {
             ],
         });
         self.sprite_textures.insert(
-            texture_id,
+            texture_key,
             CachedSpriteTexture {
-                _texture: texture,
+                _texture: gpu_texture,
                 _view: view,
                 _sampler: sampler,
                 bind_group,
@@ -743,3 +743,4 @@ fn create_sprite_pipeline(
         cache: None,
     })
 }
+

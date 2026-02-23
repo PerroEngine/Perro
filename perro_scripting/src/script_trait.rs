@@ -8,11 +8,11 @@ use std::any::Any;
 pub type ScriptConstructor<R> = extern "C" fn() -> *mut dyn ScriptBehavior<R>;
 
 pub trait ScriptLifecycle<R: RuntimeAPI + ?Sized> {
-    fn on_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
-    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
-    fn on_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
-    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
-    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn on_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
 }
 
 pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
@@ -20,16 +20,16 @@ pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
     fn create_state(&self) -> Box<dyn Any> {
         Box::new(())
     }
-    fn get_var(&self, state: &dyn Any, var_id: ScriptMemberID) -> Variant;
-    fn set_var(&self, state: &mut dyn Any, var_id: ScriptMemberID, value: &Variant);
+    fn get_var(&self, state: &dyn Any, var: ScriptMemberID) -> Variant;
+    fn set_var(&self, state: &mut dyn Any, var: ScriptMemberID, value: &Variant);
     fn apply_exposed_vars(&self, state: &mut dyn Any, vars: &[(ScriptMemberID, Variant)]) {
-        for (var_id, value) in vars {
-            self.set_var(state, *var_id, value);
+        for (var, value) in vars {
+            self.set_var(state, *var, value);
         }
     }
     fn call_method(
         &self,
-        method_id: ScriptMemberID,
+        method: ScriptMemberID,
         ctx: &mut RuntimeContext<'_, R>,
         self_id: NodeID,
         params: &[Variant],
@@ -91,3 +91,6 @@ impl ScriptFlags {
         self.0 & Self::HAS_REMOVAL != 0
     }
 }
+
+
+

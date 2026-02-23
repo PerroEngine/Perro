@@ -35,7 +35,7 @@ pub const fn mix64(mut x: u64) -> u64 {
 
 /// Defines a generational ID type (NodeID, TextureID, MaterialID, etc.).
 /// All such IDs use index + generation for safe arena slot reuse.
-macro_rules! define_generational_id {
+macro_rules! define_generational {
     ($type_name:ident, $doc:literal) => {
         #[doc = $doc]
         #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -114,31 +114,31 @@ macro_rules! define_generational_id {
     };
 }
 
-define_generational_id!(
+define_generational!(
     NodeID,
     "Node ID — allocated by NodeArena. Index + generation."
 );
-define_generational_id!(
+define_generational!(
     TextureID,
     "Texture ID — allocated by TextureManager. Index + generation."
 );
-define_generational_id!(
+define_generational!(
     MaterialID,
     "Material ID — allocated by material system. Index + generation."
 );
-define_generational_id!(
+define_generational!(
     MeshID,
     "Mesh ID — allocated by mesh system. Index + generation."
 );
-define_generational_id!(
+define_generational!(
     LightID,
     "Light ID — allocated by light system. Index + generation."
 );
-define_generational_id!(
+define_generational!(
     UIElementID,
     "UI Element ID — allocated by UI or synthetic. Index + generation."
 );
-define_generational_id!(
+define_generational!(
     SignalID,
     "Signal ID — hash of signal name (or generational). Used for connect/emit."
 );
@@ -216,3 +216,4 @@ impl ScriptMemberID {
         Self(string_to_u64(s))
     }
 }
+

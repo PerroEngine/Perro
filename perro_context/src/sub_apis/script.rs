@@ -60,41 +60,41 @@ impl From<&'static str> for Member {
 }
 
 pub trait IntoScriptMemberID {
-    fn into_script_member_id(self) -> ScriptMemberID;
+    fn into_script_member(self) -> ScriptMemberID;
 }
 
 impl IntoScriptMemberID for ScriptMemberID {
-    fn into_script_member_id(self) -> ScriptMemberID {
+    fn into_script_member(self) -> ScriptMemberID {
         self
     }
 }
 
 impl IntoScriptMemberID for Member {
-    fn into_script_member_id(self) -> ScriptMemberID {
+    fn into_script_member(self) -> ScriptMemberID {
         self.id
     }
 }
 
 impl IntoScriptMemberID for &Member {
-    fn into_script_member_id(self) -> ScriptMemberID {
+    fn into_script_member(self) -> ScriptMemberID {
         self.id
     }
 }
 
 impl IntoScriptMemberID for &str {
-    fn into_script_member_id(self) -> ScriptMemberID {
+    fn into_script_member(self) -> ScriptMemberID {
         ScriptMemberID::from_string(self)
     }
 }
 
 impl IntoScriptMemberID for String {
-    fn into_script_member_id(self) -> ScriptMemberID {
+    fn into_script_member(self) -> ScriptMemberID {
         ScriptMemberID::from_string(self.as_str())
     }
 }
 
 impl IntoScriptMemberID for &String {
-    fn into_script_member_id(self) -> ScriptMemberID {
+    fn into_script_member(self) -> ScriptMemberID {
         ScriptMemberID::from_string(self.as_str())
     }
 }
@@ -115,7 +115,7 @@ pub trait ScriptAPI {
     fn call_method(
         &mut self,
         script_id: NodeID,
-        method_id: ScriptMemberID,
+        method: ScriptMemberID,
         params: &[Variant],
     ) -> Variant;
     fn attributes_of(&mut self, script_id: NodeID, member: &str) -> &'static [Attribute];
@@ -159,22 +159,22 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
     }
 
     pub fn get_var<M: IntoScriptMemberID>(&mut self, script_id: NodeID, member: M) -> Variant {
-        self.rt.get_var(script_id, member.into_script_member_id())
+        self.rt.get_var(script_id, member.into_script_member())
     }
 
     pub fn set_var<M: IntoScriptMemberID>(&mut self, script_id: NodeID, member: M, value: Variant) {
         self.rt
-            .set_var(script_id, member.into_script_member_id(), value);
+            .set_var(script_id, member.into_script_member(), value);
     }
 
     pub fn call_method<M: IntoScriptMemberID>(
         &mut self,
         script_id: NodeID,
-        method_id: M,
+        method: M,
         params: &[Variant],
     ) -> Variant {
         self.rt
-            .call_method(script_id, method_id.into_script_member_id(), params)
+            .call_method(script_id, method.into_script_member(), params)
     }
 
     pub fn attributes_of<M: AsRef<str>>(
@@ -203,3 +203,6 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
             .has_attribute(script_id, member.as_ref(), attribute.as_ref())
     }
 }
+
+
+

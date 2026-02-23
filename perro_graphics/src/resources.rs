@@ -57,12 +57,12 @@ pub struct ResourceStore {
     textures: SlotArena,
     materials: SlotArena,
     mesh_by_source: HashMap<String, MeshID>,
-    mesh_source_by_id: HashMap<MeshID, String>,
+    mesh_source_by: HashMap<MeshID, String>,
     texture_by_source: HashMap<String, TextureID>,
-    texture_source_by_id: HashMap<TextureID, String>,
-    material_by_id: HashMap<MaterialID, Material3D>,
+    texture_source_by: HashMap<TextureID, String>,
+    material_by: HashMap<MaterialID, Material3D>,
     material_by_source: HashMap<String, MaterialID>,
-    material_source_by_id: HashMap<MaterialID, String>,
+    material_source_by: HashMap<MaterialID, String>,
 }
 
 impl ResourceStore {
@@ -78,7 +78,7 @@ impl ResourceStore {
         let (index, generation) = self.meshes.create_parts();
         let id = MeshID::from_parts(index, generation);
         self.mesh_by_source.insert(source.to_string(), id);
-        self.mesh_source_by_id.insert(id, source.to_string());
+        self.mesh_source_by.insert(id, source.to_string());
         id
     }
 
@@ -90,7 +90,7 @@ impl ResourceStore {
         let (index, generation) = self.textures.create_parts();
         let id = TextureID::from_parts(index, generation);
         self.texture_by_source.insert(source.to_string(), id);
-        self.texture_source_by_id.insert(id, source.to_string());
+        self.texture_source_by.insert(id, source.to_string());
         id
     }
 
@@ -102,11 +102,11 @@ impl ResourceStore {
             }
         let (index, generation) = self.materials.create_parts();
         let id = MaterialID::from_parts(index, generation);
-        self.material_by_id.insert(id, material);
+        self.material_by.insert(id, material);
         if let Some(source) = source {
             let source = source.to_string();
             self.material_by_source.insert(source.clone(), id);
-            self.material_source_by_id.insert(id, source);
+            self.material_source_by.insert(id, source);
         }
         id
     }
@@ -123,12 +123,12 @@ impl ResourceStore {
 
     #[inline]
     pub fn texture_source(&self, id: TextureID) -> Option<&str> {
-        self.texture_source_by_id.get(&id).map(String::as_str)
+        self.texture_source_by.get(&id).map(String::as_str)
     }
 
     #[inline]
     pub fn mesh_source(&self, id: MeshID) -> Option<&str> {
-        self.mesh_source_by_id.get(&id).map(String::as_str)
+        self.mesh_source_by.get(&id).map(String::as_str)
     }
 
     #[inline]
@@ -138,7 +138,7 @@ impl ResourceStore {
 
     #[inline]
     pub fn material(&self, id: MaterialID) -> Option<Material3D> {
-        self.material_by_id.get(&id).copied()
+        self.material_by.get(&id).copied()
     }
 
     #[cfg(test)]
@@ -169,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn material_source_reuses_existing_id() {
+    fn material_source_reuses_existing() {
         let mut store = ResourceStore::new();
         let mat = Material3D::default();
         let first = store.create_material(mat, Some("res://materials/base.pmat"));
@@ -183,3 +183,4 @@ mod tests {
         assert_eq!(first, second);
     }
 }
+

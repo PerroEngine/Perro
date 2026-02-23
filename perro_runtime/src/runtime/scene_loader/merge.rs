@@ -16,9 +16,9 @@ pub(super) fn merge_prepared_scene(
 
     let mut engine_root = SceneNode::new(SceneNodeData::Node);
     engine_root.name = Cow::Borrowed("Game Root");
-    let engine_root_id = runtime.nodes.insert(engine_root);
+    let engine_root = runtime.nodes.insert(engine_root);
 
-    let mut key_to_id: HashMap<String, NodeID> = HashMap::with_capacity(nodes.len());
+    let mut key_to: HashMap<String, NodeID> = HashMap::with_capacity(nodes.len());
     let mut key_order: Vec<String> = Vec::with_capacity(nodes.len());
     let mut parent_pairs = Vec::with_capacity(nodes.len());
 
@@ -33,62 +33,62 @@ pub(super) fn merge_prepared_scene(
             material_inline,
         } = pending;
 
-        if key_to_id.contains_key(&key) {
+        if key_to.contains_key(&key) {
             return Err(format!("duplicate scene key `{}`", key));
         }
 
-        let node_id = runtime.nodes.insert(node);
+        let node = runtime.nodes.insert(node);
         if let Some(source) = texture_source {
-            runtime.render_2d.texture_sources.insert(node_id, source);
+            runtime.render_2d.texture_sources.insert(node, source);
         }
         if let Some(source) = mesh_source {
-            runtime.render_3d.mesh_sources.insert(node_id, source);
+            runtime.render_3d.mesh_sources.insert(node, source);
         }
         if let Some(source) = material_source {
-            runtime.render_3d.material_sources.insert(node_id, source);
+            runtime.render_3d.material_sources.insert(node, source);
         }
         if let Some(material) = material_inline {
             runtime
                 .render_3d
                 .material_overrides
-                .insert(node_id, material);
+                .insert(node, material);
         }
         if let Some(parent_key) = parent_key {
             parent_pairs.push((key.clone(), parent_key));
         }
         key_order.push(key.clone());
-        key_to_id.insert(key, node_id);
+        key_to.insert(key, node);
     }
 
     if let Some(root_key) = root_key.as_deref()
-        && !key_to_id.contains_key(root_key) {
+        && !key_to.contains_key(root_key) {
             return Err(format!("scene root `{root_key}` not found in node list"));
         }
 
     let mut edges = Vec::with_capacity(parent_pairs.len());
     for (child_key, parent_key) in parent_pairs {
-        let child_id = *key_to_id
+        let child = *key_to
             .get(&child_key)
             .ok_or_else(|| format!("child node key `{child_key}` not found"))?;
-        let parent_id = *key_to_id.get(&parent_key).ok_or_else(|| {
+        let parent = *key_to.get(&parent_key).ok_or_else(|| {
             format!("parent node key `{parent_key}` not found while linking child `{child_key}`")
         })?;
 
-        if let Some(child) = runtime.nodes.get_mut(child_id) {
-            child.parent = parent_id;
+        if let Some(child) = runtime.nodes.get_mut(child) {
+            child.parent = parent;
         }
-        edges.push((parent_id, child_id));
+        edges.push((parent, child));
     }
 
-    for (parent_id, child_id) in edges {
-        if let Some(parent) = runtime.nodes.get_mut(parent_id) {
-            parent.add_child(child_id);
+    for (parent, child) in edges {
+        if let Some(parent) = runtime.nodes.get_mut(parent) {
+            parent.add_child(child);
         }
     }
 
     let mut top_level_roots: Vec<NodeID> = Vec::new();
     for key in &key_order {
-        let Some(&id) = key_to_id.get(key) else {
+        let Some(&id) = key_to.get(key) else {
             continue;
         };
         let Some(node) = runtime.nodes.get(id) else {
@@ -104,7 +104,7 @@ pub(super) fn merge_prepared_scene(
     }
 
     let primary_root = if let Some(root_key) = root_key.as_deref() {
-        *key_to_id
+        *key_to
             .get(root_key)
             .ok_or_else(|| format!("scene root `{root_key}` not found in node list"))?
     } else {
@@ -119,18 +119,18 @@ pub(super) fn merge_prepared_scene(
         }
     }
 
-    for root_id in &attach_order {
-        if let Some(root_node) = runtime.nodes.get_mut(*root_id) {
-            root_node.parent = engine_root_id;
+    for root in &attach_order {
+        if let Some(root_node) = runtime.nodes.get_mut(*root) {
+            root_node.parent = engine_root;
         }
-        if let Some(engine_root_node) = runtime.nodes.get_mut(engine_root_id) {
-            engine_root_node.add_child(*root_id);
+        if let Some(engine_root_node) = runtime.nodes.get_mut(engine_root) {
+            engine_root_node.add_child(*root);
         }
     }
 
     let mut script_nodes = Vec::with_capacity(scripts.len());
     for pending_script in scripts {
-        let id = *key_to_id.get(&pending_script.node_key).ok_or_else(|| {
+        let id = *key_to.get(&pending_script.node_key).ok_or_else(|| {
             format!(
                 "script node key `{}` not found in node list",
                 pending_script.node_key
@@ -141,3 +141,4 @@ pub(super) fn merge_prepared_scene(
 
     Ok(script_nodes)
 }
+

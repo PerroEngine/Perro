@@ -68,15 +68,15 @@ macro_rules! get_node_children_ids {
 
 #[macro_export]
 macro_rules! reparent {
-    ($ctx:expr, $parent_id:expr, $child_id:expr) => {
-        $ctx.Nodes().reparent($parent_id, $child_id)
+    ($ctx:expr, $parent:expr, $child:expr) => {
+        $ctx.Nodes().reparent($parent, $child)
     };
 }
 
 #[macro_export]
 macro_rules! reparent_multi {
-    ($ctx:expr, $parent_id:expr, $child_ids:expr) => {
-        $ctx.Nodes().reparent_multi($parent_id, $child_ids)
+    ($ctx:expr, $parent:expr, $child_ids:expr) => {
+        $ctx.Nodes().reparent_multi($parent, $child_ids)
     };
 }
 
@@ -138,27 +138,27 @@ macro_rules! has_attribute {
 
 #[macro_export]
 macro_rules! connect_signal {
-    ($ctx:expr, $script_id:expr, $signal_id:expr, $function_id:expr) => {
+    ($ctx:expr, $script:expr, $signal:expr, $function:expr) => {
         $ctx.Signals()
-            .connect($script_id, $signal_id, $function_id)
+            .connect($script, $signal, $function)
     };
 }
 
 #[macro_export]
 macro_rules! disconnect_signal {
-    ($ctx:expr, $script_id:expr, $signal_id:expr, $function_id:expr) => {
+    ($ctx:expr, $script:expr, $signal:expr, $function:expr) => {
         $ctx.Signals()
-            .disconnect($script_id, $signal_id, $function_id)
+            .disconnect($script, $signal, $function)
     };
 }
 
 #[macro_export]
 macro_rules! emit_signal {
-    ($ctx:expr, $signal_id:expr, $params:expr) => {
-        $ctx.Signals().emit($signal_id, $params)
+    ($ctx:expr, $signal:expr, $params:expr) => {
+        $ctx.Signals().emit($signal, $params)
     };
-    ($ctx:expr, $signal_id:expr) => {
-        $ctx.Signals().emit($signal_id, &[])
+    ($ctx:expr, $signal:expr) => {
+        $ctx.Signals().emit($signal, &[])
     };
 }
 
@@ -177,28 +177,28 @@ macro_rules! sid {
 }
 
 #[macro_export]
-macro_rules! var_id {
+macro_rules! var {
     ($name:expr) => {
         ::perro_ids::ScriptMemberID::from_string($name)
     };
 }
 
 #[macro_export]
-macro_rules! func_id {
+macro_rules! func {
     ($name:expr) => {
         ::perro_ids::ScriptMemberID::from_string($name)
     };
 }
 
 #[macro_export]
-macro_rules! method_id {
+macro_rules! method {
     ($name:expr) => {
         ::perro_ids::ScriptMemberID::from_string($name)
     };
 }
 
 #[macro_export]
-macro_rules! sig_id {
+macro_rules! signal {
     ($name:expr) => {
         ::perro_ids::SignalID::from_string($name)
     };
@@ -261,10 +261,10 @@ pub mod prelude {
     };
     pub use crate::{
         attach_script, attributes_of, call_method, connect_signal, create_node, delta_time,
-        detach_script, disconnect_signal, elapsed_time, emit_signal, fixed_delta_time, func_id,
-        get_node_children_ids, get_node_name, get_node_parent_id, get_var, has_attribute, method_id,
-        member, members_with, params, reparent, reparent_multi, set_node_name, set_var, sid, sig_id,
-        smid, var_id, variant, with_node, with_node_mut, with_state, with_state_mut, attribute,
+        detach_script, disconnect_signal, elapsed_time, emit_signal, fixed_delta_time, func,
+        get_node_children_ids, get_node_name, get_node_parent_id, get_var, has_attribute, method,
+        member, members_with, params, reparent, reparent_multi, set_node_name, set_var, sid, signal,
+        smid, var, variant, with_node, with_node_mut, with_state, with_state_mut, attribute,
     };
 }
 
@@ -309,7 +309,7 @@ mod tests {
 
         fn with_node<T, V: Clone + Default>(
             &mut self,
-            _node_id: NodeID,
+            _node: NodeID,
             _f: impl FnOnce(&T) -> V,
         ) -> V
         where
@@ -318,30 +318,30 @@ mod tests {
             V::default()
         }
 
-        fn get_node_name(&mut self, _node_id: NodeID) -> Option<std::borrow::Cow<'static, str>> {
+        fn get_node_name(&mut self, _node: NodeID) -> Option<std::borrow::Cow<'static, str>> {
             None
         }
 
-        fn set_node_name<S>(&mut self, _node_id: NodeID, _name: S) -> bool
+        fn set_node_name<S>(&mut self, _node: NodeID, _name: S) -> bool
         where
             S: Into<std::borrow::Cow<'static, str>>,
         {
             false
         }
 
-        fn get_node_parent_id(&mut self, _node_id: NodeID) -> Option<NodeID> {
+        fn get_node_parent_id(&mut self, _node: NodeID) -> Option<NodeID> {
             None
         }
 
-        fn get_node_children_ids(&mut self, _node_id: NodeID) -> Option<Vec<NodeID>> {
+        fn get_node_children_ids(&mut self, _node: NodeID) -> Option<Vec<NodeID>> {
             None
         }
 
-        fn reparent(&mut self, _parent_id: NodeID, _child_id: NodeID) -> bool {
+        fn reparent(&mut self, _parent: NodeID, _child: NodeID) -> bool {
             false
         }
 
-        fn reparent_multi<I>(&mut self, _parent_id: NodeID, _child_ids: I) -> usize
+        fn reparent_multi<I>(&mut self, _parent: NodeID, _child_ids: I) -> usize
         where
             I: IntoIterator<Item = NodeID>,
         {
@@ -350,35 +350,35 @@ mod tests {
     }
 
     impl ScriptAPI for DummyRuntime {
-        fn with_state<T: 'static, V, F>(&mut self, _script_id: NodeID, f: F) -> Option<V>
+        fn with_state<T: 'static, V, F>(&mut self, _script: NodeID, f: F) -> Option<V>
         where
             F: FnOnce(&T) -> V,
         {
             self.state.downcast_ref::<T>().map(f)
         }
 
-        fn with_state_mut<T: 'static, V, F>(&mut self, _script_id: NodeID, f: F) -> Option<V>
+        fn with_state_mut<T: 'static, V, F>(&mut self, _script: NodeID, f: F) -> Option<V>
         where
             F: FnOnce(&mut T) -> V,
         {
             self.state.downcast_mut::<T>().map(f)
         }
 
-        fn attach_script(&mut self, _node_id: NodeID, _script_path: &str) -> bool {
+        fn attach_script(&mut self, _node: NodeID, _script_path: &str) -> bool {
             false
         }
 
-        fn detach_script(&mut self, _node_id: NodeID) -> bool {
+        fn detach_script(&mut self, _node: NodeID) -> bool {
             false
         }
 
-        fn remove_script(&mut self, _script_id: NodeID) -> bool {
+        fn remove_script(&mut self, _script: NodeID) -> bool {
             false
         }
 
         fn get_var(
             &mut self,
-            _script_id: NodeID,
+            _script: NodeID,
             _member: perro_ids::ScriptMemberID,
         ) -> perro_variant::Variant {
             perro_variant::Variant::Null
@@ -386,7 +386,7 @@ mod tests {
 
         fn set_var(
             &mut self,
-            _script_id: NodeID,
+            _script: NodeID,
             _member: perro_ids::ScriptMemberID,
             _value: perro_variant::Variant,
         ) {
@@ -394,8 +394,8 @@ mod tests {
 
         fn call_method(
             &mut self,
-            _script_id: NodeID,
-            _method_id: perro_ids::ScriptMemberID,
+            _script: NodeID,
+            _method: perro_ids::ScriptMemberID,
             _params: &[perro_variant::Variant],
         ) -> perro_variant::Variant {
             perro_variant::Variant::Null
@@ -403,7 +403,7 @@ mod tests {
 
         fn attributes_of(
             &mut self,
-            _script_id: NodeID,
+            _script: NodeID,
             _member: &str,
         ) -> &'static [Attribute] {
             &[]
@@ -411,7 +411,7 @@ mod tests {
 
         fn members_with(
             &mut self,
-            _script_id: NodeID,
+            _script: NodeID,
             _attribute: &str,
         ) -> &'static [Member] {
             &[]
@@ -419,7 +419,7 @@ mod tests {
 
         fn has_attribute(
             &mut self,
-            _script_id: NodeID,
+            _script: NodeID,
             _member: &str,
             _attribute: &str,
         ) -> bool {
@@ -430,25 +430,25 @@ mod tests {
     impl SignalAPI for DummyRuntime {
         fn connect_signal(
             &mut self,
-            _script_id: NodeID,
-            _signal_id: perro_ids::SignalID,
-            _function_id: perro_ids::ScriptMemberID,
+            _script: NodeID,
+            _signal: perro_ids::SignalID,
+            _function: perro_ids::ScriptMemberID,
         ) -> bool {
             true
         }
 
         fn disconnect_signal(
             &mut self,
-            _script_id: NodeID,
-            _signal_id: perro_ids::SignalID,
-            _function_id: perro_ids::ScriptMemberID,
+            _script: NodeID,
+            _signal: perro_ids::SignalID,
+            _function: perro_ids::ScriptMemberID,
         ) -> bool {
             true
         }
 
         fn emit_signal(
             &mut self,
-            _signal_id: perro_ids::SignalID,
+            _signal: perro_ids::SignalID,
             _params: &[perro_variant::Variant],
         ) -> usize {
             1
@@ -484,12 +484,12 @@ mod tests {
         assert_eq!(reparent_multi!(&mut ctx, NodeID::new(1), [id]), 0);
         assert!(!attach_script!(&mut ctx, id, "res://scripts/a.rs"));
         assert!(!detach_script!(&mut ctx, id));
-        let member = var_id!("x");
+        let member = var!("x");
         let member_alias = sid!("x");
-        let var_member = var_id!("x");
-        let method_member = method_id!("x");
-        let func_member = func_id!("x");
-        let signal_member = sig_id!("on_test");
+        let var_member = var!("x");
+        let method_member = method!("x");
+        let func_member = func!("x");
+        let signal_member = signal!("on_test");
         assert_eq!(member, member_alias);
         assert_eq!(member, var_member);
         assert_eq!(member, method_member);
@@ -509,17 +509,17 @@ mod tests {
         assert!(connect_signal!(
             &mut ctx,
             id,
-            sig_id!("on_test"),
-            method_id!("handle")
+            signal!("on_test"),
+            method!("handle")
         ));
         assert!(disconnect_signal!(
             &mut ctx,
             id,
-            sig_id!("on_test"),
-            method_id!("handle")
+            signal!("on_test"),
+            method!("handle")
         ));
-        assert_eq!(emit_signal!(&mut ctx, sig_id!("on_test"), params![1_i32]), 1);
-        assert_eq!(emit_signal!(&mut ctx, sig_id!("on_test")), 1);
+        assert_eq!(emit_signal!(&mut ctx, signal!("on_test"), params![1_i32]), 1);
+        assert_eq!(emit_signal!(&mut ctx, signal!("on_test")), 1);
 
         let dt = delta_time!(&mut ctx);
         let fdt = fixed_delta_time!(&mut ctx);
@@ -529,3 +529,5 @@ mod tests {
         assert_eq!(elapsed, 1.0);
     }
 }
+
+

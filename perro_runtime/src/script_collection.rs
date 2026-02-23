@@ -40,7 +40,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     }
 
     pub(crate) fn get_instance(&self, id: NodeID) -> Option<&ScriptInstance<R>> {
-        let i = self.instance_index_for_id(id)?;
+        let i = self.instance_index_for(id)?;
         self.instances.get(i)
     }
 
@@ -61,7 +61,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     where
         F: FnOnce(&ScriptInstance<R>) -> V,
     {
-        let i = self.instance_index_for_id(id)?;
+        let i = self.instance_index_for(id)?;
         Some(f(self.instances.get(i)?))
     }
 
@@ -70,7 +70,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     where
         F: FnOnce(&mut ScriptInstance<R>) -> V,
     {
-        let i = self.instance_index_for_id(id)?;
+        let i = self.instance_index_for(id)?;
         Some(f(self.instances.get_mut(i)?))
     }
 
@@ -83,7 +83,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         let flags = behavior.script_flags();
         let state_type = state.as_ref().type_id();
 
-        if let Some(i) = self.instance_index_for_id(id) {
+        if let Some(i) = self.instance_index_for(id) {
             self.instances[i] = ScriptInstance {
                 behavior,
                 state_type,
@@ -98,8 +98,8 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         let slot = id.index() as usize;
         if let Some(Some(existing_i)) = self.index.get(slot).copied()
             && self.ids.get(existing_i).copied() != Some(id) {
-                let stale_id = self.ids[existing_i];
-                let _ = self.remove(stale_id);
+                let stale = self.ids[existing_i];
+                let _ = self.remove(stale);
             }
 
         let i = self.instances.len();
@@ -125,7 +125,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     }
 
     pub(crate) fn remove(&mut self, id: NodeID) -> Option<ScriptInstance<R>> {
-        let i = self.instance_index_for_id(id)?;
+        let i = self.instance_index_for(id)?;
         self.set_index_slot(id.index() as usize, None);
         self.remove_from_schedules_by_index(i);
 
@@ -134,12 +134,12 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         self.ids.swap(i, last);
 
         let removed = self.instances.pop().unwrap();
-        let removed_id = self.ids.pop().unwrap();
-        debug_assert!(removed_id == id);
+        let removed_node = self.ids.pop().unwrap();
+        debug_assert!(removed_node == id);
 
         if i != last {
-            let moved_id = self.ids[i];
-            self.set_index_slot(moved_id.index() as usize, Some(i));
+            let moved = self.ids[i];
+            self.set_index_slot(moved.index() as usize, Some(i));
 
             if let Some(pos) = Self::take_reverse_slot(&mut self.update_pos, last) {
                 self.update[pos] = i;
@@ -190,7 +190,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     where
         F: FnOnce(&T) -> V,
     {
-        let i = self.instance_index_for_id(id)?;
+        let i = self.instance_index_for(id)?;
         let instance = self.instances.get(i)?;
         if instance.state_type != TypeId::of::<T>() {
             return None;
@@ -204,7 +204,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     where
         F: FnOnce(&mut T) -> V,
     {
-        let i = self.instance_index_for_id(id)?;
+        let i = self.instance_index_for(id)?;
         let instance = self.instances.get_mut(i)?;
         if instance.state_type != TypeId::of::<T>() {
             return None;
@@ -215,7 +215,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     }
 
     #[inline]
-    fn instance_index_for_id(&self, id: NodeID) -> Option<usize> {
+    fn instance_index_for(&self, id: NodeID) -> Option<usize> {
         let slot = id.index() as usize;
         let i = (*self.index.get(slot)?)?;
         (self.ids.get(i).copied() == Some(id)).then_some(i)
@@ -293,3 +293,4 @@ impl<R: RuntimeAPI + ?Sized> Default for ScriptCollection<R> {
         Self::new()
     }
 }
+

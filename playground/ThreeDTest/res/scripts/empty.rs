@@ -10,18 +10,19 @@ type SelfNodeType = Node2D;
 pub struct EmptyState {}
 
 lifecycle!({
-    fn on_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {
+    fn on_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {
     }
 
-    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
 
-    fn on_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn on_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
 
-    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
 
-    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
 });
 
 methods!({
-    fn default_method(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn default_method(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
 });
+

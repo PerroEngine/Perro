@@ -4,7 +4,7 @@ use perro_ids::{NodeID, ScriptMemberID, SignalID};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SignalConnection {
     pub(crate) script_id: NodeID,
-    pub(crate) method_id: ScriptMemberID,
+    pub(crate) method: ScriptMemberID,
 }
 
 pub(crate) struct SignalRegistry {
@@ -20,84 +20,84 @@ impl SignalRegistry {
 
     pub(crate) fn connect(
         &mut self,
-        signal_id: SignalID,
+        signal: SignalID,
         script_id: NodeID,
-        method_id: ScriptMemberID,
+        method: ScriptMemberID,
     ) -> bool {
         let connections = self
             .by_signal
-            .entry(signal_id)
+            .entry(signal)
             .or_insert_with(|| Vec::with_capacity(1));
         if connections
             .iter()
-            .any(|c| c.script_id == script_id && c.method_id == method_id)
+            .any(|c| c.script_id == script_id && c.method == method)
         {
             return false;
         }
         connections.push(SignalConnection {
             script_id,
-            method_id,
+            method,
         });
         true
     }
 
     pub(crate) fn disconnect(
         &mut self,
-        signal_id: SignalID,
+        signal: SignalID,
         script_id: NodeID,
-        method_id: ScriptMemberID,
+        method: ScriptMemberID,
     ) -> bool {
-        let Some(connections) = self.by_signal.get_mut(&signal_id) else {
+        let Some(connections) = self.by_signal.get_mut(&signal) else {
             return false;
         };
         let Some(i) = connections
             .iter()
-            .position(|c| c.script_id == script_id && c.method_id == method_id)
+            .position(|c| c.script_id == script_id && c.method == method)
         else {
             return false;
         };
         connections.swap_remove(i);
         if connections.is_empty() {
-            self.by_signal.remove(&signal_id);
+            self.by_signal.remove(&signal);
         }
         true
     }
 
     pub(crate) fn copy_signal_connections(
         &self,
-        signal_id: SignalID,
+        signal: SignalID,
         out: &mut Vec<SignalConnection>,
     ) {
-        let Some(connections) = self.by_signal.get(&signal_id) else {
+        let Some(connections) = self.by_signal.get(&signal) else {
             return;
         };
         out.extend_from_slice(connections);
     }
 
     #[inline]
-    pub(crate) fn single_signal_connection(&self, signal_id: SignalID) -> Option<SignalConnection> {
-        let connections = self.by_signal.get(&signal_id)?;
+    pub(crate) fn single_signal_connection(&self, signal: SignalID) -> Option<SignalConnection> {
+        let connections = self.by_signal.get(&signal)?;
         (connections.len() == 1).then_some(connections[0])
     }
 
     #[inline]
-    pub(crate) fn signal_connection_count(&self, signal_id: SignalID) -> usize {
-        self.by_signal.get(&signal_id).map_or(0, Vec::len)
+    pub(crate) fn signal_connection_count(&self, signal: SignalID) -> usize {
+        self.by_signal.get(&signal).map_or(0, Vec::len)
     }
 
     pub(crate) fn disconnect_script(&mut self, script_id: NodeID) -> usize {
         let mut removed = 0usize;
         let mut empty_signals = Vec::new();
-        for (signal_id, connections) in self.by_signal.iter_mut() {
+        for (signal, connections) in self.by_signal.iter_mut() {
             let before = connections.len();
             connections.retain(|c| c.script_id != script_id);
             removed += before - connections.len();
             if connections.is_empty() {
-                empty_signals.push(*signal_id);
+                empty_signals.push(*signal);
             }
         }
-        for signal_id in empty_signals {
-            self.by_signal.remove(&signal_id);
+        for signal in empty_signals {
+            self.by_signal.remove(&signal);
         }
         removed
     }
@@ -164,3 +164,5 @@ mod tests {
         assert!(out.is_empty());
     }
 }
+
+

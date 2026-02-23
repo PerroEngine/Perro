@@ -39,7 +39,7 @@ macro_rules! __methods_internal {
         $vis:vis fn $name:ident(
             &$self_ident:ident,
             $ctx:ident : &mut RuntimeContext<'_, R>,
-            $self_id:ident : NodeID
+            $self:ident : NodeID
             $(, $arg:ident : $arg_ty:ty )* $(,)?
         ) $(-> $ret:ty)? $body:block
         $($rest:tt)*
@@ -48,7 +48,7 @@ macro_rules! __methods_internal {
         $vis fn $name<R: RuntimeAPI + ?Sized>(
             &$self_ident,
             $ctx: &mut RuntimeContext<'_, R>,
-            $self_id: NodeID
+            $self: NodeID
             $(, $arg : $arg_ty )*
         ) $(-> $ret)? $body
 
@@ -74,3 +74,5 @@ pub mod prelude {
     pub use perro_ids::prelude::{NodeID, ScriptMemberID};
     pub use perro_variant::Variant;
 }
+
+

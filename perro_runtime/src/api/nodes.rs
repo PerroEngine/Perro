@@ -57,11 +57,11 @@ impl NodeAPI for Runtime {
             return V::default();
         }
 
-        let Some(node) = self.nodes.get(node_id) else {
+        let Some(node_ref) = self.nodes.get(node_id) else {
             return V::default();
         };
 
-        node.with_typed_ref::<T, _>(f).unwrap_or_default()
+        node_ref.with_typed_ref::<T, _>(f).unwrap_or_default()
     }
 
     fn get_node_name(&mut self, node_id: perro_ids::NodeID) -> Option<Cow<'static, str>> {
@@ -80,10 +80,13 @@ impl NodeAPI for Runtime {
     }
 
     fn get_node_parent_id(&mut self, node_id: perro_ids::NodeID) -> Option<perro_ids::NodeID> {
-        self.nodes.get(node_id).map(|node| node.get_parent_id())
+        self.nodes.get(node_id).map(|node| node.get_parent())
     }
 
-    fn get_node_children_ids(&mut self, node_id: perro_ids::NodeID) -> Option<Vec<perro_ids::NodeID>> {
+    fn get_node_children_ids(
+        &mut self,
+        node_id: perro_ids::NodeID,
+    ) -> Option<Vec<perro_ids::NodeID>> {
         self.nodes
             .get(node_id)
             .map(|node| node.get_children_ids().to_vec())
@@ -98,7 +101,7 @@ impl NodeAPI for Runtime {
         }
 
         let old_parent = match self.nodes.get(child_id) {
-            Some(node) => node.get_parent_id(),
+            Some(node) => node.get_parent(),
             None => return false,
         };
 
@@ -144,3 +147,4 @@ impl NodeAPI for Runtime {
         updated
     }
 }
+

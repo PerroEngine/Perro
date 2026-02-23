@@ -18,17 +18,18 @@ impl DerefMut for MeshInstance3D {
 #[derive(Clone, Debug, Default)]
 pub struct MeshInstance3D {
     pub base: Node3D,
-    pub mesh_id: MeshID,
-    pub material_id: MaterialID,
+    pub mesh: MeshID,
+    pub material: MaterialID,
 }
 
 impl MeshInstance3D {
     pub const fn new() -> Self {
         Self {
             base: Node3D::new(),
-            mesh_id: MeshID::nil(),
-            material_id: MaterialID::nil(),
+            mesh: MeshID::nil(),
+            material: MaterialID::nil(),
         }
     }
 }
+
 

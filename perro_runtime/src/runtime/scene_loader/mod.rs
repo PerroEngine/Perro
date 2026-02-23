@@ -151,8 +151,8 @@ fn fmt_duration(duration: Option<Duration>) -> String {
         .unwrap_or_else(|| "n/a".to_string())
 }
 
-fn print_scene_tree(runtime: &Runtime, node_id: NodeID, indent: &str, depth: usize) {
-    let Some(node) = runtime.nodes.get(node_id) else {
+fn print_scene_tree(runtime: &Runtime, node: NodeID, indent: &str, depth: usize) {
+    let Some(node_ref) = runtime.nodes.get(node) else {
         return;
     };
     let color = depth_color(depth);
@@ -160,14 +160,14 @@ fn print_scene_tree(runtime: &Runtime, node_id: NodeID, indent: &str, depth: usi
         "{}{}- [{}] {} ({}){}",
         color,
         indent,
-        node_id,
-        node.name.as_ref(),
-        node.node_type(),
+        node,
+        node_ref.name.as_ref(),
+        node_ref.node_type(),
         ANSI_RESET,
     );
     let child_indent = format!("{indent}  ");
-    for child_id in node.children_slice() {
-        print_scene_tree(runtime, *child_id, &child_indent, depth + 1);
+    for child in node_ref.children_slice() {
+        print_scene_tree(runtime, *child, &child_indent, depth + 1);
     }
 }
 
@@ -177,3 +177,4 @@ const ANSI_WHITE: &str = "\x1b[97m";
 fn depth_color(depth: usize) -> &'static str {
     if depth == 0 { ANSI_WHITE } else { "" }
 }
+

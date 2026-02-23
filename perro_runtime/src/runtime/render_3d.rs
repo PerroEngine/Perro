@@ -9,11 +9,11 @@ use perro_render_bridge::{
 use perro_scene::{Parser, RuntimeValue};
 
 impl Runtime {
-    fn mesh_request_id(node: NodeID) -> RenderRequestID {
+    fn mesh_request(node: NodeID) -> RenderRequestID {
         RenderRequestID::new((node.as_u64() << 8) | 0x3E)
     }
 
-    fn material_request_id(node: NodeID) -> RenderRequestID {
+    fn material_request(node: NodeID) -> RenderRequestID {
         RenderRequestID::new((node.as_u64() << 8) | 0x3F)
     }
 
@@ -24,8 +24,8 @@ impl Runtime {
         traversal_ids.clear();
         traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
 
-        for node_id in traversal_ids.iter().copied() {
-            let camera_data = self.nodes.get(node_id).and_then(|node| match &node.data {
+        for node in traversal_ids.iter().copied() {
+            let camera_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::Camera3D(camera) if camera.active => Some(Camera3DState {
                     position: [
                         camera.transform.position.x,
@@ -46,7 +46,7 @@ impl Runtime {
                 self.queue_render_command(RenderCommand::ThreeD(Command3D::SetCamera { camera }));
             }
 
-            let ambient_light_data = self.nodes.get(node_id).and_then(|node| match &node.data {
+            let ambient_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::AmbientLight3D(light) if light.active && light.visible => {
                     Some(AmbientLight3DState {
                         color: light.color,
@@ -57,12 +57,12 @@ impl Runtime {
             });
             if let Some(light) = ambient_light_data {
                 self.queue_render_command(RenderCommand::ThreeD(Command3D::SetAmbientLight {
-                    node: node_id,
+                    node: node,
                     light,
                 }));
             }
 
-            let ray_light_data = self.nodes.get(node_id).and_then(|node| match &node.data {
+            let ray_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::RayLight3D(light) if light.active && light.visible => {
                     Some(RayLight3DState {
                         direction: quaternion_forward(light.transform.rotation),
@@ -74,12 +74,12 @@ impl Runtime {
             });
             if let Some(light) = ray_light_data {
                 self.queue_render_command(RenderCommand::ThreeD(Command3D::SetRayLight {
-                    node: node_id,
+                    node: node,
                     light,
                 }));
             }
 
-            let point_light_data = self.nodes.get(node_id).and_then(|node| match &node.data {
+            let point_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::PointLight3D(light) if light.active && light.visible => {
                     Some(PointLight3DState {
                         position: [
@@ -96,12 +96,12 @@ impl Runtime {
             });
             if let Some(light) = point_light_data {
                 self.queue_render_command(RenderCommand::ThreeD(Command3D::SetPointLight {
-                    node: node_id,
+                    node: node,
                     light,
                 }));
             }
 
-            let spot_light_data = self.nodes.get(node_id).and_then(|node| match &node.data {
+            let spot_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::SpotLight3D(light) if light.active && light.visible => {
                     Some(SpotLight3DState {
                         position: [
@@ -123,21 +123,21 @@ impl Runtime {
             });
             if let Some(light) = spot_light_data {
                 self.queue_render_command(RenderCommand::ThreeD(Command3D::SetSpotLight {
-                    node: node_id,
+                    node: node,
                     light,
                 }));
             }
 
-            let mesh_data = self.nodes.get(node_id).and_then(|node| match &node.data {
+            let mesh_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::MeshInstance3D(mesh) => Some((
                     mesh.visible,
-                    mesh.mesh_id,
-                    mesh.material_id,
+                    mesh.mesh,
+                    mesh.material,
                     mesh.transform.to_mat4().to_cols_array_2d(),
                 )),
                 _ => None,
             });
-            let Some((visible, mesh_id, material_id, model)) = mesh_data else {
+            let Some((visible, mesh, material, model)) = mesh_data else {
                 continue;
             };
             if !visible {
@@ -145,14 +145,14 @@ impl Runtime {
             }
 
             let Some((mesh, material)) =
-                self.resolve_mesh_instance_assets(node_id, mesh_id, material_id)
+                self.resolve_mesh_instance_assets(node, mesh, material)
             else {
                 continue;
             };
             self.queue_render_command(RenderCommand::ThreeD(Command3D::Draw {
                 mesh,
                 material,
-                node: node_id,
+                node: node,
                 model,
             }));
         }
@@ -163,19 +163,19 @@ impl Runtime {
 
     fn resolve_mesh_instance_assets(
         &mut self,
-        node_id: NodeID,
-        mut mesh_id: MeshID,
-        mut material_id: MaterialID,
+        node: NodeID,
+        mut mesh: MeshID,
+        mut material: MaterialID,
     ) -> Option<(MeshID, MaterialID)> {
-        if mesh_id.is_nil() {
-            let request = Self::mesh_request_id(node_id);
+        if mesh.is_nil() {
+            let request = Self::mesh_request(node);
             if let Some(result) = self.take_render_result(request) {
                 match result {
                     crate::RuntimeRenderResult::Mesh(id) => {
-                        mesh_id = id;
-                        if let Some(node) = self.nodes.get_mut(node_id)
+                        mesh = id;
+                        if let Some(node) = self.nodes.get_mut(node)
                             && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data {
-                                mesh_instance.mesh_id = id;
+                                mesh_instance.mesh = id;
                             }
                     }
                     crate::RuntimeRenderResult::Failed(_)
@@ -183,11 +183,11 @@ impl Runtime {
                     | crate::RuntimeRenderResult::Material(_) => {}
                 }
             }
-            if mesh_id.is_nil() {
+            if mesh.is_nil() {
                 let source = self
                     .render_3d
                     .mesh_sources
-                    .get(&node_id)?
+                    .get(&node)?
                     .trim()
                     .to_string();
                 if source.is_empty() {
@@ -198,7 +198,7 @@ impl Runtime {
                     self.queue_render_command(RenderCommand::Resource(
                         ResourceCommand::CreateMesh {
                             request,
-                            owner: node_id,
+                            owner: node,
                             source,
                         },
                     ));
@@ -207,15 +207,15 @@ impl Runtime {
             }
         }
 
-        if material_id.is_nil() {
-            let request = Self::material_request_id(node_id);
+        if material.is_nil() {
+            let request = Self::material_request(node);
             if let Some(result) = self.take_render_result(request) {
                 match result {
                     crate::RuntimeRenderResult::Material(id) => {
-                        material_id = id;
-                        if let Some(node) = self.nodes.get_mut(node_id)
+                        material = id;
+                        if let Some(node) = self.nodes.get_mut(node)
                             && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data {
-                                mesh_instance.material_id = id;
+                                mesh_instance.material = id;
                             }
                     }
                     crate::RuntimeRenderResult::Failed(_)
@@ -223,17 +223,17 @@ impl Runtime {
                     | crate::RuntimeRenderResult::Mesh(_) => {}
                 }
             }
-            if material_id.is_nil() {
-                let source = self.render_3d.material_sources.get(&node_id).cloned();
+            if material.is_nil() {
+                let source = self.render_3d.material_sources.get(&node).cloned();
                 let material = self
                     .render_3d
                     .material_overrides
-                    .get(&node_id)
+                    .get(&node)
                     .copied()
                     .or_else(|| {
                         self.render_3d
                             .material_sources
-                            .get(&node_id)
+                            .get(&node)
                             .and_then(|source| load_material_from_source(self, source))
                     })
                     .unwrap_or_else(Material3D::default);
@@ -242,7 +242,7 @@ impl Runtime {
                     self.queue_render_command(RenderCommand::Resource(
                         ResourceCommand::CreateMaterial {
                             request,
-                            owner: node_id,
+                            owner: node,
                             material,
                             source,
                         },
@@ -252,7 +252,7 @@ impl Runtime {
             }
         }
 
-        Some((mesh_id, material_id))
+        Some((mesh, material))
     }
 }
 
@@ -535,8 +535,8 @@ mod tests {
     fn mesh_instance_without_mesh_source_requests_nothing() {
         let mut runtime = Runtime::new();
         let mut mesh = MeshInstance3D::new();
-        mesh.mesh_id = MeshID::nil();
-        mesh.material_id = MaterialID::nil();
+        mesh.mesh = MeshID::nil();
+        mesh.material = MaterialID::nil();
         runtime
             .nodes
             .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
@@ -550,15 +550,15 @@ mod tests {
     fn mesh_instance_requests_missing_assets_once_until_events_arrive() {
         let mut runtime = Runtime::new();
         let mut mesh = MeshInstance3D::new();
-        mesh.mesh_id = MeshID::nil();
-        mesh.material_id = MaterialID::nil();
-        let node_id = runtime
+        mesh.mesh = MeshID::nil();
+        mesh.material = MaterialID::nil();
+        let expected_node = runtime
             .nodes
             .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
         runtime
             .render_3d
             .mesh_sources
-            .insert(node_id, "__cube__".to_string());
+            .insert(expected_node, "__cube__".to_string());
 
         runtime.extract_render_3d_commands();
         let first = collect_commands(&mut runtime);
@@ -566,7 +566,7 @@ mod tests {
         assert!(matches!(
             &first[0],
             RenderCommand::Resource(ResourceCommand::CreateMesh { owner, source, .. })
-                if *owner == node_id && source == "__cube__"
+                if *owner == expected_node && source == "__cube__"
         ));
 
         runtime.extract_render_3d_commands();
@@ -577,7 +577,7 @@ mod tests {
     #[test]
     fn mesh_instance_emits_draw_after_mesh_and_material_created() {
         let mut runtime = Runtime::new();
-        let node_id = runtime
+        let expected_node = runtime
             .nodes
             .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
                 MeshInstance3D::new(),
@@ -585,7 +585,7 @@ mod tests {
         runtime
             .render_3d
             .mesh_sources
-            .insert(node_id, "__cube__".to_string());
+            .insert(expected_node, "__cube__".to_string());
 
         runtime.extract_render_3d_commands();
         let first = collect_commands(&mut runtime);
@@ -594,10 +594,10 @@ mod tests {
             _ => panic!("expected mesh create request"),
         };
 
-        let mesh_id = MeshID::from_parts(9, 1);
+        let mesh = MeshID::from_parts(9, 1);
         runtime.apply_render_event(RenderEvent::MeshCreated {
             request: mesh_request,
-            id: mesh_id,
+            id: mesh,
         });
         runtime.extract_render_3d_commands();
         let second = collect_commands(&mut runtime);
@@ -606,10 +606,10 @@ mod tests {
             _ => panic!("expected material create request"),
         };
 
-        let material_id = MaterialID::from_parts(7, 4);
+        let material = MaterialID::from_parts(7, 4);
         runtime.apply_render_event(RenderEvent::MaterialCreated {
             request: material_request,
-            id: material_id,
+            id: material,
         });
         runtime.extract_render_3d_commands();
         let third = collect_commands(&mut runtime);
@@ -622,7 +622,7 @@ mod tests {
                 material,
                 ..
             })
-            if node == node_id && mesh == mesh_id && material == material_id
+            if node == expected_node && mesh == mesh && material == material
         ));
     }
 
@@ -727,3 +727,4 @@ mod tests {
         )));
     }
 }
+

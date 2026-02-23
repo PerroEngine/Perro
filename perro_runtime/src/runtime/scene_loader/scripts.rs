@@ -44,12 +44,12 @@ impl Runtime {
 
     pub(crate) fn attach_script_instance(
         &mut self,
-        node_id: perro_ids::NodeID,
+        node: perro_ids::NodeID,
         script_path: &str,
     ) -> Result<(), String> {
-        if node_id.is_nil() || self.nodes.get(node_id).is_none() {
+        if node.is_nil() || self.nodes.get(node).is_none() {
             return Err(format!(
-                "node `{node_id}` not found for script `{script_path}`"
+                "node `{node}` not found for script `{script_path}`"
             ));
         }
 
@@ -70,17 +70,17 @@ impl Runtime {
         let behavior: Arc<dyn ScriptBehavior<Self>> = behavior.into();
         let state = behavior.create_state();
         let flags = behavior.script_flags();
-        if self.scripts.get_instance(node_id).is_some() {
-            self.remove_script_instance(node_id);
+        if self.scripts.get_instance(node).is_some() {
+            self.remove_script_instance(node);
         }
-        self.scripts.insert(node_id, Arc::clone(&behavior), state);
+        self.scripts.insert(node, Arc::clone(&behavior), state);
 
         if flags.has_init() {
             let mut ctx = RuntimeContext::new(self);
-            behavior.on_init(&mut ctx, node_id);
+            behavior.on_init(&mut ctx, node);
         }
         if flags.has_all_init() {
-            self.queue_start_script(node_id);
+            self.queue_start_script(node);
         }
 
         Ok(())
@@ -258,3 +258,4 @@ fn scripts_dylib_suffix() -> &'static str {
 fn scripts_dylib_suffix() -> &'static str {
     ".dylib"
 }
+

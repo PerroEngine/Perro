@@ -399,17 +399,17 @@ impl<R: RuntimeAPI + ?Sized> ScriptBehavior<R> for {script_ty} {{
         Box::new(<{state_ty} as Default>::default())
     }}
 
-    fn get_var(&self, state: &dyn std::any::Any, var_id: ScriptMemberID) -> Variant {{
+    fn get_var(&self, state: &dyn std::any::Any, var: ScriptMemberID) -> Variant {{
 {get_var_body}
     }}
 
-    fn set_var(&self, state: &mut dyn std::any::Any, var_id: ScriptMemberID, value: &Variant) {{
+    fn set_var(&self, state: &mut dyn std::any::Any, var: ScriptMemberID, value: &Variant) {{
 {set_var_body}
     }}
 
     fn call_method(
         &self,
-        method_id: ScriptMemberID,
+        method: ScriptMemberID,
         ctx: &mut RuntimeContext<'_, R>,
         self_id: NodeID,
         params: &[Variant],
@@ -822,14 +822,14 @@ fn generate_member_consts(fields: &[StateField], methods: &[ScriptMethod]) -> St
     for field in fields {
         let const_name = member_const_name(&field.name);
         out.push_str(&format!(
-            "const {const_name}: ScriptMemberID = var_id!(\"{}\");\n",
+            "const {const_name}: ScriptMemberID = var!(\"{}\");\n",
             field.name
         ));
     }
     for method in methods {
         let const_name = method_const_name(&method.name);
         out.push_str(&format!(
-            "const {const_name}: ScriptMemberID = func_id!(\"{}\");\n",
+            "const {const_name}: ScriptMemberID = func!(\"{}\");\n",
             method.name
         ));
         if !method.takes_raw_params {
@@ -845,11 +845,11 @@ fn generate_member_consts(fields: &[StateField], methods: &[ScriptMethod]) -> St
 
 fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
     if methods.is_empty() {
-        return "        let _ = (method_id, ctx, self_id, params);\n        Variant::Null".to_string();
+        return "        let _ = (method, ctx, self_id, params);\n        Variant::Null".to_string();
     }
 
     let mut out = String::new();
-    out.push_str("        match method_id {\n");
+    out.push_str("        match method {\n");
     for method in methods {
         let const_name = method_const_name(&method.name);
         let arity_const_name = method_arity_const_name(&method.name);
@@ -1110,7 +1110,10 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
         return None;
     }
 
-    if !line.contains("&self") || !line.contains("ctx") || !line.contains("self_id") {
+    if !line.contains("&self")
+        || !line.contains("ctx")
+        || (!line.contains("self_id") && !line.contains("node"))
+    {
         return None;
     }
 
@@ -1146,7 +1149,7 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
             };
             let param_name = name_part.trim();
             let param_ty = ty_part.trim();
-            if param_name == "ctx" || param_name == "self_id" {
+            if param_name == "ctx" || param_name == "self_id" || param_name == "node" {
                 continue;
             }
 
@@ -1306,7 +1309,7 @@ fn generate_get_var_body(state_ty: &str, fields: &[StateField]) -> String {
     out.push_str(&format!(
         "        let state = unsafe {{ &*(state as *const dyn std::any::Any as *const {state_ty}) }};\n"
     ));
-    out.push_str("        match var_id {\n");
+    out.push_str("        match var {\n");
     for field in fields {
         let const_name = member_const_name(&field.name);
         let access = match field_kind(&field.ty).unwrap() {
@@ -1331,7 +1334,7 @@ fn generate_set_var_body(state_ty: &str, fields: &[StateField]) -> String {
     out.push_str(&format!(
         "        let state = unsafe {{ &mut *(state as *mut dyn std::any::Any as *mut {state_ty}) }};\n"
     ));
-    out.push_str("        match var_id {\n");
+    out.push_str("        match var {\n");
     for field in fields {
         let const_name = member_const_name(&field.name);
         let ty = normalize_type(&field.ty);
@@ -1505,3 +1508,6 @@ fn module_name_from_rel(rel: &str) -> String {
 fn rel_to_path(base: &Path, rel: &str) -> PathBuf {
     base.join(rel.replace('/', "\\"))
 }
+
+
+

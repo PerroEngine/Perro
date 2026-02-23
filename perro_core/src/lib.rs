@@ -67,7 +67,7 @@ mod tests {
                 visible: true,
                 z_index: 1,
             },
-            texture_id: perro_ids::TextureID::nil(),
+            texture: perro_ids::TextureID::nil(),
         }));
         sprite.id = NodeID::new(3);
         sprite.name = Cow::Borrowed("PlayerSprite");
@@ -83,8 +83,8 @@ mod tests {
         // Create a MeshInstance3D (contains Node3D as base)
         let mut mesh = SceneNode::new(SceneNodeData::MeshInstance3D(MeshInstance3D {
             base: Node3D::default(),
-            mesh_id: perro_ids::MeshID::nil(),
-            material_id: perro_ids::MaterialID::nil(),
+            mesh: perro_ids::MeshID::nil(),
+            material: perro_ids::MaterialID::nil(),
         }));
         mesh.id = NodeID::new(4);
         mesh.name = Cow::Borrowed("Character");
@@ -134,7 +134,7 @@ mod tests {
 
         let mut sprite = SceneNode::new(SceneNodeData::Sprite2D(Sprite2D {
             base: Node2D::new(),
-            texture_id: perro_ids::TextureID::nil(),
+            texture: perro_ids::TextureID::nil(),
         }));
         sprite.id = NodeID::new(3);
         sprite.name = Cow::Borrowed("Sprite");
@@ -210,4 +210,5 @@ mod tests {
         assert!(matches!(scene.data, SceneNodeData::Node2D(_)));
     }
 }
+
 

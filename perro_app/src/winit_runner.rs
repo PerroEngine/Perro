@@ -238,13 +238,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
-        window_id: winit::window::WindowId,
+        window: winit::window::WindowId,
         event: WindowEvent,
     ) {
         if self
             .window
             .as_ref()
-            .is_some_and(|window| window.id() != window_id)
+            .is_some_and(|current_window| current_window.id() != window)
         {
             return;
         }
@@ -349,3 +349,4 @@ fn center_position(
     let y = monitor_pos.y + ((monitor_size.height as i32 - window_size.height as i32) / 2);
     PhysicalPosition::new(x, y)
 }
+

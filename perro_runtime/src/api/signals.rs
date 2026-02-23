@@ -10,28 +10,28 @@ impl SignalAPI for Runtime {
     fn connect_signal(
         &mut self,
         script_id: NodeID,
-        signal_id: SignalID,
-        function_id: ScriptMemberID,
+        signal: SignalID,
+        function: ScriptMemberID,
     ) -> bool {
-        self.signals.connect(signal_id, script_id, function_id)
+        self.signals.connect(signal, script_id, function)
     }
 
     fn disconnect_signal(
         &mut self,
         script_id: NodeID,
-        signal_id: SignalID,
-        function_id: ScriptMemberID,
+        signal: SignalID,
+        function: ScriptMemberID,
     ) -> bool {
-        self.signals.disconnect(signal_id, script_id, function_id)
+        self.signals.disconnect(signal, script_id, function)
     }
 
-    fn emit_signal(&mut self, signal_id: SignalID, params: &[Variant]) -> usize {
+    fn emit_signal(&mut self, signal: SignalID, params: &[Variant]) -> usize {
         let emit_start = Instant::now();
-        let connection_count = self.signals.signal_connection_count(signal_id);
+        let connection_count = self.signals.signal_connection_count(signal);
         let mut calls = 0usize;
         let mut missing_scripts = 0usize;
 
-        if let Some(connection) = self.signals.single_signal_connection(signal_id) {
+        if let Some(connection) = self.signals.single_signal_connection(signal) {
             let lookup_from_emit_ns = emit_start.elapsed().as_nanos();
             let behavior = self
                 .scripts
@@ -41,7 +41,7 @@ impl SignalAPI for Runtime {
             if let Some(behavior) = behavior {
                 let mut ctx = RuntimeContext::new(self);
                 let _ = behavior.call_method(
-                    connection.method_id,
+                    connection.method,
                     &mut ctx,
                     connection.script_id,
                     params,
@@ -52,7 +52,7 @@ impl SignalAPI for Runtime {
             }
             println!(
                 "[signal.emit] signal={} params={} connections={} calls={} missing_scripts={} lookup_from_emit_ns={} first_call_from_emit_ns={}",
-                signal_id.as_u64(),
+                signal.as_u64(),
                 params.len(),
                 connection_count,
                 calls,
@@ -65,7 +65,7 @@ impl SignalAPI for Runtime {
 
         let mut pending = std::mem::take(&mut self.signal_emit_scratch);
         pending.clear();
-        self.signals.copy_signal_connections(signal_id, &mut pending);
+        self.signals.copy_signal_connections(signal, &mut pending);
         let lookup_from_emit_ns = emit_start.elapsed().as_nanos();
 
         let mut first_call_from_emit_ns: Option<u128> = None;
@@ -83,14 +83,14 @@ impl SignalAPI for Runtime {
             }
 
             let mut ctx = RuntimeContext::new(self);
-            let _ = behavior.call_method(connection.method_id, &mut ctx, connection.script_id, params);
+            let _ = behavior.call_method(connection.method, &mut ctx, connection.script_id, params);
             calls += 1;
         }
 
         let first_call_from_emit_ns = first_call_from_emit_ns.unwrap_or(0);
         println!(
             "[signal.emit] signal={} params={} connections={} calls={} missing_scripts={} lookup_from_emit_ns={} first_call_from_emit_ns={}",
-            signal_id.as_u64(),
+            signal.as_u64(),
             params.len(),
             connection_count,
             calls,
@@ -104,3 +104,5 @@ impl SignalAPI for Runtime {
         calls
     }
 }
+
+

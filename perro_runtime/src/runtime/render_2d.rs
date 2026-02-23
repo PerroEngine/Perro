@@ -7,7 +7,7 @@ use perro_render_bridge::{
 };
 
 impl Runtime {
-    fn sprite_texture_request_id(node: NodeID) -> RenderRequestID {
+    fn sprite_texture_request(node: NodeID) -> RenderRequestID {
         RenderRequestID::new((node.as_u64() << 8) | 0x2D)
     }
 
@@ -22,28 +22,28 @@ impl Runtime {
         visible_now.clear();
         self.render_2d.removed_nodes.clear();
 
-        for node_id in traversal_ids.iter().copied() {
-            let sprite_data = self.nodes.get(node_id).and_then(|node| match &node.data {
+        for node in traversal_ids.iter().copied() {
+            let sprite_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::Sprite2D(sprite) => Some((
                     sprite.visible,
-                    sprite.texture_id,
+                    sprite.texture,
                     sprite.transform.to_mat3().to_cols_array_2d(),
                     sprite.z_index,
                 )),
                 _ => None,
             });
-            if let Some((visible, texture_id, model, z_index)) = sprite_data {
+            if let Some((visible, texture, model, z_index)) = sprite_data {
                 self.emit_sprite_2d(
-                    node_id,
+                    node,
                     visible,
-                    texture_id,
+                    texture,
                     model,
                     z_index,
                     &mut visible_now,
                 );
             }
 
-            let camera_data = self.nodes.get(node_id).and_then(|node| match &node.data {
+            let camera_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::Camera2D(camera) if camera.active => Some(Camera2DState {
                     position: [camera.transform.position.x, camera.transform.position.y],
                     rotation_radians: camera.transform.rotation,
@@ -67,9 +67,9 @@ impl Runtime {
 
     fn emit_sprite_2d(
         &mut self,
-        node_id: NodeID,
+        node: NodeID,
         visible: bool,
-        texture_id: TextureID,
+        texture: TextureID,
         model: [[f32; 3]; 3],
         z_index: i32,
         visible_now: &mut AHashSet<NodeID>,
@@ -78,18 +78,18 @@ impl Runtime {
             return;
         }
 
-        let Some(resolved_texture) = self.resolve_sprite_texture(node_id, texture_id) else {
+        let Some(resolved_texture) = self.resolve_sprite_texture(node, texture) else {
             return;
         };
 
         let needs_upsert = self
             .render_2d
             .retained_sprite_textures
-            .get(&node_id)
+            .get(&node)
             .is_none_or(|cached| *cached != resolved_texture);
         if needs_upsert {
             self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertSprite {
-                node: node_id,
+                node: node,
                 sprite: Sprite2DCommand {
                     texture: resolved_texture,
                     model,
@@ -98,10 +98,10 @@ impl Runtime {
             }));
             self.render_2d
                 .retained_sprite_textures
-                .insert(node_id, resolved_texture);
+                .insert(node, resolved_texture);
         } else {
             self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertSprite {
-                node: node_id,
+                node: node,
                 sprite: Sprite2DCommand {
                     texture: resolved_texture,
                     model,
@@ -109,23 +109,23 @@ impl Runtime {
                 },
             }));
         }
-        visible_now.insert(node_id);
+        visible_now.insert(node);
     }
 
     fn resolve_sprite_texture(
         &mut self,
-        node_id: NodeID,
-        mut texture_id: TextureID,
+        node: NodeID,
+        mut texture: TextureID,
     ) -> Option<TextureID> {
-        if texture_id.is_nil() {
-            let request = Self::sprite_texture_request_id(node_id);
+        if texture.is_nil() {
+            let request = Self::sprite_texture_request(node);
             if let Some(result) = self.take_render_result(request) {
                 match result {
                     crate::RuntimeRenderResult::Texture(id) => {
-                        texture_id = id;
-                        if let Some(node) = self.nodes.get_mut(node_id)
+                        texture = id;
+                        if let Some(node) = self.nodes.get_mut(node)
                             && let SceneNodeData::Sprite2D(sprite) = &mut node.data {
-                                sprite.texture_id = id;
+                                sprite.texture = id;
                             }
                     }
                     crate::RuntimeRenderResult::Failed(_) => {}
@@ -135,20 +135,20 @@ impl Runtime {
             }
         }
 
-        if texture_id.is_nil() {
-            let request = Self::sprite_texture_request_id(node_id);
+        if texture.is_nil() {
+            let request = Self::sprite_texture_request(node);
             if !self.render.is_inflight(request) {
                 let source = self
                     .render_2d
                     .texture_sources
-                    .get(&node_id)
+                    .get(&node)
                     .cloned()
                     .unwrap_or_else(|| "__default__".to_string());
                 self.render.mark_inflight(request);
                 self.queue_render_command(RenderCommand::Resource(
                     ResourceCommand::CreateTexture {
                         request,
-                        owner: node_id,
+                        owner: node,
                         source,
                     },
                 ));
@@ -156,7 +156,7 @@ impl Runtime {
             return None;
         }
 
-        Some(texture_id)
+        Some(texture)
     }
 
     fn remove_no_longer_visible_render_2d_nodes(&mut self, visible_now: &AHashSet<NodeID>) {
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn sprite_requests_texture_once_until_created() {
         let mut runtime = Runtime::new();
-        let node_id = runtime
+        let expected_node = runtime
             .nodes
             .insert(SceneNode::new(SceneNodeData::Sprite2D(Sprite2D::new())));
 
@@ -201,7 +201,7 @@ mod tests {
                 owner,
                 source,
             }) => {
-                assert_eq!(*owner, node_id);
+                assert_eq!(*owner, expected_node);
                 assert_eq!(source, "__default__");
                 *request
             }
@@ -211,10 +211,10 @@ mod tests {
         runtime.extract_render_2d_commands();
         assert!(collect_commands(&mut runtime).is_empty());
 
-        let texture_id = TextureID::from_parts(3, 1);
+        let texture = TextureID::from_parts(3, 1);
         runtime.apply_render_event(RenderEvent::TextureCreated {
             request,
-            id: texture_id,
+            id: texture,
         });
         runtime.extract_render_2d_commands();
         let third = collect_commands(&mut runtime);
@@ -222,7 +222,7 @@ mod tests {
         assert!(matches!(
             third[0],
             RenderCommand::TwoD(Command2D::UpsertSprite { node, sprite })
-            if node == node_id && sprite.texture == texture_id
+            if node == expected_node && sprite.texture == texture
         ));
     }
 
@@ -230,8 +230,8 @@ mod tests {
     fn sprite_becoming_invisible_emits_remove_node() {
         let mut runtime = Runtime::new();
         let mut sprite = Sprite2D::new();
-        sprite.texture_id = TextureID::from_parts(7, 0);
-        let node_id = runtime
+        sprite.texture = TextureID::from_parts(7, 0);
+        let expected_node = runtime
             .nodes
             .insert(SceneNode::new(SceneNodeData::Sprite2D(sprite)));
 
@@ -240,12 +240,12 @@ mod tests {
         assert_eq!(first.len(), 1);
         assert!(matches!(
             first[0],
-            RenderCommand::TwoD(Command2D::UpsertSprite { node, .. }) if node == node_id
+            RenderCommand::TwoD(Command2D::UpsertSprite { node, .. }) if node == expected_node
         ));
 
         let node = runtime
             .nodes
-            .get_mut(node_id)
+            .get_mut(expected_node)
             .expect("sprite node must exist");
         if let SceneNodeData::Sprite2D(sprite) = &mut node.data {
             sprite.visible = false;
@@ -256,7 +256,7 @@ mod tests {
         assert_eq!(second.len(), 1);
         assert!(matches!(
             second[0],
-            RenderCommand::TwoD(Command2D::RemoveNode { node }) if node == node_id
+            RenderCommand::TwoD(Command2D::RemoveNode { node }) if node == expected_node
         ));
     }
 
@@ -284,3 +284,4 @@ mod tests {
         )));
     }
 }
+

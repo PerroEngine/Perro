@@ -86,7 +86,7 @@ macro_rules! define_scene_nodes {
                 self.name = name.into();
             }
 
-            pub const fn get_parent_id(&self) -> NodeID {
+            pub const fn get_parent(&self) -> NodeID {
                 self.parent
             }
 
@@ -354,4 +354,5 @@ define_scene_nodes! {
         SpotLight3D => (SpotLight3D, Renderable::True)
     }
 }
+
 
