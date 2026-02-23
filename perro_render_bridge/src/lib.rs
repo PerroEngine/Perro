@@ -137,17 +137,14 @@ pub struct Sprite2DCommand {
 pub enum ResourceCommand {
     CreateMesh {
         request: RenderRequestID,
-        owner: NodeID,
         source: String,
     },
     CreateTexture {
         request: RenderRequestID,
-        owner: NodeID,
         source: String,
     },
     CreateMaterial {
         request: RenderRequestID,
-        owner: NodeID,
         material: Material3D,
         source: Option<String>,
     },

@@ -1,4 +1,4 @@
-use super::{core::RuntimeResourceApi, state::nil_owner};
+use super::core::RuntimeResourceApi;
 use perro_ids::MaterialID;
 use perro_render_bridge::{Material3D, RenderCommand, ResourceCommand};
 use perro_resource_context::sub_apis::MaterialAPI;
@@ -23,7 +23,6 @@ impl MaterialAPI for RuntimeResourceApi {
             .queued_commands
             .push(RenderCommand::Resource(ResourceCommand::CreateMaterial {
                 request,
-                owner: nil_owner(),
                 material: Material3D::default(),
                 source: Some(source.to_string()),
             }));
@@ -37,7 +36,6 @@ impl MaterialAPI for RuntimeResourceApi {
             .queued_commands
             .push(RenderCommand::Resource(ResourceCommand::CreateMaterial {
                 request,
-                owner: nil_owner(),
                 material,
                 source: None,
             }));

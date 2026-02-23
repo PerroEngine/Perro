@@ -1,4 +1,4 @@
-use super::{core::RuntimeResourceApi, state::nil_owner};
+use super::core::RuntimeResourceApi;
 use perro_ids::MeshID;
 use perro_render_bridge::{RenderCommand, ResourceCommand};
 use perro_resource_context::sub_apis::MeshAPI;
@@ -21,7 +21,6 @@ impl MeshAPI for RuntimeResourceApi {
             .queued_commands
             .push(RenderCommand::Resource(ResourceCommand::CreateMesh {
                 request,
-                owner: nil_owner(),
                 source: source.to_string(),
             }));
         MeshID::nil()

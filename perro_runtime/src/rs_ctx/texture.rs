@@ -1,4 +1,4 @@
-use super::{core::RuntimeResourceApi, state::nil_owner};
+use super::core::RuntimeResourceApi;
 use perro_ids::TextureID;
 use perro_render_bridge::{RenderCommand, ResourceCommand};
 use perro_resource_context::sub_apis::TextureAPI;
@@ -23,7 +23,6 @@ impl TextureAPI for RuntimeResourceApi {
             .queued_commands
             .push(RenderCommand::Resource(ResourceCommand::CreateTexture {
                 request,
-                owner: nil_owner(),
                 source: source.to_string(),
             }));
         TextureID::nil()

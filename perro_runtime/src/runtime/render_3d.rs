@@ -57,7 +57,7 @@ impl Runtime {
             });
             if let Some(light) = ambient_light_data {
                 self.queue_render_command(RenderCommand::ThreeD(Command3D::SetAmbientLight {
-                    node: node,
+                    node,
                     light,
                 }));
             }
@@ -74,7 +74,7 @@ impl Runtime {
             });
             if let Some(light) = ray_light_data {
                 self.queue_render_command(RenderCommand::ThreeD(Command3D::SetRayLight {
-                    node: node,
+                    node,
                     light,
                 }));
             }
@@ -96,7 +96,7 @@ impl Runtime {
             });
             if let Some(light) = point_light_data {
                 self.queue_render_command(RenderCommand::ThreeD(Command3D::SetPointLight {
-                    node: node,
+                    node,
                     light,
                 }));
             }
@@ -123,7 +123,7 @@ impl Runtime {
             });
             if let Some(light) = spot_light_data {
                 self.queue_render_command(RenderCommand::ThreeD(Command3D::SetSpotLight {
-                    node: node,
+                    node,
                     light,
                 }));
             }
@@ -152,7 +152,7 @@ impl Runtime {
             self.queue_render_command(RenderCommand::ThreeD(Command3D::Draw {
                 mesh,
                 material,
-                node: node,
+                node,
                 model,
             }));
         }
@@ -198,7 +198,6 @@ impl Runtime {
                     self.queue_render_command(RenderCommand::Resource(
                         ResourceCommand::CreateMesh {
                             request,
-                            owner: node,
                             source,
                         },
                     ));
@@ -242,7 +241,6 @@ impl Runtime {
                     self.queue_render_command(RenderCommand::Resource(
                         ResourceCommand::CreateMaterial {
                             request,
-                            owner: node,
                             material,
                             source,
                         },
@@ -565,8 +563,8 @@ mod tests {
         assert_eq!(first.len(), 1);
         assert!(matches!(
             &first[0],
-            RenderCommand::Resource(ResourceCommand::CreateMesh { owner, source, .. })
-                if *owner == expected_node && source == "__cube__"
+            RenderCommand::Resource(ResourceCommand::CreateMesh { source, .. })
+                if source == "__cube__"
         ));
 
         runtime.extract_render_3d_commands();
@@ -655,7 +653,7 @@ mod tests {
         assert_eq!(second.len(), 1);
         assert!(matches!(
             second[0],
-            RenderCommand::Resource(ResourceCommand::CreateMaterial { owner, .. }) if owner == inserted
+            RenderCommand::Resource(ResourceCommand::CreateMaterial { .. })
         ));
     }
 

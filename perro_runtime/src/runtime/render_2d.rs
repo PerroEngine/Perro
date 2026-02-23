@@ -89,7 +89,7 @@ impl Runtime {
             .is_none_or(|cached| *cached != resolved_texture);
         if needs_upsert {
             self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertSprite {
-                node: node,
+                node,
                 sprite: Sprite2DCommand {
                     texture: resolved_texture,
                     model,
@@ -101,7 +101,7 @@ impl Runtime {
                 .insert(node, resolved_texture);
         } else {
             self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertSprite {
-                node: node,
+                node,
                 sprite: Sprite2DCommand {
                     texture: resolved_texture,
                     model,
@@ -148,7 +148,6 @@ impl Runtime {
                 self.queue_render_command(RenderCommand::Resource(
                     ResourceCommand::CreateTexture {
                         request,
-                        owner: node,
                         source,
                     },
                 ));
@@ -198,10 +197,8 @@ mod tests {
         let request = match &first[0] {
             RenderCommand::Resource(ResourceCommand::CreateTexture {
                 request,
-                owner,
                 source,
             }) => {
-                assert_eq!(*owner, expected_node);
                 assert_eq!(source, "__default__");
                 *request
             }

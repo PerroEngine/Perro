@@ -251,7 +251,6 @@ mod tests {
 
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateTexture {
             request,
-            owner: node,
             source: "__default__".to_string(),
         }));
         graphics.draw_frame();
@@ -294,23 +293,19 @@ mod tests {
 
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
             request: perro_render_bridge::RenderRequestID::new(1001),
-            owner: node_a,
             source: "__cube__".to_string(),
         }));
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
             request: perro_render_bridge::RenderRequestID::new(1002),
-            owner: node_a,
             material: Material3D::default(),
             source: None,
         }));
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
             request: perro_render_bridge::RenderRequestID::new(1003),
-            owner: node_b,
             source: "res://mesh/cube.glb".to_string(),
         }));
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
             request: perro_render_bridge::RenderRequestID::new(1004),
-            owner: node_b,
             material: Material3D::default(),
             source: None,
         }));

@@ -1,4 +1,4 @@
-use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
+use perro_ids::{MaterialID, MeshID, TextureID};
 use perro_render_bridge::{RenderCommand, RenderRequestID};
 use std::collections::HashMap;
 
@@ -32,9 +32,4 @@ impl RuntimeResourceState {
         self.next_request = self.next_request.wrapping_add(1);
         request
     }
-}
-
-#[inline]
-pub(super) fn nil_owner() -> NodeID {
-    NodeID::nil()
 }
