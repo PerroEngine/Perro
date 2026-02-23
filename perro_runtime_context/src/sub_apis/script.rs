@@ -204,5 +204,89 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
     }
 }
 
+#[macro_export]
+macro_rules! with_state {
+    ($ctx:expr, $state_ty:ty, $id:expr, $f:expr) => {
+        $ctx.Scripts().with_state::<$state_ty, _, _>($id, $f)
+    };
+}
+
+#[macro_export]
+macro_rules! with_state_mut {
+    ($ctx:expr, $state_ty:ty, $id:expr, $f:expr) => {
+        $ctx.Scripts().with_state_mut::<$state_ty, _, _>($id, $f)
+    };
+}
+
+#[macro_export]
+macro_rules! attach_script {
+    ($ctx:expr, $id:expr, $path:expr) => {
+        $ctx.Scripts().attach($id, $path)
+    };
+}
+
+#[macro_export]
+macro_rules! detach_script {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Scripts().detach($id)
+    };
+}
+
+#[macro_export]
+macro_rules! get_var {
+    ($ctx:expr, $id:expr, $member:expr) => {
+        $ctx.Scripts().get_var($id, $member)
+    };
+}
+
+#[macro_export]
+macro_rules! set_var {
+    ($ctx:expr, $id:expr, $member:expr, $value:expr) => {
+        $ctx.Scripts().set_var($id, $member, $value)
+    };
+}
+
+#[macro_export]
+macro_rules! call_method {
+    ($ctx:expr, $id:expr, $method:expr, $params:expr) => {
+        $ctx.Scripts().call_method($id, $method, $params)
+    };
+}
+
+#[macro_export]
+macro_rules! attributes_of {
+    ($ctx:expr, $id:expr, $member:expr) => {
+        $ctx.Scripts().attributes_of($id, $member)
+    };
+}
+
+#[macro_export]
+macro_rules! members_with {
+    ($ctx:expr, $id:expr, $attribute:expr) => {
+        $ctx.Scripts().members_with($id, $attribute)
+    };
+}
+
+#[macro_export]
+macro_rules! has_attribute {
+    ($ctx:expr, $id:expr, $member:expr, $attribute:expr) => {
+        $ctx.Scripts().has_attribute($id, $member, $attribute)
+    };
+}
+
+#[macro_export]
+macro_rules! member {
+    ($name:expr) => {
+        ::perro_runtime_context::sub_apis::Member::new($name)
+    };
+}
+
+#[macro_export]
+macro_rules! attribute {
+    ($value:expr) => {
+        ::perro_runtime_context::sub_apis::Attribute::new($value)
+    };
+}
+
 
 

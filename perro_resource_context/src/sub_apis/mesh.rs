@@ -18,3 +18,10 @@ impl<'res, R: MeshAPI + ?Sized> MeshModule<'res, R> {
         self.api.load_mesh(source.as_ref())
     }
 }
+
+#[macro_export]
+macro_rules! load_mesh {
+    ($res:expr, $source:expr) => {
+        $res.Meshes().load($source)
+    };
+}

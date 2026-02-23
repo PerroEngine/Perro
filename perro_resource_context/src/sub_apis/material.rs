@@ -25,3 +25,10 @@ impl<'res, R: MaterialAPI + ?Sized> MaterialModule<'res, R> {
         self.api.create_material(material)
     }
 }
+
+#[macro_export]
+macro_rules! load_material {
+    ($res:expr, $source:expr) => {
+        $res.Materials().load($source)
+    };
+}

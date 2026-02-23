@@ -1,4 +1,5 @@
 pub mod variant;
+mod macros;
 pub use variant::*;
 
 #[cfg(test)]

@@ -59,6 +59,46 @@ fn format_prefixed(
     }
 }
 
+#[macro_export]
+macro_rules! log_print {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::log::print(format_args!($fmt $(, $arg)*))
+    };
+    ($message:expr) => {
+        $crate::log::print($message)
+    };
+}
+
+#[macro_export]
+macro_rules! log_info {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::log::info(format_args!($fmt $(, $arg)*))
+    };
+    ($message:expr) => {
+        $crate::log::info($message)
+    };
+}
+
+#[macro_export]
+macro_rules! log_warn {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::log::warn(format_args!($fmt $(, $arg)*))
+    };
+    ($message:expr) => {
+        $crate::log::warn($message)
+    };
+}
+
+#[macro_export]
+macro_rules! log_error {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::log::error(format_args!($fmt $(, $arg)*))
+    };
+    ($message:expr) => {
+        $crate::log::error($message)
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::{format_error, format_info, format_warn};

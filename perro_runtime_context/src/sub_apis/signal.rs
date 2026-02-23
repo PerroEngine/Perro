@@ -51,4 +51,30 @@ impl<'rt, R: SignalAPI + ?Sized> SignalModule<'rt, R> {
     }
 }
 
+#[macro_export]
+macro_rules! connect_signal {
+    ($ctx:expr, $script:expr, $signal:expr, $function:expr) => {
+        $ctx.Signals()
+            .connect($script, $signal, $function)
+    };
+}
+
+#[macro_export]
+macro_rules! disconnect_signal {
+    ($ctx:expr, $script:expr, $signal:expr, $function:expr) => {
+        $ctx.Signals()
+            .disconnect($script, $signal, $function)
+    };
+}
+
+#[macro_export]
+macro_rules! emit_signal {
+    ($ctx:expr, $signal:expr, $params:expr) => {
+        $ctx.Signals().emit($signal, $params)
+    };
+    ($ctx:expr, $signal:expr) => {
+        $ctx.Signals().emit($signal, &[])
+    };
+}
+
 

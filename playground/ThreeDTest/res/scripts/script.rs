@@ -19,11 +19,11 @@ pub struct ExampleState {
 lifecycle!({
     fn on_init(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, self_id: NodeID) {
         self.set_speed(ctx, _res, self_id, 12.0);
-        connect_signal!(ctx, self_id, sig_id!("test_signal1"), func!("set_speed"));
+        connect_signal!(ctx, self_id, signal!("test_signal1"), func!("set_speed"));
     }
 
     fn on_all_init(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {
-        emit_signal!(ctx, sig_id!("test_signal1"), params![7_f32]);
+        emit_signal!(ctx, signal!("test_signal1"), params![7_f32]);
     }
 
     fn on_update(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, self_id: NodeID) {
@@ -33,7 +33,8 @@ lifecycle!({
         }).unwrap_or_default();
         let b = with_node_mut!(ctx, SelfNodeType, self_id, |mesh| {
             mesh.rotation.rotate_z(dt * speed / 2.0);
-            mesh.position
+            mesh.position;
+            _res.Meshes().load("test.obj")
         }).unwrap_or_default();
     }
 

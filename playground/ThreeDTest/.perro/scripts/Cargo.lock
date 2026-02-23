@@ -274,6 +274,7 @@ dependencies = [
  "perro_core",
  "perro_ids",
  "perro_modules",
+ "perro_resource_context",
  "perro_runtime",
  "perro_runtime_context",
  "perro_scripting",

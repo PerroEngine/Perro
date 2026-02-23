@@ -18,3 +18,10 @@ impl<'res, R: TextureAPI + ?Sized> TextureModule<'res, R> {
         self.api.load_texture(source.as_ref())
     }
 }
+
+#[macro_export]
+macro_rules! load_texture {
+    ($res:expr, $source:expr) => {
+        $res.Textures().load($source)
+    };
+}

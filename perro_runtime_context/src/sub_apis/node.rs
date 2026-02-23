@@ -99,4 +99,67 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
     }
 }
 
+#[macro_export]
+macro_rules! with_node_mut {
+    ($ctx:expr, $node_ty:ty, $id:expr, $f:expr) => {
+        $ctx.Nodes().with_node_mut::<$node_ty, _, _>($id, $f)
+    };
+}
+
+#[macro_export]
+macro_rules! with_node {
+    ($ctx:expr, $node_ty:ty, $id:expr, $f:expr) => {
+        $ctx.Nodes().with_node::<$node_ty, _>($id, $f)
+    };
+}
+
+#[macro_export]
+macro_rules! create_node {
+    ($ctx:expr, $node_ty:ty) => {
+        $ctx.Nodes().create::<$node_ty>()
+    };
+}
+
+#[macro_export]
+macro_rules! get_node_name {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_node_name($id)
+    };
+}
+
+#[macro_export]
+macro_rules! set_node_name {
+    ($ctx:expr, $id:expr, $name:expr) => {
+        $ctx.Nodes().set_node_name($id, $name)
+    };
+}
+
+#[macro_export]
+macro_rules! get_node_parent_id {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_node_parent_id($id)
+    };
+}
+
+#[macro_export]
+macro_rules! get_node_children_ids {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_node_children_ids($id)
+    };
+}
+
+#[macro_export]
+macro_rules! reparent {
+    ($ctx:expr, $parent:expr, $child:expr) => {
+        $ctx.Nodes().reparent($parent, $child)
+    };
+}
+
+#[macro_export]
+macro_rules! reparent_multi {
+    ($ctx:expr, $parent:expr, $child_ids:expr) => {
+        $ctx.Nodes().reparent_multi($parent, $child_ids)
+    };
+}
+
 

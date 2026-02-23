@@ -25,3 +25,24 @@ impl<'rt, R: TimeAPI + ?Sized> TimeModule<'rt, R> {
         self.rt.get_elapsed()
     }
 }
+
+#[macro_export]
+macro_rules! delta_time {
+    ($ctx:expr) => {
+        $ctx.Time().get_delta()
+    };
+}
+
+#[macro_export]
+macro_rules! fixed_delta_time {
+    ($ctx:expr) => {
+        $ctx.Time().get_fixed_delta()
+    };
+}
+
+#[macro_export]
+macro_rules! elapsed_time {
+    ($ctx:expr) => {
+        $ctx.Time().get_elapsed()
+    };
+}
