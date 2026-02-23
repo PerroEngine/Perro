@@ -15,7 +15,7 @@ This structure makes it explicit when state is read or mutated, and how nodes ar
 For more details, see the full documentation: [perroengine.com/docs](https://www.perroengine.com/docs).
 
 ```rust
-use perro_context::prelude::*;
+use perro_runtime_context::prelude::*;
 use perro_core::prelude::*;
 use perro_ids::prelude::*;
 use perro_modules::prelude::*;

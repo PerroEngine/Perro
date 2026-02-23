@@ -1,6 +1,7 @@
 [workspace]
-members = ["perro_context",
+members = ["perro_runtime_context",
     "perro_app", "perro_cli", "perro_compiler", "perro_core", "perro_dev_runner", "perro_graphics", "perro_ids", "perro_io", "perro_modules", "perro_project", "perro_render_bridge", "perro_runtime", "perro_scene", "perro_scripting", "perro_scripting_macros", "perro_static_pipeline", "perro_variant",
+    "perro_resource_context",
 ]
 
 resolver = "3"
@@ -10,7 +11,7 @@ perro_core = {path = "perro_core"}
 perro_scene = {path = "perro_scene"}
 perro_ids = {path = "perro_ids"}
 perro_io = {path = "perro_io"}
-perro_context = {path = "perro_context"}
+perro_runtime_context = {path = "perro_runtime_context"}
 perro_scripting = {path = "perro_scripting"}
 perro_scripting_macros = {path = "perro_scripting_macros"}
 perro_variant = {path="perro_variant"}
@@ -24,6 +25,7 @@ perro_cli = {path="perro_cli"}
 perro_compiler = {path="perro_compiler"}
 perro_dev_runner = {path="perro_dev_runner"}
 perro_static_pipeline = {path="perro_static_pipeline"}
+perro_resource_context = {path="perro_resource_context"}
 
 [profile.release]
 opt-level = 2

@@ -1,7 +1,8 @@
-use perro_context::prelude::*;
+use perro_runtime_context::prelude::*;
 use perro_core::prelude::*;
 use perro_ids::prelude::*;
 use perro_modules::prelude::*;
+use perro_resource_context::prelude::*;
 use perro_scripting::prelude::*;
 
 // Script is authored against a node type. This default template uses Node2D.
@@ -25,7 +26,7 @@ lifecycle!({
     // `self` is the NodeID handle of the node this script is attached to.
 
     // init is called when the script instance is created. This can be used for one-time setup. State is initialized
-    fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, node: NodeID) {
+    fn on_init(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, node: NodeID) {
         // with_state! gives read-only state access and returns data from the closure.
         // with_state_mut! gives mutable state access; it can mutate and optionally return data.
         let count = with_state!(ctx, ExampleState, node, |state| {
@@ -35,13 +36,13 @@ lifecycle!({
     }
 
     // on_all_init is called after all scripts have had on_init called. This can be used for setup that requires other scripts to be initialized.
-    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
 
     // on_update is called every frame. This is where most behavior logic goes.
-    fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, node: NodeID) {
+    fn on_update(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, node: NodeID) {
         let dt = delta_time!(ctx);
         // Regular Rust method calls are for internal methods.
-        self.bump_count(ctx, node);
+        self.bump_count(ctx, _res, node);
 
         // with_node! gives read-only typed node access and returns data from the closure.
         // with_node_mut! gives mutable typed node access; it can mutate and optionally return data.
@@ -97,27 +98,31 @@ lifecycle!({
     }
 
     // on_fixed_update is called on a fixed timestep, independent of frame rate. This is useful for physics and other deterministic updates.
-    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
 
     // on_removal is called when the script instance is removed from a node or the node is removed from the scene. This can be used for cleanup.
-    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
 });
 
 methods!({
     // methods! defines callable behavior methods (local or cross-script via call_method!)...
-    fn bump_count(&self, ctx: &mut RuntimeContext<'_, R>, node: NodeID) {
+    fn bump_count(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, node: NodeID) {
         //  Use `with_state_mut!` for mutable access to state
         with_state_mut!(ctx, ExampleState, node, |state| {
             state.count += 1;
         });
     }
 
-    fn test(&self, ctx: &mut RuntimeContext<'_, R>, node: NodeID, param1: i32, msg: &str) {
+    fn test(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, node: NodeID, param1: i32, msg: &str) {
         log_info!(param1);
         log_info!(msg);
-        self.bump_count(ctx, node);
+        self.bump_count(ctx, res, node);
     }
 });
+
+
+
+
 
 
 

@@ -1,8 +1,9 @@
-use perro_context::{
+use perro_runtime_context::{
     RuntimeContext,
     sub_apis::{Attribute, Member, ScriptAPI},
 };
 use perro_ids::{NodeID, ScriptMemberID};
+use perro_resource_context::ResourceContext;
 use perro_variant::Variant;
 use std::sync::Arc;
 
@@ -39,8 +40,10 @@ impl Runtime {
         if !flags.has_all_init() {
             return;
         }
+        let resource_api = self.resource_api.clone();
+        let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
         let mut ctx = RuntimeContext::new(self);
-        behavior.on_all_init(&mut ctx, id);
+        behavior.on_all_init(&mut ctx, &res, id);
     }
 
     #[inline(always)]
@@ -52,8 +55,10 @@ impl Runtime {
         if !flags.has_removal() {
             return;
         }
+        let resource_api = self.resource_api.clone();
+        let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
         let mut ctx = RuntimeContext::new(self);
-        behavior.on_removal(&mut ctx, id);
+        behavior.on_removal(&mut ctx, &res, id);
     }
 
     #[inline(always)]
@@ -73,8 +78,10 @@ impl Runtime {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return,
         };
+        let resource_api = self.resource_api.clone();
+        let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
         let mut ctx = RuntimeContext::new(self);
-        behavior.on_update(&mut ctx, id);
+        behavior.on_update(&mut ctx, &res, id);
     }
 
     #[inline(always)]
@@ -86,8 +93,10 @@ impl Runtime {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return,
         };
+        let resource_api = self.resource_api.clone();
+        let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
         let mut ctx = RuntimeContext::new(self);
-        behavior.on_fixed_update(&mut ctx, id);
+        behavior.on_fixed_update(&mut ctx, &res, id);
     }
 }
 
@@ -157,8 +166,10 @@ impl ScriptAPI for Runtime {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return Variant::Null,
         };
+        let resource_api = self.resource_api.clone();
+        let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
         let mut ctx = RuntimeContext::new(self);
-        behavior.call_method(method, &mut ctx, script_id, params)
+        behavior.call_method(method, &mut ctx, &res, script_id, params)
     }
 
     fn attributes_of(&mut self, script_id: NodeID, member: &str) -> &'static [Attribute] {
@@ -185,6 +196,7 @@ impl ScriptAPI for Runtime {
         behavior.has_attribute(member, attribute)
     }
 }
+
 
 
 

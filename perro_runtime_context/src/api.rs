@@ -5,33 +5,34 @@ use crate::sub_apis::{
 pub trait RuntimeAPI: TimeAPI + NodeAPI + ScriptAPI + SignalAPI {}
 impl<T> RuntimeAPI for T where T: TimeAPI + NodeAPI + ScriptAPI + SignalAPI {}
 
-pub struct RuntimeContext<'rt, R: RuntimeAPI + ?Sized> {
-    rt: &'rt mut R,
+pub struct RuntimeContext<'rt, RT: RuntimeAPI + ?Sized> {
+    rt: &'rt mut RT,
 }
 
 #[allow(non_snake_case)]
-impl<'rt, R: RuntimeAPI + ?Sized> RuntimeContext<'rt, R> {
-    pub fn new(rt: &'rt mut R) -> Self {
+impl<'rt, RT: RuntimeAPI + ?Sized> RuntimeContext<'rt, RT> {
+    pub fn new(rt: &'rt mut RT) -> Self {
         Self { rt }
     }
 
     #[inline]
-    pub fn Time(&mut self) -> TimeModule<'_, R> {
+    pub fn Time(&mut self) -> TimeModule<'_, RT> {
         TimeModule::new(self.rt)
     }
 
     #[inline]
-    pub fn Nodes(&mut self) -> NodeModule<'_, R> {
+    pub fn Nodes(&mut self) -> NodeModule<'_, RT> {
         NodeModule::new(self.rt)
     }
 
     #[inline]
-    pub fn Scripts(&mut self) -> ScriptModule<'_, R> {
+    pub fn Scripts(&mut self) -> ScriptModule<'_, RT> {
         ScriptModule::new(self.rt)
     }
 
     #[inline]
-    pub fn Signals(&mut self) -> SignalModule<'_, R> {
+    pub fn Signals(&mut self) -> SignalModule<'_, RT> {
         SignalModule::new(self.rt)
     }
 }
+

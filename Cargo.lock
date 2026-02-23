@@ -1613,15 +1613,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "perro_context"
-version = "0.1.0"
-dependencies = [
- "perro_core",
- "perro_ids",
- "perro_variant",
-]
-
-[[package]]
 name = "perro_core"
 version = "0.1.0"
 dependencies = [
@@ -1688,19 +1679,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "perro_resource_context"
+version = "0.1.0"
+dependencies = [
+ "perro_ids",
+ "perro_render_bridge",
+]
+
+[[package]]
 name = "perro_runtime"
 version = "0.1.0"
 dependencies = [
  "ahash",
  "libloading",
- "perro_context",
  "perro_core",
  "perro_ids",
  "perro_io",
  "perro_project",
  "perro_render_bridge",
+ "perro_resource_context",
+ "perro_runtime_context",
  "perro_scene",
  "perro_scripting",
+ "perro_variant",
+]
+
+[[package]]
+name = "perro_runtime_context"
+version = "0.1.0"
+dependencies = [
+ "perro_core",
+ "perro_ids",
  "perro_variant",
 ]
 
@@ -1715,8 +1724,9 @@ dependencies = [
 name = "perro_scripting"
 version = "0.1.0"
 dependencies = [
- "perro_context",
  "perro_ids",
+ "perro_resource_context",
+ "perro_runtime_context",
  "perro_scripting_macros",
  "perro_variant",
 ]

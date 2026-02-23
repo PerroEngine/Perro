@@ -1,21 +1,30 @@
-use perro_context::{RuntimeContext, api::RuntimeAPI};
-use perro_context::sub_apis::{Attribute, Member};
+use perro_runtime_context::{RuntimeContext, api::RuntimeAPI};
+use perro_runtime_context::sub_apis::{Attribute, Member};
 use perro_ids::{NodeID, ScriptMemberID};
+use perro_resource_context::{ResourceContext, api::ResourceAPI};
 use perro_variant::Variant;
 use std::any::Any;
 
 #[allow(improper_ctypes_definitions)]
-pub type ScriptConstructor<R> = extern "C" fn() -> *mut dyn ScriptBehavior<R>;
+pub type ScriptConstructor<RT, RS> = extern "C" fn() -> *mut dyn ScriptBehavior<RT, RS>;
 
-pub trait ScriptLifecycle<R: RuntimeAPI + ?Sized> {
-    fn on_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
-    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
-    fn on_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
-    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
-    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+pub trait ScriptLifecycle<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized> {
+    fn on_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self_id: NodeID) {}
+    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self_id: NodeID) {}
+    fn on_update(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self_id: NodeID) {}
+    fn on_fixed_update(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _self_id: NodeID,
+    ) {
+    }
+    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self_id: NodeID) {}
 }
 
-pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
+pub trait ScriptBehavior<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized>:
+    ScriptLifecycle<RT, RS>
+{
     fn script_flags(&self) -> ScriptFlags;
     fn create_state(&self) -> Box<dyn Any> {
         Box::new(())
@@ -30,7 +39,8 @@ pub trait ScriptBehavior<R: RuntimeAPI + ?Sized>: ScriptLifecycle<R> {
     fn call_method(
         &self,
         method: ScriptMemberID,
-        ctx: &mut RuntimeContext<'_, R>,
+        ctx: &mut RuntimeContext<'_, RT>,
+        res: &ResourceContext<'_, RS>,
         self_id: NodeID,
         params: &[Variant],
     ) -> Variant;
@@ -91,6 +101,9 @@ impl ScriptFlags {
         self.0 & Self::HAS_REMOVAL != 0
     }
 }
+
+
+
 
 
 

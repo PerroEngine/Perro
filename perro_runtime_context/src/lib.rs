@@ -207,14 +207,14 @@ macro_rules! signal {
 #[macro_export]
 macro_rules! member {
     ($name:expr) => {
-        ::perro_context::sub_apis::Member::new($name)
+        ::perro_runtime_context::sub_apis::Member::new($name)
     };
 }
 
 #[macro_export]
 macro_rules! attribute {
     ($value:expr) => {
-        ::perro_context::sub_apis::Attribute::new($value)
+        ::perro_runtime_context::sub_apis::Attribute::new($value)
     };
 }
 

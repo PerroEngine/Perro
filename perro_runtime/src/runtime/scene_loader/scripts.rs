@@ -1,5 +1,6 @@
 use crate::{Runtime, runtime_project::ProviderMode};
-use perro_context::RuntimeContext;
+use perro_resource_context::ResourceContext;
+use perro_runtime_context::RuntimeContext;
 use perro_scripting::{ScriptBehavior, ScriptConstructor};
 use std::{
     fs,
@@ -66,8 +67,9 @@ impl Runtime {
             ));
         }
 
-        let behavior: Box<dyn ScriptBehavior<Self>> = unsafe { Box::from_raw(raw) };
-        let behavior: Arc<dyn ScriptBehavior<Self>> = behavior.into();
+        let behavior: Box<dyn ScriptBehavior<Self, crate::RuntimeResourceApi>> =
+            unsafe { Box::from_raw(raw) };
+        let behavior: Arc<dyn ScriptBehavior<Self, crate::RuntimeResourceApi>> = behavior.into();
         let state = behavior.create_state();
         let flags = behavior.script_flags();
         if self.scripts.get_instance(node).is_some() {
@@ -76,8 +78,10 @@ impl Runtime {
         self.scripts.insert(node, Arc::clone(&behavior), state);
 
         if flags.has_init() {
+            let resource_api = self.resource_api.clone();
+            let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
             let mut ctx = RuntimeContext::new(self);
-            behavior.on_init(&mut ctx, node);
+            behavior.on_init(&mut ctx, &res, node);
         }
         if flags.has_all_init() {
             self.queue_start_script(node);
@@ -114,7 +118,7 @@ impl Runtime {
                 usize,
                 *mut *const u8,
                 *mut usize,
-                *mut ScriptConstructor<Runtime>,
+                *mut ScriptConstructor<Runtime, crate::RuntimeResourceApi>,
             ) -> bool;
 
             if let Ok(init) = library.get::<InitFn>(b"perro_scripts_init") {
@@ -152,7 +156,8 @@ impl Runtime {
             for i in 0..registry_len() {
                 let mut ptr: *const u8 = std::ptr::null();
                 let mut len = 0usize;
-                let mut ctor = std::mem::MaybeUninit::<ScriptConstructor<Runtime>>::uninit();
+                let mut ctor =
+                    std::mem::MaybeUninit::<ScriptConstructor<Runtime, crate::RuntimeResourceApi>>::uninit();
                 let ok = registry_get(i, &mut ptr, &mut len, ctor.as_mut_ptr());
                 if !ok {
                     return Err(format!("scripts registry entry {i} could not be read"));
@@ -258,4 +263,5 @@ fn scripts_dylib_suffix() -> &'static str {
 fn scripts_dylib_suffix() -> &'static str {
     ".dylib"
 }
+
 

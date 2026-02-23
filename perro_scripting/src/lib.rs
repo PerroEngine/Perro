@@ -12,7 +12,7 @@ macro_rules! lifecycle {
         #[derive(Default)]
         struct $script_name;
 
-        impl<R: RuntimeAPI + ?Sized> ScriptLifecycle<R> for $script_name {
+        impl<RT: RuntimeAPI + ?Sized, RS: perro_resource_context::api::ResourceAPI + ?Sized> ScriptLifecycle<RT, RS> for $script_name {
             $($methods)*
         }
     };
@@ -38,16 +38,18 @@ macro_rules! __methods_internal {
         $(#[$meta:meta])*
         $vis:vis fn $name:ident(
             &$self_ident:ident,
-            $ctx:ident : &mut RuntimeContext<'_, R>,
+            $ctx:ident : &mut RuntimeContext<'_, RT>,
+            $res:ident : &ResourceContext<'_, RS>,
             $self:ident : NodeID
             $(, $arg:ident : $arg_ty:ty )* $(,)?
         ) $(-> $ret:ty)? $body:block
         $($rest:tt)*
     ) => {
         $(#[$meta])*
-        $vis fn $name<R: RuntimeAPI + ?Sized>(
+        $vis fn $name<RT: RuntimeAPI + ?Sized, RS: perro_resource_context::api::ResourceAPI + ?Sized>(
             &$self_ident,
-            $ctx: &mut RuntimeContext<'_, R>,
+            $ctx: &mut RuntimeContext<'_, RT>,
+            $res: &perro_resource_context::ResourceContext<'_, RS>,
             $self: NodeID
             $(, $arg : $arg_ty )*
         ) $(-> $ret)? $body
@@ -70,9 +72,13 @@ pub mod prelude {
     pub use crate::script_trait::{
         ScriptBehavior, ScriptConstructor, ScriptFlags, ScriptLifecycle,
     };
-    pub use perro_context::prelude::{RuntimeAPI, RuntimeContext};
+    pub use perro_runtime_context::prelude::{RuntimeAPI, RuntimeContext};
+    pub use perro_resource_context::prelude::ResourceContext;
     pub use perro_ids::prelude::{NodeID, ScriptMemberID};
     pub use perro_variant::Variant;
 }
+
+
+
 
 

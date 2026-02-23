@@ -75,7 +75,9 @@ pub struct StaticEmbeddedProject<'a> {
     pub material_lookup: perro_runtime::StaticMaterialLookup,
     pub mesh_lookup: perro_graphics::StaticMeshLookup,
     pub texture_lookup: perro_graphics::StaticTextureLookup,
-    pub static_script_registry: Option<&'static [(&'static str, ScriptConstructor<Runtime>)]>,
+    pub static_script_registry: Option<
+        &'static [(&'static str, ScriptConstructor<Runtime, perro_runtime::RuntimeResourceApi>)],
+    >,
 }
 
 pub fn run_static_embedded_project(

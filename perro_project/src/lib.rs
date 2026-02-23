@@ -400,10 +400,11 @@ fn default_main_scene() -> String {
 }
 
 pub fn default_script_example_rs() -> String {
-    r#"use perro_context::prelude::*;
+    r#"use perro_runtime_context::prelude::*;
 use perro_core::prelude::*;
 use perro_ids::prelude::*;
 use perro_modules::prelude::*;
+use perro_resource_context::prelude::*;
 use perro_scripting::prelude::*;
 
 // Script is authored against a node type. This default template uses Node2D.
@@ -427,7 +428,7 @@ lifecycle!({
     // `self` is the NodeID handle of the node this script is attached to.
 
     // init is called when the script instance is created. This can be used for one-time setup. State is initialized
-    fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, node: NodeID) {
+    fn on_init(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, node: NodeID) {
         // with_state! gives read-only state access and returns data from the closure.
         // with_state_mut! gives mutable state access; it can mutate and optionally return data.
         let count = with_state!(ctx, ExampleState, node, |state| {
@@ -437,13 +438,13 @@ lifecycle!({
     }
 
     // on_all_init is called after all scripts have had on_init called. This can be used for setup that requires other scripts to be initialized.
-    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
 
     // on_update is called every frame. This is where most behavior logic goes.
-    fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, node: NodeID) {
+    fn on_update(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, node: NodeID) {
         let dt = delta_time!(ctx);
         // Regular Rust method calls are for internal methods.
-        self.bump_count(ctx, node);
+        self.bump_count(ctx, _res, node);
 
         // with_node! gives read-only typed node access and returns data from the closure.
         // with_node_mut! gives mutable typed node access; it can mutate and optionally return data.
@@ -499,25 +500,25 @@ lifecycle!({
     }
 
     // on_fixed_update is called on a fixed timestep, independent of frame rate. This is useful for physics and other deterministic updates.
-    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
 
     // on_removal is called when the script instance is removed from a node or the node is removed from the scene. This can be used for cleanup.
-    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
 });
 
 methods!({
     // methods! defines callable behavior methods (local or cross-script via call_method!)...
-    fn bump_count(&self, ctx: &mut RuntimeContext<'_, R>, node: NodeID) {
+    fn bump_count(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, node: NodeID) {
         //  Use `with_state_mut!` for mutable access to state
         with_state_mut!(ctx, ExampleState, node, |state| {
             state.count += 1;
         });
     }
 
-    fn test(&self, ctx: &mut RuntimeContext<'_, R>, node: NodeID, param1: i32, msg: &str) {
+    fn test(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, node: NodeID, param1: i32, msg: &str) {
         log_info!(param1);
         log_info!(msg);
-        self.bump_count(ctx, node);
+        self.bump_count(ctx, res, node);
     }
 });
 "#
@@ -525,10 +526,11 @@ methods!({
 }
 
 pub fn default_script_empty_rs() -> String {
-    r#"use perro_context::prelude::*;
+    r#"use perro_runtime_context::prelude::*;
 use perro_core::prelude::*;
 use perro_ids::prelude::*;
 use perro_modules::prelude::*;
+use perro_resource_context::prelude::*;
 use perro_scripting::prelude::*;
 
 type SelfNodeType = Node2D;
@@ -537,19 +539,19 @@ type SelfNodeType = Node2D;
 pub struct EmptyState {}
 
 lifecycle!({
-    fn on_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
 
-    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
 
-    fn on_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_update(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
 
-    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
 
-    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
 });
 
 methods!({
-    fn default_method(&self, _ctx: &mut RuntimeContext<'_, R>, _self: NodeID) {}
+    fn default_method(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
 });
 "#
     .to_string()
@@ -577,7 +579,8 @@ edition = "2024"
 perro_app = "0.1.0"
 perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
-perro_context = "0.1.0"
+perro_runtime_context = "0.1.0"
+perro_resource_context = "0.1.0"
 perro_core = "0.1.0"
 perro_scene = "0.1.0"
 perro_render_bridge = "0.1.0"
@@ -611,7 +614,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
-perro_context = "0.1.0"
+perro_runtime_context = "0.1.0"
+perro_resource_context = "0.1.0"
 perro_core = "0.1.0"
 perro_modules = "0.1.0"
 perro_variant = "0.1.0"
@@ -747,10 +751,10 @@ pub fn lookup_mesh(_path: &str) -> Option<&'static [u8]> {
 }
 
 fn default_scripts_lib_rs() -> String {
-    r#"use perro_runtime::Runtime;
+    r#"use perro_runtime::{Runtime, RuntimeResourceApi};
 use perro_scripting::ScriptConstructor;
 
-pub static SCRIPT_REGISTRY: &[(&str, ScriptConstructor<Runtime>)] = &[];
+pub static SCRIPT_REGISTRY: &[(&str, ScriptConstructor<Runtime, RuntimeResourceApi>)] = &[];
 
 #[unsafe(no_mangle)]
 pub extern "C" fn perro_scripts_init() {}
@@ -1086,6 +1090,12 @@ virtual_resolution = "1920x1080"
         assert_eq!(crate_name_from_project_name("123"), "_123");
     }
 }
+
+
+
+
+
+
 
 
 

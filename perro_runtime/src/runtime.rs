@@ -1,5 +1,6 @@
 use crate::{
     NodeArena,
+    resource_api::RuntimeResourceApi,
     render_result::RuntimeRenderResult,
     runtime_project::{ProviderMode, RuntimeProject},
     signal_registry::{SignalConnection, SignalRegistry},
@@ -40,7 +41,8 @@ pub struct Runtime {
     pub(crate) signals: SignalRegistry,
     pub(crate) signal_emit_scratch: Vec<SignalConnection>,
     script_library: Option<Library>,
-    dynamic_script_registry: AHashMap<String, ScriptConstructor<Runtime>>,
+    dynamic_script_registry: AHashMap<String, ScriptConstructor<Runtime, RuntimeResourceApi>>,
+    pub(crate) resource_api: Arc<RuntimeResourceApi>,
 }
 
 pub struct Timing {
@@ -68,7 +70,7 @@ impl ScriptSchedules {
         }
     }
 
-    fn snapshot_update<R: perro_context::api::RuntimeAPI + ?Sized>(
+    fn snapshot_update<R: perro_runtime_context::api::RuntimeAPI + ?Sized>(
         &mut self,
         scripts: &ScriptCollection<R>,
     ) {
@@ -87,7 +89,7 @@ impl ScriptSchedules {
         self.update_epoch = epoch;
     }
 
-    fn snapshot_fixed<R: perro_context::api::RuntimeAPI + ?Sized>(
+    fn snapshot_fixed<R: perro_runtime_context::api::RuntimeAPI + ?Sized>(
         &mut self,
         scripts: &ScriptCollection<R>,
     ) {
@@ -328,6 +330,7 @@ impl Runtime {
             signal_emit_scratch: Vec::new(),
             script_library: None,
             dynamic_script_registry: AHashMap::default(),
+            resource_api: RuntimeResourceApi::new(),
         }
     }
 
@@ -338,7 +341,7 @@ impl Runtime {
     pub fn from_project_with_script_registry(
         project: RuntimeProject,
         provider_mode: ProviderMode,
-        script_registry: Option<&'static [(&'static str, ScriptConstructor<Self>)]>,
+        script_registry: Option<&'static [(&'static str, ScriptConstructor<Self, RuntimeResourceApi>)]>,
     ) -> Self {
         let mut runtime = Self::new();
         runtime.project = Some(Arc::new(project));
@@ -384,10 +387,16 @@ impl Runtime {
     }
 
     pub fn drain_render_commands(&mut self, out: &mut Vec<RenderCommand>) {
+        let mut queued_resource_commands = Vec::new();
+        self.resource_api.drain_commands(&mut queued_resource_commands);
+        for command in queued_resource_commands {
+            self.render.queue_command(command);
+        }
         self.render.drain_commands(out);
     }
 
     pub fn apply_render_event(&mut self, event: RenderEvent) {
+        self.resource_api.apply_render_event(&event);
         self.render.apply_event(event);
     }
 
