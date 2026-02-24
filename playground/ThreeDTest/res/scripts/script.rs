@@ -16,13 +16,14 @@ pub struct ExampleState {
 
     #[default = 0.0]
     timer: f32,
+
+
 }
 
 
 lifecycle!({
     fn on_init(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, self_id: NodeID) {
         self.set_speed(ctx, res, self_id, 5.0);
-    
         connect_signal!(ctx, self_id, signal!("test_signal1"), func!("set_speed"));
     }
 
@@ -39,7 +40,7 @@ lifecycle!({
             (state.speed, state.timer)
         }).unwrap_or_default();
 
-        if timer > 5.0 {
+        if timer > 3.0 {
             with_node_mut!(ctx, SelfNodeType, self_id, |mesh| {
                 mesh.mesh = res.Meshes().load("__sq_pyr__");
                 mesh.material = res.Materials().load("res://materials/mat.pmat");

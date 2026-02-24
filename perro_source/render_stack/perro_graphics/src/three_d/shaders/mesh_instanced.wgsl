@@ -57,6 +57,16 @@ struct VertexOutput {
     @location(5) material_params: vec4<f32>,
 };
 
+struct FragmentInput {
+    @builtin(front_facing) is_front: bool,
+    @location(0) world_pos: vec3<f32>,
+    @location(1) normal_ws: vec3<f32>,
+    @location(2) color: vec4<f32>,
+    @location(3) pbr_params: vec4<f32>,
+    @location(4) emissive_factor: vec3<f32>,
+    @location(5) material_params: vec4<f32>,
+};
+
 @vertex
 fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     let model = mat4x4<f32>(inst.model_0, inst.model_1, inst.model_2, inst.model_3);
@@ -101,6 +111,11 @@ fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
     return f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - cos_theta, 5.0);
 }
 
+fn fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> vec3<f32> {
+    let one_minus_roughness = vec3<f32>(1.0 - roughness);
+    return f0 + (max(one_minus_roughness, f0) - f0) * pow(1.0 - cos_theta, 5.0);
+}
+
 fn brdf_pbr(
     albedo: vec3<f32>,
     n: vec3<f32>,
@@ -128,9 +143,13 @@ fn brdf_pbr(
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     let albedo = in.color.rgb;
-    let n = normalize(in.normal_ws);
+    let double_sided = in.material_params.z > 0.5;
+    var n = normalize(in.normal_ws);
+    if double_sided && !in.is_front {
+        n = -n;
+    }
     let v = normalize(scene.camera_pos.xyz - in.world_pos);
     let roughness = clamp(in.pbr_params.x, 0.04, 1.0);
     let metallic = clamp(in.pbr_params.y, 0.0, 1.0);
@@ -188,7 +207,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         light_rgb += brdf_pbr(albedo, n, v, l, roughness, metallic, radiance);
     }
 
-    let ambient = albedo * scene.ambient_color.xyz * scene.ambient_color.w * ao;
-    let color = ambient + light_rgb + in.emissive_factor;
+    let f0 = mix(vec3<f32>(0.04), albedo, vec3<f32>(metallic));
+    let f_ambient = fresnel_schlick_roughness(max(dot(n, v), 0.0), f0, roughness);
+    let k_s_ambient = f_ambient;
+    let k_d_ambient = (vec3<f32>(1.0) - k_s_ambient) * (1.0 - metallic);
+    let ambient_radiance = scene.ambient_color.xyz * scene.ambient_color.w * ao;
+    let ambient_diffuse = k_d_ambient * albedo * ambient_radiance;
+    let ambient_specular = k_s_ambient * ambient_radiance * (0.25 + 0.75 * (1.0 - roughness));
+
+    let color = ambient_diffuse + ambient_specular + light_rgb + in.emissive_factor;
     return vec4<f32>(color, alpha);
 }

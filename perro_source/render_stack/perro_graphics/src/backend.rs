@@ -304,7 +304,7 @@ impl GraphicsBackend for PerroGraphics {
             self.resources.mark_material_used(draw.material);
         }
         self.frame_index = self.frame_index.wrapping_add(1);
-        if self.frame_index % GC_INTERVAL_FRAMES == 0 {
+        if self.frame_index.is_multiple_of(GC_INTERVAL_FRAMES) {
             self.resources
                 .gc_unused(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
         }

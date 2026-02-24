@@ -50,14 +50,16 @@ pub fn sync_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError> {
                 return Ok(());
             }
             let rel = path.strip_prefix(&res_dir).unwrap();
-            let dst = scripts_src.join(rel);
+            let rel_norm = rel.to_string_lossy().replace('\\', "/");
+            let generated_rel = generated_script_rel(&rel_norm);
+            let dst = scripts_src.join(&generated_rel);
             if let Some(parent) = dst.parent() {
                 fs::create_dir_all(parent)?;
             }
             let source = fs::read_to_string(path)?;
             let transformed = transpile_frontend_script(&source);
             fs::write(&dst, transformed)?;
-            copied.push(rel.to_string_lossy().replace('\\', "/"));
+            copied.push(rel_norm);
             Ok(())
         })?;
     }
@@ -256,7 +258,8 @@ fn write_scripts_lib(scripts_src: &Path, copied: &[String]) -> Result<(), Compil
 
     for rel in copied {
         let module = module_name_from_rel(rel);
-        out.push_str(&format!("#[path = \"{rel}\"]\n"));
+        let generated_rel = generated_script_rel(rel);
+        out.push_str(&format!("#[path = \"{generated_rel}\"]\n"));
         out.push_str(&format!("pub mod {module};\n\n"));
         out.push_str("#[cfg(rust_analyzer)]\n");
         out.push_str(&format!("mod __ra_{module} {{\n"));
@@ -1767,6 +1770,14 @@ fn module_name_from_rel(rel: &str) -> String {
         name.insert(0, '_');
     }
     name
+}
+
+fn generated_script_rel(rel: &str) -> String {
+    if let Some(base) = rel.strip_suffix(".rs") {
+        format!("{base}.gen.rs")
+    } else {
+        format!("{rel}.gen.rs")
+    }
 }
 
 #[allow(dead_code)]
