@@ -43,6 +43,8 @@ struct InstanceInput {
     @location(5) model_3: vec4<f32>,
     @location(6) color: vec4<f32>,
     @location(7) pbr_params: vec4<f32>,
+    @location(8) emissive_factor: vec3<f32>,
+    @location(9) material_params: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -51,6 +53,8 @@ struct VertexOutput {
     @location(1) normal_ws: vec3<f32>,
     @location(2) color: vec4<f32>,
     @location(3) pbr_params: vec4<f32>,
+    @location(4) emissive_factor: vec3<f32>,
+    @location(5) material_params: vec4<f32>,
 };
 
 @vertex
@@ -65,6 +69,8 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.normal_ws = normal_ws;
     out.color = inst.color;
     out.pbr_params = inst.pbr_params;
+    out.emissive_factor = inst.emissive_factor;
+    out.material_params = inst.material_params;
     return out;
 }
 
@@ -129,7 +135,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let roughness = clamp(in.pbr_params.x, 0.04, 1.0);
     let metallic = clamp(in.pbr_params.y, 0.0, 1.0);
     let ao = clamp(in.pbr_params.z, 0.0, 1.0);
-    let emissive = max(in.pbr_params.w, 0.0);
+    let alpha_mode = u32(in.material_params.x + 0.5);
+    let alpha_cutoff = clamp(in.material_params.y, 0.0, 1.0);
+    var alpha = clamp(in.color.a, 0.0, 1.0);
+    if alpha_mode == 1u && alpha < alpha_cutoff {
+        discard;
+    }
+    if alpha_mode == 0u {
+        alpha = 1.0;
+    }
 
     var light_rgb = vec3<f32>(0.0);
 
@@ -175,6 +189,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let ambient = albedo * scene.ambient_color.xyz * scene.ambient_color.w * ao;
-    let color = ambient + light_rgb + albedo * emissive;
-    return vec4<f32>(color, in.color.a);
+    let color = ambient + light_rgb + in.emissive_factor;
+    return vec4<f32>(color, alpha);
 }

@@ -287,6 +287,3 @@ macro_rules! attribute {
         ::perro_runtime_context::sub_apis::Attribute::new($value)
     };
 }
-
-
-

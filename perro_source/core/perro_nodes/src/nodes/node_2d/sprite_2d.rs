@@ -30,5 +30,3 @@ impl Sprite2D {
         }
     }
 }
-
-

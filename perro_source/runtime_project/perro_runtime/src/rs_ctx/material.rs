@@ -1,10 +1,12 @@
 use super::core::RuntimeResourceApi;
+use crate::material_schema;
 use perro_ids::MaterialID;
 use perro_render_bridge::{Material3D, RenderCommand, ResourceCommand};
 use perro_resource_context::sub_apis::MaterialAPI;
 
 impl MaterialAPI for RuntimeResourceApi {
     fn load_material_source(&self, source: &str) -> MaterialID {
+        let material = self.load_material_source_data(source).unwrap_or_default();
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.material_by_source.get(source).copied() {
             return id;
@@ -24,7 +26,7 @@ impl MaterialAPI for RuntimeResourceApi {
             .push(RenderCommand::Resource(ResourceCommand::CreateMaterial {
                 request,
                 id,
-                material: Material3D::default(),
+                material,
                 source: Some(source.to_string()),
                 reserved: false,
             }));
@@ -47,6 +49,7 @@ impl MaterialAPI for RuntimeResourceApi {
     }
 
     fn reserve_material_source(&self, source: &str) -> MaterialID {
+        let material = self.load_material_source_data(source).unwrap_or_default();
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.material_by_source.get(source).copied() {
             if state.material_pending_by_source.contains_key(source) {
@@ -75,7 +78,7 @@ impl MaterialAPI for RuntimeResourceApi {
             .push(RenderCommand::Resource(ResourceCommand::CreateMaterial {
                 request,
                 id,
-                material: Material3D::default(),
+                material,
                 source: Some(source.to_string()),
                 reserved: true,
             }));
@@ -99,5 +102,18 @@ impl MaterialAPI for RuntimeResourceApi {
             return true;
         }
         false
+    }
+}
+
+impl RuntimeResourceApi {
+    fn load_material_source_data(&self, source: &str) -> Option<Material3D> {
+        let source = source.trim();
+        if source.is_empty() {
+            return None;
+        }
+        if let Some(lookup) = self.static_material_lookup {
+            return lookup(source).copied();
+        }
+        material_schema::load_from_source(source)
     }
 }

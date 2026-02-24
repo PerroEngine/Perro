@@ -45,4 +45,3 @@ impl Default for SpotLight3D {
         Self::new()
     }
 }
-

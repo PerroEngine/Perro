@@ -10,7 +10,7 @@ type SelfNodeType = MeshInstance3D;
 
 #[State]
 pub struct ExampleState {
-    #[default = 5.0]
+    #[default = 0.0]
     ///@Expose
     speed: f32,
 
@@ -21,16 +21,8 @@ pub struct ExampleState {
 
 lifecycle!({
     fn on_init(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, self_id: NodeID) {
-        self.set_speed(ctx, res, self_id, 12.0);
-        with_node_mut!(ctx, SelfNodeType, self_id, |mesh| {
-                   let id = res.Meshes().load("res://models/2Noses.glb:mesh[3]");
-                   let id = res.Meshes().load("res://models/2Noses.glb:mesh[2]");
-                   log_info!(format!("Loaded mesh with id: {}", id));
-                   let id2 = res.Meshes().load("res://models/2Noses.glb:mesh[0]");
-                    log_info!(format!("Loaded mesh with id: {}", id2));
-                    mesh.mesh = id2;
-                    log_info!(mesh.mesh);
-                });
+        self.set_speed(ctx, res, self_id, 5.0);
+    
         connect_signal!(ctx, self_id, signal!("test_signal1"), func!("set_speed"));
     }
 
@@ -49,7 +41,8 @@ lifecycle!({
 
         if timer > 5.0 {
             with_node_mut!(ctx, SelfNodeType, self_id, |mesh| {
-                mesh.mesh = res.Meshes().load("res://models/2Noses.glb:mesh[1]");
+                mesh.mesh = res.Meshes().load("__sq_pyr__");
+                mesh.material = res.Materials().load("res://materials/mat.pmat");
             }).unwrap_or_default();
             with_state_mut!(ctx, ExampleState, self_id, |state| {
                 state.timer = -1.0;
@@ -58,7 +51,7 @@ lifecycle!({
 
 
         let b = with_node_mut!(ctx, SelfNodeType, self_id, |mesh| {
-            mesh.rotation.rotate_z(dt * speed / 2.0);
+            mesh.rotation.rotate_y(dt * speed / 2.0);
             mesh.position;
         }).unwrap_or_default();
     }

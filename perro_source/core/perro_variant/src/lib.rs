@@ -1,13 +1,13 @@
-pub mod variant;
 mod macros;
+pub mod variant;
 pub use variant::*;
 
 #[cfg(test)]
 mod tests {
     use std::{collections::BTreeMap, sync::Arc};
 
-    use perro_structs::{Vector2, Vector3};
     use perro_ids::{NodeID, TextureID};
+    use perro_structs::{Vector2, Vector3};
 
     use super::*;
 
@@ -336,4 +336,3 @@ mod tests {
         assert_eq!(s1, s2);
     }
 }
-

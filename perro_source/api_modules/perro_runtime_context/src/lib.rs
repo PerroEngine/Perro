@@ -10,11 +10,11 @@ pub mod prelude {
         SignalAPI, SignalModule, TimeAPI, TimeModule,
     };
     pub use crate::{
-        attach_script, attributes_of, call_method, connect_signal, create_node, delta_time,
-        detach_script, disconnect_signal, elapsed_time, emit_signal, fixed_delta_time,
-        get_node_children_ids, get_node_name, get_node_parent_id, get_var, has_attribute,
-        member, members_with, reparent, reparent_multi, set_node_name, set_var, with_node,
-        with_node_mut, with_state, with_state_mut, attribute,
+        attach_script, attribute, attributes_of, call_method, connect_signal, create_node,
+        delta_time, detach_script, disconnect_signal, elapsed_time, emit_signal, fixed_delta_time,
+        get_node_children_ids, get_node_name, get_node_parent_id, get_var, has_attribute, member,
+        members_with, reparent, reparent_multi, set_node_name, set_var, with_node, with_node_mut,
+        with_state, with_state_mut,
     };
     pub use perro_ids::{func, method, sid, signal, smid, var};
     pub use perro_variant::{params, variant};
@@ -23,8 +23,8 @@ pub mod prelude {
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
-    use perro_nodes::prelude::Node2D;
     use perro_ids::NodeID;
+    use perro_nodes::prelude::Node2D;
     use std::any::Any;
 
     struct DummyRuntime {
@@ -59,11 +59,7 @@ mod tests {
             None
         }
 
-        fn with_node<T, V: Clone + Default>(
-            &mut self,
-            _node: NodeID,
-            _f: impl FnOnce(&T) -> V,
-        ) -> V
+        fn with_node<T, V: Clone + Default>(&mut self, _node: NodeID, _f: impl FnOnce(&T) -> V) -> V
         where
             T: perro_nodes::NodeTypeDispatch,
         {
@@ -153,28 +149,15 @@ mod tests {
             perro_variant::Variant::Null
         }
 
-        fn attributes_of(
-            &mut self,
-            _script: NodeID,
-            _member: &str,
-        ) -> &'static [Attribute] {
+        fn attributes_of(&mut self, _script: NodeID, _member: &str) -> &'static [Attribute] {
             &[]
         }
 
-        fn members_with(
-            &mut self,
-            _script: NodeID,
-            _attribute: &str,
-        ) -> &'static [Member] {
+        fn members_with(&mut self, _script: NodeID, _attribute: &str) -> &'static [Member] {
             &[]
         }
 
-        fn has_attribute(
-            &mut self,
-            _script: NodeID,
-            _member: &str,
-            _attribute: &str,
-        ) -> bool {
+        fn has_attribute(&mut self, _script: NodeID, _member: &str, _attribute: &str) -> bool {
             false
         }
     }
@@ -246,10 +229,7 @@ mod tests {
         assert_eq!(member, var_member);
         assert_eq!(member, method_member);
         assert_eq!(member, func_member);
-        assert_eq!(
-            signal_member,
-            perro_ids::SignalID::from_string("on_test")
-        );
+        assert_eq!(signal_member, perro_ids::SignalID::from_string("on_test"));
         let _value = get_var!(&mut ctx, id, member);
         set_var!(&mut ctx, id, member, variant!(perro_variant::Variant::Null));
         set_var!(&mut ctx, id, member, variant!(77_i32));
@@ -270,7 +250,10 @@ mod tests {
             signal!("on_test"),
             method!("handle")
         ));
-        assert_eq!(emit_signal!(&mut ctx, signal!("on_test"), params![1_i32]), 1);
+        assert_eq!(
+            emit_signal!(&mut ctx, signal!("on_test"), params![1_i32]),
+            1
+        );
         assert_eq!(emit_signal!(&mut ctx, signal!("on_test")), 1);
 
         let dt = delta_time!(&mut ctx);
@@ -281,5 +264,3 @@ mod tests {
         assert_eq!(elapsed, 1.0);
     }
 }
-
-

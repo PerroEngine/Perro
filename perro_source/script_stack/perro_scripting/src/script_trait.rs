@@ -1,7 +1,7 @@
-use perro_runtime_context::{RuntimeContext, api::RuntimeAPI};
-use perro_runtime_context::sub_apis::{Attribute, Member};
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_resource_context::{ResourceContext, api::ResourceAPI};
+use perro_runtime_context::sub_apis::{Attribute, Member};
+use perro_runtime_context::{RuntimeContext, api::RuntimeAPI};
 use perro_variant::Variant;
 use std::any::Any;
 
@@ -9,9 +9,27 @@ use std::any::Any;
 pub type ScriptConstructor<RT, RS> = extern "C" fn() -> *mut dyn ScriptBehavior<RT, RS>;
 
 pub trait ScriptLifecycle<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized> {
-    fn on_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self_id: NodeID) {}
-    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self_id: NodeID) {}
-    fn on_update(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self_id: NodeID) {}
+    fn on_init(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _self_id: NodeID,
+    ) {
+    }
+    fn on_all_init(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _self_id: NodeID,
+    ) {
+    }
+    fn on_update(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _self_id: NodeID,
+    ) {
+    }
     fn on_fixed_update(
         &self,
         _ctx: &mut RuntimeContext<'_, RT>,
@@ -19,7 +37,13 @@ pub trait ScriptLifecycle<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized> {
         _self_id: NodeID,
     ) {
     }
-    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self_id: NodeID) {}
+    fn on_removal(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _self_id: NodeID,
+    ) {
+    }
 }
 
 pub trait ScriptBehavior<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized>:
@@ -44,19 +68,9 @@ pub trait ScriptBehavior<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized>:
         self_id: NodeID,
         params: &[Variant],
     ) -> Variant;
-    fn attributes_of(
-        &self,
-        member: &str,
-    ) -> &'static [Attribute];
-    fn members_with(
-        &self,
-        attribute: &str,
-    ) -> &'static [Member];
-    fn has_attribute(
-        &self,
-        member: &str,
-        attribute: &str,
-    ) -> bool;
+    fn attributes_of(&self, member: &str) -> &'static [Attribute];
+    fn members_with(&self, attribute: &str) -> &'static [Member];
+    fn has_attribute(&self, member: &str, attribute: &str) -> bool;
 }
 
 /// Bitflags to track which lifecycle methods are implemented by a script.
@@ -101,9 +115,3 @@ impl ScriptFlags {
         self.0 & Self::HAS_REMOVAL != 0
     }
 }
-
-
-
-
-
-

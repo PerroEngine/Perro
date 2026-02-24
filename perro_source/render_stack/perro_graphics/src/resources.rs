@@ -443,7 +443,11 @@ impl ResourceStore {
             }
         }
         for id in drop_textures {
-            let source = self.texture_source_by.get(&id).map(String::as_str).unwrap_or("<unknown>");
+            let source = self
+                .texture_source_by
+                .get(&id)
+                .map(String::as_str)
+                .unwrap_or("<unknown>");
             self.log_auto_drop("texture", id.index(), id.generation(), source, ttl_frames);
             let _ = self.drop_texture_inner(id, false);
         }
@@ -459,7 +463,11 @@ impl ResourceStore {
             }
         }
         for id in drop_meshes {
-            let source = self.mesh_source_by.get(&id).map(String::as_str).unwrap_or("<unknown>");
+            let source = self
+                .mesh_source_by
+                .get(&id)
+                .map(String::as_str)
+                .unwrap_or("<unknown>");
             self.log_auto_drop("mesh", id.index(), id.generation(), source, ttl_frames);
             let _ = self.drop_mesh_inner(id, false);
         }
@@ -475,7 +483,11 @@ impl ResourceStore {
             }
         }
         for id in drop_materials {
-            let source = self.material_source_by.get(&id).map(String::as_str).unwrap_or("<inline>");
+            let source = self
+                .material_source_by
+                .get(&id)
+                .map(String::as_str)
+                .unwrap_or("<inline>");
             self.log_auto_drop("material", id.index(), id.generation(), source, ttl_frames);
             let _ = self.drop_material_inner(id, false);
         }
@@ -605,7 +617,6 @@ impl ResourceStore {
     }
 
     fn log_manual_drop(&self, _kind: &str, _index: u32, _generation: u32, _source: &str) {}
-
 }
 
 #[cfg(test)]

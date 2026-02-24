@@ -354,17 +354,16 @@ fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<(String, RuntimeVal
         }
     }
 
-    if !rotation_present
-        && let Some((x_deg, y_deg, z_deg)) = rotation_deg_xyz {
-            fields.push((
-                "rotation".to_string(),
-                euler_xyz_radians_to_quat_value(
-                    x_deg.to_radians(),
-                    y_deg.to_radians(),
-                    z_deg.to_radians(),
-                ),
-            ));
-        }
+    if !rotation_present && let Some((x_deg, y_deg, z_deg)) = rotation_deg_xyz {
+        fields.push((
+            "rotation".to_string(),
+            euler_xyz_radians_to_quat_value(
+                x_deg.to_radians(),
+                y_deg.to_radians(),
+                z_deg.to_radians(),
+            ),
+        ));
+    }
 
     fields.retain(|(name, _)| name != "rotation_deg");
 }

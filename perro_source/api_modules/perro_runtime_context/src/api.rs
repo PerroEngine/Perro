@@ -35,4 +35,3 @@ impl<'rt, RT: RuntimeAPI + ?Sized> RuntimeContext<'rt, RT> {
         SignalModule::new(self.rt)
     }
 }
-

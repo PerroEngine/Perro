@@ -1,15 +1,18 @@
 use super::state::RuntimeResourceState;
+use crate::runtime_project::StaticMaterialLookup;
 use perro_render_bridge::{RenderCommand, RenderEvent};
 use std::sync::{Arc, Mutex};
 
 pub struct RuntimeResourceApi {
     pub(super) state: Mutex<RuntimeResourceState>,
+    pub(super) static_material_lookup: Option<StaticMaterialLookup>,
 }
 
 impl RuntimeResourceApi {
-    pub(crate) fn new() -> Arc<Self> {
+    pub(crate) fn new(static_material_lookup: Option<StaticMaterialLookup>) -> Arc<Self> {
         Arc::new(Self {
             state: Mutex::new(RuntimeResourceState::new()),
+            static_material_lookup,
         })
     }
 

@@ -87,7 +87,9 @@ fn print_usage() {
     eprintln!("  perro_cli project [--path <project_dir>] # full static project bundle + build");
     eprintln!("  perro_cli dev [--path <project_dir>] [--name <project_name>]");
     eprintln!("  perro_cli run [--path <project_dir>]     # alias for build scripts");
-    eprintln!("  perro_cli --path <project_dir|res|res/scripts> --script-new [<name.rs|res://scripts/name.rs>]");
+    eprintln!(
+        "  perro_cli --path <project_dir|res|res/scripts> --script-new [<name.rs|res://scripts/name.rs>]"
+    );
     eprintln!(
         "  perro_cli --path <project_dir|res|res/scripts> --script-template [<name.rs|res://scripts/name.rs>]"
     );
@@ -240,7 +242,9 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     log_done("Dev Runner Built");
 
     let runner_path = if cfg!(target_os = "windows") {
-        root.join("target").join("release").join("perro_dev_runner.exe")
+        root.join("target")
+            .join("release")
+            .join("perro_dev_runner.exe")
     } else {
         root.join("target").join("release").join("perro_dev_runner")
     };
@@ -326,12 +330,8 @@ fn create_script_command(args: &[String], cwd: &Path, contents: &str) -> Result<
         })?;
     }
 
-    fs::write(&script_path, contents).map_err(|err| {
-        format!(
-            "failed to write script at {}: {err}",
-            script_path.display()
-        )
-    })?;
+    fs::write(&script_path, contents)
+        .map_err(|err| format!("failed to write script at {}: {err}", script_path.display()))?;
 
     sync_scripts(&project_dir).map_err(|err| {
         format!(
@@ -345,9 +345,7 @@ fn create_script_command(args: &[String], cwd: &Path, contents: &str) -> Result<
 }
 
 fn resolve_script_roots_for_create(path: &Path) -> Result<(PathBuf, PathBuf), String> {
-    let path = path
-        .canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf());
+    let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
 
     // `--path` can point at project root, `res`, or `res/scripts`.
     if path.join("project.toml").exists() {
@@ -425,7 +423,10 @@ fn normalize_script_rel_path(input: &str) -> Result<PathBuf, String> {
     }
 
     let path = PathBuf::from(rel);
-    if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
         return Err("script path cannot contain parent-directory segments".to_string());
     }
     Ok(path)

@@ -1,5 +1,5 @@
-use perro_nodes::SceneNode;
 use perro_ids::NodeID;
+use perro_nodes::SceneNode;
 
 pub struct NodeArena {
     nodes: Vec<Option<SceneNode>>,

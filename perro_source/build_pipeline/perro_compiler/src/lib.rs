@@ -526,7 +526,10 @@ fn has_nonempty_lifecycle_method(source: &str, method_name: &str) -> bool {
     false
 }
 
-fn extract_method_body_from_fn_start(source: &str, fn_start: usize) -> Option<std::ops::Range<usize>> {
+fn extract_method_body_from_fn_start(
+    source: &str,
+    fn_start: usize,
+) -> Option<std::ops::Range<usize>> {
     let after_fn = &source[fn_start..];
     let sig_open_rel = after_fn.find('(')?;
     let sig_open = fn_start + sig_open_rel;
@@ -592,9 +595,10 @@ fn block_has_non_comment_tokens(block: &str) -> bool {
 fn parse_named_struct(source: &str, expected: &str) -> Option<String> {
     for line in source.lines() {
         if let Some(name) = parse_struct_name(line.trim())
-            && name == expected {
-                return Some(name);
-            }
+            && name == expected
+        {
+            return Some(name);
+        }
     }
     None
 }
@@ -602,9 +606,10 @@ fn parse_named_struct(source: &str, expected: &str) -> Option<String> {
 fn first_non_state_struct(source: &str, state_ty: &str) -> Option<String> {
     for line in source.lines() {
         if let Some(name) = parse_struct_name(line.trim())
-            && name != state_ty {
-                return Some(name);
-            }
+            && name != state_ty
+        {
+            return Some(name);
+        }
     }
     None
 }
@@ -687,11 +692,12 @@ fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<StateField> {
                 depth = 1;
                 let rest = &line[pos + 1..];
                 if depth == 1
-                    && let Some(mut field) = parse_field_line(rest) {
-                        apply_field_attrs(&mut field, &pending_attrs);
-                        pending_attrs.clear();
-                        fields.push(field);
-                    }
+                    && let Some(mut field) = parse_field_line(rest)
+                {
+                    apply_field_attrs(&mut field, &pending_attrs);
+                    pending_attrs.clear();
+                    fields.push(field);
+                }
                 depth += brace_delta(rest);
                 if depth <= 0 {
                     break;
@@ -702,11 +708,12 @@ fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<StateField> {
         }
 
         if depth == 1
-            && let Some(mut field) = parse_field_line(line) {
-                apply_field_attrs(&mut field, &pending_attrs);
-                pending_attrs.clear();
-                fields.push(field);
-            }
+            && let Some(mut field) = parse_field_line(line)
+        {
+            apply_field_attrs(&mut field, &pending_attrs);
+            pending_attrs.clear();
+            fields.push(field);
+        }
         depth += brace_delta(line);
         if depth <= 0 {
             break;
@@ -892,7 +899,8 @@ fn generate_member_consts(fields: &[StateField], methods: &[ScriptMethod]) -> St
 
 fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
     if methods.is_empty() {
-        return "        let _ = (method, ctx, res, self_id, params);\n        Variant::Null".to_string();
+        return "        let _ = (method, ctx, res, self_id, params);\n        Variant::Null"
+            .to_string();
     }
 
     let mut out = String::new();
@@ -980,19 +988,23 @@ fn parse_inherent_methods(source: &str, struct_name: &str) -> Vec<ScriptMethod> 
 
         while i < lines.len() {
             let raw_line = lines[i];
-            if opened && depth == 1
-                && let Some(attr) = parse_transpiler_attr_name(raw_line.trim()) {
-                    pending_attrs.push(attr);
-                    i += 1;
-                    continue;
-                }
+            if opened
+                && depth == 1
+                && let Some(attr) = parse_transpiler_attr_name(raw_line.trim())
+            {
+                pending_attrs.push(attr);
+                i += 1;
+                continue;
+            }
             let l = strip_line_comment(raw_line);
-            if opened && depth == 1
-                && let Some(mut method) = parse_script_method_signature(l.trim()) {
-                    method.attrs = dedup_attrs(&pending_attrs);
-                    pending_attrs.clear();
-                    methods.push(method);
-                }
+            if opened
+                && depth == 1
+                && let Some(mut method) = parse_script_method_signature(l.trim())
+            {
+                method.attrs = dedup_attrs(&pending_attrs);
+                pending_attrs.clear();
+                methods.push(method);
+            }
 
             if !opened && l.contains('{') {
                 opened = true;
@@ -1068,9 +1080,10 @@ fn parse_methods_macro_methods(source: &str, struct_name: &str) -> Vec<ScriptMet
 
         let inner = &source[open_paren + 1..close_paren];
         if let Some((target_name, body)) = parse_methods_macro_inner(inner)
-            && target_name == struct_name {
-                methods.extend(parse_methods_block_signatures(body));
-            }
+            && target_name == struct_name
+        {
+            methods.extend(parse_methods_block_signatures(body));
+        }
 
         search_from = close_paren + 1;
     }
@@ -1152,17 +1165,19 @@ fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
 
     for line in body.lines() {
         if depth == 0
-            && let Some(attr) = parse_transpiler_attr_name(line.trim()) {
-                pending_attrs.push(attr);
-                continue;
-            }
+            && let Some(attr) = parse_transpiler_attr_name(line.trim())
+        {
+            pending_attrs.push(attr);
+            continue;
+        }
         let l = strip_line_comment(line);
         if depth == 0
-            && let Some(mut method) = parse_script_method_signature(l.trim()) {
-                method.attrs = dedup_attrs(&pending_attrs);
-                pending_attrs.clear();
-                methods.push(method);
-            }
+            && let Some(mut method) = parse_script_method_signature(l.trim())
+        {
+            method.attrs = dedup_attrs(&pending_attrs);
+            pending_attrs.clear();
+            methods.push(method);
+        }
         depth += brace_delta(l);
     }
 
@@ -1664,9 +1679,7 @@ fn generate_attributes_of_body(fields: &[StateField], methods: &[ScriptMethod]) 
     out.push_str("        match member {\n");
     for name in member_attrs.keys() {
         let const_name = format!("__PERRO_MEMBER_ATTRS_{}", sanitize_const_suffix(name));
-        out.push_str(&format!(
-            "            \"{name}\" => {const_name},\n"
-        ));
+        out.push_str(&format!("            \"{name}\" => {const_name},\n"));
     }
     out.push_str("            _ => &[],\n");
     out.push_str("        }");
@@ -1682,7 +1695,10 @@ fn generate_members_with_body(fields: &[StateField], methods: &[ScriptMethod]) -
     let mut by_attr: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (member, attrs) in &member_attrs {
         for attr in attrs {
-            by_attr.entry(attr.clone()).or_default().push(member.clone());
+            by_attr
+                .entry(attr.clone())
+                .or_default()
+                .push(member.clone());
         }
     }
 
@@ -1757,9 +1773,3 @@ fn module_name_from_rel(rel: &str) -> String {
 fn rel_to_path(base: &Path, rel: &str) -> PathBuf {
     base.join(rel.replace('/', "\\"))
 }
-
-
-
-
-
-

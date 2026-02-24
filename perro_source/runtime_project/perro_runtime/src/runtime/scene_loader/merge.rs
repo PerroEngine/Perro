@@ -1,7 +1,7 @@
 use super::prepare::PreparedScene;
 use crate::Runtime;
-use perro_nodes::{SceneNode, SceneNodeData};
 use perro_ids::NodeID;
+use perro_nodes::{SceneNode, SceneNodeData};
 use std::{borrow::Cow, collections::HashMap};
 
 pub(super) fn merge_prepared_scene(

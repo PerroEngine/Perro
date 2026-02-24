@@ -31,5 +31,3 @@ impl MeshInstance3D {
         }
     }
 }
-
-

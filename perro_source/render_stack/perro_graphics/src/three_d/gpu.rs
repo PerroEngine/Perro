@@ -66,12 +66,15 @@ struct InstanceGpu {
     model_2: [f32; 4],
     model_3: [f32; 4],
     color: [f32; 4],
-    pbr_params: [f32; 4], // roughness, metallic, occlusion_strength, emissive_strength
+    pbr_params: [f32; 4], // roughness, metallic, occlusion_strength, normal_scale
+    emissive_factor: [f32; 3], // rgb
+    material_params: [f32; 4], // alpha_mode, alpha_cutoff, double_sided, reserved
 }
 
 pub struct Gpu3D {
     camera_bgl: wgpu::BindGroupLayout,
-    pipeline: wgpu::RenderPipeline,
+    pipeline_culled: wgpu::RenderPipeline,
+    pipeline_double_sided: wgpu::RenderPipeline,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     instance_buffer: wgpu::Buffer,
@@ -115,6 +118,7 @@ struct DrawBatch {
     mesh: MeshRange,
     instance_start: u32,
     instance_count: u32,
+    double_sided: bool,
 }
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
@@ -170,12 +174,21 @@ impl Gpu3D {
             bind_group_layouts: &[&camera_bgl],
             immediate_size: 0,
         });
-        let pipeline = create_pipeline(
+        let pipeline_culled = create_pipeline(
             device,
             &pipeline_layout,
             &shader,
             color_format,
             sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_double_sided = create_pipeline(
+            device,
+            &pipeline_layout,
+            &shader,
+            color_format,
+            sample_count,
+            None,
         );
 
         let (vertices, indices, builtin_mesh_ranges) = build_builtin_mesh_buffer();
@@ -204,7 +217,8 @@ impl Gpu3D {
 
         Self {
             camera_bgl,
-            pipeline,
+            pipeline_culled,
+            pipeline_double_sided,
             camera_buffer,
             camera_bind_group,
             instance_buffer,
@@ -258,12 +272,21 @@ impl Gpu3D {
             bind_group_layouts: &[&self.camera_bgl],
             immediate_size: 0,
         });
-        self.pipeline = create_pipeline(
+        self.pipeline_culled = create_pipeline(
             device,
             &pipeline_layout,
             &shader,
             color_format,
             sample_count,
+            Some(wgpu::Face::Back),
+        );
+        self.pipeline_double_sided = create_pipeline(
+            device,
+            &pipeline_layout,
+            &shader,
+            color_format,
+            sample_count,
+            None,
         );
         let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
         self.depth_texture = depth_texture;
@@ -272,12 +295,7 @@ impl Gpu3D {
         self.sample_count = sample_count;
     }
 
-    pub fn prepare(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        frame: Prepare3D<'_>,
-    ) {
+    pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: Prepare3D<'_>) {
         let Prepare3D {
             resources,
             camera,
@@ -313,9 +331,7 @@ impl Gpu3D {
             let mesh = self
                 .resolve_mesh_range(device, queue, source, static_mesh_lookup)
                 .unwrap_or(default_mesh);
-            let material = resources
-                .material(draw.material)
-                .unwrap_or_default();
+            let material = resources.material(draw.material).unwrap_or_default();
             let instance = self.staged_instances.len() as u32;
             self.staged_instances.push(InstanceGpu {
                 model_0: draw.model[0],
@@ -327,26 +343,31 @@ impl Gpu3D {
                     material.roughness_factor,
                     material.metallic_factor,
                     material.occlusion_strength,
-                    material
-                        .emissive_factor
-                        .iter()
-                        .copied()
-                        .fold(0.0_f32, f32::max),
+                    material.normal_scale,
+                ],
+                emissive_factor: material.emissive_factor,
+                material_params: [
+                    material.alpha_mode as f32,
+                    material.alpha_cutoff,
+                    if material.double_sided { 1.0 } else { 0.0 },
+                    0.0,
                 ],
             });
             if let Some(batch) = self.draw_batches.last_mut()
                 && batch.mesh.index_start == mesh.index_start
-                    && batch.mesh.index_count == mesh.index_count
-                    && batch.mesh.base_vertex == mesh.base_vertex
-                    && batch.instance_start + batch.instance_count == instance
-                {
-                    batch.instance_count += 1;
-                    continue;
-                }
+                && batch.mesh.index_count == mesh.index_count
+                && batch.mesh.base_vertex == mesh.base_vertex
+                && batch.double_sided == material.double_sided
+                && batch.instance_start + batch.instance_count == instance
+            {
+                batch.instance_count += 1;
+                continue;
+            }
             self.draw_batches.push(DrawBatch {
                 mesh,
                 instance_start: instance,
                 instance_count: 1,
+                double_sided: material.double_sided,
             });
         }
         if !self.staged_instances.is_empty() {
@@ -390,12 +411,21 @@ impl Gpu3D {
         if self.draw_batches.is_empty() {
             return;
         }
-        pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.camera_bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        let mut current_double_sided = None;
         for batch in &self.draw_batches {
+            if current_double_sided != Some(batch.double_sided) {
+                let pipeline = if batch.double_sided {
+                    &self.pipeline_double_sided
+                } else {
+                    &self.pipeline_culled
+                };
+                pass.set_pipeline(pipeline);
+                current_double_sided = Some(batch.double_sided);
+            }
             let start = batch.mesh.index_start;
             let end = start + batch.mesh.index_count;
             let instances = batch.instance_start..batch.instance_start + batch.instance_count;
@@ -463,7 +493,8 @@ impl Gpu3D {
         let new_index_len = self.mesh_indices.len() + added_indices.len();
         let grew = self.ensure_mesh_buffer_capacity(device, new_vertex_len, new_index_len);
 
-        let vertex_offset = self.mesh_vertices.len() as u64 * std::mem::size_of::<MeshVertex>() as u64;
+        let vertex_offset =
+            self.mesh_vertices.len() as u64 * std::mem::size_of::<MeshVertex>() as u64;
         let index_offset = self.mesh_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
 
         self.mesh_vertices.extend_from_slice(&added_vertices);
@@ -515,7 +546,8 @@ impl Gpu3D {
         }
 
         if grew {
-            let mut vertex_bytes = vec![0u8; self.vertex_capacity * std::mem::size_of::<MeshVertex>()];
+            let mut vertex_bytes =
+                vec![0u8; self.vertex_capacity * std::mem::size_of::<MeshVertex>()];
             let used_vertex_bytes = bytemuck::cast_slice(&self.mesh_vertices);
             vertex_bytes[..used_vertex_bytes.len()].copy_from_slice(used_vertex_bytes);
             self.vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -544,9 +576,10 @@ fn load_mesh_from_source(
 ) -> Option<DecodedMesh> {
     if let Some(lookup) = static_mesh_lookup
         && let Some(bytes) = lookup(source)
-            && let Some(decoded) = decode_pmesh(bytes) {
-                return Some(decoded);
-            }
+        && let Some(decoded) = decode_pmesh(bytes)
+    {
+        return Some(decoded);
+    }
 
     let (path, fragment) = split_source_fragment(source);
     if path.ends_with(".pmesh") {
@@ -573,8 +606,6 @@ pub(crate) fn validate_mesh_source(
     }
     Err(format!("mesh source failed to decode: {}", source))
 }
-
-
 
 fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
     let Some((path, selector)) = source.rsplit_once(':') else {
@@ -708,6 +739,7 @@ fn create_pipeline(
     shader: &wgpu::ShaderModule,
     color_format: wgpu::TextureFormat,
     sample_count: u32,
+    cull_mode: Option<wgpu::Face>,
 ) -> wgpu::RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("perro_mesh_pipeline"),
@@ -766,6 +798,16 @@ fn create_pipeline(
                             shader_location: 7,
                             format: wgpu::VertexFormat::Float32x4,
                         },
+                        wgpu::VertexAttribute {
+                            offset: 96,
+                            shader_location: 8,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 108,
+                            shader_location: 9,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
                     ],
                 },
             ],
@@ -785,7 +827,7 @@ fn create_pipeline(
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
-            cull_mode: Some(wgpu::Face::Back),
+            cull_mode,
             unclipped_depth: false,
             polygon_mode: wgpu::PolygonMode::Fill,
             conservative: false,

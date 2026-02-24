@@ -216,4 +216,3 @@ impl ScriptMemberID {
         Self(string_to_u64(s))
     }
 }
-

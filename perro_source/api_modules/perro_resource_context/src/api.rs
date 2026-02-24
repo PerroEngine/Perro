@@ -1,4 +1,6 @@
-use crate::sub_apis::{MaterialAPI, MaterialModule, MeshAPI, MeshModule, TextureAPI, TextureModule};
+use crate::sub_apis::{
+    MaterialAPI, MaterialModule, MeshAPI, MeshModule, TextureAPI, TextureModule,
+};
 
 pub trait ResourceAPI: TextureAPI + MeshAPI + MaterialAPI + Send + Sync {}
 impl<T> ResourceAPI for T where T: TextureAPI + MeshAPI + MaterialAPI + Send + Sync {}

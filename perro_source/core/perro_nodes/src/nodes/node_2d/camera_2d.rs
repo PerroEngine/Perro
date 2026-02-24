@@ -31,4 +31,3 @@ impl Camera2D {
         }
     }
 }
-

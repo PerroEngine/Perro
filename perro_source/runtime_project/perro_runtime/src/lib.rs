@@ -1,4 +1,5 @@
 mod cns;
+mod material_schema;
 mod render_result;
 mod rs_ctx;
 mod runtime;

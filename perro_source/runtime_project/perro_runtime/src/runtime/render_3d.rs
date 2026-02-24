@@ -1,12 +1,11 @@
 use super::Runtime;
-use perro_nodes::SceneNodeData;
+use crate::material_schema;
 use perro_ids::{MaterialID, MeshID, NodeID};
-use perro_io::load_asset;
+use perro_nodes::SceneNodeData;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, Command3D, Material3D, PointLight3DState, RayLight3DState,
     RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
 };
-use perro_scene::{Parser, RuntimeValue};
 
 impl Runtime {
     fn mesh_request(node: NodeID) -> RenderRequestID {
@@ -303,7 +302,7 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
     }
 
     if path.ends_with(".pmat") {
-        return load_pmat(path);
+        return material_schema::load_from_source(path);
     }
 
     if path.ends_with(".glb") || path.ends_with(".gltf") {
@@ -344,183 +343,14 @@ fn parse_fragment_index(fragment: Option<&str>, keys: &[&str]) -> Option<u32> {
     None
 }
 
-fn load_pmat(source: &str) -> Option<Material3D> {
-    let bytes = load_asset(source).ok()?;
-    let text = std::str::from_utf8(&bytes).ok()?;
-    let value = std::panic::catch_unwind(|| Parser::new(text).parse_value_literal()).ok()?;
-    material_from_runtime_value(&value)
-}
-
-fn material_from_runtime_value(value: &RuntimeValue) -> Option<Material3D> {
-    let RuntimeValue::Object(entries) = value else {
-        return None;
-    };
-    let mut out = Material3D::default();
-    let mut any = false;
-    apply_runtime_material_entries(entries, &mut out, &mut any);
-    any.then_some(out)
-}
-
-fn apply_runtime_material_entries(
-    entries: &[(String, RuntimeValue)],
-    out: &mut Material3D,
-    any: &mut bool,
-) {
-    for (name, value) in entries {
-        match name.as_str() {
-            "roughnessFactor" => {
-                if let Some(v) = runtime_as_f32(value) {
-                    out.roughness_factor = v;
-                    *any = true;
-                }
-            }
-            "metallicFactor" => {
-                if let Some(v) = runtime_as_f32(value) {
-                    out.metallic_factor = v;
-                    *any = true;
-                }
-            }
-            "occlusionStrength" => {
-                if let Some(v) = runtime_as_f32(value) {
-                    out.occlusion_strength = v;
-                    *any = true;
-                }
-            }
-            "emissiveFactor" => {
-                if let Some(v) = runtime_as_color4(value) {
-                    out.emissive_factor = [v[0], v[1], v[2]];
-                    *any = true;
-                }
-            }
-            "baseColorFactor" => {
-                if let Some(color) = runtime_as_color4(value) {
-                    out.base_color_factor = color;
-                    *any = true;
-                }
-            }
-            "normalScale" => {
-                if let Some(v) = runtime_as_f32(value) {
-                    out.normal_scale = v;
-                    *any = true;
-                }
-            }
-            "alphaCutoff" => {
-                if let Some(v) = runtime_as_f32(value) {
-                    out.alpha_cutoff = v;
-                    *any = true;
-                }
-            }
-            "alphaMode" => {
-                if let Some(mode) = runtime_as_alpha_mode(value) {
-                    out.alpha_mode = mode;
-                    *any = true;
-                }
-            }
-            "doubleSided" => {
-                if let Some(v) = runtime_as_bool(value) {
-                    out.double_sided = v;
-                    *any = true;
-                }
-            }
-            "baseColorTexture" => {
-                if let Some(index) = runtime_as_texture_index(value) {
-                    out.base_color_texture = index;
-                    *any = true;
-                }
-            }
-            "metallicRoughnessTexture" => {
-                if let Some(index) = runtime_as_texture_index(value) {
-                    out.metallic_roughness_texture = index;
-                    *any = true;
-                }
-            }
-            "normalTexture" => {
-                if let Some(index) = runtime_as_texture_index(value) {
-                    out.normal_texture = index;
-                    *any = true;
-                }
-            }
-            "occlusionTexture" => {
-                if let Some(index) = runtime_as_texture_index(value) {
-                    out.occlusion_texture = index;
-                    *any = true;
-                }
-            }
-            "emissiveTexture" => {
-                if let Some(index) = runtime_as_texture_index(value) {
-                    out.emissive_texture = index;
-                    *any = true;
-                }
-            }
-            "pbrMetallicRoughness" => {
-                if let RuntimeValue::Object(inner) = value {
-                    apply_runtime_material_entries(inner, out, any);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn runtime_as_f32(value: &RuntimeValue) -> Option<f32> {
-    match value {
-        RuntimeValue::F32(v) => Some(*v),
-        RuntimeValue::I32(v) => Some(*v as f32),
-        _ => None,
-    }
-}
-
-fn runtime_as_bool(value: &RuntimeValue) -> Option<bool> {
-    match value {
-        RuntimeValue::Bool(v) => Some(*v),
-        _ => None,
-    }
-}
-
-fn runtime_as_texture_index(value: &RuntimeValue) -> Option<u32> {
-    match value {
-        RuntimeValue::Object(entries) => entries.iter().find_map(|(name, inner)| {
-            if name != "index" {
-                return None;
-            }
-            match inner {
-                RuntimeValue::I32(v) if *v >= 0 => Some(*v as u32),
-                _ => None,
-            }
-        }),
-        _ => None,
-    }
-}
-
-fn runtime_as_alpha_mode(value: &RuntimeValue) -> Option<u32> {
-    match value {
-        RuntimeValue::Str(s) => match s.as_str() {
-            "OPAQUE" => Some(0),
-            "MASK" => Some(1),
-            "BLEND" => Some(2),
-            _ => None,
-        },
-        RuntimeValue::I32(v) if (0..=2).contains(v) => Some(*v as u32),
-        _ => None,
-    }
-}
-
-fn runtime_as_color4(value: &RuntimeValue) -> Option<[f32; 4]> {
-    match value {
-        RuntimeValue::Vec4 { x, y, z, w } => Some([*x, *y, *z, *w]),
-        RuntimeValue::Vec3 { x, y, z } => Some([*x, *y, *z, 1.0]),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::Runtime;
+    use perro_ids::{MaterialID, MeshID};
     use perro_nodes::{
         SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D, camera_3d::Camera3D,
         mesh_instance_3d::MeshInstance3D, ray_light_3d::RayLight3D,
     };
-    use perro_ids::{MaterialID, MeshID};
     use perro_render_bridge::{Command3D, RenderCommand, RenderEvent, ResourceCommand};
 
     fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {

@@ -13,6 +13,8 @@ pub struct StaticProjectConfig {
     pub icon: &'static str,
     pub virtual_width: u32,
     pub virtual_height: u32,
+    pub vsync: bool,
+    pub msaa: bool,
 }
 
 impl StaticProjectConfig {
@@ -29,7 +31,19 @@ impl StaticProjectConfig {
             icon,
             virtual_width,
             virtual_height,
+            vsync: false,
+            msaa: true,
         }
+    }
+
+    pub const fn with_vsync(mut self, enabled: bool) -> Self {
+        self.vsync = enabled;
+        self
+    }
+
+    pub const fn with_msaa(mut self, enabled: bool) -> Self {
+        self.msaa = enabled;
+        self
     }
 
     pub fn to_runtime(self) -> ProjectConfig {
@@ -39,6 +53,8 @@ impl StaticProjectConfig {
             icon: self.icon.to_string(),
             virtual_width: self.virtual_width,
             virtual_height: self.virtual_height,
+            vsync: self.vsync,
+            msaa: self.msaa,
         }
     }
 }
@@ -50,6 +66,8 @@ pub struct ProjectConfig {
     pub icon: String,
     pub virtual_width: u32,
     pub virtual_height: u32,
+    pub vsync: bool,
+    pub msaa: bool,
 }
 
 impl ProjectConfig {
@@ -60,6 +78,8 @@ impl ProjectConfig {
             icon: "res://icon.png".to_string(),
             virtual_width: 1920,
             virtual_height: 1080,
+            vsync: false,
+            msaa: true,
         }
     }
 }
@@ -234,6 +254,8 @@ icon = "res://icon.png"
 
 [graphics]
 virtual_resolution = "1920x1080"
+vsync = false
+msaa = true
 "#
     )
 }
@@ -312,12 +334,37 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         ));
     }
 
+    let vsync = parse_bool_with_default(graphics_table, "vsync", false)?;
+    let msaa = parse_bool_with_default(graphics_table, "msaa", true)?;
+
     Ok(ProjectConfig {
         name,
         main_scene,
         icon,
         virtual_width,
         virtual_height,
+        vsync,
+        msaa,
+    })
+}
+
+fn parse_bool_with_default(
+    table: &toml::map::Map<String, Value>,
+    key: &'static str,
+    default: bool,
+) -> Result<bool, ProjectError> {
+    let Some(value) = table.get(key) else {
+        return Ok(default);
+    };
+    value.as_bool().ok_or_else(|| {
+        ProjectError::InvalidField(
+            match key {
+                "vsync" => "graphics.vsync",
+                "msaa" => "graphics.msaa",
+                _ => "graphics",
+            },
+            "must be a boolean".to_string(),
+        )
     })
 }
 
@@ -646,7 +693,8 @@ overflow-checks = false
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rust_analyzer)"] }
-"#.to_string()
+"#
+    .to_string()
 }
 
 fn rel_path(from: &Path, to: &Path) -> String {
@@ -867,8 +915,8 @@ fn strip_patch_crates_io(src: &str) -> String {
     for line in src.lines() {
         let trimmed = line.trim();
         let is_header = trimmed.starts_with('[') && trimmed.ends_with(']');
-        let is_patch_header =
-            is_header && (trimmed == "[patch.crates-io]" || trimmed.starts_with("[patch.crates-io."));
+        let is_patch_header = is_header
+            && (trimmed == "[patch.crates-io]" || trimmed.starts_with("[patch.crates-io."));
         if is_patch_header {
             in_patch = true;
             continue;
@@ -1109,6 +1157,8 @@ virtual_resolution = "1280x720"
         assert_eq!(parsed.icon, "res://icon.png");
         assert_eq!(parsed.virtual_width, 1280);
         assert_eq!(parsed.virtual_height, 720);
+        assert!(!parsed.vsync);
+        assert!(parsed.msaa);
     }
 
     #[test]
@@ -1127,6 +1177,27 @@ virtual_height = 1080
         let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
         assert_eq!(parsed.virtual_width, 1920);
         assert_eq!(parsed.virtual_height, 1080);
+        assert!(!parsed.vsync);
+        assert!(parsed.msaa);
+    }
+
+    #[test]
+    fn parse_project_toml_reads_vsync_and_msaa() {
+        let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+vsync = true
+msaa = false
+"#;
+
+        let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
+        assert!(parsed.vsync);
+        assert!(!parsed.msaa);
     }
 
     #[test]
@@ -1173,16 +1244,3 @@ virtual_resolution = "1920x1080"
         assert_eq!(crate_name_from_project_name("123"), "_123");
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

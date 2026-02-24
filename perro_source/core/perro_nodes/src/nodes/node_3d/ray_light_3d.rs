@@ -39,4 +39,3 @@ impl Default for RayLight3D {
         Self::new()
     }
 }
-

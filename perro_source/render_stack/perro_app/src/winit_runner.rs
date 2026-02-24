@@ -178,14 +178,14 @@ impl<B: GraphicsBackend> RunnerState<B> {
         if batch_elapsed_secs >= LOG_INTERVAL_SECONDS && self.batch_frames > 0 {
             let work_ms = self.batch_work.as_secs_f64() * 1_000.0;
             let avg_work_us = (work_ms * 1_000.0) / self.batch_frames as f64;
-            let avg_runtime_update_ns =
-                self.batch_runtime_update.as_nanos() as f64 / self.batch_frames as f64;
+            let avg_runtime_update_us =
+                self.batch_runtime_update.as_micros() as f64 / self.batch_frames as f64;
             let present_ms = self.batch_present.as_secs_f64() * 1_000.0;
             let avg_present_us = (present_ms * 1_000.0) / self.batch_frames as f64;
 
             println!(
-                "update: ({:.1}ns avg) | frame present:  ({:.3}us avg) | total: ({:.3}us avg)",
-                avg_runtime_update_ns, avg_present_us, avg_work_us,
+                "update: ({:.3}us avg) | frame present:  ({:.3}us avg) | total: ({:.3}us avg)",
+                avg_runtime_update_us, avg_present_us, avg_work_us,
             );
 
             self.batch_frames = 0;
@@ -349,4 +349,3 @@ fn center_position(
     let y = monitor_pos.y + ((monitor_size.height as i32 - window_size.height as i32) / 2);
     PhysicalPosition::new(x, y)
 }
-

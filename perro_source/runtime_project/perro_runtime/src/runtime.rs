@@ -6,8 +6,8 @@ use crate::{
 };
 use ahash::{AHashMap, AHashSet};
 use libloading::Library;
-use perro_nodes::Spatial;
 use perro_ids::{NodeID, TextureID};
+use perro_nodes::Spatial;
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
 use perro_scripting::ScriptConstructor;
 use std::sync::Arc;
@@ -329,7 +329,7 @@ impl Runtime {
             signal_emit_scratch: Vec::new(),
             script_library: None,
             dynamic_script_registry: AHashMap::default(),
-            resource_api: RuntimeResourceApi::new(),
+            resource_api: RuntimeResourceApi::new(None),
         }
     }
 
@@ -345,8 +345,10 @@ impl Runtime {
         >,
     ) -> Self {
         let mut runtime = Self::new();
+        let static_material_lookup = project.static_material_lookup;
         runtime.project = Some(Arc::new(project));
         runtime.provider_mode = provider_mode;
+        runtime.resource_api = RuntimeResourceApi::new(static_material_lookup);
         if let Some(entries) = script_registry {
             for (path, ctor) in entries {
                 runtime

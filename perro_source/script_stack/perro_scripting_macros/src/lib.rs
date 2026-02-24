@@ -1,7 +1,9 @@
 use proc_macro::TokenStream;
-use quote::quote;
 use quote::ToTokens;
-use syn::{Expr, Field, Fields, ItemStruct, Meta, Result, parse::Parse, parse_macro_input, parse_quote};
+use quote::quote;
+use syn::{
+    Expr, Field, Fields, ItemStruct, Meta, Result, parse::Parse, parse_macro_input, parse_quote,
+};
 
 struct EmptyAttrArgs;
 

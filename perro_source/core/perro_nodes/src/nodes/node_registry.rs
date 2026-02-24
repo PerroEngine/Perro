@@ -354,5 +354,3 @@ define_scene_nodes! {
         SpotLight3D => (SpotLight3D, Renderable::True)
     }
 }
-
-

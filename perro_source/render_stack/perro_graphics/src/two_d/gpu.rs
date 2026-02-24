@@ -262,12 +262,7 @@ impl Gpu2D {
         );
     }
 
-    pub fn prepare(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        frame: Prepare2D<'_>,
-    ) {
+    pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: Prepare2D<'_>) {
         let Prepare2D {
             resources,
             camera,
@@ -326,11 +321,11 @@ impl Gpu2D {
             });
             if let Some(batch) = self.sprite_batches.last_mut()
                 && batch.texture == sprite.texture
-                    && batch.instance_start + batch.instance_count == idx
-                {
-                    batch.instance_count += 1;
-                    continue;
-                }
+                && batch.instance_start + batch.instance_count == idx
+            {
+                batch.instance_count += 1;
+                continue;
+            }
             self.sprite_batches.push(SpriteBatch {
                 texture: sprite.texture,
                 instance_start: idx,
@@ -745,4 +740,3 @@ fn create_sprite_pipeline(
         cache: None,
     })
 }
-

@@ -52,7 +52,7 @@ pub struct RenderFrame<'a> {
 }
 
 impl Gpu {
-    pub fn new(window: Arc<Window>, smoothing_samples: u32) -> Option<Self> {
+    pub fn new(window: Arc<Window>, smoothing_samples: u32, vsync_enabled: bool) -> Option<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let surface = instance.create_surface(window.clone()).ok()?;
 
@@ -81,11 +81,7 @@ impl Gpu {
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
         let render_format = surface_format;
-        let present_mode = if caps.present_modes.contains(&wgpu::PresentMode::Fifo) {
-            wgpu::PresentMode::Fifo
-        } else {
-            caps.present_modes[0]
-        };
+        let present_mode = choose_present_mode(&caps.present_modes, vsync_enabled);
         let alpha_mode = caps.alpha_modes[0];
         let size = window.inner_size();
         let width = size.width.max(1);
@@ -303,4 +299,29 @@ fn create_msaa_color_target(
         _texture: texture,
         view,
     })
+}
+
+fn choose_present_mode(modes: &[wgpu::PresentMode], vsync_enabled: bool) -> wgpu::PresentMode {
+    let preferred = if vsync_enabled {
+        [
+            wgpu::PresentMode::FifoRelaxed,
+            wgpu::PresentMode::Fifo,
+            wgpu::PresentMode::AutoVsync,
+        ]
+        .as_slice()
+    } else {
+        [
+            wgpu::PresentMode::Immediate,
+            wgpu::PresentMode::Mailbox,
+            wgpu::PresentMode::AutoNoVsync,
+        ]
+        .as_slice()
+    };
+
+    for mode in preferred {
+        if modes.contains(mode) {
+            return *mode;
+        }
+    }
+    modes.first().copied().unwrap_or(wgpu::PresentMode::Fifo)
 }

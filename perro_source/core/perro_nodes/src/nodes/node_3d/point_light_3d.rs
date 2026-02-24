@@ -41,4 +41,3 @@ impl Default for PointLight3D {
         Self::new()
     }
 }
-

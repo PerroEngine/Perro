@@ -1,18 +1,20 @@
 use crate::{
     gpu::{Gpu, RenderFrame},
     resources::ResourceStore,
-    three_d::gpu::validate_mesh_source,
+    three_d::{gpu::validate_mesh_source, renderer::Draw3DInstance},
     three_d::renderer::Renderer3D,
     two_d::renderer::Renderer2D,
 };
 use perro_render_bridge::{
     Command2D, Command3D, RenderBridge, RenderCommand, RenderEvent, ResourceCommand,
+    Sprite2DCommand,
 };
 use std::sync::Arc;
 use winit::window::Window;
 
 pub type StaticTextureLookup = fn(path: &str) -> Option<&'static [u8]>;
 pub type StaticMeshLookup = fn(path: &str) -> Option<&'static [u8]>;
+const GC_INTERVAL_FRAMES: u32 = 4;
 
 pub trait GraphicsBackend: RenderBridge {
     fn attach_window(&mut self, window: Arc<Window>);
@@ -32,10 +34,6 @@ impl FrameState {
     fn queue(&mut self, command: RenderCommand) {
         self.pending_commands.push(command);
     }
-
-    fn take_pending(&mut self) -> Vec<RenderCommand> {
-        std::mem::take(&mut self.pending_commands)
-    }
 }
 
 #[derive(Default)]
@@ -47,10 +45,14 @@ pub struct PerroGraphics {
     gpu: Option<Gpu>,
     events: Vec<RenderEvent>,
     viewport: (u32, u32),
+    vsync_enabled: bool,
     smoothing_enabled: bool,
     smoothing_samples: u32,
     static_texture_lookup: Option<StaticTextureLookup>,
     static_mesh_lookup: Option<StaticMeshLookup>,
+    retained_draws_cache: Vec<Draw3DInstance>,
+    retained_sprites_cache: Vec<Sprite2DCommand>,
+    frame_index: u32,
 }
 
 impl PerroGraphics {
@@ -63,11 +65,25 @@ impl PerroGraphics {
             gpu: None,
             events: Vec::new(),
             viewport: (0, 0),
+            vsync_enabled: false,
             smoothing_enabled: true,
             smoothing_samples: 4,
             static_texture_lookup: None,
             static_mesh_lookup: None,
+            retained_draws_cache: Vec::new(),
+            retained_sprites_cache: Vec::new(),
+            frame_index: 0,
         }
+    }
+
+    pub fn with_vsync(mut self, enabled: bool) -> Self {
+        self.vsync_enabled = enabled;
+        self
+    }
+
+    pub fn with_msaa(mut self, enabled: bool) -> Self {
+        self.set_smoothing(enabled);
+        self
     }
 
     pub fn with_static_texture_lookup(mut self, lookup: StaticTextureLookup) -> Self {
@@ -80,7 +96,10 @@ impl PerroGraphics {
         self
     }
 
-    fn process_commands(&mut self, commands: Vec<RenderCommand>) {
+    fn process_commands<I>(&mut self, commands: I)
+    where
+        I: IntoIterator<Item = RenderCommand>,
+    {
         for command in commands {
             match command {
                 RenderCommand::Resource(resource_cmd) => match resource_cmd {
@@ -90,10 +109,9 @@ impl PerroGraphics {
                         source,
                         reserved,
                     } => {
-                        if let Err(reason) = validate_mesh_source(
-                            source.as_str(),
-                            self.static_mesh_lookup,
-                        ) {
+                        if let Err(reason) =
+                            validate_mesh_source(source.as_str(), self.static_mesh_lookup)
+                        {
                             self.events.push(RenderEvent::Failed { request, reason });
                             continue;
                         }
@@ -230,7 +248,7 @@ impl RenderBridge for PerroGraphics {
 impl GraphicsBackend for PerroGraphics {
     fn attach_window(&mut self, window: Arc<Window>) {
         if self.gpu.is_none() {
-            let mut gpu = Gpu::new(window, self.smoothing_samples);
+            let mut gpu = Gpu::new(window, self.smoothing_samples, self.vsync_enabled);
             if let Some(gpu_ref) = gpu.as_mut() {
                 let [vw, vh] = Gpu::virtual_size();
                 self.renderer_2d.set_virtual_viewport(vw, vh);
@@ -265,33 +283,42 @@ impl GraphicsBackend for PerroGraphics {
     }
 
     fn draw_frame(&mut self) {
-        let commands = self.frame.take_pending();
-        self.process_commands(commands);
+        let mut pending = Vec::new();
+        std::mem::swap(&mut pending, &mut self.frame.pending_commands);
+        self.process_commands(pending.drain(..));
+        std::mem::swap(&mut pending, &mut self.frame.pending_commands);
         let (camera_2d, _stats, upload) = self.renderer_2d.prepare_frame(&self.resources);
         let (camera_3d, _stats_3d, lighting_3d) = self.renderer_3d.prepare_frame(&self.resources);
-        let draws_3d: Vec<_> = self.renderer_3d.retained_draws().collect();
-        let sprites_2d: Vec<_> = self.renderer_2d.retained_sprites().collect();
+        self.retained_draws_cache.clear();
+        self.retained_draws_cache
+            .extend(self.renderer_3d.retained_draws());
+        self.retained_sprites_cache.clear();
+        self.retained_sprites_cache
+            .extend(self.renderer_2d.retained_sprites());
         self.resources.reset_ref_counts();
-        for sprite in &sprites_2d {
+        for sprite in &self.retained_sprites_cache {
             self.resources.mark_texture_used(sprite.texture);
         }
-        for draw in &draws_3d {
+        for draw in &self.retained_draws_cache {
             self.resources.mark_mesh_used(draw.mesh);
             self.resources.mark_material_used(draw.material);
         }
-        self.resources
-            .gc_unused(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
+        self.frame_index = self.frame_index.wrapping_add(1);
+        if self.frame_index % GC_INTERVAL_FRAMES == 0 {
+            self.resources
+                .gc_unused(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
+        }
 
         if let Some(gpu) = &mut self.gpu {
             gpu.render(RenderFrame {
                 resources: &self.resources,
                 camera_3d,
                 lighting_3d: &lighting_3d,
-                draws_3d: &draws_3d,
+                draws_3d: &self.retained_draws_cache,
                 camera_2d,
                 rects_2d: self.renderer_2d.retained_rects(),
                 upload_2d: &upload,
-                sprites_2d: &sprites_2d,
+                sprites_2d: &self.retained_sprites_cache,
                 static_texture_lookup: self.static_texture_lookup,
                 static_mesh_lookup: self.static_mesh_lookup,
             });

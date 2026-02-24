@@ -31,4 +31,3 @@ impl Camera3D {
         }
     }
 }
-
