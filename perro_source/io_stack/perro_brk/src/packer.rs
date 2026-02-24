@@ -9,7 +9,8 @@ use std::{
 use super::common::{
     BRK_MAGIC, BrkEntryMeta, BrkHeader, FLAG_COMPRESSED, write_header, write_index_entry,
 };
-use crate::compress_deflate_best;
+use crate::compression::compress_deflate_best;
+use crate::walkdir::collect_file_paths;
 
 // Scripts (compiled into binary)
 const SKIP_SCRIPT_EXT: &[&str] = &["rs"];
@@ -85,7 +86,7 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path) -> io::Res
         };
 
     // Collect file paths and process file bytes/compression in parallel.
-    let mut rel_paths = crate::collect_file_paths(res_dir, res_dir)?
+    let mut rel_paths = collect_file_paths(res_dir, res_dir)?
         .into_iter()
         .map(|rel| rel.replace('\\', "/"))
         .filter(|rel| !should_skip(rel))

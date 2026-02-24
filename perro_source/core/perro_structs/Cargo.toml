@@ -1,0 +1,7 @@
+[package]
+name = "perro_structs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+glam = "0.31.0"

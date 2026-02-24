@@ -1,4 +1,4 @@
-use crate::Transform3D;
+use perro_structs::Transform3D;
 
 #[derive(Clone, Debug)]
 pub struct AmbientLight3D {

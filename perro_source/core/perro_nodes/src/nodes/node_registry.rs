@@ -8,8 +8,8 @@ use crate::point_light_3d::PointLight3D;
 use crate::ray_light_3d::RayLight3D;
 use crate::spot_light_3d::SpotLight3D;
 use crate::sprite_2d::Sprite2D;
-use crate::{Transform2D, Transform3D};
 use perro_ids::NodeID;
+use perro_structs::{Transform2D, Transform3D};
 use std::borrow::Cow;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
