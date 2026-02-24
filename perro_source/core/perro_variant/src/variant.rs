@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
-use perro_core::structs::*;
+use perro_structs::*;
 use perro_ids::*;
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 

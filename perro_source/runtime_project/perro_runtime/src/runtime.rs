@@ -6,7 +6,7 @@ use crate::{
 };
 use ahash::{AHashMap, AHashSet};
 use libloading::Library;
-use perro_core::Spatial;
+use perro_nodes::Spatial;
 use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
 use perro_scripting::ScriptConstructor;

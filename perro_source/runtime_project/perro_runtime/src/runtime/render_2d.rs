@@ -1,6 +1,6 @@
 use super::Runtime;
 use ahash::AHashSet;
-use perro_core::SceneNodeData;
+use perro_nodes::SceneNodeData;
 use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{
     Camera2DState, Command2D, RenderCommand, RenderRequestID, ResourceCommand, Sprite2DCommand,
@@ -170,7 +170,7 @@ impl Runtime {
 #[cfg(test)]
 mod tests {
     use super::Runtime;
-    use perro_core::{SceneNode, SceneNodeData, camera_2d::Camera2D, sprite_2d::Sprite2D};
+    use perro_nodes::{SceneNode, SceneNodeData, camera_2d::Camera2D, sprite_2d::Sprite2D};
     use perro_ids::TextureID;
     use perro_render_bridge::{Command2D, RenderCommand, RenderEvent, ResourceCommand};
 

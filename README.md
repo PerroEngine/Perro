@@ -16,7 +16,8 @@ For more details, see the full documentation: [perroengine.com/docs](https://www
 
 ```rust
 use perro_runtime_context::prelude::*;
-use perro_core::prelude::*;
+use perro_nodes::prelude::*;
+use perro_structs::prelude::*;
 use perro_ids::prelude::*;
 use perro_modules::prelude::*;
 use perro_resource_context::prelude::*;
@@ -88,3 +89,5 @@ Donations help fund full-time development, faster features, and better tooling. 
 Perro is licensed under the **Apache 2.0 License**. See [LICENSE](LICENSE) for details.
 
 ---
+
+

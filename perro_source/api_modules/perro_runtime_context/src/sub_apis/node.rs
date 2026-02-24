@@ -1,4 +1,4 @@
-use perro_core::{NodeTypeDispatch, SceneNodeData};
+use perro_nodes::{NodeTypeDispatch, SceneNodeData};
 use perro_ids::NodeID;
 use std::borrow::Cow;
 

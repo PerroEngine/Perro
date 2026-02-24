@@ -1,4 +1,4 @@
-use perro_core::{NodeTypeDispatch, Renderable, SceneNode, SceneNodeData};
+use perro_nodes::{NodeTypeDispatch, Renderable, SceneNode, SceneNodeData};
 use perro_runtime_context::sub_apis::NodeAPI;
 use std::borrow::Cow;
 

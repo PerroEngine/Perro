@@ -1,5 +1,5 @@
 use super::Runtime;
-use perro_core::SceneNodeData;
+use perro_nodes::SceneNodeData;
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_io::load_asset;
 use perro_render_bridge::{
@@ -254,7 +254,7 @@ impl Runtime {
     }
 }
 
-fn quaternion_forward(rotation: perro_core::Quaternion) -> [f32; 3] {
+fn quaternion_forward(rotation: perro_structs::Quaternion) -> [f32; 3] {
     let len_sq = rotation.x * rotation.x
         + rotation.y * rotation.y
         + rotation.z * rotation.z
@@ -516,7 +516,7 @@ fn runtime_as_color4(value: &RuntimeValue) -> Option<[f32; 4]> {
 #[cfg(test)]
 mod tests {
     use super::Runtime;
-    use perro_core::{
+    use perro_nodes::{
         SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D, camera_3d::Camera3D,
         mesh_instance_3d::MeshInstance3D, ray_light_3d::RayLight3D,
     };

@@ -4,4 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_core = "0.1.0"
+perro_nodes = "0.1.0"
+perro_structs = "0.1.0"

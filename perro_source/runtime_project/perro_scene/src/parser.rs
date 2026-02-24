@@ -1,6 +1,6 @@
 // parser.rs - Parse into runtime types
 use crate::{Lexer, RuntimeNodeData, RuntimeNodeEntry, RuntimeScene, RuntimeValue, Token};
-use perro_core::Quaternion;
+use perro_structs::Quaternion;
 use std::collections::HashMap;
 
 pub struct Parser<'a> {

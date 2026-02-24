@@ -1,4 +1,4 @@
-use perro_core::SceneNode;
+use perro_nodes::SceneNode;
 use perro_ids::NodeID;
 
 pub struct NodeArena {

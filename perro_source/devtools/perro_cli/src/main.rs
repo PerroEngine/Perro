@@ -6,6 +6,22 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const DEFAULT_PROJECT_NAME: &str = "Perro Project";
+const COLOR_RESET: &str = "\x1b[0m";
+const COLOR_BLUE: &str = "\x1b[94m";
+const COLOR_GREEN: &str = "\x1b[92m";
+const COLOR_YELLOW: &str = "\x1b[93m";
+
+fn log_step(label: &str) {
+    println!("{COLOR_BLUE}🔧 {label}...{COLOR_RESET}");
+}
+
+fn log_done(label: &str) {
+    println!("{COLOR_GREEN}✅ {label}{COLOR_RESET}");
+}
+
+fn log_note(label: &str) {
+    println!("{COLOR_YELLOW}🚀 {label}{COLOR_RESET}");
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -135,7 +151,10 @@ fn sanitize_project_dir_name(name: &str) -> String {
 }
 
 fn workspace_root() -> PathBuf {
-    let raw = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let raw = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..");
     raw.canonicalize().unwrap_or(raw)
 }
 
@@ -166,12 +185,17 @@ fn build_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
-    compile_scripts(&project_dir).map(|_| ()).map_err(|err| {
-        format!(
-            "scripts pipeline failed for {}: {err}",
-            project_dir.display()
-        )
-    })
+    log_step("Building Scripts");
+    compile_scripts(&project_dir)
+        .map(|_| {
+            log_done("Scripts Built");
+        })
+        .map_err(|err| {
+            format!(
+                "scripts pipeline failed for {}: {err}",
+                project_dir.display()
+            )
+        })
 }
 
 fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
@@ -181,21 +205,48 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_name =
         parse_flag_value(args, "--name").unwrap_or_else(|| DEFAULT_PROJECT_NAME.to_string());
 
-    compile_scripts(&project_dir).map(|_| ()).map_err(|err| {
+    log_step("Building Scripts");
+    compile_scripts(&project_dir).map_err(|err| {
         format!(
             "scripts pipeline failed for {}: {err}",
             project_dir.display()
         )
     })?;
+    log_done("Scripts Built");
 
     let root = workspace_root();
+    log_step("Building Dev Runner");
 
-    let status = Command::new("cargo")
-        .arg("run")
+    let build_status = Command::new("cargo")
+        .arg("build")
         .arg("-p")
         .arg("perro_dev_runner")
         .arg("--release")
-        .arg("--")
+        .current_dir(&root)
+        .status()
+        .map_err(|err| {
+            format!(
+                "failed to build perro_dev_runner from {}: {err}",
+                root.display()
+            )
+        })?;
+
+    if !build_status.success() {
+        return Err(format!(
+            "perro_dev_runner build failed with exit code {:?}",
+            build_status.code()
+        ));
+    }
+    log_done("Dev Runner Built");
+
+    let runner_path = if cfg!(target_os = "windows") {
+        root.join("target").join("release").join("perro_dev_runner.exe")
+    } else {
+        root.join("target").join("release").join("perro_dev_runner")
+    };
+    log_note("Running Dev Runner");
+
+    let run_status = Command::new(&runner_path)
         .arg("--path")
         .arg(project_dir.to_string_lossy().to_string())
         .arg("--name")
@@ -204,17 +255,18 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .status()
         .map_err(|err| {
             format!(
-                "failed to run perro_dev_runner from {}: {err}",
-                root.display()
+                "failed to launch perro_dev_runner at {}: {err}",
+                runner_path.display()
             )
         })?;
 
-    if !status.success() {
+    if !run_status.success() {
         return Err(format!(
             "perro_dev_runner failed with exit code {:?}",
-            status.code()
+            run_status.code()
         ));
     }
+    log_done("Dev Runner Finished");
     Ok(())
 }
 
@@ -226,12 +278,17 @@ fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
-    compile_project_bundle(&project_dir).map_err(|err| {
-        format!(
-            "project pipeline failed for {}: {err}",
-            project_dir.display()
-        )
-    })
+    log_step("Building Project Bundle");
+    compile_project_bundle(&project_dir)
+        .map(|_| {
+            log_done("Project Bundle Built");
+        })
+        .map_err(|err| {
+            format!(
+                "project pipeline failed for {}: {err}",
+                project_dir.display()
+            )
+        })
 }
 
 fn script_new_command(args: &[String], cwd: &Path) -> Result<(), String> {

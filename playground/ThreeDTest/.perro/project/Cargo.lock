@@ -1595,11 +1595,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "perro_core"
+name = "perro_brk"
 version = "0.1.0"
 dependencies = [
- "glam",
- "perro_ids",
+ "flate2",
+ "rayon",
 ]
 
 [[package]]
@@ -1627,7 +1627,7 @@ name = "perro_io"
 version = "0.1.0"
 dependencies = [
  "flate2",
- "rayon",
+ "perro_brk",
 ]
 
 [[package]]
@@ -1637,6 +1637,14 @@ dependencies = [
  "perro_io",
  "perro_variant",
  "serde_json",
+]
+
+[[package]]
+name = "perro_nodes"
+version = "0.1.0"
+dependencies = [
+ "perro_ids",
+ "perro_structs",
 ]
 
 [[package]]
@@ -1667,15 +1675,16 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "libloading",
- "perro_core",
  "perro_ids",
  "perro_io",
+ "perro_nodes",
  "perro_project",
  "perro_render_bridge",
  "perro_resource_context",
  "perro_runtime_context",
  "perro_scene",
  "perro_scripting",
+ "perro_structs",
  "perro_variant",
 ]
 
@@ -1683,8 +1692,8 @@ dependencies = [
 name = "perro_runtime_context"
 version = "0.1.0"
 dependencies = [
- "perro_core",
  "perro_ids",
+ "perro_nodes",
  "perro_variant",
 ]
 
@@ -1692,7 +1701,8 @@ dependencies = [
 name = "perro_scene"
 version = "0.1.0"
 dependencies = [
- "perro_core",
+ "perro_nodes",
+ "perro_structs",
 ]
 
 [[package]]
@@ -1716,11 +1726,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "perro_structs"
+version = "0.1.0"
+dependencies = [
+ "glam",
+]
+
+[[package]]
 name = "perro_variant"
 version = "0.1.0"
 dependencies = [
- "perro_core",
  "perro_ids",
+ "perro_structs",
  "serde_json",
 ]
 
@@ -2123,13 +2140,14 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 name = "scripts"
 version = "0.1.0"
 dependencies = [
- "perro_core",
  "perro_ids",
  "perro_modules",
+ "perro_nodes",
  "perro_resource_context",
  "perro_runtime",
  "perro_runtime_context",
  "perro_scripting",
+ "perro_structs",
  "perro_variant",
 ]
 
@@ -2328,12 +2346,13 @@ name = "threedtest"
 version = "0.1.0"
 dependencies = [
  "perro_app",
- "perro_core",
  "perro_ids",
+ "perro_nodes",
  "perro_render_bridge",
  "perro_runtime_context",
  "perro_scene",
  "perro_scripting",
+ "perro_structs",
  "scripts",
 ]
 

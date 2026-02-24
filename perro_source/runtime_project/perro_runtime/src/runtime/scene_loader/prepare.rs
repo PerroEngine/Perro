@@ -1,9 +1,10 @@
-use perro_core::{
-    Quaternion, SceneNode, SceneNodeData, Vector2, Vector3, ambient_light_3d::AmbientLight3D,
-    camera_2d::Camera2D, camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, node_2d::Node2D,
-    node_3d::Node3D, point_light_3d::PointLight3D, ray_light_3d::RayLight3D,
-    spot_light_3d::SpotLight3D, sprite_2d::Sprite2D,
+use perro_nodes::{
+    SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D, camera_2d::Camera2D,
+    camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, node_2d::Node2D, node_3d::Node3D,
+    point_light_3d::PointLight3D, ray_light_3d::RayLight3D, spot_light_3d::SpotLight3D,
+    sprite_2d::Sprite2D,
 };
+use perro_structs::{Quaternion, Vector2, Vector3};
 use perro_io::load_asset;
 use perro_render_bridge::Material3D;
 use perro_scene::{

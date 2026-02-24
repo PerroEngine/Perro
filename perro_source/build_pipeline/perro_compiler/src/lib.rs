@@ -1,4 +1,4 @@
-use perro_io::brk::build_brk;
+use perro_brk::build_brk;
 use perro_io::walkdir::walk_dir;
 use perro_project::{ensure_source_overrides, load_project_toml};
 use std::{
@@ -72,6 +72,8 @@ pub fn compile_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError
     let scripts_crate = project_root.join(".perro").join("scripts");
     let target_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
+        .join("..")
+        .join("..")
         .join("target");
 
     let status = Command::new("cargo")
@@ -123,6 +125,8 @@ fn generate_assets_brk(project_root: &Path) -> Result<(), CompilerError> {
 fn build_project_crate(project_root: &Path) -> Result<(), CompilerError> {
     let project_crate = project_root.join(".perro").join("project");
     let target_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
         .join("..")
         .join("target");
     let status = Command::new("cargo")

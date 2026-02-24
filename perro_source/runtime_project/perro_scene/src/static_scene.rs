@@ -1,4 +1,4 @@
-pub type SceneNodeType = perro_core::NodeType;
+pub type SceneNodeType = perro_nodes::NodeType;
 
 #[derive(Debug)]
 pub struct Scene {

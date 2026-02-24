@@ -32,8 +32,9 @@ perro_ids = { path = "../../../../perro_source/core/perro_ids" }
 perro_nodes = { path = "../../../../perro_source/core/perro_nodes" }
 perro_structs = { path = "../../../../perro_source/core/perro_structs" }
 perro_variant = { path = "../../../../perro_source/core/perro_variant" }
-perro_runtime = { path = "../../../../perro_source/runtime_scene/perro_runtime" }
-perro_scene = { path = "../../../../perro_source/runtime_scene/perro_scene" }
+perro_project = { path = "../../../../perro_source/runtime_project/perro_project" }
+perro_runtime = { path = "../../../../perro_source/runtime_project/perro_runtime" }
+perro_scene = { path = "../../../../perro_source/runtime_project/perro_scene" }
 perro_modules = { path = "../../../../perro_source/api_modules/perro_modules" }
 perro_resource_context = { path = "../../../../perro_source/api_modules/perro_resource_context" }
 perro_runtime_context = { path = "../../../../perro_source/api_modules/perro_runtime_context" }
@@ -44,4 +45,3 @@ perro_scripting = { path = "../../../../perro_source/script_stack/perro_scriptin
 perro_scripting_macros = { path = "../../../../perro_source/script_stack/perro_scripting_macros" }
 perro_brk = { path = "../../../../perro_source/io_stack/perro_brk" }
 perro_io = { path = "../../../../perro_source/io_stack/perro_io" }
-perro_project = { path = "../../../../perro_source/project_meta/perro_project" }

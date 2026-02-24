@@ -1,6 +1,6 @@
 use super::prepare::PreparedScene;
 use crate::Runtime;
-use perro_core::{SceneNode, SceneNodeData};
+use perro_nodes::{SceneNode, SceneNodeData};
 use perro_ids::NodeID;
 use std::{borrow::Cow, collections::HashMap};
 

@@ -401,7 +401,8 @@ fn default_main_scene() -> String {
 
 pub fn default_script_example_rs() -> String {
     r#"use perro_runtime_context::prelude::*;
-use perro_core::prelude::*;
+use perro_nodes::prelude::*;
+use perro_structs::prelude::*;
 use perro_ids::prelude::*;
 use perro_modules::prelude::*;
 use perro_resource_context::prelude::*;
@@ -528,7 +529,8 @@ methods!({
 
 pub fn default_script_empty_rs() -> String {
     r#"use perro_runtime_context::prelude::*;
-use perro_core::prelude::*;
+use perro_nodes::prelude::*;
+use perro_structs::prelude::*;
 use perro_ids::prelude::*;
 use perro_modules::prelude::*;
 use perro_resource_context::prelude::*;
@@ -582,7 +584,8 @@ perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
 perro_runtime_context = "0.1.0"
 perro_resource_context = "0.1.0"
-perro_core = "0.1.0"
+perro_nodes = "0.1.0"
+perro_structs = "0.1.0"
 perro_scene = "0.1.0"
 perro_render_bridge = "0.1.0"
 scripts = {{ path = "../scripts" }}
@@ -617,7 +620,8 @@ perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
 perro_runtime_context = "0.1.0"
 perro_resource_context = "0.1.0"
-perro_core = "0.1.0"
+perro_nodes = "0.1.0"
+perro_structs = "0.1.0"
 perro_modules = "0.1.0"
 perro_variant = "0.1.0"
 perro_runtime = "0.1.0"
@@ -883,8 +887,15 @@ fn strip_patch_crates_io(src: &str) -> String {
 fn source_overrides_block_for_manifest(manifest_path: &Path, manifest_src: &str) -> String {
     let engine_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
+        .join("..")
+        .join("..")
         .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."));
+        .unwrap_or_else(|_| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("..")
+        });
     let manifest_dir = manifest_path
         .parent()
         .map(Path::to_path_buf)
@@ -907,10 +918,20 @@ fn source_overrides_block_for_manifest(manifest_path: &Path, manifest_src: &str)
         return String::new();
     }
 
+    let mut ordered_crates: Vec<_> = crates.into_iter().collect();
+    ordered_crates.sort_by(|a, b| {
+        let ka = crate_group_sort_key(a);
+        let kb = crate_group_sort_key(b);
+        ka.cmp(&kb).then_with(|| a.cmp(b))
+    });
+
     let mut lines = Vec::new();
     lines.push("[patch.crates-io]".to_string());
-    for crate_name in crates {
-        let path = rel_path(&manifest_dir, &engine_root.join(&crate_name));
+    for crate_name in ordered_crates {
+        let Some(rel_crate_path) = crate_workspace_rel_path(&crate_name) else {
+            continue;
+        };
+        let path = rel_path(&manifest_dir, &engine_root.join(rel_crate_path));
         lines.push(format!("{crate_name} = {{ path = \"{path}\" }}"));
     }
     lines.join("\n")
@@ -990,7 +1011,10 @@ fn collect_local_path_deps(table: Option<&Value>, out: &mut Vec<String>) {
 fn expand_transitive_perro_deps(engine_root: &Path, crates: &mut BTreeSet<String>) {
     let mut queue: Vec<String> = crates.iter().cloned().collect();
     while let Some(crate_name) = queue.pop() {
-        let manifest = engine_root.join(&crate_name).join("Cargo.toml");
+        let Some(rel_path) = crate_workspace_rel_path(&crate_name) else {
+            continue;
+        };
+        let manifest = engine_root.join(rel_path).join("Cargo.toml");
         let Ok(src) = fs::read_to_string(manifest) else {
             continue;
         };
@@ -1003,6 +1027,64 @@ fn expand_transitive_perro_deps(engine_root: &Path, crates: &mut BTreeSet<String
             }
         }
     }
+}
+
+fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
+    match crate_name {
+        "perro_nodes" => Some("perro_source/core/perro_nodes"),
+        "perro_structs" => Some("perro_source/core/perro_structs"),
+        "perro_ids" => Some("perro_source/core/perro_ids"),
+        "perro_variant" => Some("perro_source/core/perro_variant"),
+        "perro_runtime" => Some("perro_source/runtime_project/perro_runtime"),
+        "perro_scene" => Some("perro_source/runtime_project/perro_scene"),
+        "perro_runtime_context" => Some("perro_source/api_modules/perro_runtime_context"),
+        "perro_resource_context" => Some("perro_source/api_modules/perro_resource_context"),
+        "perro_modules" => Some("perro_source/api_modules/perro_modules"),
+        "perro_render_bridge" => Some("perro_source/render_stack/perro_render_bridge"),
+        "perro_graphics" => Some("perro_source/render_stack/perro_graphics"),
+        "perro_app" => Some("perro_source/render_stack/perro_app"),
+        "perro_scripting" => Some("perro_source/script_stack/perro_scripting"),
+        "perro_scripting_macros" => Some("perro_source/script_stack/perro_scripting_macros"),
+        "perro_compiler" => Some("perro_source/build_pipeline/perro_compiler"),
+        "perro_static_pipeline" => Some("perro_source/build_pipeline/perro_static_pipeline"),
+        "perro_io" => Some("perro_source/io_stack/perro_io"),
+        "perro_brk" => Some("perro_source/io_stack/perro_brk"),
+        "perro_project" => Some("perro_source/runtime_project/perro_project"),
+        "perro_cli" => Some("perro_source/devtools/perro_cli"),
+        "perro_dev_runner" => Some("perro_source/devtools/perro_dev_runner"),
+        _ => None,
+    }
+}
+
+fn crate_group_sort_key(crate_name: &str) -> u8 {
+    let Some(rel) = crate_workspace_rel_path(crate_name) else {
+        return u8::MAX;
+    };
+    if rel.starts_with("perro_source/core/") {
+        return 0;
+    }
+    if rel.starts_with("perro_source/runtime_project/") {
+        return 1;
+    }
+    if rel.starts_with("perro_source/api_modules/") {
+        return 2;
+    }
+    if rel.starts_with("perro_source/render_stack/") {
+        return 3;
+    }
+    if rel.starts_with("perro_source/script_stack/") {
+        return 4;
+    }
+    if rel.starts_with("perro_source/build_pipeline/") {
+        return 5;
+    }
+    if rel.starts_with("perro_source/io_stack/") {
+        return 6;
+    }
+    if rel.starts_with("perro_source/devtools/") {
+        return 7;
+    }
+    8
 }
 
 #[cfg(test)]
@@ -1091,6 +1173,9 @@ virtual_resolution = "1920x1080"
         assert_eq!(crate_name_from_project_name("123"), "_123");
     }
 }
+
+
+
 
 
 

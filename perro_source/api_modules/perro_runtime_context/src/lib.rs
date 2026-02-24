@@ -23,7 +23,7 @@ pub mod prelude {
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
-    use perro_core::prelude::Node2D;
+    use perro_nodes::prelude::Node2D;
     use perro_ids::NodeID;
     use std::any::Any;
 
@@ -46,14 +46,14 @@ mod tests {
     impl NodeAPI for DummyRuntime {
         fn create<T>(&mut self) -> NodeID
         where
-            T: Default + Into<perro_core::SceneNodeData>,
+            T: Default + Into<perro_nodes::SceneNodeData>,
         {
             NodeID::nil()
         }
 
         fn with_node_mut<T, V, F>(&mut self, _id: NodeID, _f: F) -> Option<V>
         where
-            T: perro_core::NodeTypeDispatch,
+            T: perro_nodes::NodeTypeDispatch,
             F: FnOnce(&mut T) -> V,
         {
             None
@@ -65,7 +65,7 @@ mod tests {
             _f: impl FnOnce(&T) -> V,
         ) -> V
         where
-            T: perro_core::NodeTypeDispatch,
+            T: perro_nodes::NodeTypeDispatch,
         {
             V::default()
         }

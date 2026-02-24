@@ -5,10 +5,8 @@ use std::{
     sync::RwLock,
 };
 
-use crate::{
-    brk::archive::{BrkArchive, BrkFile},
-    data_local_dir,
-};
+use crate::data_local_dir;
+use perro_brk::archive::{BrkArchive, BrkFile};
 
 /// Trait alias for Read + Seek
 pub trait ReadSeek: Read + Seek {}

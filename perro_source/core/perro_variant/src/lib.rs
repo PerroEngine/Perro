@@ -6,7 +6,7 @@ pub use variant::*;
 mod tests {
     use std::{collections::BTreeMap, sync::Arc};
 
-    use perro_core::structs::{Vector2, Vector3};
+    use perro_structs::{Vector2, Vector3};
     use perro_ids::{NodeID, TextureID};
 
     use super::*;
