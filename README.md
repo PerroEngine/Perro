@@ -19,6 +19,7 @@ use perro_runtime_context::prelude::*;
 use perro_core::prelude::*;
 use perro_ids::prelude::*;
 use perro_modules::prelude::*;
+use perro_resource_context::prelude::*;
 use perro_scripting::prelude::*;
 
 type SelfNodeType = Node2D;
@@ -30,16 +31,16 @@ pub struct ExampleState {
 }
 
 lifecycle!({
-    fn on_init(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+    fn on_init(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, self_id: NodeID) {
         // Read state
         let count = with_state!(ctx, ExampleState, self_id, |state| state.count)
             .unwrap_or_default();
         log_info!(count);
     }
 
-    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self_id: NodeID) {}
 
-    fn on_update(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+    fn on_update(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, self_id: NodeID) {
         // Mutate state
         with_state_mut!(ctx, ExampleState, self_id, |state| {
             state.count += 1;
@@ -55,13 +56,13 @@ lifecycle!({
         });
     }
 
-    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self_id: NodeID) {}
 
-    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, R>, _self_id: NodeID) {}
+    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self_id: NodeID) {}
 });
 
 methods!({
-    fn reset_count(&self, ctx: &mut RuntimeContext<'_, R>, self_id: NodeID) {
+    fn reset_count(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, self_id: NodeID) {
         with_state_mut!(ctx, ExampleState, self_id, |state| {
             state.count = 0;
         });

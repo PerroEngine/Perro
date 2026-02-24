@@ -23,6 +23,7 @@ const SPEED: f32 = 5.0;
 lifecycle!({
     // Lifecycle methods are engine entry points. They are called by the runtime.
     // `ctx` is the main interface into the engine core to access runtime data/scripts and nodes.
+    // `res` is resource access (meshes/materials/textures) available at runtime.
     // `self` is the NodeID handle of the node this script is attached to.
 
     // init is called when the script instance is created. This can be used for one-time setup. State is initialized
@@ -39,10 +40,10 @@ lifecycle!({
     fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
 
     // on_update is called every frame. This is where most behavior logic goes.
-    fn on_update(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, node: NodeID) {
+    fn on_update(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, node: NodeID) {
         let dt = delta_time!(ctx);
         // Regular Rust method calls are for internal methods.
-        self.bump_count(ctx, _res, node);
+        self.bump_count(ctx, res, node);
 
         // with_node! gives read-only typed node access and returns data from the closure.
         // with_node_mut! gives mutable typed node access; it can mutate and optionally return data.
