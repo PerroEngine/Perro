@@ -8,9 +8,9 @@
 
 ## Rust as a Scripting Language
 
-While **Rust** is typically a general-purpose systems language, Perro uses it as a scripting language through a structured authoring model. Scripts are organized into clear sections: a target node type, `#[State]` data, lifecycle entry points (`lifecycle!`), and callable behavior methods (`methods!`).
+While **Rust** is typically a low-level systems language, Perro uses it as a scripting language for games programming. Scripts are organized into clear sections: `#[State]` data, lifecycle entry points (`lifecycle!`), and behavior methods (`methods!`).
 
-This structure makes it explicit when state is read or mutated, and how nodes are accessed at runtime.
+This system is structured and architected as such to make scripts simple to write and clearly lay out access to runtime state (script/node mutations/reads)
 
 For more details, see the full documentation: [perroengine.com/docs](https://www.perroengine.com/docs).
 
@@ -32,4 +32,3 @@ Donations help fund full-time development, faster features, and better tooling. 
 Perro is licensed under the **Apache 2.0 License**. See [LICENSE](LICENSE) for details.
 
 ---
-
