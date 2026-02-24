@@ -11,9 +11,11 @@ type SelfNodeType = MeshInstance3D;
 #[State]
 pub struct ExampleState {
     #[default = 5.0]
+    ///@Expose
     speed: f32,
+
     #[default = 0.0]
-    timer: f32
+    timer: f32,
 }
 
 

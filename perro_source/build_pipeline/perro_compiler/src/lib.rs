@@ -2,6 +2,7 @@ use perro_brk::build_brk;
 use perro_io::walkdir::walk_dir;
 use perro_project::{ensure_source_overrides, load_project_toml};
 use std::{
+    collections::{BTreeMap, BTreeSet},
     fmt::{Display, Formatter},
     fs,
     path::{Path, PathBuf},
@@ -359,9 +360,10 @@ fn transpile_frontend_script(source: &str) -> String {
     let has_update = has_nonempty_lifecycle_method(&source, "on_update");
     let has_fixed = has_nonempty_lifecycle_method(&source, "on_fixed_update");
     let has_removal = has_nonempty_lifecycle_method(&source, "on_removal");
-    let user_methods = parse_inherent_methods(&stripped_source, &script_ty);
+    let user_methods = parse_inherent_methods(&source, &script_ty);
     let state_fields = parse_struct_fields(&source, &state_ty);
     let exposed_fields = supported_fields(&state_fields);
+    let attributed_fields = supported_attributed_fields(&state_fields);
 
     let mut flags = String::from("ScriptFlags::NONE");
     if has_init {
@@ -384,9 +386,9 @@ fn transpile_frontend_script(source: &str) -> String {
     let get_var_body = generate_get_var_body(&state_ty, &exposed_fields);
     let set_var_body = generate_set_var_body(&state_ty, &exposed_fields);
     let call_method_body = generate_call_method_body(&user_methods);
-    let attr_of_body = generate_attributes_of_body(&exposed_fields);
-    let members_with_body = generate_members_with_body(&exposed_fields);
-    let has_attr_body = generate_has_attribute_body(&exposed_fields);
+    let attr_of_body = generate_attributes_of_body(&attributed_fields, &user_methods);
+    let members_with_body = generate_members_with_body(&attributed_fields, &user_methods);
+    let has_attr_body = generate_has_attribute_body(&attributed_fields, &user_methods);
 
     format!(
         r#"{stripped_source}
@@ -466,7 +468,16 @@ fn ensure_script_allows(source: &str) -> String {
 }
 
 fn strip_transpiler_attributes(source: &str) -> String {
-    source.to_string()
+    let mut out = String::new();
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        if is_transpiler_attr_line(trimmed) {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 fn parse_marked_struct_name(source: &str, marker: &str) -> Option<String> {
@@ -627,6 +638,7 @@ fn is_unit_struct(source: &str, struct_name: &str) -> bool {
 struct StateField {
     name: String,
     ty: String,
+    attrs: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -659,16 +671,25 @@ fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<StateField> {
     let mut depth = 0_i32;
     let mut opened = false;
     let mut i = start;
+    let mut pending_attrs: Vec<String> = Vec::new();
 
     while i < lines.len() {
-        let line = strip_line_comment(lines[i]);
+        let raw_line = lines[i];
+        if let Some(attr) = parse_transpiler_attr_name(raw_line.trim()) {
+            pending_attrs.push(attr);
+            i += 1;
+            continue;
+        }
+        let line = strip_line_comment(raw_line);
         if !opened {
             if let Some(pos) = line.find('{') {
                 opened = true;
                 depth = 1;
                 let rest = &line[pos + 1..];
                 if depth == 1
-                    && let Some(field) = parse_field_line(rest) {
+                    && let Some(mut field) = parse_field_line(rest) {
+                        apply_field_attrs(&mut field, &pending_attrs);
+                        pending_attrs.clear();
                         fields.push(field);
                     }
                 depth += brace_delta(rest);
@@ -681,7 +702,9 @@ fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<StateField> {
         }
 
         if depth == 1
-            && let Some(field) = parse_field_line(line) {
+            && let Some(mut field) = parse_field_line(line) {
+                apply_field_attrs(&mut field, &pending_attrs);
+                pending_attrs.clear();
                 fields.push(field);
             }
         depth += brace_delta(line);
@@ -731,7 +754,12 @@ fn parse_field_line(line: &str) -> Option<StateField> {
     Some(StateField {
         name: name.to_string(),
         ty: ty.to_string(),
+        attrs: Vec::new(),
     })
+}
+
+fn apply_field_attrs(field: &mut StateField, attrs: &[String]) {
+    field.attrs = dedup_attrs(attrs);
 }
 
 fn is_ident(s: &str) -> bool {
@@ -769,6 +797,14 @@ fn supported_fields(fields: &[StateField]) -> Vec<StateField> {
     fields
         .iter()
         .filter(|f| field_kind(&f.ty).is_some())
+        .cloned()
+        .collect()
+}
+
+fn supported_attributed_fields(fields: &[StateField]) -> Vec<StateField> {
+    fields
+        .iter()
+        .filter(|f| field_kind(&f.ty).is_some() && !f.attrs.is_empty())
         .cloned()
         .collect()
 }
@@ -815,6 +851,7 @@ struct ScriptMethod {
     takes_raw_params: bool,
     params: Vec<ScriptMethodParam>,
     returns_variant: bool,
+    attrs: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -938,12 +975,22 @@ fn parse_inherent_methods(source: &str, struct_name: &str) -> Vec<ScriptMethod> 
 
         let mut depth = brace_delta(line);
         let mut opened = line.contains('{');
+        let mut pending_attrs: Vec<String> = Vec::new();
         i += 1;
 
         while i < lines.len() {
-            let l = strip_line_comment(lines[i]);
+            let raw_line = lines[i];
             if opened && depth == 1
-                && let Some(method) = parse_script_method_signature(l.trim()) {
+                && let Some(attr) = parse_transpiler_attr_name(raw_line.trim()) {
+                    pending_attrs.push(attr);
+                    i += 1;
+                    continue;
+                }
+            let l = strip_line_comment(raw_line);
+            if opened && depth == 1
+                && let Some(mut method) = parse_script_method_signature(l.trim()) {
+                    method.attrs = dedup_attrs(&pending_attrs);
+                    pending_attrs.clear();
                     methods.push(method);
                 }
 
@@ -1101,11 +1148,19 @@ fn extract_brace_block(s: &str) -> Option<&str> {
 fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
     let mut methods = Vec::new();
     let mut depth = 0_i32;
+    let mut pending_attrs: Vec<String> = Vec::new();
 
     for line in body.lines() {
+        if depth == 0
+            && let Some(attr) = parse_transpiler_attr_name(line.trim()) {
+                pending_attrs.push(attr);
+                continue;
+            }
         let l = strip_line_comment(line);
         if depth == 0
-            && let Some(method) = parse_script_method_signature(l.trim()) {
+            && let Some(mut method) = parse_script_method_signature(l.trim()) {
+                method.attrs = dedup_attrs(&pending_attrs);
+                pending_attrs.clear();
                 methods.push(method);
             }
         depth += brace_delta(l);
@@ -1193,8 +1248,116 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
             takes_raw_params,
             params,
             returns_variant,
+            attrs: Vec::new(),
         })
     }
+}
+
+fn parse_transpiler_attr_name(line: &str) -> Option<String> {
+    let line = line.trim();
+    if let Some(comment) = line.strip_prefix("///").or_else(|| line.strip_prefix("//")) {
+        let comment = comment.trim();
+        let rest = comment
+            .strip_prefix('@')
+            .or_else(|| comment.strip_prefix('#'))?
+            .trim();
+        if rest.is_empty() {
+            return None;
+        }
+        let mut name = String::new();
+        for c in rest.chars() {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                name.push(c);
+            } else {
+                break;
+            }
+        }
+        return is_ident(&name).then(|| name.to_ascii_lowercase());
+    }
+
+    if line.starts_with("#[") {
+        let inner = line.strip_prefix("#[")?.strip_suffix(']')?.trim();
+        if inner.is_empty() {
+            return None;
+        }
+        let name = inner.split('(').next()?.trim();
+        if !is_ident(name) || is_rust_attribute_name(name) {
+            return None;
+        }
+        return Some(name.to_ascii_lowercase());
+    }
+
+    let rest = line.strip_prefix('#')?;
+    if rest.starts_with('[') || rest.starts_with('!') {
+        return None;
+    }
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return None;
+    }
+    let mut name = String::new();
+    for c in rest.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            name.push(c);
+        } else {
+            break;
+        }
+    }
+    is_ident(&name).then(|| name.to_ascii_lowercase())
+}
+
+fn is_rust_attribute_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    matches!(
+        name.as_str(),
+        "state"
+            | "default"
+            | "derive"
+            | "allow"
+            | "warn"
+            | "deny"
+            | "forbid"
+            | "cfg"
+            | "cfg_attr"
+            | "doc"
+            | "path"
+            | "test"
+            | "inline"
+            | "cold"
+            | "deprecated"
+            | "must_use"
+            | "repr"
+            | "non_exhaustive"
+            | "no_mangle"
+            | "unsafe"
+    )
+}
+
+fn is_transpiler_attr_line(line: &str) -> bool {
+    parse_transpiler_attr_name(line).is_some()
+}
+
+fn dedup_attrs(attrs: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::<String>::new();
+    for attr in attrs {
+        if seen.insert(attr.clone()) {
+            out.push(attr.clone());
+        }
+    }
+    out
+}
+
+fn sanitize_const_suffix(name: &str) -> String {
+    let mut out = String::new();
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_uppercase());
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() { "X".to_string() } else { out }
 }
 
 fn extract_fn_params_segment(line: &str) -> Option<&str> {
@@ -1444,17 +1607,65 @@ fn exact_unsigned_assign_block(ty: &str, field_name: &str) -> String {
     }
 }
 
-fn generate_attributes_of_body(fields: &[StateField]) -> String {
-    if fields.is_empty() {
+fn collect_member_attributes(
+    fields: &[StateField],
+    methods: &[ScriptMethod],
+) -> BTreeMap<String, Vec<String>> {
+    let mut out = BTreeMap::<String, Vec<String>>::new();
+    for field in fields {
+        out.insert(field.name.clone(), dedup_attrs(&field.attrs));
+    }
+    for method in methods {
+        let attrs = dedup_attrs(&method.attrs);
+        if attrs.is_empty() {
+            continue;
+        }
+        out.insert(method.name.clone(), attrs);
+    }
+    out
+}
+
+fn generate_attributes_of_body(fields: &[StateField], methods: &[ScriptMethod]) -> String {
+    let member_attrs = collect_member_attributes(fields, methods);
+    if member_attrs.is_empty() {
         return "        &[]".to_string();
     }
+
+    let mut unique_attrs = BTreeSet::<String>::new();
+    for attrs in member_attrs.values() {
+        for attr in attrs {
+            unique_attrs.insert(attr.clone());
+        }
+    }
+
     let mut out = String::new();
-    out.push_str("        const __PERRO_EXPORT_ATTRIBUTES: &[Attribute] = &[attribute!(\"export\")];\n");
-    out.push_str("        match member {\n");
-    for field in fields {
+    let mut attr_consts = BTreeMap::<String, String>::new();
+    for attr in unique_attrs {
+        let const_name = format!("__PERRO_ATTR_{}", sanitize_const_suffix(&attr));
+        attr_consts.insert(attr.clone(), const_name.clone());
         out.push_str(&format!(
-            "            \"{}\" => __PERRO_EXPORT_ATTRIBUTES,\n",
-            field.name
+            "        const {const_name}: Attribute = attribute!(\"{attr}\");\n"
+        ));
+    }
+
+    for (name, attrs) in &member_attrs {
+        let const_name = format!("__PERRO_MEMBER_ATTRS_{}", sanitize_const_suffix(name));
+        let values = attrs
+            .iter()
+            .filter_map(|a| attr_consts.get(a))
+            .map(|const_name| const_name.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push_str(&format!(
+            "        const {const_name}: &[Attribute] = &[{values}];\n"
+        ));
+    }
+
+    out.push_str("        match member {\n");
+    for name in member_attrs.keys() {
+        let const_name = format!("__PERRO_MEMBER_ATTRS_{}", sanitize_const_suffix(name));
+        out.push_str(&format!(
+            "            \"{name}\" => {const_name},\n"
         ));
     }
     out.push_str("            _ => &[],\n");
@@ -1462,39 +1673,62 @@ fn generate_attributes_of_body(fields: &[StateField]) -> String {
     out
 }
 
-fn generate_members_with_body(fields: &[StateField]) -> String {
-    if fields.is_empty() {
+fn generate_members_with_body(fields: &[StateField], methods: &[ScriptMethod]) -> String {
+    let member_attrs = collect_member_attributes(fields, methods);
+    if member_attrs.is_empty() {
         return "        &[]".to_string();
     }
-    let mut out = String::new();
-    out.push_str("        const __PERRO_EXPORT_MEMBERS: &[Member] = &[\n");
-    for field in fields {
-        out.push_str(&format!("            member!(\"{}\"),\n", field.name));
+
+    let mut by_attr: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (member, attrs) in &member_attrs {
+        for attr in attrs {
+            by_attr.entry(attr.clone()).or_default().push(member.clone());
+        }
     }
-    out.push_str("        ];\n");
-    out.push_str("        if attribute == \"export\" {\n");
-    out.push_str("            return __PERRO_EXPORT_MEMBERS;\n");
-    out.push_str("        }\n");
-    out.push_str("        &[]");
+
+    let mut out = String::new();
+    for (attr, members) in &by_attr {
+        let const_name = format!("__PERRO_MEMBERS_WITH_{}", sanitize_const_suffix(attr));
+        out.push_str(&format!("        const {const_name}: &[Member] = &[\n"));
+        for member in members {
+            out.push_str(&format!("            member!(\"{member}\"),\n"));
+        }
+        out.push_str("        ];\n");
+    }
+    out.push_str("        match attribute {\n");
+    for attr in by_attr.keys() {
+        let const_name = format!("__PERRO_MEMBERS_WITH_{}", sanitize_const_suffix(attr));
+        out.push_str(&format!("            \"{attr}\" => {const_name},\n"));
+    }
+    out.push_str("            _ => &[],\n");
+    out.push_str("        }");
     out
 }
 
-fn generate_has_attribute_body(fields: &[StateField]) -> String {
-    if fields.is_empty() {
+fn generate_has_attribute_body(fields: &[StateField], methods: &[ScriptMethod]) -> String {
+    let member_attrs = collect_member_attributes(fields, methods);
+    if member_attrs.is_empty() {
         return "        false".to_string();
     }
+
     let mut out = String::new();
-    out.push_str("        if attribute != \"export\" {\n");
-    out.push_str("            return false;\n");
-    out.push_str("        }\n");
-    out.push_str("        matches!(member, ");
-    for (i, field) in fields.iter().enumerate() {
-        if i > 0 {
-            out.push_str(" | ");
+    out.push_str("        match member {\n");
+    for (member, attrs) in &member_attrs {
+        if attrs.is_empty() {
+            out.push_str(&format!("            \"{member}\" => false,\n"));
+            continue;
         }
-        out.push_str(&format!("\"{}\"", field.name));
+        out.push_str(&format!("            \"{member}\" => matches!(attribute, "));
+        for (i, attr) in attrs.iter().enumerate() {
+            if i > 0 {
+                out.push_str(" | ");
+            }
+            out.push_str(&format!("\"{attr}\""));
+        }
+        out.push_str("),\n");
     }
-    out.push(')');
+    out.push_str("            _ => false,\n");
+    out.push_str("        }");
     out
 }
 
