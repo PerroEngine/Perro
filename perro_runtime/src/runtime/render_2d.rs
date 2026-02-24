@@ -33,14 +33,7 @@ impl Runtime {
                 _ => None,
             });
             if let Some((visible, texture, model, z_index)) = sprite_data {
-                self.emit_sprite_2d(
-                    node,
-                    visible,
-                    texture,
-                    model,
-                    z_index,
-                    &mut visible_now,
-                );
+                self.emit_sprite_2d(node, visible, texture, model, z_index, &mut visible_now);
             }
 
             let camera_data = self.nodes.get(node).and_then(|node| match &node.data {
@@ -124,9 +117,10 @@ impl Runtime {
                     crate::RuntimeRenderResult::Texture(id) => {
                         texture = id;
                         if let Some(node) = self.nodes.get_mut(node)
-                            && let SceneNodeData::Sprite2D(sprite) = &mut node.data {
-                                sprite.texture = id;
-                            }
+                            && let SceneNodeData::Sprite2D(sprite) = &mut node.data
+                        {
+                            sprite.texture = id;
+                        }
                     }
                     crate::RuntimeRenderResult::Failed(_) => {}
                     crate::RuntimeRenderResult::Mesh(_)
@@ -287,4 +281,3 @@ mod tests {
         )));
     }
 }
-

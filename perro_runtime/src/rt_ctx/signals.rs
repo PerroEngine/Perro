@@ -1,6 +1,6 @@
-use perro_runtime_context::{RuntimeContext, sub_apis::SignalAPI};
 use perro_ids::{NodeID, ScriptMemberID, SignalID};
 use perro_resource_context::ResourceContext;
+use perro_runtime_context::{RuntimeContext, sub_apis::SignalAPI};
 use perro_variant::Variant;
 use std::sync::Arc;
 
@@ -35,7 +35,8 @@ impl SignalAPI for Runtime {
                 .map(|instance| Arc::clone(&instance.behavior));
             if let Some(behavior) = behavior {
                 let resource_api = self.resource_api.clone();
-                let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
+                let res: ResourceContext<'_, crate::RuntimeResourceApi> =
+                    ResourceContext::new(resource_api.as_ref());
                 let mut ctx = RuntimeContext::new(self);
                 let _ = behavior.call_method(
                     connection.method,
@@ -60,9 +61,16 @@ impl SignalAPI for Runtime {
             };
 
             let resource_api = self.resource_api.clone();
-            let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
+            let res: ResourceContext<'_, crate::RuntimeResourceApi> =
+                ResourceContext::new(resource_api.as_ref());
             let mut ctx = RuntimeContext::new(self);
-            let _ = behavior.call_method(connection.method, &mut ctx, &res, connection.script_id, params);
+            let _ = behavior.call_method(
+                connection.method,
+                &mut ctx,
+                &res,
+                connection.script_id,
+                params,
+            );
             calls += 1;
         }
 
@@ -71,6 +79,3 @@ impl SignalAPI for Runtime {
         calls
     }
 }
-
-
-

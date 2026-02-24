@@ -53,12 +53,9 @@ impl MaterialAPI for RuntimeResourceApi {
                 state.material_reserve_pending.insert(source.to_string());
                 return id;
             }
-            state
-                .queued_commands
-                .push(RenderCommand::Resource(ResourceCommand::SetMaterialReserved {
-                    id,
-                    reserved: true,
-                }));
+            state.queued_commands.push(RenderCommand::Resource(
+                ResourceCommand::SetMaterialReserved { id, reserved: true },
+            ));
             return id;
         }
         state.material_drop_pending.remove(source);
@@ -96,7 +93,9 @@ impl MaterialAPI for RuntimeResourceApi {
             let _ = state.free_material_id(id);
             state
                 .queued_commands
-                .push(RenderCommand::Resource(ResourceCommand::DropMaterial { id }));
+                .push(RenderCommand::Resource(ResourceCommand::DropMaterial {
+                    id,
+                }));
             return true;
         }
         false

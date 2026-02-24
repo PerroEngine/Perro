@@ -34,10 +34,7 @@ impl SignalRegistry {
         {
             return false;
         }
-        connections.push(SignalConnection {
-            script_id,
-            method,
-        });
+        connections.push(SignalConnection { script_id, method });
         true
     }
 
@@ -159,5 +156,3 @@ mod tests {
         assert!(out.is_empty());
     }
 }
-
-

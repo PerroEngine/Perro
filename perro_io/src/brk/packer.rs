@@ -1,4 +1,6 @@
+use rayon::prelude::*;
 use std::{
+    fs,
     fs::File,
     io::{self, Seek, SeekFrom, Write},
     path::Path,
@@ -41,6 +43,13 @@ struct BrkEntry {
     meta: BrkEntryMeta,
 }
 
+struct ProcessedFile {
+    rel_path: String,
+    data: Vec<u8>,
+    flags: u32,
+    original_size: u64,
+}
+
 /// Build a `.brk` archive
 pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path) -> io::Result<()> {
     let mut file = File::create(output)?;
@@ -75,26 +84,43 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path) -> io::Res
             Ok((data, flags, original_data_len))
         };
 
-    // Collect all files using our walk utility
-    let file_entries = crate::collect_files(res_dir, res_dir)?;
+    // Collect file paths and process file bytes/compression in parallel.
+    let mut rel_paths = crate::collect_file_paths(res_dir, res_dir)?
+        .into_iter()
+        .map(|rel| rel.replace('\\', "/"))
+        .filter(|rel| !should_skip(rel))
+        .collect::<Vec<_>>();
+    rel_paths.sort();
 
-    for (rel_path, data) in file_entries {
-        // Skip extensions that are statically compiled
-        if should_skip(&rel_path) {
-            continue;
-        }
+    let processed_files = rel_paths
+        .into_par_iter()
+        .map(|rel_path| -> io::Result<ProcessedFile> {
+            let full_path = res_dir.join(&rel_path);
+            let data = fs::read(&full_path)?;
+            let (processed_data, flags, original_size) = process_data(data, true)?;
+            Ok(ProcessedFile {
+                rel_path,
+                data: processed_data,
+                flags,
+                original_size,
+            })
+        })
+        .collect::<io::Result<Vec<_>>>()?;
 
-        // Always try compression; we only keep it if smaller
-        let should_compress = true;
-
-        let (processed_data, flags, original_size) = process_data(data, should_compress)?;
+    for processed in processed_files {
+        let ProcessedFile {
+            rel_path,
+            data,
+            flags,
+            original_size,
+        } = processed;
 
         let offset = file.stream_position()?;
-        file.write_all(&processed_data)?;
-        let size = processed_data.len() as u64;
+        file.write_all(&data)?;
+        let size = data.len() as u64;
 
         entries.push(BrkEntry {
-            path: format!("res/{}", rel_path.replace("\\", "/")),
+            path: format!("res/{rel_path}"),
             meta: BrkEntryMeta {
                 offset,
                 size,

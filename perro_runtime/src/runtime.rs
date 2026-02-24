@@ -39,7 +39,8 @@ pub struct Runtime {
     pub(crate) signals: SignalRegistry,
     pub(crate) signal_emit_scratch: Vec<SignalConnection>,
     pub(crate) script_library: Option<Library>,
-    pub(crate) dynamic_script_registry: AHashMap<String, ScriptConstructor<Runtime, RuntimeResourceApi>>,
+    pub(crate) dynamic_script_registry:
+        AHashMap<String, ScriptConstructor<Runtime, RuntimeResourceApi>>,
     pub(crate) resource_api: Arc<RuntimeResourceApi>,
 }
 
@@ -339,7 +340,9 @@ impl Runtime {
     pub fn from_project_with_script_registry(
         project: RuntimeProject,
         provider_mode: ProviderMode,
-        script_registry: Option<&'static [(&'static str, ScriptConstructor<Self, RuntimeResourceApi>)]>,
+        script_registry: Option<
+            &'static [(&'static str, ScriptConstructor<Self, RuntimeResourceApi>)],
+        >,
     ) -> Self {
         let mut runtime = Self::new();
         runtime.project = Some(Arc::new(project));
@@ -386,7 +389,8 @@ impl Runtime {
 
     pub fn drain_render_commands(&mut self, out: &mut Vec<RenderCommand>) {
         let mut queued_resource_commands = Vec::new();
-        self.resource_api.drain_commands(&mut queued_resource_commands);
+        self.resource_api
+            .drain_commands(&mut queued_resource_commands);
         for command in queued_resource_commands {
             self.render.queue_command(command);
         }
@@ -490,12 +494,7 @@ impl Runtime {
         let mut queued = std::mem::take(&mut self.pending_start_scripts);
         for id in queued.drain(..) {
             let slot = id.index() as usize;
-            let still_pending = self
-                .pending_start_flags
-                .get(slot)
-                .copied()
-                .flatten()
-                == Some(id);
+            let still_pending = self.pending_start_flags.get(slot).copied().flatten() == Some(id);
             if !still_pending {
                 continue;
             }

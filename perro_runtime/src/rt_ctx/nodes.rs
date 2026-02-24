@@ -1,5 +1,5 @@
-use perro_runtime_context::sub_apis::NodeAPI;
 use perro_core::{NodeTypeDispatch, Renderable, SceneNode, SceneNodeData};
+use perro_runtime_context::sub_apis::NodeAPI;
 use std::borrow::Cow;
 
 use crate::Runtime;
@@ -110,9 +110,10 @@ impl NodeAPI for Runtime {
         }
 
         if !old_parent.is_nil()
-            && let Some(parent) = self.nodes.get_mut(old_parent) {
-                parent.remove_child(child_id);
-            }
+            && let Some(parent) = self.nodes.get_mut(old_parent)
+        {
+            parent.remove_child(child_id);
+        }
 
         if let Some(child) = self.nodes.get_mut(child_id) {
             child.parent = parent_id;
@@ -147,4 +148,3 @@ impl NodeAPI for Runtime {
         updated
     }
 }
-

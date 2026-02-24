@@ -1,5 +1,6 @@
 use crate::{StaticPipelineError, embedded_dir, res_dir, static_dir};
-use perro_io::{compress_zlib_best, walkdir::walk_dir};
+use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
+use rayon::prelude::*;
 use std::{
     fmt::Write as _,
     fs, io,
@@ -30,6 +31,11 @@ struct MeshRef {
     embedded_rel_path: String,
 }
 
+struct MeshAsset {
+    entry: MeshRef,
+    bytes: Vec<u8>,
+}
+
 pub fn generate_static_meshes(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
     let static_dir = static_dir(project_root);
@@ -37,46 +43,68 @@ pub fn generate_static_meshes(project_root: &Path) -> Result<(), StaticPipelineE
     fs::create_dir_all(&static_dir)?;
     fs::create_dir_all(&embedded_meshes_dir)?;
 
-    let mut mesh_refs = Vec::<MeshRef>::new();
+    let mut mesh_paths = Vec::<String>::new();
     if res_dir.exists() {
-        walk_dir(&res_dir, &mut |path| {
-            let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
-                return Ok(());
-            };
-            let ext = ext.to_ascii_lowercase();
-            let rel = path
-                .strip_prefix(&res_dir)
-                .unwrap()
-                .to_string_lossy()
-                .replace('\\', "/");
+        mesh_paths = collect_file_paths(&res_dir, &res_dir)?
+            .into_iter()
+            .map(|rel| rel.replace('\\', "/"))
+            .filter(|rel| {
+                Path::new(rel)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|ext| {
+                        matches!(ext.to_ascii_lowercase().as_str(), "pmesh" | "glb" | "gltf")
+                    })
+            })
+            .collect();
+    }
+    mesh_paths.sort();
+
+    let processed = mesh_paths
+        .into_par_iter()
+        .map(|rel| -> io::Result<Vec<MeshAsset>> {
             let res_path = format!("res://{rel}");
+            let full_path = res_dir.join(&rel);
+            let ext = Path::new(&rel)
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|s| s.to_ascii_lowercase())
+                .unwrap_or_default();
             match ext.as_str() {
                 "pmesh" => {
-                    let output_path = embedded_meshes_dir.join(&rel);
-                    if let Some(parent) = output_path.parent() {
-                        fs::create_dir_all(parent)?;
-                    }
-                    fs::copy(path, &output_path)?;
-                    mesh_refs.push(MeshRef {
-                        lookup_key: res_path,
-                        embedded_rel_path: rel,
-                    });
+                    let bytes = fs::read(&full_path)?;
+                    Ok(vec![MeshAsset {
+                        entry: MeshRef {
+                            lookup_key: res_path,
+                            embedded_rel_path: rel,
+                        },
+                        bytes,
+                    }])
                 }
                 "glb" | "gltf" => {
-                    let entries = build_gltf_mesh_entries(path, &res_path, &rel)?;
-                    for (entry, bytes) in entries {
-                        let output_path = embedded_meshes_dir.join(&entry.embedded_rel_path);
-                        if let Some(parent) = output_path.parent() {
-                            fs::create_dir_all(parent)?;
-                        }
-                        fs::write(&output_path, bytes)?;
-                        mesh_refs.push(entry);
-                    }
+                    build_gltf_mesh_entries(&full_path, &res_path, &rel).map(|entries| {
+                        entries
+                            .into_iter()
+                            .map(|(entry, bytes)| MeshAsset { entry, bytes })
+                            .collect()
+                    })
                 }
-                _ => {}
+                _ => Ok(Vec::new()),
             }
-            Ok(())
-        })?;
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+
+    let mut mesh_assets = processed.into_iter().flatten().collect::<Vec<_>>();
+    mesh_assets.sort_by(|a, b| a.entry.embedded_rel_path.cmp(&b.entry.embedded_rel_path));
+
+    let mut mesh_refs = Vec::<MeshRef>::with_capacity(mesh_assets.len());
+    for asset in mesh_assets {
+        let output_path = embedded_meshes_dir.join(&asset.entry.embedded_rel_path);
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&output_path, asset.bytes)?;
+        mesh_refs.push(asset.entry);
     }
 
     mesh_refs.sort_by(|a, b| a.lookup_key.cmp(&b.lookup_key));

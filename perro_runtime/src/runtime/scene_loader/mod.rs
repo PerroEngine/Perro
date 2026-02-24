@@ -187,7 +187,13 @@ fn print_scene_tree(
     );
     let child_indent = format!("{indent}  ");
     for child in node_ref.children_slice() {
-        print_scene_tree(runtime, *child, &child_indent, depth + 1, script_paths_by_node);
+        print_scene_tree(
+            runtime,
+            *child,
+            &child_indent,
+            depth + 1,
+            script_paths_by_node,
+        );
     }
 }
 
@@ -198,4 +204,3 @@ const ANSI_ORANGE: &str = "\x1b[38;5;208m";
 fn depth_color(depth: usize) -> &'static str {
     if depth == 0 { ANSI_WHITE } else { "" }
 }
-

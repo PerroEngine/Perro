@@ -1,6 +1,7 @@
 use crate::{StaticPipelineError, res_dir, static_dir};
-use perro_io::walkdir::walk_dir;
+use perro_io::walkdir::collect_file_paths;
 use perro_scene::{Parser, RuntimeValue};
+use rayon::prelude::*;
 use std::{collections::HashMap, fmt::Write as _, fs, io, path::Path};
 
 pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipelineError> {
@@ -8,41 +9,49 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
     let static_dir = static_dir(project_root);
     fs::create_dir_all(&static_dir)?;
 
-    let mut materials: Vec<(String, MaterialLiteral)> = Vec::new();
+    let mut material_paths = Vec::<String>::new();
     if res_dir.exists() {
-        walk_dir(&res_dir, &mut |path| {
-            let rel = path
-                .strip_prefix(&res_dir)
-                .unwrap()
-                .to_string_lossy()
-                .replace('\\', "/");
+        material_paths = collect_file_paths(&res_dir, &res_dir)?
+            .into_iter()
+            .map(|rel| rel.replace('\\', "/"))
+            .filter(|rel| {
+                Path::new(rel)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|ext| matches!(ext, "pmat" | "glb" | "gltf"))
+            })
+            .collect();
+    }
+    material_paths.sort();
+
+    let mut materials = material_paths
+        .into_par_iter()
+        .map(|rel| -> io::Result<Vec<(String, MaterialLiteral)>> {
             let res_path = format!("res://{rel}");
-            match path.extension().and_then(|e| e.to_str()) {
+            let full_path = res_dir.join(&rel);
+            match Path::new(&rel).extension().and_then(|e| e.to_str()) {
                 Some("pmat") => {
-                    let src = fs::read_to_string(path)?;
+                    let src = fs::read_to_string(&full_path)?;
                     let parsed =
                         std::panic::catch_unwind(|| Parser::new(&src).parse_value_literal())
                             .map_err(|_| {
-                                std::io::Error::other(format!(
-                                    "failed to parse material: {res_path}"
-                                ))
+                                io::Error::other(format!("failed to parse material: {res_path}"))
                             })?;
                     let material = material_from_runtime_value(&parsed).ok_or_else(|| {
-                        std::io::Error::other(format!(
+                        io::Error::other(format!(
                             "material `{res_path}` must be an object with at least one valid field"
                         ))
                     })?;
-                    materials.push((res_path, material));
+                    Ok(vec![(res_path, material)])
                 }
-                Some("glb") | Some("gltf") => {
-                    let mut gltf_materials = materials_from_gltf_file(path, &res_path)?;
-                    materials.append(&mut gltf_materials);
-                }
-                _ => {}
+                Some("glb") | Some("gltf") => materials_from_gltf_file(&full_path, &res_path),
+                _ => Ok(Vec::new()),
             }
-            Ok(())
-        })?;
-    }
+        })
+        .collect::<io::Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
 
     materials.sort_by(|a, b| a.0.cmp(&b.0));
 

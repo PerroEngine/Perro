@@ -12,7 +12,9 @@ impl MeshAPI for RuntimeResourceApi {
         let request = state.allocate_request();
         let id = state.allocate_mesh_id();
         state.mesh_by_source.insert(source.to_string(), id);
-        state.mesh_pending_by_source.insert(source.to_string(), request);
+        state
+            .mesh_pending_by_source
+            .insert(source.to_string(), request);
         state
             .mesh_pending_source_by_request
             .insert(request, source.to_string());
@@ -48,7 +50,9 @@ impl MeshAPI for RuntimeResourceApi {
         let request = state.allocate_request();
         let id = state.allocate_mesh_id();
         state.mesh_by_source.insert(source.to_string(), id);
-        state.mesh_pending_by_source.insert(source.to_string(), request);
+        state
+            .mesh_pending_by_source
+            .insert(source.to_string(), request);
         state
             .mesh_pending_source_by_request
             .insert(request, source.to_string());

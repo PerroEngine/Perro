@@ -1,7 +1,8 @@
 use crate::{StaticPipelineError, res_dir, static_dir};
-use perro_io::walkdir::walk_dir;
+use perro_io::walkdir::collect_file_paths;
 use perro_scene::{Parser, RuntimeNodeData, RuntimeValue};
-use std::{collections::HashMap, fmt::Write as _, fs, path::Path};
+use rayon::prelude::*;
+use std::{collections::HashMap, fmt::Write as _, fs, io, path::Path};
 
 pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
@@ -9,35 +10,41 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
     fs::create_dir_all(&static_dir)?;
 
     let mut scene_paths = Vec::<String>::new();
+
+    if res_dir.exists() {
+        scene_paths = collect_file_paths(&res_dir, &res_dir)?
+            .into_iter()
+            .map(|rel| rel.replace('\\', "/"))
+            .filter(|rel| Path::new(rel).extension().and_then(|e| e.to_str()) == Some("scn"))
+            .map(|rel| format!("res://{rel}"))
+            .collect();
+    }
+    scene_paths.sort();
+
+    let mut emitted_scenes = scene_paths
+        .par_iter()
+        .map(|res_path| -> io::Result<(String, EmittedScene)> {
+            let rel = res_path.trim_start_matches("res://");
+            let full_path = res_dir.join(rel);
+            let src = fs::read_to_string(&full_path)?;
+            let parsed = std::panic::catch_unwind(|| Parser::new(&src).parse_scene())
+                .map_err(|_| io::Error::other(format!("failed to parse scene: {res_path}")))?;
+            let emitted = emit_static_scene_const(res_path, &parsed)
+                .map_err(|err| io::Error::other(err.to_string()))?;
+            Ok((res_path.clone(), emitted))
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+    emitted_scenes.sort_by(|a, b| a.0.cmp(&b.0));
+
     let mut scene_defs = String::new();
     let mut any_uses_empty_keys = false;
     let mut any_uses_empty_fields = false;
-
-    if res_dir.exists() {
-        walk_dir(&res_dir, &mut |path| {
-            if path.extension().and_then(|e| e.to_str()) != Some("scn") {
-                return Ok(());
-            }
-            let rel = path
-                .strip_prefix(&res_dir)
-                .unwrap()
-                .to_string_lossy()
-                .replace('\\', "/");
-            let res_path = format!("res://{rel}");
-            let src = fs::read_to_string(path)?;
-            let parsed = std::panic::catch_unwind(|| Parser::new(&src).parse_scene())
-                .map_err(|_| std::io::Error::other(format!("failed to parse scene: {res_path}")))?;
-            let emitted = emit_static_scene_const(&res_path, &parsed)
-                .map_err(|err| std::io::Error::other(err.to_string()))?;
-            scene_defs.push_str(&emitted.code);
-            any_uses_empty_keys |= emitted.uses_empty_keys;
-            any_uses_empty_fields |= emitted.uses_empty_fields;
-            scene_paths.push(res_path);
-            Ok(())
-        })?;
+    for (_res_path, emitted) in emitted_scenes {
+        scene_defs.push_str(&emitted.code);
+        any_uses_empty_keys |= emitted.uses_empty_keys;
+        any_uses_empty_fields |= emitted.uses_empty_fields;
     }
 
-    scene_paths.sort();
     let mut lookup = String::new();
     lookup.push_str("pub fn lookup_scene(path: &str) -> Option<&'static StaticScene> {\n");
     lookup.push_str("    match path {\n");

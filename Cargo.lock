@@ -1653,6 +1653,7 @@ name = "perro_io"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "rayon",
 ]
 
 [[package]]
@@ -1748,6 +1749,7 @@ dependencies = [
  "image",
  "perro_io",
  "perro_scene",
+ "rayon",
 ]
 
 [[package]]

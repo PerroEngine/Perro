@@ -1,9 +1,9 @@
+use perro_ids::{NodeID, ScriptMemberID};
+use perro_resource_context::ResourceContext;
 use perro_runtime_context::{
     RuntimeContext,
     sub_apis::{Attribute, Member, ScriptAPI},
 };
-use perro_ids::{NodeID, ScriptMemberID};
-use perro_resource_context::ResourceContext;
 use perro_variant::Variant;
 use std::sync::Arc;
 
@@ -34,14 +34,18 @@ impl Runtime {
     #[inline(always)]
     pub(crate) fn call_start_script(&mut self, id: NodeID) {
         let (behavior, flags) = match self.scripts.get_instance(id) {
-            Some(instance) => (Arc::clone(&instance.behavior), instance.behavior.script_flags()),
+            Some(instance) => (
+                Arc::clone(&instance.behavior),
+                instance.behavior.script_flags(),
+            ),
             None => return,
         };
         if !flags.has_all_init() {
             return;
         }
         let resource_api = self.resource_api.clone();
-        let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
+        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
+            ResourceContext::new(resource_api.as_ref());
         let mut ctx = RuntimeContext::new(self);
         behavior.on_all_init(&mut ctx, &res, id);
     }
@@ -49,14 +53,18 @@ impl Runtime {
     #[inline(always)]
     pub(crate) fn call_removal_script(&mut self, id: NodeID) {
         let (behavior, flags) = match self.scripts.get_instance(id) {
-            Some(instance) => (Arc::clone(&instance.behavior), instance.behavior.script_flags()),
+            Some(instance) => (
+                Arc::clone(&instance.behavior),
+                instance.behavior.script_flags(),
+            ),
             None => return,
         };
         if !flags.has_removal() {
             return;
         }
         let resource_api = self.resource_api.clone();
-        let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
+        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
+            ResourceContext::new(resource_api.as_ref());
         let mut ctx = RuntimeContext::new(self);
         behavior.on_removal(&mut ctx, &res, id);
     }
@@ -79,7 +87,8 @@ impl Runtime {
             None => return,
         };
         let resource_api = self.resource_api.clone();
-        let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
+        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
+            ResourceContext::new(resource_api.as_ref());
         let mut ctx = RuntimeContext::new(self);
         behavior.on_update(&mut ctx, &res, id);
     }
@@ -94,7 +103,8 @@ impl Runtime {
             None => return,
         };
         let resource_api = self.resource_api.clone();
-        let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
+        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
+            ResourceContext::new(resource_api.as_ref());
         let mut ctx = RuntimeContext::new(self);
         behavior.on_fixed_update(&mut ctx, &res, id);
     }
@@ -167,7 +177,8 @@ impl ScriptAPI for Runtime {
             None => return Variant::Null,
         };
         let resource_api = self.resource_api.clone();
-        let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
+        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
+            ResourceContext::new(resource_api.as_ref());
         let mut ctx = RuntimeContext::new(self);
         behavior.call_method(method, &mut ctx, &res, script_id, params)
     }
@@ -196,7 +207,3 @@ impl ScriptAPI for Runtime {
         behavior.has_attribute(member, attribute)
     }
 }
-
-
-
-

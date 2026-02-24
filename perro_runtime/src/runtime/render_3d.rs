@@ -144,8 +144,7 @@ impl Runtime {
                 continue;
             }
 
-            let Some((mesh, material)) =
-                self.resolve_mesh_instance_assets(node, mesh, material)
+            let Some((mesh, material)) = self.resolve_mesh_instance_assets(node, mesh, material)
             else {
                 continue;
             };
@@ -174,9 +173,10 @@ impl Runtime {
                     crate::RuntimeRenderResult::Mesh(id) => {
                         mesh = id;
                         if let Some(node) = self.nodes.get_mut(node)
-                            && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data {
-                                mesh_instance.mesh = id;
-                            }
+                            && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data
+                        {
+                            mesh_instance.mesh = id;
+                        }
                     }
                     crate::RuntimeRenderResult::Failed(_)
                     | crate::RuntimeRenderResult::Texture(_)
@@ -184,12 +184,7 @@ impl Runtime {
                 }
             }
             if mesh.is_nil() {
-                let source = self
-                    .render_3d
-                    .mesh_sources
-                    .get(&node)?
-                    .trim()
-                    .to_string();
+                let source = self.render_3d.mesh_sources.get(&node)?.trim().to_string();
                 if source.is_empty() {
                     return None;
                 }
@@ -215,9 +210,10 @@ impl Runtime {
                     crate::RuntimeRenderResult::Material(id) => {
                         material = id;
                         if let Some(node) = self.nodes.get_mut(node)
-                            && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data {
-                                mesh_instance.material = id;
-                            }
+                            && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data
+                        {
+                            mesh_instance.material = id;
+                        }
                     }
                     crate::RuntimeRenderResult::Failed(_)
                     | crate::RuntimeRenderResult::Texture(_)
@@ -729,4 +725,3 @@ mod tests {
         )));
     }
 }
-

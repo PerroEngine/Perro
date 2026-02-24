@@ -37,12 +37,9 @@ impl TextureAPI for RuntimeResourceApi {
                 state.texture_reserve_pending.insert(source.to_string());
                 return id;
             }
-            state
-                .queued_commands
-                .push(RenderCommand::Resource(ResourceCommand::SetTextureReserved {
-                    id,
-                    reserved: true,
-                }));
+            state.queued_commands.push(RenderCommand::Resource(
+                ResourceCommand::SetTextureReserved { id, reserved: true },
+            ));
             return id;
         }
         state.texture_drop_pending.remove(source);

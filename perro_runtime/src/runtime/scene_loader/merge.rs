@@ -48,10 +48,7 @@ pub(super) fn merge_prepared_scene(
             runtime.render_3d.material_sources.insert(node, source);
         }
         if let Some(material) = material_inline {
-            runtime
-                .render_3d
-                .material_overrides
-                .insert(node, material);
+            runtime.render_3d.material_overrides.insert(node, material);
         }
         if let Some(parent_key) = parent_key {
             parent_pairs.push((key.clone(), parent_key));
@@ -61,9 +58,10 @@ pub(super) fn merge_prepared_scene(
     }
 
     if let Some(root_key) = root_key.as_deref()
-        && !key_to.contains_key(root_key) {
-            return Err(format!("scene root `{root_key}` not found in node list"));
-        }
+        && !key_to.contains_key(root_key)
+    {
+        return Err(format!("scene root `{root_key}` not found in node list"));
+    }
 
     let mut edges = Vec::with_capacity(parent_pairs.len());
     for (child_key, parent_key) in parent_pairs {
@@ -141,4 +139,3 @@ pub(super) fn merge_prepared_scene(
 
     Ok(script_nodes)
 }
-

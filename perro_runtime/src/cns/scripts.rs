@@ -79,7 +79,8 @@ impl Runtime {
 
         if flags.has_init() {
             let resource_api = self.resource_api.clone();
-            let res: ResourceContext<'_, crate::RuntimeResourceApi> = ResourceContext::new(resource_api.as_ref());
+            let res: ResourceContext<'_, crate::RuntimeResourceApi> =
+                ResourceContext::new(resource_api.as_ref());
             let mut ctx = RuntimeContext::new(self);
             behavior.on_init(&mut ctx, &res, node);
         }
@@ -156,8 +157,9 @@ impl Runtime {
             for i in 0..registry_len() {
                 let mut ptr: *const u8 = std::ptr::null();
                 let mut len = 0usize;
-                let mut ctor =
-                    std::mem::MaybeUninit::<ScriptConstructor<Runtime, crate::RuntimeResourceApi>>::uninit();
+                let mut ctor = std::mem::MaybeUninit::<
+                    ScriptConstructor<Runtime, crate::RuntimeResourceApi>,
+                >::uninit();
                 let ok = registry_get(i, &mut ptr, &mut len, ctor.as_mut_ptr());
                 if !ok {
                     return Err(format!("scripts registry entry {i} could not be read"));
@@ -263,5 +265,3 @@ fn scripts_dylib_suffix() -> &'static str {
 fn scripts_dylib_suffix() -> &'static str {
     ".dylib"
 }
-
-

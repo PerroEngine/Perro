@@ -1,8 +1,9 @@
 use crate::{StaticPipelineError, embedded_dir, res_dir, static_dir};
-use perro_io::{compress_zlib_best, walkdir::walk_dir};
+use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
+use rayon::prelude::*;
 use std::{
     fmt::Write as _,
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -17,25 +18,29 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
     fs::create_dir_all(&static_dir)?;
     fs::create_dir_all(&embedded_textures_dir)?;
 
-    let mut textures = Vec::<(String, String)>::new();
+    let mut texture_paths = Vec::<String>::new();
     if res_dir.exists() {
-        walk_dir(&res_dir, &mut |path| {
-            let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
-                return Ok(());
-            };
-            if !IMAGE_EXTENSIONS.contains(&ext) {
-                return Ok(());
-            }
+        texture_paths = collect_file_paths(&res_dir, &res_dir)?
+            .into_iter()
+            .map(|rel| rel.replace('\\', "/"))
+            .filter(|rel| {
+                Path::new(rel)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext))
+            })
+            .collect();
+    }
+    texture_paths.sort();
 
-            let rel = path
-                .strip_prefix(&res_dir)
-                .unwrap()
-                .to_string_lossy()
-                .replace('\\', "/");
+    let mut encoded = texture_paths
+        .into_par_iter()
+        .map(|rel| -> io::Result<(String, String, Vec<u8>)> {
             let res_path = format!("res://{rel}");
-            let file_bytes = fs::read(path)?;
+            let full_path = res_dir.join(&rel);
+            let file_bytes = fs::read(&full_path)?;
             let image = image::load_from_memory(&file_bytes).map_err(|err| {
-                std::io::Error::other(format!("failed to decode image `{res_path}`: {err}"))
+                io::Error::other(format!("failed to decode image `{res_path}`: {err}"))
             })?;
             let rgba = image.to_rgba8();
             let (width, height) = rgba.dimensions();
@@ -53,15 +58,19 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
             let mut rel_ptex = PathBuf::from(&rel);
             rel_ptex.set_extension("ptex");
             let rel_ptex = rel_ptex.to_string_lossy().replace('\\', "/");
-            let output_path = embedded_textures_dir.join(&rel_ptex);
-            if let Some(parent) = output_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(&output_path, &ptex)?;
+            Ok((res_path, rel_ptex, ptex))
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+    encoded.sort_by(|a, b| a.0.cmp(&b.0));
 
-            textures.push((res_path, rel_ptex));
-            Ok(())
-        })?;
+    let mut textures = Vec::<(String, String)>::with_capacity(encoded.len());
+    for (res_path, rel_ptex, ptex) in encoded {
+        let output_path = embedded_textures_dir.join(&rel_ptex);
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&output_path, ptex)?;
+        textures.push((res_path, rel_ptex));
     }
 
     textures.sort_by(|a, b| a.0.cmp(&b.0));

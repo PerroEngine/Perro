@@ -99,9 +99,7 @@ pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
             if let Some(archive) = BRK_ARCHIVE.read().unwrap().as_ref() {
                 archive.read_file(&virtual_path)
             } else {
-                Err(io::Error::other(
-                    "BRK archive not loaded",
-                ))
+                Err(io::Error::other("BRK archive not loaded"))
             }
         }
     }
@@ -119,9 +117,7 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
                 let file: BrkFile = archive.stream_file(&virtual_path)?;
                 Ok(Box::new(file))
             } else {
-                Err(io::Error::other(
-                    "BRK archive not loaded",
-                ))
+                Err(io::Error::other("BRK archive not loaded"))
             }
         }
     }
@@ -137,8 +133,6 @@ pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
             let mut file = File::create(pb)?;
             file.write_all(data)
         }
-        ResolvedPath::Brk(_) => Err(io::Error::other(
-            "Cannot save to BRK archive",
-        )),
+        ResolvedPath::Brk(_) => Err(io::Error::other("Cannot save to BRK archive")),
     }
 }
