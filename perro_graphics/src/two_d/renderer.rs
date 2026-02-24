@@ -165,6 +165,12 @@ impl Renderer2D {
                 self.retained_sprites.insert(node, sprite);
                 stats.accepted_draws = stats.accepted_draws.saturating_add(1);
             } else {
+                if let Some(retained) = self.retained_sprites.get_mut(&node) {
+                    // Keep previous texture binding until replacement exists,
+                    // but still apply latest transform/depth updates.
+                    retained.model = sprite.model;
+                    retained.z_index = sprite.z_index;
+                }
                 stats.rejected_draws = stats.rejected_draws.saturating_add(1);
             }
         }

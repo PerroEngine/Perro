@@ -94,11 +94,23 @@ impl Renderer3D {
     ) -> (Camera3DState, Renderer3DStats, Lighting3DState) {
         let mut stats = Renderer3DStats::default();
         for draw in self.queued_draws.drain(..) {
-            if resources.has_mesh(draw.mesh) && resources.has_material(draw.material) {
+            let mesh_ready = resources.has_mesh(draw.mesh);
+            let material_ready = resources.has_material(draw.material);
+            if mesh_ready && material_ready {
                 self.retained_draws.insert(draw.node, draw);
                 stats.accepted_draws = stats.accepted_draws.saturating_add(1);
             } else {
-                self.retained_draws.remove(&draw.node);
+                if let Some(retained) = self.retained_draws.get_mut(&draw.node) {
+                    // Keep previous mesh/material bindings until replacements exist,
+                    // but continue applying latest transform updates.
+                    retained.model = draw.model;
+                    if mesh_ready {
+                        retained.mesh = draw.mesh;
+                    }
+                    if material_ready {
+                        retained.material = draw.material;
+                    }
+                }
                 stats.rejected_draws = stats.rejected_draws.saturating_add(1);
             }
         }
