@@ -198,6 +198,7 @@ impl Runtime {
                     self.queue_render_command(RenderCommand::Resource(
                         ResourceCommand::CreateMesh {
                             request,
+                            id: MeshID::nil(),
                             source,
                             reserved: false,
                         },
@@ -242,6 +243,7 @@ impl Runtime {
                     self.queue_render_command(RenderCommand::Resource(
                         ResourceCommand::CreateMaterial {
                             request,
+                            id: MaterialID::nil(),
                             material,
                             source,
                             reserved: false,

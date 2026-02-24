@@ -48,6 +48,34 @@ impl SlotArena {
         self.free_slots.push(slot);
         true
     }
+
+    #[inline]
+    fn occupy_parts(&mut self, index: u32, generation: u32) -> bool {
+        if index == 0 {
+            return false;
+        }
+        let slot = index as usize - 1;
+        if self.generations.len() <= slot {
+            let start = self.generations.len();
+            self.generations.resize(slot + 1, 0);
+            self.occupied.resize(slot + 1, false);
+            for s in start..slot {
+                self.free_slots.push(s);
+            }
+        }
+        if self.occupied[slot] {
+            return self.generations[slot] == generation;
+        }
+        if self.generations[slot] > generation {
+            return false;
+        }
+        self.generations[slot] = generation;
+        self.occupied[slot] = true;
+        if let Some(pos) = self.free_slots.iter().position(|s| *s == slot) {
+            self.free_slots.swap_remove(pos);
+        }
+        true
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -88,6 +116,7 @@ impl ResourceStore {
             if reserved {
                 self.set_mesh_reserved(id, true);
             }
+            self.log_resource_reused("mesh", id.index(), id.generation(), source, reserved);
             return id;
         }
         let (index, generation) = self.meshes.create_parts();
@@ -101,6 +130,38 @@ impl ResourceStore {
                 ..ResourceMeta::default()
             },
         );
+        self.log_resource_created("mesh", index, generation, source, reserved);
+        id
+    }
+
+    #[inline]
+    pub fn create_mesh_with_id(&mut self, id: MeshID, source: &str, reserved: bool) -> MeshID {
+        if let Some(existing) = self.mesh_by_source.get(source).copied() {
+            if reserved {
+                self.set_mesh_reserved(existing, true);
+            }
+            self.log_resource_reused(
+                "mesh",
+                existing.index(),
+                existing.generation(),
+                source,
+                reserved,
+            );
+            return existing;
+        }
+        if !self.meshes.occupy_parts(id.index(), id.generation()) {
+            return MeshID::nil();
+        }
+        self.mesh_by_source.insert(source.to_string(), id);
+        self.mesh_source_by.insert(id, source.to_string());
+        self.mesh_meta_by.insert(
+            id,
+            ResourceMeta {
+                reserved,
+                ..ResourceMeta::default()
+            },
+        );
+        self.log_resource_created("mesh", id.index(), id.generation(), source, reserved);
         id
     }
 
@@ -110,6 +171,7 @@ impl ResourceStore {
             if reserved {
                 self.set_texture_reserved(id, true);
             }
+            self.log_resource_reused("texture", id.index(), id.generation(), source, reserved);
             return id;
         }
         let (index, generation) = self.textures.create_parts();
@@ -123,6 +185,43 @@ impl ResourceStore {
                 ..ResourceMeta::default()
             },
         );
+        self.log_resource_created("texture", index, generation, source, reserved);
+        id
+    }
+
+    #[inline]
+    pub fn create_texture_with_id(
+        &mut self,
+        id: TextureID,
+        source: &str,
+        reserved: bool,
+    ) -> TextureID {
+        if let Some(existing) = self.texture_by_source.get(source).copied() {
+            if reserved {
+                self.set_texture_reserved(existing, true);
+            }
+            self.log_resource_reused(
+                "texture",
+                existing.index(),
+                existing.generation(),
+                source,
+                reserved,
+            );
+            return existing;
+        }
+        if !self.textures.occupy_parts(id.index(), id.generation()) {
+            return TextureID::nil();
+        }
+        self.texture_by_source.insert(source.to_string(), id);
+        self.texture_source_by.insert(id, source.to_string());
+        self.texture_meta_by.insert(
+            id,
+            ResourceMeta {
+                reserved,
+                ..ResourceMeta::default()
+            },
+        );
+        self.log_resource_created("texture", id.index(), id.generation(), source, reserved);
         id
     }
 
@@ -139,6 +238,7 @@ impl ResourceStore {
             if reserved {
                 self.set_material_reserved(id, true);
             }
+            self.log_resource_reused("material", id.index(), id.generation(), source, reserved);
             return id;
         }
         let (index, generation) = self.materials.create_parts();
@@ -155,6 +255,62 @@ impl ResourceStore {
                 reserved,
                 ..ResourceMeta::default()
             },
+        );
+        self.log_resource_created(
+            "material",
+            index,
+            generation,
+            source.unwrap_or("<inline>"),
+            reserved,
+        );
+        id
+    }
+
+    #[inline]
+    pub fn create_material_with_id(
+        &mut self,
+        id: MaterialID,
+        material: Material3D,
+        source: Option<&str>,
+        reserved: bool,
+    ) -> MaterialID {
+        if let Some(source) = source
+            && let Some(existing) = self.material_by_source.get(source).copied()
+        {
+            if reserved {
+                self.set_material_reserved(existing, true);
+            }
+            self.log_resource_reused(
+                "material",
+                existing.index(),
+                existing.generation(),
+                source,
+                reserved,
+            );
+            return existing;
+        }
+        if !self.materials.occupy_parts(id.index(), id.generation()) {
+            return MaterialID::nil();
+        }
+        self.material_by.insert(id, material);
+        if let Some(source) = source {
+            let source = source.to_string();
+            self.material_by_source.insert(source.clone(), id);
+            self.material_source_by.insert(id, source);
+        }
+        self.material_meta_by.insert(
+            id,
+            ResourceMeta {
+                reserved,
+                ..ResourceMeta::default()
+            },
+        );
+        self.log_resource_created(
+            "material",
+            id.index(),
+            id.generation(),
+            source.unwrap_or("<inline>"),
+            reserved,
         );
         id
     }
@@ -209,28 +365,67 @@ impl ResourceStore {
 
     #[inline]
     pub fn mark_texture_used(&mut self, id: TextureID) {
+        let should_log = self
+            .texture_meta_by
+            .get(&id)
+            .map(|meta| !meta.used_once)
+            .unwrap_or(false);
         if let Some(meta) = self.texture_meta_by.get_mut(&id) {
             meta.ref_count = meta.ref_count.saturating_add(1);
             meta.used_once = true;
             meta.zero_ref_frames = 0;
         }
+        if should_log {
+            let source = self
+                .texture_source_by
+                .get(&id)
+                .map(String::as_str)
+                .unwrap_or("<unknown>");
+            self.log_used_once("texture", id.index(), id.generation(), source);
+        }
     }
 
     #[inline]
     pub fn mark_mesh_used(&mut self, id: MeshID) {
+        let should_log = self
+            .mesh_meta_by
+            .get(&id)
+            .map(|meta| !meta.used_once)
+            .unwrap_or(false);
         if let Some(meta) = self.mesh_meta_by.get_mut(&id) {
             meta.ref_count = meta.ref_count.saturating_add(1);
             meta.used_once = true;
             meta.zero_ref_frames = 0;
         }
+        if should_log {
+            let source = self
+                .mesh_source_by
+                .get(&id)
+                .map(String::as_str)
+                .unwrap_or("<unknown>");
+            self.log_used_once("mesh", id.index(), id.generation(), source);
+        }
     }
 
     #[inline]
     pub fn mark_material_used(&mut self, id: MaterialID) {
+        let should_log = self
+            .material_meta_by
+            .get(&id)
+            .map(|meta| !meta.used_once)
+            .unwrap_or(false);
         if let Some(meta) = self.material_meta_by.get_mut(&id) {
             meta.ref_count = meta.ref_count.saturating_add(1);
             meta.used_once = true;
             meta.zero_ref_frames = 0;
+        }
+        if should_log {
+            let source = self
+                .material_source_by
+                .get(&id)
+                .map(String::as_str)
+                .unwrap_or("<inline>");
+            self.log_used_once("material", id.index(), id.generation(), source);
         }
     }
 
@@ -248,7 +443,9 @@ impl ResourceStore {
             }
         }
         for id in drop_textures {
-            let _ = self.drop_texture(id);
+            let source = self.texture_source_by.get(&id).map(String::as_str).unwrap_or("<unknown>");
+            self.log_auto_drop("texture", id.index(), id.generation(), source, ttl_frames);
+            let _ = self.drop_texture_inner(id, false);
         }
 
         let mut drop_meshes = Vec::new();
@@ -262,7 +459,9 @@ impl ResourceStore {
             }
         }
         for id in drop_meshes {
-            let _ = self.drop_mesh(id);
+            let source = self.mesh_source_by.get(&id).map(String::as_str).unwrap_or("<unknown>");
+            self.log_auto_drop("mesh", id.index(), id.generation(), source, ttl_frames);
+            let _ = self.drop_mesh_inner(id, false);
         }
 
         let mut drop_materials = Vec::new();
@@ -276,7 +475,9 @@ impl ResourceStore {
             }
         }
         for id in drop_materials {
-            let _ = self.drop_material(id);
+            let source = self.material_source_by.get(&id).map(String::as_str).unwrap_or("<inline>");
+            self.log_auto_drop("material", id.index(), id.generation(), source, ttl_frames);
+            let _ = self.drop_material_inner(id, false);
         }
     }
 
@@ -317,10 +518,17 @@ impl ResourceStore {
     }
 
     pub fn drop_texture(&mut self, id: TextureID) -> bool {
+        self.drop_texture_inner(id, true)
+    }
+
+    fn drop_texture_inner(&mut self, id: TextureID, log_manual: bool) -> bool {
         if !self.textures.remove_parts(id.index(), id.generation()) {
             return false;
         }
         if let Some(source) = self.texture_source_by.remove(&id) {
+            if log_manual {
+                self.log_manual_drop("texture", id.index(), id.generation(), &source);
+            }
             self.texture_by_source.remove(&source);
         }
         self.texture_meta_by.remove(&id);
@@ -328,10 +536,17 @@ impl ResourceStore {
     }
 
     pub fn drop_mesh(&mut self, id: MeshID) -> bool {
+        self.drop_mesh_inner(id, true)
+    }
+
+    fn drop_mesh_inner(&mut self, id: MeshID, log_manual: bool) -> bool {
         if !self.meshes.remove_parts(id.index(), id.generation()) {
             return false;
         }
         if let Some(source) = self.mesh_source_by.remove(&id) {
+            if log_manual {
+                self.log_manual_drop("mesh", id.index(), id.generation(), &source);
+            }
             self.mesh_by_source.remove(&source);
         }
         self.mesh_meta_by.remove(&id);
@@ -339,16 +554,58 @@ impl ResourceStore {
     }
 
     pub fn drop_material(&mut self, id: MaterialID) -> bool {
+        self.drop_material_inner(id, true)
+    }
+
+    fn drop_material_inner(&mut self, id: MaterialID, log_manual: bool) -> bool {
         if !self.materials.remove_parts(id.index(), id.generation()) {
             return false;
         }
         self.material_by.remove(&id);
         if let Some(source) = self.material_source_by.remove(&id) {
+            if log_manual {
+                self.log_manual_drop("material", id.index(), id.generation(), &source);
+            }
             self.material_by_source.remove(&source);
         }
         self.material_meta_by.remove(&id);
         true
     }
+
+    fn log_resource_created(
+        &self,
+        _kind: &str,
+        _index: u32,
+        _generation: u32,
+        _source: &str,
+        _reserved: bool,
+    ) {
+    }
+
+    fn log_resource_reused(
+        &self,
+        _kind: &str,
+        _index: u32,
+        _generation: u32,
+        _source: &str,
+        _reserved: bool,
+    ) {
+    }
+
+    fn log_used_once(&self, _kind: &str, _index: u32, _generation: u32, _source: &str) {}
+
+    fn log_auto_drop(
+        &self,
+        _kind: &str,
+        _index: u32,
+        _generation: u32,
+        _source: &str,
+        _ttl_frames: u32,
+    ) {
+    }
+
+    fn log_manual_drop(&self, _kind: &str, _index: u32, _generation: u32, _source: &str) {}
+
 }
 
 #[cfg(test)]

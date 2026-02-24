@@ -83,6 +83,8 @@ pub struct Gpu3D {
     mesh_indices: Vec<u32>,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    vertex_capacity: usize,
+    index_capacity: usize,
     builtin_mesh_ranges: HashMap<&'static str, MeshRange>,
     custom_mesh_ranges: HashMap<String, MeshRange>,
     depth_texture: wgpu::Texture,
@@ -177,6 +179,8 @@ impl Gpu3D {
         );
 
         let (vertices, indices, builtin_mesh_ranges) = build_builtin_mesh_buffer();
+        let vertex_capacity = vertices.len().max(1);
+        let index_capacity = indices.len().max(1);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("perro_builtin_mesh_vertices"),
             contents: bytemuck::cast_slice(&vertices),
@@ -212,6 +216,8 @@ impl Gpu3D {
             mesh_indices: indices,
             vertex_buffer,
             index_buffer,
+            vertex_capacity,
+            index_capacity,
             builtin_mesh_ranges,
             custom_mesh_ranges: HashMap::new(),
             depth_texture,
@@ -447,28 +453,88 @@ impl Gpu3D {
         let index_start = self.mesh_indices.len() as u32;
         let index_count = decoded.indices.len() as u32;
 
-        self.mesh_vertices.extend_from_slice(&decoded.vertices);
-        self.mesh_indices
-            .extend(decoded.indices.iter().copied().map(|idx| idx + base_vertex));
+        let added_vertices = decoded.vertices;
+        let mut added_indices = Vec::with_capacity(decoded.indices.len());
+        for idx in decoded.indices {
+            added_indices.push(idx + base_vertex);
+        }
 
-        self.vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("perro_mesh_vertices"),
-            contents: bytemuck::cast_slice(&self.mesh_vertices),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
-        self.index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("perro_mesh_indices"),
-            contents: bytemuck::cast_slice(&self.mesh_indices),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-        });
-        // Queue is intentionally unused: we rebuild immutable buffers for now.
-        let _ = queue;
+        let new_vertex_len = self.mesh_vertices.len() + added_vertices.len();
+        let new_index_len = self.mesh_indices.len() + added_indices.len();
+        let grew = self.ensure_mesh_buffer_capacity(device, new_vertex_len, new_index_len);
+
+        let vertex_offset = self.mesh_vertices.len() as u64 * std::mem::size_of::<MeshVertex>() as u64;
+        let index_offset = self.mesh_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
+
+        self.mesh_vertices.extend_from_slice(&added_vertices);
+        self.mesh_indices.extend_from_slice(&added_indices);
+
+        let _ = grew;
+        queue.write_buffer(
+            &self.vertex_buffer,
+            vertex_offset,
+            bytemuck::cast_slice(&added_vertices),
+        );
+        queue.write_buffer(
+            &self.index_buffer,
+            index_offset,
+            bytemuck::cast_slice(&added_indices),
+        );
 
         Some(MeshRange {
             index_start,
             index_count,
             base_vertex: 0,
         })
+    }
+
+    fn ensure_mesh_buffer_capacity(
+        &mut self,
+        device: &wgpu::Device,
+        needed_vertices: usize,
+        needed_indices: usize,
+    ) -> bool {
+        let mut grew = false;
+
+        if needed_vertices > self.vertex_capacity {
+            let mut cap = self.vertex_capacity.max(1);
+            while cap < needed_vertices {
+                cap *= 2;
+            }
+            self.vertex_capacity = cap;
+            grew = true;
+        }
+
+        if needed_indices > self.index_capacity {
+            let mut cap = self.index_capacity.max(1);
+            while cap < needed_indices {
+                cap *= 2;
+            }
+            self.index_capacity = cap;
+            grew = true;
+        }
+
+        if grew {
+            let mut vertex_bytes = vec![0u8; self.vertex_capacity * std::mem::size_of::<MeshVertex>()];
+            let used_vertex_bytes = bytemuck::cast_slice(&self.mesh_vertices);
+            vertex_bytes[..used_vertex_bytes.len()].copy_from_slice(used_vertex_bytes);
+            self.vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("perro_mesh_vertices"),
+                contents: &vertex_bytes,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+
+            let mut index_bytes = vec![0u8; self.index_capacity * std::mem::size_of::<u32>()];
+            let used_index_bytes = bytemuck::cast_slice(&self.mesh_indices);
+            index_bytes[..used_index_bytes.len()].copy_from_slice(used_index_bytes);
+            self.index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("perro_mesh_indices"),
+                contents: &index_bytes,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            });
+        }
+
+        grew
     }
 }
 
@@ -494,6 +560,21 @@ fn load_mesh_from_source(
     }
     None
 }
+
+pub(crate) fn validate_mesh_source(
+    source: &str,
+    static_mesh_lookup: Option<StaticMeshLookup>,
+) -> Result<(), String> {
+    if source.starts_with("__") {
+        return Ok(());
+    }
+    if load_mesh_from_source(source, static_mesh_lookup).is_some() {
+        return Ok(());
+    }
+    Err(format!("mesh source failed to decode: {}", source))
+}
+
+
 
 fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
     let Some((path, selector)) = source.rsplit_once(':') else {

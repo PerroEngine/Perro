@@ -23,19 +23,18 @@ std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
 
 fn main() {
 let root = project_root();
-perro_app::entry::run_static_embedded_project(
-&root,
-"ThreeDTest",
-"ThreeDTest",
-"res://main.scn",
-"res://icon.png",
-1920,
-1080,
-ASSETS_BRK,
-static_assets::scenes::lookup_scene,
-static_assets::materials::lookup_material,
-static_assets::meshes::lookup_mesh,
-static_assets::textures::lookup_texture,
-Some(scripts::SCRIPT_REGISTRY),
-).expect("failed to run embedded static project");
+perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedProject {
+project_root: &root,
+project_name: "ThreeDTest",
+main_scene: "res://main.scn",
+icon: "res://icon.png",
+virtual_width: 1920,
+virtual_height: 1080,
+assets_brk: ASSETS_BRK,
+scene_lookup: static_assets::scenes::lookup_scene,
+material_lookup: static_assets::materials::lookup_material,
+mesh_lookup: static_assets::meshes::lookup_mesh,
+texture_lookup: static_assets::textures::lookup_texture,
+static_script_registry: Some(scripts::SCRIPT_REGISTRY),
+}).expect("failed to run embedded static project");
 }

@@ -1,6 +1,7 @@
 use crate::{
     gpu::{Gpu, RenderFrame},
     resources::ResourceStore,
+    three_d::gpu::validate_mesh_source,
     three_d::renderer::Renderer3D,
     two_d::renderer::Renderer2D,
 };
@@ -85,30 +86,61 @@ impl PerroGraphics {
                 RenderCommand::Resource(resource_cmd) => match resource_cmd {
                     ResourceCommand::CreateMesh {
                         request,
+                        id,
                         source,
                         reserved,
                     } => {
-                        let id = self.resources.create_mesh(source.as_str(), reserved);
-                        self.events.push(RenderEvent::MeshCreated { request, id });
+                        if let Err(reason) = validate_mesh_source(
+                            source.as_str(),
+                            self.static_mesh_lookup,
+                        ) {
+                            self.events.push(RenderEvent::Failed { request, reason });
+                            continue;
+                        }
+                        let out_id = if id.is_nil() {
+                            self.resources.create_mesh(source.as_str(), reserved)
+                        } else {
+                            self.resources
+                                .create_mesh_with_id(id, source.as_str(), reserved)
+                        };
+                        self.events.push(RenderEvent::MeshCreated {
+                            request,
+                            id: out_id,
+                        });
                     }
                     ResourceCommand::CreateTexture {
                         request,
+                        id,
                         source,
                         reserved,
                     } => {
-                        let id = self.resources.create_texture(source.as_str(), reserved);
+                        let id = if id.is_nil() {
+                            self.resources.create_texture(source.as_str(), reserved)
+                        } else {
+                            self.resources
+                                .create_texture_with_id(id, source.as_str(), reserved)
+                        };
                         self.events
                             .push(RenderEvent::TextureCreated { request, id });
                     }
                     ResourceCommand::CreateMaterial {
                         request,
+                        id,
                         material,
                         source,
                         reserved,
                     } => {
-                        let id =
+                        let id = if id.is_nil() {
                             self.resources
-                                .create_material(material, source.as_deref(), reserved);
+                                .create_material(material, source.as_deref(), reserved)
+                        } else {
+                            self.resources.create_material_with_id(
+                                id,
+                                material,
+                                source.as_deref(),
+                                reserved,
+                            )
+                        };
                         self.events
                             .push(RenderEvent::MaterialCreated { request, id });
                     }
@@ -271,7 +303,7 @@ impl GraphicsBackend for PerroGraphics {
 mod tests {
     use super::PerroGraphics;
     use crate::backend::GraphicsBackend;
-    use perro_ids::{NodeID, TextureID};
+    use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
     use perro_render_bridge::{
         Camera3DState, Command2D, Command3D, Material3D, RenderBridge, RenderCommand,
         ResourceCommand, Sprite2DCommand,
@@ -285,6 +317,7 @@ mod tests {
 
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateTexture {
             request,
+            id: TextureID::nil(),
             source: "__default__".to_string(),
             reserved: false,
         }));
@@ -328,22 +361,26 @@ mod tests {
 
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
             request: perro_render_bridge::RenderRequestID::new(1001),
+            id: MeshID::nil(),
             source: "__cube__".to_string(),
             reserved: false,
         }));
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
             request: perro_render_bridge::RenderRequestID::new(1002),
+            id: MaterialID::nil(),
             material: Material3D::default(),
             source: None,
             reserved: false,
         }));
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
             request: perro_render_bridge::RenderRequestID::new(1003),
-            source: "res://mesh/cube.glb".to_string(),
+            id: MeshID::nil(),
+            source: "__sphere__".to_string(),
             reserved: false,
         }));
         graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
             request: perro_render_bridge::RenderRequestID::new(1004),
+            id: MaterialID::nil(),
             material: Material3D::default(),
             source: None,
             reserved: false,

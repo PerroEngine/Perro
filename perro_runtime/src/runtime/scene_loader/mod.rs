@@ -1,6 +1,7 @@
 use crate::{Runtime, runtime_project::ProviderMode};
 use perro_ids::NodeID;
 use perro_io::{ProjectRoot, set_project_root};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 mod merge;
@@ -114,6 +115,10 @@ impl Runtime {
                 }
             },
         }
+        let script_paths_by_node: HashMap<NodeID, String> = script_nodes
+            .iter()
+            .map(|(id, script_path)| (*id, script_path.clone()))
+            .collect();
         self.attach_scene_scripts(script_nodes)?;
         let stats = SceneLoadStats {
             mode_label,
@@ -122,12 +127,17 @@ impl Runtime {
             node_insert,
             total_excluding_debug_print: boot_start.elapsed(),
         };
-        debug_print_scene_load(self, &main_scene_path, stats);
+        debug_print_scene_load(self, &main_scene_path, stats, &script_paths_by_node);
         Ok(())
     }
 }
 
-fn debug_print_scene_load(runtime: &Runtime, path: &str, stats: SceneLoadStats) {
+fn debug_print_scene_load(
+    runtime: &Runtime,
+    path: &str,
+    stats: SceneLoadStats,
+    script_paths_by_node: &HashMap<NodeID, String>,
+) {
     println!(
         "[scene_load] mode={} path={} total_us={:.3} source_us={} parse_us={} insert_us={:.3}",
         stats.mode_label,
@@ -137,7 +147,7 @@ fn debug_print_scene_load(runtime: &Runtime, path: &str, stats: SceneLoadStats) 
         fmt_duration(stats.parse),
         as_us(stats.node_insert),
     );
-    print_scene_tree(runtime, NodeID::ROOT, "", 0);
+    print_scene_tree(runtime, NodeID::ROOT, "", 0, script_paths_by_node);
 }
 
 fn as_us(duration: Duration) -> f64 {
@@ -150,28 +160,40 @@ fn fmt_duration(duration: Option<Duration>) -> String {
         .unwrap_or_else(|| "n/a".to_string())
 }
 
-fn print_scene_tree(runtime: &Runtime, node: NodeID, indent: &str, depth: usize) {
+fn print_scene_tree(
+    runtime: &Runtime,
+    node: NodeID,
+    indent: &str,
+    depth: usize,
+    script_paths_by_node: &HashMap<NodeID, String>,
+) {
     let Some(node_ref) = runtime.nodes.get(node) else {
         return;
     };
     let color = depth_color(depth);
+    let script_suffix = script_paths_by_node
+        .get(&node)
+        .map(|script_path| format!(" {}script={}{}", ANSI_ORANGE, script_path, color))
+        .unwrap_or_default();
     println!(
-        "{}{}- [{}] {} ({}){}",
+        "{}{}- [{}] {} ({}){}{}",
         color,
         indent,
         node,
         node_ref.name.as_ref(),
         node_ref.node_type(),
+        script_suffix,
         ANSI_RESET,
     );
     let child_indent = format!("{indent}  ");
     for child in node_ref.children_slice() {
-        print_scene_tree(runtime, *child, &child_indent, depth + 1);
+        print_scene_tree(runtime, *child, &child_indent, depth + 1, script_paths_by_node);
     }
 }
 
 const ANSI_RESET: &str = "\x1b[0m";
 const ANSI_WHITE: &str = "\x1b[97m";
+const ANSI_ORANGE: &str = "\x1b[38;5;208m";
 
 fn depth_color(depth: usize) -> &'static str {
     if depth == 0 { ANSI_WHITE } else { "" }

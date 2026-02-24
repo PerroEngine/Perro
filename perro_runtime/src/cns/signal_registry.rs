@@ -80,11 +80,6 @@ impl SignalRegistry {
         (connections.len() == 1).then_some(connections[0])
     }
 
-    #[inline]
-    pub(crate) fn signal_connection_count(&self, signal: SignalID) -> usize {
-        self.by_signal.get(&signal).map_or(0, Vec::len)
-    }
-
     pub(crate) fn disconnect_script(&mut self, script_id: NodeID) -> usize {
         let mut removed = 0usize;
         let mut empty_signals = Vec::new();

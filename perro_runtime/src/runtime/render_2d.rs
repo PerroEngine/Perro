@@ -148,6 +148,7 @@ impl Runtime {
                 self.queue_render_command(RenderCommand::Resource(
                     ResourceCommand::CreateTexture {
                         request,
+                        id: TextureID::nil(),
                         source,
                         reserved: false,
                     },
@@ -198,11 +199,13 @@ mod tests {
         let request = match &first[0] {
             RenderCommand::Resource(ResourceCommand::CreateTexture {
                 request,
+                id,
                 source,
                 reserved,
             }) => {
                 assert_eq!(source, "__default__");
                 assert!(!reserved);
+                assert!(id.is_nil());
                 *request
             }
             _ => panic!("expected CreateTexture"),
