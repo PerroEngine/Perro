@@ -10,7 +10,12 @@ pub(super) fn query_node_ids(arena: &NodeArena, query: TagQuery) -> Vec<NodeID> 
     let start = Instant::now();
     let slot_count = arena.slot_count();
     if slot_count <= 1 {
-        print_query_timing(&query, 0, slot_count, start.elapsed().as_secs_f64() * 1_000_000.0);
+        print_query_timing(
+            &query,
+            0,
+            slot_count,
+            start.elapsed().as_secs_f64() * 1_000_000.0,
+        );
         return Vec::new();
     }
 
@@ -26,7 +31,8 @@ pub(super) fn query_node_ids(arena: &NodeArena, query: TagQuery) -> Vec<NodeID> 
                 let end = (start + chunk_size).min(slot_count);
                 let query_ref = &query;
                 let plan_ref = &plan;
-                handles.push(scope.spawn(move || scan_range(arena, start, end, query_ref, plan_ref)));
+                handles
+                    .push(scope.spawn(move || scan_range(arena, start, end, query_ref, plan_ref)));
             }
             let mut out = Vec::new();
             for handle in handles {

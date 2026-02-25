@@ -26,6 +26,10 @@ impl<'rt, R: TimeAPI + ?Sized> TimeModule<'rt, R> {
     }
 }
 
+/// Returns frame delta time (seconds).
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
 #[macro_export]
 macro_rules! delta_time {
     ($ctx:expr) => {
@@ -33,6 +37,10 @@ macro_rules! delta_time {
     };
 }
 
+/// Returns fixed-step delta time (seconds).
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
 #[macro_export]
 macro_rules! fixed_delta_time {
     ($ctx:expr) => {
@@ -40,6 +48,10 @@ macro_rules! fixed_delta_time {
     };
 }
 
+/// Returns elapsed runtime time (seconds).
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
 #[macro_export]
 macro_rules! elapsed_time {
     ($ctx:expr) => {

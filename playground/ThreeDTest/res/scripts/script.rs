@@ -28,7 +28,7 @@ lifecycle!({
         self_id: NodeID,
     ) {
         self.set_speed(ctx, res, ipt, self_id, 5.0);
-        connect_signal!(ctx, self_id, signal!("test_signal1"), func!("set_speed"));
+        signal_connect!(ctx, self_id, signal!("test_signal1"), func!("set_speed"));
        let ids = query!(ctx, is_type[MeshInstance3D, Camera3D]);
       log_info!(format!("Found {} nodes of type MeshInstance3D or Camera3D", ids.len()));
 
@@ -41,7 +41,7 @@ lifecycle!({
         _ipt: &InputContext<'_, IP>,
         _self: NodeID,
     ) {
-        emit_signal!(ctx, signal!("test_signal1"), params![7_f32]);
+        signal_emit!(ctx, signal!("test_signal1"), params![7_f32]);
     }
 
     fn on_update(

@@ -67,7 +67,7 @@ impl NodeAPI for Runtime {
         node_ref.with_typed_ref::<T, _>(f).unwrap_or_default()
     }
 
-    fn with_node_base<T, V, F>(&mut self, id: perro_ids::NodeID, f: F) -> Option<V>
+    fn with_base_node<T, V, F>(&mut self, id: perro_ids::NodeID, f: F) -> Option<V>
     where
         T: NodeBaseDispatch,
         F: FnOnce(&T) -> V,
@@ -82,7 +82,7 @@ impl NodeAPI for Runtime {
         node.with_base_ref::<T, _>(f)
     }
 
-    fn with_node_base_mut<T, V, F>(&mut self, id: perro_ids::NodeID, f: F) -> Option<V>
+    fn with_base_node_mut<T, V, F>(&mut self, id: perro_ids::NodeID, f: F) -> Option<V>
     where
         T: NodeBaseDispatch,
         F: FnOnce(&mut T) -> V,

@@ -6,16 +6,16 @@ pub use api::RuntimeContext;
 pub mod prelude {
     pub use crate::api::{RuntimeAPI, RuntimeContext};
     pub use crate::sub_apis::{
-        Attribute, IntoScriptMemberID, Member, NodeAPI, NodeModule, ScriptAPI, ScriptModule,
-        SignalAPI, SignalModule, TagQuery, TimeAPI, TimeModule,
+        Attribute, IntoNodeTags, IntoScriptMemberID, Member, NodeAPI, NodeModule, ScriptAPI,
+        ScriptModule, SignalAPI, SignalModule, TagQuery, TimeAPI, TimeModule,
     };
     pub use crate::{
-        add_node_tag, attach_script, attribute, attributes_of, call_method, connect_signal,
-        create_node, delta_time, detach_script, disconnect_signal, elapsed_time, emit_signal,
+        attribute, attributes_of, call_method, create_node, delta_time, elapsed_time,
         fixed_delta_time, get_node_children_ids, get_node_name, get_node_parent_id, get_node_tags,
-        get_node_type, get_var, has_attribute, member, members_with, query, remove_node_tag,
-        reparent, reparent_multi, set_node_name, set_node_tags, set_var, tag_add, tag_remove,
-        with_node, with_node_base, with_node_base_mut, with_node_mut, with_state, with_state_mut,
+        get_node_type, get_var, has_attribute, member, members_with, query, reparent,
+        reparent_multi, script_attach, script_detach, set_node_name, set_node_tags, set_var,
+        signal_connect, signal_disconnect, signal_emit, tag_add, tag_remove, with_base_node,
+        with_base_node_mut, with_node, with_node_mut, with_state, with_state_mut,
     };
     pub use perro_ids::{func, method, sid, signal, smid, tag, tags, var};
     pub use perro_variant::{params, variant};
@@ -67,7 +67,7 @@ mod tests {
             V::default()
         }
 
-        fn with_node_base<T, V, F>(&mut self, _id: NodeID, _f: F) -> Option<V>
+        fn with_base_node<T, V, F>(&mut self, _id: NodeID, _f: F) -> Option<V>
         where
             T: perro_nodes::NodeBaseDispatch,
             F: FnOnce(&T) -> V,
@@ -75,7 +75,7 @@ mod tests {
             None
         }
 
-        fn with_node_base_mut<T, V, F>(&mut self, _id: NodeID, _f: F) -> Option<V>
+        fn with_base_node_mut<T, V, F>(&mut self, _id: NodeID, _f: F) -> Option<V>
         where
             T: perro_nodes::NodeBaseDispatch,
             F: FnOnce(&mut T) -> V,
@@ -162,11 +162,11 @@ mod tests {
             self.state.downcast_mut::<T>().map(f)
         }
 
-        fn attach_script(&mut self, _node: NodeID, _script_path: &str) -> bool {
+        fn script_attach(&mut self, _node: NodeID, _script_path: &str) -> bool {
             false
         }
 
-        fn detach_script(&mut self, _node: NodeID) -> bool {
+        fn script_detach(&mut self, _node: NodeID) -> bool {
             false
         }
 
@@ -213,7 +213,7 @@ mod tests {
     }
 
     impl SignalAPI for DummyRuntime {
-        fn connect_signal(
+        fn signal_connect(
             &mut self,
             _script: NodeID,
             _signal: perro_ids::SignalID,
@@ -222,7 +222,7 @@ mod tests {
             true
         }
 
-        fn disconnect_signal(
+        fn signal_disconnect(
             &mut self,
             _script: NodeID,
             _signal: perro_ids::SignalID,
@@ -231,7 +231,7 @@ mod tests {
             true
         }
 
-        fn emit_signal(
+        fn signal_emit(
             &mut self,
             _signal: perro_ids::SignalID,
             _params: &[perro_variant::Variant],
@@ -261,8 +261,8 @@ mod tests {
         with_node_mut!(&mut ctx, Node2D, id, |_node| {});
         let value = with_node!(&mut ctx, Node2D, id, |_node| 99_i32);
         assert_eq!(value, 0_i32);
-        let _ = with_node_base!(&mut ctx, Node2D, id, |_node| 1_i32);
-        let _ = with_node_base_mut!(&mut ctx, Node2D, id, |_node| 2_i32);
+        let _ = with_base_node!(&mut ctx, Node2D, id, |_node| 1_i32);
+        let _ = with_base_node_mut!(&mut ctx, Node2D, id, |_node| 2_i32);
         assert_eq!(get_node_name!(&mut ctx, id), None);
         assert!(!set_node_name!(&mut ctx, id, "player"));
         assert_eq!(get_node_parent_id!(&mut ctx, id), None);
@@ -271,14 +271,14 @@ mod tests {
         assert_eq!(get_node_tags!(&mut ctx, id), None);
         assert!(!set_node_tags!(&mut ctx, id, tags!["player", "enemy"]));
         assert!(!set_node_tags!(&mut ctx, id));
-        assert!(!add_node_tag!(&mut ctx, id, "player"));
-        assert!(!remove_node_tag!(&mut ctx, id, "player"));
+        assert!(!tag_add!(&mut ctx, id, "player"));
+        assert!(!tag_remove!(&mut ctx, id, "player"));
         assert!(query!(&mut ctx, has["player"], not["enemy"]).is_empty());
         assert!(query!(&mut ctx, is[Node2D], base[Node3D]).is_empty());
         assert!(!reparent!(&mut ctx, NodeID::new(1), id));
         assert_eq!(reparent_multi!(&mut ctx, NodeID::new(1), [id]), 0);
-        assert!(!attach_script!(&mut ctx, id, "res://scripts/a.rs"));
-        assert!(!detach_script!(&mut ctx, id));
+        assert!(!script_attach!(&mut ctx, id, "res://scripts/a.rs"));
+        assert!(!script_detach!(&mut ctx, id));
         let member = var!("x");
         let member_alias = sid!("x");
         let var_member = var!("x");
@@ -298,23 +298,23 @@ mod tests {
         let _attrs = attributes_of!(&mut ctx, id, "speed");
         let _members = members_with!(&mut ctx, id, "export");
         let _has = has_attribute!(&mut ctx, id, "speed", "export");
-        assert!(connect_signal!(
+        assert!(signal_connect!(
             &mut ctx,
             id,
             signal!("on_test"),
             method!("handle")
         ));
-        assert!(disconnect_signal!(
+        assert!(signal_disconnect!(
             &mut ctx,
             id,
             signal!("on_test"),
             method!("handle")
         ));
         assert_eq!(
-            emit_signal!(&mut ctx, signal!("on_test"), params![1_i32]),
+            signal_emit!(&mut ctx, signal!("on_test"), params![1_i32]),
             1
         );
-        assert_eq!(emit_signal!(&mut ctx, signal!("on_test")), 1);
+        assert_eq!(signal_emit!(&mut ctx, signal!("on_test")), 1);
 
         let dt = delta_time!(&mut ctx);
         let fdt = fixed_delta_time!(&mut ctx);

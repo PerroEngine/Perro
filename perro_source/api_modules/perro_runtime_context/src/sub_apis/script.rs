@@ -106,8 +106,8 @@ pub trait ScriptAPI {
     fn with_state_mut<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&mut T) -> V;
-    fn attach_script(&mut self, node_id: NodeID, script_path: &str) -> bool;
-    fn detach_script(&mut self, node_id: NodeID) -> bool;
+    fn script_attach(&mut self, node_id: NodeID, script_path: &str) -> bool;
+    fn script_detach(&mut self, node_id: NodeID) -> bool;
     fn remove_script(&mut self, script_id: NodeID) -> bool;
     fn get_var(&mut self, script_id: NodeID, member: ScriptMemberID) -> Variant;
     fn set_var(&mut self, script_id: NodeID, member: ScriptMemberID, value: Variant);
@@ -146,12 +146,12 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
         self.rt.with_state_mut(script_id, f)
     }
 
-    pub fn attach(&mut self, node_id: NodeID, script_path: &str) -> bool {
-        self.rt.attach_script(node_id, script_path)
+    pub fn script_attach(&mut self, node_id: NodeID, script_path: &str) -> bool {
+        self.rt.script_attach(node_id, script_path)
     }
 
-    pub fn detach(&mut self, node_id: NodeID) -> bool {
-        self.rt.detach_script(node_id)
+    pub fn script_detach(&mut self, node_id: NodeID) -> bool {
+        self.rt.script_detach(node_id)
     }
 
     pub fn remove(&mut self, script_id: NodeID) -> bool {
@@ -204,6 +204,21 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
     }
 }
 
+/// Script state macros.
+///
+/// These macros provide typed access to script state through closure-scoped borrows.
+///
+/// Typed read access to script state through a closure.
+///
+/// Internals:
+/// - The runtime resolves `script_id`, downcasts to `state_ty`, then calls your closure.
+/// - The state reference is only valid inside the closure, preventing leaked borrows.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `state_ty`: concrete script state type
+/// - `id`: script `NodeID`
+/// - closure arg: `&state_ty`
 #[macro_export]
 macro_rules! with_state {
     ($ctx:expr, $state_ty:ty, $id:expr, $f:expr) => {
@@ -211,6 +226,17 @@ macro_rules! with_state {
     };
 }
 
+/// Typed mutable access to script state through a closure.
+///
+/// Internals:
+/// - The runtime resolves `script_id`, downcasts to `state_ty`, then calls your closure with `&mut`.
+/// - Mutable access is scoped to closure execution, keeping aliasing rules enforced.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `state_ty`: concrete script state type
+/// - `id`: script `NodeID`
+/// - closure arg: `&mut state_ty`
 #[macro_export]
 macro_rules! with_state_mut {
     ($ctx:expr, $state_ty:ty, $id:expr, $f:expr) => {
@@ -218,20 +244,41 @@ macro_rules! with_state_mut {
     };
 }
 
+/// Script lifecycle macros.
+///
+/// Attaches a script resource to a scene node.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `id`: target node `NodeID`
+/// - `path`: script path (for example `"res://scripts/foo.rs"`)
 #[macro_export]
-macro_rules! attach_script {
+macro_rules! script_attach {
     ($ctx:expr, $id:expr, $path:expr) => {
-        $ctx.Scripts().attach($id, $path)
+        $ctx.Scripts().script_attach($id, $path)
     };
 }
 
+/// Detaches the current script from a scene node.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `id`: target node `NodeID`
 #[macro_export]
-macro_rules! detach_script {
+macro_rules! script_detach {
     ($ctx:expr, $id:expr) => {
-        $ctx.Scripts().detach($id)
+        $ctx.Scripts().script_detach($id)
     };
 }
 
+/// Script member access macros.
+///
+/// Gets a script variable by member identifier.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `id`: script `NodeID`
+/// - `member`: `ScriptMemberID`-compatible value (`sid!(...)`, `var!(...)`, `member!(...)`, `&str`)
 #[macro_export]
 macro_rules! get_var {
     ($ctx:expr, $id:expr, $member:expr) => {
@@ -239,6 +286,13 @@ macro_rules! get_var {
     };
 }
 
+/// Sets a script variable by member identifier.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `id`: script `NodeID`
+/// - `member`: `ScriptMemberID`-compatible value
+/// - `value`: `Variant`
 #[macro_export]
 macro_rules! set_var {
     ($ctx:expr, $id:expr, $member:expr, $value:expr) => {
@@ -246,6 +300,13 @@ macro_rules! set_var {
     };
 }
 
+/// Calls a script method with params.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `id`: script `NodeID`
+/// - `method`: `ScriptMemberID`-compatible value (`method!(...)`, `func!(...)`, `&str`)
+/// - `params`: `&[Variant]` (for example `params![...]`)
 #[macro_export]
 macro_rules! call_method {
     ($ctx:expr, $id:expr, $method:expr, $params:expr) => {
@@ -253,6 +314,12 @@ macro_rules! call_method {
     };
 }
 
+/// Returns attributes declared on a script member.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `id`: script `NodeID`
+/// - `member`: member name or `Member`
 #[macro_export]
 macro_rules! attributes_of {
     ($ctx:expr, $id:expr, $member:expr) => {
@@ -260,6 +327,12 @@ macro_rules! attributes_of {
     };
 }
 
+/// Returns all members with a specific attribute.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `id`: script `NodeID`
+/// - `attribute`: attribute name or `Attribute`
 #[macro_export]
 macro_rules! members_with {
     ($ctx:expr, $id:expr, $attribute:expr) => {
@@ -267,6 +340,13 @@ macro_rules! members_with {
     };
 }
 
+/// Checks whether a member has a specific attribute.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `id`: script `NodeID`
+/// - `member`: member name or `Member`
+/// - `attribute`: attribute name or `Attribute`
 #[macro_export]
 macro_rules! has_attribute {
     ($ctx:expr, $id:expr, $member:expr, $attribute:expr) => {
@@ -274,6 +354,10 @@ macro_rules! has_attribute {
     };
 }
 
+/// Creates a typed `Member` descriptor from a static name.
+///
+/// Arguments:
+/// - `name`: `&'static str`
 #[macro_export]
 macro_rules! member {
     ($name:expr) => {
@@ -281,6 +365,10 @@ macro_rules! member {
     };
 }
 
+/// Creates a typed `Attribute` descriptor from a static name.
+///
+/// Arguments:
+/// - `value`: `&'static str`
 #[macro_export]
 macro_rules! attribute {
     ($value:expr) => {

@@ -134,7 +134,7 @@ impl ScriptAPI for Runtime {
         self.scripts.with_state_mut(script_id, f)
     }
 
-    fn attach_script(&mut self, node_id: NodeID, script_path: &str) -> bool {
+    fn script_attach(&mut self, node_id: NodeID, script_path: &str) -> bool {
         let Some(project) = self.project() else {
             return false;
         };
@@ -151,7 +151,7 @@ impl ScriptAPI for Runtime {
         self.attach_script_instance(node_id, script_path).is_ok()
     }
 
-    fn detach_script(&mut self, node_id: NodeID) -> bool {
+    fn script_detach(&mut self, node_id: NodeID) -> bool {
         self.remove_script_instance(node_id)
     }
 

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::Runtime;
 
 impl SignalAPI for Runtime {
-    fn connect_signal(
+    fn signal_connect(
         &mut self,
         script_id: NodeID,
         signal: SignalID,
@@ -17,7 +17,7 @@ impl SignalAPI for Runtime {
         self.signals.connect(signal, script_id, function)
     }
 
-    fn disconnect_signal(
+    fn signal_disconnect(
         &mut self,
         script_id: NodeID,
         signal: SignalID,
@@ -26,7 +26,7 @@ impl SignalAPI for Runtime {
         self.signals.disconnect(signal, script_id, function)
     }
 
-    fn emit_signal(&mut self, signal: SignalID, params: &[Variant]) -> usize {
+    fn signal_emit(&mut self, signal: SignalID, params: &[Variant]) -> usize {
         let mut calls = 0usize;
 
         if let Some(connection) = self.signals.single_signal_connection(signal) {

@@ -85,10 +85,10 @@ lifecycle!({
         // let _moved = reparent_multi!(ctx, NodeID::new(10), [NodeID::new(11), NodeID::new(12)]);
         //
         // Script attachment helpers:
-        // let _attached = attach_script!(ctx, node, "res://scripts/other.rs");
-        // let _detached = detach_script!(ctx, node);
-        // `attach_script!` takes a target node id + script path.
-        // `detach_script!` takes a node/script id and removes the attached script instance.
+        // let _attached = script_attach!(ctx, node, "res://scripts/other.rs");
+        // let _detached = script_detach!(ctx, node);
+        // `script_attach!` takes a target node id + script path.
+        // `script_detach!` takes a node/script id and removes the attached script instance.
         //
         // call_method! can invoke methods through the script interface by member id.
         // Here we call our own script through self for demonstration.
