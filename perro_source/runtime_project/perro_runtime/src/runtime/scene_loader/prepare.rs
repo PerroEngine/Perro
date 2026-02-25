@@ -1,5 +1,6 @@
 use crate::material_schema;
 use perro_io::load_asset;
+use perro_ids::IntoTagID;
 use perro_nodes::{
     SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D, camera_2d::Camera2D,
     camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, node_2d::Node2D, node_3d::Node3D,
@@ -133,6 +134,14 @@ fn scene_node_from_static_entry(entry: &StaticNodeEntry) -> Result<SceneNodeExtr
     if let Some(name) = entry.name {
         node.name = Cow::Borrowed(name);
     }
+    if !entry.tags.is_empty() {
+        let tags = entry
+            .tags
+            .iter()
+            .map(|tag| (*tag).into_tag_id())
+            .collect::<Vec<_>>();
+        node.set_tag_ids(Some(tags));
+    }
     let texture_source = extract_texture_source_static(&entry.data);
     let mesh_source_explicit = extract_mesh_source_static(&entry.data);
     let material_source_explicit = extract_material_source_static(&entry.data);
@@ -165,6 +174,14 @@ fn scene_node_from_runtime_entry(entry: &RuntimeNodeEntry) -> Result<SceneNodeEx
     let mut node = SceneNode::new(scene_node_data_from_runtime(&entry.data)?);
     if let Some(name) = &entry.name {
         node.name = Cow::Owned(name.clone());
+    }
+    if !entry.tags.is_empty() {
+        let tags = entry
+            .tags
+            .iter()
+            .map(|tag| tag.as_str().into_tag_id())
+            .collect::<Vec<_>>();
+        node.set_tag_ids(Some(tags));
     }
     let texture_source = extract_texture_source(&entry.data);
     let mesh_source_explicit = extract_mesh_source(&entry.data);

@@ -9,6 +9,7 @@
 [mesh]
 parent = @root
 script = "res://scripts/script.rs"
+tags=[fart]
 
 [MeshInstance3D]
     mesh = "__tri_prism__"

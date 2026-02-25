@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, res_dir, static_dir};
+use crate::{res_dir, static_dir, StaticPipelineError};
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::{Parser, RuntimeNodeData, RuntimeValue};
 use rayon::prelude::*;
@@ -38,10 +38,12 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
 
     let mut scene_defs = String::new();
     let mut any_uses_empty_keys = false;
+    let mut any_uses_empty_tags = false;
     let mut any_uses_empty_fields = false;
     for (_res_path, emitted) in emitted_scenes {
         scene_defs.push_str(&emitted.code);
         any_uses_empty_keys |= emitted.uses_empty_keys;
+        any_uses_empty_tags |= emitted.uses_empty_tags;
         any_uses_empty_fields |= emitted.uses_empty_fields;
     }
 
@@ -65,6 +67,9 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
     if any_uses_empty_keys {
         shared_consts.push_str("const EMPTY_SCENE_KEYS: &[StaticSceneKey] = &[];\n");
     }
+    if any_uses_empty_tags {
+        shared_consts.push_str("const EMPTY_SCENE_TAGS: &[&str] = &[];\n");
+    }
     if any_uses_empty_fields {
         shared_consts.push_str("const EMPTY_SCENE_FIELDS: &[(&str, StaticSceneValue)] = &[];\n");
     }
@@ -87,6 +92,7 @@ use perro_scene::{{StaticNodeData, StaticNodeEntry, StaticNodeType, StaticScene,
 struct EmittedScene {
     code: String,
     uses_empty_keys: bool,
+    uses_empty_tags: bool,
     uses_empty_fields: bool,
 }
 
@@ -99,6 +105,7 @@ fn emit_static_scene_const(
     let mut counter = 0usize;
     let mut node_entries = String::new();
     let mut uses_empty_keys = false;
+    let mut uses_empty_tags = false;
     let mut uses_empty_fields = false;
     let mut children_by_parent: HashMap<&str, Vec<usize>> = HashMap::new();
     for (child_index, node) in scene.nodes.iter().enumerate() {
@@ -137,10 +144,23 @@ fn emit_static_scene_const(
             &mut counter,
             &mut uses_empty_fields,
         )?;
+        let tags_ref = if node.tags.is_empty() {
+            uses_empty_tags = true;
+            "EMPTY_SCENE_TAGS".to_string()
+        } else {
+            let tags_name = format!("TAGS_{}_{}", scene_ident, index);
+            let _ = writeln!(out, "const {tags_name}: &[&str] = &[");
+            for tag in &node.tags {
+                let _ = writeln!(out, "    \"{}\",", escape_str(tag));
+            }
+            out.push_str("];\n");
+            tags_name
+        };
         node_entries.push_str(&format!(
-            "    StaticNodeEntry {{ key: StaticSceneKey(\"{key}\"), name: {name}, children: {children}, parent: {parent}, script: {script}, data: {data} }},\n",
+            "    StaticNodeEntry {{ key: StaticSceneKey(\"{key}\"), name: {name}, tags: {tags}, children: {children}, parent: {parent}, script: {script}, data: {data} }},\n",
             key = escape_str(&node.key),
             name = opt_static_str(&node.name),
+            tags = tags_ref,
             children = children_ref,
             parent = match &node.parent {
                 Some(p) => format!("Some(StaticSceneKey(\"{}\"))", escape_str(p)),
@@ -168,6 +188,7 @@ fn emit_static_scene_const(
     Ok(EmittedScene {
         code: out,
         uses_empty_keys,
+        uses_empty_tags,
         uses_empty_fields,
     })
 }

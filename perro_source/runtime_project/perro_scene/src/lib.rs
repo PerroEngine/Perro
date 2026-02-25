@@ -64,6 +64,7 @@ mod tests {
         // player node
         let player = scene.nodes.iter().find(|n| n.key == "player").unwrap();
         assert_eq!(player.parent.as_deref(), Some("main"));
+        assert!(player.tags.is_empty());
 
         // Sprite2D
         assert_eq!(player.data.ty, "Sprite2D");
@@ -216,6 +217,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_node_tags() {
+        let src = r#"
+        @root = main
+        @kind = enemy
+
+        [main]
+        tags = ["root", ui]
+        [Node]
+        [/Node]
+        [/main]
+
+        [orc]
+        tags = [@kind, "hostile"]
+        [Node]
+        [/Node]
+        [/orc]
+        "#;
+
+        let scene = Parser::new(src).parse_scene();
+        let main = scene.nodes.iter().find(|n| n.key == "main").unwrap();
+        let orc = scene.nodes.iter().find(|n| n.key == "orc").unwrap();
+
+        assert_eq!(main.tags, vec!["root".to_string(), "ui".to_string()]);
+        assert_eq!(orc.tags, vec!["enemy".to_string(), "hostile".to_string()]);
+    }
+
+    #[test]
     fn parse_node3d_rotation_deg_as_quaternion() {
         let src = r#"
         @root = main
@@ -334,6 +362,7 @@ mod tests {
                 StaticNodeEntry {
                     key: StaticSceneKey("main"),
                     name: Some("Root Node"),
+                    tags: &[],
                     children: &[StaticSceneKey("player")],
                     parent: None,
                     script: None,
@@ -346,6 +375,7 @@ mod tests {
                 StaticNodeEntry {
                     key: StaticSceneKey("player"),
                     name: Some("Player"),
+                    tags: &[],
                     children: &[],
                     parent: Some(StaticSceneKey("main")),
                     script: None,
@@ -410,6 +440,7 @@ mod tests {
 
         assert_eq!(static_main.key.0, runtime_main.key);
         assert_eq!(static_main.name, runtime_main.name.as_deref());
+        assert_eq!(static_main.tags, runtime_main.tags.as_slice());
         assert_eq!(static_main.data.ty.as_str(), runtime_main.data.ty);
         assert_eq!(
             static_main.data.fields.len(),
@@ -426,6 +457,7 @@ mod tests {
 
         assert_eq!(static_player.key.0, runtime_player.key);
         assert_eq!(static_player.name, runtime_player.name.as_deref());
+        assert_eq!(static_player.tags, runtime_player.tags.as_slice());
         assert_eq!(
             static_player.parent.map(|p| p.0),
             runtime_player.parent.as_deref()

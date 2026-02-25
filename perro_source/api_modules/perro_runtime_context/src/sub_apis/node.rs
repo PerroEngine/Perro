@@ -2,23 +2,29 @@ use perro_ids::{IntoTagID, NodeID, TagID};
 use perro_nodes::{NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData};
 use std::borrow::Cow;
 
-/// Query clauses used by [`query!`](macro@crate::query) to filter nodes.
-///
-/// Matching semantics:
-/// - `has`: all listed tags must be present
-/// - `any`: at least one listed tag must be present
-/// - `not`: none of listed tags may be present
-/// - `is_node_types`: node's concrete [`NodeType`] must match one of these
-/// - `base_node_types`: node's concrete type must be `is_a` one of these base types
-///
-/// Across fields, clauses are combined with logical AND.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum QueryScope {
+    #[default]
+    Root,
+    Subtree(NodeID),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum QueryExpr {
+    All(Vec<QueryExpr>),
+    Any(Vec<QueryExpr>),
+    Not(Box<QueryExpr>),
+    Name(Vec<String>),
+    Tags(Vec<TagID>),
+    IsType(Vec<NodeType>),
+    BaseType(Vec<NodeType>),
+}
+
+/// Query definition used by [`query!`](macro@crate::query) to filter nodes.
 #[derive(Clone, Debug, Default)]
 pub struct TagQuery {
-    pub has: Vec<TagID>,
-    pub any: Vec<TagID>,
-    pub not: Vec<TagID>,
-    pub is_node_types: Vec<NodeType>,
-    pub base_node_types: Vec<NodeType>,
+    pub expr: Option<QueryExpr>,
+    pub scope: QueryScope,
 }
 
 /// Converts a single tag or tag collection into `Vec<TagID>`.
@@ -137,72 +143,69 @@ impl TagQuery {
     /// Creates an empty query (matches all nodes).
     pub const fn new() -> Self {
         Self {
-            has: Vec::new(),
-            any: Vec::new(),
-            not: Vec::new(),
-            is_node_types: Vec::new(),
-            base_node_types: Vec::new(),
+            expr: None,
+            scope: QueryScope::Root,
         }
     }
 
-    /// Adds tags to the `has` clause.
-    ///
-    /// Each tag is converted via [`IntoTagID`].
-    pub fn has<I, T>(mut self, tags: I) -> Self
-    where
-        I: IntoIterator<Item = T>,
-        T: IntoTagID,
-    {
-        self.has
-            .extend(tags.into_iter().map(IntoTagID::into_tag_id));
+    fn and_expr(mut self, expr: QueryExpr) -> Self {
+        self.expr = Some(match self.expr {
+            None => expr,
+            Some(existing) => QueryExpr::All(vec![existing, expr]),
+        });
         self
     }
 
-    /// Adds tags to the `any` clause.
-    ///
-    /// Each tag is converted via [`IntoTagID`].
-    pub fn any<I, T>(mut self, tags: I) -> Self
+    /// Adds names to the query as a single OR group.
+    pub fn name<I, T>(self, names: I) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: IntoTagID,
+        T: Into<String>,
     {
-        self.any
-            .extend(tags.into_iter().map(IntoTagID::into_tag_id));
-        self
+        self.and_expr(QueryExpr::Name(
+            names.into_iter().map(Into::into).collect(),
+        ))
     }
 
-    /// Adds tags to the `not` clause.
-    ///
-    /// Each tag is converted via [`IntoTagID`].
-    pub fn not<I, T>(mut self, tags: I) -> Self
+    /// Adds tags as a single OR-group.
+    pub fn tags<I, T>(self, tags: I) -> Self
     where
         I: IntoIterator<Item = T>,
         T: IntoTagID,
     {
-        self.not
-            .extend(tags.into_iter().map(IntoTagID::into_tag_id));
-        self
+        self.and_expr(QueryExpr::Tags(
+            tags.into_iter().map(IntoTagID::into_tag_id).collect(),
+        ))
     }
 
     /// Adds exact type filters.
     ///
     /// Match succeeds if node's concrete type is any one of these.
-    pub fn is_node_types<I>(mut self, types: I) -> Self
+    pub fn is_node_types<I>(self, types: I) -> Self
     where
         I: IntoIterator<Item = NodeType>,
     {
-        self.is_node_types.extend(types);
-        self
+        self.and_expr(QueryExpr::IsType(types.into_iter().collect()))
     }
 
     /// Adds base/inclusive type filters.
     ///
     /// Match succeeds if node's concrete type `is_a` any one of these.
-    pub fn base_node_types<I>(mut self, types: I) -> Self
+    pub fn base_node_types<I>(self, types: I) -> Self
     where
         I: IntoIterator<Item = NodeType>,
     {
-        self.base_node_types.extend(types);
+        self.and_expr(QueryExpr::BaseType(types.into_iter().collect()))
+    }
+
+    /// Adds an explicit expression tree.
+    pub fn where_expr(self, expr: QueryExpr) -> Self {
+        self.and_expr(expr)
+    }
+
+    /// Restricts query traversal to a subtree.
+    pub fn in_subtree(mut self, parent_id: NodeID) -> Self {
+        self.scope = QueryScope::Subtree(parent_id);
         self
     }
 }
@@ -679,74 +682,87 @@ macro_rules! tag_remove {
 
 /// Executes a node query and returns `Vec<NodeID>`.
 ///
-/// Syntax:
-/// - `query!(ctx, CLAUSE[...], CLAUSE[...], ...)`
-/// - Each clause always uses bracket form: `CLAUSE[comma-separated items]`.
+/// Preferred syntax:
+/// - `query!(ctx, all(name[...], tags[...], ...))`
+/// - `query!(ctx, any(...))`
+/// - `query!(ctx, not(...))`
+/// - Optional scope: `query!(ctx, all(...), in_subtree(parent_id))`
 ///
-/// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
-/// - clause values:
-///   - tag clauses (`has/any/not`) accept `TagID`, `&str`, `String`
-///   - type clauses (`is/base`) accept `NodeType` variants
+/// Predicate groups:
+/// - `name[...]` OR-list of names
+/// - `tags[...]` list of tags; interpretation comes from wrapper:
+///   `all(tags[...])`, `any(tags[...])`, or `not(tags[...])`
+/// - `is[...]` / `is_type[...]`
+/// - `base[...]` / `base_type[...]`
 ///
-/// Clauses:
-/// - `has[...]` all tags must match
-/// - `any[...]` at least one tag must match
-/// - `not[...]` tags must not match
-/// - `is_type[...]` exact concrete type OR list
-/// - `base_type[...]` inclusive base type OR list (`is_a`)
-///
-/// Aliases:
-/// - `is[...]` == `is_type[...]`
-/// - `base[...]` == `base_type[...]`
-///
-/// Across clauses = AND.
-///
-/// Examples:
-/// - `query!(ctx, has["enemy", "alive"])`
-/// - `query!(ctx, any["flying", "boss"], not["dead"])`
-/// - `query!(ctx, is[MeshInstance3D, Light3D])`
-/// - `query!(ctx, base[Node3D], has["visible"])`
+/// Boolean combinators:
+/// - `all(expr, expr, ...)`
+/// - `any(expr, expr, ...)`
+/// - `not(expr)`
 #[macro_export]
 macro_rules! query {
-    ($ctx:expr $(, $kind:ident [$($arg:tt)*] )* $(,)?) => {{
-        let mut __query = $crate::sub_apis::TagQuery::new();
-        $(
-            __query = $crate::query!(@apply __query, $kind, [$($arg)*]);
-        )*
+    ($ctx:expr, tags[$($tag:tt)*], in_subtree($parent:expr) $(,)?) => {{
+        let _ = &$ctx;
+        let _ = &$parent;
+        compile_error!("tags[...] must be wrapped by all(...), any(...), or not(...)");
+    }};
+    ($ctx:expr, tags[$($tag:tt)*] $(,)?) => {{
+        let _ = &$ctx;
+        compile_error!("tags[...] must be wrapped by all(...), any(...), or not(...)");
+    }};
+    ($ctx:expr, $kind:ident $args:tt, in_subtree($parent:expr) $(,)?) => {{
+        let __expr = $crate::query!(@expr $kind $args);
+        let __query = $crate::sub_apis::TagQuery::new()
+            .where_expr(__expr)
+            .in_subtree($parent);
         $ctx.Nodes().query(__query)
     }};
-    (@apply $query:expr, has, [$($tag:expr),* $(,)?]) => {
-        $query.has(vec![$(::perro_ids::IntoTagID::into_tag_id($tag)),*])
+    ($ctx:expr, $kind:ident $args:tt $(,)?) => {{
+        let __expr = $crate::query!(@expr $kind $args);
+        let __query = $crate::sub_apis::TagQuery::new().where_expr(__expr);
+        $ctx.Nodes().query(__query)
+    }};
+
+    (@expr all($($kind:ident $args:tt),* $(,)?)) => {
+        $crate::sub_apis::QueryExpr::All(vec![$($crate::query!(@expr $kind $args)),*])
     };
-    (@apply $query:expr, any, [$($tag:expr),* $(,)?]) => {
-        $query.any(vec![$(::perro_ids::IntoTagID::into_tag_id($tag)),*])
+    (@expr any($($kind:ident $args:tt),* $(,)?)) => {
+        $crate::sub_apis::QueryExpr::Any(vec![$($crate::query!(@expr $kind $args)),*])
     };
-    (@apply $query:expr, not, [$($tag:expr),* $(,)?]) => {
-        $query.not(vec![$(::perro_ids::IntoTagID::into_tag_id($tag)),*])
+    (@expr not($kind:ident $args:tt)) => {
+        $crate::sub_apis::QueryExpr::Not(Box::new($crate::query!(@expr $kind $args)))
     };
-    (@apply $query:expr, is, [$($ty:ident),* $(,)?]) => {
-        $query.is_node_types(vec![$(::perro_nodes::NodeType::$ty),*])
+
+    (@expr name[$($name:expr),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::Name(vec![$(($name).to_string()),*])
     };
-    (@apply $query:expr, is, [$($ty:path),* $(,)?]) => {
-        $query.is_node_types(vec![$($ty),*])
+
+    (@expr tags[$($tag:expr),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::Tags(vec![$(::perro_ids::IntoTagID::into_tag_id($tag)),*])
     };
-    (@apply $query:expr, is_type, [$($ty:ident),* $(,)?]) => {
-        $query.is_node_types(vec![$(::perro_nodes::NodeType::$ty),*])
+
+    (@expr is[$($ty:ident),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::IsType(vec![$(::perro_nodes::NodeType::$ty),*])
     };
-    (@apply $query:expr, is_type, [$($ty:path),* $(,)?]) => {
-        $query.is_node_types(vec![$($ty),*])
+    (@expr is[$($ty:path),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::IsType(vec![$($ty),*])
     };
-    (@apply $query:expr, base, [$($ty:ident),* $(,)?]) => {
-        $query.base_node_types(vec![$(::perro_nodes::NodeType::$ty),*])
+    (@expr is_type[$($ty:ident),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::IsType(vec![$(::perro_nodes::NodeType::$ty),*])
     };
-    (@apply $query:expr, base, [$($ty:path),* $(,)?]) => {
-        $query.base_node_types(vec![$($ty),*])
+    (@expr is_type[$($ty:path),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::IsType(vec![$($ty),*])
     };
-    (@apply $query:expr, base_type, [$($ty:ident),* $(,)?]) => {
-        $query.base_node_types(vec![$(::perro_nodes::NodeType::$ty),*])
+    (@expr base[$($ty:ident),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::BaseType(vec![$(::perro_nodes::NodeType::$ty),*])
     };
-    (@apply $query:expr, base_type, [$($ty:path),* $(,)?]) => {
-        $query.base_node_types(vec![$($ty),*])
+    (@expr base[$($ty:path),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::BaseType(vec![$($ty),*])
+    };
+    (@expr base_type[$($ty:ident),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::BaseType(vec![$(::perro_nodes::NodeType::$ty),*])
+    };
+    (@expr base_type[$($ty:path),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::BaseType(vec![$($ty),*])
     };
 }

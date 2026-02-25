@@ -1283,16 +1283,14 @@ impl Gpu3D {
                     pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
                 }
                 pass.end_occlusion_query();
+            } else if self.frustum_cull_enabled {
+                let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
+                pass.draw_indexed_indirect(&self.indirect_buffer, offset);
             } else {
-                if self.frustum_cull_enabled {
-                    let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
-                    pass.draw_indexed_indirect(&self.indirect_buffer, offset);
-                } else {
-                    let start = batch.mesh.index_start;
-                    let end = start + batch.mesh.index_count;
-                    let instances = batch.instance_start..batch.instance_start + batch.instance_count;
-                    pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
-                }
+                let start = batch.mesh.index_start;
+                let end = start + batch.mesh.index_count;
+                let instances = batch.instance_start..batch.instance_start + batch.instance_count;
+                pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
             }
         }
         drop(pass);

@@ -7,7 +7,8 @@ pub mod prelude {
     pub use crate::api::{RuntimeAPI, RuntimeContext};
     pub use crate::sub_apis::{
         Attribute, IntoNodeTags, IntoScriptMemberID, Member, NodeAPI, NodeModule, ScriptAPI,
-        ScriptModule, SignalAPI, SignalModule, TagQuery, TimeAPI, TimeModule,
+        ScriptModule, SignalAPI, SignalModule, QueryExpr, QueryScope, TagQuery, TimeAPI,
+        TimeModule,
     };
     pub use crate::{
         attribute, attributes_of, call_method, create_node, delta_time, elapsed_time,
@@ -273,8 +274,8 @@ mod tests {
         assert!(!set_node_tags!(&mut ctx, id));
         assert!(!tag_add!(&mut ctx, id, "player"));
         assert!(!tag_remove!(&mut ctx, id, "player"));
-        assert!(query!(&mut ctx, has["player"], not["enemy"]).is_empty());
-        assert!(query!(&mut ctx, is[Node2D], base[Node3D]).is_empty());
+        assert!(query!(&mut ctx, all(tags["player"], not(tags["enemy"]))).is_empty());
+        assert!(query!(&mut ctx, all(is[Node2D], base[Node3D])).is_empty());
         assert!(!reparent!(&mut ctx, NodeID::new(1), id));
         assert_eq!(reparent_multi!(&mut ctx, NodeID::new(1), [id]), 0);
         assert!(!script_attach!(&mut ctx, id, "res://scripts/a.rs"));

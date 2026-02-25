@@ -224,6 +224,53 @@ impl<'a> Parser<'a> {
         self.parse_type_block_after_lbracket()
     }
 
+    fn parse_tags(&mut self) -> Vec<String> {
+        self.expect(Token::LBracket);
+        let mut tags = Vec::new();
+
+        loop {
+            match &self.current {
+                Token::RBracket => {
+                    self.advance();
+                    break;
+                }
+                Token::String(s) | Token::Ident(s) => {
+                    tags.push(s.clone());
+                    self.advance();
+                }
+                Token::At => {
+                    self.advance();
+                    let name = self.expect_ident();
+                    let resolved = self
+                        .vars
+                        .get(&name)
+                        .cloned()
+                        .unwrap_or_else(|| panic!("Unknown variable @{name}"));
+                    match resolved {
+                        RuntimeValue::Str(tag) | RuntimeValue::Key(tag) => tags.push(tag),
+                        _ => panic!("tags variable @{name} must resolve to a string or key"),
+                    }
+                }
+                other => panic!("tags entries must be strings, identifiers, or @vars; got {other:?}"),
+            }
+
+            if self.current == Token::Comma {
+                self.advance();
+                continue;
+            }
+            if self.current == Token::RBracket {
+                self.advance();
+                break;
+            }
+            panic!(
+                "Expected ',' or ']' in tags list, got {:?}",
+                self.current
+            );
+        }
+
+        tags
+    }
+
     fn parse_scene_inner(mut self) -> RuntimeScene {
         let mut nodes = Vec::new();
         let mut root = None;
@@ -257,12 +304,17 @@ impl<'a> Parser<'a> {
                     self.expect(Token::RBracket);
 
                     let mut name = None;
+                    let mut tags = Vec::new();
                     let mut parent = None;
                     let mut script = None;
 
                     while matches!(self.current, Token::Ident(_)) {
                         let k = self.expect_ident();
                         self.expect(Token::Equals);
+                        if k == "tags" {
+                            tags = self.parse_tags();
+                            continue;
+                        }
                         let v = self.parse_value();
                         match k.as_ref() {
                             "name" => {
@@ -300,6 +352,7 @@ impl<'a> Parser<'a> {
                     nodes.push(RuntimeNodeEntry {
                         key,
                         name,
+                        tags,
                         parent,
                         script,
                         data,

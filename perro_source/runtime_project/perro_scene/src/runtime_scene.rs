@@ -11,6 +11,7 @@ pub struct RuntimeNodeEntry {
     pub data: RuntimeNodeData,
     pub key: String,
     pub name: Option<String>,
+    pub tags: Vec<String>,
     pub parent: Option<String>,
     pub script: Option<String>,
 }
