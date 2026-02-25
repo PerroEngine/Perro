@@ -8,7 +8,7 @@ use crate::point_light_3d::PointLight3D;
 use crate::ray_light_3d::RayLight3D;
 use crate::spot_light_3d::SpotLight3D;
 use crate::sprite_2d::Sprite2D;
-use perro_ids::NodeID;
+use perro_ids::{NodeID, TagID};
 use perro_structs::{Transform2D, Transform3D};
 use std::borrow::Cow;
 
@@ -28,11 +28,103 @@ pub enum Renderable {
 }
 
 #[macro_export]
+macro_rules! __node_parent_opt {
+    (None) => {
+        None
+    };
+    ($parent:ident) => {
+        Some(NodeType::$parent)
+    };
+}
+
+#[macro_export]
+macro_rules! __node2d_base_expr {
+    (Node2D, None, $inner:ident, $f:ident) => {
+        Some($f($inner))
+    };
+    ($_variant:ident, None, $inner:ident, $_f:ident) => {{
+        let _ = &$inner;
+        None
+    }};
+    ($_variant:ident, $parent:ident, $inner:ident, $f:ident) => {
+        Some($f($inner))
+    };
+}
+
+#[macro_export]
+macro_rules! __node3d_base_expr {
+    (Node3D, None, $inner:ident, $f:ident) => {
+        Some($f($inner))
+    };
+    ($_variant:ident, None, $inner:ident, $_f:ident) => {{
+        let _ = &$inner;
+        None
+    }};
+    ($_variant:ident, $parent:ident, $inner:ident, $f:ident) => {
+        Some($f($inner))
+    };
+}
+
+#[macro_export]
+macro_rules! __impl_exact_node_base_dispatch_2d {
+    (Node2D, $ty_2d:ty, $variant_2d:ident) => {};
+    ($variant:ident, $ty_2d:ty, $variant_2d:ident) => {
+        impl NodeBaseDispatch for $ty_2d {
+            const BASE_NODE_TYPE: NodeType = NodeType::$variant_2d;
+
+            fn with_base_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
+                match data {
+                    SceneNodeData::$variant_2d(inner) => Some(f(inner)),
+                    _ => None,
+                }
+            }
+
+            fn with_base_mut<R>(
+                data: &mut SceneNodeData,
+                f: impl FnOnce(&mut Self) -> R,
+            ) -> Option<R> {
+                match data {
+                    SceneNodeData::$variant_2d(inner) => Some(f(inner)),
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! __impl_exact_node_base_dispatch_3d {
+    (Node3D, $ty_3d:ty, $variant_3d:ident) => {};
+    ($variant:ident, $ty_3d:ty, $variant_3d:ident) => {
+        impl NodeBaseDispatch for $ty_3d {
+            const BASE_NODE_TYPE: NodeType = NodeType::$variant_3d;
+
+            fn with_base_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
+                match data {
+                    SceneNodeData::$variant_3d(inner) => Some(f(inner)),
+                    _ => None,
+                }
+            }
+
+            fn with_base_mut<R>(
+                data: &mut SceneNodeData,
+                f: impl FnOnce(&mut Self) -> R,
+            ) -> Option<R> {
+                match data {
+                    SceneNodeData::$variant_3d(inner) => Some(f(inner)),
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! define_scene_nodes {
     (
         base: { $($base_variant:ident $(=> $base_ty:ty)?),* $(,)? }
-        2d: { $($variant_2d:ident => ($ty_2d:ty, $renderable_2d:expr)),* $(,)? }
-        3d: { $($variant_3d:ident => ($ty_3d:ty, $renderable_3d:expr)),* $(,)? }
+        2d: { $($variant_2d:ident => ($parent_2d:ident, $ty_2d:ty, $renderable_2d:expr)),* $(,)? }
+        3d: { $($variant_3d:ident => ($parent_3d:ident, $ty_3d:ty, $renderable_3d:expr)),* $(,)? }
     ) => {
         #[derive(Clone, Debug)]
         pub struct SceneNode {
@@ -41,6 +133,7 @@ macro_rules! define_scene_nodes {
             pub name: Cow<'static, str>,
             pub parent: NodeID,
             pub children: Option<Cow<'static, [NodeID]>>,
+            pub tags: Option<Cow<'static, [TagID]>>,
         }
 
         #[derive(Clone, Debug)]
@@ -67,6 +160,7 @@ macro_rules! define_scene_nodes {
                     name: Cow::Borrowed("Node"),
                     parent: NodeID::nil(),
                     children: None,
+                    tags: None,
                     data,
                 }
             }
@@ -102,6 +196,20 @@ macro_rules! define_scene_nodes {
                 C: Into<Cow<'static, [NodeID]>>,
             {
                 self.children = children.map(Into::into);
+            }
+
+            pub fn get_tag_ids(&self) -> &[TagID] {
+                self.tags
+                    .as_ref()
+                    .map(|cow| cow.as_ref())
+                    .unwrap_or(&[])
+            }
+
+            pub fn set_tag_ids<T>(&mut self, tags: Option<T>)
+            where
+                T: Into<Cow<'static, [TagID]>>,
+            {
+                self.tags = tags.map(Into::into);
             }
 
             pub const fn node_type(&self) -> NodeType {
@@ -164,6 +272,31 @@ macro_rules! define_scene_nodes {
                 self.get_children_ids()
             }
 
+            pub fn add_tag(&mut self, tag: TagID) {
+                self.tags
+                    .get_or_insert_with(|| Cow::Owned(Vec::new()))
+                    .to_mut()
+                    .push(tag);
+            }
+
+            pub fn remove_tag(&mut self, tag: TagID) {
+                if let Some(tags) = &mut self.tags {
+                    tags.to_mut().retain(|&t| t != tag);
+                }
+            }
+
+            pub fn clear_tags(&mut self) {
+                self.tags = None;
+            }
+
+            pub fn has_tag(&self, tag: TagID) -> bool {
+                self.get_tag_ids().contains(&tag)
+            }
+
+            pub fn tags_slice(&self) -> &[TagID] {
+                self.get_tag_ids()
+            }
+
             pub fn with_typed_ref<T: NodeTypeDispatch, R>(
                 &self,
                 f: impl FnOnce(&T) -> R,
@@ -176,6 +309,20 @@ macro_rules! define_scene_nodes {
                 f: impl FnOnce(&mut T) -> R,
             ) -> Option<R> {
                 T::with_mut(&mut self.data, f)
+            }
+
+            pub fn with_base_ref<T: NodeBaseDispatch, R>(
+                &self,
+                f: impl FnOnce(&T) -> R,
+            ) -> Option<R> {
+                T::with_base_ref(&self.data, f)
+            }
+
+            pub fn with_base_mut<T: NodeBaseDispatch, R>(
+                &mut self,
+                f: impl FnOnce(&mut T) -> R,
+            ) -> Option<R> {
+                T::with_base_mut(&mut self.data, f)
             }
         }
 
@@ -221,11 +368,44 @@ macro_rules! define_scene_nodes {
         }
 
         impl NodeType {
+            pub const ALL: &'static [NodeType] = &[
+                $(NodeType::$base_variant,)*
+                $(NodeType::$variant_2d,)*
+                $(NodeType::$variant_3d,)*
+            ];
+
             pub const fn as_str(&self) -> &'static str {
                 match self {
                     $(NodeType::$base_variant => stringify!($base_variant),)*
                     $(NodeType::$variant_2d => stringify!($variant_2d),)*
                     $(NodeType::$variant_3d => stringify!($variant_3d),)*
+                }
+            }
+
+            pub const fn parent_type(&self) -> Option<NodeType> {
+                match self {
+                    $(NodeType::$base_variant => None,)*
+                    $(NodeType::$variant_2d => $crate::__node_parent_opt!($parent_2d),)*
+                    $(NodeType::$variant_3d => $crate::__node_parent_opt!($parent_3d),)*
+                }
+            }
+
+            pub fn is_a(&self, base: NodeType) -> bool {
+                if *self == base {
+                    return true;
+                }
+
+                let mut cursor = *self;
+                loop {
+                    match cursor.parent_type() {
+                        Some(parent) => {
+                            if parent == base {
+                                return true;
+                            }
+                            cursor = parent;
+                        }
+                        None => return false,
+                    }
                 }
             }
 
@@ -328,7 +508,67 @@ macro_rules! define_scene_nodes {
                 Some(value.transform)
             }
         })*
+
+        $($crate::__impl_exact_node_base_dispatch_2d!($variant_2d, $ty_2d, $variant_2d);)*
+        $($crate::__impl_exact_node_base_dispatch_3d!($variant_3d, $ty_3d, $variant_3d);)*
+
+        impl NodeBaseDispatch for Node2D {
+            const BASE_NODE_TYPE: NodeType = NodeType::Node2D;
+
+            fn with_base_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
+                match data {
+                    $(SceneNodeData::$variant_2d(inner) => {
+                        $crate::__node2d_base_expr!($variant_2d, $parent_2d, inner, f)
+                    },)*
+                    _ => None,
+                }
+            }
+
+            fn with_base_mut<R>(
+                data: &mut SceneNodeData,
+                f: impl FnOnce(&mut Self) -> R,
+            ) -> Option<R> {
+                match data {
+                    $(SceneNodeData::$variant_2d(inner) => {
+                        $crate::__node2d_base_expr!($variant_2d, $parent_2d, inner, f)
+                    },)*
+                    _ => None,
+                }
+            }
+        }
+
+        impl NodeBaseDispatch for Node3D {
+            const BASE_NODE_TYPE: NodeType = NodeType::Node3D;
+
+            fn with_base_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
+                match data {
+                    $(SceneNodeData::$variant_3d(inner) => {
+                        $crate::__node3d_base_expr!($variant_3d, $parent_3d, inner, f)
+                    },)*
+                    _ => None,
+                }
+            }
+
+            fn with_base_mut<R>(
+                data: &mut SceneNodeData,
+                f: impl FnOnce(&mut Self) -> R,
+            ) -> Option<R> {
+                match data {
+                    $(SceneNodeData::$variant_3d(inner) => {
+                        $crate::__node3d_base_expr!($variant_3d, $parent_3d, inner, f)
+                    },)*
+                    _ => None,
+                }
+            }
+        }
     };
+}
+
+pub trait NodeBaseDispatch: Sized {
+    const BASE_NODE_TYPE: NodeType;
+
+    fn with_base_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R>;
+    fn with_base_mut<R>(data: &mut SceneNodeData, f: impl FnOnce(&mut Self) -> R) -> Option<R>;
 }
 
 // ======================================================================
@@ -340,17 +580,18 @@ define_scene_nodes! {
         Node,
     }
     2d: {
-        Node2D => (Node2D, Renderable::False),
-        Sprite2D => (Sprite2D, Renderable::True),
-        Camera2D => (Camera2D, Renderable::True)
+        Node2D => (None, Node2D, Renderable::False),
+        Camera2D => (Node2D, Camera2D, Renderable::True),
+        Sprite2D => (Node2D, Sprite2D, Renderable::True),
     }
     3d: {
-        Node3D => (Node3D, Renderable::False),
-        MeshInstance3D => (MeshInstance3D, Renderable::True),
-        Camera3D => (Camera3D, Renderable::True),
-        AmbientLight3D => (AmbientLight3D, Renderable::True),
-        RayLight3D => (RayLight3D, Renderable::True),
-        PointLight3D => (PointLight3D, Renderable::True),
-        SpotLight3D => (SpotLight3D, Renderable::True)
+        Node3D => (None, Node3D, Renderable::False),
+        Camera3D => (Node3D, Camera3D, Renderable::True),
+        MeshInstance3D => (Node3D, MeshInstance3D, Renderable::True),
+        //Lights
+        AmbientLight3D => (None, AmbientLight3D, Renderable::True),
+        RayLight3D => (Node3D, RayLight3D, Renderable::True),
+        PointLight3D => (Node3D, PointLight3D, Renderable::True),
+        SpotLight3D => (Node3D, SpotLight3D, Renderable::True)
     }
 }

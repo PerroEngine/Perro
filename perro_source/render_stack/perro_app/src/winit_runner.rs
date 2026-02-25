@@ -419,10 +419,18 @@ fn map_winit_key_code(code: winit::keyboard::KeyCode) -> Option<perro_input::Key
         winit::keyboard::KeyCode::NumpadEqual => Some(perro_input::KeyCode::NumpadEqual),
         winit::keyboard::KeyCode::NumpadHash => Some(perro_input::KeyCode::NumpadHash),
         winit::keyboard::KeyCode::NumpadMemoryAdd => Some(perro_input::KeyCode::NumpadMemoryAdd),
-        winit::keyboard::KeyCode::NumpadMemoryClear => Some(perro_input::KeyCode::NumpadMemoryClear),
-        winit::keyboard::KeyCode::NumpadMemoryRecall => Some(perro_input::KeyCode::NumpadMemoryRecall),
-        winit::keyboard::KeyCode::NumpadMemoryStore => Some(perro_input::KeyCode::NumpadMemoryStore),
-        winit::keyboard::KeyCode::NumpadMemorySubtract => Some(perro_input::KeyCode::NumpadMemorySubtract),
+        winit::keyboard::KeyCode::NumpadMemoryClear => {
+            Some(perro_input::KeyCode::NumpadMemoryClear)
+        }
+        winit::keyboard::KeyCode::NumpadMemoryRecall => {
+            Some(perro_input::KeyCode::NumpadMemoryRecall)
+        }
+        winit::keyboard::KeyCode::NumpadMemoryStore => {
+            Some(perro_input::KeyCode::NumpadMemoryStore)
+        }
+        winit::keyboard::KeyCode::NumpadMemorySubtract => {
+            Some(perro_input::KeyCode::NumpadMemorySubtract)
+        }
         winit::keyboard::KeyCode::NumpadMultiply => Some(perro_input::KeyCode::NumpadMultiply),
         winit::keyboard::KeyCode::NumpadParenLeft => Some(perro_input::KeyCode::NumpadParenLeft),
         winit::keyboard::KeyCode::NumpadParenRight => Some(perro_input::KeyCode::NumpadParenRight),
@@ -449,7 +457,9 @@ fn map_winit_key_code(code: winit::keyboard::KeyCode) -> Option<perro_input::Key
         winit::keyboard::KeyCode::MediaSelect => Some(perro_input::KeyCode::MediaSelect),
         winit::keyboard::KeyCode::MediaStop => Some(perro_input::KeyCode::MediaStop),
         winit::keyboard::KeyCode::MediaTrackNext => Some(perro_input::KeyCode::MediaTrackNext),
-        winit::keyboard::KeyCode::MediaTrackPrevious => Some(perro_input::KeyCode::MediaTrackPrevious),
+        winit::keyboard::KeyCode::MediaTrackPrevious => {
+            Some(perro_input::KeyCode::MediaTrackPrevious)
+        }
         winit::keyboard::KeyCode::Power => Some(perro_input::KeyCode::Power),
         winit::keyboard::KeyCode::Sleep => Some(perro_input::KeyCode::Sleep),
         winit::keyboard::KeyCode::AudioVolumeDown => Some(perro_input::KeyCode::AudioVolumeDown),
@@ -591,5 +601,3 @@ fn center_position(
     let y = monitor_pos.y + ((monitor_size.height as i32 - window_size.height as i32) / 2);
     PhysicalPosition::new(x, y)
 }
-
-

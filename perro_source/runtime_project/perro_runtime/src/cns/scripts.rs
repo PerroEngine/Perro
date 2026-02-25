@@ -1,5 +1,5 @@
-use perro_input::InputContext;
 use crate::{Runtime, runtime_project::ProviderMode};
+use perro_input::InputContext;
 use perro_resource_context::ResourceContext;
 use perro_runtime_context::RuntimeContext;
 use perro_scripting::{ScriptBehavior, ScriptConstructor};
@@ -70,8 +70,7 @@ impl Runtime {
 
         let behavior: Box<
             dyn ScriptBehavior<Self, crate::RuntimeResourceApi, perro_input::InputSnapshot>,
-        > =
-            unsafe { Box::from_raw(raw) };
+        > = unsafe { Box::from_raw(raw) };
         let behavior: Arc<
             dyn ScriptBehavior<Self, crate::RuntimeResourceApi, perro_input::InputSnapshot>,
         > = behavior.into();

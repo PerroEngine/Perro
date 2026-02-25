@@ -1,6 +1,6 @@
 use super::{MeshRange, MeshVertex, MeshletRange};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 mod capsule;
 mod common;
@@ -27,8 +27,7 @@ impl From<MeshVertex> for MeshVertexKey {
     }
 }
 
-pub(super) fn build_builtin_mesh_buffer()
--> (
+pub(super) fn build_builtin_mesh_buffer() -> (
     Vec<MeshVertex>,
     Vec<u32>,
     HashMap<&'static str, MeshRange>,

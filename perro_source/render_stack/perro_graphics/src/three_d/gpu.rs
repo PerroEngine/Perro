@@ -10,7 +10,11 @@ use mesh_presets::build_builtin_mesh_buffer;
 use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::pack_meshlets_from_positions;
 use perro_render_bridge::Camera3DState;
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{
+    collections::HashMap,
+    sync::{Arc, mpsc, mpsc::TryRecvError},
+    time::Instant,
+};
 use wgpu::util::DeviceExt;
 
 mod mesh_presets;
@@ -100,8 +104,23 @@ pub struct Gpu3D {
     meshlets_enabled: bool,
     dev_meshlets: bool,
     meshlet_debug_view: bool,
+    occlusion_enabled: bool,
     last_total_meshlets: usize,
     last_total_drawn: usize,
+    occlusion_frame: u64,
+    occlusion_state: HashMap<u64, OcclusionState>,
+    occlusion_query_set: Option<wgpu::QuerySet>,
+    occlusion_query_capacity: u32,
+    occlusion_resolve_buffer: Option<wgpu::Buffer>,
+    occlusion_readback_buffer: Option<wgpu::Buffer>,
+    occlusion_query_keys_this_frame: Vec<u64>,
+    pending_occlusion_query_keys: Vec<u64>,
+    pending_occlusion_query_count: u32,
+    pending_occlusion_map_rx: Option<mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>>,
+    last_occlusion_queried: u32,
+    last_occlusion_visible: u32,
+    last_occlusion_culled: u32,
+    occlusion_print_cooldown: u32,
 }
 
 pub struct Prepare3D<'a> {
@@ -141,9 +160,19 @@ struct DrawBatch {
     instance_start: u32,
     instance_count: u32,
     double_sided: bool,
+    occlusion_key: u64,
+    occlusion_query: Option<u32>,
+}
+
+#[derive(Clone, Copy)]
+struct OcclusionState {
+    visible_last_frame: bool,
+    last_test_frame: u64,
 }
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
+// Re-test occluded batches frequently so visibility recovers quickly when camera/object moves.
+const OCCLUSION_PROBE_INTERVAL: u64 = 3;
 
 #[derive(Clone)]
 struct DecodedMesh {
@@ -170,6 +199,7 @@ impl Gpu3D {
         meshlets_enabled: bool,
         dev_meshlets: bool,
         meshlet_debug_view: bool,
+        occlusion_enabled: bool,
     ) -> Self {
         let shader = create_mesh_shader_module(device);
         let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -225,7 +255,8 @@ impl Gpu3D {
             None,
         );
 
-        let (vertices, indices, builtin_mesh_ranges, builtin_meshlets) = build_builtin_mesh_buffer();
+        let (vertices, indices, builtin_mesh_ranges, builtin_meshlets) =
+            build_builtin_mesh_buffer();
         let vertex_capacity = vertices.len().max(1);
         let index_capacity = indices.len().max(1);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -277,8 +308,23 @@ impl Gpu3D {
             meshlets_enabled,
             dev_meshlets,
             meshlet_debug_view,
+            occlusion_enabled,
             last_total_meshlets: 0,
             last_total_drawn: 0,
+            occlusion_frame: 0,
+            occlusion_state: HashMap::new(),
+            occlusion_query_set: None,
+            occlusion_query_capacity: 0,
+            occlusion_resolve_buffer: None,
+            occlusion_readback_buffer: None,
+            occlusion_query_keys_this_frame: Vec::new(),
+            pending_occlusion_query_keys: Vec::new(),
+            pending_occlusion_query_count: 0,
+            pending_occlusion_map_rx: None,
+            last_occlusion_queried: 0,
+            last_occlusion_visible: 0,
+            last_occlusion_culled: 0,
+            occlusion_print_cooldown: 0,
         }
     }
 
@@ -337,6 +383,19 @@ impl Gpu3D {
     }
 
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: Prepare3D<'_>) {
+        if self.occlusion_enabled {
+            let _ = device.poll(wgpu::PollType::Poll);
+            if self.pending_occlusion_query_count > 0 && self.pending_occlusion_map_rx.is_none() {
+                self.request_occlusion_map_async();
+            }
+            self.consume_occlusion_results();
+            self.occlusion_frame = self.occlusion_frame.wrapping_add(1);
+        }
+        self.occlusion_query_keys_this_frame.clear();
+        let occlusion_capture_this_frame = self.occlusion_enabled
+            && self.pending_occlusion_query_count == 0
+            && self.pending_occlusion_map_rx.is_none();
+
         let Prepare3D {
             resources,
             camera,
@@ -393,6 +452,15 @@ impl Gpu3D {
             }
 
             if !use_meshlets {
+                let occlusion_key = draw.node.as_u64();
+                if self.occlusion_enabled && !self.should_probe_or_draw(occlusion_key) {
+                    continue;
+                }
+                let occlusion_query = if occlusion_capture_this_frame {
+                    Some(self.push_occlusion_query_key(occlusion_key))
+                } else {
+                    None
+                };
                 let instance = self.staged_instances.len() as u32;
                 self.staged_instances.push(build_instance(
                     draw.model,
@@ -405,10 +473,22 @@ impl Gpu3D {
                     mesh_asset.full,
                     instance,
                     material.double_sided,
+                    occlusion_key,
+                    occlusion_query,
                 );
             } else {
                 for meshlet in mesh_asset.meshlets.iter().copied() {
                     if meshlet_in_frustum(draw.model, meshlet, &frustum) {
+                        let occlusion_key =
+                            (draw.node.as_u64() << 32) ^ u64::from(meshlet.index_start);
+                        if self.occlusion_enabled && !self.should_probe_or_draw(occlusion_key) {
+                            continue;
+                        }
+                        let occlusion_query = if occlusion_capture_this_frame {
+                            Some(self.push_occlusion_query_key(occlusion_key))
+                        } else {
+                            None
+                        };
                         let instance = self.staged_instances.len() as u32;
                         self.staged_instances.push(build_instance(
                             draw.model,
@@ -425,10 +505,18 @@ impl Gpu3D {
                             },
                             instance,
                             material.double_sided,
+                            occlusion_key,
+                            occlusion_query,
                         );
                     }
                 }
             }
+        }
+        if occlusion_capture_this_frame {
+            self.ensure_occlusion_query_capacity(
+                device,
+                self.occlusion_query_keys_this_frame.len() as u32,
+            );
         }
         if !self.staged_instances.is_empty() {
             queue.write_buffer(
@@ -442,11 +530,24 @@ impl Gpu3D {
     }
 
     pub fn render_pass(
-        &self,
+        &mut self,
         encoder: &mut wgpu::CommandEncoder,
         color_view: &wgpu::TextureView,
         clear_color: wgpu::Color,
     ) {
+        let query_count = if self.occlusion_enabled
+            && self.pending_occlusion_query_count == 0
+            && self.pending_occlusion_map_rx.is_none()
+        {
+            self.occlusion_query_keys_this_frame.len() as u32
+        } else {
+            0
+        };
+        let query_set = if query_count > 0 {
+            self.occlusion_query_set.as_ref()
+        } else {
+            None
+        };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_mesh_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -467,7 +568,7 @@ impl Gpu3D {
                 stencil_ops: None,
             }),
             timestamp_writes: None,
-            occlusion_query_set: None,
+            occlusion_query_set: query_set,
             multiview_mask: None,
         });
         if self.draw_batches.is_empty() {
@@ -491,7 +592,31 @@ impl Gpu3D {
             let start = batch.mesh.index_start;
             let end = start + batch.mesh.index_count;
             let instances = batch.instance_start..batch.instance_start + batch.instance_count;
-            pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+            if let Some(query_index) = batch.occlusion_query {
+                pass.begin_occlusion_query(query_index);
+                pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+                pass.end_occlusion_query();
+            } else {
+                pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+            }
+        }
+        drop(pass);
+
+        if query_count > 0
+            && let (Some(query_set), Some(resolve), Some(readback)) = (
+                self.occlusion_query_set.as_ref(),
+                self.occlusion_resolve_buffer.as_ref(),
+                self.occlusion_readback_buffer.as_ref(),
+            )
+        {
+            let byte_len = u64::from(query_count) * 8;
+            encoder.resolve_query_set(query_set, 0..query_count, resolve, 0);
+            encoder.copy_buffer_to_buffer(resolve, 0, readback, 0, byte_len);
+
+            self.pending_occlusion_query_count = query_count;
+            self.pending_occlusion_query_keys.clear();
+            self.pending_occlusion_query_keys
+                .extend(self.occlusion_query_keys_this_frame.iter().copied());
         }
     }
 
@@ -510,6 +635,138 @@ impl Gpu3D {
             mapped_at_creation: false,
         });
         self.instance_capacity = new_capacity;
+    }
+
+    fn should_probe_or_draw(&self, key: u64) -> bool {
+        let Some(state) = self.occlusion_state.get(&key) else {
+            return true;
+        };
+        state.visible_last_frame
+            || self.occlusion_frame.saturating_sub(state.last_test_frame)
+                >= OCCLUSION_PROBE_INTERVAL
+    }
+
+    fn push_occlusion_query_key(&mut self, key: u64) -> u32 {
+        let query = self.occlusion_query_keys_this_frame.len() as u32;
+        self.occlusion_query_keys_this_frame.push(key);
+        query
+    }
+
+    fn ensure_occlusion_query_capacity(&mut self, device: &wgpu::Device, needed: u32) {
+        if !self.occlusion_enabled {
+            return;
+        }
+        if needed == 0 || needed <= self.occlusion_query_capacity {
+            return;
+        }
+        let mut capacity = self.occlusion_query_capacity.max(64);
+        while capacity < needed {
+            capacity = capacity.saturating_mul(2);
+        }
+        self.occlusion_query_set = Some(device.create_query_set(&wgpu::QuerySetDescriptor {
+            label: Some("perro_occlusion_query_set"),
+            ty: wgpu::QueryType::Occlusion,
+            count: capacity,
+        }));
+        let byte_len = u64::from(capacity) * 8;
+        self.occlusion_resolve_buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_occlusion_resolve"),
+            size: byte_len,
+            usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        }));
+        self.occlusion_readback_buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_occlusion_readback"),
+            size: byte_len,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        }));
+        self.occlusion_query_capacity = capacity;
+    }
+
+    fn request_occlusion_map_async(&mut self) {
+        if self.pending_occlusion_query_count == 0 || self.pending_occlusion_map_rx.is_some() {
+            return;
+        }
+        let Some(readback) = self.occlusion_readback_buffer.as_ref() else {
+            return;
+        };
+        let byte_len = u64::from(self.pending_occlusion_query_count) * 8;
+        let (tx, rx) = mpsc::channel();
+        readback
+            .slice(0..byte_len)
+            .map_async(wgpu::MapMode::Read, move |result| {
+                let _ = tx.send(result);
+            });
+        self.pending_occlusion_map_rx = Some(rx);
+    }
+
+    fn consume_occlusion_results(&mut self) {
+        if !self.occlusion_enabled {
+            return;
+        }
+        let query_count = self.pending_occlusion_query_count as usize;
+        if query_count == 0 {
+            return;
+        }
+        let Some(rx) = self.pending_occlusion_map_rx.as_ref() else {
+            return;
+        };
+        let Some(readback) = self.occlusion_readback_buffer.as_ref() else {
+            self.pending_occlusion_query_count = 0;
+            self.pending_occlusion_query_keys.clear();
+            self.pending_occlusion_map_rx = None;
+            return;
+        };
+        match rx.try_recv() {
+            Ok(Ok(())) => {
+                let byte_len = (query_count * 8) as u64;
+                let data = readback.slice(0..byte_len).get_mapped_range();
+                let mut visible = 0u32;
+                for (i, bytes) in data.chunks_exact(8).enumerate() {
+                    let samples =
+                        u64::from_le_bytes(bytes.try_into().expect("8-byte occlusion sample"));
+                    if samples > 0 {
+                        visible = visible.saturating_add(1);
+                    }
+                    if let Some(key) = self.pending_occlusion_query_keys.get(i).copied() {
+                        self.occlusion_state.insert(
+                            key,
+                            OcclusionState {
+                                visible_last_frame: samples > 0,
+                                last_test_frame: self.occlusion_frame,
+                            },
+                        );
+                    }
+                }
+                drop(data);
+                readback.unmap();
+                self.last_occlusion_queried = query_count as u32;
+                self.last_occlusion_visible = visible;
+                self.last_occlusion_culled = (query_count as u32).saturating_sub(visible);
+                if self.occlusion_print_cooldown == 0 {
+                    println!(
+                        "[perro][3d][occlusion] queried={} visible={} culled={}",
+                        self.last_occlusion_queried,
+                        self.last_occlusion_visible,
+                        self.last_occlusion_culled
+                    );
+                    self.occlusion_print_cooldown = 20;
+                } else {
+                    self.occlusion_print_cooldown = self.occlusion_print_cooldown.saturating_sub(1);
+                }
+                self.pending_occlusion_query_count = 0;
+                self.pending_occlusion_query_keys.clear();
+                self.pending_occlusion_map_rx = None;
+            }
+            Ok(Err(_)) | Err(TryRecvError::Disconnected) => {
+                readback.unmap();
+                self.pending_occlusion_query_count = 0;
+                self.pending_occlusion_query_keys.clear();
+                self.pending_occlusion_map_rx = None;
+            }
+            Err(TryRecvError::Empty) => {}
+        }
     }
 
     fn resolve_mesh_range(
@@ -1024,12 +1281,16 @@ fn push_draw_batch(
     mesh: MeshRange,
     instance: u32,
     double_sided: bool,
+    occlusion_key: u64,
+    occlusion_query: Option<u32>,
 ) {
     if let Some(batch) = draw_batches.last_mut()
         && batch.mesh.index_start == mesh.index_start
         && batch.mesh.index_count == mesh.index_count
         && batch.mesh.base_vertex == mesh.base_vertex
         && batch.double_sided == double_sided
+        && batch.occlusion_key == occlusion_key
+        && batch.occlusion_query == occlusion_query
         && batch.instance_start + batch.instance_count == instance
     {
         batch.instance_count += 1;
@@ -1040,6 +1301,8 @@ fn push_draw_batch(
         instance_start: instance,
         instance_count: 1,
         double_sided,
+        occlusion_key,
+        occlusion_query,
     });
 }
 
@@ -1051,12 +1314,7 @@ fn build_instance(
     debug_color: [f32; 4],
 ) -> InstanceGpu {
     let (color, pbr_params, emissive_factor, debug_flag) = if debug_view {
-        (
-            debug_color,
-            [0.5, 0.0, 1.0, 1.0],
-            [0.0, 0.0, 0.0],
-            1.0,
-        )
+        (debug_color, [0.5, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0], 1.0)
     } else {
         (
             material.base_color_factor,

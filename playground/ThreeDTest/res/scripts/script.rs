@@ -29,6 +29,9 @@ lifecycle!({
     ) {
         self.set_speed(ctx, res, ipt, self_id, 5.0);
         connect_signal!(ctx, self_id, signal!("test_signal1"), func!("set_speed"));
+       let ids = query!(ctx, is_type[MeshInstance3D, Camera3D]);
+      log_info!(format!("Found {} nodes of type MeshInstance3D or Camera3D", ids.len()));
+
     }
 
     fn on_all_init(
@@ -50,6 +53,7 @@ lifecycle!({
     ) {
         let dt = delta_time!(ctx);
         let (speed, timer) = with_state_mut!(ctx, ExampleState, self_id, |state| {
+            
             if state.timer >= 0.0 {
                 state.timer += dt; 
             }

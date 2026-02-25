@@ -1,8 +1,8 @@
 use crate::{
     gpu::{Gpu, RenderFrame},
     resources::ResourceStore,
-    three_d::{gpu::validate_mesh_source, renderer::Draw3DInstance},
     three_d::renderer::Renderer3D,
+    three_d::{gpu::validate_mesh_source, renderer::Draw3DInstance},
     two_d::renderer::Renderer2D,
 };
 use perro_render_bridge::{

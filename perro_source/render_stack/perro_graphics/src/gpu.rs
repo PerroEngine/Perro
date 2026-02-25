@@ -79,6 +79,7 @@ impl Gpu {
             trace: wgpu::Trace::default(),
         }))
         .ok()?;
+        let occlusion_enabled = true;
 
         let caps = surface.get_capabilities(&adapter);
         let surface_format = caps
@@ -117,6 +118,7 @@ impl Gpu {
             meshlets_enabled,
             dev_meshlets,
             meshlet_debug_view,
+            occlusion_enabled,
         );
         let msaa_color =
             create_msaa_color_target(&device, render_format, width, height, sample_count);

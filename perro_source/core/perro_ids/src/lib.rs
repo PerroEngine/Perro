@@ -5,7 +5,7 @@ pub use ids::*;
 
 pub mod prelude {
     pub use crate::ids::*;
-    pub use crate::{func, method, sid, signal, smid, var};
+    pub use crate::{func, method, sid, signal, smid, tag, tags, var};
 }
 
 #[cfg(test)]
@@ -102,5 +102,22 @@ mod tests {
         let c = SignalID::from_string("on_heal");
         assert_eq!(a, b);
         assert_ne!(a, c);
+    }
+
+    #[test]
+    fn tag_id_from_string_deterministic() {
+        let a = TagID::from_string("enemy");
+        let b = TagID::from_string("enemy");
+        let c = TagID::from_string("ally");
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn tags_macro_builds_slice() {
+        let built = tags!["enemy", "boss"];
+        assert_eq!(built.len(), 2);
+        assert_eq!(built[0], TagID::from_string("enemy"));
+        assert_eq!(built[1], TagID::from_string("boss"));
     }
 }

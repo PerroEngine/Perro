@@ -3,8 +3,8 @@ use crate::material_schema;
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_nodes::SceneNodeData;
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, Command3D, Material3D, PointLight3DState,
-    RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
+    AmbientLight3DState, Camera3DState, Command3D, Material3D, PointLight3DState, RayLight3DState,
+    RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
 };
 
 impl Runtime {
@@ -29,20 +29,22 @@ impl Runtime {
         for node in traversal_ids.iter().copied() {
             let effective_visible = self.is_effectively_visible(node);
             let camera_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::Camera3D(camera) if camera.active && effective_visible => Some(Camera3DState {
-                    position: [
-                        camera.transform.position.x,
-                        camera.transform.position.y,
-                        camera.transform.position.z,
-                    ],
-                    rotation: [
-                        camera.transform.rotation.x,
-                        camera.transform.rotation.y,
-                        camera.transform.rotation.z,
-                        camera.transform.rotation.w,
-                    ],
-                    zoom: camera.zoom,
-                }),
+                SceneNodeData::Camera3D(camera) if camera.active && effective_visible => {
+                    Some(Camera3DState {
+                        position: [
+                            camera.transform.position.x,
+                            camera.transform.position.y,
+                            camera.transform.position.z,
+                        ],
+                        rotation: [
+                            camera.transform.rotation.x,
+                            camera.transform.rotation.y,
+                            camera.transform.rotation.z,
+                            camera.transform.rotation.w,
+                        ],
+                        zoom: camera.zoom,
+                    })
+                }
                 _ => None,
             });
             if let Some(camera) = camera_data {
@@ -50,7 +52,9 @@ impl Runtime {
             }
 
             let ambient_light_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::AmbientLight3D(light) if light.active && light.visible && effective_visible => {
+                SceneNodeData::AmbientLight3D(light)
+                    if light.active && light.visible && effective_visible =>
+                {
                     Some(AmbientLight3DState {
                         color: light.color,
                         intensity: light.intensity.max(0.0),
@@ -67,7 +71,9 @@ impl Runtime {
             }
 
             let ray_light_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::RayLight3D(light) if light.active && light.visible && effective_visible => {
+                SceneNodeData::RayLight3D(light)
+                    if light.active && light.visible && effective_visible =>
+                {
                     Some(RayLight3DState {
                         direction: quaternion_forward(light.transform.rotation),
                         color: light.color,
@@ -85,7 +91,9 @@ impl Runtime {
             }
 
             let point_light_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::PointLight3D(light) if light.active && light.visible && effective_visible => {
+                SceneNodeData::PointLight3D(light)
+                    if light.active && light.visible && effective_visible =>
+                {
                     Some(PointLight3DState {
                         position: [
                             light.transform.position.x,
@@ -108,7 +116,9 @@ impl Runtime {
             }
 
             let spot_light_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::SpotLight3D(light) if light.active && light.visible && effective_visible => {
+                SceneNodeData::SpotLight3D(light)
+                    if light.active && light.visible && effective_visible =>
+                {
                     Some(SpotLight3DState {
                         position: [
                             light.transform.position.x,
@@ -171,10 +181,7 @@ impl Runtime {
         self.render_3d.traversal_ids = traversal_ids;
     }
 
-    fn remove_no_longer_visible_render_3d_nodes(
-        &mut self,
-        visible_now: &ahash::AHashSet<NodeID>,
-    ) {
+    fn remove_no_longer_visible_render_3d_nodes(&mut self, visible_now: &ahash::AHashSet<NodeID>) {
         for node in self.render_3d.prev_visible.iter().copied() {
             if !visible_now.contains(&node) {
                 self.render_3d.removed_nodes.push(node);

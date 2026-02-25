@@ -7,23 +7,24 @@ pub mod prelude {
     pub use crate::api::{RuntimeAPI, RuntimeContext};
     pub use crate::sub_apis::{
         Attribute, IntoScriptMemberID, Member, NodeAPI, NodeModule, ScriptAPI, ScriptModule,
-        SignalAPI, SignalModule, TimeAPI, TimeModule,
+        SignalAPI, SignalModule, TagQuery, TimeAPI, TimeModule,
     };
     pub use crate::{
-        attach_script, attribute, attributes_of, call_method, connect_signal, create_node,
-        delta_time, detach_script, disconnect_signal, elapsed_time, emit_signal, fixed_delta_time,
-        get_node_children_ids, get_node_name, get_node_parent_id, get_var, has_attribute, member,
-        members_with, reparent, reparent_multi, set_node_name, set_var, with_node, with_node_mut,
-        with_state, with_state_mut,
+        add_node_tag, attach_script, attribute, attributes_of, call_method, connect_signal,
+        create_node, delta_time, detach_script, disconnect_signal, elapsed_time, emit_signal,
+        fixed_delta_time, get_node_children_ids, get_node_name, get_node_parent_id, get_node_tags,
+        get_node_type, get_var, has_attribute, member, members_with, query, remove_node_tag,
+        reparent, reparent_multi, set_node_name, set_node_tags, set_var, tag_add, tag_remove,
+        with_node, with_node_base, with_node_base_mut, with_node_mut, with_state, with_state_mut,
     };
-    pub use perro_ids::{func, method, sid, signal, smid, var};
+    pub use perro_ids::{func, method, sid, signal, smid, tag, tags, var};
     pub use perro_variant::{params, variant};
 }
 
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
-    use perro_ids::NodeID;
+    use perro_ids::{IntoTagID, NodeID, TagID};
     use perro_nodes::prelude::Node2D;
     use std::any::Any;
 
@@ -66,6 +67,22 @@ mod tests {
             V::default()
         }
 
+        fn with_node_base<T, V, F>(&mut self, _id: NodeID, _f: F) -> Option<V>
+        where
+            T: perro_nodes::NodeBaseDispatch,
+            F: FnOnce(&T) -> V,
+        {
+            None
+        }
+
+        fn with_node_base_mut<T, V, F>(&mut self, _id: NodeID, _f: F) -> Option<V>
+        where
+            T: perro_nodes::NodeBaseDispatch,
+            F: FnOnce(&mut T) -> V,
+        {
+            None
+        }
+
         fn get_node_name(&mut self, _node: NodeID) -> Option<std::borrow::Cow<'static, str>> {
             None
         }
@@ -85,6 +102,10 @@ mod tests {
             None
         }
 
+        fn get_node_type(&mut self, _node: NodeID) -> Option<perro_nodes::NodeType> {
+            None
+        }
+
         fn reparent(&mut self, _parent: NodeID, _child: NodeID) -> bool {
             false
         }
@@ -94,6 +115,35 @@ mod tests {
             I: IntoIterator<Item = NodeID>,
         {
             0
+        }
+
+        fn get_node_tags(&mut self, _node_id: NodeID) -> Option<Vec<TagID>> {
+            None
+        }
+
+        fn set_node_tags<T>(&mut self, _node_id: NodeID, _tags: Option<T>) -> bool
+        where
+            T: Into<std::borrow::Cow<'static, [TagID]>>,
+        {
+            false
+        }
+
+        fn add_node_tag<T>(&mut self, _node_id: NodeID, _tag: T) -> bool
+        where
+            T: IntoTagID,
+        {
+            false
+        }
+
+        fn remove_node_tag<T>(&mut self, _node_id: NodeID, _tag: T) -> bool
+        where
+            T: IntoTagID,
+        {
+            false
+        }
+
+        fn query_nodes(&mut self, _query: TagQuery) -> Vec<NodeID> {
+            Vec::new()
         }
     }
 
@@ -211,10 +261,20 @@ mod tests {
         with_node_mut!(&mut ctx, Node2D, id, |_node| {});
         let value = with_node!(&mut ctx, Node2D, id, |_node| 99_i32);
         assert_eq!(value, 0_i32);
+        let _ = with_node_base!(&mut ctx, Node2D, id, |_node| 1_i32);
+        let _ = with_node_base_mut!(&mut ctx, Node2D, id, |_node| 2_i32);
         assert_eq!(get_node_name!(&mut ctx, id), None);
         assert!(!set_node_name!(&mut ctx, id, "player"));
         assert_eq!(get_node_parent_id!(&mut ctx, id), None);
         assert_eq!(get_node_children_ids!(&mut ctx, id), None);
+        assert_eq!(get_node_type!(&mut ctx, id), None);
+        assert_eq!(get_node_tags!(&mut ctx, id), None);
+        assert!(!set_node_tags!(&mut ctx, id, tags!["player", "enemy"]));
+        assert!(!set_node_tags!(&mut ctx, id));
+        assert!(!add_node_tag!(&mut ctx, id, "player"));
+        assert!(!remove_node_tag!(&mut ctx, id, "player"));
+        assert!(query!(&mut ctx, has["player"], not["enemy"]).is_empty());
+        assert!(query!(&mut ctx, is[Node2D], base[Node3D]).is_empty());
         assert!(!reparent!(&mut ctx, NodeID::new(1), id));
         assert_eq!(reparent_multi!(&mut ctx, NodeID::new(1), [id]), 0);
         assert!(!attach_script!(&mut ctx, id, "res://scripts/a.rs"));

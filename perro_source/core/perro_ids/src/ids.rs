@@ -140,7 +140,11 @@ define_generational!(
 );
 define_generational!(
     SignalID,
-    "Signal ID — hash of signal name (or generational). Used for connect/emit."
+    "Signal ID - hash of signal name (or generational). Used for connect/emit."
+);
+define_generational!(
+    TagID,
+    "Tag ID - deterministic ID from tag name. Used for scene node tags and queries."
 );
 
 impl NodeID {
@@ -205,6 +209,52 @@ impl SignalID {
     /// Deterministic ID from signal name. Uses hash; generation 0.
     pub const fn from_string(s: &str) -> Self {
         Self::from_u64(string_to_u64(s))
+    }
+}
+
+impl TagID {
+    /// Deterministic ID from tag name. Uses hash; generation 0.
+    pub const fn from_string(s: &str) -> Self {
+        Self::from_u64(string_to_u64(s))
+    }
+}
+
+pub trait IntoTagID {
+    fn into_tag_id(self) -> TagID;
+}
+
+impl IntoTagID for TagID {
+    #[inline]
+    fn into_tag_id(self) -> TagID {
+        self
+    }
+}
+
+impl IntoTagID for &TagID {
+    #[inline]
+    fn into_tag_id(self) -> TagID {
+        *self
+    }
+}
+
+impl IntoTagID for &str {
+    #[inline]
+    fn into_tag_id(self) -> TagID {
+        TagID::from_string(self)
+    }
+}
+
+impl IntoTagID for String {
+    #[inline]
+    fn into_tag_id(self) -> TagID {
+        TagID::from_string(self.as_str())
+    }
+}
+
+impl IntoTagID for &String {
+    #[inline]
+    fn into_tag_id(self) -> TagID {
+        TagID::from_string(self.as_str())
     }
 }
 

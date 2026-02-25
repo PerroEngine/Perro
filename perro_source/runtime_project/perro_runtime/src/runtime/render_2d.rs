@@ -38,11 +38,13 @@ impl Runtime {
             }
 
             let camera_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::Camera2D(camera) if camera.active && effective_visible => Some(Camera2DState {
-                    position: [camera.transform.position.x, camera.transform.position.y],
-                    rotation_radians: camera.transform.rotation,
-                    zoom: camera.zoom,
-                }),
+                SceneNodeData::Camera2D(camera) if camera.active && effective_visible => {
+                    Some(Camera2DState {
+                        position: [camera.transform.position.x, camera.transform.position.y],
+                        rotation_radians: camera.transform.rotation,
+                        zoom: camera.zoom,
+                    })
+                }
                 _ => None,
             });
             if let Some(camera) = camera_data {

@@ -150,4 +150,21 @@ impl NodeArena {
     pub fn is_empty(&self) -> bool {
         self.nodes.iter().all(|n| n.is_none())
     }
+
+    /// Number of internal slots including the reserved nil slot at index 0.
+    pub fn slot_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Returns node at a raw slot index if occupied. Intended for fast linear scans.
+    pub fn slot_get(&self, index: usize) -> Option<(NodeID, &SceneNode)> {
+        if index == 0 || index >= self.nodes.len() {
+            return None;
+        }
+        let node = self.nodes[index].as_ref()?;
+        Some((
+            NodeID::from_parts(index as u32, self.generations[index]),
+            node,
+        ))
+    }
 }
