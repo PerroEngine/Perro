@@ -12,6 +12,13 @@ mod square_pyramid;
 mod tri_prism;
 mod triangular_pyramid;
 
+type BuiltinMeshBuffer = (
+    Vec<MeshVertex>,
+    Vec<u32>,
+    HashMap<&'static str, MeshRange>,
+    HashMap<&'static str, Arc<[MeshletRange]>>,
+);
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct MeshVertexKey {
     pos: [u32; 3],
@@ -27,12 +34,7 @@ impl From<MeshVertex> for MeshVertexKey {
     }
 }
 
-pub(super) fn build_builtin_mesh_buffer() -> (
-    Vec<MeshVertex>,
-    Vec<u32>,
-    HashMap<&'static str, MeshRange>,
-    HashMap<&'static str, Arc<[MeshletRange]>>,
-) {
+pub(super) fn build_builtin_mesh_buffer() -> BuiltinMeshBuffer {
     const ROUND_SEGMENTS: u32 = 36;
     const SPHERE_LATITUDE_BANDS: u32 = 24;
     const CAPSULE_HEMISPHERE_BANDS: u32 = 14;

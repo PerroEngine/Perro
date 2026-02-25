@@ -16,6 +16,14 @@ pub type StaticTextureLookup = fn(path: &str) -> Option<&'static [u8]>;
 pub type StaticMeshLookup = fn(path: &str) -> Option<&'static [u8]>;
 const GC_INTERVAL_FRAMES: u32 = 4;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OcclusionCullingMode {
+    Cpu,
+    #[default]
+    Gpu,
+    Off,
+}
+
 pub trait GraphicsBackend: RenderBridge {
     fn attach_window(&mut self, window: Arc<Window>);
     fn resize(&mut self, width: u32, height: u32);
@@ -53,6 +61,7 @@ pub struct PerroGraphics {
     meshlets_enabled: bool,
     dev_meshlets: bool,
     meshlet_debug_view: bool,
+    occlusion_culling: OcclusionCullingMode,
     retained_draws_cache: Vec<Draw3DInstance>,
     retained_sprites_cache: Vec<Sprite2DCommand>,
     frame_index: u32,
@@ -76,6 +85,7 @@ impl PerroGraphics {
             meshlets_enabled: false,
             dev_meshlets: false,
             meshlet_debug_view: false,
+            occlusion_culling: OcclusionCullingMode::Gpu,
             retained_draws_cache: Vec::new(),
             retained_sprites_cache: Vec::new(),
             frame_index: 0,
@@ -114,6 +124,11 @@ impl PerroGraphics {
 
     pub fn with_meshlet_debug_view(mut self, enabled: bool) -> Self {
         self.meshlet_debug_view = enabled;
+        self
+    }
+
+    pub fn with_occlusion_culling(mut self, mode: OcclusionCullingMode) -> Self {
+        self.occlusion_culling = mode;
         self
     }
 
@@ -276,6 +291,7 @@ impl GraphicsBackend for PerroGraphics {
                 self.meshlets_enabled,
                 self.dev_meshlets,
                 self.meshlet_debug_view,
+                self.occlusion_culling,
             );
             if let Some(gpu_ref) = gpu.as_mut() {
                 let [vw, vh] = Gpu::virtual_size();

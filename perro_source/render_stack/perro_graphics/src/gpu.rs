@@ -1,8 +1,8 @@
 use crate::{
-    backend::{StaticMeshLookup, StaticTextureLookup},
+    backend::{OcclusionCullingMode, StaticMeshLookup, StaticTextureLookup},
     resources::ResourceStore,
     three_d::{
-        gpu::{Gpu3D, Prepare3D},
+        gpu::{Gpu3D, Gpu3DConfig, Prepare3D},
         renderer::{Draw3DInstance, Lighting3DState},
     },
     two_d::{
@@ -59,6 +59,7 @@ impl Gpu {
         meshlets_enabled: bool,
         dev_meshlets: bool,
         meshlet_debug_view: bool,
+        occlusion_culling: OcclusionCullingMode,
     ) -> Option<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let surface = instance.create_surface(window.clone()).ok()?;
@@ -69,18 +70,28 @@ impl Gpu {
             force_fallback_adapter: false,
         }))
         .ok()?;
+        let adapter_features = adapter.features();
+        let mut required_features = wgpu::Features::empty();
+        if adapter_features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE) {
+            required_features |= wgpu::Features::INDIRECT_FIRST_INSTANCE;
+        }
 
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("perro_device"),
-            required_features: wgpu::Features::empty(),
+            required_features,
             required_limits: wgpu::Limits::default(),
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
             memory_hints: wgpu::MemoryHints::Performance,
             trace: wgpu::Trace::default(),
         }))
         .ok()?;
-        let occlusion_enabled = true;
-
+        let indirect_first_instance_enabled =
+            required_features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE);
+        if !indirect_first_instance_enabled {
+            eprintln!(
+                "[perro][3d] INDIRECT_FIRST_INSTANCE not supported by adapter; falling back to CPU frustum path"
+            );
+        }
         let caps = surface.get_capabilities(&adapter);
         let surface_format = caps
             .formats
@@ -112,13 +123,16 @@ impl Gpu {
         let three_d = Gpu3D::new(
             &device,
             render_format,
-            sample_count,
-            width,
-            height,
-            meshlets_enabled,
-            dev_meshlets,
-            meshlet_debug_view,
-            occlusion_enabled,
+            Gpu3DConfig {
+                sample_count,
+                width,
+                height,
+                meshlets_enabled,
+                dev_meshlets,
+                meshlet_debug_view,
+                occlusion_culling,
+                indirect_first_instance_enabled,
+            },
         );
         let msaa_color =
             create_msaa_color_target(&device, render_format, width, height, sample_count);
@@ -255,6 +269,7 @@ impl Gpu {
             });
 
         self.three_d.render_pass(
+            &self.device,
             &mut encoder,
             color_view,
             wgpu::Color {

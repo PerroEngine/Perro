@@ -1,9 +1,14 @@
 use crate::App;
 use crate::winit_runner::WinitRunner;
-use perro_graphics::{GraphicsBackend, PerroGraphics};
-use perro_runtime::{ProjectLoadError, ProviderMode, Runtime, RuntimeProject};
+use perro_graphics::{GraphicsBackend, OcclusionCullingMode, PerroGraphics};
+use perro_runtime::{OcclusionCulling, ProjectLoadError, ProviderMode, Runtime, RuntimeProject};
 use perro_scripting::ScriptConstructor;
 use std::path::Path;
+
+type StaticScriptRegistry = &'static [(
+    &'static str,
+    ScriptConstructor<Runtime, perro_runtime::RuntimeResourceApi, perro_runtime::RuntimeInputApi>,
+)];
 
 pub fn create_runtime_from_project(
     project: RuntimeProject,
@@ -49,6 +54,11 @@ fn graphics_from_project_config(
         .with_meshlets_enabled(config.meshlets)
         .with_dev_meshlets(!release_mode && config.dev_meshlets)
         .with_meshlet_debug_view(config.meshlet_debug_view)
+        .with_occlusion_culling(match config.occlusion_culling {
+            OcclusionCulling::Cpu => OcclusionCullingMode::Cpu,
+            OcclusionCulling::Gpu => OcclusionCullingMode::Gpu,
+            OcclusionCulling::Off => OcclusionCullingMode::Off,
+        })
 }
 
 pub fn run_dev_project_from_path(
@@ -87,16 +97,7 @@ pub struct StaticEmbeddedProject<'a> {
     pub material_lookup: perro_runtime::StaticMaterialLookup,
     pub mesh_lookup: perro_graphics::StaticMeshLookup,
     pub texture_lookup: perro_graphics::StaticTextureLookup,
-    pub static_script_registry: Option<
-        &'static [(
-            &'static str,
-            ScriptConstructor<
-                Runtime,
-                perro_runtime::RuntimeResourceApi,
-                perro_runtime::RuntimeInputApi,
-            >,
-        )],
-    >,
+    pub static_script_registry: Option<StaticScriptRegistry>,
 }
 
 pub fn run_static_embedded_project(

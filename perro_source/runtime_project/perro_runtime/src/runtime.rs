@@ -17,6 +17,9 @@ mod render_2d;
 mod render_3d;
 mod scene_loader;
 
+type RuntimeScriptCtor = ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>;
+type StaticScriptRegistry = &'static [(&'static str, RuntimeScriptCtor)];
+
 pub struct Runtime {
     pub time: Timing,
     provider_mode: ProviderMode,
@@ -40,8 +43,7 @@ pub struct Runtime {
     pub(crate) signals: SignalRegistry,
     pub(crate) signal_emit_scratch: Vec<SignalConnection>,
     pub(crate) script_library: Option<Library>,
-    pub(crate) dynamic_script_registry:
-        AHashMap<String, ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>>,
+    pub(crate) dynamic_script_registry: AHashMap<String, RuntimeScriptCtor>,
     pub(crate) resource_api: Arc<RuntimeResourceApi>,
     pub(crate) input: InputSnapshot,
 }
@@ -349,12 +351,7 @@ impl Runtime {
     pub fn from_project_with_script_registry(
         project: RuntimeProject,
         provider_mode: ProviderMode,
-        script_registry: Option<
-            &'static [(
-                &'static str,
-                ScriptConstructor<Self, RuntimeResourceApi, InputSnapshot>,
-            )],
-        >,
+        script_registry: Option<StaticScriptRegistry>,
     ) -> Self {
         let mut runtime = Self::new();
         let static_material_lookup = project.static_material_lookup;

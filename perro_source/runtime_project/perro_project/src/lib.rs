@@ -7,6 +7,23 @@ use std::{
 use toml::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OcclusionCulling {
+    Cpu,
+    Gpu,
+    Off,
+}
+
+impl OcclusionCulling {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cpu => "cpu",
+            Self::Gpu => "gpu",
+            Self::Off => "off",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StaticProjectConfig {
     pub name: &'static str,
     pub main_scene: &'static str,
@@ -19,6 +36,7 @@ pub struct StaticProjectConfig {
     pub dev_meshlets: bool,
     pub release_meshlets: bool,
     pub meshlet_debug_view: bool,
+    pub occlusion_culling: OcclusionCulling,
 }
 
 impl StaticProjectConfig {
@@ -41,6 +59,7 @@ impl StaticProjectConfig {
             dev_meshlets: false,
             release_meshlets: true,
             meshlet_debug_view: false,
+            occlusion_culling: OcclusionCulling::Gpu,
         }
     }
 
@@ -74,6 +93,11 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_occlusion_culling(mut self, mode: OcclusionCulling) -> Self {
+        self.occlusion_culling = mode;
+        self
+    }
+
     pub fn to_runtime(self) -> ProjectConfig {
         ProjectConfig {
             name: self.name.to_string(),
@@ -87,6 +111,7 @@ impl StaticProjectConfig {
             dev_meshlets: self.dev_meshlets,
             release_meshlets: self.release_meshlets,
             meshlet_debug_view: self.meshlet_debug_view,
+            occlusion_culling: self.occlusion_culling,
         }
     }
 }
@@ -104,6 +129,7 @@ pub struct ProjectConfig {
     pub dev_meshlets: bool,
     pub release_meshlets: bool,
     pub meshlet_debug_view: bool,
+    pub occlusion_culling: OcclusionCulling,
 }
 
 impl ProjectConfig {
@@ -120,6 +146,7 @@ impl ProjectConfig {
             dev_meshlets: false,
             release_meshlets: true,
             meshlet_debug_view: false,
+            occlusion_culling: OcclusionCulling::Gpu,
         }
     }
 }
@@ -300,6 +327,7 @@ meshlets = false
 dev_meshlets = false
 release_meshlets = true
 meshlet_debug_view = false
+occlusion_culling = "gpu"
 "#
     )
 }
@@ -384,6 +412,8 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let dev_meshlets = parse_bool_with_default(graphics_table, "dev_meshlets", false)?;
     let release_meshlets = parse_bool_with_default(graphics_table, "release_meshlets", true)?;
     let meshlet_debug_view = parse_bool_with_default(graphics_table, "meshlet_debug_view", false)?;
+    let occlusion_culling =
+        parse_occlusion_culling_with_default(graphics_table, "occlusion_culling", OcclusionCulling::Gpu)?;
 
     Ok(ProjectConfig {
         name,
@@ -397,6 +427,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         dev_meshlets,
         release_meshlets,
         meshlet_debug_view,
+        occlusion_culling,
     })
 }
 
@@ -422,6 +453,31 @@ fn parse_bool_with_default(
             "must be a boolean".to_string(),
         )
     })
+}
+
+fn parse_occlusion_culling_with_default(
+    table: &toml::map::Map<String, Value>,
+    key: &'static str,
+    default: OcclusionCulling,
+) -> Result<OcclusionCulling, ProjectError> {
+    let Some(value) = table.get(key) else {
+        return Ok(default);
+    };
+    let Some(raw) = value.as_str() else {
+        return Err(ProjectError::InvalidField(
+            "graphics.occlusion_culling",
+            "must be one of \"cpu\", \"gpu\", \"off\"".to_string(),
+        ));
+    };
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "cpu" => Ok(OcclusionCulling::Cpu),
+        "gpu" => Ok(OcclusionCulling::Gpu),
+        "off" => Ok(OcclusionCulling::Off),
+        _ => Err(ProjectError::InvalidField(
+            "graphics.occlusion_culling",
+            "must be one of \"cpu\", \"gpu\", \"off\"".to_string(),
+        )),
+    }
 }
 
 fn validate_res_path(field: &'static str, path: &str) -> Result<(), ProjectError> {
@@ -1343,6 +1399,7 @@ virtual_resolution = "1280x720"
         assert!(!parsed.dev_meshlets);
         assert!(parsed.release_meshlets);
         assert!(!parsed.meshlet_debug_view);
+        assert_eq!(parsed.occlusion_culling, OcclusionCulling::Gpu);
     }
 
     #[test]
@@ -1367,6 +1424,7 @@ virtual_height = 1080
         assert!(!parsed.dev_meshlets);
         assert!(parsed.release_meshlets);
         assert!(!parsed.meshlet_debug_view);
+        assert_eq!(parsed.occlusion_culling, OcclusionCulling::Gpu);
     }
 
     #[test]
@@ -1385,6 +1443,7 @@ meshlets = true
 dev_meshlets = true
 release_meshlets = false
 meshlet_debug_view = true
+occlusion_culling = "cpu"
 "#;
 
         let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
@@ -1394,6 +1453,7 @@ meshlet_debug_view = true
         assert!(parsed.dev_meshlets);
         assert!(!parsed.release_meshlets);
         assert!(parsed.meshlet_debug_view);
+        assert_eq!(parsed.occlusion_culling, OcclusionCulling::Cpu);
     }
 
     #[test]

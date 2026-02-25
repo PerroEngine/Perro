@@ -29,8 +29,8 @@ lifecycle!({
     ) {
         self.set_speed(ctx, res, ipt, self_id, 5.0);
         signal_connect!(ctx, self_id, signal!("test_signal1"), func!("set_speed"));
-       let ids = query!(ctx, is_type[MeshInstance3D, Camera3D]);
-      log_info!(format!("Found {} nodes of type MeshInstance3D or Camera3D", ids.len()));
+       let ids = query!(ctx, is_type[RayLight3D]);
+       log_info!(format!("Found {} nodes of type RayLight3D", ids.len()));
 
     }
 

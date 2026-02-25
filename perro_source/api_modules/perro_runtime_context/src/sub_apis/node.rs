@@ -433,6 +433,7 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 /// - The runtime looks up `node_id`, verifies exact type equality with `ConcreteType`,
 ///   then invokes your closure while holding a short-lived mutable borrow.
 /// - The borrow cannot escape the closure, which keeps access compile-time safe.
+///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeContext<_>`
 /// - `ConcreteType`: concrete node struct type (exact match only)
@@ -450,6 +451,7 @@ macro_rules! with_node_mut {
 /// Internals:
 /// - The runtime does an exact concrete-type check, then calls the closure with `&ConcreteType`.
 /// - The read borrow is scoped to the closure call and cannot outlive it.
+///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeContext<_>`
 /// - `ConcreteType`: concrete node struct type (exact match only)
@@ -467,6 +469,7 @@ macro_rules! with_node {
 /// Internals:
 /// - The runtime checks `node.node_type().is_a(BaseType)`, then dispatches the closure as `&BaseType`.
 /// - This keeps one runtime check while still giving typed field/method access in the closure body.
+///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeContext<_>`
 /// - `BaseType`: base node struct type (descendants allowed)
@@ -484,6 +487,7 @@ macro_rules! with_base_node {
 /// Internals:
 /// - Same `is_a` runtime check as `with_base_node!`, then executes your closure with `&mut BaseType`.
 /// - Mutable borrow is closure-scoped so references cannot escape.
+///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeContext<_>`
 /// - `BaseType`: base node struct type (descendants allowed)
@@ -515,8 +519,10 @@ macro_rules! create_node {
 /// - hierarchy (`get_node_parent_id!`, `get_node_children_ids!`)
 /// - runtime typing (`get_node_type!`)
 /// - tags (`get_node_tags!`, `set_node_tags!`, `tag_add!`, `tag_remove!`)
+///
 /// Gets node display name.
 /// Usage: `get_node_name!(ctx, node_id) -> Option<Cow<'static, str>>`.
+///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeContext<_>`
 /// - `node_id`: `NodeID`
@@ -618,6 +624,7 @@ macro_rules! get_node_tags {
 /// Usage:
 /// - `set_node_tags!(ctx, node_id, tags)` where `tags` is `Cow<'static, [TagID]>` compatible.
 /// - `set_node_tags!(ctx, node_id)` clears all tags.
+///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeContext<_>`
 /// - `node_id`: `NodeID`
@@ -638,6 +645,7 @@ macro_rules! set_node_tags {
 /// - `tag_add!(ctx, node_id, "enemy")`
 /// - `tag_add!(ctx, node_id, tags!["enemy", "alive"])`
 /// - `tag_add!(ctx, node_id, ["enemy", "alive"])`
+///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeContext<_>`
 /// - `node_id`: `NodeID`
@@ -653,6 +661,7 @@ macro_rules! tag_add {
 /// Usage:
 /// - `tag_remove!(ctx, node_id, tag) -> bool`
 /// - `tag_remove!(ctx, node_id)` clears all tags.
+///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeContext<_>`
 /// - `node_id`: `NodeID`
@@ -673,6 +682,7 @@ macro_rules! tag_remove {
 /// Syntax:
 /// - `query!(ctx, CLAUSE[...], CLAUSE[...], ...)`
 /// - Each clause always uses bracket form: `CLAUSE[comma-separated items]`.
+///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeContext<_>`
 /// - clause values:

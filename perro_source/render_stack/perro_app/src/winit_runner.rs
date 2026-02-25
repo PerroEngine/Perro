@@ -264,11 +264,11 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.step_frame(Instant::now());
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if let PhysicalKey::Code(code) = event.physical_key {
-                    if let Some(key) = map_winit_key_code(code) {
-                        self.app
-                            .set_key_state(key, event.state == ElementState::Pressed);
-                    }
+                if let PhysicalKey::Code(code) = event.physical_key
+                    && let Some(key) = map_winit_key_code(code)
+                {
+                    self.app
+                        .set_key_state(key, event.state == ElementState::Pressed);
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {

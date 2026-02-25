@@ -12,3 +12,4 @@ meshlets = true
 dev_meshlets = true
 release_meshlets = true
 meshlet_debug_view = false
+occlusion_culling = "gpu"

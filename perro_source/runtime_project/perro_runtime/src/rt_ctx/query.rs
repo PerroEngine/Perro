@@ -70,8 +70,7 @@ fn scan_range(
     query: &TagQuery,
     plan: &QueryPlan,
 ) -> Vec<NodeID> {
-    let mut out = Vec::new();
-    out.reserve((end.saturating_sub(start)) / 4);
+    let mut out = Vec::with_capacity((end.saturating_sub(start)) / 4);
     for index in start..end {
         let Some((id, node)) = arena.slot_get(index) else {
             continue;

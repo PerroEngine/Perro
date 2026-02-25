@@ -3,7 +3,8 @@ use perro_scene::StaticScene;
 use std::{collections::BTreeMap, path::PathBuf};
 
 pub use perro_project::{
-    ProjectConfig as RuntimeProjectConfig, ProjectError as ProjectLoadError, StaticProjectConfig,
+    OcclusionCulling, ProjectConfig as RuntimeProjectConfig, ProjectError as ProjectLoadError,
+    StaticProjectConfig,
     default_project_toml, ensure_project_layout, ensure_project_toml, load_project_toml,
     parse_project_toml,
 };

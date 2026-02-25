@@ -106,7 +106,7 @@ pub fn pack_meshlets_from_positions(
 
     let chunk = triangles_per_meshlet * 3;
     let packed_tri_len = (packed_indices.len() / 3) * 3;
-    let mut meshlets = Vec::with_capacity((packed_tri_len + chunk - 1) / chunk);
+    let mut meshlets = Vec::with_capacity(packed_tri_len.div_ceil(chunk));
     let mut start = 0usize;
     while start < packed_tri_len {
         let end = (start + chunk).min(packed_tri_len);

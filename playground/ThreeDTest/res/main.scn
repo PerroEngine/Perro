@@ -34,6 +34,20 @@ script = "res://scripts/script.rs"
 [/MeshInstance3D]
 [/mesh2]
 
+[mesh3]
+parent = @root
+
+[MeshInstance3D]
+    mesh = "__cube__"
+
+    [Node3D]
+        position = (0, 0, -75)
+        scale = (5,5,5)
+    [/Node3D]
+[/MeshInstance3D]
+[/mesh3]
+
+
 [camera]
 parent = @root
 script = "res://scripts/camera.rs"
