@@ -72,6 +72,11 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn add_mouse_wheel(&mut self, dx: f32, dy: f32) {
+        self.runtime.add_mouse_wheel(dx, dy);
+    }
+
+    #[inline]
     pub fn fixed_update_runtime(&mut self, fixed_delta_time: f32) {
         self.runtime.fixed_update(fixed_delta_time);
     }

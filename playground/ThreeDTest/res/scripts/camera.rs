@@ -57,7 +57,12 @@ lifecycle!({
         let dt = delta_time!(ctx);
         let middle_down = ipt.Mouse().down(MouseButton::Middle);
         let (mouse_dx, mouse_dy) = ipt.Mouse().delta();
+        let (_wheel_x, wheel_y) = ipt.Mouse().wheel();
         let (move_speed, yaw, pitch) = with_state_mut!(ctx, CameraState, node, |state| {
+            if wheel_y != 0.0 {
+                // Scroll up speeds up, scroll down slows down.
+                state.move_speed = (state.move_speed + wheel_y * 2.0).clamp(0.5, 300.0);
+            }
             if middle_down {
                 // Inverted drag direction for both axes.
                 state.yaw -= mouse_dx * state.look_sensitivity;

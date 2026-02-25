@@ -13,7 +13,7 @@ pub mod prelude {
     pub use crate::{
         attribute, attributes_of, call_method, create_node, delta_time, elapsed_time,
         fixed_delta_time, get_node_children_ids, get_node_name, get_node_parent_id, get_node_tags,
-        get_node_type, get_var, has_attribute, member, members_with, query, reparent,
+        get_node_type, get_var, has_attribute, member, members_with, query, remove_node, reparent,
         reparent_multi, script_attach, script_detach, set_node_name, set_node_tags, set_var,
         signal_connect, signal_disconnect, signal_emit, tag_add, tag_remove, with_base_node,
         with_base_node_mut, with_node, with_node_mut, with_state, with_state_mut,
@@ -116,6 +116,10 @@ mod tests {
             I: IntoIterator<Item = NodeID>,
         {
             0
+        }
+
+        fn remove_node(&mut self, _node_id: NodeID) -> bool {
+            false
         }
 
         fn get_node_tags(&mut self, _node_id: NodeID) -> Option<Vec<TagID>> {
@@ -278,6 +282,7 @@ mod tests {
         assert!(query!(&mut ctx, all(is[Node2D], base[Node3D])).is_empty());
         assert!(!reparent!(&mut ctx, NodeID::new(1), id));
         assert_eq!(reparent_multi!(&mut ctx, NodeID::new(1), [id]), 0);
+        assert!(!remove_node!(&mut ctx, id));
         assert!(!script_attach!(&mut ctx, id, "res://scripts/a.rs"));
         assert!(!script_detach!(&mut ctx, id));
         let member = var!("x");

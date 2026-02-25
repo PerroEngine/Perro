@@ -14,6 +14,8 @@ pub struct InputSnapshot {
     mouse_released: u8,
     mouse_delta_x: f32,
     mouse_delta_y: f32,
+    mouse_wheel_x: f32,
+    mouse_wheel_y: f32,
 }
 
 impl InputSnapshot {
@@ -28,6 +30,8 @@ impl InputSnapshot {
             mouse_released: 0,
             mouse_delta_x: 0.0,
             mouse_delta_y: 0.0,
+            mouse_wheel_x: 0.0,
+            mouse_wheel_y: 0.0,
         }
     }
 
@@ -39,6 +43,8 @@ impl InputSnapshot {
         self.mouse_released = 0;
         self.mouse_delta_x = 0.0;
         self.mouse_delta_y = 0.0;
+        self.mouse_wheel_x = 0.0;
+        self.mouse_wheel_y = 0.0;
     }
 
     #[inline]
@@ -97,6 +103,12 @@ impl InputSnapshot {
     }
 
     #[inline]
+    pub fn add_mouse_wheel(&mut self, dx: f32, dy: f32) {
+        self.mouse_wheel_x += dx;
+        self.mouse_wheel_y += dy;
+    }
+
+    #[inline]
     pub fn is_mouse_down(&self, button: MouseButton) -> bool {
         self.mouse_down & button.bit() != 0
     }
@@ -114,6 +126,11 @@ impl InputSnapshot {
     #[inline]
     pub fn mouse_delta(&self) -> (f32, f32) {
         (self.mouse_delta_x, self.mouse_delta_y)
+    }
+
+    #[inline]
+    pub fn mouse_wheel(&self) -> (f32, f32) {
+        (self.mouse_wheel_x, self.mouse_wheel_y)
     }
 
     #[inline]
@@ -139,6 +156,7 @@ pub trait InputAPI {
     fn is_mouse_pressed(&self, button: MouseButton) -> bool;
     fn is_mouse_released(&self, button: MouseButton) -> bool;
     fn mouse_delta(&self) -> (f32, f32);
+    fn mouse_wheel(&self) -> (f32, f32);
 }
 
 impl InputAPI for InputSnapshot {
@@ -175,6 +193,11 @@ impl InputAPI for InputSnapshot {
     #[inline]
     fn mouse_delta(&self) -> (f32, f32) {
         self.mouse_delta()
+    }
+
+    #[inline]
+    fn mouse_wheel(&self) -> (f32, f32) {
+        self.mouse_wheel()
     }
 }
 
@@ -251,6 +274,11 @@ impl<'ipt, IP: InputAPI + ?Sized> MouseModule<'ipt, IP> {
     #[inline]
     pub fn delta(&self) -> (f32, f32) {
         self.ipt.mouse_delta()
+    }
+
+    #[inline]
+    pub fn wheel(&self) -> (f32, f32) {
+        self.ipt.mouse_wheel()
     }
 }
 

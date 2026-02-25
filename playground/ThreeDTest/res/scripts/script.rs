@@ -29,8 +29,6 @@ lifecycle!({
     ) {
         self.set_speed(ctx, res, ipt, self_id, 5.0);
         signal_connect!(ctx, self_id, signal!("test_signal1"), func!("set_speed"));
-       let ids = query!(ctx, any(tags["fart","poop"]));
-       log_info!(format!("Found {} nodes of tag fart", ids.len()));
 
     }
 
@@ -61,10 +59,14 @@ lifecycle!({
         }).unwrap_or_default();
 
         if timer > 3.0 {
+            let tags = get_node_tags!(ctx, self_id).unwrap_or_default();
+            if tags.contains(&tag!("mesh_change")) {
+  
+            
             with_node_mut!(ctx, SelfNodeType, self_id, |mesh| {
                 mesh.mesh = res.Meshes().load("res://models/2Noses.glb:mesh[1]");
                 mesh.material = res.Materials().load("res://materials/mat.pmat");
-            }).unwrap_or_default();
+            }).unwrap_or_default(); }
             with_state_mut!(ctx, ExampleState, self_id, |state| {
                 state.timer = -1.0;
             });

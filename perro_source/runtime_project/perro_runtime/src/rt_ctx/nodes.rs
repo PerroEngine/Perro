@@ -198,6 +198,36 @@ impl NodeAPI for Runtime {
         updated
     }
 
+    fn remove_node(&mut self, node_id: perro_ids::NodeID) -> bool {
+        if node_id.is_nil() || self.nodes.get(node_id).is_none() {
+            return false;
+        }
+
+        // Remove script state first so script-side lookups cannot outlive node removal.
+        let _ = self.remove_script_instance(node_id);
+
+        let (parent_id, child_ids) = match self.nodes.get(node_id) {
+            Some(node) => (node.get_parent(), node.get_children_ids().to_vec()),
+            None => return false,
+        };
+
+        if !parent_id.is_nil()
+            && let Some(parent) = self.nodes.get_mut(parent_id)
+        {
+            parent.remove_child(node_id);
+        }
+
+        // Keep subtree valid: children become root-level nodes.
+        for child_id in child_ids {
+            if let Some(child) = self.nodes.get_mut(child_id) {
+                child.parent = perro_ids::NodeID::nil();
+                self.mark_transform_dirty_recursive(child_id);
+            }
+        }
+
+        self.nodes.remove(node_id).is_some()
+    }
+
     fn get_node_tags(&mut self, node_id: perro_ids::NodeID) -> Option<Vec<TagID>> {
         self.nodes
             .get(node_id)

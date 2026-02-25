@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize, Position, Size},
-    event::{ElementState, MouseButton as WinitMouseButton, WindowEvent},
+    event::{ElementState, MouseButton as WinitMouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::PhysicalKey,
     monitor::MonitorHandle,
@@ -287,6 +287,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             }
             WindowEvent::CursorLeft { .. } => {
                 self.last_cursor_position = None;
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let (dx, dy) = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => (x, y),
+                    MouseScrollDelta::PixelDelta(pos) => ((pos.x as f32) / 40.0, (pos.y as f32) / 40.0),
+                };
+                self.app.add_mouse_wheel(dx, dy);
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 if let Some(window) = &self.window {

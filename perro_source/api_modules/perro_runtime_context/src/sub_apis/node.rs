@@ -270,6 +270,11 @@ pub trait NodeAPI {
     where
         I: IntoIterator<Item = NodeID>;
 
+    /// Removes a node from runtime storage.
+    ///
+    /// Implementations should also clean related runtime state (for example, script instances).
+    fn remove_node(&mut self, node_id: NodeID) -> bool;
+
     /// Returns node tags if node exists.
     fn get_node_tags(&mut self, node_id: NodeID) -> Option<Vec<TagID>>;
 
@@ -377,6 +382,10 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         I: IntoIterator<Item = NodeID>,
     {
         self.rt.reparent_multi(parent_id, child_ids)
+    }
+
+    pub fn remove_node(&mut self, node_id: NodeID) -> bool {
+        self.rt.remove_node(node_id)
     }
 
     pub fn get_node_tags(&mut self, node_id: NodeID) -> Option<Vec<TagID>> {
@@ -504,15 +513,41 @@ macro_rules! with_base_node_mut {
 }
 
 /// Creates a node from default concrete type.
-/// Usage: `create_node!(ctx, ConcreteType) -> NodeID`.
+/// Usage:
+/// - `create_node!(ctx, ConcreteType) -> NodeID`
+/// - `create_node!(ctx, ConcreteType, name) -> NodeID`
+/// - `create_node!(ctx, ConcreteType, name, tags) -> NodeID`
+/// - `create_node!(ctx, ConcreteType, name, tags, parent_id) -> NodeID`
+///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeContext<_>`
-/// - `ConcreteType`: node struct type implementing `Default`
+/// - `ConcreteType`: ie Node2D, MeshInstance3D, Sprite2D`
+/// - `name` (optional): `&str`, `String`, or `Cow<'static, str>`
+/// - `tags` (optional): usually from `tags![...]`, or `&[TagID]`, `[TagID; N]`, `Vec<TagID>`
+/// - `parent_id` (optional): `NodeID`
 #[macro_export]
 macro_rules! create_node {
     ($ctx:expr, $node_ty:ty) => {
         $ctx.Nodes().create::<$node_ty>()
     };
+    ($ctx:expr, $node_ty:ty, $name:expr) => {{
+        let __id = $ctx.Nodes().create::<$node_ty>();
+        let _ = $ctx.Nodes().set_node_name(__id, $name);
+        __id
+    }};
+    ($ctx:expr, $node_ty:ty, $name:expr, $tags:expr) => {{
+        let __id = $ctx.Nodes().create::<$node_ty>();
+        let _ = $ctx.Nodes().set_node_name(__id, $name);
+        let _ = $ctx.Nodes().set_node_tags(__id, Some($tags));
+        __id
+    }};
+    ($ctx:expr, $node_ty:ty, $name:expr, $tags:expr, $parent:expr) => {{
+        let __id = $ctx.Nodes().create::<$node_ty>();
+        let _ = $ctx.Nodes().set_node_name(__id, $name);
+        let _ = $ctx.Nodes().set_node_tags(__id, Some($tags));
+        let _ = $ctx.Nodes().reparent($parent, __id);
+        __id
+    }};
 }
 
 /// SceneNode metadata macros.
@@ -520,6 +555,7 @@ macro_rules! create_node {
 /// These macros expose node identity/relationship/metadata access:
 /// - name (`get_node_name!`, `set_node_name!`)
 /// - hierarchy (`get_node_parent_id!`, `get_node_children_ids!`)
+/// - lifecycle (`remove_node!`)
 /// - runtime typing (`get_node_type!`)
 /// - tags (`get_node_tags!`, `set_node_tags!`, `tag_add!`, `tag_remove!`)
 ///
@@ -608,6 +644,18 @@ macro_rules! reparent {
 macro_rules! reparent_multi {
     ($ctx:expr, $parent:expr, $child_ids:expr) => {
         $ctx.Nodes().reparent_multi($parent, $child_ids)
+    };
+}
+
+/// Removes a node by ID.
+/// Usage: `remove_node!(ctx, node_id) -> bool`.
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `node_id`: `NodeID`
+#[macro_export]
+macro_rules! remove_node {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().remove_node($id)
     };
 }
 

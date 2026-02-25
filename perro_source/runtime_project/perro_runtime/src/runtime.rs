@@ -414,6 +414,11 @@ impl Runtime {
         self.input.add_mouse_delta(dx, dy);
     }
 
+    #[inline]
+    pub fn add_mouse_wheel(&mut self, dx: f32, dy: f32) {
+        self.input.add_mouse_wheel(dx, dy);
+    }
+
     pub fn queue_render_command(&mut self, command: RenderCommand) {
         self.render.queue_command(command);
     }
