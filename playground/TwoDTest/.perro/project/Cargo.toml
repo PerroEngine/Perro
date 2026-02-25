@@ -11,6 +11,8 @@ perro_app = "0.1.0"
 perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
 perro_runtime_context = "0.1.0"
+perro_resource_context = "0.1.0"
+perro_input = "0.1.0"
 perro_nodes = "0.1.0"
 perro_structs = "0.1.0"
 perro_scene = "0.1.0"
@@ -36,6 +38,7 @@ perro_project = { path = "../../../../perro_source/runtime_project/perro_project
 perro_runtime = { path = "../../../../perro_source/runtime_project/perro_runtime" }
 perro_scene = { path = "../../../../perro_source/runtime_project/perro_scene" }
 perro_modules = { path = "../../../../perro_source/api_modules/perro_modules" }
+perro_input = { path = "../../../../perro_source/api_modules/perro_input" }
 perro_resource_context = { path = "../../../../perro_source/api_modules/perro_resource_context" }
 perro_runtime_context = { path = "../../../../perro_source/api_modules/perro_runtime_context" }
 perro_app = { path = "../../../../perro_source/render_stack/perro_app" }

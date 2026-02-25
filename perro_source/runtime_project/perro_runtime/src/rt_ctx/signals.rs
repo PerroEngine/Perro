@@ -1,4 +1,5 @@
 use perro_ids::{NodeID, ScriptMemberID, SignalID};
+use perro_input::InputContext;
 use perro_resource_context::ResourceContext;
 use perro_runtime_context::{RuntimeContext, sub_apis::SignalAPI};
 use perro_variant::Variant;
@@ -37,11 +38,14 @@ impl SignalAPI for Runtime {
                 let resource_api = self.resource_api.clone();
                 let res: ResourceContext<'_, crate::RuntimeResourceApi> =
                     ResourceContext::new(resource_api.as_ref());
+                let input = self.input.clone();
+                let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
                 let mut ctx = RuntimeContext::new(self);
                 let _ = behavior.call_method(
                     connection.method,
                     &mut ctx,
                     &res,
+                    &ipt,
                     connection.script_id,
                     params,
                 );
@@ -63,11 +67,14 @@ impl SignalAPI for Runtime {
             let resource_api = self.resource_api.clone();
             let res: ResourceContext<'_, crate::RuntimeResourceApi> =
                 ResourceContext::new(resource_api.as_ref());
+            let input = self.input.clone();
+            let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
             let mut ctx = RuntimeContext::new(self);
             let _ = behavior.call_method(
                 connection.method,
                 &mut ctx,
                 &res,
+                &ipt,
                 connection.script_id,
                 params,
             );

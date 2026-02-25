@@ -1588,6 +1588,7 @@ name = "perro_app"
 version = "0.1.0"
 dependencies = [
  "perro_graphics",
+ "perro_input",
  "perro_render_bridge",
  "perro_runtime",
  "perro_scripting",
@@ -1650,6 +1651,10 @@ name = "perro_ids"
 version = "0.1.0"
 
 [[package]]
+name = "perro_input"
+version = "0.1.0"
+
+[[package]]
 name = "perro_io"
 version = "0.1.0"
 dependencies = [
@@ -1703,6 +1708,7 @@ dependencies = [
  "ahash",
  "libloading",
  "perro_ids",
+ "perro_input",
  "perro_io",
  "perro_nodes",
  "perro_project",
@@ -1737,6 +1743,7 @@ name = "perro_scripting"
 version = "0.1.0"
 dependencies = [
  "perro_ids",
+ "perro_input",
  "perro_resource_context",
  "perro_runtime_context",
  "perro_scripting_macros",

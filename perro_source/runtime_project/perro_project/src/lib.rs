@@ -447,12 +447,10 @@ fn default_main_scene() -> String {
 }
 
 pub fn default_script_example_rs() -> String {
-    r#"use perro_runtime_context::prelude::*;
-use perro_nodes::prelude::*;
+    r#"use perro_nodes::prelude::*;
 use perro_structs::prelude::*;
 use perro_ids::prelude::*;
 use perro_modules::prelude::*;
-use perro_resource_context::prelude::*;
 use perro_scripting::prelude::*;
 
 // Script is authored against a node type. This default template uses Node2D.
@@ -474,10 +472,17 @@ lifecycle!({
     // Lifecycle methods are engine entry points. They are called by the runtime.
     // `ctx` is the main interface into the engine core to access runtime data/scripts and nodes.
     // `res` is resource access (meshes/materials/textures) available at runtime.
+    // `ipt` is immutable input state for the current frame (keys pressed/released/down).
     // `self` is the NodeID handle of the node this script is attached to.
 
     // init is called when the script instance is created. This can be used for one-time setup. State is initialized
-    fn on_init(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, node: NodeID) {
+    fn on_init(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        node: NodeID,
+    ) {
         // with_state! gives read-only state access and returns data from the closure.
         // with_state_mut! gives mutable state access; it can mutate and optionally return data.
         let count = with_state!(ctx, ExampleState, node, |state| {
@@ -487,13 +492,27 @@ lifecycle!({
     }
 
     // on_all_init is called after all scripts have had on_init called. This can be used for setup that requires other scripts to be initialized.
-    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
+    fn on_all_init(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self: NodeID,
+    ) {}
 
     // on_update is called every frame. This is where most behavior logic goes.
-    fn on_update(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, node: NodeID) {
+    fn on_update(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        res: &ResourceContext<'_, RS>,
+        ipt: &InputContext<'_, IP>,
+        node: NodeID,
+    ) {
         let dt = delta_time!(ctx);
+        let _is_space_down = ipt.Keys().down(KeyCode::Space);
+
         // Regular Rust method calls are for internal methods.
-        self.bump_count(ctx, res, node);
+        self.bump_count(ctx, res, ipt, node);
 
         // with_node! gives read-only typed node access and returns data from the closure.
         // with_node_mut! gives mutable typed node access; it can mutate and optionally return data.
@@ -549,25 +568,37 @@ lifecycle!({
     }
 
     // on_fixed_update is called on a fixed timestep, independent of frame rate. This is useful for physics and other deterministic updates.
-    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
+    fn on_fixed_update(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self: NodeID,
+    ) {}
 
     // on_removal is called when the script instance is removed from a node or the node is removed from the scene. This can be used for cleanup.
-    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
+    fn on_removal(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self: NodeID,
+    ) {}
 });
 
 methods!({
     // methods! defines callable behavior methods (local or cross-script via call_method!)...
-    fn bump_count(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, node: NodeID) {
+    fn bump_count(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _ipt: &InputContext<'_, IP>, node: NodeID) {
         //  Use `with_state_mut!` for mutable access to state
         with_state_mut!(ctx, ExampleState, node, |state| {
             state.count += 1;
         });
     }
 
-    fn test(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, node: NodeID, param1: i32, msg: &str) {
+    fn test(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, ipt: &InputContext<'_, IP>, node: NodeID, param1: i32, msg: &str) {
         log_info!(param1);
         log_info!(msg);
-        self.bump_count(ctx, res, node);
+        self.bump_count(ctx, res, ipt, node);
     }
 });
 "#
@@ -575,12 +606,10 @@ methods!({
 }
 
 pub fn default_script_empty_rs() -> String {
-    r#"use perro_runtime_context::prelude::*;
-use perro_nodes::prelude::*;
+    r#"use perro_nodes::prelude::*;
 use perro_structs::prelude::*;
 use perro_ids::prelude::*;
 use perro_modules::prelude::*;
-use perro_resource_context::prelude::*;
 use perro_scripting::prelude::*;
 
 type SelfNodeType = Node2D;
@@ -589,19 +618,49 @@ type SelfNodeType = Node2D;
 pub struct EmptyState {}
 
 lifecycle!({
-    fn on_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
+    fn on_init(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self: NodeID,
+    ) {}
 
-    fn on_all_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
+    fn on_all_init(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self: NodeID,
+    ) {}
 
-    fn on_update(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
+    fn on_update(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self: NodeID,
+    ) {}
 
-    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
+    fn on_fixed_update(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self: NodeID,
+    ) {}
 
-    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
+    fn on_removal(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self: NodeID,
+    ) {}
 });
 
 methods!({
-    fn default_method(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
+    fn default_method(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _ipt: &InputContext<'_, IP>, _self: NodeID) {}
 });
 "#
     .to_string()
@@ -631,6 +690,7 @@ perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
 perro_runtime_context = "0.1.0"
 perro_resource_context = "0.1.0"
+perro_input = "0.1.0"
 perro_nodes = "0.1.0"
 perro_structs = "0.1.0"
 perro_scene = "0.1.0"
@@ -667,6 +727,7 @@ perro_ids = "0.1.0"
 perro_scripting = "0.1.0"
 perro_runtime_context = "0.1.0"
 perro_resource_context = "0.1.0"
+perro_input = "0.1.0"
 perro_nodes = "0.1.0"
 perro_structs = "0.1.0"
 perro_modules = "0.1.0"
@@ -804,10 +865,10 @@ pub fn lookup_mesh(_path: &str) -> Option<&'static [u8]> {
 }
 
 fn default_scripts_lib_rs() -> String {
-    r#"use perro_runtime::{Runtime, RuntimeResourceApi};
+    r#"use perro_runtime::{Runtime, RuntimeInputApi, RuntimeResourceApi};
 use perro_scripting::ScriptConstructor;
 
-pub static SCRIPT_REGISTRY: &[(&str, ScriptConstructor<Runtime, RuntimeResourceApi>)] = &[];
+pub static SCRIPT_REGISTRY: &[(&str, ScriptConstructor<Runtime, RuntimeResourceApi, RuntimeInputApi>)] = &[];
 
 #[unsafe(no_mangle)]
 pub extern "C" fn perro_scripts_init() {}
@@ -835,11 +896,59 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
         .join(".perro")
         .join("scripts")
         .join("Cargo.toml");
+    ensure_project_manifest_deps(&project_manifest)?;
     ensure_scripts_manifest_deps(&scripts_manifest)?;
     ensure_scripts_manifest_rust_analyzer_cfg(&scripts_manifest)?;
     ensure_patch_block_in_manifest(&project_manifest)?;
     ensure_patch_block_in_manifest(&scripts_manifest)?;
     Ok(())
+}
+
+fn ensure_project_manifest_deps(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let src = fs::read_to_string(path)?;
+    let Ok(mut value) = src.parse::<Value>() else {
+        return Ok(());
+    };
+    let Some(root) = value.as_table_mut() else {
+        return Ok(());
+    };
+
+    let deps = root
+        .entry("dependencies")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(deps_table) = deps.as_table_mut() else {
+        return Ok(());
+    };
+
+    let mut changed = false;
+
+    if !deps_table.contains_key("perro_resource_context") {
+        deps_table.insert(
+            "perro_resource_context".to_string(),
+            Value::String("0.1.0".to_string()),
+        );
+        changed = true;
+    }
+
+    if !deps_table.contains_key("perro_input") {
+        deps_table.insert(
+            "perro_input".to_string(),
+            Value::String("0.1.0".to_string()),
+        );
+        changed = true;
+    }
+
+    if !changed {
+        return Ok(());
+    }
+
+    let rendered = toml::to_string(&value)
+        .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
+    fs::write(path, rendered)
 }
 
 fn ensure_scripts_manifest_deps(path: &Path) -> std::io::Result<()> {
@@ -862,14 +971,27 @@ fn ensure_scripts_manifest_deps(path: &Path) -> std::io::Result<()> {
         return Ok(());
     };
 
-    if deps_table.contains_key("perro_modules") {
-        return Ok(());
+    let mut changed = false;
+
+    if !deps_table.contains_key("perro_modules") {
+        deps_table.insert(
+            "perro_modules".to_string(),
+            Value::String("0.1.0".to_string()),
+        );
+        changed = true;
     }
 
-    deps_table.insert(
-        "perro_modules".to_string(),
-        Value::String("0.1.0".to_string()),
-    );
+    if !deps_table.contains_key("perro_input") {
+        deps_table.insert(
+            "perro_input".to_string(),
+            Value::String("0.1.0".to_string()),
+        );
+        changed = true;
+    }
+
+    if !changed {
+        return Ok(());
+    }
 
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
@@ -1088,6 +1210,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_runtime_context" => Some("perro_source/api_modules/perro_runtime_context"),
         "perro_resource_context" => Some("perro_source/api_modules/perro_resource_context"),
         "perro_modules" => Some("perro_source/api_modules/perro_modules"),
+        "perro_input" => Some("perro_source/api_modules/perro_input"),
         "perro_render_bridge" => Some("perro_source/render_stack/perro_render_bridge"),
         "perro_graphics" => Some("perro_source/render_stack/perro_graphics"),
         "perro_app" => Some("perro_source/render_stack/perro_app"),
@@ -1244,3 +1367,6 @@ virtual_resolution = "1920x1080"
         assert_eq!(crate_name_from_project_name("123"), "_123");
     }
 }
+
+
+

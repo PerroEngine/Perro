@@ -23,9 +23,10 @@ impl Runtime {
         self.render_2d.removed_nodes.clear();
 
         for node in traversal_ids.iter().copied() {
+            let effective_visible = self.is_effectively_visible(node);
             let sprite_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::Sprite2D(sprite) => Some((
-                    sprite.visible,
+                    effective_visible && sprite.visible,
                     sprite.texture,
                     sprite.transform.to_mat3().to_cols_array_2d(),
                     sprite.z_index,
@@ -37,7 +38,7 @@ impl Runtime {
             }
 
             let camera_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::Camera2D(camera) if camera.active => Some(Camera2DState {
+                SceneNodeData::Camera2D(camera) if camera.active && effective_visible => Some(Camera2DState {
                     position: [camera.transform.position.x, camera.transform.position.y],
                     rotation_radians: camera.transform.rotation,
                     zoom: camera.zoom,

@@ -11,6 +11,7 @@ pub use rt_ctx as api;
 pub use cns::node_arena::NodeArena;
 pub use perro_project::{bootstrap_project, create_new_project};
 pub use render_result::RuntimeRenderResult;
+pub use perro_input::InputSnapshot as RuntimeInputApi;
 pub use rs_ctx::RuntimeResourceApi;
 pub use runtime::Runtime;
 pub use runtime_project::{

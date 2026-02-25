@@ -84,7 +84,11 @@ pub struct StaticEmbeddedProject<'a> {
     pub static_script_registry: Option<
         &'static [(
             &'static str,
-            ScriptConstructor<Runtime, perro_runtime::RuntimeResourceApi>,
+            ScriptConstructor<
+                Runtime,
+                perro_runtime::RuntimeResourceApi,
+                perro_runtime::RuntimeInputApi,
+            >,
         )],
     >,
 }

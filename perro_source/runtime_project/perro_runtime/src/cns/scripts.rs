@@ -1,3 +1,4 @@
+use perro_input::InputContext;
 use crate::{Runtime, runtime_project::ProviderMode};
 use perro_resource_context::ResourceContext;
 use perro_runtime_context::RuntimeContext;
@@ -67,9 +68,13 @@ impl Runtime {
             ));
         }
 
-        let behavior: Box<dyn ScriptBehavior<Self, crate::RuntimeResourceApi>> =
+        let behavior: Box<
+            dyn ScriptBehavior<Self, crate::RuntimeResourceApi, perro_input::InputSnapshot>,
+        > =
             unsafe { Box::from_raw(raw) };
-        let behavior: Arc<dyn ScriptBehavior<Self, crate::RuntimeResourceApi>> = behavior.into();
+        let behavior: Arc<
+            dyn ScriptBehavior<Self, crate::RuntimeResourceApi, perro_input::InputSnapshot>,
+        > = behavior.into();
         let state = behavior.create_state();
         let flags = behavior.script_flags();
         if self.scripts.get_instance(node).is_some() {
@@ -81,8 +86,10 @@ impl Runtime {
             let resource_api = self.resource_api.clone();
             let res: ResourceContext<'_, crate::RuntimeResourceApi> =
                 ResourceContext::new(resource_api.as_ref());
+            let input = self.input.clone();
+            let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
             let mut ctx = RuntimeContext::new(self);
-            behavior.on_init(&mut ctx, &res, node);
+            behavior.on_init(&mut ctx, &res, &ipt, node);
         }
         if flags.has_all_init() {
             self.queue_start_script(node);
@@ -119,7 +126,11 @@ impl Runtime {
                 usize,
                 *mut *const u8,
                 *mut usize,
-                *mut ScriptConstructor<Runtime, crate::RuntimeResourceApi>,
+                *mut ScriptConstructor<
+                    Runtime,
+                    crate::RuntimeResourceApi,
+                    perro_input::InputSnapshot,
+                >,
             ) -> bool;
 
             if let Ok(init) = library.get::<InitFn>(b"perro_scripts_init") {
@@ -158,7 +169,11 @@ impl Runtime {
                 let mut ptr: *const u8 = std::ptr::null();
                 let mut len = 0usize;
                 let mut ctor = std::mem::MaybeUninit::<
-                    ScriptConstructor<Runtime, crate::RuntimeResourceApi>,
+                    ScriptConstructor<
+                        Runtime,
+                        crate::RuntimeResourceApi,
+                        perro_input::InputSnapshot,
+                    >,
                 >::uninit();
                 let ok = registry_get(i, &mut ptr, &mut len, ctor.as_mut_ptr());
                 if !ok {

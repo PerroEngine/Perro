@@ -1,4 +1,5 @@
 use perro_graphics::GraphicsBackend;
+use perro_input::{KeyCode, MouseButton};
 use perro_render_bridge::RenderEvent;
 use perro_runtime::Runtime;
 use std::sync::Arc;
@@ -48,6 +49,26 @@ impl<B: GraphicsBackend> App<B> {
     #[inline]
     pub fn update_runtime(&mut self, delta_time: f32) {
         self.runtime.update(delta_time);
+    }
+
+    #[inline]
+    pub fn begin_input_frame(&mut self) {
+        self.runtime.begin_input_frame();
+    }
+
+    #[inline]
+    pub fn set_key_state(&mut self, key: KeyCode, is_down: bool) {
+        self.runtime.set_key_state(key, is_down);
+    }
+
+    #[inline]
+    pub fn set_mouse_button_state(&mut self, button: MouseButton, is_down: bool) {
+        self.runtime.set_mouse_button_state(button, is_down);
+    }
+
+    #[inline]
+    pub fn add_mouse_delta(&mut self, dx: f32, dy: f32) {
+        self.runtime.add_mouse_delta(dx, dy);
     }
 
     #[inline]

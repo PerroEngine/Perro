@@ -14,7 +14,7 @@
   "rust-analyzer.checkOnSave": true,
   "rust-analyzer.check.command": "check",
   "rust-analyzer.vfs.extraIncludes": [
-    "${workspaceFolder}/playground/ThreeDTest/res/scripts",
-    "${workspaceFolder}/playground/TwoDTest/res/scripts"
+    "${workspaceFolder}/playground/ThreeDTest/res/",
+    "${workspaceFolder}/playground/TwoDTest/res/"
   ]
 }

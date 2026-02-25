@@ -1,4 +1,5 @@
 use perro_ids::{NodeID, ScriptMemberID};
+use perro_input::InputContext;
 use perro_resource_context::ResourceContext;
 use perro_runtime_context::{
     RuntimeContext,
@@ -46,8 +47,10 @@ impl Runtime {
         let resource_api = self.resource_api.clone();
         let res: ResourceContext<'_, crate::RuntimeResourceApi> =
             ResourceContext::new(resource_api.as_ref());
+        let input = self.input.clone();
+        let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
         let mut ctx = RuntimeContext::new(self);
-        behavior.on_all_init(&mut ctx, &res, id);
+        behavior.on_all_init(&mut ctx, &res, &ipt, id);
     }
 
     #[inline(always)]
@@ -65,8 +68,10 @@ impl Runtime {
         let resource_api = self.resource_api.clone();
         let res: ResourceContext<'_, crate::RuntimeResourceApi> =
             ResourceContext::new(resource_api.as_ref());
+        let input = self.input.clone();
+        let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
         let mut ctx = RuntimeContext::new(self);
-        behavior.on_removal(&mut ctx, &res, id);
+        behavior.on_removal(&mut ctx, &res, &ipt, id);
     }
 
     #[inline(always)]
@@ -89,8 +94,10 @@ impl Runtime {
         let resource_api = self.resource_api.clone();
         let res: ResourceContext<'_, crate::RuntimeResourceApi> =
             ResourceContext::new(resource_api.as_ref());
+        let input = self.input.clone();
+        let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
         let mut ctx = RuntimeContext::new(self);
-        behavior.on_update(&mut ctx, &res, id);
+        behavior.on_update(&mut ctx, &res, &ipt, id);
     }
 
     #[inline(always)]
@@ -105,8 +112,10 @@ impl Runtime {
         let resource_api = self.resource_api.clone();
         let res: ResourceContext<'_, crate::RuntimeResourceApi> =
             ResourceContext::new(resource_api.as_ref());
+        let input = self.input.clone();
+        let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
         let mut ctx = RuntimeContext::new(self);
-        behavior.on_fixed_update(&mut ctx, &res, id);
+        behavior.on_fixed_update(&mut ctx, &res, &ipt, id);
     }
 }
 
@@ -179,8 +188,10 @@ impl ScriptAPI for Runtime {
         let resource_api = self.resource_api.clone();
         let res: ResourceContext<'_, crate::RuntimeResourceApi> =
             ResourceContext::new(resource_api.as_ref());
+        let input = self.input.clone();
+        let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
         let mut ctx = RuntimeContext::new(self);
-        behavior.call_method(method, &mut ctx, &res, script_id, params)
+        behavior.call_method(method, &mut ctx, &res, &ipt, script_id, params)
     }
 
     fn attributes_of(&mut self, script_id: NodeID, member: &str) -> &'static [Attribute] {

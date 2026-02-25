@@ -1,4 +1,5 @@
 use perro_ids::{NodeID, ScriptMemberID};
+use perro_input::{InputAPI, InputContext};
 use perro_resource_context::{ResourceContext, api::ResourceAPI};
 use perro_runtime_context::sub_apis::{Attribute, Member};
 use perro_runtime_context::{RuntimeContext, api::RuntimeAPI};
@@ -6,13 +7,15 @@ use perro_variant::Variant;
 use std::any::Any;
 
 #[allow(improper_ctypes_definitions)]
-pub type ScriptConstructor<RT, RS> = extern "C" fn() -> *mut dyn ScriptBehavior<RT, RS>;
+pub type ScriptConstructor<RT, RS, IP> = extern "C" fn() -> *mut dyn ScriptBehavior<RT, RS, IP>;
 
-pub trait ScriptLifecycle<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized> {
+pub trait ScriptLifecycle<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>
+{
     fn on_init(
         &self,
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
         _self_id: NodeID,
     ) {
     }
@@ -20,6 +23,7 @@ pub trait ScriptLifecycle<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized> {
         &self,
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
         _self_id: NodeID,
     ) {
     }
@@ -27,6 +31,7 @@ pub trait ScriptLifecycle<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized> {
         &self,
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
         _self_id: NodeID,
     ) {
     }
@@ -34,6 +39,7 @@ pub trait ScriptLifecycle<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized> {
         &self,
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
         _self_id: NodeID,
     ) {
     }
@@ -41,13 +47,14 @@ pub trait ScriptLifecycle<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized> {
         &self,
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
         _self_id: NodeID,
     ) {
     }
 }
 
-pub trait ScriptBehavior<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized>:
-    ScriptLifecycle<RT, RS>
+pub trait ScriptBehavior<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>:
+    ScriptLifecycle<RT, RS, IP>
 {
     fn script_flags(&self) -> ScriptFlags;
     fn create_state(&self) -> Box<dyn Any> {
@@ -65,6 +72,7 @@ pub trait ScriptBehavior<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized>:
         method: ScriptMemberID,
         ctx: &mut RuntimeContext<'_, RT>,
         res: &ResourceContext<'_, RS>,
+        ipt: &InputContext<'_, IP>,
         self_id: NodeID,
         params: &[Variant],
     ) -> Variant;

@@ -3,8 +3,8 @@ use crate::material_schema;
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_nodes::SceneNodeData;
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, Command3D, Material3D, PointLight3DState, RayLight3DState,
-    RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
+    AmbientLight3DState, Camera3DState, Command3D, Material3D, PointLight3DState,
+    RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
 };
 
 impl Runtime {
@@ -22,10 +22,14 @@ impl Runtime {
         let mut traversal_ids = std::mem::take(&mut self.render_3d.traversal_ids);
         traversal_ids.clear();
         traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
+        let mut visible_now = std::mem::take(&mut self.render_3d.visible_now);
+        visible_now.clear();
+        self.render_3d.removed_nodes.clear();
 
         for node in traversal_ids.iter().copied() {
+            let effective_visible = self.is_effectively_visible(node);
             let camera_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::Camera3D(camera) if camera.active => Some(Camera3DState {
+                SceneNodeData::Camera3D(camera) if camera.active && effective_visible => Some(Camera3DState {
                     position: [
                         camera.transform.position.x,
                         camera.transform.position.y,
@@ -46,7 +50,7 @@ impl Runtime {
             }
 
             let ambient_light_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::AmbientLight3D(light) if light.active && light.visible => {
+                SceneNodeData::AmbientLight3D(light) if light.active && light.visible && effective_visible => {
                     Some(AmbientLight3DState {
                         color: light.color,
                         intensity: light.intensity.max(0.0),
@@ -59,10 +63,11 @@ impl Runtime {
                     node,
                     light,
                 }));
+                visible_now.insert(node);
             }
 
             let ray_light_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::RayLight3D(light) if light.active && light.visible => {
+                SceneNodeData::RayLight3D(light) if light.active && light.visible && effective_visible => {
                     Some(RayLight3DState {
                         direction: quaternion_forward(light.transform.rotation),
                         color: light.color,
@@ -76,10 +81,11 @@ impl Runtime {
                     node,
                     light,
                 }));
+                visible_now.insert(node);
             }
 
             let point_light_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::PointLight3D(light) if light.active && light.visible => {
+                SceneNodeData::PointLight3D(light) if light.active && light.visible && effective_visible => {
                     Some(PointLight3DState {
                         position: [
                             light.transform.position.x,
@@ -98,10 +104,11 @@ impl Runtime {
                     node,
                     light,
                 }));
+                visible_now.insert(node);
             }
 
             let spot_light_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::SpotLight3D(light) if light.active && light.visible => {
+                SceneNodeData::SpotLight3D(light) if light.active && light.visible && effective_visible => {
                     Some(SpotLight3DState {
                         position: [
                             light.transform.position.x,
@@ -125,21 +132,21 @@ impl Runtime {
                     node,
                     light,
                 }));
+                visible_now.insert(node);
             }
 
             let mesh_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::MeshInstance3D(mesh) => Some((
-                    mesh.visible,
                     mesh.mesh,
                     mesh.material,
                     mesh.transform.to_mat4().to_cols_array_2d(),
                 )),
                 _ => None,
             });
-            let Some((visible, mesh, material, model)) = mesh_data else {
+            let Some((mesh, material, model)) = mesh_data else {
                 continue;
             };
-            if !visible {
+            if !effective_visible {
                 continue;
             }
 
@@ -153,10 +160,29 @@ impl Runtime {
                 node,
                 model,
             }));
+            visible_now.insert(node);
         }
+        self.remove_no_longer_visible_render_3d_nodes(&visible_now);
+        std::mem::swap(&mut self.render_3d.prev_visible, &mut visible_now);
+        visible_now.clear();
+        self.render_3d.visible_now = visible_now;
 
         traversal_ids.clear();
         self.render_3d.traversal_ids = traversal_ids;
+    }
+
+    fn remove_no_longer_visible_render_3d_nodes(
+        &mut self,
+        visible_now: &ahash::AHashSet<NodeID>,
+    ) {
+        for node in self.render_3d.prev_visible.iter().copied() {
+            if !visible_now.contains(&node) {
+                self.render_3d.removed_nodes.push(node);
+            }
+        }
+        while let Some(node) = self.render_3d.removed_nodes.pop() {
+            self.queue_render_command(RenderCommand::ThreeD(Command3D::RemoveNode { node }));
+        }
     }
 
     fn resolve_mesh_instance_assets(
@@ -349,7 +375,7 @@ mod tests {
     use perro_ids::{MaterialID, MeshID};
     use perro_nodes::{
         SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D, camera_3d::Camera3D,
-        mesh_instance_3d::MeshInstance3D, ray_light_3d::RayLight3D,
+        mesh_instance_3d::MeshInstance3D, node_3d::Node3D, ray_light_3d::RayLight3D,
     };
     use perro_render_bridge::{Command3D, RenderCommand, RenderEvent, ResourceCommand};
 
@@ -485,6 +511,79 @@ mod tests {
             second[0],
             RenderCommand::Resource(ResourceCommand::CreateMaterial { .. })
         ));
+    }
+
+    #[test]
+    fn mesh_under_invisible_parent_emits_remove_node() {
+        let mut runtime = Runtime::new();
+        let parent = runtime
+            .nodes
+            .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+        let child = runtime
+            .nodes
+            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
+                MeshInstance3D::new(),
+            )));
+        if let Some(parent_node) = runtime.nodes.get_mut(parent) {
+            parent_node.add_child(child);
+        }
+        if let Some(child_node) = runtime.nodes.get_mut(child) {
+            child_node.parent = parent;
+        }
+
+        let mesh = MeshID::from_parts(20, 0);
+        let material = MaterialID::from_parts(21, 0);
+        if let Some(node) = runtime.nodes.get_mut(child)
+            && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data
+        {
+            mesh_instance.mesh = mesh;
+            mesh_instance.material = material;
+        }
+
+        runtime.extract_render_3d_commands();
+        let first = collect_commands(&mut runtime);
+        assert!(first.iter().any(|command| matches!(
+            command,
+            RenderCommand::ThreeD(Command3D::Draw { node, .. }) if *node == child
+        )));
+
+        if let Some(node) = runtime.nodes.get_mut(parent)
+            && let SceneNodeData::Node3D(parent_node) = &mut node.data
+        {
+            parent_node.visible = false;
+        }
+        runtime.extract_render_3d_commands();
+        let second = collect_commands(&mut runtime);
+        assert!(second.iter().any(|command| matches!(
+            command,
+            RenderCommand::ThreeD(Command3D::RemoveNode { node }) if *node == child
+        )));
+    }
+
+    #[test]
+    fn unchanged_mesh_instance_emits_draw() {
+        let mut runtime = Runtime::new();
+        let node = runtime
+            .nodes
+            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
+                MeshInstance3D::new(),
+            )));
+        let mesh = MeshID::from_parts(30, 0);
+        let material = MaterialID::from_parts(31, 0);
+        if let Some(scene_node) = runtime.nodes.get_mut(node)
+            && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut scene_node.data
+        {
+            mesh_instance.mesh = mesh;
+            mesh_instance.material = material;
+        }
+
+        runtime.extract_render_3d_commands();
+        let commands = collect_commands(&mut runtime);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::ThreeD(Command3D::Draw { node: draw_node, .. })
+                if *draw_node == node
+        )));
     }
 
     #[test]

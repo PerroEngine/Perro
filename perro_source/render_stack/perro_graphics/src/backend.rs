@@ -292,6 +292,8 @@ impl GraphicsBackend for PerroGraphics {
         self.retained_draws_cache.clear();
         self.retained_draws_cache
             .extend(self.renderer_3d.retained_draws());
+        self.retained_draws_cache
+            .sort_unstable_by_key(|draw| draw.node.as_u64());
         self.retained_sprites_cache.clear();
         self.retained_sprites_cache
             .extend(self.renderer_2d.retained_sprites());

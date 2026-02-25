@@ -1,9 +1,7 @@
-use perro_runtime_context::prelude::*;
 use perro_nodes::prelude::*;
 use perro_structs::prelude::*;
 use perro_ids::prelude::*;
 use perro_modules::prelude::*;
-use perro_resource_context::prelude::*;
 use perro_scripting::prelude::*;
 
 type SelfNodeType = MeshInstance3D;
@@ -22,16 +20,34 @@ pub struct ExampleState {
 
 
 lifecycle!({
-    fn on_init(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, self_id: NodeID) {
-        self.set_speed(ctx, res, self_id, 5.0);
+    fn on_init(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        res: &ResourceContext<'_, RS>,
+        ipt: &InputContext<'_, IP>,
+        self_id: NodeID,
+    ) {
+        self.set_speed(ctx, res, ipt, self_id, 5.0);
         connect_signal!(ctx, self_id, signal!("test_signal1"), func!("set_speed"));
     }
 
-    fn on_all_init(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {
+    fn on_all_init(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self: NodeID,
+    ) {
         emit_signal!(ctx, signal!("test_signal1"), params![7_f32]);
     }
 
-    fn on_update(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, self_id: NodeID) {
+    fn on_update(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        self_id: NodeID,
+    ) {
         let dt = delta_time!(ctx);
         let (speed, timer) = with_state_mut!(ctx, ExampleState, self_id, |state| {
             if state.timer >= 0.0 {
@@ -57,25 +73,38 @@ lifecycle!({
         }).unwrap_or_default();
     }
 
-    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self_id: NodeID) {}
+    fn on_fixed_update(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+    ) {}
 
-    fn on_removal(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self_id: NodeID) {}
+    fn on_removal(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+    ) {}
 });
 
 methods!({
-    fn set_speed(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, self_id: NodeID, speed: f32) {
+    fn set_speed(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _ipt: &InputContext<'_, IP>, self_id: NodeID, speed: f32) {
         log_info!(format!("Setting speed to {}", speed));
         with_state_mut!(ctx, ExampleState, self_id, |state| {
             state.speed = speed;
         });
     }
 
-    fn get_speed(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, self_id: NodeID) -> f32 {
+    fn get_speed(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _ipt: &InputContext<'_, IP>, self_id: NodeID) -> f32 {
         with_state!(ctx, ExampleState, self_id, |state| {
             state.speed
         }).unwrap_or_default()
     }
 });
+
 
 
 

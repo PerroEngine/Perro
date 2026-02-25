@@ -20,8 +20,16 @@ pub struct ExampleState {
 ///@Script
 pub struct ExampleScript;
 
-impl<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized> ScriptLifecycle<RT, RS> for ExampleScript {
-    fn on_init(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, node: NodeID) {
+impl<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>
+    ScriptLifecycle<RT, RS, IP> for ExampleScript
+{
+    fn on_init(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        node: NodeID,
+    ) {
         let _origin = Vector2::new(0.0, 0.0);
         log_info!("Script initialized!");
         let b = ctx
@@ -33,7 +41,13 @@ impl<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized> ScriptLifecycle<RT, RS> 
         log_info!(b);
     }
 
-    fn on_update(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, node: NodeID) {
+    fn on_update(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        node: NodeID,
+    ) {
         let dt = delta_time!(ctx);
         let _ = ctx
             .Scripts()
@@ -42,7 +56,13 @@ impl<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized> ScriptLifecycle<RT, RS> 
             });
     }
 
-    fn on_fixed_update(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _self: NodeID) {}
+    fn on_fixed_update(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self: NodeID,
+    ) {}
 }
 
 

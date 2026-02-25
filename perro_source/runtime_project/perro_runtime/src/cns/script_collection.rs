@@ -5,7 +5,8 @@ use std::any::{Any, TypeId};
 use std::sync::Arc;
 
 pub(crate) struct ScriptInstance<R: RuntimeAPI + ?Sized> {
-    pub(crate) behavior: Arc<dyn ScriptBehavior<R, crate::RuntimeResourceApi>>,
+    pub(crate) behavior:
+        Arc<dyn ScriptBehavior<R, crate::RuntimeResourceApi, perro_input::InputSnapshot>>,
     pub(crate) state_type: TypeId,
     pub(crate) state: Box<dyn Any>,
 }
@@ -77,7 +78,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     pub(crate) fn insert(
         &mut self,
         id: NodeID,
-        behavior: Arc<dyn ScriptBehavior<R, crate::RuntimeResourceApi>>,
+        behavior: Arc<dyn ScriptBehavior<R, crate::RuntimeResourceApi, perro_input::InputSnapshot>>,
         state: Box<dyn Any>,
     ) {
         let flags = behavior.script_flags();

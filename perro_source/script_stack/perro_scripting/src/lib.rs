@@ -11,7 +11,8 @@ pub mod prelude {
         ScriptBehavior, ScriptConstructor, ScriptFlags, ScriptLifecycle,
     };
     pub use perro_ids::prelude::{NodeID, ScriptMemberID};
-    pub use perro_resource_context::prelude::ResourceContext;
-    pub use perro_runtime_context::prelude::{RuntimeAPI, RuntimeContext};
+    pub use perro_input::prelude::*;
+    pub use perro_resource_context::prelude::*;
+    pub use perro_runtime_context::prelude::*;
     pub use perro_variant::Variant;
 }

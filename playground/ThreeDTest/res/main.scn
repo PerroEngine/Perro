@@ -6,7 +6,7 @@
 [/Node3D]
 [/main]
 
-[cube]
+[mesh]
 parent = @root
 script = "res://scripts/script.rs"
 
@@ -18,7 +18,21 @@ script = "res://scripts/script.rs"
         scale = (15,15,15)
     [/Node3D]
 [/MeshInstance3D]
-[/cube]
+[/mesh]
+
+[mesh2]
+parent = @root
+script = "res://scripts/script.rs"
+
+[MeshInstance3D]
+    mesh = "__cube__"
+
+    [Node3D]
+        position = (0, 0, -50)
+        scale = (15,15,15)
+    [/Node3D]
+[/MeshInstance3D]
+[/mesh2]
 
 [camera]
 parent = @root

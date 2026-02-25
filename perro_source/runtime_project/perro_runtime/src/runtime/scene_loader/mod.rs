@@ -70,9 +70,12 @@ impl Runtime {
         self.render_2d.texture_sources.clear();
         self.render_2d.removed_nodes.clear();
         self.render_3d.traversal_ids.clear();
+        self.render_3d.visible_now.clear();
+        self.render_3d.prev_visible.clear();
         self.render_3d.mesh_sources.clear();
         self.render_3d.material_sources.clear();
         self.render_3d.material_overrides.clear();
+        self.render_3d.removed_nodes.clear();
         if self.provider_mode == ProviderMode::Dynamic {
             self.dynamic_script_registry.clear();
         }

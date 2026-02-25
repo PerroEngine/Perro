@@ -81,6 +81,7 @@ pub struct Gpu3D {
     instance_capacity: usize,
     staged_instances: Vec<InstanceGpu>,
     draw_batches: Vec<DrawBatch>,
+    last_draws: Vec<Draw3DInstance>,
     last_scene: Option<Scene3DUniform>,
     mesh_vertices: Vec<MeshVertex>,
     mesh_indices: Vec<u32>,
@@ -225,6 +226,7 @@ impl Gpu3D {
             instance_capacity,
             staged_instances: Vec::new(),
             draw_batches: Vec::new(),
+            last_draws: Vec::new(),
             last_scene: None,
             mesh_vertices: vertices,
             mesh_indices: indices,
@@ -316,11 +318,16 @@ impl Gpu3D {
             self.last_scene = Some(uniform);
         }
 
+        if self.last_draws.as_slice() == draws {
+            return;
+        }
+        self.last_draws.clear();
+        self.last_draws.extend_from_slice(draws);
+
         self.staged_instances.clear();
         self.staged_instances.reserve(draws.len());
         self.draw_batches.clear();
         self.draw_batches.reserve(draws.len());
-
         let default_mesh = self
             .builtin_mesh_ranges
             .get("__cube__")

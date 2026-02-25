@@ -7,7 +7,8 @@ use crate::{
 use ahash::{AHashMap, AHashSet};
 use libloading::Library;
 use perro_ids::{NodeID, TextureID};
-use perro_nodes::Spatial;
+use perro_input::{InputSnapshot, KeyCode, MouseButton};
+use perro_nodes::{SceneNodeData, Spatial};
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
 use perro_scripting::ScriptConstructor;
 use std::sync::Arc;
@@ -40,8 +41,9 @@ pub struct Runtime {
     pub(crate) signal_emit_scratch: Vec<SignalConnection>,
     pub(crate) script_library: Option<Library>,
     pub(crate) dynamic_script_registry:
-        AHashMap<String, ScriptConstructor<Runtime, RuntimeResourceApi>>,
+        AHashMap<String, ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>>,
     pub(crate) resource_api: Arc<RuntimeResourceApi>,
+    pub(crate) input: InputSnapshot,
 }
 
 pub struct Timing {
@@ -203,18 +205,24 @@ impl Render2DState {
 
 struct Render3DState {
     traversal_ids: Vec<NodeID>,
+    visible_now: AHashSet<NodeID>,
+    prev_visible: AHashSet<NodeID>,
     mesh_sources: AHashMap<NodeID, String>,
     material_sources: AHashMap<NodeID, String>,
     material_overrides: AHashMap<NodeID, Material3D>,
+    removed_nodes: Vec<NodeID>,
 }
 
 impl Render3DState {
     fn new() -> Self {
         Self {
             traversal_ids: Vec::new(),
+            visible_now: AHashSet::default(),
+            prev_visible: AHashSet::default(),
             mesh_sources: AHashMap::default(),
             material_sources: AHashMap::default(),
             material_overrides: AHashMap::default(),
+            removed_nodes: Vec::new(),
         }
     }
 }
@@ -330,6 +338,7 @@ impl Runtime {
             script_library: None,
             dynamic_script_registry: AHashMap::default(),
             resource_api: RuntimeResourceApi::new(None),
+            input: InputSnapshot::new(),
         }
     }
 
@@ -341,7 +350,10 @@ impl Runtime {
         project: RuntimeProject,
         provider_mode: ProviderMode,
         script_registry: Option<
-            &'static [(&'static str, ScriptConstructor<Self, RuntimeResourceApi>)],
+            &'static [(
+                &'static str,
+                ScriptConstructor<Self, RuntimeResourceApi, InputSnapshot>,
+            )],
         >,
     ) -> Self {
         let mut runtime = Self::new();
@@ -383,6 +395,26 @@ impl Runtime {
         self.time.fixed_delta = fixed_delta_time;
         self.schedules.snapshot_fixed(&self.scripts);
         self.run_fixed_schedule();
+    }
+
+    #[inline]
+    pub fn begin_input_frame(&mut self) {
+        self.input.begin_frame();
+    }
+
+    #[inline]
+    pub fn set_key_state(&mut self, key: KeyCode, is_down: bool) {
+        self.input.set_key_state(key, is_down);
+    }
+
+    #[inline]
+    pub fn set_mouse_button_state(&mut self, button: MouseButton, is_down: bool) {
+        self.input.set_mouse_button_state(button, is_down);
+    }
+
+    #[inline]
+    pub fn add_mouse_delta(&mut self, dx: f32, dy: f32) {
+        self.input.add_mouse_delta(dx, dy);
     }
 
     pub fn queue_render_command(&mut self, command: RenderCommand) {
@@ -508,6 +540,45 @@ impl Runtime {
 
     pub fn clear_dirty_flags(&mut self) {
         self.dirty.clear();
+    }
+
+    pub(crate) fn node_local_visible(data: &SceneNodeData) -> bool {
+        match data {
+            SceneNodeData::Node => true,
+            SceneNodeData::Node2D(node) => node.visible,
+            SceneNodeData::Sprite2D(node) => node.visible,
+            SceneNodeData::Camera2D(node) => node.visible,
+            SceneNodeData::Node3D(node) => node.visible,
+            SceneNodeData::MeshInstance3D(node) => node.visible,
+            SceneNodeData::Camera3D(node) => node.visible,
+            SceneNodeData::AmbientLight3D(node) => node.visible,
+            SceneNodeData::RayLight3D(node) => node.visible,
+            SceneNodeData::PointLight3D(node) => node.visible,
+            SceneNodeData::SpotLight3D(node) => node.visible,
+        }
+    }
+
+    pub(crate) fn is_effectively_visible(&self, node: NodeID) -> bool {
+        if node.is_nil() {
+            return false;
+        }
+        let mut current = node;
+        let mut hops = 0usize;
+        let max_hops = self.nodes.len().saturating_add(1);
+        while hops < max_hops {
+            let Some(scene_node) = self.nodes.get(current) else {
+                return false;
+            };
+            if !Self::node_local_visible(&scene_node.data) {
+                return false;
+            }
+            if scene_node.parent.is_nil() {
+                return true;
+            }
+            current = scene_node.parent;
+            hops += 1;
+        }
+        false
     }
 }
 
