@@ -48,6 +48,8 @@ struct CachedSpriteTexture {
     _view: wgpu::TextureView,
     _sampler: wgpu::Sampler,
     bind_group: wgpu::BindGroup,
+    width: u32,
+    height: u32,
 }
 
 pub struct Gpu2D {
@@ -312,6 +314,17 @@ impl Gpu2D {
             ) {
                 continue;
             }
+            let Some(texture) = self.sprite_textures.get(&sprite.texture) else {
+                continue;
+            };
+            if !sprite_intersects_screen(
+                sprite,
+                texture.width as f32,
+                texture.height as f32,
+                &camera,
+            ) {
+                continue;
+            }
             let idx = self.sprite_instances.len() as u32;
             self.sprite_instances.push(SpriteInstanceGpu {
                 transform_0: sprite.model[0],
@@ -502,6 +515,8 @@ impl Gpu2D {
                 _view: view,
                 _sampler: sampler,
                 bind_group,
+                width,
+                height,
             },
         );
         true
@@ -544,6 +559,41 @@ impl Gpu2D {
     pub fn virtual_size() -> [f32; 2] {
         [VIRTUAL_WIDTH, VIRTUAL_HEIGHT]
     }
+}
+
+#[inline]
+fn sprite_intersects_screen(
+    sprite: &Sprite2DCommand,
+    texture_width: f32,
+    texture_height: f32,
+    camera: &Camera2DUniform,
+) -> bool {
+    let hx = 0.5 * texture_width.max(1.0);
+    let hy = 0.5 * texture_height.max(1.0);
+    let corners = [(-hx, -hy), (hx, -hy), (hx, hy), (-hx, hy)];
+
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+
+    for (lx, ly) in corners {
+        let wx = sprite.model[0][0] * lx + sprite.model[1][0] * ly + sprite.model[2][0];
+        let wy = sprite.model[0][1] * lx + sprite.model[1][1] * ly + sprite.model[2][1];
+        let vx = camera.view[0][0] * wx + camera.view[1][0] * wy + camera.view[3][0];
+        let vy = camera.view[0][1] * wx + camera.view[1][1] * wy + camera.view[3][1];
+        let ndc_x = vx * camera.ndc_scale[0];
+        let ndc_y = vy * camera.ndc_scale[1];
+        if !(ndc_x.is_finite() && ndc_y.is_finite()) {
+            return false;
+        }
+        min_x = min_x.min(ndc_x);
+        max_x = max_x.max(ndc_x);
+        min_y = min_y.min(ndc_y);
+        max_y = max_y.max(ndc_y);
+    }
+
+    !(max_x < -1.0 || min_x > 1.0 || max_y < -1.0 || min_y > 1.0)
 }
 
 fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {

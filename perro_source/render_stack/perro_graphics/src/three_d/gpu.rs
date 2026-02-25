@@ -5,7 +5,7 @@ use super::{
 use crate::backend::StaticMeshLookup;
 use crate::resources::ResourceStore;
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Quat, Vec3};
+use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;
 use perro_io::{decompress_zlib, load_asset};
 use perro_render_bridge::Camera3DState;
@@ -317,8 +317,14 @@ impl Gpu3D {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
             self.last_scene = Some(uniform);
         }
+        let view_proj = compute_view_proj_mat(camera, width, height);
 
         if self.last_draws.as_slice() == draws {
+            eprintln!(
+                "[perro][3d] total_items={} drawing={}",
+                draws.len(),
+                self.staged_instances.len()
+            );
             return;
         }
         self.last_draws.clear();
@@ -334,6 +340,9 @@ impl Gpu3D {
             .copied()
             .expect("cube mesh preset must exist");
         for draw in draws {
+            if !draw_center_in_frustum(draw, view_proj) {
+                continue;
+            }
             let source = resources.mesh_source(draw.mesh).unwrap_or("__cube__");
             let mesh = self
                 .resolve_mesh_range(device, queue, source, static_mesh_lookup)
@@ -384,6 +393,11 @@ impl Gpu3D {
                 bytemuck::cast_slice(&self.staged_instances),
             );
         }
+        eprintln!(
+            "[perro][3d] total_items={} drawing={}",
+            draws.len(),
+            self.staged_instances.len()
+        );
     }
 
     pub fn render_pass(
@@ -857,6 +871,10 @@ fn create_pipeline(
 }
 
 fn compute_view_proj(camera: Camera3DState, width: u32, height: u32) -> [[f32; 4]; 4] {
+    compute_view_proj_mat(camera, width, height).to_cols_array_2d()
+}
+
+fn compute_view_proj_mat(camera: Camera3DState, width: u32, height: u32) -> Mat4 {
     let w = width.max(1) as f32;
     let h = height.max(1) as f32;
     let aspect = w / h;
@@ -885,7 +903,25 @@ fn compute_view_proj(camera: Camera3DState, width: u32, height: u32) -> [[f32; 4
     };
     let world = Mat4::from_rotation_translation(rot, pos);
     let view = world.inverse();
-    (proj * view).to_cols_array_2d()
+    proj * view
+}
+
+#[inline]
+fn draw_center_in_frustum(draw: &Draw3DInstance, view_proj: Mat4) -> bool {
+    let center = Vec4::new(draw.model[3][0], draw.model[3][1], draw.model[3][2], 1.0);
+    if !center.is_finite() {
+        return false;
+    }
+    let clip = view_proj * center;
+    if !clip.is_finite() || clip.w <= 0.0 {
+        return false;
+    }
+    clip.x >= -clip.w
+        && clip.x <= clip.w
+        && clip.y >= -clip.w
+        && clip.y <= clip.w
+        && clip.z >= -clip.w
+        && clip.z <= clip.w
 }
 
 fn build_scene_uniform(
