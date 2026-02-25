@@ -58,7 +58,7 @@ lifecycle!({
 
         if timer > 3.0 {
             with_node_mut!(ctx, SelfNodeType, self_id, |mesh| {
-                mesh.mesh = res.Meshes().load("__sq_pyr__");
+                mesh.mesh = res.Meshes().load("res://models/2Noses.glb:mesh[1]");
                 mesh.material = res.Materials().load("res://materials/mat.pmat");
             }).unwrap_or_default();
             with_state_mut!(ctx, ExampleState, self_id, |state| {

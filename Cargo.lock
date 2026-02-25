@@ -1640,6 +1640,7 @@ dependencies = [
  "image",
  "perro_ids",
  "perro_io",
+ "perro_meshlets",
  "perro_render_bridge",
  "pollster",
  "wgpu",
@@ -1661,6 +1662,10 @@ dependencies = [
  "flate2",
  "perro_brk",
 ]
+
+[[package]]
+name = "perro_meshlets"
+version = "0.1.0"
 
 [[package]]
 name = "perro_modules"
@@ -1766,6 +1771,7 @@ dependencies = [
  "gltf",
  "image",
  "perro_io",
+ "perro_meshlets",
  "perro_scene",
  "rayon",
 ]

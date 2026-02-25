@@ -8,8 +8,9 @@ use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;
 use perro_io::{decompress_zlib, load_asset};
+use perro_meshlets::pack_meshlets_from_positions;
 use perro_render_bridge::Camera3DState;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc, time::Instant};
 use wgpu::util::DeviceExt;
 
 mod mesh_presets;
@@ -90,11 +91,17 @@ pub struct Gpu3D {
     vertex_capacity: usize,
     index_capacity: usize,
     builtin_mesh_ranges: HashMap<&'static str, MeshRange>,
-    custom_mesh_ranges: HashMap<String, MeshRange>,
+    builtin_meshlets: HashMap<&'static str, Arc<[MeshletRange]>>,
+    custom_mesh_ranges: HashMap<String, MeshAssetRange>,
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
     depth_size: (u32, u32),
     sample_count: u32,
+    meshlets_enabled: bool,
+    dev_meshlets: bool,
+    meshlet_debug_view: bool,
+    last_total_meshlets: usize,
+    last_total_drawn: usize,
 }
 
 pub struct Prepare3D<'a> {
@@ -115,6 +122,20 @@ struct MeshRange {
 }
 
 #[derive(Clone, Copy)]
+struct MeshletRange {
+    index_start: u32,
+    index_count: u32,
+    center: [f32; 3],
+    radius: f32,
+}
+
+#[derive(Clone)]
+struct MeshAssetRange {
+    full: MeshRange,
+    meshlets: Arc<[MeshletRange]>,
+}
+
+#[derive(Clone, Copy)]
 struct DrawBatch {
     mesh: MeshRange,
     instance_start: u32,
@@ -128,6 +149,15 @@ const PMESH_MAGIC: &[u8; 5] = b"PMESH";
 struct DecodedMesh {
     vertices: Vec<MeshVertex>,
     indices: Vec<u32>,
+    meshlets: Vec<DecodedMeshlet>,
+}
+
+#[derive(Clone, Copy)]
+struct DecodedMeshlet {
+    index_start: u32,
+    index_count: u32,
+    center: [f32; 3],
+    radius: f32,
 }
 
 impl Gpu3D {
@@ -137,6 +167,9 @@ impl Gpu3D {
         sample_count: u32,
         width: u32,
         height: u32,
+        meshlets_enabled: bool,
+        dev_meshlets: bool,
+        meshlet_debug_view: bool,
     ) -> Self {
         let shader = create_mesh_shader_module(device);
         let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -192,7 +225,7 @@ impl Gpu3D {
             None,
         );
 
-        let (vertices, indices, builtin_mesh_ranges) = build_builtin_mesh_buffer();
+        let (vertices, indices, builtin_mesh_ranges, builtin_meshlets) = build_builtin_mesh_buffer();
         let vertex_capacity = vertices.len().max(1);
         let index_capacity = indices.len().max(1);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -235,11 +268,17 @@ impl Gpu3D {
             vertex_capacity,
             index_capacity,
             builtin_mesh_ranges,
+            builtin_meshlets,
             custom_mesh_ranges: HashMap::new(),
             depth_texture,
             depth_view,
             depth_size: (width.max(1), height.max(1)),
             sample_count,
+            meshlets_enabled,
+            dev_meshlets,
+            meshlet_debug_view,
+            last_total_meshlets: 0,
+            last_total_drawn: 0,
         }
     }
 
@@ -320,11 +359,6 @@ impl Gpu3D {
         let view_proj = compute_view_proj_mat(camera, width, height);
 
         if self.last_draws.as_slice() == draws {
-            eprintln!(
-                "[perro][3d] total_items={} drawing={}",
-                draws.len(),
-                self.staged_instances.len()
-            );
             return;
         }
         self.last_draws.clear();
@@ -334,57 +368,67 @@ impl Gpu3D {
         self.staged_instances.reserve(draws.len());
         self.draw_batches.clear();
         self.draw_batches.reserve(draws.len());
+        let mut total_meshlets = 0usize;
+        let frustum = extract_frustum_planes(view_proj);
         let default_mesh = self
-            .builtin_mesh_ranges
-            .get("__cube__")
-            .copied()
+            .resolve_builtin_mesh_asset("__cube__")
             .expect("cube mesh preset must exist");
         for draw in draws {
-            if !draw_center_in_frustum(draw, view_proj) {
-                continue;
-            }
             let source = resources.mesh_source(draw.mesh).unwrap_or("__cube__");
-            let mesh = self
+            let mesh_asset = self
                 .resolve_mesh_range(device, queue, source, static_mesh_lookup)
-                .unwrap_or(default_mesh);
+                .unwrap_or_else(|| default_mesh.clone());
             let material = resources.material(draw.material).unwrap_or_default();
-            let instance = self.staged_instances.len() as u32;
-            self.staged_instances.push(InstanceGpu {
-                model_0: draw.model[0],
-                model_1: draw.model[1],
-                model_2: draw.model[2],
-                model_3: draw.model[3],
-                color: material.base_color_factor,
-                pbr_params: [
-                    material.roughness_factor,
-                    material.metallic_factor,
-                    material.occlusion_strength,
-                    material.normal_scale,
-                ],
-                emissive_factor: material.emissive_factor,
-                material_params: [
-                    material.alpha_mode as f32,
-                    material.alpha_cutoff,
-                    if material.double_sided { 1.0 } else { 0.0 },
-                    0.0,
-                ],
+            let use_meshlets = self.meshlets_enabled && !mesh_asset.meshlets.is_empty();
+            total_meshlets = total_meshlets.saturating_add(if use_meshlets {
+                mesh_asset.meshlets.len()
+            } else {
+                1
             });
-            if let Some(batch) = self.draw_batches.last_mut()
-                && batch.mesh.index_start == mesh.index_start
-                && batch.mesh.index_count == mesh.index_count
-                && batch.mesh.base_vertex == mesh.base_vertex
-                && batch.double_sided == material.double_sided
-                && batch.instance_start + batch.instance_count == instance
-            {
-                batch.instance_count += 1;
+
+            // For non-meshlet draws, keep coarse center culling.
+            // For meshlet-enabled draws, rely on per-meshlet bounds culling.
+            if !use_meshlets && !draw_center_in_frustum(draw, view_proj) {
                 continue;
             }
-            self.draw_batches.push(DrawBatch {
-                mesh,
-                instance_start: instance,
-                instance_count: 1,
-                double_sided: material.double_sided,
-            });
+
+            if !use_meshlets {
+                let instance = self.staged_instances.len() as u32;
+                self.staged_instances.push(build_instance(
+                    draw.model,
+                    &material,
+                    self.meshlet_debug_view,
+                    debug_color(draw.node.as_u64()),
+                ));
+                push_draw_batch(
+                    &mut self.draw_batches,
+                    mesh_asset.full,
+                    instance,
+                    material.double_sided,
+                );
+            } else {
+                for meshlet in mesh_asset.meshlets.iter().copied() {
+                    if meshlet_in_frustum(draw.model, meshlet, &frustum) {
+                        let instance = self.staged_instances.len() as u32;
+                        self.staged_instances.push(build_instance(
+                            draw.model,
+                            &material,
+                            self.meshlet_debug_view,
+                            debug_color((draw.node.as_u64() << 32) ^ meshlet.index_start as u64),
+                        ));
+                        push_draw_batch(
+                            &mut self.draw_batches,
+                            MeshRange {
+                                index_start: meshlet.index_start,
+                                index_count: meshlet.index_count,
+                                base_vertex: mesh_asset.full.base_vertex,
+                            },
+                            instance,
+                            material.double_sided,
+                        );
+                    }
+                }
+            }
         }
         if !self.staged_instances.is_empty() {
             queue.write_buffer(
@@ -393,11 +437,8 @@ impl Gpu3D {
                 bytemuck::cast_slice(&self.staged_instances),
             );
         }
-        eprintln!(
-            "[perro][3d] total_items={} drawing={}",
-            draws.len(),
-            self.staged_instances.len()
-        );
+        self.last_total_meshlets = total_meshlets;
+        self.last_total_drawn = self.staged_instances.len();
     }
 
     pub fn render_pass(
@@ -477,17 +518,39 @@ impl Gpu3D {
         queue: &wgpu::Queue,
         source: &str,
         static_mesh_lookup: Option<StaticMeshLookup>,
-    ) -> Option<MeshRange> {
+    ) -> Option<MeshAssetRange> {
         if let Some(range) = self.builtin_mesh_ranges.get(source).copied() {
+            return Some(MeshAssetRange {
+                full: range,
+                meshlets: self
+                    .builtin_meshlets
+                    .get(source)
+                    .cloned()
+                    .unwrap_or_else(|| Arc::from([])),
+            });
+        }
+        if let Some(range) = self.custom_mesh_ranges.get(source).cloned() {
             return Some(range);
         }
-        if let Some(range) = self.custom_mesh_ranges.get(source).copied() {
-            return Some(range);
-        }
-        let decoded = load_mesh_from_source(source, static_mesh_lookup)?;
+        let decoded = load_mesh_from_source(
+            source,
+            static_mesh_lookup,
+            self.meshlets_enabled && self.dev_meshlets,
+        )?;
         let range = self.append_mesh_data(device, queue, source, decoded)?;
-        self.custom_mesh_ranges.insert(source.to_string(), range);
+        self.custom_mesh_ranges
+            .insert(source.to_string(), range.clone());
         Some(range)
+    }
+
+    fn resolve_builtin_mesh_asset(&self, source: &str) -> Option<MeshAssetRange> {
+        let full = self.builtin_mesh_ranges.get(source).copied()?;
+        let meshlets = self
+            .builtin_meshlets
+            .get(source)
+            .cloned()
+            .unwrap_or_else(|| Arc::from([]));
+        Some(MeshAssetRange { full, meshlets })
     }
 
     fn append_mesh_data(
@@ -496,7 +559,7 @@ impl Gpu3D {
         queue: &wgpu::Queue,
         _source: &str,
         decoded: DecodedMesh,
-    ) -> Option<MeshRange> {
+    ) -> Option<MeshAssetRange> {
         if decoded.vertices.is_empty() || decoded.indices.is_empty() {
             return None;
         }
@@ -533,10 +596,31 @@ impl Gpu3D {
             bytemuck::cast_slice(&added_indices),
         );
 
-        Some(MeshRange {
+        let full = MeshRange {
             index_start,
             index_count,
             base_vertex: 0,
+        };
+
+        let meshlets: Vec<MeshletRange> = decoded
+            .meshlets
+            .into_iter()
+            .filter_map(|meshlet| {
+                if meshlet.index_count == 0 {
+                    return None;
+                }
+                Some(MeshletRange {
+                    index_start: index_start + meshlet.index_start,
+                    index_count: meshlet.index_count,
+                    center: meshlet.center,
+                    radius: meshlet.radius.max(0.0),
+                })
+            })
+            .collect();
+
+        Some(MeshAssetRange {
+            full,
+            meshlets: Arc::from(meshlets),
         })
     }
 
@@ -594,25 +678,43 @@ impl Gpu3D {
 fn load_mesh_from_source(
     source: &str,
     static_mesh_lookup: Option<StaticMeshLookup>,
+    dev_meshlets: bool,
 ) -> Option<DecodedMesh> {
-    if let Some(lookup) = static_mesh_lookup
+    let mut decoded = if let Some(lookup) = static_mesh_lookup
         && let Some(bytes) = lookup(source)
         && let Some(decoded) = decode_pmesh(bytes)
     {
-        return Some(decoded);
+        decoded
+    } else {
+        let (path, fragment) = split_source_fragment(source);
+        if path.ends_with(".pmesh") {
+            let bytes = load_asset(path).ok()?;
+            decode_pmesh(&bytes)?
+        } else if path.ends_with(".glb") || path.ends_with(".gltf") {
+            let mesh_index = parse_fragment_index(fragment, "mesh").unwrap_or(0);
+            let bytes = load_asset(path).ok()?;
+            decode_gltf_mesh(&bytes, mesh_index as usize)?
+        } else {
+            return None;
+        }
+    };
+
+    if decoded.meshlets.is_empty() && dev_meshlets {
+        let start = Instant::now();
+        let (packed_indices, meshlets) = build_meshlets(&decoded.vertices, &decoded.indices);
+        decoded.indices = packed_indices;
+        decoded.meshlets = meshlets;
+        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        eprintln!(
+            "[perro][3d][meshlets] generated source={} meshlets={} tris={} took_ms={:.2}",
+            source,
+            decoded.meshlets.len(),
+            decoded.indices.len() / 3,
+            elapsed_ms
+        );
     }
 
-    let (path, fragment) = split_source_fragment(source);
-    if path.ends_with(".pmesh") {
-        let bytes = load_asset(path).ok()?;
-        return decode_pmesh(&bytes);
-    }
-    if path.ends_with(".glb") || path.ends_with(".gltf") {
-        let mesh_index = parse_fragment_index(fragment, "mesh").unwrap_or(0);
-        let bytes = load_asset(path).ok()?;
-        return decode_gltf_mesh(&bytes, mesh_index as usize);
-    }
-    None
+    Some(decoded)
 }
 
 pub(crate) fn validate_mesh_source(
@@ -622,7 +724,7 @@ pub(crate) fn validate_mesh_source(
     if source.starts_with("__") {
         return Ok(());
     }
-    if load_mesh_from_source(source, static_mesh_lookup).is_some() {
+    if load_mesh_from_source(source, static_mesh_lookup, false).is_some() {
         return Ok(());
     }
     Err(format!("mesh source failed to decode: {}", source))
@@ -651,6 +753,24 @@ fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {
     value.parse::<u32>().ok()
 }
 
+const MESHLET_TRIANGLES: usize = 64;
+
+fn build_meshlets(vertices: &[MeshVertex], indices: &[u32]) -> (Vec<u32>, Vec<DecodedMeshlet>) {
+    let positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.pos).collect();
+    let packed = pack_meshlets_from_positions(&positions, indices, MESHLET_TRIANGLES);
+    let meshlets = packed
+        .meshlets
+        .into_iter()
+        .map(|m| DecodedMeshlet {
+            index_start: m.index_start,
+            index_count: m.index_count,
+            center: m.center,
+            radius: m.radius,
+        })
+        .collect();
+    (packed.packed_indices, meshlets)
+}
+
 fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     if bytes.len() < 25 || &bytes[0..5] != PMESH_MAGIC {
         return None;
@@ -661,7 +781,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     }
     let vertex_count = u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize;
     let index_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
-    let _material_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
+    let meshlet_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
     let raw_len = u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize;
     let raw = decompress_zlib(&bytes[25..]).ok()?;
     if raw.len() != raw_len {
@@ -670,7 +790,11 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
 
     let vertex_bytes = vertex_count.checked_mul(24)?;
     let index_bytes = index_count.checked_mul(4)?;
-    if raw.len() < vertex_bytes + index_bytes {
+    let meshlet_bytes = meshlet_count.checked_mul(24)?;
+    let required = vertex_bytes
+        .checked_add(index_bytes)?
+        .checked_add(meshlet_bytes)?;
+    if raw.len() < required {
         return None;
     }
 
@@ -697,7 +821,27 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         let off = index_start + i * 4;
         indices.push(u32::from_le_bytes(raw[off..off + 4].try_into().ok()?));
     }
-    Some(DecodedMesh { vertices, indices })
+    let mut meshlets = Vec::with_capacity(meshlet_count);
+    let meshlet_start = vertex_bytes + index_bytes;
+    for i in 0..meshlet_count {
+        let off = meshlet_start + i * 24;
+        meshlets.push(DecodedMeshlet {
+            index_start: u32::from_le_bytes(raw[off..off + 4].try_into().ok()?),
+            index_count: u32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?),
+            center: [
+                f32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?),
+                f32::from_le_bytes(raw[off + 12..off + 16].try_into().ok()?),
+                f32::from_le_bytes(raw[off + 16..off + 20].try_into().ok()?),
+            ],
+            radius: f32::from_le_bytes(raw[off + 20..off + 24].try_into().ok()?),
+        });
+    }
+
+    Some(DecodedMesh {
+        vertices,
+        indices,
+        meshlets,
+    })
 }
 
 fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> {
@@ -727,7 +871,11 @@ fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> {
     } else {
         (0..vertices.len() as u32).collect()
     };
-    Some(DecodedMesh { vertices, indices })
+    Some(DecodedMesh {
+        vertices,
+        indices,
+        meshlets: Vec::new(),
+    })
 }
 
 fn create_depth_texture(
@@ -870,6 +1018,107 @@ fn create_pipeline(
     })
 }
 
+#[inline]
+fn push_draw_batch(
+    draw_batches: &mut Vec<DrawBatch>,
+    mesh: MeshRange,
+    instance: u32,
+    double_sided: bool,
+) {
+    if let Some(batch) = draw_batches.last_mut()
+        && batch.mesh.index_start == mesh.index_start
+        && batch.mesh.index_count == mesh.index_count
+        && batch.mesh.base_vertex == mesh.base_vertex
+        && batch.double_sided == double_sided
+        && batch.instance_start + batch.instance_count == instance
+    {
+        batch.instance_count += 1;
+        return;
+    }
+    draw_batches.push(DrawBatch {
+        mesh,
+        instance_start: instance,
+        instance_count: 1,
+        double_sided,
+    });
+}
+
+#[inline]
+fn build_instance(
+    model: [[f32; 4]; 4],
+    material: &perro_render_bridge::Material3D,
+    debug_view: bool,
+    debug_color: [f32; 4],
+) -> InstanceGpu {
+    let (color, pbr_params, emissive_factor, debug_flag) = if debug_view {
+        (
+            debug_color,
+            [0.5, 0.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0],
+            1.0,
+        )
+    } else {
+        (
+            material.base_color_factor,
+            [
+                material.roughness_factor,
+                material.metallic_factor,
+                material.occlusion_strength,
+                material.normal_scale,
+            ],
+            material.emissive_factor,
+            0.0,
+        )
+    };
+
+    InstanceGpu {
+        model_0: model[0],
+        model_1: model[1],
+        model_2: model[2],
+        model_3: model[3],
+        color,
+        pbr_params,
+        emissive_factor,
+        material_params: [
+            material.alpha_mode as f32,
+            material.alpha_cutoff,
+            if material.double_sided { 1.0 } else { 0.0 },
+            debug_flag,
+        ],
+    }
+}
+
+#[inline]
+fn debug_color(seed: u64) -> [f32; 4] {
+    let mut x = seed ^ 0x9E37_79B9_7F4A_7C15;
+    x ^= x >> 30;
+    x = x.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x ^= x >> 27;
+    x = x.wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^= x >> 31;
+
+    let h = ((x & 0xFFFF) as f32) / 65535.0;
+    hsv_to_rgb(h, 0.75, 0.95)
+}
+
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [f32; 4] {
+    let h = (h.fract() * 6.0).max(0.0);
+    let i = h.floor() as i32;
+    let f = h - i as f32;
+    let p = v * (1.0 - s);
+    let q = v * (1.0 - s * f);
+    let t = v * (1.0 - s * (1.0 - f));
+    let (r, g, b) = match i.rem_euclid(6) {
+        0 => (v, t, p),
+        1 => (q, v, p),
+        2 => (p, v, t),
+        3 => (p, q, v),
+        4 => (t, p, v),
+        _ => (v, p, q),
+    };
+    [r, g, b, 1.0]
+}
+
 fn compute_view_proj(camera: Camera3DState, width: u32, height: u32) -> [[f32; 4]; 4] {
     compute_view_proj_mat(camera, width, height).to_cols_array_2d()
 }
@@ -922,6 +1171,78 @@ fn draw_center_in_frustum(draw: &Draw3DInstance, view_proj: Mat4) -> bool {
         && clip.y <= clip.w
         && clip.z >= -clip.w
         && clip.z <= clip.w
+}
+
+fn extract_frustum_planes(view_proj: Mat4) -> [Vec4; 6] {
+    let r0 = Vec4::new(
+        view_proj.x_axis.x,
+        view_proj.y_axis.x,
+        view_proj.z_axis.x,
+        view_proj.w_axis.x,
+    );
+    let r1 = Vec4::new(
+        view_proj.x_axis.y,
+        view_proj.y_axis.y,
+        view_proj.z_axis.y,
+        view_proj.w_axis.y,
+    );
+    let r2 = Vec4::new(
+        view_proj.x_axis.z,
+        view_proj.y_axis.z,
+        view_proj.z_axis.z,
+        view_proj.w_axis.z,
+    );
+    let r3 = Vec4::new(
+        view_proj.x_axis.w,
+        view_proj.y_axis.w,
+        view_proj.z_axis.w,
+        view_proj.w_axis.w,
+    );
+    [
+        normalize_plane(r3 + r0),
+        normalize_plane(r3 - r0),
+        normalize_plane(r3 + r1),
+        normalize_plane(r3 - r1),
+        normalize_plane(r3 + r2),
+        normalize_plane(r3 - r2),
+    ]
+}
+
+#[inline]
+fn normalize_plane(plane: Vec4) -> Vec4 {
+    let n = plane.truncate();
+    let len = n.length();
+    if len > 1.0e-6 && len.is_finite() {
+        plane / len
+    } else {
+        plane
+    }
+}
+
+fn meshlet_in_frustum(model: [[f32; 4]; 4], meshlet: MeshletRange, planes: &[Vec4; 6]) -> bool {
+    let model = Mat4::from_cols_array_2d(&model);
+    if !model.is_finite() {
+        return false;
+    }
+    let center_local = Vec4::new(meshlet.center[0], meshlet.center[1], meshlet.center[2], 1.0);
+    let center_world = model * center_local;
+    if !center_world.is_finite() {
+        return false;
+    }
+    let sx = Vec3::new(model.x_axis.x, model.x_axis.y, model.x_axis.z).length();
+    let sy = Vec3::new(model.y_axis.x, model.y_axis.y, model.y_axis.z).length();
+    let sz = Vec3::new(model.z_axis.x, model.z_axis.y, model.z_axis.z).length();
+    let scale = sx.max(sy).max(sz).max(1.0e-6);
+    let radius_world = meshlet.radius.max(0.0) * scale;
+    let center = center_world.truncate();
+
+    for plane in planes {
+        let d = plane.truncate().dot(center) + plane.w;
+        if d < -radius_world {
+            return false;
+        }
+    }
+    true
 }
 
 fn build_scene_uniform(

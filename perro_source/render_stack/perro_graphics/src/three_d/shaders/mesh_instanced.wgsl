@@ -156,12 +156,16 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     let ao = clamp(in.pbr_params.z, 0.0, 1.0);
     let alpha_mode = u32(in.material_params.x + 0.5);
     let alpha_cutoff = clamp(in.material_params.y, 0.0, 1.0);
+    let meshlet_debug_view = in.material_params.w > 0.5;
     var alpha = clamp(in.color.a, 0.0, 1.0);
     if alpha_mode == 1u && alpha < alpha_cutoff {
         discard;
     }
     if alpha_mode == 0u {
         alpha = 1.0;
+    }
+    if meshlet_debug_view {
+        return vec4<f32>(in.color.rgb, 1.0);
     }
 
     var light_rgb = vec3<f32>(0.0);

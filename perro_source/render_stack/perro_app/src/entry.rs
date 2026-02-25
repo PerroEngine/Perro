@@ -39,10 +39,16 @@ pub fn create_static_app<B: GraphicsBackend>(graphics: B, project: RuntimeProjec
     create_app_from_project(graphics, project, ProviderMode::Static)
 }
 
-fn graphics_from_project_config(config: &perro_runtime::RuntimeProjectConfig) -> PerroGraphics {
+fn graphics_from_project_config(
+    config: &perro_runtime::RuntimeProjectConfig,
+    release_mode: bool,
+) -> PerroGraphics {
     PerroGraphics::new()
         .with_vsync(config.vsync)
         .with_msaa(config.msaa)
+        .with_meshlets_enabled(config.meshlets)
+        .with_dev_meshlets(!release_mode && config.dev_meshlets)
+        .with_meshlet_debug_view(config.meshlet_debug_view)
 }
 
 pub fn run_dev_project_from_path(
@@ -51,7 +57,7 @@ pub fn run_dev_project_from_path(
 ) -> Result<(), ProjectLoadError> {
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
     let window_title = project.config.name.clone();
-    let graphics = graphics_from_project_config(&project.config);
+    let graphics = graphics_from_project_config(&project.config, false);
     let app = create_dev_app(graphics, project);
     WinitRunner::new().run(app, &window_title);
     Ok(())
@@ -63,7 +69,7 @@ pub fn run_static_project_from_path(
 ) -> Result<(), ProjectLoadError> {
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
     let window_title = project.config.name.clone();
-    let graphics = graphics_from_project_config(&project.config);
+    let graphics = graphics_from_project_config(&project.config, true);
     let app = create_static_app(graphics, project);
     WinitRunner::new().run(app, &window_title);
     Ok(())
@@ -113,7 +119,7 @@ pub fn run_static_embedded_project(
         .with_brk_bytes(input.assets_brk);
 
     let window_title = project.config.name.clone();
-    let graphics = graphics_from_project_config(&project.config)
+    let graphics = graphics_from_project_config(&project.config, true)
         .with_static_mesh_lookup(input.mesh_lookup)
         .with_static_texture_lookup(input.texture_lookup);
     let runtime = Runtime::from_project_with_script_registry(

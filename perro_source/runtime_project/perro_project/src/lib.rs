@@ -15,6 +15,10 @@ pub struct StaticProjectConfig {
     pub virtual_height: u32,
     pub vsync: bool,
     pub msaa: bool,
+    pub meshlets: bool,
+    pub dev_meshlets: bool,
+    pub release_meshlets: bool,
+    pub meshlet_debug_view: bool,
 }
 
 impl StaticProjectConfig {
@@ -33,6 +37,10 @@ impl StaticProjectConfig {
             virtual_height,
             vsync: false,
             msaa: true,
+            meshlets: false,
+            dev_meshlets: false,
+            release_meshlets: true,
+            meshlet_debug_view: false,
         }
     }
 
@@ -46,6 +54,26 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_dev_meshlets(mut self, enabled: bool) -> Self {
+        self.dev_meshlets = enabled;
+        self
+    }
+
+    pub const fn with_meshlets(mut self, enabled: bool) -> Self {
+        self.meshlets = enabled;
+        self
+    }
+
+    pub const fn with_release_meshlets(mut self, enabled: bool) -> Self {
+        self.release_meshlets = enabled;
+        self
+    }
+
+    pub const fn with_meshlet_debug_view(mut self, enabled: bool) -> Self {
+        self.meshlet_debug_view = enabled;
+        self
+    }
+
     pub fn to_runtime(self) -> ProjectConfig {
         ProjectConfig {
             name: self.name.to_string(),
@@ -55,6 +83,10 @@ impl StaticProjectConfig {
             virtual_height: self.virtual_height,
             vsync: self.vsync,
             msaa: self.msaa,
+            meshlets: self.meshlets,
+            dev_meshlets: self.dev_meshlets,
+            release_meshlets: self.release_meshlets,
+            meshlet_debug_view: self.meshlet_debug_view,
         }
     }
 }
@@ -68,6 +100,10 @@ pub struct ProjectConfig {
     pub virtual_height: u32,
     pub vsync: bool,
     pub msaa: bool,
+    pub meshlets: bool,
+    pub dev_meshlets: bool,
+    pub release_meshlets: bool,
+    pub meshlet_debug_view: bool,
 }
 
 impl ProjectConfig {
@@ -80,6 +116,10 @@ impl ProjectConfig {
             virtual_height: 1080,
             vsync: false,
             msaa: true,
+            meshlets: false,
+            dev_meshlets: false,
+            release_meshlets: true,
+            meshlet_debug_view: false,
         }
     }
 }
@@ -256,6 +296,10 @@ icon = "res://icon.png"
 virtual_resolution = "1920x1080"
 vsync = false
 msaa = true
+meshlets = false
+dev_meshlets = false
+release_meshlets = true
+meshlet_debug_view = false
 "#
     )
 }
@@ -336,6 +380,10 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
 
     let vsync = parse_bool_with_default(graphics_table, "vsync", false)?;
     let msaa = parse_bool_with_default(graphics_table, "msaa", true)?;
+    let meshlets = parse_bool_with_default(graphics_table, "meshlets", false)?;
+    let dev_meshlets = parse_bool_with_default(graphics_table, "dev_meshlets", false)?;
+    let release_meshlets = parse_bool_with_default(graphics_table, "release_meshlets", true)?;
+    let meshlet_debug_view = parse_bool_with_default(graphics_table, "meshlet_debug_view", false)?;
 
     Ok(ProjectConfig {
         name,
@@ -345,6 +393,10 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         virtual_height,
         vsync,
         msaa,
+        meshlets,
+        dev_meshlets,
+        release_meshlets,
+        meshlet_debug_view,
     })
 }
 
@@ -361,6 +413,10 @@ fn parse_bool_with_default(
             match key {
                 "vsync" => "graphics.vsync",
                 "msaa" => "graphics.msaa",
+                "meshlets" => "graphics.meshlets",
+                "dev_meshlets" => "graphics.dev_meshlets",
+                "release_meshlets" => "graphics.release_meshlets",
+                "meshlet_debug_view" => "graphics.meshlet_debug_view",
                 _ => "graphics",
             },
             "must be a boolean".to_string(),
@@ -1213,6 +1269,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_input" => Some("perro_source/api_modules/perro_input"),
         "perro_render_bridge" => Some("perro_source/render_stack/perro_render_bridge"),
         "perro_graphics" => Some("perro_source/render_stack/perro_graphics"),
+        "perro_meshlets" => Some("perro_source/render_stack/perro_meshlets"),
         "perro_app" => Some("perro_source/render_stack/perro_app"),
         "perro_scripting" => Some("perro_source/script_stack/perro_scripting"),
         "perro_scripting_macros" => Some("perro_source/script_stack/perro_scripting_macros"),
@@ -1282,6 +1339,10 @@ virtual_resolution = "1280x720"
         assert_eq!(parsed.virtual_height, 720);
         assert!(!parsed.vsync);
         assert!(parsed.msaa);
+        assert!(!parsed.meshlets);
+        assert!(!parsed.dev_meshlets);
+        assert!(parsed.release_meshlets);
+        assert!(!parsed.meshlet_debug_view);
     }
 
     #[test]
@@ -1302,6 +1363,10 @@ virtual_height = 1080
         assert_eq!(parsed.virtual_height, 1080);
         assert!(!parsed.vsync);
         assert!(parsed.msaa);
+        assert!(!parsed.meshlets);
+        assert!(!parsed.dev_meshlets);
+        assert!(parsed.release_meshlets);
+        assert!(!parsed.meshlet_debug_view);
     }
 
     #[test]
@@ -1316,11 +1381,19 @@ icon = "res://icon.png"
 virtual_resolution = "1920x1080"
 vsync = true
 msaa = false
+meshlets = true
+dev_meshlets = true
+release_meshlets = false
+meshlet_debug_view = true
 "#;
 
         let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
         assert!(parsed.vsync);
         assert!(!parsed.msaa);
+        assert!(parsed.meshlets);
+        assert!(parsed.dev_meshlets);
+        assert!(!parsed.release_meshlets);
+        assert!(parsed.meshlet_debug_view);
     }
 
     #[test]

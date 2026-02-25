@@ -50,6 +50,9 @@ pub struct PerroGraphics {
     smoothing_samples: u32,
     static_texture_lookup: Option<StaticTextureLookup>,
     static_mesh_lookup: Option<StaticMeshLookup>,
+    meshlets_enabled: bool,
+    dev_meshlets: bool,
+    meshlet_debug_view: bool,
     retained_draws_cache: Vec<Draw3DInstance>,
     retained_sprites_cache: Vec<Sprite2DCommand>,
     frame_index: u32,
@@ -70,6 +73,9 @@ impl PerroGraphics {
             smoothing_samples: 4,
             static_texture_lookup: None,
             static_mesh_lookup: None,
+            meshlets_enabled: false,
+            dev_meshlets: false,
+            meshlet_debug_view: false,
             retained_draws_cache: Vec::new(),
             retained_sprites_cache: Vec::new(),
             frame_index: 0,
@@ -93,6 +99,21 @@ impl PerroGraphics {
 
     pub fn with_static_mesh_lookup(mut self, lookup: StaticMeshLookup) -> Self {
         self.static_mesh_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_dev_meshlets(mut self, enabled: bool) -> Self {
+        self.dev_meshlets = enabled;
+        self
+    }
+
+    pub fn with_meshlets_enabled(mut self, enabled: bool) -> Self {
+        self.meshlets_enabled = enabled;
+        self
+    }
+
+    pub fn with_meshlet_debug_view(mut self, enabled: bool) -> Self {
+        self.meshlet_debug_view = enabled;
         self
     }
 
@@ -248,7 +269,14 @@ impl RenderBridge for PerroGraphics {
 impl GraphicsBackend for PerroGraphics {
     fn attach_window(&mut self, window: Arc<Window>) {
         if self.gpu.is_none() {
-            let mut gpu = Gpu::new(window, self.smoothing_samples, self.vsync_enabled);
+            let mut gpu = Gpu::new(
+                window,
+                self.smoothing_samples,
+                self.vsync_enabled,
+                self.meshlets_enabled,
+                self.dev_meshlets,
+                self.meshlet_debug_view,
+            );
             if let Some(gpu_ref) = gpu.as_mut() {
                 let [vw, vh] = Gpu::virtual_size();
                 self.renderer_2d.set_virtual_viewport(vw, vh);

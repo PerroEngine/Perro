@@ -52,7 +52,14 @@ pub struct RenderFrame<'a> {
 }
 
 impl Gpu {
-    pub fn new(window: Arc<Window>, smoothing_samples: u32, vsync_enabled: bool) -> Option<Self> {
+    pub fn new(
+        window: Arc<Window>,
+        smoothing_samples: u32,
+        vsync_enabled: bool,
+        meshlets_enabled: bool,
+        dev_meshlets: bool,
+        meshlet_debug_view: bool,
+    ) -> Option<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let surface = instance.create_surface(window.clone()).ok()?;
 
@@ -101,7 +108,16 @@ impl Gpu {
 
         let sample_count = normalize_sample_count(smoothing_samples);
         let two_d = Gpu2D::new(&device, render_format, sample_count);
-        let three_d = Gpu3D::new(&device, render_format, sample_count, width, height);
+        let three_d = Gpu3D::new(
+            &device,
+            render_format,
+            sample_count,
+            width,
+            height,
+            meshlets_enabled,
+            dev_meshlets,
+            meshlet_debug_view,
+        );
         let msaa_color =
             create_msaa_color_target(&device, render_format, width, height, sample_count);
 

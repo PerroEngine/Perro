@@ -16,6 +16,7 @@ members = [
 
     "perro_source/render_stack/perro_app",
     "perro_source/render_stack/perro_graphics",
+    "perro_source/render_stack/perro_meshlets",
     "perro_source/render_stack/perro_render_bridge",
 
     "perro_source/script_stack/perro_scripting",
@@ -51,6 +52,7 @@ perro_resource_context = {path="perro_source/api_modules/perro_resource_context"
 perro_app = {path="perro_source/render_stack/perro_app"}
 perro_render_bridge = {path="perro_source/render_stack/perro_render_bridge"}
 perro_graphics = {path="perro_source/render_stack/perro_graphics"}
+perro_meshlets = {path="perro_source/render_stack/perro_meshlets"}
 perro_scripting = {path="perro_source/script_stack/perro_scripting"}
 perro_scripting_macros = {path="perro_source/script_stack/perro_scripting_macros"}
 

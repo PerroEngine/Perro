@@ -9,6 +9,7 @@ use std::{
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
 const PMESH_VERSION: u32 = 1;
+const MESHLET_TRIANGLES: usize = 64;
 
 #[derive(Clone, Copy)]
 struct PackedVertex {
@@ -17,12 +18,11 @@ struct PackedVertex {
 }
 
 #[derive(Clone, Copy)]
-struct PackedMaterial {
-    base_color: [f32; 4],
-    roughness: f32,
-    metallic: f32,
-    ao: f32,
-    emissive: f32,
+struct PackedMeshlet {
+    index_start: u32,
+    index_count: u32,
+    center: [f32; 3],
+    radius: f32,
 }
 
 #[derive(Clone)]
@@ -36,7 +36,10 @@ struct MeshAsset {
     bytes: Vec<u8>,
 }
 
-pub fn generate_static_meshes(project_root: &Path) -> Result<(), StaticPipelineError> {
+pub fn generate_static_meshes(
+    project_root: &Path,
+    bake_meshlets: bool,
+) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
     let static_dir = static_dir(project_root);
     let embedded_meshes_dir = embedded_dir(project_root).join("meshes");
@@ -82,12 +85,14 @@ pub fn generate_static_meshes(project_root: &Path) -> Result<(), StaticPipelineE
                     }])
                 }
                 "glb" | "gltf" => {
-                    build_gltf_mesh_entries(&full_path, &res_path, &rel).map(|entries| {
-                        entries
-                            .into_iter()
-                            .map(|(entry, bytes)| MeshAsset { entry, bytes })
-                            .collect()
-                    })
+                    build_gltf_mesh_entries(&full_path, &res_path, &rel, bake_meshlets).map(
+                        |entries| {
+                            entries
+                                .into_iter()
+                                .map(|(entry, bytes)| MeshAsset { entry, bytes })
+                                .collect()
+                        },
+                    )
                 }
                 _ => Ok(Vec::new()),
             }
@@ -147,6 +152,7 @@ fn build_gltf_mesh_entries(
     path: &Path,
     res_path: &str,
     rel: &str,
+    bake_meshlets: bool,
 ) -> io::Result<Vec<(MeshRef, Vec<u8>)>> {
     let (doc, buffers, _images) = gltf::import(path)
         .map_err(|err| io::Error::other(format!("failed to import model `{res_path}`: {err}")))?;
@@ -185,8 +191,12 @@ fn build_gltf_mesh_entries(
             (0..vertices.len() as u32).collect()
         };
 
-        let material = material_from_gltf(primitive.material());
-        let pmesh = encode_pmesh(&vertices, &indices, &[material])?;
+        let (indices, meshlets) = if bake_meshlets {
+            pack_meshlets(&vertices, &indices)
+        } else {
+            (indices, Vec::new())
+        };
+        let pmesh = encode_pmesh(&vertices, &indices, &meshlets)?;
 
         let embedded_rel_path = format!("{rel_base}_mesh{mesh_index}.pmesh");
         let key_bracket = format!("{res_path}:mesh[{mesh_index}]");
@@ -202,31 +212,15 @@ fn build_gltf_mesh_entries(
     Ok(entries)
 }
 
-fn material_from_gltf(material: gltf::Material<'_>) -> PackedMaterial {
-    let pbr = material.pbr_metallic_roughness();
-    let base_color = pbr.base_color_factor();
-    let emissive_factor = material.emissive_factor();
-    PackedMaterial {
-        base_color,
-        roughness: pbr.roughness_factor(),
-        metallic: pbr.metallic_factor(),
-        ao: material
-            .occlusion_texture()
-            .map(|occ| occ.strength())
-            .unwrap_or(1.0),
-        emissive: emissive_factor.iter().copied().fold(0.0_f32, f32::max),
-    }
-}
-
 fn encode_pmesh(
     vertices: &[PackedVertex],
     indices: &[u32],
-    materials: &[PackedMaterial],
+    meshlets: &[PackedMeshlet],
 ) -> io::Result<Vec<u8>> {
     let mut raw = Vec::<u8>::with_capacity(
         vertices.len() * (6 * std::mem::size_of::<f32>())
             + std::mem::size_of_val(indices)
-            + materials.len() * (8 * std::mem::size_of::<f32>()),
+            + meshlets.len() * (2 * std::mem::size_of::<u32>() + 4 * std::mem::size_of::<f32>()),
     );
 
     for vertex in vertices {
@@ -240,15 +234,13 @@ fn encode_pmesh(
     for &index in indices {
         raw.extend_from_slice(&index.to_le_bytes());
     }
-    for material in materials {
-        write_f32(&mut raw, material.base_color[0]);
-        write_f32(&mut raw, material.base_color[1]);
-        write_f32(&mut raw, material.base_color[2]);
-        write_f32(&mut raw, material.base_color[3]);
-        write_f32(&mut raw, material.roughness);
-        write_f32(&mut raw, material.metallic);
-        write_f32(&mut raw, material.ao);
-        write_f32(&mut raw, material.emissive);
+    for meshlet in meshlets {
+        raw.extend_from_slice(&meshlet.index_start.to_le_bytes());
+        raw.extend_from_slice(&meshlet.index_count.to_le_bytes());
+        write_f32(&mut raw, meshlet.center[0]);
+        write_f32(&mut raw, meshlet.center[1]);
+        write_f32(&mut raw, meshlet.center[2]);
+        write_f32(&mut raw, meshlet.radius);
     }
 
     let compressed = compress_zlib_best(&raw)?;
@@ -257,10 +249,140 @@ fn encode_pmesh(
     out.extend_from_slice(&PMESH_VERSION.to_le_bytes());
     out.extend_from_slice(&(vertices.len() as u32).to_le_bytes());
     out.extend_from_slice(&(indices.len() as u32).to_le_bytes());
-    out.extend_from_slice(&(materials.len() as u32).to_le_bytes());
+    out.extend_from_slice(&(meshlets.len() as u32).to_le_bytes());
     out.extend_from_slice(&(raw.len() as u32).to_le_bytes());
     out.extend_from_slice(&compressed);
     Ok(out)
+}
+
+fn pack_meshlets(vertices: &[PackedVertex], indices: &[u32]) -> (Vec<u32>, Vec<PackedMeshlet>) {
+    if indices.len() < 3 {
+        return (indices.to_vec(), Vec::new());
+    }
+    let packed = pack_indices_spatial(vertices, indices);
+    let mut out = Vec::new();
+    let tri_index_len = (packed.len() / 3) * 3;
+    let chunk = MESHLET_TRIANGLES * 3;
+    let mut start = 0usize;
+    while start < tri_index_len {
+        let end = (start + chunk).min(tri_index_len);
+        if let Some((center, radius)) = meshlet_bounds(vertices, &packed[start..end]) {
+            out.push(PackedMeshlet {
+                index_start: start as u32,
+                index_count: (end - start) as u32,
+                center,
+                radius,
+            });
+        }
+        start = end;
+    }
+    (packed, out)
+}
+
+fn pack_indices_spatial(vertices: &[PackedVertex], indices: &[u32]) -> Vec<u32> {
+    let tri_len = (indices.len() / 3) * 3;
+    if tri_len == 0 {
+        return indices.to_vec();
+    }
+
+    let mut centroids = Vec::with_capacity(tri_len / 3);
+    let mut cmin = [f32::INFINITY; 3];
+    let mut cmax = [f32::NEG_INFINITY; 3];
+    for tri in indices[..tri_len].chunks_exact(3) {
+        let Some(a) = vertices.get(tri[0] as usize) else {
+            return indices.to_vec();
+        };
+        let Some(b) = vertices.get(tri[1] as usize) else {
+            return indices.to_vec();
+        };
+        let Some(c) = vertices.get(tri[2] as usize) else {
+            return indices.to_vec();
+        };
+        let centroid = [
+            (a.position[0] + b.position[0] + c.position[0]) / 3.0,
+            (a.position[1] + b.position[1] + c.position[1]) / 3.0,
+            (a.position[2] + b.position[2] + c.position[2]) / 3.0,
+        ];
+        cmin[0] = cmin[0].min(centroid[0]);
+        cmin[1] = cmin[1].min(centroid[1]);
+        cmin[2] = cmin[2].min(centroid[2]);
+        cmax[0] = cmax[0].max(centroid[0]);
+        cmax[1] = cmax[1].max(centroid[1]);
+        cmax[2] = cmax[2].max(centroid[2]);
+        centroids.push((tri, centroid));
+    }
+
+    let span = [
+        (cmax[0] - cmin[0]).max(1.0e-6),
+        (cmax[1] - cmin[1]).max(1.0e-6),
+        (cmax[2] - cmin[2]).max(1.0e-6),
+    ];
+    let mut keyed = Vec::with_capacity(centroids.len());
+    for (tri, c) in centroids {
+        let nx = ((c[0] - cmin[0]) / span[0]).clamp(0.0, 1.0);
+        let ny = ((c[1] - cmin[1]) / span[1]).clamp(0.0, 1.0);
+        let nz = ((c[2] - cmin[2]) / span[2]).clamp(0.0, 1.0);
+        keyed.push((morton3(nx, ny, nz), [tri[0], tri[1], tri[2]]));
+    }
+    keyed.sort_unstable_by_key(|(key, _)| *key);
+
+    let mut packed = Vec::with_capacity(indices.len());
+    for (_, tri) in keyed {
+        packed.extend_from_slice(&tri);
+    }
+    if tri_len < indices.len() {
+        packed.extend_from_slice(&indices[tri_len..]);
+    }
+    packed
+}
+
+#[inline]
+fn morton3(nx: f32, ny: f32, nz: f32) -> u64 {
+    let qx = (nx * 1023.0).round() as u32;
+    let qy = (ny * 1023.0).round() as u32;
+    let qz = (nz * 1023.0).round() as u32;
+    interleave10(qx) | (interleave10(qy) << 1) | (interleave10(qz) << 2)
+}
+
+#[inline]
+fn interleave10(v: u32) -> u64 {
+    let mut x = (v & 0x3ff) as u64;
+    x = (x | (x << 16)) & 0x30000ff;
+    x = (x | (x << 8)) & 0x300f00f;
+    x = (x | (x << 4)) & 0x30c30c3;
+    x = (x | (x << 2)) & 0x9249249;
+    x
+}
+
+fn meshlet_bounds(vertices: &[PackedVertex], indices: &[u32]) -> Option<([f32; 3], f32)> {
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    for &idx in indices {
+        let pos = vertices.get(idx as usize)?.position;
+        min[0] = min[0].min(pos[0]);
+        min[1] = min[1].min(pos[1]);
+        min[2] = min[2].min(pos[2]);
+        max[0] = max[0].max(pos[0]);
+        max[1] = max[1].max(pos[1]);
+        max[2] = max[2].max(pos[2]);
+    }
+    if !min.iter().all(|v| v.is_finite()) || !max.iter().all(|v| v.is_finite()) {
+        return None;
+    }
+    let center = [
+        (min[0] + max[0]) * 0.5,
+        (min[1] + max[1]) * 0.5,
+        (min[2] + max[2]) * 0.5,
+    ];
+    let mut radius_sq = 0.0f32;
+    for &idx in indices {
+        let pos = vertices.get(idx as usize)?.position;
+        let dx = pos[0] - center[0];
+        let dy = pos[1] - center[1];
+        let dz = pos[2] - center[2];
+        radius_sq = radius_sq.max(dx * dx + dy * dy + dz * dz);
+    }
+    Some((center, radius_sq.sqrt()))
 }
 
 fn write_f32(out: &mut Vec<u8>, value: f32) {

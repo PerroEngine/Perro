@@ -95,6 +95,8 @@ pub fn compile_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError
 
 pub fn compile_project_bundle(project_root: &Path) -> Result<(), CompilerError> {
     ensure_source_overrides(project_root)?;
+    let cfg = load_project_toml(project_root)
+        .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     let _ = compile_scripts(project_root)?;
     perro_static_pipeline::generate_static_scenes(project_root).map_err(|err| {
         CompilerError::SceneParse(format!("scene static generation failed: {err}"))
@@ -102,9 +104,11 @@ pub fn compile_project_bundle(project_root: &Path) -> Result<(), CompilerError> 
     perro_static_pipeline::generate_static_materials(project_root).map_err(|err| {
         CompilerError::SceneParse(format!("material static generation failed: {err}"))
     })?;
-    perro_static_pipeline::generate_static_meshes(project_root).map_err(|err| {
-        CompilerError::SceneParse(format!("mesh static generation failed: {err}"))
-    })?;
+    perro_static_pipeline::generate_static_meshes(
+        project_root,
+        cfg.meshlets && cfg.release_meshlets,
+    )
+    .map_err(|err| CompilerError::SceneParse(format!("mesh static generation failed: {err}")))?;
     perro_static_pipeline::generate_static_textures(project_root).map_err(|err| {
         CompilerError::SceneParse(format!("texture static generation failed: {err}"))
     })?;
