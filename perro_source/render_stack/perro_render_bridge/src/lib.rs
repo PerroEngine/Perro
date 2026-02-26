@@ -21,7 +21,29 @@ pub struct Camera2DState {
 pub struct Camera3DState {
     pub position: [f32; 3],
     pub rotation: [f32; 4],
-    pub zoom: f32,
+    pub projection: CameraProjectionState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CameraProjectionState {
+    Perspective {
+        fov_y_degrees: f32,
+        near: f32,
+        far: f32,
+    },
+    Orthographic {
+        size: f32,
+        near: f32,
+        far: f32,
+    },
+    Frustum {
+        left: f32,
+        right: f32,
+        bottom: f32,
+        top: f32,
+        near: f32,
+        far: f32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -103,7 +125,17 @@ impl Default for Camera3DState {
         Self {
             position: [0.0, 0.0, 0.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
-            zoom: 1.0,
+            projection: CameraProjectionState::default(),
+        }
+    }
+}
+
+impl Default for CameraProjectionState {
+    fn default() -> Self {
+        Self::Perspective {
+            fov_y_degrees: 60.0,
+            near: 0.1,
+            far: 1000.0,
         }
     }
 }

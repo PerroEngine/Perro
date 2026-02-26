@@ -378,7 +378,8 @@ mod tests {
     use crate::backend::GraphicsBackend;
     use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
     use perro_render_bridge::{
-        Camera3DState, Command2D, Command3D, Material3D, RenderBridge, RenderCommand,
+        Camera3DState, CameraProjectionState, Command2D, Command3D, Material3D, RenderBridge,
+        RenderCommand,
         ResourceCommand, Sprite2DCommand,
     };
 
@@ -688,7 +689,11 @@ mod tests {
             camera: Camera3DState {
                 position: [1.0, 2.0, 3.0],
                 rotation: [0.0, 0.5, 0.0, 0.8660254],
-                zoom: 1.25,
+                projection: CameraProjectionState::Perspective {
+                    fov_y_degrees: 48.0,
+                    near: 0.2,
+                    far: 900.0,
+                },
             },
         }));
         graphics.draw_frame();
@@ -698,7 +703,11 @@ mod tests {
             Camera3DState {
                 position: [1.0, 2.0, 3.0],
                 rotation: [0.0, 0.5, 0.0, 0.8660254],
-                zoom: 1.25,
+                projection: CameraProjectionState::Perspective {
+                    fov_y_degrees: 48.0,
+                    near: 0.2,
+                    far: 900.0,
+                },
             }
         );
     }

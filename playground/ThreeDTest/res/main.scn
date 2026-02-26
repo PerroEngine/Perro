@@ -55,10 +55,13 @@ script = "res://scripts/camera.rs"
 
     [Camera3D]
         active = true
-        zoom = 1.0
+     projection = "orthographic"
+    orthographic_size = 30.0
+    orthographic_near = 0.1
+    orthographic_far = 1000.0
 
         [Node3D]
-            position = (0, 0, 30)
+            position = (0, 0, 100)
         [/Node3D]
     [/Camera3D]
 [/camera]

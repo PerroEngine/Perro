@@ -1,10 +1,11 @@
 use super::Runtime;
 use crate::material_schema;
 use perro_ids::{MaterialID, MeshID, NodeID};
-use perro_nodes::SceneNodeData;
+use perro_nodes::{CameraProjection, SceneNodeData};
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, Command3D, Material3D, PointLight3DState, RayLight3DState,
-    RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
+    AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
+    PointLight3DState, RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand,
+    SpotLight3DState,
 };
 
 impl Runtime {
@@ -42,7 +43,39 @@ impl Runtime {
                             camera.transform.rotation.z,
                             camera.transform.rotation.w,
                         ],
-                        zoom: camera.zoom,
+                        projection: match &camera.projection {
+                            CameraProjection::Perspective {
+                                fov_y_degrees,
+                                near,
+                                far,
+                            } => CameraProjectionState::Perspective {
+                                fov_y_degrees: *fov_y_degrees,
+                                near: *near,
+                                far: *far,
+                            },
+                            CameraProjection::Orthographic { size, near, far } => {
+                                CameraProjectionState::Orthographic {
+                                    size: *size,
+                                    near: *near,
+                                    far: *far,
+                                }
+                            }
+                            CameraProjection::Frustum {
+                                left,
+                                right,
+                                bottom,
+                                top,
+                                near,
+                                far,
+                            } => CameraProjectionState::Frustum {
+                                left: *left,
+                                right: *right,
+                                bottom: *bottom,
+                                top: *top,
+                                near: *near,
+                                far: *far,
+                            },
+                        },
                     })
                 }
                 _ => None,
@@ -381,10 +414,9 @@ mod tests {
     use super::Runtime;
     use perro_ids::{MaterialID, MeshID};
     use perro_nodes::{
-        SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D, camera_3d::Camera3D,
-        mesh_instance_3d::MeshInstance3D, node_3d::Node3D, ray_light_3d::RayLight3D,
+        CameraProjection, SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D, camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, node_3d::Node3D, ray_light_3d::RayLight3D
     };
-    use perro_render_bridge::{Command3D, RenderCommand, RenderEvent, ResourceCommand};
+    use perro_render_bridge::{CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand};
 
     fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
         let mut out = Vec::new();
@@ -598,7 +630,11 @@ mod tests {
         let mut runtime = Runtime::new();
         let mut camera = Camera3D::new();
         camera.active = true;
-        camera.zoom = 1.75;
+        camera.projection = CameraProjection::Orthographic {
+            size: 24.0,
+            near: 0.2,
+            far: 600.0,
+        };
         camera.transform.position.x = 6.0;
         camera.transform.position.y = 7.0;
         camera.transform.position.z = 8.0;
@@ -617,7 +653,11 @@ mod tests {
             RenderCommand::ThreeD(Command3D::SetCamera { camera })
                 if camera.position == [6.0, 7.0, 8.0]
                     && camera.rotation == [0.1, 0.2, 0.3, 0.9]
-                    && camera.zoom == 1.75
+                    && matches!(
+                        camera.projection,
+                        CameraProjectionState::Orthographic { size, near, far }
+                            if size == 24.0 && near == 0.2 && far == 600.0
+                    )
         )));
     }
 

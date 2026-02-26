@@ -14,7 +14,7 @@ use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;
 use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::pack_meshlets_from_positions;
-use perro_render_bridge::Camera3DState;
+use perro_render_bridge::{Camera3DState, CameraProjectionState};
 use std::{
     collections::HashMap,
     sync::{Arc, mpsc, mpsc::TryRecvError},
@@ -139,6 +139,7 @@ pub struct Gpu3D {
     instance_capacity: usize,
     staged_instances: Vec<InstanceGpu>,
     frustum_cull_enabled: bool,
+    frustum_cull_supported: bool,
     frustum_cull_pipeline: wgpu::ComputePipeline,
     frustum_cull_bgl: wgpu::BindGroupLayout,
     frustum_cull_bind_group: wgpu::BindGroup,
@@ -684,6 +685,7 @@ impl Gpu3D {
             instance_capacity,
             staged_instances: Vec::new(),
             frustum_cull_enabled,
+            frustum_cull_supported: frustum_cull_enabled,
             frustum_cull_pipeline,
             frustum_cull_bgl,
             frustum_cull_bind_group,
@@ -732,7 +734,7 @@ impl Gpu3D {
             pending_hiz_debug_map_rx: None,
             debug_frustum_visible_est: 0,
             last_aspect: (width.max(1) as f32) / (height.max(1) as f32),
-            last_proj_y_scale: projection_y_scale_from_zoom(1.0),
+            last_proj_y_scale: projection_y_scale_from_projection(CameraProjectionState::default()),
             sample_count,
             occlusion_mode: occlusion_culling,
             meshlets_enabled,
@@ -926,6 +928,10 @@ impl Gpu3D {
         self.custom_mesh_ranges
             .retain(|source, _| resources.has_mesh_source(source));
         self.resize(device, width, height);
+        self.frustum_cull_enabled = self.frustum_cull_supported;
+        let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(self.occlusion_mode);
+        self.gpu_occlusion_enabled = gpu_occlusion_enabled && self.frustum_cull_enabled;
+        self.cpu_occlusion_enabled = cpu_occlusion_enabled;
 
         let uniform = build_scene_uniform(camera, lighting, width, height);
         let scene_changed = self.last_scene != Some(uniform) || self.last_draws.as_slice() != draws;
@@ -940,7 +946,7 @@ impl Gpu3D {
         }
         let view_proj = compute_view_proj_mat(camera, width, height);
         self.last_aspect = (width.max(1) as f32) / (height.max(1) as f32);
-        self.last_proj_y_scale = projection_y_scale_from_zoom(camera.zoom);
+        self.last_proj_y_scale = projection_y_scale_from_projection(camera.projection);
 
         self.last_draws.clear();
         self.last_draws.extend_from_slice(draws);
@@ -973,8 +979,12 @@ impl Gpu3D {
                 1
             });
 
-            // CPU frustum culling remains as fallback when GPU culling is disabled.
-            if !self.frustum_cull_enabled && !use_meshlets && !draw_center_in_frustum(draw, view_proj) {
+            // CPU center-point frustum culling is a coarse shortcut.
+            // Disable it for orthographic projection to avoid false negatives.
+            if !self.frustum_cull_enabled
+                && !use_meshlets
+                && !draw_center_in_frustum(draw, view_proj)
+            {
                 continue;
             }
 
@@ -1006,7 +1016,9 @@ impl Gpu3D {
                 );
             } else {
                 for meshlet in mesh_asset.meshlets.iter().copied() {
-                    if !self.frustum_cull_enabled && !meshlet_in_frustum(draw.model, meshlet, &frustum) {
+                    if !self.frustum_cull_enabled
+                        && !meshlet_in_frustum(draw.model, meshlet, &frustum)
+                    {
                         continue;
                     }
                     // CPU query occlusion at meshlet granularity self-occludes dynamic meshes.
@@ -2472,15 +2484,7 @@ fn compute_view_proj_mat(camera: Camera3DState, width: u32, height: u32) -> Mat4
     let h = height.max(1) as f32;
     let aspect = w / h;
 
-    let zoom = if camera.zoom.is_finite() && camera.zoom > 0.0 {
-        camera.zoom
-    } else {
-        1.0
-    };
-    let fov_y_radians = (60.0f32 / zoom)
-        .to_radians()
-        .clamp(10.0f32.to_radians(), 120.0f32.to_radians());
-    let proj = Mat4::perspective_rh_gl(fov_y_radians, aspect, 0.1, 1000.0);
+    let proj = projection_matrix(camera.projection, aspect);
 
     let pos = Vec3::from(camera.position);
     let rot_raw = Quat::from_xyzw(
@@ -2499,16 +2503,107 @@ fn compute_view_proj_mat(camera: Camera3DState, width: u32, height: u32) -> Mat4
     proj * view
 }
 
-fn projection_y_scale_from_zoom(zoom: f32) -> f32 {
-    let zoom = if zoom.is_finite() && zoom > 0.0 {
-        zoom
+fn projection_matrix(projection: CameraProjectionState, aspect: f32) -> Mat4 {
+    match projection {
+        CameraProjectionState::Perspective {
+            fov_y_degrees,
+            near,
+            far,
+        } => {
+            let fov_y_radians = if fov_y_degrees.is_finite() {
+                fov_y_degrees
+                    .to_radians()
+                    .clamp(10.0f32.to_radians(), 120.0f32.to_radians())
+            } else {
+                60.0f32.to_radians()
+            };
+            let near = sanitize_near(near);
+            let far = sanitize_far(far, near);
+            Mat4::perspective_rh_gl(fov_y_radians, aspect.max(1.0e-6), near, far)
+        }
+        CameraProjectionState::Orthographic { size, near, far } => {
+            let half_h = if size.is_finite() {
+                (size.abs() * 0.5).max(1.0e-3)
+            } else {
+                5.0
+            };
+            let half_w = half_h * aspect.max(1.0e-6);
+            let near = sanitize_near(near);
+            let far = sanitize_far(far, near);
+            Mat4::orthographic_rh(-half_w, half_w, -half_h, half_h, near, far)
+        }
+        CameraProjectionState::Frustum {
+            left,
+            right,
+            bottom,
+            top,
+            near,
+            far,
+        } => {
+            let near = sanitize_near(near);
+            let far = sanitize_far(far, near);
+            let (left, right) = sanitize_range(left, right, -1.0, 1.0);
+            let (bottom, top) = sanitize_range(bottom, top, -1.0, 1.0);
+            Mat4::frustum_rh_gl(left, right, bottom, top, near, far)
+        }
+    }
+}
+
+fn projection_y_scale_from_projection(projection: CameraProjectionState) -> f32 {
+    match projection {
+        CameraProjectionState::Perspective { fov_y_degrees, .. } => {
+            let fov_y_radians = if fov_y_degrees.is_finite() {
+                fov_y_degrees
+                    .to_radians()
+                    .clamp(10.0f32.to_radians(), 120.0f32.to_radians())
+            } else {
+                60.0f32.to_radians()
+            };
+            1.0 / (fov_y_radians * 0.5).tan().max(1.0e-6)
+        }
+        CameraProjectionState::Orthographic { size, .. } => {
+            let half_h = if size.is_finite() {
+                (size.abs() * 0.5).max(1.0e-3)
+            } else {
+                5.0
+            };
+            1.0 / half_h
+        }
+        CameraProjectionState::Frustum { bottom, top, near, .. } => {
+            let near = sanitize_near(near);
+            let (bottom, top) = sanitize_range(bottom, top, -1.0, 1.0);
+            (2.0 * near / (top - bottom).abs().max(1.0e-6)).max(1.0e-6)
+        }
+    }
+}
+
+fn sanitize_near(near: f32) -> f32 {
+    if near.is_finite() {
+        near.max(1.0e-3)
     } else {
-        1.0
-    };
-    let fov_y_radians = (60.0f32 / zoom)
-        .to_radians()
-        .clamp(10.0f32.to_radians(), 120.0f32.to_radians());
-    1.0 / (fov_y_radians * 0.5).tan().max(1.0e-6)
+        0.1
+    }
+}
+
+fn sanitize_far(far: f32, near: f32) -> f32 {
+    if far.is_finite() {
+        far.max(near + 1.0e-3)
+    } else {
+        (near + 1000.0).max(near + 1.0e-3)
+    }
+}
+
+fn sanitize_range(min: f32, max: f32, fallback_min: f32, fallback_max: f32) -> (f32, f32) {
+    let mut a = if min.is_finite() { min } else { fallback_min };
+    let mut b = if max.is_finite() { max } else { fallback_max };
+    if (b - a).abs() < 1.0e-6 {
+        a = fallback_min;
+        b = fallback_max;
+    }
+    if b < a {
+        std::mem::swap(&mut a, &mut b);
+    }
+    (a, b)
 }
 
 // Returns (gpu_occlusion_enabled, cpu_occlusion_enabled).

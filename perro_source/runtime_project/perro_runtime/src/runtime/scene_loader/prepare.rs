@@ -3,9 +3,9 @@ use perro_io::load_asset;
 use perro_ids::IntoTagID;
 use perro_nodes::{
     SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D, camera_2d::Camera2D,
-    camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, node_2d::Node2D, node_3d::Node3D,
-    point_light_3d::PointLight3D, ray_light_3d::RayLight3D, spot_light_3d::SpotLight3D,
-    sprite_2d::Sprite2D,
+    camera_3d::{Camera3D, CameraProjection}, mesh_instance_3d::MeshInstance3D,
+    node_2d::Node2D, node_3d::Node3D, point_light_3d::PointLight3D, ray_light_3d::RayLight3D,
+    spot_light_3d::SpotLight3D, sprite_2d::Sprite2D,
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
@@ -558,7 +558,72 @@ fn apply_camera_3d_fields(node: &mut Camera3D, fields: &[(String, RuntimeValue)]
         match name.as_str() {
             "zoom" => {
                 if let Some(v) = as_f32(value) {
-                    node.zoom = v;
+                    apply_zoom_compat_projection(node, v);
+                }
+            }
+            "projection" => {
+                if let Some(v) = as_str(value) {
+                    set_projection_mode(node, v);
+                }
+            }
+            "perspective_fov_y_degrees" => {
+                if let Some(v) = as_f32(value) {
+                    set_projection_fov(node, v);
+                }
+            }
+            "perspective_near" => {
+                if let Some(v) = as_f32(value) {
+                    set_projection_perspective_near(node, v);
+                }
+            }
+            "perspective_far" => {
+                if let Some(v) = as_f32(value) {
+                    set_projection_perspective_far(node, v);
+                }
+            }
+            "orthographic_size" => {
+                if let Some(v) = as_f32(value) {
+                    set_projection_ortho_size(node, v);
+                }
+            }
+            "orthographic_near" => {
+                if let Some(v) = as_f32(value) {
+                    set_projection_ortho_near(node, v);
+                }
+            }
+            "orthographic_far" => {
+                if let Some(v) = as_f32(value) {
+                    set_projection_ortho_far(node, v);
+                }
+            }
+            "frustum_left" => {
+                if let Some(v) = as_f32(value) {
+                    set_projection_frustum_left(node, v);
+                }
+            }
+            "frustum_right" => {
+                if let Some(v) = as_f32(value) {
+                    set_projection_frustum_right(node, v);
+                }
+            }
+            "frustum_bottom" => {
+                if let Some(v) = as_f32(value) {
+                    set_projection_frustum_bottom(node, v);
+                }
+            }
+            "frustum_top" => {
+                if let Some(v) = as_f32(value) {
+                    set_projection_frustum_top(node, v);
+                }
+            }
+            "frustum_near" => {
+                if let Some(v) = as_f32(value) {
+                    set_projection_frustum_near(node, v);
+                }
+            }
+            "frustum_far" => {
+                if let Some(v) = as_f32(value) {
+                    set_projection_frustum_far(node, v);
                 }
             }
             "active" => {
@@ -782,7 +847,72 @@ fn apply_camera_3d_fields_static(node: &mut Camera3D, fields: &[(&str, StaticSce
         match *name {
             "zoom" => {
                 if let Some(v) = as_f32_static(value) {
-                    node.zoom = v;
+                    apply_zoom_compat_projection(node, v);
+                }
+            }
+            "projection" => {
+                if let Some(v) = as_str_static(value) {
+                    set_projection_mode(node, v);
+                }
+            }
+            "perspective_fov_y_degrees" => {
+                if let Some(v) = as_f32_static(value) {
+                    set_projection_fov(node, v);
+                }
+            }
+            "perspective_near" => {
+                if let Some(v) = as_f32_static(value) {
+                    set_projection_perspective_near(node, v);
+                }
+            }
+            "perspective_far" => {
+                if let Some(v) = as_f32_static(value) {
+                    set_projection_perspective_far(node, v);
+                }
+            }
+            "orthographic_size" => {
+                if let Some(v) = as_f32_static(value) {
+                    set_projection_ortho_size(node, v);
+                }
+            }
+            "orthographic_near" => {
+                if let Some(v) = as_f32_static(value) {
+                    set_projection_ortho_near(node, v);
+                }
+            }
+            "orthographic_far" => {
+                if let Some(v) = as_f32_static(value) {
+                    set_projection_ortho_far(node, v);
+                }
+            }
+            "frustum_left" => {
+                if let Some(v) = as_f32_static(value) {
+                    set_projection_frustum_left(node, v);
+                }
+            }
+            "frustum_right" => {
+                if let Some(v) = as_f32_static(value) {
+                    set_projection_frustum_right(node, v);
+                }
+            }
+            "frustum_bottom" => {
+                if let Some(v) = as_f32_static(value) {
+                    set_projection_frustum_bottom(node, v);
+                }
+            }
+            "frustum_top" => {
+                if let Some(v) = as_f32_static(value) {
+                    set_projection_frustum_top(node, v);
+                }
+            }
+            "frustum_near" => {
+                if let Some(v) = as_f32_static(value) {
+                    set_projection_frustum_near(node, v);
+                }
+            }
+            "frustum_far" => {
+                if let Some(v) = as_f32_static(value) {
+                    set_projection_frustum_far(node, v);
                 }
             }
             "active" => {
@@ -963,6 +1093,14 @@ fn as_quat(value: &RuntimeValue) -> Option<Quaternion> {
     }
 }
 
+fn as_str(value: &RuntimeValue) -> Option<&str> {
+    match value {
+        RuntimeValue::Str(v) => Some(v.as_str()),
+        RuntimeValue::Key(v) => Some(v.as_str()),
+        _ => None,
+    }
+}
+
 fn as_asset_source(value: &RuntimeValue) -> Option<String> {
     match value {
         RuntimeValue::Str(v) => Some(v.clone()),
@@ -1068,6 +1206,144 @@ fn as_quat_static(value: &StaticSceneValue) -> Option<Quaternion> {
     match value {
         StaticSceneValue::Vec4 { x, y, z, w } => Some(Quaternion::new(*x, *y, *z, *w)),
         _ => None,
+    }
+}
+
+fn as_str_static(value: &StaticSceneValue) -> Option<&str> {
+    match value {
+        StaticSceneValue::Str(v) => Some(*v),
+        StaticSceneValue::Key(v) => Some(v.0),
+        _ => None,
+    }
+}
+
+fn apply_zoom_compat_projection(node: &mut Camera3D, zoom: f32) {
+    let zoom = if zoom.is_finite() && zoom > 0.0 {
+        zoom
+    } else {
+        1.0
+    };
+    let fov_y_degrees = (60.0 / zoom).clamp(10.0, 120.0);
+    if let CameraProjection::Perspective { fov_y_degrees: fov, .. } = &mut node.projection {
+        *fov = fov_y_degrees;
+    }
+}
+
+fn set_projection_mode(node: &mut Camera3D, mode: &str) {
+    match mode {
+        "perspective" => {
+            node.projection = CameraProjection::Perspective {
+                fov_y_degrees: 60.0,
+                near: 0.1,
+                far: 1000.0,
+            };
+        }
+        "orthographic" => {
+            node.projection = CameraProjection::Orthographic {
+                size: 10.0,
+                near: 0.1,
+                far: 1000.0,
+            };
+        }
+        "frustum" => {
+            node.projection = CameraProjection::Frustum {
+                left: -1.0,
+                right: 1.0,
+                bottom: -1.0,
+                top: 1.0,
+                near: 0.1,
+                far: 1000.0,
+            };
+        }
+        _ => {}
+    }
+}
+
+fn set_projection_fov(node: &mut Camera3D, value: f32) {
+    let fov = value.clamp(10.0, 120.0);
+    if let CameraProjection::Perspective { fov_y_degrees, .. } = &mut node.projection {
+        *fov_y_degrees = fov;
+    }
+}
+
+fn set_projection_perspective_near(node: &mut Camera3D, value: f32) {
+    if let CameraProjection::Perspective { near, far, .. } = &mut node.projection {
+        *near = value.max(0.001);
+        if *far <= *near {
+            *far = *near + 0.001;
+        }
+    }
+}
+
+fn set_projection_perspective_far(node: &mut Camera3D, value: f32) {
+    if let CameraProjection::Perspective { near, far, .. } = &mut node.projection {
+        *far = value.max(*near + 0.001);
+    }
+}
+
+fn set_projection_ortho_size(node: &mut Camera3D, value: f32) {
+    if let CameraProjection::Orthographic { size, .. } = &mut node.projection {
+        *size = value.abs().max(0.001);
+    }
+}
+
+fn set_projection_ortho_near(node: &mut Camera3D, value: f32) {
+    if let CameraProjection::Orthographic { near, far, .. } = &mut node.projection {
+        *near = value.max(0.001);
+        if *far <= *near {
+            *far = *near + 0.001;
+        }
+    }
+}
+
+fn set_projection_ortho_far(node: &mut Camera3D, value: f32) {
+    if let CameraProjection::Orthographic { near, far, .. } = &mut node.projection {
+        *far = value.max(*near + 0.001);
+    }
+}
+
+fn set_projection_frustum_left(node: &mut Camera3D, value: f32) {
+    if let CameraProjection::Frustum { left, right, .. } = &mut node.projection {
+        *left = value;
+        if *right <= *left {
+            *right = *left + 0.001;
+        }
+    }
+}
+
+fn set_projection_frustum_right(node: &mut Camera3D, value: f32) {
+    if let CameraProjection::Frustum { left, right, .. } = &mut node.projection {
+        *right = value.max(*left + 0.001);
+    }
+}
+
+fn set_projection_frustum_bottom(node: &mut Camera3D, value: f32) {
+    if let CameraProjection::Frustum { bottom, top, .. } = &mut node.projection {
+        *bottom = value;
+        if *top <= *bottom {
+            *top = *bottom + 0.001;
+        }
+    }
+}
+
+fn set_projection_frustum_top(node: &mut Camera3D, value: f32) {
+    if let CameraProjection::Frustum { bottom, top, .. } = &mut node.projection {
+        *top = value.max(*bottom + 0.001);
+    }
+}
+
+fn set_projection_frustum_near(node: &mut Camera3D, value: f32) {
+    if let CameraProjection::Frustum { near, far, .. } = &mut node.projection {
+        *near = value.max(0.001);
+        if *far <= *near {
+            *far = *near + 0.001;
+        }
+    }
+}
+
+fn set_projection_frustum_far(node: &mut Camera3D, value: f32) {
+    if let CameraProjection::Frustum { near, far, .. } = &mut node.projection {
+        *far = value.max(*near + 0.001);
     }
 }
 

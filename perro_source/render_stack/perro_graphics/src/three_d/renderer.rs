@@ -1,7 +1,8 @@
 use crate::resources::ResourceStore;
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, PointLight3DState, RayLight3DState, SpotLight3DState,
+    AmbientLight3DState, Camera3DState, CameraProjectionState, PointLight3DState,
+    RayLight3DState, SpotLight3DState,
 };
 use std::collections::HashMap;
 
@@ -166,7 +167,11 @@ impl Default for Renderer3D {
             camera: Camera3DState {
                 position: [0.0, 0.0, 6.0],
                 rotation: [0.0, 0.0, 0.0, 1.0],
-                zoom: 1.0,
+                projection: CameraProjectionState::Perspective {
+                    fov_y_degrees: 60.0,
+                    near: 0.1,
+                    far: 1000.0,
+                },
             },
         }
     }
