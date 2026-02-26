@@ -95,6 +95,7 @@ pub struct StaticEmbeddedProject<'a> {
     pub assets_brk: &'static [u8],
     pub scene_lookup: perro_runtime::StaticSceneLookup,
     pub material_lookup: perro_runtime::StaticMaterialLookup,
+    pub particle_lookup: perro_runtime::StaticParticleLookup,
     pub mesh_lookup: perro_graphics::StaticMeshLookup,
     pub texture_lookup: perro_graphics::StaticTextureLookup,
     pub static_script_registry: Option<StaticScriptRegistry>,
@@ -117,6 +118,7 @@ pub fn run_static_embedded_project(
     project = project
         .with_static_scene_lookup(input.scene_lookup)
         .with_static_material_lookup(input.material_lookup)
+        .with_static_particle_lookup(input.particle_lookup)
         .with_brk_bytes(input.assets_brk);
 
     let window_title = project.config.name.clone();

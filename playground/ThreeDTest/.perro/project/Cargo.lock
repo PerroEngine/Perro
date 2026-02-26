@@ -1627,6 +1627,9 @@ version = "0.1.0"
 [[package]]
 name = "perro_input"
 version = "0.1.0"
+dependencies = [
+ "perro_structs",
+]
 
 [[package]]
 name = "perro_io"

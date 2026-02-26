@@ -7,6 +7,7 @@ use perro_render_bridge::{
     ParticlePath3D, PointLight3DState, PointParticleProfile3D, PointParticles3DState,
     RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
 };
+use std::borrow::Cow;
 
 impl Runtime {
     fn mesh_request(node: NodeID) -> RenderRequestID {
@@ -451,7 +452,20 @@ fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<Point
     if let Some(path) = runtime.render_3d.particle_path_cache.get(source) {
         return Some(path.clone());
     }
-    let parsed = if let Some(inline) = source.strip_prefix("inline://") {
+    let parsed = if let Some(lookup) = runtime
+        .project()
+        .and_then(|project| project.static_particle_lookup)
+    {
+        if let Some(profile) = lookup(source) {
+            profile.clone()
+        } else if let Some(inline) = source.strip_prefix("inline://") {
+            parse_pparticle_source(inline)?
+        } else {
+            let bytes = perro_io::load_asset(source).ok()?;
+            let text = std::str::from_utf8(&bytes).ok()?;
+            parse_pparticle_source(text)?
+        }
+    } else if let Some(inline) = source.strip_prefix("inline://") {
         parse_pparticle_source(inline)?
     } else {
         let bytes = perro_io::load_asset(source).ok()?;
@@ -512,9 +526,9 @@ fn parse_pparticle_source(source: &str) -> Option<PointParticleProfile3D> {
             frequency: path_b.abs(),
         },
         "custom" => ParticlePath3D::Custom {
-            expr_x,
-            expr_y,
-            expr_z,
+            expr_x: Cow::Owned(expr_x),
+            expr_y: Cow::Owned(expr_y),
+            expr_z: Cow::Owned(expr_z),
         },
         _ => ParticlePath3D::Ballistic,
     };

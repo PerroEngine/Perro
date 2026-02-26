@@ -1,4 +1,4 @@
-use perro_render_bridge::Material3D;
+use perro_render_bridge::{Material3D, PointParticleProfile3D};
 use perro_scene::StaticScene;
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -18,6 +18,7 @@ pub enum ProviderMode {
 
 pub type StaticSceneLookup = fn(&str) -> Option<&'static StaticScene>;
 pub type StaticMaterialLookup = fn(&str) -> Option<&'static Material3D>;
+pub type StaticParticleLookup = fn(&str) -> Option<&'static PointParticleProfile3D>;
 
 /// Immutable project boot data owned by the runtime.
 #[derive(Debug, Clone)]
@@ -28,6 +29,7 @@ pub struct RuntimeProject {
     pub runtime_params: BTreeMap<String, String>,
     pub static_scene_lookup: Option<StaticSceneLookup>,
     pub static_material_lookup: Option<StaticMaterialLookup>,
+    pub static_particle_lookup: Option<StaticParticleLookup>,
     pub brk_bytes: Option<&'static [u8]>,
 }
 
@@ -41,6 +43,7 @@ impl RuntimeProject {
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
             static_material_lookup: None,
+            static_particle_lookup: None,
             brk_bytes: None,
         }
     }
@@ -54,6 +57,7 @@ impl RuntimeProject {
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
             static_material_lookup: None,
+            static_particle_lookup: None,
             brk_bytes: None,
         }
     }
@@ -76,6 +80,7 @@ impl RuntimeProject {
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
             static_material_lookup: None,
+            static_particle_lookup: None,
             brk_bytes: None,
         })
     }
@@ -92,6 +97,11 @@ impl RuntimeProject {
 
     pub fn with_static_material_lookup(mut self, lookup: StaticMaterialLookup) -> Self {
         self.static_material_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_static_particle_lookup(mut self, lookup: StaticParticleLookup) -> Self {
+        self.static_particle_lookup = Some(lookup);
         self
     }
 

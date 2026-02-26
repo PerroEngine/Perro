@@ -287,6 +287,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         &default_static_materials_rs(),
     )?;
     write_if_missing(
+        project_static_src.join("particles.rs"),
+        &default_static_particles_rs(),
+    )?;
+    write_if_missing(
         project_static_src.join("textures.rs"),
         &default_static_textures_rs(),
     )?;
@@ -928,6 +932,7 @@ fn main() {
         assets_brk: ASSETS_BRK,
         scene_lookup: static_assets::scenes::lookup_scene,
         material_lookup: static_assets::materials::lookup_material,
+        particle_lookup: static_assets::particles::lookup_particle,
         mesh_lookup: static_assets::meshes::lookup_mesh,
         texture_lookup: static_assets::textures::lookup_texture,
         static_script_registry: Some(scripts::SCRIPT_REGISTRY),
@@ -938,7 +943,7 @@ fn main() {
 }
 
 fn default_static_mod_rs() -> String {
-    "pub mod scenes;\npub mod materials;\npub mod meshes;\npub mod textures;\n".to_string()
+    "pub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod textures;\n".to_string()
 }
 
 fn default_static_scenes_rs() -> String {
@@ -955,6 +960,16 @@ fn default_static_materials_rs() -> String {
     r#"use perro_render_bridge::Material3D;
 
 pub fn lookup_material(_path: &str) -> Option<&'static Material3D> {
+    None
+}
+"#
+    .to_string()
+}
+
+fn default_static_particles_rs() -> String {
+    r#"use perro_render_bridge::PointParticleProfile3D;
+
+pub fn lookup_particle(_path: &str) -> Option<&'static PointParticleProfile3D> {
     None
 }
 "#

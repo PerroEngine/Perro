@@ -32,12 +32,7 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
             match Path::new(&rel).extension().and_then(|e| e.to_str()) {
                 Some("pmat") => {
                     let src = fs::read_to_string(&full_path)?;
-                    let parsed =
-                        std::panic::catch_unwind(|| Parser::new(&src).parse_value_literal())
-                            .map_err(|_| {
-                                io::Error::other(format!("failed to parse material: {res_path}"))
-                            })?;
-                    let material = material_from_runtime_value(&parsed).ok_or_else(|| {
+                    let material = load_pmat_literal(&src).ok_or_else(|| {
                         io::Error::other(format!(
                             "material `{res_path}` must be an object with at least one valid field"
                         ))
@@ -193,6 +188,10 @@ fn material_from_runtime_value(value: &RuntimeValue) -> Option<MaterialLiteral> 
     let RuntimeValue::Object(entries) = value else {
         return None;
     };
+    material_from_runtime_entries(entries)
+}
+
+fn material_from_runtime_entries(entries: &[(String, RuntimeValue)]) -> Option<MaterialLiteral> {
     let mut out = MaterialLiteral {
         base_color_factor: [0.85, 0.85, 0.85, 1.0],
         roughness_factor: 0.5,
@@ -214,13 +213,102 @@ fn material_from_runtime_value(value: &RuntimeValue) -> Option<MaterialLiteral> 
     any.then_some(out)
 }
 
+fn load_pmat_literal(source: &str) -> Option<MaterialLiteral> {
+    if let Some(parsed) = std::panic::catch_unwind(|| Parser::new(source).parse_value_literal()).ok()
+        && let Some(material) = material_from_runtime_value(&parsed)
+    {
+        return Some(material);
+    }
+    let entries = parse_pmat_key_values(source)?;
+    material_from_runtime_entries(&entries)
+}
+
+fn parse_pmat_key_values(text: &str) -> Option<Vec<(String, RuntimeValue)>> {
+    let mut entries = Vec::new();
+    for raw_line in text.lines() {
+        let line = strip_line_comment(raw_line).trim();
+        if line.is_empty() {
+            continue;
+        }
+        let (raw_key, raw_value) = line.split_once('=')?;
+        let key = raw_key.trim().to_string();
+        if key.is_empty() {
+            continue;
+        }
+        let value_text = raw_value.trim().trim_end_matches(',');
+        if value_text.is_empty() {
+            continue;
+        }
+        let value = parse_kv_value(value_text)?;
+        entries.push((key, value));
+    }
+    (!entries.is_empty()).then_some(entries)
+}
+
+fn strip_line_comment(line: &str) -> &str {
+    let slash = line.find("//");
+    let hash = line.find('#');
+    match (slash, hash) {
+        (Some(a), Some(b)) => &line[..a.min(b)],
+        (Some(a), None) => &line[..a],
+        (None, Some(b)) => &line[..b],
+        (None, None) => line,
+    }
+}
+
+fn parse_kv_value(text: &str) -> Option<RuntimeValue> {
+    let text = text.trim();
+    if let Some(value) = parse_vec_value(text) {
+        return Some(value);
+    }
+    if text.eq_ignore_ascii_case("true") {
+        return Some(RuntimeValue::Bool(true));
+    }
+    if text.eq_ignore_ascii_case("false") {
+        return Some(RuntimeValue::Bool(false));
+    }
+    if let Some(inner) = text.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
+        return Some(RuntimeValue::Str(inner.to_string()));
+    }
+    if let Ok(v) = text.parse::<i32>() {
+        return Some(RuntimeValue::I32(v));
+    }
+    if let Ok(v) = text.parse::<f32>() {
+        return Some(RuntimeValue::F32(v));
+    }
+    Some(RuntimeValue::Str(text.to_string()))
+}
+
+fn parse_vec_value(text: &str) -> Option<RuntimeValue> {
+    let inner = text.strip_prefix('(')?.strip_suffix(')')?;
+    let numbers = inner
+        .split(',')
+        .map(|token| token.trim().parse::<f32>().ok())
+        .collect::<Option<Vec<_>>>()?;
+    match numbers.as_slice() {
+        [x, y] => Some(RuntimeValue::Vec2 { x: *x, y: *y }),
+        [x, y, z] => Some(RuntimeValue::Vec3 {
+            x: *x,
+            y: *y,
+            z: *z,
+        }),
+        [x, y, z, w] => Some(RuntimeValue::Vec4 {
+            x: *x,
+            y: *y,
+            z: *z,
+            w: *w,
+        }),
+        _ => None,
+    }
+}
+
 fn apply_runtime_material_entries(
     entries: &[(String, RuntimeValue)],
     out: &mut MaterialLiteral,
     any: &mut bool,
 ) {
     for (name, value) in entries {
-        match name.as_str() {
+        match canonical_key(name) {
             "roughnessFactor" => {
                 if let Some(v) = runtime_as_f32(value) {
                     out.roughness_factor = v;
@@ -312,6 +400,27 @@ fn apply_runtime_material_entries(
             }
             _ => {}
         }
+    }
+}
+
+fn canonical_key(name: &str) -> &str {
+    match name {
+        "roughnessFactor" | "roughness_factor" => "roughnessFactor",
+        "metallicFactor" | "metallic_factor" => "metallicFactor",
+        "occlusionStrength" | "occlusion_strength" => "occlusionStrength",
+        "emissiveFactor" | "emissive_factor" => "emissiveFactor",
+        "baseColorFactor" | "base_color_factor" | "color" => "baseColorFactor",
+        "normalScale" | "normal_scale" => "normalScale",
+        "alphaCutoff" | "alpha_cutoff" => "alphaCutoff",
+        "alphaMode" | "alpha_mode" => "alphaMode",
+        "doubleSided" | "double_sided" => "doubleSided",
+        "baseColorTexture" | "base_color_texture" => "baseColorTexture",
+        "metallicRoughnessTexture" | "metallic_roughness_texture" => "metallicRoughnessTexture",
+        "normalTexture" | "normal_texture" => "normalTexture",
+        "occlusionTexture" | "occlusion_texture" => "occlusionTexture",
+        "emissiveTexture" | "emissive_texture" => "emissiveTexture",
+        "pbrMetallicRoughness" | "pbr_metallic_roughness" => "pbrMetallicRoughness",
+        other => other,
     }
 }
 

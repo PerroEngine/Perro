@@ -1,4 +1,5 @@
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RenderRequestID(pub u64);
@@ -85,9 +86,9 @@ pub enum ParticlePath3D {
     OrbitY { angular_velocity: f32, radius: f32 },
     NoiseDrift { amplitude: f32, frequency: f32 },
     Custom {
-        expr_x: String,
-        expr_y: String,
-        expr_z: String,
+        expr_x: Cow<'static, str>,
+        expr_y: Cow<'static, str>,
+        expr_z: Cow<'static, str>,
     },
 }
 
