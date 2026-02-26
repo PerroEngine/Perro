@@ -132,7 +132,11 @@ impl Camera3D {
 }
 
 fn sanitize_near_far(near: f32, far: f32) -> (f32, f32) {
-    let near = if near.is_finite() { near.max(0.001) } else { 0.1 };
+    let near = if near.is_finite() {
+        near.max(0.001)
+    } else {
+        0.1
+    };
     let far = if far.is_finite() {
         far.max(near + 0.001)
     } else {

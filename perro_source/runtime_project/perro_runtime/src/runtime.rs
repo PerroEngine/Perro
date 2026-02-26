@@ -212,6 +212,7 @@ struct Render3DState {
     mesh_sources: AHashMap<NodeID, String>,
     material_sources: AHashMap<NodeID, String>,
     material_overrides: AHashMap<NodeID, Material3D>,
+    particle_path_cache: AHashMap<String, perro_render_bridge::PointParticleProfile3D>,
     removed_nodes: Vec<NodeID>,
 }
 
@@ -224,6 +225,7 @@ impl Render3DState {
             mesh_sources: AHashMap::default(),
             material_sources: AHashMap::default(),
             material_overrides: AHashMap::default(),
+            particle_path_cache: AHashMap::default(),
             removed_nodes: Vec::new(),
         }
     }
@@ -557,6 +559,7 @@ impl Runtime {
             SceneNodeData::RayLight3D(node) => node.visible,
             SceneNodeData::PointLight3D(node) => node.visible,
             SceneNodeData::SpotLight3D(node) => node.visible,
+            SceneNodeData::ParticleEmitter3D(node) => node.visible,
         }
     }
 

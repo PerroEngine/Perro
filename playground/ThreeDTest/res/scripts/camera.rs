@@ -56,8 +56,11 @@ lifecycle!({
     ) {
         let dt = delta_time!(ctx);
         let middle_down = ipt.Mouse().down(MouseButton::Middle);
-        let (mouse_dx, mouse_dy) = ipt.Mouse().delta();
-        let (_wheel_x, wheel_y) = ipt.Mouse().wheel();
+        let mouse_delta = ipt.Mouse().delta();
+        let wheel = ipt.Mouse().wheel();
+        let mouse_dx = mouse_delta.x;
+        let mouse_dy = mouse_delta.y;
+        let wheel_y = wheel.y;
         let (move_speed, yaw, pitch) = with_state_mut!(ctx, CameraState, node, |state| {
             if wheel_y != 0.0 {
                 // Scroll up speeds up, scroll down slows down.

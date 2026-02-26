@@ -1,0 +1,4 @@
+mode = custom
+expr_x = sin(t * params[0] * pi * 2.0) * params[1]
+expr_y = t * params[2]
+expr_z = cos(t * params[0] * pi * 2.0) * params[1]

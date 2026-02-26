@@ -30,11 +30,94 @@ pub fn from_static_object(entries: &[(&str, StaticSceneValue)]) -> Option<Materi
 fn load_pmat(source: &str) -> Option<Material3D> {
     let bytes = load_asset(source).ok()?;
     let text = std::str::from_utf8(&bytes).ok()?;
-    let value = std::panic::catch_unwind(|| Parser::new(text).parse_value_literal()).ok()?;
-    let RuntimeValue::Object(entries) = value else {
-        return None;
-    };
+    if let Some(value) = std::panic::catch_unwind(|| Parser::new(text).parse_value_literal())
+        .ok()
+        && let RuntimeValue::Object(entries) = value
+        && let Some(material) = from_runtime_object(&entries)
+    {
+        return Some(material);
+    }
+    let entries = parse_pmat_key_values(text)?;
     from_runtime_object(&entries)
+}
+
+fn parse_pmat_key_values(text: &str) -> Option<Vec<(String, RuntimeValue)>> {
+    let mut entries = Vec::new();
+    for raw_line in text.lines() {
+        let line = strip_line_comment(raw_line).trim();
+        if line.is_empty() {
+            continue;
+        }
+        let (raw_key, raw_value) = line.split_once('=')?;
+        let key = raw_key.trim().to_string();
+        if key.is_empty() {
+            continue;
+        }
+        let value_text = raw_value.trim().trim_end_matches(',');
+        if value_text.is_empty() {
+            continue;
+        }
+        let value = parse_kv_value(value_text)?;
+        entries.push((key, value));
+    }
+    (!entries.is_empty()).then_some(entries)
+}
+
+fn strip_line_comment(line: &str) -> &str {
+    let slash = line.find("//");
+    let hash = line.find('#');
+    match (slash, hash) {
+        (Some(a), Some(b)) => &line[..a.min(b)],
+        (Some(a), None) => &line[..a],
+        (None, Some(b)) => &line[..b],
+        (None, None) => line,
+    }
+}
+
+fn parse_kv_value(text: &str) -> Option<RuntimeValue> {
+    let text = text.trim();
+    if let Some(value) = parse_vec_value(text) {
+        return Some(value);
+    }
+    if text.eq_ignore_ascii_case("true") {
+        return Some(RuntimeValue::Bool(true));
+    }
+    if text.eq_ignore_ascii_case("false") {
+        return Some(RuntimeValue::Bool(false));
+    }
+    if let Some(inner) = text.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
+        return Some(RuntimeValue::Str(inner.to_string()));
+    }
+    if let Ok(v) = text.parse::<i32>() {
+        return Some(RuntimeValue::I32(v));
+    }
+    if let Ok(v) = text.parse::<f32>() {
+        return Some(RuntimeValue::F32(v));
+    }
+    Some(RuntimeValue::Str(text.to_string()))
+}
+
+fn parse_vec_value(text: &str) -> Option<RuntimeValue> {
+    let inner = text.strip_prefix('(')?.strip_suffix(')')?;
+    let numbers = inner
+        .split(',')
+        .map(|token| token.trim().parse::<f32>().ok())
+        .collect::<Option<Vec<_>>>()?;
+    match numbers.as_slice() {
+        [x, y] => Some(RuntimeValue::Vec2 { x: *x, y: *y }),
+        [x, y, z] => Some(RuntimeValue::Vec3 {
+            x: *x,
+            y: *y,
+            z: *z,
+        }),
+        [x, y, z, w] => Some(RuntimeValue::Vec4 {
+            x: *x,
+            y: *y,
+            z: *z,
+            w: *w,
+        }),
+        _ => None,
+    }
 }
 
 fn apply_runtime_entries(entries: &[(String, RuntimeValue)], out: &mut Material3D, any: &mut bool) {

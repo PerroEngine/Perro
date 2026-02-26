@@ -251,7 +251,9 @@ impl<'a> Parser<'a> {
                         _ => panic!("tags variable @{name} must resolve to a string or key"),
                     }
                 }
-                other => panic!("tags entries must be strings, identifiers, or @vars; got {other:?}"),
+                other => {
+                    panic!("tags entries must be strings, identifiers, or @vars; got {other:?}")
+                }
             }
 
             if self.current == Token::Comma {
@@ -262,10 +264,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 break;
             }
-            panic!(
-                "Expected ',' or ']' in tags list, got {:?}",
-                self.current
-            );
+            panic!("Expected ',' or ']' in tags list, got {:?}", self.current);
         }
 
         tags

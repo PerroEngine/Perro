@@ -2,9 +2,8 @@ use super::{
     renderer::{Draw3DInstance, Lighting3DState, MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS},
     shaders::{
         create_depth_prepass_shader_module, create_frustum_cull_shader_module,
-        create_hiz_depth_copy_shader_module,
-        create_hiz_downsample_shader_module, create_hiz_occlusion_cull_shader_module,
-        create_mesh_shader_module,
+        create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
+        create_hiz_occlusion_cull_shader_module, create_mesh_shader_module,
     },
 };
 use crate::backend::{OcclusionCullingMode, StaticMeshLookup};
@@ -369,16 +368,13 @@ impl Gpu3D {
             &depth_prepass_shader,
             Some(wgpu::Face::Back),
         );
-        let pipeline_depth_prepass_double_sided = create_depth_prepass_pipeline(
-            device,
-            &pipeline_layout,
-            &depth_prepass_shader,
-            None,
-        );
+        let pipeline_depth_prepass_double_sided =
+            create_depth_prepass_pipeline(device, &pipeline_layout, &depth_prepass_shader, None);
 
         let (vertices, indices, builtin_mesh_ranges, builtin_meshlets) =
             build_builtin_mesh_buffer();
-        let builtin_mesh_bounds = compute_builtin_mesh_bounds(&vertices, &indices, &builtin_mesh_ranges);
+        let builtin_mesh_bounds =
+            compute_builtin_mesh_bounds(&vertices, &indices, &builtin_mesh_ranges);
         let vertex_capacity = vertices.len().max(1);
         let index_capacity = indices.len().max(1);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -413,7 +409,7 @@ impl Gpu3D {
                         has_dynamic_offset: false,
                         min_binding_size: Some(
                             std::num::NonZeroU64::new(
-                                std::mem::size_of::<FrustumCullParamsGpu>() as u64,
+                                std::mem::size_of::<FrustumCullParamsGpu>() as u64
                             )
                             .expect("frustum cull params size must be non-zero"),
                         ),
@@ -535,31 +531,32 @@ impl Gpu3D {
                 },
             ],
         });
-        let hiz_downsample_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("perro_hiz_downsample_bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
+        let hiz_downsample_bgl =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("perro_hiz_downsample_bgl"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: wgpu::TextureFormat::R32Float,
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::StorageTexture {
+                            access: wgpu::StorageTextureAccess::WriteOnly,
+                            format: wgpu::TextureFormat::R32Float,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
         let hiz_cull_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_hiz_cull_bgl"),
             entries: &[
@@ -608,11 +605,13 @@ impl Gpu3D {
 
         let hiz_copy_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("perro_hiz_copy_pipeline"),
-            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("perro_hiz_copy_layout"),
-                bind_group_layouts: &[&hiz_copy_bgl],
-                immediate_size: 0,
-            })),
+            layout: Some(
+                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("perro_hiz_copy_layout"),
+                    bind_group_layouts: &[&hiz_copy_bgl],
+                    immediate_size: 0,
+                }),
+            ),
             module: &create_hiz_depth_copy_shader_module(device),
             entry_point: Some("cs_main"),
             compilation_options: Default::default(),
@@ -621,11 +620,13 @@ impl Gpu3D {
         let hiz_downsample_pipeline =
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some("perro_hiz_downsample_pipeline"),
-                layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("perro_hiz_downsample_layout"),
-                    bind_group_layouts: &[&hiz_downsample_bgl],
-                    immediate_size: 0,
-                })),
+                layout: Some(
+                    &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("perro_hiz_downsample_layout"),
+                        bind_group_layouts: &[&hiz_downsample_bgl],
+                        immediate_size: 0,
+                    }),
+                ),
                 module: &create_hiz_downsample_shader_module(device),
                 entry_point: Some("cs_main"),
                 compilation_options: Default::default(),
@@ -633,11 +634,13 @@ impl Gpu3D {
             });
         let hiz_cull_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("perro_hiz_cull_pipeline"),
-            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("perro_hiz_cull_layout"),
-                bind_group_layouts: &[&hiz_cull_bgl],
-                immediate_size: 0,
-            })),
+            layout: Some(
+                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("perro_hiz_cull_layout"),
+                    bind_group_layouts: &[&hiz_cull_bgl],
+                    immediate_size: 0,
+                }),
+            ),
             module: &create_hiz_occlusion_cull_shader_module(device),
             entry_point: Some("cs_main"),
             compilation_options: Default::default(),
@@ -846,12 +849,8 @@ impl Gpu3D {
             &depth_prepass_shader,
             Some(wgpu::Face::Back),
         );
-        self.pipeline_depth_prepass_double_sided = create_depth_prepass_pipeline(
-            device,
-            &pipeline_layout,
-            &depth_prepass_shader,
-            None,
-        );
+        self.pipeline_depth_prepass_double_sided =
+            create_depth_prepass_pipeline(device, &pipeline_layout, &depth_prepass_shader, None);
         let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
         self.depth_texture = depth_texture;
         self.depth_view = depth_view;
@@ -1229,7 +1228,8 @@ impl Gpu3D {
             if self.pending_hiz_debug_count == 0 && self.pending_hiz_debug_map_rx.is_none() {
                 let count = self.draw_batches.len() as u32;
                 if count > 0 {
-                    let byte_len = u64::from(count) * std::mem::size_of::<DrawIndexedIndirectGpu>() as u64;
+                    let byte_len =
+                        u64::from(count) * std::mem::size_of::<DrawIndexedIndirectGpu>() as u64;
                     encoder.copy_buffer_to_buffer(
                         &self.indirect_buffer,
                         0,
@@ -1291,7 +1291,8 @@ impl Gpu3D {
                 } else {
                     let start = batch.mesh.index_start;
                     let end = start + batch.mesh.index_count;
-                    let instances = batch.instance_start..batch.instance_start + batch.instance_count;
+                    let instances =
+                        batch.instance_start..batch.instance_start + batch.instance_count;
                     pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
                 }
                 pass.end_occlusion_query();
@@ -1485,14 +1486,15 @@ impl Gpu3D {
         if self.pending_hiz_debug_count == 0 || self.pending_hiz_debug_map_rx.is_some() {
             return;
         }
-        let byte_len =
-            u64::from(self.pending_hiz_debug_count) * std::mem::size_of::<DrawIndexedIndirectGpu>() as u64;
+        let byte_len = u64::from(self.pending_hiz_debug_count)
+            * std::mem::size_of::<DrawIndexedIndirectGpu>() as u64;
         let (tx, rx) = mpsc::channel();
-        self.hiz_debug_readback_buffer
-            .slice(0..byte_len)
-            .map_async(wgpu::MapMode::Read, move |result| {
+        self.hiz_debug_readback_buffer.slice(0..byte_len).map_async(
+            wgpu::MapMode::Read,
+            move |result| {
                 let _ = tx.send(result);
-            });
+            },
+        );
         self.pending_hiz_debug_map_rx = Some(rx);
     }
 
@@ -2048,7 +2050,13 @@ fn create_hiz_texture(
     device: &wgpu::Device,
     width: u32,
     height: u32,
-) -> (wgpu::Texture, Vec<wgpu::TextureView>, wgpu::TextureView, u32, (u32, u32)) {
+) -> (
+    wgpu::Texture,
+    Vec<wgpu::TextureView>,
+    wgpu::TextureView,
+    u32,
+    (u32, u32),
+) {
     let width = width.max(1);
     let height = height.max(1);
     let max_dim = width.max(height);
@@ -2105,7 +2113,9 @@ fn compute_builtin_mesh_bounds(
     let mut out = HashMap::new();
     for (name, range) in ranges {
         let start = range.index_start as usize;
-        let end = start.saturating_add(range.index_count as usize).min(indices.len());
+        let end = start
+            .saturating_add(range.index_count as usize)
+            .min(indices.len());
         let mut pts = Vec::with_capacity(end.saturating_sub(start));
         for idx in &indices[start..end] {
             let Some(v) = vertices.get(*idx as usize) else {
@@ -2569,7 +2579,9 @@ fn projection_y_scale_from_projection(projection: CameraProjectionState) -> f32 
             };
             1.0 / half_h
         }
-        CameraProjectionState::Frustum { bottom, top, near, .. } => {
+        CameraProjectionState::Frustum {
+            bottom, top, near, ..
+        } => {
             let near = sanitize_near(near);
             let (bottom, top) = sanitize_range(bottom, top, -1.0, 1.0);
             (2.0 * near / (top - bottom).abs().max(1.0e-6)).max(1.0e-6)

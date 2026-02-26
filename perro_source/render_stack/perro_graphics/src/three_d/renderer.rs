@@ -1,8 +1,8 @@
 use crate::resources::ResourceStore;
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, CameraProjectionState, PointLight3DState,
-    RayLight3DState, SpotLight3DState,
+    AmbientLight3DState, Camera3DState, CameraProjectionState, PointLight3DState, RayLight3DState,
+    SpotLight3DState,
 };
 use std::collections::HashMap;
 

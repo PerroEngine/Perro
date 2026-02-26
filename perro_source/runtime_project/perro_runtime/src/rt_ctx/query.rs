@@ -40,9 +40,8 @@ fn query_node_ids_with_worker_override(
     }
     let out = match query.scope {
         QueryScope::Root => {
-            let worker_count = worker_override.unwrap_or_else(|| {
-                recommended_workers(slot_count, plan.estimated_cost_per_node)
-            });
+            let worker_count = worker_override
+                .unwrap_or_else(|| recommended_workers(slot_count, plan.estimated_cost_per_node));
             if worker_count <= 1 {
                 scan_range(arena, 1, slot_count, &plan)
             } else {
@@ -52,9 +51,7 @@ fn query_node_ids_with_worker_override(
                     for start in (1..slot_count).step_by(chunk_size) {
                         let end = (start + chunk_size).min(slot_count);
                         let plan_ref = &plan;
-                        handles.push(
-                            scope.spawn(move || scan_range(arena, start, end, plan_ref)),
-                        );
+                        handles.push(scope.spawn(move || scan_range(arena, start, end, plan_ref)));
                     }
                     let mut out = Vec::new();
                     for handle in handles {
@@ -98,12 +95,7 @@ fn recommended_workers(total_nodes: usize, estimated_cost_per_node: u32) -> usiz
         .unwrap_or(1)
 }
 
-fn scan_range(
-    arena: &NodeArena,
-    start: usize,
-    end: usize,
-    plan: &QueryPlan,
-) -> Vec<NodeID> {
+fn scan_range(arena: &NodeArena, start: usize, end: usize, plan: &QueryPlan) -> Vec<NodeID> {
     let mut out = Vec::with_capacity((end.saturating_sub(start)) / 4);
     for index in start..end {
         let Some((id, node)) = arena.slot_get(index) else {
@@ -296,12 +288,12 @@ fn allowed_type_mask(expr: Option<&QueryExpr>, kind: TypeFilterKind) -> u64 {
 
 fn allowed_type_mask_inner(expr: &QueryExpr, kind: TypeFilterKind) -> u64 {
     match expr {
-        QueryExpr::All(children) => children
-            .iter()
-            .fold(all_types_mask(), |acc, child| acc & allowed_type_mask_inner(child, kind)),
-        QueryExpr::Any(children) => children
-            .iter()
-            .fold(0_u64, |acc, child| acc | allowed_type_mask_inner(child, kind)),
+        QueryExpr::All(children) => children.iter().fold(all_types_mask(), |acc, child| {
+            acc & allowed_type_mask_inner(child, kind)
+        }),
+        QueryExpr::Any(children) => children.iter().fold(0_u64, |acc, child| {
+            acc | allowed_type_mask_inner(child, kind)
+        }),
         QueryExpr::Not(_) => all_types_mask(),
         QueryExpr::Name(_) | QueryExpr::Tags(_) => all_types_mask(),
         QueryExpr::IsType(types) => match kind {
@@ -359,7 +351,10 @@ mod tests {
     #[test]
     fn optimize_all_sorts_cheapest_first() {
         let expr = QueryExpr::All(vec![
-            QueryExpr::Tags(vec![TagID::from_string("enemy"), TagID::from_string("alive")]),
+            QueryExpr::Tags(vec![
+                TagID::from_string("enemy"),
+                TagID::from_string("alive"),
+            ]),
             QueryExpr::Name(vec!["boss".to_string()]),
             QueryExpr::IsType(vec![NodeType::MeshInstance3D]),
         ]);

@@ -291,7 +291,9 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             WindowEvent::MouseWheel { delta, .. } => {
                 let (dx, dy) = match delta {
                     MouseScrollDelta::LineDelta(x, y) => (x, y),
-                    MouseScrollDelta::PixelDelta(pos) => ((pos.x as f32) / 40.0, (pos.y as f32) / 40.0),
+                    MouseScrollDelta::PixelDelta(pos) => {
+                        ((pos.x as f32) / 40.0, (pos.y as f32) / 40.0)
+                    }
                 };
                 self.app.add_mouse_wheel(dx, dy);
             }

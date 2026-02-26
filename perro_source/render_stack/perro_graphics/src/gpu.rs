@@ -3,6 +3,7 @@ use crate::{
     resources::ResourceStore,
     three_d::{
         gpu::{Gpu3D, Gpu3DConfig, Prepare3D},
+        particles::gpu::{GpuPointParticles3D, PreparePointParticles3D},
         renderer::{Draw3DInstance, Lighting3DState},
     },
     two_d::{
@@ -10,7 +11,8 @@ use crate::{
         renderer::{Camera2DUniform, RectInstanceGpu, RectUploadPlan},
     },
 };
-use perro_render_bridge::{Camera3DState, Sprite2DCommand};
+use perro_ids::NodeID;
+use perro_render_bridge::{Camera3DState, PointParticles3DState, Sprite2DCommand};
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -36,6 +38,7 @@ pub struct Gpu {
     msaa_color: Option<MsaaColorTarget>,
     two_d: Gpu2D,
     three_d: Gpu3D,
+    point_particles_3d: GpuPointParticles3D,
 }
 
 pub struct RenderFrame<'a> {
@@ -43,6 +46,7 @@ pub struct RenderFrame<'a> {
     pub camera_3d: Camera3DState,
     pub lighting_3d: &'a Lighting3DState,
     pub draws_3d: &'a [Draw3DInstance],
+    pub point_particles_3d: &'a [(NodeID, PointParticles3DState)],
     pub camera_2d: Camera2DUniform,
     pub rects_2d: &'a [RectInstanceGpu],
     pub upload_2d: &'a RectUploadPlan,
@@ -134,6 +138,7 @@ impl Gpu {
                 indirect_first_instance_enabled,
             },
         );
+        let point_particles_3d = GpuPointParticles3D::new(&device, render_format, sample_count);
         let msaa_color =
             create_msaa_color_target(&device, render_format, width, height, sample_count);
 
@@ -148,6 +153,7 @@ impl Gpu {
             msaa_color,
             two_d,
             three_d,
+            point_particles_3d,
         })
     }
 
@@ -186,6 +192,8 @@ impl Gpu {
             self.config.width,
             self.config.height,
         );
+        self.point_particles_3d
+            .set_sample_count(&self.device, self.render_format, sample_count);
         self.msaa_color = create_msaa_color_target(
             &self.device,
             self.render_format,
@@ -201,6 +209,7 @@ impl Gpu {
             camera_3d,
             lighting_3d,
             draws_3d,
+            point_particles_3d,
             camera_2d,
             rects_2d,
             upload_2d,
@@ -234,6 +243,16 @@ impl Gpu {
                 width: self.config.width,
                 height: self.config.height,
                 static_mesh_lookup,
+            },
+        );
+        self.point_particles_3d.prepare(
+            &self.device,
+            &self.queue,
+            PreparePointParticles3D {
+                camera: camera_3d,
+                emitters: point_particles_3d,
+                width: self.config.width,
+                height: self.config.height,
             },
         );
 
@@ -279,6 +298,8 @@ impl Gpu {
                 a: 1.0,
             },
         );
+        self.point_particles_3d
+            .render_pass(&mut encoder, color_view);
         self.two_d.render_pass(
             &mut encoder,
             color_view,

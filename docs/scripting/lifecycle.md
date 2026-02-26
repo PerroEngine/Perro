@@ -1,0 +1,34 @@
+# Script Lifecycle
+
+Lifecycle hooks are declared in `lifecycle!({ ... })`.
+
+Available hooks:
+- `on_init`: runs when this script instance is created
+- `on_all_init`: runs after all scripts have initialized
+- `on_update`: runs every frame
+- `on_fixed_update`: runs on fixed timestep
+- `on_removal`: runs when script/node is removed
+
+## Example
+
+```rust
+lifecycle!({
+    fn on_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _ipt: &InputContext<'_, IP>, _self: NodeID) {}
+
+    fn on_update(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _ipt: &InputContext<'_, IP>, self_id: NodeID) {
+        let dt = delta_time!(ctx);
+        with_node_mut!(ctx, Node2D, self_id, |node| {
+            node.position.x += dt * 5.0;
+        });
+    }
+});
+```
+
+## Methods vs Lifecycle
+
+Use `methods!` for reusable callable logic (including `call_method!` targets).
+Use lifecycle methods for engine-driven entry points.
+
+Related:
+- [Script Contexts](contexts/README.md) for callback signatures and macro convention.
+- [Script Methods](methods.md) for reusable/callable method bodies.

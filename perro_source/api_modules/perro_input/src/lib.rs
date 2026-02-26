@@ -3,6 +3,7 @@ mod mouse_button;
 
 pub use keycode::KeyCode;
 pub use mouse_button::MouseButton;
+use perro_structs::Vector2;
 
 #[derive(Clone, Debug)]
 pub struct InputSnapshot {
@@ -124,13 +125,13 @@ impl InputSnapshot {
     }
 
     #[inline]
-    pub fn mouse_delta(&self) -> (f32, f32) {
-        (self.mouse_delta_x, self.mouse_delta_y)
+    pub fn mouse_delta(&self) -> Vector2 {
+        Vector2::new(self.mouse_delta_x, self.mouse_delta_y)
     }
 
     #[inline]
-    pub fn mouse_wheel(&self) -> (f32, f32) {
-        (self.mouse_wheel_x, self.mouse_wheel_y)
+    pub fn mouse_wheel(&self) -> Vector2 {
+        Vector2::new(self.mouse_wheel_x, self.mouse_wheel_y)
     }
 
     #[inline]
@@ -155,8 +156,8 @@ pub trait InputAPI {
     fn is_mouse_down(&self, button: MouseButton) -> bool;
     fn is_mouse_pressed(&self, button: MouseButton) -> bool;
     fn is_mouse_released(&self, button: MouseButton) -> bool;
-    fn mouse_delta(&self) -> (f32, f32);
-    fn mouse_wheel(&self) -> (f32, f32);
+    fn mouse_delta(&self) -> Vector2;
+    fn mouse_wheel(&self) -> Vector2;
 }
 
 impl InputAPI for InputSnapshot {
@@ -191,12 +192,12 @@ impl InputAPI for InputSnapshot {
     }
 
     #[inline]
-    fn mouse_delta(&self) -> (f32, f32) {
+    fn mouse_delta(&self) -> Vector2 {
         self.mouse_delta()
     }
 
     #[inline]
-    fn mouse_wheel(&self) -> (f32, f32) {
+    fn mouse_wheel(&self) -> Vector2 {
         self.mouse_wheel()
     }
 }
@@ -272,18 +273,77 @@ impl<'ipt, IP: InputAPI + ?Sized> MouseModule<'ipt, IP> {
     }
 
     #[inline]
-    pub fn delta(&self) -> (f32, f32) {
+    pub fn delta(&self) -> Vector2 {
         self.ipt.mouse_delta()
     }
 
     #[inline]
-    pub fn wheel(&self) -> (f32, f32) {
+    pub fn wheel(&self) -> Vector2 {
         self.ipt.mouse_wheel()
     }
+}
+
+#[macro_export]
+macro_rules! key_down {
+    ($ipt:expr, $key:expr) => {
+        $ipt.Keys().down($key)
+    };
+}
+
+#[macro_export]
+macro_rules! key_pressed {
+    ($ipt:expr, $key:expr) => {
+        $ipt.Keys().pressed($key)
+    };
+}
+
+#[macro_export]
+macro_rules! key_released {
+    ($ipt:expr, $key:expr) => {
+        $ipt.Keys().released($key)
+    };
+}
+
+#[macro_export]
+macro_rules! mouse_down {
+    ($ipt:expr, $button:expr) => {
+        $ipt.Mouse().down($button)
+    };
+}
+
+#[macro_export]
+macro_rules! mouse_pressed {
+    ($ipt:expr, $button:expr) => {
+        $ipt.Mouse().pressed($button)
+    };
+}
+
+#[macro_export]
+macro_rules! mouse_released {
+    ($ipt:expr, $button:expr) => {
+        $ipt.Mouse().released($button)
+    };
+}
+
+#[macro_export]
+macro_rules! mouse_delta {
+    ($ipt:expr) => {
+        $ipt.Mouse().delta()
+    };
+}
+
+#[macro_export]
+macro_rules! mouse_wheel {
+    ($ipt:expr) => {
+        $ipt.Mouse().wheel()
+    };
 }
 
 pub mod prelude {
     pub use crate::{
         InputAPI, InputContext, InputSnapshot, KeyCode, KeyModule, MouseButton, MouseModule,
+        key_down, key_pressed, key_released, mouse_delta, mouse_down, mouse_pressed,
+        mouse_released, mouse_wheel,
     };
+    pub use perro_structs::Vector2;
 }

@@ -1,4 +1,3 @@
 pub mod gpu;
-pub mod particles;
 pub mod renderer;
 pub mod shaders;

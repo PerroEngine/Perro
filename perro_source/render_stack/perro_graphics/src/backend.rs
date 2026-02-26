@@ -1,13 +1,15 @@
 use crate::{
     gpu::{Gpu, RenderFrame},
     resources::ResourceStore,
+    three_d::particles::renderer::Particles3DRenderer,
     three_d::renderer::Renderer3D,
     three_d::{gpu::validate_mesh_source, renderer::Draw3DInstance},
     two_d::renderer::Renderer2D,
 };
+use perro_ids::NodeID;
 use perro_render_bridge::{
-    Command2D, Command3D, RenderBridge, RenderCommand, RenderEvent, ResourceCommand,
-    Sprite2DCommand,
+    Command2D, Command3D, PointParticles3DState, RenderBridge, RenderCommand, RenderEvent,
+    ResourceCommand, Sprite2DCommand,
 };
 use std::sync::Arc;
 use winit::window::Window;
@@ -50,6 +52,7 @@ pub struct PerroGraphics {
     resources: ResourceStore,
     renderer_2d: Renderer2D,
     renderer_3d: Renderer3D,
+    particles_3d: Particles3DRenderer,
     gpu: Option<Gpu>,
     events: Vec<RenderEvent>,
     viewport: (u32, u32),
@@ -63,6 +66,7 @@ pub struct PerroGraphics {
     meshlet_debug_view: bool,
     occlusion_culling: OcclusionCullingMode,
     retained_draws_cache: Vec<Draw3DInstance>,
+    retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,
     retained_sprites_cache: Vec<Sprite2DCommand>,
     frame_index: u32,
 }
@@ -74,6 +78,7 @@ impl PerroGraphics {
             resources: ResourceStore::new(),
             renderer_2d: Renderer2D::new(),
             renderer_3d: Renderer3D::new(),
+            particles_3d: Particles3DRenderer::new(),
             gpu: None,
             events: Vec::new(),
             viewport: (0, 0),
@@ -87,6 +92,7 @@ impl PerroGraphics {
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCullingMode::Gpu,
             retained_draws_cache: Vec::new(),
+            retained_point_particles_cache: Vec::new(),
             retained_sprites_cache: Vec::new(),
             frame_index: 0,
         }
@@ -255,8 +261,12 @@ impl PerroGraphics {
                     Command3D::SetSpotLight { node, light } => {
                         self.renderer_3d.set_spot_light(node, light);
                     }
+                    Command3D::UpsertPointParticles { node, particles } => {
+                        self.particles_3d.queue_point_particles(node, particles);
+                    }
                     Command3D::RemoveNode { node } => {
                         self.renderer_3d.remove_node(node);
+                        self.particles_3d.remove_node(node);
                     }
                 },
             }
@@ -333,11 +343,17 @@ impl GraphicsBackend for PerroGraphics {
         std::mem::swap(&mut pending, &mut self.frame.pending_commands);
         let (camera_2d, _stats, upload) = self.renderer_2d.prepare_frame(&self.resources);
         let (camera_3d, _stats_3d, lighting_3d) = self.renderer_3d.prepare_frame(&self.resources);
+        self.particles_3d.prepare_frame();
         self.retained_draws_cache.clear();
         self.retained_draws_cache
             .extend(self.renderer_3d.retained_draws());
         self.retained_draws_cache
             .sort_unstable_by_key(|draw| draw.node.as_u64());
+        self.retained_point_particles_cache.clear();
+        self.retained_point_particles_cache
+            .extend(self.particles_3d.retained_point_particles());
+        self.retained_point_particles_cache
+            .sort_unstable_by_key(|(node, _)| node.as_u64());
         self.retained_sprites_cache.clear();
         self.retained_sprites_cache
             .extend(self.renderer_2d.retained_sprites());
@@ -361,6 +377,7 @@ impl GraphicsBackend for PerroGraphics {
                 camera_3d,
                 lighting_3d: &lighting_3d,
                 draws_3d: &self.retained_draws_cache,
+                point_particles_3d: &self.retained_point_particles_cache,
                 camera_2d,
                 rects_2d: self.renderer_2d.retained_rects(),
                 upload_2d: &upload,
@@ -379,8 +396,7 @@ mod tests {
     use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
     use perro_render_bridge::{
         Camera3DState, CameraProjectionState, Command2D, Command3D, Material3D, RenderBridge,
-        RenderCommand,
-        ResourceCommand, Sprite2DCommand,
+        RenderCommand, ResourceCommand, Sprite2DCommand,
     };
 
     #[test]

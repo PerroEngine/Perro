@@ -44,3 +44,24 @@ macro_rules! load_material {
         $res.Materials().load($source)
     };
 }
+
+#[macro_export]
+macro_rules! reserve_material {
+    ($res:expr, $source:expr) => {
+        $res.Materials().reserve($source)
+    };
+}
+
+#[macro_export]
+macro_rules! drop_material {
+    ($res:expr, $source:expr) => {
+        $res.Materials().drop($source)
+    };
+}
+
+#[macro_export]
+macro_rules! create_material {
+    ($res:expr, $material:expr) => {
+        $res.Materials().create($material)
+    };
+}

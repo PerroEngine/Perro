@@ -8,5 +8,8 @@ pub mod prelude {
     pub use crate::sub_apis::{
         MaterialAPI, MaterialModule, MeshAPI, MeshModule, TextureAPI, TextureModule,
     };
-    pub use crate::{load_material, load_mesh, load_texture};
+    pub use crate::{
+        create_material, drop_material, drop_mesh, drop_texture, load_material, load_mesh,
+        load_texture, reserve_material, reserve_mesh, reserve_texture,
+    };
 }

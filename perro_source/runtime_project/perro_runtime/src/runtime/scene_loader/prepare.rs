@@ -1,11 +1,19 @@
 use crate::material_schema;
-use perro_io::load_asset;
 use perro_ids::IntoTagID;
+use perro_io::load_asset;
 use perro_nodes::{
-    SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D, camera_2d::Camera2D,
-    camera_3d::{Camera3D, CameraProjection}, mesh_instance_3d::MeshInstance3D,
-    node_2d::Node2D, node_3d::Node3D, point_light_3d::PointLight3D, ray_light_3d::RayLight3D,
-    spot_light_3d::SpotLight3D, sprite_2d::Sprite2D,
+    SceneNode, SceneNodeData,
+    ambient_light_3d::AmbientLight3D,
+    camera_2d::Camera2D,
+    camera_3d::{Camera3D, CameraProjection},
+    mesh_instance_3d::MeshInstance3D,
+    node_2d::Node2D,
+    node_3d::Node3D,
+    particle_emitter_3d::ParticleEmitter3D,
+    point_light_3d::PointLight3D,
+    ray_light_3d::RayLight3D,
+    spot_light_3d::SpotLight3D,
+    sprite_2d::Sprite2D,
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
@@ -222,6 +230,9 @@ fn scene_node_data_from_runtime(data: &RuntimeNodeData) -> Result<SceneNodeData,
             build_runtime_mesh_instance_3d(data),
         )),
         "Camera3D" => Ok(SceneNodeData::Camera3D(build_runtime_camera_3d(data))),
+        "ParticleEmitter3D" => Ok(SceneNodeData::ParticleEmitter3D(
+            build_runtime_particle_emitter_3d(data),
+        )),
         "AmbientLight3D" => Ok(SceneNodeData::AmbientLight3D(
             build_runtime_ambient_light_3d(data),
         )),
@@ -247,6 +258,9 @@ fn scene_node_data_from_static(data: &StaticNodeData) -> Result<SceneNodeData, S
             build_static_mesh_instance_3d(data),
         )),
         StaticNodeType::Camera3D => Ok(SceneNodeData::Camera3D(build_static_camera_3d(data))),
+        StaticNodeType::ParticleEmitter3D => Ok(SceneNodeData::ParticleEmitter3D(
+            build_static_particle_emitter_3d(data),
+        )),
         StaticNodeType::AmbientLight3D => Ok(SceneNodeData::AmbientLight3D(
             build_static_ambient_light_3d(data),
         )),
@@ -312,6 +326,16 @@ fn build_runtime_camera_3d(data: &RuntimeNodeData) -> Camera3D {
     }
     apply_node_3d_fields(&mut node, &data.fields);
     apply_camera_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_runtime_particle_emitter_3d(data: &RuntimeNodeData) -> ParticleEmitter3D {
+    let mut node = ParticleEmitter3D::new();
+    if let Some(base) = &data.base {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_particle_emitter_3d_fields(&mut node, &data.fields);
     node
 }
 
@@ -401,6 +425,16 @@ fn build_static_camera_3d(data: &StaticNodeData) -> Camera3D {
     }
     apply_node_3d_fields_static(&mut node, data.fields);
     apply_camera_3d_fields_static(&mut node, data.fields);
+    node
+}
+
+fn build_static_particle_emitter_3d(data: &StaticNodeData) -> ParticleEmitter3D {
+    let mut node = ParticleEmitter3D::new();
+    if let Some(base) = data.base {
+        apply_node_3d_data_static(&mut node, base);
+    }
+    apply_node_3d_fields_static(&mut node, data.fields);
+    apply_particle_emitter_3d_fields_static(&mut node, data.fields);
     node
 }
 
@@ -629,6 +663,124 @@ fn apply_camera_3d_fields(node: &mut Camera3D, fields: &[(String, RuntimeValue)]
             "active" => {
                 if let Some(v) = as_bool(value) {
                     node.active = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_particle_emitter_3d_fields(
+    node: &mut ParticleEmitter3D,
+    fields: &[(String, RuntimeValue)],
+) {
+    for (name, value) in fields {
+        match name.as_str() {
+            "active" => {
+                if let Some(v) = as_bool(value) {
+                    node.active = v;
+                }
+            }
+            "looping" => {
+                if let Some(v) = as_bool(value) {
+                    node.looping = v;
+                }
+            }
+            "prewarm" => {
+                if let Some(v) = as_bool(value) {
+                    node.prewarm = v;
+                }
+            }
+            "max_particles" => {
+                if let Some(v) = as_i32(value) {
+                    node.max_particles = v.max(1) as u32;
+                }
+            }
+            "emission_rate" => {
+                if let Some(v) = as_f32(value) {
+                    node.emission_rate = v.max(0.0);
+                }
+            }
+            "duration" => {
+                if let Some(v) = as_f32(value) {
+                    node.duration = v.max(0.0);
+                }
+            }
+            "lifetime_min" => {
+                if let Some(v) = as_f32(value) {
+                    node.lifetime_min = v.max(0.001);
+                }
+            }
+            "lifetime_max" => {
+                if let Some(v) = as_f32(value) {
+                    node.lifetime_max = v.max(node.lifetime_min);
+                }
+            }
+            "speed_min" => {
+                if let Some(v) = as_f32(value) {
+                    node.speed_min = v.max(0.0);
+                }
+            }
+            "speed_max" => {
+                if let Some(v) = as_f32(value) {
+                    node.speed_max = v.max(node.speed_min);
+                }
+            }
+            "spread_radians" => {
+                if let Some(v) = as_f32(value) {
+                    node.spread_radians = v.clamp(0.0, std::f32::consts::PI);
+                }
+            }
+            "point_size" => {
+                if let Some(v) = as_f32(value) {
+                    node.point_size = v.max(1.0);
+                }
+            }
+            "size_min" => {
+                if let Some(v) = as_f32(value) {
+                    node.size_min = v.max(0.01);
+                }
+            }
+            "size_max" => {
+                if let Some(v) = as_f32(value) {
+                    node.size_max = v.max(node.size_min);
+                }
+            }
+            "gravity" => {
+                if let Some(v) = as_vec3(value) {
+                    node.gravity = [v.x, v.y, v.z];
+                }
+            }
+            "color_start" => {
+                if let Some(v) = as_quat(value) {
+                    node.color_start = [v.x, v.y, v.z, v.w];
+                }
+            }
+            "color_end" => {
+                if let Some(v) = as_quat(value) {
+                    node.color_end = [v.x, v.y, v.z, v.w];
+                }
+            }
+            "emissive" => {
+                if let Some(v) = as_vec3(value) {
+                    node.emissive = [v.x, v.y, v.z];
+                }
+            }
+            "seed" => {
+                if let Some(v) = as_i32(value) {
+                    node.seed = v.max(0) as u32;
+                }
+            }
+            "params" => {
+                if let Some(v) = as_particle_params(value) {
+                    node.params = v;
+                }
+            }
+            "particle_path" | "particle" => {
+                if let Some(v) = as_asset_source(value) {
+                    node.particle = v;
+                } else if let RuntimeValue::Object(entries) = value {
+                    node.particle = inline_pparticle_from_runtime(entries);
                 }
             }
             _ => {}
@@ -918,6 +1070,124 @@ fn apply_camera_3d_fields_static(node: &mut Camera3D, fields: &[(&str, StaticSce
             "active" => {
                 if let Some(v) = as_bool_static(value) {
                     node.active = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_particle_emitter_3d_fields_static(
+    node: &mut ParticleEmitter3D,
+    fields: &[(&str, StaticSceneValue)],
+) {
+    for (name, value) in fields {
+        match *name {
+            "active" => {
+                if let Some(v) = as_bool_static(value) {
+                    node.active = v;
+                }
+            }
+            "looping" => {
+                if let Some(v) = as_bool_static(value) {
+                    node.looping = v;
+                }
+            }
+            "prewarm" => {
+                if let Some(v) = as_bool_static(value) {
+                    node.prewarm = v;
+                }
+            }
+            "max_particles" => {
+                if let Some(v) = as_i32_static(value) {
+                    node.max_particles = v.max(1) as u32;
+                }
+            }
+            "emission_rate" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.emission_rate = v.max(0.0);
+                }
+            }
+            "duration" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.duration = v.max(0.0);
+                }
+            }
+            "lifetime_min" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.lifetime_min = v.max(0.001);
+                }
+            }
+            "lifetime_max" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.lifetime_max = v.max(node.lifetime_min);
+                }
+            }
+            "speed_min" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.speed_min = v.max(0.0);
+                }
+            }
+            "speed_max" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.speed_max = v.max(node.speed_min);
+                }
+            }
+            "spread_radians" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.spread_radians = v.clamp(0.0, std::f32::consts::PI);
+                }
+            }
+            "point_size" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.point_size = v.max(1.0);
+                }
+            }
+            "size_min" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.size_min = v.max(0.01);
+                }
+            }
+            "size_max" => {
+                if let Some(v) = as_f32_static(value) {
+                    node.size_max = v.max(node.size_min);
+                }
+            }
+            "gravity" => {
+                if let Some(v) = as_vec3_static(value) {
+                    node.gravity = [v.x, v.y, v.z];
+                }
+            }
+            "color_start" => {
+                if let Some(v) = as_quat_static(value) {
+                    node.color_start = [v.x, v.y, v.z, v.w];
+                }
+            }
+            "color_end" => {
+                if let Some(v) = as_quat_static(value) {
+                    node.color_end = [v.x, v.y, v.z, v.w];
+                }
+            }
+            "emissive" => {
+                if let Some(v) = as_vec3_static(value) {
+                    node.emissive = [v.x, v.y, v.z];
+                }
+            }
+            "seed" => {
+                if let Some(v) = as_i32_static(value) {
+                    node.seed = v.max(0) as u32;
+                }
+            }
+            "params" => {
+                if let Some(v) = as_particle_params_static(value) {
+                    node.params = v;
+                }
+            }
+            "particle_path" | "particle" => {
+                if let Some(v) = as_asset_source_static(value) {
+                    node.particle = v;
+                } else if let StaticSceneValue::Object(entries) = value {
+                    node.particle = inline_pparticle_from_static(entries);
                 }
             }
             _ => {}
@@ -1217,6 +1487,134 @@ fn as_str_static(value: &StaticSceneValue) -> Option<&str> {
     }
 }
 
+fn inline_pparticle_from_runtime(entries: &[(String, RuntimeValue)]) -> String {
+    let mut out = String::from("inline://");
+    for (key, value) in entries {
+        if let Some(encoded) = encode_runtime_value_for_pparticle(value) {
+            out.push_str(key);
+            out.push_str(" = ");
+            out.push_str(&encoded);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+fn inline_pparticle_from_static(entries: &[(&str, StaticSceneValue)]) -> String {
+    let mut out = String::from("inline://");
+    for (key, value) in entries {
+        if let Some(encoded) = encode_static_value_for_pparticle(value) {
+            out.push_str(key);
+            out.push_str(" = ");
+            out.push_str(&encoded);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+fn encode_runtime_value_for_pparticle(value: &RuntimeValue) -> Option<String> {
+    match value {
+        RuntimeValue::Bool(v) => Some(if *v { "true" } else { "false" }.to_string()),
+        RuntimeValue::I32(v) => Some(v.to_string()),
+        RuntimeValue::F32(v) => Some(v.to_string()),
+        RuntimeValue::Vec2 { x, y } => Some(format!("({x}, {y})")),
+        RuntimeValue::Vec3 { x, y, z } => Some(format!("({x}, {y}, {z})")),
+        RuntimeValue::Vec4 { x, y, z, w } => Some(format!("({x}, {y}, {z}, {w})")),
+        RuntimeValue::Str(v) | RuntimeValue::Key(v) => Some(v.clone()),
+        RuntimeValue::Object(_) => None,
+    }
+}
+
+fn encode_static_value_for_pparticle(value: &StaticSceneValue) -> Option<String> {
+    match value {
+        StaticSceneValue::Bool(v) => Some(if *v { "true" } else { "false" }.to_string()),
+        StaticSceneValue::I32(v) => Some(v.to_string()),
+        StaticSceneValue::F32(v) => Some(v.to_string()),
+        StaticSceneValue::Vec2 { x, y } => Some(format!("({x}, {y})")),
+        StaticSceneValue::Vec3 { x, y, z } => Some(format!("({x}, {y}, {z})")),
+        StaticSceneValue::Vec4 { x, y, z, w } => Some(format!("({x}, {y}, {z}, {w})")),
+        StaticSceneValue::Str(v) => Some((*v).to_string()),
+        StaticSceneValue::Key(v) => Some(v.0.to_string()),
+        StaticSceneValue::Object(_) => None,
+    }
+}
+
+fn as_particle_params(value: &RuntimeValue) -> Option<Vec<f32>> {
+    match value {
+        RuntimeValue::Vec2 { x, y } => Some(vec![*x, *y]),
+        RuntimeValue::Vec3 { x, y, z } => Some(vec![*x, *y, *z]),
+        RuntimeValue::Vec4 { x, y, z, w } => Some(vec![*x, *y, *z, *w]),
+        RuntimeValue::Object(entries) => {
+            let mut indexed = Vec::<(usize, f32)>::new();
+            for (k, v) in entries {
+                let idx = parse_param_key_index(k)?;
+                let val = match v {
+                    RuntimeValue::F32(n) => *n,
+                    RuntimeValue::I32(n) => *n as f32,
+                    _ => return None,
+                };
+                indexed.push((idx, val));
+            }
+            if indexed.is_empty() {
+                return Some(Vec::new());
+            }
+            indexed.sort_unstable_by_key(|(i, _)| *i);
+            let max = indexed.last().map(|(i, _)| *i).unwrap_or(0);
+            let mut out = vec![0.0; max + 1];
+            for (i, v) in indexed {
+                out[i] = v;
+            }
+            Some(out)
+        }
+        _ => None,
+    }
+}
+
+fn as_particle_params_static(value: &StaticSceneValue) -> Option<Vec<f32>> {
+    match value {
+        StaticSceneValue::Vec2 { x, y } => Some(vec![*x, *y]),
+        StaticSceneValue::Vec3 { x, y, z } => Some(vec![*x, *y, *z]),
+        StaticSceneValue::Vec4 { x, y, z, w } => Some(vec![*x, *y, *z, *w]),
+        StaticSceneValue::Object(entries) => {
+            let mut indexed = Vec::<(usize, f32)>::new();
+            for (k, v) in *entries {
+                let idx = parse_param_key_index(k)?;
+                let val = match v {
+                    StaticSceneValue::F32(n) => *n,
+                    StaticSceneValue::I32(n) => *n as f32,
+                    _ => return None,
+                };
+                indexed.push((idx, val));
+            }
+            if indexed.is_empty() {
+                return Some(Vec::new());
+            }
+            indexed.sort_unstable_by_key(|(i, _)| *i);
+            let max = indexed.last().map(|(i, _)| *i).unwrap_or(0);
+            let mut out = vec![0.0; max + 1];
+            for (i, v) in indexed {
+                out[i] = v;
+            }
+            Some(out)
+        }
+        _ => None,
+    }
+}
+
+fn parse_param_key_index(key: &str) -> Option<usize> {
+    let key = key.trim();
+    if let Ok(i) = key.parse::<usize>() {
+        return Some(i);
+    }
+    if let Some(rest) = key.strip_prefix('p')
+        && let Ok(i) = rest.parse::<usize>()
+    {
+        return Some(i);
+    }
+    None
+}
+
 fn apply_zoom_compat_projection(node: &mut Camera3D, zoom: f32) {
     let zoom = if zoom.is_finite() && zoom > 0.0 {
         zoom
@@ -1224,7 +1622,10 @@ fn apply_zoom_compat_projection(node: &mut Camera3D, zoom: f32) {
         1.0
     };
     let fov_y_degrees = (60.0 / zoom).clamp(10.0, 120.0);
-    if let CameraProjection::Perspective { fov_y_degrees: fov, .. } = &mut node.projection {
+    if let CameraProjection::Perspective {
+        fov_y_degrees: fov, ..
+    } = &mut node.projection
+    {
         *fov = fov_y_degrees;
     }
 }

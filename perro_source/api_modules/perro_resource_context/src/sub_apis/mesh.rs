@@ -37,3 +37,17 @@ macro_rules! load_mesh {
         $res.Meshes().load($source)
     };
 }
+
+#[macro_export]
+macro_rules! reserve_mesh {
+    ($res:expr, $source:expr) => {
+        $res.Meshes().reserve($source)
+    };
+}
+
+#[macro_export]
+macro_rules! drop_mesh {
+    ($res:expr, $source:expr) => {
+        $res.Meshes().drop($source)
+    };
+}

@@ -4,8 +4,8 @@ use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_nodes::{CameraProjection, SceneNodeData};
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
-    PointLight3DState, RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand,
-    SpotLight3DState,
+    ParticlePath3D, PointLight3DState, PointParticleProfile3D, PointParticles3DState,
+    RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
 };
 
 impl Runtime {
@@ -186,24 +186,58 @@ impl Runtime {
                 )),
                 _ => None,
             });
-            let Some((mesh, material, model)) = mesh_data else {
-                continue;
-            };
-            if !effective_visible {
-                continue;
+            if let Some((mesh, material, model)) = mesh_data {
+                if effective_visible {
+                    if let Some((mesh, material)) =
+                        self.resolve_mesh_instance_assets(node, mesh, material)
+                    {
+                        self.queue_render_command(RenderCommand::ThreeD(Command3D::Draw {
+                            mesh,
+                            material,
+                            node,
+                            model,
+                        }));
+                        visible_now.insert(node);
+                    }
+                }
             }
 
-            let Some((mesh, material)) = self.resolve_mesh_instance_assets(node, mesh, material)
-            else {
-                continue;
-            };
-            self.queue_render_command(RenderCommand::ThreeD(Command3D::Draw {
-                mesh,
-                material,
-                node,
-                model,
-            }));
-            visible_now.insert(node);
+            let point_emitter_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::ParticleEmitter3D(emitter) => Some(emitter.clone()),
+                _ => None,
+            });
+            if effective_visible && let Some(emitter) = point_emitter_data {
+                let profile = resolve_particle_profile(self, &emitter.particle).unwrap_or_default();
+                self.queue_render_command(RenderCommand::ThreeD(Command3D::UpsertPointParticles {
+                    node,
+                    particles: PointParticles3DState {
+                        model: emitter.transform.to_mat4().to_cols_array_2d(),
+                        active: emitter.active,
+                        looping: emitter.looping,
+                        prewarm: emitter.prewarm,
+                        max_particles: emitter.max_particles.max(1),
+                        emission_rate: emitter.emission_rate.max(0.0),
+                        duration: emitter.duration.max(0.0),
+                        lifetime_min: emitter.lifetime_min.max(0.001),
+                        lifetime_max: emitter.lifetime_max.max(emitter.lifetime_min.max(0.001)),
+                        speed_min: emitter.speed_min.max(0.0),
+                        speed_max: emitter.speed_max.max(emitter.speed_min.max(0.0)),
+                        spread_radians: emitter.spread_radians.clamp(0.0, std::f32::consts::PI),
+                        point_size: emitter.point_size.max(1.0),
+                        size_min: emitter.size_min.max(0.01),
+                        size_max: emitter.size_max.max(emitter.size_min.max(0.01)),
+                        gravity: emitter.gravity,
+                        color_start: emitter.color_start,
+                        color_end: emitter.color_end,
+                        emissive: emitter.emissive,
+                        seed: emitter.seed,
+                        params: emitter.params.clone(),
+                        simulation_time: self.time.elapsed.max(0.0),
+                        profile,
+                    },
+                }));
+                visible_now.insert(node);
+            }
         }
         self.remove_no_longer_visible_render_3d_nodes(&visible_now);
         std::mem::swap(&mut self.render_3d.prev_visible, &mut visible_now);
@@ -409,14 +443,96 @@ fn parse_fragment_index(fragment: Option<&str>, keys: &[&str]) -> Option<u32> {
     None
 }
 
+fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<PointParticleProfile3D> {
+    let source = source.trim();
+    if source.is_empty() {
+        return None;
+    }
+    if let Some(path) = runtime.render_3d.particle_path_cache.get(source) {
+        return Some(path.clone());
+    }
+    let parsed = if let Some(inline) = source.strip_prefix("inline://") {
+        parse_pparticle_source(inline)?
+    } else {
+        let bytes = perro_io::load_asset(source).ok()?;
+        let text = std::str::from_utf8(&bytes).ok()?;
+        parse_pparticle_source(text)?
+    };
+    runtime
+        .render_3d
+        .particle_path_cache
+        .insert(source.to_string(), parsed.clone());
+    Some(parsed)
+}
+
+fn parse_pparticle_source(source: &str) -> Option<PointParticleProfile3D> {
+    let mut profile = PointParticleProfile3D::default();
+    let mut path_mode = String::from("ballistic");
+    let mut path_a = 1.0f32;
+    let mut path_b = 1.0f32;
+    let mut expr_x = String::from("0.0");
+    let mut expr_y = String::from("0.0");
+    let mut expr_z = String::from("0.0");
+    for line in source.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
+            continue;
+        }
+        let (key, value) = line.split_once('=')?;
+        let key = key.trim().to_ascii_lowercase();
+        let value = value.trim();
+        match key.as_str() {
+            "mode" | "path_mode" => {
+                path_mode = value.to_ascii_lowercase();
+            }
+            "param_a" | "angular_velocity" | "amplitude" => {
+                path_a = value.parse::<f32>().ok().unwrap_or(path_a);
+            }
+            "param_b" | "radius" | "frequency" => {
+                path_b = value.parse::<f32>().ok().unwrap_or(path_b);
+            }
+            "expr_x" => expr_x = value.to_string(),
+            "expr_y" => expr_y = value.to_string(),
+            "expr_z" => expr_z = value.to_string(),
+            _ => {}
+        }
+    }
+    profile.path = match path_mode.as_str() {
+        "ballistic" => ParticlePath3D::Ballistic,
+        "spiral" => ParticlePath3D::Spiral {
+            angular_velocity: path_a,
+            radius: path_b.abs(),
+        },
+        "orbity" | "orbit_y" | "orbit" => ParticlePath3D::OrbitY {
+            angular_velocity: path_a,
+            radius: path_b.abs(),
+        },
+        "noisedrift" | "noise_drift" | "noise" => ParticlePath3D::NoiseDrift {
+            amplitude: path_a.abs(),
+            frequency: path_b.abs(),
+        },
+        "custom" => ParticlePath3D::Custom {
+            expr_x,
+            expr_y,
+            expr_z,
+        },
+        _ => ParticlePath3D::Ballistic,
+    };
+    Some(profile)
+}
+
 #[cfg(test)]
 mod tests {
     use super::Runtime;
     use perro_ids::{MaterialID, MeshID};
     use perro_nodes::{
-        CameraProjection, SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D, camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, node_3d::Node3D, ray_light_3d::RayLight3D
+        CameraProjection, SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D,
+        camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, node_3d::Node3D,
+        ray_light_3d::RayLight3D,
     };
-    use perro_render_bridge::{CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand};
+    use perro_render_bridge::{
+        CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
+    };
 
     fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
         let mut out = Vec::new();

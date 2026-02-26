@@ -37,3 +37,17 @@ macro_rules! load_texture {
         $res.Textures().load($source)
     };
 }
+
+#[macro_export]
+macro_rules! reserve_texture {
+    ($res:expr, $source:expr) => {
+        $res.Textures().reserve($source)
+    };
+}
+
+#[macro_export]
+macro_rules! drop_texture {
+    ($res:expr, $source:expr) => {
+        $res.Textures().drop($source)
+    };
+}

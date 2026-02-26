@@ -162,9 +162,7 @@ impl TagQuery {
         I: IntoIterator<Item = T>,
         T: Into<String>,
     {
-        self.and_expr(QueryExpr::Name(
-            names.into_iter().map(Into::into).collect(),
-        ))
+        self.and_expr(QueryExpr::Name(names.into_iter().map(Into::into).collect()))
     }
 
     /// Adds tags as a single OR-group.
@@ -270,9 +268,7 @@ pub trait NodeAPI {
     where
         I: IntoIterator<Item = NodeID>;
 
-    /// Removes a node from runtime storage.
-    ///
-    /// Implementations should also clean related runtime state (for example, script instances).
+    /// Removes a node from the scene graph.
     fn remove_node(&mut self, node_id: NodeID) -> bool;
 
     /// Returns node tags if node exists.
@@ -281,7 +277,7 @@ pub trait NodeAPI {
     /// Sets node tags (`Some`) or clears all tags (`None`).
     ///
     /// `T` supports borrowed static slices or owned vectors through `Cow`.
-    fn set_node_tags<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool
+    fn tag_set<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool
     where
         T: Into<Cow<'static, [TagID]>>;
 
@@ -392,11 +388,11 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.get_node_tags(node_id)
     }
 
-    pub fn set_node_tags<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool
+    pub fn tag_set<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool
     where
         T: Into<Cow<'static, [TagID]>>,
     {
-        self.rt.set_node_tags(node_id, tags)
+        self.rt.tag_set(node_id, tags)
     }
 
     pub fn add_node_tag<T>(&mut self, node_id: NodeID, tag: T) -> bool
@@ -521,7 +517,7 @@ macro_rules! with_base_node_mut {
 ///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeContext<_>`
-/// - `ConcreteType`: ie Node2D, MeshInstance3D, Sprite2D`
+/// - `ConcreteType`: ie Node2D, MeshInstance3D, Sprite2D
 /// - `name` (optional): `&str`, `String`, or `Cow<'static, str>`
 /// - `tags` (optional): usually from `tags![...]`, or `&[TagID]`, `[TagID; N]`, `Vec<TagID>`
 /// - `parent_id` (optional): `NodeID`
@@ -538,13 +534,13 @@ macro_rules! create_node {
     ($ctx:expr, $node_ty:ty, $name:expr, $tags:expr) => {{
         let __id = $ctx.Nodes().create::<$node_ty>();
         let _ = $ctx.Nodes().set_node_name(__id, $name);
-        let _ = $ctx.Nodes().set_node_tags(__id, Some($tags));
+        let _ = $ctx.Nodes().tag_set(__id, Some($tags));
         __id
     }};
     ($ctx:expr, $node_ty:ty, $name:expr, $tags:expr, $parent:expr) => {{
         let __id = $ctx.Nodes().create::<$node_ty>();
         let _ = $ctx.Nodes().set_node_name(__id, $name);
-        let _ = $ctx.Nodes().set_node_tags(__id, Some($tags));
+        let _ = $ctx.Nodes().tag_set(__id, Some($tags));
         let _ = $ctx.Nodes().reparent($parent, __id);
         __id
     }};
@@ -555,9 +551,8 @@ macro_rules! create_node {
 /// These macros expose node identity/relationship/metadata access:
 /// - name (`get_node_name!`, `set_node_name!`)
 /// - hierarchy (`get_node_parent_id!`, `get_node_children_ids!`)
-/// - lifecycle (`remove_node!`)
 /// - runtime typing (`get_node_type!`)
-/// - tags (`get_node_tags!`, `set_node_tags!`, `tag_add!`, `tag_remove!`)
+/// - tags (`get_node_tags!`, `tag_set!`, `tag_add!`, `tag_remove!`)
 ///
 /// Gets node display name.
 /// Usage: `get_node_name!(ctx, node_id) -> Option<Cow<'static, str>>`.
@@ -647,11 +642,8 @@ macro_rules! reparent_multi {
     };
 }
 
-/// Removes a node by ID.
+/// Removes a node from the scene graph.
 /// Usage: `remove_node!(ctx, node_id) -> bool`.
-/// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
-/// - `node_id`: `NodeID`
 #[macro_export]
 macro_rules! remove_node {
     ($ctx:expr, $id:expr) => {
@@ -673,21 +665,21 @@ macro_rules! get_node_tags {
 
 /// Sets or clears node tags.
 /// Usage:
-/// - `set_node_tags!(ctx, node_id, tags)` where `tags` is `Cow<'static, [TagID]>` compatible.
-/// - `set_node_tags!(ctx, node_id)` clears all tags.
+/// - `tag_set!(ctx, node_id, tags)` where `tags` is `Cow<'static, [TagID]>` compatible.
+/// - `tag_set!(ctx, node_id)` clears all tags.
 ///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeContext<_>`
 /// - `node_id`: `NodeID`
 /// - `tags`: usually from `tags![...]`, or `&[TagID]`, `[TagID; N]`, `Vec<TagID>`
 #[macro_export]
-macro_rules! set_node_tags {
+macro_rules! tag_set {
     ($ctx:expr, $id:expr, $tags:expr) => {
-        $ctx.Nodes().set_node_tags($id, Some($tags))
+        $ctx.Nodes().tag_set($id, Some($tags))
     };
     ($ctx:expr, $id:expr) => {
         $ctx.Nodes()
-            .set_node_tags::<&'static [::perro_ids::TagID]>($id, None)
+            .tag_set::<&'static [::perro_ids::TagID]>($id, None)
     };
 }
 
@@ -724,7 +716,7 @@ macro_rules! tag_remove {
     };
     ($ctx:expr, $id:expr) => {
         $ctx.Nodes()
-            .set_node_tags::<&'static [::perro_ids::TagID]>($id, None)
+            .tag_set::<&'static [::perro_ids::TagID]>($id, None)
     };
 }
 

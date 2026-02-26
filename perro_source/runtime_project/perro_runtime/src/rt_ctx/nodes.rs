@@ -234,7 +234,7 @@ impl NodeAPI for Runtime {
             .map(|node| node.tags_slice().to_vec())
     }
 
-    fn set_node_tags<T>(&mut self, node_id: perro_ids::NodeID, tags: Option<T>) -> bool
+    fn tag_set<T>(&mut self, node_id: perro_ids::NodeID, tags: Option<T>) -> bool
     where
         T: Into<Cow<'static, [TagID]>>,
     {

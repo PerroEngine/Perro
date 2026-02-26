@@ -78,6 +78,59 @@ pub struct SpotLight3DState {
     pub outer_angle_radians: f32,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParticlePath3D {
+    Ballistic,
+    Spiral { angular_velocity: f32, radius: f32 },
+    OrbitY { angular_velocity: f32, radius: f32 },
+    NoiseDrift { amplitude: f32, frequency: f32 },
+    Custom {
+        expr_x: String,
+        expr_y: String,
+        expr_z: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PointParticleProfile3D {
+    pub path: ParticlePath3D,
+}
+
+impl Default for PointParticleProfile3D {
+    fn default() -> Self {
+        Self {
+            path: ParticlePath3D::Ballistic,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PointParticles3DState {
+    pub model: [[f32; 4]; 4],
+    pub active: bool,
+    pub looping: bool,
+    pub prewarm: bool,
+    pub max_particles: u32,
+    pub emission_rate: f32,
+    pub duration: f32,
+    pub lifetime_min: f32,
+    pub lifetime_max: f32,
+    pub speed_min: f32,
+    pub speed_max: f32,
+    pub spread_radians: f32,
+    pub point_size: f32,
+    pub size_min: f32,
+    pub size_max: f32,
+    pub gravity: [f32; 3],
+    pub color_start: [f32; 4],
+    pub color_end: [f32; 4],
+    pub emissive: [f32; 3],
+    pub seed: u32,
+    pub params: Vec<f32>,
+    pub simulation_time: f32,
+    pub profile: PointParticleProfile3D,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Material3D {
     pub base_color_factor: [f32; 4],
@@ -253,6 +306,10 @@ pub enum Command3D {
     SetSpotLight {
         node: NodeID,
         light: SpotLight3DState,
+    },
+    UpsertPointParticles {
+        node: NodeID,
+        particles: PointParticles3DState,
     },
     RemoveNode {
         node: NodeID,

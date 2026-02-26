@@ -412,8 +412,11 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let dev_meshlets = parse_bool_with_default(graphics_table, "dev_meshlets", false)?;
     let release_meshlets = parse_bool_with_default(graphics_table, "release_meshlets", true)?;
     let meshlet_debug_view = parse_bool_with_default(graphics_table, "meshlet_debug_view", false)?;
-    let occlusion_culling =
-        parse_occlusion_culling_with_default(graphics_table, "occlusion_culling", OcclusionCulling::Gpu)?;
+    let occlusion_culling = parse_occlusion_culling_with_default(
+        graphics_table,
+        "occlusion_culling",
+        OcclusionCulling::Gpu,
+    )?;
 
     Ok(ProjectConfig {
         name,

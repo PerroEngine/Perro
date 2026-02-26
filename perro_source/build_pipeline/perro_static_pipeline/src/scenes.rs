@@ -1,4 +1,4 @@
-use crate::{res_dir, static_dir, StaticPipelineError};
+use crate::{StaticPipelineError, res_dir, static_dir};
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::{Parser, RuntimeNodeData, RuntimeValue};
 use rayon::prelude::*;
