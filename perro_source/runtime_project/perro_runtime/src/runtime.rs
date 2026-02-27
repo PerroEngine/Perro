@@ -213,6 +213,8 @@ struct Render3DState {
     material_sources: AHashMap<NodeID, String>,
     material_overrides: AHashMap<NodeID, Material3D>,
     particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile3D>,
+    non_looping_emitter_start_time: AHashMap<NodeID, f32>,
+    completed_non_looping_emitters: AHashSet<NodeID>,
     removed_nodes: Vec<NodeID>,
 }
 
@@ -226,6 +228,8 @@ impl Render3DState {
             material_sources: AHashMap::default(),
             material_overrides: AHashMap::default(),
             particle_path_cache: AHashMap::default(),
+            non_looping_emitter_start_time: AHashMap::default(),
+            completed_non_looping_emitters: AHashSet::default(),
             removed_nodes: Vec::new(),
         }
     }

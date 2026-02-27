@@ -1,0 +1,14 @@
+lifetime_min = 1.2
+lifetime_max = 1.9
+speed_min = 3.8
+speed_max = 6.5
+spread_radians = 3.14159
+size = 1.6
+size_min = 1.0
+size_max = 2.4
+color_start = (1.0, 0.85, 0.55, 1.0)
+color_end = (1.0, 0.2, 0.05, 0.0)
+emissive = (1.25, 0.45, 0.18)
+
+
+x = cos(life)

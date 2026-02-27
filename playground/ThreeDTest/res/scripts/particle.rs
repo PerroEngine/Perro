@@ -4,10 +4,10 @@ use perro_ids::prelude::*;
 use perro_modules::prelude::*;
 use perro_scripting::prelude::*;
 
-type SelfNodeType = Node2D;
+type SelfNodeType = ParticleEmitter3D;
 
 #[State]
-pub struct EmptyState {}
+pub struct ParticleState {}
 
 lifecycle!({
     fn on_init(
@@ -29,11 +29,16 @@ lifecycle!({
 
     fn on_update(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
+        ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
-        _self: NodeID,
-    ) {}
+        self_id: NodeID,
+    ) {
+        let dt = delta_time!(ctx);
+        with_node_mut!(ctx, SelfNodeType, self_id, |node| {
+            node.position.y += 12.0 * dt;
+        });
+    }
 
     fn on_fixed_update(
         &self,

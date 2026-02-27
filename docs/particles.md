@@ -3,11 +3,11 @@
 Perro exposes a flexible 3D particle system centered around:
 
 - `ParticleEmitter3D` for spawning/controlling particles
-- `.pparticle` profiles for per-particle mathematical behavior
+- `.ppart` profiles for per-particle mathematical behavior
 
-`.pparticle` authoring details are documented here:
+`.ppart` authoring details are documented here:
 
-- [`.pparticle` Format](resources/pparticle.md)
+- [`.ppart` Format](resources/ppart.md)
 
 ## Overview
 
@@ -44,7 +44,7 @@ You can pair render mode with any simulation mode; choose based on visual style 
 ## How Emitter + Profile Fit Together
 
 `ParticleEmitter3D` defines when/how many particles spawn.  
-`.pparticle` defines what each particle does over its lifetime.
+`.ppart` defines what each particle does over its lifetime.
 
 That split keeps effects composable:
 

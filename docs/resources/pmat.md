@@ -1,6 +1,6 @@
 # `.pmat` Format
 
-`*.pmat` defines a material profile used by `MeshInstance3D`.
+`*.pmat` is a **Perro Material** resource and defines a material profile used by `MeshInstance3D`.
 
 You can reference it in scene/scripts like:
 
@@ -33,6 +33,7 @@ double_sided = false
 ```
 
 Comments:
+
 - `# comment`
 - `// comment`
 
@@ -62,8 +63,3 @@ Comments:
 - `vec3`: `(x, y, z)`
 - `vec4`: `(x, y, z, w)`
 - `string/bare token`: used by `alpha_mode` (for example `OPAQUE`)
-
-## Backward Compatibility
-
-Object-style `.pmat` is still supported for existing content.
-

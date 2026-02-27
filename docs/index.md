@@ -12,4 +12,4 @@
 
 ## Resources
 - [`.pmat` Format](resources/pmat.md)
-- [`.pparticle` Format](resources/pparticle.md)
+- [`.ppart` Format](resources/ppart.md)

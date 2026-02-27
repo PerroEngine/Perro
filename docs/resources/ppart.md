@@ -1,6 +1,6 @@
-# `.pparticle` Format
+# `.ppart` Format
 
-`*.pparticle` defines mathematical per-particle profile behavior used by `ParticleEmitter3D`.
+`*.ppart` is a **Perro Particle** resource and defines mathematical per-particle profile behavior used by `ParticleEmitter3D`.
 
 For full emitter + runtime behavior, read [Particle System Guide](../particles.md).
 
@@ -8,7 +8,7 @@ For full emitter + runtime behavior, read [Particle System Guide](../particles.m
 
 ```scn
 [ParticleEmitter3D]
-    profile = "res://particles/fire_spiral.pparticle"
+    profile = "res://particles/fire_spiral.ppart"
     params = (3.0, 2.0, 8.0, 0.0)
 [/ParticleEmitter3D]
 ```

@@ -57,6 +57,11 @@ var<storage, read> expr_ops: array<ExprOp>;
 @group(1) @binding(4)
 var<storage, read> custom_params: array<f32>;
 
+@group(1) @binding(5)
+var<storage, read> particle_emitters: array<u32>;
+@group(1) @binding(6)
+var<storage, read> particle_spawn_origins: array<vec4<f32>>;
+
 @group(1) @binding(0)
 var<storage, read> particles_read: array<ComputedParticle>;
 
@@ -327,26 +332,18 @@ fn eval_particle(particle_index: u32) -> ComputedParticle {
     out.color = vec4<f32>(0.0);
     out.emissive = vec4<f32>(0.0);
 
-    var emitter_idx: u32 = 0u;
-    var found = false;
-    for (var i: u32 = 0u; i < params.emitter_count; i = i + 1u) {
-        let e = emitters[i];
-        let start = e.counts_seed.x;
-        let count = e.counts_seed.y;
-        if particle_index >= start && particle_index < (start + count) {
-            emitter_idx = i;
-            found = true;
-            break;
-        }
+    if particle_index >= params.particle_count {
+        return out;
     }
-    if !found {
+    let emitter_idx = particle_emitters[particle_index];
+    if emitter_idx >= params.emitter_count {
         return out;
     }
 
     let e = emitters[emitter_idx];
     let local_i = particle_index - e.counts_seed.x;
     let model = mat4x4<f32>(e.model_0, e.model_1, e.model_2, e.model_3);
-    let origin = (model * vec4<f32>(0.0, 0.0, 0.0, 1.0)).xyz;
+    let origin = particle_spawn_origins[particle_index].xyz;
     let time = max(e.time_path.x, 0.0);
     let life_min = max(e.life_speed.x, 0.001);
     let life_max = max(e.life_speed.y, life_min);
@@ -355,8 +352,9 @@ fn eval_particle(particle_index: u32) -> ComputedParticle {
     let size_min = max(e.size_spread_rate.x, 0.01);
     let size_max = max(e.size_spread_rate.y, size_min);
 
+    let prewarm_time = select(time, time + life_max, e.flags.x != 0u && e.flags.y != 0u);
     let rate = max(e.size_spread_rate.w, 1.0e-6);
-    var total_spawned = u32(floor(time * rate));
+    var total_spawned = u32(floor(prewarm_time * rate));
     if e.flags.x != 0u && e.flags.y != 0u {
         total_spawned = max(total_spawned, e.counts_seed.y - 1u);
     }
@@ -371,7 +369,7 @@ fn eval_particle(particle_index: u32) -> ComputedParticle {
     let h3 = hash01((e.counts_seed.w + 0x94D049BBu) ^ (spawn_index * 11u));
     let lifetime = life_min + (life_max - life_min) * h0;
     let spawn_t = f32(spawn_index) / rate;
-    let local_t = time - spawn_t;
+    let local_t = prewarm_time - spawn_t;
     if local_t < 0.0 || local_t > lifetime {
         return out;
     }
@@ -568,12 +566,6 @@ struct ParticleOut {
 fn vs_main(@builtin(instance_index) particle_index: u32) -> ParticleOut {
     var out: ParticleOut;
     let p = particles_read[particle_index];
-    if p.emissive.w != 0.0 {
-        out.clip_pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
-        out.color = vec4<f32>(0.0);
-        out.emissive = vec3<f32>(0.0);
-        return out;
-    }
     out.clip_pos = camera.view_proj * vec4<f32>(p.world_pos.xyz, 1.0);
     out.color = p.color;
     out.emissive = p.emissive.xyz;
@@ -587,12 +579,6 @@ fn vs_billboard(
 ) -> ParticleOut {
     var out: ParticleOut;
     let p = particles_read[particle_index];
-    if p.emissive.w == 0.0 {
-        out.clip_pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
-        out.color = vec4<f32>(0.0);
-        out.emissive = vec3<f32>(0.0);
-        return out;
-    }
     let center_clip = camera.view_proj * vec4<f32>(p.world_pos.xyz, 1.0);
     let corners = array<vec2<f32>, 4>(
         vec2<f32>(-1.0, -1.0),
@@ -613,3 +599,5 @@ fn fs_main(in: ParticleOut) -> @location(0) vec4<f32> {
     let rgb = in.color.rgb + in.emissive;
     return vec4<f32>(rgb, in.color.a);
 }
+
+

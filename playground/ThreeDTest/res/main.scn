@@ -44,7 +44,7 @@ script = "res://scripts/camera.rs"
   
 
         [Node3D]
-            position = (0, 0, 100)
+            position = (0, 0, 5)
         [/Node3D]
     [/Camera3D]
 [/camera]
@@ -75,19 +75,19 @@ parent = @root
 
 [particles_test]
 parent = @root
+script = "res://scripts/particle.rs"
 
 [ParticleEmitter3D]
     render_mode = "billboard"
-    prewarm = true
     active = true
-    looping = true
-    spawn_rate = 8000.0
-    seed = 2125
+    looping = false
+    spawn_rate = 10000.0
+    seed = 21
     params = (3.0, 2.0, 8.0, 0.0)
-    profile = "res://particles/test.pparticle"
+    profile = "res://particles/test.ppart"
 
     [Node3D]
-        position = (0, 0, 5)
+        position = (0, 0, -12)
     [/Node3D]
 [/ParticleEmitter3D]
 [/particles_test]

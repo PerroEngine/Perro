@@ -11,7 +11,7 @@ use perro_render_bridge::{
     ParticleSimulationMode3D,
     PointParticles3DState,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const PARTICLE_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
 
@@ -74,6 +74,13 @@ struct GpuExprOp {
     words: [u32; 4], // opcode, arg_bits, reserved, reserved
 }
 
+#[derive(Clone, Copy)]
+struct InstanceRange {
+    start: u32,
+    count: u32,
+    path_kind: u32,
+}
+
 pub struct PreparePointParticles3D<'a> {
     pub camera: Camera3DState,
     pub emitters: &'a [(NodeID, PointParticles3DState)],
@@ -107,18 +114,34 @@ pub struct GpuPointParticles3D {
     hybrid_emitters: Vec<GpuEmitterParticle>,
     hybrid_emitter_buffer: wgpu::Buffer,
     hybrid_emitter_capacity: usize,
+    hybrid_particle_emitter_map: Vec<u32>,
+    hybrid_particle_emitter_buffer: wgpu::Buffer,
+    hybrid_particle_emitter_capacity: usize,
+    hybrid_particle_spawn_origins: Vec<[f32; 4]>,
+    hybrid_particle_spawn_origin_buffer: wgpu::Buffer,
+    hybrid_particle_spawn_origin_capacity: usize,
     hybrid_particle_count: u32,
     hybrid_has_point: bool,
     hybrid_has_billboard: bool,
+    hybrid_point_ranges: Vec<InstanceRange>,
+    hybrid_billboard_ranges: Vec<InstanceRange>,
     compute_emitters: Vec<GpuEmitterParticle>,
     compute_emitter_buffer: wgpu::Buffer,
     compute_emitter_capacity: usize,
+    compute_particle_emitter_map: Vec<u32>,
+    compute_particle_emitter_buffer: wgpu::Buffer,
+    compute_particle_emitter_capacity: usize,
+    compute_particle_spawn_origins: Vec<[f32; 4]>,
+    compute_particle_spawn_origin_buffer: wgpu::Buffer,
+    compute_particle_spawn_origin_capacity: usize,
     compute_params_buffer: wgpu::Buffer,
     compute_particle_buffer: wgpu::Buffer,
     compute_particle_capacity: usize,
     compute_particle_count: u32,
     compute_has_point: bool,
     compute_has_billboard: bool,
+    compute_point_ranges: Vec<InstanceRange>,
+    compute_billboard_ranges: Vec<InstanceRange>,
     compute_expr_ops: Vec<GpuExprOp>,
     compute_expr_op_buffer: wgpu::Buffer,
     compute_expr_op_capacity: usize,
@@ -128,6 +151,7 @@ pub struct GpuPointParticles3D {
     compiled_exprs: Vec<Program>,
     compiled_expr_lookup: HashMap<String, usize>,
     eval_stack: Vec<f32>,
+    spawn_origin_cache: HashMap<NodeID, HashMap<u32, [f32; 3]>>,
 }
 
 impl GpuPointParticles3D {
@@ -338,6 +362,26 @@ impl GpuPointParticles3D {
                         },
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
         let hybrid_shader = create_point_particles_gpu_shader_module(device);
@@ -481,6 +525,26 @@ impl GpuPointParticles3D {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -633,6 +697,20 @@ impl GpuPointParticles3D {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let hybrid_particle_emitter_capacity = 1024usize;
+        let hybrid_particle_emitter_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_particles3d_hybrid_particle_emitters"),
+            size: (hybrid_particle_emitter_capacity * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let hybrid_particle_spawn_origin_capacity = 1024usize;
+        let hybrid_particle_spawn_origin_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_particles3d_hybrid_particle_spawn_origins"),
+            size: (hybrid_particle_spawn_origin_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let hybrid_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_hybrid_params"),
             size: std::mem::size_of::<GpuEmitterParams>() as u64,
@@ -651,12 +729,34 @@ impl GpuPointParticles3D {
                     binding: 1,
                     resource: hybrid_params_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: hybrid_particle_emitter_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: hybrid_particle_spawn_origin_buffer.as_entire_binding(),
+                },
             ],
         });
         let compute_emitter_capacity = 64usize;
         let compute_emitter_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_compute_emitters"),
             size: (compute_emitter_capacity * std::mem::size_of::<GpuEmitterParticle>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let compute_particle_emitter_capacity = 1024usize;
+        let compute_particle_emitter_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_particles3d_compute_particle_emitters"),
+            size: (compute_particle_emitter_capacity * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let compute_particle_spawn_origin_capacity = 1024usize;
+        let compute_particle_spawn_origin_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_particles3d_compute_particle_spawn_origins"),
+            size: (compute_particle_spawn_origin_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -711,6 +811,14 @@ impl GpuPointParticles3D {
                     binding: 4,
                     resource: compute_custom_param_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: compute_particle_emitter_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: compute_particle_spawn_origin_buffer.as_entire_binding(),
+                },
             ],
         });
         let compute_render_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -747,18 +855,34 @@ impl GpuPointParticles3D {
             hybrid_emitters: Vec::new(),
             hybrid_emitter_buffer,
             hybrid_emitter_capacity,
+            hybrid_particle_emitter_map: Vec::new(),
+            hybrid_particle_emitter_buffer,
+            hybrid_particle_emitter_capacity,
+            hybrid_particle_spawn_origins: Vec::new(),
+            hybrid_particle_spawn_origin_buffer,
+            hybrid_particle_spawn_origin_capacity,
             hybrid_particle_count: 0,
             hybrid_has_point: false,
             hybrid_has_billboard: false,
+            hybrid_point_ranges: Vec::new(),
+            hybrid_billboard_ranges: Vec::new(),
             compute_emitters: Vec::new(),
             compute_emitter_buffer,
             compute_emitter_capacity,
+            compute_particle_emitter_map: Vec::new(),
+            compute_particle_emitter_buffer,
+            compute_particle_emitter_capacity,
+            compute_particle_spawn_origins: Vec::new(),
+            compute_particle_spawn_origin_buffer,
+            compute_particle_spawn_origin_capacity,
             compute_params_buffer,
             compute_particle_buffer,
             compute_particle_capacity,
             compute_particle_count: 0,
             compute_has_point: false,
             compute_has_billboard: false,
+            compute_point_ranges: Vec::new(),
+            compute_billboard_ranges: Vec::new(),
             compute_expr_ops: Vec::new(),
             compute_expr_op_buffer,
             compute_expr_op_capacity,
@@ -768,6 +892,7 @@ impl GpuPointParticles3D {
             compiled_exprs: Vec::new(),
             compiled_expr_lookup: HashMap::new(),
             eval_stack: Vec::new(),
+            spawn_origin_cache: HashMap::new(),
         }
     }
 
@@ -789,30 +914,48 @@ impl GpuPointParticles3D {
         self.staged.clear();
         self.staged_billboards.clear();
         self.hybrid_emitters.clear();
+        self.hybrid_particle_emitter_map.clear();
+        self.hybrid_particle_spawn_origins.clear();
         self.hybrid_particle_count = 0;
         self.hybrid_has_point = false;
         self.hybrid_has_billboard = false;
+        self.hybrid_point_ranges.clear();
+        self.hybrid_billboard_ranges.clear();
         self.compute_emitters.clear();
+        self.compute_particle_emitter_map.clear();
+        self.compute_particle_spawn_origins.clear();
         self.compute_particle_count = 0;
         self.compute_has_point = false;
         self.compute_has_billboard = false;
+        self.compute_point_ranges.clear();
+        self.compute_billboard_ranges.clear();
         self.compute_expr_ops.clear();
         self.compute_custom_params.clear();
-        for (_, emitter) in frame.emitters {
+        let mut live_spawn_keys: HashMap<NodeID, HashSet<u32>> = HashMap::new();
+        for (node, emitter) in frame.emitters {
             match emitter.sim_mode {
-                ParticleSimulationMode3D::Cpu => self.push_emitter_particles(emitter.clone()),
+                ParticleSimulationMode3D::Cpu => {
+                    self.push_emitter_particles(*node, emitter.clone(), &mut live_spawn_keys)
+                }
                 ParticleSimulationMode3D::GpuVertex => {
-                    if !self.push_hybrid_emitter_particles(emitter.clone()) {
-                        self.push_emitter_particles(emitter.clone());
+                    if !self.push_hybrid_emitter_particles(*node, emitter.clone(), &mut live_spawn_keys) {
+                        self.push_emitter_particles(*node, emitter.clone(), &mut live_spawn_keys);
                     }
                 }
                 ParticleSimulationMode3D::GpuCompute => {
-                    if !self.push_compute_emitter_particles(emitter.clone()) {
-                        self.push_emitter_particles(emitter.clone());
+                    if !self.push_compute_emitter_particles(*node, emitter.clone(), &mut live_spawn_keys) {
+                        self.push_emitter_particles(*node, emitter.clone(), &mut live_spawn_keys);
                     }
                 }
             }
         }
+        self.spawn_origin_cache.retain(|node, per_particle| {
+            let Some(keys) = live_spawn_keys.get(node) else {
+                return false;
+            };
+            per_particle.retain(|key, _| keys.contains(key));
+            !per_particle.is_empty()
+        });
         if self.staged.is_empty()
             && self.staged_billboards.is_empty()
             && self.hybrid_emitters.is_empty()
@@ -833,11 +976,25 @@ impl GpuPointParticles3D {
             );
         }
         if !self.hybrid_emitters.is_empty() {
-            self.ensure_hybrid_emitter_capacity(device, self.hybrid_emitters.len());
+            self.ensure_hybrid_emitter_capacity(
+                device,
+                self.hybrid_emitters.len(),
+                self.hybrid_particle_count as usize,
+            );
             queue.write_buffer(
                 &self.hybrid_emitter_buffer,
                 0,
                 bytemuck::cast_slice(&self.hybrid_emitters),
+            );
+            queue.write_buffer(
+                &self.hybrid_particle_emitter_buffer,
+                0,
+                bytemuck::cast_slice(&self.hybrid_particle_emitter_map),
+            );
+            queue.write_buffer(
+                &self.hybrid_particle_spawn_origin_buffer,
+                0,
+                bytemuck::cast_slice(&self.hybrid_particle_spawn_origins),
             );
             let params = GpuEmitterParams {
                 emitter_count: self.hybrid_emitters.len() as u32,
@@ -858,6 +1015,16 @@ impl GpuPointParticles3D {
                 &self.compute_emitter_buffer,
                 0,
                 bytemuck::cast_slice(&self.compute_emitters),
+            );
+            queue.write_buffer(
+                &self.compute_particle_emitter_buffer,
+                0,
+                bytemuck::cast_slice(&self.compute_particle_emitter_map),
+            );
+            queue.write_buffer(
+                &self.compute_particle_spawn_origin_buffer,
+                0,
+                bytemuck::cast_slice(&self.compute_particle_spawn_origins),
             );
             let params = GpuEmitterParams {
                 emitter_count: self.compute_emitters.len() as u32,
@@ -954,13 +1121,17 @@ impl GpuPointParticles3D {
                 pass.set_pipeline(&self.hybrid_pipeline);
                 pass.set_bind_group(0, &self.camera_bg, &[]);
                 pass.set_bind_group(1, &self.hybrid_params_bg, &[]);
-                pass.draw(0..1, 0..self.hybrid_particle_count);
+                for range in &self.hybrid_point_ranges {
+                    pass.draw(0..1, range.start..(range.start + range.count));
+                }
             }
             if self.hybrid_has_billboard {
                 pass.set_pipeline(&self.hybrid_billboard_pipeline);
                 pass.set_bind_group(0, &self.camera_bg, &[]);
                 pass.set_bind_group(1, &self.hybrid_params_bg, &[]);
-                pass.draw(0..4, 0..self.hybrid_particle_count);
+                for range in &self.hybrid_billboard_ranges {
+                    pass.draw(0..4, range.start..(range.start + range.count));
+                }
             }
         }
         if self.compute_particle_count > 0 {
@@ -968,13 +1139,17 @@ impl GpuPointParticles3D {
                 pass.set_pipeline(&self.compute_render_pipeline);
                 pass.set_bind_group(0, &self.camera_bg, &[]);
                 pass.set_bind_group(1, &self.compute_render_bg, &[]);
-                pass.draw(0..1, 0..self.compute_particle_count);
+                for range in &self.compute_point_ranges {
+                    pass.draw(0..1, range.start..(range.start + range.count));
+                }
             }
             if self.compute_has_billboard {
                 pass.set_pipeline(&self.compute_render_billboard_pipeline);
                 pass.set_bind_group(0, &self.camera_bg, &[]);
                 pass.set_bind_group(1, &self.compute_render_bg, &[]);
-                pass.draw(0..4, 0..self.compute_particle_count);
+                for range in &self.compute_billboard_ranges {
+                    pass.draw(0..4, range.start..(range.start + range.count));
+                }
             }
         }
     }
@@ -1013,35 +1188,81 @@ impl GpuPointParticles3D {
         self.billboard_particle_capacity = new_capacity;
     }
 
-    fn ensure_hybrid_emitter_capacity(&mut self, device: &wgpu::Device, needed: usize) {
-        if needed <= self.hybrid_emitter_capacity {
-            return;
+    fn ensure_hybrid_emitter_capacity(
+        &mut self,
+        device: &wgpu::Device,
+        needed_emitters: usize,
+        needed_particles: usize,
+    ) {
+        let mut emitter_recreated = false;
+        if needed_emitters > self.hybrid_emitter_capacity {
+            let mut new_capacity = self.hybrid_emitter_capacity.max(1);
+            while new_capacity < needed_emitters {
+                new_capacity *= 2;
+            }
+            self.hybrid_emitter_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_particles3d_hybrid_emitters"),
+                size: (new_capacity * std::mem::size_of::<GpuEmitterParticle>()) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.hybrid_emitter_capacity = new_capacity;
+            emitter_recreated = true;
         }
-        let mut new_capacity = self.hybrid_emitter_capacity.max(1);
-        while new_capacity < needed {
-            new_capacity *= 2;
+        let mut map_recreated = false;
+        if needed_particles > self.hybrid_particle_emitter_capacity {
+            let mut new_capacity = self.hybrid_particle_emitter_capacity.max(1);
+            while new_capacity < needed_particles {
+                new_capacity *= 2;
+            }
+            self.hybrid_particle_emitter_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_particles3d_hybrid_particle_emitters"),
+                size: (new_capacity * std::mem::size_of::<u32>()) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.hybrid_particle_emitter_capacity = new_capacity;
+            map_recreated = true;
         }
-        self.hybrid_emitter_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_particles3d_hybrid_emitters"),
-            size: (new_capacity * std::mem::size_of::<GpuEmitterParticle>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        self.hybrid_params_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_particles3d_hybrid_emitters_bg"),
-            layout: &self.hybrid_emitters_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.hybrid_emitter_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.hybrid_params_buffer.as_entire_binding(),
-                },
-            ],
-        });
-        self.hybrid_emitter_capacity = new_capacity;
+        let mut spawn_origin_recreated = false;
+        if needed_particles > self.hybrid_particle_spawn_origin_capacity {
+            let mut new_capacity = self.hybrid_particle_spawn_origin_capacity.max(1);
+            while new_capacity < needed_particles {
+                new_capacity *= 2;
+            }
+            self.hybrid_particle_spawn_origin_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_particles3d_hybrid_particle_spawn_origins"),
+                size: (new_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.hybrid_particle_spawn_origin_capacity = new_capacity;
+            spawn_origin_recreated = true;
+        }
+        if emitter_recreated || map_recreated || spawn_origin_recreated {
+            self.hybrid_params_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_particles3d_hybrid_emitters_bg"),
+                layout: &self.hybrid_emitters_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.hybrid_emitter_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.hybrid_params_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.hybrid_particle_emitter_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: self.hybrid_particle_spawn_origin_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+        }
     }
 
     fn ensure_compute_capacity(
@@ -1115,8 +1336,44 @@ impl GpuPointParticles3D {
             self.compute_custom_param_capacity = new_capacity;
             params_recreated = true;
         }
+        let mut map_recreated = false;
+        if needed_particles > self.compute_particle_emitter_capacity {
+            let mut new_capacity = self.compute_particle_emitter_capacity.max(1);
+            while new_capacity < needed_particles {
+                new_capacity *= 2;
+            }
+            self.compute_particle_emitter_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_particles3d_compute_particle_emitters"),
+                size: (new_capacity * std::mem::size_of::<u32>()) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.compute_particle_emitter_capacity = new_capacity;
+            map_recreated = true;
+        }
+        let mut spawn_origin_recreated = false;
+        if needed_particles > self.compute_particle_spawn_origin_capacity {
+            let mut new_capacity = self.compute_particle_spawn_origin_capacity.max(1);
+            while new_capacity < needed_particles {
+                new_capacity *= 2;
+            }
+            self.compute_particle_spawn_origin_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_particles3d_compute_particle_spawn_origins"),
+                size: (new_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.compute_particle_spawn_origin_capacity = new_capacity;
+            spawn_origin_recreated = true;
+        }
 
-        if emitter_recreated || particle_recreated || expr_recreated || params_recreated {
+        if emitter_recreated
+            || particle_recreated
+            || expr_recreated
+            || params_recreated
+            || map_recreated
+            || spawn_origin_recreated
+        {
             self.compute_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("perro_particles3d_compute_bg"),
                 layout: &self.compute_bgl,
@@ -1141,6 +1398,14 @@ impl GpuPointParticles3D {
                         binding: 4,
                         resource: self.compute_custom_param_buffer.as_entire_binding(),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: self.compute_particle_emitter_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: self.compute_particle_spawn_origin_buffer.as_entire_binding(),
+                    },
                 ],
             });
             self.compute_render_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1154,12 +1419,30 @@ impl GpuPointParticles3D {
         }
     }
 
-    fn push_emitter_particles(&mut self, emitter: PointParticles3DState) {
+    fn resolve_spawn_origin(
+        &mut self,
+        node: NodeID,
+        particle_key: u32,
+        current_origin: [f32; 3],
+        live_spawn_keys: &mut HashMap<NodeID, HashSet<u32>>,
+    ) -> [f32; 3] {
+        let per_particle = self.spawn_origin_cache.entry(node).or_default();
+        let origin = *per_particle.entry(particle_key).or_insert(current_origin);
+        live_spawn_keys.entry(node).or_default().insert(particle_key);
+        origin
+    }
+
+    fn push_emitter_particles(
+        &mut self,
+        node: NodeID,
+        emitter: PointParticles3DState,
+        live_spawn_keys: &mut HashMap<NodeID, HashSet<u32>>,
+    ) {
         if !emitter.active || emitter.emission_rate <= 0.0 {
             return;
         }
         let model = Mat4::from_cols_array_2d(&emitter.model);
-        let origin = model.transform_point3(Vec3::ZERO);
+        let current_origin = model.transform_point3(Vec3::ZERO);
         let time = emitter.simulation_time.max(0.0);
         let sim_delta = emitter.simulation_delta.max(0.0);
         let life_min = emitter.lifetime_min.max(0.001);
@@ -1221,8 +1504,13 @@ impl GpuPointParticles3D {
         } else {
             self.staged.reserve(emit_count as usize);
         }
+        let prewarm_time = if emitter.looping && emitter.prewarm {
+            time + life_max
+        } else {
+            time
+        };
         let emission_rate = emitter.emission_rate.max(1.0e-6);
-        let mut total_spawned = (time * emission_rate).floor() as u32;
+        let mut total_spawned = (prewarm_time * emission_rate).floor() as u32;
         if emitter.looping && emitter.prewarm {
             total_spawned = total_spawned.max(emit_count.saturating_sub(1));
         }
@@ -1247,7 +1535,7 @@ impl GpuPointParticles3D {
             );
             let life = life_min + (life_max - life_min) * h0;
             let spawn_t = (spawn_index as f32) / emission_rate;
-            let local_t = time - spawn_t;
+            let local_t = prewarm_time - spawn_t;
             if !(0.0..=life).contains(&local_t) {
                 continue;
             }
@@ -1272,7 +1560,14 @@ impl GpuPointParticles3D {
             let seed_value = particle_key as f32;
             let dir_arr = [dir.x, dir.y, dir.z];
             let vel_arr = [vel.x, vel.y, vel.z];
-            let emitter_pos = [origin.x, origin.y, origin.z];
+            let spawn_origin = self.resolve_spawn_origin(
+                node,
+                particle_key,
+                [current_origin.x, current_origin.y, current_origin.z],
+                live_spawn_keys,
+            );
+            let origin = Vec3::from_array(spawn_origin);
+            let emitter_pos = spawn_origin;
             let mut pos = origin;
             let mut prev_pos = origin;
             match &emitter.profile.path {
@@ -1490,7 +1785,12 @@ impl GpuPointParticles3D {
         }
     }
 
-    fn push_hybrid_emitter_particles(&mut self, emitter: PointParticles3DState) -> bool {
+    fn push_hybrid_emitter_particles(
+        &mut self,
+        node: NodeID,
+        emitter: PointParticles3DState,
+        live_spawn_keys: &mut HashMap<NodeID, HashSet<u32>>,
+    ) -> bool {
         if !emitter.active || emitter.emission_rate <= 0.0 {
             return true;
         }
@@ -1516,6 +1816,39 @@ impl GpuPointParticles3D {
         }
         if emit_count == 0 {
             return true;
+        }
+        let model = Mat4::from_cols_array_2d(&emitter.model);
+        let current_origin = model.transform_point3(Vec3::ZERO);
+        let time = emitter.simulation_time.max(0.0);
+        let prewarm_time = if emitter.looping && emitter.prewarm {
+            time + life_max
+        } else {
+            time
+        };
+        let emission_rate = emitter.emission_rate.max(1.0e-6);
+        let mut total_spawned = (prewarm_time * emission_rate).floor() as u32;
+        if emitter.looping && emitter.prewarm {
+            total_spawned = total_spawned.max(emit_count.saturating_sub(1));
+        }
+        let particle_start = self.hybrid_particle_count;
+        let emitter_index = self.hybrid_emitters.len() as u32;
+        append_emitter_map_entries(&mut self.hybrid_particle_emitter_map, emitter_index, emit_count);
+        self.hybrid_particle_spawn_origins.reserve(emit_count as usize);
+        for i in 0..emit_count {
+            let spawn_index = if emitter.looping {
+                let back = emit_count.saturating_sub(1).saturating_sub(i);
+                total_spawned.saturating_sub(back)
+            } else {
+                i
+            };
+            let spawn_origin = self.resolve_spawn_origin(
+                node,
+                spawn_index,
+                [current_origin.x, current_origin.y, current_origin.z],
+                live_spawn_keys,
+            );
+            self.hybrid_particle_spawn_origins
+                .push([spawn_origin[0], spawn_origin[1], spawn_origin[2], 0.0]);
         }
         self.hybrid_emitters.push(GpuEmitterParticle {
             model_0: emitter.model[0],
@@ -1555,7 +1888,7 @@ impl GpuPointParticles3D {
                 emitter.simulation_delta.max(0.0),
             ],
             counts_seed: [
-                self.hybrid_particle_count,
+                particle_start,
                 emit_count,
                 max_alive_budget.max(1),
                 emitter.seed,
@@ -1571,14 +1904,31 @@ impl GpuPointParticles3D {
         });
         if emitter.render_mode == ParticleRenderMode3D::Billboard {
             self.hybrid_has_billboard = true;
+            push_instance_range(
+                &mut self.hybrid_billboard_ranges,
+                particle_start,
+                emit_count,
+                path_kind,
+            );
         } else {
             self.hybrid_has_point = true;
+            push_instance_range(
+                &mut self.hybrid_point_ranges,
+                particle_start,
+                emit_count,
+                path_kind,
+            );
         }
         self.hybrid_particle_count += emit_count;
         true
     }
 
-    fn push_compute_emitter_particles(&mut self, emitter: PointParticles3DState) -> bool {
+    fn push_compute_emitter_particles(
+        &mut self,
+        node: NodeID,
+        emitter: PointParticles3DState,
+        live_spawn_keys: &mut HashMap<NodeID, HashSet<u32>>,
+    ) -> bool {
         if !emitter.active || emitter.emission_rate <= 0.0 {
             return true;
         }
@@ -1707,6 +2057,39 @@ impl GpuPointParticles3D {
         if emit_count == 0 {
             return true;
         }
+        let model = Mat4::from_cols_array_2d(&emitter.model);
+        let current_origin = model.transform_point3(Vec3::ZERO);
+        let time = emitter.simulation_time.max(0.0);
+        let prewarm_time = if emitter.looping && emitter.prewarm {
+            time + life_max
+        } else {
+            time
+        };
+        let emission_rate = emitter.emission_rate.max(1.0e-6);
+        let mut total_spawned = (prewarm_time * emission_rate).floor() as u32;
+        if emitter.looping && emitter.prewarm {
+            total_spawned = total_spawned.max(emit_count.saturating_sub(1));
+        }
+        let particle_start = self.compute_particle_count;
+        let emitter_index = self.compute_emitters.len() as u32;
+        append_emitter_map_entries(&mut self.compute_particle_emitter_map, emitter_index, emit_count);
+        self.compute_particle_spawn_origins.reserve(emit_count as usize);
+        for i in 0..emit_count {
+            let spawn_index = if emitter.looping {
+                let back = emit_count.saturating_sub(1).saturating_sub(i);
+                total_spawned.saturating_sub(back)
+            } else {
+                i
+            };
+            let spawn_origin = self.resolve_spawn_origin(
+                node,
+                spawn_index,
+                [current_origin.x, current_origin.y, current_origin.z],
+                live_spawn_keys,
+            );
+            self.compute_particle_spawn_origins
+                .push([spawn_origin[0], spawn_origin[1], spawn_origin[2], 0.0]);
+        }
         self.compute_emitters.push(GpuEmitterParticle {
             model_0: emitter.model[0],
             model_1: emitter.model[1],
@@ -1745,7 +2128,7 @@ impl GpuPointParticles3D {
                 emitter.simulation_delta.max(0.0),
             ],
             counts_seed: [
-                self.compute_particle_count,
+                particle_start,
                 emit_count,
                 max_alive_budget.max(1),
                 emitter.seed,
@@ -1761,8 +2144,20 @@ impl GpuPointParticles3D {
         });
         if emitter.render_mode == ParticleRenderMode3D::Billboard {
             self.compute_has_billboard = true;
+            push_instance_range(
+                &mut self.compute_billboard_ranges,
+                particle_start,
+                emit_count,
+                path_kind,
+            );
         } else {
             self.compute_has_point = true;
+            push_instance_range(
+                &mut self.compute_point_ranges,
+                particle_start,
+                emit_count,
+                path_kind,
+            );
         }
         self.compute_particle_count += emit_count;
         true
@@ -1952,6 +2347,32 @@ fn compute_view_proj(camera: Camera3DState, width: u32, height: u32) -> Mat4 {
     };
     let world = Mat4::from_rotation_translation(rot, pos);
     proj * world.inverse()
+}
+
+fn push_instance_range(ranges: &mut Vec<InstanceRange>, start: u32, count: u32, path_kind: u32) {
+    if count == 0 {
+        return;
+    }
+    if let Some(last) = ranges.last_mut() {
+        let last_end = last.start.saturating_add(last.count);
+        if last_end == start && last.path_kind == path_kind {
+            last.count = last.count.saturating_add(count);
+            return;
+        }
+    }
+    ranges.push(InstanceRange {
+        start,
+        count,
+        path_kind,
+    });
+}
+
+fn append_emitter_map_entries(map: &mut Vec<u32>, emitter_index: u32, count: u32) {
+    if count == 0 {
+        return;
+    }
+    let old_len = map.len();
+    map.resize(old_len + count as usize, emitter_index);
 }
 
 fn projection_matrix(projection: CameraProjectionState, aspect: f32) -> Mat4 {

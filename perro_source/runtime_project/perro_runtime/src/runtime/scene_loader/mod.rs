@@ -76,6 +76,8 @@ impl Runtime {
         self.render_3d.material_sources.clear();
         self.render_3d.material_overrides.clear();
         self.render_3d.particle_path_cache.clear();
+        self.render_3d.non_looping_emitter_start_time.clear();
+        self.render_3d.completed_non_looping_emitters.clear();
         self.render_3d.removed_nodes.clear();
         if self.provider_mode == ProviderMode::Dynamic {
             self.dynamic_script_registry.clear();

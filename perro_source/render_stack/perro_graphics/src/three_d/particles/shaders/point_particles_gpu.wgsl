@@ -38,6 +38,11 @@ var<storage, read> emitters: array<GpuEmitter>;
 @group(1) @binding(1)
 var<uniform> params: ParticleParams;
 
+@group(1) @binding(2)
+var<storage, read> particle_emitters: array<u32>;
+@group(1) @binding(3)
+var<storage, read> particle_spawn_origins: array<vec4<f32>>;
+
 struct ParticleOut {
     @builtin(position) clip_pos: vec4<f32>,
     @location(0) color: vec4<f32>,
@@ -67,30 +72,19 @@ fn vs_main(@builtin(instance_index) particle_index: u32) -> ParticleOut {
     out.color = vec4<f32>(0.0);
     out.emissive = vec3<f32>(0.0);
 
-    var emitter_idx: u32 = 0u;
-    var found = false;
-    for (var i: u32 = 0u; i < params.emitter_count; i = i + 1u) {
-        let e = emitters[i];
-        let start = e.counts_seed.x;
-        let count = e.counts_seed.y;
-        if particle_index >= start && particle_index < (start + count) {
-            emitter_idx = i;
-            found = true;
-            break;
-        }
+    if particle_index >= params.particle_count {
+        return out;
     }
-    if !found {
+    let emitter_idx = particle_emitters[particle_index];
+    if emitter_idx >= params.emitter_count {
         return out;
     }
 
     let e = emitters[emitter_idx];
-    if e.flags.w != 0u {
-        return out;
-    }
     let local_i = particle_index - e.counts_seed.x;
     let model = mat4x4<f32>(e.model_0, e.model_1, e.model_2, e.model_3);
     let up = safe_normalize((model * vec4<f32>(0.0, 1.0, 0.0, 0.0)).xyz, vec3<f32>(0.0, 1.0, 0.0));
-    let origin = (model * vec4<f32>(0.0, 0.0, 0.0, 1.0)).xyz;
+    let origin = particle_spawn_origins[particle_index].xyz;
     let time = max(e.time_path.x, 0.0);
     let life_min = max(e.life_speed.x, 0.001);
     let life_max = max(e.life_speed.y, life_min);
@@ -99,8 +93,9 @@ fn vs_main(@builtin(instance_index) particle_index: u32) -> ParticleOut {
     let size_min = max(e.size_spread_rate.x, 0.01);
     let size_max = max(e.size_spread_rate.y, size_min);
 
+    let prewarm_time = select(time, time + life_max, e.flags.x != 0u && e.flags.y != 0u);
     let rate = max(e.size_spread_rate.w, 1.0e-6);
-    var total_spawned = u32(floor(time * rate));
+    var total_spawned = u32(floor(prewarm_time * rate));
     if e.flags.x != 0u && e.flags.y != 0u {
         total_spawned = max(total_spawned, e.counts_seed.y - 1u);
     }
@@ -115,7 +110,7 @@ fn vs_main(@builtin(instance_index) particle_index: u32) -> ParticleOut {
     let h3 = hash01((e.counts_seed.w + 0x94D049BBu) ^ (spawn_index * 11u));
     let life = life_min + (life_max - life_min) * h0;
     let spawn_t = f32(spawn_index) / rate;
-    let local_t = time - spawn_t;
+    let local_t = prewarm_time - spawn_t;
     if local_t < 0.0 || local_t > life {
         return out;
     }
@@ -188,29 +183,18 @@ fn vs_billboard(
     out.color = vec4<f32>(0.0);
     out.emissive = vec3<f32>(0.0);
 
-    var emitter_idx: u32 = 0u;
-    var found = false;
-    for (var i: u32 = 0u; i < params.emitter_count; i = i + 1u) {
-        let e = emitters[i];
-        let start = e.counts_seed.x;
-        let count = e.counts_seed.y;
-        if particle_index >= start && particle_index < (start + count) {
-            emitter_idx = i;
-            found = true;
-            break;
-        }
+    if particle_index >= params.particle_count {
+        return out;
     }
-    if !found {
+    let emitter_idx = particle_emitters[particle_index];
+    if emitter_idx >= params.emitter_count {
         return out;
     }
 
     let e = emitters[emitter_idx];
-    if e.flags.w == 0u {
-        return out;
-    }
     let local_i = particle_index - e.counts_seed.x;
     let model = mat4x4<f32>(e.model_0, e.model_1, e.model_2, e.model_3);
-    let origin = (model * vec4<f32>(0.0, 0.0, 0.0, 1.0)).xyz;
+    let origin = particle_spawn_origins[particle_index].xyz;
     let time = max(e.time_path.x, 0.0);
     let life_min = max(e.life_speed.x, 0.001);
     let life_max = max(e.life_speed.y, life_min);
@@ -219,8 +203,9 @@ fn vs_billboard(
     let size_min = max(e.size_spread_rate.x, 0.01);
     let size_max = max(e.size_spread_rate.y, size_min);
 
+    let prewarm_time = select(time, time + life_max, e.flags.x != 0u && e.flags.y != 0u);
     let rate = max(e.size_spread_rate.w, 1.0e-6);
-    var total_spawned = u32(floor(time * rate));
+    var total_spawned = u32(floor(prewarm_time * rate));
     if e.flags.x != 0u && e.flags.y != 0u {
         total_spawned = max(total_spawned, e.counts_seed.y - 1u);
     }
@@ -235,7 +220,7 @@ fn vs_billboard(
     let h3 = hash01((e.counts_seed.w + 0x94D049BBu) ^ (spawn_index * 11u));
     let life = life_min + (life_max - life_min) * h0;
     let spawn_t = f32(spawn_index) / rate;
-    let local_t = time - spawn_t;
+    let local_t = prewarm_time - spawn_t;
     if local_t < 0.0 || local_t > life {
         return out;
     }
@@ -310,3 +295,5 @@ fn fs_main(in: ParticleOut) -> @location(0) vec4<f32> {
     let rgb = in.color.rgb + in.emissive;
     return vec4<f32>(rgb, in.color.a);
 }
+
+
