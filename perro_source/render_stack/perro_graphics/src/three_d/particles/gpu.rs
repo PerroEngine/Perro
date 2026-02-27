@@ -1926,6 +1926,7 @@ fn encode_gpu_op(op: &Op) -> GpuExprOp {
         Op::PrevX => (40u32, 0u32),
         Op::PrevY => (41u32, 0u32),
         Op::PrevZ => (42u32, 0u32),
+        Op::Hash => (43u32, 0u32),
     };
     GpuExprOp {
         words: [opcode, arg, 0, 0],

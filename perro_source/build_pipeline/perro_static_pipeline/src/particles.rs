@@ -492,6 +492,7 @@ fn emit_op_literal(op: &Op) -> String {
         Op::Min => "ParticleExprOp3D::Min".to_string(),
         Op::Max => "ParticleExprOp3D::Max".to_string(),
         Op::Clamp => "ParticleExprOp3D::Clamp".to_string(),
+        Op::Hash => "ParticleExprOp3D::Hash".to_string(),
     }
 }
 

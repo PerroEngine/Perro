@@ -1,20 +1,17 @@
-preset = spiral
-preset_param_a = 12.0
-
 lifetime_min = 1.4
-lifetime_max = 6.0
-speed_min = 3.0
-speed_max = 5.0
-spread_radians = 1.35
+lifetime_max = 7.0
+speed_min = 1.1
+speed_max = 1.6
+spread_radians = 0.55
 size = 1.0
 size_min = 0.55
 size_max = 2.2
 color_start = (0.15, 0.95, 0.75, 1.0)
-color_end = (1.0, 0.1, 0.02, 0.0)
+color_end = (0.4, 0.1, 0.2, 1.0)
 emissive = (0.2, 0.06, 0.01)
-force = (0.0, -0.9, 0.0)
-spin = 0.1
+force = (0.0, -0.1, 0.0)
 
-x = cos(life * (2.8 + rand * 0.6) + ring_u * pi * 2.0) * (4.0 + t * 10.0) + cos((life + spawn_time * 0.2) * (7.0 + rand2 * 2.0)) * (1.2 + rand3) + sin(emitter_time * 0.8 + id * 0.01) * 1.6 + (prev_x - emitter_x) * 0.12 + params[0]
-y = (sin(life * (1.9 + rand2 * 0.5)) + sin(life * (4.1 + rand3 * 0.9)) * 0.45) * (2.2 + t * 2.5) + cos((life - lifetime * 0.5) * pi * 2.0) * 0.9 + max(-2.0, min(2.0, (prev_y - emitter_y) * 0.18)) + dir_y * speed * 0.22 + params[1]
-z = sin(life * (2.8 + rand * 0.6) + ring_u * pi * 2.0) * (4.0 + t * 10.0) + sin((life + spawn_time * 0.2) * (7.0 + rand3 * 2.0)) * (1.2 + rand2) + cos(emitter_time * 0.8 + seed * 0.0009 + id * 0.013) * 1.6 + (prev_z - emitter_z) * 0.12 + params[2]
+
+
+x = 5*cos(life)
+y = 5*sin(t^2)

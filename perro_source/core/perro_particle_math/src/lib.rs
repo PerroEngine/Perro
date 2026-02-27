@@ -43,6 +43,7 @@ pub enum Op {
     Min,
     Max,
     Clamp,
+    Hash,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -257,6 +258,10 @@ pub fn eval_ops_particle(
                     let x = stack.pop()?;
                     stack.push(x.clamp(lo, hi));
                 }
+                Op::Hash => {
+                    let a = stack.pop()?;
+                    stack.push(hash01f(a));
+                }
             }
         }
     if stack.len() == 1 {
@@ -339,6 +344,10 @@ pub fn emit_wgsl_expr_ops(ops: &[Op]) -> Result<String, CompileError> {
                     let x = stack.pop().ok_or(CompileError::InvalidProgram)?;
                     stack.push(format!("clamp({x}, {lo}, {hi})"));
                 }
+                Op::Hash => {
+                    let a = stack.pop().ok_or(CompileError::InvalidProgram)?;
+                    stack.push(format!("hash01f({a})"));
+                }
             }
         }
     if stack.len() == 1 {
@@ -371,6 +380,12 @@ fn format_float(v: f32) -> String {
     } else {
         "0.0".to_string()
     }
+}
+
+#[inline]
+fn hash01f(v: f32) -> f32 {
+    let n = (v * 12.9898 + 78.233).sin() * 43_758.547;
+    n - n.floor()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -503,6 +518,7 @@ impl<'a> Compiler<'a> {
                 ("min", 2) => Op::Min,
                 ("max", 2) => Op::Max,
                 ("clamp", 3) => Op::Clamp,
+                ("hash", 1) => Op::Hash,
                 _ => return Err(CompileError::InvalidFunctionArity),
             };
             self.ops.push(op);
@@ -538,6 +554,7 @@ impl<'a> Compiler<'a> {
             "prev_y" => self.ops.push(Op::PrevY),
             "prev_z" => self.ops.push(Op::PrevZ),
             "pi" => self.ops.push(Op::Const(std::f32::consts::PI)),
+            "tau" => self.ops.push(Op::Const(std::f32::consts::TAU)),
             _ => return Err(CompileError::UnknownIdentifier),
         }
         Ok(())
@@ -633,5 +650,42 @@ mod tests {
         let p = compile_expression("clamp(t,0.0,1.0)").expect("compile");
         let e = p.emit_wgsl_expr().expect("emit");
         assert!(e.contains("clamp("));
+    }
+
+    #[test]
+    fn hash_function_works() {
+        let p = compile_expression("hash(id + params[0])").expect("compile");
+        let mut stack = Vec::new();
+        let v = p
+            .eval_particle(
+                0.5,
+                0.5,
+                1.0,
+                0.0,
+                0.0,
+                1.0,
+                42.0,
+                [0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.1, 0.2, 0.3],
+                42.0,
+                0.0,
+                0.0,
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                &[2.0],
+                &mut stack,
+            )
+            .expect("eval should succeed");
+        assert!(v.is_finite());
+        assert!((0.0..1.0).contains(&v));
+    }
+
+    #[test]
+    fn tau_constant_works() {
+        let p = compile_expression("tau").expect("compile");
+        let mut stack = Vec::new();
+        let v = p.eval(0.0, 0.0, &[], &mut stack).expect("eval should succeed");
+        assert!((v - std::f32::consts::TAU).abs() < 1.0e-6);
     }
 }

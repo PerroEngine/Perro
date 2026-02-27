@@ -90,10 +90,12 @@ Operators:
 Functions:
 
 - `sin`, `cos`, `tan`, `abs`, `sqrt`, `min`, `max`, `clamp`
+- `hash(x)`: deterministic pseudo-random scalar in `[0,1)` derived from input `x`.
 
 Constants/inputs:
 
 - `pi`: constant `3.14159265...`.
+- `tau`: constant `6.28318530...` (`2*pi`).
 - `params[i]`: emitter-provided parameter array value at index `i` (out-of-range -> `0.0`).
 - `t`: normalized particle age in `[0,1]` (`0` at spawn, `1` at death).
 - `life`: elapsed seconds since this particle spawned.

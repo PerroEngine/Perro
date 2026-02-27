@@ -68,6 +68,11 @@ fn hash01(seed: u32) -> f32 {
     return f32(x) / 4294967295.0;
 }
 
+fn hash01f(v: f32) -> f32 {
+    let n = sin(v * 12.9898 + 78.233) * 43758.547;
+    return n - floor(n);
+}
+
 fn safe_normalize(v: vec3<f32>, fallback: vec3<f32>) -> vec3<f32> {
     let len = length(v);
     if len > 1.0e-6 {
@@ -302,6 +307,10 @@ fn eval_expr(
             if sp >= 64u { return 0.0; }
             stack[sp] = prev_z;
             sp = sp + 1u;
+        } else if code == 43u { // hash
+            if sp < 1u { return 0.0; }
+            sp = sp - 1u; let a = stack[sp];
+            stack[sp] = hash01f(a); sp = sp + 1u;
         } else {
             return 0.0;
         }
