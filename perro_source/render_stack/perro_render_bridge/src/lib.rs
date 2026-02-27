@@ -107,8 +107,14 @@ pub enum ParticleSimulationMode3D {
     GpuCompute,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParticleRenderMode3D {
+    Point,
+    Billboard,
+}
+
 #[derive(Debug, Clone, PartialEq)]
-pub struct PointParticleProfile3D {
+pub struct ParticleProfile3D {
     pub path: ParticlePath3D,
     pub expr_x_ops: Option<Cow<'static, [ParticleExprOp3D]>>,
     pub expr_y_ops: Option<Cow<'static, [ParticleExprOp3D]>>,
@@ -118,7 +124,7 @@ pub struct PointParticleProfile3D {
     pub speed_min: f32,
     pub speed_max: f32,
     pub spread_radians: f32,
-    pub point_size: f32,
+    pub size: f32,
     pub size_min: f32,
     pub size_max: f32,
     pub force: [f32; 3],
@@ -128,7 +134,7 @@ pub struct PointParticleProfile3D {
     pub spin_angular_velocity: f32,
 }
 
-impl Default for PointParticleProfile3D {
+impl Default for ParticleProfile3D {
     fn default() -> Self {
         Self {
             path: ParticlePath3D::None,
@@ -140,7 +146,7 @@ impl Default for PointParticleProfile3D {
             speed_min: 1.0,
             speed_max: 3.0,
             spread_radians: std::f32::consts::FRAC_PI_3,
-            point_size: 6.0,
+            size: 6.0,
             size_min: 0.65,
             size_max: 1.35,
             force: [0.0, 0.0, 0.0],
@@ -165,7 +171,7 @@ pub struct PointParticles3DState {
     pub speed_min: f32,
     pub speed_max: f32,
     pub spread_radians: f32,
-    pub point_size: f32,
+    pub size: f32,
     pub size_min: f32,
     pub size_max: f32,
     pub gravity: [f32; 3],
@@ -175,8 +181,10 @@ pub struct PointParticles3DState {
     pub seed: u32,
     pub params: Vec<f32>,
     pub simulation_time: f32,
-    pub profile: PointParticleProfile3D,
+    pub simulation_delta: f32,
+    pub profile: ParticleProfile3D,
     pub sim_mode: ParticleSimulationMode3D,
+    pub render_mode: ParticleRenderMode3D,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -405,3 +413,4 @@ pub trait RenderBridge {
 
     fn drain_events(&mut self, out: &mut Vec<RenderEvent>);
 }
+

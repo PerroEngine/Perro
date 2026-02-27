@@ -1,108 +1,112 @@
 # `.pparticle` Format
 
-`*.pparticle` defines **per-particle motion math over lifetime**.
+`*.pparticle` defines mathematical per-particle profile behavior used by `ParticleEmitter3D`.
 
-Emitter-level controls (count, emission, lifetime range, speed range, etc.) stay on `ParticleEmitter3D` in scene.
+For full emitter + runtime behavior, read [Particle System Guide](../particles.md).
 
-## Where It Is Used
-
-On a `ParticleEmitter3D` node:
+## Usage
 
 ```scn
 [ParticleEmitter3D]
-    particle = "res://particles/fire_spiral.pparticle"
+    profile = "res://particles/fire_spiral.pparticle"
     params = (3.0, 2.0, 8.0, 0.0)
 [/ParticleEmitter3D]
 ```
 
-`params` is a float slice exposed to expressions as `params[index]`.
+## Keys
 
-## Supported Keys
+Core path/expression keys:
 
-- `mode`
-- `param_a`
-- `param_b`
-- `expr_x` (custom mode)
-- `expr_y` (custom mode)
-- `expr_z` (custom mode)
+- `preset`
+- `preset_param_a`
+- `preset_param_b`
+- `preset_param_c`
+- `preset_param_d`
+- `x`
+- `y`
+- `z`
 
-## Modes
+Profile keys:
 
-### `ballistic`
+- `lifetime_min`
+- `lifetime_max`
+- `speed_min`
+- `speed_max`
+- `spread_radians`
+- `size`
+- `size_min`
+- `size_max`
+- `force` or `force_x`, `force_y`, `force_z`
+- `color_start`
+- `color_end`
+- `emissive`
+- `spin`
 
-Default path; no extra keys required.
-
-### `spiral`
-
-```txt
-mode = spiral
-param_a = 8.0    # angular velocity
-param_b = 1.5    # radius
-```
-
-### `orbit_y`
-
-```txt
-mode = orbit_y
-param_a = 4.0    # angular velocity
-param_b = 2.0    # radius
-```
-
-### `noise_drift`
+## Defaults
 
 ```txt
-mode = noise_drift
-param_a = 1.2    # amplitude
-param_b = 6.0    # frequency
+lifetime_min = 0.6
+lifetime_max = 1.4
+speed_min = 1.0
+speed_max = 3.0
+spread_radians = 1.0471976
+size = 6.0
+size_min = 0.65
+size_max = 1.35
+force = (0.0, 0.0, 0.0)
+color_start = (1.0, 1.0, 1.0, 1.0)
+color_end = (1.0, 0.4, 0.1, 0.0)
+emissive = (0.0, 0.0, 0.0)
+spin = 0.0
 ```
 
-### `custom`
+## Presets
 
-Define per-axis offset equations over lifetime.
+Supported `preset` values:
 
-```txt
-mode = custom
-expr_x = sin(t * params[0] * pi * 2.0) * params[1]
-expr_y = t * params[2]
-expr_z = cos(t * params[0] * pi * 2.0) * params[1]
-```
+- `ballistic`
+- `spiral`
+- `orbit_y`
+- `noise_drift`
+- `flat_disk`
 
-## Expression Inputs
+If omitted, no preset path is applied.
 
-- `t` = normalized lifetime in `[0, 1]`
-- `life` = elapsed seconds since spawn
-- `pi`
-- `params[i]` = emitter parameter slice value (out-of-range returns `0.0`)
+Preset mappings:
 
-## Expression Operators
+- `spiral`: `preset_param_a = angular_velocity`, `preset_param_b = radius`
+- `orbit_y`: `preset_param_a = angular_velocity`, `preset_param_b = radius`
+- `noise_drift`: `preset_param_a = amplitude`, `preset_param_b = frequency`
+- `flat_disk`: `preset_param_a = radius`
 
-- `+`, `-`, `*`, `/`, `^`
-- Parentheses: `( ... )`
+`x`, `y`, `z` expressions are additive offsets on top of preset output.
 
-## Expression Functions
+## Expressions
 
-- `sin(x)`
-- `cos(x)`
-- `tan(x)`
-- `abs(x)`
-- `sqrt(x)`
-- `min(a, b)`
-- `max(a, b)`
-- `clamp(x, lo, hi)`
+Operators:
 
-## Inline Particle Definition
+- `+`, `-`, `*`, `/`, `^`, unary `-`
 
-You can inline instead of using a file:
+Functions:
 
-```scn
-[ParticleEmitter3D]
-    particle = {
-        mode: custom,
-        expr_x: "sin(t * params[0])",
-        expr_y: "t * params[1]",
-        expr_z: "0.0"
-    }
-    params = (8.0, 4.0)
-[/ParticleEmitter3D]
-```
+- `sin`, `cos`, `tan`, `abs`, `sqrt`, `min`, `max`, `clamp`
 
+Constants/inputs:
+
+- `pi`: constant `3.14159265...`.
+- `params[i]`: emitter-provided parameter array value at index `i` (out-of-range -> `0.0`).
+- `t`: normalized particle age in `[0,1]` (`0` at spawn, `1` at death).
+- `life`: elapsed seconds since this particle spawned.
+- `lifetime`: this particle's sampled total lifetime in seconds.
+- `age_left`: remaining life in seconds (`max(lifetime - life, 0)`).
+- `spawn_time`: emitter simulation time when this particle spawned.
+- `emitter_time`: current emitter simulation time.
+- `speed`: particle sampled initial speed (`speed_min..speed_max`).
+- `id`: stable particle id/key (float form).
+- `dir_x`, `dir_y`, `dir_z`: initial unit direction components.
+- `vel_x`, `vel_y`, `vel_z`: initial velocity components (`dir * speed`).
+- `rand`, `rand2`, `rand3`: three stable random channels in `[0,1]` per particle.
+- `seed`: stable per-particle seed-derived value.
+- `ring_u`: stable low-discrepancy scalar in `[0,1)`, useful for ring/circle layouts.
+- `emitter_x`, `emitter_y`, `emitter_z`: emitter world position components.
+- `prev_x`, `prev_y`, `prev_z`: previous-frame base world position components for this particle

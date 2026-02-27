@@ -1,0 +1,20 @@
+preset = flat_disk
+preset_param_a = 6.0
+
+lifetime_min = 3.0
+lifetime_max = 8.0
+speed_min = 0.1
+speed_max = 1.2
+spread_radians = 1.57
+size = 14.0
+size_min = 0.7
+size_max = 2.4
+color_start = (0.72, 0.72, 0.72, 0.35)
+color_end = (0.36, 0.36, 0.36, 0.0)
+emissive = (0.0, 0.0, 0.0)
+force = (0.0, 0.12, 0.0)
+spin = 0.18
+
+x = cos(ring_u * pi * 2.0 + life * (0.35 + rand * 0.45)) * (2.0 + t * 8.0 + rand2 * 3.0) + sin(life * (1.2 + rand3)) * 0.8 + (prev_x - emitter_x) * 0.05
+y = sin(life * (0.8 + rand2 * 0.6) + id * 0.003) * 1.2 + age_left * 0.05 + (prev_y - emitter_y) * 0.06
+z = sin(ring_u * pi * 2.0 + life * (0.35 + rand2 * 0.45)) * (2.0 + t * 8.0 + rand * 3.0) + cos(life * (1.1 + rand3)) * 0.8 + (prev_z - emitter_z) * 0.05

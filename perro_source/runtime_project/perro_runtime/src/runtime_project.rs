@@ -1,4 +1,4 @@
-use perro_render_bridge::{Material3D, PointParticleProfile3D};
+use perro_render_bridge::{Material3D, ParticleProfile3D};
 use perro_scene::StaticScene;
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -18,7 +18,7 @@ pub enum ProviderMode {
 
 pub type StaticSceneLookup = fn(&str) -> Option<&'static StaticScene>;
 pub type StaticMaterialLookup = fn(&str) -> Option<&'static Material3D>;
-pub type StaticParticleLookup = fn(&str) -> Option<&'static PointParticleProfile3D>;
+pub type StaticParticleLookup = fn(&str) -> Option<&'static ParticleProfile3D>;
 
 /// Immutable project boot data owned by the runtime.
 #[derive(Debug, Clone)]
@@ -110,3 +110,4 @@ impl RuntimeProject {
         self
     }
 }
+

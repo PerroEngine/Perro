@@ -1,5 +1,8 @@
 # Docs Index
 
+## Particles
+- [Particle System Guide](particles.md)
+
 ## Scripting
 - [Scripting Overview](scripting/README.md)
 - [Script Contexts](scripting/contexts/README.md)

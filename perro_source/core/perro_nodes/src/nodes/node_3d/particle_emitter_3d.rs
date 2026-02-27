@@ -9,6 +9,12 @@ pub enum ParticleEmitterSimMode3D {
     GpuCompute,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParticleEmitterRenderMode3D {
+    Point,
+    Billboard,
+}
+
 #[derive(Clone, Debug)]
 pub struct ParticleEmitter3D {
     pub base: Node3D,
@@ -20,6 +26,7 @@ pub struct ParticleEmitter3D {
     pub params: Vec<f32>,
     pub profile: String,
     pub sim_mode: ParticleEmitterSimMode3D,
+    pub render_mode: ParticleEmitterRenderMode3D,
 }
 
 impl Deref for ParticleEmitter3D {
@@ -48,6 +55,7 @@ impl ParticleEmitter3D {
             params: Vec::new(),
             profile: String::new(),
             sim_mode: ParticleEmitterSimMode3D::Default,
+            render_mode: ParticleEmitterRenderMode3D::Point,
         }
     }
 }

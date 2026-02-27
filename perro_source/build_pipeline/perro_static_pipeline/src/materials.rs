@@ -214,11 +214,15 @@ fn material_from_runtime_entries(entries: &[(String, RuntimeValue)]) -> Option<M
 }
 
 fn load_pmat_literal(source: &str) -> Option<MaterialLiteral> {
-    if let Some(parsed) = std::panic::catch_unwind(|| Parser::new(source).parse_value_literal()).ok()
-        && let Some(material) = material_from_runtime_value(&parsed)
-    {
-        return Some(material);
+    if pmat_looks_like_object(source) {
+        if let Some(parsed) = std::panic::catch_unwind(|| Parser::new(source).parse_value_literal()).ok()
+            && let Some(material) = material_from_runtime_value(&parsed)
+        {
+            return Some(material);
+        }
+        return None;
     }
+
     let entries = parse_pmat_key_values(source)?;
     material_from_runtime_entries(&entries)
 }
@@ -254,6 +258,14 @@ fn strip_line_comment(line: &str) -> &str {
         (None, Some(b)) => &line[..b],
         (None, None) => line,
     }
+}
+
+fn pmat_looks_like_object(text: &str) -> bool {
+    text.lines()
+        .map(strip_line_comment)
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .is_some_and(|line| line.starts_with('{'))
 }
 
 fn parse_kv_value(text: &str) -> Option<RuntimeValue> {

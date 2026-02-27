@@ -30,15 +30,26 @@ pub fn from_static_object(entries: &[(&str, StaticSceneValue)]) -> Option<Materi
 fn load_pmat(source: &str) -> Option<Material3D> {
     let bytes = load_asset(source).ok()?;
     let text = std::str::from_utf8(&bytes).ok()?;
-    if let Some(value) = std::panic::catch_unwind(|| Parser::new(text).parse_value_literal())
-        .ok()
-        && let RuntimeValue::Object(entries) = value
-        && let Some(material) = from_runtime_object(&entries)
-    {
-        return Some(material);
+    if pmat_looks_like_object(text) {
+        if let Some(value) = std::panic::catch_unwind(|| Parser::new(text).parse_value_literal()).ok()
+            && let RuntimeValue::Object(entries) = value
+            && let Some(material) = from_runtime_object(&entries)
+        {
+            return Some(material);
+        }
+        return None;
     }
+
     let entries = parse_pmat_key_values(text)?;
     from_runtime_object(&entries)
+}
+
+fn pmat_looks_like_object(text: &str) -> bool {
+    text.lines()
+        .map(strip_line_comment)
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .is_some_and(|line| line.starts_with('{'))
 }
 
 fn parse_pmat_key_values(text: &str) -> Option<Vec<(String, RuntimeValue)>> {

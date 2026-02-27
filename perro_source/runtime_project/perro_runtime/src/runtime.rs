@@ -212,7 +212,7 @@ struct Render3DState {
     mesh_sources: AHashMap<NodeID, String>,
     material_sources: AHashMap<NodeID, String>,
     material_overrides: AHashMap<NodeID, Material3D>,
-    particle_path_cache: AHashMap<String, perro_render_bridge::PointParticleProfile3D>,
+    particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile3D>,
     removed_nodes: Vec<NodeID>,
 }
 
@@ -592,3 +592,4 @@ impl Default for Runtime {
         Self::new()
     }
 }
+

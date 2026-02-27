@@ -1,12 +1,15 @@
 use super::Runtime;
 use crate::material_schema;
 use perro_ids::{MaterialID, MeshID, NodeID};
-use perro_nodes::{CameraProjection, SceneNodeData, particle_emitter_3d::ParticleEmitterSimMode3D};
+use perro_nodes::{
+    CameraProjection, SceneNodeData,
+    particle_emitter_3d::{ParticleEmitterRenderMode3D, ParticleEmitterSimMode3D},
+};
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
-    ParticlePath3D, ParticleSimulationMode3D, PointLight3DState, PointParticleProfile3D,
-    PointParticles3DState,
+    ParticlePath3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
+    ParticleProfile3D, PointParticles3DState,
     RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
 };
 use std::borrow::Cow;
@@ -216,6 +219,7 @@ impl Runtime {
                     .map(|project| project.config.particle_sim_default)
                     .unwrap_or(perro_project::ParticleSimDefault::Cpu);
                 let sim_mode = resolve_particle_sim_mode(emitter.sim_mode, default_sim_mode);
+                let render_mode = resolve_particle_render_mode(emitter.render_mode);
                 self.queue_render_command(RenderCommand::ThreeD(Command3D::UpsertPointParticles {
                     node,
                     particles: PointParticles3DState {
@@ -233,7 +237,7 @@ impl Runtime {
                         speed_min: profile.speed_min.max(0.0),
                         speed_max: profile.speed_max.max(profile.speed_min.max(0.0)),
                         spread_radians: profile.spread_radians.clamp(0.0, std::f32::consts::PI),
-                        point_size: profile.point_size.max(1.0),
+                        size: profile.size.max(1.0),
                         size_min: profile.size_min.max(0.01),
                         size_max: profile.size_max.max(profile.size_min.max(0.01)),
                         gravity: profile.force,
@@ -243,8 +247,10 @@ impl Runtime {
                         seed: emitter.seed,
                         params: emitter.params.clone(),
                         simulation_time: self.time.elapsed.max(0.0),
+                        simulation_delta: self.time.delta.max(0.0),
                         profile,
                         sim_mode,
+                        render_mode,
                     },
                 }));
                 visible_now.insert(node);
@@ -388,6 +394,13 @@ fn resolve_particle_sim_mode(
     }
 }
 
+fn resolve_particle_render_mode(mode: ParticleEmitterRenderMode3D) -> ParticleRenderMode3D {
+    match mode {
+        ParticleEmitterRenderMode3D::Point => ParticleRenderMode3D::Point,
+        ParticleEmitterRenderMode3D::Billboard => ParticleRenderMode3D::Billboard,
+    }
+}
+
 fn quaternion_forward(rotation: perro_structs::Quaternion) -> [f32; 3] {
     let len_sq = rotation.x * rotation.x
         + rotation.y * rotation.y
@@ -478,7 +491,7 @@ fn parse_fragment_index(fragment: Option<&str>, keys: &[&str]) -> Option<u32> {
     None
 }
 
-fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<PointParticleProfile3D> {
+fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<ParticleProfile3D> {
     let source = source.trim();
     if source.is_empty() {
         return None;
@@ -514,8 +527,8 @@ fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<Point
     Some(parsed)
 }
 
-fn parse_pparticle_source(source: &str) -> Option<PointParticleProfile3D> {
-    let mut profile = PointParticleProfile3D::default();
+fn parse_pparticle_source(source: &str) -> Option<ParticleProfile3D> {
+    let mut profile = ParticleProfile3D::default();
     let mut preset: Option<String> = None;
     let mut preset_param_a = 1.0f32;
     let mut preset_param_b = 1.0f32;
@@ -550,18 +563,6 @@ fn parse_pparticle_source(source: &str) -> Option<PointParticleProfile3D> {
             }
             "preset_param_d" => {
                 preset_param_d = value.parse::<f32>().ok().unwrap_or(preset_param_d);
-            }
-            "angular_velocity" => {
-                preset_param_a = value.parse::<f32>().ok().unwrap_or(preset_param_a);
-            }
-            "radius" => {
-                preset_param_b = value.parse::<f32>().ok().unwrap_or(preset_param_b);
-            }
-            "amplitude" => {
-                preset_param_a = value.parse::<f32>().ok().unwrap_or(preset_param_a);
-            }
-            "frequency" => {
-                preset_param_b = value.parse::<f32>().ok().unwrap_or(preset_param_b);
             }
             "x" => expr_x = value.to_string(),
             "y" => expr_y = value.to_string(),
@@ -601,8 +602,8 @@ fn parse_pparticle_source(source: &str) -> Option<PointParticleProfile3D> {
                     .ok()
                     .unwrap_or(profile.spread_radians);
             }
-            "point_size" => {
-                profile.point_size = value.parse::<f32>().ok().unwrap_or(profile.point_size);
+            "size" => {
+                profile.size = value.parse::<f32>().ok().unwrap_or(profile.size);
             }
             "size_min" => {
                 profile.size_min = value.parse::<f32>().ok().unwrap_or(profile.size_min);
@@ -642,7 +643,6 @@ fn parse_pparticle_source(source: &str) -> Option<PointParticleProfile3D> {
     }
     profile.path = match preset.as_deref() {
         None => ParticlePath3D::None,
-        Some("custom") => ParticlePath3D::None,
         Some("ballistic") => ParticlePath3D::Ballistic,
         Some("spiral") => ParticlePath3D::Spiral {
             angular_velocity: preset_param_a,
@@ -981,3 +981,4 @@ mod tests {
         )));
     }
 }
+

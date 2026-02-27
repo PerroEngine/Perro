@@ -10,7 +10,7 @@ use perro_nodes::{
     node_2d::Node2D,
     node_3d::Node3D,
     particle_emitter_3d::ParticleEmitter3D,
-    particle_emitter_3d::ParticleEmitterSimMode3D,
+    particle_emitter_3d::{ParticleEmitterRenderMode3D, ParticleEmitterSimMode3D},
     point_light_3d::PointLight3D,
     ray_light_3d::RayLight3D,
     spot_light_3d::SpotLight3D,
@@ -719,6 +719,11 @@ fn apply_particle_emitter_3d_fields(
                     node.sim_mode = v;
                 }
             }
+            "render_mode" => {
+                if let Some(v) = as_particle_render_mode(value) {
+                    node.render_mode = v;
+                }
+            }
             _ => {}
         }
     }
@@ -1059,6 +1064,11 @@ fn apply_particle_emitter_3d_fields_static(
             "sim_mode" => {
                 if let Some(v) = as_particle_sim_mode_static(value) {
                     node.sim_mode = v;
+                }
+            }
+            "render_mode" => {
+                if let Some(v) = as_particle_render_mode_static(value) {
+                    node.render_mode = v;
                 }
             }
             _ => {}
@@ -1416,8 +1426,17 @@ fn as_particle_sim_mode(value: &RuntimeValue) -> Option<ParticleEmitterSimMode3D
     match raw.as_str() {
         "default" => Some(ParticleEmitterSimMode3D::Default),
         "cpu" => Some(ParticleEmitterSimMode3D::Cpu),
-        "gpu_vertex" => Some(ParticleEmitterSimMode3D::GpuVertex),
-        "gpu_compute" => Some(ParticleEmitterSimMode3D::GpuCompute),
+        "hybrid" => Some(ParticleEmitterSimMode3D::GpuVertex),
+        "gpu" => Some(ParticleEmitterSimMode3D::GpuCompute),
+        _ => None,
+    }
+}
+
+fn as_particle_render_mode(value: &RuntimeValue) -> Option<ParticleEmitterRenderMode3D> {
+    let raw = as_str(value)?.trim().to_ascii_lowercase();
+    match raw.as_str() {
+        "point" => Some(ParticleEmitterRenderMode3D::Point),
+        "billboard" => Some(ParticleEmitterRenderMode3D::Billboard),
         _ => None,
     }
 }
@@ -1458,8 +1477,17 @@ fn as_particle_sim_mode_static(value: &StaticSceneValue) -> Option<ParticleEmitt
     match raw.as_str() {
         "default" => Some(ParticleEmitterSimMode3D::Default),
         "cpu" => Some(ParticleEmitterSimMode3D::Cpu),
-        "gpu_vertex" => Some(ParticleEmitterSimMode3D::GpuVertex),
-        "gpu_compute" => Some(ParticleEmitterSimMode3D::GpuCompute),
+        "hybrid" => Some(ParticleEmitterSimMode3D::GpuVertex),
+        "gpu" => Some(ParticleEmitterSimMode3D::GpuCompute),
+        _ => None,
+    }
+}
+
+fn as_particle_render_mode_static(value: &StaticSceneValue) -> Option<ParticleEmitterRenderMode3D> {
+    let raw = as_str_static(value)?.trim().to_ascii_lowercase();
+    match raw.as_str() {
+        "point" => Some(ParticleEmitterRenderMode3D::Point),
+        "billboard" => Some(ParticleEmitterRenderMode3D::Billboard),
         _ => None,
     }
 }

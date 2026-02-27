@@ -35,7 +35,7 @@ impl ParticleSimDefault {
         match self {
             Self::Cpu => "cpu",
             Self::GpuVertex => "hybrid",
-            Self::GpuCompute => "gpu_compute",
+            Self::GpuCompute => "gpu",
         }
     }
 }
@@ -532,18 +532,16 @@ fn parse_particle_sim_default_with_default(
     let Some(raw) = value.as_str() else {
         return Err(ProjectError::InvalidField(
             "graphics.particle_sim_default",
-            "must be one of \"cpu\", \"hybrid\", \"gpu\", \"gpu_vertex\", \"gpu_compute\""
-                .to_string(),
+            "must be one of \"cpu\", \"hybrid\", \"gpu\"".to_string(),
         ));
     };
     match raw.trim().to_ascii_lowercase().as_str() {
         "cpu" => Ok(ParticleSimDefault::Cpu),
-        "hybrid" | "gpu_vertex" => Ok(ParticleSimDefault::GpuVertex),
-        "gpu" | "gpu_compute" => Ok(ParticleSimDefault::GpuCompute),
+        "hybrid" => Ok(ParticleSimDefault::GpuVertex),
+        "gpu" => Ok(ParticleSimDefault::GpuCompute),
         _ => Err(ProjectError::InvalidField(
             "graphics.particle_sim_default",
-            "must be one of \"cpu\", \"hybrid\", \"gpu\", \"gpu_vertex\", \"gpu_compute\""
-                .to_string(),
+            "must be one of \"cpu\", \"hybrid\", \"gpu\"".to_string(),
         )),
     }
 }
@@ -1036,9 +1034,9 @@ pub fn lookup_material(_path: &str) -> Option<&'static Material3D> {
 }
 
 fn default_static_particles_rs() -> String {
-    r#"use perro_render_bridge::PointParticleProfile3D;
+    r#"use perro_render_bridge::ParticleProfile3D;
 
-pub fn lookup_particle(_path: &str) -> Option<&'static PointParticleProfile3D> {
+pub fn lookup_particle(_path: &str) -> Option<&'static ParticleProfile3D> {
     None
 }
 "#
@@ -1534,7 +1532,7 @@ dev_meshlets = true
 release_meshlets = false
 meshlet_debug_view = true
 occlusion_culling = "cpu"
-particle_sim_default = "gpu_compute"
+particle_sim_default = "gpu"
 "#;
 
         let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
@@ -1568,7 +1566,7 @@ virtual_resolution = "1920x1080"
     }
 
     #[test]
-    fn parse_project_toml_particle_sim_aliases() {
+    fn parse_project_toml_particle_sim_rejects_old_names() {
         let base = r#"
 [project]
 name = "Game"
@@ -1579,17 +1577,22 @@ icon = "res://icon.png"
 virtual_resolution = "1920x1080"
 "#;
 
-        let gpu = format!("{base}particle_sim_default = \"gpu\"\n");
-        let hybrid = format!("{base}particle_sim_default = \"hybrid\"\n");
+        let gpu_compute = format!("{base}particle_sim_default = \"gpu_compute\"\n");
+        let gpu_vertex = format!("{base}particle_sim_default = \"gpu_vertex\"\n");
 
-        let parsed_gpu = parse_project_toml(&gpu).expect("gpu alias should parse");
-        let parsed_hybrid = parse_project_toml(&hybrid).expect("hybrid alias should parse");
+        let err_gpu_compute =
+            parse_project_toml(&gpu_compute).expect_err("gpu_compute should be rejected");
+        let err_gpu_vertex =
+            parse_project_toml(&gpu_vertex).expect_err("gpu_vertex should be rejected");
 
-        assert_eq!(parsed_gpu.particle_sim_default, ParticleSimDefault::GpuCompute);
-        assert_eq!(
-            parsed_hybrid.particle_sim_default,
-            ParticleSimDefault::GpuVertex
-        );
+        assert!(matches!(
+            err_gpu_compute,
+            ProjectError::InvalidField("graphics.particle_sim_default", _)
+        ));
+        assert!(matches!(
+            err_gpu_vertex,
+            ProjectError::InvalidField("graphics.particle_sim_default", _)
+        ));
     }
 
     #[test]
@@ -1617,3 +1620,4 @@ virtual_resolution = "1920x1080"
         assert_eq!(crate_name_from_project_name("123"), "_123");
     }
 }
+
