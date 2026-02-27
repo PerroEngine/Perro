@@ -234,6 +234,14 @@ fn main() {{\n\
         icon: \"{icon}\",\n\
         virtual_width: {w},\n\
         virtual_height: {h},\n\
+        vsync: {vsync},\n\
+        msaa: {msaa},\n\
+        meshlets: {meshlets},\n\
+        dev_meshlets: {dev_meshlets},\n\
+        release_meshlets: {release_meshlets},\n\
+        meshlet_debug_view: {meshlet_debug_view},\n\
+        occlusion_culling: {occlusion_culling},\n\
+        particle_sim_default: {particle_sim_default},\n\
         assets_brk: ASSETS_BRK,\n\
         scene_lookup: static_assets::scenes::lookup_scene,\n\
         material_lookup: static_assets::materials::lookup_material,\n\
@@ -247,7 +255,15 @@ fn main() {{\n\
         main_scene = escape_str(&cfg.main_scene),
         icon = escape_str(&cfg.icon),
         w = cfg.virtual_width,
-        h = cfg.virtual_height
+        h = cfg.virtual_height,
+        vsync = cfg.vsync,
+        msaa = cfg.msaa,
+        meshlets = cfg.meshlets,
+        dev_meshlets = cfg.dev_meshlets,
+        release_meshlets = cfg.release_meshlets,
+        meshlet_debug_view = cfg.meshlet_debug_view,
+        occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
+        particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
     );
     fs::write(project_src.join("main.rs"), main_src)?;
     Ok(())
@@ -255,6 +271,26 @@ fn main() {{\n\
 
 fn escape_str(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn emit_occlusion_culling_expr(mode: perro_project::OcclusionCulling) -> &'static str {
+    match mode {
+        perro_project::OcclusionCulling::Cpu => "perro_app::entry::OcclusionCulling::Cpu",
+        perro_project::OcclusionCulling::Gpu => "perro_app::entry::OcclusionCulling::Gpu",
+        perro_project::OcclusionCulling::Off => "perro_app::entry::OcclusionCulling::Off",
+    }
+}
+
+fn emit_particle_sim_default_expr(mode: perro_project::ParticleSimDefault) -> &'static str {
+    match mode {
+        perro_project::ParticleSimDefault::Cpu => "perro_app::entry::ParticleSimDefault::Cpu",
+        perro_project::ParticleSimDefault::GpuVertex => {
+            "perro_app::entry::ParticleSimDefault::GpuVertex"
+        }
+        perro_project::ParticleSimDefault::GpuCompute => {
+            "perro_app::entry::ParticleSimDefault::GpuCompute"
+        }
+    }
 }
 
 fn write_scripts_lib(scripts_src: &Path, copied: &[String]) -> Result<(), CompilerError> {

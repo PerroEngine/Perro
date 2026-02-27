@@ -1326,6 +1326,10 @@ impl Gpu3D {
         }
     }
 
+    pub fn depth_view(&self) -> &wgpu::TextureView {
+        &self.depth_view
+    }
+
     fn ensure_instance_capacity(&mut self, device: &wgpu::Device, needed: usize) {
         if needed <= self.instance_capacity {
             return;

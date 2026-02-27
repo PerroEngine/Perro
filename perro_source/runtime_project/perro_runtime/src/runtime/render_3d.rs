@@ -1,10 +1,12 @@
 use super::Runtime;
 use crate::material_schema;
 use perro_ids::{MaterialID, MeshID, NodeID};
-use perro_nodes::{CameraProjection, SceneNodeData};
+use perro_nodes::{CameraProjection, SceneNodeData, particle_emitter_3d::ParticleEmitterSimMode3D};
+use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
-    ParticlePath3D, PointLight3DState, PointParticleProfile3D, PointParticles3DState,
+    ParticlePath3D, ParticleSimulationMode3D, PointLight3DState, PointParticleProfile3D,
+    PointParticles3DState,
     RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
 };
 use std::borrow::Cow;
@@ -208,7 +210,12 @@ impl Runtime {
                 _ => None,
             });
             if effective_visible && let Some(emitter) = point_emitter_data {
-                let profile = resolve_particle_profile(self, &emitter.particle).unwrap_or_default();
+                let profile = resolve_particle_profile(self, &emitter.profile).unwrap_or_default();
+                let default_sim_mode = self
+                    .project()
+                    .map(|project| project.config.particle_sim_default)
+                    .unwrap_or(perro_project::ParticleSimDefault::Cpu);
+                let sim_mode = resolve_particle_sim_mode(emitter.sim_mode, default_sim_mode);
                 self.queue_render_command(RenderCommand::ThreeD(Command3D::UpsertPointParticles {
                     node,
                     particles: PointParticles3DState {
@@ -216,25 +223,28 @@ impl Runtime {
                         active: emitter.active,
                         looping: emitter.looping,
                         prewarm: emitter.prewarm,
-                        max_particles: emitter.max_particles.max(1),
-                        emission_rate: emitter.emission_rate.max(0.0),
-                        duration: emitter.duration.max(0.0),
-                        lifetime_min: emitter.lifetime_min.max(0.001),
-                        lifetime_max: emitter.lifetime_max.max(emitter.lifetime_min.max(0.001)),
-                        speed_min: emitter.speed_min.max(0.0),
-                        speed_max: emitter.speed_max.max(emitter.speed_min.max(0.0)),
-                        spread_radians: emitter.spread_radians.clamp(0.0, std::f32::consts::PI),
-                        point_size: emitter.point_size.max(1.0),
-                        size_min: emitter.size_min.max(0.01),
-                        size_max: emitter.size_max.max(emitter.size_min.max(0.01)),
-                        gravity: emitter.gravity,
-                        color_start: emitter.color_start,
-                        color_end: emitter.color_end,
-                        emissive: emitter.emissive,
+                        lifetime_min: profile.lifetime_min.max(0.001),
+                        lifetime_max: profile.lifetime_max.max(profile.lifetime_min.max(0.001)),
+                        alive_budget: derived_particle_budget(
+                            emitter.spawn_rate.max(0.0),
+                            profile.lifetime_max.max(profile.lifetime_min.max(0.001)),
+                        ),
+                        emission_rate: emitter.spawn_rate.max(0.0),
+                        speed_min: profile.speed_min.max(0.0),
+                        speed_max: profile.speed_max.max(profile.speed_min.max(0.0)),
+                        spread_radians: profile.spread_radians.clamp(0.0, std::f32::consts::PI),
+                        point_size: profile.point_size.max(1.0),
+                        size_min: profile.size_min.max(0.01),
+                        size_max: profile.size_max.max(profile.size_min.max(0.01)),
+                        gravity: profile.force,
+                        color_start: profile.color_start,
+                        color_end: profile.color_end,
+                        emissive: profile.emissive,
                         seed: emitter.seed,
                         params: emitter.params.clone(),
                         simulation_time: self.time.elapsed.max(0.0),
                         profile,
+                        sim_mode,
                     },
                 }));
                 visible_now.insert(node);
@@ -354,6 +364,30 @@ impl Runtime {
     }
 }
 
+fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {
+    if spawn_rate <= 0.0 || lifetime_max <= 0.0 {
+        return 1;
+    }
+    let budget = (spawn_rate * lifetime_max).ceil() as u32 + 2;
+    budget.clamp(1, 1_000_000)
+}
+
+fn resolve_particle_sim_mode(
+    override_mode: ParticleEmitterSimMode3D,
+    default_mode: perro_project::ParticleSimDefault,
+) -> ParticleSimulationMode3D {
+    match override_mode {
+        ParticleEmitterSimMode3D::Default => match default_mode {
+            perro_project::ParticleSimDefault::Cpu => ParticleSimulationMode3D::Cpu,
+            perro_project::ParticleSimDefault::GpuVertex => ParticleSimulationMode3D::GpuVertex,
+            perro_project::ParticleSimDefault::GpuCompute => ParticleSimulationMode3D::GpuCompute,
+        },
+        ParticleEmitterSimMode3D::Cpu => ParticleSimulationMode3D::Cpu,
+        ParticleEmitterSimMode3D::GpuVertex => ParticleSimulationMode3D::GpuVertex,
+        ParticleEmitterSimMode3D::GpuCompute => ParticleSimulationMode3D::GpuCompute,
+    }
+}
+
 fn quaternion_forward(rotation: perro_structs::Quaternion) -> [f32; 3] {
     let len_sq = rotation.x * rotation.x
         + rotation.y * rotation.y
@@ -452,11 +486,12 @@ fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<Point
     if let Some(path) = runtime.render_3d.particle_path_cache.get(source) {
         return Some(path.clone());
     }
-    let parsed = if let Some(lookup) = runtime
-        .project()
-        .and_then(|project| project.static_particle_lookup)
-    {
-        if let Some(profile) = lookup(source) {
+    let parsed = if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static {
+        if let Some(lookup) = runtime
+            .project()
+            .and_then(|project| project.static_particle_lookup)
+            && let Some(profile) = lookup(source)
+        {
             profile.clone()
         } else if let Some(inline) = source.strip_prefix("inline://") {
             parse_pparticle_source(inline)?
@@ -481,12 +516,17 @@ fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<Point
 
 fn parse_pparticle_source(source: &str) -> Option<PointParticleProfile3D> {
     let mut profile = PointParticleProfile3D::default();
-    let mut path_mode = String::from("ballistic");
-    let mut path_a = 1.0f32;
-    let mut path_b = 1.0f32;
+    let mut preset: Option<String> = None;
+    let mut preset_param_a = 1.0f32;
+    let mut preset_param_b = 1.0f32;
+    let mut preset_param_c = 0.0f32;
+    let mut preset_param_d = 0.0f32;
     let mut expr_x = String::from("0.0");
     let mut expr_y = String::from("0.0");
     let mut expr_z = String::from("0.0");
+    let mut has_expr_x = false;
+    let mut has_expr_y = false;
+    let mut has_expr_z = false;
     for line in source.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
@@ -496,44 +536,154 @@ fn parse_pparticle_source(source: &str) -> Option<PointParticleProfile3D> {
         let key = key.trim().to_ascii_lowercase();
         let value = value.trim();
         match key.as_str() {
-            "mode" | "path_mode" => {
-                path_mode = value.to_ascii_lowercase();
+            "preset" => {
+                preset = Some(value.to_ascii_lowercase());
             }
-            "param_a" | "angular_velocity" | "amplitude" => {
-                path_a = value.parse::<f32>().ok().unwrap_or(path_a);
+            "preset_param_a" => {
+                preset_param_a = value.parse::<f32>().ok().unwrap_or(preset_param_a);
             }
-            "param_b" | "radius" | "frequency" => {
-                path_b = value.parse::<f32>().ok().unwrap_or(path_b);
+            "preset_param_b" => {
+                preset_param_b = value.parse::<f32>().ok().unwrap_or(preset_param_b);
             }
-            "expr_x" => expr_x = value.to_string(),
-            "expr_y" => expr_y = value.to_string(),
-            "expr_z" => expr_z = value.to_string(),
+            "preset_param_c" => {
+                preset_param_c = value.parse::<f32>().ok().unwrap_or(preset_param_c);
+            }
+            "preset_param_d" => {
+                preset_param_d = value.parse::<f32>().ok().unwrap_or(preset_param_d);
+            }
+            "angular_velocity" => {
+                preset_param_a = value.parse::<f32>().ok().unwrap_or(preset_param_a);
+            }
+            "radius" => {
+                preset_param_b = value.parse::<f32>().ok().unwrap_or(preset_param_b);
+            }
+            "amplitude" => {
+                preset_param_a = value.parse::<f32>().ok().unwrap_or(preset_param_a);
+            }
+            "frequency" => {
+                preset_param_b = value.parse::<f32>().ok().unwrap_or(preset_param_b);
+            }
+            "x" => expr_x = value.to_string(),
+            "y" => expr_y = value.to_string(),
+            "z" => expr_z = value.to_string(),
+            "force" => {
+                if let Some(v) = parse_vec3_literal(value) {
+                    profile.force = v;
+                }
+            }
+            "force_x" => {
+                let v = value.parse::<f32>().ok()?;
+                profile.force[0] = v;
+            }
+            "force_y" => {
+                let v = value.parse::<f32>().ok()?;
+                profile.force[1] = v;
+            }
+            "force_z" => {
+                let v = value.parse::<f32>().ok()?;
+                profile.force[2] = v;
+            }
+            "lifetime_min" => {
+                profile.lifetime_min = value.parse::<f32>().ok().unwrap_or(profile.lifetime_min);
+            }
+            "lifetime_max" => {
+                profile.lifetime_max = value.parse::<f32>().ok().unwrap_or(profile.lifetime_max);
+            }
+            "speed_min" => {
+                profile.speed_min = value.parse::<f32>().ok().unwrap_or(profile.speed_min);
+            }
+            "speed_max" => {
+                profile.speed_max = value.parse::<f32>().ok().unwrap_or(profile.speed_max);
+            }
+            "spread_radians" => {
+                profile.spread_radians = value
+                    .parse::<f32>()
+                    .ok()
+                    .unwrap_or(profile.spread_radians);
+            }
+            "point_size" => {
+                profile.point_size = value.parse::<f32>().ok().unwrap_or(profile.point_size);
+            }
+            "size_min" => {
+                profile.size_min = value.parse::<f32>().ok().unwrap_or(profile.size_min);
+            }
+            "size_max" => {
+                profile.size_max = value.parse::<f32>().ok().unwrap_or(profile.size_max);
+            }
+            "color_start" => {
+                if let Some(v) = parse_vec4_literal(value) {
+                    profile.color_start = v;
+                }
+            }
+            "color_end" => {
+                if let Some(v) = parse_vec4_literal(value) {
+                    profile.color_end = v;
+                }
+            }
+            "emissive" => {
+                if let Some(v) = parse_vec3_literal(value) {
+                    profile.emissive = v;
+                }
+            }
+            "spin" => {
+                profile.spin_angular_velocity = value
+                    .parse::<f32>()
+                    .ok()
+                    .unwrap_or(profile.spin_angular_velocity);
+            }
+            _ => {}
+        }
+        match key.as_str() {
+            "x" => has_expr_x = true,
+            "y" => has_expr_y = true,
+            "z" => has_expr_z = true,
             _ => {}
         }
     }
-    profile.path = match path_mode.as_str() {
-        "ballistic" => ParticlePath3D::Ballistic,
-        "spiral" => ParticlePath3D::Spiral {
-            angular_velocity: path_a,
-            radius: path_b.abs(),
+    profile.path = match preset.as_deref() {
+        None => ParticlePath3D::None,
+        Some("custom") => ParticlePath3D::None,
+        Some("ballistic") => ParticlePath3D::Ballistic,
+        Some("spiral") => ParticlePath3D::Spiral {
+            angular_velocity: preset_param_a,
+            radius: preset_param_b.abs(),
         },
-        "orbity" | "orbit_y" | "orbit" => ParticlePath3D::OrbitY {
-            angular_velocity: path_a,
-            radius: path_b.abs(),
+        Some("orbit_y") => ParticlePath3D::OrbitY {
+            angular_velocity: preset_param_a,
+            radius: preset_param_b.abs(),
         },
-        "noisedrift" | "noise_drift" | "noise" => ParticlePath3D::NoiseDrift {
-            amplitude: path_a.abs(),
-            frequency: path_b.abs(),
+        Some("noise_drift") => ParticlePath3D::NoiseDrift {
+            amplitude: preset_param_a.abs(),
+            frequency: preset_param_b.abs(),
         },
-        "custom" => ParticlePath3D::Custom {
-            expr_x: Cow::Owned(expr_x),
-            expr_y: Cow::Owned(expr_y),
-            expr_z: Cow::Owned(expr_z),
+        Some("flat_disk") => ParticlePath3D::FlatDisk {
+            radius: preset_param_a.abs(),
         },
-        _ => ParticlePath3D::Ballistic,
+        Some(_) => ParticlePath3D::None,
     };
+    let _ = (preset_param_c, preset_param_d);
+    if has_expr_x || has_expr_y || has_expr_z {
+        profile.expr_x_ops = Some(Cow::Owned(compile_expression(&expr_x).ok()?.ops().to_vec()));
+        profile.expr_y_ops = Some(Cow::Owned(compile_expression(&expr_y).ok()?.ops().to_vec()));
+        profile.expr_z_ops = Some(Cow::Owned(compile_expression(&expr_z).ok()?.ops().to_vec()));
+    }
     Some(profile)
 }
+
+fn parse_vec3_literal(raw: &str) -> Option<[f32; 3]> {
+    let raw = raw.trim();
+    let inner = raw.strip_prefix('(')?.strip_suffix(')')?;
+    let mut it = inner.split(',').map(|v| v.trim().parse::<f32>().ok());
+    Some([it.next()??, it.next()??, it.next()??])
+}
+
+fn parse_vec4_literal(raw: &str) -> Option<[f32; 4]> {
+    let raw = raw.trim();
+    let inner = raw.strip_prefix('(')?.strip_suffix(')')?;
+    let mut it = inner.split(',').map(|v| v.trim().parse::<f32>().ok());
+    Some([it.next()??, it.next()??, it.next()??, it.next()??])
+}
+
 
 #[cfg(test)]
 mod tests {

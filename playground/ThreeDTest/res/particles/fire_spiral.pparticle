@@ -1,4 +1,17 @@
-mode = custom
-expr_x = sin(t * params[0] * pi * 2.0) * params[1]
-expr_y = t * params[2]
-expr_z = cos(t * params[0] * pi * 2.0) * params[1]
+preset = flat_disk
+preset_param_a = 25
+
+lifetime_min = 0.6
+lifetime_max = 5.2
+speed_min = 8.0
+speed_max = 16.0
+spread_radians = 1.2
+point_size = 25
+size_min = 0.8
+size_max = 1.8
+color_start = (1.0, 0.85, 0.45, 1.0)
+color_end = (1.0, 0.2, 0.02, 0.0)
+emissive = (0.08, 0.03, 0.0)
+force = (0.0, 0.0, 0.0)
+
+y = t * 4 * pi

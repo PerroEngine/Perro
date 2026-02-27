@@ -1,4 +1,5 @@
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
+pub use perro_particle_math::Op as ParticleExprOp3D;
 use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -81,26 +82,72 @@ pub struct SpotLight3DState {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParticlePath3D {
+    None,
     Ballistic,
     Spiral { angular_velocity: f32, radius: f32 },
     OrbitY { angular_velocity: f32, radius: f32 },
     NoiseDrift { amplitude: f32, frequency: f32 },
+    FlatDisk { radius: f32 },
     Custom {
         expr_x: Cow<'static, str>,
         expr_y: Cow<'static, str>,
         expr_z: Cow<'static, str>,
     },
+    CustomCompiled {
+        expr_x_ops: Cow<'static, [ParticleExprOp3D]>,
+        expr_y_ops: Cow<'static, [ParticleExprOp3D]>,
+        expr_z_ops: Cow<'static, [ParticleExprOp3D]>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParticleSimulationMode3D {
+    Cpu,
+    GpuVertex,
+    GpuCompute,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PointParticleProfile3D {
     pub path: ParticlePath3D,
+    pub expr_x_ops: Option<Cow<'static, [ParticleExprOp3D]>>,
+    pub expr_y_ops: Option<Cow<'static, [ParticleExprOp3D]>>,
+    pub expr_z_ops: Option<Cow<'static, [ParticleExprOp3D]>>,
+    pub lifetime_min: f32,
+    pub lifetime_max: f32,
+    pub speed_min: f32,
+    pub speed_max: f32,
+    pub spread_radians: f32,
+    pub point_size: f32,
+    pub size_min: f32,
+    pub size_max: f32,
+    pub force: [f32; 3],
+    pub color_start: [f32; 4],
+    pub color_end: [f32; 4],
+    pub emissive: [f32; 3],
+    pub spin_angular_velocity: f32,
 }
 
 impl Default for PointParticleProfile3D {
     fn default() -> Self {
         Self {
-            path: ParticlePath3D::Ballistic,
+            path: ParticlePath3D::None,
+            expr_x_ops: None,
+            expr_y_ops: None,
+            expr_z_ops: None,
+            lifetime_min: 0.6,
+            lifetime_max: 1.4,
+            speed_min: 1.0,
+            speed_max: 3.0,
+            spread_radians: std::f32::consts::FRAC_PI_3,
+            point_size: 6.0,
+            size_min: 0.65,
+            size_max: 1.35,
+            force: [0.0, 0.0, 0.0],
+            color_start: [1.0, 1.0, 1.0, 1.0],
+            color_end: [1.0, 0.4, 0.1, 0.0],
+            emissive: [0.0, 0.0, 0.0],
+            spin_angular_velocity: 0.0,
         }
     }
 }
@@ -111,9 +158,8 @@ pub struct PointParticles3DState {
     pub active: bool,
     pub looping: bool,
     pub prewarm: bool,
-    pub max_particles: u32,
+    pub alive_budget: u32,
     pub emission_rate: f32,
-    pub duration: f32,
     pub lifetime_min: f32,
     pub lifetime_max: f32,
     pub speed_min: f32,
@@ -130,6 +176,7 @@ pub struct PointParticles3DState {
     pub params: Vec<f32>,
     pub simulation_time: f32,
     pub profile: PointParticleProfile3D,
+    pub sim_mode: ParticleSimulationMode3D,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

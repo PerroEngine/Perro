@@ -1,0 +1,179 @@
+struct Camera3D {
+    view_proj: mat4x4<f32>,
+}
+
+@group(0) @binding(0)
+var<uniform> camera: Camera3D;
+
+struct GpuEmitter {
+    model_0: vec4<f32>,
+    model_1: vec4<f32>,
+    model_2: vec4<f32>,
+    model_3: vec4<f32>,
+    gravity_path: vec4<f32>,      // xyz gravity, w path_kind
+    color_start: vec4<f32>,
+    color_end: vec4<f32>,
+    emissive_point: vec4<f32>,    // xyz emissive, w point_size
+    life_speed: vec4<f32>,        // life_min, life_max, speed_min, speed_max
+    size_spread_rate: vec4<f32>,  // size_min, size_max, spread_radians, emission_rate
+    time_path: vec4<f32>,         // simulation_time, path_a, path_b, reserved
+    counts_seed: vec4<u32>,       // start, count, max_alive_budget, seed
+    flags: vec4<u32>,             // looping, prewarm, reserved, reserved
+    custom_ops_xy: vec4<u32>,     // x_off, x_len, y_off, y_len
+    custom_ops_zp: vec4<u32>,     // z_off, z_len, params_off, params_len
+}
+
+struct ParticleParams {
+    emitter_count: u32,
+    particle_count: u32,
+    _pad0: u32,
+    _pad1: u32,
+}
+
+@group(1) @binding(0)
+var<storage, read> emitters: array<GpuEmitter>;
+
+@group(1) @binding(1)
+var<uniform> params: ParticleParams;
+
+struct ParticleOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+    @location(1) emissive: vec3<f32>,
+}
+
+fn hash01(seed: u32) -> f32 {
+    var x = seed * 747796405u + 2891336453u;
+    x = (x >> ((x >> 28u) + 4u)) ^ x;
+    x = x * 277803737u;
+    x = (x >> 22u) ^ x;
+    return f32(x) / 4294967295.0;
+}
+
+fn safe_normalize(v: vec3<f32>, fallback: vec3<f32>) -> vec3<f32> {
+    let len = length(v);
+    if len > 1.0e-6 {
+        return v / len;
+    }
+    return fallback;
+}
+
+@vertex
+fn vs_main(@builtin(instance_index) particle_index: u32) -> ParticleOut {
+    var out: ParticleOut;
+    out.clip_pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
+    out.color = vec4<f32>(0.0);
+    out.emissive = vec3<f32>(0.0);
+
+    var emitter_idx: u32 = 0u;
+    var found = false;
+    for (var i: u32 = 0u; i < params.emitter_count; i = i + 1u) {
+        let e = emitters[i];
+        let start = e.counts_seed.x;
+        let count = e.counts_seed.y;
+        if particle_index >= start && particle_index < (start + count) {
+            emitter_idx = i;
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        return out;
+    }
+
+    let e = emitters[emitter_idx];
+    let local_i = particle_index - e.counts_seed.x;
+    let model = mat4x4<f32>(e.model_0, e.model_1, e.model_2, e.model_3);
+    let up = safe_normalize((model * vec4<f32>(0.0, 1.0, 0.0, 0.0)).xyz, vec3<f32>(0.0, 1.0, 0.0));
+    let origin = (model * vec4<f32>(0.0, 0.0, 0.0, 1.0)).xyz;
+    let time = max(e.time_path.x, 0.0);
+    let life_min = max(e.life_speed.x, 0.001);
+    let life_max = max(e.life_speed.y, life_min);
+    let speed_min = max(e.life_speed.z, 0.0);
+    let speed_max = max(e.life_speed.w, speed_min);
+    let size_min = max(e.size_spread_rate.x, 0.01);
+    let size_max = max(e.size_spread_rate.y, size_min);
+
+    let rate = max(e.size_spread_rate.w, 1.0e-6);
+    var total_spawned = u32(floor(time * rate));
+    if e.flags.x != 0u && e.flags.y != 0u {
+        total_spawned = max(total_spawned, e.counts_seed.y - 1u);
+    }
+    var spawn_index = local_i;
+    if e.flags.x != 0u {
+        let back = (e.counts_seed.y - 1u) - local_i;
+        spawn_index = total_spawned - back;
+    }
+    let h0 = hash01(e.counts_seed.w ^ spawn_index);
+    let h1 = hash01((e.counts_seed.w + 0x9E3779B9u) ^ (spawn_index * 3u));
+    let h2 = hash01((e.counts_seed.w + 0x7F4A7C15u) ^ (spawn_index * 7u));
+    let h3 = hash01((e.counts_seed.w + 0x94D049BBu) ^ (spawn_index * 11u));
+    let life = life_min + (life_max - life_min) * h0;
+    let spawn_t = f32(spawn_index) / rate;
+    let local_t = time - spawn_t;
+    if local_t < 0.0 || local_t > life {
+        return out;
+    }
+
+    let age = clamp(local_t / life, 0.0, 1.0);
+    let speed = speed_min + (speed_max - speed_min) * h1;
+    let spread = e.size_spread_rate.z * (h2 * 2.0 - 1.0);
+    let yaw = h0 * 6.28318530718;
+    let yaw_sin = sin(yaw);
+    let yaw_cos = cos(yaw);
+    let spread_sin = sin(spread);
+    let spread_cos = cos(spread);
+    let dir_y = spread_cos - yaw_cos * spread_sin;
+    let dir_z = spread_sin + yaw_cos * spread_cos;
+    let dir = safe_normalize(vec3<f32>(yaw_sin, dir_y, dir_z), vec3<f32>(0.0, 1.0, 0.0));
+    var pos = origin;
+
+    let path_kind = u32(max(e.gravity_path.w, 0.0));
+    let path_a = e.time_path.y;
+    let path_b = e.time_path.z;
+    if path_kind == 1u {
+        pos = pos + dir * speed * local_t;
+    } else if path_kind == 2u {
+        let theta = local_t * path_a + h0 * 6.28318530718;
+        pos = pos + vec3<f32>(cos(theta) * path_b, 0.0, sin(theta) * path_b);
+    } else if path_kind == 3u {
+        let theta = local_t * path_a + h1 * 6.28318530718;
+        pos = origin + vec3<f32>(cos(theta) * path_b, pos.y - origin.y, sin(theta) * path_b);
+    } else if path_kind == 4u {
+        let n = sin(local_t * path_b + h2 * 37.0);
+        let m = cos(local_t * path_b * 1.37 + h1 * 17.0);
+        pos = pos + vec3<f32>(n, m, n * m) * abs(path_a);
+    } else if path_kind == 5u {
+        let theta = h3 * 6.28318530718;
+        let radial = sqrt(h2);
+        let r = path_b * radial * age;
+        pos = pos + vec3<f32>(cos(theta) * r, 0.0, sin(theta) * r);
+    }
+
+    let force = e.gravity_path.xyz;
+    pos = pos + 0.5 * force * local_t * local_t;
+
+    let spin = bitcast<f32>(e.flags.z);
+    if abs(spin) > 1.0e-6 {
+        let rel = pos - origin;
+        let theta = spin * local_t;
+        let s = sin(theta);
+        let c = cos(theta);
+        pos = origin + vec3<f32>(rel.x * c - rel.z * s, rel.y, rel.x * s + rel.z * c);
+    }
+
+    let color = e.color_start + (e.color_end - e.color_start) * age;
+    let size = e.emissive_point.w * (size_min + (size_max - size_min) * h2);
+
+    out.clip_pos = camera.view_proj * vec4<f32>(pos, 1.0);
+    out.color = color;
+    out.color.a = clamp(color.a, 0.0, 1.0) * clamp(size / max(size, 1.0), 0.0, 1.0);
+    out.emissive = e.emissive_point.xyz;
+    return out;
+}
+
+@fragment
+fn fs_main(in: ParticleOut) -> @location(0) vec4<f32> {
+    let rgb = in.color.rgb + in.emissive;
+    return vec4<f32>(rgb, in.color.a);
+}

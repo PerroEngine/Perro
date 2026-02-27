@@ -299,7 +299,7 @@ impl Gpu {
             },
         );
         self.point_particles_3d
-            .render_pass(&mut encoder, color_view);
+            .render_pass(&mut encoder, color_view, self.three_d.depth_view());
         self.two_d.render_pass(
             &mut encoder,
             color_view,

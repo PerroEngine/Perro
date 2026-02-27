@@ -1,7 +1,8 @@
 use crate::App;
 use crate::winit_runner::WinitRunner;
 use perro_graphics::{GraphicsBackend, OcclusionCullingMode, PerroGraphics};
-use perro_runtime::{OcclusionCulling, ProjectLoadError, ProviderMode, Runtime, RuntimeProject};
+pub use perro_runtime::{OcclusionCulling, ParticleSimDefault};
+use perro_runtime::{ProjectLoadError, ProviderMode, Runtime, RuntimeProject};
 use perro_scripting::ScriptConstructor;
 use std::path::Path;
 
@@ -92,6 +93,14 @@ pub struct StaticEmbeddedProject<'a> {
     pub icon: &'static str,
     pub virtual_width: u32,
     pub virtual_height: u32,
+    pub vsync: bool,
+    pub msaa: bool,
+    pub meshlets: bool,
+    pub dev_meshlets: bool,
+    pub release_meshlets: bool,
+    pub meshlet_debug_view: bool,
+    pub occlusion_culling: OcclusionCulling,
+    pub particle_sim_default: ParticleSimDefault,
     pub assets_brk: &'static [u8],
     pub scene_lookup: perro_runtime::StaticSceneLookup,
     pub material_lookup: perro_runtime::StaticMaterialLookup,
@@ -104,14 +113,23 @@ pub struct StaticEmbeddedProject<'a> {
 pub fn run_static_embedded_project(
     input: StaticEmbeddedProject<'_>,
 ) -> Result<(), ProjectLoadError> {
+    let static_config = perro_runtime::StaticProjectConfig::new(
+        input.project_name,
+        input.main_scene,
+        input.icon,
+        input.virtual_width,
+        input.virtual_height,
+    )
+    .with_vsync(input.vsync)
+    .with_msaa(input.msaa)
+    .with_meshlets(input.meshlets)
+    .with_dev_meshlets(input.dev_meshlets)
+    .with_release_meshlets(input.release_meshlets)
+    .with_meshlet_debug_view(input.meshlet_debug_view)
+    .with_occlusion_culling(input.occlusion_culling)
+    .with_particle_sim_default(input.particle_sim_default);
     let mut project = RuntimeProject::from_static(
-        perro_runtime::StaticProjectConfig::new(
-            input.project_name,
-            input.main_scene,
-            input.icon,
-            input.virtual_width,
-            input.virtual_height,
-        ),
+        static_config,
         input.project_root.to_path_buf(),
     );
 

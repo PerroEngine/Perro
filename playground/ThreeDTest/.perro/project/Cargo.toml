@@ -32,6 +32,7 @@ overflow-checks = false
 [patch.crates-io]
 perro_ids = { path = "../../../../perro_source/core/perro_ids" }
 perro_nodes = { path = "../../../../perro_source/core/perro_nodes" }
+perro_particle_math = { path = "../../../../perro_source/core/perro_particle_math" }
 perro_structs = { path = "../../../../perro_source/core/perro_structs" }
 perro_variant = { path = "../../../../perro_source/core/perro_variant" }
 perro_project = { path = "../../../../perro_source/runtime_project/perro_project" }

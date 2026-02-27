@@ -44,13 +44,14 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rust_analyzer)"] }
 [patch.crates-io]
 perro_ids = { path = "../../../../perro_source/core/perro_ids" }
 perro_nodes = { path = "../../../../perro_source/core/perro_nodes" }
+perro_particle_math = { path = "../../../../perro_source/core/perro_particle_math" }
 perro_structs = { path = "../../../../perro_source/core/perro_structs" }
 perro_variant = { path = "../../../../perro_source/core/perro_variant" }
 perro_project = { path = "../../../../perro_source/runtime_project/perro_project" }
 perro_runtime = { path = "../../../../perro_source/runtime_project/perro_runtime" }
 perro_scene = { path = "../../../../perro_source/runtime_project/perro_scene" }
-perro_modules = { path = "../../../../perro_source/api_modules/perro_modules" }
 perro_input = { path = "../../../../perro_source/api_modules/perro_input" }
+perro_modules = { path = "../../../../perro_source/api_modules/perro_modules" }
 perro_resource_context = { path = "../../../../perro_source/api_modules/perro_resource_context" }
 perro_runtime_context = { path = "../../../../perro_source/api_modules/perro_runtime_context" }
 perro_render_bridge = { path = "../../../../perro_source/render_stack/perro_render_bridge" }

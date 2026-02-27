@@ -10,6 +10,7 @@ use perro_nodes::{
     node_2d::Node2D,
     node_3d::Node3D,
     particle_emitter_3d::ParticleEmitter3D,
+    particle_emitter_3d::ParticleEmitterSimMode3D,
     point_light_3d::PointLight3D,
     ray_light_3d::RayLight3D,
     spot_light_3d::SpotLight3D,
@@ -691,79 +692,9 @@ fn apply_particle_emitter_3d_fields(
                     node.prewarm = v;
                 }
             }
-            "max_particles" => {
-                if let Some(v) = as_i32(value) {
-                    node.max_particles = v.max(1) as u32;
-                }
-            }
-            "emission_rate" => {
+            "spawn_rate" => {
                 if let Some(v) = as_f32(value) {
-                    node.emission_rate = v.max(0.0);
-                }
-            }
-            "duration" => {
-                if let Some(v) = as_f32(value) {
-                    node.duration = v.max(0.0);
-                }
-            }
-            "lifetime_min" => {
-                if let Some(v) = as_f32(value) {
-                    node.lifetime_min = v.max(0.001);
-                }
-            }
-            "lifetime_max" => {
-                if let Some(v) = as_f32(value) {
-                    node.lifetime_max = v.max(node.lifetime_min);
-                }
-            }
-            "speed_min" => {
-                if let Some(v) = as_f32(value) {
-                    node.speed_min = v.max(0.0);
-                }
-            }
-            "speed_max" => {
-                if let Some(v) = as_f32(value) {
-                    node.speed_max = v.max(node.speed_min);
-                }
-            }
-            "spread_radians" => {
-                if let Some(v) = as_f32(value) {
-                    node.spread_radians = v.clamp(0.0, std::f32::consts::PI);
-                }
-            }
-            "point_size" => {
-                if let Some(v) = as_f32(value) {
-                    node.point_size = v.max(1.0);
-                }
-            }
-            "size_min" => {
-                if let Some(v) = as_f32(value) {
-                    node.size_min = v.max(0.01);
-                }
-            }
-            "size_max" => {
-                if let Some(v) = as_f32(value) {
-                    node.size_max = v.max(node.size_min);
-                }
-            }
-            "gravity" => {
-                if let Some(v) = as_vec3(value) {
-                    node.gravity = [v.x, v.y, v.z];
-                }
-            }
-            "color_start" => {
-                if let Some(v) = as_quat(value) {
-                    node.color_start = [v.x, v.y, v.z, v.w];
-                }
-            }
-            "color_end" => {
-                if let Some(v) = as_quat(value) {
-                    node.color_end = [v.x, v.y, v.z, v.w];
-                }
-            }
-            "emissive" => {
-                if let Some(v) = as_vec3(value) {
-                    node.emissive = [v.x, v.y, v.z];
+                    node.spawn_rate = v.max(0.0);
                 }
             }
             "seed" => {
@@ -776,11 +707,16 @@ fn apply_particle_emitter_3d_fields(
                     node.params = v;
                 }
             }
-            "particle_path" | "particle" => {
+            "profile" => {
                 if let Some(v) = as_asset_source(value) {
-                    node.particle = v;
+                    node.profile = v;
                 } else if let RuntimeValue::Object(entries) = value {
-                    node.particle = inline_pparticle_from_runtime(entries);
+                    node.profile = inline_pparticle_from_runtime(entries);
+                }
+            }
+            "sim_mode" => {
+                if let Some(v) = as_particle_sim_mode(value) {
+                    node.sim_mode = v;
                 }
             }
             _ => {}
@@ -1098,79 +1034,9 @@ fn apply_particle_emitter_3d_fields_static(
                     node.prewarm = v;
                 }
             }
-            "max_particles" => {
-                if let Some(v) = as_i32_static(value) {
-                    node.max_particles = v.max(1) as u32;
-                }
-            }
-            "emission_rate" => {
+            "spawn_rate" => {
                 if let Some(v) = as_f32_static(value) {
-                    node.emission_rate = v.max(0.0);
-                }
-            }
-            "duration" => {
-                if let Some(v) = as_f32_static(value) {
-                    node.duration = v.max(0.0);
-                }
-            }
-            "lifetime_min" => {
-                if let Some(v) = as_f32_static(value) {
-                    node.lifetime_min = v.max(0.001);
-                }
-            }
-            "lifetime_max" => {
-                if let Some(v) = as_f32_static(value) {
-                    node.lifetime_max = v.max(node.lifetime_min);
-                }
-            }
-            "speed_min" => {
-                if let Some(v) = as_f32_static(value) {
-                    node.speed_min = v.max(0.0);
-                }
-            }
-            "speed_max" => {
-                if let Some(v) = as_f32_static(value) {
-                    node.speed_max = v.max(node.speed_min);
-                }
-            }
-            "spread_radians" => {
-                if let Some(v) = as_f32_static(value) {
-                    node.spread_radians = v.clamp(0.0, std::f32::consts::PI);
-                }
-            }
-            "point_size" => {
-                if let Some(v) = as_f32_static(value) {
-                    node.point_size = v.max(1.0);
-                }
-            }
-            "size_min" => {
-                if let Some(v) = as_f32_static(value) {
-                    node.size_min = v.max(0.01);
-                }
-            }
-            "size_max" => {
-                if let Some(v) = as_f32_static(value) {
-                    node.size_max = v.max(node.size_min);
-                }
-            }
-            "gravity" => {
-                if let Some(v) = as_vec3_static(value) {
-                    node.gravity = [v.x, v.y, v.z];
-                }
-            }
-            "color_start" => {
-                if let Some(v) = as_quat_static(value) {
-                    node.color_start = [v.x, v.y, v.z, v.w];
-                }
-            }
-            "color_end" => {
-                if let Some(v) = as_quat_static(value) {
-                    node.color_end = [v.x, v.y, v.z, v.w];
-                }
-            }
-            "emissive" => {
-                if let Some(v) = as_vec3_static(value) {
-                    node.emissive = [v.x, v.y, v.z];
+                    node.spawn_rate = v.max(0.0);
                 }
             }
             "seed" => {
@@ -1183,11 +1049,16 @@ fn apply_particle_emitter_3d_fields_static(
                     node.params = v;
                 }
             }
-            "particle_path" | "particle" => {
+            "profile" => {
                 if let Some(v) = as_asset_source_static(value) {
-                    node.particle = v;
+                    node.profile = v;
                 } else if let StaticSceneValue::Object(entries) = value {
-                    node.particle = inline_pparticle_from_static(entries);
+                    node.profile = inline_pparticle_from_static(entries);
+                }
+            }
+            "sim_mode" => {
+                if let Some(v) = as_particle_sim_mode_static(value) {
+                    node.sim_mode = v;
                 }
             }
             _ => {}
@@ -1540,6 +1411,17 @@ fn encode_static_value_for_pparticle(value: &StaticSceneValue) -> Option<String>
     }
 }
 
+fn as_particle_sim_mode(value: &RuntimeValue) -> Option<ParticleEmitterSimMode3D> {
+    let raw = as_str(value)?.trim().to_ascii_lowercase();
+    match raw.as_str() {
+        "default" => Some(ParticleEmitterSimMode3D::Default),
+        "cpu" => Some(ParticleEmitterSimMode3D::Cpu),
+        "gpu_vertex" => Some(ParticleEmitterSimMode3D::GpuVertex),
+        "gpu_compute" => Some(ParticleEmitterSimMode3D::GpuCompute),
+        _ => None,
+    }
+}
+
 fn as_particle_params(value: &RuntimeValue) -> Option<Vec<f32>> {
     match value {
         RuntimeValue::Vec2 { x, y } => Some(vec![*x, *y]),
@@ -1567,6 +1449,17 @@ fn as_particle_params(value: &RuntimeValue) -> Option<Vec<f32>> {
             }
             Some(out)
         }
+        _ => None,
+    }
+}
+
+fn as_particle_sim_mode_static(value: &StaticSceneValue) -> Option<ParticleEmitterSimMode3D> {
+    let raw = as_str_static(value)?.trim().to_ascii_lowercase();
+    match raw.as_str() {
+        "default" => Some(ParticleEmitterSimMode3D::Default),
+        "cpu" => Some(ParticleEmitterSimMode3D::Cpu),
+        "gpu_vertex" => Some(ParticleEmitterSimMode3D::GpuVertex),
+        "gpu_compute" => Some(ParticleEmitterSimMode3D::GpuCompute),
         _ => None,
     }
 }

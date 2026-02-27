@@ -4,6 +4,7 @@ members = [
     "perro_source/core/perro_nodes",
     "perro_source/core/perro_structs",
     "perro_source/core/perro_variant",
+    "perro_source/core/perro_particle_math",
 
     "perro_source/runtime_project/perro_runtime",
     "perro_source/runtime_project/perro_scene",
@@ -39,6 +40,7 @@ perro_nodes = {path = "perro_source/core/perro_nodes"}
 perro_structs = {path = "perro_source/core/perro_structs"}
 perro_ids = {path = "perro_source/core/perro_ids"}
 perro_variant = {path="perro_source/core/perro_variant"}
+perro_particle_math = {path = "perro_source/core/perro_particle_math"}
 
 perro_runtime = {path="perro_source/runtime_project/perro_runtime"}
 perro_scene = {path = "perro_source/runtime_project/perro_scene"}

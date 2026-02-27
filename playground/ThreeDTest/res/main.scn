@@ -79,24 +79,10 @@ parent = @root
 [ParticleEmitter3D]
     active = true
     looping = true
-    prewarm = true
-    max_particles = 120000
-    emission_rate = 4500.0
-    lifetime_min = 0.6
-    lifetime_max = 5.2
-    speed_min = 8.0
-    speed_max = 16.0
-    spread_radians = 1.2
-    point_size = 5.0
-    size_min = 0.8
-    size_max = 1.4
-    gravity = (0.0, -7.0, 0.0)
-    color_start = (1.0, 0.85, 0.45, 1.0)
-    color_end = (1.0, 0.2, 0.02, 0.0)
-    emissive = (0.08, 0.03, 0.0)
-    seed = 1337
+    spawn_rate = 25000.0
+    seed = 2125
     params = (3.0, 2.0, 8.0, 0.0)
-    particle = "res://particles/fire_spiral.pparticle"
+    profile = "res://particles/fire_spiral.pparticle"
 
     [Node3D]
         position = (0, 0, 5)

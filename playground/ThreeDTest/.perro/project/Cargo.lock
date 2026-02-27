@@ -1614,6 +1614,7 @@ dependencies = [
  "perro_ids",
  "perro_io",
  "perro_meshlets",
+ "perro_particle_math",
  "perro_render_bridge",
  "pollster",
  "wgpu",
@@ -1661,6 +1662,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "perro_particle_math"
+version = "0.1.0"
+
+[[package]]
 name = "perro_project"
 version = "0.1.0"
 dependencies = [
@@ -1672,6 +1677,7 @@ name = "perro_render_bridge"
 version = "0.1.0"
 dependencies = [
  "perro_ids",
+ "perro_particle_math",
 ]
 
 [[package]]
@@ -1692,6 +1698,7 @@ dependencies = [
  "perro_input",
  "perro_io",
  "perro_nodes",
+ "perro_particle_math",
  "perro_project",
  "perro_render_bridge",
  "perro_resource_context",

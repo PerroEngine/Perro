@@ -1,30 +1,25 @@
 use crate::node_3d::Node3D;
 use std::ops::{Deref, DerefMut};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParticleEmitterSimMode3D {
+    Default,
+    Cpu,
+    GpuVertex,
+    GpuCompute,
+}
+
 #[derive(Clone, Debug)]
 pub struct ParticleEmitter3D {
     pub base: Node3D,
     pub active: bool,
     pub looping: bool,
     pub prewarm: bool,
-    pub max_particles: u32,
-    pub emission_rate: f32,
-    pub duration: f32,
-    pub lifetime_min: f32,
-    pub lifetime_max: f32,
-    pub speed_min: f32,
-    pub speed_max: f32,
-    pub spread_radians: f32,
-    pub point_size: f32,
-    pub size_min: f32,
-    pub size_max: f32,
-    pub gravity: [f32; 3],
-    pub color_start: [f32; 4],
-    pub color_end: [f32; 4],
-    pub emissive: [f32; 3],
+    pub spawn_rate: f32,
     pub seed: u32,
     pub params: Vec<f32>,
-    pub particle: String,
+    pub profile: String,
+    pub sim_mode: ParticleEmitterSimMode3D,
 }
 
 impl Deref for ParticleEmitter3D {
@@ -48,24 +43,11 @@ impl ParticleEmitter3D {
             active: true,
             looping: true,
             prewarm: false,
-            max_particles: 4096,
-            emission_rate: 256.0,
-            duration: 0.0,
-            lifetime_min: 0.6,
-            lifetime_max: 1.4,
-            speed_min: 1.0,
-            speed_max: 3.0,
-            spread_radians: std::f32::consts::FRAC_PI_3,
-            point_size: 6.0,
-            size_min: 0.65,
-            size_max: 1.35,
-            gravity: [0.0, -3.0, 0.0],
-            color_start: [1.0, 1.0, 1.0, 1.0],
-            color_end: [1.0, 0.4, 0.1, 0.0],
-            emissive: [0.0, 0.0, 0.0],
+            spawn_rate: 256.0,
             seed: 1,
             params: Vec::new(),
-            particle: String::new(),
+            profile: String::new(),
+            sim_mode: ParticleEmitterSimMode3D::Default,
         }
     }
 }

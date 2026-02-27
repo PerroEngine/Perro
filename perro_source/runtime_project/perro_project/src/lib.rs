@@ -24,6 +24,23 @@ impl OcclusionCulling {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParticleSimDefault {
+    Cpu,
+    GpuVertex,
+    GpuCompute,
+}
+
+impl ParticleSimDefault {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cpu => "cpu",
+            Self::GpuVertex => "hybrid",
+            Self::GpuCompute => "gpu_compute",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StaticProjectConfig {
     pub name: &'static str,
     pub main_scene: &'static str,
@@ -37,6 +54,7 @@ pub struct StaticProjectConfig {
     pub release_meshlets: bool,
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCulling,
+    pub particle_sim_default: ParticleSimDefault,
 }
 
 impl StaticProjectConfig {
@@ -60,6 +78,7 @@ impl StaticProjectConfig {
             release_meshlets: true,
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCulling::Gpu,
+            particle_sim_default: ParticleSimDefault::Cpu,
         }
     }
 
@@ -98,6 +117,11 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_particle_sim_default(mut self, mode: ParticleSimDefault) -> Self {
+        self.particle_sim_default = mode;
+        self
+    }
+
     pub fn to_runtime(self) -> ProjectConfig {
         ProjectConfig {
             name: self.name.to_string(),
@@ -112,6 +136,7 @@ impl StaticProjectConfig {
             release_meshlets: self.release_meshlets,
             meshlet_debug_view: self.meshlet_debug_view,
             occlusion_culling: self.occlusion_culling,
+            particle_sim_default: self.particle_sim_default,
         }
     }
 }
@@ -130,6 +155,7 @@ pub struct ProjectConfig {
     pub release_meshlets: bool,
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCulling,
+    pub particle_sim_default: ParticleSimDefault,
 }
 
 impl ProjectConfig {
@@ -147,6 +173,7 @@ impl ProjectConfig {
             release_meshlets: true,
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCulling::Gpu,
+            particle_sim_default: ParticleSimDefault::Cpu,
         }
     }
 }
@@ -332,6 +359,7 @@ dev_meshlets = false
 release_meshlets = true
 meshlet_debug_view = false
 occlusion_culling = "gpu"
+particle_sim_default = "cpu"
 "#
     )
 }
@@ -421,6 +449,11 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         "occlusion_culling",
         OcclusionCulling::Gpu,
     )?;
+    let particle_sim_default = parse_particle_sim_default_with_default(
+        graphics_table,
+        "particle_sim_default",
+        ParticleSimDefault::Cpu,
+    )?;
 
     Ok(ProjectConfig {
         name,
@@ -435,6 +468,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         release_meshlets,
         meshlet_debug_view,
         occlusion_culling,
+        particle_sim_default,
     })
 }
 
@@ -483,6 +517,33 @@ fn parse_occlusion_culling_with_default(
         _ => Err(ProjectError::InvalidField(
             "graphics.occlusion_culling",
             "must be one of \"cpu\", \"gpu\", \"off\"".to_string(),
+        )),
+    }
+}
+
+fn parse_particle_sim_default_with_default(
+    table: &toml::map::Map<String, Value>,
+    key: &'static str,
+    default: ParticleSimDefault,
+) -> Result<ParticleSimDefault, ProjectError> {
+    let Some(value) = table.get(key) else {
+        return Ok(default);
+    };
+    let Some(raw) = value.as_str() else {
+        return Err(ProjectError::InvalidField(
+            "graphics.particle_sim_default",
+            "must be one of \"cpu\", \"hybrid\", \"gpu\", \"gpu_vertex\", \"gpu_compute\""
+                .to_string(),
+        ));
+    };
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "cpu" => Ok(ParticleSimDefault::Cpu),
+        "hybrid" | "gpu_vertex" => Ok(ParticleSimDefault::GpuVertex),
+        "gpu" | "gpu_compute" => Ok(ParticleSimDefault::GpuCompute),
+        _ => Err(ProjectError::InvalidField(
+            "graphics.particle_sim_default",
+            "must be one of \"cpu\", \"hybrid\", \"gpu\", \"gpu_vertex\", \"gpu_compute\""
+                .to_string(),
         )),
     }
 }
@@ -929,6 +990,14 @@ fn main() {
         icon: "res://icon.png",
         virtual_width: 1920,
         virtual_height: 1080,
+        vsync: false,
+        msaa: true,
+        meshlets: false,
+        dev_meshlets: false,
+        release_meshlets: true,
+        meshlet_debug_view: false,
+        occlusion_culling: perro_app::entry::OcclusionCulling::Gpu,
+        particle_sim_default: perro_app::entry::ParticleSimDefault::Cpu,
         assets_brk: ASSETS_BRK,
         scene_lookup: static_assets::scenes::lookup_scene,
         material_lookup: static_assets::materials::lookup_material,
@@ -1335,6 +1404,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_structs" => Some("perro_source/core/perro_structs"),
         "perro_ids" => Some("perro_source/core/perro_ids"),
         "perro_variant" => Some("perro_source/core/perro_variant"),
+        "perro_particle_math" => Some("perro_source/core/perro_particle_math"),
         "perro_runtime" => Some("perro_source/runtime_project/perro_runtime"),
         "perro_scene" => Some("perro_source/runtime_project/perro_scene"),
         "perro_runtime_context" => Some("perro_source/api_modules/perro_runtime_context"),
@@ -1418,6 +1488,7 @@ virtual_resolution = "1280x720"
         assert!(parsed.release_meshlets);
         assert!(!parsed.meshlet_debug_view);
         assert_eq!(parsed.occlusion_culling, OcclusionCulling::Gpu);
+        assert_eq!(parsed.particle_sim_default, ParticleSimDefault::Cpu);
     }
 
     #[test]
@@ -1443,6 +1514,7 @@ virtual_height = 1080
         assert!(parsed.release_meshlets);
         assert!(!parsed.meshlet_debug_view);
         assert_eq!(parsed.occlusion_culling, OcclusionCulling::Gpu);
+        assert_eq!(parsed.particle_sim_default, ParticleSimDefault::Cpu);
     }
 
     #[test]
@@ -1462,6 +1534,7 @@ dev_meshlets = true
 release_meshlets = false
 meshlet_debug_view = true
 occlusion_culling = "cpu"
+particle_sim_default = "gpu_compute"
 "#;
 
         let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
@@ -1472,6 +1545,7 @@ occlusion_culling = "cpu"
         assert!(!parsed.release_meshlets);
         assert!(parsed.meshlet_debug_view);
         assert_eq!(parsed.occlusion_culling, OcclusionCulling::Cpu);
+        assert_eq!(parsed.particle_sim_default, ParticleSimDefault::GpuCompute);
     }
 
     #[test]
@@ -1491,6 +1565,31 @@ virtual_resolution = "1920x1080"
             err,
             ProjectError::InvalidField("project.main_scene", _)
         ));
+    }
+
+    #[test]
+    fn parse_project_toml_particle_sim_aliases() {
+        let base = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+"#;
+
+        let gpu = format!("{base}particle_sim_default = \"gpu\"\n");
+        let hybrid = format!("{base}particle_sim_default = \"hybrid\"\n");
+
+        let parsed_gpu = parse_project_toml(&gpu).expect("gpu alias should parse");
+        let parsed_hybrid = parse_project_toml(&hybrid).expect("hybrid alias should parse");
+
+        assert_eq!(parsed_gpu.particle_sim_default, ParticleSimDefault::GpuCompute);
+        assert_eq!(
+            parsed_hybrid.particle_sim_default,
+            ParticleSimDefault::GpuVertex
+        );
     }
 
     #[test]
