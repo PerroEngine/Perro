@@ -53,6 +53,14 @@ impl TerrainChunk {
             distance_epsilon,
         );
 
+        if maybe_coplanar && self.can_skip_coplanar_insert(position, &hit_triangle_ids, area_epsilon) {
+            let fallback_id = self.triangles[hit_triangle_ids[0]].a;
+            return Ok(InsertVertexResult {
+                inserted_vertex_id: fallback_id,
+                removed_as_coplanar: true,
+            });
+        }
+
         let inserted_vertex_id = self.add_vertex(position);
         self.split_hit_triangles(inserted_vertex_id, &hit_triangle_ids, area_epsilon);
 
@@ -116,6 +124,25 @@ impl TerrainChunk {
             }
         }
         true
+    }
+
+    fn can_skip_coplanar_insert(
+        &self,
+        position: Vector3,
+        hit_triangle_ids: &[usize],
+        area_epsilon: f32,
+    ) -> bool {
+        for tri_id in hit_triangle_ids {
+            let tri = self.triangles[*tri_id];
+            let a = self.vertices[tri.a].position;
+            let b = self.vertices[tri.b].position;
+            let c = self.vertices[tri.c].position;
+            if point_in_triangle_xz_strict_interior(position.x, position.z, a, b, c, area_epsilon * 4.0)
+            {
+                return true;
+            }
+        }
+        false
     }
 
     fn find_hit_triangles_xz(&mut self, x: f32, z: f32, eps: f32) -> Vec<usize> {

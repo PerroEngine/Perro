@@ -172,6 +172,33 @@ Track what each terrain commit changed so video explanations are easy later.
   - 4096 single-plane coplanar: `23.373 ms`, `5.706 us/op`, final `4 verts / 2 tris`
   - 4096 piecewise-planar: `352.794 ms`, `86.131 us/op`, final `3350 verts / 6694 tris`
 
+## Commit: Coplanar No-Op Fast Path
+
+### What was added
+
+- Added early-return path in `insert_vertex` for strictly interior coplanar inserts.
+- If point is already on the local hit-triangle plane and would optimize away, the system now skips:
+  - vertex allocation
+  - triangle split
+  - retriangulation
+  - collapse checks
+- Added local-triangle return ID fallback to keep API contract intact.
+
+### Why it matters
+
+- Removes unnecessary topology work for no-op edits.
+- Greatly reduces overhead in flat/coplanar workloads and dense coplanar stamping.
+- Keeps non-coplanar edit behavior unchanged.
+
+### Validation added
+
+- Re-ran release perf tests:
+  - Coplanar bulk: `1600` iters, `1.305 ms`, `0.816 us/op`, final `4 verts / 2 tris`
+  - 4096 single-plane coplanar: `4.344 ms`, `1.061 us/op`, final `4 verts / 2 tris`
+  - Circle brush bulk: `400` brushes (`2400` generated points), `70.991 ms`, `177.477 us/brush`, final `833 verts / 1660 tris`
+  - Non-coplanar bulk: `1600` iters, `78.644 ms`, `49.153 us/op`, final `1604 verts / 3202 tris`
+  - 4096 piecewise-planar: `341.240 ms`, `83.311 us/op`, final `3350 verts / 6694 tris`
+
 ## Future Commit Template
 
 ## Commit: <name>
