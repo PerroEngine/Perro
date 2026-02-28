@@ -101,6 +101,31 @@ Track what each terrain commit changed so video explanations are easy later.
 
 - Added repeated mixed insert test that verifies resulting mesh stays valid and manifold.
 
+## Commit: First Perf
+
+### What was added
+
+- Added ignored perf tests in `tests/perf.rs` for repeatable timing snapshots.
+- Added three benchmark-style cases:
+  - `insert_vertex` coplanar bulk
+  - `insert_vertex` non-coplanar bulk
+  - `insert_brush` circle bulk
+- Each test prints total time, per-op/per-brush time, and final mesh counts.
+
+### Why it matters
+
+- Gives a baseline before further optimization work.
+- Makes it easy to compare future changes against concrete numbers.
+- Separates cheap coplanar paths from expensive non-coplanar topology growth paths.
+
+### Validation added
+
+- Ran perf tests in release mode with `--ignored --nocapture`.
+- Captured first baseline:
+  - Coplanar bulk: `1600` iters, `10.336 ms`, `6.460 us/op`, final `4 verts / 2 tris`
+  - Non-coplanar bulk: `1600` iters, `161.638 ms`, `101.024 us/op`, final `1604 verts / 3202 tris`
+  - Circle brush bulk: `400` brushes (`2400` generated points), `162.734 ms`, `406.834 us/brush`, final `2371 verts / 1638 tris`
+
 ## Future Commit Template
 
 ## Commit: <name>
