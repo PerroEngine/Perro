@@ -118,16 +118,32 @@ impl TerrainChunk {
         true
     }
 
-    fn find_hit_triangles_xz(&self, x: f32, z: f32, eps: f32) -> Vec<usize> {
+    fn find_hit_triangles_xz(&mut self, x: f32, z: f32, eps: f32) -> Vec<usize> {
+        if let Some(tri_id) = self.last_hit_triangle {
+            if let Some(tri) = self.triangles.get(tri_id).copied() {
+                let a = self.vertices[tri.a].position;
+                let b = self.vertices[tri.b].position;
+                let c = self.vertices[tri.c].position;
+                if point_in_triangle_xz_strict_interior(x, z, a, b, c, eps * 4.0) {
+                    return vec![tri_id];
+                }
+            }
+        }
+
         let mut hits = Vec::new();
         for (tri_id, tri) in self.triangles.iter().copied().enumerate() {
             let a = self.vertices[tri.a].position;
             let b = self.vertices[tri.b].position;
             let c = self.vertices[tri.c].position;
+
+            if !point_in_triangle_aabb_xz(x, z, a, b, c, eps) {
+                continue;
+            }
             if point_in_triangle_xz(x, z, a, b, c, eps) {
                 hits.push(tri_id);
             }
         }
+        self.last_hit_triangle = hits.first().copied();
         hits
     }
 
@@ -160,30 +176,27 @@ impl TerrainChunk {
             let on_bc = w0.abs() <= eps;
             let on_ca = w1.abs() <= eps;
 
-            let candidates = if on_ab {
-                vec![
-                    Triangle::new(tri.a, vertex_id, tri.c),
-                    Triangle::new(vertex_id, tri.b, tri.c),
-                ]
+            let mut candidates = [Triangle::new(0, 0, 0); 3];
+            let candidate_count = if on_ab {
+                candidates[0] = Triangle::new(tri.a, vertex_id, tri.c);
+                candidates[1] = Triangle::new(vertex_id, tri.b, tri.c);
+                2
             } else if on_bc {
-                vec![
-                    Triangle::new(tri.b, vertex_id, tri.a),
-                    Triangle::new(vertex_id, tri.c, tri.a),
-                ]
+                candidates[0] = Triangle::new(tri.b, vertex_id, tri.a);
+                candidates[1] = Triangle::new(vertex_id, tri.c, tri.a);
+                2
             } else if on_ca {
-                vec![
-                    Triangle::new(tri.c, vertex_id, tri.b),
-                    Triangle::new(vertex_id, tri.a, tri.b),
-                ]
+                candidates[0] = Triangle::new(tri.c, vertex_id, tri.b);
+                candidates[1] = Triangle::new(vertex_id, tri.a, tri.b);
+                2
             } else {
-                vec![
-                    Triangle::new(tri.a, tri.b, vertex_id),
-                    Triangle::new(tri.b, tri.c, vertex_id),
-                    Triangle::new(tri.c, tri.a, vertex_id),
-                ]
+                candidates[0] = Triangle::new(tri.a, tri.b, vertex_id);
+                candidates[1] = Triangle::new(tri.b, tri.c, vertex_id);
+                candidates[2] = Triangle::new(tri.c, tri.a, vertex_id);
+                3
             };
 
-            for cand in candidates {
+            for cand in candidates.into_iter().take(candidate_count) {
                 if self.triangle_area2_by_positions(cand) > eps {
                     replacement.push(cand);
                 }
@@ -488,6 +501,28 @@ fn point_in_triangle_xz(x: f32, z: f32, a: Vector3, b: Vector3, c: Vector3, eps:
         return false;
     };
     w0 >= -eps && w1 >= -eps && w2 >= -eps
+}
+
+fn point_in_triangle_xz_strict_interior(
+    x: f32,
+    z: f32,
+    a: Vector3,
+    b: Vector3,
+    c: Vector3,
+    eps: f32,
+) -> bool {
+    let Some((w0, w1, w2)) = barycentric_xz(x, z, a, b, c, eps) else {
+        return false;
+    };
+    w0 > eps && w1 > eps && w2 > eps
+}
+
+fn point_in_triangle_aabb_xz(x: f32, z: f32, a: Vector3, b: Vector3, c: Vector3, eps: f32) -> bool {
+    let min_x = a.x.min(b.x).min(c.x) - eps;
+    let max_x = a.x.max(b.x).max(c.x) + eps;
+    let min_z = a.z.min(b.z).min(c.z) - eps;
+    let max_z = a.z.max(b.z).max(c.z) + eps;
+    x >= min_x && x <= max_x && z >= min_z && z <= max_z
 }
 
 fn barycentric_xz(

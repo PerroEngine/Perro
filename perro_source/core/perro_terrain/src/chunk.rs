@@ -66,6 +66,7 @@ pub struct TerrainChunk {
     pub config: ChunkConfig,
     pub(crate) vertices: Vec<Vertex>,
     pub(crate) triangles: Vec<Triangle>,
+    pub(crate) last_hit_triangle: Option<TriangleID>,
 }
 
 impl TerrainChunk {
@@ -85,6 +86,7 @@ impl TerrainChunk {
             config,
             vertices,
             triangles,
+            last_hit_triangle: None,
         }
     }
 

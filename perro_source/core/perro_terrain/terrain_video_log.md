@@ -148,6 +148,30 @@ Track what each terrain commit changed so video explanations are easy later.
   - Non-coplanar bulk: `1600` iters, `129.205 ms`, `80.753 us/op`, final `1604 verts / 3202 tris`
   - Circle brush bulk: `400` brushes (`2400` generated points), `80.233 ms`, `200.582 us/brush`, final `833 verts / 1660 tris`
 
+## Commit: Caching + Local Spatial Fast Paths
+
+### What was added
+
+- Added last-hit triangle cache for point insert queries.
+- Added strict-interior fast return when the next insert lands inside cached triangle.
+- Added triangle AABB prefilter before barycentric checks.
+- Removed per-triangle temporary `Vec` allocations in split candidate generation (stack array path).
+
+### Why it matters
+
+- Reduces repeated full-triangle scans in localized editing workflows.
+- Cuts hot-path math work by skipping barycentric checks for obvious misses.
+- Lowers allocator pressure during heavy insert loops.
+
+### Validation added
+
+- Re-ran release perf tests:
+  - Coplanar bulk: `1600` iters, `7.561 ms`, `4.726 us/op`, final `4 verts / 2 tris`
+  - Non-coplanar bulk: `1600` iters, `77.587 ms`, `48.492 us/op`, final `1604 verts / 3202 tris`
+  - Circle brush bulk: `400` brushes (`2400` generated points), `60.620 ms`, `151.551 us/brush`, final `833 verts / 1660 tris`
+  - 4096 single-plane coplanar: `23.373 ms`, `5.706 us/op`, final `4 verts / 2 tris`
+  - 4096 piecewise-planar: `352.794 ms`, `86.131 us/op`, final `3350 verts / 6694 tris`
+
 ## Future Commit Template
 
 ## Commit: <name>
