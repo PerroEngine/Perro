@@ -25,9 +25,6 @@ pub enum Op {
     EmitterX,
     EmitterY,
     EmitterZ,
-    PrevX,
-    PrevY,
-    PrevZ,
     Param,
     Add,
     Sub,
@@ -150,7 +147,7 @@ pub fn eval_ops_particle(
     ring_u: f32,
     index01: f32,
     emitter_pos: [f32; 3],
-    prev_pos: [f32; 3],
+    _prev_pos: [f32; 3],
     params: &[f32],
     stack: &mut Vec<f32>,
 ) -> Option<f32> {
@@ -182,9 +179,6 @@ pub fn eval_ops_particle(
                 Op::EmitterX => stack.push(emitter_pos[0]),
                 Op::EmitterY => stack.push(emitter_pos[1]),
                 Op::EmitterZ => stack.push(emitter_pos[2]),
-                Op::PrevX => stack.push(prev_pos[0]),
-                Op::PrevY => stack.push(prev_pos[1]),
-                Op::PrevZ => stack.push(prev_pos[2]),
                 Op::Param => {
                     let idx = stack.pop()?.floor() as isize;
                     if idx < 0 {
@@ -300,9 +294,6 @@ pub fn emit_wgsl_expr_ops(ops: &[Op]) -> Result<String, CompileError> {
                 Op::EmitterX => stack.push("emitter_x".to_string()),
                 Op::EmitterY => stack.push("emitter_y".to_string()),
                 Op::EmitterZ => stack.push("emitter_z".to_string()),
-                Op::PrevX => stack.push("prev_x".to_string()),
-                Op::PrevY => stack.push("prev_y".to_string()),
-                Op::PrevZ => stack.push("prev_z".to_string()),
                 Op::Param => {
                     let idx = stack.pop().ok_or(CompileError::InvalidProgram)?;
                     stack.push(format!("params_expr({idx}, params_len, params)"));
@@ -550,9 +541,6 @@ impl<'a> Compiler<'a> {
             "emitter_x" => self.ops.push(Op::EmitterX),
             "emitter_y" => self.ops.push(Op::EmitterY),
             "emitter_z" => self.ops.push(Op::EmitterZ),
-            "prev_x" => self.ops.push(Op::PrevX),
-            "prev_y" => self.ops.push(Op::PrevY),
-            "prev_z" => self.ops.push(Op::PrevZ),
             "pi" => self.ops.push(Op::Const(std::f32::consts::PI)),
             "tau" => self.ops.push(Op::Const(std::f32::consts::TAU)),
             _ => return Err(CompileError::UnknownIdentifier),

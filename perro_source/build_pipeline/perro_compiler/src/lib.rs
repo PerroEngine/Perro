@@ -1241,15 +1241,6 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
         return None;
     }
 
-    if !line.contains("&self")
-        || !line.contains("ctx")
-        || !line.contains("res")
-        || !line.contains("ipt")
-        || (!line.contains("self_id") && !line.contains("node"))
-    {
-        return None;
-    }
-
     let rest = line.trim_start_matches("fn ").trim_start();
     let mut name = String::new();
     for c in rest.chars() {
@@ -1265,6 +1256,11 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
         let params_sig = extract_fn_params_segment(line)?;
         let mut takes_raw_params = false;
         let mut params = Vec::new();
+        let mut has_self = false;
+        let mut has_ctx = false;
+        let mut has_res = false;
+        let mut has_ipt = false;
+        let mut has_node_id = false;
 
         for raw in split_top_level_commas(params_sig) {
             let token = raw.trim();
@@ -1274,6 +1270,7 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
                 || token == "&mut self"
                 || token == "mut self"
             {
+                has_self = true;
                 continue;
             }
 
@@ -1282,16 +1279,25 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
             };
             let param_name = name_part.trim();
             let param_ty = ty_part.trim();
-            if param_name == "ctx"
-                || param_name == "res"
-                || param_name == "ipt"
-                || param_name == "self_id"
-                || param_name == "node"
-            {
+
+            let normalized = normalize_type(param_ty);
+            if is_runtime_context_type(&normalized) {
+                has_ctx = true;
+                continue;
+            }
+            if is_resource_context_type(&normalized) {
+                has_res = true;
+                continue;
+            }
+            if is_input_context_type(&normalized) {
+                has_ipt = true;
+                continue;
+            }
+            if is_node_id_type(&normalized) {
+                has_node_id = true;
                 continue;
             }
 
-            let normalized = normalize_type(param_ty);
             let is_raw_params = param_name == "params"
                 && (normalized == "&[Variant]" || normalized == "&[perro_variant::Variant]");
             if is_raw_params {
@@ -1308,6 +1314,9 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
         if takes_raw_params && !params.is_empty() {
             return None;
         }
+        if !(has_self && has_ctx && has_res && has_ipt && has_node_id) {
+            return None;
+        }
 
         let returns_variant =
             line.contains("-> Variant") || line.contains("->perro_variant::Variant");
@@ -1319,6 +1328,31 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
             attrs: Vec::new(),
         })
     }
+}
+
+fn is_runtime_context_type(ty: &str) -> bool {
+    ty.starts_with("&mutRuntimeContext<")
+        || ty == "&mutRuntimeContext"
+        || ty.starts_with("&mutperro_runtime_context::RuntimeContext<")
+        || ty == "&mutperro_runtime_context::RuntimeContext"
+}
+
+fn is_resource_context_type(ty: &str) -> bool {
+    ty.starts_with("&ResourceContext<")
+        || ty == "&ResourceContext"
+        || ty.starts_with("&perro_resource_context::ResourceContext<")
+        || ty == "&perro_resource_context::ResourceContext"
+}
+
+fn is_input_context_type(ty: &str) -> bool {
+    ty.starts_with("&InputContext<")
+        || ty == "&InputContext"
+        || ty.starts_with("&perro_input::InputContext<")
+        || ty == "&perro_input::InputContext"
+}
+
+fn is_node_id_type(ty: &str) -> bool {
+    ty == "NodeID" || ty == "perro_ids::NodeID"
 }
 
 fn parse_transpiler_attr_name(line: &str) -> Option<String> {

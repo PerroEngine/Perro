@@ -27,6 +27,10 @@ pub struct ParticleEmitter3D {
     pub profile: String,
     pub sim_mode: ParticleEmitterSimMode3D,
     pub render_mode: ParticleEmitterRenderMode3D,
+    pub internal_simulation_time: f32,
+    pub internal_prev_active: bool,
+    pub internal_finished_emitted: bool,
+    pub internal_lifetime_max: f32,
 }
 
 impl Deref for ParticleEmitter3D {
@@ -56,6 +60,10 @@ impl ParticleEmitter3D {
             profile: String::new(),
             sim_mode: ParticleEmitterSimMode3D::Default,
             render_mode: ParticleEmitterRenderMode3D::Point,
+            internal_simulation_time: 0.0,
+            internal_prev_active: true,
+            internal_finished_emitted: false,
+            internal_lifetime_max: 1.0,
         }
     }
 }

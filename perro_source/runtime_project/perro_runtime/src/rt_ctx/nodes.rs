@@ -12,7 +12,11 @@ impl NodeAPI for Runtime {
     where
         T: Default + Into<SceneNodeData>,
     {
-        self.nodes.insert(SceneNode::new(T::default().into()))
+        let id = self.nodes.insert(SceneNode::new(T::default().into()));
+        if let Some(node) = self.nodes.get(id) {
+            self.register_internal_node_schedules(id, node.node_type());
+        }
+        id
     }
 
     fn with_node_mut<T, V, F>(&mut self, id: perro_ids::NodeID, f: F) -> Option<V>
@@ -225,6 +229,7 @@ impl NodeAPI for Runtime {
             }
         }
 
+        self.unregister_internal_node_schedules(node_id);
         self.nodes.remove(node_id).is_some()
     }
 

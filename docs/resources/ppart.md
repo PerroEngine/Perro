@@ -111,4 +111,3 @@ Constants/inputs:
 - `seed`: stable per-particle seed-derived value.
 - `ring_u`: stable low-discrepancy scalar in `[0,1)`, useful for ring/circle layouts.
 - `emitter_x`, `emitter_y`, `emitter_z`: emitter world position components.
-- `prev_x`, `prev_y`, `prev_z`: previous-frame base world position components for this particle

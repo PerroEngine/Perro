@@ -181,6 +181,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "perro_internal_updates"
+version = "0.1.0"
+dependencies = [
+ "perro_ids",
+ "perro_input",
+ "perro_nodes",
+ "perro_resource_context",
+ "perro_runtime_context",
+]
+
+[[package]]
 name = "perro_io"
 version = "0.1.0"
 dependencies = [
@@ -240,6 +251,7 @@ dependencies = [
  "libloading",
  "perro_ids",
  "perro_input",
+ "perro_internal_updates",
  "perro_io",
  "perro_nodes",
  "perro_particle_math",

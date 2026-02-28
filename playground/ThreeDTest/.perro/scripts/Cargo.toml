@@ -48,6 +48,7 @@ perro_nodes = { path = "../../../../perro_source/core/perro_nodes" }
 perro_particle_math = { path = "../../../../perro_source/core/perro_particle_math" }
 perro_structs = { path = "../../../../perro_source/core/perro_structs" }
 perro_variant = { path = "../../../../perro_source/core/perro_variant" }
+perro_internal_updates = { path = "../../../../perro_source/runtime_project/perro_internal_updates" }
 perro_project = { path = "../../../../perro_source/runtime_project/perro_project" }
 perro_runtime = { path = "../../../../perro_source/runtime_project/perro_runtime" }
 perro_scene = { path = "../../../../perro_source/runtime_project/perro_scene" }

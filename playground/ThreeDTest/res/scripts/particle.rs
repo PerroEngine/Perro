@@ -36,7 +36,7 @@ lifecycle!({
     ) {
         let dt = delta_time!(ctx);
         with_node_mut!(ctx, SelfNodeType, self_id, |node| {
-            node.position.y += 12.0 * dt;
+            node.rotation.rotate_x(5.0 * dt);
         });
     }
 

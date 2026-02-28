@@ -1404,6 +1404,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_variant" => Some("perro_source/core/perro_variant"),
         "perro_particle_math" => Some("perro_source/core/perro_particle_math"),
         "perro_runtime" => Some("perro_source/runtime_project/perro_runtime"),
+        "perro_internal_updates" => Some("perro_source/runtime_project/perro_internal_updates"),
         "perro_scene" => Some("perro_source/runtime_project/perro_scene"),
         "perro_runtime_context" => Some("perro_source/api_modules/perro_runtime_context"),
         "perro_resource_context" => Some("perro_source/api_modules/perro_resource_context"),

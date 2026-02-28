@@ -28,6 +28,20 @@ pub enum Renderable {
     True,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum InternalUpdate {
+    False,
+    True,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum InternalFixedUpdate {
+    False,
+    True,
+}
+
 #[macro_export]
 macro_rules! __node_parent_opt {
     (None) => {
@@ -124,8 +138,8 @@ macro_rules! __impl_exact_node_base_dispatch_3d {
 macro_rules! define_scene_nodes {
     (
         base: { $($base_variant:ident $(=> $base_ty:ty)?),* $(,)? }
-        2d: { $($variant_2d:ident => ($parent_2d:ident, $ty_2d:ty, $renderable_2d:expr)),* $(,)? }
-        3d: { $($variant_3d:ident => ($parent_3d:ident, $ty_3d:ty, $renderable_3d:expr)),* $(,)? }
+        2d: { $($variant_2d:ident => ($parent_2d:ident, $ty_2d:ty, $renderable_2d:expr, $internal_update_2d:expr, $internal_fixed_update_2d:expr)),* $(,)? }
+        3d: { $($variant_3d:ident => ($parent_3d:ident, $ty_3d:ty, $renderable_3d:expr, $internal_update_3d:expr, $internal_fixed_update_3d:expr)),* $(,)? }
     ) => {
         #[derive(Clone, Debug)]
         pub struct SceneNode {
@@ -331,6 +345,8 @@ macro_rules! define_scene_nodes {
             const NODE_TYPE: NodeType;
             const SPATIAL: Spatial;
             const RENDERABLE: Renderable;
+            const INTERNAL_UPDATE: InternalUpdate;
+            const INTERNAL_FIXED_UPDATE: InternalFixedUpdate;
             type TransformSnapshot: Copy + PartialEq;
 
             fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R>;
@@ -418,6 +434,22 @@ macro_rules! define_scene_nodes {
                 }
             }
 
+            pub const fn get_internal_update(&self) -> InternalUpdate {
+                match self {
+                    $(NodeType::$base_variant => InternalUpdate::False,)*
+                    $(NodeType::$variant_2d => $internal_update_2d,)*
+                    $(NodeType::$variant_3d => $internal_update_3d,)*
+                }
+            }
+
+            pub const fn get_internal_fixed_update(&self) -> InternalFixedUpdate {
+                match self {
+                    $(NodeType::$base_variant => InternalFixedUpdate::False,)*
+                    $(NodeType::$variant_2d => $internal_fixed_update_2d,)*
+                    $(NodeType::$variant_3d => $internal_fixed_update_3d,)*
+                }
+            }
+
             pub const fn is_2d(&self) -> bool {
                 matches!(self.get_spatial(), Spatial::TwoD)
             }
@@ -432,6 +464,7 @@ macro_rules! define_scene_nodes {
                     Spatial::TwoD | Spatial::ThreeD
                 )
             }
+
         }
 
         $(impl From<$ty_2d> for SceneNodeData {
@@ -456,6 +489,8 @@ macro_rules! define_scene_nodes {
             const NODE_TYPE: NodeType = NodeType::$variant_2d;
             const SPATIAL: Spatial = Spatial::TwoD;
             const RENDERABLE: Renderable = $renderable_2d;
+            const INTERNAL_UPDATE: InternalUpdate = $internal_update_2d;
+            const INTERNAL_FIXED_UPDATE: InternalFixedUpdate = $internal_fixed_update_2d;
             type TransformSnapshot = Transform2D;
 
             fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
@@ -485,6 +520,8 @@ macro_rules! define_scene_nodes {
             const NODE_TYPE: NodeType = NodeType::$variant_3d;
             const SPATIAL: Spatial = Spatial::ThreeD;
             const RENDERABLE: Renderable = $renderable_3d;
+            const INTERNAL_UPDATE: InternalUpdate = $internal_update_3d;
+            const INTERNAL_FIXED_UPDATE: InternalFixedUpdate = $internal_fixed_update_3d;
             type TransformSnapshot = Transform3D;
 
             fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
@@ -581,19 +618,19 @@ define_scene_nodes! {
         Node,
     }
     2d: {
-        Node2D => (None, Node2D, Renderable::False),
-        Camera2D => (Node2D, Camera2D, Renderable::True),
-        Sprite2D => (Node2D, Sprite2D, Renderable::True),
+        Node2D => (None, Node2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        Camera2D => (Node2D, Camera2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        Sprite2D => (Node2D, Sprite2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
     }
     3d: {
-        Node3D => (None, Node3D, Renderable::False),
-        Camera3D => (Node3D, Camera3D, Renderable::True),
-        MeshInstance3D => (Node3D, MeshInstance3D, Renderable::True),
-        ParticleEmitter3D => (Node3D, ParticleEmitter3D, Renderable::True),
+        Node3D => (None, Node3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        Camera3D => (Node3D, Camera3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        MeshInstance3D => (Node3D, MeshInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        ParticleEmitter3D => (Node3D, ParticleEmitter3D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         //Lights
-        AmbientLight3D => (None, AmbientLight3D, Renderable::True),
-        RayLight3D => (Node3D, RayLight3D, Renderable::True),
-        PointLight3D => (Node3D, PointLight3D, Renderable::True),
-        SpotLight3D => (Node3D, SpotLight3D, Renderable::True)
+        AmbientLight3D => (None, AmbientLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        RayLight3D => (Node3D, RayLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        PointLight3D => (Node3D, PointLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        SpotLight3D => (Node3D, SpotLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False)
     }
 }

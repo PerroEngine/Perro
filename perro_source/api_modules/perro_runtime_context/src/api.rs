@@ -34,4 +34,9 @@ impl<'rt, RT: RuntimeAPI + ?Sized> RuntimeContext<'rt, RT> {
     pub fn Signals(&mut self) -> SignalModule<'_, RT> {
         SignalModule::new(self.rt)
     }
+
+    #[inline]
+    pub fn runtime_mut(&mut self) -> &mut RT {
+        self.rt
+    }
 }

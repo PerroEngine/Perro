@@ -17,6 +17,9 @@ pub(super) fn merge_prepared_scene(
     let mut engine_root = SceneNode::new(SceneNodeData::Node);
     engine_root.name = Cow::Borrowed("Game Root");
     let engine_root = runtime.nodes.insert(engine_root);
+    if let Some(node) = runtime.nodes.get(engine_root) {
+        runtime.register_internal_node_schedules(engine_root, node.node_type());
+    }
 
     let mut key_to: HashMap<String, NodeID> = HashMap::with_capacity(nodes.len());
     let mut key_order: Vec<String> = Vec::with_capacity(nodes.len());
@@ -38,6 +41,9 @@ pub(super) fn merge_prepared_scene(
         }
 
         let node = runtime.nodes.insert(node);
+        if let Some(inserted) = runtime.nodes.get(node) {
+            runtime.register_internal_node_schedules(node, inserted.node_type());
+        }
         if let Some(source) = texture_source {
             runtime.render_2d.texture_sources.insert(node, source);
         }

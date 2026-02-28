@@ -8,7 +8,12 @@ macro_rules! lifecycle {
         #[derive(Default)]
         struct $script_name;
 
-        impl<RT: RuntimeAPI + ?Sized, RS: perro_resource_context::api::ResourceAPI + ?Sized, IP: perro_input::InputAPI + ?Sized> ScriptLifecycle<RT, RS, IP> for $script_name {
+        impl<RT, RS, IP> ScriptLifecycle<RT, RS, IP> for $script_name
+        where
+            RT: RuntimeAPI + ?Sized,
+            RS: perro_resource_context::api::ResourceAPI + ?Sized,
+            IP: perro_input::InputAPI + ?Sized,
+        {
             $($methods)*
         }
     };
@@ -43,14 +48,19 @@ macro_rules! __methods_internal {
         $($rest:tt)*
     ) => {
         $(#[$meta])*
-        $vis fn $name<RT: RuntimeAPI + ?Sized, RS: perro_resource_context::api::ResourceAPI + ?Sized, IP: perro_input::InputAPI + ?Sized>(
+        $vis fn $name<RT, RS, IP>(
             &$self_ident,
             $ctx: &mut RuntimeContext<'_, RT>,
             $res: &perro_resource_context::ResourceContext<'_, RS>,
             $ipt: &perro_input::InputContext<'_, IP>,
             $self: NodeID
             $(, $arg : $arg_ty )*
-        ) $(-> $ret)? $body
+        ) $(-> $ret)?
+        where
+            RT: RuntimeAPI + ?Sized,
+            RS: perro_resource_context::api::ResourceAPI + ?Sized,
+            IP: perro_input::InputAPI + ?Sized,
+        $body
 
         $crate::__methods_internal! { $($rest)* }
     };

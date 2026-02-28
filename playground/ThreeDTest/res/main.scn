@@ -80,8 +80,8 @@ script = "res://scripts/particle.rs"
 [ParticleEmitter3D]
     render_mode = "billboard"
     active = true
-    looping = false
-    spawn_rate = 10000.0
+    looping = true
+    spawn_rate = 1000.0
     seed = 21
     params = (3.0, 2.0, 8.0, 0.0)
     profile = "res://particles/test.ppart"

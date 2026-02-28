@@ -63,6 +63,7 @@ impl Runtime {
         self.scripts = Default::default();
         self.pending_start_scripts.clear();
         self.pending_start_flags.clear();
+        self.clear_internal_node_schedules();
         self.render_2d.traversal_ids.clear();
         self.render_2d.visible_now.clear();
         self.render_2d.prev_visible.clear();
@@ -76,8 +77,6 @@ impl Runtime {
         self.render_3d.material_sources.clear();
         self.render_3d.material_overrides.clear();
         self.render_3d.particle_path_cache.clear();
-        self.render_3d.non_looping_emitter_start_time.clear();
-        self.render_3d.completed_non_looping_emitters.clear();
         self.render_3d.removed_nodes.clear();
         if self.provider_mode == ProviderMode::Dynamic {
             self.dynamic_script_registry.clear();
@@ -125,6 +124,7 @@ impl Runtime {
             .iter()
             .map(|(id, script_path)| (*id, script_path.clone()))
             .collect();
+        self.rebuild_internal_node_schedules();
         self.attach_scene_scripts(script_nodes)?;
         let stats = SceneLoadStats {
             mode_label,

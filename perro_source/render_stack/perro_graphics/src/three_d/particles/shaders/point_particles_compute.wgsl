@@ -61,6 +61,8 @@ var<storage, read> custom_params: array<f32>;
 var<storage, read> particle_emitters: array<u32>;
 @group(1) @binding(6)
 var<storage, read> particle_spawn_origins: array<vec4<f32>>;
+@group(1) @binding(7)
+var<storage, read> particle_spawn_rotations: array<vec4<f32>>;
 
 @group(1) @binding(0)
 var<storage, read> particles_read: array<ComputedParticle>;
@@ -84,6 +86,11 @@ fn safe_normalize(v: vec3<f32>, fallback: vec3<f32>) -> vec3<f32> {
         return v / len;
     }
     return fallback;
+}
+
+fn rotate_by_quat(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
+    let t = 2.0 * cross(q.xyz, v);
+    return v + q.w * t + cross(q.xyz, t);
 }
 
 fn eval_expr(
@@ -111,9 +118,6 @@ fn eval_expr(
     emitter_x: f32,
     emitter_y: f32,
     emitter_z: f32,
-    prev_x: f32,
-    prev_y: f32,
-    prev_z: f32,
     params_offset: u32,
     params_len: u32,
 ) -> f32 {
@@ -300,18 +304,6 @@ fn eval_expr(
             if sp >= 64u { return 0.0; }
             stack[sp] = emitter_z;
             sp = sp + 1u;
-        } else if code == 40u { // prev_x
-            if sp >= 64u { return 0.0; }
-            stack[sp] = prev_x;
-            sp = sp + 1u;
-        } else if code == 41u { // prev_y
-            if sp >= 64u { return 0.0; }
-            stack[sp] = prev_y;
-            sp = sp + 1u;
-        } else if code == 42u { // prev_z
-            if sp >= 64u { return 0.0; }
-            stack[sp] = prev_z;
-            sp = sp + 1u;
         } else if code == 43u { // hash
             if sp < 1u { return 0.0; }
             sp = sp - 1u; let a = stack[sp];
@@ -343,7 +335,6 @@ fn eval_particle(particle_index: u32) -> ComputedParticle {
     let e = emitters[emitter_idx];
     let local_i = particle_index - e.counts_seed.x;
     let model = mat4x4<f32>(e.model_0, e.model_1, e.model_2, e.model_3);
-    let origin = particle_spawn_origins[particle_index].xyz;
     let time = max(e.time_path.x, 0.0);
     let life_min = max(e.life_speed.x, 0.001);
     let life_max = max(e.life_speed.y, life_min);
@@ -363,6 +354,9 @@ fn eval_particle(particle_index: u32) -> ComputedParticle {
         let back = (e.counts_seed.y - 1u) - local_i;
         spawn_index = total_spawned - back;
     }
+    let spawn_slot = e.flags.w + (spawn_index % max(e.counts_seed.z, 1u));
+    let origin = particle_spawn_origins[spawn_slot].xyz;
+    let spawn_rot = particle_spawn_rotations[spawn_slot];
     let h0 = hash01(e.counts_seed.w ^ spawn_index);
     let h1 = hash01((e.counts_seed.w + 0x9E3779B9u) ^ (spawn_index * 3u));
     let h2 = hash01((e.counts_seed.w + 0x7F4A7C15u) ^ (spawn_index * 7u));
@@ -459,9 +453,6 @@ fn eval_particle(particle_index: u32) -> ComputedParticle {
             origin.x,
             origin.y,
             origin.z,
-            prev_pos.x,
-            prev_pos.y,
-            prev_pos.z,
             e.custom_ops_zp.z,
             e.custom_ops_zp.w,
         );
@@ -490,9 +481,6 @@ fn eval_particle(particle_index: u32) -> ComputedParticle {
             origin.x,
             origin.y,
             origin.z,
-            prev_pos.x,
-            prev_pos.y,
-            prev_pos.z,
             e.custom_ops_zp.z,
             e.custom_ops_zp.w,
         );
@@ -521,9 +509,6 @@ fn eval_particle(particle_index: u32) -> ComputedParticle {
             origin.x,
             origin.y,
             origin.z,
-            prev_pos.x,
-            prev_pos.y,
-            prev_pos.z,
             e.custom_ops_zp.z,
             e.custom_ops_zp.w,
         );
@@ -538,12 +523,13 @@ fn eval_particle(particle_index: u32) -> ComputedParticle {
         let c = cos(theta);
         pos = origin + vec3<f32>(rel.x * c - rel.z * s, rel.y, rel.x * s + rel.z * c);
     }
+    pos = origin + rotate_by_quat(spawn_rot, pos - origin);
 
     let color = e.color_start + (e.color_end - e.color_start) * age;
     let size = e.emissive_point.w * (size_min + (size_max - size_min) * h2);
     out.world_pos = vec4<f32>(pos, size);
     out.color = vec4<f32>(color.rgb, clamp(color.a, 0.0, 1.0));
-    out.emissive = vec4<f32>(e.emissive_point.xyz, f32(e.flags.w));
+    out.emissive = vec4<f32>(e.emissive_point.xyz, 0.0);
     return out;
 }
 

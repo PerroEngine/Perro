@@ -1634,6 +1634,7 @@ dependencies = [
 name = "perro_graphics"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "bytemuck",
  "glam",
  "gltf",
@@ -1657,6 +1658,17 @@ name = "perro_input"
 version = "0.1.0"
 dependencies = [
  "perro_structs",
+]
+
+[[package]]
+name = "perro_internal_updates"
+version = "0.1.0"
+dependencies = [
+ "perro_ids",
+ "perro_input",
+ "perro_nodes",
+ "perro_resource_context",
+ "perro_runtime_context",
 ]
 
 [[package]]
@@ -1723,6 +1735,7 @@ dependencies = [
  "libloading",
  "perro_ids",
  "perro_input",
+ "perro_internal_updates",
  "perro_io",
  "perro_nodes",
  "perro_particle_math",

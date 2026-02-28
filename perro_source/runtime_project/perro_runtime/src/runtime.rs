@@ -7,9 +7,11 @@ use crate::{
 use ahash::{AHashMap, AHashSet};
 use libloading::Library;
 use perro_ids::{NodeID, TextureID};
-use perro_input::{InputSnapshot, KeyCode, MouseButton};
-use perro_nodes::{SceneNodeData, Spatial};
+use perro_input::{InputContext, InputSnapshot, KeyCode, MouseButton};
+use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType, SceneNodeData, Spatial};
+use perro_resource_context::ResourceContext;
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
+use perro_runtime_context::RuntimeContext;
 use perro_scripting::ScriptConstructor;
 use std::sync::Arc;
 
@@ -37,6 +39,8 @@ pub struct Runtime {
     traversal_stack: Vec<NodeID>,
     transform_visit_flags: Vec<u8>,
     transform_visit_indices: Vec<u32>,
+    internal_update_nodes: Vec<NodeID>,
+    internal_fixed_update_nodes: Vec<NodeID>,
 
     render_2d: Render2DState,
     render_3d: Render3DState,
@@ -213,8 +217,6 @@ struct Render3DState {
     material_sources: AHashMap<NodeID, String>,
     material_overrides: AHashMap<NodeID, Material3D>,
     particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile3D>,
-    non_looping_emitter_start_time: AHashMap<NodeID, f32>,
-    completed_non_looping_emitters: AHashSet<NodeID>,
     removed_nodes: Vec<NodeID>,
 }
 
@@ -228,8 +230,6 @@ impl Render3DState {
             material_sources: AHashMap::default(),
             material_overrides: AHashMap::default(),
             particle_path_cache: AHashMap::default(),
-            non_looping_emitter_start_time: AHashMap::default(),
-            completed_non_looping_emitters: AHashSet::default(),
             removed_nodes: Vec::new(),
         }
     }
@@ -339,6 +339,8 @@ impl Runtime {
             traversal_stack: Vec::new(),
             transform_visit_flags: Vec::new(),
             transform_visit_indices: Vec::new(),
+            internal_update_nodes: Vec::new(),
+            internal_fixed_update_nodes: Vec::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
             signals: SignalRegistry::new(),
@@ -391,6 +393,7 @@ impl Runtime {
         self.run_start_schedule();
         self.schedules.snapshot_update(&self.scripts);
         self.run_update_schedule();
+        self.run_internal_update_schedule();
     }
 
     #[inline]
@@ -398,6 +401,7 @@ impl Runtime {
         self.time.fixed_delta = fixed_delta_time;
         self.schedules.snapshot_fixed(&self.scripts);
         self.run_fixed_schedule();
+        self.run_internal_fixed_update_schedule();
     }
 
     #[inline]
@@ -546,6 +550,92 @@ impl Runtime {
         self.pending_start_scripts = queued;
     }
 
+    pub(crate) fn rebuild_internal_node_schedules(&mut self) {
+        self.internal_update_nodes.clear();
+        self.internal_fixed_update_nodes.clear();
+        for (id, node) in self.nodes.iter() {
+            match node.node_type().get_internal_update() {
+                InternalUpdate::True => self.internal_update_nodes.push(id),
+                InternalUpdate::False => {}
+            }
+            match node.node_type().get_internal_fixed_update() {
+                InternalFixedUpdate::True => self.internal_fixed_update_nodes.push(id),
+                InternalFixedUpdate::False => {}
+            }
+        }
+    }
+
+    pub(crate) fn register_internal_node_schedules(&mut self, id: NodeID, ty: NodeType) {
+        if matches!(ty.get_internal_update(), InternalUpdate::True)
+            && !self.internal_update_nodes.contains(&id)
+        {
+            self.internal_update_nodes.push(id);
+        }
+        if matches!(ty.get_internal_fixed_update(), InternalFixedUpdate::True)
+            && !self.internal_fixed_update_nodes.contains(&id)
+        {
+            self.internal_fixed_update_nodes.push(id);
+        }
+    }
+
+    pub(crate) fn unregister_internal_node_schedules(&mut self, id: NodeID) {
+        self.internal_update_nodes.retain(|node| *node != id);
+        self.internal_fixed_update_nodes.retain(|node| *node != id);
+    }
+
+    pub(crate) fn clear_internal_node_schedules(&mut self) {
+        self.internal_update_nodes.clear();
+        self.internal_fixed_update_nodes.clear();
+    }
+
+    fn run_internal_update_schedule(&mut self) {
+        let schedule = std::mem::take(&mut self.internal_update_nodes);
+        for id in schedule.iter().copied() {
+            if self.nodes.get(id).is_none() {
+                continue;
+            }
+            self.call_internal_update_node(id);
+        }
+        self.internal_update_nodes = schedule;
+    }
+
+    fn run_internal_fixed_update_schedule(&mut self) {
+        let schedule = std::mem::take(&mut self.internal_fixed_update_nodes);
+        for id in schedule.iter().copied() {
+            if self.nodes.get(id).is_none() {
+                continue;
+            }
+            self.call_internal_fixed_update_node(id);
+        }
+        self.internal_fixed_update_nodes = schedule;
+    }
+
+    fn call_internal_update_node(&mut self, id: NodeID) {
+        if self.nodes.get(id).is_none() {
+            return;
+        }
+        let resource_api = self.resource_api.clone();
+        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
+            ResourceContext::new(resource_api.as_ref());
+        let input = self.input.clone();
+        let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
+        let mut ctx = RuntimeContext::new(self);
+        perro_internal_updates::internal_update_node(&mut ctx, &res, &ipt, id);
+    }
+
+    fn call_internal_fixed_update_node(&mut self, id: NodeID) {
+        if self.nodes.get(id).is_none() {
+            return;
+        }
+        let resource_api = self.resource_api.clone();
+        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
+            ResourceContext::new(resource_api.as_ref());
+        let input = self.input.clone();
+        let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
+        let mut ctx = RuntimeContext::new(self);
+        perro_internal_updates::internal_fixed_update_node(&mut ctx, &res, &ipt, id);
+    }
+
     pub fn clear_dirty_flags(&mut self) {
         self.dirty.clear();
     }
@@ -591,9 +681,9 @@ impl Runtime {
     }
 }
 
+
 impl Default for Runtime {
     fn default() -> Self {
         Self::new()
     }
 }
-

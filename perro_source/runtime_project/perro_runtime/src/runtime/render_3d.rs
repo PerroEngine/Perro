@@ -212,48 +212,14 @@ impl Runtime {
                 SceneNodeData::ParticleEmitter3D(emitter) => Some(emitter.clone()),
                 _ => None,
             });
-            if effective_visible && let Some(mut emitter) = point_emitter_data {
+            if effective_visible && let Some(emitter) = point_emitter_data {
                 let profile = resolve_particle_profile(self, &emitter.profile).unwrap_or_default();
-                let now = self.time.elapsed.max(0.0);
                 let lifetime_min = profile.lifetime_min.max(0.001);
                 let lifetime_max = profile.lifetime_max.max(lifetime_min);
-                let mut simulation_time = now;
-                if emitter.looping {
-                    self.render_3d.non_looping_emitter_start_time.remove(&node);
-                    self.render_3d.completed_non_looping_emitters.remove(&node);
-                } else if emitter.active {
-                    let restarted = self.render_3d.completed_non_looping_emitters.remove(&node);
-                    let start_time = if restarted {
-                        self.render_3d
-                            .non_looping_emitter_start_time
-                            .insert(node, now);
-                        now
-                    } else {
-                        *self
-                            .render_3d
-                            .non_looping_emitter_start_time
-                            .entry(node)
-                            .or_insert(now)
-                    };
-                    simulation_time = (now - start_time).max(0.0);
-                    if let Some(done_after) = non_looping_emitter_done_after(
-                        emitter.spawn_rate.max(0.0),
-                        lifetime_max,
-                    ) && simulation_time > done_after
-                    {
-                        emitter.active = false;
-                        self.render_3d.completed_non_looping_emitters.insert(node);
-                        self.render_3d.non_looping_emitter_start_time.remove(&node);
-                        if let Some(node_mut) = self.nodes.get_mut(node)
-                            && let SceneNodeData::ParticleEmitter3D(runtime_emitter) =
-                                &mut node_mut.data
-                        {
-                            runtime_emitter.active = false;
-                        }
-                    }
-                } else {
-                    self.render_3d.non_looping_emitter_start_time.remove(&node);
-                    self.render_3d.completed_non_looping_emitters.remove(&node);
+                if let Some(node_mut) = self.nodes.get_mut(node)
+                    && let SceneNodeData::ParticleEmitter3D(emitter_mut) = &mut node_mut.data
+                {
+                    emitter_mut.internal_lifetime_max = lifetime_max;
                 }
                 let default_sim_mode = self
                     .project()
@@ -287,7 +253,7 @@ impl Runtime {
                         emissive: profile.emissive,
                         seed: emitter.seed,
                         params: emitter.params.clone(),
-                        simulation_time,
+                        simulation_time: emitter.internal_simulation_time.max(0.0),
                         simulation_delta: self.time.delta.max(0.0),
                         profile,
                         sim_mode,
@@ -419,14 +385,6 @@ fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {
     budget.clamp(1, 1_000_000)
 }
 
-fn non_looping_emitter_done_after(spawn_rate: f32, lifetime_max: f32) -> Option<f32> {
-    if spawn_rate <= 0.0 || lifetime_max <= 0.0 {
-        return None;
-    }
-    let budget = derived_particle_budget(spawn_rate, lifetime_max);
-    let last_spawn_t = (budget.saturating_sub(1) as f32) / spawn_rate.max(1.0e-6);
-    Some(last_spawn_t + lifetime_max)
-}
 
 fn resolve_particle_sim_mode(
     override_mode: ParticleEmitterSimMode3D,
