@@ -76,6 +76,92 @@ fn perf_insert_brush_circle_bulk() {
     );
 }
 
+#[test]
+#[ignore]
+fn perf_4096_points_single_coplanar_plane_1m_spacing() {
+    let mut chunk = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
+    let points = generate_centered_grid_points_64(0.0, |_, _, base_y| base_y);
+    let iterations = points.len();
+    let mut removed = 0usize;
+    let mut kept = 0usize;
+
+    let start = Instant::now();
+    for p in points {
+        let r = chunk.insert_vertex(p).expect("insert should succeed");
+        if r.removed_as_coplanar {
+            removed += 1;
+        } else {
+            kept += 1;
+        }
+    }
+    let elapsed = start.elapsed();
+
+    assert!(chunk.validate(1.0e-6).is_ok());
+    assert_eq!(iterations, 4096);
+    assert_eq!(chunk.vertex_count(), 4);
+    assert_eq!(chunk.triangle_count(), 2);
+
+    println!(
+        "[perf] 4096 single-plane coplanar: iters={} removed={} kept={} total_ms={:.3} per_op_us={:.3} final_verts={} final_tris={}",
+        iterations,
+        removed,
+        kept,
+        elapsed.as_secs_f64() * 1000.0,
+        elapsed.as_secs_f64() * 1_000_000.0 / iterations as f64,
+        chunk.vertex_count(),
+        chunk.triangle_count()
+    );
+}
+
+#[test]
+#[ignore]
+fn perf_4096_points_piecewise_coplanar_planes_1m_spacing() {
+    let mut chunk = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
+    let points = generate_centered_grid_points_64(0.0, |x, z, _| {
+        if x < 0.0 && z < 0.0 {
+            0.0
+        } else if x >= 0.0 && z < 0.0 {
+            0.08 * x + 1.0
+        } else if x < 0.0 && z >= 0.0 {
+            -0.06 * z - 1.0
+        } else {
+            0.04 * x + 0.04 * z + 2.0
+        }
+    });
+    let iterations = points.len();
+    let mut removed = 0usize;
+    let mut kept = 0usize;
+
+    let start = Instant::now();
+    for p in points {
+        let r = chunk.insert_vertex(p).expect("insert should succeed");
+        if r.removed_as_coplanar {
+            removed += 1;
+        } else {
+            kept += 1;
+        }
+    }
+    let elapsed = start.elapsed();
+
+    assert!(chunk.validate(1.0e-6).is_ok());
+    assert_eq!(iterations, 4096);
+    assert!(chunk.vertex_count() > 4);
+    assert!(chunk.vertex_count() <= 4100);
+    assert!(removed > 0);
+    assert!(kept > 0);
+
+    println!(
+        "[perf] 4096 piecewise-planar: iters={} removed={} kept={} total_ms={:.3} per_op_us={:.3} final_verts={} final_tris={}",
+        iterations,
+        removed,
+        kept,
+        elapsed.as_secs_f64() * 1000.0,
+        elapsed.as_secs_f64() * 1_000_000.0 / iterations as f64,
+        chunk.vertex_count(),
+        chunk.triangle_count()
+    );
+}
+
 fn generate_grid_points(
     nx: usize,
     nz: usize,
@@ -92,6 +178,22 @@ fn generate_grid_points(
                 y,
                 origin_z + iz as f32 * step,
             ));
+        }
+    }
+    out
+}
+
+fn generate_centered_grid_points_64<F>(base_y: f32, mut y_fn: F) -> Vec<Vector3>
+where
+    F: FnMut(f32, f32, f32) -> f32,
+{
+    let mut out = Vec::with_capacity(64 * 64);
+    for ix in 0..64 {
+        for iz in 0..64 {
+            let x = -31.5 + ix as f32;
+            let z = -31.5 + iz as f32;
+            let y = y_fn(x, z, base_y);
+            out.push(Vector3::new(x, y, z));
         }
     }
     out

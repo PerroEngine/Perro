@@ -133,6 +133,7 @@ Track what each terrain commit changed so video explanations are easy later.
 - Added fast-path precheck to skip coplanar optimization attempts when insert point is clearly non-coplanar with hit triangles.
 - Added duplicate-insert short-circuit localized to hit triangles (prevents redundant reinsertion in dense brush overlaps).
 - Replaced full-mesh manifold scan during coplanar collapse with a local manifold check on replacement triangles.
+- Switched split/collapse triangle updates to local in-place patching (`swap_remove` + append replacements) instead of whole-array rebuilds.
 
 ### Why it matters
 
@@ -143,9 +144,9 @@ Track what each terrain commit changed so video explanations are easy later.
 ### Validation added
 
 - Re-ran release perf tests after optimization:
-  - Coplanar bulk: `1600` iters, `12.924 ms`, `8.077 us/op`, final `4 verts / 2 tris`
-  - Non-coplanar bulk: `1600` iters, `161.679 ms`, `101.049 us/op`, final `1604 verts / 3202 tris`
-  - Circle brush bulk: `400` brushes (`2400` generated points), `105.448 ms`, `263.620 us/brush`, final `833 verts / 1660 tris`
+  - Coplanar bulk: `1600` iters, `14.564 ms`, `9.103 us/op`, final `4 verts / 2 tris`
+  - Non-coplanar bulk: `1600` iters, `129.205 ms`, `80.753 us/op`, final `1604 verts / 3202 tris`
+  - Circle brush bulk: `400` brushes (`2400` generated points), `80.233 ms`, `200.582 us/brush`, final `833 verts / 1660 tris`
 
 ## Future Commit Template
 

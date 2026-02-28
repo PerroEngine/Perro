@@ -132,16 +132,23 @@ impl TerrainChunk {
     }
 
     fn split_hit_triangles(&mut self, vertex_id: VertexID, hit_triangle_ids: &[usize], eps: f32) {
-        let hit_set: HashSet<usize> = hit_triangle_ids.iter().copied().collect();
-        let mut next_tris = Vec::with_capacity(self.triangles.len() + hit_triangle_ids.len() * 2);
         let p = self.vertices[vertex_id].position;
+        let hit_ids = unique_sorted_desc(hit_triangle_ids);
+        if hit_ids.is_empty() {
+            return;
+        }
 
-        for (tri_id, tri) in self.triangles.iter().copied().enumerate() {
-            if !hit_set.contains(&tri_id) {
-                next_tris.push(tri);
-                continue;
+        let mut source_tris = Vec::with_capacity(hit_ids.len());
+        for tri_id in &hit_ids {
+            if let Some(tri) = self.triangles.get(*tri_id).copied() {
+                source_tris.push(tri);
             }
+        }
 
+        remove_triangles_by_ids_desc(&mut self.triangles, &hit_ids);
+        let mut replacement = Vec::with_capacity(source_tris.len() * 3);
+
+        for tri in source_tris {
             let a = self.vertices[tri.a].position;
             let b = self.vertices[tri.b].position;
             let c = self.vertices[tri.c].position;
@@ -178,12 +185,12 @@ impl TerrainChunk {
 
             for cand in candidates {
                 if self.triangle_area2_by_positions(cand) > eps {
-                    next_tris.push(cand);
+                    replacement.push(cand);
                 }
             }
         }
 
-        self.triangles = next_tris;
+        self.triangles.extend(replacement);
     }
 
     fn try_remove_coplanar_vertex(
@@ -246,8 +253,10 @@ impl TerrainChunk {
             return false;
         }
 
-        let incident_set: HashSet<usize> = incident.iter().copied().collect();
-        let next_tris = self.compose_next_triangles_without_incident(&incident_set, &replacement);
+        let incident_ids = unique_sorted_desc(&incident);
+        let mut next_tris = self.triangles.clone();
+        remove_triangles_by_ids_desc(&mut next_tris, &incident_ids);
+        next_tris.extend(replacement.iter().copied());
         if !self.replacement_is_safe(
             vertex_id,
             &incident,
@@ -356,22 +365,6 @@ impl TerrainChunk {
                 tri.c -= 1;
             }
         }
-    }
-
-    fn compose_next_triangles_without_incident(
-        &self,
-        incident_set: &HashSet<usize>,
-        replacement: &[Triangle],
-    ) -> Vec<Triangle> {
-        let mut next_tris =
-            Vec::with_capacity(self.triangles.len() - incident_set.len() + replacement.len());
-        for (tri_id, tri) in self.triangles.iter().copied().enumerate() {
-            if !incident_set.contains(&tri_id) {
-                next_tris.push(tri);
-            }
-        }
-        next_tris.extend(replacement.iter().copied());
-        next_tris
     }
 
     fn replacement_is_safe(
@@ -595,4 +588,20 @@ fn triangles_are_manifold_local(tris: &[Triangle]) -> bool {
 
 fn edge_key(a: VertexID, b: VertexID) -> (VertexID, VertexID) {
     if a < b { (a, b) } else { (b, a) }
+}
+
+fn unique_sorted_desc(ids: &[usize]) -> Vec<usize> {
+    let mut out = ids.to_vec();
+    out.sort_unstable();
+    out.dedup();
+    out.sort_unstable_by(|a, b| b.cmp(a));
+    out
+}
+
+fn remove_triangles_by_ids_desc(triangles: &mut Vec<Triangle>, sorted_desc_ids: &[usize]) {
+    for &id in sorted_desc_ids {
+        if id < triangles.len() {
+            triangles.swap_remove(id);
+        }
+    }
 }
