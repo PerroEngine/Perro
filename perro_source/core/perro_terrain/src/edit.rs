@@ -37,20 +37,85 @@ impl TerrainChunk {
             });
         }
 
+        if let Some(existing_id) =
+            self.find_existing_vertex_in_hit_triangles(position, &hit_triangle_ids, distance_epsilon)
+        {
+            return Ok(InsertVertexResult {
+                inserted_vertex_id: existing_id,
+                removed_as_coplanar: true,
+            });
+        }
+
+        let maybe_coplanar = self.is_potentially_coplanar_insert(
+            position,
+            &hit_triangle_ids,
+            area_epsilon,
+            distance_epsilon,
+        );
+
         let inserted_vertex_id = self.add_vertex(position);
         self.split_hit_triangles(inserted_vertex_id, &hit_triangle_ids, area_epsilon);
 
-        let removed_as_coplanar = self.try_remove_coplanar_vertex(
-            inserted_vertex_id,
-            area_epsilon,
-            normal_epsilon,
-            distance_epsilon,
-        );
+        let removed_as_coplanar = if maybe_coplanar {
+            self.try_remove_coplanar_vertex(
+                inserted_vertex_id,
+                area_epsilon,
+                normal_epsilon,
+                distance_epsilon,
+            )
+        } else {
+            false
+        };
 
         Ok(InsertVertexResult {
             inserted_vertex_id,
             removed_as_coplanar,
         })
+    }
+
+    fn find_existing_vertex_in_hit_triangles(
+        &self,
+        position: Vector3,
+        hit_triangle_ids: &[usize],
+        eps: f32,
+    ) -> Option<VertexID> {
+        let eps2 = eps * eps;
+        let mut seen: HashSet<VertexID> = HashSet::new();
+        for tri_id in hit_triangle_ids {
+            let tri = self.triangles[*tri_id];
+            for vid in [tri.a, tri.b, tri.c] {
+                if seen.insert(vid) && squared_distance(self.vertices[vid].position, position) <= eps2 {
+                    return Some(vid);
+                }
+            }
+        }
+        None
+    }
+
+    fn is_potentially_coplanar_insert(
+        &self,
+        position: Vector3,
+        hit_triangle_ids: &[usize],
+        area_epsilon: f32,
+        distance_epsilon: f32,
+    ) -> bool {
+        for tri_id in hit_triangle_ids {
+            let tri = self.triangles[*tri_id];
+            let a = self.vertices[tri.a].position;
+            let b = self.vertices[tri.b].position;
+            let c = self.vertices[tri.c].position;
+
+            let n = triangle_normal(a, b, c);
+            if n.length() <= area_epsilon {
+                return false;
+            }
+            let nn = n.normalized();
+            let dist = point_plane_distance_abs(position, a, nn);
+            if dist > distance_epsilon {
+                return false;
+            }
+        }
+        true
     }
 
     fn find_hit_triangles_xz(&self, x: f32, z: f32, eps: f32) -> Vec<usize> {
@@ -187,7 +252,6 @@ impl TerrainChunk {
             vertex_id,
             &incident,
             &replacement,
-            &next_tris,
             base_normal,
             area_epsilon,
             normal_epsilon,
@@ -315,7 +379,6 @@ impl TerrainChunk {
         center_vertex_id: VertexID,
         incident: &[usize],
         replacement: &[Triangle],
-        next_tris: &[Triangle],
         base_normal: Vector3,
         area_epsilon: f32,
         normal_epsilon: f32,
@@ -329,7 +392,7 @@ impl TerrainChunk {
         if !self.replacement_normals_consistent(replacement, base_normal, normal_epsilon, area_epsilon) {
             return false;
         }
-        if !triangles_are_manifold(next_tris) {
+        if !triangles_are_manifold_local(replacement) {
             return false;
         }
         true
@@ -409,6 +472,11 @@ fn triangle_normal(a: Vector3, b: Vector3, c: Vector3) -> Vector3 {
 
 fn point_plane_distance_abs(point: Vector3, plane_point: Vector3, plane_normal: Vector3) -> f32 {
     sub(point, plane_point).dot(plane_normal).abs()
+}
+
+fn squared_distance(a: Vector3, b: Vector3) -> f32 {
+    let d = sub(a, b);
+    d.dot(d)
 }
 
 fn orthonormal_basis(normal: Vector3) -> (Vector3, Vector3) {
@@ -498,7 +566,7 @@ fn boundary_edges_of(tris: &[Triangle]) -> HashSet<(VertexID, VertexID)> {
         .collect()
 }
 
-fn triangles_are_manifold(tris: &[Triangle]) -> bool {
+fn triangles_are_manifold_local(tris: &[Triangle]) -> bool {
     let mut edge_counts: HashMap<(VertexID, VertexID), usize> = HashMap::new();
     let mut tri_set: HashSet<[VertexID; 3]> = HashSet::new();
 

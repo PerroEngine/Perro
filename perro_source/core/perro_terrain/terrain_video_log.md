@@ -126,6 +126,27 @@ Track what each terrain commit changed so video explanations are easy later.
   - Non-coplanar bulk: `1600` iters, `161.638 ms`, `101.024 us/op`, final `1604 verts / 3202 tris`
   - Circle brush bulk: `400` brushes (`2400` generated points), `162.734 ms`, `406.834 us/brush`, final `2371 verts / 1638 tris`
 
+## Commit: Perf Optimization Pass
+
+### What was added
+
+- Added fast-path precheck to skip coplanar optimization attempts when insert point is clearly non-coplanar with hit triangles.
+- Added duplicate-insert short-circuit localized to hit triangles (prevents redundant reinsertion in dense brush overlaps).
+- Replaced full-mesh manifold scan during coplanar collapse with a local manifold check on replacement triangles.
+
+### Why it matters
+
+- Cuts unnecessary work in common non-coplanar insert paths.
+- Avoids repeated local inserts in brush-heavy edits.
+- Preserves topology safety while reducing optimization overhead.
+
+### Validation added
+
+- Re-ran release perf tests after optimization:
+  - Coplanar bulk: `1600` iters, `12.924 ms`, `8.077 us/op`, final `4 verts / 2 tris`
+  - Non-coplanar bulk: `1600` iters, `161.679 ms`, `101.049 us/op`, final `1604 verts / 3202 tris`
+  - Circle brush bulk: `400` brushes (`2400` generated points), `105.448 ms`, `263.620 us/brush`, final `833 verts / 1660 tris`
+
 ## Future Commit Template
 
 ## Commit: <name>
