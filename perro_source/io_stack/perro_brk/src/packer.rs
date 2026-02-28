@@ -150,16 +150,8 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path) -> io::Res
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::should_skip;
 
-    #[test]
-    fn pmat_is_skipped_as_compiled_resource() {
-        assert!(should_skip("materials/mat.pmat"));
-        assert!(should_skip("particles/fire.ppart"));
-        assert!(should_skip("scene/main.scn"));
-        assert!(should_skip("mesh/robot.glb"));
-        assert!(!should_skip("audio/music.ogg"));
-    }
-}
+
+#[cfg(test)]
+#[path = "../tests/unit/packer_tests.rs"]
+mod tests;
