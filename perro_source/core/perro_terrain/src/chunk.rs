@@ -31,7 +31,7 @@ impl Triangle {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ChunkCoord {
     pub x: i32,
     pub z: i32,

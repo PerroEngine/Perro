@@ -1,9 +1,11 @@
 use perro_structs::Vector3;
-use perro_terrain::{BatchInsertMode, BrushShape, ChunkCoord, TerrainChunk};
+use perro_terrain::{BrushShape, ChunkCoord, TerrainChunk};
 use std::time::Instant;
 
 const PERF_RUNS: usize = 9;
 const PERF_WARMUP_RUNS: usize = 1;
+const SUBMETER_PERF_RUNS: usize = 3;
+const SUBMETER_WARMUP_RUNS: usize = 1;
 
 #[test]
 #[ignore]
@@ -81,7 +83,7 @@ fn perf_insert_vertex_non_coplanar_bulk_batch_mode() {
         let mut chunk = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
         let start = Instant::now();
         let summary = chunk
-            .insert_vertices_batch(&points, BatchInsertMode::AssumeNonCoplanar)
+            .insert_vertices_batch(&points)
             .expect("batch insert should succeed");
         let elapsed_s = start.elapsed().as_secs_f64();
         if run_idx >= PERF_WARMUP_RUNS {
@@ -281,7 +283,7 @@ fn perf_4096_points_piecewise_coplanar_planes_1m_spacing_batch_mode() {
         let mut chunk = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
         let start = Instant::now();
         let summary = chunk
-            .insert_vertices_batch(&points, BatchInsertMode::Default)
+            .insert_vertices_batch(&points)
             .expect("batch insert should succeed");
         let elapsed_s = start.elapsed().as_secs_f64();
         if run_idx >= PERF_WARMUP_RUNS {
@@ -304,6 +306,147 @@ fn perf_4096_points_piecewise_coplanar_planes_1m_spacing_batch_mode() {
         iterations,
         &samples_s,
         &format!("{last_summary} final_verts={final_verts} final_tris={final_tris}"),
+    );
+}
+
+#[test]
+#[ignore]
+fn perf_submeter_center_window_spacing_sweep() {
+    let spacings = [0.75_f32, 0.5, 0.25, 0.1, 0.05];
+    for spacing in spacings {
+        let points = generate_center_square_points(10.0, spacing, 1.0);
+        let iterations = points.len();
+        let mut samples_s = Vec::with_capacity(SUBMETER_PERF_RUNS);
+        let mut final_verts = 0usize;
+        let mut final_tris = 0usize;
+        let mut last_summary = String::new();
+
+        for run_idx in 0..(SUBMETER_WARMUP_RUNS + SUBMETER_PERF_RUNS) {
+            let mut chunk = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
+            let start = Instant::now();
+            let summary = chunk
+                .insert_vertices_batch(&points)
+                .expect("batch insert should succeed");
+            let elapsed_s = start.elapsed().as_secs_f64();
+            if run_idx >= SUBMETER_WARMUP_RUNS {
+                samples_s.push(elapsed_s);
+            }
+            final_verts = chunk.vertex_count();
+            final_tris = chunk.triangle_count();
+            last_summary = format!(
+                "inserted={} removed={} skipped={}",
+                summary.inserted, summary.removed_as_coplanar, summary.skipped_outside_mesh
+            );
+        }
+
+        print_perf_summary(
+            &format!("submeter center-window sweep (spacing={spacing:.2}m)"),
+            iterations,
+            &samples_s,
+            &format!("{last_summary} final_verts={final_verts} final_tris={final_tris}"),
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn perf_recursive_square_brush_levels_coplanar() {
+    let sizes = recursive_square_sizes();
+    let mut samples_s = Vec::with_capacity(SUBMETER_PERF_RUNS);
+    let mut final_verts = 0usize;
+    let mut final_tris = 0usize;
+    let mut generated_points = 0usize;
+    let mut removed_points = 0usize;
+
+    for run_idx in 0..(SUBMETER_WARMUP_RUNS + SUBMETER_PERF_RUNS) {
+        let mut chunk = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
+        let mut generated_this_run = 0usize;
+        let mut removed_this_run = 0usize;
+        let start = Instant::now();
+
+        for size in &sizes {
+            let results = chunk
+                .insert_brush(Vector3::new(0.0, 0.0, 0.0), *size, BrushShape::Square)
+                .expect("recursive square insert should succeed");
+            generated_this_run += results.len();
+            removed_this_run += results.iter().filter(|r| r.removed_as_coplanar).count();
+        }
+
+        let elapsed_s = start.elapsed().as_secs_f64();
+        if run_idx >= SUBMETER_WARMUP_RUNS {
+            samples_s.push(elapsed_s);
+        }
+        generated_points = generated_this_run;
+        removed_points = removed_this_run;
+        final_verts = chunk.vertex_count();
+        final_tris = chunk.triangle_count();
+        assert!(chunk.validate(1.0e-6).is_ok());
+    }
+
+    print_perf_summary(
+        "recursive square brush levels (coplanar)",
+        sizes.len(),
+        &samples_s,
+        &format!(
+            "levels={} generated_points={} removed_points={} final_verts={} final_tris={}",
+            sizes.len(),
+            generated_points,
+            removed_points,
+            final_verts,
+            final_tris
+        ),
+    );
+}
+
+#[test]
+#[ignore]
+fn perf_recursive_square_brush_levels_rising_y() {
+    let sizes = recursive_square_sizes();
+    let mut samples_s = Vec::with_capacity(SUBMETER_PERF_RUNS);
+    let mut final_verts = 0usize;
+    let mut final_tris = 0usize;
+    let mut generated_points = 0usize;
+    let mut removed_points = 0usize;
+
+    for run_idx in 0..(SUBMETER_WARMUP_RUNS + SUBMETER_PERF_RUNS) {
+        let mut chunk = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
+        let mut generated_this_run = 0usize;
+        let mut removed_this_run = 0usize;
+        let mut y = 0.0_f32;
+        let start = Instant::now();
+
+        for size in &sizes {
+            let results = chunk
+                .insert_brush(Vector3::new(0.0, y, 0.0), *size, BrushShape::Square)
+                .expect("recursive square insert should succeed");
+            generated_this_run += results.len();
+            removed_this_run += results.iter().filter(|r| r.removed_as_coplanar).count();
+            y += 1.0;
+        }
+
+        let elapsed_s = start.elapsed().as_secs_f64();
+        if run_idx >= SUBMETER_WARMUP_RUNS {
+            samples_s.push(elapsed_s);
+        }
+        generated_points = generated_this_run;
+        removed_points = removed_this_run;
+        final_verts = chunk.vertex_count();
+        final_tris = chunk.triangle_count();
+        assert!(chunk.validate(1.0e-6).is_ok());
+    }
+
+    print_perf_summary(
+        "recursive square brush levels (rising y)",
+        sizes.len(),
+        &samples_s,
+        &format!(
+            "levels={} generated_points={} removed_points={} final_verts={} final_tris={}",
+            sizes.len(),
+            generated_points,
+            removed_points,
+            final_verts,
+            final_tris
+        ),
     );
 }
 
@@ -357,6 +500,35 @@ fn mean(values: &[f64]) -> f64 {
     } else {
         values.iter().sum::<f64>() / values.len() as f64
     }
+}
+
+fn recursive_square_sizes() -> Vec<f32> {
+    let mut sizes = Vec::new();
+    let mut s = 60.0_f32;
+    while s >= 4.0 {
+        sizes.push(s);
+        s -= 4.0;
+    }
+    sizes.extend([2.0, 1.0, 0.5, 0.25, 0.1, 0.05]);
+    sizes
+}
+
+fn generate_center_square_points(window_size: f32, spacing: f32, y: f32) -> Vec<Vector3> {
+    let half = window_size * 0.5;
+    let mut values = Vec::new();
+    let mut v = -half;
+    while v <= half + 1.0e-6 {
+        values.push(v);
+        v += spacing;
+    }
+
+    let mut out = Vec::with_capacity(values.len() * values.len());
+    for x in &values {
+        for z in &values {
+            out.push(Vector3::new(*x, y, *z));
+        }
+    }
+    out
 }
 
 fn generate_grid_points(

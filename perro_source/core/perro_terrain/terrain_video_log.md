@@ -254,6 +254,37 @@ Track what each terrain commit changed so video explanations are easy later.
   - `4096` piecewise-planar single: `119.798 us/op`
   - `4096` piecewise-planar batch: `90.849 us/op`
 
+## Commit: Multi-Chunk Terrain Editing
+
+### What was added
+
+- Added `TerrainData` as a terrain-level owner of chunk collection with a centered, dynamically growing 2D grid.
+- Added signed-coordinate to array-index mapping via origin offsets.
+- Added automatic grid growth and data migration when new chunk coordinates fall outside current bounds.
+- Added world-space edit entry points on terrain instance:
+  - `insert_brush_world(...)`
+  - `insert_vertex_world(...)`
+- Added overlapped-chunk dispatch so one brush can edit multiple chunks in one operation.
+- Added border seam synchronization for touched neighbor chunk pairs.
+- Added border vertex reconciliation:
+  - merge seam points from both sides
+  - ensure both chunks contain seam points
+  - align seam vertex heights to avoid cracks
+
+### Why it matters
+
+- Editing now happens at terrain level rather than per isolated chunk.
+- Chunk storage is spatially local and aligns with centered terrain coordinates (`(0,0)` center chunk, rings around it).
+- Cross-chunk brushes can modify both chunks and maintain seam consistency.
+- Keeps chunks logically separate while enforcing matching shared-edge geometry.
+
+### Validation added
+
+- Added `terrain.rs` tests:
+  - brush spanning boundary touches both chunks
+  - brush 3m from boundary with radius >3m spans both chunks
+  - seam vertices align after cross-chunk edit
+
 ## Future Commit Template
 
 ## Commit: <name>

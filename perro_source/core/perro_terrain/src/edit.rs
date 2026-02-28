@@ -12,12 +12,6 @@ pub struct InsertVertexResult {
     pub removed_as_coplanar: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BatchInsertMode {
-    Default,
-    AssumeNonCoplanar,
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BatchInsertSummary {
     pub attempted: usize,
@@ -67,7 +61,7 @@ impl TerrainChunk {
             distance_epsilon,
         );
 
-        if maybe_coplanar && self.can_skip_coplanar_insert(position, &hit_triangle_ids, area_epsilon) {
+        if maybe_coplanar {
             let fallback_id = self.triangles[hit_triangle_ids[0]].a;
             return Ok(InsertVertexResult {
                 inserted_vertex_id: fallback_id,
@@ -98,12 +92,9 @@ impl TerrainChunk {
     pub fn insert_vertices_batch(
         &mut self,
         points: &[Vector3],
-        mode: BatchInsertMode,
     ) -> Result<BatchInsertSummary, ChunkError> {
         let mut ordered: Vec<Vector3> = points.to_vec();
-        if matches!(mode, BatchInsertMode::Default) {
-            ordered.sort_by_key(|p| morton_key_2d(p.x, p.z));
-        }
+        ordered.sort_by_key(|p| morton_key_2d(p.x, p.z));
 
         let mut summary = BatchInsertSummary {
             attempted: ordered.len(),
@@ -111,11 +102,7 @@ impl TerrainChunk {
         };
 
         for p in ordered {
-            let result = match mode {
-                BatchInsertMode::Default => self.insert_vertex(p),
-                BatchInsertMode::AssumeNonCoplanar => self.insert_vertex_assume_non_coplanar(p),
-            };
-            match result {
+            match self.insert_vertex(p) {
                 Ok(r) => {
                     summary.inserted += 1;
                     if r.removed_as_coplanar {
@@ -129,39 +116,6 @@ impl TerrainChunk {
             }
         }
         Ok(summary)
-    }
-
-    fn insert_vertex_assume_non_coplanar(
-        &mut self,
-        position: Vector3,
-    ) -> Result<InsertVertexResult, ChunkError> {
-        let area_epsilon = DEFAULT_AREA_EPSILON;
-        let distance_epsilon = DEFAULT_DISTANCE_EPSILON;
-
-        let hit_triangle_ids = self.find_hit_triangles_xz(position.x, position.z, area_epsilon);
-        if hit_triangle_ids.is_empty() {
-            return Err(ChunkError::PointOutsideMesh {
-                x: position.x,
-                z: position.z,
-            });
-        }
-
-        if let Some(existing_id) =
-            self.find_existing_vertex_in_hit_triangles(position, &hit_triangle_ids, distance_epsilon)
-        {
-            return Ok(InsertVertexResult {
-                inserted_vertex_id: existing_id,
-                removed_as_coplanar: true,
-            });
-        }
-
-        let inserted_vertex_id = self.add_vertex(position);
-        self.split_hit_triangles(inserted_vertex_id, &hit_triangle_ids, area_epsilon);
-
-        Ok(InsertVertexResult {
-            inserted_vertex_id,
-            removed_as_coplanar: false,
-        })
     }
 
     fn find_existing_vertex_in_hit_triangles(
@@ -207,25 +161,6 @@ impl TerrainChunk {
             }
         }
         true
-    }
-
-    fn can_skip_coplanar_insert(
-        &self,
-        position: Vector3,
-        hit_triangle_ids: &[usize],
-        area_epsilon: f32,
-    ) -> bool {
-        for tri_id in hit_triangle_ids {
-            let tri = self.triangles[*tri_id];
-            let a = self.vertices[tri.a].position;
-            let b = self.vertices[tri.b].position;
-            let c = self.vertices[tri.c].position;
-            if point_in_triangle_xz_strict_interior(position.x, position.z, a, b, c, area_epsilon * 4.0)
-            {
-                return true;
-            }
-        }
-        false
     }
 
     fn find_hit_triangles_xz(&mut self, x: f32, z: f32, eps: f32) -> Vec<usize> {

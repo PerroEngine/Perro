@@ -1,0 +1,73 @@
+use perro_structs::Vector3;
+use perro_terrain::{BrushShape, ChunkCoord, TerrainData};
+
+const EPS: f32 = 1.0e-4;
+
+#[test]
+fn brush_spanning_two_chunks_touches_both_chunks() {
+    let mut terrain = TerrainData::new(64.0);
+    terrain.ensure_chunk(ChunkCoord::new(0, 0));
+    terrain.ensure_chunk(ChunkCoord::new(1, 0));
+
+    let summary = terrain
+        .insert_brush_world(Vector3::new(64.0, 4.0, 32.0), 10.0, BrushShape::Circle)
+        .expect("multi-chunk brush should succeed");
+
+    assert!(summary.touched_chunks.contains(&ChunkCoord::new(0, 0)));
+    assert!(summary.touched_chunks.contains(&ChunkCoord::new(1, 0)));
+}
+
+#[test]
+fn seam_vertices_align_after_cross_chunk_edit() {
+    let mut terrain = TerrainData::new(64.0);
+    terrain.ensure_chunk(ChunkCoord::new(0, 0));
+    terrain.ensure_chunk(ChunkCoord::new(1, 0));
+
+    let _ = terrain
+        .insert_brush_world(Vector3::new(64.0, 6.0, 32.0), 12.0, BrushShape::Circle)
+        .expect("multi-chunk brush should succeed");
+
+    let left = terrain.chunk(ChunkCoord::new(0, 0)).expect("left chunk exists");
+    let right = terrain.chunk(ChunkCoord::new(1, 0)).expect("right chunk exists");
+
+    let mut left_border = border_world_points(left.vertices(), 32.0, 32.0);
+    let mut right_border = border_world_points(right.vertices(), -32.0, 96.0);
+
+    left_border.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    right_border.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    for (lz, ly) in &left_border {
+        let Some((_, ry)) = right_border.iter().find(|(rz, _)| (*rz - *lz).abs() <= EPS) else {
+            continue;
+        };
+        assert!((ly - ry).abs() <= 1.0e-3);
+    }
+}
+
+#[test]
+fn brush_three_meters_from_edge_with_radius_over_three_spans_both_chunks() {
+    let mut terrain = TerrainData::new(64.0);
+    terrain.ensure_chunk(ChunkCoord::new(0, 0));
+    terrain.ensure_chunk(ChunkCoord::new(1, 0));
+
+    // Edge between chunk (0,0) and (1,0) is at world X=64.
+    // Center is 3m from edge (x=61), brush radius is 4m (size=8), so it must cross.
+    let summary = terrain
+        .insert_brush_world(Vector3::new(61.0, 3.0, 32.0), 8.0, BrushShape::Circle)
+        .expect("near-edge brush should succeed");
+
+    assert!(summary.touched_chunks.contains(&ChunkCoord::new(0, 0)));
+    assert!(summary.touched_chunks.contains(&ChunkCoord::new(1, 0)));
+}
+
+fn border_world_points(vertices: &[perro_terrain::Vertex], border_x_local: f32, world_center_x: f32) -> Vec<(f32, f32)> {
+    let mut out = Vec::new();
+    for v in vertices {
+        if (v.position.x - border_x_local).abs() <= EPS {
+            let world_z = v.position.z + 32.0;
+            let _world_x = v.position.x + world_center_x;
+            out.push((world_z, v.position.y));
+        }
+    }
+    out
+}
