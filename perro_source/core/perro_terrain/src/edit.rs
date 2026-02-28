@@ -1,6 +1,6 @@
 use crate::{ChunkError, TerrainChunk, Triangle, VertexID};
 use perro_structs::Vector3;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub const DEFAULT_AREA_EPSILON: f32 = 1.0e-6;
 pub const DEFAULT_NORMAL_EPSILON: f32 = 1.0e-4;
@@ -181,16 +181,20 @@ impl TerrainChunk {
             return false;
         }
 
-        let incident_set: HashSet<usize> = incident.into_iter().collect();
-        let mut next_tris =
-            Vec::with_capacity(self.triangles.len() - incident_set.len() + replacement.len());
-
-        for (tri_id, tri) in self.triangles.iter().copied().enumerate() {
-            if !incident_set.contains(&tri_id) {
-                next_tris.push(tri);
-            }
+        let incident_set: HashSet<usize> = incident.iter().copied().collect();
+        let next_tris = self.compose_next_triangles_without_incident(&incident_set, &replacement);
+        if !self.replacement_is_safe(
+            vertex_id,
+            &incident,
+            &replacement,
+            &next_tris,
+            base_normal,
+            area_epsilon,
+            normal_epsilon,
+        ) {
+            return false;
         }
-        next_tris.extend(replacement);
+
         self.triangles = next_tris;
 
         self.compact_remove_vertex(vertex_id);
@@ -289,6 +293,108 @@ impl TerrainChunk {
             }
         }
     }
+
+    fn compose_next_triangles_without_incident(
+        &self,
+        incident_set: &HashSet<usize>,
+        replacement: &[Triangle],
+    ) -> Vec<Triangle> {
+        let mut next_tris =
+            Vec::with_capacity(self.triangles.len() - incident_set.len() + replacement.len());
+        for (tri_id, tri) in self.triangles.iter().copied().enumerate() {
+            if !incident_set.contains(&tri_id) {
+                next_tris.push(tri);
+            }
+        }
+        next_tris.extend(replacement.iter().copied());
+        next_tris
+    }
+
+    fn replacement_is_safe(
+        &self,
+        center_vertex_id: VertexID,
+        incident: &[usize],
+        replacement: &[Triangle],
+        next_tris: &[Triangle],
+        base_normal: Vector3,
+        area_epsilon: f32,
+        normal_epsilon: f32,
+    ) -> bool {
+        if !self.boundary_preserved(center_vertex_id, incident, replacement) {
+            return false;
+        }
+        if !self.replacement_area_consistent(incident, replacement, area_epsilon) {
+            return false;
+        }
+        if !self.replacement_normals_consistent(replacement, base_normal, normal_epsilon, area_epsilon) {
+            return false;
+        }
+        if !triangles_are_manifold(next_tris) {
+            return false;
+        }
+        true
+    }
+
+    fn replacement_normals_consistent(
+        &self,
+        replacement: &[Triangle],
+        base_normal: Vector3,
+        normal_epsilon: f32,
+        area_epsilon: f32,
+    ) -> bool {
+        for tri in replacement {
+            let n = triangle_normal(
+                self.vertices[tri.a].position,
+                self.vertices[tri.b].position,
+                self.vertices[tri.c].position,
+            );
+            let len = n.length();
+            if len <= area_epsilon {
+                return false;
+            }
+            let d = n.normalized().dot(base_normal);
+            if d < 1.0 - normal_epsilon {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn replacement_area_consistent(
+        &self,
+        incident: &[usize],
+        replacement: &[Triangle],
+        area_epsilon: f32,
+    ) -> bool {
+        let mut incident_area2 = 0.0;
+        for tri_id in incident {
+            incident_area2 += self.triangle_area2_by_positions(self.triangles[*tri_id]);
+        }
+
+        let mut replacement_area2 = 0.0;
+        for tri in replacement {
+            replacement_area2 += self.triangle_area2_by_positions(*tri);
+        }
+
+        let diff = (incident_area2 - replacement_area2).abs();
+        let tol = (incident_area2 + replacement_area2) * 1.0e-4 + area_epsilon * 32.0;
+        diff <= tol
+    }
+
+    fn boundary_preserved(
+        &self,
+        center_vertex_id: VertexID,
+        incident: &[usize],
+        replacement: &[Triangle],
+    ) -> bool {
+        let expected = incident_boundary_edges_without_center(self, center_vertex_id, incident);
+        if expected.is_empty() {
+            return false;
+        }
+
+        let produced = boundary_edges_of(replacement);
+        expected == produced
+    }
 }
 
 fn sub(a: Vector3, b: Vector3) -> Vector3 {
@@ -353,4 +459,72 @@ fn sub2(a: (f32, f32), b: (f32, f32)) -> (f32, f32) {
 
 fn cross2(a: (f32, f32), b: (f32, f32)) -> f32 {
     a.0 * b.1 - a.1 * b.0
+}
+
+fn incident_boundary_edges_without_center(
+    chunk: &TerrainChunk,
+    center_vertex_id: VertexID,
+    incident: &[usize],
+) -> HashSet<(VertexID, VertexID)> {
+    let mut counts: HashMap<(VertexID, VertexID), usize> = HashMap::new();
+
+    for tri_id in incident {
+        let tri = chunk.triangles[*tri_id];
+        for (u, v) in [(tri.a, tri.b), (tri.b, tri.c), (tri.c, tri.a)] {
+            if u == center_vertex_id || v == center_vertex_id {
+                continue;
+            }
+            *counts.entry(edge_key(u, v)).or_insert(0) += 1;
+        }
+    }
+
+    counts
+        .into_iter()
+        .filter_map(|(e, c)| (c == 1).then_some(e))
+        .collect()
+}
+
+fn boundary_edges_of(tris: &[Triangle]) -> HashSet<(VertexID, VertexID)> {
+    let mut counts: HashMap<(VertexID, VertexID), usize> = HashMap::new();
+    for tri in tris {
+        for (u, v) in [(tri.a, tri.b), (tri.b, tri.c), (tri.c, tri.a)] {
+            *counts.entry(edge_key(u, v)).or_insert(0) += 1;
+        }
+    }
+
+    counts
+        .into_iter()
+        .filter_map(|(e, c)| (c == 1).then_some(e))
+        .collect()
+}
+
+fn triangles_are_manifold(tris: &[Triangle]) -> bool {
+    let mut edge_counts: HashMap<(VertexID, VertexID), usize> = HashMap::new();
+    let mut tri_set: HashSet<[VertexID; 3]> = HashSet::new();
+
+    for tri in tris {
+        if tri.a == tri.b || tri.b == tri.c || tri.a == tri.c {
+            return false;
+        }
+
+        let mut key = [tri.a, tri.b, tri.c];
+        key.sort_unstable();
+        if !tri_set.insert(key) {
+            return false;
+        }
+
+        for (u, v) in [(tri.a, tri.b), (tri.b, tri.c), (tri.c, tri.a)] {
+            let k = edge_key(u, v);
+            let c = edge_counts.entry(k).or_insert(0);
+            *c += 1;
+            if *c > 2 {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn edge_key(a: VertexID, b: VertexID) -> (VertexID, VertexID) {
+    if a < b { (a, b) } else { (b, a) }
 }

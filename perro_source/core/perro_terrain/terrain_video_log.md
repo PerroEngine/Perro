@@ -81,6 +81,26 @@ Track what each terrain commit changed so video explanations are easy later.
 - Triangle test verifies 3-point insert behavior and coplanar optimization on flat terrain.
 - Raised brush tests verify non-coplanar inserts are preserved for square/circle/triangle.
 
+## Commit: Topology Safety
+
+### What was added
+
+- Hardened coplanar vertex removal with extra guards before committing simplification.
+- Added boundary preservation check around the removed vertex fan.
+- Added area consistency check (incident region vs replacement region).
+- Added replacement normal consistency check against the base plane normal.
+- Added manifold safety check on candidate triangle topology (no duplicate triangles, no edge used by more than two triangles).
+
+### Why it matters
+
+- Prevents optimization from changing shape unexpectedly.
+- Prevents topology breaks during aggressive local simplification.
+- Keeps optimization behavior predictable while still removing redundant coplanar detail.
+
+### Validation added
+
+- Added repeated mixed insert test that verifies resulting mesh stays valid and manifold.
+
 ## Future Commit Template
 
 ## Commit: <name>
