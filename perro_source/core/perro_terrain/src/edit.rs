@@ -1,0 +1,356 @@
+use crate::{ChunkError, TerrainChunk, Triangle, VertexID};
+use perro_structs::Vector3;
+use std::collections::HashSet;
+
+pub const DEFAULT_AREA_EPSILON: f32 = 1.0e-6;
+pub const DEFAULT_NORMAL_EPSILON: f32 = 1.0e-4;
+pub const DEFAULT_DISTANCE_EPSILON: f32 = 1.0e-4;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InsertVertexResult {
+    pub inserted_vertex_id: VertexID,
+    pub removed_as_coplanar: bool,
+}
+
+impl TerrainChunk {
+    pub fn insert_vertex(&mut self, position: Vector3) -> Result<InsertVertexResult, ChunkError> {
+        self.insert_vertex_with_tolerances(
+            position,
+            DEFAULT_AREA_EPSILON,
+            DEFAULT_NORMAL_EPSILON,
+            DEFAULT_DISTANCE_EPSILON,
+        )
+    }
+
+    pub fn insert_vertex_with_tolerances(
+        &mut self,
+        position: Vector3,
+        area_epsilon: f32,
+        normal_epsilon: f32,
+        distance_epsilon: f32,
+    ) -> Result<InsertVertexResult, ChunkError> {
+        let hit_triangle_ids = self.find_hit_triangles_xz(position.x, position.z, area_epsilon);
+        if hit_triangle_ids.is_empty() {
+            return Err(ChunkError::PointOutsideMesh {
+                x: position.x,
+                z: position.z,
+            });
+        }
+
+        let inserted_vertex_id = self.add_vertex(position);
+        self.split_hit_triangles(inserted_vertex_id, &hit_triangle_ids, area_epsilon);
+
+        let removed_as_coplanar = self.try_remove_coplanar_vertex(
+            inserted_vertex_id,
+            area_epsilon,
+            normal_epsilon,
+            distance_epsilon,
+        );
+
+        Ok(InsertVertexResult {
+            inserted_vertex_id,
+            removed_as_coplanar,
+        })
+    }
+
+    fn find_hit_triangles_xz(&self, x: f32, z: f32, eps: f32) -> Vec<usize> {
+        let mut hits = Vec::new();
+        for (tri_id, tri) in self.triangles.iter().copied().enumerate() {
+            let a = self.vertices[tri.a].position;
+            let b = self.vertices[tri.b].position;
+            let c = self.vertices[tri.c].position;
+            if point_in_triangle_xz(x, z, a, b, c, eps) {
+                hits.push(tri_id);
+            }
+        }
+        hits
+    }
+
+    fn split_hit_triangles(&mut self, vertex_id: VertexID, hit_triangle_ids: &[usize], eps: f32) {
+        let hit_set: HashSet<usize> = hit_triangle_ids.iter().copied().collect();
+        let mut next_tris = Vec::with_capacity(self.triangles.len() + hit_triangle_ids.len() * 2);
+        let p = self.vertices[vertex_id].position;
+
+        for (tri_id, tri) in self.triangles.iter().copied().enumerate() {
+            if !hit_set.contains(&tri_id) {
+                next_tris.push(tri);
+                continue;
+            }
+
+            let a = self.vertices[tri.a].position;
+            let b = self.vertices[tri.b].position;
+            let c = self.vertices[tri.c].position;
+            let Some((w0, w1, w2)) = barycentric_xz(p.x, p.z, a, b, c, eps) else {
+                continue;
+            };
+
+            let on_ab = w2.abs() <= eps;
+            let on_bc = w0.abs() <= eps;
+            let on_ca = w1.abs() <= eps;
+
+            let candidates = if on_ab {
+                vec![
+                    Triangle::new(tri.a, vertex_id, tri.c),
+                    Triangle::new(vertex_id, tri.b, tri.c),
+                ]
+            } else if on_bc {
+                vec![
+                    Triangle::new(tri.b, vertex_id, tri.a),
+                    Triangle::new(vertex_id, tri.c, tri.a),
+                ]
+            } else if on_ca {
+                vec![
+                    Triangle::new(tri.c, vertex_id, tri.b),
+                    Triangle::new(vertex_id, tri.a, tri.b),
+                ]
+            } else {
+                vec![
+                    Triangle::new(tri.a, tri.b, vertex_id),
+                    Triangle::new(tri.b, tri.c, vertex_id),
+                    Triangle::new(tri.c, tri.a, vertex_id),
+                ]
+            };
+
+            for cand in candidates {
+                if self.triangle_area2_by_positions(cand) > eps {
+                    next_tris.push(cand);
+                }
+            }
+        }
+
+        self.triangles = next_tris;
+    }
+
+    fn try_remove_coplanar_vertex(
+        &mut self,
+        vertex_id: VertexID,
+        area_epsilon: f32,
+        normal_epsilon: f32,
+        distance_epsilon: f32,
+    ) -> bool {
+        let incident = self.incident_triangle_ids(vertex_id);
+        if incident.len() < 3 {
+            return false;
+        }
+
+        let neighbors = self.neighbor_vertices_of(vertex_id, &incident);
+        if neighbors.len() < 3 {
+            return false;
+        }
+
+        let base_normal = {
+            let tri = self.triangles[incident[0]];
+            let n = triangle_normal(
+                self.vertices[tri.a].position,
+                self.vertices[tri.b].position,
+                self.vertices[tri.c].position,
+            );
+            if n.length() <= area_epsilon {
+                return false;
+            }
+            n.normalized()
+        };
+
+        let base_point = self.vertices[vertex_id].position;
+        for tri_id in &incident {
+            let tri = self.triangles[*tri_id];
+            let n = triangle_normal(
+                self.vertices[tri.a].position,
+                self.vertices[tri.b].position,
+                self.vertices[tri.c].position,
+            );
+            if n.length() <= area_epsilon {
+                return false;
+            }
+            let d = n.normalized().dot(base_normal).abs();
+            if 1.0 - d > normal_epsilon {
+                return false;
+            }
+        }
+
+        for neighbor in &neighbors {
+            let p = self.vertices[*neighbor].position;
+            let dist = point_plane_distance_abs(p, base_point, base_normal);
+            if dist > distance_epsilon {
+                return false;
+            }
+        }
+
+        let replacement = self.retriangulate_neighbors(vertex_id, &neighbors, base_normal, area_epsilon);
+        if replacement.is_empty() {
+            return false;
+        }
+
+        let incident_set: HashSet<usize> = incident.into_iter().collect();
+        let mut next_tris =
+            Vec::with_capacity(self.triangles.len() - incident_set.len() + replacement.len());
+
+        for (tri_id, tri) in self.triangles.iter().copied().enumerate() {
+            if !incident_set.contains(&tri_id) {
+                next_tris.push(tri);
+            }
+        }
+        next_tris.extend(replacement);
+        self.triangles = next_tris;
+
+        self.compact_remove_vertex(vertex_id);
+        true
+    }
+
+    fn retriangulate_neighbors(
+        &self,
+        center_vertex_id: VertexID,
+        neighbors: &[VertexID],
+        normal: Vector3,
+        area_epsilon: f32,
+    ) -> Vec<Triangle> {
+        let center = self.vertices[center_vertex_id].position;
+        let mut sorted = neighbors.to_vec();
+        let (u, v) = orthonormal_basis(normal);
+
+        sorted.sort_by(|lhs, rhs| {
+            let lp = self.vertices[*lhs].position;
+            let rp = self.vertices[*rhs].position;
+            let l = sub(lp, center);
+            let r = sub(rp, center);
+            let la = l.dot(u).atan2(l.dot(v));
+            let ra = r.dot(u).atan2(r.dot(v));
+            la.partial_cmp(&ra).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        if sorted.len() < 3 {
+            return Vec::new();
+        }
+
+        let mut out = Vec::new();
+        let root = sorted[0];
+        for i in 1..(sorted.len() - 1) {
+            let mut tri = Triangle::new(root, sorted[i], sorted[i + 1]);
+            if self.triangle_area2_by_positions(tri) <= area_epsilon {
+                continue;
+            }
+
+            let tri_n = triangle_normal(
+                self.vertices[tri.a].position,
+                self.vertices[tri.b].position,
+                self.vertices[tri.c].position,
+            );
+            if tri_n.dot(normal) < 0.0 {
+                tri = Triangle::new(root, sorted[i + 1], sorted[i]);
+            }
+            out.push(tri);
+        }
+        out
+    }
+
+    fn incident_triangle_ids(&self, vertex_id: VertexID) -> Vec<usize> {
+        let mut out = Vec::new();
+        for (tri_id, tri) in self.triangles.iter().copied().enumerate() {
+            if tri.a == vertex_id || tri.b == vertex_id || tri.c == vertex_id {
+                out.push(tri_id);
+            }
+        }
+        out
+    }
+
+    fn neighbor_vertices_of(&self, vertex_id: VertexID, incident: &[usize]) -> Vec<VertexID> {
+        let mut uniq = HashSet::new();
+        for tri_id in incident {
+            let tri = self.triangles[*tri_id];
+            for idx in [tri.a, tri.b, tri.c] {
+                if idx != vertex_id {
+                    uniq.insert(idx);
+                }
+            }
+        }
+        let mut neighbors: Vec<VertexID> = uniq.into_iter().collect();
+        neighbors.sort_unstable();
+        neighbors
+    }
+
+    fn triangle_area2_by_positions(&self, tri: Triangle) -> f32 {
+        let a = self.vertices[tri.a].position;
+        let b = self.vertices[tri.b].position;
+        let c = self.vertices[tri.c].position;
+        triangle_normal(a, b, c).length()
+    }
+
+    fn compact_remove_vertex(&mut self, vertex_id: VertexID) {
+        self.vertices.remove(vertex_id);
+        for tri in &mut self.triangles {
+            if tri.a > vertex_id {
+                tri.a -= 1;
+            }
+            if tri.b > vertex_id {
+                tri.b -= 1;
+            }
+            if tri.c > vertex_id {
+                tri.c -= 1;
+            }
+        }
+    }
+}
+
+fn sub(a: Vector3, b: Vector3) -> Vector3 {
+    Vector3::new(a.x - b.x, a.y - b.y, a.z - b.z)
+}
+
+fn triangle_normal(a: Vector3, b: Vector3, c: Vector3) -> Vector3 {
+    let ab = sub(b, a);
+    let ac = sub(c, a);
+    ab.cross(ac)
+}
+
+fn point_plane_distance_abs(point: Vector3, plane_point: Vector3, plane_normal: Vector3) -> f32 {
+    sub(point, plane_point).dot(plane_normal).abs()
+}
+
+fn orthonormal_basis(normal: Vector3) -> (Vector3, Vector3) {
+    let helper = if normal.y.abs() < 0.99 {
+        Vector3::new(0.0, 1.0, 0.0)
+    } else {
+        Vector3::new(1.0, 0.0, 0.0)
+    };
+    let u = normal.cross(helper).normalized();
+    let v = normal.cross(u).normalized();
+    (u, v)
+}
+
+fn point_in_triangle_xz(x: f32, z: f32, a: Vector3, b: Vector3, c: Vector3, eps: f32) -> bool {
+    let Some((w0, w1, w2)) = barycentric_xz(x, z, a, b, c, eps) else {
+        return false;
+    };
+    w0 >= -eps && w1 >= -eps && w2 >= -eps
+}
+
+fn barycentric_xz(
+    x: f32,
+    z: f32,
+    a: Vector3,
+    b: Vector3,
+    c: Vector3,
+    eps: f32,
+) -> Option<(f32, f32, f32)> {
+    let p = (x, z);
+    let a2 = (a.x, a.z);
+    let b2 = (b.x, b.z);
+    let c2 = (c.x, c.z);
+
+    let area = cross2(sub2(b2, a2), sub2(c2, a2));
+    if area.abs() <= eps {
+        return None;
+    }
+
+    let w0 = cross2(sub2(b2, p), sub2(c2, p)) / area;
+    let w1 = cross2(sub2(c2, p), sub2(a2, p)) / area;
+    let w2 = cross2(sub2(a2, p), sub2(b2, p)) / area;
+    Some((w0, w1, w2))
+}
+
+fn sub2(a: (f32, f32), b: (f32, f32)) -> (f32, f32) {
+    (a.0 - b.0, a.1 - b.1)
+}
+
+fn cross2(a: (f32, f32), b: (f32, f32)) -> f32 {
+    a.0 * b.1 - a.1 * b.0
+}

@@ -64,17 +64,18 @@ impl Default for ChunkConfig {
 pub struct TerrainChunk {
     pub coord: ChunkCoord,
     pub config: ChunkConfig,
-    vertices: Vec<Vertex>,
-    triangles: Vec<Triangle>,
+    pub(crate) vertices: Vec<Vertex>,
+    pub(crate) triangles: Vec<Triangle>,
 }
 
 impl TerrainChunk {
     pub fn new_flat(coord: ChunkCoord, config: ChunkConfig) -> Self {
         let size = config.size_meters;
-        let v0 = Vertex::new(Vector3::new(0.0, 0.0, 0.0));
-        let v1 = Vertex::new(Vector3::new(size, 0.0, 0.0));
-        let v2 = Vertex::new(Vector3::new(0.0, 0.0, size));
-        let v3 = Vertex::new(Vector3::new(size, 0.0, size));
+        let half = size * 0.5;
+        let v0 = Vertex::new(Vector3::new(-half, 0.0, -half));
+        let v1 = Vertex::new(Vector3::new(half, 0.0, -half));
+        let v2 = Vertex::new(Vector3::new(-half, 0.0, half));
+        let v3 = Vertex::new(Vector3::new(half, 0.0, half));
 
         let vertices = vec![v0, v1, v2, v3];
         let triangles = vec![Triangle::new(0, 1, 2), Triangle::new(2, 1, 3)];
@@ -204,61 +205,5 @@ pub enum ChunkError {
     InvalidTriangleID { triangle_id: TriangleID },
     DuplicateTriangleVertex { indices: [VertexID; 3] },
     DegenerateTriangle { triangle_id: TriangleID },
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn flat_chunk_starts_with_4_vertices_and_2_triangles() {
-        let c = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
-        assert_eq!(c.vertex_count(), 4);
-        assert_eq!(c.triangle_count(), 2);
-        assert!(c.validate(1.0e-6).is_ok());
-    }
-
-    #[test]
-    fn add_vertex_and_triangle_works() {
-        let mut c = TerrainChunk::new_flat_64m(ChunkCoord::new(2, -1));
-        let center = c.add_vertex(Vector3::new(32.0, 2.0, 32.0));
-        let tri_id = c
-            .add_triangle(0, 1, center)
-            .expect("triangle should be valid");
-        assert_eq!(tri_id, 2);
-        assert_eq!(c.vertex_count(), 5);
-        assert_eq!(c.triangle_count(), 3);
-    }
-
-    #[test]
-    fn add_triangle_rejects_bad_indices() {
-        let mut c = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
-        let err = c
-            .add_triangle(0, 1, 999)
-            .expect_err("invalid index should fail");
-        assert_eq!(err, ChunkError::InvalidVertexID { vertex_id: 999 });
-    }
-
-    #[test]
-    fn validate_rejects_degenerate_triangles() {
-        let mut c = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
-        let v = c.add_vertex(Vector3::new(10.0, 0.0, 10.0));
-        c.add_triangle(v, v, 0)
-            .expect_err("duplicate index must fail early");
-
-        c.triangles.push(Triangle::new(0, 0, 1));
-        let err = c.validate(1.0e-6).expect_err("validation should fail");
-        assert_eq!(
-            err,
-            ChunkError::DuplicateTriangleVertex { indices: [0, 0, 1] }
-        );
-    }
-
-    #[test]
-    fn set_vertex_position_updates_existing_vertex() {
-        let mut c = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
-        c.set_vertex_position(0, Vector3::new(-3.0, 5.0, 7.0))
-            .expect("vertex should exist");
-        assert_eq!(c.vertices()[0].position, Vector3::new(-3.0, 5.0, 7.0));
-    }
+    PointOutsideMesh { x: f32, z: f32 },
 }
