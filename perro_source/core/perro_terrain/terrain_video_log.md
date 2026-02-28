@@ -199,6 +199,61 @@ Track what each terrain commit changed so video explanations are easy later.
   - Non-coplanar bulk: `1600` iters, `78.644 ms`, `49.153 us/op`, final `1604 verts / 3202 tris`
   - 4096 piecewise-planar: `341.240 ms`, `83.311 us/op`, final `3350 verts / 6694 tris`
 
+## Commit: Batch Region Inserts
+
+### What was added
+
+- Added `insert_vertices_batch(points, mode)` API.
+- Added `BatchInsertMode`:
+  - `Default` (full behavior, locality-ordered)
+  - `AssumeNonCoplanar` (skips coplanar-collapse path for known non-coplanar workloads)
+- Added `BatchInsertSummary` for tracking inserted/removed/skipped counts.
+- Added locality ordering with Morton code for default batch mode.
+- Added dedicated batch perf tests for non-coplanar bulk and 4096 piecewise-planar workloads.
+
+### Why it matters
+
+- Reduces per-point overhead in large edit sequences.
+- Improves cache locality for default workloads.
+- Allows explicit fast path when the caller knows points are non-coplanar.
+
+### Validation added
+
+- Re-ran release perf tests with single vs batch:
+  - Non-coplanar single: `70.870 us/op`
+  - Non-coplanar batch (`AssumeNonCoplanar`): `53.656 us/op`
+  - 4096 piecewise-planar single: `90.763 us/op`
+  - 4096 piecewise-planar batch (`Default`): `70.285 us/op`
+
+## Commit: Perf Harness (P95)
+
+### What was added
+
+- Updated perf tests to run multiple samples (`9` measured runs + `1` warmup).
+- Added summary output metrics for each perf case:
+  - `min`
+  - `p50`
+  - `p95`
+  - `mean`
+- Metrics are printed both for total test time and per-unit latency.
+
+### Why it matters
+
+- Single-run perf numbers were noisy and hard to trust.
+- P95 shows tail latency behavior, which is critical for editor responsiveness.
+- Median + p95 makes regression tracking much more reliable.
+
+### Validation added
+
+- Re-ran release perf suite with the new harness.
+- Example p95 per-unit latencies:
+  - `insert_vertex` coplanar bulk: `0.710 us/op`
+  - `insert_vertex` non-coplanar bulk: `78.884 us/op`
+  - `insert_vertex` non-coplanar bulk (batch): `79.813 us/op`
+  - `insert_brush` circle bulk: `263.675 us/brush`
+  - `4096` piecewise-planar single: `119.798 us/op`
+  - `4096` piecewise-planar batch: `90.849 us/op`
+
 ## Future Commit Template
 
 ## Commit: <name>

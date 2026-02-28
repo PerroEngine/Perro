@@ -12,6 +12,20 @@ pub struct InsertVertexResult {
     pub removed_as_coplanar: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BatchInsertMode {
+    Default,
+    AssumeNonCoplanar,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BatchInsertSummary {
+    pub attempted: usize,
+    pub inserted: usize,
+    pub removed_as_coplanar: usize,
+    pub skipped_outside_mesh: usize,
+}
+
 impl TerrainChunk {
     pub fn insert_vertex(&mut self, position: Vector3) -> Result<InsertVertexResult, ChunkError> {
         self.insert_vertex_with_tolerances(
@@ -78,6 +92,75 @@ impl TerrainChunk {
         Ok(InsertVertexResult {
             inserted_vertex_id,
             removed_as_coplanar,
+        })
+    }
+
+    pub fn insert_vertices_batch(
+        &mut self,
+        points: &[Vector3],
+        mode: BatchInsertMode,
+    ) -> Result<BatchInsertSummary, ChunkError> {
+        let mut ordered: Vec<Vector3> = points.to_vec();
+        if matches!(mode, BatchInsertMode::Default) {
+            ordered.sort_by_key(|p| morton_key_2d(p.x, p.z));
+        }
+
+        let mut summary = BatchInsertSummary {
+            attempted: ordered.len(),
+            ..BatchInsertSummary::default()
+        };
+
+        for p in ordered {
+            let result = match mode {
+                BatchInsertMode::Default => self.insert_vertex(p),
+                BatchInsertMode::AssumeNonCoplanar => self.insert_vertex_assume_non_coplanar(p),
+            };
+            match result {
+                Ok(r) => {
+                    summary.inserted += 1;
+                    if r.removed_as_coplanar {
+                        summary.removed_as_coplanar += 1;
+                    }
+                }
+                Err(ChunkError::PointOutsideMesh { .. }) => {
+                    summary.skipped_outside_mesh += 1;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(summary)
+    }
+
+    fn insert_vertex_assume_non_coplanar(
+        &mut self,
+        position: Vector3,
+    ) -> Result<InsertVertexResult, ChunkError> {
+        let area_epsilon = DEFAULT_AREA_EPSILON;
+        let distance_epsilon = DEFAULT_DISTANCE_EPSILON;
+
+        let hit_triangle_ids = self.find_hit_triangles_xz(position.x, position.z, area_epsilon);
+        if hit_triangle_ids.is_empty() {
+            return Err(ChunkError::PointOutsideMesh {
+                x: position.x,
+                z: position.z,
+            });
+        }
+
+        if let Some(existing_id) =
+            self.find_existing_vertex_in_hit_triangles(position, &hit_triangle_ids, distance_epsilon)
+        {
+            return Ok(InsertVertexResult {
+                inserted_vertex_id: existing_id,
+                removed_as_coplanar: true,
+            });
+        }
+
+        let inserted_vertex_id = self.add_vertex(position);
+        self.split_hit_triangles(inserted_vertex_id, &hit_triangle_ids, area_epsilon);
+
+        Ok(InsertVertexResult {
+            inserted_vertex_id,
+            removed_as_coplanar: false,
         })
     }
 
@@ -650,6 +733,28 @@ fn triangles_are_manifold_local(tris: &[Triangle]) -> bool {
 
 fn edge_key(a: VertexID, b: VertexID) -> (VertexID, VertexID) {
     if a < b { (a, b) } else { (b, a) }
+}
+
+fn morton_key_2d(x: f32, z: f32) -> u64 {
+    let sx = ((x * 16.0).round() as i32).saturating_add(1 << 15).clamp(0, u16::MAX as i32) as u16;
+    let sz = ((z * 16.0).round() as i32).saturating_add(1 << 15).clamp(0, u16::MAX as i32) as u16;
+    interleave_u16(sx, sz)
+}
+
+fn interleave_u16(x: u16, y: u16) -> u64 {
+    let mut xx = x as u64;
+    let mut yy = y as u64;
+    xx = (xx | (xx << 8)) & 0x00FF_00FF;
+    xx = (xx | (xx << 4)) & 0x0F0F_0F0F;
+    xx = (xx | (xx << 2)) & 0x3333_3333;
+    xx = (xx | (xx << 1)) & 0x5555_5555;
+
+    yy = (yy | (yy << 8)) & 0x00FF_00FF;
+    yy = (yy | (yy << 4)) & 0x0F0F_0F0F;
+    yy = (yy | (yy << 2)) & 0x3333_3333;
+    yy = (yy | (yy << 1)) & 0x5555_5555;
+
+    xx | (yy << 1)
 }
 
 fn unique_sorted_desc(ids: &[usize]) -> Vec<usize> {
