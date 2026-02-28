@@ -1808,6 +1808,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "perro_terrain"
+version = "0.1.0"
+dependencies = [
+ "perro_structs",
+]
+
+[[package]]
 name = "perro_variant"
 version = "0.1.0"
 dependencies = [

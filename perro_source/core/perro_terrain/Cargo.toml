@@ -1,0 +1,7 @@
+[package]
+name = "perro_terrain"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+perro_structs = "0.1.0"
