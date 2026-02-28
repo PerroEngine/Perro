@@ -273,7 +273,6 @@ Track what each terrain commit changed so video explanations are easy later.
 
 ### Why it matters
 
-- Editing now happens at terrain level rather than per isolated chunk.
 - Chunk storage is spatially local and aligns with centered terrain coordinates (`(0,0)` center chunk, rings around it).
 - Cross-chunk brushes can modify both chunks and maintain seam consistency.
 - Keeps chunks logically separate while enforcing matching shared-edge geometry.
@@ -284,6 +283,34 @@ Track what each terrain commit changed so video explanations are easy later.
   - brush spanning boundary touches both chunks
   - brush 3m from boundary with radius >3m spans both chunks
   - seam vertices align after cross-chunk edit
+
+## Commit: Brush Ops + Cross-Chunk Op Tests
+
+### What was added
+
+- Added `BrushOp` workflow:
+  - `SetHeight { y, feature_offset }`
+  - `Add { delta }`
+  - `Remove { delta }`
+  - `Smooth { strength }`
+  - `Decimate { basis }`
+- Added chunk-level `apply_brush_op(...)`.
+- Added terrain-level `apply_brush_op_world(...)`.
+- `SetHeight` now uses structural insertion for top+base feature points.
+
+### Why it matters
+
+- Brush behavior is now operation-driven instead of only insert-driven.
+- `SetHeight` can build platform-like geometry (including negative height).
+- Same brush-op API works across chunk boundaries with seam sync.
+
+### Validation added
+
+- Added `brush_ops.rs` tests for set/add/remove/smooth/decimate behavior.
+- Added cross-chunk brush-op seam tests in `terrain.rs`:
+  - set-height spanning seam
+  - add/remove spanning seam
+  - decimate spanning seam
 
 ## Future Commit Template
 

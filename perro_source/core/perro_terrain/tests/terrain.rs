@@ -1,5 +1,5 @@
 use perro_structs::Vector3;
-use perro_terrain::{BrushShape, ChunkCoord, TerrainData};
+use perro_terrain::{BrushOp, BrushShape, ChunkCoord, TerrainData};
 
 const EPS: f32 = 1.0e-4;
 
@@ -58,6 +58,98 @@ fn brush_three_meters_from_edge_with_radius_over_three_spans_both_chunks() {
 
     assert!(summary.touched_chunks.contains(&ChunkCoord::new(0, 0)));
     assert!(summary.touched_chunks.contains(&ChunkCoord::new(1, 0)));
+}
+
+#[test]
+fn set_height_brush_op_spanning_chunks_keeps_seam_aligned() {
+    let mut terrain = TerrainData::new(64.0);
+    terrain.ensure_chunk(ChunkCoord::new(0, 0));
+    terrain.ensure_chunk(ChunkCoord::new(1, 0));
+
+    let summary = terrain
+        .apply_brush_op_world(
+            Vector3::new(61.0, 0.0, 32.0),
+            8.0,
+            BrushShape::Square,
+            BrushOp::SetHeight {
+                y: 6.0,
+                feature_offset: 0.1,
+            },
+        )
+        .expect("set-height op should succeed");
+
+    assert!(summary.touched_chunks.contains(&ChunkCoord::new(0, 0)));
+    assert!(summary.touched_chunks.contains(&ChunkCoord::new(1, 0)));
+    assert_seam_y_aligned(&terrain);
+}
+
+#[test]
+fn add_remove_brush_ops_spanning_chunks_keep_seam_aligned() {
+    let mut terrain = TerrainData::new(64.0);
+    terrain.ensure_chunk(ChunkCoord::new(0, 0));
+    terrain.ensure_chunk(ChunkCoord::new(1, 0));
+
+    let _ = terrain
+        .apply_brush_op_world(
+            Vector3::new(61.0, 0.0, 32.0),
+            8.0,
+            BrushShape::Circle,
+            BrushOp::Add { delta: 2.5 },
+        )
+        .expect("add op should succeed");
+    let _ = terrain
+        .apply_brush_op_world(
+            Vector3::new(61.0, 0.0, 32.0),
+            8.0,
+            BrushShape::Circle,
+            BrushOp::Remove { delta: 1.0 },
+        )
+        .expect("remove op should succeed");
+
+    assert_seam_y_aligned(&terrain);
+}
+
+#[test]
+fn decimate_brush_op_spanning_chunks_keeps_seam_aligned() {
+    let mut terrain = TerrainData::new(64.0);
+    terrain.ensure_chunk(ChunkCoord::new(0, 0));
+    terrain.ensure_chunk(ChunkCoord::new(1, 0));
+
+    let _ = terrain
+        .apply_brush_op_world(
+            Vector3::new(61.0, 0.0, 32.0),
+            8.0,
+            BrushShape::Circle,
+            BrushOp::Add { delta: 2.1 },
+        )
+        .expect("add op should succeed");
+    let _ = terrain
+        .apply_brush_op_world(
+            Vector3::new(61.0, 0.0, 32.0),
+            8.0,
+            BrushShape::Circle,
+            BrushOp::Decimate { basis: 0.25 },
+        )
+        .expect("decimate op should succeed");
+
+    assert_seam_y_aligned(&terrain);
+}
+
+fn assert_seam_y_aligned(terrain: &TerrainData) {
+    let left = terrain.chunk(ChunkCoord::new(0, 0)).expect("left chunk exists");
+    let right = terrain.chunk(ChunkCoord::new(1, 0)).expect("right chunk exists");
+
+    let mut left_border = border_world_points(left.vertices(), 32.0, 32.0);
+    let mut right_border = border_world_points(right.vertices(), -32.0, 96.0);
+    left_border.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    right_border.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    for (lz, ly) in &left_border {
+        let Some((_, ry)) = right_border.iter().find(|(rz, _)| (*rz - *lz).abs() <= EPS) else {
+            continue;
+        };
+        assert!((ly - ry).abs() <= 1.0e-3);
+    }
 }
 
 fn border_world_points(vertices: &[perro_terrain::Vertex], border_x_local: f32, world_center_x: f32) -> Vec<(f32, f32)> {

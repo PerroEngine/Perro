@@ -1,5 +1,5 @@
 use perro_structs::Vector3;
-use perro_terrain::{BrushShape, ChunkCoord, TerrainChunk};
+use perro_terrain::{BrushOp, BrushShape, ChunkCoord, TerrainChunk, TerrainData};
 use std::time::Instant;
 
 const PERF_RUNS: usize = 9;
@@ -450,6 +450,271 @@ fn perf_recursive_square_brush_levels_rising_y() {
     );
 }
 
+#[test]
+#[ignore]
+fn perf_brush_ops_chunk_sweep() {
+    let iterations = 5usize;
+    let mut samples_s = Vec::with_capacity(PERF_RUNS);
+    let mut final_verts = 0usize;
+    let mut final_tris = 0usize;
+    let mut total_points = 0usize;
+
+    for run_idx in 0..(PERF_WARMUP_RUNS + PERF_RUNS) {
+        let mut chunk = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
+        let start = Instant::now();
+        let mut points_this_run = 0usize;
+
+        let ops = [
+            BrushOp::SetHeight {
+                y: 4.0,
+                feature_offset: 0.1,
+            },
+            BrushOp::Add { delta: 1.0 },
+            BrushOp::Remove { delta: 0.5 },
+            BrushOp::Smooth { strength: 0.6 },
+            BrushOp::Decimate { basis: 0.25 },
+        ];
+
+        for op in ops {
+            let results = chunk
+                .apply_brush_op(Vector3::new(0.0, 0.0, 0.0), 10.0, BrushShape::Circle, op)
+                .expect("brush op should succeed");
+            points_this_run += results.len();
+        }
+
+        let elapsed_s = start.elapsed().as_secs_f64();
+        if run_idx >= PERF_WARMUP_RUNS {
+            samples_s.push(elapsed_s);
+        }
+        total_points = points_this_run;
+        final_verts = chunk.vertex_count();
+        final_tris = chunk.triangle_count();
+        assert!(chunk.validate(1.0e-6).is_ok());
+    }
+
+    print_perf_summary(
+        "brush ops chunk sweep",
+        iterations,
+        &samples_s,
+        &format!(
+            "total_points={} final_verts={} final_tris={}",
+            total_points, final_verts, final_tris
+        ),
+    );
+}
+
+#[test]
+#[ignore]
+fn perf_brush_ops_world_cross_chunk_setheight() {
+    let iterations = 1usize;
+    let mut samples_s = Vec::with_capacity(PERF_RUNS);
+    let mut touched_chunks = 0usize;
+    let mut inserted_points = 0usize;
+    let mut left_verts = 0usize;
+    let mut right_verts = 0usize;
+
+    for run_idx in 0..(PERF_WARMUP_RUNS + PERF_RUNS) {
+        let mut terrain = TerrainData::new(64.0);
+        terrain.ensure_chunk(ChunkCoord::new(0, 0));
+        terrain.ensure_chunk(ChunkCoord::new(1, 0));
+
+        let start = Instant::now();
+        let summary = terrain
+            .apply_brush_op_world(
+                Vector3::new(61.0, 0.0, 32.0),
+                8.0,
+                BrushShape::Square,
+                BrushOp::SetHeight {
+                    y: 6.0,
+                    feature_offset: 0.1,
+                },
+            )
+            .expect("world set-height should succeed");
+        let elapsed_s = start.elapsed().as_secs_f64();
+        if run_idx >= PERF_WARMUP_RUNS {
+            samples_s.push(elapsed_s);
+        }
+
+        touched_chunks = summary.touched_chunks.len();
+        inserted_points = summary.inserted_points;
+        left_verts = terrain
+            .chunk(ChunkCoord::new(0, 0))
+            .map(|c| c.vertex_count())
+            .unwrap_or(0);
+        right_verts = terrain
+            .chunk(ChunkCoord::new(1, 0))
+            .map(|c| c.vertex_count())
+            .unwrap_or(0);
+    }
+
+    print_perf_summary(
+        "brush ops world cross-chunk setheight",
+        iterations,
+        &samples_s,
+        &format!(
+            "touched_chunks={} inserted_points={} left_verts={} right_verts={}",
+            touched_chunks, inserted_points, left_verts, right_verts
+        ),
+    );
+}
+
+#[test]
+#[ignore]
+fn perf_brush_ops_world_cross_chunk_add_remove_decimate() {
+    let iterations = 3usize;
+    let mut samples_s = Vec::with_capacity(PERF_RUNS);
+    let mut inserted_points = 0usize;
+    let mut left_verts = 0usize;
+    let mut right_verts = 0usize;
+
+    for run_idx in 0..(PERF_WARMUP_RUNS + PERF_RUNS) {
+        let mut terrain = TerrainData::new(64.0);
+        terrain.ensure_chunk(ChunkCoord::new(0, 0));
+        terrain.ensure_chunk(ChunkCoord::new(1, 0));
+
+        let start = Instant::now();
+        let s1 = terrain
+            .apply_brush_op_world(
+                Vector3::new(61.0, 0.0, 32.0),
+                8.0,
+                BrushShape::Circle,
+                BrushOp::Add { delta: 2.0 },
+            )
+            .expect("add should succeed");
+        let s2 = terrain
+            .apply_brush_op_world(
+                Vector3::new(61.0, 0.0, 32.0),
+                8.0,
+                BrushShape::Circle,
+                BrushOp::Remove { delta: 1.0 },
+            )
+            .expect("remove should succeed");
+        let s3 = terrain
+            .apply_brush_op_world(
+                Vector3::new(61.0, 0.0, 32.0),
+                8.0,
+                BrushShape::Circle,
+                BrushOp::Decimate { basis: 0.25 },
+            )
+            .expect("decimate should succeed");
+        let elapsed_s = start.elapsed().as_secs_f64();
+        if run_idx >= PERF_WARMUP_RUNS {
+            samples_s.push(elapsed_s);
+        }
+
+        inserted_points = s1.inserted_points + s2.inserted_points + s3.inserted_points;
+        left_verts = terrain
+            .chunk(ChunkCoord::new(0, 0))
+            .map(|c| c.vertex_count())
+            .unwrap_or(0);
+        right_verts = terrain
+            .chunk(ChunkCoord::new(1, 0))
+            .map(|c| c.vertex_count())
+            .unwrap_or(0);
+    }
+
+    print_perf_summary(
+        "brush ops world cross-chunk add/remove/decimate",
+        iterations,
+        &samples_s,
+        &format!(
+            "inserted_points={} left_verts={} right_verts={}",
+            inserted_points, left_verts, right_verts
+        ),
+    );
+}
+
+#[test]
+#[ignore]
+fn perf_brush_ops_established_piecewise_dense_cross_sections() {
+    let points = generate_piecewise_dense_points();
+    let iterations = 3usize;
+    let mut samples_s = Vec::with_capacity(PERF_RUNS);
+    let mut establish_inserted = 0usize;
+    let mut establish_removed = 0usize;
+    let mut establish_skipped = 0usize;
+    let mut verts_established = 0usize;
+    let mut tris_established = 0usize;
+    let mut verts_after_add = 0usize;
+    let mut tris_after_add = 0usize;
+    let mut verts_after_final = 0usize;
+    let mut tris_after_final = 0usize;
+
+    for run_idx in 0..(PERF_WARMUP_RUNS + PERF_RUNS) {
+        let mut chunk = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
+        let summary = chunk
+            .insert_vertices_batch(&points)
+            .expect("established insert should succeed");
+        let v_established = chunk.vertex_count();
+        let t_established = chunk.triangle_count();
+
+        let start = Instant::now();
+        let _ = chunk
+            .apply_brush_op(
+                Vector3::new(0.0, 0.0, 0.0),
+                18.0,
+                BrushShape::Circle,
+                BrushOp::Add { delta: 1.5 },
+            )
+            .expect("cross-section add should succeed");
+        let v_after_add = chunk.vertex_count();
+        let t_after_add = chunk.triangle_count();
+        let _ = chunk
+            .apply_brush_op(
+                Vector3::new(0.0, 0.0, 0.0),
+                18.0,
+                BrushShape::Circle,
+                BrushOp::Remove { delta: 0.75 },
+            )
+            .expect("cross-section remove should succeed");
+        let _ = chunk
+            .apply_brush_op(
+                Vector3::new(0.0, 0.0, 0.0),
+                18.0,
+                BrushShape::Circle,
+                BrushOp::Decimate { basis: 0.25 },
+            )
+            .expect("cross-section decimate should succeed");
+        let elapsed_s = start.elapsed().as_secs_f64();
+        if run_idx >= PERF_WARMUP_RUNS {
+            samples_s.push(elapsed_s);
+        }
+
+        let v_after_final = chunk.vertex_count();
+        let t_after_final = chunk.triangle_count();
+        assert!(chunk.validate(1.0e-6).is_ok());
+
+        establish_inserted = summary.inserted;
+        establish_removed = summary.removed_as_coplanar;
+        establish_skipped = summary.skipped_outside_mesh;
+        verts_established = v_established;
+        tris_established = t_established;
+        verts_after_add = v_after_add;
+        tris_after_add = t_after_add;
+        verts_after_final = v_after_final;
+        tris_after_final = t_after_final;
+    }
+
+    print_perf_summary(
+        "brush ops established piecewise dense cross-sections",
+        iterations,
+        &samples_s,
+        &format!(
+            "establish_points={} establish_inserted={} establish_removed={} establish_skipped={} verts_established={} tris_established={} verts_after_add={} tris_after_add={} verts_after_final={} tris_after_final={}",
+            points.len(),
+            establish_inserted,
+            establish_removed,
+            establish_skipped,
+            verts_established,
+            tris_established,
+            verts_after_add,
+            tris_after_add,
+            verts_after_final,
+            tris_after_final
+        ),
+    );
+}
+
 fn print_perf_summary(name: &str, units: usize, samples_s: &[f64], extra: &str) {
     let mut ms_samples: Vec<f64> = samples_s.iter().map(|s| s * 1000.0).collect();
     let mut per_unit_us_samples: Vec<f64> = samples_s
@@ -583,6 +848,31 @@ fn generate_wave_points(
             let z = origin_z + iz as f32 * step;
             let y = (x * 0.17).sin() * (z * 0.11).cos() * amplitude;
             out.push(Vector3::new(x, y, z));
+        }
+    }
+    out
+}
+
+fn generate_piecewise_dense_points() -> Vec<Vector3> {
+    let side = 40usize;
+    let spacing = 0.5_f32;
+    let start = -9.75_f32;
+    let mut out = Vec::with_capacity(side * side);
+    for ix in 0..side {
+        for iz in 0..side {
+            let x = start + ix as f32 * spacing;
+            let z = start + iz as f32 * spacing;
+            let section_base = if x < 0.0 && z < 0.0 {
+                0.06 * x + 0.04 * z
+            } else if x >= 0.0 && z < 0.0 {
+                -0.05 * x + 1.2
+            } else if x < 0.0 && z >= 0.0 {
+                0.03 * z - 0.8
+            } else {
+                0.08 * x + 0.02 * z + 1.8
+            };
+            let local_detail = (x * 1.7).sin() * (z * 1.3).cos() * 0.03;
+            out.push(Vector3::new(x, section_base + local_detail, z));
         }
     }
     out

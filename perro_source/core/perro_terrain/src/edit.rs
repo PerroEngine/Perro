@@ -89,6 +89,38 @@ impl TerrainChunk {
         })
     }
 
+    pub(crate) fn insert_vertex_structural(
+        &mut self,
+        position: Vector3,
+    ) -> Result<InsertVertexResult, ChunkError> {
+        let area_epsilon = DEFAULT_AREA_EPSILON;
+        let distance_epsilon = DEFAULT_DISTANCE_EPSILON;
+
+        let hit_triangle_ids = self.find_hit_triangles_xz(position.x, position.z, area_epsilon);
+        if hit_triangle_ids.is_empty() {
+            return Err(ChunkError::PointOutsideMesh {
+                x: position.x,
+                z: position.z,
+            });
+        }
+
+        if let Some(existing_id) =
+            self.find_existing_vertex_in_hit_triangles(position, &hit_triangle_ids, distance_epsilon)
+        {
+            return Ok(InsertVertexResult {
+                inserted_vertex_id: existing_id,
+                removed_as_coplanar: false,
+            });
+        }
+
+        let inserted_vertex_id = self.add_vertex(position);
+        self.split_hit_triangles(inserted_vertex_id, &hit_triangle_ids, area_epsilon);
+        Ok(InsertVertexResult {
+            inserted_vertex_id,
+            removed_as_coplanar: false,
+        })
+    }
+
     pub fn insert_vertices_batch(
         &mut self,
         points: &[Vector3],
@@ -116,6 +148,22 @@ impl TerrainChunk {
             }
         }
         Ok(summary)
+    }
+
+    pub(crate) fn reconcile_after_edit(&mut self) {
+        self.enforce_single_height_per_xz(DEFAULT_DISTANCE_EPSILON);
+        self.remove_invalid_triangles(DEFAULT_AREA_EPSILON);
+        self.remove_duplicate_triangles();
+        self.compact_unreferenced_vertices();
+        self.global_coplanar_cleanup(
+            DEFAULT_AREA_EPSILON,
+            DEFAULT_NORMAL_EPSILON,
+            DEFAULT_DISTANCE_EPSILON,
+        );
+        self.remove_invalid_triangles(DEFAULT_AREA_EPSILON);
+        self.remove_duplicate_triangles();
+        self.compact_unreferenced_vertices();
+        self.last_hit_triangle = None;
     }
 
     fn find_existing_vertex_in_hit_triangles(
@@ -509,6 +557,123 @@ impl TerrainChunk {
         let produced = boundary_edges_of(replacement);
         expected == produced
     }
+
+    fn enforce_single_height_per_xz(&mut self, eps: f32) {
+        if self.vertices.is_empty() || self.triangles.is_empty() {
+            return;
+        }
+
+        let step = if eps > 0.0 { eps } else { 1.0e-4 };
+        let mut canonical_by_xz: HashMap<(i64, i64), VertexID> = HashMap::new();
+        for (vid, v) in self.vertices.iter().enumerate() {
+            canonical_by_xz.insert(quantize_xz_key(v.position.x, v.position.z, step), vid);
+        }
+
+        let mut remap: Vec<VertexID> = (0..self.vertices.len()).collect();
+        let mut had_merge = false;
+        for (vid, v) in self.vertices.iter().enumerate() {
+            let key = quantize_xz_key(v.position.x, v.position.z, step);
+            if let Some(&canonical) = canonical_by_xz.get(&key) {
+                remap[vid] = canonical;
+                if canonical != vid {
+                    had_merge = true;
+                }
+            }
+        }
+        if !had_merge {
+            return;
+        }
+
+        for tri in &mut self.triangles {
+            tri.a = remap[tri.a];
+            tri.b = remap[tri.b];
+            tri.c = remap[tri.c];
+        }
+    }
+
+    fn remove_invalid_triangles(&mut self, area_epsilon: f32) {
+        self.triangles.retain(|tri| {
+            if tri.a == tri.b || tri.b == tri.c || tri.a == tri.c {
+                return false;
+            }
+            let a = self.vertices[tri.a].position;
+            let b = self.vertices[tri.b].position;
+            let c = self.vertices[tri.c].position;
+            triangle_normal(a, b, c).length() > area_epsilon
+        });
+    }
+
+    fn remove_duplicate_triangles(&mut self) {
+        let mut seen: HashSet<[VertexID; 3]> = HashSet::new();
+        self.triangles.retain(|tri| {
+            let mut key = [tri.a, tri.b, tri.c];
+            key.sort_unstable();
+            seen.insert(key)
+        });
+    }
+
+    fn compact_unreferenced_vertices(&mut self) {
+        if self.vertices.is_empty() {
+            return;
+        }
+        let mut used = vec![false; self.vertices.len()];
+        for tri in &self.triangles {
+            used[tri.a] = true;
+            used[tri.b] = true;
+            used[tri.c] = true;
+        }
+
+        let mut remap = vec![usize::MAX; self.vertices.len()];
+        let mut compacted = Vec::with_capacity(self.vertices.len());
+        for (old, is_used) in used.iter().copied().enumerate() {
+            if is_used {
+                remap[old] = compacted.len();
+                compacted.push(self.vertices[old]);
+            }
+        }
+
+        for tri in &mut self.triangles {
+            tri.a = remap[tri.a];
+            tri.b = remap[tri.b];
+            tri.c = remap[tri.c];
+        }
+        self.vertices = compacted;
+    }
+
+    fn global_coplanar_cleanup(
+        &mut self,
+        area_epsilon: f32,
+        normal_epsilon: f32,
+        distance_epsilon: f32,
+    ) {
+        if self.vertices.len() <= 4 || self.triangles.len() <= 2 {
+            return;
+        }
+        let mut guard = 0usize;
+        loop {
+            if self.vertices.len() <= 4 {
+                break;
+            }
+
+            let mut changed = false;
+            let mut vid = 0usize;
+            while vid < self.vertices.len() {
+                if self.try_remove_coplanar_vertex(vid, area_epsilon, normal_epsilon, distance_epsilon) {
+                    changed = true;
+                    break;
+                }
+                vid += 1;
+            }
+
+            if !changed {
+                break;
+            }
+            guard += 1;
+            if guard > self.vertices.len().saturating_mul(4).max(64) {
+                break;
+            }
+        }
+    }
 }
 
 fn sub(a: Vector3, b: Vector3) -> Vector3 {
@@ -668,6 +833,13 @@ fn triangles_are_manifold_local(tris: &[Triangle]) -> bool {
 
 fn edge_key(a: VertexID, b: VertexID) -> (VertexID, VertexID) {
     if a < b { (a, b) } else { (b, a) }
+}
+
+fn quantize_xz_key(x: f32, z: f32, step: f32) -> (i64, i64) {
+    let inv = 1.0 / step.max(1.0e-6);
+    let qx = (x * inv).round() as i64;
+    let qz = (z * inv).round() as i64;
+    (qx, qz)
 }
 
 fn morton_key_2d(x: f32, z: f32) -> u64 {

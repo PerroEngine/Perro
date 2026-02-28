@@ -1,4 +1,4 @@
-use crate::{BrushShape, ChunkConfig, ChunkCoord, ChunkError, InsertVertexResult, TerrainChunk};
+use crate::{BrushOp, BrushShape, ChunkConfig, ChunkCoord, ChunkError, InsertVertexResult, TerrainChunk};
 use perro_structs::Vector3;
 use std::collections::{HashMap, HashSet};
 
@@ -84,6 +84,35 @@ impl TerrainData {
             let chunk = self.ensure_chunk(coord);
             let results: Vec<InsertVertexResult> =
                 chunk.insert_brush(local_center, brush_size_meters, shape)?;
+            if !results.is_empty() {
+                summary.inserted_points += results.len();
+                touched_set.insert(coord);
+            }
+        }
+
+        let mut touched_chunks: Vec<ChunkCoord> = touched_set.into_iter().collect();
+        touched_chunks.sort_by_key(|c| (c.x, c.z));
+        self.sync_seams_for_touched(&touched_chunks)?;
+        summary.touched_chunks = touched_chunks;
+        Ok(summary)
+    }
+
+    pub fn apply_brush_op_world(
+        &mut self,
+        center_world: Vector3,
+        brush_size_meters: f32,
+        shape: BrushShape,
+        op: BrushOp,
+    ) -> Result<TerrainEditSummary, ChunkError> {
+        let touched = self.overlapped_chunks(center_world, brush_size_meters);
+        let mut summary = TerrainEditSummary::default();
+        let mut touched_set: HashSet<ChunkCoord> = HashSet::new();
+
+        for coord in touched {
+            let local_center = self.world_to_chunk_local(center_world, coord);
+            let chunk = self.ensure_chunk(coord);
+            let results: Vec<InsertVertexResult> =
+                chunk.apply_brush_op(local_center, brush_size_meters, shape, op)?;
             if !results.is_empty() {
                 summary.inserted_points += results.len();
                 touched_set.insert(coord);
