@@ -93,10 +93,34 @@ impl TerrainChunk {
         &mut self,
         position: Vector3,
     ) -> Result<InsertVertexResult, ChunkError> {
+        self.insert_vertex_structural_filtered(position, None)
+    }
+
+    pub(crate) fn insert_vertex_structural_in_region(
+        &mut self,
+        position: Vector3,
+        region_polygon_xz: &[(f32, f32)],
+    ) -> Result<InsertVertexResult, ChunkError> {
+        self.insert_vertex_structural_filtered(position, Some(region_polygon_xz))
+    }
+
+    fn insert_vertex_structural_filtered(
+        &mut self,
+        position: Vector3,
+        region_polygon_xz: Option<&[(f32, f32)]>,
+    ) -> Result<InsertVertexResult, ChunkError> {
         let area_epsilon = DEFAULT_AREA_EPSILON;
         let distance_epsilon = DEFAULT_DISTANCE_EPSILON;
 
-        let hit_triangle_ids = self.find_hit_triangles_xz(position.x, position.z, area_epsilon);
+        let hit_triangle_ids = match region_polygon_xz {
+            Some(region) => self.find_hit_triangles_xz_in_region(
+                position.x,
+                position.z,
+                area_epsilon,
+                region,
+            ),
+            None => self.find_hit_triangles_xz(position.x, position.z, area_epsilon),
+        };
         if hit_triangle_ids.is_empty() {
             return Err(ChunkError::PointOutsideMesh {
                 x: position.x,
@@ -166,6 +190,115 @@ impl TerrainChunk {
         self.last_hit_triangle = None;
     }
 
+    pub(crate) fn reconcile_structural_after_edit(&mut self) {
+        // Structural feature passes preserve authored topology and skip aggressive
+        // coplanar cleanup. This keeps intermediate staged connectivity stable.
+        self.enforce_single_height_per_xz(DEFAULT_DISTANCE_EPSILON);
+        self.remove_invalid_triangles(DEFAULT_AREA_EPSILON);
+        self.remove_duplicate_triangles();
+        self.compact_unreferenced_vertices();
+        self.improve_planar_connectivity_shortest_edges(48, 1.0e-4, DEFAULT_AREA_EPSILON);
+        self.remove_invalid_triangles(DEFAULT_AREA_EPSILON);
+        self.remove_duplicate_triangles();
+        self.compact_unreferenced_vertices();
+        self.last_hit_triangle = None;
+    }
+
+    fn improve_planar_connectivity_shortest_edges(
+        &mut self,
+        max_passes: usize,
+        y_epsilon: f32,
+        area_epsilon: f32,
+    ) {
+        if self.triangles.len() < 2 {
+            return;
+        }
+        for _ in 0..max_passes {
+            let mut edge_to_tris: HashMap<(VertexID, VertexID), Vec<usize>> = HashMap::new();
+            for (tri_id, tri) in self.triangles.iter().copied().enumerate() {
+                for (u, v) in [(tri.a, tri.b), (tri.b, tri.c), (tri.c, tri.a)] {
+                    edge_to_tris.entry(edge_key(u, v)).or_default().push(tri_id);
+                }
+            }
+
+            let mut flipped_any = false;
+            for ((a, b), owners) in edge_to_tris {
+                if owners.len() != 2 {
+                    continue;
+                }
+                let t0_id = owners[0];
+                let t1_id = owners[1];
+                if t0_id >= self.triangles.len() || t1_id >= self.triangles.len() {
+                    continue;
+                }
+                let t0 = self.triangles[t0_id];
+                let t1 = self.triangles[t1_id];
+
+                let c = opposite_vertex_for_edge(t0, a, b);
+                let d = opposite_vertex_for_edge(t1, a, b);
+                let (Some(c), Some(d)) = (c, d) else {
+                    continue;
+                };
+                if c == d || c == a || c == b || d == a || d == b {
+                    continue;
+                }
+
+                let pa = self.vertices[a].position;
+                let pb = self.vertices[b].position;
+                let pc = self.vertices[c].position;
+                let pd = self.vertices[d].position;
+
+                // Keep this pass strictly planar-like so we do not alter vertical wall topology.
+                let min_y = pa.y.min(pb.y).min(pc.y).min(pd.y);
+                let max_y = pa.y.max(pb.y).max(pc.y).max(pd.y);
+                if (max_y - min_y) > y_epsilon {
+                    continue;
+                }
+
+                if !segments_cross_strict_2d((pa.x, pa.z), (pb.x, pb.z), (pc.x, pc.z), (pd.x, pd.z))
+                {
+                    continue;
+                }
+
+                let current_len2 = squared_distance(pa, pb);
+                let alt_len2 = squared_distance(pc, pd);
+                if alt_len2 + 1.0e-7 >= current_len2 {
+                    continue;
+                }
+
+                let ref_normal = {
+                    let n0 = triangle_normal(pa, pb, pc);
+                    let n1 = triangle_normal(pb, pa, pd);
+                    let s = Vector3::new(n0.x + n1.x, n0.y + n1.y, n0.z + n1.z);
+                    if s.length() <= 1.0e-8 {
+                        Vector3::new(0.0, 1.0, 0.0)
+                    } else {
+                        s
+                    }
+                };
+
+                let mut nt0 = Triangle::new(c, d, a);
+                orient_triangle(&mut nt0, &self.vertices, ref_normal);
+                let mut nt1 = Triangle::new(d, c, b);
+                orient_triangle(&mut nt1, &self.vertices, ref_normal);
+
+                if self.triangle_area2_by_positions(nt0) <= area_epsilon
+                    || self.triangle_area2_by_positions(nt1) <= area_epsilon
+                {
+                    continue;
+                }
+
+                self.triangles[t0_id] = nt0;
+                self.triangles[t1_id] = nt1;
+                flipped_any = true;
+                break;
+            }
+            if !flipped_any {
+                break;
+            }
+        }
+    }
+
     fn find_existing_vertex_in_hit_triangles(
         &self,
         position: Vector3,
@@ -229,6 +362,34 @@ impl TerrainChunk {
             let b = self.vertices[tri.b].position;
             let c = self.vertices[tri.c].position;
 
+            if !point_in_triangle_aabb_xz(x, z, a, b, c, eps) {
+                continue;
+            }
+            if point_in_triangle_xz(x, z, a, b, c, eps) {
+                hits.push(tri_id);
+            }
+        }
+        self.last_hit_triangle = hits.first().copied();
+        hits
+    }
+
+    fn find_hit_triangles_xz_in_region(
+        &mut self,
+        x: f32,
+        z: f32,
+        eps: f32,
+        region_polygon_xz: &[(f32, f32)],
+    ) -> Vec<usize> {
+        let mut hits = Vec::new();
+        for (tri_id, tri) in self.triangles.iter().copied().enumerate() {
+            let a = self.vertices[tri.a].position;
+            let b = self.vertices[tri.b].position;
+            let c = self.vertices[tri.c].position;
+            let cx = (a.x + b.x + c.x) / 3.0;
+            let cz = (a.z + b.z + c.z) / 3.0;
+            if !point_in_polygon_xz((cx, cz), region_polygon_xz) {
+                continue;
+            }
             if !point_in_triangle_aabb_xz(x, z, a, b, c, eps) {
                 continue;
             }
@@ -835,6 +996,42 @@ fn edge_key(a: VertexID, b: VertexID) -> (VertexID, VertexID) {
     if a < b { (a, b) } else { (b, a) }
 }
 
+fn opposite_vertex_for_edge(tri: Triangle, a: VertexID, b: VertexID) -> Option<VertexID> {
+    let ids = [tri.a, tri.b, tri.c];
+    let has_a = ids.contains(&a);
+    let has_b = ids.contains(&b);
+    if !has_a || !has_b {
+        return None;
+    }
+    ids.into_iter().find(|v| *v != a && *v != b)
+}
+
+fn orient_triangle(tri: &mut Triangle, vertices: &[crate::Vertex], reference_normal: Vector3) {
+    let a = vertices[tri.a].position;
+    let b = vertices[tri.b].position;
+    let c = vertices[tri.c].position;
+    if triangle_normal(a, b, c).dot(reference_normal) < 0.0 {
+        std::mem::swap(&mut tri.b, &mut tri.c);
+    }
+}
+
+fn segments_cross_strict_2d(
+    p1: (f32, f32),
+    p2: (f32, f32),
+    q1: (f32, f32),
+    q2: (f32, f32),
+) -> bool {
+    fn orient(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> f32 {
+        (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
+    }
+    let o1 = orient(p1, p2, q1);
+    let o2 = orient(p1, p2, q2);
+    let o3 = orient(q1, q2, p1);
+    let o4 = orient(q1, q2, p2);
+    (o1 > 1.0e-7 && o2 < -1.0e-7 || o1 < -1.0e-7 && o2 > 1.0e-7)
+        && (o3 > 1.0e-7 && o4 < -1.0e-7 || o3 < -1.0e-7 && o4 > 1.0e-7)
+}
+
 fn quantize_xz_key(x: f32, z: f32, step: f32) -> (i64, i64) {
     let inv = 1.0 / step.max(1.0e-6);
     let qx = (x * inv).round() as i64;
@@ -846,6 +1043,26 @@ fn morton_key_2d(x: f32, z: f32) -> u64 {
     let sx = ((x * 16.0).round() as i32).saturating_add(1 << 15).clamp(0, u16::MAX as i32) as u16;
     let sz = ((z * 16.0).round() as i32).saturating_add(1 << 15).clamp(0, u16::MAX as i32) as u16;
     interleave_u16(sx, sz)
+}
+
+fn point_in_polygon_xz(point: (f32, f32), polygon: &[(f32, f32)]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+    let (px, pz) = point;
+    let mut inside = false;
+    let mut j = polygon.len() - 1;
+    for i in 0..polygon.len() {
+        let (xi, zi) = polygon[i];
+        let (xj, zj) = polygon[j];
+        let intersects = ((zi > pz) != (zj > pz))
+            && (px < (xj - xi) * (pz - zi) / ((zj - zi).abs().max(1.0e-8)) + xi);
+        if intersects {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
 }
 
 fn interleave_u16(x: u16, y: u16) -> u64 {

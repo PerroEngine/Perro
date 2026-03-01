@@ -405,7 +405,49 @@ Track what each terrain commit changed so video explanations are easy later.
 - Runtime tests pass after bootstrap change (`cargo test -p perro_runtime`).
 - Existing debug test path still verifies set-height feature behavior and debug draw output.
 
+## Commit: SetHeight Topology Staging + Structural Reconcile
+
+### What was added
+
+- Changed square `SetHeight` construction order and staging:
+  - phase 1: insert widened base ring
+  - phase 2: insert raised top ring
+- Kept outward base offset behavior so the base remains the larger footprint.
+- Changed structural insertion reconcile path to a non-aggressive structural reconcile:
+  - keeps manifold/valid cleanup
+  - skips global coplanar collapse during structural feature construction
+- Added constrained structural staging details:
+  - intermediate retessellation of the inner base polygon region
+  - top-phase inserts constrained to that base region (prevents top connections through outer ground region)
+- Added planar shortest-edge edge-flip optimization during structural reconcile:
+  - flips crossing/long coplanar shared diagonals when a shorter valid manifold diagonal exists
+
+### Why it matters
+
+- Staging the base first gives retriangulation a stable local footprint before vertical/top feature points are introduced.
+- This better matches expected connectivity:
+  - outer terrain should anchor into nearest base corners first
+  - then top points connect inward from that base
+  - avoids long fan connections from distant chunk corners into top points
+- Prevents intermediate feature topology from being simplified away before the second construction phase runs.
+- Makes brush-op triangulation behavior more predictable for nested/stacked set-height operations.
+- Reduces illegal-looking long fan connections by preferring shorter coplanar manifold diagonals.
+- Preserves the "simplest valid topology" direction and moves behavior toward the intended pattern:
+  - triangulate at each structural phase
+  - simplify only when safe after structure is established
+
+### Validation added
+
+- `set_height_square_builds_top_and_base_points` passes with:
+  - 8 structural inserts
+  - no coplanar-collapse removals
+  - outward base radius larger than top radius
+- Full `perro_terrain` test suite passes.
+- Runtime terrain debug test passes:
+  - `terrain_instance_debug_flags_emit_vertex_and_edge_commands`
+
 ## Future Commit Template
+
 
 ## Commit: <name>
 

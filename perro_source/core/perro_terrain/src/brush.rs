@@ -1,4 +1,4 @@
-use crate::{ChunkError, InsertVertexResult, TerrainChunk};
+use crate::{ChunkError, InsertVertexResult, TerrainChunk, Triangle};
 use perro_structs::Vector3;
 use std::f32::consts::{FRAC_PI_2, PI};
 
@@ -133,18 +133,27 @@ impl TerrainChunk {
     ) -> Result<Vec<InsertVertexResult>, ChunkError> {
         let offset = feature_offset.abs();
         let top_ring = brush_xz_points(center, size, shape);
-        let mut targets = Vec::with_capacity(top_ring.len() * 2);
-        for p in &top_ring {
-            targets.push(Vector3::new(p.x, target_y, p.z));
-        }
+        let mut base_targets = Vec::with_capacity(top_ring.len());
+        let mut top_targets = Vec::with_capacity(top_ring.len());
+        // Insert base ring first so ground retriangulation anchors to the widened footprint
+        // before top-ring walls are introduced.
         for p in &top_ring {
             let dir = radial_dir_xz(center, *p);
-            let base_x = p.x - dir.x * offset;
-            let base_z = p.z - dir.z * offset;
+            // Base ring expands outward so set-height forms a stable skirt around the top ring.
+            let base_x = p.x + dir.x * offset;
+            let base_z = p.z + dir.z * offset;
             let base_y = self.sample_height_at_xz(p.x, p.z).unwrap_or(0.0);
-            targets.push(Vector3::new(base_x, base_y, base_z));
+            base_targets.push(Vector3::new(base_x, base_y, base_z));
         }
-        self.apply_points_structural(targets)
+        for p in &top_ring {
+            top_targets.push(Vector3::new(p.x, target_y, p.z));
+        }
+        let base_polygon = ordered_polygon_xz(&base_targets, center);
+        let mut out = Vec::with_capacity(base_targets.len() + top_targets.len());
+        out.extend(self.apply_points_structural(base_targets)?);
+        self.retriangulate_polygon_region(&base_polygon);
+        out.extend(self.apply_points_structural_in_region(top_targets, &base_polygon)?);
+        Ok(out)
     }
 
     fn apply_points(&mut self, points: Vec<Vector3>) -> Result<Vec<InsertVertexResult>, ChunkError> {
@@ -172,8 +181,78 @@ impl TerrainChunk {
                 Err(e) => return Err(e),
             }
         }
-        self.reconcile_after_edit();
+        self.reconcile_structural_after_edit();
         Ok(out)
+    }
+
+    fn apply_points_structural_in_region(
+        &mut self,
+        points: Vec<Vector3>,
+        region_polygon_xz: &[(f32, f32)],
+    ) -> Result<Vec<InsertVertexResult>, ChunkError> {
+        let mut out = Vec::with_capacity(points.len());
+        for p in points {
+            match self.insert_vertex_structural_in_region(p, region_polygon_xz) {
+                Ok(r) => out.push(r),
+                Err(ChunkError::PointOutsideMesh { .. }) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        self.reconcile_structural_after_edit();
+        Ok(out)
+    }
+
+    fn retriangulate_polygon_region(&mut self, polygon_xz: &[(f32, f32)]) {
+        if polygon_xz.len() < 3 {
+            return;
+        }
+        let mut remove_ids = Vec::new();
+        for (tri_id, tri) in self.triangles.iter().copied().enumerate() {
+            let a = self.vertices[tri.a].position;
+            let b = self.vertices[tri.b].position;
+            let c = self.vertices[tri.c].position;
+            let centroid = ((a.x + b.x + c.x) / 3.0, (a.z + b.z + c.z) / 3.0);
+            if point_in_polygon_xz(centroid, polygon_xz) {
+                remove_ids.push(tri_id);
+            }
+        }
+        remove_ids.sort_unstable_by(|a, b| b.cmp(a));
+        for tri_id in remove_ids {
+            if tri_id < self.triangles.len() {
+                self.triangles.swap_remove(tri_id);
+            }
+        }
+
+        let mut boundary_ids = Vec::new();
+        for &(x, z) in polygon_xz {
+            if let Some(id) = self.find_vertex_id_at_xz(x, z, 1.0e-3)
+                && boundary_ids.last().copied() != Some(id)
+            {
+                boundary_ids.push(id);
+            }
+        }
+        if boundary_ids.len() < 3 {
+            return;
+        }
+        if boundary_ids.first() == boundary_ids.last() {
+            let _ = boundary_ids.pop();
+        }
+        if boundary_ids.len() < 3 {
+            return;
+        }
+
+        let root = boundary_ids[0];
+        for i in 1..(boundary_ids.len() - 1) {
+            self.triangles
+                .push(Triangle::new(root, boundary_ids[i], boundary_ids[i + 1]));
+        }
+        self.reconcile_structural_after_edit();
+    }
+
+    fn find_vertex_id_at_xz(&self, x: f32, z: f32, eps: f32) -> Option<usize> {
+        self.vertices().iter().enumerate().find_map(|(id, v)| {
+            ((v.position.x - x).abs() <= eps && (v.position.z - z).abs() <= eps).then_some(id)
+        })
     }
 
     fn sample_height_at_xz(&self, x: f32, z: f32) -> Option<f32> {
@@ -287,6 +366,37 @@ fn dedupe_points(points: Vec<Vector3>) -> Vec<Vector3> {
         }
     }
     out
+}
+
+fn ordered_polygon_xz(points: &[Vector3], center: Vector3) -> Vec<(f32, f32)> {
+    let mut out: Vec<(f32, f32)> = points.iter().map(|p| (p.x, p.z)).collect();
+    out.sort_by(|(ax, az), (bx, bz)| {
+        let aa = (az - center.z).atan2(ax - center.x);
+        let ba = (bz - center.z).atan2(bx - center.x);
+        aa.partial_cmp(&ba).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    out
+}
+
+fn point_in_polygon_xz(point: (f32, f32), polygon: &[(f32, f32)]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+    let (px, pz) = point;
+    let mut inside = false;
+    let mut j = polygon.len() - 1;
+    for i in 0..polygon.len() {
+        let (xi, zi) = polygon[i];
+        let (xj, zj) = polygon[j];
+        let dz = zj - zi;
+        let intersects = ((zi > pz) != (zj > pz))
+            && (px < (xj - xi) * (pz - zi) / if dz.abs() <= 1.0e-8 { 1.0e-8 } else { dz } + xi);
+        if intersects {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
 }
 
 fn radial_dir_xz(center: Vector3, point: Vector3) -> Vector3 {

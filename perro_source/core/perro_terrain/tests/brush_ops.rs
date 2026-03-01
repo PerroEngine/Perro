@@ -28,6 +28,24 @@ fn set_height_square_builds_top_and_base_points() {
     let ys: Vec<f32> = chunk.vertices().iter().map(|v| v.position.y).collect();
     assert!(ys.iter().any(|y| *y >= 4.9));
     assert!(ys.iter().any(|y| y.abs() <= 1.0e-4));
+
+    // Base ring should be radially farther from center than top ring.
+    let top_max_radius = chunk
+        .vertices()
+        .iter()
+        .filter(|v| v.position.y >= 4.9 && v.position.x.abs() <= 8.0 && v.position.z.abs() <= 8.0)
+        .map(|v| (v.position.x * v.position.x + v.position.z * v.position.z).sqrt())
+        .fold(0.0_f32, f32::max);
+    let base_max_radius = chunk
+        .vertices()
+        .iter()
+        .filter(|v| v.position.y.abs() <= 1.0e-3 && v.position.x.abs() <= 8.0 && v.position.z.abs() <= 8.0)
+        .map(|v| (v.position.x * v.position.x + v.position.z * v.position.z).sqrt())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        base_max_radius > top_max_radius + 0.05,
+        "expected outward base ring: base radius {base_max_radius:.4} > top radius {top_max_radius:.4}"
+    );
 }
 
 #[test]
