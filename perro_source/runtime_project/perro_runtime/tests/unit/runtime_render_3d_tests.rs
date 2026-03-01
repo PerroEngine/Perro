@@ -10,6 +10,7 @@ use perro_render_bridge::{
 };
 use perro_structs::Vector3;
 use perro_terrain::{BrushOp, BrushShape, ChunkCoord, TerrainData};
+use std::collections::HashSet;
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
@@ -354,10 +355,10 @@ fn terrain_instance_debug_flags_emit_vertex_and_edge_commands_stacked_setheight(
     let base_results = chunk
         .apply_brush_op(
             Vector3::new(0.0, 0.0, 0.0),
-            15.0,
+            5.0,
             BrushShape::Square,
             BrushOp::SetHeight {
-                y: 5.0,
+                y: 10.0,
                 feature_offset: 0.1,
             },
         )
@@ -365,10 +366,10 @@ fn terrain_instance_debug_flags_emit_vertex_and_edge_commands_stacked_setheight(
     let top_results = chunk
         .apply_brush_op(
             Vector3::new(0.0, 0.0, 0.0),
-            5.0,
+            15.0,
             BrushShape::Square,
             BrushOp::SetHeight {
-                y: 10.0,
+                y: 5.0,
                 feature_offset: 0.1,
             },
         )
@@ -390,8 +391,23 @@ fn terrain_instance_debug_flags_emit_vertex_and_edge_commands_stacked_setheight(
         "second set-height structural inserts should not collapse as coplanar"
     );
     assert!(
-        chunk.vertex_count() >= 20,
-        "expected additional detail after stacked set-height operations"
+        chunk.vertex_count() >= 12,
+        "expected non-trivial geometry after stacked set-height operations"
+    );
+    assert!(chunk.validate(1.0e-6).is_ok(), "expected valid topology");
+
+    let referenced: HashSet<usize> = chunk
+        .triangles()
+        .iter()
+        .flat_map(|t| [t.a, t.b, t.c])
+        .collect();
+    assert!(
+        !referenced.is_empty(),
+        "expected terrain chunk to contain referenced topology after stacked ops"
+    );
+    assert!(
+        referenced.len() == chunk.vertex_count(),
+        "expected no orphaned vertices after stacked set-height operations"
     );
 
     runtime.extract_render_3d_commands();
@@ -415,7 +431,7 @@ fn terrain_instance_debug_flags_emit_vertex_and_edge_commands_stacked_setheight(
         })
         .count();
     assert!(
-        point_count >= 20,
+        point_count >= 12,
         "expected terrain debug vertex commands for stacked set-height geometry"
     );
     assert!(line_count > 0, "expected terrain debug edge commands");

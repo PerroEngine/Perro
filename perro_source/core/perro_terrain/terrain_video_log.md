@@ -523,6 +523,16 @@ Track what each terrain commit changed so video explanations are easy later.
 
 - Prove that it properly connects
 
+## Inset Ops
+
+### What was added
+
+- Showing multi op inset - secondary feature for vid
+
+### Why it matters
+
+- Looks cool
+
 ## Future Commit Template
 
 ## Commit: <name>

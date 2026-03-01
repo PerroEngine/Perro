@@ -711,7 +711,7 @@ impl Runtime {
                 15.0,
                 BrushShape::Square,
                 BrushOp::SetHeight {
-                    y: 5.0,
+                    y: -5.0,
                     feature_offset: 0.1,
                 },
             );
@@ -720,7 +720,7 @@ impl Runtime {
                 5.0,
                 BrushShape::Square,
                 BrushOp::SetHeight {
-                    y: 10.0,
+                    y: 5.0,
                     feature_offset: 0.1,
                 },
             );
