@@ -9,7 +9,8 @@ use libloading::Library;
 use perro_ids::{NodeID, TextureID};
 use perro_input::{InputContext, InputSnapshot, KeyCode, MouseButton};
 use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType, SceneNodeData, Spatial};
-use perro_terrain::{ChunkCoord, TerrainData};
+use perro_terrain::{BrushOp, BrushShape, ChunkCoord, TerrainData};
+use perro_structs::Vector3;
 use perro_resource_context::ResourceContext;
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
 use perro_runtime_context::RuntimeContext;
@@ -686,7 +687,18 @@ impl Runtime {
 
     pub(crate) fn default_terrain_data() -> TerrainData {
         let mut terrain = TerrainData::new(64.0);
-        terrain.ensure_chunk(ChunkCoord::new(0, 0));
+        let _ = terrain.ensure_chunk(ChunkCoord::new(0, 0));
+        if let Some(chunk) = terrain.chunk_mut(ChunkCoord::new(0, 0)) {
+            let _ = chunk.apply_brush_op(
+                Vector3::new(0.0, 0.0, 0.0),
+                10.0,
+                BrushShape::Square,
+                BrushOp::SetHeight {
+                    y: 5.0,
+                    feature_offset: 0.1,
+                },
+            );
+        }
         terrain
     }
 

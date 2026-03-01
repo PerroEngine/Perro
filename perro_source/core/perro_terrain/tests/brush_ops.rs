@@ -18,6 +18,10 @@ fn set_height_square_builds_top_and_base_points() {
         .expect("set-height square should succeed");
 
     assert_eq!(results.len(), 8);
+    assert!(
+        results.iter().all(|r| !r.removed_as_coplanar),
+        "set-height structural inserts should not collapse as coplanar"
+    );
     assert_eq!(chunk.vertex_count(), 12);
     assert!(chunk.triangle_count() >= 10);
 

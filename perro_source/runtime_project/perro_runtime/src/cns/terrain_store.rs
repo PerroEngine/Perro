@@ -40,6 +40,14 @@ impl TerrainStore {
         self.slots[id.index() as usize].as_ref()
     }
 
+    #[cfg(test)]
+    pub(crate) fn get_mut(&mut self, id: TerrainID) -> Option<&mut TerrainData> {
+        if !self.is_valid(id) {
+            return None;
+        }
+        self.slots[id.index() as usize].as_mut()
+    }
+
     pub(crate) fn remove(&mut self, id: TerrainID) -> Option<TerrainData> {
         if !self.is_valid(id) {
             return None;

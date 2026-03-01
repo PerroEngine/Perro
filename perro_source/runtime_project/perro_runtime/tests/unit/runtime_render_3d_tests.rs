@@ -8,6 +8,8 @@ use perro_nodes::{
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
 };
+use perro_structs::Vector3;
+use perro_terrain::{BrushOp, BrushShape, ChunkCoord, TerrainData};
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
@@ -251,9 +253,48 @@ fn terrain_instance_debug_flags_emit_vertex_and_edge_commands() {
     let mut terrain = TerrainInstance3D::new();
     terrain.show_debug_vertices = true;
     terrain.show_debug_edges = true;
-    runtime
+    let node = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::TerrainInstance3D(terrain)));
+
+    assert!(runtime.ensure_terrain_instance_data(node));
+    let terrain_id = runtime
+        .nodes
+        .get(node)
+        .and_then(|node| match &node.data {
+            SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
+            _ => None,
+        })
+        .expect("expected terrain node");
+    let terrain_data = runtime
+        .terrain_store
+        .get_mut(terrain_id)
+        .expect("expected terrain data");
+    *terrain_data = TerrainData::new(64.0);
+    let _ = terrain_data.ensure_chunk(ChunkCoord::new(0, 0));
+    let chunk = terrain_data
+        .chunk_mut(ChunkCoord::new(0, 0))
+        .expect("expected chunk (0,0) to exist");
+    let results = chunk
+        .apply_brush_op(
+            Vector3::new(0.0, 0.0, 0.0),
+            10.0,
+            BrushShape::Square,
+            BrushOp::SetHeight {
+                y: 5.0,
+                feature_offset: 0.1,
+            },
+        )
+        .expect("set-height brush op should succeed");
+    assert_eq!(
+        results.len(), 8,
+        "expected eight structural points from set-height square feature"
+    );
+    assert!(
+        results.iter().all(|r| !r.removed_as_coplanar),
+        "set-height structural inserts should not collapse as coplanar"
+    );
+    assert_eq!(chunk.vertex_count(), 12);
 
     runtime.extract_render_3d_commands();
     let commands = collect_commands(&mut runtime);
@@ -275,7 +316,10 @@ fn terrain_instance_debug_flags_emit_vertex_and_edge_commands() {
             )
         })
         .count();
-    assert!(point_count > 0, "expected terrain debug vertex commands");
+    assert!(
+        point_count >= 12,
+        "expected terrain debug vertex commands for expanded set-height geometry"
+    );
     assert!(line_count > 0, "expected terrain debug edge commands");
 }
 

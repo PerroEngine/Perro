@@ -384,6 +384,27 @@ Track what each terrain commit changed so video explanations are easy later.
 - Re-ran `terrain_instance_debug_flags_emit_vertex_and_edge_commands` after the offset correction.
 - Manual expectation: debug overlay aligns with terrain at origin with no +32 shift.
 
+## Commit: Runtime Default Terrain SetHeight Bootstrap
+
+### What was added
+
+- Updated runtime default terrain creation to apply an immediate brush op on chunk `(0,0)`:
+  - `BrushShape::Square`
+  - center `(0,0)` in chunk-local space
+  - size `10m`
+  - `BrushOp::SetHeight { y: 5.0, feature_offset: 0.1 }`
+
+### Why it matters
+
+- New terrain instances now start with visible non-flat topology for inspection.
+- Makes it easy to verify final triangulation behavior in live runtime without needing a test harness first.
+- Confirms the set-height structural path is exercised in real scene startup flow.
+
+### Validation added
+
+- Runtime tests pass after bootstrap change (`cargo test -p perro_runtime`).
+- Existing debug test path still verifies set-height feature behavior and debug draw output.
+
 ## Future Commit Template
 
 ## Commit: <name>
