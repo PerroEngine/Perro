@@ -252,6 +252,22 @@ impl PerroGraphics {
                     } => {
                         self.renderer_3d.queue_terrain(node, model);
                     }
+                    Command3D::DrawDebugPoint3D {
+                        node,
+                        position,
+                        size,
+                    } => {
+                        self.renderer_3d.queue_debug_point(node, position, size);
+                    }
+                    Command3D::DrawDebugLine3D {
+                        node,
+                        start,
+                        end,
+                        thickness,
+                    } => {
+                        self.renderer_3d
+                            .queue_debug_line(node, start, end, thickness);
+                    }
                     Command3D::SetCamera { camera } => {
                         self.renderer_3d.set_camera(camera);
                     }
@@ -352,7 +368,7 @@ impl GraphicsBackend for PerroGraphics {
         self.particles_3d.prepare_frame();
         self.retained_draws_cache.clear();
         self.retained_draws_cache
-            .extend(self.renderer_3d.retained_draws());
+            .extend(self.renderer_3d.all_draws());
         self.retained_draws_cache
             .sort_unstable_by_key(|draw| draw.node.as_u64());
         self.retained_point_particles_cache.clear();

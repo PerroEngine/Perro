@@ -246,6 +246,40 @@ fn terrain_instance_uses_builtin_terrain64_mesh_by_default() {
 }
 
 #[test]
+fn terrain_instance_debug_flags_emit_vertex_and_edge_commands() {
+    let mut runtime = Runtime::new();
+    let mut terrain = TerrainInstance3D::new();
+    terrain.show_debug_vertices = true;
+    terrain.show_debug_edges = true;
+    runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::TerrainInstance3D(terrain)));
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    let point_count = commands
+        .iter()
+        .filter(|command| {
+            matches!(
+                command,
+                RenderCommand::ThreeD(Command3D::DrawDebugPoint3D { .. })
+            )
+        })
+        .count();
+    let line_count = commands
+        .iter()
+        .filter(|command| {
+            matches!(
+                command,
+                RenderCommand::ThreeD(Command3D::DrawDebugLine3D { .. })
+            )
+        })
+        .count();
+    assert!(point_count > 0, "expected terrain debug vertex commands");
+    assert!(line_count > 0, "expected terrain debug edge commands");
+}
+
+#[test]
 fn active_camera_3d_emits_set_camera_command() {
     let mut runtime = Runtime::new();
     let mut camera = Camera3D::new();

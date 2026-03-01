@@ -616,9 +616,24 @@ fn apply_node_3d_fields(node: &mut Node3D, fields: &[(String, RuntimeValue)]) {
 fn apply_mesh_instance_3d_fields(_node: &mut MeshInstance3D, _fields: &[(String, RuntimeValue)]) {}
 
 fn apply_terrain_instance_3d_fields(
-    _node: &mut TerrainInstance3D,
-    _fields: &[(String, RuntimeValue)],
+    node: &mut TerrainInstance3D,
+    fields: &[(String, RuntimeValue)],
 ) {
+    for (name, value) in fields {
+        match name.as_str() {
+            "show_debug_vertices" => {
+                if let Some(v) = as_bool(value) {
+                    node.show_debug_vertices = v;
+                }
+            }
+            "show_debug_edges" => {
+                if let Some(v) = as_bool(value) {
+                    node.show_debug_edges = v;
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn apply_camera_3d_fields(node: &mut Camera3D, fields: &[(String, RuntimeValue)]) {
@@ -969,9 +984,24 @@ fn apply_mesh_instance_3d_fields_static(
 }
 
 fn apply_terrain_instance_3d_fields_static(
-    _node: &mut TerrainInstance3D,
-    _fields: &[(&str, StaticSceneValue)],
+    node: &mut TerrainInstance3D,
+    fields: &[(&str, StaticSceneValue)],
 ) {
+    for (name, value) in fields {
+        match *name {
+            "show_debug_vertices" => {
+                if let Some(v) = as_bool_static(value) {
+                    node.show_debug_vertices = v;
+                }
+            }
+            "show_debug_edges" => {
+                if let Some(v) = as_bool_static(value) {
+                    node.show_debug_edges = v;
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn apply_camera_3d_fields_static(node: &mut Camera3D, fields: &[(&str, StaticSceneValue)]) {

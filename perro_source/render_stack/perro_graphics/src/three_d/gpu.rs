@@ -979,12 +979,36 @@ impl Gpu3D {
                         .unwrap_or_else(|| default_mesh.clone()),
                     true,
                 ),
+                Draw3DKind::DebugPointCube => (
+                    self.resolve_builtin_mesh_asset("__cube__")
+                        .unwrap_or_else(|| default_mesh.clone()),
+                    false,
+                ),
+                Draw3DKind::DebugEdgeCylinder => (
+                    self.resolve_builtin_mesh_asset("__cylinder__")
+                        .unwrap_or_else(|| default_mesh.clone()),
+                    false,
+                ),
             };
             let material = match draw.kind {
                 Draw3DKind::Terrain64 => Material3D {
                     base_color_factor: [0.32, 0.56, 0.29, 1.0],
                     roughness_factor: 0.92,
                     metallic_factor: 0.0,
+                    ..Material3D::default()
+                },
+                Draw3DKind::DebugPointCube => Material3D {
+                    base_color_factor: [1.0, 0.92, 0.2, 1.0],
+                    roughness_factor: 0.35,
+                    metallic_factor: 0.0,
+                    emissive_factor: [0.35, 0.3, 0.06],
+                    ..Material3D::default()
+                },
+                Draw3DKind::DebugEdgeCylinder => Material3D {
+                    base_color_factor: [0.15, 0.95, 0.95, 1.0],
+                    roughness_factor: 0.6,
+                    metallic_factor: 0.0,
+                    emissive_factor: [0.06, 0.3, 0.3],
                     ..Material3D::default()
                 },
                 Draw3DKind::Mesh(_) => draw

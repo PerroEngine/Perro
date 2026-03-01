@@ -19,6 +19,8 @@ impl DerefMut for TerrainInstance3D {
 pub struct TerrainInstance3D {
     pub base: Node3D,
     pub terrain: TerrainID,
+    pub show_debug_vertices: bool,
+    pub show_debug_edges: bool,
 }
 
 impl TerrainInstance3D {
@@ -26,6 +28,8 @@ impl TerrainInstance3D {
         Self {
             base: Node3D::new(),
             terrain: TerrainID::nil(),
+            show_debug_vertices: true,
+            show_debug_edges: true,
         }
     }
 }

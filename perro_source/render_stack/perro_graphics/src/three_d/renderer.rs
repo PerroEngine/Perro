@@ -1,4 +1,5 @@
 use crate::resources::ResourceStore;
+use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, PointLight3DState, RayLight3DState,
@@ -10,6 +11,8 @@ use std::collections::HashMap;
 pub enum Draw3DKind {
     Mesh(MeshID),
     Terrain64,
+    DebugPointCube,
+    DebugEdgeCylinder,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -39,6 +42,9 @@ pub const MAX_SPOT_LIGHTS: usize = 8;
 
 pub struct Renderer3D {
     queued_draws: Vec<Draw3DInstance>,
+    queued_debug_points: Vec<QueuedDebugPoint3D>,
+    queued_debug_lines: Vec<QueuedDebugLine3D>,
+    frame_debug_draws: Vec<Draw3DInstance>,
     retained_draws: HashMap<NodeID, Draw3DInstance>,
     ambient_lights: HashMap<NodeID, AmbientLight3DState>,
     ray_lights: HashMap<NodeID, RayLight3DState>,
@@ -80,6 +86,29 @@ impl Renderer3D {
         });
     }
 
+    pub fn queue_debug_point(&mut self, node: NodeID, position: [f32; 3], size: f32) {
+        self.queued_debug_points.push(QueuedDebugPoint3D {
+            node,
+            position,
+            size,
+        });
+    }
+
+    pub fn queue_debug_line(
+        &mut self,
+        node: NodeID,
+        start: [f32; 3],
+        end: [f32; 3],
+        thickness: f32,
+    ) {
+        self.queued_debug_lines.push(QueuedDebugLine3D {
+            node,
+            start,
+            end,
+            thickness,
+        });
+    }
+
     pub fn remove_node(&mut self, node: NodeID) {
         self.retained_draws.remove(&node);
         self.ambient_lights.remove(&node);
@@ -109,15 +138,17 @@ impl Renderer3D {
         resources: &ResourceStore,
     ) -> (Camera3DState, Renderer3DStats, Lighting3DState) {
         let mut stats = Renderer3DStats::default();
+        self.frame_debug_draws.clear();
+
         for draw in self.queued_draws.drain(..) {
             let material_ready = draw.material.map(|id| resources.has_material(id)).unwrap_or(true);
             let mesh_ready = match draw.kind {
                 Draw3DKind::Mesh(mesh) => resources.has_mesh(mesh),
-                Draw3DKind::Terrain64 => true,
+                Draw3DKind::Terrain64 | Draw3DKind::DebugPointCube | Draw3DKind::DebugEdgeCylinder => true,
             };
             let draw_ready = match draw.kind {
                 Draw3DKind::Mesh(_) => mesh_ready && material_ready,
-                Draw3DKind::Terrain64 => material_ready,
+                Draw3DKind::Terrain64 | Draw3DKind::DebugPointCube | Draw3DKind::DebugEdgeCylinder => material_ready,
             };
             if draw_ready {
                 self.retained_draws.insert(draw.node, draw);
@@ -135,6 +166,25 @@ impl Renderer3D {
                     }
                 }
                 stats.rejected_draws = stats.rejected_draws.saturating_add(1);
+            }
+        }
+
+        for point in self.queued_debug_points.drain(..) {
+            self.frame_debug_draws.push(Draw3DInstance {
+                node: point.node,
+                kind: Draw3DKind::DebugPointCube,
+                material: None,
+                model: debug_point_model(point.position, point.size).to_cols_array_2d(),
+            });
+        }
+        for line in self.queued_debug_lines.drain(..) {
+            if let Some(model) = debug_line_model(line.start, line.end, line.thickness) {
+                self.frame_debug_draws.push(Draw3DInstance {
+                    node: line.node,
+                    kind: Draw3DKind::DebugEdgeCylinder,
+                    material: None,
+                    model: model.to_cols_array_2d(),
+                });
             }
         }
 
@@ -171,6 +221,13 @@ impl Renderer3D {
         self.retained_draws.values().copied()
     }
 
+    pub fn all_draws(&self) -> impl Iterator<Item = Draw3DInstance> + '_ {
+        self.retained_draws
+            .values()
+            .copied()
+            .chain(self.frame_debug_draws.iter().copied())
+    }
+
     pub fn camera(&self) -> Camera3DState {
         self.camera
     }
@@ -180,6 +237,9 @@ impl Default for Renderer3D {
     fn default() -> Self {
         Self {
             queued_draws: Vec::new(),
+            queued_debug_points: Vec::new(),
+            queued_debug_lines: Vec::new(),
+            frame_debug_draws: Vec::new(),
             retained_draws: HashMap::new(),
             ambient_lights: HashMap::new(),
             ray_lights: HashMap::new(),
@@ -197,4 +257,41 @@ impl Default for Renderer3D {
             },
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct QueuedDebugPoint3D {
+    node: NodeID,
+    position: [f32; 3],
+    size: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct QueuedDebugLine3D {
+    node: NodeID,
+    start: [f32; 3],
+    end: [f32; 3],
+    thickness: f32,
+}
+
+fn debug_point_model(position: [f32; 3], size: f32) -> Mat4 {
+    let scale = Vec3::splat(size.max(0.001));
+    Mat4::from_scale_rotation_translation(scale, Quat::IDENTITY, Vec3::from_array(position))
+}
+
+fn debug_line_model(start: [f32; 3], end: [f32; 3], thickness: f32) -> Option<Mat4> {
+    let a = Vec3::from_array(start);
+    let b = Vec3::from_array(end);
+    let delta = b - a;
+    let len = delta.length();
+    if !len.is_finite() || len <= 1.0e-5 {
+        return None;
+    }
+    let dir = delta / len;
+    let up = Vec3::Y;
+    let rot = Quat::from_rotation_arc(up, dir);
+    let center = (a + b) * 0.5;
+    let radius = thickness.max(0.001);
+    let scale = Vec3::new(radius, len, radius);
+    Some(Mat4::from_scale_rotation_translation(scale, rot, center))
 }

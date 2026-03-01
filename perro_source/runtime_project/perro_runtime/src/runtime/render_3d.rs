@@ -1,5 +1,6 @@
 use super::Runtime;
 use crate::material_schema;
+use glam::{Mat4, Vec3};
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_nodes::{
     CameraProjection, SceneNodeData,
@@ -12,6 +13,7 @@ use perro_render_bridge::{
     ParticleProfile3D, PointParticles3DState,
     RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
 };
+use perro_terrain::{ChunkCoord, TerrainData};
 use std::borrow::Cow;
 
 impl Runtime {
@@ -208,20 +210,48 @@ impl Runtime {
                 }
             }
             let terrain_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::TerrainInstance3D(terrain) => {
-                    Some(terrain.transform.to_mat4().to_cols_array_2d())
-                }
+                SceneNodeData::TerrainInstance3D(terrain) => Some((
+                    terrain.transform.to_mat4(),
+                    terrain.show_debug_vertices,
+                    terrain.show_debug_edges,
+                    terrain.terrain,
+                )),
                 _ => None,
             });
-            if let Some(model) = terrain_data {
+            if let Some((world_from_terrain, show_debug_vertices, show_debug_edges, terrain_id)) =
+                terrain_data
+            {
                 if effective_visible {
                     if !self.ensure_terrain_instance_data(node) {
                         continue;
                     }
                     self.queue_render_command(RenderCommand::ThreeD(Command3D::DrawTerrain {
                         node,
-                        model,
+                        model: world_from_terrain.to_cols_array_2d(),
                     }));
+                    let active_terrain_id = if terrain_id.is_nil() {
+                        self.nodes.get(node).and_then(|scene_node| match &scene_node.data {
+                            SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
+                            _ => None,
+                        })
+                    } else {
+                        Some(terrain_id)
+                    };
+                    if (show_debug_vertices || show_debug_edges)
+                        && let Some(id) = active_terrain_id
+                        && let Some(data) = self.terrain_store.get(id)
+                    {
+                        let debug_commands = Self::build_terrain_debug_draws(
+                            node,
+                            data,
+                            world_from_terrain,
+                            show_debug_vertices,
+                            show_debug_edges,
+                        );
+                        for command in debug_commands {
+                            self.queue_render_command(command);
+                        }
+                    }
                     visible_now.insert(node);
                 }
             }
@@ -299,6 +329,57 @@ impl Runtime {
         while let Some(node) = self.render_3d.removed_nodes.pop() {
             self.queue_render_command(RenderCommand::ThreeD(Command3D::RemoveNode { node }));
         }
+    }
+
+    fn build_terrain_debug_draws(
+        node: NodeID,
+        terrain: &TerrainData,
+        world_from_terrain: Mat4,
+        show_vertices: bool,
+        show_edges: bool,
+    ) -> Vec<RenderCommand> {
+        let mut out = Vec::new();
+        let point_size = 0.16;
+        let edge_thickness = 0.035;
+        for (coord, chunk) in terrain.chunks() {
+            let vertices = chunk.vertices();
+            if show_vertices {
+                for vertex in vertices {
+                    let world = world_from_terrain
+                        .transform_point3(terrain_chunk_local_to_world(vertex.position, coord, terrain));
+                    out.push(RenderCommand::ThreeD(Command3D::DrawDebugPoint3D {
+                        node,
+                        position: world.to_array(),
+                        size: point_size,
+                    }));
+                }
+            }
+            if show_edges {
+                let mut edges = ahash::AHashSet::<(usize, usize)>::new();
+                for tri in chunk.triangles() {
+                    let pairs = [(tri.a, tri.b), (tri.b, tri.c), (tri.c, tri.a)];
+                    for (a, b) in pairs {
+                        let key = if a <= b { (a, b) } else { (b, a) };
+                        if !edges.insert(key) {
+                            continue;
+                        }
+                        let start = world_from_terrain.transform_point3(
+                            terrain_chunk_local_to_world(vertices[a].position, coord, terrain),
+                        );
+                        let end = world_from_terrain.transform_point3(
+                            terrain_chunk_local_to_world(vertices[b].position, coord, terrain),
+                        );
+                        out.push(RenderCommand::ThreeD(Command3D::DrawDebugLine3D {
+                            node,
+                            start: start.to_array(),
+                            end: end.to_array(),
+                            thickness: edge_thickness,
+                        }));
+                    }
+                }
+            }
+        }
+        out
     }
 
     fn resolve_render_mesh_assets(
@@ -399,6 +480,13 @@ impl Runtime {
         Some((mesh, material))
     }
 
+}
+
+fn terrain_chunk_local_to_world(local: perro_structs::Vector3, coord: ChunkCoord, terrain: &TerrainData) -> Vec3 {
+    let size = terrain.chunk_size_meters();
+    let center_x = coord.x as f32 * size + size * 0.5;
+    let center_z = coord.z as f32 * size + size * 0.5;
+    Vec3::new(local.x + center_x, local.y, local.z + center_z)
 }
 
 fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {

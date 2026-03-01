@@ -348,6 +348,17 @@ pub enum Command3D {
         node: NodeID,
         model: [[f32; 4]; 4],
     },
+    DrawDebugPoint3D {
+        node: NodeID,
+        position: [f32; 3],
+        size: f32,
+    },
+    DrawDebugLine3D {
+        node: NodeID,
+        start: [f32; 3],
+        end: [f32; 3],
+        thickness: f32,
+    },
     SetCamera {
         camera: Camera3DState,
     },

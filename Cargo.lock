@@ -1733,6 +1733,7 @@ name = "perro_runtime"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "glam",
  "libloading",
  "perro_ids",
  "perro_input",

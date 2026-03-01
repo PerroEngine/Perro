@@ -53,6 +53,16 @@ impl TerrainData {
         self.cells.get_mut(idx)?.as_mut()
     }
 
+    pub fn chunks(&self) -> impl Iterator<Item = (ChunkCoord, &TerrainChunk)> + '_ {
+        self.cells.iter().enumerate().filter_map(|(idx, cell)| {
+            let chunk = cell.as_ref()?;
+            let x = idx % self.width.max(1);
+            let z = idx / self.width.max(1);
+            let coord = ChunkCoord::new(self.origin_x + x as i32, self.origin_z + z as i32);
+            Some((coord, chunk))
+        })
+    }
+
     pub fn ensure_chunk(&mut self, coord: ChunkCoord) -> &mut TerrainChunk {
         self.ensure_bounds_contains(coord);
         let idx = self

@@ -337,6 +337,35 @@ Track what each terrain commit changed so video explanations are easy later.
 - `terrain_store_reuses_slot_with_bumped_generation` verifies reused index + new generation.
 - `terrain_store_clear_invalidates_existing_ids` verifies old IDs become invalid after clear.
 
+## Commit: Terrain Node Debug Vertices + Edges
+
+### What was added
+
+- Added per-node terrain debug flags:
+  - `show_debug_vertices`
+  - `show_debug_edges`
+- Added runtime debug draw emission for terrain geometry:
+  - vertex markers (small cubes)
+  - edge markers (thin cylinders)
+- Added render bridge/debug command support for 3D point+line debug draws.
+- Added scene loader parsing for terrain debug flags (runtime + static scene paths).
+
+### Why it matters
+
+- Terrain visualization can now be toggled per terrain node without global debug mode.
+- You can inspect triangulation quality directly in-scene (vertex density + edge flow).
+- Helps catch seam, over-tessellation, and topology artifacts quickly during terrain work.
+- Offset explanation:
+  - chunk vertices start in chunk-local space (centered around each chunk center),
+  - then convert to terrain/world space using chunk coordinate + chunk size,
+  - then apply the terrain node transform matrix.
+  - This layered offset keeps debug geometry exactly aligned with rendered terrain, even when the terrain node is moved/rotated/scaled.
+
+### Validation added
+
+- Added runtime test `terrain_instance_debug_flags_emit_vertex_and_edge_commands`.
+- Full runtime + graphics test suites pass after adding debug draw command paths.
+
 ## Future Commit Template
 
 ## Commit: <name>
