@@ -366,6 +366,24 @@ Track what each terrain commit changed so video explanations are easy later.
 - Added runtime test `terrain_instance_debug_flags_emit_vertex_and_edge_commands`.
 - Full runtime + graphics test suites pass after adding debug draw command paths.
 
+## Commit: Terrain Debug Overlay Offset Fix
+
+### What was added
+
+- Corrected terrain debug world-position conversion for chunk centers.
+- Removed the half-chunk center bias (`+ chunk_size * 0.5`) in debug overlay placement.
+
+### Why it matters
+
+- The terrain system treats chunk `(0,0)` as centered at world `(0,0)`.
+- Debug vertices/edges were effectively treating `(0,0)` like a corner-origin path, causing a visible half-chunk offset (`32m` on `64m` chunks).
+- Overlay geometry now lines up with the actual rendered terrain surface and edit locations.
+
+### Validation added
+
+- Re-ran `terrain_instance_debug_flags_emit_vertex_and_edge_commands` after the offset correction.
+- Manual expectation: debug overlay aligns with terrain at origin with no +32 shift.
+
 ## Future Commit Template
 
 ## Commit: <name>

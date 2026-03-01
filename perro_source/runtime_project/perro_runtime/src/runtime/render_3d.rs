@@ -339,43 +339,62 @@ impl Runtime {
         show_edges: bool,
     ) -> Vec<RenderCommand> {
         let mut out = Vec::new();
-        let point_size = 0.16;
-        let edge_thickness = 0.035;
         for (coord, chunk) in terrain.chunks() {
             let vertices = chunk.vertices();
+            let world_vertices: Vec<Vec3> = vertices
+                .iter()
+                .map(|vertex| {
+                    world_from_terrain.transform_point3(terrain_chunk_local_to_world(
+                        vertex.position,
+                        coord,
+                        terrain,
+                    ))
+                })
+                .collect();
+
+            let mut edge_pairs = Vec::<(usize, usize, f32)>::new();
+            let mut unique_edges = ahash::AHashSet::<(usize, usize)>::new();
+            let mut vertex_length_sum = vec![0.0f32; vertices.len()];
+            let mut vertex_length_count = vec![0u32; vertices.len()];
+            for tri in chunk.triangles() {
+                let pairs = [(tri.a, tri.b), (tri.b, tri.c), (tri.c, tri.a)];
+                for (a, b) in pairs {
+                    let key = if a <= b { (a, b) } else { (b, a) };
+                    if !unique_edges.insert(key) {
+                        continue;
+                    }
+                    let len = (world_vertices[a] - world_vertices[b]).length();
+                    edge_pairs.push((a, b, len));
+                    vertex_length_sum[a] += len;
+                    vertex_length_sum[b] += len;
+                    vertex_length_count[a] = vertex_length_count[a].saturating_add(1);
+                    vertex_length_count[b] = vertex_length_count[b].saturating_add(1);
+                }
+            }
+
             if show_vertices {
-                for vertex in vertices {
-                    let world = world_from_terrain
-                        .transform_point3(terrain_chunk_local_to_world(vertex.position, coord, terrain));
+                for (i, world) in world_vertices.iter().enumerate() {
+                    let avg_edge_len = if vertex_length_count[i] > 0 {
+                        vertex_length_sum[i] / vertex_length_count[i] as f32
+                    } else {
+                        terrain.chunk_size_meters() * 0.1
+                    };
                     out.push(RenderCommand::ThreeD(Command3D::DrawDebugPoint3D {
                         node,
                         position: world.to_array(),
-                        size: point_size,
+                        size: debug_vertex_size(avg_edge_len),
                     }));
                 }
             }
+
             if show_edges {
-                let mut edges = ahash::AHashSet::<(usize, usize)>::new();
-                for tri in chunk.triangles() {
-                    let pairs = [(tri.a, tri.b), (tri.b, tri.c), (tri.c, tri.a)];
-                    for (a, b) in pairs {
-                        let key = if a <= b { (a, b) } else { (b, a) };
-                        if !edges.insert(key) {
-                            continue;
-                        }
-                        let start = world_from_terrain.transform_point3(
-                            terrain_chunk_local_to_world(vertices[a].position, coord, terrain),
-                        );
-                        let end = world_from_terrain.transform_point3(
-                            terrain_chunk_local_to_world(vertices[b].position, coord, terrain),
-                        );
-                        out.push(RenderCommand::ThreeD(Command3D::DrawDebugLine3D {
-                            node,
-                            start: start.to_array(),
-                            end: end.to_array(),
-                            thickness: edge_thickness,
-                        }));
-                    }
+                for (a, b, len) in edge_pairs {
+                    out.push(RenderCommand::ThreeD(Command3D::DrawDebugLine3D {
+                        node,
+                        start: world_vertices[a].to_array(),
+                        end: world_vertices[b].to_array(),
+                        thickness: debug_edge_thickness(len),
+                    }));
                 }
             }
         }
@@ -484,9 +503,18 @@ impl Runtime {
 
 fn terrain_chunk_local_to_world(local: perro_structs::Vector3, coord: ChunkCoord, terrain: &TerrainData) -> Vec3 {
     let size = terrain.chunk_size_meters();
-    let center_x = coord.x as f32 * size + size * 0.5;
-    let center_z = coord.z as f32 * size + size * 0.5;
+    // Debug overlays should align with terrain draw origin where chunk (0,0) is centered at (0,0).
+    let center_x = coord.x as f32 * size;
+    let center_z = coord.z as f32 * size;
     Vec3::new(local.x + center_x, local.y, local.z + center_z)
+}
+
+fn debug_edge_thickness(edge_len: f32) -> f32 {
+    (0.02 + edge_len * 0.0035).clamp(0.03, 0.22)
+}
+
+fn debug_vertex_size(avg_edge_len: f32) -> f32 {
+    (0.08 + avg_edge_len * 0.009).clamp(0.12, 0.75)
 }
 
 fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {
