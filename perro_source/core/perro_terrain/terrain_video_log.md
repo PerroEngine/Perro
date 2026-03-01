@@ -499,6 +499,20 @@ Track what each terrain commit changed so video explanations are easy later.
 - Full suites pass:
   - `cargo test -p perro_graphics -p perro_runtime --tests`
 
+## Commit: Fixed Flipped Normals
+
+### What was added
+
+- Flipped Normals because they were inverted
+
+### Why it matters
+
+- Proper visuals
+
+### Validation added
+
+- None
+
 ## Future Commit Template
 
 ## Commit: <name>

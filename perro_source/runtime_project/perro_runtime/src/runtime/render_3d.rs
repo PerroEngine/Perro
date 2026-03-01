@@ -668,6 +668,7 @@ fn terrain_chunk_to_runtime_mesh(chunk: &TerrainChunk) -> Option<RuntimeMeshData
     }
 
     let mut normals = vec![Vec3::ZERO; vertices.len()];
+    let mut indices = Vec::with_capacity(triangles.len() * 3);
     for tri in triangles {
         if tri.a >= vertices.len() || tri.b >= vertices.len() || tri.c >= vertices.len() {
             return None;
@@ -687,12 +688,24 @@ fn terrain_chunk_to_runtime_mesh(chunk: &TerrainChunk) -> Option<RuntimeMeshData
             vertices[tri.c].position.y,
             vertices[tri.c].position.z,
         );
-        let n = (b - a).cross(c - a);
-        if n.length_squared() > 1.0e-10 {
+        let mut ib = tri.b as u32;
+        let mut ic = tri.c as u32;
+        let mut n = (b - a).cross(c - a);
+
+        // Terrain is top-visible; enforce non-negative Y-facing winding.
+        if n.y < 0.0 {
+            std::mem::swap(&mut ib, &mut ic);
+            n = -n;
+        }
+
+        if n.length_squared() > 1.0e-10 && n.is_finite() {
             normals[tri.a] += n;
             normals[tri.b] += n;
             normals[tri.c] += n;
         }
+        indices.push(tri.a as u32);
+        indices.push(ib);
+        indices.push(ic);
     }
 
     let out_vertices: Vec<RuntimeMeshVertex> = vertices
@@ -710,13 +723,6 @@ fn terrain_chunk_to_runtime_mesh(chunk: &TerrainChunk) -> Option<RuntimeMeshData
             }
         })
         .collect();
-
-    let mut indices = Vec::with_capacity(triangles.len() * 3);
-    for tri in triangles {
-        indices.push(tri.a as u32);
-        indices.push(tri.b as u32);
-        indices.push(tri.c as u32);
-    }
 
     Some(RuntimeMeshData {
         vertices: out_vertices,
