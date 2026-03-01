@@ -132,7 +132,7 @@ impl TerrainChunk {
         feature_offset: f32,
     ) -> Result<Vec<InsertVertexResult>, ChunkError> {
         let offset = feature_offset.abs();
-        let top_ring = brush_xz_points(center, size, shape);
+        let top_ring = brush_xz_points_feature(center, size, shape);
         let mut base_targets = Vec::with_capacity(top_ring.len());
         let mut top_targets = Vec::with_capacity(top_ring.len());
         // Insert base ring first so ground retriangulation anchors to the widened footprint
@@ -152,7 +152,8 @@ impl TerrainChunk {
         let mut out = Vec::with_capacity(base_targets.len() + top_targets.len());
         out.extend(self.apply_points_structural(base_targets)?);
         self.retriangulate_polygon_region(&base_polygon);
-        out.extend(self.apply_points_structural_in_region(top_targets, &base_polygon)?);
+        out.extend(self.apply_points_structural(top_targets)?);
+        self.enforce_top_cap_quad(&top_ring, center, target_y);
         Ok(out)
     }
 
@@ -255,6 +256,70 @@ impl TerrainChunk {
         })
     }
 
+    fn enforce_top_cap_quad(&mut self, top_ring: &[Vector3], center: Vector3, target_y: f32) {
+        let ordered_top = ordered_polygon_xz(top_ring, center);
+        let mut top_ids = Vec::with_capacity(ordered_top.len());
+        for (x, z) in ordered_top {
+            let Some(id) = self.find_vertex_id_near_xyz(x, z, target_y, 0.25, 1.0e-3) else {
+                return;
+            };
+            if top_ids.contains(&id) {
+                return;
+            }
+            top_ids.push(id);
+        }
+        if top_ids.len() != 4 {
+            return;
+        }
+
+        let top_set: std::collections::HashSet<usize> = top_ids.iter().copied().collect();
+        let mut remove_ids = Vec::new();
+        for (tri_id, tri) in self.triangles.iter().copied().enumerate() {
+            if top_set.contains(&tri.a) && top_set.contains(&tri.b) && top_set.contains(&tri.c) {
+                remove_ids.push(tri_id);
+            }
+        }
+        remove_ids.sort_unstable_by(|a, b| b.cmp(a));
+        for tri_id in remove_ids {
+            if tri_id < self.triangles.len() {
+                self.triangles.swap_remove(tri_id);
+            }
+        }
+
+        let mut t0 = Triangle::new(top_ids[0], top_ids[1], top_ids[2]);
+        orient_triangle_upward(&mut t0, &self.vertices);
+        let mut t1 = Triangle::new(top_ids[0], top_ids[2], top_ids[3]);
+        orient_triangle_upward(&mut t1, &self.vertices);
+        self.triangles.push(t0);
+        self.triangles.push(t1);
+        self.reconcile_structural_after_edit();
+    }
+
+    fn find_vertex_id_near_xyz(
+        &self,
+        x: f32,
+        z: f32,
+        y: f32,
+        y_eps: f32,
+        xz_eps: f32,
+    ) -> Option<usize> {
+        self.vertices()
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| {
+                (v.position.x - x).abs() <= xz_eps
+                    && (v.position.z - z).abs() <= xz_eps
+                    && (v.position.y - y).abs() <= y_eps
+            })
+            .min_by(|(_, a), (_, b)| {
+                (a.position.y - y)
+                    .abs()
+                    .partial_cmp(&(b.position.y - y).abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(id, _)| id)
+    }
+
     fn sample_height_at_xz(&self, x: f32, z: f32) -> Option<f32> {
         for tri in &self.triangles {
             let a = self.vertices[tri.a].position;
@@ -279,6 +344,16 @@ fn brush_xz_points(center: Vector3, size: f32, shape: BrushShape) -> Vec<Vector3
     }
 }
 
+fn brush_xz_points_feature(center: Vector3, size: f32, shape: BrushShape) -> Vec<Vector3> {
+    match shape {
+        // Feature construction should be centered on brush center (not size-grid anchored)
+        // so set-height topology is symmetric around the intended operation center.
+        BrushShape::Square => square_feature_points_centered(center, size).into(),
+        BrushShape::Circle => circle_brush_points_snapped(center, size),
+        BrushShape::Triangle => triangle_brush_points_snapped(center, size).into(),
+    }
+}
+
 fn normalize_size_for_snap(size: f32) -> f32 {
     if size > 1.0 {
         size.round().max(1.0)
@@ -292,6 +367,23 @@ fn square_brush_points_snapped(center: Vector3, size: f32) -> [Vector3; 4] {
     let min_z = snap_to_grid(center.z - size * 0.5, size);
     let max_x = min_x + size;
     let max_z = min_z + size;
+    [
+        Vector3::new(min_x, center.y, min_z),
+        Vector3::new(max_x, center.y, min_z),
+        Vector3::new(min_x, center.y, max_z),
+        Vector3::new(max_x, center.y, max_z),
+    ]
+}
+
+fn square_feature_points_centered(center: Vector3, size: f32) -> [Vector3; 4] {
+    let half = size * 0.5;
+    let step = detail_snap_step(size);
+    let cx = snap_to_grid(center.x, step);
+    let cz = snap_to_grid(center.z, step);
+    let min_x = snap_to_grid(cx - half, step);
+    let min_z = snap_to_grid(cz - half, step);
+    let max_x = snap_to_grid(cx + half, step);
+    let max_z = snap_to_grid(cz + half, step);
     [
         Vector3::new(min_x, center.y, min_z),
         Vector3::new(max_x, center.y, min_z),
@@ -464,4 +556,15 @@ fn sub2(a: (f32, f32), b: (f32, f32)) -> (f32, f32) {
 
 fn cross2(a: (f32, f32), b: (f32, f32)) -> f32 {
     a.0 * b.1 - a.1 * b.0
+}
+
+fn orient_triangle_upward(tri: &mut Triangle, vertices: &[crate::Vertex]) {
+    let a = vertices[tri.a].position;
+    let b = vertices[tri.b].position;
+    let c = vertices[tri.c].position;
+    let ab = Vector3::new(b.x - a.x, b.y - a.y, b.z - a.z);
+    let ac = Vector3::new(c.x - a.x, c.y - a.y, c.z - a.z);
+    if ab.cross(ac).y < 0.0 {
+        std::mem::swap(&mut tri.b, &mut tri.c);
+    }
 }

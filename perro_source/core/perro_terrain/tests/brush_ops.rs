@@ -29,6 +29,21 @@ fn set_height_square_builds_top_and_base_points() {
     assert!(ys.iter().any(|y| *y >= 4.9));
     assert!(ys.iter().any(|y| y.abs() <= 1.0e-4));
 
+    let top_ids: Vec<usize> = chunk
+        .vertices()
+        .iter()
+        .enumerate()
+        .filter_map(|(i, v)| (v.position.y >= 4.9 && v.position.x.abs() <= 6.0 && v.position.z.abs() <= 6.0).then_some(i))
+        .collect();
+    assert_eq!(top_ids.len(), 4, "expected four top-cap corner vertices");
+    let top_set: std::collections::HashSet<usize> = top_ids.iter().copied().collect();
+    let cap_tri_count = chunk
+        .triangles()
+        .iter()
+        .filter(|tri| top_set.contains(&tri.a) && top_set.contains(&tri.b) && top_set.contains(&tri.c))
+        .count();
+    assert_eq!(cap_tri_count, 2, "top cap should be a quad triangulated into exactly two triangles");
+
     // Base ring should be radially farther from center than top ring.
     let top_max_radius = chunk
         .vertices()

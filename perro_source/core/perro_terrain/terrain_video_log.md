@@ -446,8 +446,34 @@ Track what each terrain commit changed so video explanations are easy later.
 - Runtime terrain debug test passes:
   - `terrain_instance_debug_flags_emit_vertex_and_edge_commands`
 
-## Future Commit Template
+## Commit: Fixing Inner Plane
 
+### What was added
+
+- Implemented centered square feature sampling for `SetHeight` (centered `-size/2..+size/2` around brush center for feature construction).
+- Added explicit top-cap enforcement after structural insertion:
+  - detect the 4 top-ring vertices
+  - remove any existing all-top cap triangles
+  - rebuild cap as exactly 2 triangles (quad cap)
+- Added upward orientation fix for rebuilt cap triangles.
+
+### Why it matters
+
+- Prevents inner-cap collapse into asymmetric triangular-prism-like artifacts.
+- Keeps set-height output aligned with the intended minimal, stable topology:
+  - 8 feature vertices
+  - 10 feature triangles (4 walls + top cap), no bottom cap
+- Improves predictability for follow-up brush operations inside existing raised regions.
+
+### Validation added
+
+- `set_height_square_builds_top_and_base_points` now verifies:
+  - 4 top-cap vertices exist
+  - top cap is exactly 2 triangles
+- Runtime debug topology test remains passing:
+  - `terrain_instance_debug_flags_emit_vertex_and_edge_commands`
+
+## Future Commit Template
 
 ## Commit: <name>
 
