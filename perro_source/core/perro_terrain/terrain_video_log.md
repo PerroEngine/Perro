@@ -513,6 +513,16 @@ Track what each terrain commit changed so video explanations are easy later.
 
 - None
 
+## Added Secondary Brush Op
+
+### What was added
+
+- Second SetHeight inside of another
+
+### Why it matters
+
+- Prove that it properly connects
+
 ## Future Commit Template
 
 ## Commit: <name>

@@ -708,10 +708,19 @@ impl Runtime {
         if let Some(chunk) = terrain.chunk_mut(ChunkCoord::new(0, 0)) {
             let _ = chunk.apply_brush_op(
                 Vector3::new(0.0, 0.0, 0.0),
-                10.0,
+                15.0,
                 BrushShape::Square,
                 BrushOp::SetHeight {
                     y: 5.0,
+                    feature_offset: 0.1,
+                },
+            );
+            let _ = chunk.apply_brush_op(
+                Vector3::new(0.0, 0.0, 0.0),
+                5.0,
+                BrushShape::Square,
+                BrushOp::SetHeight {
+                    y: 10.0,
                     feature_offset: 0.1,
                 },
             );
