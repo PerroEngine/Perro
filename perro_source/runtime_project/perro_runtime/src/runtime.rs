@@ -6,7 +6,7 @@ use crate::{
 };
 use ahash::{AHashMap, AHashSet};
 use libloading::Library;
-use perro_ids::{NodeID, TextureID};
+use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_input::{InputContext, InputSnapshot, KeyCode, MouseButton};
 use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType, SceneNodeData, Spatial};
 use perro_terrain::{BrushOp, BrushShape, ChunkCoord, TerrainData};
@@ -219,6 +219,8 @@ struct Render3DState {
     mesh_sources: AHashMap<NodeID, String>,
     material_sources: AHashMap<NodeID, String>,
     material_overrides: AHashMap<NodeID, Material3D>,
+    terrain_material: MaterialID,
+    terrain_chunk_meshes: AHashMap<TerrainChunkMeshKey, TerrainChunkMeshState>,
     particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile3D>,
     removed_nodes: Vec<NodeID>,
 }
@@ -232,10 +234,25 @@ impl Render3DState {
             mesh_sources: AHashMap::default(),
             material_sources: AHashMap::default(),
             material_overrides: AHashMap::default(),
+            terrain_material: MaterialID::nil(),
+            terrain_chunk_meshes: AHashMap::default(),
             particle_path_cache: AHashMap::default(),
             removed_nodes: Vec::new(),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct TerrainChunkMeshKey {
+    node: NodeID,
+    coord: ChunkCoord,
+}
+
+#[derive(Clone, Debug)]
+struct TerrainChunkMeshState {
+    source: String,
+    hash: u64,
+    mesh: MeshID,
 }
 
 impl DirtyState {

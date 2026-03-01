@@ -13,7 +13,7 @@ use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;
 use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::pack_meshlets_from_positions;
-use perro_render_bridge::{Camera3DState, CameraProjectionState, Material3D};
+use perro_render_bridge::{Camera3DState, CameraProjectionState, Material3D, RuntimeMeshData};
 use std::{
     collections::HashMap,
     sync::{Arc, mpsc, mpsc::TryRecvError},
@@ -970,7 +970,7 @@ impl Gpu3D {
                     let source = resources.mesh_source(mesh).unwrap_or("__cube__");
                     let is_terrain = source.starts_with("__terrain");
                     let asset = self
-                        .resolve_mesh_range(device, queue, source, static_mesh_lookup)
+                        .resolve_mesh_range(device, queue, resources, source, static_mesh_lookup)
                         .unwrap_or_else(|| default_mesh.clone());
                     (asset, is_terrain)
                 }
@@ -1730,6 +1730,7 @@ impl Gpu3D {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        resources: &ResourceStore,
         source: &str,
         static_mesh_lookup: Option<StaticMeshLookup>,
     ) -> Option<MeshAssetRange> {
@@ -1756,6 +1757,7 @@ impl Gpu3D {
         let decoded = load_mesh_from_source(
             source,
             static_mesh_lookup,
+            resources.runtime_mesh_data(source),
             self.meshlets_enabled && self.dev_meshlets,
         )?;
         let range = self.append_mesh_data(device, queue, source, decoded)?;
@@ -1912,9 +1914,12 @@ impl Gpu3D {
 fn load_mesh_from_source(
     source: &str,
     static_mesh_lookup: Option<StaticMeshLookup>,
+    runtime_mesh: Option<&RuntimeMeshData>,
     dev_meshlets: bool,
 ) -> Option<DecodedMesh> {
-    let mut decoded = if let Some(lookup) = static_mesh_lookup
+    let mut decoded = if let Some(mesh) = runtime_mesh {
+        decode_runtime_mesh(mesh)?
+    } else if let Some(lookup) = static_mesh_lookup
         && let Some(bytes) = lookup(source)
         && let Some(decoded) = decode_pmesh(bytes)
     {
@@ -1949,10 +1954,45 @@ pub(crate) fn validate_mesh_source(
     if source.starts_with("__") {
         return Ok(());
     }
-    if load_mesh_from_source(source, static_mesh_lookup, false).is_some() {
+    if load_mesh_from_source(source, static_mesh_lookup, None, false).is_some() {
         return Ok(());
     }
     Err(format!("mesh source failed to decode: {}", source))
+}
+
+fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
+    if mesh.vertices.is_empty() || mesh.indices.is_empty() {
+        return None;
+    }
+    if mesh.indices.len() % 3 != 0 {
+        return None;
+    }
+    let vertices: Vec<MeshVertex> = mesh
+        .vertices
+        .iter()
+        .map(|v| MeshVertex {
+            pos: v.position,
+            normal: v.normal,
+        })
+        .collect();
+    if vertices.iter().any(|v| !v.pos.iter().all(|c| c.is_finite())) {
+        return None;
+    }
+    if vertices.iter().any(|v| !v.normal.iter().all(|c| c.is_finite())) {
+        return None;
+    }
+    if mesh
+        .indices
+        .iter()
+        .any(|&idx| (idx as usize) >= vertices.len())
+    {
+        return None;
+    }
+    Some(DecodedMesh {
+        vertices,
+        indices: mesh.indices.clone(),
+        meshlets: Vec::new(),
+    })
 }
 
 fn split_source_fragment(source: &str) -> (&str, Option<&str>) {

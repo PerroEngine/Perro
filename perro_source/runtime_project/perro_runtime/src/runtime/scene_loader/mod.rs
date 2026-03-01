@@ -76,6 +76,8 @@ impl Runtime {
         self.render_3d.mesh_sources.clear();
         self.render_3d.material_sources.clear();
         self.render_3d.material_overrides.clear();
+        self.render_3d.terrain_material = perro_ids::MaterialID::nil();
+        self.render_3d.terrain_chunk_meshes.clear();
         self.render_3d.particle_path_cache.clear();
         self.render_3d.removed_nodes.clear();
         self.terrain_store.clear();

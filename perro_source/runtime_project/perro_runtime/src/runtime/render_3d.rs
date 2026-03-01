@@ -10,10 +10,10 @@ use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
     ParticlePath3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
-    ParticleProfile3D, PointParticles3DState,
+    ParticleProfile3D, PointParticles3DState, RuntimeMeshData, RuntimeMeshVertex,
     RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
 };
-use perro_terrain::{ChunkCoord, TerrainData};
+use perro_terrain::{ChunkCoord, TerrainChunk, TerrainData};
 use std::borrow::Cow;
 
 impl Runtime {
@@ -23,6 +23,18 @@ impl Runtime {
 
     fn material_request(node: NodeID) -> RenderRequestID {
         RenderRequestID::new((node.as_u64() << 8) | 0x3F)
+    }
+
+    fn terrain_material_request() -> RenderRequestID {
+        RenderRequestID::new(0x5445_5252_4D41_544Cu64)
+    }
+
+    fn terrain_chunk_request(node: NodeID, coord: ChunkCoord) -> RenderRequestID {
+        let mut h = node.as_u64() ^ 0xA5A5_5A5A_D3C1_BEEF;
+        h ^= (coord.x as u32 as u64).wrapping_mul(0x9E37_79B1);
+        h = h.rotate_left(17);
+        h ^= (coord.z as u32 as u64).wrapping_mul(0x85EB_CA77);
+        RenderRequestID::new(h)
     }
 
     pub fn extract_render_3d_commands(&mut self) {
@@ -225,10 +237,6 @@ impl Runtime {
                     if !self.ensure_terrain_instance_data(node) {
                         continue;
                     }
-                    self.queue_render_command(RenderCommand::ThreeD(Command3D::DrawTerrain {
-                        node,
-                        model: world_from_terrain.to_cols_array_2d(),
-                    }));
                     let active_terrain_id = if terrain_id.is_nil() {
                         self.nodes.get(node).and_then(|scene_node| match &scene_node.data {
                             SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
@@ -237,6 +245,21 @@ impl Runtime {
                     } else {
                         Some(terrain_id)
                     };
+                    if let Some(id) = active_terrain_id
+                        && let Some(data) = self.terrain_store.get(id)
+                    {
+                        let chunk_size = data.chunk_size_meters();
+                        let chunk_snapshots: Vec<(ChunkCoord, TerrainChunk)> = data
+                            .chunks()
+                            .map(|(coord, chunk)| (coord, chunk.clone()))
+                            .collect();
+                        self.queue_terrain_chunk_draws(
+                            node,
+                            chunk_size,
+                            &chunk_snapshots,
+                            world_from_terrain,
+                        );
+                    }
                     if (show_debug_vertices || show_debug_edges)
                         && let Some(id) = active_terrain_id
                         && let Some(data) = self.terrain_store.get(id)
@@ -328,6 +351,134 @@ impl Runtime {
         }
         while let Some(node) = self.render_3d.removed_nodes.pop() {
             self.queue_render_command(RenderCommand::ThreeD(Command3D::RemoveNode { node }));
+        }
+    }
+
+    fn resolve_terrain_material(&mut self) -> Option<MaterialID> {
+        if !self.render_3d.terrain_material.is_nil() {
+            return Some(self.render_3d.terrain_material);
+        }
+        let request = Self::terrain_material_request();
+        if let Some(result) = self.take_render_result(request) {
+            match result {
+                crate::RuntimeRenderResult::Material(id) => {
+                    self.render_3d.terrain_material = id;
+                    return Some(id);
+                }
+                crate::RuntimeRenderResult::Failed(_)
+                | crate::RuntimeRenderResult::Texture(_)
+                | crate::RuntimeRenderResult::Mesh(_) => {}
+            }
+        }
+        if !self.render.is_inflight(request) {
+            self.render.mark_inflight(request);
+            self.queue_render_command(RenderCommand::Resource(ResourceCommand::CreateMaterial {
+                request,
+                id: MaterialID::nil(),
+                material: Material3D {
+                    base_color_factor: [0.32, 0.56, 0.29, 1.0],
+                    roughness_factor: 0.92,
+                    metallic_factor: 0.0,
+                    ..Material3D::default()
+                },
+                source: Some("__terrain_runtime_material__".to_string()),
+                reserved: false,
+            }));
+        }
+        None
+    }
+
+    fn queue_terrain_chunk_draws(
+        &mut self,
+        node: NodeID,
+        chunk_size_meters: f32,
+        chunks: &[(ChunkCoord, TerrainChunk)],
+        world_from_terrain: Mat4,
+    ) {
+        let material = self.resolve_terrain_material();
+
+        for (coord, chunk) in chunks {
+            let key = crate::runtime::TerrainChunkMeshKey {
+                node,
+                coord: *coord,
+            };
+            let hash = terrain_chunk_hash(chunk);
+            let source = format!(
+                "__terrain_runtime__/n{}_x{}_z{}_h{:016x}",
+                node.as_u64(),
+                coord.x,
+                coord.z,
+                hash
+            );
+            let request = Self::terrain_chunk_request(node, *coord);
+
+            let mut prev_mesh_to_drop = MeshID::nil();
+            let mut current_mesh = {
+                let entry = self
+                    .render_3d
+                    .terrain_chunk_meshes
+                    .entry(key)
+                    .or_insert_with(|| crate::runtime::TerrainChunkMeshState {
+                        source: source.clone(),
+                        hash,
+                        mesh: MeshID::nil(),
+                    });
+
+                if entry.hash != hash || entry.source != source {
+                    prev_mesh_to_drop = entry.mesh;
+                    entry.hash = hash;
+                    entry.source = source.clone();
+                    entry.mesh = MeshID::nil();
+                }
+                entry.mesh
+            };
+
+            if !prev_mesh_to_drop.is_nil() {
+                self.queue_render_command(RenderCommand::Resource(ResourceCommand::DropMesh {
+                    id: prev_mesh_to_drop,
+                }));
+            }
+
+            if current_mesh.is_nil() {
+                if let Some(result) = self.take_render_result(request)
+                    && let crate::RuntimeRenderResult::Mesh(id) = result
+                {
+                    current_mesh = id;
+                }
+                if current_mesh.is_nil() && !self.render.is_inflight(request) {
+                    self.render.mark_inflight(request);
+                    if let Some(mesh) = terrain_chunk_to_runtime_mesh(chunk) {
+                        self.queue_render_command(RenderCommand::Resource(
+                            ResourceCommand::CreateRuntimeMesh {
+                                request,
+                                id: MeshID::nil(),
+                                source: source.clone(),
+                                reserved: false,
+                                mesh,
+                            },
+                        ));
+                    }
+                }
+                if current_mesh.is_nil() {
+                    continue;
+                }
+                if let Some(entry) = self.render_3d.terrain_chunk_meshes.get_mut(&key) {
+                    entry.mesh = current_mesh;
+                }
+            }
+
+            if let Some(material) = material {
+                let chunk_center_x = coord.x as f32 * chunk_size_meters;
+                let chunk_center_z = coord.z as f32 * chunk_size_meters;
+                let model = world_from_terrain
+                    * Mat4::from_translation(Vec3::new(chunk_center_x, 0.0, chunk_center_z));
+                self.queue_render_command(RenderCommand::ThreeD(Command3D::Draw {
+                    mesh: current_mesh,
+                    material,
+                    node,
+                    model: model.to_cols_array_2d(),
+                }));
+            }
         }
     }
 
@@ -507,6 +658,95 @@ fn terrain_chunk_local_to_world(local: perro_structs::Vector3, coord: ChunkCoord
     let center_x = coord.x as f32 * size;
     let center_z = coord.z as f32 * size;
     Vec3::new(local.x + center_x, local.y, local.z + center_z)
+}
+
+fn terrain_chunk_to_runtime_mesh(chunk: &TerrainChunk) -> Option<RuntimeMeshData> {
+    let vertices = chunk.vertices();
+    let triangles = chunk.triangles();
+    if vertices.is_empty() || triangles.is_empty() {
+        return None;
+    }
+
+    let mut normals = vec![Vec3::ZERO; vertices.len()];
+    for tri in triangles {
+        if tri.a >= vertices.len() || tri.b >= vertices.len() || tri.c >= vertices.len() {
+            return None;
+        }
+        let a = Vec3::new(
+            vertices[tri.a].position.x,
+            vertices[tri.a].position.y,
+            vertices[tri.a].position.z,
+        );
+        let b = Vec3::new(
+            vertices[tri.b].position.x,
+            vertices[tri.b].position.y,
+            vertices[tri.b].position.z,
+        );
+        let c = Vec3::new(
+            vertices[tri.c].position.x,
+            vertices[tri.c].position.y,
+            vertices[tri.c].position.z,
+        );
+        let n = (b - a).cross(c - a);
+        if n.length_squared() > 1.0e-10 {
+            normals[tri.a] += n;
+            normals[tri.b] += n;
+            normals[tri.c] += n;
+        }
+    }
+
+    let out_vertices: Vec<RuntimeMeshVertex> = vertices
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            let n = if normals[i].length_squared() > 1.0e-10 {
+                normals[i].normalize()
+            } else {
+                Vec3::Y
+            };
+            RuntimeMeshVertex {
+                position: [v.position.x, v.position.y, v.position.z],
+                normal: [n.x, n.y, n.z],
+            }
+        })
+        .collect();
+
+    let mut indices = Vec::with_capacity(triangles.len() * 3);
+    for tri in triangles {
+        indices.push(tri.a as u32);
+        indices.push(tri.b as u32);
+        indices.push(tri.c as u32);
+    }
+
+    Some(RuntimeMeshData {
+        vertices: out_vertices,
+        indices,
+    })
+}
+
+fn terrain_chunk_hash(chunk: &TerrainChunk) -> u64 {
+    let mut h = 0x9E37_79B9_7F4A_7C15u64;
+    h ^= chunk.vertices().len() as u64;
+    h = h.rotate_left(27).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    h ^= chunk.triangles().len() as u64;
+    h = h.rotate_left(27).wrapping_mul(0x94D0_49BB_1331_11EB);
+    for v in chunk.vertices() {
+        h ^= v.position.x.to_bits() as u64;
+        h = h.rotate_left(13).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        h ^= v.position.y.to_bits() as u64;
+        h = h.rotate_left(13).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        h ^= v.position.z.to_bits() as u64;
+        h = h.rotate_left(13).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    }
+    for tri in chunk.triangles() {
+        h ^= tri.a as u64;
+        h = h.rotate_left(11).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        h ^= tri.b as u64;
+        h = h.rotate_left(11).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        h ^= tri.c as u64;
+        h = h.rotate_left(11).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    }
+    h
 }
 
 fn debug_edge_thickness(edge_len: f32) -> f32 {

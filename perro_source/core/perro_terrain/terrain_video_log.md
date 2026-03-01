@@ -473,6 +473,32 @@ Track what each terrain commit changed so video explanations are easy later.
 - Runtime debug topology test remains passing:
   - `terrain_instance_debug_flags_emit_vertex_and_edge_commands`
 
+## Commit: Proper Terrain Rendering - but it is flipped lol
+
+### What was added
+
+- Replaced terrain draw fallback (`DrawTerrain`/builtin terrain mesh) with per-chunk runtime mesh submission.
+- Added runtime chunk mesh build path:
+  - converts each `TerrainChunk` into explicit vertex/index buffers
+  - computes per-vertex normals from triangle faces
+  - uploads via `ResourceCommand::CreateRuntimeMesh`
+- Added runtime chunk mesh cache state keyed by `(terrain node, chunk coord)` with geometry hashing.
+- Added terrain material bootstrap for runtime chunk draws.
+- Added graphics backend/resource support for runtime-provided mesh payloads.
+
+### Why it matters
+
+- Terrain data remains owned by `TerrainData`/`TerrainChunk` and stays separate from renderer resource state.
+- Render path now uses real chunk geometry, so each chunk is rendered as its own mesh unit (submesh-style chunk granularity).
+- Changed chunks can be re-uploaded independently without rebuilding unrelated chunks.
+- Removes the hardcoded terrain mesh dependency and aligns rendering with runtime terrain edits.
+
+### Validation added
+
+- Updated runtime 3D terrain test to assert `CreateRuntimeMesh` is emitted for terrain chunks.
+- Full suites pass:
+  - `cargo test -p perro_graphics -p perro_runtime --tests`
+
 ## Future Commit Template
 
 ## Commit: <name>

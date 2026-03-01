@@ -274,6 +274,18 @@ pub struct Sprite2DCommand {
     pub z_index: i32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RuntimeMeshVertex {
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeMeshData {
+    pub vertices: Vec<RuntimeMeshVertex>,
+    pub indices: Vec<u32>,
+}
+
 #[derive(Debug, Clone)]
 pub enum ResourceCommand {
     CreateMesh {
@@ -281,6 +293,13 @@ pub enum ResourceCommand {
         id: MeshID,
         source: String,
         reserved: bool,
+    },
+    CreateRuntimeMesh {
+        request: RenderRequestID,
+        id: MeshID,
+        source: String,
+        reserved: bool,
+        mesh: RuntimeMeshData,
     },
     CreateTexture {
         request: RenderRequestID,

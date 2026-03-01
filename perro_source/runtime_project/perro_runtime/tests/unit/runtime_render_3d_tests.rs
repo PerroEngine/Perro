@@ -219,7 +219,7 @@ fn unchanged_mesh_instance_emits_draw() {
 }
 
 #[test]
-fn terrain_instance_uses_builtin_terrain64_mesh_by_default() {
+fn terrain_instance_emits_runtime_chunk_mesh_commands() {
     let mut runtime = Runtime::new();
     let node = runtime
         .nodes
@@ -242,8 +242,8 @@ fn terrain_instance_uses_builtin_terrain64_mesh_by_default() {
     let first = collect_commands(&mut runtime);
     assert!(first.iter().any(|command| matches!(
         command,
-        RenderCommand::ThreeD(Command3D::DrawTerrain { node: draw_node, .. })
-            if *draw_node == node
+        RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh { source, .. })
+            if source.starts_with("__terrain_runtime__/")
     )));
 }
 

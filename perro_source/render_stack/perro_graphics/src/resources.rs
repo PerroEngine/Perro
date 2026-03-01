@@ -1,5 +1,5 @@
 use perro_ids::{MaterialID, MeshID, TextureID};
-use perro_render_bridge::Material3D;
+use perro_render_bridge::{Material3D, RuntimeMeshData};
 use std::collections::HashMap;
 
 #[derive(Default)]
@@ -93,6 +93,7 @@ pub struct ResourceStore {
     materials: SlotArena,
     mesh_by_source: HashMap<String, MeshID>,
     mesh_source_by: HashMap<MeshID, String>,
+    runtime_mesh_by_source: HashMap<String, RuntimeMeshData>,
     texture_by_source: HashMap<String, TextureID>,
     texture_source_by: HashMap<TextureID, String>,
     material_by: HashMap<MaterialID, Material3D>,
@@ -341,6 +342,16 @@ impl ResourceStore {
     }
 
     #[inline]
+    pub fn set_runtime_mesh_data(&mut self, source: &str, mesh: RuntimeMeshData) {
+        self.runtime_mesh_by_source.insert(source.to_string(), mesh);
+    }
+
+    #[inline]
+    pub fn runtime_mesh_data(&self, source: &str) -> Option<&RuntimeMeshData> {
+        self.runtime_mesh_by_source.get(source)
+    }
+
+    #[inline]
     pub fn has_material(&self, id: MaterialID) -> bool {
         self.materials.contains_parts(id.index(), id.generation())
     }
@@ -560,6 +571,7 @@ impl ResourceStore {
                 self.log_manual_drop("mesh", id.index(), id.generation(), &source);
             }
             self.mesh_by_source.remove(&source);
+            self.runtime_mesh_by_source.remove(&source);
         }
         self.mesh_meta_by.remove(&id);
         true

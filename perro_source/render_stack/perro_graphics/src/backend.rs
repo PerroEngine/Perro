@@ -168,6 +168,25 @@ impl PerroGraphics {
                             id: out_id,
                         });
                     }
+                    ResourceCommand::CreateRuntimeMesh {
+                        request,
+                        id,
+                        source,
+                        reserved,
+                        mesh,
+                    } => {
+                        let out_id = if id.is_nil() {
+                            self.resources.create_mesh(source.as_str(), reserved)
+                        } else {
+                            self.resources
+                                .create_mesh_with_id(id, source.as_str(), reserved)
+                        };
+                        self.resources.set_runtime_mesh_data(source.as_str(), mesh);
+                        self.events.push(RenderEvent::MeshCreated {
+                            request,
+                            id: out_id,
+                        });
+                    }
                     ResourceCommand::CreateTexture {
                         request,
                         id,
