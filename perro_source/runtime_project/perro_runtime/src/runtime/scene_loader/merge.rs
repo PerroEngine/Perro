@@ -44,6 +44,7 @@ pub(super) fn merge_prepared_scene(
         if let Some(inserted) = runtime.nodes.get(node) {
             runtime.register_internal_node_schedules(node, inserted.node_type());
         }
+        let _ = runtime.ensure_terrain_instance_data(node);
         if let Some(source) = texture_source {
             runtime.render_2d.texture_sources.insert(node, source);
         }

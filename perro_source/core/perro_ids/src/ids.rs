@@ -131,6 +131,10 @@ define_generational!(
     "Mesh ID — allocated by mesh system. Index + generation."
 );
 define_generational!(
+    TerrainID,
+    "Terrain ID — allocated by terrain system. Index + generation."
+);
+define_generational!(
     LightID,
     "Light ID — allocated by light system. Index + generation."
 );

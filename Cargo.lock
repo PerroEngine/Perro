@@ -1747,6 +1747,7 @@ dependencies = [
  "perro_scene",
  "perro_scripting",
  "perro_structs",
+ "perro_terrain",
  "perro_variant",
 ]
 

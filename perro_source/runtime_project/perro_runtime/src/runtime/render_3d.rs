@@ -215,6 +215,9 @@ impl Runtime {
             });
             if let Some(model) = terrain_data {
                 if effective_visible {
+                    if !self.ensure_terrain_instance_data(node) {
+                        continue;
+                    }
                     self.queue_render_command(RenderCommand::ThreeD(Command3D::DrawTerrain {
                         node,
                         model,

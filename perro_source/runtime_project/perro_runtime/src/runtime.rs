@@ -1,5 +1,5 @@
 use crate::{
-    cns::{NodeArena, ScriptCollection, SignalConnection, SignalRegistry},
+    cns::{NodeArena, ScriptCollection, SignalConnection, SignalRegistry, TerrainStore},
     render_result::RuntimeRenderResult,
     rs_ctx::RuntimeResourceApi,
     runtime_project::{ProviderMode, RuntimeProject},
@@ -9,6 +9,7 @@ use libloading::Library;
 use perro_ids::{NodeID, TextureID};
 use perro_input::{InputContext, InputSnapshot, KeyCode, MouseButton};
 use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType, SceneNodeData, Spatial};
+use perro_terrain::{ChunkCoord, TerrainData};
 use perro_resource_context::ResourceContext;
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
 use perro_runtime_context::RuntimeContext;
@@ -44,6 +45,7 @@ pub struct Runtime {
 
     render_2d: Render2DState,
     render_3d: Render3DState,
+    pub(crate) terrain_store: TerrainStore,
     pub(crate) signals: SignalRegistry,
     pub(crate) signal_emit_scratch: Vec<SignalConnection>,
     pub(crate) script_library: Option<Library>,
@@ -343,6 +345,7 @@ impl Runtime {
             internal_fixed_update_nodes: Vec::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
+            terrain_store: TerrainStore::new(),
             signals: SignalRegistry::new(),
             signal_emit_scratch: Vec::new(),
             script_library: None,
@@ -678,6 +681,35 @@ impl Runtime {
             current = scene_node.parent;
             hops += 1;
         }
+        false
+    }
+
+    pub(crate) fn default_terrain_data() -> TerrainData {
+        let mut terrain = TerrainData::new(64.0);
+        terrain.ensure_chunk(ChunkCoord::new(0, 0));
+        terrain
+    }
+
+    pub(crate) fn ensure_terrain_instance_data(&mut self, node: NodeID) -> bool {
+        let Some(current_id) = self.nodes.get(node).and_then(|scene_node| match &scene_node.data {
+            SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
+            _ => None,
+        }) else {
+            return false;
+        };
+
+        if !current_id.is_nil() && self.terrain_store.get(current_id).is_some() {
+            return true;
+        }
+
+        let id = self.terrain_store.insert(Self::default_terrain_data());
+        if let Some(scene_node) = self.nodes.get_mut(node)
+            && let SceneNodeData::TerrainInstance3D(terrain) = &mut scene_node.data
+        {
+            terrain.terrain = id;
+            return true;
+        }
+
         false
     }
 }

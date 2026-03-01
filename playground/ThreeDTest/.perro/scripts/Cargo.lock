@@ -262,6 +262,7 @@ dependencies = [
  "perro_scene",
  "perro_scripting",
  "perro_structs",
+ "perro_terrain",
  "perro_variant",
 ]
 
@@ -308,6 +309,13 @@ name = "perro_structs"
 version = "0.1.0"
 dependencies = [
  "glam",
+]
+
+[[package]]
+name = "perro_terrain"
+version = "0.1.0"
+dependencies = [
+ "perro_structs",
 ]
 
 [[package]]

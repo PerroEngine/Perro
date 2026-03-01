@@ -1403,6 +1403,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_ids" => Some("perro_source/core/perro_ids"),
         "perro_variant" => Some("perro_source/core/perro_variant"),
         "perro_particle_math" => Some("perro_source/core/perro_particle_math"),
+        "perro_terrain" => Some("perro_source/core/perro_terrain"),
         "perro_runtime" => Some("perro_source/runtime_project/perro_runtime"),
         "perro_internal_updates" => Some("perro_source/runtime_project/perro_internal_updates"),
         "perro_scene" => Some("perro_source/runtime_project/perro_scene"),

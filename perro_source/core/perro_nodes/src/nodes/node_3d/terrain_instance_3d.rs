@@ -1,5 +1,5 @@
 use crate::node_3d::Node3D;
-use perro_ids::{MaterialID, MeshID};
+use perro_ids::TerrainID;
 use std::ops::{Deref, DerefMut};
 
 impl Deref for TerrainInstance3D {
@@ -18,16 +18,14 @@ impl DerefMut for TerrainInstance3D {
 #[derive(Clone, Debug, Default)]
 pub struct TerrainInstance3D {
     pub base: Node3D,
-    pub mesh: MeshID,
-    pub material: MaterialID,
+    pub terrain: TerrainID,
 }
 
 impl TerrainInstance3D {
     pub const fn new() -> Self {
         Self {
             base: Node3D::new(),
-            mesh: MeshID::nil(),
-            material: MaterialID::nil(),
+            terrain: TerrainID::nil(),
         }
     }
 }

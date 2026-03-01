@@ -312,6 +312,31 @@ Track what each terrain commit changed so video explanations are easy later.
   - add/remove spanning seam
   - decimate spanning seam
 
+## Commit: Terrain Runtime Store + IDs
+
+### What was added
+
+- Replaced `TerrainInstance3D` mesh/material references with a dedicated `TerrainID`.
+- Added runtime `TerrainStore` with generational IDs and slot reuse.
+- Runtime now ensures terrain instances always have backing `TerrainData` before draw.
+- Added default terrain allocation path (`64m` chunk with ensured `(0,0)` chunk).
+- Added cleanup hooks so terrain data is removed on node deletion and cleared on scene reset.
+- Added `terrain_store` unit tests for slot reuse and ID invalidation.
+- Removed terrain-specific mesh/material fallback extraction in scene loader.
+
+### Why it matters
+
+- Terrain is now treated as first-class terrain data instead of piggybacking on mesh/material IDs.
+- Generational IDs prevent stale-handle bugs after remove/reuse cycles.
+- Auto-ensure before render prevents missing-data failures for terrain instances.
+- Cleanup paths prevent leaked terrain allocations across runtime/scene lifecycle.
+- Scene loading now keeps terrain flow separate from generic mesh ingestion assumptions.
+
+### Validation added
+
+- `terrain_store_reuses_slot_with_bumped_generation` verifies reused index + new generation.
+- `terrain_store_clear_invalidates_existing_ids` verifies old IDs become invalid after clear.
+
 ## Future Commit Template
 
 ## Commit: <name>

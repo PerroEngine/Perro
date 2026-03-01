@@ -226,6 +226,17 @@ fn terrain_instance_uses_builtin_terrain64_mesh_by_default() {
         )));
 
     runtime.extract_render_3d_commands();
+    let assigned_id = runtime
+        .nodes
+        .get(node)
+        .and_then(|node| match &node.data {
+            SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
+            _ => None,
+        })
+        .expect("expected terrain node");
+    assert!(!assigned_id.is_nil());
+    assert!(runtime.terrain_store.get(assigned_id).is_some());
+
     let first = collect_commands(&mut runtime);
     assert!(first.iter().any(|command| matches!(
         command,

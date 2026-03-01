@@ -210,8 +210,14 @@ impl NodeAPI for Runtime {
         // Remove script state first so script-side lookups cannot outlive node removal.
         let _ = self.remove_script_instance(node_id);
 
-        let (parent_id, child_ids) = match self.nodes.get(node_id) {
-            Some(node) => (node.get_parent(), node.get_children_ids().to_vec()),
+        let (parent_id, child_ids, terrain_id) = match self.nodes.get(node_id) {
+            Some(node) => {
+                let terrain_id = match &node.data {
+                    SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
+                    _ => None,
+                };
+                (node.get_parent(), node.get_children_ids().to_vec(), terrain_id)
+            }
             None => return false,
         };
 
@@ -227,6 +233,12 @@ impl NodeAPI for Runtime {
                 child.parent = perro_ids::NodeID::nil();
                 self.mark_transform_dirty_recursive(child_id);
             }
+        }
+
+        if let Some(terrain_id) = terrain_id
+            && !terrain_id.is_nil()
+        {
+            let _ = self.terrain_store.remove(terrain_id);
         }
 
         self.unregister_internal_node_schedules(node_id);

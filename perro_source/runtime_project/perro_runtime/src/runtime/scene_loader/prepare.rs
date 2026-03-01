@@ -1311,25 +1311,16 @@ fn extract_texture_source(data: &RuntimeNodeData) -> Option<String> {
 }
 
 fn extract_mesh_source(data: &RuntimeNodeData) -> Option<String> {
-    let is_terrain = data.ty == "TerrainInstance3D";
-    if data.ty != "MeshInstance3D" && !is_terrain {
+    if data.ty != "MeshInstance3D" {
         return None;
     }
-    let explicit = data
-        .fields
+    data.fields
         .iter()
-        .find_map(|(name, value)| (name == "mesh").then(|| as_asset_source(value)).flatten());
-    if explicit.is_some() {
-        return explicit;
-    }
-    if is_terrain {
-        return Some("__terrain64__".to_string());
-    }
-    None
+        .find_map(|(name, value)| (name == "mesh").then(|| as_asset_source(value)).flatten())
 }
 
 fn extract_material_source(data: &RuntimeNodeData) -> Option<String> {
-    if data.ty != "MeshInstance3D" && data.ty != "TerrainInstance3D" {
+    if data.ty != "MeshInstance3D" {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -1340,7 +1331,7 @@ fn extract_material_source(data: &RuntimeNodeData) -> Option<String> {
 }
 
 fn extract_material_inline(data: &RuntimeNodeData) -> Option<Material3D> {
-    if data.ty != "MeshInstance3D" && data.ty != "TerrainInstance3D" {
+    if data.ty != "MeshInstance3D" {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -1737,26 +1728,18 @@ fn extract_texture_source_static(data: &StaticNodeData) -> Option<String> {
 }
 
 fn extract_mesh_source_static(data: &StaticNodeData) -> Option<String> {
-    let is_terrain = data.ty == StaticNodeType::TerrainInstance3D;
-    if data.ty != StaticNodeType::MeshInstance3D && !is_terrain {
+    if data.ty != StaticNodeType::MeshInstance3D {
         return None;
     }
-    let explicit = data.fields.iter().find_map(|(name, value)| {
+    data.fields.iter().find_map(|(name, value)| {
         (*name == "mesh")
             .then(|| as_asset_source_static(value))
             .flatten()
-    });
-    if explicit.is_some() {
-        return explicit;
-    }
-    if is_terrain {
-        return Some("__terrain64__".to_string());
-    }
-    None
+    })
 }
 
 fn extract_material_source_static(data: &StaticNodeData) -> Option<String> {
-    if data.ty != StaticNodeType::MeshInstance3D && data.ty != StaticNodeType::TerrainInstance3D {
+    if data.ty != StaticNodeType::MeshInstance3D {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -1767,7 +1750,7 @@ fn extract_material_source_static(data: &StaticNodeData) -> Option<String> {
 }
 
 fn extract_material_inline_static(data: &StaticNodeData) -> Option<Material3D> {
-    if data.ty != StaticNodeType::MeshInstance3D && data.ty != StaticNodeType::TerrainInstance3D {
+    if data.ty != StaticNodeType::MeshInstance3D {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
