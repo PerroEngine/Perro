@@ -1,5 +1,5 @@
 use super::{
-    renderer::{Draw3DInstance, Lighting3DState, MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS},
+    renderer::{Draw3DInstance, Draw3DKind, Lighting3DState, MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS},
     shaders::{
         create_depth_prepass_shader_module, create_frustum_cull_shader_module,
         create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
@@ -13,7 +13,7 @@ use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;
 use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::pack_meshlets_from_positions;
-use perro_render_bridge::{Camera3DState, CameraProjectionState};
+use perro_render_bridge::{Camera3DState, CameraProjectionState, Material3D};
 use std::{
     collections::HashMap,
     sync::{Arc, mpsc, mpsc::TryRecvError},
@@ -100,6 +100,7 @@ struct FrustumCullItemGpu {
     model_2: [f32; 4],
     model_3: [f32; 4],
     local_center_radius: [f32; 4],
+    cull_flags: [u32; 4],
 }
 
 #[repr(C)]
@@ -264,6 +265,7 @@ struct DrawBatch {
     local_center: [f32; 3],
     local_radius: f32,
     occlusion_query: Option<u32>,
+    disable_hiz_occlusion: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -273,6 +275,7 @@ struct OcclusionState {
 }
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
+const CULL_FLAG_DISABLE_HIZ_OCCLUSION: u32 = 1u32;
 // Re-test occluded batches every frame so visibility recovers immediately when camera/object moves.
 const OCCLUSION_PROBE_INTERVAL: u64 = 1;
 
@@ -962,11 +965,33 @@ impl Gpu3D {
             .resolve_builtin_mesh_asset("__cube__")
             .expect("cube mesh preset must exist");
         for draw in draws {
-            let source = resources.mesh_source(draw.mesh).unwrap_or("__cube__");
-            let mesh_asset = self
-                .resolve_mesh_range(device, queue, source, static_mesh_lookup)
-                .unwrap_or_else(|| default_mesh.clone());
-            let material = resources.material(draw.material).unwrap_or_default();
+            let (mesh_asset, is_terrain_mesh) = match draw.kind {
+                Draw3DKind::Mesh(mesh) => {
+                    let source = resources.mesh_source(mesh).unwrap_or("__cube__");
+                    let is_terrain = source.starts_with("__terrain");
+                    let asset = self
+                        .resolve_mesh_range(device, queue, source, static_mesh_lookup)
+                        .unwrap_or_else(|| default_mesh.clone());
+                    (asset, is_terrain)
+                }
+                Draw3DKind::Terrain64 => (
+                    self.resolve_builtin_mesh_asset("__terrain64__")
+                        .unwrap_or_else(|| default_mesh.clone()),
+                    true,
+                ),
+            };
+            let material = match draw.kind {
+                Draw3DKind::Terrain64 => Material3D {
+                    base_color_factor: [0.32, 0.56, 0.29, 1.0],
+                    roughness_factor: 0.92,
+                    metallic_factor: 0.0,
+                    ..Material3D::default()
+                },
+                Draw3DKind::Mesh(_) => draw
+                    .material
+                    .and_then(|id| resources.material(id))
+                    .unwrap_or_default(),
+            };
             // CPU occlusion query mode works at object granularity.
             // Force whole-mesh batching in that mode so each object can be queried.
             let use_meshlets = self.meshlets_enabled
@@ -978,11 +1003,16 @@ impl Gpu3D {
                 1
             });
 
-            // CPU center-point frustum culling is a coarse shortcut.
-            // Disable it for orthographic projection to avoid false negatives.
+            // CPU fallback frustum culling should use mesh bounds, not object center.
+            // Center-only tests pop large meshes when their origin exits the screen.
             if !self.frustum_cull_enabled
                 && !use_meshlets
-                && !draw_center_in_frustum(draw, view_proj)
+                && !bounds_in_frustum(
+                    draw.model,
+                    mesh_asset.bounds_center,
+                    mesh_asset.bounds_radius,
+                    &frustum,
+                )
             {
                 continue;
             }
@@ -1012,6 +1042,7 @@ impl Gpu3D {
                     mesh_asset.bounds_center,
                     mesh_asset.bounds_radius,
                     occlusion_query,
+                    is_terrain_mesh,
                 );
             } else {
                 for meshlet in mesh_asset.meshlets.iter().copied() {
@@ -1046,6 +1077,7 @@ impl Gpu3D {
                         occlusion_center,
                         occlusion_radius,
                         occlusion_query,
+                        is_terrain_mesh,
                     );
                 }
             }
@@ -1101,6 +1133,11 @@ impl Gpu3D {
                         batch.local_center[2],
                         batch.local_radius.max(0.0),
                     ],
+                    cull_flags: [if batch.disable_hiz_occlusion {
+                        CULL_FLAG_DISABLE_HIZ_OCCLUSION
+                    } else {
+                        0
+                    }, 0, 0, 0],
                 });
             }
             let mut planes = [[0.0f32; 4]; 6];
@@ -2122,7 +2159,11 @@ fn compute_builtin_mesh_bounds(
             .min(indices.len());
         let mut pts = Vec::with_capacity(end.saturating_sub(start));
         for idx in &indices[start..end] {
-            let Some(v) = vertices.get(*idx as usize) else {
+            let vertex_index = range.base_vertex as i64 + *idx as i64;
+            if vertex_index < 0 {
+                continue;
+            }
+            let Some(v) = vertices.get(vertex_index as usize) else {
                 continue;
             };
             pts.push(v.pos);
@@ -2406,6 +2447,7 @@ fn push_draw_batch(
     local_center: [f32; 3],
     local_radius: f32,
     occlusion_query: Option<u32>,
+    disable_hiz_occlusion: bool,
 ) {
     draw_batches.push(DrawBatch {
         mesh,
@@ -2415,6 +2457,7 @@ fn push_draw_batch(
         local_center,
         local_radius: local_radius.max(0.0),
         occlusion_query,
+        disable_hiz_occlusion,
     });
 }
 
@@ -2629,24 +2672,6 @@ fn occlusion_flags(mode: OcclusionCullingMode) -> (bool, bool) {
         OcclusionCullingMode::Gpu => (true, false),
         OcclusionCullingMode::Off => (false, false),
     }
-}
-
-#[inline]
-fn draw_center_in_frustum(draw: &Draw3DInstance, view_proj: Mat4) -> bool {
-    let center = Vec4::new(draw.model[3][0], draw.model[3][1], draw.model[3][2], 1.0);
-    if !center.is_finite() {
-        return false;
-    }
-    let clip = view_proj * center;
-    if !clip.is_finite() || clip.w <= 0.0 {
-        return false;
-    }
-    clip.x >= -clip.w
-        && clip.x <= clip.w
-        && clip.y >= -clip.w
-        && clip.y <= clip.w
-        && clip.z >= -clip.w
-        && clip.z <= clip.w
 }
 
 fn extract_frustum_planes(view_proj: Mat4) -> [Vec4; 6] {

@@ -3,7 +3,7 @@ use crate::{
     resources::ResourceStore,
     three_d::particles::renderer::Particles3DRenderer,
     three_d::renderer::Renderer3D,
-    three_d::{gpu::validate_mesh_source, renderer::Draw3DInstance},
+    three_d::{gpu::validate_mesh_source, renderer::Draw3DInstance, renderer::Draw3DKind},
     two_d::renderer::Renderer2D,
 };
 use perro_ids::NodeID;
@@ -246,6 +246,12 @@ impl PerroGraphics {
                     } => {
                         self.renderer_3d.queue_draw(node, mesh, material, model);
                     }
+                    Command3D::DrawTerrain {
+                        node,
+                        model,
+                    } => {
+                        self.renderer_3d.queue_terrain(node, model);
+                    }
                     Command3D::SetCamera { camera } => {
                         self.renderer_3d.set_camera(camera);
                     }
@@ -362,8 +368,12 @@ impl GraphicsBackend for PerroGraphics {
             self.resources.mark_texture_used(sprite.texture);
         }
         for draw in &self.retained_draws_cache {
-            self.resources.mark_mesh_used(draw.mesh);
-            self.resources.mark_material_used(draw.material);
+            if let Draw3DKind::Mesh(mesh) = draw.kind {
+                self.resources.mark_mesh_used(mesh);
+            }
+            if let Some(material) = draw.material {
+                self.resources.mark_material_used(material);
+            }
         }
         self.frame_index = self.frame_index.wrapping_add(1);
         if self.frame_index.is_multiple_of(GC_INTERVAL_FRAMES) {

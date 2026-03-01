@@ -15,6 +15,7 @@ use perro_nodes::{
     ray_light_3d::RayLight3D,
     spot_light_3d::SpotLight3D,
     sprite_2d::Sprite2D,
+    terrain_instance_3d::TerrainInstance3D,
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
@@ -230,6 +231,9 @@ fn scene_node_data_from_runtime(data: &RuntimeNodeData) -> Result<SceneNodeData,
         "MeshInstance3D" => Ok(SceneNodeData::MeshInstance3D(
             build_runtime_mesh_instance_3d(data),
         )),
+        "TerrainInstance3D" => Ok(SceneNodeData::TerrainInstance3D(
+            build_runtime_terrain_instance_3d(data),
+        )),
         "Camera3D" => Ok(SceneNodeData::Camera3D(build_runtime_camera_3d(data))),
         "ParticleEmitter3D" => Ok(SceneNodeData::ParticleEmitter3D(
             build_runtime_particle_emitter_3d(data),
@@ -257,6 +261,9 @@ fn scene_node_data_from_static(data: &StaticNodeData) -> Result<SceneNodeData, S
         StaticNodeType::Node3D => Ok(SceneNodeData::Node3D(build_static_node_3d(data))),
         StaticNodeType::MeshInstance3D => Ok(SceneNodeData::MeshInstance3D(
             build_static_mesh_instance_3d(data),
+        )),
+        StaticNodeType::TerrainInstance3D => Ok(SceneNodeData::TerrainInstance3D(
+            build_static_terrain_instance_3d(data),
         )),
         StaticNodeType::Camera3D => Ok(SceneNodeData::Camera3D(build_static_camera_3d(data))),
         StaticNodeType::ParticleEmitter3D => Ok(SceneNodeData::ParticleEmitter3D(
@@ -317,6 +324,16 @@ fn build_runtime_mesh_instance_3d(data: &RuntimeNodeData) -> MeshInstance3D {
     }
     apply_node_3d_fields(&mut node, &data.fields);
     apply_mesh_instance_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_runtime_terrain_instance_3d(data: &RuntimeNodeData) -> TerrainInstance3D {
+    let mut node = TerrainInstance3D::new();
+    if let Some(base) = &data.base {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_terrain_instance_3d_fields(&mut node, &data.fields);
     node
 }
 
@@ -416,6 +433,16 @@ fn build_static_mesh_instance_3d(data: &StaticNodeData) -> MeshInstance3D {
     }
     apply_node_3d_fields_static(&mut node, data.fields);
     apply_mesh_instance_3d_fields_static(&mut node, data.fields);
+    node
+}
+
+fn build_static_terrain_instance_3d(data: &StaticNodeData) -> TerrainInstance3D {
+    let mut node = TerrainInstance3D::new();
+    if let Some(base) = data.base {
+        apply_node_3d_data_static(&mut node, base);
+    }
+    apply_node_3d_fields_static(&mut node, data.fields);
+    apply_terrain_instance_3d_fields_static(&mut node, data.fields);
     node
 }
 
@@ -587,6 +614,12 @@ fn apply_node_3d_fields(node: &mut Node3D, fields: &[(String, RuntimeValue)]) {
 }
 
 fn apply_mesh_instance_3d_fields(_node: &mut MeshInstance3D, _fields: &[(String, RuntimeValue)]) {}
+
+fn apply_terrain_instance_3d_fields(
+    _node: &mut TerrainInstance3D,
+    _fields: &[(String, RuntimeValue)],
+) {
+}
 
 fn apply_camera_3d_fields(node: &mut Camera3D, fields: &[(String, RuntimeValue)]) {
     for (name, value) in fields {
@@ -935,6 +968,12 @@ fn apply_mesh_instance_3d_fields_static(
 ) {
 }
 
+fn apply_terrain_instance_3d_fields_static(
+    _node: &mut TerrainInstance3D,
+    _fields: &[(&str, StaticSceneValue)],
+) {
+}
+
 fn apply_camera_3d_fields_static(node: &mut Camera3D, fields: &[(&str, StaticSceneValue)]) {
     for (name, value) in fields {
         match *name {
@@ -1272,16 +1311,25 @@ fn extract_texture_source(data: &RuntimeNodeData) -> Option<String> {
 }
 
 fn extract_mesh_source(data: &RuntimeNodeData) -> Option<String> {
-    if data.ty != "MeshInstance3D" {
+    let is_terrain = data.ty == "TerrainInstance3D";
+    if data.ty != "MeshInstance3D" && !is_terrain {
         return None;
     }
-    data.fields
+    let explicit = data
+        .fields
         .iter()
-        .find_map(|(name, value)| (name == "mesh").then(|| as_asset_source(value)).flatten())
+        .find_map(|(name, value)| (name == "mesh").then(|| as_asset_source(value)).flatten());
+    if explicit.is_some() {
+        return explicit;
+    }
+    if is_terrain {
+        return Some("__terrain64__".to_string());
+    }
+    None
 }
 
 fn extract_material_source(data: &RuntimeNodeData) -> Option<String> {
-    if data.ty != "MeshInstance3D" {
+    if data.ty != "MeshInstance3D" && data.ty != "TerrainInstance3D" {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -1292,7 +1340,7 @@ fn extract_material_source(data: &RuntimeNodeData) -> Option<String> {
 }
 
 fn extract_material_inline(data: &RuntimeNodeData) -> Option<Material3D> {
-    if data.ty != "MeshInstance3D" {
+    if data.ty != "MeshInstance3D" && data.ty != "TerrainInstance3D" {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -1689,18 +1737,26 @@ fn extract_texture_source_static(data: &StaticNodeData) -> Option<String> {
 }
 
 fn extract_mesh_source_static(data: &StaticNodeData) -> Option<String> {
-    if data.ty != StaticNodeType::MeshInstance3D {
+    let is_terrain = data.ty == StaticNodeType::TerrainInstance3D;
+    if data.ty != StaticNodeType::MeshInstance3D && !is_terrain {
         return None;
     }
-    data.fields.iter().find_map(|(name, value)| {
+    let explicit = data.fields.iter().find_map(|(name, value)| {
         (*name == "mesh")
             .then(|| as_asset_source_static(value))
             .flatten()
-    })
+    });
+    if explicit.is_some() {
+        return explicit;
+    }
+    if is_terrain {
+        return Some("__terrain64__".to_string());
+    }
+    None
 }
 
 fn extract_material_source_static(data: &StaticNodeData) -> Option<String> {
-    if data.ty != StaticNodeType::MeshInstance3D {
+    if data.ty != StaticNodeType::MeshInstance3D && data.ty != StaticNodeType::TerrainInstance3D {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -1711,7 +1767,7 @@ fn extract_material_source_static(data: &StaticNodeData) -> Option<String> {
 }
 
 fn extract_material_inline_static(data: &StaticNodeData) -> Option<Material3D> {
-    if data.ty != StaticNodeType::MeshInstance3D {
+    if data.ty != StaticNodeType::MeshInstance3D && data.ty != StaticNodeType::TerrainInstance3D {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {

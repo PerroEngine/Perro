@@ -344,6 +344,10 @@ pub enum Command3D {
         node: NodeID,
         model: [[f32; 4]; 4],
     },
+    DrawTerrain {
+        node: NodeID,
+        model: [[f32; 4]; 4],
+    },
     SetCamera {
         camera: Camera3DState,
     },

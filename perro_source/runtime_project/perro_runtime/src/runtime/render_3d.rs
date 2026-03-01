@@ -195,7 +195,7 @@ impl Runtime {
             if let Some((mesh, material, model)) = mesh_data {
                 if effective_visible {
                     if let Some((mesh, material)) =
-                        self.resolve_mesh_instance_assets(node, mesh, material)
+                        self.resolve_render_mesh_assets(node, mesh, material)
                     {
                         self.queue_render_command(RenderCommand::ThreeD(Command3D::Draw {
                             mesh,
@@ -205,6 +205,21 @@ impl Runtime {
                         }));
                         visible_now.insert(node);
                     }
+                }
+            }
+            let terrain_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::TerrainInstance3D(terrain) => {
+                    Some(terrain.transform.to_mat4().to_cols_array_2d())
+                }
+                _ => None,
+            });
+            if let Some(model) = terrain_data {
+                if effective_visible {
+                    self.queue_render_command(RenderCommand::ThreeD(Command3D::DrawTerrain {
+                        node,
+                        model,
+                    }));
+                    visible_now.insert(node);
                 }
             }
 
@@ -283,7 +298,7 @@ impl Runtime {
         }
     }
 
-    fn resolve_mesh_instance_assets(
+    fn resolve_render_mesh_assets(
         &mut self,
         node: NodeID,
         mut mesh: MeshID,
@@ -307,7 +322,12 @@ impl Runtime {
                 }
             }
             if mesh.is_nil() {
-                let source = self.render_3d.mesh_sources.get(&node)?.trim().to_string();
+                let source = self
+                    .render_3d
+                    .mesh_sources
+                    .get(&node)
+                    .map(|source| source.trim().to_string())
+                    .filter(|source| !source.is_empty())?;
                 if source.is_empty() {
                     return None;
                 }
@@ -375,6 +395,7 @@ impl Runtime {
 
         Some((mesh, material))
     }
+
 }
 
 fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {

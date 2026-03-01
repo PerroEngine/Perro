@@ -12,6 +12,7 @@ struct CullItem {
     model_2: vec4<f32>,
     model_3: vec4<f32>,
     local_center_radius: vec4<f32>,
+    cull_flags: vec4<u32>,
 }
 
 struct DrawIndexedIndirect {

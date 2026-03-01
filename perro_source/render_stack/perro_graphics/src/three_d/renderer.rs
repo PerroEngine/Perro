@@ -7,10 +7,16 @@ use perro_render_bridge::{
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Draw3DKind {
+    Mesh(MeshID),
+    Terrain64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Draw3DInstance {
     pub node: NodeID,
-    pub mesh: MeshID,
-    pub material: MaterialID,
+    pub kind: Draw3DKind,
+    pub material: Option<MaterialID>,
     pub model: [[f32; 4]; 4],
 }
 
@@ -59,8 +65,17 @@ impl Renderer3D {
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
-            mesh,
-            material,
+            kind: Draw3DKind::Mesh(mesh),
+            material: Some(material),
+            model,
+        });
+    }
+
+    pub fn queue_terrain(&mut self, node: NodeID, model: [[f32; 4]; 4]) {
+        self.queued_draws.push(Draw3DInstance {
+            node,
+            kind: Draw3DKind::Terrain64,
+            material: None,
             model,
         });
     }
@@ -95,9 +110,16 @@ impl Renderer3D {
     ) -> (Camera3DState, Renderer3DStats, Lighting3DState) {
         let mut stats = Renderer3DStats::default();
         for draw in self.queued_draws.drain(..) {
-            let mesh_ready = resources.has_mesh(draw.mesh);
-            let material_ready = resources.has_material(draw.material);
-            if mesh_ready && material_ready {
+            let material_ready = draw.material.map(|id| resources.has_material(id)).unwrap_or(true);
+            let mesh_ready = match draw.kind {
+                Draw3DKind::Mesh(mesh) => resources.has_mesh(mesh),
+                Draw3DKind::Terrain64 => true,
+            };
+            let draw_ready = match draw.kind {
+                Draw3DKind::Mesh(_) => mesh_ready && material_ready,
+                Draw3DKind::Terrain64 => material_ready,
+            };
+            if draw_ready {
                 self.retained_draws.insert(draw.node, draw);
                 stats.accepted_draws = stats.accepted_draws.saturating_add(1);
             } else {
@@ -106,7 +128,7 @@ impl Renderer3D {
                     // but continue applying latest transform updates.
                     retained.model = draw.model;
                     if mesh_ready {
-                        retained.mesh = draw.mesh;
+                        retained.kind = draw.kind;
                     }
                     if material_ready {
                         retained.material = draw.material;

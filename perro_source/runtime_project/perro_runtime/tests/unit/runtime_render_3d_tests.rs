@@ -3,7 +3,7 @@ use perro_ids::{MaterialID, MeshID};
 use perro_nodes::{
     CameraProjection, SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D,
     camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, node_3d::Node3D,
-    ray_light_3d::RayLight3D,
+    ray_light_3d::RayLight3D, terrain_instance_3d::TerrainInstance3D,
 };
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
@@ -212,6 +212,24 @@ fn unchanged_mesh_instance_emits_draw() {
     assert!(commands.iter().any(|command| matches!(
         command,
         RenderCommand::ThreeD(Command3D::Draw { node: draw_node, .. })
+            if *draw_node == node
+    )));
+}
+
+#[test]
+fn terrain_instance_uses_builtin_terrain64_mesh_by_default() {
+    let mut runtime = Runtime::new();
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::TerrainInstance3D(
+            TerrainInstance3D::new(),
+        )));
+
+    runtime.extract_render_3d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(first.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(Command3D::DrawTerrain { node: draw_node, .. })
             if *draw_node == node
     )));
 }

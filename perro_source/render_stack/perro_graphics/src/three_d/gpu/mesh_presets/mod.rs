@@ -9,6 +9,7 @@ mod cube;
 mod cylinder;
 mod sphere;
 mod square_pyramid;
+mod terrain64;
 mod tri_prism;
 mod triangular_pyramid;
 
@@ -60,6 +61,7 @@ pub(super) fn build_builtin_mesh_buffer() -> BuiltinMeshBuffer {
             "__capsule__",
             deduplicate_mesh(capsule::geometry(ROUND_SEGMENTS, CAPSULE_HEMISPHERE_BANDS)),
         ),
+        ("__terrain64__", deduplicate_mesh(terrain64::geometry())),
     ];
 
     let mut all_vertices = Vec::new();

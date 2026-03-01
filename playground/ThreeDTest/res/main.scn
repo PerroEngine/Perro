@@ -6,33 +6,15 @@
 [/Node3D]
 [/main]
 
-
-[mesh2]
-parent = @root
-script = "res://scripts/script.rs"
-
-[MeshInstance3D]
-    mesh = "__cube__"
-
-    [Node3D]
-        position = (0, 0, -50)
-        scale = (15,15,15)
-    [/Node3D]
-[/MeshInstance3D]
-[/mesh2]
-
-[mesh3]
+[terrain]
 parent = @root
 
-[MeshInstance3D]
-    mesh = "__cube__"
-
+[TerrainInstance3D]
     [Node3D]
-        position = (0, 0, -75)
-        scale = (5,5,5)
+        position = (0, 0, 0)
     [/Node3D]
-[/MeshInstance3D]
-[/mesh3]
+[/TerrainInstance3D]
+[/terrain]
 
 
 [camera]
@@ -72,22 +54,3 @@ parent = @root
     intensity = 0.3
 [/AmbientLight3D]
 [/ambient]
-
-[particles_test]
-parent = @root
-script = "res://scripts/particle.rs"
-
-[ParticleEmitter3D]
-    render_mode = "billboard"
-    active = true
-    looping = true
-    spawn_rate = 1000.0
-    seed = 21
-    params = (3.0, 2.0, 8.0, 0.0)
-    profile = "res://particles/test.ppart"
-
-    [Node3D]
-        position = (0, 0, -12)
-    [/Node3D]
-[/ParticleEmitter3D]
-[/particles_test]

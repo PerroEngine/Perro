@@ -6,6 +6,7 @@ pub mod particle_emitter_3d;
 pub mod point_light_3d;
 pub mod ray_light_3d;
 pub mod spot_light_3d;
+pub mod terrain_instance_3d;
 
 pub use ambient_light_3d::*;
 pub use camera_3d::*;
@@ -15,3 +16,4 @@ pub use particle_emitter_3d::*;
 pub use point_light_3d::*;
 pub use ray_light_3d::*;
 pub use spot_light_3d::*;
+pub use terrain_instance_3d::*;

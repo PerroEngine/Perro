@@ -5,6 +5,7 @@ use perro_render_bridge::{
     Camera3DState, CameraProjectionState, Command2D, Command3D, Material3D, RenderBridge,
     RenderCommand, ResourceCommand, Sprite2DCommand,
 };
+use crate::three_d::renderer::Draw3DKind;
 
 #[test]
 fn sprite_texture_upsert_is_accepted_after_texture_creation() {
@@ -132,8 +133,8 @@ fn draw_3d_updates_retained_state_per_node() {
         graphics.renderer_3d.retained_draw(node_a),
         Some(crate::three_d::renderer::Draw3DInstance {
             node: node_a,
-            mesh: created_meshes[0],
-            material: created_materials[0],
+            kind: Draw3DKind::Mesh(created_meshes[0]),
+            material: Some(created_materials[0]),
             model: model_a,
         })
     );
@@ -141,8 +142,8 @@ fn draw_3d_updates_retained_state_per_node() {
         graphics.renderer_3d.retained_draw(node_b),
         Some(crate::three_d::renderer::Draw3DInstance {
             node: node_b,
-            mesh: created_meshes[1],
-            material: created_materials[1],
+            kind: Draw3DKind::Mesh(created_meshes[1]),
+            material: Some(created_materials[1]),
             model: model_b,
         })
     );
@@ -199,8 +200,8 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         graphics.renderer_3d.retained_draw(node),
         Some(crate::three_d::renderer::Draw3DInstance {
             node,
-            mesh: mesh_id,
-            material: material_id,
+            kind: Draw3DKind::Mesh(mesh_id),
+            material: Some(material_id),
             model: first_model,
         })
     );
@@ -224,8 +225,8 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         graphics.renderer_3d.retained_draw(node),
         Some(crate::three_d::renderer::Draw3DInstance {
             node,
-            mesh: mesh_id,
-            material: material_id,
+            kind: Draw3DKind::Mesh(mesh_id),
+            material: Some(material_id),
             model: second_model,
         })
     );
@@ -298,8 +299,8 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         graphics.renderer_3d.retained_draw(node),
         Some(crate::three_d::renderer::Draw3DInstance {
             node,
-            mesh: mesh_id,
-            material: material_id,
+            kind: Draw3DKind::Mesh(mesh_id),
+            material: Some(material_id),
             model: second_model,
         })
     );

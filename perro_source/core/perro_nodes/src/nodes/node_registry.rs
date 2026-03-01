@@ -9,6 +9,7 @@ use crate::point_light_3d::PointLight3D;
 use crate::ray_light_3d::RayLight3D;
 use crate::spot_light_3d::SpotLight3D;
 use crate::sprite_2d::Sprite2D;
+use crate::terrain_instance_3d::TerrainInstance3D;
 use perro_ids::{NodeID, TagID};
 use perro_structs::{Transform2D, Transform3D};
 use std::borrow::Cow;
@@ -626,6 +627,7 @@ define_scene_nodes! {
         Node3D => (None, Node3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         Camera3D => (Node3D, Camera3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         MeshInstance3D => (Node3D, MeshInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        TerrainInstance3D => (Node3D, TerrainInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         ParticleEmitter3D => (Node3D, ParticleEmitter3D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         //Lights
         AmbientLight3D => (None, AmbientLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

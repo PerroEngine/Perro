@@ -1644,6 +1644,7 @@ dependencies = [
  "perro_meshlets",
  "perro_particle_math",
  "perro_render_bridge",
+ "perro_terrain",
  "pollster",
  "wgpu",
  "winit",

@@ -16,6 +16,7 @@ struct CullItem {
     model_2: vec4<f32>,
     model_3: vec4<f32>,
     local_center_radius: vec4<f32>,
+    cull_flags: vec4<u32>,
 }
 
 struct DrawIndexedIndirect {
@@ -50,6 +51,9 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
 
     let item = cull_items[i];
+    if (item.cull_flags.x & 1u) != 0u {
+        return;
+    }
     let model = mat4x4<f32>(item.model_0, item.model_1, item.model_2, item.model_3);
     let center_local = vec4<f32>(item.local_center_radius.xyz, 1.0);
     let center_world = model * center_local;
