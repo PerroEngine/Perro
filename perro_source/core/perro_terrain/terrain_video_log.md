@@ -594,6 +594,13 @@ Preview:
 - `cargo check` passes for full workspace.
 - `cargo check -p perro_runtime -p perro_resource_context -p perro_input -p perro_terrain` passes.
 
+## Commit: Editor Sucks Less
+
+### What was added
+
+- Raycast offset (to make the point of the "oops" vs "thats better btu still scuks")
+
+
 ## Future Commit Template
 
 ## Commit: <name>

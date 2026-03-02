@@ -91,29 +91,28 @@ lifecycle!({
         let smooth_scroll_down = ipt.Keys().down(KeyCode::KeyF);
         let setheight_scroll_down = ipt.Keys().down(KeyCode::KeyH);
 
-        if ipt.Keys().pressed(KeyCode::Digit1) {
-            with_state_mut!(ctx, CameraState, node, |state| state.editor_mode = 1);
-        }
-        if ipt.Keys().pressed(KeyCode::Digit2) {
-            with_state_mut!(ctx, CameraState, node, |state| state.editor_mode = 2);
-        }
-        if ipt.Keys().pressed(KeyCode::Digit3) {
-            with_state_mut!(ctx, CameraState, node, |state| state.editor_mode = 3);
-        }
-        if ipt.Keys().pressed(KeyCode::Digit4) {
-            with_state_mut!(ctx, CameraState, node, |state| state.editor_mode = 4);
-        }
-        if ipt.Keys().pressed(KeyCode::Digit5) {
-            with_state_mut!(ctx, CameraState, node, |state| state.editor_mode = 5);
-        }
-        if ipt.Keys().pressed(KeyCode::Digit6) {
-            with_state_mut!(ctx, CameraState, node, |state| state.editor_shape = 1);
-        }
-        if ipt.Keys().pressed(KeyCode::Digit7) {
-            with_state_mut!(ctx, CameraState, node, |state| state.editor_shape = 2);
-        }
-        if ipt.Keys().pressed(KeyCode::Digit8) {
-            with_state_mut!(ctx, CameraState, node, |state| state.editor_shape = 3);
+        let mut new_mode = None;
+        let mut new_shape = None;
+
+        if ipt.Keys().pressed(KeyCode::Digit1) { new_mode = Some(1); }
+        if ipt.Keys().pressed(KeyCode::Digit2) { new_mode = Some(2); }
+        if ipt.Keys().pressed(KeyCode::Digit3) { new_mode = Some(3); }
+        if ipt.Keys().pressed(KeyCode::Digit4) { new_mode = Some(4); }
+        if ipt.Keys().pressed(KeyCode::Digit5) { new_mode = Some(5); }
+
+        if ipt.Keys().pressed(KeyCode::Digit6) { new_shape = Some(1); }
+        if ipt.Keys().pressed(KeyCode::Digit7) { new_shape = Some(2); }
+        if ipt.Keys().pressed(KeyCode::Digit8) { new_shape = Some(3); }
+
+        if new_mode.is_some() || new_shape.is_some() {
+            with_state_mut!(ctx, CameraState, node, |state| {
+                if let Some(m) = new_mode {
+                    state.editor_mode = m;
+                }
+                if let Some(s) = new_shape {
+                    state.editor_shape = s;
+                }
+            });
         }
 
         let (move_speed, yaw, pitch, editor_size, editor_basis, editor_delta, editor_smooth_strength, editor_set_height_y, editor_mode, editor_shape) = with_state_mut!(ctx, CameraState, node, |state| {
