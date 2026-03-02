@@ -5,6 +5,14 @@ use std::collections::{HashMap, HashSet};
 const BORDER_EPSILON: f32 = 1.0e-4;
 const POSITION_KEY_SCALE: f32 = 10_000.0;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TerrainRayHit {
+    pub chunk: ChunkCoord,
+    pub position_world: Vector3,
+    pub normal_world: Vector3,
+    pub distance: f32,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TerrainEditSummary {
     pub touched_chunks: Vec<ChunkCoord>,
@@ -152,6 +160,47 @@ impl TerrainData {
             touched_chunks: touched,
             inserted_points: 1,
         })
+    }
+
+    pub fn raycast_world(
+        &self,
+        origin_world: Vector3,
+        direction_world: Vector3,
+        max_distance: f32,
+    ) -> Option<TerrainRayHit> {
+        if !max_distance.is_finite() || max_distance <= 0.0 {
+            return None;
+        }
+        let direction = direction_world.normalized();
+        if direction.length_squared() <= 1.0e-8 {
+            return None;
+        }
+
+        let mut best: Option<TerrainRayHit> = None;
+        for (coord, chunk) in self.chunks() {
+            for tri in chunk.triangles() {
+                let a = self.chunk_local_to_world(chunk.vertices()[tri.a].position, coord);
+                let b = self.chunk_local_to_world(chunk.vertices()[tri.b].position, coord);
+                let c = self.chunk_local_to_world(chunk.vertices()[tri.c].position, coord);
+
+                if let Some((distance, position_world, normal_world)) =
+                    ray_triangle_hit(origin_world, direction, max_distance, a, b, c)
+                {
+                    match best {
+                        Some(current) if current.distance <= distance => {}
+                        _ => {
+                            best = Some(TerrainRayHit {
+                                chunk: coord,
+                                position_world,
+                                normal_world,
+                                distance,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        best
     }
 
     fn sync_seams_for_touched(&mut self, touched: &[ChunkCoord]) -> Result<(), ChunkError> {
@@ -424,4 +473,55 @@ fn position_key(x: f32, z: f32) -> (i32, i32) {
         (x * POSITION_KEY_SCALE).round() as i32,
         (z * POSITION_KEY_SCALE).round() as i32,
     )
+}
+
+fn ray_triangle_hit(
+    origin: Vector3,
+    direction: Vector3,
+    max_distance: f32,
+    a: Vector3,
+    b: Vector3,
+    c: Vector3,
+) -> Option<(f32, Vector3, Vector3)> {
+    let ab = sub(b, a);
+    let ac = sub(c, a);
+    let p = direction.cross(ac);
+    let det = ab.dot(p);
+    if det.abs() < 1.0e-6 {
+        return None;
+    }
+    let inv_det = 1.0 / det;
+    let tvec = sub(origin, a);
+    let u = tvec.dot(p) * inv_det;
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    let q = tvec.cross(ab);
+    let v = direction.dot(q) * inv_det;
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    let t = ac.dot(q) * inv_det;
+    if t < 0.0 || t > max_distance {
+        return None;
+    }
+
+    let hit = add(origin, mul(direction, t));
+    let normal = ab.cross(ac).normalized();
+    Some((t, hit, normal))
+}
+
+#[inline]
+fn sub(a: Vector3, b: Vector3) -> Vector3 {
+    Vector3::new(a.x - b.x, a.y - b.y, a.z - b.z)
+}
+
+#[inline]
+fn add(a: Vector3, b: Vector3) -> Vector3 {
+    Vector3::new(a.x + b.x, a.y + b.y, a.z + b.z)
+}
+
+#[inline]
+fn mul(a: Vector3, s: f32) -> Vector3 {
+    Vector3::new(a.x * s, a.y * s, a.z * s)
 }

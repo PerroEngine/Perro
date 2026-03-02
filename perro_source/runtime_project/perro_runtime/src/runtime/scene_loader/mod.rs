@@ -80,7 +80,10 @@ impl Runtime {
         self.render_3d.terrain_chunk_meshes.clear();
         self.render_3d.particle_path_cache.clear();
         self.render_3d.removed_nodes.clear();
-        self.terrain_store.clear();
+        self.terrain_store
+            .lock()
+            .expect("terrain store mutex poisoned")
+            .clear();
         if self.provider_mode == ProviderMode::Dynamic {
             self.dynamic_script_registry.clear();
         }

@@ -533,6 +533,67 @@ Track what each terrain commit changed so video explanations are easy later.
 
 - Looks cool
 
+## Commit: Runtime Terrain Editor Suite + Resource Terrain API
+
+### What was added
+
+- Added `Terrain` sub-API to `ResourceContext`:
+  - `res.Terrain().brush_op(terrain_id, center_world, brush_size_meters, shape, op)`
+  - `res.Terrain().raycast(terrain_id, origin_world, direction_world, max_distance)`
+- Added terrain raycast support in terrain core (`TerrainData::raycast_world`) and new hit payload (`TerrainRayHit`).
+- Refactored runtime terrain ownership to shared terrain storage between runtime + resource API so script-issued brush ops and render path use the same terrain data.
+- Added mouse absolute position + viewport size to input API:
+  - `ipt.Mouse().position()`
+  - `ipt.Mouse().viewport_size()`
+- Wired window runner/app/runtime to feed cursor position + viewport size every frame.
+- Built a full runtime terrain editor directly into `playground/ThreeDTest/res/scripts/camera.rs`:
+  - raycasts mouse-to-terrain each frame
+  - creates/maintains a stable preview `ParticleEmitter3D`
+  - moves preview emitter to the terrain hit point
+  - pushes brush params into emitter `params` (`[size, basis]`)
+  - applies brush ops while mouse is held
+
+### Editor Controls (Exact)
+
+- `MMB + mouse drag`: camera look
+- `W/A/S/D`: planar movement
+- `Space`: move up
+- `Shift`: move down
+- `Mouse wheel` (no modifier): camera move speed
+- `S + mouse wheel`: brush size
+- `B + mouse wheel`: decimate basis
+- `LMB (hold)`: apply active brush op at raycast hit point
+
+Brush operation mode:
+- `1`: `Add`
+- `2`: `Remove`
+- `3`: `Smooth`
+- `4`: `Decimate`
+- `5`: `SetHeight`
+
+Brush shape:
+- `6`: `Square`
+- `7`: `Circle`
+- `8`: `Triangle`
+
+Preview:
+- Auto-created emitter tag: `terrain_editor_preview`
+- Profile path: `res://particles/test.ppart`
+- Emitter follows current raycast hit point
+- Emitter params are updated to `[brush_size, basis]`
+
+### Why it matters
+
+- Keeps `ResourceContext` immutable from script call sites while still supporting terrain edits through command-style APIs.
+- Establishes terrain as a first-class editable resource surface with `TerrainID`-driven operations.
+- Delivers immediate in-runtime terrain authoring workflow in `ThreeDTest` with visual hit/brush feedback.
+- Sets up clean path to later unify terrain raycast into broader world/physics raycast APIs.
+
+### Validation added
+
+- `cargo check` passes for full workspace.
+- `cargo check -p perro_runtime -p perro_resource_context -p perro_input -p perro_terrain` passes.
+
 ## Future Commit Template
 
 ## Commit: <name>

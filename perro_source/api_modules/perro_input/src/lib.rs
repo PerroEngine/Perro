@@ -17,6 +17,10 @@ pub struct InputSnapshot {
     mouse_delta_y: f32,
     mouse_wheel_x: f32,
     mouse_wheel_y: f32,
+    mouse_position_x: f32,
+    mouse_position_y: f32,
+    viewport_width: f32,
+    viewport_height: f32,
 }
 
 impl InputSnapshot {
@@ -33,6 +37,10 @@ impl InputSnapshot {
             mouse_delta_y: 0.0,
             mouse_wheel_x: 0.0,
             mouse_wheel_y: 0.0,
+            mouse_position_x: 0.0,
+            mouse_position_y: 0.0,
+            viewport_width: 1.0,
+            viewport_height: 1.0,
         }
     }
 
@@ -110,6 +118,18 @@ impl InputSnapshot {
     }
 
     #[inline]
+    pub fn set_mouse_position(&mut self, x: f32, y: f32) {
+        self.mouse_position_x = x;
+        self.mouse_position_y = y;
+    }
+
+    #[inline]
+    pub fn set_viewport_size(&mut self, width: u32, height: u32) {
+        self.viewport_width = (width.max(1)) as f32;
+        self.viewport_height = (height.max(1)) as f32;
+    }
+
+    #[inline]
     pub fn is_mouse_down(&self, button: MouseButton) -> bool {
         self.mouse_down & button.bit() != 0
     }
@@ -132,6 +152,16 @@ impl InputSnapshot {
     #[inline]
     pub fn mouse_wheel(&self) -> Vector2 {
         Vector2::new(self.mouse_wheel_x, self.mouse_wheel_y)
+    }
+
+    #[inline]
+    pub fn mouse_position(&self) -> Vector2 {
+        Vector2::new(self.mouse_position_x, self.mouse_position_y)
+    }
+
+    #[inline]
+    pub fn viewport_size(&self) -> Vector2 {
+        Vector2::new(self.viewport_width, self.viewport_height)
     }
 
     #[inline]
@@ -158,6 +188,8 @@ pub trait InputAPI {
     fn is_mouse_released(&self, button: MouseButton) -> bool;
     fn mouse_delta(&self) -> Vector2;
     fn mouse_wheel(&self) -> Vector2;
+    fn mouse_position(&self) -> Vector2;
+    fn viewport_size(&self) -> Vector2;
 }
 
 impl InputAPI for InputSnapshot {
@@ -199,6 +231,16 @@ impl InputAPI for InputSnapshot {
     #[inline]
     fn mouse_wheel(&self) -> Vector2 {
         self.mouse_wheel()
+    }
+
+    #[inline]
+    fn mouse_position(&self) -> Vector2 {
+        self.mouse_position()
+    }
+
+    #[inline]
+    fn viewport_size(&self) -> Vector2 {
+        self.viewport_size()
     }
 }
 
@@ -281,6 +323,16 @@ impl<'ipt, IP: InputAPI + ?Sized> MouseModule<'ipt, IP> {
     pub fn wheel(&self) -> Vector2 {
         self.ipt.mouse_wheel()
     }
+
+    #[inline]
+    pub fn position(&self) -> Vector2 {
+        self.ipt.mouse_position()
+    }
+
+    #[inline]
+    pub fn viewport_size(&self) -> Vector2 {
+        self.ipt.viewport_size()
+    }
 }
 
 #[macro_export]
@@ -339,11 +391,25 @@ macro_rules! mouse_wheel {
     };
 }
 
+#[macro_export]
+macro_rules! mouse_position {
+    ($ipt:expr) => {
+        $ipt.Mouse().position()
+    };
+}
+
+#[macro_export]
+macro_rules! viewport_size {
+    ($ipt:expr) => {
+        $ipt.Mouse().viewport_size()
+    };
+}
+
 pub mod prelude {
     pub use crate::{
         InputAPI, InputContext, InputSnapshot, KeyCode, KeyModule, MouseButton, MouseModule,
-        key_down, key_pressed, key_released, mouse_delta, mouse_down, mouse_pressed,
-        mouse_released, mouse_wheel,
+        key_down, key_pressed, key_released, mouse_delta, mouse_down, mouse_position,
+        mouse_pressed, mouse_released, mouse_wheel, viewport_size,
     };
     pub use perro_structs::Vector2;
 }

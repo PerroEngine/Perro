@@ -6,7 +6,8 @@ pub use api::ResourceContext;
 pub mod prelude {
     pub use crate::api::{ResourceAPI, ResourceContext};
     pub use crate::sub_apis::{
-        MaterialAPI, MaterialModule, MeshAPI, MeshModule, TextureAPI, TextureModule,
+        MaterialAPI, MaterialModule, MeshAPI, MeshModule, TerrainAPI, TerrainModule, TextureAPI,
+        TextureModule,
     };
     pub use crate::{
         create_material, drop_material, drop_mesh, drop_texture, load_material, load_mesh,

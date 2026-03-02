@@ -245,14 +245,36 @@ impl Runtime {
                     } else {
                         Some(terrain_id)
                     };
-                    if let Some(id) = active_terrain_id
-                        && let Some(data) = self.terrain_store.get(id)
-                    {
-                        let chunk_size = data.chunk_size_meters();
-                        let chunk_snapshots: Vec<(ChunkCoord, TerrainChunk)> = data
-                            .chunks()
-                            .map(|(coord, chunk)| (coord, chunk.clone()))
-                            .collect();
+                    let (chunk_size, chunk_snapshots, debug_commands) = {
+                        let terrain_store = self
+                            .terrain_store
+                            .lock()
+                            .expect("terrain store mutex poisoned");
+                        if let Some(id) = active_terrain_id
+                            && let Some(data) = terrain_store.get(id)
+                        {
+                            let chunk_size = data.chunk_size_meters();
+                            let chunk_snapshots: Vec<(ChunkCoord, TerrainChunk)> = data
+                                .chunks()
+                                .map(|(coord, chunk)| (coord, chunk.clone()))
+                                .collect();
+                            let debug_commands = if show_debug_vertices || show_debug_edges {
+                                Self::build_terrain_debug_draws(
+                                    node,
+                                    data,
+                                    world_from_terrain,
+                                    show_debug_vertices,
+                                    show_debug_edges,
+                                )
+                            } else {
+                                Vec::new()
+                            };
+                            (Some(chunk_size), chunk_snapshots, debug_commands)
+                        } else {
+                            (None, Vec::new(), Vec::new())
+                        }
+                    };
+                    if let Some(chunk_size) = chunk_size {
                         self.queue_terrain_chunk_draws(
                             node,
                             chunk_size,
@@ -260,20 +282,8 @@ impl Runtime {
                             world_from_terrain,
                         );
                     }
-                    if (show_debug_vertices || show_debug_edges)
-                        && let Some(id) = active_terrain_id
-                        && let Some(data) = self.terrain_store.get(id)
-                    {
-                        let debug_commands = Self::build_terrain_debug_draws(
-                            node,
-                            data,
-                            world_from_terrain,
-                            show_debug_vertices,
-                            show_debug_edges,
-                        );
-                        for command in debug_commands {
-                            self.queue_render_command(command);
-                        }
+                    for command in debug_commands {
+                        self.queue_render_command(command);
                     }
                     visible_now.insert(node);
                 }

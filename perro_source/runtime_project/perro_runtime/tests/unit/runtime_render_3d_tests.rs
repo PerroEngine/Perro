@@ -238,7 +238,14 @@ fn terrain_instance_emits_runtime_chunk_mesh_commands() {
         })
         .expect("expected terrain node");
     assert!(!assigned_id.is_nil());
-    assert!(runtime.terrain_store.get(assigned_id).is_some());
+    assert!(
+        runtime
+            .terrain_store
+            .lock()
+            .expect("terrain store mutex poisoned")
+            .get(assigned_id)
+            .is_some()
+    );
 
     let first = collect_commands(&mut runtime);
     assert!(first.iter().any(|command| matches!(
@@ -267,10 +274,11 @@ fn terrain_instance_debug_flags_emit_vertex_and_edge_commands_single_setheight()
             _ => None,
         })
         .expect("expected terrain node");
-    let terrain_data = runtime
+    let mut terrain_store = runtime
         .terrain_store
-        .get_mut(terrain_id)
-        .expect("expected terrain data");
+        .lock()
+        .expect("terrain store mutex poisoned");
+    let terrain_data = terrain_store.get_mut(terrain_id).expect("expected terrain data");
     *terrain_data = TerrainData::new(64.0);
     let _ = terrain_data.ensure_chunk(ChunkCoord::new(0, 0));
     let chunk = terrain_data
@@ -296,6 +304,7 @@ fn terrain_instance_debug_flags_emit_vertex_and_edge_commands_single_setheight()
         "set-height structural inserts should not collapse as coplanar"
     );
     assert_eq!(chunk.vertex_count(), 12);
+    drop(terrain_store);
 
     runtime.extract_render_3d_commands();
     let commands = collect_commands(&mut runtime);
@@ -343,10 +352,11 @@ fn terrain_instance_debug_flags_emit_vertex_and_edge_commands_stacked_setheight(
             _ => None,
         })
         .expect("expected terrain node");
-    let terrain_data = runtime
+    let mut terrain_store = runtime
         .terrain_store
-        .get_mut(terrain_id)
-        .expect("expected terrain data");
+        .lock()
+        .expect("terrain store mutex poisoned");
+    let terrain_data = terrain_store.get_mut(terrain_id).expect("expected terrain data");
     *terrain_data = TerrainData::new(64.0);
     let _ = terrain_data.ensure_chunk(ChunkCoord::new(0, 0));
     let chunk = terrain_data
@@ -409,6 +419,7 @@ fn terrain_instance_debug_flags_emit_vertex_and_edge_commands_stacked_setheight(
         referenced.len() == chunk.vertex_count(),
         "expected no orphaned vertices after stacked set-height operations"
     );
+    drop(terrain_store);
 
     runtime.extract_render_3d_commands();
     let commands = collect_commands(&mut runtime);

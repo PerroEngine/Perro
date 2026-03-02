@@ -77,6 +77,16 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn set_mouse_position(&mut self, x: f32, y: f32) {
+        self.runtime.set_mouse_position(x, y);
+    }
+
+    #[inline]
+    pub fn set_viewport_size(&mut self, width: u32, height: u32) {
+        self.runtime.set_viewport_size(width, height);
+    }
+
+    #[inline]
     pub fn fixed_update_runtime(&mut self, fixed_delta_time: f32) {
         self.runtime.fixed_update(fixed_delta_time);
     }
@@ -98,6 +108,7 @@ impl<B: GraphicsBackend> App<B> {
     #[inline]
     pub fn resize_surface(&mut self, width: u32, height: u32) {
         self.graphics.resize(width, height);
+        self.runtime.set_viewport_size(width, height);
     }
 
     pub fn frame(&mut self, delta_time: f32) {

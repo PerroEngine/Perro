@@ -15,7 +15,7 @@ use perro_resource_context::ResourceContext;
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
 use perro_runtime_context::RuntimeContext;
 use perro_scripting::ScriptConstructor;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 mod render_2d;
 mod render_3d;
@@ -46,7 +46,7 @@ pub struct Runtime {
 
     render_2d: Render2DState,
     render_3d: Render3DState,
-    pub(crate) terrain_store: TerrainStore,
+    pub(crate) terrain_store: Arc<Mutex<TerrainStore>>,
     pub(crate) signals: SignalRegistry,
     pub(crate) signal_emit_scratch: Vec<SignalConnection>,
     pub(crate) script_library: Option<Library>,
@@ -340,6 +340,7 @@ impl DirtyState {
 
 impl Runtime {
     pub fn new() -> Self {
+        let terrain_store = Arc::new(Mutex::new(TerrainStore::new()));
         Self {
             time: Timing {
                 fixed_delta: 0.0,
@@ -363,12 +364,12 @@ impl Runtime {
             internal_fixed_update_nodes: Vec::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
-            terrain_store: TerrainStore::new(),
+            terrain_store: terrain_store.clone(),
             signals: SignalRegistry::new(),
             signal_emit_scratch: Vec::new(),
             script_library: None,
             dynamic_script_registry: AHashMap::default(),
-            resource_api: RuntimeResourceApi::new(None),
+            resource_api: RuntimeResourceApi::new(None, terrain_store),
             input: InputSnapshot::new(),
         }
     }
@@ -386,7 +387,8 @@ impl Runtime {
         let static_material_lookup = project.static_material_lookup;
         runtime.project = Some(Arc::new(project));
         runtime.provider_mode = provider_mode;
-        runtime.resource_api = RuntimeResourceApi::new(static_material_lookup);
+        runtime.resource_api =
+            RuntimeResourceApi::new(static_material_lookup, runtime.terrain_store.clone());
         if let Some(entries) = script_registry {
             for (path, ctor) in entries {
                 runtime
@@ -448,6 +450,16 @@ impl Runtime {
     #[inline]
     pub fn add_mouse_wheel(&mut self, dx: f32, dy: f32) {
         self.input.add_mouse_wheel(dx, dy);
+    }
+
+    #[inline]
+    pub fn set_mouse_position(&mut self, x: f32, y: f32) {
+        self.input.set_mouse_position(x, y);
+    }
+
+    #[inline]
+    pub fn set_viewport_size(&mut self, width: u32, height: u32) {
+        self.input.set_viewport_size(width, height);
     }
 
     pub fn queue_render_command(&mut self, command: RenderCommand) {
@@ -736,11 +748,21 @@ impl Runtime {
             return false;
         };
 
-        if !current_id.is_nil() && self.terrain_store.get(current_id).is_some() {
-            return true;
+        if !current_id.is_nil() {
+            let store = self
+                .terrain_store
+                .lock()
+                .expect("terrain store mutex poisoned");
+            if store.get(current_id).is_some() {
+                return true;
+            }
         }
 
-        let id = self.terrain_store.insert(Self::default_terrain_data());
+        let id = self
+            .terrain_store
+            .lock()
+            .expect("terrain store mutex poisoned")
+            .insert(Self::default_terrain_data());
         if let Some(scene_node) = self.nodes.get_mut(node)
             && let SceneNodeData::TerrainInstance3D(terrain) = &mut scene_node.data
         {

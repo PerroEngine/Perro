@@ -238,7 +238,11 @@ impl NodeAPI for Runtime {
         if let Some(terrain_id) = terrain_id
             && !terrain_id.is_nil()
         {
-            let _ = self.terrain_store.remove(terrain_id);
+            let _ = self
+                .terrain_store
+                .lock()
+                .expect("terrain store mutex poisoned")
+                .remove(terrain_id);
         }
 
         self.unregister_internal_node_schedules(node_id);

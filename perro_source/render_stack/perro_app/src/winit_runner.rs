@@ -283,6 +283,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                     let dy = (position.y - prev.y) as f32;
                     self.app.add_mouse_delta(dx, dy);
                 }
+                self.app
+                    .set_mouse_position(position.x as f32, position.y as f32);
                 self.last_cursor_position = Some(position);
             }
             WindowEvent::CursorLeft { .. } => {

@@ -241,6 +241,8 @@ version = "0.1.0"
 dependencies = [
  "perro_ids",
  "perro_render_bridge",
+ "perro_structs",
+ "perro_terrain",
 ]
 
 [[package]]
@@ -385,6 +387,7 @@ dependencies = [
  "perro_runtime_context",
  "perro_scripting",
  "perro_structs",
+ "perro_terrain",
  "perro_variant",
 ]
 

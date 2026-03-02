@@ -1726,6 +1726,8 @@ version = "0.1.0"
 dependencies = [
  "perro_ids",
  "perro_render_bridge",
+ "perro_structs",
+ "perro_terrain",
 ]
 
 [[package]]
