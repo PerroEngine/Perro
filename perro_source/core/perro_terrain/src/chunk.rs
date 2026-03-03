@@ -73,13 +73,28 @@ impl TerrainChunk {
     pub fn new_flat(coord: ChunkCoord, config: ChunkConfig) -> Self {
         let size = config.size_meters;
         let half = size * 0.5;
-        let v0 = Vertex::new(Vector3::new(-half, 0.0, -half));
-        let v1 = Vertex::new(Vector3::new(half, 0.0, -half));
-        let v2 = Vertex::new(Vector3::new(-half, 0.0, half));
-        let v3 = Vertex::new(Vector3::new(half, 0.0, half));
+        let cells = size.round().max(1.0) as usize;
+        let verts_per_side = cells + 1;
+        let mut vertices = Vec::with_capacity(verts_per_side * verts_per_side);
+        for z in 0..=cells {
+            for x in 0..=cells {
+                let px = -half + x as f32;
+                let pz = -half + z as f32;
+                vertices.push(Vertex::new(Vector3::new(px, 0.0, pz)));
+            }
+        }
 
-        let vertices = vec![v0, v1, v2, v3];
-        let triangles = vec![Triangle::new(0, 1, 2), Triangle::new(2, 1, 3)];
+        let mut triangles = Vec::with_capacity(cells * cells * 2);
+        for z in 0..cells {
+            for x in 0..cells {
+                let i0 = z * verts_per_side + x;
+                let i1 = i0 + 1;
+                let i2 = (z + 1) * verts_per_side + x;
+                let i3 = i2 + 1;
+                triangles.push(Triangle::new(i0, i1, i2));
+                triangles.push(Triangle::new(i2, i1, i3));
+            }
+        }
 
         Self {
             coord,

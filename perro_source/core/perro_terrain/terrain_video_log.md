@@ -609,6 +609,17 @@ Preview:
 
 - Can see what you are affecting
 
+## Commit: 1 Vertex per Meter Regression for Editing purposes
+
+### What was added
+
+- In edit mode, 1 vertex per meter
+
+### Why it matters
+
+- The more trad pipeline however for edit mode only, but in release mode we do coplanar optimization so runtime performance isn't affected
+- Easier editing and authoring of terrain and technically more efficient because don't have to retriangulate every edit
+
 ## Future Commit Template
 
 ## Commit: <name>

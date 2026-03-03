@@ -2,10 +2,10 @@ use perro_structs::Vector3;
 use perro_terrain::{ChunkCoord, ChunkError, TerrainChunk};
 
 #[test]
-fn flat_chunk_starts_with_4_vertices_and_2_triangles() {
+fn flat_chunk_starts_with_dense_1m_grid() {
     let c = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
-    assert_eq!(c.vertex_count(), 4);
-    assert_eq!(c.triangle_count(), 2);
+    assert_eq!(c.vertex_count(), 65 * 65);
+    assert_eq!(c.triangle_count(), 64 * 64 * 2);
     assert!(c.validate(1.0e-6).is_ok());
 }
 
@@ -13,9 +13,9 @@ fn flat_chunk_starts_with_4_vertices_and_2_triangles() {
 fn flat_chunk_is_centered_around_origin() {
     let c = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
     let p0 = c.vertices()[0].position;
-    let p3 = c.vertices()[3].position;
+    let plast = c.vertices()[c.vertex_count() - 1].position;
     assert_eq!(p0, Vector3::new(-32.0, 0.0, -32.0));
-    assert_eq!(p3, Vector3::new(32.0, 0.0, 32.0));
+    assert_eq!(plast, Vector3::new(32.0, 0.0, 32.0));
 }
 
 #[test]
@@ -25,23 +25,25 @@ fn add_vertex_and_triangle_works() {
     let tri_id = c
         .add_triangle(0, 1, center)
         .expect("triangle should be valid");
-    assert_eq!(tri_id, 2);
-    assert_eq!(c.vertex_count(), 5);
-    assert_eq!(c.triangle_count(), 3);
+    assert_eq!(tri_id, 64 * 64 * 2);
+    assert_eq!(c.vertex_count(), 65 * 65 + 1);
+    assert_eq!(c.triangle_count(), 64 * 64 * 2 + 1);
 }
 
 #[test]
 fn add_triangle_rejects_bad_indices() {
     let mut c = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
+    let bad_index = c.vertex_count() + 100;
     let err = c
-        .add_triangle(0, 1, 999)
+        .add_triangle(0, 1, bad_index)
         .expect_err("invalid index should fail");
-    assert_eq!(err, ChunkError::InvalidVertexID { vertex_id: 999 });
+    assert_eq!(err, ChunkError::InvalidVertexID { vertex_id: bad_index });
 }
 
 #[test]
 fn validate_rejects_degenerate_triangles() {
     let mut c = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
+    let first_extra_tri = c.triangle_count();
     let a = c.add_vertex(Vector3::new(10.0, 0.0, 10.0));
     let b = c.add_vertex(Vector3::new(20.0, 0.0, 20.0));
     let d = c.add_vertex(Vector3::new(30.0, 0.0, 30.0));
@@ -49,7 +51,7 @@ fn validate_rejects_degenerate_triangles() {
         .expect("indices are valid, triangle insert should succeed");
 
     let err = c.validate(1.0e-6).expect_err("validation should fail");
-    assert_eq!(err, ChunkError::DegenerateTriangle { triangle_id: 2 });
+    assert_eq!(err, ChunkError::DegenerateTriangle { triangle_id: first_extra_tri });
 }
 
 #[test]

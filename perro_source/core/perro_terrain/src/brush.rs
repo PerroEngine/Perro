@@ -60,55 +60,81 @@ impl TerrainChunk {
             return Ok(Vec::new());
         }
 
-        let snapped_size = normalize_size_for_snap(brush_size_meters);
-        let xz_points = brush_xz_points(center, snapped_size, shape);
-        if xz_points.is_empty() {
+        let touched_ids = self.vertices_in_brush(center, brush_size_meters, shape);
+        if touched_ids.is_empty() {
             return Ok(Vec::new());
         }
 
-        match op {
-            BrushOp::SetHeight { y, feature_offset } => {
-                self.apply_set_height_feature(center, snapped_size, shape, y, feature_offset)
+        let current_heights: Vec<f32> = touched_ids
+            .iter()
+            .map(|&id| self.vertices[id].position.y)
+            .collect();
+        let avg = if current_heights.is_empty() {
+            0.0
+        } else {
+            current_heights.iter().sum::<f32>() / current_heights.len() as f32
+        };
+
+        if let BrushOp::Decimate { basis } = op {
+            if basis <= 0.0 || !basis.is_finite() {
+                return Ok(Vec::new());
             }
-            BrushOp::Add { delta } => {
-                self.apply_add_remove_feature(center, snapped_size, shape, delta)
+            for &id in &touched_ids {
+                let old = self.vertices[id].position;
+                // Topology decimate: collapse edited vertices onto the target XY lattice.
+                // Reconcile pass below merges duplicated positions and removes invalid tris.
+                let snapped_x = snap_to_grid(old.x, basis);
+                let snapped_z = snap_to_grid(old.z, basis);
+                let snapped_y = (old.y / basis).round() * basis;
+                self.vertices[id].position = Vector3::new(snapped_x, snapped_y, snapped_z);
             }
-            BrushOp::Remove { delta } => {
-                self.apply_add_remove_feature(center, snapped_size, shape, -delta)
+            self.reconcile_after_edit();
+
+            let mut out = Vec::with_capacity(touched_ids.len());
+            for id in touched_ids {
+                out.push(InsertVertexResult {
+                    inserted_vertex_id: id,
+                    removed_as_coplanar: false,
+                });
             }
-            BrushOp::Smooth { strength } => {
-                let strength = strength.clamp(0.0, 1.0);
-                let current: Vec<f32> = xz_points
-                    .iter()
-                    .map(|p| self.sample_height_at_xz(p.x, p.z).unwrap_or(0.0))
-                    .collect();
-                let avg = if current.is_empty() {
-                    0.0
-                } else {
-                    current.iter().sum::<f32>() / current.len() as f32
-                };
-                let targets: Vec<Vector3> = xz_points
-                    .iter()
-                    .zip(current.iter())
-                    .map(|(p, y0)| Vector3::new(p.x, *y0 + (avg - *y0) * strength, p.z))
-                    .collect();
-                self.apply_points(targets)
-            }
-            BrushOp::Decimate { basis } => {
-                if basis <= 0.0 || !basis.is_finite() {
-                    return Ok(Vec::new());
-                }
-                let targets: Vec<Vector3> = xz_points
-                    .iter()
-                    .map(|p| {
-                        let y0 = self.sample_height_at_xz(p.x, p.z).unwrap_or(0.0);
-                        let y = (y0 / basis).round() * basis;
-                        Vector3::new(p.x, y, p.z)
-                    })
-                    .collect();
-                self.apply_points(targets)
+            return Ok(out);
+        }
+
+        for &id in &touched_ids {
+            let old = self.vertices[id].position;
+            let new_y = match op {
+                BrushOp::SetHeight { y, .. } => y,
+                BrushOp::Add { delta } => old.y + delta,
+                BrushOp::Remove { delta } => old.y - delta,
+                BrushOp::Smooth { strength } => old.y + (avg - old.y) * strength.clamp(0.0, 1.0),
+                BrushOp::Decimate { .. } => old.y,
+            };
+            self.vertices[id].position = Vector3::new(old.x, new_y, old.z);
+        }
+
+        let mut out = Vec::with_capacity(touched_ids.len());
+        for id in touched_ids {
+            out.push(InsertVertexResult {
+                inserted_vertex_id: id,
+                removed_as_coplanar: false,
+            });
+        }
+        Ok(out)
+    }
+
+    fn vertices_in_brush(
+        &self,
+        center: Vector3,
+        size: f32,
+        shape: BrushShape,
+    ) -> Vec<usize> {
+        let mut ids = Vec::new();
+        for (id, v) in self.vertices.iter().enumerate() {
+            if point_in_brush_xz(v.position.x, v.position.z, center, size, shape) {
+                ids.push(id);
             }
         }
+        ids
     }
 
     fn apply_set_height_feature(
@@ -501,6 +527,43 @@ fn radial_dir_xz(center: Vector3, point: Vector3) -> Vector3 {
         Vector3::new(1.0, 0.0, 0.0)
     } else {
         Vector3::new(dx / len, 0.0, dz / len)
+    }
+}
+
+fn point_in_brush_xz(x: f32, z: f32, center: Vector3, size: f32, shape: BrushShape) -> bool {
+    let half = size * 0.5;
+    match shape {
+        BrushShape::Square => {
+            let min_x = center.x - half;
+            let max_x = center.x + half;
+            let min_z = center.z - half;
+            let max_z = center.z + half;
+            x >= min_x && x <= max_x && z >= min_z && z <= max_z
+        }
+        BrushShape::Circle => {
+            let dx = x - center.x;
+            let dz = z - center.z;
+            (dx * dx + dz * dz) <= (half * half)
+        }
+        BrushShape::Triangle => {
+            let tri = triangle_brush_points_snapped(center, size);
+            point_in_triangle_xz_inclusive(x, z, tri[0], tri[1], tri[2], 1.0e-5)
+        }
+    }
+}
+
+fn point_in_triangle_xz_inclusive(
+    x: f32,
+    z: f32,
+    a: Vector3,
+    b: Vector3,
+    c: Vector3,
+    eps: f32,
+) -> bool {
+    if let Some((w0, w1, w2)) = barycentric_xz(x, z, a, b, c, eps) {
+        w0 >= -eps && w1 >= -eps && w2 >= -eps
+    } else {
+        false
     }
 }
 
