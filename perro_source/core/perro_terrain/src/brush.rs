@@ -2,6 +2,8 @@ use crate::{ChunkError, InsertVertexResult, TerrainChunk, Triangle};
 use perro_structs::Vector3;
 use std::f32::consts::{FRAC_PI_2, PI};
 
+const ADD_REMOVE_FEATURE_OFFSET_METERS: f32 = 0.1;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BrushShape {
     Square,
@@ -69,24 +71,10 @@ impl TerrainChunk {
                 self.apply_set_height_feature(center, snapped_size, shape, y, feature_offset)
             }
             BrushOp::Add { delta } => {
-                let targets: Vec<Vector3> = xz_points
-                    .iter()
-                    .map(|p| {
-                        let current_y = self.sample_height_at_xz(p.x, p.z).unwrap_or(0.0);
-                        Vector3::new(p.x, current_y + delta, p.z)
-                    })
-                    .collect();
-                self.apply_points(targets)
+                self.apply_add_remove_feature(center, snapped_size, shape, delta)
             }
             BrushOp::Remove { delta } => {
-                let targets: Vec<Vector3> = xz_points
-                    .iter()
-                    .map(|p| {
-                        let current_y = self.sample_height_at_xz(p.x, p.z).unwrap_or(0.0);
-                        Vector3::new(p.x, current_y - delta, p.z)
-                    })
-                    .collect();
-                self.apply_points(targets)
+                self.apply_add_remove_feature(center, snapped_size, shape, -delta)
             }
             BrushOp::Smooth { strength } => {
                 let strength = strength.clamp(0.0, 1.0);
@@ -154,6 +142,35 @@ impl TerrainChunk {
         self.retriangulate_polygon_region(&base_polygon);
         out.extend(self.apply_points_structural(top_targets)?);
         self.enforce_top_cap_quad(&top_ring, center, target_y);
+        Ok(out)
+    }
+
+    fn apply_add_remove_feature(
+        &mut self,
+        center: Vector3,
+        size: f32,
+        shape: BrushShape,
+        signed_delta: f32,
+    ) -> Result<Vec<InsertVertexResult>, ChunkError> {
+        let top_ring = brush_xz_points_feature(center, size, shape);
+        let mut base_targets = Vec::with_capacity(top_ring.len());
+        let mut top_targets = Vec::with_capacity(top_ring.len());
+
+        for p in &top_ring {
+            let dir = radial_dir_xz(center, *p);
+            let base_x = p.x + dir.x * ADD_REMOVE_FEATURE_OFFSET_METERS;
+            let base_z = p.z + dir.z * ADD_REMOVE_FEATURE_OFFSET_METERS;
+            let base_y = self.sample_height_at_xz(base_x, base_z).unwrap_or(0.0);
+            let top_y = self.sample_height_at_xz(p.x, p.z).unwrap_or(base_y) + signed_delta;
+            base_targets.push(Vector3::new(base_x, base_y, base_z));
+            top_targets.push(Vector3::new(p.x, top_y, p.z));
+        }
+
+        let base_polygon = ordered_polygon_xz(&base_targets, center);
+        let mut out = Vec::with_capacity(base_targets.len() + top_targets.len());
+        out.extend(self.apply_points_structural(base_targets)?);
+        self.retriangulate_polygon_region(&base_polygon);
+        out.extend(self.apply_points_structural(top_targets)?);
         Ok(out)
     }
 

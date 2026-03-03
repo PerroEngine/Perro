@@ -43,6 +43,13 @@ pub struct CameraState {
 
     #[default = 1]
     editor_shape: i32,
+
+    #[default = 0.08]
+    ///@Expose
+    editor_apply_interval: f32,
+
+    #[default = 0.0]
+    editor_apply_cooldown: f32,
 }
 
 
@@ -78,6 +85,8 @@ lifecycle!({
     ) {
         let dt = delta_time!(ctx);
         let middle_down = ipt.Mouse().down(MouseButton::Middle);
+        let left_down = ipt.Mouse().down(MouseButton::Left);
+        let left_pressed = ipt.Mouse().pressed(MouseButton::Left);
         let mouse_delta = ipt.Mouse().delta();
         let wheel = ipt.Mouse().wheel();
         let mouse_pos = ipt.Mouse().position();
@@ -116,6 +125,8 @@ lifecycle!({
         }
 
         let (move_speed, yaw, pitch, editor_size, editor_basis, editor_delta, editor_smooth_strength, editor_set_height_y, editor_mode, editor_shape) = with_state_mut!(ctx, CameraState, node, |state| {
+            state.editor_apply_cooldown = (state.editor_apply_cooldown - dt).max(0.0);
+
             if wheel_y != 0.0 {
                 if size_scroll_down {
                     state.editor_size = (state.editor_size + wheel_y).clamp(0.25, 128.0);
@@ -256,20 +267,34 @@ lifecycle!({
                 ];
             });
 
-            if ipt.Mouse().down(MouseButton::Left) {
-                let _ = res.Terrain().brush_op(
-                    terrain_id,
-                    hit.position_world,
-                    editor_size,
-                    brush_shape_from_index(editor_shape),
-                    brush_op_from_mode(
-                        editor_mode,
-                        editor_basis,
-                        editor_delta,
-                        editor_smooth_strength,
-                        editor_set_height_y,
-                    ),
-                );
+            if left_down {
+                let should_apply = with_state_mut!(ctx, CameraState, node, |state| {
+                    if left_pressed {
+                        state.editor_apply_cooldown = 0.0;
+                    }
+                    if state.editor_apply_cooldown <= 0.0 {
+                        state.editor_apply_cooldown = state.editor_apply_interval.max(0.0);
+                        true
+                    } else {
+                        false
+                    }
+                }).unwrap_or(false);
+
+                if should_apply {
+                    let _ = res.Terrain().brush_op(
+                        terrain_id,
+                        hit.position_world,
+                        editor_size,
+                        brush_shape_from_index(editor_shape),
+                        brush_op_from_mode(
+                            editor_mode,
+                            editor_basis,
+                            editor_delta,
+                            editor_smooth_strength,
+                            editor_set_height_y,
+                        ),
+                    );
+                }
             }
         } else {
             with_node_mut!(ctx, ParticleEmitter3D, preview, |emitter| {
