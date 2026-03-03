@@ -620,6 +620,16 @@ Preview:
 - The more trad pipeline however for edit mode only, but in release mode we do coplanar optimization so runtime performance isn't affected
 - Easier editing and authoring of terrain and technically more efficient because don't have to retriangulate every edit
 
+### Commit: Brush Ops Create Verticies
+
+### What was added
+
+- Reverted the reversion of 1 vertex per meter,
+
+### Why it matters
+
+- make brush ops create the verticies in a proper locaiton, and then apply, instead of creating
+
 ## Future Commit Template
 
 ## Commit: <name>

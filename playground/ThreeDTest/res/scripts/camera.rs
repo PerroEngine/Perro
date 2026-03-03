@@ -384,16 +384,18 @@ fn brush_op_from_mode(
     set_height_y: f32,
 ) -> BrushOp {
     match mode {
-        2 => BrushOp::Remove { delta },
+        2 => BrushOp::Remove { delta, basis },
         3 => BrushOp::Smooth {
             strength: smooth_strength,
+            basis,
         },
         4 => BrushOp::Decimate { basis },
         5 => BrushOp::SetHeight {
             y: set_height_y,
+            basis,
             feature_offset: 0.1,
         },
-        _ => BrushOp::Add { delta },
+        _ => BrushOp::Add { delta, basis },
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::{ChunkError, InsertVertexResult, TerrainChunk, Triangle};
 use perro_structs::Vector3;
+use std::collections::{HashMap, HashSet};
 use std::f32::consts::{FRAC_PI_2, PI};
 
 const ADD_REMOVE_FEATURE_OFFSET_METERS: f32 = 0.1;
@@ -13,10 +14,10 @@ pub enum BrushShape {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BrushOp {
-    SetHeight { y: f32, feature_offset: f32 },
-    Add { delta: f32 },
-    Remove { delta: f32 },
-    Smooth { strength: f32 },
+    SetHeight { y: f32, basis: f32, feature_offset: f32 },
+    Add { delta: f32, basis: f32 },
+    Remove { delta: f32, basis: f32 },
+    Smooth { strength: f32, basis: f32 },
     Decimate { basis: f32 },
 }
 
@@ -60,6 +61,11 @@ impl TerrainChunk {
             return Ok(Vec::new());
         }
 
+        let Some(basis) = brush_op_basis(op) else {
+            return Ok(Vec::new());
+        };
+
+        let mut created = self.ensure_brush_vertices_for_basis(center, brush_size_meters, shape, basis)?;
         let touched_ids = self.vertices_in_brush(center, brush_size_meters, shape);
         if touched_ids.is_empty() {
             return Ok(Vec::new());
@@ -76,9 +82,6 @@ impl TerrainChunk {
         };
 
         if let BrushOp::Decimate { basis } = op {
-            if basis <= 0.0 || !basis.is_finite() {
-                return Ok(Vec::new());
-            }
             for &id in &touched_ids {
                 let old = self.vertices[id].position;
                 // Topology decimate: collapse edited vertices onto the target XY lattice.
@@ -90,7 +93,8 @@ impl TerrainChunk {
             }
             self.reconcile_after_edit();
 
-            let mut out = Vec::with_capacity(touched_ids.len());
+            let mut out = Vec::with_capacity(created.len() + touched_ids.len());
+            out.append(&mut created);
             for id in touched_ids {
                 out.push(InsertVertexResult {
                     inserted_vertex_id: id,
@@ -104,21 +108,62 @@ impl TerrainChunk {
             let old = self.vertices[id].position;
             let new_y = match op {
                 BrushOp::SetHeight { y, .. } => y,
-                BrushOp::Add { delta } => old.y + delta,
-                BrushOp::Remove { delta } => old.y - delta,
-                BrushOp::Smooth { strength } => old.y + (avg - old.y) * strength.clamp(0.0, 1.0),
+                BrushOp::Add { delta, .. } => old.y + delta,
+                BrushOp::Remove { delta, .. } => old.y - delta,
+                BrushOp::Smooth { strength, .. } => old.y + (avg - old.y) * strength.clamp(0.0, 1.0),
                 BrushOp::Decimate { .. } => old.y,
             };
             self.vertices[id].position = Vector3::new(old.x, new_y, old.z);
         }
 
-        let mut out = Vec::with_capacity(touched_ids.len());
+        let mut out = Vec::with_capacity(created.len() + touched_ids.len());
+        out.append(&mut created);
         for id in touched_ids {
             out.push(InsertVertexResult {
                 inserted_vertex_id: id,
                 removed_as_coplanar: false,
             });
         }
+        Ok(out)
+    }
+
+    fn ensure_brush_vertices_for_basis(
+        &mut self,
+        center: Vector3,
+        size: f32,
+        shape: BrushShape,
+        basis: f32,
+    ) -> Result<Vec<InsertVertexResult>, ChunkError> {
+        let points = brush_lattice_points(center, size, shape, basis);
+        if points.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Build/reuse basis vertices first.
+        let mut out = Vec::with_capacity(points.len());
+        let mut point_ids: HashMap<(i32, i32), usize> = HashMap::with_capacity(points.len());
+        for p in points {
+            if let Some(existing_id) = self.find_vertex_id_at_xz(p.x, p.z, 1.0e-4) {
+                out.push(InsertVertexResult {
+                    inserted_vertex_id: existing_id,
+                    removed_as_coplanar: false,
+                });
+                point_ids.insert(grid_key(p.x, p.z, basis), existing_id);
+                continue;
+            }
+            let y = self.sample_height_at_xz(p.x, p.z).unwrap_or(center.y);
+            let target = Vector3::new(p.x, y, p.z);
+            let id = self.add_vertex(target);
+            out.push(InsertVertexResult {
+                inserted_vertex_id: id,
+                removed_as_coplanar: false,
+            });
+            point_ids.insert(grid_key(p.x, p.z, basis), id);
+        }
+
+        // Remove old interior triangles, then reconnect interior as pure basis grid cells.
+        self.remove_brush_interior_triangles(center, size, shape);
+        self.connect_basis_grid_cells(center, size, shape, basis, &point_ids);
         Ok(out)
     }
 
@@ -282,6 +327,83 @@ impl TerrainChunk {
         self.vertices().iter().enumerate().find_map(|(id, v)| {
             ((v.position.x - x).abs() <= eps && (v.position.z - z).abs() <= eps).then_some(id)
         })
+    }
+
+    fn remove_brush_interior_triangles(&mut self, center: Vector3, size: f32, shape: BrushShape) {
+        self.triangles.retain(|tri| {
+            let a = self.vertices[tri.a].position;
+            let b = self.vertices[tri.b].position;
+            let c = self.vertices[tri.c].position;
+            let cx = (a.x + b.x + c.x) / 3.0;
+            let cz = (a.z + b.z + c.z) / 3.0;
+            !point_in_brush_xz(cx, cz, center, size, shape)
+        });
+    }
+
+    fn connect_basis_grid_cells(
+        &mut self,
+        center: Vector3,
+        size: f32,
+        shape: BrushShape,
+        basis: f32,
+        point_ids: &HashMap<(i32, i32), usize>,
+    ) {
+        let half = size * 0.5;
+        let min_x = center.x - half;
+        let max_x = center.x + half;
+        let min_z = center.z - half;
+        let max_z = center.z + half;
+        let start_x = snap_to_grid(min_x, basis);
+        let start_z = snap_to_grid(min_z, basis);
+
+        let mut existing = HashSet::with_capacity(self.triangles.len());
+        for tri in &self.triangles {
+            existing.insert(tri_key(tri.a, tri.b, tri.c));
+        }
+
+        let mut x = start_x;
+        while x + basis <= max_x + 1.0e-6 {
+            let mut z = start_z;
+            while z + basis <= max_z + 1.0e-6 {
+                let p00 = (x, z);
+                let p10 = (x + basis, z);
+                let p01 = (x, z + basis);
+                let p11 = (x + basis, z + basis);
+
+                if point_in_brush_xz(p00.0, p00.1, center, size, shape)
+                    && point_in_brush_xz(p10.0, p10.1, center, size, shape)
+                    && point_in_brush_xz(p01.0, p01.1, center, size, shape)
+                    && point_in_brush_xz(p11.0, p11.1, center, size, shape)
+                {
+                    let i00 = point_ids.get(&grid_key(p00.0, p00.1, basis)).copied();
+                    let i10 = point_ids.get(&grid_key(p10.0, p10.1, basis)).copied();
+                    let i01 = point_ids.get(&grid_key(p01.0, p01.1, basis)).copied();
+                    let i11 = point_ids.get(&grid_key(p11.0, p11.1, basis)).copied();
+                    if let (Some(i00), Some(i10), Some(i01), Some(i11)) = (i00, i10, i01, i11) {
+                        self.push_triangle_unique(i00, i10, i01, &mut existing);
+                        self.push_triangle_unique(i01, i10, i11, &mut existing);
+                    }
+                }
+                z += basis;
+            }
+            x += basis;
+        }
+    }
+
+    fn push_triangle_unique(
+        &mut self,
+        a: usize,
+        b: usize,
+        c: usize,
+        existing: &mut HashSet<(usize, usize, usize)>,
+    ) {
+        if a == b || b == c || a == c {
+            return;
+        }
+        let key = tri_key(a, b, c);
+        if existing.insert(key) {
+            self.triangles.push(Triangle::new(a, b, c));
+        }
     }
 
     fn enforce_top_cap_quad(&mut self, top_ring: &[Vector3], center: Vector3, target_y: f32) {
@@ -567,6 +689,52 @@ fn point_in_triangle_xz_inclusive(
     }
 }
 
+fn brush_op_basis(op: BrushOp) -> Option<f32> {
+    let basis = match op {
+        BrushOp::SetHeight { basis, .. } => basis,
+        BrushOp::Add { basis, .. } => basis,
+        BrushOp::Remove { basis, .. } => basis,
+        BrushOp::Smooth { basis, .. } => basis,
+        BrushOp::Decimate { basis } => basis,
+    };
+    normalize_brush_basis(basis)
+}
+
+fn normalize_brush_basis(basis: f32) -> Option<f32> {
+    const ALLOWED: [f32; 6] = [0.25, 0.5, 1.0, 2.0, 4.0, 8.0];
+    if !basis.is_finite() || basis <= 0.0 {
+        return None;
+    }
+    ALLOWED
+        .into_iter()
+        .find(|allowed| (basis - allowed).abs() <= 1.0e-5)
+}
+
+fn brush_lattice_points(center: Vector3, size: f32, shape: BrushShape, basis: f32) -> Vec<Vector3> {
+    let half = size * 0.5;
+    let min_x = center.x - half;
+    let max_x = center.x + half;
+    let min_z = center.z - half;
+    let max_z = center.z + half;
+    let start_x = snap_to_grid(min_x, basis);
+    let start_z = snap_to_grid(min_z, basis);
+    let mut points = Vec::new();
+
+    let mut x = start_x;
+    while x <= max_x + 1.0e-6 {
+        let mut z = start_z;
+        while z <= max_z + 1.0e-6 {
+            if point_in_brush_xz(x, z, center, size, shape) {
+                points.push(Vector3::new(snap_to_grid(x, basis), center.y, snap_to_grid(z, basis)));
+            }
+            z += basis;
+        }
+        x += basis;
+    }
+
+    dedupe_points(points)
+}
+
 fn detail_snap_step(size: f32) -> f32 {
     if size > 1.0 {
         1.0
@@ -613,6 +781,19 @@ fn barycentric_xz(
     let w1 = cross2(sub2(c2, p), sub2(a2, p)) / area;
     let w2 = cross2(sub2(a2, p), sub2(b2, p)) / area;
     Some((w0, w1, w2))
+}
+
+fn grid_key(x: f32, z: f32, basis: f32) -> (i32, i32) {
+    (
+        (snap_to_grid(x, basis) / basis).round() as i32,
+        (snap_to_grid(z, basis) / basis).round() as i32,
+    )
+}
+
+fn tri_key(a: usize, b: usize, c: usize) -> (usize, usize, usize) {
+    let mut ids = [a, b, c];
+    ids.sort_unstable();
+    (ids[0], ids[1], ids[2])
 }
 
 fn sub2(a: (f32, f32), b: (f32, f32)) -> (f32, f32) {

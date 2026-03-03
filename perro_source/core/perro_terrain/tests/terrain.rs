@@ -73,6 +73,7 @@ fn set_height_brush_op_spanning_chunks_keeps_seam_aligned() {
             BrushShape::Square,
             BrushOp::SetHeight {
                 y: 6.0,
+                basis: 1.0,
                 feature_offset: 0.1,
             },
         )
@@ -94,7 +95,7 @@ fn add_remove_brush_ops_spanning_chunks_keep_seam_aligned() {
             Vector3::new(29.0, 0.0, 0.0),
             8.0,
             BrushShape::Circle,
-            BrushOp::Add { delta: 2.5 },
+            BrushOp::Add { delta: 2.5, basis: 1.0 },
         )
         .expect("add op should succeed");
     let _ = terrain
@@ -102,7 +103,7 @@ fn add_remove_brush_ops_spanning_chunks_keep_seam_aligned() {
             Vector3::new(29.0, 0.0, 0.0),
             8.0,
             BrushShape::Circle,
-            BrushOp::Remove { delta: 1.0 },
+            BrushOp::Remove { delta: 1.0, basis: 1.0 },
         )
         .expect("remove op should succeed");
 
@@ -120,7 +121,7 @@ fn decimate_brush_op_spanning_chunks_keeps_seam_aligned() {
             Vector3::new(29.0, 0.0, 0.0),
             8.0,
             BrushShape::Circle,
-            BrushOp::Add { delta: 2.1 },
+            BrushOp::Add { delta: 2.1, basis: 1.0 },
         )
         .expect("add op should succeed");
     let _ = terrain
