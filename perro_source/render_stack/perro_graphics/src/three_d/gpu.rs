@@ -964,7 +964,22 @@ impl Gpu3D {
         let default_mesh = self
             .resolve_builtin_mesh_asset("__cube__")
             .expect("cube mesh preset must exist");
+        let mut debug_points_start: Option<u32> = None;
+        let mut debug_points_count: u32 = 0;
+        let mut debug_points_double_sided = false;
+        let mut debug_points_local_center = [0.0f32; 3];
+        let mut debug_points_local_radius = 0.0f32;
+        let mut debug_point_instances: Vec<InstanceGpu> = Vec::new();
+        let mut debug_edges_start: Option<u32> = None;
+        let mut debug_edges_count: u32 = 0;
+        let mut debug_edges_double_sided = false;
+        let mut debug_edges_local_center = [0.0f32; 3];
+        let mut debug_edges_local_radius = 0.0f32;
+        let mut debug_edge_instances: Vec<InstanceGpu> = Vec::new();
+
         for draw in draws {
+            let is_debug_point = matches!(draw.kind, Draw3DKind::DebugPointCube);
+            let is_debug_edge = matches!(draw.kind, Draw3DKind::DebugEdgeCylinder);
             let (mesh_asset, is_terrain_mesh) = match draw.kind {
                 Draw3DKind::Mesh(mesh) => {
                     let source = resources.mesh_source(mesh).unwrap_or("__cube__");
@@ -1018,7 +1033,9 @@ impl Gpu3D {
             };
             // CPU occlusion query mode works at object granularity.
             // Force whole-mesh batching in that mode so each object can be queried.
-            let use_meshlets = self.meshlets_enabled
+            let use_meshlets = !is_debug_point
+                && !is_debug_edge
+                && self.meshlets_enabled
                 && !mesh_asset.meshlets.is_empty()
                 && !self.cpu_occlusion_enabled;
             total_meshlets = total_meshlets.saturating_add(if use_meshlets {
@@ -1046,28 +1063,51 @@ impl Gpu3D {
                 if self.cpu_occlusion_enabled && !self.should_probe_or_draw(occlusion_key) {
                     continue;
                 }
-                let occlusion_query = if occlusion_capture_this_frame {
+                let occlusion_query = if (is_debug_point || is_debug_edge) && self.cpu_occlusion_enabled {
+                    // Debug primitives are batched into shared instanced draws, so per-object CPU
+                    // occlusion queries are not meaningful for these draws.
+                    None
+                } else if occlusion_capture_this_frame {
                     Some(self.push_occlusion_query_key(occlusion_key))
                 } else {
                     None
                 };
-                let instance = self.staged_instances.len() as u32;
-                self.staged_instances.push(build_instance(
+                let built_instance = build_instance(
                     draw.model,
                     &material,
                     self.meshlet_debug_view,
                     debug_color(draw.node.as_u64()),
-                ));
-                push_draw_batch(
-                    &mut self.draw_batches,
-                    mesh_asset.full,
-                    instance,
-                    material.double_sided || self.meshlet_debug_view,
-                    mesh_asset.bounds_center,
-                    mesh_asset.bounds_radius,
-                    occlusion_query,
-                    is_terrain_mesh,
                 );
+                if is_debug_point {
+                    if debug_point_instances.is_empty() {
+                        debug_points_double_sided = material.double_sided || self.meshlet_debug_view;
+                        debug_points_local_center = mesh_asset.bounds_center;
+                        debug_points_local_radius = mesh_asset.bounds_radius;
+                    }
+                    debug_point_instances.push(built_instance);
+                    debug_points_count = debug_points_count.saturating_add(1);
+                } else if is_debug_edge {
+                    if debug_edge_instances.is_empty() {
+                        debug_edges_double_sided = material.double_sided || self.meshlet_debug_view;
+                        debug_edges_local_center = mesh_asset.bounds_center;
+                        debug_edges_local_radius = mesh_asset.bounds_radius;
+                    }
+                    debug_edge_instances.push(built_instance);
+                    debug_edges_count = debug_edges_count.saturating_add(1);
+                } else {
+                    let instance = self.staged_instances.len() as u32;
+                    self.staged_instances.push(built_instance);
+                    push_draw_batch(
+                        &mut self.draw_batches,
+                        mesh_asset.full,
+                        instance,
+                        material.double_sided || self.meshlet_debug_view,
+                        mesh_asset.bounds_center,
+                        mesh_asset.bounds_radius,
+                        occlusion_query,
+                        is_terrain_mesh,
+                    );
+                }
             } else {
                 for meshlet in mesh_asset.meshlets.iter().copied() {
                     if !self.frustum_cull_enabled
@@ -1105,6 +1145,45 @@ impl Gpu3D {
                     );
                 }
             }
+        }
+        if !debug_point_instances.is_empty() {
+            debug_points_start = Some(self.staged_instances.len() as u32);
+            self.staged_instances.extend(debug_point_instances);
+        }
+        if !debug_edge_instances.is_empty() {
+            debug_edges_start = Some(self.staged_instances.len() as u32);
+            self.staged_instances.extend(debug_edge_instances);
+        }
+        if let Some(instance_start) = debug_points_start
+            && debug_points_count > 0
+        {
+            self.draw_batches.push(DrawBatch {
+                mesh: default_mesh.full,
+                instance_start,
+                instance_count: debug_points_count,
+                double_sided: debug_points_double_sided,
+                local_center: debug_points_local_center,
+                local_radius: debug_points_local_radius.max(0.0),
+                occlusion_query: None,
+                disable_hiz_occlusion: false,
+            });
+        }
+        if let Some(instance_start) = debug_edges_start
+            && debug_edges_count > 0
+        {
+            let debug_edge_mesh = self
+                .resolve_builtin_mesh_asset("__cylinder__")
+                .unwrap_or_else(|| default_mesh.clone());
+            self.draw_batches.push(DrawBatch {
+                mesh: debug_edge_mesh.full,
+                instance_start,
+                instance_count: debug_edges_count,
+                double_sided: debug_edges_double_sided,
+                local_center: debug_edges_local_center,
+                local_radius: debug_edges_local_radius.max(0.0),
+                occlusion_query: None,
+                disable_hiz_occlusion: false,
+            });
         }
         self.debug_frustum_visible_est = 0;
         for batch in &self.draw_batches {

@@ -9,8 +9,7 @@ use libloading::Library;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_input::{InputContext, InputSnapshot, KeyCode, MouseButton};
 use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType, SceneNodeData, Spatial};
-use perro_terrain::{BrushOp, BrushShape, ChunkCoord, TerrainData};
-use perro_structs::Vector3;
+use perro_terrain::{ChunkCoord, TerrainData};
 use perro_resource_context::ResourceContext;
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
 use perro_runtime_context::RuntimeContext;
@@ -221,6 +220,7 @@ struct Render3DState {
     material_overrides: AHashMap<NodeID, Material3D>,
     terrain_material: MaterialID,
     terrain_chunk_meshes: AHashMap<TerrainChunkMeshKey, TerrainChunkMeshState>,
+    terrain_debug_state: AHashMap<NodeID, TerrainDebugState>,
     particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile3D>,
     removed_nodes: Vec<NodeID>,
 }
@@ -236,6 +236,7 @@ impl Render3DState {
             material_overrides: AHashMap::default(),
             terrain_material: MaterialID::nil(),
             terrain_chunk_meshes: AHashMap::default(),
+            terrain_debug_state: AHashMap::default(),
             particle_path_cache: AHashMap::default(),
             removed_nodes: Vec::new(),
         }
@@ -253,6 +254,13 @@ struct TerrainChunkMeshState {
     source: String,
     hash: u64,
     mesh: MeshID,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TerrainDebugState {
+    signature: u64,
+    point_count: u32,
+    edge_count: u32,
 }
 
 impl DirtyState {
@@ -717,26 +725,6 @@ impl Runtime {
     pub(crate) fn default_terrain_data() -> TerrainData {
         let mut terrain = TerrainData::new(64.0);
         let _ = terrain.ensure_chunk(ChunkCoord::new(0, 0));
-        if let Some(chunk) = terrain.chunk_mut(ChunkCoord::new(0, 0)) {
-            let _ = chunk.apply_brush_op(
-                Vector3::new(0.0, 0.0, 0.0),
-                15.0,
-                BrushShape::Square,
-                BrushOp::SetHeight {
-                    y: -5.0,
-                    feature_offset: 0.1,
-                },
-            );
-            let _ = chunk.apply_brush_op(
-                Vector3::new(0.0, 0.0, 0.0),
-                5.0,
-                BrushShape::Square,
-                BrushOp::SetHeight {
-                    y: 5.0,
-                    feature_offset: 0.1,
-                },
-            );
-        }
         terrain
     }
 

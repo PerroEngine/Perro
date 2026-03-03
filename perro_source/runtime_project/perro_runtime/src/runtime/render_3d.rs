@@ -13,7 +13,7 @@ use perro_render_bridge::{
     ParticleProfile3D, PointParticles3DState, RuntimeMeshData, RuntimeMeshVertex,
     RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
 };
-use perro_terrain::{ChunkCoord, TerrainChunk, TerrainData};
+use perro_terrain::{ChunkCoord, TerrainChunk};
 use std::borrow::Cow;
 
 impl Runtime {
@@ -245,7 +245,7 @@ impl Runtime {
                     } else {
                         Some(terrain_id)
                     };
-                    let (chunk_size, chunk_snapshots, debug_commands) = {
+                    let (chunk_size, chunk_snapshots) = {
                         let terrain_store = self
                             .terrain_store
                             .lock()
@@ -258,32 +258,59 @@ impl Runtime {
                                 .chunks()
                                 .map(|(coord, chunk)| (coord, chunk.clone()))
                                 .collect();
-                            let debug_commands = if show_debug_vertices || show_debug_edges {
-                                Self::build_terrain_debug_draws(
-                                    node,
-                                    data,
-                                    world_from_terrain,
-                                    show_debug_vertices,
-                                    show_debug_edges,
-                                )
-                            } else {
-                                Vec::new()
-                            };
-                            (Some(chunk_size), chunk_snapshots, debug_commands)
+                            let mut chunk_snapshots = chunk_snapshots;
+                            chunk_snapshots.sort_unstable_by_key(|(coord, _)| (coord.x, coord.z));
+                            (Some(chunk_size), chunk_snapshots)
                         } else {
-                            (None, Vec::new(), Vec::new())
+                            (None, Vec::new())
                         }
                     };
                     if let Some(chunk_size) = chunk_size {
-                        self.queue_terrain_chunk_draws(
+                        let terrain_signature = self.queue_terrain_chunk_draws(
                             node,
                             chunk_size,
                             &chunk_snapshots,
                             world_from_terrain,
                         );
-                    }
-                    for command in debug_commands {
-                        self.queue_render_command(command);
+                        if show_debug_vertices || show_debug_edges {
+                            let debug_signature = terrain_debug_signature(
+                                node,
+                                active_terrain_id,
+                                show_debug_vertices,
+                                show_debug_edges,
+                                world_from_terrain,
+                                terrain_signature,
+                            );
+                            let prev = self.render_3d.terrain_debug_state.get(&node).copied();
+                            let needs_rebuild =
+                                prev.map(|state| state.signature != debug_signature).unwrap_or(true);
+                            if needs_rebuild {
+                                if let Some(prev) = prev {
+                                    Self::queue_remove_terrain_debug_nodes(self, node, prev);
+                                }
+                                let (point_count, edge_count) = Self::queue_terrain_debug_draws(
+                                    self,
+                                    node,
+                                    chunk_size,
+                                    &chunk_snapshots,
+                                    world_from_terrain,
+                                    show_debug_vertices,
+                                    show_debug_edges,
+                                );
+                                self.render_3d.terrain_debug_state.insert(
+                                    node,
+                                    crate::runtime::TerrainDebugState {
+                                        signature: debug_signature,
+                                        point_count,
+                                        edge_count,
+                                    },
+                                );
+                            }
+                        } else {
+                            if let Some(prev) = self.render_3d.terrain_debug_state.remove(&node) {
+                                Self::queue_remove_terrain_debug_nodes(self, node, prev);
+                            }
+                        }
                     }
                     visible_now.insert(node);
                 }
@@ -360,6 +387,9 @@ impl Runtime {
             }
         }
         while let Some(node) = self.render_3d.removed_nodes.pop() {
+            if let Some(prev) = self.render_3d.terrain_debug_state.remove(&node) {
+                Self::queue_remove_terrain_debug_nodes(self, node, prev);
+            }
             self.queue_render_command(RenderCommand::ThreeD(Command3D::RemoveNode { node }));
         }
     }
@@ -404,8 +434,11 @@ impl Runtime {
         chunk_size_meters: f32,
         chunks: &[(ChunkCoord, TerrainChunk)],
         world_from_terrain: Mat4,
-    ) {
+    ) -> u64 {
         let material = self.resolve_terrain_material();
+        let mut terrain_signature = 0xD6E8_FD91_4A2C_7C3Bu64;
+        terrain_signature ^= chunk_size_meters.to_bits() as u64;
+        terrain_signature = terrain_signature.rotate_left(13);
 
         for (coord, chunk) in chunks {
             let key = crate::runtime::TerrainChunkMeshKey {
@@ -413,6 +446,12 @@ impl Runtime {
                 coord: *coord,
             };
             let hash = terrain_chunk_hash(chunk);
+            terrain_signature ^= (coord.x as u32 as u64).wrapping_mul(0x9E37_79B1);
+            terrain_signature = terrain_signature.rotate_left(11);
+            terrain_signature ^= (coord.z as u32 as u64).wrapping_mul(0x85EB_CA77);
+            terrain_signature = terrain_signature.rotate_left(11);
+            terrain_signature ^= hash;
+            terrain_signature = terrain_signature.rotate_left(11);
             let source = format!(
                 "__terrain_runtime__/n{}_x{}_z{}_h{:016x}",
                 node.as_u64(),
@@ -490,25 +529,29 @@ impl Runtime {
                 }));
             }
         }
+        terrain_signature
     }
 
-    fn build_terrain_debug_draws(
+    fn queue_terrain_debug_draws(
+        &mut self,
         node: NodeID,
-        terrain: &TerrainData,
+        chunk_size_meters: f32,
+        chunks: &[(ChunkCoord, TerrainChunk)],
         world_from_terrain: Mat4,
         show_vertices: bool,
         show_edges: bool,
-    ) -> Vec<RenderCommand> {
-        let mut out = Vec::new();
-        for (coord, chunk) in terrain.chunks() {
+    ) -> (u32, u32) {
+        let mut point_count = 0u32;
+        let mut edge_count = 0u32;
+        for (coord, chunk) in chunks.iter() {
             let vertices = chunk.vertices();
             let world_vertices: Vec<Vec3> = vertices
                 .iter()
                 .map(|vertex| {
                     world_from_terrain.transform_point3(terrain_chunk_local_to_world(
                         vertex.position,
-                        coord,
-                        terrain,
+                        *coord,
+                        chunk_size_meters,
                     ))
                 })
                 .collect();
@@ -538,28 +581,43 @@ impl Runtime {
                     let avg_edge_len = if vertex_length_count[i] > 0 {
                         vertex_length_sum[i] / vertex_length_count[i] as f32
                     } else {
-                        terrain.chunk_size_meters() * 0.1
+                        chunk_size_meters * 0.1
                     };
-                    out.push(RenderCommand::ThreeD(Command3D::DrawDebugPoint3D {
-                        node,
+                    self.queue_render_command(RenderCommand::ThreeD(Command3D::DrawDebugPoint3D {
+                        node: terrain_debug_point_node(node, point_count),
                         position: world.to_array(),
                         size: debug_vertex_size(avg_edge_len),
                     }));
+                    point_count = point_count.saturating_add(1);
                 }
             }
 
             if show_edges {
                 for (a, b, len) in edge_pairs {
-                    out.push(RenderCommand::ThreeD(Command3D::DrawDebugLine3D {
-                        node,
+                    self.queue_render_command(RenderCommand::ThreeD(Command3D::DrawDebugLine3D {
+                        node: terrain_debug_edge_node(node, edge_count),
                         start: world_vertices[a].to_array(),
                         end: world_vertices[b].to_array(),
                         thickness: debug_edge_thickness(len),
                     }));
+                    edge_count = edge_count.saturating_add(1);
                 }
             }
         }
-        out
+        (point_count, edge_count)
+    }
+
+    fn queue_remove_terrain_debug_nodes(&mut self, node: NodeID, state: crate::runtime::TerrainDebugState) {
+        for i in 0..state.point_count {
+            self.queue_render_command(RenderCommand::ThreeD(Command3D::RemoveNode {
+                node: terrain_debug_point_node(node, i),
+            }));
+        }
+        for i in 0..state.edge_count {
+            self.queue_render_command(RenderCommand::ThreeD(Command3D::RemoveNode {
+                node: terrain_debug_edge_node(node, i),
+            }));
+        }
     }
 
     fn resolve_render_mesh_assets(
@@ -662,12 +720,43 @@ impl Runtime {
 
 }
 
-fn terrain_chunk_local_to_world(local: perro_structs::Vector3, coord: ChunkCoord, terrain: &TerrainData) -> Vec3 {
-    let size = terrain.chunk_size_meters();
+fn terrain_chunk_local_to_world(
+    local: perro_structs::Vector3,
+    coord: ChunkCoord,
+    chunk_size_meters: f32,
+) -> Vec3 {
+    let size = chunk_size_meters;
     // Debug overlays should align with terrain draw origin where chunk (0,0) is centered at (0,0).
     let center_x = coord.x as f32 * size;
     let center_z = coord.z as f32 * size;
     Vec3::new(local.x + center_x, local.y, local.z + center_z)
+}
+
+fn terrain_debug_signature(
+    node: NodeID,
+    terrain_id: Option<perro_ids::TerrainID>,
+    show_vertices: bool,
+    show_edges: bool,
+    world_from_terrain: Mat4,
+    terrain_signature: u64,
+) -> u64 {
+    let mut h = 0xA35F_1C2D_4B77_9E01u64;
+    h ^= node.as_u64();
+    h = h.rotate_left(7);
+    h ^= terrain_id.map(|id| id.as_u64()).unwrap_or(0);
+    h = h.rotate_left(7);
+    h ^= if show_vertices { 1 } else { 0 };
+    h = h.rotate_left(7);
+    h ^= if show_edges { 2 } else { 0 };
+    h = h.rotate_left(7);
+    h ^= terrain_signature;
+    for col in world_from_terrain.to_cols_array_2d() {
+        for value in col {
+            h ^= value.to_bits() as u64;
+            h = h.rotate_left(9).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        }
+    }
+    h
 }
 
 fn terrain_chunk_to_runtime_mesh(chunk: &TerrainChunk) -> Option<RuntimeMeshData> {
@@ -771,6 +860,16 @@ fn debug_edge_thickness(edge_len: f32) -> f32 {
 
 fn debug_vertex_size(avg_edge_len: f32) -> f32 {
     (0.08 + avg_edge_len * 0.009).clamp(0.12, 0.75)
+}
+
+fn terrain_debug_point_node(node: NodeID, index: u32) -> NodeID {
+    // Synthetic retained debug ID namespace: top byte 0xD1 for points.
+    NodeID::from_u64((0xD1u64 << 56) ^ (node.as_u64() << 16) ^ index as u64)
+}
+
+fn terrain_debug_edge_node(node: NodeID, index: u32) -> NodeID {
+    // Synthetic retained debug ID namespace: top byte 0xD2 for edges.
+    NodeID::from_u64((0xD2u64 << 56) ^ (node.as_u64() << 16) ^ index as u64)
 }
 
 fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {

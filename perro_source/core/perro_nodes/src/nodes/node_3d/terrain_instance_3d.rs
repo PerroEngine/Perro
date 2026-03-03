@@ -28,8 +28,8 @@ impl TerrainInstance3D {
         Self {
             base: Node3D::new(),
             terrain: TerrainID::nil(),
-            show_debug_vertices: true,
-            show_debug_edges: true,
+            show_debug_vertices: false,
+            show_debug_edges: false,
         }
     }
 }
