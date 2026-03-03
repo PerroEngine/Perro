@@ -234,7 +234,7 @@ lifecycle!({
             mouse_pos.y,
             viewport.x,
             viewport.y,
-            yaw,
+            yaw, 
             pitch,
             deg_to_rad!(fov_deg),
         );
@@ -325,13 +325,17 @@ methods!({
             tags!["terrain_editor_preview"],
             parent_id
         );
+        let brush_size = with_state!(ctx, CameraState, camera_node, |s| {
+            s.editor_size
+        }).unwrap_or(0.0);
+
         with_node_mut!(ctx, ParticleEmitter3D, emitter_id, |emitter| {
             emitter.profile = "res://particles/test.ppart".to_string();
             emitter.looping = true;
             emitter.prewarm = true;
             emitter.spawn_rate = 96.0;
             emitter.active = false;
-            emitter.params = vec![8.0, 0.5];
+            emitter.params = vec![brush_size, 0.5];
         });
         emitter_id
     }
