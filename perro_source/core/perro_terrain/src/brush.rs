@@ -186,22 +186,7 @@ impl TerrainChunk {
         Ok(out)
     }
 
-    fn apply_points_structural_in_region(
-        &mut self,
-        points: Vec<Vector3>,
-        region_polygon_xz: &[(f32, f32)],
-    ) -> Result<Vec<InsertVertexResult>, ChunkError> {
-        let mut out = Vec::with_capacity(points.len());
-        for p in points {
-            match self.insert_vertex_structural_in_region(p, region_polygon_xz) {
-                Ok(r) => out.push(r),
-                Err(ChunkError::PointOutsideMesh { .. }) => {}
-                Err(e) => return Err(e),
-            }
-        }
-        self.reconcile_structural_after_edit();
-        Ok(out)
-    }
+
 
     fn retriangulate_polygon_region(&mut self, polygon_xz: &[(f32, f32)]) {
         if polygon_xz.len() < 3 {

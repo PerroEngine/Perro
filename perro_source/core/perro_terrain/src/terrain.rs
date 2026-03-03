@@ -331,20 +331,20 @@ impl TerrainData {
 
     fn world_to_chunk_coord(&self, world_x: f32, world_z: f32) -> ChunkCoord {
         let inv = 1.0 / self.chunk_size_meters;
-        let cx = (world_x * inv).floor() as i32;
-        let cz = (world_z * inv).floor() as i32;
+        let cx = (world_x * inv + 0.5).floor() as i32;
+        let cz = (world_z * inv + 0.5).floor() as i32;
         ChunkCoord::new(cx, cz)
     }
 
     fn world_to_chunk_local(&self, world: Vector3, coord: ChunkCoord) -> Vector3 {
-        let center_x = coord.x as f32 * self.chunk_size_meters + self.chunk_size_meters * 0.5;
-        let center_z = coord.z as f32 * self.chunk_size_meters + self.chunk_size_meters * 0.5;
+        let center_x = coord.x as f32 * self.chunk_size_meters;
+        let center_z = coord.z as f32 * self.chunk_size_meters;
         Vector3::new(world.x - center_x, world.y, world.z - center_z)
     }
 
     fn chunk_local_to_world(&self, local: Vector3, coord: ChunkCoord) -> Vector3 {
-        let center_x = coord.x as f32 * self.chunk_size_meters + self.chunk_size_meters * 0.5;
-        let center_z = coord.z as f32 * self.chunk_size_meters + self.chunk_size_meters * 0.5;
+        let center_x = coord.x as f32 * self.chunk_size_meters;
+        let center_z = coord.z as f32 * self.chunk_size_meters;
         Vector3::new(local.x + center_x, local.y, local.z + center_z)
     }
 

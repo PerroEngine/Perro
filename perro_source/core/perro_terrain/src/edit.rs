@@ -96,13 +96,7 @@ impl TerrainChunk {
         self.insert_vertex_structural_filtered(position, None)
     }
 
-    pub(crate) fn insert_vertex_structural_in_region(
-        &mut self,
-        position: Vector3,
-        region_polygon_xz: &[(f32, f32)],
-    ) -> Result<InsertVertexResult, ChunkError> {
-        self.insert_vertex_structural_filtered(position, Some(region_polygon_xz))
-    }
+ 
 
     fn insert_vertex_structural_filtered(
         &mut self,

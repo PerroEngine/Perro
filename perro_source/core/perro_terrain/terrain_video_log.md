@@ -565,6 +565,7 @@ Track what each terrain commit changed so video explanations are easy later.
 - `LMB (hold)`: apply active brush op at raycast hit point
 
 Brush operation mode:
+
 - `1`: `Add`
 - `2`: `Remove`
 - `3`: `Smooth`
@@ -572,11 +573,13 @@ Brush operation mode:
 - `5`: `SetHeight`
 
 Brush shape:
+
 - `6`: `Square`
 - `7`: `Circle`
 - `8`: `Triangle`
 
 Preview:
+
 - Auto-created emitter tag: `terrain_editor_preview`
 - Profile path: `res://particles/test.ppart`
 - Emitter follows current raycast hit point
@@ -593,6 +596,12 @@ Preview:
 
 - `cargo check` passes for full workspace.
 - `cargo check -p perro_runtime -p perro_resource_context -p perro_input -p perro_terrain` passes.
+
+## Commit: Editor Sucks Less
+
+### What was added
+
+- Raycast offset (to make the point of the "oops" vs "thats better btu still scuks")
 
 ## Future Commit Template
 
