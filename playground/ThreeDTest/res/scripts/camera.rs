@@ -331,9 +331,10 @@ methods!({
 
         with_node_mut!(ctx, ParticleEmitter3D, emitter_id, |emitter| {
             emitter.profile = "res://particles/test.ppart".to_string();
+            emitter.render_mode = ParticleType::Billboard;
             emitter.looping = true;
             emitter.prewarm = true;
-            emitter.spawn_rate = 96.0;
+            emitter.spawn_rate = 5000.0;
             emitter.active = false;
             emitter.params = vec![brush_size, 0.5];
         });

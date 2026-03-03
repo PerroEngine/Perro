@@ -603,6 +603,12 @@ Preview:
 
 - Raycast offset (to make the point of the "oops" vs "thats better btu still scuks")
 
+## Commit: Added visual particle circle
+
+### What was added
+
+- Can see what you are affecting
+
 ## Future Commit Template
 
 ## Commit: <name>

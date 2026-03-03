@@ -10,7 +10,7 @@ use perro_nodes::{
     node_2d::Node2D,
     node_3d::Node3D,
     particle_emitter_3d::ParticleEmitter3D,
-    particle_emitter_3d::{ParticleEmitterRenderMode3D, ParticleEmitterSimMode3D},
+    particle_emitter_3d::{ParticleType, ParticleEmitterSimMode3D},
     point_light_3d::PointLight3D,
     ray_light_3d::RayLight3D,
     spot_light_3d::SpotLight3D,
@@ -1501,11 +1501,11 @@ fn as_particle_sim_mode(value: &RuntimeValue) -> Option<ParticleEmitterSimMode3D
     }
 }
 
-fn as_particle_render_mode(value: &RuntimeValue) -> Option<ParticleEmitterRenderMode3D> {
+fn as_particle_render_mode(value: &RuntimeValue) -> Option<ParticleType> {
     let raw = as_str(value)?.trim().to_ascii_lowercase();
     match raw.as_str() {
-        "point" => Some(ParticleEmitterRenderMode3D::Point),
-        "billboard" => Some(ParticleEmitterRenderMode3D::Billboard),
+        "point" => Some(ParticleType::Point),
+        "billboard" => Some(ParticleType::Billboard),
         _ => None,
     }
 }
@@ -1552,11 +1552,11 @@ fn as_particle_sim_mode_static(value: &StaticSceneValue) -> Option<ParticleEmitt
     }
 }
 
-fn as_particle_render_mode_static(value: &StaticSceneValue) -> Option<ParticleEmitterRenderMode3D> {
+fn as_particle_render_mode_static(value: &StaticSceneValue) -> Option<ParticleType> {
     let raw = as_str_static(value)?.trim().to_ascii_lowercase();
     match raw.as_str() {
-        "point" => Some(ParticleEmitterRenderMode3D::Point),
-        "billboard" => Some(ParticleEmitterRenderMode3D::Billboard),
+        "point" => Some(ParticleType::Point),
+        "billboard" => Some(ParticleType::Billboard),
         _ => None,
     }
 }

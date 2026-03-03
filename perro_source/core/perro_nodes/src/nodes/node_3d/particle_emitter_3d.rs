@@ -10,7 +10,7 @@ pub enum ParticleEmitterSimMode3D {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ParticleEmitterRenderMode3D {
+pub enum ParticleType {
     Point,
     Billboard,
 }
@@ -26,7 +26,7 @@ pub struct ParticleEmitter3D {
     pub params: Vec<f32>,
     pub profile: String,
     pub sim_mode: ParticleEmitterSimMode3D,
-    pub render_mode: ParticleEmitterRenderMode3D,
+    pub render_mode: ParticleType,
     pub internal_simulation_time: f32,
     pub internal_prev_active: bool,
     pub internal_finished_emitted: bool,
@@ -59,7 +59,7 @@ impl ParticleEmitter3D {
             params: Vec::new(),
             profile: String::new(),
             sim_mode: ParticleEmitterSimMode3D::Default,
-            render_mode: ParticleEmitterRenderMode3D::Point,
+            render_mode: ParticleType::Point,
             internal_simulation_time: 0.0,
             internal_prev_active: true,
             internal_finished_emitted: false,

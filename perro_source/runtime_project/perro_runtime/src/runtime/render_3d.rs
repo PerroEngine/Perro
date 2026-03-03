@@ -4,7 +4,7 @@ use glam::{Mat4, Vec3};
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_nodes::{
     CameraProjection, SceneNodeData,
-    particle_emitter_3d::{ParticleEmitterRenderMode3D, ParticleEmitterSimMode3D},
+    particle_emitter_3d::{ParticleType, ParticleEmitterSimMode3D},
 };
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
@@ -798,10 +798,10 @@ fn resolve_particle_sim_mode(
     }
 }
 
-fn resolve_particle_render_mode(mode: ParticleEmitterRenderMode3D) -> ParticleRenderMode3D {
+fn resolve_particle_render_mode(mode: ParticleType) -> ParticleRenderMode3D {
     match mode {
-        ParticleEmitterRenderMode3D::Point => ParticleRenderMode3D::Point,
-        ParticleEmitterRenderMode3D::Billboard => ParticleRenderMode3D::Billboard,
+        ParticleType::Point => ParticleRenderMode3D::Point,
+        ParticleType::Billboard => ParticleRenderMode3D::Billboard,
     }
 }
 
