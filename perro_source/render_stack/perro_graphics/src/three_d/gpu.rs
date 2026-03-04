@@ -1104,8 +1104,7 @@ impl Gpu3D {
                         mesh_asset.full,
                         instance,
                         material.double_sided || self.meshlet_debug_view,
-                        mesh_asset.bounds_center,
-                        mesh_asset.bounds_radius,
+                        (mesh_asset.bounds_center, mesh_asset.bounds_radius),
                         occlusion_query,
                         is_terrain_mesh,
                     );
@@ -1140,8 +1139,7 @@ impl Gpu3D {
                         },
                         instance,
                         material.double_sided || self.meshlet_debug_view,
-                        occlusion_center,
-                        occlusion_radius,
+                        (occlusion_center, occlusion_radius),
                         occlusion_query,
                         is_terrain_mesh,
                     );
@@ -2600,11 +2598,11 @@ fn push_draw_batch(
     mesh: MeshRange,
     instance: u32,
     double_sided: bool,
-    local_center: [f32; 3],
-    local_radius: f32,
+    local_bounds: ([f32; 3], f32),
     occlusion_query: Option<u32>,
     disable_hiz_occlusion: bool,
 ) {
+    let (local_center, local_radius) = local_bounds;
     draw_batches.push(DrawBatch {
         mesh,
         instance_start: instance,
@@ -3017,3 +3015,4 @@ fn build_scene_uniform(
 
     scene
 }
+

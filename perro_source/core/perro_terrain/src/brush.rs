@@ -48,11 +48,7 @@ impl TerrainChunk {
         }
 
         let snapped_size = normalize_size_for_snap(brush_size_meters);
-        let points: Vec<Vector3> = match shape {
-            BrushShape::Square => square_brush_points_snapped(center, snapped_size).into(),
-            BrushShape::Circle => circle_brush_points_snapped(center, snapped_size),
-            BrushShape::Triangle => triangle_brush_points_snapped(center, snapped_size).into(),
-        };
+        let points = brush_xz_points(center, snapped_size, shape);
 
         let mut out = Vec::with_capacity(points.len());
         for p in points {
@@ -79,6 +75,26 @@ impl TerrainChunk {
         let Some(basis) = brush_op_basis(op) else {
             return Ok(Vec::new());
         };
+        match op {
+            BrushOp::SetHeight {
+                y, feature_offset, ..
+            } if feature_offset.abs() > 1.0e-6 => {
+                return self.apply_set_height_feature(
+                    center,
+                    brush_size_meters,
+                    shape,
+                    y,
+                    feature_offset,
+                );
+            }
+            BrushOp::Add { delta, .. } => {
+                return self.apply_add_remove_feature(center, brush_size_meters, shape, delta);
+            }
+            BrushOp::Remove { delta, .. } => {
+                return self.apply_add_remove_feature(center, brush_size_meters, shape, -delta);
+            }
+            _ => {}
+        }
 
         let mut created =
             self.ensure_brush_vertices_for_basis(center, brush_size_meters, shape, basis)?;
@@ -255,22 +271,6 @@ impl TerrainChunk {
         out.extend(self.apply_points_structural(base_targets)?);
         self.retriangulate_polygon_region(&base_polygon);
         out.extend(self.apply_points_structural(top_targets)?);
-        Ok(out)
-    }
-
-    fn apply_points(
-        &mut self,
-        points: Vec<Vector3>,
-    ) -> Result<Vec<InsertVertexResult>, ChunkError> {
-        let mut out = Vec::with_capacity(points.len());
-        for p in points {
-            match self.insert_vertex(p) {
-                Ok(r) => out.push(r),
-                Err(ChunkError::PointOutsideMesh { .. }) => {}
-                Err(e) => return Err(e),
-            }
-        }
-        self.reconcile_after_edit();
         Ok(out)
     }
 

@@ -114,13 +114,13 @@ fn draw_3d_updates_retained_state_per_node() {
         [0.0, 0.0, 0.0, 1.0],
     ];
 
-    graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: created_meshes[0],
         material: created_materials[0],
         node: node_a,
         model: model_a,
     }));
-    graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: created_meshes[1],
         material: created_materials[1],
         node: node_b,
@@ -189,7 +189,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: mesh_id,
         material: material_id,
         node,
@@ -213,7 +213,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: missing_mesh,
         material: material_id,
         node,
@@ -272,7 +272,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: mesh_id,
         material: material_id,
         node,
@@ -287,7 +287,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    graphics.submit(RenderCommand::ThreeD(Command3D::Draw {
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: mesh_id,
         material: missing_material,
         node,
@@ -309,7 +309,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
 #[test]
 fn set_camera_3d_updates_retained_camera_state() {
     let mut graphics = PerroGraphics::new();
-    graphics.submit(RenderCommand::ThreeD(Command3D::SetCamera {
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::SetCamera {
         camera: Camera3DState {
             position: [1.0, 2.0, 3.0],
             rotation: [0.0, 0.5, 0.0, 0.8660254],

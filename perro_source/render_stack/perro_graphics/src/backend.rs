@@ -256,7 +256,7 @@ impl PerroGraphics {
                         self.renderer_2d.set_camera(camera);
                     }
                 },
-                RenderCommand::ThreeD(cmd_3d) => match cmd_3d {
+                RenderCommand::ThreeD(cmd_3d) => match *cmd_3d {
                     Command3D::Draw {
                         mesh,
                         material,
@@ -300,7 +300,7 @@ impl PerroGraphics {
                         self.renderer_3d.set_spot_light(node, light);
                     }
                     Command3D::UpsertPointParticles { node, particles } => {
-                        self.particles_3d.queue_point_particles(node, particles);
+                        self.particles_3d.queue_point_particles(node, *particles);
                     }
                     Command3D::RemoveNode { node } => {
                         self.renderer_3d.remove_node(node);

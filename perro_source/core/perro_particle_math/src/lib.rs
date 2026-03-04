@@ -48,6 +48,26 @@ pub struct Program {
     ops: Vec<Op>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ParticleEvalInput<'a> {
+    pub t: f32,
+    pub life: f32,
+    pub lifetime: f32,
+    pub spawn_time: f32,
+    pub emitter_time: f32,
+    pub speed: f32,
+    pub particle_id: f32,
+    pub dir: [f32; 3],
+    pub vel: [f32; 3],
+    pub rand: [f32; 3],
+    pub seed: f32,
+    pub ring_u: f32,
+    pub index01: f32,
+    pub emitter_pos: [f32; 3],
+    pub prev_pos: [f32; 3],
+    pub params: &'a [f32],
+}
+
 impl Program {
     pub fn new(ops: Vec<Op>) -> Self {
         Self { ops }
@@ -61,46 +81,8 @@ impl Program {
         eval_ops(&self.ops, t, life, params, stack)
     }
 
-    pub fn eval_particle(
-        &self,
-        t: f32,
-        life: f32,
-        lifetime: f32,
-        spawn_time: f32,
-        emitter_time: f32,
-        speed: f32,
-        particle_id: f32,
-        dir: [f32; 3],
-        vel: [f32; 3],
-        rand: [f32; 3],
-        seed: f32,
-        ring_u: f32,
-        index01: f32,
-        emitter_pos: [f32; 3],
-        prev_pos: [f32; 3],
-        params: &[f32],
-        stack: &mut Vec<f32>,
-    ) -> Option<f32> {
-        eval_ops_particle(
-            &self.ops,
-            t,
-            life,
-            lifetime,
-            spawn_time,
-            emitter_time,
-            speed,
-            particle_id,
-            dir,
-            vel,
-            rand,
-            seed,
-            ring_u,
-            index01,
-            emitter_pos,
-            prev_pos,
-            params,
-            stack,
-        )
+    pub fn eval_particle(&self, input: &ParticleEvalInput<'_>, stack: &mut Vec<f32>) -> Option<f32> {
+        eval_ops_particle(&self.ops, input, stack)
     }
 
     pub fn emit_wgsl_expr(&self) -> Result<String, CompileError> {
@@ -115,48 +97,47 @@ pub fn eval_ops(
     params: &[f32],
     stack: &mut Vec<f32>,
 ) -> Option<f32> {
-    eval_ops_particle(
-        ops,
+    let input = ParticleEvalInput {
         t,
         life,
-        life,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        [0.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0],
-        0.0,
-        0.0,
-        0.0,
-        [0.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0],
+        lifetime: life,
+        spawn_time: 0.0,
+        emitter_time: 0.0,
+        speed: 0.0,
+        particle_id: 0.0,
+        dir: [0.0, 0.0, 0.0],
+        vel: [0.0, 0.0, 0.0],
+        rand: [0.0, 0.0, 0.0],
+        seed: 0.0,
+        ring_u: 0.0,
+        index01: 0.0,
+        emitter_pos: [0.0, 0.0, 0.0],
+        prev_pos: [0.0, 0.0, 0.0],
         params,
-        stack,
-    )
+    };
+    eval_ops_particle(ops, &input, stack)
 }
 
 pub fn eval_ops_particle(
     ops: &[Op],
-    t: f32,
-    life: f32,
-    lifetime: f32,
-    spawn_time: f32,
-    emitter_time: f32,
-    speed: f32,
-    particle_id: f32,
-    dir: [f32; 3],
-    vel: [f32; 3],
-    rand: [f32; 3],
-    seed: f32,
-    ring_u: f32,
-    index01: f32,
-    emitter_pos: [f32; 3],
-    _prev_pos: [f32; 3],
-    params: &[f32],
+    input: &ParticleEvalInput<'_>,
     stack: &mut Vec<f32>,
 ) -> Option<f32> {
+    let t = input.t;
+    let life = input.life;
+    let lifetime = input.lifetime;
+    let spawn_time = input.spawn_time;
+    let emitter_time = input.emitter_time;
+    let speed = input.speed;
+    let particle_id = input.particle_id;
+    let dir = input.dir;
+    let vel = input.vel;
+    let rand = input.rand;
+    let seed = input.seed;
+    let ring_u = input.ring_u;
+    let index01 = input.index01;
+    let emitter_pos = input.emitter_pos;
+    let params = input.params;
     stack.clear();
     for op in ops {
         match *op {

@@ -22,26 +22,26 @@ fn wgsl_emit_works() {
 fn hash_function_works() {
     let p = compile_expression("hash(id + params[0])").expect("compile");
     let mut stack = Vec::new();
+    let input = ParticleEvalInput {
+        t: 0.5,
+        life: 0.5,
+        lifetime: 1.0,
+        spawn_time: 0.0,
+        emitter_time: 0.0,
+        speed: 1.0,
+        particle_id: 42.0,
+        dir: [0.0, 1.0, 0.0],
+        vel: [0.0, 1.0, 0.0],
+        rand: [0.1, 0.2, 0.3],
+        seed: 42.0,
+        ring_u: 0.0,
+        index01: 0.0,
+        emitter_pos: [0.0, 0.0, 0.0],
+        prev_pos: [0.0, 0.0, 0.0],
+        params: &[2.0],
+    };
     let v = p
-        .eval_particle(
-            0.5,
-            0.5,
-            1.0,
-            0.0,
-            0.0,
-            1.0,
-            42.0,
-            [0.0, 1.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.1, 0.2, 0.3],
-            42.0,
-            0.0,
-            0.0,
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0],
-            &[2.0],
-            &mut stack,
-        )
+        .eval_particle(&input, &mut stack)
         .expect("eval should succeed");
     assert!(v.is_finite());
     assert!((0.0..1.0).contains(&v));

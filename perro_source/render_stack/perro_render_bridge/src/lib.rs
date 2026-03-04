@@ -410,7 +410,7 @@ pub enum Command3D {
     },
     UpsertPointParticles {
         node: NodeID,
-        particles: PointParticles3DState,
+        particles: Box<PointParticles3DState>,
     },
     RemoveNode {
         node: NodeID,
@@ -421,7 +421,7 @@ pub enum Command3D {
 pub enum RenderCommand {
     Resource(ResourceCommand),
     TwoD(Command2D),
-    ThreeD(Command3D),
+    ThreeD(Box<Command3D>),
 }
 
 #[derive(Debug, Clone)]

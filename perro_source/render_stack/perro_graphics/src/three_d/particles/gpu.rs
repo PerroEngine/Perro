@@ -6,7 +6,7 @@ use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3};
 use perro_ids::NodeID;
-use perro_particle_math::{Op, Program, compile_expression, eval_ops_particle};
+use perro_particle_math::{Op, ParticleEvalInput, Program, compile_expression, eval_ops_particle};
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, ParticlePath3D, ParticleRenderMode3D,
     ParticleSimulationMode3D, PointParticles3DState,
@@ -1868,133 +1868,34 @@ impl GpuPointParticles3D {
             prev_pos += 0.5 * force * prev_local_t * prev_local_t;
             let prev_pos_arr = [prev_pos.x, prev_pos.y, prev_pos.z];
             if let Some(custom_eval) = &compiled_custom {
+                let eval_input = ParticleEvalInput {
+                    t: age,
+                    life: local_t,
+                    lifetime,
+                    spawn_time: spawn_t,
+                    emitter_time: time,
+                    speed,
+                    particle_id: particle_key as f32,
+                    dir: dir_arr,
+                    vel: vel_arr,
+                    rand: [h0, h1, h2],
+                    seed: seed_value,
+                    ring_u,
+                    index01,
+                    emitter_pos,
+                    prev_pos: prev_pos_arr,
+                    params: &emitter.params,
+                };
                 let (dx, dy, dz) = match *custom_eval {
                     CustomEval::ProgramIds(x_id, y_id, z_id) => (
-                        self.eval_compiled_expr(
-                            x_id,
-                            age,
-                            local_t,
-                            lifetime,
-                            spawn_t,
-                            time,
-                            speed,
-                            particle_key as f32,
-                            dir_arr,
-                            vel_arr,
-                            [h0, h1, h2],
-                            seed_value,
-                            ring_u,
-                            index01,
-                            emitter_pos,
-                            prev_pos_arr,
-                            &emitter.params,
-                        )
-                        .unwrap_or(0.0),
-                        self.eval_compiled_expr(
-                            y_id,
-                            age,
-                            local_t,
-                            lifetime,
-                            spawn_t,
-                            time,
-                            speed,
-                            particle_key as f32,
-                            dir_arr,
-                            vel_arr,
-                            [h0, h1, h2],
-                            seed_value,
-                            ring_u,
-                            index01,
-                            emitter_pos,
-                            prev_pos_arr,
-                            &emitter.params,
-                        )
-                        .unwrap_or(0.0),
-                        self.eval_compiled_expr(
-                            z_id,
-                            age,
-                            local_t,
-                            lifetime,
-                            spawn_t,
-                            time,
-                            speed,
-                            particle_key as f32,
-                            dir_arr,
-                            vel_arr,
-                            [h0, h1, h2],
-                            seed_value,
-                            ring_u,
-                            index01,
-                            emitter_pos,
-                            prev_pos_arr,
-                            &emitter.params,
-                        )
-                        .unwrap_or(0.0),
+                        self.eval_compiled_expr(x_id, &eval_input).unwrap_or(0.0),
+                        self.eval_compiled_expr(y_id, &eval_input).unwrap_or(0.0),
+                        self.eval_compiled_expr(z_id, &eval_input).unwrap_or(0.0),
                     ),
                     CustomEval::Ops(x_ops, y_ops, z_ops) => (
-                        eval_ops_particle(
-                            x_ops,
-                            age,
-                            local_t,
-                            lifetime,
-                            spawn_t,
-                            time,
-                            speed,
-                            particle_key as f32,
-                            dir_arr,
-                            vel_arr,
-                            [h0, h1, h2],
-                            seed_value,
-                            ring_u,
-                            index01,
-                            emitter_pos,
-                            prev_pos_arr,
-                            &emitter.params,
-                            &mut self.eval_stack,
-                        )
-                        .unwrap_or(0.0),
-                        eval_ops_particle(
-                            y_ops,
-                            age,
-                            local_t,
-                            lifetime,
-                            spawn_t,
-                            time,
-                            speed,
-                            particle_key as f32,
-                            dir_arr,
-                            vel_arr,
-                            [h0, h1, h2],
-                            seed_value,
-                            ring_u,
-                            index01,
-                            emitter_pos,
-                            prev_pos_arr,
-                            &emitter.params,
-                            &mut self.eval_stack,
-                        )
-                        .unwrap_or(0.0),
-                        eval_ops_particle(
-                            z_ops,
-                            age,
-                            local_t,
-                            lifetime,
-                            spawn_t,
-                            time,
-                            speed,
-                            particle_key as f32,
-                            dir_arr,
-                            vel_arr,
-                            [h0, h1, h2],
-                            seed_value,
-                            ring_u,
-                            index01,
-                            emitter_pos,
-                            prev_pos_arr,
-                            &emitter.params,
-                            &mut self.eval_stack,
-                        )
-                        .unwrap_or(0.0),
+                        eval_ops_particle(x_ops, &eval_input, &mut self.eval_stack).unwrap_or(0.0),
+                        eval_ops_particle(y_ops, &eval_input, &mut self.eval_stack).unwrap_or(0.0),
+                        eval_ops_particle(z_ops, &eval_input, &mut self.eval_stack).unwrap_or(0.0),
                     ),
                 };
                 pos += Vec3::new(dx, dy, dz);
@@ -2535,46 +2436,9 @@ impl GpuPointParticles3D {
         Some(id)
     }
 
-    fn eval_compiled_expr(
-        &mut self,
-        id: usize,
-        t: f32,
-        life: f32,
-        lifetime: f32,
-        spawn_time: f32,
-        emitter_time: f32,
-        speed: f32,
-        particle_id: f32,
-        dir: [f32; 3],
-        vel: [f32; 3],
-        rand: [f32; 3],
-        seed: f32,
-        ring_u: f32,
-        index01: f32,
-        emitter_pos: [f32; 3],
-        prev_pos: [f32; 3],
-        params: &[f32],
-    ) -> Option<f32> {
+    fn eval_compiled_expr(&mut self, id: usize, input: &ParticleEvalInput<'_>) -> Option<f32> {
         let compiled = self.compiled_exprs.get(id)?;
-        compiled.eval_particle(
-            t,
-            life,
-            lifetime,
-            spawn_time,
-            emitter_time,
-            speed,
-            particle_id,
-            dir,
-            vel,
-            rand,
-            seed,
-            ring_u,
-            index01,
-            emitter_pos,
-            prev_pos,
-            params,
-            &mut self.eval_stack,
-        )
+        compiled.eval_particle(input, &mut self.eval_stack)
     }
 }
 
