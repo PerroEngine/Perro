@@ -215,7 +215,8 @@ fn material_from_runtime_entries(entries: &[(String, RuntimeValue)]) -> Option<M
 
 fn load_pmat_literal(source: &str) -> Option<MaterialLiteral> {
     if pmat_looks_like_object(source) {
-        if let Some(parsed) = std::panic::catch_unwind(|| Parser::new(source).parse_value_literal()).ok()
+        if let Some(parsed) =
+            std::panic::catch_unwind(|| Parser::new(source).parse_value_literal()).ok()
             && let Some(material) = material_from_runtime_value(&parsed)
         {
             return Some(material);

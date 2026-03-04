@@ -1,11 +1,11 @@
 use super::PerroGraphics;
 use crate::backend::GraphicsBackend;
+use crate::three_d::renderer::Draw3DKind;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, Command2D, Command3D, Material3D, RenderBridge,
     RenderCommand, ResourceCommand, Sprite2DCommand,
 };
-use crate::three_d::renderer::Draw3DKind;
 
 #[test]
 fn sprite_texture_upsert_is_accepted_after_texture_creation() {

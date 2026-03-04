@@ -9,11 +9,11 @@ use libloading::Library;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_input::{InputContext, InputSnapshot, KeyCode, MouseButton};
 use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType, SceneNodeData, Spatial};
-use perro_terrain::{ChunkCoord, TerrainData};
-use perro_resource_context::ResourceContext;
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
+use perro_resource_context::ResourceContext;
 use perro_runtime_context::RuntimeContext;
 use perro_scripting::ScriptConstructor;
+use perro_terrain::{ChunkCoord, TerrainData};
 use std::sync::{Arc, Mutex};
 
 mod render_2d;
@@ -729,10 +729,14 @@ impl Runtime {
     }
 
     pub(crate) fn ensure_terrain_instance_data(&mut self, node: NodeID) -> bool {
-        let Some(current_id) = self.nodes.get(node).and_then(|scene_node| match &scene_node.data {
-            SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
-            _ => None,
-        }) else {
+        let Some(current_id) = self
+            .nodes
+            .get(node)
+            .and_then(|scene_node| match &scene_node.data {
+                SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
+                _ => None,
+            })
+        else {
             return false;
         };
 
@@ -761,7 +765,6 @@ impl Runtime {
         false
     }
 }
-
 
 impl Default for Runtime {
     fn default() -> Self {

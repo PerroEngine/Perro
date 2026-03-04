@@ -18,11 +18,9 @@ pub fn internal_update<RT, R, IP>(
     let _ = with_node_mut!(ctx, SelfNodeType, self_id, |emitter| {
         emit_finished_signal = internal_step_update(emitter, delta_seconds);
     });
-    if emit_finished_signal
-        && let Some(node_name) = get_node_name!(ctx, self_id)
-    {
+    if emit_finished_signal && let Some(node_name) = get_node_name!(ctx, self_id) {
         let signal_name = format!("{}_PARTICLES_FINISHED", node_name);
-      
+
         let signal_id = SignalID::from_string(&signal_name);
         let _ = signal_emit!(ctx, signal_id);
     }

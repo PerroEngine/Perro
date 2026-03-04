@@ -37,4 +37,3 @@ impl TerrainAPI for RuntimeResourceApi {
         data.raycast_world(origin_world, direction_world, max_distance)
     }
 }
-

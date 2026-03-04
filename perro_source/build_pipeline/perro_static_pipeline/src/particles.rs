@@ -60,10 +60,7 @@ pub fn generate_static_particles(project_root: &Path) -> Result<(), StaticPipeli
     for (index, particle) in unique_particles.iter().enumerate() {
         let const_name = format!("PARTICLE_{}", index);
         let init = emit_particle_literal(particle);
-        let _ = writeln!(
-            out,
-            "static {const_name}: ParticleProfile3D = {init};"
-        );
+        let _ = writeln!(out, "static {const_name}: ParticleProfile3D = {init};");
     }
     out.push('\n');
     out.push_str("pub fn lookup_particle(path: &str) -> Option<&'static ParticleProfile3D> {\n");
@@ -271,10 +268,20 @@ fn emit_particle_literal(particle: &ParticleLiteral) -> String {
         particle.size,
         particle.size_min,
         particle.size_max,
-        particle.force[0], particle.force[1], particle.force[2],
-        particle.color_start[0], particle.color_start[1], particle.color_start[2], particle.color_start[3],
-        particle.color_end[0], particle.color_end[1], particle.color_end[2], particle.color_end[3],
-        particle.emissive[0], particle.emissive[1], particle.emissive[2],
+        particle.force[0],
+        particle.force[1],
+        particle.force[2],
+        particle.color_start[0],
+        particle.color_start[1],
+        particle.color_start[2],
+        particle.color_start[3],
+        particle.color_end[0],
+        particle.color_end[1],
+        particle.color_end[2],
+        particle.color_end[3],
+        particle.emissive[0],
+        particle.emissive[1],
+        particle.emissive[2],
         particle.spin_angular_velocity,
     )
 }
@@ -367,10 +374,8 @@ fn parse_pparticle_source(source: &str) -> Option<ParticleLiteral> {
                 literal.speed_max = value.parse::<f32>().ok().unwrap_or(literal.speed_max);
             }
             "spread_radians" => {
-                literal.spread_radians = value
-                    .parse::<f32>()
-                    .ok()
-                    .unwrap_or(literal.spread_radians);
+                literal.spread_radians =
+                    value.parse::<f32>().ok().unwrap_or(literal.spread_radians);
             }
             "size" => {
                 literal.size = value.parse::<f32>().ok().unwrap_or(literal.size);
@@ -510,4 +515,3 @@ fn parse_vec4_literal(raw: &str) -> Option<[f32; 4]> {
     let mut it = inner.split(',').map(|v| v.trim().parse::<f32>().ok());
     Some([it.next()??, it.next()??, it.next()??, it.next()??])
 }
-

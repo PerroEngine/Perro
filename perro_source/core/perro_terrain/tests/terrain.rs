@@ -27,8 +27,12 @@ fn seam_vertices_align_after_cross_chunk_edit() {
         .insert_brush_world(Vector3::new(32.0, 6.0, 0.0), 12.0, BrushShape::Circle)
         .expect("multi-chunk brush should succeed");
 
-    let left = terrain.chunk(ChunkCoord::new(0, 0)).expect("left chunk exists");
-    let right = terrain.chunk(ChunkCoord::new(1, 0)).expect("right chunk exists");
+    let left = terrain
+        .chunk(ChunkCoord::new(0, 0))
+        .expect("left chunk exists");
+    let right = terrain
+        .chunk(ChunkCoord::new(1, 0))
+        .expect("right chunk exists");
 
     let mut left_border = border_world_points(left.vertices(), 32.0, 0.0);
     let mut right_border = border_world_points(right.vertices(), -32.0, 64.0);
@@ -95,7 +99,10 @@ fn add_remove_brush_ops_spanning_chunks_keep_seam_aligned() {
             Vector3::new(29.0, 0.0, 0.0),
             8.0,
             BrushShape::Circle,
-            BrushOp::Add { delta: 2.5, basis: 1.0 },
+            BrushOp::Add {
+                delta: 2.5,
+                basis: 1.0,
+            },
         )
         .expect("add op should succeed");
     let _ = terrain
@@ -103,7 +110,10 @@ fn add_remove_brush_ops_spanning_chunks_keep_seam_aligned() {
             Vector3::new(29.0, 0.0, 0.0),
             8.0,
             BrushShape::Circle,
-            BrushOp::Remove { delta: 1.0, basis: 1.0 },
+            BrushOp::Remove {
+                delta: 1.0,
+                basis: 1.0,
+            },
         )
         .expect("remove op should succeed");
 
@@ -121,7 +131,10 @@ fn decimate_brush_op_spanning_chunks_keeps_seam_aligned() {
             Vector3::new(29.0, 0.0, 0.0),
             8.0,
             BrushShape::Circle,
-            BrushOp::Add { delta: 2.1, basis: 1.0 },
+            BrushOp::Add {
+                delta: 2.1,
+                basis: 1.0,
+            },
         )
         .expect("add op should succeed");
     let _ = terrain
@@ -137,8 +150,12 @@ fn decimate_brush_op_spanning_chunks_keeps_seam_aligned() {
 }
 
 fn assert_seam_y_aligned(terrain: &TerrainData) {
-    let left = terrain.chunk(ChunkCoord::new(0, 0)).expect("left chunk exists");
-    let right = terrain.chunk(ChunkCoord::new(1, 0)).expect("right chunk exists");
+    let left = terrain
+        .chunk(ChunkCoord::new(0, 0))
+        .expect("left chunk exists");
+    let right = terrain
+        .chunk(ChunkCoord::new(1, 0))
+        .expect("right chunk exists");
 
     let mut left_border = border_world_points(left.vertices(), 32.0, 0.0);
     let mut right_border = border_world_points(right.vertices(), -32.0, 64.0);
@@ -153,7 +170,11 @@ fn assert_seam_y_aligned(terrain: &TerrainData) {
     }
 }
 
-fn border_world_points(vertices: &[perro_terrain::Vertex], border_x_local: f32, world_center_x: f32) -> Vec<(f32, f32)> {
+fn border_world_points(
+    vertices: &[perro_terrain::Vertex],
+    border_x_local: f32,
+    world_center_x: f32,
+) -> Vec<(f32, f32)> {
     let mut out = Vec::new();
     for v in vertices {
         if (v.position.x - border_x_local).abs() <= EPS {

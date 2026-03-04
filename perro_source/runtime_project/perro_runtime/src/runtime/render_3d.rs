@@ -4,14 +4,14 @@ use glam::{Mat4, Vec3};
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_nodes::{
     CameraProjection, SceneNodeData,
-    particle_emitter_3d::{ParticleType, ParticleEmitterSimMode3D},
+    particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
 };
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
-    ParticlePath3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
-    ParticleProfile3D, PointParticles3DState, RuntimeMeshData, RuntimeMeshVertex,
-    RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SpotLight3DState,
+    ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
+    PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID,
+    ResourceCommand, RuntimeMeshData, RuntimeMeshVertex, SpotLight3DState,
 };
 use perro_terrain::{ChunkCoord, TerrainChunk};
 use std::borrow::Cow;
@@ -238,10 +238,12 @@ impl Runtime {
                         continue;
                     }
                     let active_terrain_id = if terrain_id.is_nil() {
-                        self.nodes.get(node).and_then(|scene_node| match &scene_node.data {
-                            SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
-                            _ => None,
-                        })
+                        self.nodes
+                            .get(node)
+                            .and_then(|scene_node| match &scene_node.data {
+                                SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
+                                _ => None,
+                            })
                     } else {
                         Some(terrain_id)
                     };
@@ -282,8 +284,9 @@ impl Runtime {
                                 terrain_signature,
                             );
                             let prev = self.render_3d.terrain_debug_state.get(&node).copied();
-                            let needs_rebuild =
-                                prev.map(|state| state.signature != debug_signature).unwrap_or(true);
+                            let needs_rebuild = prev
+                                .map(|state| state.signature != debug_signature)
+                                .unwrap_or(true);
                             if needs_rebuild {
                                 if let Some(prev) = prev {
                                     Self::queue_remove_terrain_debug_nodes(self, node, prev);
@@ -607,7 +610,11 @@ impl Runtime {
         (point_count, edge_count)
     }
 
-    fn queue_remove_terrain_debug_nodes(&mut self, node: NodeID, state: crate::runtime::TerrainDebugState) {
+    fn queue_remove_terrain_debug_nodes(
+        &mut self,
+        node: NodeID,
+        state: crate::runtime::TerrainDebugState,
+    ) {
         for i in 0..state.point_count {
             self.queue_render_command(RenderCommand::ThreeD(Command3D::RemoveNode {
                 node: terrain_debug_point_node(node, i),
@@ -717,7 +724,6 @@ impl Runtime {
 
         Some((mesh, material))
     }
-
 }
 
 fn terrain_chunk_local_to_world(
@@ -879,7 +885,6 @@ fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {
     let budget = (spawn_rate * lifetime_max).ceil() as u32 + 2;
     budget.clamp(1, 1_000_000)
 }
-
 
 fn resolve_particle_sim_mode(
     override_mode: ParticleEmitterSimMode3D,
@@ -1100,10 +1105,8 @@ fn parse_pparticle_source(source: &str) -> Option<ParticleProfile3D> {
                 profile.speed_max = value.parse::<f32>().ok().unwrap_or(profile.speed_max);
             }
             "spread_radians" => {
-                profile.spread_radians = value
-                    .parse::<f32>()
-                    .ok()
-                    .unwrap_or(profile.spread_radians);
+                profile.spread_radians =
+                    value.parse::<f32>().ok().unwrap_or(profile.spread_radians);
             }
             "size" => {
                 profile.size = value.parse::<f32>().ok().unwrap_or(profile.size);

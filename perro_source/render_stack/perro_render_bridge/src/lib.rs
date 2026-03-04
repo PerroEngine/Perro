@@ -84,10 +84,21 @@ pub struct SpotLight3DState {
 pub enum ParticlePath3D {
     None,
     Ballistic,
-    Spiral { angular_velocity: f32, radius: f32 },
-    OrbitY { angular_velocity: f32, radius: f32 },
-    NoiseDrift { amplitude: f32, frequency: f32 },
-    FlatDisk { radius: f32 },
+    Spiral {
+        angular_velocity: f32,
+        radius: f32,
+    },
+    OrbitY {
+        angular_velocity: f32,
+        radius: f32,
+    },
+    NoiseDrift {
+        amplitude: f32,
+        frequency: f32,
+    },
+    FlatDisk {
+        radius: f32,
+    },
     Custom {
         expr_x: Cow<'static, str>,
         expr_y: Cow<'static, str>,
@@ -447,4 +458,3 @@ pub trait RenderBridge {
 
     fn drain_events(&mut self, out: &mut Vec<RenderEvent>);
 }
-

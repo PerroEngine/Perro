@@ -10,7 +10,7 @@ use perro_nodes::{
     node_2d::Node2D,
     node_3d::Node3D,
     particle_emitter_3d::ParticleEmitter3D,
-    particle_emitter_3d::{ParticleType, ParticleEmitterSimMode3D},
+    particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
     point_light_3d::PointLight3D,
     ray_light_3d::RayLight3D,
     spot_light_3d::SpotLight3D,

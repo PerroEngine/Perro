@@ -14,9 +14,9 @@ pub mod prelude {
         attribute, attributes_of, call_method, create_node, delta_time, elapsed_time,
         fixed_delta_time, get_node_children_ids, get_node_name, get_node_parent_id, get_node_tags,
         get_node_type, get_var, has_attribute, member, members_with, query, remove_node, reparent,
-        reparent_multi, script_attach, script_detach, set_node_name, set_var,
-        signal_connect, signal_disconnect, signal_emit, tag_add, tag_remove, with_base_node,
-        tag_set, with_base_node_mut, with_node, with_node_mut, with_state, with_state_mut,
+        reparent_multi, script_attach, script_detach, set_node_name, set_var, signal_connect,
+        signal_disconnect, signal_emit, tag_add, tag_remove, tag_set, with_base_node,
+        with_base_node_mut, with_node, with_node_mut, with_state, with_state_mut,
     };
     pub use perro_ids::{func, method, sid, signal, smid, tag, tags, var};
     pub use perro_variant::{params, variant};

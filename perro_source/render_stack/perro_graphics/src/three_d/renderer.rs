@@ -84,12 +84,15 @@ impl Renderer3D {
     }
 
     pub fn queue_debug_point(&mut self, node: NodeID, position: [f32; 3], size: f32) {
-        self.retained_draws.insert(node, Draw3DInstance {
+        self.retained_draws.insert(
             node,
-            kind: Draw3DKind::DebugPointCube,
-            material: None,
-            model: debug_point_model(position, size).to_cols_array_2d(),
-        });
+            Draw3DInstance {
+                node,
+                kind: Draw3DKind::DebugPointCube,
+                material: None,
+                model: debug_point_model(position, size).to_cols_array_2d(),
+            },
+        );
     }
 
     pub fn queue_debug_line(
@@ -100,12 +103,15 @@ impl Renderer3D {
         thickness: f32,
     ) {
         if let Some(model) = debug_line_model(start, end, thickness) {
-            self.retained_draws.insert(node, Draw3DInstance {
+            self.retained_draws.insert(
                 node,
-                kind: Draw3DKind::DebugEdgeCylinder,
-                material: None,
-                model: model.to_cols_array_2d(),
-            });
+                Draw3DInstance {
+                    node,
+                    kind: Draw3DKind::DebugEdgeCylinder,
+                    material: None,
+                    model: model.to_cols_array_2d(),
+                },
+            );
         } else {
             self.retained_draws.remove(&node);
         }
@@ -142,14 +148,21 @@ impl Renderer3D {
         let mut stats = Renderer3DStats::default();
 
         for draw in self.queued_draws.drain(..) {
-            let material_ready = draw.material.map(|id| resources.has_material(id)).unwrap_or(true);
+            let material_ready = draw
+                .material
+                .map(|id| resources.has_material(id))
+                .unwrap_or(true);
             let mesh_ready = match draw.kind {
                 Draw3DKind::Mesh(mesh) => resources.has_mesh(mesh),
-                Draw3DKind::Terrain64 | Draw3DKind::DebugPointCube | Draw3DKind::DebugEdgeCylinder => true,
+                Draw3DKind::Terrain64
+                | Draw3DKind::DebugPointCube
+                | Draw3DKind::DebugEdgeCylinder => true,
             };
             let draw_ready = match draw.kind {
                 Draw3DKind::Mesh(_) => mesh_ready && material_ready,
-                Draw3DKind::Terrain64 | Draw3DKind::DebugPointCube | Draw3DKind::DebugEdgeCylinder => material_ready,
+                Draw3DKind::Terrain64
+                | Draw3DKind::DebugPointCube
+                | Draw3DKind::DebugEdgeCylinder => material_ready,
             };
             if draw_ready {
                 self.retained_draws.insert(draw.node, draw);

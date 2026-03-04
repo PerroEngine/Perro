@@ -11,8 +11,6 @@ pub fn stringify(value: &Variant) -> Result<String, serde_json::Error> {
     serde_json::to_string(&json_value)
 }
 
-
-
 #[cfg(test)]
 #[path = "../tests/unit/json_tests.rs"]
 mod tests;

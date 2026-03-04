@@ -53,4 +53,3 @@ impl<'res, R: TerrainAPI + ?Sized> TerrainModule<'res, R> {
             .terrain_raycast(terrain, origin_world, direction_world, max_distance)
     }
 }
-

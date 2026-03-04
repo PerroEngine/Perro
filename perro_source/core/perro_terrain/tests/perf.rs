@@ -470,9 +470,18 @@ fn perf_brush_ops_chunk_sweep() {
                 basis: 1.0,
                 feature_offset: 0.1,
             },
-            BrushOp::Add { delta: 1.0, basis: 1.0 },
-            BrushOp::Remove { delta: 0.5, basis: 1.0 },
-            BrushOp::Smooth { strength: 0.6, basis: 1.0 },
+            BrushOp::Add {
+                delta: 1.0,
+                basis: 1.0,
+            },
+            BrushOp::Remove {
+                delta: 0.5,
+                basis: 1.0,
+            },
+            BrushOp::Smooth {
+                strength: 0.6,
+                basis: 1.0,
+            },
             BrushOp::Decimate { basis: 0.25 },
         ];
 
@@ -580,7 +589,10 @@ fn perf_brush_ops_world_cross_chunk_add_remove_decimate() {
                 Vector3::new(61.0, 0.0, 32.0),
                 8.0,
                 BrushShape::Circle,
-                BrushOp::Add { delta: 2.0, basis: 1.0 },
+                BrushOp::Add {
+                    delta: 2.0,
+                    basis: 1.0,
+                },
             )
             .expect("add should succeed");
         let s2 = terrain
@@ -588,7 +600,10 @@ fn perf_brush_ops_world_cross_chunk_add_remove_decimate() {
                 Vector3::new(61.0, 0.0, 32.0),
                 8.0,
                 BrushShape::Circle,
-                BrushOp::Remove { delta: 1.0, basis: 1.0 },
+                BrushOp::Remove {
+                    delta: 1.0,
+                    basis: 1.0,
+                },
             )
             .expect("remove should succeed");
         let s3 = terrain
@@ -656,7 +671,10 @@ fn perf_brush_ops_established_piecewise_dense_cross_sections() {
                 Vector3::new(0.0, 0.0, 0.0),
                 18.0,
                 BrushShape::Circle,
-                BrushOp::Add { delta: 1.5, basis: 1.0 },
+                BrushOp::Add {
+                    delta: 1.5,
+                    basis: 1.0,
+                },
             )
             .expect("cross-section add should succeed");
         let v_after_add = chunk.vertex_count();
@@ -666,7 +684,10 @@ fn perf_brush_ops_established_piecewise_dense_cross_sections() {
                 Vector3::new(0.0, 0.0, 0.0),
                 18.0,
                 BrushShape::Circle,
-                BrushOp::Remove { delta: 0.75, basis: 1.0 },
+                BrushOp::Remove {
+                    delta: 0.75,
+                    basis: 1.0,
+                },
             )
             .expect("cross-section remove should succeed");
         let _ = chunk

@@ -45,9 +45,11 @@ impl TerrainChunk {
             });
         }
 
-        if let Some(existing_id) =
-            self.find_existing_vertex_in_hit_triangles(position, &hit_triangle_ids, distance_epsilon)
-        {
+        if let Some(existing_id) = self.find_existing_vertex_in_hit_triangles(
+            position,
+            &hit_triangle_ids,
+            distance_epsilon,
+        ) {
             return Ok(InsertVertexResult {
                 inserted_vertex_id: existing_id,
                 removed_as_coplanar: true,
@@ -96,8 +98,6 @@ impl TerrainChunk {
         self.insert_vertex_structural_filtered(position, None)
     }
 
- 
-
     fn insert_vertex_structural_filtered(
         &mut self,
         position: Vector3,
@@ -107,12 +107,9 @@ impl TerrainChunk {
         let distance_epsilon = DEFAULT_DISTANCE_EPSILON;
 
         let hit_triangle_ids = match region_polygon_xz {
-            Some(region) => self.find_hit_triangles_xz_in_region(
-                position.x,
-                position.z,
-                area_epsilon,
-                region,
-            ),
+            Some(region) => {
+                self.find_hit_triangles_xz_in_region(position.x, position.z, area_epsilon, region)
+            }
             None => self.find_hit_triangles_xz(position.x, position.z, area_epsilon),
         };
         if hit_triangle_ids.is_empty() {
@@ -122,9 +119,11 @@ impl TerrainChunk {
             });
         }
 
-        if let Some(existing_id) =
-            self.find_existing_vertex_in_hit_triangles(position, &hit_triangle_ids, distance_epsilon)
-        {
+        if let Some(existing_id) = self.find_existing_vertex_in_hit_triangles(
+            position,
+            &hit_triangle_ids,
+            distance_epsilon,
+        ) {
             return Ok(InsertVertexResult {
                 inserted_vertex_id: existing_id,
                 removed_as_coplanar: false,
@@ -304,7 +303,9 @@ impl TerrainChunk {
         for tri_id in hit_triangle_ids {
             let tri = self.triangles[*tri_id];
             for vid in [tri.a, tri.b, tri.c] {
-                if seen.insert(vid) && squared_distance(self.vertices[vid].position, position) <= eps2 {
+                if seen.insert(vid)
+                    && squared_distance(self.vertices[vid].position, position) <= eps2
+                {
                     return Some(vid);
                 }
             }
@@ -509,7 +510,8 @@ impl TerrainChunk {
             }
         }
 
-        let replacement = self.retriangulate_neighbors(vertex_id, &neighbors, base_normal, area_epsilon);
+        let replacement =
+            self.retriangulate_neighbors(vertex_id, &neighbors, base_normal, area_epsilon);
         if replacement.is_empty() {
             return false;
         }
@@ -643,7 +645,12 @@ impl TerrainChunk {
         if !self.replacement_area_consistent(incident, replacement, area_epsilon) {
             return false;
         }
-        if !self.replacement_normals_consistent(replacement, base_normal, normal_epsilon, area_epsilon) {
+        if !self.replacement_normals_consistent(
+            replacement,
+            base_normal,
+            normal_epsilon,
+            area_epsilon,
+        ) {
             return false;
         }
         if !triangles_are_manifold_local(replacement) {
@@ -813,7 +820,12 @@ impl TerrainChunk {
             let mut changed = false;
             let mut vid = 0usize;
             while vid < self.vertices.len() {
-                if self.try_remove_coplanar_vertex(vid, area_epsilon, normal_epsilon, distance_epsilon) {
+                if self.try_remove_coplanar_vertex(
+                    vid,
+                    area_epsilon,
+                    normal_epsilon,
+                    distance_epsilon,
+                ) {
                     changed = true;
                     break;
                 }
@@ -1034,8 +1046,12 @@ fn quantize_xz_key(x: f32, z: f32, step: f32) -> (i64, i64) {
 }
 
 fn morton_key_2d(x: f32, z: f32) -> u64 {
-    let sx = ((x * 16.0).round() as i32).saturating_add(1 << 15).clamp(0, u16::MAX as i32) as u16;
-    let sz = ((z * 16.0).round() as i32).saturating_add(1 << 15).clamp(0, u16::MAX as i32) as u16;
+    let sx = ((x * 16.0).round() as i32)
+        .saturating_add(1 << 15)
+        .clamp(0, u16::MAX as i32) as u16;
+    let sz = ((z * 16.0).round() as i32)
+        .saturating_add(1 << 15)
+        .clamp(0, u16::MAX as i32) as u16;
     interleave_u16(sx, sz)
 }
 

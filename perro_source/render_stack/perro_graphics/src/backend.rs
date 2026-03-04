@@ -265,10 +265,7 @@ impl PerroGraphics {
                     } => {
                         self.renderer_3d.queue_draw(node, mesh, material, model);
                     }
-                    Command3D::DrawTerrain {
-                        node,
-                        model,
-                    } => {
+                    Command3D::DrawTerrain { node, model } => {
                         self.renderer_3d.queue_terrain(node, model);
                     }
                     Command3D::DrawDebugPoint3D {
@@ -433,8 +430,6 @@ impl GraphicsBackend for PerroGraphics {
         }
     }
 }
-
-
 
 #[cfg(test)]
 #[path = "../tests/unit/backend_tests.rs"]

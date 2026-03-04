@@ -135,6 +135,7 @@ impl<'a> Parser<'a> {
                 RuntimeValue::Bool(false)
             }
 
+            // inside parse_value(), in the Token::LBrace => { ... } arm
             Token::LBrace => {
                 self.advance();
                 let mut entries = Vec::new();
@@ -157,7 +158,13 @@ impl<'a> Parser<'a> {
                         }
                         other => panic!("Expected object key, got {:?}", other),
                     };
-                    self.expect(Token::Colon);
+
+                    // ACCEPT BOTH ':' AND '=' HERE
+                    match &self.current {
+                        Token::Colon | Token::Equals => self.advance(),
+                        other => panic!("Expected ':' or '=' after object key, got {:?}", other),
+                    }
+
                     let value = self.parse_value();
                     entries.push((key, value));
 

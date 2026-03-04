@@ -51,6 +51,8 @@ fn hash_function_works() {
 fn tau_constant_works() {
     let p = compile_expression("tau").expect("compile");
     let mut stack = Vec::new();
-    let v = p.eval(0.0, 0.0, &[], &mut stack).expect("eval should succeed");
+    let v = p
+        .eval(0.0, 0.0, &[], &mut stack)
+        .expect("eval should succeed");
     assert!((v - std::f32::consts::TAU).abs() < 1.0e-6);
 }

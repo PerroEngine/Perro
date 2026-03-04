@@ -190,18 +190,12 @@ fn bench_parallel_threshold_sweep() {
         arena
     }
 
-    fn avg_ms(
-        arena: &NodeArena,
-        query: &TagQuery,
-        workers: usize,
-        rounds: usize,
-    ) -> (u128, usize) {
+    fn avg_ms(arena: &NodeArena, query: &TagQuery, workers: usize, rounds: usize) -> (u128, usize) {
         let mut total = 0_u128;
         let mut matches = 0_usize;
         for _ in 0..rounds {
             let start = std::time::Instant::now();
-            let result =
-                query_node_ids_with_worker_override(arena, query.clone(), Some(workers));
+            let result = query_node_ids_with_worker_override(arena, query.clone(), Some(workers));
             total += start.elapsed().as_micros();
             matches = result.len();
             black_box(&result);

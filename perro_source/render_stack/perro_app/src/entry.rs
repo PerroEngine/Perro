@@ -128,10 +128,7 @@ pub fn run_static_embedded_project(
     .with_meshlet_debug_view(input.meshlet_debug_view)
     .with_occlusion_culling(input.occlusion_culling)
     .with_particle_sim_default(input.particle_sim_default);
-    let mut project = RuntimeProject::from_static(
-        static_config,
-        input.project_root.to_path_buf(),
-    );
+    let mut project = RuntimeProject::from_static(static_config, input.project_root.to_path_buf());
 
     project = project
         .with_static_scene_lookup(input.scene_lookup)

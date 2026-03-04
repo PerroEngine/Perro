@@ -9,8 +9,7 @@ use perro_ids::NodeID;
 use perro_particle_math::{Op, Program, compile_expression, eval_ops_particle};
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, ParticlePath3D, ParticleRenderMode3D,
-    ParticleSimulationMode3D,
-    PointParticles3DState,
+    ParticleSimulationMode3D, PointParticles3DState,
 };
 
 const PARTICLE_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
@@ -39,7 +38,7 @@ struct GpuEmitterParticle {
     model_1: [f32; 4],
     model_2: [f32; 4],
     model_3: [f32; 4],
-    gravity_path: [f32; 4],     // xyz gravity, w path kind
+    gravity_path: [f32; 4], // xyz gravity, w path kind
     color_start: [f32; 4],
     color_end: [f32; 4],
     emissive_point: [f32; 4],   // xyz emissive, w size
@@ -297,74 +296,75 @@ impl GpuPointParticles3D {
             multiview_mask: None,
             cache: None,
         });
-        let cpu_billboard_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_particles3d_billboard_pipeline"),
-            layout: Some(&cpu_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_billboard"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<PointParticleGpu>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 12,
-                            shader_location: 1,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 20,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 36,
-                            shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                    ],
-                }],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: PARTICLE_DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: sample_count,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
+        let cpu_billboard_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("perro_particles3d_billboard_pipeline"),
+                layout: Some(&cpu_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_billboard"),
+                    buffers: &[wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<PointParticleGpu>() as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &[
+                            wgpu::VertexAttribute {
+                                offset: 0,
+                                shader_location: 0,
+                                format: wgpu::VertexFormat::Float32x3,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 12,
+                                shader_location: 1,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 20,
+                                shader_location: 2,
+                                format: wgpu::VertexFormat::Float32x4,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 36,
+                                shader_location: 3,
+                                format: wgpu::VertexFormat::Float32x3,
+                            },
+                        ],
+                    }],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: color_format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    unclipped_depth: false,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    conservative: false,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: PARTICLE_DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: sample_count,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview_mask: None,
+                cache: None,
+            });
         let hybrid_emitters_bgl =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("perro_particles3d_hybrid_emitters_bgl"),
@@ -475,49 +475,50 @@ impl GpuPointParticles3D {
             multiview_mask: None,
             cache: None,
         });
-        let hybrid_billboard_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_particles3d_hybrid_billboard_pipeline"),
-            layout: Some(&hybrid_layout),
-            vertex: wgpu::VertexState {
-                module: &hybrid_shader,
-                entry_point: Some("vs_billboard"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &hybrid_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: PARTICLE_DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: sample_count,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
+        let hybrid_billboard_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("perro_particles3d_hybrid_billboard_pipeline"),
+                layout: Some(&hybrid_layout),
+                vertex: wgpu::VertexState {
+                    module: &hybrid_shader,
+                    entry_point: Some("vs_billboard"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &hybrid_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: color_format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    unclipped_depth: false,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    conservative: false,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: PARTICLE_DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: sample_count,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview_mask: None,
+                cache: None,
+            });
 
         let compute_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_particles3d_compute_bgl"),
@@ -539,8 +540,10 @@ impl GpuPointParticles3D {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
                         min_binding_size: Some(
-                            std::num::NonZeroU64::new(std::mem::size_of::<GpuEmitterParams>() as u64)
-                                .expect("gpu emitter params size must be non-zero"),
+                            std::num::NonZeroU64::new(
+                                std::mem::size_of::<GpuEmitterParams>() as u64
+                            )
+                            .expect("gpu emitter params size must be non-zero"),
                         ),
                     },
                     count: None,
@@ -635,56 +638,58 @@ impl GpuPointParticles3D {
             compilation_options: Default::default(),
             cache: None,
         });
-        let compute_render_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_particles3d_compute_render_layout"),
-            bind_group_layouts: &[&camera_bgl, &compute_render_bgl],
-            immediate_size: 0,
-        });
-        let compute_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_particles3d_compute_render_pipeline"),
-            layout: Some(&compute_render_layout),
-            vertex: wgpu::VertexState {
-                module: &compute_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &compute_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::PointList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: PARTICLE_DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: sample_count,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
-        let compute_render_billboard_pipeline = device.create_render_pipeline(
-            &wgpu::RenderPipelineDescriptor {
+        let compute_render_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_particles3d_compute_render_layout"),
+                bind_group_layouts: &[&camera_bgl, &compute_render_bgl],
+                immediate_size: 0,
+            });
+        let compute_render_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("perro_particles3d_compute_render_pipeline"),
+                layout: Some(&compute_render_layout),
+                vertex: wgpu::VertexState {
+                    module: &compute_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &compute_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: color_format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::PointList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    unclipped_depth: false,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    conservative: false,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: PARTICLE_DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: sample_count,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview_mask: None,
+                cache: None,
+            });
+        let compute_render_billboard_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("perro_particles3d_compute_render_billboard_pipeline"),
                 layout: Some(&compute_render_layout),
                 vertex: wgpu::VertexState {
@@ -726,8 +731,7 @@ impl GpuPointParticles3D {
                 },
                 multiview_mask: None,
                 cache: None,
-            },
-        );
+            });
         let particle_capacity = 1024usize;
         let particle_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_points"),
@@ -766,7 +770,8 @@ impl GpuPointParticles3D {
         let hybrid_particle_spawn_rotation_capacity = 1024usize;
         let hybrid_particle_spawn_rotation_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_hybrid_particle_spawn_rotations"),
-            size: (hybrid_particle_spawn_rotation_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
+            size: (hybrid_particle_spawn_rotation_capacity * std::mem::size_of::<[f32; 4]>())
+                as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -824,12 +829,14 @@ impl GpuPointParticles3D {
             mapped_at_creation: false,
         });
         let compute_particle_spawn_rotation_capacity = 1024usize;
-        let compute_particle_spawn_rotation_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_particles3d_compute_particle_spawn_rotations"),
-            size: (compute_particle_spawn_rotation_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let compute_particle_spawn_rotation_buffer =
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_particles3d_compute_particle_spawn_rotations"),
+                size: (compute_particle_spawn_rotation_capacity * std::mem::size_of::<[f32; 4]>())
+                    as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
         let compute_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_compute_params"),
             size: std::mem::size_of::<GpuEmitterParams>() as u64,
@@ -1388,12 +1395,13 @@ impl GpuPointParticles3D {
             while new_capacity < needed_spawn_slots {
                 new_capacity *= 2;
             }
-            self.hybrid_particle_spawn_origin_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("perro_particles3d_hybrid_particle_spawn_origins"),
-                size: (new_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+            self.hybrid_particle_spawn_origin_buffer =
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("perro_particles3d_hybrid_particle_spawn_origins"),
+                    size: (new_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
             self.hybrid_particle_spawn_origin_capacity = new_capacity;
             spawn_origin_recreated = true;
         }
@@ -1403,16 +1411,18 @@ impl GpuPointParticles3D {
             while new_capacity < needed_spawn_slots {
                 new_capacity *= 2;
             }
-            self.hybrid_particle_spawn_rotation_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("perro_particles3d_hybrid_particle_spawn_rotations"),
-                size: (new_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+            self.hybrid_particle_spawn_rotation_buffer =
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("perro_particles3d_hybrid_particle_spawn_rotations"),
+                    size: (new_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
             self.hybrid_particle_spawn_rotation_capacity = new_capacity;
             spawn_rotation_recreated = true;
         }
-        if emitter_recreated || map_recreated || spawn_origin_recreated || spawn_rotation_recreated {
+        if emitter_recreated || map_recreated || spawn_origin_recreated || spawn_rotation_recreated
+        {
             self.hybrid_params_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("perro_particles3d_hybrid_emitters_bg"),
                 layout: &self.hybrid_emitters_bgl,
@@ -1435,7 +1445,9 @@ impl GpuPointParticles3D {
                     },
                     wgpu::BindGroupEntry {
                         binding: 4,
-                        resource: self.hybrid_particle_spawn_rotation_buffer.as_entire_binding(),
+                        resource: self
+                            .hybrid_particle_spawn_rotation_buffer
+                            .as_entire_binding(),
                     },
                 ],
             });
@@ -1536,12 +1548,13 @@ impl GpuPointParticles3D {
             while new_capacity < needed_spawn_slots {
                 new_capacity *= 2;
             }
-            self.compute_particle_spawn_origin_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("perro_particles3d_compute_particle_spawn_origins"),
-                size: (new_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+            self.compute_particle_spawn_origin_buffer =
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("perro_particles3d_compute_particle_spawn_origins"),
+                    size: (new_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
             self.compute_particle_spawn_origin_capacity = new_capacity;
             spawn_origin_recreated = true;
         }
@@ -1551,12 +1564,13 @@ impl GpuPointParticles3D {
             while new_capacity < needed_spawn_slots {
                 new_capacity *= 2;
             }
-            self.compute_particle_spawn_rotation_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("perro_particles3d_compute_particle_spawn_rotations"),
-                size: (new_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+            self.compute_particle_spawn_rotation_buffer =
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("perro_particles3d_compute_particle_spawn_rotations"),
+                    size: (new_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
             self.compute_particle_spawn_rotation_capacity = new_capacity;
             spawn_rotation_recreated = true;
         }
@@ -1599,11 +1613,15 @@ impl GpuPointParticles3D {
                     },
                     wgpu::BindGroupEntry {
                         binding: 6,
-                        resource: self.compute_particle_spawn_origin_buffer.as_entire_binding(),
+                        resource: self
+                            .compute_particle_spawn_origin_buffer
+                            .as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 7,
-                        resource: self.compute_particle_spawn_rotation_buffer.as_entire_binding(),
+                        resource: self
+                            .compute_particle_spawn_rotation_buffer
+                            .as_entire_binding(),
                     },
                 ],
             });
@@ -1628,20 +1646,18 @@ impl GpuPointParticles3D {
     ) -> ([f32; 3], [f32; 4]) {
         let per_particle = self.spawn_origin_cache.entry(node).or_default();
         let generation = self.spawn_origin_generation;
-        let entry = per_particle.entry(particle_key).or_insert(SpawnOriginEntry {
-            origin: current_origin,
-            rotation: current_rotation,
-            last_seen_generation: generation,
-        });
+        let entry = per_particle
+            .entry(particle_key)
+            .or_insert(SpawnOriginEntry {
+                origin: current_origin,
+                rotation: current_rotation,
+                last_seen_generation: generation,
+            });
         entry.last_seen_generation = generation;
         (entry.origin, entry.rotation)
     }
 
-    fn push_emitter_particles(
-        &mut self,
-        node: NodeID,
-        emitter: &PointParticles3DState,
-    ) {
+    fn push_emitter_particles(&mut self, node: NodeID, emitter: &PointParticles3DState) {
         if !emitter.active || emitter.emission_rate <= 0.0 {
             return;
         }
@@ -1679,33 +1695,37 @@ impl GpuPointParticles3D {
             emitter.profile.expr_y_ops.as_ref(),
             emitter.profile.expr_z_ops.as_ref(),
         ) {
-            Some(CustomEval::Ops(x_ops.as_ref(), y_ops.as_ref(), z_ops.as_ref()))
+            Some(CustomEval::Ops(
+                x_ops.as_ref(),
+                y_ops.as_ref(),
+                z_ops.as_ref(),
+            ))
         } else {
             match &emitter.profile.path {
-            ParticlePath3D::Custom {
-                expr_x,
-                expr_y,
-                expr_z,
-            } => {
-                match (
-                    self.get_or_compile_expr(expr_x),
-                    self.get_or_compile_expr(expr_y),
-                    self.get_or_compile_expr(expr_z),
-                ) {
-                    (Some(x), Some(y), Some(z)) => Some(CustomEval::ProgramIds(x, y, z)),
-                    _ => None,
+                ParticlePath3D::Custom {
+                    expr_x,
+                    expr_y,
+                    expr_z,
+                } => {
+                    match (
+                        self.get_or_compile_expr(expr_x),
+                        self.get_or_compile_expr(expr_y),
+                        self.get_or_compile_expr(expr_z),
+                    ) {
+                        (Some(x), Some(y), Some(z)) => Some(CustomEval::ProgramIds(x, y, z)),
+                        _ => None,
+                    }
                 }
-            }
-            ParticlePath3D::CustomCompiled {
-                expr_x_ops,
-                expr_y_ops,
-                expr_z_ops,
-            } => Some(CustomEval::Ops(
-                expr_x_ops.as_ref(),
-                expr_y_ops.as_ref(),
-                expr_z_ops.as_ref(),
-            )),
-            _ => None,
+                ParticlePath3D::CustomCompiled {
+                    expr_x_ops,
+                    expr_y_ops,
+                    expr_z_ops,
+                } => Some(CustomEval::Ops(
+                    expr_x_ops.as_ref(),
+                    expr_y_ops.as_ref(),
+                    expr_z_ops.as_ref(),
+                )),
+                _ => None,
             }
         };
         let billboard_mode = emitter.render_mode == ParticleRenderMode3D::Billboard;
@@ -1734,15 +1754,9 @@ impl GpuPointParticles3D {
             };
             let particle_key = spawn_index;
             let h0 = hash01(emitter.seed ^ particle_key);
-            let h1 = hash01(
-                emitter.seed.wrapping_add(0x9E37_79B9) ^ particle_key.wrapping_mul(3),
-            );
-            let h2 = hash01(
-                emitter.seed.wrapping_add(0x7F4A_7C15) ^ particle_key.wrapping_mul(7),
-            );
-            let h3 = hash01(
-                emitter.seed.wrapping_add(0x94D0_49BB) ^ particle_key.wrapping_mul(11),
-            );
+            let h1 = hash01(emitter.seed.wrapping_add(0x9E37_79B9) ^ particle_key.wrapping_mul(3));
+            let h2 = hash01(emitter.seed.wrapping_add(0x7F4A_7C15) ^ particle_key.wrapping_mul(7));
+            let h3 = hash01(emitter.seed.wrapping_add(0x94D0_49BB) ^ particle_key.wrapping_mul(11));
             let life = life_min + (life_max - life_min) * h0;
             let spawn_t = (spawn_index as f32) / emission_rate;
             let local_t = prewarm_time - spawn_t;
@@ -1783,13 +1797,12 @@ impl GpuPointParticles3D {
                 spawn_rotation[2],
                 spawn_rotation[3],
             );
-            let spawn_rotation = if spawn_rotation.is_finite()
-                && spawn_rotation.length_squared() > 1.0e-6
-            {
-                spawn_rotation.normalize()
-            } else {
-                Quat::IDENTITY
-            };
+            let spawn_rotation =
+                if spawn_rotation.is_finite() && spawn_rotation.length_squared() > 1.0e-6 {
+                    spawn_rotation.normalize()
+                } else {
+                    Quat::IDENTITY
+                };
             let emitter_pos = spawn_origin;
             let mut pos = origin;
             let mut prev_pos = origin;
@@ -1806,11 +1819,8 @@ impl GpuPointParticles3D {
                     let theta = local_t * *angular_velocity + h0 * std::f32::consts::TAU;
                     pos += Vec3::new(theta.cos() * *radius, 0.0, theta.sin() * *radius);
                     let prev_theta = prev_local_t * *angular_velocity + h0 * std::f32::consts::TAU;
-                    prev_pos += Vec3::new(
-                        prev_theta.cos() * *radius,
-                        0.0,
-                        prev_theta.sin() * *radius,
-                    );
+                    prev_pos +=
+                        Vec3::new(prev_theta.cos() * *radius, 0.0, prev_theta.sin() * *radius);
                 }
                 ParticlePath3D::OrbitY {
                     angular_velocity,
@@ -1818,7 +1828,11 @@ impl GpuPointParticles3D {
                 } => {
                     let theta = local_t * *angular_velocity + h1 * std::f32::consts::TAU;
                     pos = origin
-                        + Vec3::new(theta.cos() * *radius, pos.y - origin.y, theta.sin() * *radius);
+                        + Vec3::new(
+                            theta.cos() * *radius,
+                            pos.y - origin.y,
+                            theta.sin() * *radius,
+                        );
                     let prev_theta = prev_local_t * *angular_velocity + h1 * std::f32::consts::TAU;
                     prev_pos = origin
                         + Vec3::new(
@@ -1875,7 +1889,7 @@ impl GpuPointParticles3D {
                             prev_pos_arr,
                             &emitter.params,
                         )
-                            .unwrap_or(0.0),
+                        .unwrap_or(0.0),
                         self.eval_compiled_expr(
                             y_id,
                             age,
@@ -1895,7 +1909,7 @@ impl GpuPointParticles3D {
                             prev_pos_arr,
                             &emitter.params,
                         )
-                            .unwrap_or(0.0),
+                        .unwrap_or(0.0),
                         self.eval_compiled_expr(
                             z_id,
                             age,
@@ -1915,7 +1929,7 @@ impl GpuPointParticles3D {
                             prev_pos_arr,
                             &emitter.params,
                         )
-                            .unwrap_or(0.0),
+                        .unwrap_or(0.0),
                     ),
                     CustomEval::Ops(x_ops, y_ops, z_ops) => (
                         eval_ops_particle(
@@ -2075,8 +2089,10 @@ impl GpuPointParticles3D {
                 let base = self.hybrid_particle_spawn_origins.len() as u32;
                 self.hybrid_particle_spawn_origins
                     .resize((base + spawn_origin_capacity) as usize, [0.0; 4]);
-                self.hybrid_particle_spawn_rotations
-                    .resize((base + spawn_origin_capacity) as usize, [0.0, 0.0, 0.0, 1.0]);
+                self.hybrid_particle_spawn_rotations.resize(
+                    (base + spawn_origin_capacity) as usize,
+                    [0.0, 0.0, 0.0, 1.0],
+                );
                 SpawnRingState {
                     base,
                     capacity: spawn_origin_capacity,
@@ -2087,8 +2103,10 @@ impl GpuPointParticles3D {
                 let base = self.hybrid_particle_spawn_origins.len() as u32;
                 self.hybrid_particle_spawn_origins
                     .resize((base + spawn_origin_capacity) as usize, [0.0; 4]);
-                self.hybrid_particle_spawn_rotations
-                    .resize((base + spawn_origin_capacity) as usize, [0.0, 0.0, 0.0, 1.0]);
+                self.hybrid_particle_spawn_rotations.resize(
+                    (base + spawn_origin_capacity) as usize,
+                    [0.0, 0.0, 0.0, 1.0],
+                );
                 entry.base = base;
                 entry.capacity = spawn_origin_capacity;
                 entry.slot_spawn_keys = vec![u32::MAX; spawn_origin_capacity as usize];
@@ -2114,7 +2132,8 @@ impl GpuPointParticles3D {
             entry.base
         };
         for (slot, origin, rotation) in spawn_origin_updates {
-            self.hybrid_particle_spawn_origins[slot as usize] = [origin[0], origin[1], origin[2], 0.0];
+            self.hybrid_particle_spawn_origins[slot as usize] =
+                [origin[0], origin[1], origin[2], 0.0];
             self.hybrid_particle_spawn_rotations[slot as usize] = rotation;
             self.hybrid_spawn_origin_dirty_slots.push(slot);
             self.hybrid_spawn_rotation_dirty_slots.push(slot);
@@ -2262,8 +2281,12 @@ impl GpuPointParticles3D {
             emitter.profile.expr_y_ops.as_ref(),
             emitter.profile.expr_z_ops.as_ref(),
         ) {
-            let (ops_xy, ops_zp) =
-                self.append_compute_custom_data(x_ops.as_ref(), y_ops.as_ref(), z_ops.as_ref(), &emitter.params);
+            let (ops_xy, ops_zp) = self.append_compute_custom_data(
+                x_ops.as_ref(),
+                y_ops.as_ref(),
+                z_ops.as_ref(),
+                &emitter.params,
+            );
             custom_ops_xy = ops_xy;
             custom_ops_zp = ops_zp;
         } else {
@@ -2360,8 +2383,10 @@ impl GpuPointParticles3D {
                 let base = self.compute_particle_spawn_origins.len() as u32;
                 self.compute_particle_spawn_origins
                     .resize((base + spawn_origin_capacity) as usize, [0.0; 4]);
-                self.compute_particle_spawn_rotations
-                    .resize((base + spawn_origin_capacity) as usize, [0.0, 0.0, 0.0, 1.0]);
+                self.compute_particle_spawn_rotations.resize(
+                    (base + spawn_origin_capacity) as usize,
+                    [0.0, 0.0, 0.0, 1.0],
+                );
                 SpawnRingState {
                     base,
                     capacity: spawn_origin_capacity,
@@ -2372,8 +2397,10 @@ impl GpuPointParticles3D {
                 let base = self.compute_particle_spawn_origins.len() as u32;
                 self.compute_particle_spawn_origins
                     .resize((base + spawn_origin_capacity) as usize, [0.0; 4]);
-                self.compute_particle_spawn_rotations
-                    .resize((base + spawn_origin_capacity) as usize, [0.0, 0.0, 0.0, 1.0]);
+                self.compute_particle_spawn_rotations.resize(
+                    (base + spawn_origin_capacity) as usize,
+                    [0.0, 0.0, 0.0, 1.0],
+                );
                 entry.base = base;
                 entry.capacity = spawn_origin_capacity;
                 entry.slot_spawn_keys = vec![u32::MAX; spawn_origin_capacity as usize];
@@ -2399,7 +2426,8 @@ impl GpuPointParticles3D {
             entry.base
         };
         for (slot, origin, rotation) in spawn_origin_updates {
-            self.compute_particle_spawn_origins[slot as usize] = [origin[0], origin[1], origin[2], 0.0];
+            self.compute_particle_spawn_origins[slot as usize] =
+                [origin[0], origin[1], origin[2], 0.0];
             self.compute_particle_spawn_rotations[slot as usize] = rotation;
             self.compute_spawn_origin_dirty_slots.push(slot);
             self.compute_spawn_rotation_dirty_slots.push(slot);
@@ -2490,7 +2518,10 @@ impl GpuPointParticles3D {
         let params_off = self.compute_custom_params.len() as u32;
         self.compute_custom_params.extend_from_slice(params);
         let params_len = params.len() as u32;
-        ([x_off, x_len, y_off, y_len], [z_off, z_len, params_off, params_len])
+        (
+            [x_off, x_len, y_off, y_len],
+            [z_off, z_len, params_off, params_len],
+        )
     }
 
     fn get_or_compile_expr(&mut self, expr: &str) -> Option<usize> {
@@ -2719,7 +2750,11 @@ fn write_spawn_origin_dirty_ranges(
         let start_idx = start as usize;
         let end_idx = end as usize + 1;
         let byte_offset = (start_idx * std::mem::size_of::<[f32; 4]>()) as u64;
-        queue.write_buffer(buffer, byte_offset, bytemuck::cast_slice(&all_origins[start_idx..end_idx]));
+        queue.write_buffer(
+            buffer,
+            byte_offset,
+            bytemuck::cast_slice(&all_origins[start_idx..end_idx]),
+        );
     }
     dirty_slots.clear();
 }

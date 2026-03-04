@@ -37,7 +37,12 @@ fn add_triangle_rejects_bad_indices() {
     let err = c
         .add_triangle(0, 1, bad_index)
         .expect_err("invalid index should fail");
-    assert_eq!(err, ChunkError::InvalidVertexID { vertex_id: bad_index });
+    assert_eq!(
+        err,
+        ChunkError::InvalidVertexID {
+            vertex_id: bad_index
+        }
+    );
 }
 
 #[test]
@@ -51,7 +56,12 @@ fn validate_rejects_degenerate_triangles() {
         .expect("indices are valid, triangle insert should succeed");
 
     let err = c.validate(1.0e-6).expect_err("validation should fail");
-    assert_eq!(err, ChunkError::DegenerateTriangle { triangle_id: first_extra_tri });
+    assert_eq!(
+        err,
+        ChunkError::DegenerateTriangle {
+            triangle_id: first_extra_tri
+        }
+    );
 }
 
 #[test]

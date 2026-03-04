@@ -1063,15 +1063,16 @@ impl Gpu3D {
                 if self.cpu_occlusion_enabled && !self.should_probe_or_draw(occlusion_key) {
                     continue;
                 }
-                let occlusion_query = if (is_debug_point || is_debug_edge) && self.cpu_occlusion_enabled {
-                    // Debug primitives are batched into shared instanced draws, so per-object CPU
-                    // occlusion queries are not meaningful for these draws.
-                    None
-                } else if occlusion_capture_this_frame {
-                    Some(self.push_occlusion_query_key(occlusion_key))
-                } else {
-                    None
-                };
+                let occlusion_query =
+                    if (is_debug_point || is_debug_edge) && self.cpu_occlusion_enabled {
+                        // Debug primitives are batched into shared instanced draws, so per-object CPU
+                        // occlusion queries are not meaningful for these draws.
+                        None
+                    } else if occlusion_capture_this_frame {
+                        Some(self.push_occlusion_query_key(occlusion_key))
+                    } else {
+                        None
+                    };
                 let built_instance = build_instance(
                     draw.model,
                     &material,
@@ -1080,7 +1081,8 @@ impl Gpu3D {
                 );
                 if is_debug_point {
                     if debug_point_instances.is_empty() {
-                        debug_points_double_sided = material.double_sided || self.meshlet_debug_view;
+                        debug_points_double_sided =
+                            material.double_sided || self.meshlet_debug_view;
                         debug_points_local_center = mesh_asset.bounds_center;
                         debug_points_local_radius = mesh_asset.bounds_radius;
                     }
@@ -1236,11 +1238,16 @@ impl Gpu3D {
                         batch.local_center[2],
                         batch.local_radius.max(0.0),
                     ],
-                    cull_flags: [if batch.disable_hiz_occlusion {
-                        CULL_FLAG_DISABLE_HIZ_OCCLUSION
-                    } else {
-                        0
-                    }, 0, 0, 0],
+                    cull_flags: [
+                        if batch.disable_hiz_occlusion {
+                            CULL_FLAG_DISABLE_HIZ_OCCLUSION
+                        } else {
+                            0
+                        },
+                        0,
+                        0,
+                        0,
+                    ],
                 });
             }
             let mut planes = [[0.0f32; 4]; 6];
@@ -2054,10 +2061,16 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
             normal: v.normal,
         })
         .collect();
-    if vertices.iter().any(|v| !v.pos.iter().all(|c| c.is_finite())) {
+    if vertices
+        .iter()
+        .any(|v| !v.pos.iter().all(|c| c.is_finite()))
+    {
         return None;
     }
-    if vertices.iter().any(|v| !v.normal.iter().all(|c| c.is_finite())) {
+    if vertices
+        .iter()
+        .any(|v| !v.normal.iter().all(|c| c.is_finite()))
+    {
         return None;
     }
     if mesh

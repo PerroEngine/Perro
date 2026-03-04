@@ -85,15 +85,24 @@ fn add_remove_and_decimate_ops_work() {
             Vector3::new(0.0, 0.0, 0.0),
             10.0,
             BrushShape::Square,
-            BrushOp::Add { delta: 2.0, basis: 1.0 },
+            BrushOp::Add {
+                delta: 2.0,
+                basis: 1.0,
+            },
         )
         .expect("add should succeed");
     assert!(
         add_results.len() >= 100,
         "dense edit should affect many in-brush vertices"
     );
-    let has_base = chunk.vertices().iter().any(|v| v.position.y.abs() <= 1.0e-3);
-    let has_raised = chunk.vertices().iter().any(|v| (v.position.y - 2.0).abs() <= 1.0e-3);
+    let has_base = chunk
+        .vertices()
+        .iter()
+        .any(|v| v.position.y.abs() <= 1.0e-3);
+    let has_raised = chunk
+        .vertices()
+        .iter()
+        .any(|v| (v.position.y - 2.0).abs() <= 1.0e-3);
     assert!(has_base, "expected base ring near y=0");
     assert!(has_raised, "expected raised interior near y=2");
 
@@ -108,7 +117,10 @@ fn add_remove_and_decimate_ops_work() {
             Vector3::new(0.0, 0.0, 0.0),
             10.0,
             BrushShape::Square,
-            BrushOp::Remove { delta: 1.25, basis: 1.0 },
+            BrushOp::Remove {
+                delta: 1.25,
+                basis: 1.0,
+            },
         )
         .expect("remove should succeed");
 
@@ -135,7 +147,10 @@ fn smooth_op_reduces_peak_height() {
             Vector3::new(0.0, 0.0, 0.0),
             10.0,
             BrushShape::Circle,
-            BrushOp::Add { delta: 2.0, basis: 1.0 },
+            BrushOp::Add {
+                delta: 2.0,
+                basis: 1.0,
+            },
         )
         .expect("add should succeed");
 
@@ -148,7 +163,10 @@ fn smooth_op_reduces_peak_height() {
             Vector3::new(0.0, 0.0, 0.0),
             10.0,
             BrushShape::Circle,
-            BrushOp::Smooth { strength: 1.0, basis: 1.0 },
+            BrushOp::Smooth {
+                strength: 1.0,
+                basis: 1.0,
+            },
         )
         .expect("smooth should succeed");
     let after = chunk

@@ -16,7 +16,7 @@ pub use rs_ctx::RuntimeResourceApi;
 pub use runtime::Runtime;
 pub use runtime_project::{
     OcclusionCulling, ParticleSimDefault, ProjectLoadError, ProviderMode, RuntimeProject,
-    RuntimeProjectConfig,
-    StaticMaterialLookup, StaticParticleLookup, StaticProjectConfig, StaticSceneLookup, default_project_toml,
-    ensure_project_layout, ensure_project_toml, load_project_toml, parse_project_toml,
+    RuntimeProjectConfig, StaticMaterialLookup, StaticParticleLookup, StaticProjectConfig,
+    StaticSceneLookup, default_project_toml, ensure_project_layout, ensure_project_toml,
+    load_project_toml, parse_project_toml,
 };

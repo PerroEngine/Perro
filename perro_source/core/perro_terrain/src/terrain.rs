@@ -1,4 +1,6 @@
-use crate::{BrushOp, BrushShape, ChunkConfig, ChunkCoord, ChunkError, InsertVertexResult, TerrainChunk};
+use crate::{
+    BrushOp, BrushShape, ChunkConfig, ChunkCoord, ChunkError, InsertVertexResult, TerrainChunk,
+};
 use perro_structs::Vector3;
 use std::collections::{HashMap, HashSet};
 
@@ -253,7 +255,11 @@ impl TerrainData {
             lhs.x
                 .partial_cmp(&rhs.x)
                 .unwrap_or(std::cmp::Ordering::Equal)
-                .then(lhs.z.partial_cmp(&rhs.z).unwrap_or(std::cmp::Ordering::Equal))
+                .then(
+                    lhs.z
+                        .partial_cmp(&rhs.z)
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                )
         });
 
         self.ensure_border_points_and_heights(a_coord, border.side_for_a(), &targets)?;
@@ -273,9 +279,10 @@ impl TerrainData {
                 continue;
             }
 
-            let chunk = self
-                .chunk_mut(coord)
-                .ok_or(ChunkError::PointOutsideMesh { x: local.x, z: local.z })?;
+            let chunk = self.chunk_mut(coord).ok_or(ChunkError::PointOutsideMesh {
+                x: local.x,
+                z: local.z,
+            })?;
             let ids = find_vertex_ids_near_xz(chunk, local.x, local.z, BORDER_EPSILON);
             if ids.is_empty() {
                 let _ = chunk.insert_vertex(local)?;
@@ -400,10 +407,8 @@ impl TerrainData {
         for old_z in 0..self.height {
             for old_x in 0..self.width {
                 let old_idx = old_z * self.width + old_x;
-                let old_coord = ChunkCoord::new(
-                    self.origin_x + old_x as i32,
-                    self.origin_z + old_z as i32,
-                );
+                let old_coord =
+                    ChunkCoord::new(self.origin_x + old_x as i32, self.origin_z + old_z as i32);
                 let new_x = (old_coord.x - new_min_x) as usize;
                 let new_z = (old_coord.z - new_min_z) as usize;
                 let new_idx = new_z * new_width + new_x;

@@ -1010,7 +1010,8 @@ fn main() {
 }
 
 fn default_static_mod_rs() -> String {
-    "pub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod textures;\n".to_string()
+    "pub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod textures;\n"
+        .to_string()
 }
 
 fn default_static_scenes_rs() -> String {
@@ -1458,8 +1459,6 @@ fn crate_group_sort_key(crate_name: &str) -> u8 {
     }
     8
 }
-
-
 
 #[cfg(test)]
 #[path = "../tests/unit/lib_tests.rs"]

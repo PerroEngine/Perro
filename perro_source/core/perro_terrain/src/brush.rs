@@ -14,11 +14,26 @@ pub enum BrushShape {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BrushOp {
-    SetHeight { y: f32, basis: f32, feature_offset: f32 },
-    Add { delta: f32, basis: f32 },
-    Remove { delta: f32, basis: f32 },
-    Smooth { strength: f32, basis: f32 },
-    Decimate { basis: f32 },
+    SetHeight {
+        y: f32,
+        basis: f32,
+        feature_offset: f32,
+    },
+    Add {
+        delta: f32,
+        basis: f32,
+    },
+    Remove {
+        delta: f32,
+        basis: f32,
+    },
+    Smooth {
+        strength: f32,
+        basis: f32,
+    },
+    Decimate {
+        basis: f32,
+    },
 }
 
 impl TerrainChunk {
@@ -65,7 +80,8 @@ impl TerrainChunk {
             return Ok(Vec::new());
         };
 
-        let mut created = self.ensure_brush_vertices_for_basis(center, brush_size_meters, shape, basis)?;
+        let mut created =
+            self.ensure_brush_vertices_for_basis(center, brush_size_meters, shape, basis)?;
         let touched_ids = self.vertices_in_brush(center, brush_size_meters, shape);
         if touched_ids.is_empty() {
             return Ok(Vec::new());
@@ -110,7 +126,9 @@ impl TerrainChunk {
                 BrushOp::SetHeight { y, .. } => y,
                 BrushOp::Add { delta, .. } => old.y + delta,
                 BrushOp::Remove { delta, .. } => old.y - delta,
-                BrushOp::Smooth { strength, .. } => old.y + (avg - old.y) * strength.clamp(0.0, 1.0),
+                BrushOp::Smooth { strength, .. } => {
+                    old.y + (avg - old.y) * strength.clamp(0.0, 1.0)
+                }
                 BrushOp::Decimate { .. } => old.y,
             };
             self.vertices[id].position = Vector3::new(old.x, new_y, old.z);
@@ -167,12 +185,7 @@ impl TerrainChunk {
         Ok(out)
     }
 
-    fn vertices_in_brush(
-        &self,
-        center: Vector3,
-        size: f32,
-        shape: BrushShape,
-    ) -> Vec<usize> {
+    fn vertices_in_brush(&self, center: Vector3, size: f32, shape: BrushShape) -> Vec<usize> {
         let mut ids = Vec::new();
         for (id, v) in self.vertices.iter().enumerate() {
             if point_in_brush_xz(v.position.x, v.position.z, center, size, shape) {
@@ -245,7 +258,10 @@ impl TerrainChunk {
         Ok(out)
     }
 
-    fn apply_points(&mut self, points: Vec<Vector3>) -> Result<Vec<InsertVertexResult>, ChunkError> {
+    fn apply_points(
+        &mut self,
+        points: Vec<Vector3>,
+    ) -> Result<Vec<InsertVertexResult>, ChunkError> {
         let mut out = Vec::with_capacity(points.len());
         for p in points {
             match self.insert_vertex(p) {
@@ -273,8 +289,6 @@ impl TerrainChunk {
         self.reconcile_structural_after_edit();
         Ok(out)
     }
-
-
 
     fn retriangulate_polygon_region(&mut self, polygon_xz: &[(f32, f32)]) {
         if polygon_xz.len() < 3 {
@@ -576,7 +590,11 @@ fn triangle_brush_points_snapped(center: Vector3, size: f32) -> [Vector3; 3] {
         let angle = FRAC_PI_2 + (i as f32) * (2.0 * PI / 3.0);
         let x = cx + radius * angle.cos();
         let z = cz + radius * angle.sin();
-        *p = Vector3::new(snap_to_grid(x, snap_step), center.y, snap_to_grid(z, snap_step));
+        *p = Vector3::new(
+            snap_to_grid(x, snap_step),
+            center.y,
+            snap_to_grid(z, snap_step),
+        );
     }
     out
 }
@@ -601,7 +619,9 @@ fn dedupe_points(points: Vec<Vector3>) -> Vec<Vector3> {
     let mut out: Vec<Vector3> = Vec::with_capacity(points.len());
     for p in points {
         let is_dup = out.iter().any(|e| {
-            (e.x - p.x).abs() <= 1.0e-6 && (e.y - p.y).abs() <= 1.0e-6 && (e.z - p.z).abs() <= 1.0e-6
+            (e.x - p.x).abs() <= 1.0e-6
+                && (e.y - p.y).abs() <= 1.0e-6
+                && (e.z - p.z).abs() <= 1.0e-6
         });
         if !is_dup {
             out.push(p);
@@ -725,7 +745,11 @@ fn brush_lattice_points(center: Vector3, size: f32, shape: BrushShape, basis: f3
         let mut z = start_z;
         while z <= max_z + 1.0e-6 {
             if point_in_brush_xz(x, z, center, size, shape) {
-                points.push(Vector3::new(snap_to_grid(x, basis), center.y, snap_to_grid(z, basis)));
+                points.push(Vector3::new(
+                    snap_to_grid(x, basis),
+                    center.y,
+                    snap_to_grid(z, basis),
+                ));
             }
             z += basis;
         }
@@ -752,11 +776,7 @@ fn snap_to_grid(value: f32, step: f32) -> f32 {
         return value;
     }
     let snapped = (value / step).round() * step;
-    if step > 1.0 {
-        snapped.round()
-    } else {
-        snapped
-    }
+    if step > 1.0 { snapped.round() } else { snapped }
 }
 
 fn barycentric_xz(

@@ -144,7 +144,9 @@ impl TerrainChunk {
 
     pub fn triangle_normal(&self, tri_id: TriangleID) -> Result<Vector3, ChunkError> {
         let Some(tri) = self.triangles.get(tri_id).copied() else {
-            return Err(ChunkError::InvalidTriangleID { triangle_id: tri_id });
+            return Err(ChunkError::InvalidTriangleID {
+                triangle_id: tri_id,
+            });
         };
         let a = self.vertices[tri.a].position;
         let b = self.vertices[tri.b].position;

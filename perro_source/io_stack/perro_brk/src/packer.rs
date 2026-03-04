@@ -150,8 +150,6 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path) -> io::Res
     Ok(())
 }
 
-
-
 #[cfg(test)]
 #[path = "../tests/unit/packer_tests.rs"]
 mod tests;

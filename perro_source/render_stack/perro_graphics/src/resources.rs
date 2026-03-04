@@ -631,8 +631,6 @@ impl ResourceStore {
     fn log_manual_drop(&self, _kind: &str, _index: u32, _generation: u32, _source: &str) {}
 }
 
-
-
 #[cfg(test)]
 #[path = "../tests/unit/resources_tests.rs"]
 mod tests;

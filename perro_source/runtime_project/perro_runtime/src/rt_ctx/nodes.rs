@@ -216,7 +216,11 @@ impl NodeAPI for Runtime {
                     SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
                     _ => None,
                 };
-                (node.get_parent(), node.get_children_ids().to_vec(), terrain_id)
+                (
+                    node.get_parent(),
+                    node.get_children_ids().to_vec(),
+                    terrain_id,
+                )
             }
             None => return false,
         };

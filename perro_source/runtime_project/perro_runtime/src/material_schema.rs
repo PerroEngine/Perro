@@ -31,7 +31,8 @@ fn load_pmat(source: &str) -> Option<Material3D> {
     let bytes = load_asset(source).ok()?;
     let text = std::str::from_utf8(&bytes).ok()?;
     if pmat_looks_like_object(text) {
-        if let Some(value) = std::panic::catch_unwind(|| Parser::new(text).parse_value_literal()).ok()
+        if let Some(value) =
+            std::panic::catch_unwind(|| Parser::new(text).parse_value_literal()).ok()
             && let RuntimeValue::Object(entries) = value
             && let Some(material) = from_runtime_object(&entries)
         {

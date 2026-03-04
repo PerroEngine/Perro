@@ -329,8 +329,6 @@ fn coalesce_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     merged
 }
 
-
-
 #[cfg(test)]
 #[path = "../../tests/unit/two_d_renderer_tests.rs"]
 mod tests;
