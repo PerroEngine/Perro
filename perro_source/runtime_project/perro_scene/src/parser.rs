@@ -168,19 +168,31 @@ impl<'a> Parser<'a> {
                     let value = self.parse_value();
                     entries.push((key, value));
 
-                    if self.current == Token::Comma {
-                        self.advance();
-                        continue;
+                    // delimiter: comma is optional
+                    match &self.current {
+                        Token::Comma => {
+                            self.advance();
+                            continue;
+                        }
+
+                        // end object
+                        Token::RBrace => {
+                            self.advance();
+                            break;
+                        }
+
+                        // LINE-BASED: next key starts immediately (no comma)
+                        Token::Ident(_) | Token::String(_) => {
+                            continue;
+                        }
+
+                        other => panic!(
+                            "Expected ',', '}}', or next key in object literal, got {:?}",
+                            other
+                        ),
                     }
-                    if self.current == Token::RBrace {
-                        self.advance();
-                        break;
-                    }
-                    panic!(
-                        "Expected ',' or '}}' in object literal, got {:?}",
-                        self.current
-                    );
                 }
+
                 RuntimeValue::Object(entries)
             }
 

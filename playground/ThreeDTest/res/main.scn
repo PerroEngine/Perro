@@ -59,8 +59,8 @@ script = "res://scripts/script.rs"
     mesh = "__tri_pyr__"
     material = {
         base_color_factor = (0.2, 0.4, 1.0, 1.0)
-        metallic_factor = 1.0
-        roughness_factor = 0.2
+        metallic_factor = 0.7
+        roughness_factor = 0.5
         alpha_mode = OPAQUE
         double_sided = false
     }

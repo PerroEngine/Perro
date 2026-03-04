@@ -28,8 +28,6 @@ lifecycle!({
         self_id: NodeID,
     ) {
         self.set_speed(ctx, res, ipt, self_id, 5.0);
-        signal_connect!(ctx, self_id, signal!("test_signal1"), func!("set_speed"));
-        signal_connect!(ctx, self_id, signal!("particles_test_PARTICLES_FINISHED"), func!("test"));
 
     }
 
@@ -40,7 +38,7 @@ lifecycle!({
         _ipt: &InputContext<'_, IP>,
         _self: NodeID,
     ) {
-        signal_emit!(ctx, signal!("test_signal1"), params![7_f32]);
+      
     }
 
     fn on_update(
@@ -100,7 +98,6 @@ lifecycle!({
 methods!({
     fn set_speed(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, ipt: &InputContext<'_, IP>, self_id: NodeID, speed: f32) {
         let _ = (res, ipt);
-        log_info!(format!("Setting speed to {}", speed));
         with_state_mut!(ctx, ExampleState, self_id, |state| {
             state.speed = speed;
         });
@@ -111,11 +108,6 @@ methods!({
         with_state!(ctx, ExampleState, self_id, |state| {
             state.speed
         }).unwrap_or_default()
-    }
-
-    fn test(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, ipt: &InputContext<'_, IP>, self_id: NodeID) {
-        let _ = (ctx, res, ipt, self_id);
-        log_info!("Test signal received!");
     }
 });
 
