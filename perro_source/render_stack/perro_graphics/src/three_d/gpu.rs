@@ -2050,7 +2050,7 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
     if mesh.vertices.is_empty() || mesh.indices.is_empty() {
         return None;
     }
-    if mesh.indices.len() % 3 != 0 {
+    if !mesh.indices.len().is_multiple_of(3) {
         return None;
     }
     let vertices: Vec<MeshVertex> = mesh

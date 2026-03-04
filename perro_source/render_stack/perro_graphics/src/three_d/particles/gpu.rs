@@ -1677,7 +1677,7 @@ impl GpuPointParticles3D {
         if max_alive_budget == 0 {
             return;
         }
-        let emit_count = emitter_emission_count(&emitter, max_alive_budget);
+        let emit_count = emitter_emission_count(emitter, max_alive_budget);
         if emit_count == 0 {
             return;
         }
@@ -2044,7 +2044,7 @@ impl GpuPointParticles3D {
         let life_min = emitter.lifetime_min.max(0.001);
         let life_max = emitter.lifetime_max.max(life_min);
         let max_alive_budget = emitter.alive_budget.max(1);
-        let mut emit_count = emitter_emission_count(&emitter, max_alive_budget);
+        let mut emit_count = emitter_emission_count(emitter, max_alive_budget);
         if emit_count == 0 {
             return true;
         }
@@ -2338,7 +2338,7 @@ impl GpuPointParticles3D {
         let life_min = emitter.lifetime_min.max(0.001);
         let life_max = emitter.lifetime_max.max(life_min);
         let max_alive_budget = emitter.alive_budget.max(1);
-        let mut emit_count = emitter_emission_count(&emitter, max_alive_budget);
+        let mut emit_count = emitter_emission_count(emitter, max_alive_budget);
         if emit_count == 0 {
             return true;
         }

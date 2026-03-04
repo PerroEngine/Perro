@@ -340,8 +340,8 @@ impl TerrainChunk {
     }
 
     fn find_hit_triangles_xz(&mut self, x: f32, z: f32, eps: f32) -> Vec<usize> {
-        if let Some(tri_id) = self.last_hit_triangle {
-            if let Some(tri) = self.triangles.get(tri_id).copied() {
+        if let Some(tri_id) = self.last_hit_triangle
+            && let Some(tri) = self.triangles.get(tri_id).copied() {
                 let a = self.vertices[tri.a].position;
                 let b = self.vertices[tri.b].position;
                 let c = self.vertices[tri.c].position;
@@ -349,7 +349,6 @@ impl TerrainChunk {
                     return vec![tri_id];
                 }
             }
-        }
 
         let mut hits = Vec::new();
         for (tri_id, tri) in self.triangles.iter().copied().enumerate() {

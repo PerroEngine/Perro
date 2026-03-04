@@ -206,9 +206,9 @@ impl Runtime {
                 )),
                 _ => None,
             });
-            if let Some((mesh, material, model)) = mesh_data {
-                if effective_visible {
-                    if let Some((mesh, material)) =
+            if let Some((mesh, material, model)) = mesh_data
+                && effective_visible
+                    && let Some((mesh, material)) =
                         self.resolve_render_mesh_assets(node, mesh, material)
                     {
                         self.queue_render_command(RenderCommand::ThreeD(Command3D::Draw {
@@ -219,8 +219,6 @@ impl Runtime {
                         }));
                         visible_now.insert(node);
                     }
-                }
-            }
             let terrain_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::TerrainInstance3D(terrain) => Some((
                     terrain.transform.to_mat4(),
@@ -232,8 +230,7 @@ impl Runtime {
             });
             if let Some((world_from_terrain, show_debug_vertices, show_debug_edges, terrain_id)) =
                 terrain_data
-            {
-                if effective_visible {
+                && effective_visible {
                     if !self.ensure_terrain_instance_data(node) {
                         continue;
                     }
@@ -309,15 +306,12 @@ impl Runtime {
                                     },
                                 );
                             }
-                        } else {
-                            if let Some(prev) = self.render_3d.terrain_debug_state.remove(&node) {
-                                Self::queue_remove_terrain_debug_nodes(self, node, prev);
-                            }
+                        } else if let Some(prev) = self.render_3d.terrain_debug_state.remove(&node) {
+                            Self::queue_remove_terrain_debug_nodes(self, node, prev);
                         }
                     }
                     visible_now.insert(node);
                 }
-            }
 
             let point_emitter_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::ParticleEmitter3D(emitter) => Some(emitter.clone()),
