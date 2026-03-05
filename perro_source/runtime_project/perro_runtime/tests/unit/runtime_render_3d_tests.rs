@@ -8,9 +8,6 @@ use perro_nodes::{
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
 };
-use perro_structs::Vector3;
-use perro_terrain::{BrushOp, BrushShape, ChunkCoord, TerrainData};
-use std::collections::HashSet;
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
@@ -81,10 +78,10 @@ fn mesh_instance_emits_draw_after_mesh_and_material_created() {
         _ => panic!("expected mesh create request"),
     };
 
-    let mesh = MeshID::from_parts(9, 1);
+    let expected_mesh = MeshID::from_parts(9, 1);
     runtime.apply_render_event(RenderEvent::MeshCreated {
         request: mesh_request,
-        id: mesh,
+        id: expected_mesh,
     });
     runtime.extract_render_3d_commands();
     let second = collect_commands(&mut runtime);
@@ -93,23 +90,26 @@ fn mesh_instance_emits_draw_after_mesh_and_material_created() {
         _ => panic!("expected material create request"),
     };
 
-    let material = MaterialID::from_parts(7, 4);
+    let expected_material = MaterialID::from_parts(7, 4);
     runtime.apply_render_event(RenderEvent::MaterialCreated {
         request: material_request,
-        id: material,
+        id: expected_material,
     });
     runtime.extract_render_3d_commands();
     let third = collect_commands(&mut runtime);
     assert_eq!(third.len(), 1);
     assert!(matches!(
-        third[0],
-        RenderCommand::ThreeD(Box::new(Command3D::Draw {
-            node,
-            mesh,
-            material,
-            ..
-        })
-        if node == expected_node && mesh == mesh && material == material
+        &third[0],
+        RenderCommand::ThreeD(command)
+            if matches!(
+                command.as_ref(),
+                Command3D::Draw {
+                    node,
+                    mesh,
+                    material,
+                    ..
+                } if *node == expected_node && *mesh == expected_mesh && *material == expected_material
+            )
     ));
 }
 
@@ -177,7 +177,8 @@ fn mesh_under_invisible_parent_emits_remove_node() {
     let first = collect_commands(&mut runtime);
     assert!(first.iter().any(|command| matches!(
         command,
-        RenderCommand::ThreeD(Box::new(Command3D::Draw { node, .. }) if *node == child
+        RenderCommand::ThreeD(command_3d)
+            if matches!(command_3d.as_ref(), Command3D::Draw { node, .. } if *node == child)
     )));
 
     if let Some(node) = runtime.nodes.get_mut(parent)
@@ -189,7 +190,8 @@ fn mesh_under_invisible_parent_emits_remove_node() {
     let second = collect_commands(&mut runtime);
     assert!(second.iter().any(|command| matches!(
         command,
-        RenderCommand::ThreeD(Box::new(Command3D::RemoveNode { node }) if *node == child
+        RenderCommand::ThreeD(command_3d)
+            if matches!(command_3d.as_ref(), Command3D::RemoveNode { node } if *node == child)
     )));
 }
 
@@ -214,8 +216,13 @@ fn unchanged_mesh_instance_emits_draw() {
     let commands = collect_commands(&mut runtime);
     assert!(commands.iter().any(|command| matches!(
         command,
-        RenderCommand::ThreeD(Box::new(Command3D::Draw { node: draw_node, .. })
-            if *draw_node == node
+        RenderCommand::ThreeD(command_3d)
+            if matches!(
+                command_3d.as_ref(),
+                Command3D::Draw {
+                    node: draw_node, ..
+                } if *draw_node == node
+            )
     )));
 }
 
@@ -280,14 +287,18 @@ fn active_camera_3d_emits_set_camera_command() {
     let commands = collect_commands(&mut runtime);
     assert!(commands.iter().any(|command| matches!(
         command,
-        RenderCommand::ThreeD(Box::new(Command3D::SetCamera { camera })
-            if camera.position == [6.0, 7.0, 8.0]
-                && camera.rotation == [0.1, 0.2, 0.3, 0.9]
-                && matches!(
-                    camera.projection,
-                    CameraProjectionState::Orthographic { size, near, far }
-                        if size == 24.0 && near == 0.2 && far == 600.0
-                )
+        RenderCommand::ThreeD(command_3d)
+            if matches!(
+                command_3d.as_ref(),
+                Command3D::SetCamera { camera }
+                    if camera.position == [6.0, 7.0, 8.0]
+                        && camera.rotation == [0.1, 0.2, 0.3, 0.9]
+                        && matches!(
+                            camera.projection,
+                            CameraProjectionState::Orthographic { size, near, far }
+                                if size == 24.0 && near == 0.2 && far == 600.0
+                        )
+            )
     )));
 }
 
@@ -306,8 +317,12 @@ fn active_ray_light_3d_emits_set_ray_light_command() {
     let commands = collect_commands(&mut runtime);
     assert!(commands.iter().any(|command| matches!(
         command,
-        RenderCommand::ThreeD(Box::new(Command3D::SetRayLight { light, .. })
-            if light.color == [0.8, 0.7, 0.6] && light.intensity == 2.5
+        RenderCommand::ThreeD(command_3d)
+            if matches!(
+                command_3d.as_ref(),
+                Command3D::SetRayLight { light, .. }
+                    if light.color == [0.8, 0.7, 0.6] && light.intensity == 2.5
+            )
     )));
 }
 
@@ -326,7 +341,11 @@ fn active_ambient_light_3d_emits_set_ambient_light_command() {
     let commands = collect_commands(&mut runtime);
     assert!(commands.iter().any(|command| matches!(
         command,
-        RenderCommand::ThreeD(Box::new(Command3D::SetAmbientLight { light, .. })
-            if light.color == [0.25, 0.3, 0.4] && light.intensity == 0.2
+        RenderCommand::ThreeD(command_3d)
+            if matches!(
+                command_3d.as_ref(),
+                Command3D::SetAmbientLight { light, .. }
+                    if light.color == [0.25, 0.3, 0.4] && light.intensity == 0.2
+            )
     )));
 }

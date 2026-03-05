@@ -119,13 +119,13 @@ fn draw_3d_updates_retained_state_per_node() {
         material: created_materials[0],
         node: node_a,
         model: model_a,
-    }));
+    })));
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: created_meshes[1],
         material: created_materials[1],
         node: node_b,
         model: model_b,
-    }));
+    })));
     graphics.draw_frame();
 
     assert_eq!(graphics.renderer_3d.retained_draw_count(), 2);
@@ -194,7 +194,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         material: material_id,
         node,
         model: first_model,
-    }));
+    })));
     graphics.draw_frame();
     assert_eq!(
         graphics.renderer_3d.retained_draw(node),
@@ -218,7 +218,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         material: material_id,
         node,
         model: second_model,
-    }));
+    })));
     graphics.draw_frame();
 
     assert_eq!(
@@ -277,7 +277,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         material: material_id,
         node,
         model: first_model,
-    }));
+    })));
     graphics.draw_frame();
 
     let missing_material = MaterialID::from_parts(999_998, 0);
@@ -292,7 +292,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         material: missing_material,
         node,
         model: second_model,
-    }));
+    })));
     graphics.draw_frame();
 
     assert_eq!(
@@ -319,7 +319,7 @@ fn set_camera_3d_updates_retained_camera_state() {
                 far: 900.0,
             },
         },
-    }));
+    })));
     graphics.draw_frame();
 
     assert_eq!(

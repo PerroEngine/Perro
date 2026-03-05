@@ -23,18 +23,27 @@ std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
 
 fn main() {
 let root = project_root();
-perro_app::entry::run_static_embedded_project(
-&root,
-"TwoDTest",
-"TwoDTest",
-"res://main.scn",
-"res://icon.png",
-1920,
-1080,
-ASSETS_BRK,
-static_assets::scenes::lookup_scene,
-static_assets::materials::lookup_material,
-static_assets::textures::lookup_texture,
-Some(scripts::SCRIPT_REGISTRY),
-).expect("failed to run embedded static project");
+perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedProject {
+project_root: &root,
+project_name: "TwoDTest",
+main_scene: "res://main.scn",
+icon: "res://icon.png",
+virtual_width: 1920,
+virtual_height: 1080,
+vsync: false,
+msaa: true,
+meshlets: false,
+dev_meshlets: false,
+release_meshlets: true,
+meshlet_debug_view: false,
+occlusion_culling: perro_app::entry::OcclusionCulling::Gpu,
+particle_sim_default: perro_app::entry::ParticleSimDefault::Cpu,
+assets_brk: ASSETS_BRK,
+scene_lookup: static_assets::scenes::lookup_scene,
+material_lookup: static_assets::materials::lookup_material,
+particle_lookup: static_assets::particles::lookup_particle,
+mesh_lookup: static_assets::meshes::lookup_mesh,
+texture_lookup: static_assets::textures::lookup_texture,
+static_script_registry: Some(scripts::SCRIPT_REGISTRY),
+}).expect("failed to run embedded static project");
 }

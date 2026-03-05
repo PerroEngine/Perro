@@ -1607,6 +1607,7 @@ dependencies = [
 name = "perro_graphics"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "bytemuck",
  "glam",
  "gltf",
@@ -1616,6 +1617,7 @@ dependencies = [
  "perro_meshlets",
  "perro_particle_math",
  "perro_render_bridge",
+ "perro_terrain",
  "pollster",
  "wgpu",
  "winit",
@@ -1630,6 +1632,17 @@ name = "perro_input"
 version = "0.1.0"
 dependencies = [
  "perro_structs",
+]
+
+[[package]]
+name = "perro_internal_updates"
+version = "0.1.0"
+dependencies = [
+ "perro_ids",
+ "perro_input",
+ "perro_nodes",
+ "perro_resource_context",
+ "perro_runtime_context",
 ]
 
 [[package]]
@@ -1686,6 +1699,8 @@ version = "0.1.0"
 dependencies = [
  "perro_ids",
  "perro_render_bridge",
+ "perro_structs",
+ "perro_terrain",
 ]
 
 [[package]]
@@ -1693,9 +1708,11 @@ name = "perro_runtime"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "glam",
  "libloading",
  "perro_ids",
  "perro_input",
+ "perro_internal_updates",
  "perro_io",
  "perro_nodes",
  "perro_particle_math",
@@ -1706,6 +1723,7 @@ dependencies = [
  "perro_scene",
  "perro_scripting",
  "perro_structs",
+ "perro_terrain",
  "perro_variant",
 ]
 
@@ -1752,6 +1770,13 @@ name = "perro_structs"
 version = "0.1.0"
 dependencies = [
  "glam",
+]
+
+[[package]]
+name = "perro_terrain"
+version = "0.1.0"
+dependencies = [
+ "perro_structs",
 ]
 
 [[package]]
@@ -2171,6 +2196,7 @@ dependencies = [
  "perro_runtime_context",
  "perro_scripting",
  "perro_structs",
+ "perro_terrain",
  "perro_variant",
 ]
 
