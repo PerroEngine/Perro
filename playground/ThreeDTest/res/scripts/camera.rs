@@ -1,9 +1,5 @@
-use perro_nodes::prelude::*;
-use perro_structs::prelude::*;
-use perro_ids::prelude::*;
-use perro_modules::prelude::*;
-use perro_scripting::prelude::*;
-use perro_terrain::{BrushOp, BrushShape};
+use perro::prelude::*;
+
 
 type SelfNodeType = Camera3D;
 

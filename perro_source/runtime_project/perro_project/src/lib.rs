@@ -622,11 +622,7 @@ fn default_main_scene() -> String {
 }
 
 pub fn default_script_example_rs() -> String {
-    r#"use perro_nodes::prelude::*;
-use perro_structs::prelude::*;
-use perro_ids::prelude::*;
-use perro_modules::prelude::*;
-use perro_scripting::prelude::*;
+    r#"use perro::prelude::*;
 
 // Script is authored against a node type. This default template uses Node2D.
 type SelfNodeType = Node2D;
@@ -781,11 +777,7 @@ methods!({
 }
 
 pub fn default_script_empty_rs() -> String {
-    r#"use perro_nodes::prelude::*;
-use perro_structs::prelude::*;
-use perro_ids::prelude::*;
-use perro_modules::prelude::*;
-use perro_scripting::prelude::*;
+    r#"use perro::prelude::*;
 
 type SelfNodeType = Node2D;
 
@@ -867,13 +859,7 @@ edition = "2024"
 
 [dependencies]
 perro_app = "0.1.0"
-perro_ids = "0.1.0"
-perro_scripting = "0.1.0"
-perro_runtime_context = "0.1.0"
-perro_resource_context = "0.1.0"
-perro_input = "0.1.0"
-perro_nodes = "0.1.0"
-perro_structs = "0.1.0"
+perro = "0.1.0"
 perro_scene = "0.1.0"
 perro_render_bridge = "0.1.0"
 scripts = {{ path = "../scripts" }}
@@ -904,16 +890,7 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-perro_ids = "0.1.0"
-perro_scripting = "0.1.0"
-perro_runtime_context = "0.1.0"
-perro_resource_context = "0.1.0"
-perro_input = "0.1.0"
-perro_nodes = "0.1.0"
-perro_structs = "0.1.0"
-perro_modules = "0.1.0"
-perro_variant = "0.1.0"
-perro_runtime = "0.1.0"
+perro = "0.1.0"
 
 [profile.dev]
 opt-level = 0
@@ -1066,8 +1043,8 @@ pub fn lookup_mesh(_path: &str) -> Option<&'static [u8]> {
 }
 
 fn default_scripts_lib_rs() -> String {
-    r#"use perro_runtime::{Runtime, RuntimeInputApi, RuntimeResourceApi};
-use perro_scripting::ScriptConstructor;
+    r#"use perro::runtime::{Runtime, RuntimeInputApi, RuntimeResourceApi};
+use perro::scripting::ScriptConstructor;
 
 pub static SCRIPT_REGISTRY: &[(&str, ScriptConstructor<Runtime, RuntimeResourceApi, RuntimeInputApi>)] = &[];
 
@@ -1116,17 +1093,9 @@ fn ensure_project_manifest_deps(path: &Path) -> std::io::Result<()> {
 
     let mut changed = false;
 
-    if !deps_table.contains_key("perro_resource_context") {
+    if !deps_table.contains_key("perro") {
         deps_table.insert(
-            "perro_resource_context".to_string(),
-            Value::String("0.1.0".to_string()),
-        );
-        changed = true;
-    }
-
-    if !deps_table.contains_key("perro_input") {
-        deps_table.insert(
-            "perro_input".to_string(),
+            "perro".to_string(),
             Value::String("0.1.0".to_string()),
         );
         changed = true;
@@ -1163,17 +1132,9 @@ fn ensure_scripts_manifest_deps(path: &Path) -> std::io::Result<()> {
 
     let mut changed = false;
 
-    if !deps_table.contains_key("perro_modules") {
+    if !deps_table.contains_key("perro") {
         deps_table.insert(
-            "perro_modules".to_string(),
-            Value::String("0.1.0".to_string()),
-        );
-        changed = true;
-    }
-
-    if !deps_table.contains_key("perro_input") {
-        deps_table.insert(
-            "perro_input".to_string(),
+            "perro".to_string(),
             Value::String("0.1.0".to_string()),
         );
         changed = true;
@@ -1347,7 +1308,7 @@ fn collect_perro_dep_keys(table: Option<&Value>, out: &mut BTreeSet<String>) {
         return;
     };
     for key in table.keys() {
-        if key.starts_with("perro_") {
+        if key.starts_with("perro_") || key == "perro" {
             out.insert(key.to_string());
         }
     }
@@ -1402,6 +1363,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_scene" => Some("perro_source/runtime_project/perro_scene"),
         "perro_runtime_context" => Some("perro_source/api_modules/perro_runtime_context"),
         "perro_resource_context" => Some("perro_source/api_modules/perro_resource_context"),
+        "perro" => Some("perro_source/api_modules/perro"),
         "perro_modules" => Some("perro_source/api_modules/perro_modules"),
         "perro_input" => Some("perro_source/api_modules/perro_input"),
         "perro_render_bridge" => Some("perro_source/render_stack/perro_render_bridge"),
@@ -1414,6 +1376,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_static_pipeline" => Some("perro_source/build_pipeline/perro_static_pipeline"),
         "perro_io" => Some("perro_source/io_stack/perro_io"),
         "perro_assets" => Some("perro_source/io_stack/perro_assets"),
+        "perro_bark" => Some("perro_source/audio_stack/perro_bark"),
         "perro_project" => Some("perro_source/runtime_project/perro_project"),
         "perro_cli" => Some("perro_source/devtools/perro_cli"),
         "perro_dev_runner" => Some("perro_source/devtools/perro_dev_runner"),

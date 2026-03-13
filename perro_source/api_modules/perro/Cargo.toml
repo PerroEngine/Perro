@@ -1,0 +1,17 @@
+[package]
+name = "perro"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+perro_ids = "0.1.0"
+perro_input = "0.1.0"
+perro_resource_context = "0.1.0"
+perro_runtime = "0.1.0"
+perro_runtime_context = "0.1.0"
+perro_scripting = "0.1.0"
+perro_nodes = "0.1.0"
+perro_structs = "0.1.0"
+perro_modules = "0.1.0"
+perro_variant = "0.1.0"
+perro_terrain = "0.1.0"

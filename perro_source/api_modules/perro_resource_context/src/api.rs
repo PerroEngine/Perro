@@ -1,10 +1,13 @@
 use crate::sub_apis::{
-    MaterialAPI, MaterialModule, MeshAPI, MeshModule, TerrainAPI, TerrainModule, TextureAPI,
-    TextureModule,
+    AudioAPI, AudioModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule, TerrainAPI,
+    TerrainModule, TextureAPI, TextureModule,
 };
 
-pub trait ResourceAPI: TextureAPI + MeshAPI + MaterialAPI + TerrainAPI + Send + Sync {}
-impl<T> ResourceAPI for T where T: TextureAPI + MeshAPI + MaterialAPI + TerrainAPI + Send + Sync {}
+pub trait ResourceAPI: AudioAPI + TextureAPI + MeshAPI + MaterialAPI + TerrainAPI + Send + Sync {}
+impl<T> ResourceAPI for T where
+    T: AudioAPI + TextureAPI + MeshAPI + MaterialAPI + TerrainAPI + Send + Sync
+{
+}
 
 pub struct ResourceContext<'res, R: ResourceAPI + ?Sized> {
     api: &'res R,
@@ -19,6 +22,11 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceContext<'res, R> {
     #[inline]
     pub fn Textures(&self) -> TextureModule<'_, R> {
         TextureModule::new(self.api)
+    }
+
+    #[inline]
+    pub fn Audio(&self) -> AudioModule<'_, R> {
+        AudioModule::new(self.api)
     }
 
     #[inline]

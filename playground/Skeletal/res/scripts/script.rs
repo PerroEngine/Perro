@@ -1,8 +1,5 @@
-use perro_nodes::prelude::*;
-use perro_structs::prelude::*;
-use perro_ids::prelude::*;
-use perro_modules::prelude::*;
-use perro_scripting::prelude::*;
+use perro::prelude::*;
+
 
 type SelfNodeType = Node2D;
 

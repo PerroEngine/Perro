@@ -361,7 +361,7 @@ macro_rules! has_attribute {
 #[macro_export]
 macro_rules! member {
     ($name:expr) => {
-        ::perro_runtime_context::sub_apis::Member::new($name)
+        $crate::sub_apis::Member::new($name)
     };
 }
 
@@ -372,6 +372,6 @@ macro_rules! member {
 #[macro_export]
 macro_rules! attribute {
     ($value:expr) => {
-        ::perro_runtime_context::sub_apis::Attribute::new($value)
+        $crate::sub_apis::Attribute::new($value)
     };
 }

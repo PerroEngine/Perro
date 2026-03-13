@@ -14,6 +14,7 @@ members = [
 
     "perro_source/api_modules/perro_modules",
     "perro_source/api_modules/perro_input",
+    "perro_source/api_modules/perro",
     "perro_source/api_modules/perro_resource_context",
     "perro_source/api_modules/perro_runtime_context",
 
@@ -30,6 +31,7 @@ members = [
 
     "perro_source/io_stack/perro_assets",
     "perro_source/io_stack/perro_io",
+    "perro_source/audio_stack/perro_bark",
 
     "perro_source/devtools/perro_cli",
     "perro_source/devtools/perro_dev_runner",
@@ -53,6 +55,7 @@ perro_project = {path="perro_source/runtime_project/perro_project"}
 perro_runtime_context = {path = "perro_source/api_modules/perro_runtime_context"}
 perro_modules = {path="perro_source/api_modules/perro_modules"}
 perro_input = {path="perro_source/api_modules/perro_input"}
+perro = {path="perro_source/api_modules/perro"}
 perro_resource_context = {path="perro_source/api_modules/perro_resource_context"}
 
 perro_app = {path="perro_source/render_stack/perro_app"}
@@ -67,6 +70,7 @@ perro_static_pipeline = {path="perro_source/build_pipeline/perro_static_pipeline
 
 perro_io = {path = "perro_source/io_stack/perro_io"}
 perro_assets = {path = "perro_source/io_stack/perro_assets"}
+perro_bark = {path = "perro_source/audio_stack/perro_bark"}
 
 perro_cli = {path="perro_source/devtools/perro_cli"}
 perro_dev_runner = {path="perro_source/devtools/perro_dev_runner"}

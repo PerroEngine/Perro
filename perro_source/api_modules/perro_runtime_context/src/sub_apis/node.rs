@@ -679,7 +679,7 @@ macro_rules! tag_set {
     };
     ($ctx:expr, $id:expr) => {
         $ctx.Nodes()
-            .tag_set::<&'static [::perro_ids::TagID]>($id, None)
+            .tag_set::<&'static [$crate::perro_ids::TagID]>($id, None)
     };
 }
 
@@ -716,7 +716,7 @@ macro_rules! tag_remove {
     };
     ($ctx:expr, $id:expr) => {
         $ctx.Nodes()
-            .tag_set::<&'static [::perro_ids::TagID]>($id, None)
+            .tag_set::<&'static [$crate::perro_ids::TagID]>($id, None)
     };
 }
 
@@ -778,31 +778,32 @@ macro_rules! query {
     };
 
     (@expr tags[$($tag:expr),* $(,)?]) => {
-        $crate::sub_apis::QueryExpr::Tags(vec![$(::perro_ids::IntoTagID::into_tag_id($tag)),*])
+        $crate::sub_apis::QueryExpr::Tags(vec![$($crate::perro_ids::IntoTagID::into_tag_id($tag)),*])
     };
 
     (@expr is[$($ty:ident),* $(,)?]) => {
-        $crate::sub_apis::QueryExpr::IsType(vec![$(::perro_nodes::NodeType::$ty),*])
+        $crate::sub_apis::QueryExpr::IsType(vec![$($crate::perro_nodes::NodeType::$ty),*])
     };
     (@expr is[$($ty:path),* $(,)?]) => {
         $crate::sub_apis::QueryExpr::IsType(vec![$($ty),*])
     };
     (@expr is_type[$($ty:ident),* $(,)?]) => {
-        $crate::sub_apis::QueryExpr::IsType(vec![$(::perro_nodes::NodeType::$ty),*])
+        $crate::sub_apis::QueryExpr::IsType(vec![$($crate::perro_nodes::NodeType::$ty),*])
     };
     (@expr is_type[$($ty:path),* $(,)?]) => {
         $crate::sub_apis::QueryExpr::IsType(vec![$($ty),*])
     };
     (@expr base[$($ty:ident),* $(,)?]) => {
-        $crate::sub_apis::QueryExpr::BaseType(vec![$(::perro_nodes::NodeType::$ty),*])
+        $crate::sub_apis::QueryExpr::BaseType(vec![$($crate::perro_nodes::NodeType::$ty),*])
     };
     (@expr base[$($ty:path),* $(,)?]) => {
         $crate::sub_apis::QueryExpr::BaseType(vec![$($ty),*])
     };
     (@expr base_type[$($ty:ident),* $(,)?]) => {
-        $crate::sub_apis::QueryExpr::BaseType(vec![$(::perro_nodes::NodeType::$ty),*])
+        $crate::sub_apis::QueryExpr::BaseType(vec![$($crate::perro_nodes::NodeType::$ty),*])
     };
     (@expr base_type[$($ty:path),* $(,)?]) => {
         $crate::sub_apis::QueryExpr::BaseType(vec![$($ty),*])
     };
 }
+

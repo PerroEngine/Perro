@@ -9,16 +9,7 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-perro_ids = "0.1.0"
-perro_scripting = "0.1.0"
-perro_runtime_context = "0.1.0"
-perro_resource_context = "0.1.0"
-perro_nodes = "0.1.0"
-perro_structs = "0.1.0"
-perro_modules = "0.1.0"
-perro_input = "0.1.0"
-perro_variant = "0.1.0"
-perro_runtime = "0.1.0"
+perro = "0.1.0"
 
 [profile.dev]
 opt-level = 0
@@ -52,6 +43,7 @@ perro_internal_updates = { path = "../../../../perro_source/runtime_project/perr
 perro_project = { path = "../../../../perro_source/runtime_project/perro_project" }
 perro_runtime = { path = "../../../../perro_source/runtime_project/perro_runtime" }
 perro_scene = { path = "../../../../perro_source/runtime_project/perro_scene" }
+perro = { path = "../../../../perro_source/api_modules/perro" }
 perro_input = { path = "../../../../perro_source/api_modules/perro_input" }
 perro_modules = { path = "../../../../perro_source/api_modules/perro_modules" }
 perro_resource_context = { path = "../../../../perro_source/api_modules/perro_resource_context" }
@@ -61,3 +53,4 @@ perro_scripting = { path = "../../../../perro_source/script_stack/perro_scriptin
 perro_scripting_macros = { path = "../../../../perro_source/script_stack/perro_scripting_macros" }
 perro_assets = { path = "../../../../perro_source/io_stack/perro_assets" }
 perro_io = { path = "../../../../perro_source/io_stack/perro_io" }
+perro_bark = { path = "../../../../perro_source/audio_stack/perro_bark" }
