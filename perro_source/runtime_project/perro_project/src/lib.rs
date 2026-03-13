@@ -346,13 +346,17 @@ icon = "res://icon.png"
 [graphics]
 virtual_resolution = "1920x1080"
 vsync = false
+
 msaa = true
+
 meshlets = false
 dev_meshlets = false
 release_meshlets = true
 meshlet_debug_view = false
+
 occlusion_culling = "gpu"
-particle_sim_default = "cpu"
+
+particle_sim_default = "gpu"
 "#
     )
 }
