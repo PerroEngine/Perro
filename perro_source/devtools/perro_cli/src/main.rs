@@ -1,5 +1,6 @@
 use perro_compiler::{compile_project_bundle, compile_scripts, sync_scripts};
 use perro_project::{create_new_project, default_script_empty_rs, default_script_example_rs};
+use serde_json::Value;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -174,12 +175,141 @@ fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
             project_dir.display()
         )
     })?;
+    log_step("Building Scripts");
+    compile_scripts(&project_dir).map_err(|err| {
+        format!(
+            "scripts pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })?;
+    log_done("Scripts Built");
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
 
     println!(
         "created project `{}` at {}",
         project_name,
         project_dir.display()
     );
+    Ok(())
+}
+
+fn update_workspace_vscode_linked_projects(
+    workspace_root: &Path,
+    project_dir: &Path,
+) -> Result<(), String> {
+    let settings_path = workspace_root.join(".vscode").join("settings.json");
+    if !settings_path.exists() {
+        return Ok(());
+    }
+
+    let raw = fs::read_to_string(&settings_path)
+        .map_err(|err| format!("failed to read {}: {err}", settings_path.display()))?;
+    let mut json: Value = serde_json::from_str(&raw)
+        .map_err(|err| format!("failed to parse {} as JSON: {err}", settings_path.display()))?;
+    let Some(root) = json.as_object_mut() else {
+        return Err(format!(
+            "expected {} to contain a JSON object",
+            settings_path.display()
+        ));
+    };
+
+    let workspace_root = workspace_root
+        .canonicalize()
+        .unwrap_or_else(|_| workspace_root.to_path_buf());
+    let scripts_manifest = project_dir
+        .join(".perro")
+        .join("scripts")
+        .join("Cargo.toml")
+        .canonicalize()
+        .unwrap_or_else(|_| project_dir.join(".perro").join("scripts").join("Cargo.toml"));
+    let res_dir = project_dir
+        .join("res")
+        .canonicalize()
+        .unwrap_or_else(|_| project_dir.join("res"));
+    let rel = scripts_manifest
+        .strip_prefix(&workspace_root)
+        .map_err(|_| {
+            format!(
+                "project path {} is outside workspace root {}; cannot add a stable linkedProjects entry",
+                project_dir.display(),
+                workspace_root.display()
+            )
+        })?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let rel_res = res_dir
+        .strip_prefix(&workspace_root)
+        .map_err(|_| {
+            format!(
+                "project path {} is outside workspace root {}; cannot add a stable vfs.extraIncludes entry",
+                project_dir.display(),
+                workspace_root.display()
+            )
+        })?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let vfs_entry = format!("${{workspaceFolder}}/{rel_res}/");
+
+    let entry = root
+        .entry("rust-analyzer.linkedProjects".to_string())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(arr) = entry.as_array_mut() else {
+        return Err(format!(
+            "expected `rust-analyzer.linkedProjects` to be an array in {}",
+            settings_path.display()
+        ));
+    };
+
+    arr.retain(|v| {
+        let Some(s) = v.as_str() else {
+            return false;
+        };
+        let p = PathBuf::from(s);
+        let full = if p.is_absolute() {
+            p
+        } else {
+            workspace_root.join(p)
+        };
+        full.exists()
+    });
+
+    let already_present = arr.iter().any(|v| v.as_str() == Some(rel.as_str()));
+    if already_present {
+        // Keep going to also normalize/update vfs.extraIncludes.
+    } else {
+        arr.push(Value::String(rel));
+    }
+
+    let vfs = root
+        .entry("rust-analyzer.vfs.extraIncludes".to_string())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(vfs_arr) = vfs.as_array_mut() else {
+        return Err(format!(
+            "expected `rust-analyzer.vfs.extraIncludes` to be an array in {}",
+            settings_path.display()
+        ));
+    };
+
+    vfs_arr.retain(|v| {
+        let Some(s) = v.as_str() else {
+            return false;
+        };
+        let Some(path_part) = s.strip_prefix("${workspaceFolder}/") else {
+            return true;
+        };
+        let trimmed = path_part.trim_end_matches('/').trim_end_matches('\\');
+        workspace_root.join(trimmed).exists()
+    });
+
+    let vfs_present = vfs_arr.iter().any(|v| v.as_str() == Some(vfs_entry.as_str()));
+    if !vfs_present {
+        vfs_arr.push(Value::String(vfs_entry));
+    }
+
+    let rendered = serde_json::to_string_pretty(&json)
+        .map_err(|err| format!("failed to render {} as JSON: {err}", settings_path.display()))?;
+    fs::write(&settings_path, format!("{rendered}\n"))
+        .map_err(|err| format!("failed to write {}: {err}", settings_path.display()))?;
     Ok(())
 }
 

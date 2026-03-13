@@ -1609,6 +1609,7 @@ version = "0.1.0"
 dependencies = [
  "perro_compiler",
  "perro_project",
+ "serde_json",
 ]
 
 [[package]]

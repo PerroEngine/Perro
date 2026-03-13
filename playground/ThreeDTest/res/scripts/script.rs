@@ -7,12 +7,6 @@ use perro_scripting::prelude::*;
 type SelfNodeType = MeshInstance3D;
 
 
-struct Node {
-    parent: Box<Node>,
-    children: Vec<Box<Node>>,
-}
-
-
 #[State]
 pub struct ExampleState {
     #[default = 0.0]

@@ -275,7 +275,6 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     let project_static_src = project_src.join("static");
     let project_embedded = project_crate.join("embedded");
     let scripts_src = scripts_crate.join("src");
-    let vscode_dir = root.join(".vscode");
 
     fs::create_dir_all(&res_dir)?;
     fs::create_dir_all(&res_scripts_dir)?;
@@ -283,14 +282,13 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     fs::create_dir_all(&project_static_src)?;
     fs::create_dir_all(&project_embedded)?;
     fs::create_dir_all(&scripts_src)?;
-    fs::create_dir_all(&vscode_dir)?;
 
     let crate_name = crate_name_from_project_name(project_name);
     write_if_missing(root.join(".gitignore"), &default_gitignore())?;
     write_if_missing(res_dir.join("main.scn"), &default_main_scene())?;
     write_if_missing(
         res_scripts_dir.join("script.rs"),
-        &default_script_example_rs(),
+        &default_script_empty_rs(),
     )?;
     write_if_missing(
         project_crate.join("Cargo.toml"),
@@ -327,11 +325,6 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     )?;
     write_if_missing(project_embedded.join("assets.brk"), "")?;
     write_if_missing(scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
-    write_if_missing(
-        vscode_dir.join("settings.json"),
-        &default_vscode_settings_json(),
-    )?;
-
     Ok(())
 }
 
@@ -801,7 +794,7 @@ lifecycle!({
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
-        _self: NodeID,
+        self_id: NodeID,
     ) {}
 
     fn on_all_init(
@@ -809,7 +802,7 @@ lifecycle!({
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
-        _self: NodeID,
+        self_id: NodeID,
     ) {}
 
     fn on_update(
@@ -817,7 +810,7 @@ lifecycle!({
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
-        _self: NodeID,
+        self_id: NodeID,
     ) {}
 
     fn on_fixed_update(
@@ -825,7 +818,7 @@ lifecycle!({
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
-        _self: NodeID,
+        self_id: NodeID,
     ) {}
 
     fn on_removal(
@@ -833,12 +826,18 @@ lifecycle!({
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
-        _self: NodeID,
+        self_id: NodeID,
     ) {}
 });
 
 methods!({
-    fn default_method(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _ipt: &InputContext<'_, IP>, _self: NodeID) {}
+    fn default_method(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        self_id: NodeID,
+    ) {}
 });
 "#
     .to_string()
@@ -1070,17 +1069,6 @@ pub static SCRIPT_REGISTRY: &[(&str, ScriptConstructor<Runtime, RuntimeResourceA
 
 #[unsafe(no_mangle)]
 pub extern "C" fn perro_scripts_init() {}
-"#
-    .to_string()
-}
-
-fn default_vscode_settings_json() -> String {
-    r#"{
-  "rust-analyzer.linkedProjects": [
-    ".perro/scripts/Cargo.toml",
-    ".perro/project/Cargo.toml"
-  ]
-}
 "#
     .to_string()
 }
