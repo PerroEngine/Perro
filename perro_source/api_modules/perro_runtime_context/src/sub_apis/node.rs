@@ -807,3 +807,20 @@ macro_rules! query {
     };
 }
 
+/// Executes a node query and returns the first result as owned `NodeID`.
+///
+/// Usage:
+/// - `query_first!(ctx, all(name["Enemy1"])) -> Option<NodeID>`
+/// - `query_first!(ctx, all(tags["enemy"]), in_subtree(parent_id)) -> Option<NodeID>`
+#[macro_export]
+macro_rules! query_first {
+    ($ctx:expr, $kind:ident $args:tt, in_subtree($parent:expr) $(,)?) => {{
+        $crate::query!($ctx, $kind $args, in_subtree($parent))
+            .into_iter()
+            .next()
+    }};
+    ($ctx:expr, $kind:ident $args:tt $(,)?) => {{
+        $crate::query!($ctx, $kind $args).into_iter().next()
+    }};
+}
+

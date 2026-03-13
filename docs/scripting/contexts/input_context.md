@@ -10,32 +10,15 @@ Accessors:
 - `ipt.Keys()`
 - `ipt.Mouse()`
 
-Macros:
-- `key_down!(ipt, key) -> bool`
-- `key_pressed!(ipt, key) -> bool`
-- `key_released!(ipt, key) -> bool`
-- `mouse_down!(ipt, button) -> bool`
-- `mouse_pressed!(ipt, button) -> bool`
-- `mouse_released!(ipt, button) -> bool`
-- `mouse_delta!(ipt) -> Vector2`
-- `mouse_wheel!(ipt) -> Vector2`
+## Input Modules
 
-## Key Methods
+- [Keys Module](input_modules/keys.md)
+- [Mouse Module](input_modules/mouse.md)
 
-### `ipt.Keys().down(key) -> bool`
-### `ipt.Keys().pressed(key) -> bool`
-### `ipt.Keys().released(key) -> bool`
-- `key`: `KeyCode`.
-
-## Mouse Methods
-
-### `ipt.Mouse().down(button) -> bool`
-### `ipt.Mouse().pressed(button) -> bool`
-### `ipt.Mouse().released(button) -> bool`
-- `button`: `MouseButton`.
-
-### `ipt.Mouse().delta() -> Vector2`
-### `ipt.Mouse().wheel() -> Vector2`
+Each module page contains:
+- Macro reference
+- `ipt.<Module>()` methods
+- Examples
 
 ## Simple Example
 

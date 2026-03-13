@@ -14,4 +14,6 @@ Details:
 Reference layout:
 - `runtime_context.md` contains all runtime scripting macros, signatures, accepted types, and return types.
 - `runtime_context.md` also contains `query!` forms, predicates, and examples.
-- `resource_context.md` and `input_context.md` document their full macro sets, method signatures, and examples.
+- `runtime_context.md` is the RuntimeContext overview and links to module-specific pages in `runtime_modules/`.
+- `resource_context.md` is the ResourceContext overview and links to module-specific pages in `resource_modules/`.
+- `input_context.md` is the InputContext overview and links to module-specific pages in `input_modules/`.

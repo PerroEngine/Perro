@@ -1,7 +1,7 @@
 @root = main
 
 [main]
-
+script = "res://scripts/script.rs"
 [Node2D]
     position = (0, 0)
 [/Node2D]
