@@ -101,7 +101,7 @@ pub struct StaticEmbeddedProject<'a> {
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
-    pub assets_brk: &'static [u8],
+    pub perro_assets: &'static [u8],
     pub scene_lookup: perro_runtime::StaticSceneLookup,
     pub material_lookup: perro_runtime::StaticMaterialLookup,
     pub particle_lookup: perro_runtime::StaticParticleLookup,
@@ -134,7 +134,7 @@ pub fn run_static_embedded_project(
         .with_static_scene_lookup(input.scene_lookup)
         .with_static_material_lookup(input.material_lookup)
         .with_static_particle_lookup(input.particle_lookup)
-        .with_brk_bytes(input.assets_brk);
+        .with_perro_assets_bytes(input.perro_assets);
 
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, true)

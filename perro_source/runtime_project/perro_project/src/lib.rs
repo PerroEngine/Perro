@@ -323,7 +323,7 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         project_static_src.join("meshes.rs"),
         &default_static_meshes_rs(),
     )?;
-    write_if_missing(project_embedded.join("assets.brk"), "")?;
+    write_if_missing(project_embedded.join("assets.perro"), "")?;
     write_if_missing(scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
     Ok(())
 }
@@ -958,7 +958,7 @@ fn default_project_main_rs(project_name: &str) -> String {
     r#"#[path = "static/mod.rs"]
 mod static_assets;
 
-static ASSETS_BRK: &[u8] = include_bytes!("../embedded/assets.brk");
+static PERRO_ASSETS: &[u8] = include_bytes!("../embedded/assets.perro");
 
 fn project_root() -> std::path::PathBuf {
     if let Ok(exe) = std::env::current_exe() {
@@ -995,7 +995,7 @@ fn main() {
         meshlet_debug_view: false,
         occlusion_culling: perro_app::entry::OcclusionCulling::Gpu,
         particle_sim_default: perro_app::entry::ParticleSimDefault::Cpu,
-        assets_brk: ASSETS_BRK,
+        perro_assets: PERRO_ASSETS,
         scene_lookup: static_assets::scenes::lookup_scene,
         material_lookup: static_assets::materials::lookup_material,
         particle_lookup: static_assets::particles::lookup_particle,
@@ -1409,7 +1409,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_compiler" => Some("perro_source/build_pipeline/perro_compiler"),
         "perro_static_pipeline" => Some("perro_source/build_pipeline/perro_static_pipeline"),
         "perro_io" => Some("perro_source/io_stack/perro_io"),
-        "perro_brk" => Some("perro_source/io_stack/perro_brk"),
+        "perro_assets" => Some("perro_source/io_stack/perro_assets"),
         "perro_project" => Some("perro_source/runtime_project/perro_project"),
         "perro_cli" => Some("perro_source/devtools/perro_cli"),
         "perro_dev_runner" => Some("perro_source/devtools/perro_dev_runner"),

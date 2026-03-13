@@ -21,7 +21,7 @@ struct SceneLoadStats {
 impl Runtime {
     pub(crate) fn load_boot_scene(&mut self) -> Result<(), String> {
         let boot_start = Instant::now();
-        let (project_root, project_name, main_scene_path, static_lookup, brk_bytes) = {
+        let (project_root, project_name, main_scene_path, static_lookup, perro_assets_bytes) = {
             let project = self
                 .project()
                 .ok_or_else(|| "Runtime project is not set".to_string())?;
@@ -30,13 +30,13 @@ impl Runtime {
                 project.config.name.clone(),
                 project.config.main_scene.clone(),
                 project.static_scene_lookup,
-                project.brk_bytes,
+                project.perro_assets_bytes,
             )
         };
 
         if self.provider_mode == ProviderMode::Static {
-            if let Some(data) = brk_bytes {
-                set_project_root(ProjectRoot::Brk {
+            if let Some(data) = perro_assets_bytes {
+                set_project_root(ProjectRoot::PerroAssets {
                     data,
                     name: project_name,
                 });

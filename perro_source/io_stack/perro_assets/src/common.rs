@@ -1,12 +1,12 @@
 use std::io::{self, Read, Write};
 
-pub const BRK_MAGIC: [u8; 4] = *b"BRK1";
+pub const PERRO_ASSETS_MAGIC: [u8; 4] = *b"PRA1";
 
 pub const FLAG_COMPRESSED: u32 = 1; // Bit 0: Data is DEFLATE compressed
 
 /// Archive header
 #[derive(Debug, Clone, Copy)]
-pub struct BrkHeader {
+pub struct PerroAssetsHeader {
     pub magic: [u8; 4],
     pub version: u32,
     pub file_count: u32,
@@ -15,7 +15,7 @@ pub struct BrkHeader {
 
 /// Entry metadata written into the index
 #[derive(Debug, Clone)]
-pub struct BrkEntryMeta {
+pub struct PerroAssetsEntryMeta {
     pub offset: u64,
     pub size: u64,          // Actual size in archive (compressed if FLAG_COMPRESSED)
     pub original_size: u64, // Original uncompressed size
@@ -40,13 +40,16 @@ fn read_u64<R: Read>(reader: &mut R) -> io::Result<u64> {
     Ok(u64::from_le_bytes(read_exact_array::<8, _>(reader)?))
 }
 
-pub fn read_header<R: Read>(reader: &mut R) -> io::Result<BrkHeader> {
+pub fn read_header<R: Read>(reader: &mut R) -> io::Result<PerroAssetsHeader> {
     let magic = read_exact_array::<4, _>(reader)?;
-    if magic != BRK_MAGIC {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "Not a BRK file"));
+    if magic != PERRO_ASSETS_MAGIC {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Not a PerroAssets file",
+        ));
     }
 
-    Ok(BrkHeader {
+    Ok(PerroAssetsHeader {
         magic,
         version: read_u32(reader)?,
         file_count: read_u32(reader)?,
@@ -54,7 +57,7 @@ pub fn read_header<R: Read>(reader: &mut R) -> io::Result<BrkHeader> {
     })
 }
 
-pub fn write_header<W: Write>(writer: &mut W, header: &BrkHeader) -> io::Result<()> {
+pub fn write_header<W: Write>(writer: &mut W, header: &PerroAssetsHeader) -> io::Result<()> {
     writer.write_all(&header.magic)?;
     writer.write_all(&header.version.to_le_bytes())?;
     writer.write_all(&header.file_count.to_le_bytes())?;
@@ -62,7 +65,7 @@ pub fn write_header<W: Write>(writer: &mut W, header: &BrkHeader) -> io::Result<
     Ok(())
 }
 
-pub fn read_index_entry<R: Read>(reader: &mut R) -> io::Result<(String, BrkEntryMeta)> {
+pub fn read_index_entry<R: Read>(reader: &mut R) -> io::Result<(String, PerroAssetsEntryMeta)> {
     let path_len = read_u16(reader)? as usize;
     let mut path_buf = vec![0u8; path_len];
     reader.read_exact(&mut path_buf)?;
@@ -76,7 +79,7 @@ pub fn read_index_entry<R: Read>(reader: &mut R) -> io::Result<(String, BrkEntry
 
     Ok((
         path,
-        BrkEntryMeta {
+        PerroAssetsEntryMeta {
             offset,
             size,
             original_size,
@@ -88,7 +91,7 @@ pub fn read_index_entry<R: Read>(reader: &mut R) -> io::Result<(String, BrkEntry
 pub fn write_index_entry<W: Write>(
     writer: &mut W,
     path: &str,
-    meta: &BrkEntryMeta,
+    meta: &PerroAssetsEntryMeta,
 ) -> io::Result<()> {
     let path_bytes = path.as_bytes();
     if path_bytes.len() > u16::MAX as usize {

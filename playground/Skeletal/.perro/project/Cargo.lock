@@ -2269,6 +2269,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "skeletal"
+version = "0.1.0"
+dependencies = [
+ "perro_app",
+ "perro_ids",
+ "perro_input",
+ "perro_nodes",
+ "perro_render_bridge",
+ "perro_resource_context",
+ "perro_runtime_context",
+ "perro_scene",
+ "perro_scripting",
+ "perro_structs",
+ "scripts",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2486,23 +2503,6 @@ name = "tracing-core"
 version = "0.1.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
-
-[[package]]
-name = "twodtest"
-version = "0.1.0"
-dependencies = [
- "perro_app",
- "perro_ids",
- "perro_input",
- "perro_nodes",
- "perro_render_bridge",
- "perro_resource_context",
- "perro_runtime_context",
- "perro_scene",
- "perro_scripting",
- "perro_structs",
- "scripts",
-]
 
 [[package]]
 name = "unicode-ident"

@@ -1,4 +1,4 @@
-use perro_brk::build_brk;
+use perro_assets::build_perro_assets_archive;
 use perro_io::walkdir::walk_dir;
 use perro_project::{ensure_source_overrides, load_project_toml};
 use std::{
@@ -118,17 +118,17 @@ pub fn compile_project_bundle(project_root: &Path) -> Result<(), CompilerError> 
     perro_static_pipeline::write_static_mod_rs(project_root)
         .map_err(|err| CompilerError::SceneParse(format!("static mod generation failed: {err}")))?;
     generate_embedded_main(project_root)?;
-    generate_assets_brk(project_root)?;
+    generate_perro_assets(project_root)?;
     build_project_crate(project_root)?;
     Ok(())
 }
 
-fn generate_assets_brk(project_root: &Path) -> Result<(), CompilerError> {
+fn generate_perro_assets(project_root: &Path) -> Result<(), CompilerError> {
     let embedded_dir = project_root.join(".perro").join("project").join("embedded");
     fs::create_dir_all(&embedded_dir)?;
-    let output = embedded_dir.join("assets.brk");
+    let output = embedded_dir.join("assets.perro");
     let res_dir = project_root.join("res");
-    build_brk(&output, &res_dir, project_root)?;
+    build_perro_assets_archive(&output, &res_dir, project_root)?;
     Ok(())
 }
 
@@ -207,7 +207,7 @@ fn generate_embedded_main(project_root: &Path) -> Result<(), CompilerError> {
     let main_src = format!(
         "#[path = \"static/mod.rs\"]\n\
 mod static_assets;\n\n\
-static ASSETS_BRK: &[u8] = include_bytes!(\"../embedded/assets.brk\");\n\n\
+static PERRO_ASSETS: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n\
 fn project_root() -> std::path::PathBuf {{\n\
     if let Ok(exe) = std::env::current_exe() {{\n\
         if let Some(exe_dir) = exe.parent() {{\n\
@@ -242,7 +242,7 @@ fn main() {{\n\
         meshlet_debug_view: {meshlet_debug_view},\n\
         occlusion_culling: {occlusion_culling},\n\
         particle_sim_default: {particle_sim_default},\n\
-        assets_brk: ASSETS_BRK,\n\
+        perro_assets: PERRO_ASSETS,\n\
         scene_lookup: static_assets::scenes::lookup_scene,\n\
         material_lookup: static_assets::materials::lookup_material,\n\
         particle_lookup: static_assets::particles::lookup_particle,\n\

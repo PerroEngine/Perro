@@ -1,7 +1,7 @@
 #[path = "static/mod.rs"]
 mod static_assets;
 
-static ASSETS_BRK: &[u8] = include_bytes!("../embedded/assets.brk");
+static PERRO_ASSETS: &[u8] = include_bytes!("../embedded/assets.perro");
 
 fn project_root() -> std::path::PathBuf {
 if let Ok(exe) = std::env::current_exe() {
@@ -38,7 +38,7 @@ release_meshlets: true,
 meshlet_debug_view: false,
 occlusion_culling: perro_app::entry::OcclusionCulling::Gpu,
 particle_sim_default: perro_app::entry::ParticleSimDefault::GpuCompute,
-assets_brk: ASSETS_BRK,
+perro_assets: PERRO_ASSETS,
 scene_lookup: static_assets::scenes::lookup_scene,
 material_lookup: static_assets::materials::lookup_material,
 particle_lookup: static_assets::particles::lookup_particle,

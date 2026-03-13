@@ -7,7 +7,8 @@ use std::{
 };
 
 use super::common::{
-    BRK_MAGIC, BrkEntryMeta, BrkHeader, FLAG_COMPRESSED, write_header, write_index_entry,
+    FLAG_COMPRESSED, PERRO_ASSETS_MAGIC, PerroAssetsEntryMeta, PerroAssetsHeader, write_header,
+    write_index_entry,
 };
 use crate::compression::compress_deflate_best;
 use crate::walkdir::collect_file_paths;
@@ -39,9 +40,9 @@ fn should_skip(path: &str) -> bool {
 }
 
 #[derive(Debug, Clone)]
-struct BrkEntry {
+struct PerroAssetsEntry {
     path: String,
-    meta: BrkEntryMeta,
+    meta: PerroAssetsEntryMeta,
 }
 
 struct ProcessedFile {
@@ -51,13 +52,17 @@ struct ProcessedFile {
     original_size: u64,
 }
 
-/// Build a `.brk` archive
-pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path) -> io::Result<()> {
+/// Build a `.perro` archive
+pub fn build_perro_assets_archive(
+    output: &Path,
+    res_dir: &Path,
+    _project_root: &Path,
+) -> io::Result<()> {
     let mut file = File::create(output)?;
 
     // Write placeholder header
-    let header = BrkHeader {
-        magic: BRK_MAGIC,
+    let header = PerroAssetsHeader {
+        magic: PERRO_ASSETS_MAGIC,
         version: 1,
         file_count: 0,
         index_offset: 0,
@@ -120,9 +125,9 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path) -> io::Res
         file.write_all(&data)?;
         let size = data.len() as u64;
 
-        entries.push(BrkEntry {
+        entries.push(PerroAssetsEntry {
             path: format!("res/{rel_path}"),
-            meta: BrkEntryMeta {
+            meta: PerroAssetsEntryMeta {
                 offset,
                 size,
                 original_size,
@@ -139,8 +144,8 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path) -> io::Res
 
     // Rewrite header with correct counts
     file.seek(SeekFrom::Start(0))?;
-    let header = BrkHeader {
-        magic: BRK_MAGIC,
+    let header = PerroAssetsHeader {
+        magic: PERRO_ASSETS_MAGIC,
         version: 1,
         file_count: entries.len() as u32,
         index_offset,

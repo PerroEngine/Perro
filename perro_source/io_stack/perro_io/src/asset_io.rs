@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::data_local_dir;
-use perro_brk::archive::{BrkArchive, BrkFile};
+use perro_assets::archive::{PerroAssetsArchive, PerroAssetsFile};
 
 /// Trait alias for Read + Seek
 pub trait ReadSeek: Read + Seek {}
@@ -15,11 +15,11 @@ impl<T: Read + Seek> ReadSeek for T {}
 #[derive(Clone)]
 pub enum ProjectRoot {
     Disk { root: PathBuf, name: String },
-    Brk { data: &'static [u8], name: String },
+    PerroAssets { data: &'static [u8], name: String },
 }
 
 static PROJECT_ROOT: RwLock<Option<ProjectRoot>> = RwLock::new(None);
-static BRK_ARCHIVE: RwLock<Option<BrkArchive>> = RwLock::new(None);
+static PERRO_ASSETS_ARCHIVE: RwLock<Option<PerroAssetsArchive>> = RwLock::new(None);
 
 pub fn get_project_root() -> ProjectRoot {
     PROJECT_ROOT
@@ -32,16 +32,17 @@ pub fn get_project_root() -> ProjectRoot {
 pub fn set_project_root(root: ProjectRoot) {
     *PROJECT_ROOT.write().unwrap() = Some(root.clone());
 
-    if let ProjectRoot::Brk { data, .. } = root {
-        let archive = BrkArchive::open_from_bytes(data).expect("Failed to open BRK archive");
-        *BRK_ARCHIVE.write().unwrap() = Some(archive);
+    if let ProjectRoot::PerroAssets { data, .. } = root {
+        let archive = PerroAssetsArchive::open_from_bytes(data)
+            .expect("Failed to open PerroAssets archive");
+        *PERRO_ASSETS_ARCHIVE.write().unwrap() = Some(archive);
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum ResolvedPath {
     Disk(PathBuf),
-    Brk(String),
+    PerroAssets(String),
 }
 
 /// Resolve virtual path (res://foo/bar.png or user://save.dat) to actual location
@@ -54,7 +55,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
             .as_ref()
             .map(|root| match root {
                 ProjectRoot::Disk { name, .. } => name.as_str(),
-                ProjectRoot::Brk { name, .. } => name.as_str(),
+                ProjectRoot::PerroAssets { name, .. } => name.as_str(),
             })
             .expect("Project root not set");
 
@@ -78,11 +79,11 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
                 ResolvedPath::Disk(root.join(path))
             }
         }
-        Some(ProjectRoot::Brk { .. }) => {
+        Some(ProjectRoot::PerroAssets { .. }) => {
             if let Some(stripped) = path.strip_prefix("res://") {
-                ResolvedPath::Brk(format!("res/{}", stripped))
+                ResolvedPath::PerroAssets(format!("res/{}", stripped))
             } else {
-                ResolvedPath::Brk(path.to_string())
+                ResolvedPath::PerroAssets(path.to_string())
             }
         }
         None => ResolvedPath::Disk(PathBuf::from(path)),
@@ -93,11 +94,11 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
 pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
     match resolve_path(path) {
         ResolvedPath::Disk(pb) => fs::read(pb),
-        ResolvedPath::Brk(virtual_path) => {
-            if let Some(archive) = BRK_ARCHIVE.read().unwrap().as_ref() {
+        ResolvedPath::PerroAssets(virtual_path) => {
+            if let Some(archive) = PERRO_ASSETS_ARCHIVE.read().unwrap().as_ref() {
                 archive.read_file(&virtual_path)
             } else {
-                Err(io::Error::other("BRK archive not loaded"))
+                Err(io::Error::other("PerroAssets archive not loaded"))
             }
         }
     }
@@ -110,12 +111,12 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
             let file = File::open(pb)?;
             Ok(Box::new(file))
         }
-        ResolvedPath::Brk(virtual_path) => {
-            if let Some(archive) = BRK_ARCHIVE.read().unwrap().as_ref() {
-                let file: BrkFile = archive.stream_file(&virtual_path)?;
+        ResolvedPath::PerroAssets(virtual_path) => {
+            if let Some(archive) = PERRO_ASSETS_ARCHIVE.read().unwrap().as_ref() {
+                let file: PerroAssetsFile = archive.stream_file(&virtual_path)?;
                 Ok(Box::new(file))
             } else {
-                Err(io::Error::other("BRK archive not loaded"))
+                Err(io::Error::other("PerroAssets archive not loaded"))
             }
         }
     }
@@ -131,6 +132,8 @@ pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
             let mut file = File::create(pb)?;
             file.write_all(data)
         }
-        ResolvedPath::Brk(_) => Err(io::Error::other("Cannot save to BRK archive")),
+        ResolvedPath::PerroAssets(_) => {
+            Err(io::Error::other("Cannot save to PerroAssets archive"))
+        }
     }
 }

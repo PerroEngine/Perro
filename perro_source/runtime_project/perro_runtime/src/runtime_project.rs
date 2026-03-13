@@ -30,7 +30,7 @@ pub struct RuntimeProject {
     pub static_scene_lookup: Option<StaticSceneLookup>,
     pub static_material_lookup: Option<StaticMaterialLookup>,
     pub static_particle_lookup: Option<StaticParticleLookup>,
-    pub brk_bytes: Option<&'static [u8]>,
+    pub perro_assets_bytes: Option<&'static [u8]>,
 }
 
 impl RuntimeProject {
@@ -44,7 +44,7 @@ impl RuntimeProject {
             static_scene_lookup: None,
             static_material_lookup: None,
             static_particle_lookup: None,
-            brk_bytes: None,
+            perro_assets_bytes: None,
         }
     }
 
@@ -58,7 +58,7 @@ impl RuntimeProject {
             static_scene_lookup: None,
             static_material_lookup: None,
             static_particle_lookup: None,
-            brk_bytes: None,
+            perro_assets_bytes: None,
         }
     }
 
@@ -81,7 +81,7 @@ impl RuntimeProject {
             static_scene_lookup: None,
             static_material_lookup: None,
             static_particle_lookup: None,
-            brk_bytes: None,
+            perro_assets_bytes: None,
         })
     }
 
@@ -105,8 +105,8 @@ impl RuntimeProject {
         self
     }
 
-    pub fn with_brk_bytes(mut self, brk_bytes: &'static [u8]) -> Self {
-        self.brk_bytes = Some(brk_bytes);
+    pub fn with_perro_assets_bytes(mut self, perro_assets_bytes: &'static [u8]) -> Self {
+        self.perro_assets_bytes = Some(perro_assets_bytes);
         self
     }
 }

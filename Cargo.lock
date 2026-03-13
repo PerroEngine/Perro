@@ -1596,7 +1596,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "perro_brk"
+name = "perro_assets"
 version = "0.1.0"
 dependencies = [
  "flate2",
@@ -1616,7 +1616,7 @@ dependencies = [
 name = "perro_compiler"
 version = "0.1.0"
 dependencies = [
- "perro_brk",
+ "perro_assets",
  "perro_io",
  "perro_project",
  "perro_scene",
@@ -1678,7 +1678,7 @@ name = "perro_io"
 version = "0.1.0"
 dependencies = [
  "flate2",
- "perro_brk",
+ "perro_assets",
 ]
 
 [[package]]

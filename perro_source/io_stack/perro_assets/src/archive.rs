@@ -3,17 +3,17 @@ use std::collections::HashMap;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 use std::sync::Arc;
 
-use super::common::{BrkEntryMeta, FLAG_COMPRESSED, read_header, read_index_entry};
+use super::common::{PerroAssetsEntryMeta, FLAG_COMPRESSED, read_header, read_index_entry};
 
-pub type BrkEntry = BrkEntryMeta;
+pub type PerroAssetsEntry = PerroAssetsEntryMeta;
 
-pub struct BrkArchive {
+pub struct PerroAssetsArchive {
     data: Arc<[u8]>,
-    index: HashMap<String, BrkEntry>,
+    index: HashMap<String, PerroAssetsEntry>,
 }
 
-impl BrkArchive {
-    /// Open a .brk archive from embedded bytes (include_bytes!)
+impl PerroAssetsArchive {
+    /// Open a .perro archive from embedded bytes (include_bytes!)
     pub fn open_from_bytes(data: &'static [u8]) -> io::Result<Self> {
         let arc: Arc<[u8]> = Arc::from(data);
         let mut cursor = Cursor::new(&*arc);
@@ -21,7 +21,7 @@ impl BrkArchive {
         Ok(Self { data: arc, index })
     }
 
-    fn parse_index(cursor: &mut Cursor<&[u8]>) -> io::Result<HashMap<String, BrkEntry>> {
+    fn parse_index(cursor: &mut Cursor<&[u8]>) -> io::Result<HashMap<String, PerroAssetsEntry>> {
         let header = read_header(cursor)?;
         cursor.seek(SeekFrom::Start(header.index_offset))?;
         let mut index = HashMap::new();
@@ -86,7 +86,7 @@ impl BrkArchive {
     }
 
     /// Stream a file (only works for uncompressed files)
-    pub fn stream_file(&self, path: &str) -> io::Result<BrkFile> {
+    pub fn stream_file(&self, path: &str) -> io::Result<PerroAssetsFile> {
         let entry = self
             .index
             .get(path)
@@ -98,7 +98,7 @@ impl BrkArchive {
             ));
         }
 
-        Ok(BrkFile {
+        Ok(PerroAssetsFile {
             data: self.data.clone(),
             entry: entry.clone(),
             pos: 0,
@@ -112,13 +112,13 @@ impl BrkArchive {
 }
 
 /// Streaming file handle (for uncompressed files only)
-pub struct BrkFile {
+pub struct PerroAssetsFile {
     data: Arc<[u8]>,
-    entry: BrkEntry,
+    entry: PerroAssetsEntry,
     pos: u64,
 }
 
-impl Read for BrkFile {
+impl Read for PerroAssetsFile {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let start = self.entry.offset as usize;
         let end = (self.entry.offset + self.entry.size) as usize;
@@ -132,7 +132,7 @@ impl Read for BrkFile {
     }
 }
 
-impl Seek for BrkFile {
+impl Seek for PerroAssetsFile {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let new_pos = match pos {
             SeekFrom::Start(n) => n,
