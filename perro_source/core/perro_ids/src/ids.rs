@@ -147,6 +147,10 @@ define_generational!(
     "Signal ID - hash of signal name (or generational). Used for connect/emit."
 );
 define_generational!(
+    BusID,
+    "Bus ID - deterministic ID from bus name. Used for audio routing."
+);
+define_generational!(
     TagID,
     "Tag ID - deterministic ID from tag name. Used for scene node tags and queries."
 );
@@ -211,6 +215,13 @@ impl UIElementID {
 
 impl SignalID {
     /// Deterministic ID from signal name. Uses hash; generation 0.
+    pub const fn from_string(s: &str) -> Self {
+        Self::from_u64(string_to_u64(s))
+    }
+}
+
+impl BusID {
+    /// Deterministic ID from bus name. Uses hash; generation 0.
     pub const fn from_string(s: &str) -> Self {
         Self::from_u64(string_to_u64(s))
     }

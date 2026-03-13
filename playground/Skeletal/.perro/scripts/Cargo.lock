@@ -649,6 +649,7 @@ dependencies = [
 name = "perro_bark"
 version = "0.1.0"
 dependencies = [
+ "perro_ids",
  "perro_io",
  "rodio",
 ]

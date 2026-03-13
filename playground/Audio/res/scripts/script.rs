@@ -23,15 +23,17 @@ fn on_init(
     let _ = set_bus_volume!(res, music, 0.7);
     let _ = set_bus_volume!(res, sfx, 1.0);
 
-    let _ = play_audio!(
-        res,
-        Audio {
+    let bob = Audio {
             source: "res://groantube.mp3",
             bus: music,
             looped: true,
             volume: 0.5,
-            pitch: 1.8,
-        }
+            speed: 1.2,
+        };
+
+    let _ = play_audio!(
+        res,
+        bob
     );
 
 

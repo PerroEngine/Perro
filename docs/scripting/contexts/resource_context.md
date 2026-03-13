@@ -44,6 +44,7 @@ let _ = drop_mesh!(res, "res://meshes/old.glb");
 let music = bus!("music");
 let _ = set_master_volume!(res, 1.0);
 let _ = set_bus_volume!(res, music, 0.7);
+let _ = set_bus_speed!(res, music, 1.0);
 
 let _ = play_audio!(
     res,
@@ -52,7 +53,7 @@ let _ = play_audio!(
         bus: music,
         looped: true,
         volume: 1.0,
-        pitch: 1.0,
+        speed: 1.0,
     }
 );
 ```

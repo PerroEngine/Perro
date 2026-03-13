@@ -1,23 +1,38 @@
+use perro_ids::BusID;
+
 pub trait AudioAPI {
-    fn play_audio(&self, source: &str, bus_id: u32, looped: bool, volume: f32, pitch: f32)
-    -> bool;
-    fn stop_audio(&self, source: &str, bus_id: u32, looped: bool, volume: f32, pitch: f32)
-    -> bool;
+    fn play_audio(
+        &self,
+        source: &str,
+        bus_id: BusID,
+        looped: bool,
+        volume: f32,
+        speed: f32,
+    ) -> bool;
+    fn stop_audio(
+        &self,
+        source: &str,
+        bus_id: BusID,
+        looped: bool,
+        volume: f32,
+        speed: f32,
+    ) -> bool;
     fn stop_audio_source(&self, source: &str) -> bool;
     fn stop_all_audio(&self);
     fn set_master_volume(&self, volume: f32) -> bool;
-    fn set_bus_volume(&self, bus_id: u32, volume: f32) -> bool;
-    fn pause_bus(&self, bus_id: u32) -> bool;
-    fn resume_bus(&self, bus_id: u32) -> bool;
-    fn stop_bus(&self, bus_id: u32) -> bool;
+    fn set_bus_volume(&self, bus_id: BusID, volume: f32) -> bool;
+    fn set_bus_speed(&self, bus_id: BusID, speed: f32) -> bool;
+    fn pause_bus(&self, bus_id: BusID) -> bool;
+    fn resume_bus(&self, bus_id: BusID) -> bool;
+    fn stop_bus(&self, bus_id: BusID) -> bool;
 }
 
 pub struct Audio<'a> {
     pub source: &'a str,
-    pub bus: u32,
+    pub bus: BusID,
     pub looped: bool,
     pub volume: f32,
-    pub pitch: f32,
+    pub speed: f32,
 }
 
 pub struct AudioModule<'res, R: AudioAPI + ?Sized> {
@@ -31,14 +46,24 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
 
     #[inline]
     pub fn play(&self, audio: Audio<'_>) -> bool {
-        self.api
-            .play_audio(audio.source, audio.bus, audio.looped, audio.volume, audio.pitch)
+        self.api.play_audio(
+            audio.source,
+            audio.bus,
+            audio.looped,
+            audio.volume,
+            audio.speed,
+        )
     }
 
     #[inline]
     pub fn stop_audio(&self, audio: Audio<'_>) -> bool {
-        self.api
-            .stop_audio(audio.source, audio.bus, audio.looped, audio.volume, audio.pitch)
+        self.api.stop_audio(
+            audio.source,
+            audio.bus,
+            audio.looped,
+            audio.volume,
+            audio.speed,
+        )
     }
 
     #[inline]
@@ -57,22 +82,27 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
     }
 
     #[inline]
-    pub fn set_bus_volume(&self, bus_id: u32, volume: f32) -> bool {
+    pub fn set_bus_volume(&self, bus_id: BusID, volume: f32) -> bool {
         self.api.set_bus_volume(bus_id, volume)
     }
 
     #[inline]
-    pub fn pause_bus(&self, bus_id: u32) -> bool {
+    pub fn set_bus_speed(&self, bus_id: BusID, speed: f32) -> bool {
+        self.api.set_bus_speed(bus_id, speed)
+    }
+
+    #[inline]
+    pub fn pause_bus(&self, bus_id: BusID) -> bool {
         self.api.pause_bus(bus_id)
     }
 
     #[inline]
-    pub fn resume_bus(&self, bus_id: u32) -> bool {
+    pub fn resume_bus(&self, bus_id: BusID) -> bool {
         self.api.resume_bus(bus_id)
     }
 
     #[inline]
-    pub fn stop_bus(&self, bus_id: u32) -> bool {
+    pub fn stop_bus(&self, bus_id: BusID) -> bool {
         self.api.stop_bus(bus_id)
     }
 }
@@ -120,6 +150,13 @@ macro_rules! set_bus_volume {
 }
 
 #[macro_export]
+macro_rules! set_bus_speed {
+    ($res:expr, $bus_id:expr, $speed:expr) => {
+        $res.Audio().set_bus_speed($bus_id, $speed)
+    };
+}
+
+#[macro_export]
 macro_rules! pause_bus {
     ($res:expr, $bus_id:expr) => {
         $res.Audio().pause_bus($bus_id)
@@ -143,19 +180,11 @@ macro_rules! stop_bus {
 #[macro_export]
 macro_rules! bus {
     ($name:literal) => {{
-        const BUS_ID: u32 = $crate::sub_apis::bus_id($name);
+        const BUS_ID: $crate::sub_apis::BusID = $crate::sub_apis::bus_id($name);
         BUS_ID
     }};
 }
 
-pub const fn bus_id(name: &str) -> u32 {
-    let bytes = name.as_bytes();
-    let mut hash: u32 = 0x811C9DC5;
-    let mut i = 0usize;
-    while i < bytes.len() {
-        hash ^= bytes[i] as u32;
-        hash = hash.wrapping_mul(0x0100_0193);
-        i += 1;
-    }
-    hash
+pub const fn bus_id(name: &str) -> BusID {
+    BusID::from_string(name)
 }

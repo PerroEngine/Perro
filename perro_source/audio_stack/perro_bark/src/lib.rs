@@ -1,3 +1,4 @@
+use perro_ids::BusID;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor};
@@ -12,47 +13,49 @@ pub struct BarkPlayer {
 
 struct Playback {
     source: String,
-    bus_id: u32,
+    bus_id: BusID,
     looped: bool,
     base_volume: f32,
-    pitch: f32,
+    speed: f32,
     sink: Sink,
 }
 
 #[derive(Clone, Copy)]
 struct BusState {
     volume: f32,
+    speed: f32,
     paused: bool,
 }
 
 struct AudioState {
     master_volume: f32,
-    buses: HashMap<u32, BusState>,
+    buses: HashMap<BusID, BusState>,
     playbacks: Vec<Playback>,
 }
 
 enum AudioCommand {
     Play {
         source: String,
-        bus_id: u32,
+        bus_id: BusID,
         looped: bool,
         volume: f32,
-        pitch: f32,
+        speed: f32,
     },
     Stop { source: String },
     StopMatch {
         source: String,
-        bus_id: u32,
+        bus_id: BusID,
         looped: bool,
         volume: f32,
-        pitch: f32,
+        speed: f32,
     },
     StopAll,
     SetMasterVolume { volume: f32 },
-    SetBusVolume { bus_id: u32, volume: f32 },
-    PauseBus { bus_id: u32 },
-    ResumeBus { bus_id: u32 },
-    StopBus { bus_id: u32 },
+    SetBusVolume { bus_id: BusID, volume: f32 },
+    SetBusSpeed { bus_id: BusID, speed: f32 },
+    PauseBus { bus_id: BusID },
+    ResumeBus { bus_id: BusID },
+    StopBus { bus_id: BusID },
 }
 
 #[derive(Clone)]
@@ -78,24 +81,24 @@ impl BarkPlayer {
     pub fn play_source(
         &self,
         source: &str,
-        bus_id: u32,
+        bus_id: BusID,
         looped: bool,
         volume: f32,
-        pitch: f32,
+        speed: f32,
     ) -> Result<(), String> {
         let bytes = perro_io::load_asset(source)
             .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
-        self.play_bytes(source, bytes, bus_id, looped, volume, pitch)
+        self.play_bytes(source, bytes, bus_id, looped, volume, speed)
     }
 
     pub fn play_bytes(
         &self,
         source: &str,
         bytes: Vec<u8>,
-        bus_id: u32,
+        bus_id: BusID,
         looped: bool,
         volume: f32,
-        pitch: f32,
+        speed: f32,
     ) -> Result<(), String> {
         let cursor = Cursor::new(bytes);
         let reader = BufReader::new(cursor);
@@ -104,7 +107,7 @@ impl BarkPlayer {
 
         let sink =
             Sink::try_new(&self.handle).map_err(|err| format!("failed to create sink: {err}"))?;
-        sink.set_speed(pitch.max(0.01));
+        sink.set_speed(speed.max(0.01));
 
         if looped {
             sink.append(decoder.repeat_infinite());
@@ -120,8 +123,10 @@ impl BarkPlayer {
         let master_volume = state.master_volume.max(0.0);
         let bus_state = state.buses.entry(bus_id).or_insert(BusState {
             volume: 1.0,
+            speed: 1.0,
             paused: false,
         });
+        sink.set_speed(speed.max(0.01) * bus_state.speed.max(0.01));
         sink.set_volume(requested_volume * master_volume * bus_state.volume.max(0.0));
         if bus_state.paused {
             sink.pause();
@@ -142,7 +147,7 @@ impl BarkPlayer {
             bus_id,
             looped,
             base_volume: requested_volume,
-            pitch: pitch.max(0.01),
+            speed: speed.max(0.01),
             sink,
         });
         Ok(())
@@ -168,16 +173,16 @@ impl BarkPlayer {
     pub fn stop_match(
         &self,
         source: &str,
-        bus_id: u32,
+        bus_id: BusID,
         looped: bool,
         volume: f32,
-        pitch: f32,
+        speed: f32,
     ) -> bool {
         let Ok(mut state) = self.state.lock() else {
             return false;
         };
         let target_volume = volume.max(0.0);
-        let target_pitch = pitch.max(0.01);
+        let target_speed = speed.max(0.01);
         let mut i = 0usize;
         while i < state.playbacks.len() {
             let p = &state.playbacks[i];
@@ -185,7 +190,7 @@ impl BarkPlayer {
                 && p.bus_id == bus_id
                 && p.looped == looped
                 && (p.base_volume - target_volume).abs() < f32::EPSILON
-                && (p.pitch - target_pitch).abs() < f32::EPSILON
+                && (p.speed - target_speed).abs() < f32::EPSILON
             {
                 state.playbacks.remove(i).sink.stop();
                 return true;
@@ -211,24 +216,39 @@ impl BarkPlayer {
         Self::refresh_volumes(&mut state);
     }
 
-    pub fn set_bus_volume(&self, bus_id: u32, volume: f32) {
+    pub fn set_bus_volume(&self, bus_id: BusID, volume: f32) {
         let Ok(mut state) = self.state.lock() else {
             return;
         };
         let bus = state.buses.entry(bus_id).or_insert(BusState {
             volume: 1.0,
+            speed: 1.0,
             paused: false,
         });
         bus.volume = volume.max(0.0);
         Self::refresh_volumes(&mut state);
     }
 
-    pub fn pause_bus(&self, bus_id: u32) {
+    pub fn set_bus_speed(&self, bus_id: BusID, speed: f32) {
         let Ok(mut state) = self.state.lock() else {
             return;
         };
         let bus = state.buses.entry(bus_id).or_insert(BusState {
             volume: 1.0,
+            speed: 1.0,
+            paused: false,
+        });
+        bus.speed = speed.max(0.01);
+        Self::refresh_speeds(&mut state);
+    }
+
+    pub fn pause_bus(&self, bus_id: BusID) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let bus = state.buses.entry(bus_id).or_insert(BusState {
+            volume: 1.0,
+            speed: 1.0,
             paused: false,
         });
         bus.paused = true;
@@ -239,12 +259,13 @@ impl BarkPlayer {
         }
     }
 
-    pub fn resume_bus(&self, bus_id: u32) {
+    pub fn resume_bus(&self, bus_id: BusID) {
         let Ok(mut state) = self.state.lock() else {
             return;
         };
         let bus = state.buses.entry(bus_id).or_insert(BusState {
             volume: 1.0,
+            speed: 1.0,
             paused: false,
         });
         bus.paused = false;
@@ -255,7 +276,7 @@ impl BarkPlayer {
         }
     }
 
-    pub fn stop_bus(&self, bus_id: u32) -> bool {
+    pub fn stop_bus(&self, bus_id: BusID) -> bool {
         let Ok(mut state) = self.state.lock() else {
             return false;
         };
@@ -284,6 +305,17 @@ impl BarkPlayer {
                 .set_volume(playback.base_volume * state.master_volume.max(0.0) * bus_volume);
         }
     }
+
+    fn refresh_speeds(state: &mut AudioState) {
+        for playback in &state.playbacks {
+            let bus_speed = state
+                .buses
+                .get(&playback.bus_id)
+                .map(|bus| bus.speed.max(0.01))
+                .unwrap_or(1.0);
+            playback.sink.set_speed(playback.speed.max(0.01) * bus_speed);
+        }
+    }
 }
 
 impl AudioController {
@@ -303,9 +335,9 @@ impl AudioController {
                             bus_id,
                             looped,
                             volume,
-                            pitch,
+                            speed,
                         } => {
-                            let _ = player.play_source(&source, bus_id, looped, volume, pitch);
+                            let _ = player.play_source(&source, bus_id, looped, volume, speed);
                         }
                         AudioCommand::Stop { source } => {
                             let _ = player.stop_source(&source);
@@ -315,14 +347,17 @@ impl AudioController {
                             bus_id,
                             looped,
                             volume,
-                            pitch,
+                            speed,
                         } => {
-                            let _ = player.stop_match(&source, bus_id, looped, volume, pitch);
+                            let _ = player.stop_match(&source, bus_id, looped, volume, speed);
                         }
                         AudioCommand::StopAll => player.stop_all(),
                         AudioCommand::SetMasterVolume { volume } => player.set_master_volume(volume),
                         AudioCommand::SetBusVolume { bus_id, volume } => {
                             player.set_bus_volume(bus_id, volume)
+                        }
+                        AudioCommand::SetBusSpeed { bus_id, speed } => {
+                            player.set_bus_speed(bus_id, speed)
                         }
                         AudioCommand::PauseBus { bus_id } => player.pause_bus(bus_id),
                         AudioCommand::ResumeBus { bus_id } => player.resume_bus(bus_id),
@@ -339,10 +374,10 @@ impl AudioController {
     pub fn play_source(
         &self,
         source: &str,
-        bus_id: u32,
+        bus_id: BusID,
         looped: bool,
         volume: f32,
-        pitch: f32,
+        speed: f32,
     ) -> bool {
         self.tx
             .send(AudioCommand::Play {
@@ -350,7 +385,7 @@ impl AudioController {
                 bus_id,
                 looped,
                 volume,
-                pitch,
+                speed,
             })
             .is_ok()
     }
@@ -366,10 +401,10 @@ impl AudioController {
     pub fn stop_match(
         &self,
         source: &str,
-        bus_id: u32,
+        bus_id: BusID,
         looped: bool,
         volume: f32,
-        pitch: f32,
+        speed: f32,
     ) -> bool {
         self.tx
             .send(AudioCommand::StopMatch {
@@ -377,7 +412,7 @@ impl AudioController {
                 bus_id,
                 looped,
                 volume,
-                pitch,
+                speed,
             })
             .is_ok()
     }
@@ -390,21 +425,25 @@ impl AudioController {
         self.tx.send(AudioCommand::SetMasterVolume { volume }).is_ok()
     }
 
-    pub fn set_bus_volume(&self, bus_id: u32, volume: f32) -> bool {
+    pub fn set_bus_volume(&self, bus_id: BusID, volume: f32) -> bool {
         self.tx
             .send(AudioCommand::SetBusVolume { bus_id, volume })
             .is_ok()
     }
 
-    pub fn pause_bus(&self, bus_id: u32) -> bool {
+    pub fn set_bus_speed(&self, bus_id: BusID, speed: f32) -> bool {
+        self.tx.send(AudioCommand::SetBusSpeed { bus_id, speed }).is_ok()
+    }
+
+    pub fn pause_bus(&self, bus_id: BusID) -> bool {
         self.tx.send(AudioCommand::PauseBus { bus_id }).is_ok()
     }
 
-    pub fn resume_bus(&self, bus_id: u32) -> bool {
+    pub fn resume_bus(&self, bus_id: BusID) -> bool {
         self.tx.send(AudioCommand::ResumeBus { bus_id }).is_ok()
     }
 
-    pub fn stop_bus(&self, bus_id: u32) -> bool {
+    pub fn stop_bus(&self, bus_id: BusID) -> bool {
         self.tx.send(AudioCommand::StopBus { bus_id }).is_ok()
     }
 }
