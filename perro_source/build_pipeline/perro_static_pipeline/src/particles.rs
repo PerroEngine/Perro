@@ -516,4 +516,3 @@ fn parse_vec4_literal(raw: &str) -> Option<[f32; 4]> {
     let mut it = inner.split(',').map(|v| v.trim().parse::<f32>().ok());
     Some([it.next()??, it.next()??, it.next()??, it.next()??])
 }
-

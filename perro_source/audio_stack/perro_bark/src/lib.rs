@@ -2,8 +2,8 @@ use perro_ids::AudioBusID;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor};
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub struct BarkPlayer {
@@ -198,7 +198,11 @@ impl BarkPlayer {
                         .repeat_infinite(),
                 );
             } else {
-                sink.append(decoder.skip_duration(trim_start).take_duration(play_duration));
+                sink.append(
+                    decoder
+                        .skip_duration(trim_start)
+                        .take_duration(play_duration),
+                );
             }
         } else if looped {
             sink.append(decoder.skip_duration(trim_start).repeat_infinite());
@@ -500,7 +504,8 @@ impl BarkPlayer {
 
     fn unreserved_ttl(entry: &CachedAudioAsset) -> Duration {
         if let Some(duration) = entry.duration {
-            let scaled = Duration::from_secs_f32(duration.as_secs_f32() * Self::UNRESERVED_TTL_FACTOR);
+            let scaled =
+                Duration::from_secs_f32(duration.as_secs_f32() * Self::UNRESERVED_TTL_FACTOR);
             return scaled.max(Self::UNRESERVED_TTL_MIN);
         }
         Self::UNRESERVED_TTL_FALLBACK

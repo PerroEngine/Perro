@@ -574,4 +574,3 @@ fn materials_from_gltf_file(
     }
     Ok(out)
 }
-

@@ -335,4 +335,3 @@ fn sanitize_ident(path: &str) -> String {
     }
     out
 }
-

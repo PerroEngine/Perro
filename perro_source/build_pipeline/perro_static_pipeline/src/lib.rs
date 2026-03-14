@@ -52,4 +52,3 @@ pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineErro
     )?;
     Ok(())
 }
-

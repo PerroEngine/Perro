@@ -474,8 +474,8 @@ fn collect_rs_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
     let entries = fs::read_dir(dir)
         .map_err(|err| format!("failed to read directory {}: {err}", dir.display()))?;
     for entry in entries {
-        let entry =
-            entry.map_err(|err| format!("failed to read directory entry in {}: {err}", dir.display()))?;
+        let entry = entry
+            .map_err(|err| format!("failed to read directory entry in {}: {err}", dir.display()))?;
         let path = entry.path();
         if path.is_dir() {
             collect_rs_files_recursive(&path, out)?;
