@@ -48,7 +48,8 @@ pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineErro
     fs::create_dir_all(&static_dir)?;
     fs::write(
         static_dir.join("mod.rs"),
-        "pub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod textures;\n",
+        "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod textures;\n",
     )?;
     Ok(())
 }
+

@@ -990,12 +990,13 @@ fn main() {
 }
 
 fn default_static_mod_rs() -> String {
-    "pub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod textures;\n"
-        .to_string()
+    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod textures;\n".to_string()
 }
 
 fn default_static_scenes_rs() -> String {
-    r#"use perro_scene::StaticScene;
+    r#"#![allow(unused_imports)]
+
+use perro_scene::StaticScene;
 
 pub fn lookup_scene(_path: &str) -> Option<&'static StaticScene> {
     None
@@ -1005,7 +1006,9 @@ pub fn lookup_scene(_path: &str) -> Option<&'static StaticScene> {
 }
 
 fn default_static_materials_rs() -> String {
-    r#"use perro_render_bridge::Material3D;
+    r#"#![allow(unused_imports)]
+
+use perro_render_bridge::Material3D;
 
 pub fn lookup_material(_path: &str) -> Option<&'static Material3D> {
     None
@@ -1015,7 +1018,9 @@ pub fn lookup_material(_path: &str) -> Option<&'static Material3D> {
 }
 
 fn default_static_particles_rs() -> String {
-    r#"use perro_render_bridge::ParticleProfile3D;
+    r#"#![allow(unused_imports)]
+
+use perro_render_bridge::ParticleProfile3D;
 
 pub fn lookup_particle(_path: &str) -> Option<&'static ParticleProfile3D> {
     None
@@ -1025,7 +1030,9 @@ pub fn lookup_particle(_path: &str) -> Option<&'static ParticleProfile3D> {
 }
 
 fn default_static_textures_rs() -> String {
-    r#"pub fn lookup_texture(_path: &str) -> Option<&'static [u8]> {
+    r#"#![allow(unused_imports)]
+
+pub fn lookup_texture(_path: &str) -> Option<&'static [u8]> {
     None
 }
 "#
@@ -1033,7 +1040,8 @@ fn default_static_textures_rs() -> String {
 }
 
 fn default_static_meshes_rs() -> String {
-    r#"#![allow(dead_code)]
+    r#"#![allow(unused_imports)]
+#![allow(dead_code)]
 
 pub fn lookup_mesh(_path: &str) -> Option<&'static [u8]> {
     None
@@ -1412,3 +1420,4 @@ fn crate_group_sort_key(crate_name: &str) -> u8 {
 #[cfg(test)]
 #[path = "../tests/unit/lib_tests.rs"]
 mod tests;
+

@@ -67,7 +67,7 @@ fn on_update(
             volume: 0.5,
             speed: 1.5,
             from_start: 0.1,
-            from_end: 55.0,
+            from_end: 30.0,
         };
 
         play_audio!(res, bob);
