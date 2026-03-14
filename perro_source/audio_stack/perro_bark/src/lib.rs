@@ -98,6 +98,7 @@ enum AudioCommand {
 struct CachedAudioAsset {
     bytes: Arc<[u8]>,
     duration: Option<Duration>,
+    duration_known: bool,
     reserved: bool,
     last_touched: Instant,
 }
@@ -159,22 +160,32 @@ impl BarkPlayer {
         from_start: f32,
         from_end: f32,
     ) -> Result<(), String> {
-        let (bytes, total_duration) = {
+        let bytes = {
             let mut state = self
                 .state
                 .lock()
                 .map_err(|_| "audio mutex poisoned".to_string())?;
             let now = Instant::now();
             Self::prune_finished_playbacks_locked(&mut state, now);
-            let (bytes, duration) = Self::get_or_load_asset_locked(&mut state, source, false)
+            let bytes = Self::get_or_load_asset_locked(&mut state, source, false)
                 .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
-            (bytes, duration)
+            bytes
         };
 
         let cursor = Cursor::new(bytes.clone());
         let reader = BufReader::new(cursor);
         let decoder = Decoder::new(reader)
             .map_err(|err| format!("failed to decode audio `{source}`: {err}"))?;
+        let total_duration = if from_end > 0.0 {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| "audio mutex poisoned".to_string())?;
+            Some(Self::duration_for_source_locked(&mut state, source, bytes.clone()))
+        } else {
+            None
+        }
+        .flatten();
 
         let sink =
             Sink::try_new(&self.handle).map_err(|err| format!("failed to create sink: {err}"))?;
@@ -258,8 +269,8 @@ impl BarkPlayer {
         };
         let now = Instant::now();
         Self::prune_finished_playbacks_locked(&mut state, now);
-        let (_, duration) = Self::get_or_load_asset_locked(&mut state, source, false).ok()?;
-        duration.map(|d| d.as_secs_f32())
+        let bytes = Self::get_or_load_asset_locked(&mut state, source, false).ok()?;
+        Self::duration_for_source_locked(&mut state, source, bytes).map(|d| d.as_secs_f32())
     }
 
     pub fn load_source(&self, source: &str, reserved: bool) -> Result<(), String> {
@@ -458,29 +469,51 @@ impl BarkPlayer {
         state: &mut AudioState,
         source: &str,
         reserved: bool,
-    ) -> Result<(Arc<[u8]>, Option<Duration>), String> {
+    ) -> Result<Arc<[u8]>, String> {
         if let Some(existing) = state.cache.get_mut(source) {
             if reserved {
                 existing.reserved = true;
             }
             existing.last_touched = Instant::now();
-            return Ok((existing.bytes.clone(), existing.duration));
+            return Ok(existing.bytes.clone());
         }
 
         let bytes = perro_io::load_asset(source).map_err(|err| err.to_string())?;
         let shared: Arc<[u8]> = Arc::from(bytes.into_boxed_slice());
-        let duration = Self::decode_duration_from_cached_bytes(shared.clone());
         state.cache_bytes = state.cache_bytes.saturating_add(shared.len());
         state.cache.insert(
             source.to_string(),
             CachedAudioAsset {
                 bytes: shared.clone(),
-                duration,
+                duration: None,
+                duration_known: false,
                 reserved,
                 last_touched: Instant::now(),
             },
         );
-        Ok((shared, duration))
+        Ok(shared)
+    }
+
+    fn duration_for_source_locked(
+        state: &mut AudioState,
+        source: &str,
+        bytes: Arc<[u8]>,
+    ) -> Option<Duration> {
+        let needs_decode = state
+            .cache
+            .get(source)
+            .map(|entry| !entry.duration_known)
+            .unwrap_or(true);
+
+        if needs_decode {
+            let decoded = Self::decode_duration_from_cached_bytes(bytes);
+            if let Some(entry) = state.cache.get_mut(source) {
+                entry.duration = decoded;
+                entry.duration_known = true;
+            }
+        }
+
+        state.cache.get(source).and_then(|entry| entry.duration)
     }
 
     fn mark_source_touched_now(state: &mut AudioState, source: &str, now: Instant) {
