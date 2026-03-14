@@ -32,21 +32,25 @@ Each module page contains:
 - Notes on behavior and caveats
 - Exact load/reserve/drop semantics where applicable
 
+Reserve convention:
+- `load` implies `reserved: false` (auto-evict when no references remain).
+- `reserve` implies `reserved: true` (keep cached until explicit drop).
+
 ## Simple Example
 
 ```rust
-let texture_id = load_texture!(res, "res://textures/smoke.png");
-let mesh_id = load_mesh!(res, "res://meshes/rock.glb");
-let material_id = load_material!(res, "res://materials/smoke.pmat");
-let _reserved = reserve_texture!(res, "res://textures/smoke.png");
-let _ = drop_mesh!(res, "res://meshes/old.glb");
+let texture_id = texture_load!(res, "res://textures/smoke.png");
+let mesh_id = mesh_load!(res, "res://meshes/rock.glb");
+let material_id = material_load!(res, "res://materials/smoke.pmat");
+let _reserved = texture_reserve!(res, "res://textures/smoke.png");
+let _ = mesh_drop!(res, "res://meshes/old.glb");
 
-let music = bus!("music");
-let _ = set_master_volume!(res, 1.0);
-let _ = set_bus_volume!(res, music, 0.7);
-let _ = set_bus_speed!(res, music, 1.0);
+let music = audio_bus!("music");
+let _ = audio_set_master_volume!(res, 1.0);
+let _ = audio_bus_set_volume!(res, music, 0.7);
+let _ = audio_bus_set_speed!(res, music, 1.0);
 
-let _ = play_audio!(
+let _ = audio_play!(
     res,
     Audio {
         source: "res://groantube.mp3",
@@ -59,3 +63,5 @@ let _ = play_audio!(
     }
 );
 ```
+
+

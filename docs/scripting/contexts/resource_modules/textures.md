@@ -4,9 +4,9 @@ Access:
 - `res.Textures()`
 
 Macros:
-- `load_texture!(res, source) -> TextureID`
-- `reserve_texture!(res, source) -> TextureID`
-- `drop_texture!(res, source) -> bool`
+- `texture_load!(res, source) -> TextureID`
+- `texture_reserve!(res, source) -> TextureID`
+- `texture_drop!(res, source) -> bool`
 
 Methods:
 - `res.Textures().load(source) -> TextureID`
@@ -34,12 +34,16 @@ Important behavior:
 - Cache key is the exact `source` string.
 - Repeated `load` or `reserve` for the same `source` returns the same ID.
 - `drop` is source-based, not ID-based.
+- Reserved policy:
+- `reserved: false` (from `load`) means the texture can be automatically evicted from cache when no references remain.
+- `reserved: true` (from `reserve`) means it will not be auto-evicted; only explicit `texture_drop!` removes it.
 
 Example:
 
 ```rust
-let id = load_texture!(res, "res://textures/smoke.png");
-let _same_id = load_texture!(res, "res://textures/smoke.png");
-let _ = reserve_texture!(res, "res://textures/smoke.png");
-let _ = drop_texture!(res, "res://textures/smoke.png");
+let id = texture_load!(res, "res://textures/smoke.png");
+let _same_id = texture_load!(res, "res://textures/smoke.png");
+let _ = texture_reserve!(res, "res://textures/smoke.png");
+let _ = texture_drop!(res, "res://textures/smoke.png");
 ```
+

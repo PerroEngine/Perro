@@ -32,7 +32,7 @@ fn on_update(
     &self,
     ctx: &mut RuntimeContext<'_, RT>,
     res: &ResourceContext<'_, RS>,
-    _ipt: &InputContext<'_, IP>,
+    ipt: &InputContext<'_, IP>,
     self_id: NodeID,
 ) {
     let dt = delta_time!(ctx);
@@ -52,15 +52,16 @@ fn on_update(
         false
     }).unwrap_or(false);
 
-    if should_play {
-        let music = bus!("music");
-        let sfx = bus!("sfx");
+            let music = audio_bus!("music");
+        let sfx = audio_bus!("sfx");
 
-        let _ = set_master_volume!(res, 1.0);
-        let _ = set_bus_volume!(res, music, 0.7);
-        let _ = set_bus_volume!(res, sfx, 1.0);
+        let _ = audio_set_master_volume!(res, 1.0);
+        let _ = audio_bus_set_volume!(res, music, 0.7);
+        let _ = audio_bus_set_volume!(res, sfx, 1.0);
 
-        let bob = Audio {
+       
+
+    let bob = Audio {
             source: "res://groantube.mp3",
             bus: music,
             looped: true,
@@ -70,7 +71,14 @@ fn on_update(
             from_end: 30.0,
         };
 
-        play_audio!(res, bob);
+    if should_play {
+
+
+        audio_play!(res, bob);
+    }
+
+    if key_pressed!(ipt, KeyCode::Space) {
+        audio_stop!(res, bob);
     }
 }
 
@@ -100,3 +108,5 @@ methods!({
         _self_id: NodeID,
     ) {}
 });
+
+

@@ -39,28 +39,28 @@ impl<'res, R: MaterialAPI + ?Sized> MaterialModule<'res, R> {
 }
 
 #[macro_export]
-macro_rules! load_material {
+macro_rules! material_load {
     ($res:expr, $source:expr) => {
         $res.Materials().load($source)
     };
 }
 
 #[macro_export]
-macro_rules! reserve_material {
+macro_rules! material_reserve {
     ($res:expr, $source:expr) => {
         $res.Materials().reserve($source)
     };
 }
 
 #[macro_export]
-macro_rules! drop_material {
+macro_rules! material_drop {
     ($res:expr, $source:expr) => {
         $res.Materials().drop($source)
     };
 }
 
 #[macro_export]
-macro_rules! create_material {
+macro_rules! material_create {
     ($res:expr, $material:expr) => {
         $res.Materials().create($material)
     };

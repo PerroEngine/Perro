@@ -32,21 +32,21 @@ impl<'res, R: TextureAPI + ?Sized> TextureModule<'res, R> {
 }
 
 #[macro_export]
-macro_rules! load_texture {
+macro_rules! texture_load {
     ($res:expr, $source:expr) => {
         $res.Textures().load($source)
     };
 }
 
 #[macro_export]
-macro_rules! reserve_texture {
+macro_rules! texture_reserve {
     ($res:expr, $source:expr) => {
         $res.Textures().reserve($source)
     };
 }
 
 #[macro_export]
-macro_rules! drop_texture {
+macro_rules! texture_drop {
     ($res:expr, $source:expr) => {
         $res.Textures().drop($source)
     };

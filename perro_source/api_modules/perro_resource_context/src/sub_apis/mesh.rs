@@ -32,21 +32,21 @@ impl<'res, R: MeshAPI + ?Sized> MeshModule<'res, R> {
 }
 
 #[macro_export]
-macro_rules! load_mesh {
+macro_rules! mesh_load {
     ($res:expr, $source:expr) => {
         $res.Meshes().load($source)
     };
 }
 
 #[macro_export]
-macro_rules! reserve_mesh {
+macro_rules! mesh_reserve {
     ($res:expr, $source:expr) => {
         $res.Meshes().reserve($source)
     };
 }
 
 #[macro_export]
-macro_rules! drop_mesh {
+macro_rules! mesh_drop {
     ($res:expr, $source:expr) => {
         $res.Meshes().drop($source)
     };

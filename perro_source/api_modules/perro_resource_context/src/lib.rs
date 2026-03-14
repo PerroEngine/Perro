@@ -10,9 +10,10 @@ pub mod prelude {
         TerrainAPI, TerrainModule, TextureAPI, TextureModule,
     };
     pub use crate::{
-        bus, create_material, drop_material, drop_mesh, drop_texture, load_material, load_mesh,
-        load_texture, pause_bus, play_audio, reserve_material, reserve_mesh, reserve_texture,
-        resume_bus, set_bus_speed, set_bus_volume, set_master_volume, stop_all_audio, stop_audio,
-        stop_audio_source, stop_bus,
+        audio_bus, audio_bus_pause, audio_bus_resume, audio_bus_set_speed,
+        audio_bus_set_volume, audio_bus_stop, audio_play, audio_set_master_volume, audio_stop,
+        audio_stop_all, audio_stop_source, audio_length_millis, audio_length_seconds,
+        material_create, material_drop, material_load, material_reserve, mesh_drop, mesh_load,
+        mesh_reserve, texture_drop, texture_load, texture_reserve,
     };
 }

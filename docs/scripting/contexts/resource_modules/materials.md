@@ -4,10 +4,10 @@ Access:
 - `res.Materials()`
 
 Macros:
-- `load_material!(res, source) -> MaterialID`
-- `reserve_material!(res, source) -> MaterialID`
-- `drop_material!(res, source) -> bool`
-- `create_material!(res, material) -> MaterialID`
+- `material_load!(res, source) -> MaterialID`
+- `material_reserve!(res, source) -> MaterialID`
+- `material_drop!(res, source) -> bool`
+- `material_create!(res, material) -> MaterialID`
 
 Methods:
 - `res.Materials().load(source) -> MaterialID`
@@ -40,11 +40,14 @@ What `create_material` does:
 Important behavior:
 - `load/reserve/drop` are source-cache operations.
 - `create_material` is data-driven and bypasses source cache lookup.
+- Reserved policy:
+- `reserved: false` (from `load`) means the material can be automatically evicted from cache when no references remain.
+- `reserved: true` (from `reserve`) means it will not be auto-evicted; only explicit `material_drop!` removes it.
 
 Example:
 
 ```rust
-let src_id = load_material!(res, "res://materials/smoke.pmat");
-let _same_id = reserve_material!(res, "res://materials/smoke.pmat");
-let _ = drop_material!(res, "res://materials/smoke.pmat");
+let src_id = material_load!(res, "res://materials/smoke.pmat");
+let _same_id = material_reserve!(res, "res://materials/smoke.pmat");
+let _ = material_drop!(res, "res://materials/smoke.pmat");
 ```

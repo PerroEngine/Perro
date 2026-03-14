@@ -32,6 +32,7 @@ pub trait AudioAPI {
     fn stop_bus(&self, bus_id: BusID) -> bool;
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct Audio<'a> {
     pub source: &'a str,
     pub bus: BusID,
@@ -130,21 +131,21 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
 }
 
 #[macro_export]
-macro_rules! play_audio {
+macro_rules! audio_play {
     ($res:expr, $audio:expr) => {
         $res.Audio().play($audio)
     };
 }
 
 #[macro_export]
-macro_rules! stop_audio {
+macro_rules! audio_stop {
     ($res:expr, $audio:expr) => {
         $res.Audio().stop_audio($audio)
     };
 }
 
 #[macro_export]
-macro_rules! stop_audio_source {
+macro_rules! audio_stop_source {
     ($res:expr, $source:expr) => {
         $res.Audio().stop_source($source)
     };
@@ -165,56 +166,56 @@ macro_rules! audio_length_millis {
 }
 
 #[macro_export]
-macro_rules! stop_all_audio {
+macro_rules! audio_stop_all {
     ($res:expr) => {
         $res.Audio().stop_all()
     };
 }
 
 #[macro_export]
-macro_rules! set_master_volume {
+macro_rules! audio_set_master_volume {
     ($res:expr, $volume:expr) => {
         $res.Audio().set_master_volume($volume)
     };
 }
 
 #[macro_export]
-macro_rules! set_bus_volume {
+macro_rules! audio_bus_set_volume {
     ($res:expr, $bus_id:expr, $volume:expr) => {
         $res.Audio().set_bus_volume($bus_id, $volume)
     };
 }
 
 #[macro_export]
-macro_rules! set_bus_speed {
+macro_rules! audio_bus_set_speed {
     ($res:expr, $bus_id:expr, $speed:expr) => {
         $res.Audio().set_bus_speed($bus_id, $speed)
     };
 }
 
 #[macro_export]
-macro_rules! pause_bus {
+macro_rules! audio_bus_pause {
     ($res:expr, $bus_id:expr) => {
         $res.Audio().pause_bus($bus_id)
     };
 }
 
 #[macro_export]
-macro_rules! resume_bus {
+macro_rules! audio_bus_resume {
     ($res:expr, $bus_id:expr) => {
         $res.Audio().resume_bus($bus_id)
     };
 }
 
 #[macro_export]
-macro_rules! stop_bus {
+macro_rules! audio_bus_stop {
     ($res:expr, $bus_id:expr) => {
         $res.Audio().stop_bus($bus_id)
     };
 }
 
 #[macro_export]
-macro_rules! bus {
+macro_rules! audio_bus {
     ($name:literal) => {{
         const BUS_ID: $crate::sub_apis::BusID = $crate::sub_apis::bus_id($name);
         BUS_ID

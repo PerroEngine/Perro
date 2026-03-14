@@ -4,9 +4,9 @@ Access:
 - `res.Meshes()`
 
 Macros:
-- `load_mesh!(res, source) -> MeshID`
-- `reserve_mesh!(res, source) -> MeshID`
-- `drop_mesh!(res, source) -> bool`
+- `mesh_load!(res, source) -> MeshID`
+- `mesh_reserve!(res, source) -> MeshID`
+- `mesh_drop!(res, source) -> bool`
 
 Methods:
 - `res.Meshes().load(source) -> MeshID`
@@ -34,11 +34,18 @@ Important behavior:
 - Exact source string is the cache key.
 - Repeated `load`/`reserve` returns the same `MeshID` for that source.
 - `drop` operates by source path.
+- Reserved policy:
+- `reserved: false` (from `load`) means the mesh can be automatically evicted from cache when no references remain.
+- `reserved: true` (from `reserve`) means it will not be auto-evicted; only explicit `mesh_drop!` removes it.
+
+Practical tip:
+- If a complex mesh is used repeatedly and you see lag spikes from drop/recreate churn, call `mesh_reserve!` to keep it cached.
 
 Example:
 
 ```rust
-let id = load_mesh!(res, "res://meshes/rock.glb");
-let _same_id = reserve_mesh!(res, "res://meshes/rock.glb");
-let _ = drop_mesh!(res, "res://meshes/rock.glb");
+let id = mesh_load!(res, "res://meshes/rock.glb");
+let _same_id = mesh_reserve!(res, "res://meshes/rock.glb");
+let _ = mesh_drop!(res, "res://meshes/rock.glb");
 ```
+
