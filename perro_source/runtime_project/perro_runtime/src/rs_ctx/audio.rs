@@ -3,6 +3,36 @@ use perro_ids::BusID;
 use perro_resource_context::sub_apis::AudioAPI;
 
 impl AudioAPI for RuntimeResourceApi {
+    fn load_audio_source(&self, source: &str) -> bool {
+        let Ok(guard) = self.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.load_source(source)
+    }
+
+    fn reserve_audio_source(&self, source: &str) -> bool {
+        let Ok(guard) = self.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.reserve_source(source)
+    }
+
+    fn drop_audio_source(&self, source: &str) -> bool {
+        let Ok(guard) = self.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.drop_source(source)
+    }
+
     fn play_audio(
         &self,
         source: &str,

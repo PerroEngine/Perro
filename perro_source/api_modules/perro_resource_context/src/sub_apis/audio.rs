@@ -1,6 +1,9 @@
 use perro_ids::BusID;
 
 pub trait AudioAPI {
+    fn load_audio_source(&self, source: &str) -> bool;
+    fn reserve_audio_source(&self, source: &str) -> bool;
+    fn drop_audio_source(&self, source: &str) -> bool;
     fn play_audio(
         &self,
         source: &str,
@@ -50,6 +53,21 @@ pub struct AudioModule<'res, R: AudioAPI + ?Sized> {
 impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
     pub fn new(api: &'res R) -> Self {
         Self { api }
+    }
+
+    #[inline]
+    pub fn load_source<S: AsRef<str>>(&self, source: S) -> bool {
+        self.api.load_audio_source(source.as_ref())
+    }
+
+    #[inline]
+    pub fn reserve_source<S: AsRef<str>>(&self, source: S) -> bool {
+        self.api.reserve_audio_source(source.as_ref())
+    }
+
+    #[inline]
+    pub fn drop_source<S: AsRef<str>>(&self, source: S) -> bool {
+        self.api.drop_audio_source(source.as_ref())
     }
 
     #[inline]
@@ -128,6 +146,27 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
     pub fn stop_bus(&self, bus_id: BusID) -> bool {
         self.api.stop_bus(bus_id)
     }
+}
+
+#[macro_export]
+macro_rules! audio_load {
+    ($res:expr, $source:expr) => {
+        $res.Audio().load_source($source)
+    };
+}
+
+#[macro_export]
+macro_rules! audio_reserve {
+    ($res:expr, $source:expr) => {
+        $res.Audio().reserve_source($source)
+    };
+}
+
+#[macro_export]
+macro_rules! audio_drop {
+    ($res:expr, $source:expr) => {
+        $res.Audio().drop_source($source)
+    };
 }
 
 #[macro_export]

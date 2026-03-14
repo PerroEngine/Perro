@@ -7,6 +7,9 @@ Access:
 Macros:
 
 - `audio_bus!("name") -> BusID`
+- `audio_load!(res, source) -> bool`
+- `audio_reserve!(res, source) -> bool`
+- `audio_drop!(res, source) -> bool`
 - `audio_play!(res, Audio { source, bus, looped, volume, speed, from_start, from_end }) -> bool`
 - `audio_stop!(res, Audio { source, bus, looped, volume, speed, from_start, from_end }) -> bool`
 - `audio_stop_source!(res, source) -> bool`
@@ -36,6 +39,9 @@ Audio {
 
 Module methods:
 
+- `res.Audio().load_source(source) -> bool`
+- `res.Audio().reserve_source(source) -> bool`
+- `res.Audio().drop_source(source) -> bool`
 - `res.Audio().play(Audio { source, bus, looped, volume, speed, from_start, from_end }) -> bool`
 - `res.Audio().stop_audio(Audio { source, bus, looped, volume, speed, from_start, from_end }) -> bool`
 - `res.Audio().stop_source(source) -> bool`
@@ -51,6 +57,9 @@ Module methods:
 
 Macro/method parity:
 
+- `audio_load!(res, source)` is equivalent to `res.Audio().load_source(source)`.
+- `audio_reserve!(res, source)` is equivalent to `res.Audio().reserve_source(source)`.
+- `audio_drop!(res, source)` is equivalent to `res.Audio().drop_source(source)`.
 - `audio_play!(res, cfg)` is equivalent to `res.Audio().play(cfg)`.
 - `audio_stop!(res, cfg)` is equivalent to `res.Audio().stop_audio(cfg)`.
 - Other audio macros map directly to same-named `res.Audio()` methods.
@@ -59,6 +68,10 @@ How it maps to `perro_bark`:
 
 - Script call enqueues an audio command via `RuntimeResourceApi`.
 - `perro_bark` handles commands on its own audio thread.
+- Audio bytes/duration are cached by source path for reuse.
+- `audio_load!` caches as unreserved (`reserved: false`).
+- `audio_reserve!` caches as reserved (`reserved: true`), preventing automatic eviction.
+- Unreserved cached audio is evicted after idle time with `ttl = max(2.0 * audio_length, 250ms)`, and idle timer starts when playback ends/stops.
 - Playback uses one sink per source path; replaying same source replaces previous playback.
 - Final loudness is multiplicative:
   - `final_volume = master_volume * bus_volume * Audio.volume`
@@ -107,5 +120,3 @@ if let Some(length) = audio_length_seconds!(res, "res://groantube.mp3") {
     let _ = audio_play!(res, half);
 }
 ```
-
-

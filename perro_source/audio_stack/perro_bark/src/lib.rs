@@ -2,9 +2,9 @@ use perro_ids::BusID;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Sender};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub struct BarkPlayer {
     _stream: OutputStream,
@@ -34,9 +34,18 @@ struct AudioState {
     master_volume: f32,
     buses: HashMap<BusID, BusState>,
     playbacks: Vec<Playback>,
+    cache: HashMap<String, CachedAudioAsset>,
+    cache_bytes: usize,
 }
 
 enum AudioCommand {
+    Load {
+        source: String,
+        reserved: bool,
+    },
+    DropAsset {
+        source: String,
+    },
     Play {
         source: String,
         bus_id: BusID,
@@ -79,6 +88,18 @@ enum AudioCommand {
     StopBus {
         bus_id: BusID,
     },
+    SourceLength {
+        source: String,
+        reply: Sender<Option<f32>>,
+    },
+}
+
+#[derive(Clone)]
+struct CachedAudioAsset {
+    bytes: Arc<[u8]>,
+    duration: Option<Duration>,
+    reserved: bool,
+    last_touched: Instant,
 }
 
 #[derive(Clone)]
@@ -87,8 +108,29 @@ pub struct AudioController {
 }
 
 impl BarkPlayer {
-    fn decoded_total_duration_from_bytes(bytes: &[u8]) -> Option<Duration> {
-        let cursor = Cursor::new(bytes.to_vec());
+    const CACHE_SOFT_LIMIT_BYTES: usize = 128 * 1024 * 1024;
+    const UNRESERVED_TTL_FACTOR: f32 = 2.0;
+    const UNRESERVED_TTL_FALLBACK: Duration = Duration::from_secs(1);
+    const UNRESERVED_TTL_MIN: Duration = Duration::from_millis(250);
+
+    pub fn new() -> Result<Self, String> {
+        let (stream, handle) = OutputStream::try_default()
+            .map_err(|err| format!("audio output init failed: {err}"))?;
+        Ok(Self {
+            _stream: stream,
+            handle,
+            state: Mutex::new(AudioState {
+                master_volume: 1.0,
+                buses: HashMap::new(),
+                playbacks: Vec::new(),
+                cache: HashMap::new(),
+                cache_bytes: 0,
+            }),
+        })
+    }
+
+    fn decode_duration_from_cached_bytes(bytes: Arc<[u8]>) -> Option<Duration> {
+        let cursor = Cursor::new(bytes);
         let reader = BufReader::new(cursor);
         let decoder = Decoder::new(reader).ok()?;
         if let Some(duration) = decoder.total_duration() {
@@ -107,20 +149,6 @@ impl BarkPlayer {
         Some(Duration::from_secs_f64(seconds))
     }
 
-    pub fn new() -> Result<Self, String> {
-        let (stream, handle) = OutputStream::try_default()
-            .map_err(|err| format!("audio output init failed: {err}"))?;
-        Ok(Self {
-            _stream: stream,
-            handle,
-            state: Mutex::new(AudioState {
-                master_volume: 1.0,
-                buses: HashMap::new(),
-                playbacks: Vec::new(),
-            }),
-        })
-    }
-
     pub fn play_source(
         &self,
         source: &str,
@@ -131,26 +159,19 @@ impl BarkPlayer {
         from_start: f32,
         from_end: f32,
     ) -> Result<(), String> {
-        let bytes = perro_io::load_asset(source)
-            .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
-        self.play_bytes(
-            source, bytes, bus_id, looped, volume, speed, from_start, from_end,
-        )
-    }
+        let (bytes, total_duration) = {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| "audio mutex poisoned".to_string())?;
+            let now = Instant::now();
+            Self::prune_finished_playbacks_locked(&mut state, now);
+            let (bytes, duration) = Self::get_or_load_asset_locked(&mut state, source, false)
+                .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
+            (bytes, duration)
+        };
 
-    pub fn play_bytes(
-        &self,
-        source: &str,
-        bytes: Vec<u8>,
-        bus_id: BusID,
-        looped: bool,
-        volume: f32,
-        speed: f32,
-        from_start: f32,
-        from_end: f32,
-    ) -> Result<(), String> {
-        let bytes_for_duration = bytes.clone();
-        let cursor = Cursor::new(bytes);
+        let cursor = Cursor::new(bytes.clone());
         let reader = BufReader::new(cursor);
         let decoder = Decoder::new(reader)
             .map_err(|err| format!("failed to decode audio `{source}`: {err}"))?;
@@ -161,9 +182,6 @@ impl BarkPlayer {
 
         let trim_start = Duration::from_secs_f32(from_start.max(0.0));
         let trim_end = Duration::from_secs_f32(from_end.max(0.0));
-        let total_duration = decoder
-            .total_duration()
-            .or_else(|| Self::decoded_total_duration_from_bytes(&bytes_for_duration));
         if let Some(total_duration) = total_duration {
             let after_start = total_duration.saturating_sub(trim_start);
             let play_duration = after_start.saturating_sub(trim_end);
@@ -225,28 +243,68 @@ impl BarkPlayer {
             from_end: from_end.max(0.0),
             sink,
         });
+        Self::evict_unreserved_unused_locked(&mut state, Instant::now());
+        Self::enforce_cache_soft_limit_locked(&mut state);
         Ok(())
     }
 
     pub fn source_length_seconds(&self, source: &str) -> Option<f32> {
-        let bytes = perro_io::load_asset(source).ok()?;
-        Self::decoded_total_duration_from_bytes(&bytes).map(|duration| duration.as_secs_f32())
+        let Ok(mut state) = self.state.lock() else {
+            return None;
+        };
+        let now = Instant::now();
+        Self::prune_finished_playbacks_locked(&mut state, now);
+        let (_, duration) = Self::get_or_load_asset_locked(&mut state, source, false).ok()?;
+        duration.map(|d| d.as_secs_f32())
+    }
+
+    pub fn load_source(&self, source: &str, reserved: bool) -> Result<(), String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "audio mutex poisoned".to_string())?;
+        let now = Instant::now();
+        Self::prune_finished_playbacks_locked(&mut state, now);
+        let _ = Self::get_or_load_asset_locked(&mut state, source, reserved)
+            .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
+        Self::evict_unreserved_unused_locked(&mut state, now);
+        Self::enforce_cache_soft_limit_locked(&mut state);
+        Ok(())
+    }
+
+    pub fn drop_source_asset(&self, source: &str) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        let had_asset = if let Some(entry) = state.cache.remove(source) {
+            state.cache_bytes = state.cache_bytes.saturating_sub(entry.bytes.len());
+            true
+        } else {
+            false
+        };
+        Self::prune_finished_playbacks_locked(&mut state, Instant::now());
+        had_asset
     }
 
     pub fn stop_source(&self, source: &str) -> bool {
         let Ok(mut state) = self.state.lock() else {
             return false;
         };
+        let now = Instant::now();
+        Self::prune_finished_playbacks_locked(&mut state, now);
         let mut removed_any = false;
         let mut i = 0usize;
         while i < state.playbacks.len() {
             if state.playbacks[i].source == source {
-                state.playbacks.remove(i).sink.stop();
+                let removed = state.playbacks.remove(i);
+                removed.sink.stop();
+                Self::mark_source_touched_now(&mut state, &removed.source, now);
                 removed_any = true;
             } else {
                 i += 1;
             }
         }
+        Self::evict_unreserved_unused_locked(&mut state, now);
         removed_any
     }
 
@@ -263,6 +321,8 @@ impl BarkPlayer {
         let Ok(mut state) = self.state.lock() else {
             return false;
         };
+        let now = Instant::now();
+        Self::prune_finished_playbacks_locked(&mut state, now);
         let target_volume = volume.max(0.0);
         let target_speed = speed.max(0.01);
         let target_from_start = from_start.max(0.0);
@@ -278,19 +338,27 @@ impl BarkPlayer {
                 && (p.from_start - target_from_start).abs() < f32::EPSILON
                 && (p.from_end - target_from_end).abs() < f32::EPSILON
             {
-                state.playbacks.remove(i).sink.stop();
+                let removed = state.playbacks.remove(i);
+                removed.sink.stop();
+                Self::mark_source_touched_now(&mut state, &removed.source, now);
+                Self::evict_unreserved_unused_locked(&mut state, now);
                 return true;
             }
             i += 1;
         }
+        Self::evict_unreserved_unused_locked(&mut state, now);
         false
     }
 
     pub fn stop_all(&self) {
         if let Ok(mut state) = self.state.lock() {
-            for playback in state.playbacks.drain(..) {
+            let now = Instant::now();
+            let drained: Vec<_> = state.playbacks.drain(..).collect();
+            for playback in drained {
+                Self::mark_source_touched_now(&mut state, &playback.source, now);
                 playback.sink.stop();
             }
+            Self::evict_unreserved_unused_locked(&mut state, now);
         }
     }
 
@@ -370,13 +438,120 @@ impl BarkPlayer {
         let mut i = 0usize;
         while i < state.playbacks.len() {
             if state.playbacks[i].bus_id == bus_id {
-                state.playbacks.remove(i).sink.stop();
+                let removed = state.playbacks.remove(i);
+                removed.sink.stop();
+                Self::mark_source_touched_now(&mut state, &removed.source, Instant::now());
                 removed_any = true;
             } else {
                 i += 1;
             }
         }
+        Self::evict_unreserved_unused_locked(&mut state, Instant::now());
         removed_any
+    }
+
+    fn get_or_load_asset_locked(
+        state: &mut AudioState,
+        source: &str,
+        reserved: bool,
+    ) -> Result<(Arc<[u8]>, Option<Duration>), String> {
+        if let Some(existing) = state.cache.get_mut(source) {
+            if reserved {
+                existing.reserved = true;
+            }
+            existing.last_touched = Instant::now();
+            return Ok((existing.bytes.clone(), existing.duration));
+        }
+
+        let bytes = perro_io::load_asset(source).map_err(|err| err.to_string())?;
+        let shared: Arc<[u8]> = Arc::from(bytes.into_boxed_slice());
+        let duration = Self::decode_duration_from_cached_bytes(shared.clone());
+        state.cache_bytes = state.cache_bytes.saturating_add(shared.len());
+        state.cache.insert(
+            source.to_string(),
+            CachedAudioAsset {
+                bytes: shared.clone(),
+                duration,
+                reserved,
+                last_touched: Instant::now(),
+            },
+        );
+        Ok((shared, duration))
+    }
+
+    fn mark_source_touched_now(state: &mut AudioState, source: &str, now: Instant) {
+        if let Some(entry) = state.cache.get_mut(source) {
+            entry.last_touched = now;
+        }
+    }
+
+    fn prune_finished_playbacks_locked(state: &mut AudioState, now: Instant) {
+        let mut i = 0usize;
+        while i < state.playbacks.len() {
+            if state.playbacks[i].sink.empty() {
+                let source = state.playbacks.remove(i).source;
+                Self::mark_source_touched_now(state, &source, now);
+            } else {
+                i += 1;
+            }
+        }
+        Self::evict_unreserved_unused_locked(state, now);
+    }
+
+    fn unreserved_ttl(entry: &CachedAudioAsset) -> Duration {
+        if let Some(duration) = entry.duration {
+            let scaled = Duration::from_secs_f32(duration.as_secs_f32() * Self::UNRESERVED_TTL_FACTOR);
+            return scaled.max(Self::UNRESERVED_TTL_MIN);
+        }
+        Self::UNRESERVED_TTL_FALLBACK
+    }
+
+    fn evict_unreserved_unused_locked(state: &mut AudioState, now: Instant) {
+        let mut in_use = HashMap::<&str, usize>::new();
+        for playback in &state.playbacks {
+            in_use
+                .entry(playback.source.as_str())
+                .and_modify(|v| *v += 1)
+                .or_insert(1);
+        }
+        let mut to_remove = Vec::new();
+        for (source, entry) in &state.cache {
+            if entry.reserved || in_use.contains_key(source.as_str()) {
+                continue;
+            }
+            if now.duration_since(entry.last_touched) >= Self::unreserved_ttl(entry) {
+                to_remove.push(source.clone());
+            }
+        }
+        for source in to_remove {
+            if let Some(entry) = state.cache.remove(&source) {
+                state.cache_bytes = state.cache_bytes.saturating_sub(entry.bytes.len());
+            }
+        }
+    }
+
+    fn enforce_cache_soft_limit_locked(state: &mut AudioState) {
+        if state.cache_bytes <= Self::CACHE_SOFT_LIMIT_BYTES {
+            return;
+        }
+        let mut to_remove = Vec::new();
+        for (source, entry) in &state.cache {
+            if entry.reserved {
+                continue;
+            }
+            let in_use = state.playbacks.iter().any(|p| p.source == *source);
+            if !in_use {
+                to_remove.push(source.clone());
+            }
+        }
+        for source in to_remove {
+            if state.cache_bytes <= Self::CACHE_SOFT_LIMIT_BYTES {
+                break;
+            }
+            if let Some(entry) = state.cache.remove(&source) {
+                state.cache_bytes = state.cache_bytes.saturating_sub(entry.bytes.len());
+            }
+        }
     }
 
     fn refresh_volumes(state: &mut AudioState) {
@@ -407,11 +582,6 @@ impl BarkPlayer {
 }
 
 impl AudioController {
-    fn decode_length_seconds(source: &str) -> Option<f32> {
-        let bytes = perro_io::load_asset(source).ok()?;
-        BarkPlayer::decoded_total_duration_from_bytes(&bytes).map(|duration| duration.as_secs_f32())
-    }
-
     pub fn new() -> Result<Self, String> {
         let (tx, rx) = mpsc::channel::<AudioCommand>();
         std::thread::Builder::new()
@@ -423,6 +593,12 @@ impl AudioController {
 
                 while let Ok(cmd) = rx.recv() {
                     match cmd {
+                        AudioCommand::Load { source, reserved } => {
+                            let _ = player.load_source(&source, reserved);
+                        }
+                        AudioCommand::DropAsset { source } => {
+                            let _ = player.drop_source_asset(&source);
+                        }
                         AudioCommand::Play {
                             source,
                             bus_id,
@@ -467,6 +643,9 @@ impl AudioController {
                         AudioCommand::StopBus { bus_id } => {
                             let _ = player.stop_bus(bus_id);
                         }
+                        AudioCommand::SourceLength { source, reply } => {
+                            let _ = reply.send(player.source_length_seconds(&source));
+                        }
                     }
                 }
             })
@@ -497,8 +676,45 @@ impl AudioController {
             .is_ok()
     }
 
+    pub fn load_source(&self, source: &str) -> bool {
+        self.tx
+            .send(AudioCommand::Load {
+                source: source.to_string(),
+                reserved: false,
+            })
+            .is_ok()
+    }
+
+    pub fn reserve_source(&self, source: &str) -> bool {
+        self.tx
+            .send(AudioCommand::Load {
+                source: source.to_string(),
+                reserved: true,
+            })
+            .is_ok()
+    }
+
+    pub fn drop_source(&self, source: &str) -> bool {
+        self.tx
+            .send(AudioCommand::DropAsset {
+                source: source.to_string(),
+            })
+            .is_ok()
+    }
+
     pub fn source_length_seconds(&self, source: &str) -> Option<f32> {
-        Self::decode_length_seconds(source)
+        let (reply_tx, reply_rx) = mpsc::channel::<Option<f32>>();
+        if self
+            .tx
+            .send(AudioCommand::SourceLength {
+                source: source.to_string(),
+                reply: reply_tx,
+            })
+            .is_err()
+        {
+            return None;
+        }
+        reply_rx.recv().ok().flatten()
     }
 
     pub fn stop_source(&self, source: &str) -> bool {
