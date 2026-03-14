@@ -47,8 +47,11 @@ impl Runtime {
         let resource_api = self.resource_api.clone();
         let res: ResourceContext<'_, crate::RuntimeResourceApi> =
             ResourceContext::new(resource_api.as_ref());
-        let input = self.input.clone();
-        let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
+        let input_ptr = std::ptr::addr_of!(self.input);
+        // SAFETY: During callback dispatch, input is treated as immutable runtime state.
+        // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
+        let ipt: InputContext<'_, perro_input::InputSnapshot> =
+            unsafe { InputContext::new(&*input_ptr) };
         let mut ctx = RuntimeContext::new(self);
         behavior.on_all_init(&mut ctx, &res, &ipt, id);
     }
@@ -68,8 +71,11 @@ impl Runtime {
         let resource_api = self.resource_api.clone();
         let res: ResourceContext<'_, crate::RuntimeResourceApi> =
             ResourceContext::new(resource_api.as_ref());
-        let input = self.input.clone();
-        let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
+        let input_ptr = std::ptr::addr_of!(self.input);
+        // SAFETY: During callback dispatch, input is treated as immutable runtime state.
+        // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
+        let ipt: InputContext<'_, perro_input::InputSnapshot> =
+            unsafe { InputContext::new(&*input_ptr) };
         let mut ctx = RuntimeContext::new(self);
         behavior.on_removal(&mut ctx, &res, &ipt, id);
     }
@@ -94,8 +100,11 @@ impl Runtime {
         let resource_api = self.resource_api.clone();
         let res: ResourceContext<'_, crate::RuntimeResourceApi> =
             ResourceContext::new(resource_api.as_ref());
-        let input = self.input.clone();
-        let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
+        let input_ptr = std::ptr::addr_of!(self.input);
+        // SAFETY: During callback dispatch, input is treated as immutable runtime state.
+        // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
+        let ipt: InputContext<'_, perro_input::InputSnapshot> =
+            unsafe { InputContext::new(&*input_ptr) };
         let mut ctx = RuntimeContext::new(self);
         behavior.on_update(&mut ctx, &res, &ipt, id);
     }
@@ -112,8 +121,11 @@ impl Runtime {
         let resource_api = self.resource_api.clone();
         let res: ResourceContext<'_, crate::RuntimeResourceApi> =
             ResourceContext::new(resource_api.as_ref());
-        let input = self.input.clone();
-        let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
+        let input_ptr = std::ptr::addr_of!(self.input);
+        // SAFETY: During callback dispatch, input is treated as immutable runtime state.
+        // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
+        let ipt: InputContext<'_, perro_input::InputSnapshot> =
+            unsafe { InputContext::new(&*input_ptr) };
         let mut ctx = RuntimeContext::new(self);
         behavior.on_fixed_update(&mut ctx, &res, &ipt, id);
     }
@@ -188,8 +200,11 @@ impl ScriptAPI for Runtime {
         let resource_api = self.resource_api.clone();
         let res: ResourceContext<'_, crate::RuntimeResourceApi> =
             ResourceContext::new(resource_api.as_ref());
-        let input = self.input.clone();
-        let ipt: InputContext<'_, perro_input::InputSnapshot> = InputContext::new(&input);
+        let input_ptr = std::ptr::addr_of!(self.input);
+        // SAFETY: During callback dispatch, input is treated as immutable runtime state.
+        // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
+        let ipt: InputContext<'_, perro_input::InputSnapshot> =
+            unsafe { InputContext::new(&*input_ptr) };
         let mut ctx = RuntimeContext::new(self);
         behavior.call_method(method, &mut ctx, &res, &ipt, script_id, params)
     }
