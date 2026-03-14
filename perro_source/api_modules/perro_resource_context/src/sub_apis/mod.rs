@@ -7,6 +7,6 @@ mod texture;
 pub use audio::{Audio, AudioAPI, AudioModule, bus_id};
 pub use material::{MaterialAPI, MaterialModule};
 pub use mesh::{MeshAPI, MeshModule};
-pub use perro_ids::BusID;
+pub use perro_ids::AudioBusID;
 pub use terrain::{TerrainAPI, TerrainModule};
 pub use texture::{TextureAPI, TextureModule};

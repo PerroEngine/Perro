@@ -1,4 +1,4 @@
-use perro_ids::BusID;
+use perro_ids::AudioBusID;
 
 pub trait AudioAPI {
     fn load_audio_source(&self, source: &str) -> bool;
@@ -7,7 +7,7 @@ pub trait AudioAPI {
     fn play_audio(
         &self,
         source: &str,
-        bus_id: BusID,
+        bus_id: AudioBusID,
         looped: bool,
         volume: f32,
         speed: f32,
@@ -17,7 +17,7 @@ pub trait AudioAPI {
     fn stop_audio(
         &self,
         source: &str,
-        bus_id: BusID,
+        bus_id: AudioBusID,
         looped: bool,
         volume: f32,
         speed: f32,
@@ -28,17 +28,17 @@ pub trait AudioAPI {
     fn audio_length_seconds(&self, source: &str) -> Option<f32>;
     fn stop_all_audio(&self);
     fn set_master_volume(&self, volume: f32) -> bool;
-    fn set_bus_volume(&self, bus_id: BusID, volume: f32) -> bool;
-    fn set_bus_speed(&self, bus_id: BusID, speed: f32) -> bool;
-    fn pause_bus(&self, bus_id: BusID) -> bool;
-    fn resume_bus(&self, bus_id: BusID) -> bool;
-    fn stop_bus(&self, bus_id: BusID) -> bool;
+    fn set_bus_volume(&self, bus_id: AudioBusID, volume: f32) -> bool;
+    fn set_bus_speed(&self, bus_id: AudioBusID, speed: f32) -> bool;
+    fn pause_bus(&self, bus_id: AudioBusID) -> bool;
+    fn resume_bus(&self, bus_id: AudioBusID) -> bool;
+    fn stop_bus(&self, bus_id: AudioBusID) -> bool;
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Audio<'a> {
     pub source: &'a str,
-    pub bus: BusID,
+    pub bus: AudioBusID,
     pub looped: bool,
     pub volume: f32,
     pub speed: f32,
@@ -123,27 +123,27 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
     }
 
     #[inline]
-    pub fn set_bus_volume(&self, bus_id: BusID, volume: f32) -> bool {
+    pub fn set_bus_volume(&self, bus_id: AudioBusID, volume: f32) -> bool {
         self.api.set_bus_volume(bus_id, volume)
     }
 
     #[inline]
-    pub fn set_bus_speed(&self, bus_id: BusID, speed: f32) -> bool {
+    pub fn set_bus_speed(&self, bus_id: AudioBusID, speed: f32) -> bool {
         self.api.set_bus_speed(bus_id, speed)
     }
 
     #[inline]
-    pub fn pause_bus(&self, bus_id: BusID) -> bool {
+    pub fn pause_bus(&self, bus_id: AudioBusID) -> bool {
         self.api.pause_bus(bus_id)
     }
 
     #[inline]
-    pub fn resume_bus(&self, bus_id: BusID) -> bool {
+    pub fn resume_bus(&self, bus_id: AudioBusID) -> bool {
         self.api.resume_bus(bus_id)
     }
 
     #[inline]
-    pub fn stop_bus(&self, bus_id: BusID) -> bool {
+    pub fn stop_bus(&self, bus_id: AudioBusID) -> bool {
         self.api.stop_bus(bus_id)
     }
 }
@@ -256,11 +256,11 @@ macro_rules! audio_bus_stop {
 #[macro_export]
 macro_rules! audio_bus {
     ($name:literal) => {{
-        const BUS_ID: $crate::sub_apis::BusID = $crate::sub_apis::bus_id($name);
+        const BUS_ID: $crate::sub_apis::AudioBusID = $crate::sub_apis::bus_id($name);
         BUS_ID
     }};
 }
 
-pub const fn bus_id(name: &str) -> BusID {
-    BusID::from_string(name)
+pub const fn bus_id(name: &str) -> AudioBusID {
+    AudioBusID::from_string(name)
 }

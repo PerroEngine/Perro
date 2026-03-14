@@ -147,7 +147,7 @@ define_generational!(
     "Signal ID - hash of signal name (or generational). Used for connect/emit."
 );
 define_generational!(
-    BusID,
+    AudioBusID,
     "Bus ID - deterministic ID from bus name. Used for audio routing."
 );
 define_generational!(
@@ -220,7 +220,7 @@ impl SignalID {
     }
 }
 
-impl BusID {
+impl AudioBusID {
     /// Deterministic ID from bus name. Uses hash; generation 0.
     pub const fn from_string(s: &str) -> Self {
         Self::from_u64(string_to_u64(s))

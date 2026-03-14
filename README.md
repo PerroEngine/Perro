@@ -17,6 +17,7 @@ For more details, see the full documentation: [perroengine.com/docs](https://www
 Local reference:
 
 - [Docs Index](docs/index.md)
+- [Perro CLI](docs/perro_cli.md)
 
 ## Contributions
 

@@ -6,7 +6,7 @@ pub use api::ResourceContext;
 pub mod prelude {
     pub use crate::api::{ResourceAPI, ResourceContext};
     pub use crate::sub_apis::{
-        Audio, AudioAPI, AudioModule, BusID, MaterialAPI, MaterialModule, MeshAPI, MeshModule,
+        Audio, AudioAPI, AudioModule, AudioBusID, MaterialAPI, MaterialModule, MeshAPI, MeshModule,
         TerrainAPI, TerrainModule, TextureAPI, TextureModule,
     };
     pub use crate::{

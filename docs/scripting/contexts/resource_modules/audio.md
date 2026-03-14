@@ -6,7 +6,7 @@ Access:
 
 Macros:
 
-- `audio_bus!("name") -> BusID`
+- `audio_bus!("name") -> AudioBusID`
 - `audio_load!(res, source) -> bool`
 - `audio_reserve!(res, source) -> bool`
 - `audio_drop!(res, source) -> bool`
@@ -28,7 +28,7 @@ Type:
 ```rust
 Audio {
     source: &str, // res://...
-    bus: BusID,   // e.g. audio_bus!("music")
+    bus: AudioBusID,   // e.g. audio_bus!("music")
     looped: bool,
     volume: f32,  // 1.0 normal, 0.0 silent, >1 amplified
     speed: f32,   // 1.0 normal playback speed (also changes pitch)

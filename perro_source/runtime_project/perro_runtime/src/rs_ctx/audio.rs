@@ -1,5 +1,5 @@
 use super::core::RuntimeResourceApi;
-use perro_ids::BusID;
+use perro_ids::AudioBusID;
 use perro_resource_context::sub_apis::AudioAPI;
 
 impl AudioAPI for RuntimeResourceApi {
@@ -36,7 +36,7 @@ impl AudioAPI for RuntimeResourceApi {
     fn play_audio(
         &self,
         source: &str,
-        bus_id: BusID,
+        bus_id: AudioBusID,
         looped: bool,
         volume: f32,
         speed: f32,
@@ -55,7 +55,7 @@ impl AudioAPI for RuntimeResourceApi {
     fn stop_audio(
         &self,
         source: &str,
-        bus_id: BusID,
+        bus_id: AudioBusID,
         looped: bool,
         volume: f32,
         speed: f32,
@@ -110,7 +110,7 @@ impl AudioAPI for RuntimeResourceApi {
         player.set_master_volume(volume)
     }
 
-    fn set_bus_volume(&self, bus_id: BusID, volume: f32) -> bool {
+    fn set_bus_volume(&self, bus_id: AudioBusID, volume: f32) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
         };
@@ -120,7 +120,7 @@ impl AudioAPI for RuntimeResourceApi {
         player.set_bus_volume(bus_id, volume)
     }
 
-    fn set_bus_speed(&self, bus_id: BusID, speed: f32) -> bool {
+    fn set_bus_speed(&self, bus_id: AudioBusID, speed: f32) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
         };
@@ -130,7 +130,7 @@ impl AudioAPI for RuntimeResourceApi {
         player.set_bus_speed(bus_id, speed)
     }
 
-    fn pause_bus(&self, bus_id: BusID) -> bool {
+    fn pause_bus(&self, bus_id: AudioBusID) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
         };
@@ -140,7 +140,7 @@ impl AudioAPI for RuntimeResourceApi {
         player.pause_bus(bus_id)
     }
 
-    fn resume_bus(&self, bus_id: BusID) -> bool {
+    fn resume_bus(&self, bus_id: AudioBusID) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
         };
@@ -150,7 +150,7 @@ impl AudioAPI for RuntimeResourceApi {
         player.resume_bus(bus_id)
     }
 
-    fn stop_bus(&self, bus_id: BusID) -> bool {
+    fn stop_bus(&self, bus_id: AudioBusID) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
         };
