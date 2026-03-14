@@ -1875,4 +1875,3 @@ fn generated_script_rel(rel: &str) -> String {
 fn rel_to_path(base: &Path, rel: &str) -> PathBuf {
     base.join(rel.replace('/', "\\"))
 }
-

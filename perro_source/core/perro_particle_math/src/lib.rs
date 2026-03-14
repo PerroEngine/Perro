@@ -81,7 +81,11 @@ impl Program {
         eval_ops(&self.ops, t, life, params, stack)
     }
 
-    pub fn eval_particle(&self, input: &ParticleEvalInput<'_>, stack: &mut Vec<f32>) -> Option<f32> {
+    pub fn eval_particle(
+        &self,
+        input: &ParticleEvalInput<'_>,
+        stack: &mut Vec<f32>,
+    ) -> Option<f32> {
         eval_ops_particle(&self.ops, input, stack)
     }
 

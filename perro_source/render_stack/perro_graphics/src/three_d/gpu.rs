@@ -3015,4 +3015,3 @@ fn build_scene_uniform(
 
     scene
 }
-

@@ -823,4 +823,3 @@ macro_rules! query_first {
         $crate::query!($ctx, $kind $args).into_iter().next()
     }};
 }
-

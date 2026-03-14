@@ -8,6 +8,8 @@ pub trait AudioAPI {
         looped: bool,
         volume: f32,
         speed: f32,
+        from_start: f32,
+        from_end: f32,
     ) -> bool;
     fn stop_audio(
         &self,
@@ -16,8 +18,11 @@ pub trait AudioAPI {
         looped: bool,
         volume: f32,
         speed: f32,
+        from_start: f32,
+        from_end: f32,
     ) -> bool;
     fn stop_audio_source(&self, source: &str) -> bool;
+    fn audio_length_seconds(&self, source: &str) -> Option<f32>;
     fn stop_all_audio(&self);
     fn set_master_volume(&self, volume: f32) -> bool;
     fn set_bus_volume(&self, bus_id: BusID, volume: f32) -> bool;
@@ -33,6 +38,8 @@ pub struct Audio<'a> {
     pub looped: bool,
     pub volume: f32,
     pub speed: f32,
+    pub from_start: f32,
+    pub from_end: f32,
 }
 
 pub struct AudioModule<'res, R: AudioAPI + ?Sized> {
@@ -52,6 +59,8 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
             audio.looped,
             audio.volume,
             audio.speed,
+            audio.from_start,
+            audio.from_end,
         )
     }
 
@@ -63,12 +72,25 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
             audio.looped,
             audio.volume,
             audio.speed,
+            audio.from_start,
+            audio.from_end,
         )
     }
 
     #[inline]
     pub fn stop_source<S: AsRef<str>>(&self, source: S) -> bool {
         self.api.stop_audio_source(source.as_ref())
+    }
+
+    #[inline]
+    pub fn source_length_seconds<S: AsRef<str>>(&self, source: S) -> Option<f32> {
+        self.api.audio_length_seconds(source.as_ref())
+    }
+
+    #[inline]
+    pub fn source_length_millis<S: AsRef<str>>(&self, source: S) -> Option<u64> {
+        self.source_length_seconds(source)
+            .map(|seconds| (seconds * 1000.0).max(0.0) as u64)
     }
 
     #[inline]
@@ -125,6 +147,20 @@ macro_rules! stop_audio {
 macro_rules! stop_audio_source {
     ($res:expr, $source:expr) => {
         $res.Audio().stop_source($source)
+    };
+}
+
+#[macro_export]
+macro_rules! audio_length_seconds {
+    ($res:expr, $source:expr) => {
+        $res.Audio().source_length_seconds($source)
+    };
+}
+
+#[macro_export]
+macro_rules! audio_length_millis {
+    ($res:expr, $source:expr) => {
+        $res.Audio().source_length_millis($source)
     };
 }
 

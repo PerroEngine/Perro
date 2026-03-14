@@ -1094,10 +1094,7 @@ fn ensure_project_manifest_deps(path: &Path) -> std::io::Result<()> {
     let mut changed = false;
 
     if !deps_table.contains_key("perro") {
-        deps_table.insert(
-            "perro".to_string(),
-            Value::String("0.1.0".to_string()),
-        );
+        deps_table.insert("perro".to_string(), Value::String("0.1.0".to_string()));
         changed = true;
     }
 
@@ -1133,10 +1130,7 @@ fn ensure_scripts_manifest_deps(path: &Path) -> std::io::Result<()> {
     let mut changed = false;
 
     if !deps_table.contains_key("perro") {
-        deps_table.insert(
-            "perro".to_string(),
-            Value::String("0.1.0".to_string()),
-        );
+        deps_table.insert("perro".to_string(), Value::String("0.1.0".to_string()));
         changed = true;
     }
 

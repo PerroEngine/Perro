@@ -2,8 +2,9 @@ use perro_ids::BusID;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor};
-use std::sync::mpsc::{self, Sender};
 use std::sync::Mutex;
+use std::sync::mpsc::{self, Sender};
+use std::time::Duration;
 
 pub struct BarkPlayer {
     _stream: OutputStream,
@@ -17,6 +18,8 @@ struct Playback {
     looped: bool,
     base_volume: f32,
     speed: f32,
+    from_start: f32,
+    from_end: f32,
     sink: Sink,
 }
 
@@ -40,22 +43,42 @@ enum AudioCommand {
         looped: bool,
         volume: f32,
         speed: f32,
+        from_start: f32,
+        from_end: f32,
     },
-    Stop { source: String },
+    Stop {
+        source: String,
+    },
     StopMatch {
         source: String,
         bus_id: BusID,
         looped: bool,
         volume: f32,
         speed: f32,
+        from_start: f32,
+        from_end: f32,
     },
     StopAll,
-    SetMasterVolume { volume: f32 },
-    SetBusVolume { bus_id: BusID, volume: f32 },
-    SetBusSpeed { bus_id: BusID, speed: f32 },
-    PauseBus { bus_id: BusID },
-    ResumeBus { bus_id: BusID },
-    StopBus { bus_id: BusID },
+    SetMasterVolume {
+        volume: f32,
+    },
+    SetBusVolume {
+        bus_id: BusID,
+        volume: f32,
+    },
+    SetBusSpeed {
+        bus_id: BusID,
+        speed: f32,
+    },
+    PauseBus {
+        bus_id: BusID,
+    },
+    ResumeBus {
+        bus_id: BusID,
+    },
+    StopBus {
+        bus_id: BusID,
+    },
 }
 
 #[derive(Clone)]
@@ -64,9 +87,29 @@ pub struct AudioController {
 }
 
 impl BarkPlayer {
+    fn decoded_total_duration_from_bytes(bytes: &[u8]) -> Option<Duration> {
+        let cursor = Cursor::new(bytes.to_vec());
+        let reader = BufReader::new(cursor);
+        let decoder = Decoder::new(reader).ok()?;
+        if let Some(duration) = decoder.total_duration() {
+            return Some(duration);
+        }
+        let channels = decoder.channels() as f64;
+        let sample_rate = decoder.sample_rate() as f64;
+        if channels <= 0.0 || sample_rate <= 0.0 {
+            return None;
+        }
+        let sample_count = decoder.count() as f64;
+        if sample_count <= 0.0 {
+            return None;
+        }
+        let seconds = sample_count / (channels * sample_rate);
+        Some(Duration::from_secs_f64(seconds))
+    }
+
     pub fn new() -> Result<Self, String> {
-        let (stream, handle) =
-            OutputStream::try_default().map_err(|err| format!("audio output init failed: {err}"))?;
+        let (stream, handle) = OutputStream::try_default()
+            .map_err(|err| format!("audio output init failed: {err}"))?;
         Ok(Self {
             _stream: stream,
             handle,
@@ -85,10 +128,14 @@ impl BarkPlayer {
         looped: bool,
         volume: f32,
         speed: f32,
+        from_start: f32,
+        from_end: f32,
     ) -> Result<(), String> {
         let bytes = perro_io::load_asset(source)
             .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
-        self.play_bytes(source, bytes, bus_id, looped, volume, speed)
+        self.play_bytes(
+            source, bytes, bus_id, looped, volume, speed, from_start, from_end,
+        )
     }
 
     pub fn play_bytes(
@@ -99,7 +146,10 @@ impl BarkPlayer {
         looped: bool,
         volume: f32,
         speed: f32,
+        from_start: f32,
+        from_end: f32,
     ) -> Result<(), String> {
+        let bytes_for_duration = bytes.clone();
         let cursor = Cursor::new(bytes);
         let reader = BufReader::new(cursor);
         let decoder = Decoder::new(reader)
@@ -109,10 +159,33 @@ impl BarkPlayer {
             Sink::try_new(&self.handle).map_err(|err| format!("failed to create sink: {err}"))?;
         sink.set_speed(speed.max(0.01));
 
-        if looped {
-            sink.append(decoder.repeat_infinite());
+        let trim_start = Duration::from_secs_f32(from_start.max(0.0));
+        let trim_end = Duration::from_secs_f32(from_end.max(0.0));
+        let total_duration = decoder
+            .total_duration()
+            .or_else(|| Self::decoded_total_duration_from_bytes(&bytes_for_duration));
+        if let Some(total_duration) = total_duration {
+            let after_start = total_duration.saturating_sub(trim_start);
+            let play_duration = after_start.saturating_sub(trim_end);
+            if play_duration.is_zero() {
+                return Err(format!(
+                    "invalid trim for `{source}`: from_start + from_end removes full clip"
+                ));
+            }
+            if looped {
+                sink.append(
+                    decoder
+                        .skip_duration(trim_start)
+                        .take_duration(play_duration)
+                        .repeat_infinite(),
+                );
+            } else {
+                sink.append(decoder.skip_duration(trim_start).take_duration(play_duration));
+            }
+        } else if looped {
+            sink.append(decoder.skip_duration(trim_start).repeat_infinite());
         } else {
-            sink.append(decoder);
+            sink.append(decoder.skip_duration(trim_start));
         }
 
         let mut state = self
@@ -148,9 +221,16 @@ impl BarkPlayer {
             looped,
             base_volume: requested_volume,
             speed: speed.max(0.01),
+            from_start: from_start.max(0.0),
+            from_end: from_end.max(0.0),
             sink,
         });
         Ok(())
+    }
+
+    pub fn source_length_seconds(&self, source: &str) -> Option<f32> {
+        let bytes = perro_io::load_asset(source).ok()?;
+        Self::decoded_total_duration_from_bytes(&bytes).map(|duration| duration.as_secs_f32())
     }
 
     pub fn stop_source(&self, source: &str) -> bool {
@@ -177,12 +257,16 @@ impl BarkPlayer {
         looped: bool,
         volume: f32,
         speed: f32,
+        from_start: f32,
+        from_end: f32,
     ) -> bool {
         let Ok(mut state) = self.state.lock() else {
             return false;
         };
         let target_volume = volume.max(0.0);
         let target_speed = speed.max(0.01);
+        let target_from_start = from_start.max(0.0);
+        let target_from_end = from_end.max(0.0);
         let mut i = 0usize;
         while i < state.playbacks.len() {
             let p = &state.playbacks[i];
@@ -191,6 +275,8 @@ impl BarkPlayer {
                 && p.looped == looped
                 && (p.base_volume - target_volume).abs() < f32::EPSILON
                 && (p.speed - target_speed).abs() < f32::EPSILON
+                && (p.from_start - target_from_start).abs() < f32::EPSILON
+                && (p.from_end - target_from_end).abs() < f32::EPSILON
             {
                 state.playbacks.remove(i).sink.stop();
                 return true;
@@ -313,12 +399,19 @@ impl BarkPlayer {
                 .get(&playback.bus_id)
                 .map(|bus| bus.speed.max(0.01))
                 .unwrap_or(1.0);
-            playback.sink.set_speed(playback.speed.max(0.01) * bus_speed);
+            playback
+                .sink
+                .set_speed(playback.speed.max(0.01) * bus_speed);
         }
     }
 }
 
 impl AudioController {
+    fn decode_length_seconds(source: &str) -> Option<f32> {
+        let bytes = perro_io::load_asset(source).ok()?;
+        BarkPlayer::decoded_total_duration_from_bytes(&bytes).map(|duration| duration.as_secs_f32())
+    }
+
     pub fn new() -> Result<Self, String> {
         let (tx, rx) = mpsc::channel::<AudioCommand>();
         std::thread::Builder::new()
@@ -336,8 +429,12 @@ impl AudioController {
                             looped,
                             volume,
                             speed,
+                            from_start,
+                            from_end,
                         } => {
-                            let _ = player.play_source(&source, bus_id, looped, volume, speed);
+                            let _ = player.play_source(
+                                &source, bus_id, looped, volume, speed, from_start, from_end,
+                            );
                         }
                         AudioCommand::Stop { source } => {
                             let _ = player.stop_source(&source);
@@ -348,11 +445,17 @@ impl AudioController {
                             looped,
                             volume,
                             speed,
+                            from_start,
+                            from_end,
                         } => {
-                            let _ = player.stop_match(&source, bus_id, looped, volume, speed);
+                            let _ = player.stop_match(
+                                &source, bus_id, looped, volume, speed, from_start, from_end,
+                            );
                         }
                         AudioCommand::StopAll => player.stop_all(),
-                        AudioCommand::SetMasterVolume { volume } => player.set_master_volume(volume),
+                        AudioCommand::SetMasterVolume { volume } => {
+                            player.set_master_volume(volume)
+                        }
                         AudioCommand::SetBusVolume { bus_id, volume } => {
                             player.set_bus_volume(bus_id, volume)
                         }
@@ -378,6 +481,8 @@ impl AudioController {
         looped: bool,
         volume: f32,
         speed: f32,
+        from_start: f32,
+        from_end: f32,
     ) -> bool {
         self.tx
             .send(AudioCommand::Play {
@@ -386,8 +491,14 @@ impl AudioController {
                 looped,
                 volume,
                 speed,
+                from_start,
+                from_end,
             })
             .is_ok()
+    }
+
+    pub fn source_length_seconds(&self, source: &str) -> Option<f32> {
+        Self::decode_length_seconds(source)
     }
 
     pub fn stop_source(&self, source: &str) -> bool {
@@ -405,6 +516,8 @@ impl AudioController {
         looped: bool,
         volume: f32,
         speed: f32,
+        from_start: f32,
+        from_end: f32,
     ) -> bool {
         self.tx
             .send(AudioCommand::StopMatch {
@@ -413,6 +526,8 @@ impl AudioController {
                 looped,
                 volume,
                 speed,
+                from_start,
+                from_end,
             })
             .is_ok()
     }
@@ -422,7 +537,9 @@ impl AudioController {
     }
 
     pub fn set_master_volume(&self, volume: f32) -> bool {
-        self.tx.send(AudioCommand::SetMasterVolume { volume }).is_ok()
+        self.tx
+            .send(AudioCommand::SetMasterVolume { volume })
+            .is_ok()
     }
 
     pub fn set_bus_volume(&self, bus_id: BusID, volume: f32) -> bool {
@@ -432,7 +549,9 @@ impl AudioController {
     }
 
     pub fn set_bus_speed(&self, bus_id: BusID, speed: f32) -> bool {
-        self.tx.send(AudioCommand::SetBusSpeed { bus_id, speed }).is_ok()
+        self.tx
+            .send(AudioCommand::SetBusSpeed { bus_id, speed })
+            .is_ok()
     }
 
     pub fn pause_bus(&self, bus_id: BusID) -> bool {

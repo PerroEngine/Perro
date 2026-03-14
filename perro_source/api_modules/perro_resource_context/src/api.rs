@@ -3,7 +3,10 @@ use crate::sub_apis::{
     TerrainModule, TextureAPI, TextureModule,
 };
 
-pub trait ResourceAPI: AudioAPI + TextureAPI + MeshAPI + MaterialAPI + TerrainAPI + Send + Sync {}
+pub trait ResourceAPI:
+    AudioAPI + TextureAPI + MeshAPI + MaterialAPI + TerrainAPI + Send + Sync
+{
+}
 impl<T> ResourceAPI for T where
     T: AudioAPI + TextureAPI + MeshAPI + MaterialAPI + TerrainAPI + Send + Sync
 {

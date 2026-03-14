@@ -221,7 +221,12 @@ fn update_workspace_vscode_linked_projects(
         .join("scripts")
         .join("Cargo.toml")
         .canonicalize()
-        .unwrap_or_else(|_| project_dir.join(".perro").join("scripts").join("Cargo.toml"));
+        .unwrap_or_else(|_| {
+            project_dir
+                .join(".perro")
+                .join("scripts")
+                .join("Cargo.toml")
+        });
     let res_dir = project_dir
         .join("res")
         .canonicalize()
@@ -301,13 +306,19 @@ fn update_workspace_vscode_linked_projects(
         workspace_root.join(trimmed).exists()
     });
 
-    let vfs_present = vfs_arr.iter().any(|v| v.as_str() == Some(vfs_entry.as_str()));
+    let vfs_present = vfs_arr
+        .iter()
+        .any(|v| v.as_str() == Some(vfs_entry.as_str()));
     if !vfs_present {
         vfs_arr.push(Value::String(vfs_entry));
     }
 
-    let rendered = serde_json::to_string_pretty(&json)
-        .map_err(|err| format!("failed to render {} as JSON: {err}", settings_path.display()))?;
+    let rendered = serde_json::to_string_pretty(&json).map_err(|err| {
+        format!(
+            "failed to render {} as JSON: {err}",
+            settings_path.display()
+        )
+    })?;
     fs::write(&settings_path, format!("{rendered}\n"))
         .map_err(|err| format!("failed to write {}: {err}", settings_path.display()))?;
     Ok(())

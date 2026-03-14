@@ -10,6 +10,8 @@ impl AudioAPI for RuntimeResourceApi {
         looped: bool,
         volume: f32,
         speed: f32,
+        from_start: f32,
+        from_end: f32,
     ) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
@@ -17,7 +19,7 @@ impl AudioAPI for RuntimeResourceApi {
         let Some(player) = guard.as_ref() else {
             return false;
         };
-        player.play_source(source, bus_id, looped, volume, speed)
+        player.play_source(source, bus_id, looped, volume, speed, from_start, from_end)
     }
 
     fn stop_audio(
@@ -27,6 +29,8 @@ impl AudioAPI for RuntimeResourceApi {
         looped: bool,
         volume: f32,
         speed: f32,
+        from_start: f32,
+        from_end: f32,
     ) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
@@ -34,7 +38,7 @@ impl AudioAPI for RuntimeResourceApi {
         let Some(player) = guard.as_ref() else {
             return false;
         };
-        player.stop_match(source, bus_id, looped, volume, speed)
+        player.stop_match(source, bus_id, looped, volume, speed, from_start, from_end)
     }
 
     fn stop_audio_source(&self, source: &str) -> bool {
@@ -45,6 +49,16 @@ impl AudioAPI for RuntimeResourceApi {
             return false;
         };
         player.stop_source(source)
+    }
+
+    fn audio_length_seconds(&self, source: &str) -> Option<f32> {
+        let Ok(guard) = self.bark.lock() else {
+            return None;
+        };
+        let Some(player) = guard.as_ref() else {
+            return None;
+        };
+        player.source_length_seconds(source)
     }
 
     fn stop_all_audio(&self) {

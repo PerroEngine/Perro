@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 use std::sync::Arc;
 
-use super::common::{PerroAssetsEntryMeta, FLAG_COMPRESSED, read_header, read_index_entry};
+use super::common::{FLAG_COMPRESSED, PerroAssetsEntryMeta, read_header, read_index_entry};
 
 pub type PerroAssetsEntry = PerroAssetsEntryMeta;
 

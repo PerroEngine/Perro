@@ -33,8 +33,8 @@ pub fn set_project_root(root: ProjectRoot) {
     *PROJECT_ROOT.write().unwrap() = Some(root.clone());
 
     if let ProjectRoot::PerroAssets { data, .. } = root {
-        let archive = PerroAssetsArchive::open_from_bytes(data)
-            .expect("Failed to open PerroAssets archive");
+        let archive =
+            PerroAssetsArchive::open_from_bytes(data).expect("Failed to open PerroAssets archive");
         *PERRO_ASSETS_ARCHIVE.write().unwrap() = Some(archive);
     }
 }
@@ -132,8 +132,6 @@ pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
             let mut file = File::create(pb)?;
             file.write_all(data)
         }
-        ResolvedPath::PerroAssets(_) => {
-            Err(io::Error::other("Cannot save to PerroAssets archive"))
-        }
+        ResolvedPath::PerroAssets(_) => Err(io::Error::other("Cannot save to PerroAssets archive")),
     }
 }

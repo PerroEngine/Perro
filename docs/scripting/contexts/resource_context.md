@@ -54,6 +54,8 @@ let _ = play_audio!(
         looped: true,
         volume: 1.0,
         speed: 1.0,
+        from_start: 0.0,
+        from_end: 0.0,
     }
 );
 ```

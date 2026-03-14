@@ -118,10 +118,9 @@ impl Runtime {
                 _ => None,
             });
             if let Some(light) = ambient_light_data {
-                self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::SetAmbientLight {
-                    node,
-                    light,
-                })));
+                self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                    Command3D::SetAmbientLight { node, light },
+                )));
                 visible_now.insert(node);
             }
 
@@ -138,10 +137,9 @@ impl Runtime {
                 _ => None,
             });
             if let Some(light) = ray_light_data {
-                self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::SetRayLight {
-                    node,
-                    light,
-                })));
+                self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                    Command3D::SetRayLight { node, light },
+                )));
                 visible_now.insert(node);
             }
 
@@ -163,10 +161,9 @@ impl Runtime {
                 _ => None,
             });
             if let Some(light) = point_light_data {
-                self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::SetPointLight {
-                    node,
-                    light,
-                })));
+                self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                    Command3D::SetPointLight { node, light },
+                )));
                 visible_now.insert(node);
             }
 
@@ -193,10 +190,9 @@ impl Runtime {
                 _ => None,
             });
             if let Some(light) = spot_light_data {
-                self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::SetSpotLight {
-                    node,
-                    light,
-                })));
+                self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                    Command3D::SetSpotLight { node, light },
+                )));
                 visible_now.insert(node);
             }
 
@@ -210,17 +206,17 @@ impl Runtime {
             });
             if let Some((mesh, material, model)) = mesh_data
                 && effective_visible
-                    && let Some((mesh, material)) =
-                        self.resolve_render_mesh_assets(node, mesh, material)
-                    {
-                        self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::Draw {
-                            mesh,
-                            material,
-                            node,
-                            model,
-                        })));
-                        visible_now.insert(node);
-                    }
+                && let Some((mesh, material)) =
+                    self.resolve_render_mesh_assets(node, mesh, material)
+            {
+                self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::Draw {
+                    mesh,
+                    material,
+                    node,
+                    model,
+                })));
+                visible_now.insert(node);
+            }
             let terrain_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::TerrainInstance3D(terrain) => Some((
                     terrain.transform.to_mat4(),
@@ -232,88 +228,89 @@ impl Runtime {
             });
             if let Some((world_from_terrain, show_debug_vertices, show_debug_edges, terrain_id)) =
                 terrain_data
-                && effective_visible {
-                    if !self.ensure_terrain_instance_data(node) {
-                        continue;
-                    }
-                    let active_terrain_id = if terrain_id.is_nil() {
-                        self.nodes
-                            .get(node)
-                            .and_then(|scene_node| match &scene_node.data {
-                                SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
-                                _ => None,
-                            })
+                && effective_visible
+            {
+                if !self.ensure_terrain_instance_data(node) {
+                    continue;
+                }
+                let active_terrain_id = if terrain_id.is_nil() {
+                    self.nodes
+                        .get(node)
+                        .and_then(|scene_node| match &scene_node.data {
+                            SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
+                            _ => None,
+                        })
+                } else {
+                    Some(terrain_id)
+                };
+                let (chunk_size, chunk_snapshots) = {
+                    let terrain_store = self
+                        .terrain_store
+                        .lock()
+                        .expect("terrain store mutex poisoned");
+                    if let Some(id) = active_terrain_id
+                        && let Some(data) = terrain_store.get(id)
+                    {
+                        let chunk_size = data.chunk_size_meters();
+                        let chunk_snapshots: Vec<(ChunkCoord, TerrainChunk)> = data
+                            .chunks()
+                            .map(|(coord, chunk)| (coord, chunk.clone()))
+                            .collect();
+                        let mut chunk_snapshots = chunk_snapshots;
+                        chunk_snapshots.sort_unstable_by_key(|(coord, _)| (coord.x, coord.z));
+                        (Some(chunk_size), chunk_snapshots)
                     } else {
-                        Some(terrain_id)
-                    };
-                    let (chunk_size, chunk_snapshots) = {
-                        let terrain_store = self
-                            .terrain_store
-                            .lock()
-                            .expect("terrain store mutex poisoned");
-                        if let Some(id) = active_terrain_id
-                            && let Some(data) = terrain_store.get(id)
-                        {
-                            let chunk_size = data.chunk_size_meters();
-                            let chunk_snapshots: Vec<(ChunkCoord, TerrainChunk)> = data
-                                .chunks()
-                                .map(|(coord, chunk)| (coord, chunk.clone()))
-                                .collect();
-                            let mut chunk_snapshots = chunk_snapshots;
-                            chunk_snapshots.sort_unstable_by_key(|(coord, _)| (coord.x, coord.z));
-                            (Some(chunk_size), chunk_snapshots)
-                        } else {
-                            (None, Vec::new())
-                        }
-                    };
-                    if let Some(chunk_size) = chunk_size {
-                        let terrain_signature = self.queue_terrain_chunk_draws(
+                        (None, Vec::new())
+                    }
+                };
+                if let Some(chunk_size) = chunk_size {
+                    let terrain_signature = self.queue_terrain_chunk_draws(
+                        node,
+                        chunk_size,
+                        &chunk_snapshots,
+                        world_from_terrain,
+                    );
+                    if show_debug_vertices || show_debug_edges {
+                        let debug_signature = terrain_debug_signature(
                             node,
-                            chunk_size,
-                            &chunk_snapshots,
+                            active_terrain_id,
+                            show_debug_vertices,
+                            show_debug_edges,
                             world_from_terrain,
+                            terrain_signature,
                         );
-                        if show_debug_vertices || show_debug_edges {
-                            let debug_signature = terrain_debug_signature(
+                        let prev = self.render_3d.terrain_debug_state.get(&node).copied();
+                        let needs_rebuild = prev
+                            .map(|state| state.signature != debug_signature)
+                            .unwrap_or(true);
+                        if needs_rebuild {
+                            if let Some(prev) = prev {
+                                Self::queue_remove_terrain_debug_nodes(self, node, prev);
+                            }
+                            let (point_count, edge_count) = Self::queue_terrain_debug_draws(
+                                self,
                                 node,
-                                active_terrain_id,
+                                chunk_size,
+                                &chunk_snapshots,
+                                world_from_terrain,
                                 show_debug_vertices,
                                 show_debug_edges,
-                                world_from_terrain,
-                                terrain_signature,
                             );
-                            let prev = self.render_3d.terrain_debug_state.get(&node).copied();
-                            let needs_rebuild = prev
-                                .map(|state| state.signature != debug_signature)
-                                .unwrap_or(true);
-                            if needs_rebuild {
-                                if let Some(prev) = prev {
-                                    Self::queue_remove_terrain_debug_nodes(self, node, prev);
-                                }
-                                let (point_count, edge_count) = Self::queue_terrain_debug_draws(
-                                    self,
-                                    node,
-                                    chunk_size,
-                                    &chunk_snapshots,
-                                    world_from_terrain,
-                                    show_debug_vertices,
-                                    show_debug_edges,
-                                );
-                                self.render_3d.terrain_debug_state.insert(
-                                    node,
-                                    crate::runtime::TerrainDebugState {
-                                        signature: debug_signature,
-                                        point_count,
-                                        edge_count,
-                                    },
-                                );
-                            }
-                        } else if let Some(prev) = self.render_3d.terrain_debug_state.remove(&node) {
-                            Self::queue_remove_terrain_debug_nodes(self, node, prev);
+                            self.render_3d.terrain_debug_state.insert(
+                                node,
+                                crate::runtime::TerrainDebugState {
+                                    signature: debug_signature,
+                                    point_count,
+                                    edge_count,
+                                },
+                            );
                         }
+                    } else if let Some(prev) = self.render_3d.terrain_debug_state.remove(&node) {
+                        Self::queue_remove_terrain_debug_nodes(self, node, prev);
                     }
-                    visible_now.insert(node);
                 }
+                visible_now.insert(node);
+            }
 
             let point_emitter_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::ParticleEmitter3D(emitter) => Some(emitter.clone()),
@@ -334,39 +331,41 @@ impl Runtime {
                     .unwrap_or(perro_project::ParticleSimDefault::Cpu);
                 let sim_mode = resolve_particle_sim_mode(emitter.sim_mode, default_sim_mode);
                 let render_mode = resolve_particle_render_mode(emitter.render_mode);
-                self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::UpsertPointParticles {
-                    node,
-                    particles: Box::new(PointParticles3DState {
-                        model: emitter.transform.to_mat4().to_cols_array_2d(),
-                        active: emitter.active,
-                        looping: emitter.looping,
-                        prewarm: emitter.prewarm,
-                        lifetime_min,
-                        lifetime_max,
-                        alive_budget: derived_particle_budget(
-                            emitter.spawn_rate.max(0.0),
+                self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                    Command3D::UpsertPointParticles {
+                        node,
+                        particles: Box::new(PointParticles3DState {
+                            model: emitter.transform.to_mat4().to_cols_array_2d(),
+                            active: emitter.active,
+                            looping: emitter.looping,
+                            prewarm: emitter.prewarm,
+                            lifetime_min,
                             lifetime_max,
-                        ),
-                        emission_rate: emitter.spawn_rate.max(0.0),
-                        speed_min: profile.speed_min.max(0.0),
-                        speed_max: profile.speed_max.max(profile.speed_min.max(0.0)),
-                        spread_radians: profile.spread_radians.clamp(0.0, std::f32::consts::PI),
-                        size: profile.size.max(1.0),
-                        size_min: profile.size_min.max(0.01),
-                        size_max: profile.size_max.max(profile.size_min.max(0.01)),
-                        gravity: profile.force,
-                        color_start: profile.color_start,
-                        color_end: profile.color_end,
-                        emissive: profile.emissive,
-                        seed: emitter.seed,
-                        params: emitter.params.clone(),
-                        simulation_time: emitter.internal_simulation_time.max(0.0),
-                        simulation_delta: self.time.delta.max(0.0),
-                        profile,
-                        sim_mode,
-                        render_mode,
-                    }),
-                })));
+                            alive_budget: derived_particle_budget(
+                                emitter.spawn_rate.max(0.0),
+                                lifetime_max,
+                            ),
+                            emission_rate: emitter.spawn_rate.max(0.0),
+                            speed_min: profile.speed_min.max(0.0),
+                            speed_max: profile.speed_max.max(profile.speed_min.max(0.0)),
+                            spread_radians: profile.spread_radians.clamp(0.0, std::f32::consts::PI),
+                            size: profile.size.max(1.0),
+                            size_min: profile.size_min.max(0.01),
+                            size_max: profile.size_max.max(profile.size_min.max(0.01)),
+                            gravity: profile.force,
+                            color_start: profile.color_start,
+                            color_end: profile.color_end,
+                            emissive: profile.emissive,
+                            seed: emitter.seed,
+                            params: emitter.params.clone(),
+                            simulation_time: emitter.internal_simulation_time.max(0.0),
+                            simulation_delta: self.time.delta.max(0.0),
+                            profile,
+                            sim_mode,
+                            render_mode,
+                        }),
+                    },
+                )));
                 visible_now.insert(node);
             }
         }
@@ -389,7 +388,9 @@ impl Runtime {
             if let Some(prev) = self.render_3d.terrain_debug_state.remove(&node) {
                 Self::queue_remove_terrain_debug_nodes(self, node, prev);
             }
-            self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode { node })));
+            self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+                node,
+            })));
         }
     }
 
@@ -582,23 +583,27 @@ impl Runtime {
                     } else {
                         chunk_size_meters * 0.1
                     };
-                    self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::DrawDebugPoint3D {
-                        node: terrain_debug_point_node(node, point_count),
-                        position: world.to_array(),
-                        size: debug_vertex_size(avg_edge_len),
-                    })));
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                        Command3D::DrawDebugPoint3D {
+                            node: terrain_debug_point_node(node, point_count),
+                            position: world.to_array(),
+                            size: debug_vertex_size(avg_edge_len),
+                        },
+                    )));
                     point_count = point_count.saturating_add(1);
                 }
             }
 
             if show_edges {
                 for (a, b, len) in edge_pairs {
-                    self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::DrawDebugLine3D {
-                        node: terrain_debug_edge_node(node, edge_count),
-                        start: world_vertices[a].to_array(),
-                        end: world_vertices[b].to_array(),
-                        thickness: debug_edge_thickness(len),
-                    })));
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                        Command3D::DrawDebugLine3D {
+                            node: terrain_debug_edge_node(node, edge_count),
+                            start: world_vertices[a].to_array(),
+                            end: world_vertices[b].to_array(),
+                            thickness: debug_edge_thickness(len),
+                        },
+                    )));
                     edge_count = edge_count.saturating_add(1);
                 }
             }
