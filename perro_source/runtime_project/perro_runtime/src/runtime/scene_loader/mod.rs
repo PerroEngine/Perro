@@ -88,6 +88,7 @@ impl Runtime {
             self.dynamic_script_registry.clear();
         }
         self.script_library = None;
+        self.node_tag_index.clear();
         let mode_label;
         let mut source_load = None;
         let mut parse = None;
@@ -131,6 +132,7 @@ impl Runtime {
             .map(|(id, script_path)| (*id, script_path.clone()))
             .collect();
         self.rebuild_internal_node_schedules();
+        self.rebuild_node_tag_index();
         self.attach_scene_scripts(script_nodes)?;
         let stats = SceneLoadStats {
             mode_label,

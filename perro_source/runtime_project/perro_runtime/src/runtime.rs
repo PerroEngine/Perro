@@ -6,7 +6,7 @@ use crate::{
 };
 use ahash::{AHashMap, AHashSet};
 use libloading::Library;
-use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
+use perro_ids::{MaterialID, MeshID, NodeID, TagID, TextureID};
 use perro_input::{InputContext, InputSnapshot, KeyCode, MouseButton};
 use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType, SceneNodeData, Spatial};
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
@@ -44,6 +44,8 @@ pub struct Runtime {
     transform_visit_indices: Vec<u32>,
     internal_update_nodes: Vec<NodeID>,
     internal_fixed_update_nodes: Vec<NodeID>,
+    internal_update_pos: Vec<Option<usize>>,
+    internal_fixed_update_pos: Vec<Option<usize>>,
 
     render_2d: Render2DState,
     render_3d: Render3DState,
@@ -52,6 +54,7 @@ pub struct Runtime {
     pub(crate) signal_emit_scratch: Vec<SignalConnection>,
     pub(crate) script_library: Option<Library>,
     pub(crate) dynamic_script_registry: AHashMap<String, RuntimeScriptCtor>,
+    pub(crate) node_tag_index: AHashMap<TagID, AHashSet<NodeID>>,
     pub(crate) resource_api: Arc<RuntimeResourceApi>,
     pub(crate) input: InputSnapshot,
 }
@@ -374,6 +377,8 @@ impl Runtime {
             transform_visit_indices: Vec::new(),
             internal_update_nodes: Vec::new(),
             internal_fixed_update_nodes: Vec::new(),
+            internal_update_pos: Vec::new(),
+            internal_fixed_update_pos: Vec::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
             terrain_store: terrain_store.clone(),
@@ -381,6 +386,7 @@ impl Runtime {
             signal_emit_scratch: Vec::new(),
             script_library: None,
             dynamic_script_registry: AHashMap::default(),
+            node_tag_index: AHashMap::default(),
             resource_api: RuntimeResourceApi::new(None, terrain_store),
             input: InputSnapshot::new(),
         }
@@ -598,39 +604,90 @@ impl Runtime {
     pub(crate) fn rebuild_internal_node_schedules(&mut self) {
         self.internal_update_nodes.clear();
         self.internal_fixed_update_nodes.clear();
+        self.internal_update_pos.clear();
+        self.internal_fixed_update_pos.clear();
+        let mut pairs = Vec::new();
         for (id, node) in self.nodes.iter() {
-            match node.node_type().get_internal_update() {
-                InternalUpdate::True => self.internal_update_nodes.push(id),
-                InternalUpdate::False => {}
-            }
-            match node.node_type().get_internal_fixed_update() {
-                InternalFixedUpdate::True => self.internal_fixed_update_nodes.push(id),
-                InternalFixedUpdate::False => {}
-            }
+            pairs.push((id, node.node_type()));
+        }
+        for (id, ty) in pairs {
+            self.register_internal_node_schedules(id, ty);
         }
     }
 
     pub(crate) fn register_internal_node_schedules(&mut self, id: NodeID, ty: NodeType) {
-        if matches!(ty.get_internal_update(), InternalUpdate::True)
-            && !self.internal_update_nodes.contains(&id)
-        {
-            self.internal_update_nodes.push(id);
+        if matches!(ty.get_internal_update(), InternalUpdate::True) {
+            let slot = id.index() as usize;
+            if self.internal_update_pos.len() <= slot {
+                self.internal_update_pos.resize(slot + 1, None);
+            }
+            if self.internal_update_pos[slot].is_none() {
+                let pos = self.internal_update_nodes.len();
+                self.internal_update_nodes.push(id);
+                self.internal_update_pos[slot] = Some(pos);
+            }
         }
-        if matches!(ty.get_internal_fixed_update(), InternalFixedUpdate::True)
-            && !self.internal_fixed_update_nodes.contains(&id)
-        {
-            self.internal_fixed_update_nodes.push(id);
+        if matches!(ty.get_internal_fixed_update(), InternalFixedUpdate::True) {
+            let slot = id.index() as usize;
+            if self.internal_fixed_update_pos.len() <= slot {
+                self.internal_fixed_update_pos.resize(slot + 1, None);
+            }
+            if self.internal_fixed_update_pos[slot].is_none() {
+                let pos = self.internal_fixed_update_nodes.len();
+                self.internal_fixed_update_nodes.push(id);
+                self.internal_fixed_update_pos[slot] = Some(pos);
+            }
         }
     }
 
     pub(crate) fn unregister_internal_node_schedules(&mut self, id: NodeID) {
-        self.internal_update_nodes.retain(|node| *node != id);
-        self.internal_fixed_update_nodes.retain(|node| *node != id);
+        let slot = id.index() as usize;
+
+        if let Some(Some(pos)) = self.internal_update_pos.get(slot).copied() {
+            let last_pos = self.internal_update_nodes.len().saturating_sub(1);
+            self.internal_update_nodes.swap_remove(pos);
+            self.internal_update_pos[slot] = None;
+            if pos <= last_pos.saturating_sub(1)
+                && let Some(moved) = self.internal_update_nodes.get(pos).copied()
+            {
+                let moved_slot = moved.index() as usize;
+                if self.internal_update_pos.len() <= moved_slot {
+                    self.internal_update_pos.resize(moved_slot + 1, None);
+                }
+                self.internal_update_pos[moved_slot] = Some(pos);
+            }
+        }
+
+        if let Some(Some(pos)) = self.internal_fixed_update_pos.get(slot).copied() {
+            let last_pos = self.internal_fixed_update_nodes.len().saturating_sub(1);
+            self.internal_fixed_update_nodes.swap_remove(pos);
+            self.internal_fixed_update_pos[slot] = None;
+            if pos <= last_pos.saturating_sub(1)
+                && let Some(moved) = self.internal_fixed_update_nodes.get(pos).copied()
+            {
+                let moved_slot = moved.index() as usize;
+                if self.internal_fixed_update_pos.len() <= moved_slot {
+                    self.internal_fixed_update_pos.resize(moved_slot + 1, None);
+                }
+                self.internal_fixed_update_pos[moved_slot] = Some(pos);
+            }
+        }
     }
 
     pub(crate) fn clear_internal_node_schedules(&mut self) {
         self.internal_update_nodes.clear();
         self.internal_fixed_update_nodes.clear();
+        self.internal_update_pos.clear();
+        self.internal_fixed_update_pos.clear();
+    }
+
+    pub(crate) fn rebuild_node_tag_index(&mut self) {
+        self.node_tag_index.clear();
+        for (id, node) in self.nodes.iter() {
+            for &tag in node.tags_slice() {
+                self.node_tag_index.entry(tag).or_default().insert(id);
+            }
+        }
     }
 
     fn run_internal_update_schedule(&mut self) {
@@ -781,3 +838,7 @@ impl Default for Runtime {
         Self::new()
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/runtime_hotpath_tests.rs"]
+mod runtime_hotpath_tests;

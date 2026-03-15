@@ -96,7 +96,7 @@ fn bench_clause_costs() {
         scope: QueryScope::Root,
     };
     let start = std::time::Instant::now();
-    let matches = black_box(query_node_ids(&arena, q));
+    let matches = black_box(query_node_ids(&arena, q, None));
     let elapsed = start.elapsed().as_millis();
     println!(
         "bench_clause_costs: {} matches in {} ms",
@@ -195,7 +195,7 @@ fn bench_parallel_threshold_sweep() {
         let mut matches = 0_usize;
         for _ in 0..rounds {
             let start = std::time::Instant::now();
-            let result = query_node_ids_with_worker_override(arena, query.clone(), Some(workers));
+            let result = query_node_ids_with_worker_override(arena, query.clone(), Some(workers), None);
             total += start.elapsed().as_micros();
             matches = result.len();
             black_box(&result);
@@ -258,4 +258,80 @@ fn bench_parallel_threshold_sweep() {
             broad_matches,
         );
     }
+}
+
+#[test]
+#[ignore]
+fn bench_tag_indexed_candidates() {
+    use ahash::{AHashMap, AHashSet};
+
+    let arena_size = 100_000;
+    let mut arena = NodeArena::with_capacity(arena_size + 1);
+    for i in 0..arena_size {
+        let mut node = if i % 5 == 0 {
+            SceneNode::new(SceneNodeData::MeshInstance3D(MeshInstance3D::new()))
+        } else {
+            SceneNode::new(SceneNodeData::Node3D(Node3D::new()))
+        };
+        if i % 3 == 0 {
+            node.add_tag(TagID::from_string("enemy"));
+        }
+        if i % 7 == 0 {
+            node.add_tag(TagID::from_string("alive"));
+        }
+        if i % 19 == 0 {
+            node.add_tag(TagID::from_string("boss"));
+        }
+        let _ = arena.insert(node);
+    }
+
+    let mut tag_index: AHashMap<TagID, AHashSet<perro_ids::NodeID>> = AHashMap::default();
+    for (id, node) in arena.iter() {
+        for &tag in node.tags_slice() {
+            tag_index.entry(tag).or_default().insert(id);
+        }
+    }
+
+    let selective = TagQuery {
+        expr: Some(QueryExpr::All(vec![QueryExpr::Tags(vec![
+            TagID::from_string("enemy"),
+            TagID::from_string("alive"),
+            TagID::from_string("boss"),
+        ])])),
+        scope: QueryScope::Root,
+    };
+
+    let rounds = 10;
+    let mut plain_us = 0u128;
+    let mut indexed_us = 0u128;
+    let mut plain_matches = 0usize;
+    let mut indexed_matches = 0usize;
+
+    for _ in 0..rounds {
+        let t0 = std::time::Instant::now();
+        let plain = query_node_ids_with_worker_override(&arena, selective.clone(), Some(1), None);
+        plain_us += t0.elapsed().as_micros();
+        plain_matches = plain.len();
+        black_box(&plain);
+
+        let t1 = std::time::Instant::now();
+        let indexed = query_node_ids_with_worker_override(
+            &arena,
+            selective.clone(),
+            Some(1),
+            Some(&tag_index),
+        );
+        indexed_us += t1.elapsed().as_micros();
+        indexed_matches = indexed.len();
+        black_box(&indexed);
+    }
+
+    println!(
+        "bench_tag_indexed_candidates: plain={}us indexed={}us speedup={:.2}x matches={}/{}",
+        plain_us / rounds,
+        indexed_us / rounds,
+        (plain_us as f64 / indexed_us.max(1) as f64),
+        plain_matches,
+        indexed_matches,
+    );
 }

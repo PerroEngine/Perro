@@ -5,6 +5,7 @@ pub struct NodeArena {
     nodes: Vec<Option<SceneNode>>,
     generations: Vec<u32>,
     free_indices: Vec<usize>,
+    active_len: usize,
 }
 
 impl Default for NodeArena {
@@ -24,6 +25,7 @@ impl NodeArena {
             nodes,
             generations,
             free_indices: Vec::new(),
+            active_len: 0,
         }
     }
 
@@ -37,6 +39,7 @@ impl NodeArena {
             nodes,
             generations,
             free_indices: Vec::new(),
+            active_len: 0,
         }
     }
 
@@ -45,6 +48,7 @@ impl NodeArena {
         // Reuse a previously freed slot in O(1).
         if let Some(index) = self.free_indices.pop() {
             self.nodes[index] = Some(node);
+            self.active_len = self.active_len.saturating_add(1);
             let generation = self.generations[index];
             return NodeID::from_parts(index as u32, generation);
         }
@@ -53,6 +57,7 @@ impl NodeArena {
         let index = self.nodes.len();
         self.nodes.push(Some(node));
         self.generations.push(0);
+        self.active_len = self.active_len.saturating_add(1);
         NodeID::from_parts(index as u32, 0)
     }
 
@@ -94,6 +99,7 @@ impl NodeArena {
         self.generations[index] = self.generations[index].wrapping_add(1);
         let removed = self.nodes[index].take();
         if removed.is_some() {
+            self.active_len = self.active_len.saturating_sub(1);
             self.free_indices.push(index);
         }
         removed
@@ -138,17 +144,18 @@ impl NodeArena {
         self.nodes.clear();
         self.generations.clear();
         self.free_indices.clear();
+        self.active_len = 0;
         self.nodes.push(None);
         self.generations.push(0);
     }
 
     /// Number of active nodes
     pub fn len(&self) -> usize {
-        self.nodes.iter().filter(|n| n.is_some()).count()
+        self.active_len
     }
 
     pub fn is_empty(&self) -> bool {
-        self.nodes.iter().all(|n| n.is_none())
+        self.active_len == 0
     }
 
     /// Number of internal slots including the reserved nil slot at index 0.

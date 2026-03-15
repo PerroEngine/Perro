@@ -274,6 +274,16 @@ impl NodeAPI for Runtime {
 
         let (parent_id, child_ids, terrain_id) = match self.nodes.get(node_id) {
             Some(node) => {
+                for &tag in node.tags_slice() {
+                    let mut remove_entry = false;
+                    if let Some(set) = self.node_tag_index.get_mut(&tag) {
+                        set.remove(&node_id);
+                        remove_entry = set.is_empty();
+                    }
+                    if remove_entry {
+                        self.node_tag_index.remove(&tag);
+                    }
+                }
                 let terrain_id = match &node.data {
                     SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
                     _ => None,
@@ -325,6 +335,11 @@ impl NodeAPI for Runtime {
     where
         T: Into<Cow<'static, [TagID]>>,
     {
+        let old_tags = match self.nodes.get(node_id) {
+            Some(node) => node.tags_slice().to_vec(),
+            None => return false,
+        };
+
         let Some(node) = self.nodes.get_mut(node_id) else {
             return false;
         };
@@ -332,6 +347,22 @@ impl NodeAPI for Runtime {
             node.set_tag_ids(Some(tags));
         } else {
             node.clear_tags();
+        }
+        let new_tags = node.tags_slice().to_vec();
+
+        for tag in old_tags {
+            if !new_tags.contains(&tag)
+                && let Some(set) = self.node_tag_index.get_mut(&tag)
+            {
+                set.remove(&node_id);
+                let remove_entry = set.is_empty();
+                if remove_entry {
+                    self.node_tag_index.remove(&tag);
+                }
+            }
+        }
+        for tag in new_tags {
+            self.node_tag_index.entry(tag).or_default().insert(node_id);
         }
         true
     }
@@ -344,8 +375,13 @@ impl NodeAPI for Runtime {
             return false;
         };
         let tag = tag.into_tag_id();
+        let mut added = false;
         if !node.has_tag(tag) {
             node.add_tag(tag);
+            added = true;
+        }
+        if added {
+            self.node_tag_index.entry(tag).or_default().insert(node_id);
         }
         true
     }
@@ -357,11 +393,21 @@ impl NodeAPI for Runtime {
         let Some(node) = self.nodes.get_mut(node_id) else {
             return false;
         };
-        node.remove_tag(tag.into_tag_id());
+        let tag = tag.into_tag_id();
+        if node.has_tag(tag) {
+            node.remove_tag(tag);
+            if let Some(set) = self.node_tag_index.get_mut(&tag) {
+                set.remove(&node_id);
+                let remove_entry = set.is_empty();
+                if remove_entry {
+                    self.node_tag_index.remove(&tag);
+                }
+            }
+        }
         true
     }
 
     fn query_nodes(&mut self, query: TagQuery) -> Vec<perro_ids::NodeID> {
-        super::query::query_node_ids(&self.nodes, query)
+        super::query::query_node_ids(&self.nodes, query, Some(&self.node_tag_index))
     }
 }

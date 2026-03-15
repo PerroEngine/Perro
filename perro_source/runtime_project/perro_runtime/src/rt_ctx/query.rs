@@ -1,5 +1,7 @@
 use crate::cns::NodeArena;
+use ahash::{AHashMap, AHashSet};
 use perro_ids::NodeID;
+use perro_ids::TagID;
 use perro_nodes::{NodeType, SceneNode};
 use perro_runtime_context::sub_apis::{QueryExpr, QueryScope, TagQuery};
 use std::time::Instant;
@@ -7,14 +9,19 @@ use std::time::Instant;
 const PARALLEL_MIN_NODES: usize = 10_000;
 const PARALLEL_MIN_WORK_UNITS: u64 = 250_000;
 
-pub(super) fn query_node_ids(arena: &NodeArena, query: TagQuery) -> Vec<NodeID> {
-    query_node_ids_with_worker_override(arena, query, None)
+pub(super) fn query_node_ids(
+    arena: &NodeArena,
+    query: TagQuery,
+    tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
+) -> Vec<NodeID> {
+    query_node_ids_with_worker_override(arena, query, None, tag_index)
 }
 
 fn query_node_ids_with_worker_override(
     arena: &NodeArena,
     query: TagQuery,
     worker_override: Option<usize>,
+    tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
 ) -> Vec<NodeID> {
     let start = Instant::now();
     let slot_count = arena.slot_count();
@@ -40,27 +47,33 @@ fn query_node_ids_with_worker_override(
     }
     let out = match query.scope {
         QueryScope::Root => {
-            let worker_count = worker_override
-                .unwrap_or_else(|| recommended_workers(slot_count, plan.estimated_cost_per_node));
-            if worker_count <= 1 {
-                scan_range(arena, 1, slot_count, &plan)
+            if let Some(candidates) = candidate_ids_from_tag_index(&query.expr, tag_index) {
+                scan_candidates(arena, candidates, &plan)
             } else {
-                let chunk_size = slot_count.div_ceil(worker_count);
-                std::thread::scope(|scope| {
-                    let mut handles = Vec::with_capacity(worker_count);
-                    for start in (1..slot_count).step_by(chunk_size) {
-                        let end = (start + chunk_size).min(slot_count);
-                        let plan_ref = &plan;
-                        handles.push(scope.spawn(move || scan_range(arena, start, end, plan_ref)));
-                    }
-                    let mut out = Vec::new();
-                    for handle in handles {
-                        if let Ok(mut local) = handle.join() {
-                            out.append(&mut local);
+                let worker_count = worker_override.unwrap_or_else(|| {
+                    recommended_workers(slot_count, plan.estimated_cost_per_node)
+                });
+                if worker_count <= 1 {
+                    scan_range(arena, 1, slot_count, &plan)
+                } else {
+                    let chunk_size = slot_count.div_ceil(worker_count);
+                    std::thread::scope(|scope| {
+                        let mut handles = Vec::with_capacity(worker_count);
+                        for start in (1..slot_count).step_by(chunk_size) {
+                            let end = (start + chunk_size).min(slot_count);
+                            let plan_ref = &plan;
+                            handles
+                                .push(scope.spawn(move || scan_range(arena, start, end, plan_ref)));
                         }
-                    }
-                    out
-                })
+                        let mut out = Vec::new();
+                        for handle in handles {
+                            if let Ok(mut local) = handle.join() {
+                                out.append(&mut local);
+                            }
+                        }
+                        out
+                    })
+                }
             }
         }
         QueryScope::Subtree(root_id) => {
@@ -79,6 +92,54 @@ fn query_node_ids_with_worker_override(
         start.elapsed().as_secs_f64() * 1_000_000.0,
     );
     out
+}
+
+fn candidate_ids_from_tag_index<'a>(
+    expr: &'a Option<QueryExpr>,
+    tag_index: Option<&'a AHashMap<TagID, AHashSet<NodeID>>>,
+) -> Option<Vec<NodeID>> {
+    let query_expr = expr.as_ref()?;
+    let index = tag_index?;
+    let required = required_all_tags_root(query_expr)?;
+    if required.is_empty() {
+        return None;
+    }
+
+    let mut sets: Vec<&AHashSet<NodeID>> = Vec::with_capacity(required.len());
+    for tag in required {
+        let set = index.get(&tag)?;
+        sets.push(set);
+    }
+    sets.sort_by_key(|set| set.len());
+
+    let mut out = Vec::new();
+    if let Some(seed) = sets.first().copied() {
+        'outer: for &id in seed {
+            for set in sets.iter().skip(1) {
+                if !set.contains(&id) {
+                    continue 'outer;
+                }
+            }
+            out.push(id);
+        }
+    }
+    Some(out)
+}
+
+fn required_all_tags_root(expr: &QueryExpr) -> Option<Vec<TagID>> {
+    match expr {
+        QueryExpr::All(children) => {
+            for child in children {
+                if let QueryExpr::Tags(tags) = child
+                    && !tags.is_empty()
+                {
+                    return Some(tags.clone());
+                }
+            }
+            None
+        }
+        _ => None,
+    }
 }
 
 fn recommended_workers(total_nodes: usize, estimated_cost_per_node: u32) -> usize {
@@ -119,6 +180,19 @@ fn scan_subtree(arena: &NodeArena, root_id: NodeID, plan: &QueryPlan) -> Vec<Nod
             out.push(id);
         }
         stack.extend(node.children_slice().iter().copied());
+    }
+    out
+}
+
+fn scan_candidates(arena: &NodeArena, candidates: Vec<NodeID>, plan: &QueryPlan) -> Vec<NodeID> {
+    let mut out = Vec::with_capacity(candidates.len());
+    for id in candidates {
+        let Some(node) = arena.get(id) else {
+            continue;
+        };
+        if matches_query(node, plan) {
+            out.push(id);
+        }
     }
     out
 }
