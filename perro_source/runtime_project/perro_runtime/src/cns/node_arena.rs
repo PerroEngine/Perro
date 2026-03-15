@@ -167,4 +167,28 @@ impl NodeArena {
             node,
         ))
     }
+
+    /// Returns node at a known slot when generation matches. Intended for scheduler fast paths.
+    #[inline]
+    pub fn slot_get_checked(&self, index: usize, generation: u32) -> Option<&SceneNode> {
+        if index == 0 || index >= self.nodes.len() {
+            return None;
+        }
+        if self.generations[index] != generation {
+            return None;
+        }
+        self.nodes[index].as_ref()
+    }
+
+    /// Mutable variant of `slot_get_checked`.
+    #[inline]
+    pub fn slot_get_mut_checked(&mut self, index: usize, generation: u32) -> Option<&mut SceneNode> {
+        if index == 0 || index >= self.nodes.len() {
+            return None;
+        }
+        if self.generations[index] != generation {
+            return None;
+        }
+        self.nodes[index].as_mut()
+    }
 }

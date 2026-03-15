@@ -202,12 +202,54 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         Some(f(state))
     }
 
+    pub(crate) fn with_state_scheduled<T: 'static, V, F>(
+        &self,
+        instance_index: usize,
+        id: NodeID,
+        f: F,
+    ) -> Option<V>
+    where
+        F: FnOnce(&T) -> V,
+    {
+        if self.ids.get(instance_index).copied() != Some(id) {
+            return None;
+        }
+        let instance = self.instances.get(instance_index)?;
+        if instance.state_type != TypeId::of::<T>() {
+            return None;
+        }
+
+        let state = unsafe { &*(instance.state.as_ref() as *const dyn Any as *const T) };
+        Some(f(state))
+    }
+
     pub(crate) fn with_state_mut<T: 'static, V, F>(&mut self, id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&mut T) -> V,
     {
         let i = self.instance_index_for(id)?;
         let instance = self.instances.get_mut(i)?;
+        if instance.state_type != TypeId::of::<T>() {
+            return None;
+        }
+
+        let state = unsafe { &mut *(instance.state.as_mut() as *mut dyn Any as *mut T) };
+        Some(f(state))
+    }
+
+    pub(crate) fn with_state_mut_scheduled<T: 'static, V, F>(
+        &mut self,
+        instance_index: usize,
+        id: NodeID,
+        f: F,
+    ) -> Option<V>
+    where
+        F: FnOnce(&mut T) -> V,
+    {
+        if self.ids.get(instance_index).copied() != Some(id) {
+            return None;
+        }
+        let instance = self.instances.get_mut(instance_index)?;
         if instance.state_type != TypeId::of::<T>() {
             return None;
         }

@@ -105,8 +105,10 @@ impl Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputContext<'_, perro_input::InputSnapshot> =
             unsafe { InputContext::new(&*input_ptr) };
+        self.active_script_stack.push((instance_index, id));
         let mut ctx = RuntimeContext::new(self);
         behavior.on_update(&mut ctx, &res, &ipt, id);
+        let _ = self.active_script_stack.pop();
     }
 
     #[inline(always)]
@@ -126,8 +128,10 @@ impl Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputContext<'_, perro_input::InputSnapshot> =
             unsafe { InputContext::new(&*input_ptr) };
+        self.active_script_stack.push((instance_index, id));
         let mut ctx = RuntimeContext::new(self);
         behavior.on_fixed_update(&mut ctx, &res, &ipt, id);
+        let _ = self.active_script_stack.pop();
     }
 }
 
@@ -136,6 +140,13 @@ impl ScriptAPI for Runtime {
     where
         F: FnOnce(&T) -> V,
     {
+        if let Some(&(instance_index, active_id)) = self.active_script_stack.last()
+            && active_id == script_id
+        {
+            return self
+                .scripts
+                .with_state_scheduled(instance_index, script_id, f);
+        }
         self.scripts.with_state(script_id, f)
     }
 
@@ -143,6 +154,13 @@ impl ScriptAPI for Runtime {
     where
         F: FnOnce(&mut T) -> V,
     {
+        if let Some(&(instance_index, active_id)) = self.active_script_stack.last()
+            && active_id == script_id
+        {
+            return self
+                .scripts
+                .with_state_mut_scheduled(instance_index, script_id, f);
+        }
         self.scripts.with_state_mut(script_id, f)
     }
 

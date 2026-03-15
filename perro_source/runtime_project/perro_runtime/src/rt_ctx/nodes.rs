@@ -7,6 +7,44 @@ use std::borrow::Cow;
 
 use crate::Runtime;
 
+#[inline]
+fn cached_slot_for(runtime: &mut Runtime, id: perro_ids::NodeID) -> Option<(usize, u32)> {
+    if id.is_nil() {
+        return None;
+    }
+
+    if let Some(&(_, active_id)) = runtime.active_script_stack.last()
+        && active_id == id
+    {
+        let resolved = (active_id.index() as usize, active_id.generation());
+        runtime.last_node_lookup = Some((active_id, resolved.0, resolved.1));
+        return Some(resolved);
+    }
+
+    if let Some((cached_id, cached_index, cached_generation)) = runtime.last_node_lookup
+        && cached_id == id
+        && runtime
+            .nodes
+            .slot_get_checked(cached_index, cached_generation)
+            .is_some()
+    {
+        return Some((cached_index, cached_generation));
+    }
+
+    let resolved = (id.index() as usize, id.generation());
+    if runtime
+        .nodes
+        .slot_get_checked(resolved.0, resolved.1)
+        .is_some()
+    {
+        runtime.last_node_lookup = Some((id, resolved.0, resolved.1));
+        return Some(resolved);
+    }
+
+    runtime.last_node_lookup = None;
+    None
+}
+
 impl NodeAPI for Runtime {
     fn create<T>(&mut self) -> perro_ids::NodeID
     where
@@ -28,8 +66,13 @@ impl NodeAPI for Runtime {
             return None;
         }
 
+        let slot = cached_slot_for(self, id);
         let (transform_changed, value) = {
-            let node = self.nodes.get_mut(id)?;
+            let node = if let Some((index, generation)) = slot {
+                self.nodes.slot_get_mut_checked(index, generation)?
+            } else {
+                self.nodes.get_mut(id)?
+            };
 
             let mut changed = false;
             let mut value = None;
@@ -64,7 +107,12 @@ impl NodeAPI for Runtime {
             return V::default();
         }
 
-        let Some(node_ref) = self.nodes.get(node_id) else {
+        let node_ref = if let Some((index, generation)) = cached_slot_for(self, node_id) {
+            self.nodes.slot_get_checked(index, generation)
+        } else {
+            self.nodes.get(node_id)
+        };
+        let Some(node_ref) = node_ref else {
             return V::default();
         };
 
@@ -79,7 +127,11 @@ impl NodeAPI for Runtime {
         if id.is_nil() {
             return None;
         }
-        let node = self.nodes.get(id)?;
+        let node = if let Some((index, generation)) = cached_slot_for(self, id) {
+            self.nodes.slot_get_checked(index, generation)?
+        } else {
+            self.nodes.get(id)?
+        };
         if !node.node_type().is_a(T::BASE_NODE_TYPE) {
             return None;
         }
@@ -95,7 +147,13 @@ impl NodeAPI for Runtime {
             return None;
         }
 
-        if let Some(node) = self.nodes.get(id) {
+        let slot = cached_slot_for(self, id);
+        if let Some((index, generation)) = slot {
+            let node = self.nodes.slot_get_checked(index, generation)?;
+            if !node.node_type().is_a(T::BASE_NODE_TYPE) {
+                return None;
+            }
+        } else if let Some(node) = self.nodes.get(id) {
             if !node.node_type().is_a(T::BASE_NODE_TYPE) {
                 return None;
             }
@@ -104,7 +162,11 @@ impl NodeAPI for Runtime {
         }
 
         let value = {
-            let node = self.nodes.get_mut(id)?;
+            let node = if let Some((index, generation)) = slot {
+                self.nodes.slot_get_mut_checked(index, generation)?
+            } else {
+                self.nodes.get_mut(id)?
+            };
             node.with_base_mut::<T, _>(f)?
         };
 
