@@ -271,10 +271,12 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     let perro_dir = root.join(".perro");
     let project_crate = perro_dir.join("project");
     let scripts_crate = perro_dir.join("scripts");
+    let dev_runner_crate = perro_dir.join("dev_runner");
     let project_src = project_crate.join("src");
     let project_static_src = project_src.join("static");
     let project_embedded = project_crate.join("embedded");
     let scripts_src = scripts_crate.join("src");
+    let dev_runner_src = dev_runner_crate.join("src");
 
     fs::create_dir_all(&res_dir)?;
     fs::create_dir_all(&res_scripts_dir)?;
@@ -282,6 +284,7 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     fs::create_dir_all(&project_static_src)?;
     fs::create_dir_all(&project_embedded)?;
     fs::create_dir_all(&scripts_src)?;
+    fs::create_dir_all(&dev_runner_src)?;
 
     let crate_name = crate_name_from_project_name(project_name);
     write_if_missing(root.join(".gitignore"), &default_gitignore())?;
@@ -297,6 +300,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     write_if_missing(
         scripts_crate.join("Cargo.toml"),
         &default_scripts_crate_toml(),
+    )?;
+    write_if_missing(
+        dev_runner_crate.join("Cargo.toml"),
+        &default_dev_runner_crate_toml(),
     )?;
     write_if_missing(
         project_src.join("main.rs"),
@@ -329,6 +336,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     )?;
     write_if_missing(project_embedded.join("assets.perro"), "")?;
     write_if_missing(scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
+    write_if_missing(
+        dev_runner_src.join("main.rs"),
+        &default_dev_runner_main_rs(),
+    )?;
     Ok(())
 }
 
@@ -921,6 +932,57 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rust_analyzer)"] }
     .to_string()
 }
 
+fn default_dev_runner_crate_toml() -> String {
+    r#"[workspace]
+
+[package]
+name = "perro_dev_runner"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+perro_app = "0.1.0"
+perro_project = "0.1.0"
+"#
+    .to_string()
+}
+
+fn default_dev_runner_main_rs() -> String {
+    r#"use perro_app::entry;
+use perro_project::resolve_local_path;
+use std::{env, path::PathBuf};
+
+fn parse_flag_value(args: &[String], flag: &str) -> Option<String> {
+    let idx = args.iter().position(|a| a == flag)?;
+    args.get(idx + 1).cloned()
+}
+
+fn current_dir_fallback() -> PathBuf {
+    env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    let local_root = current_dir_fallback();
+
+    let root = parse_flag_value(&args, "--path")
+        .map(|p| resolve_local_path(&p, &local_root))
+        .unwrap_or_else(|| local_root.clone());
+
+    let fallback_name =
+        parse_flag_value(&args, "--name").unwrap_or_else(|| "Perro Project".to_string());
+
+    entry::run_dev_project_from_path(&root, &fallback_name).unwrap_or_else(|err| {
+        panic!(
+            "failed to load project at `{}`: {err}",
+            root.to_string_lossy()
+        )
+    });
+}
+"#
+    .to_string()
+}
+
 fn rel_path(from: &Path, to: &Path) -> String {
     let from_components: Vec<_> = from.components().collect();
     let to_components: Vec<_> = to.components().collect();
@@ -1087,11 +1149,17 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
         .join(".perro")
         .join("scripts")
         .join("Cargo.toml");
+    let dev_runner_manifest = project_root
+        .join(".perro")
+        .join("dev_runner")
+        .join("Cargo.toml");
     ensure_project_manifest_deps(&project_manifest)?;
     ensure_scripts_manifest_deps(&scripts_manifest)?;
+    ensure_dev_runner_manifest_deps(&dev_runner_manifest)?;
     ensure_scripts_manifest_rust_analyzer_cfg(&scripts_manifest)?;
     ensure_patch_block_in_manifest(&project_manifest)?;
     ensure_patch_block_in_manifest(&scripts_manifest)?;
+    ensure_patch_block_in_manifest(&dev_runner_manifest)?;
     Ok(())
 }
 
@@ -1155,6 +1223,49 @@ fn ensure_scripts_manifest_deps(path: &Path) -> std::io::Result<()> {
 
     if !deps_table.contains_key("perro") {
         deps_table.insert("perro".to_string(), Value::String("0.1.0".to_string()));
+        changed = true;
+    }
+
+    if !changed {
+        return Ok(());
+    }
+
+    let rendered = toml::to_string(&value)
+        .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
+    fs::write(path, rendered)
+}
+
+fn ensure_dev_runner_manifest_deps(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let src = fs::read_to_string(path)?;
+    let Ok(mut value) = src.parse::<Value>() else {
+        return Ok(());
+    };
+    let Some(root) = value.as_table_mut() else {
+        return Ok(());
+    };
+
+    let deps = root
+        .entry("dependencies")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(deps_table) = deps.as_table_mut() else {
+        return Ok(());
+    };
+
+    let mut changed = false;
+
+    if !deps_table.contains_key("perro_app") {
+        deps_table.insert("perro_app".to_string(), Value::String("0.1.0".to_string()));
+        changed = true;
+    }
+    if !deps_table.contains_key("perro_project") {
+        deps_table.insert(
+            "perro_project".to_string(),
+            Value::String("0.1.0".to_string()),
+        );
         changed = true;
     }
 
@@ -1436,4 +1547,3 @@ fn crate_group_sort_key(crate_name: &str) -> u8 {
 #[cfg(test)]
 #[path = "../tests/unit/lib_tests.rs"]
 mod tests;
-

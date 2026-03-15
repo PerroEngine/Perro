@@ -1,0 +1,10 @@
+[workspace]
+
+[package]
+name = "perro_dev_runner"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+perro_app = "0.1.0"
+perro_project = "0.1.0"

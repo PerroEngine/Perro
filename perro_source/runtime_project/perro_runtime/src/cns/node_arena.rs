@@ -189,7 +189,11 @@ impl NodeArena {
 
     /// Mutable variant of `slot_get_checked`.
     #[inline]
-    pub fn slot_get_mut_checked(&mut self, index: usize, generation: u32) -> Option<&mut SceneNode> {
+    pub fn slot_get_mut_checked(
+        &mut self,
+        index: usize,
+        generation: u32,
+    ) -> Option<&mut SceneNode> {
         if index == 0 || index >= self.nodes.len() {
             return None;
         }

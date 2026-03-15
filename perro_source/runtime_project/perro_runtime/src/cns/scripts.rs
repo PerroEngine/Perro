@@ -109,7 +109,7 @@ impl Runtime {
             return Ok(());
         }
 
-        let dylib_path = resolve_scripts_dylib_path()?;
+        let dylib_path = resolve_scripts_dylib_path(project_root)?;
         let library = unsafe {
             libloading::Library::new(&dylib_path).map_err(|err| {
                 format!(
@@ -198,19 +198,8 @@ impl Runtime {
     }
 }
 
-fn resolve_scripts_dylib_path() -> Result<PathBuf, String> {
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .canonicalize()
-        .unwrap_or_else(|_| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("..")
-                .join("..")
-                .join("..")
-        });
-    let release_dir = workspace_root.join("target").join("release");
+fn resolve_scripts_dylib_path(project_root: &Path) -> Result<PathBuf, String> {
+    let release_dir = project_root.join("target").join("release");
     let file_name = scripts_dylib_name();
     let primary = release_dir.join(file_name);
     if primary.exists() {

@@ -73,11 +73,7 @@ pub fn compile_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError
     ensure_source_overrides(project_root)?;
     let copied = sync_scripts(project_root)?;
     let scripts_crate = project_root.join(".perro").join("scripts");
-    let target_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("target");
+    let target_dir = project_root.join("target");
 
     let status = Command::new("cargo")
         .arg("build")
@@ -147,11 +143,7 @@ fn reset_embedded_dir(project_root: &Path) -> Result<(), CompilerError> {
 
 fn build_project_crate(project_root: &Path) -> Result<(), CompilerError> {
     let project_crate = project_root.join(".perro").join("project");
-    let target_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("target");
+    let target_dir = project_root.join("target");
     let status = Command::new("cargo")
         .arg("build")
         .arg("--release")
@@ -195,7 +187,10 @@ fn platform_binary_name(bin_name: &str) -> String {
 }
 
 fn read_project_binary_name(project_root: &Path) -> Result<String, CompilerError> {
-    let manifest_path = project_root.join(".perro").join("project").join("Cargo.toml");
+    let manifest_path = project_root
+        .join(".perro")
+        .join("project")
+        .join("Cargo.toml");
     let source = fs::read_to_string(&manifest_path)?;
     let mut in_package = false;
     for line in source.lines() {

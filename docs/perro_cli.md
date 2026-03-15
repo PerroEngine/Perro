@@ -1,33 +1,33 @@
 # Perro CLI
 
-This document covers Perro CLI in flag-first style:
+This document covers Perro CLI in command-first style:
 
-- `--scripts`
-- `--dev`
-- `--project`
-- `--format`
+- `check`
+- `dev`
+- `build`
+- `format`
+- `install`
 
 ## Quick Map
 
 Preferred usage:
 
 ```powershell
-perro_cli --path <project_dir> --scripts
-perro_cli --path <project_dir> --dev
-perro_cli --path <project_dir> --project
-perro_cli --path <project_dir> --format
+perro_cli check [--path <project_dir>]
+perro_cli dev [--path <project_dir>]
+perro_cli build [--path <project_dir>]
+perro_cli format [--path <project_dir>]
+perro_cli install
 ```
 
 `--path` defaults to the current working directory when omitted.
 
-Note: command aliases (`build`, `dev`, `project`, `format`) still exist, but flags are the primary workflow.
-
-## `--scripts`
+## `check`
 
 Command:
 
 ```powershell
-perro_cli --scripts --path <project_dir>
+perro_cli check --path <project_dir>
 ```
 
 What it does:
@@ -38,33 +38,33 @@ What it does:
 
 Use this when you only need script compilation/update.
 
-## `--dev`
+## `dev`
 
 Command:
 
 ```powershell
-perro_cli --dev --path <project_dir>
+perro_cli dev --path <project_dir>
 ```
 
 What it does:
 
-1. Runs the same scripts build pipeline as `--scripts`.
-2. Builds `perro_dev_runner` in release mode from the workspace root.
-3. Launches the dev runner binary with your `--path`.
+1. Runs the same scripts build pipeline as `check`.
+2. Builds the project-local dev runner at `<project_dir>/.perro/dev_runner` in release mode.
+3. Launches the generated dev runner binary with your `--path`.
 
 Use this for local development runs.
 
-## `--project`
+## `build`
 
 Command:
 
 ```powershell
-perro_cli --project --path <project_dir>
+perro_cli build --path <project_dir>
 ```
 
 What it does:
 
-1. Runs script compilation (same core script pipeline as `--scripts`).
+1. Runs script compilation (same core script pipeline as `check`).
 2. Generates static scene/material/particle/mesh/texture outputs.
 3. Generates embedded project entry files under `.perro/project`.
 4. Packs `res` assets into `.perro/project/embedded/assets.perro`.
@@ -73,12 +73,12 @@ What it does:
 
 Use this for full static project bundle generation and build.
 
-## `--format`
+## `format`
 
 Command:
 
 ```powershell
-perro_cli --format --path <project_dir>
+perro_cli format --path <project_dir>
 ```
 
 What it does:
@@ -87,3 +87,22 @@ What it does:
 2. Recursively finds all `*.rs` files under `res/**`.
 3. Runs `rustfmt` on those files.
 
+## `install`
+
+Command:
+
+```powershell
+perro_cli install
+```
+
+What it does:
+
+1. Adds/updates a `perro` PowerShell function in your profile.
+2. That function runs source-mode CLI from your local repo via `cargo run -p perro_cli -- ...`.
+
+After running install, open a new PowerShell and use:
+
+```powershell
+perro new --path D:\GameProjects --name MyGame
+perro check --path D:\GameProjects\MyGame
+```

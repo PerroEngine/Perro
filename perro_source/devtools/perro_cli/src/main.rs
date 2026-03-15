@@ -1,5 +1,5 @@
-use perro_compiler::{compile_project_bundle, compile_scripts, sync_scripts};
-use perro_project::{create_new_project, default_script_empty_rs, default_script_example_rs};
+use perro_compiler::{compile_project_bundle, compile_scripts};
+use perro_project::create_new_project;
 use serde_json::Value;
 use std::env;
 use std::fs;
@@ -33,15 +33,16 @@ fn main() {
         std::process::exit(2);
     };
 
-    let result = if command.starts_with('-') {
-        legacy_flag_command(&args, &cwd)
+    let result = if command == "--help" || command == "-h" || command == "help" {
+        print_usage();
+        Ok(())
     } else {
         match command {
             "new" => new_command(&args, &cwd),
-            "build" => build_command(&args, &cwd),
-            "project" => project_command(&args, &cwd),
+            "install" => install_command(&args),
+            "check" => scripts_command(&args, &cwd),
+            "build" => project_command(&args, &cwd),
             "dev" => dev_command(&args, &cwd),
-            "run" => run_command(&args, &cwd),
             "format" => format_command(&args, &cwd),
             _ => {
                 print_usage();
@@ -56,66 +57,23 @@ fn main() {
     }
 }
 
-fn legacy_flag_command(args: &[String], cwd: &Path) -> Result<(), String> {
-    if args.iter().any(|a| a == "--script-new") {
-        return script_new_command(args, cwd);
-    }
-    if args.iter().any(|a| a == "--script-template") {
-        return script_template_command(args, cwd);
-    }
-    if args.iter().any(|a| a == "--dev") {
-        return dev_command(args, cwd);
-    }
-    if args.iter().any(|a| a == "--scripts") {
-        return build_command(args, cwd);
-    }
-    if args.iter().any(|a| a == "--build") {
-        return build_command(args, cwd);
-    }
-    if args.iter().any(|a| a == "--project") {
-        return project_command(args, cwd);
-    }
-    if args.iter().any(|a| a == "--run") {
-        return run_command(args, cwd);
-    }
-    if args.iter().any(|a| a == "--format") {
-        return format_command(args, cwd);
-    }
-    print_usage();
-    Err(format!("unknown command `{}`", args[1]))
-}
-
 fn print_usage() {
     eprintln!("Usage:");
-    eprintln!("  perro_cli --path <project_dir> --scripts  # builds .perro/scripts");
-    eprintln!("  perro_cli --path <project_dir> --project  # full static project bundle + build");
-    eprintln!("  perro_cli --path <project_dir> --dev      # build scripts + run dev runner");
-    eprintln!("  perro_cli --path <project_dir> --format   # rustfmt .rs under project res only");
+    eprintln!(
+        "  perro_cli check [--path <project_dir>]    # scripts-only compile (.perro/scripts)"
+    );
+    eprintln!("  perro_cli build [--path <project_dir>]    # full static project bundle + build");
+    eprintln!("  perro_cli dev [--path <project_dir>]      # build scripts + run dev runner");
+    eprintln!("  perro_cli format [--path <project_dir>]   # rustfmt .rs under project res only");
+    eprintln!(
+        "  perro_cli install                          # add `perro` source-mode command (PowerShell)"
+    );
     eprintln!("  perro_cli new [--path <parent_dir>] [--name <project_name>]");
-    eprintln!();
-    eprintln!("Also supported:");
-    eprintln!("  perro_cli build|project|dev|run|format [--path <...>]");
-    eprintln!(
-        "  perro_cli --path <project_dir|res|res/scripts> --script-new [<name.rs|res://scripts/name.rs>]"
-    );
-    eprintln!(
-        "  perro_cli --path <project_dir|res|res/scripts> --script-template [<name.rs|res://scripts/name.rs>]"
-    );
 }
 
 fn parse_flag_value(args: &[String], flag: &str) -> Option<String> {
     let idx = args.iter().position(|a| a == flag)?;
     args.get(idx + 1).cloned()
-}
-
-fn parse_optional_flag_value(args: &[String], flag: &str) -> Option<String> {
-    let idx = args.iter().position(|a| a == flag)?;
-    let value = args.get(idx + 1)?;
-    if value.starts_with('-') {
-        None
-    } else {
-        Some(value.clone())
-    }
 }
 
 fn resolve_local_path(input: &str, local_root: &Path) -> PathBuf {
@@ -168,6 +126,126 @@ fn workspace_root() -> PathBuf {
     raw.canonicalize().unwrap_or(raw)
 }
 
+const PROFILE_SNIPPET_BEGIN: &str = "# >>> perro_cli source-mode >>>";
+const PROFILE_SNIPPET_END: &str = "# <<< perro_cli source-mode <<<";
+
+fn install_command(args: &[String]) -> Result<(), String> {
+    if !cfg!(target_os = "windows") {
+        return Err(
+            "install currently supports Windows PowerShell profile setup only. Use the docs snippet manually for other shells."
+                .to_string(),
+        );
+    }
+
+    let explicit_profile = parse_flag_value(args, "--profile").map(PathBuf::from);
+    let profile_paths = if let Some(path) = explicit_profile {
+        vec![path]
+    } else {
+        default_powershell_profile_paths()
+    };
+    let repo_root = normalize_powershell_path(&workspace_root()).replace('\\', "\\\\");
+    let snippet = format!(
+        "{PROFILE_SNIPPET_BEGIN}\n\
+function perro {{\n\
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)\n\
+    Push-Location \"{repo_root}\"\n\
+    try {{\n\
+        cargo run -p perro_cli -- @Args\n\
+    }} finally {{\n\
+        Pop-Location\n\
+    }}\n\
+}}\n\
+{PROFILE_SNIPPET_END}\n"
+    );
+
+    for profile_path in &profile_paths {
+        let parent = profile_path.parent().ok_or_else(|| {
+            format!(
+                "invalid profile path (no parent directory): {}",
+                profile_path.display()
+            )
+        })?;
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+
+        let existing = if profile_path.exists() {
+            fs::read_to_string(profile_path)
+                .map_err(|err| format!("failed to read {}: {err}", profile_path.display()))?
+        } else {
+            String::new()
+        };
+
+        let updated = replace_or_append_snippet(&existing, &snippet)?;
+        fs::write(profile_path, updated)
+            .map_err(|err| format!("failed to write {}: {err}", profile_path.display()))?;
+        println!(
+            "installed source-mode command `perro` into {}",
+            profile_path.display()
+        );
+    }
+    if let Some(primary) = profile_paths.first() {
+        println!("restart PowerShell or run: . \"{}\"", primary.display());
+    }
+    Ok(())
+}
+
+fn default_powershell_profile_paths() -> Vec<PathBuf> {
+    let user_profile = env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string());
+    let docs = PathBuf::from(user_profile).join("Documents");
+    let ps7 = docs
+        .join("PowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    let ps5 = docs
+        .join("WindowsPowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    vec![ps7, ps5]
+}
+
+fn normalize_powershell_path(path: &Path) -> String {
+    let raw = path.to_string_lossy();
+    if let Some(stripped) = raw.strip_prefix("\\\\?\\") {
+        stripped.to_string()
+    } else {
+        raw.to_string()
+    }
+}
+
+fn replace_or_append_snippet(existing: &str, snippet: &str) -> Result<String, String> {
+    let start = existing.find(PROFILE_SNIPPET_BEGIN);
+    let end = existing.find(PROFILE_SNIPPET_END);
+    match (start, end) {
+        (Some(s), Some(e)) if e >= s => {
+            let after = e + PROFILE_SNIPPET_END.len();
+            let mut out = String::new();
+            out.push_str(&existing[..s]);
+            if !out.is_empty() && !out.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str(snippet);
+            let tail = &existing[after..];
+            if !tail.is_empty() {
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                out.push_str(tail.trim_start_matches('\n'));
+            }
+            Ok(out)
+        }
+        (None, None) => {
+            let mut out = existing.to_string();
+            if !out.is_empty() && !out.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str(snippet);
+            Ok(out)
+        }
+        _ => Err(
+            "profile contains a partial perro_cli snippet; remove it and re-run install"
+                .to_string(),
+        ),
+    }
+}
+
 fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let base_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
@@ -191,6 +269,7 @@ fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
     })?;
     log_done("Scripts Built");
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
 
     println!(
         "created project `{}` at {}",
@@ -238,28 +317,20 @@ fn update_workspace_vscode_linked_projects(
         .join("res")
         .canonicalize()
         .unwrap_or_else(|_| project_dir.join("res"));
-    let rel = scripts_manifest
+    let Ok(rel) = scripts_manifest
         .strip_prefix(&workspace_root)
-        .map_err(|_| {
-            format!(
-                "project path {} is outside workspace root {}; cannot add a stable linkedProjects entry",
-                project_dir.display(),
-                workspace_root.display()
-            )
-        })?
-        .to_string_lossy()
-        .replace('\\', "/");
-    let rel_res = res_dir
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+    else {
+        // External project path: skip workspace-level VS Code wiring.
+        return Ok(());
+    };
+    let Ok(rel_res) = res_dir
         .strip_prefix(&workspace_root)
-        .map_err(|_| {
-            format!(
-                "project path {} is outside workspace root {}; cannot add a stable vfs.extraIncludes entry",
-                project_dir.display(),
-                workspace_root.display()
-            )
-        })?
-        .to_string_lossy()
-        .replace('\\', "/");
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+    else {
+        // External project path: skip workspace-level VS Code wiring.
+        return Ok(());
+    };
     let vfs_entry = format!("${{workspaceFolder}}/{rel_res}/");
 
     let entry = root
@@ -331,7 +402,75 @@ fn update_workspace_vscode_linked_projects(
     Ok(())
 }
 
-fn build_command(args: &[String], cwd: &Path) -> Result<(), String> {
+fn update_project_vscode_linked_projects(project_dir: &Path) -> Result<(), String> {
+    let settings_dir = project_dir.join(".vscode");
+    fs::create_dir_all(&settings_dir)
+        .map_err(|err| format!("failed to create {}: {err}", settings_dir.display()))?;
+
+    let settings_path = settings_dir.join("settings.json");
+    let mut json: Value = if settings_path.exists() {
+        let raw = fs::read_to_string(&settings_path)
+            .map_err(|err| format!("failed to read {}: {err}", settings_path.display()))?;
+        serde_json::from_str(&raw)
+            .map_err(|err| format!("failed to parse {} as JSON: {err}", settings_path.display()))?
+    } else {
+        Value::Object(Default::default())
+    };
+
+    let Some(root) = json.as_object_mut() else {
+        return Err(format!(
+            "expected {} to contain a JSON object",
+            settings_path.display()
+        ));
+    };
+
+    let linked_manifest = ".perro/scripts/Cargo.toml".to_string();
+    let vfs_entry = "${workspaceFolder}/res/".to_string();
+
+    let entry = root
+        .entry("rust-analyzer.linkedProjects".to_string())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(arr) = entry.as_array_mut() else {
+        return Err(format!(
+            "expected `rust-analyzer.linkedProjects` to be an array in {}",
+            settings_path.display()
+        ));
+    };
+    if !arr
+        .iter()
+        .any(|v| v.as_str() == Some(linked_manifest.as_str()))
+    {
+        arr.push(Value::String(linked_manifest));
+    }
+
+    let vfs = root
+        .entry("rust-analyzer.vfs.extraIncludes".to_string())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(vfs_arr) = vfs.as_array_mut() else {
+        return Err(format!(
+            "expected `rust-analyzer.vfs.extraIncludes` to be an array in {}",
+            settings_path.display()
+        ));
+    };
+    if !vfs_arr
+        .iter()
+        .any(|v| v.as_str() == Some(vfs_entry.as_str()))
+    {
+        vfs_arr.push(Value::String(vfs_entry));
+    }
+
+    let rendered = serde_json::to_string_pretty(&json).map_err(|err| {
+        format!(
+            "failed to render {} as JSON: {err}",
+            settings_path.display()
+        )
+    })?;
+    fs::write(&settings_path, format!("{rendered}\n"))
+        .map_err(|err| format!("failed to write {}: {err}", settings_path.display()))?;
+    Ok(())
+}
+
+fn scripts_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
@@ -362,64 +501,58 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     })?;
     log_done("Scripts Built");
 
-    let root = workspace_root();
+    let dev_runner_dir = project_dir.join(".perro").join("dev_runner");
+    let target_dir = project_dir.join("target");
     log_step("Building Dev Runner");
 
     let build_status = Command::new("cargo")
         .arg("build")
-        .arg("-p")
-        .arg("perro_dev_runner")
         .arg("--release")
-        .current_dir(&root)
+        .env("CARGO_TARGET_DIR", &target_dir)
+        .current_dir(&dev_runner_dir)
         .status()
         .map_err(|err| {
             format!(
-                "failed to build perro_dev_runner from {}: {err}",
-                root.display()
+                "failed to build project dev runner from {}: {err}",
+                dev_runner_dir.display()
             )
         })?;
 
     if !build_status.success() {
         return Err(format!(
-            "perro_dev_runner build failed with exit code {:?}",
+            "project dev runner build failed with exit code {:?}",
             build_status.code()
         ));
     }
     log_done("Dev Runner Built");
 
     let runner_path = if cfg!(target_os = "windows") {
-        root.join("target")
-            .join("release")
-            .join("perro_dev_runner.exe")
+        target_dir.join("release").join("perro_dev_runner.exe")
     } else {
-        root.join("target").join("release").join("perro_dev_runner")
+        target_dir.join("release").join("perro_dev_runner")
     };
     log_note("Running Dev Runner");
 
     let run_status = Command::new(&runner_path)
         .arg("--path")
         .arg(project_dir.to_string_lossy().to_string())
-        .current_dir(&root)
+        .current_dir(&project_dir)
         .status()
         .map_err(|err| {
             format!(
-                "failed to launch perro_dev_runner at {}: {err}",
+                "failed to launch project dev runner at {}: {err}",
                 runner_path.display()
             )
         })?;
 
     if !run_status.success() {
         return Err(format!(
-            "perro_dev_runner failed with exit code {:?}",
+            "project dev runner failed with exit code {:?}",
             run_status.code()
         ));
     }
     log_done("Dev Runner Finished");
     Ok(())
-}
-
-fn run_command(args: &[String], cwd: &Path) -> Result<(), String> {
-    build_command(args, cwd)
 }
 
 fn format_command(args: &[String], cwd: &Path) -> Result<(), String> {
@@ -501,141 +634,4 @@ fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
                 project_dir.display()
             )
         })
-}
-
-fn script_new_command(args: &[String], cwd: &Path) -> Result<(), String> {
-    create_script_command(args, cwd, &default_script_empty_rs())
-}
-
-fn script_template_command(args: &[String], cwd: &Path) -> Result<(), String> {
-    create_script_command(args, cwd, &default_script_example_rs())
-}
-
-fn create_script_command(args: &[String], cwd: &Path, contents: &str) -> Result<(), String> {
-    let base_path = parse_flag_value(args, "--path")
-        .map(|p| resolve_local_path(&p, cwd))
-        .unwrap_or_else(|| cwd.to_path_buf());
-    let (project_dir, scripts_dir) = resolve_script_roots_for_create(&base_path)?;
-    let script_name = parse_optional_flag_value(args, "--script-new")
-        .or_else(|| parse_optional_flag_value(args, "--script-template"))
-        .unwrap_or_else(|| "script.rs".to_string());
-    let rel_script = normalize_script_rel_path(&script_name)?;
-    let script_path = scripts_dir.join(&rel_script);
-
-    if script_path.exists() {
-        return Err(format!(
-            "script already exists at {} (refusing to overwrite)",
-            script_path.display()
-        ));
-    }
-
-    if let Some(parent) = script_path.parent() {
-        fs::create_dir_all(parent).map_err(|err| {
-            format!(
-                "failed to create script directory {}: {err}",
-                parent.display()
-            )
-        })?;
-    }
-
-    fs::write(&script_path, contents)
-        .map_err(|err| format!("failed to write script at {}: {err}", script_path.display()))?;
-
-    sync_scripts(&project_dir).map_err(|err| {
-        format!(
-            "script created, but failed to sync generated scripts for {}: {err}",
-            project_dir.display()
-        )
-    })?;
-
-    println!("created script at {}", script_path.display());
-    Ok(())
-}
-
-fn resolve_script_roots_for_create(path: &Path) -> Result<(PathBuf, PathBuf), String> {
-    let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-
-    // `--path` can point at project root, `res`, or `res/scripts`.
-    if path.join("project.toml").exists() {
-        let scripts_dir = path.join("res").join("scripts");
-        return Ok((path, scripts_dir));
-    }
-
-    if path.file_name().is_some_and(|n| n == "res") {
-        let Some(project_dir) = path.parent() else {
-            return Err(format!(
-                "invalid --path `{}` (could not resolve project root)",
-                path.display()
-            ));
-        };
-        if project_dir.join("project.toml").exists() {
-            return Ok((project_dir.to_path_buf(), path.join("scripts")));
-        }
-    }
-
-    if path.file_name().is_some_and(|n| n == "scripts") {
-        let Some(res_dir) = path.parent() else {
-            return Err(format!(
-                "invalid --path `{}` (could not resolve res directory)",
-                path.display()
-            ));
-        };
-        if res_dir.file_name().is_none_or(|n| n != "res") {
-            return Err(format!(
-                "invalid --path `{}` (expected `res/scripts`)",
-                path.display()
-            ));
-        }
-        let Some(project_dir) = res_dir.parent() else {
-            return Err(format!(
-                "invalid --path `{}` (could not resolve project root)",
-                path.display()
-            ));
-        };
-        if project_dir.join("project.toml").exists() {
-            return Ok((project_dir.to_path_buf(), path));
-        }
-    }
-
-    Err(format!(
-        "invalid --path `{}` for script creation. Use project root, `res`, or `res/scripts`.",
-        path.display()
-    ))
-}
-
-fn normalize_script_rel_path(input: &str) -> Result<PathBuf, String> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return Err("script name/path cannot be empty".to_string());
-    }
-
-    let mut rel = if let Some(stripped) = trimmed.strip_prefix("res://") {
-        stripped.to_string()
-    } else if let Some(stripped) = trimmed.strip_prefix("res/") {
-        stripped.to_string()
-    } else if let Some(stripped) = trimmed.strip_prefix("scripts/") {
-        stripped.to_string()
-    } else {
-        trimmed.to_string()
-    };
-    rel = rel.replace('\\', "/");
-
-    if rel.starts_with('/') {
-        rel = rel.trim_start_matches('/').to_string();
-    }
-    if rel.contains("..") {
-        return Err("script path cannot contain `..` segments".to_string());
-    }
-    if !rel.ends_with(".rs") {
-        rel.push_str(".rs");
-    }
-
-    let path = PathBuf::from(rel);
-    if path
-        .components()
-        .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
-        return Err("script path cannot contain parent-directory segments".to_string());
-    }
-    Ok(path)
 }
