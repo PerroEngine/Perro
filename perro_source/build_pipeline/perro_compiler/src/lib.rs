@@ -97,6 +97,7 @@ pub fn compile_project_bundle(project_root: &Path) -> Result<(), CompilerError> 
     ensure_source_overrides(project_root)?;
     let cfg = load_project_toml(project_root)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    reset_embedded_dir(project_root)?;
     let _ = compile_scripts(project_root)?;
     perro_static_pipeline::generate_static_scenes(project_root).map_err(|err| {
         CompilerError::SceneParse(format!("scene static generation failed: {err}"))
@@ -115,6 +116,9 @@ pub fn compile_project_bundle(project_root: &Path) -> Result<(), CompilerError> 
     perro_static_pipeline::generate_static_textures(project_root).map_err(|err| {
         CompilerError::SceneParse(format!("texture static generation failed: {err}"))
     })?;
+    perro_static_pipeline::generate_static_audios(project_root).map_err(|err| {
+        CompilerError::SceneParse(format!("audio static generation failed: {err}"))
+    })?;
     perro_static_pipeline::write_static_mod_rs(project_root)
         .map_err(|err| CompilerError::SceneParse(format!("static mod generation failed: {err}")))?;
     generate_embedded_main(project_root)?;
@@ -132,6 +136,15 @@ fn generate_perro_assets(project_root: &Path) -> Result<(), CompilerError> {
     Ok(())
 }
 
+fn reset_embedded_dir(project_root: &Path) -> Result<(), CompilerError> {
+    let embedded_dir = project_root.join(".perro").join("project").join("embedded");
+    if embedded_dir.exists() {
+        fs::remove_dir_all(&embedded_dir)?;
+    }
+    fs::create_dir_all(&embedded_dir)?;
+    Ok(())
+}
+
 fn build_project_crate(project_root: &Path) -> Result<(), CompilerError> {
     let project_crate = project_root.join(".perro").join("project");
     let target_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -142,14 +155,71 @@ fn build_project_crate(project_root: &Path) -> Result<(), CompilerError> {
     let status = Command::new("cargo")
         .arg("build")
         .arg("--release")
-        .env("CARGO_TARGET_DIR", target_dir)
+        .env("CARGO_TARGET_DIR", &target_dir)
         .current_dir(project_crate)
         .status()?;
 
     if !status.success() {
         return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
     }
+    export_project_binary(project_root, &target_dir)?;
     Ok(())
+}
+
+fn export_project_binary(project_root: &Path, target_dir: &Path) -> Result<(), CompilerError> {
+    let bin_name = read_project_binary_name(project_root)?;
+    let built_bin = target_dir
+        .join("release")
+        .join(platform_binary_name(&bin_name));
+    if !built_bin.exists() {
+        return Err(CompilerError::SceneParse(format!(
+            "project binary not found after build: {}",
+            built_bin.display()
+        )));
+    }
+
+    let output_dir = project_root.join(".output");
+    fs::create_dir_all(&output_dir)?;
+    let output_bin = output_dir.join(platform_binary_name(&bin_name));
+    fs::copy(&built_bin, &output_bin)?;
+    println!("exported project binary: {}", output_bin.display());
+    Ok(())
+}
+
+fn platform_binary_name(bin_name: &str) -> String {
+    if cfg!(target_os = "windows") {
+        format!("{bin_name}.exe")
+    } else {
+        bin_name.to_string()
+    }
+}
+
+fn read_project_binary_name(project_root: &Path) -> Result<String, CompilerError> {
+    let manifest_path = project_root.join(".perro").join("project").join("Cargo.toml");
+    let source = fs::read_to_string(&manifest_path)?;
+    let mut in_package = false;
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_package = trimmed == "[package]";
+            continue;
+        }
+        if !in_package || !trimmed.starts_with("name") {
+            continue;
+        }
+        let Some((_, raw_value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let value = raw_value.trim().trim_matches('"');
+        if !value.is_empty() {
+            return Ok(value.to_string());
+        }
+    }
+
+    Err(CompilerError::SceneParse(format!(
+        "failed to resolve package.name from {}",
+        manifest_path.display()
+    )))
 }
 
 fn ensure_project_dependency_line(
@@ -248,6 +318,7 @@ fn main() {{\n\
         particle_lookup: static_assets::particles::lookup_particle,\n\
         mesh_lookup: static_assets::meshes::lookup_mesh,\n\
         texture_lookup: static_assets::textures::lookup_texture,\n\
+        audio_lookup: static_assets::audios::lookup_audio,\n\
         static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\
     }}).expect(\"failed to run embedded static project\");\n\
 }}\n",

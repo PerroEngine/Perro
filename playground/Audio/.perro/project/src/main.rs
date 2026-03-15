@@ -44,6 +44,7 @@ material_lookup: static_assets::materials::lookup_material,
 particle_lookup: static_assets::particles::lookup_particle,
 mesh_lookup: static_assets::meshes::lookup_mesh,
 texture_lookup: static_assets::textures::lookup_texture,
+audio_lookup: static_assets::audios::lookup_audio,
 static_script_registry: Some(scripts::SCRIPT_REGISTRY),
 }).expect("failed to run embedded static project");
 }

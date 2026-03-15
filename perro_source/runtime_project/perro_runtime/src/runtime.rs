@@ -387,7 +387,7 @@ impl Runtime {
             script_library: None,
             dynamic_script_registry: AHashMap::default(),
             node_tag_index: AHashMap::default(),
-            resource_api: RuntimeResourceApi::new(None, terrain_store),
+            resource_api: RuntimeResourceApi::new(None, None, terrain_store),
             input: InputSnapshot::new(),
         }
     }
@@ -403,10 +403,15 @@ impl Runtime {
     ) -> Self {
         let mut runtime = Self::new();
         let static_material_lookup = project.static_material_lookup;
+        let static_audio_lookup = project.static_audio_lookup;
         runtime.project = Some(Arc::new(project));
         runtime.provider_mode = provider_mode;
         runtime.resource_api =
-            RuntimeResourceApi::new(static_material_lookup, runtime.terrain_store.clone());
+            RuntimeResourceApi::new(
+                static_material_lookup,
+                static_audio_lookup,
+                runtime.terrain_store.clone(),
+            );
         if let Some(entries) = script_registry {
             for (path, ctor) in entries {
                 runtime

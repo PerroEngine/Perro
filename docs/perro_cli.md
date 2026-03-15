@@ -69,6 +69,7 @@ What it does:
 3. Generates embedded project entry files under `.perro/project`.
 4. Packs `res` assets into `.perro/project/embedded/assets.perro`.
 5. Builds the generated project crate in release mode from `.perro/project`.
+6. Copies the built executable to `<project>/.output/` for clean, predictable exports.
 
 Use this for full static project bundle generation and build.
 
@@ -85,3 +86,4 @@ What it does:
 1. Resolves your path to that project's `res` root.
 2. Recursively finds all `*.rs` files under `res/**`.
 3. Runs `rustfmt` on those files.
+

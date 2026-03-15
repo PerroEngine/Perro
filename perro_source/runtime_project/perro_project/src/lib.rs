@@ -323,6 +323,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         project_static_src.join("meshes.rs"),
         &default_static_meshes_rs(),
     )?;
+    write_if_missing(
+        project_static_src.join("audios.rs"),
+        &default_static_audios_rs(),
+    )?;
     write_if_missing(project_embedded.join("assets.perro"), "")?;
     write_if_missing(scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
     Ok(())
@@ -844,6 +848,7 @@ fn default_gitignore() -> String {
 .perro/project/embedded/
 .perro/project/src/static/
 .perro/scripts/src/
+.output/
 "#
     .to_string()
 }
@@ -982,6 +987,7 @@ fn main() {
         particle_lookup: static_assets::particles::lookup_particle,
         mesh_lookup: static_assets::meshes::lookup_mesh,
         texture_lookup: static_assets::textures::lookup_texture,
+        audio_lookup: static_assets::audios::lookup_audio,
         static_script_registry: Some(scripts::SCRIPT_REGISTRY),
     }).expect("failed to run embedded static project");
 }
@@ -990,7 +996,7 @@ fn main() {
 }
 
 fn default_static_mod_rs() -> String {
-    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod textures;\n".to_string()
+    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod textures;\npub mod audios;\n".to_string()
 }
 
 fn default_static_scenes_rs() -> String {
@@ -1044,6 +1050,16 @@ fn default_static_meshes_rs() -> String {
 #![allow(dead_code)]
 
 pub fn lookup_mesh(_path: &str) -> Option<&'static [u8]> {
+    None
+}
+"#
+    .to_string()
+}
+
+fn default_static_audios_rs() -> String {
+    r#"#![allow(unused_imports)]
+
+pub fn lookup_audio(_path: &str) -> Option<&'static [u8]> {
     None
 }
 "#
@@ -1420,3 +1436,4 @@ fn crate_group_sort_key(crate_name: &str) -> u8 {
 #[cfg(test)]
 #[path = "../tests/unit/lib_tests.rs"]
 mod tests;
+

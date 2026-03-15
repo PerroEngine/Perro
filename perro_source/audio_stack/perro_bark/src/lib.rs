@@ -10,6 +10,7 @@ pub struct BarkPlayer {
     _stream: OutputStream,
     handle: OutputStreamHandle,
     state: Mutex<AudioState>,
+    static_audio_lookup: Option<fn(&str) -> Option<&'static [u8]>>,
 }
 
 struct Playback {
@@ -36,6 +37,32 @@ struct AudioState {
     playbacks: Vec<Playback>,
     cache: HashMap<String, CachedAudioAsset>,
     cache_bytes: usize,
+}
+
+#[derive(Clone, Copy)]
+enum SourceLoadKind {
+    Cache,
+    Static,
+    Disk,
+}
+
+#[derive(Clone, Copy)]
+struct SourceLoadStats {
+    kind: SourceLoadKind,
+    static_lookup: Duration,
+    pawdio_decompress: Duration,
+    disk_read: Duration,
+}
+
+impl SourceLoadStats {
+    const fn cache_hit() -> Self {
+        Self {
+            kind: SourceLoadKind::Cache,
+            static_lookup: Duration::ZERO,
+            pawdio_decompress: Duration::ZERO,
+            disk_read: Duration::ZERO,
+        }
+    }
 }
 
 enum AudioCommand {
@@ -114,12 +141,13 @@ impl BarkPlayer {
     const UNRESERVED_TTL_FALLBACK: Duration = Duration::from_secs(1);
     const UNRESERVED_TTL_MIN: Duration = Duration::from_millis(250);
 
-    pub fn new() -> Result<Self, String> {
+    pub fn new(static_audio_lookup: Option<fn(&str) -> Option<&'static [u8]>>) -> Result<Self, String> {
         let (stream, handle) = OutputStream::try_default()
             .map_err(|err| format!("audio output init failed: {err}"))?;
         Ok(Self {
             _stream: stream,
             handle,
+            static_audio_lookup,
             state: Mutex::new(AudioState {
                 master_volume: 1.0,
                 buses: HashMap::new(),
@@ -160,37 +188,55 @@ impl BarkPlayer {
         from_start: f32,
         from_end: f32,
     ) -> Result<(), String> {
-        let bytes = {
+        let play_begin = Instant::now();
+        let (bytes, cache_hit, load_stats) = {
             let mut state = self
                 .state
                 .lock()
                 .map_err(|_| "audio mutex poisoned".to_string())?;
             let now = Instant::now();
             Self::prune_finished_playbacks_locked(&mut state, now);
-            let bytes = Self::get_or_load_asset_locked(&mut state, source, false)
-                .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
-            bytes
+            let (bytes, cache_hit, load_stats) =
+                Self::get_or_load_asset_locked(&mut state, source, false, self.static_audio_lookup)
+                    .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
+            (bytes, cache_hit, load_stats)
         };
 
+        let decode_begin = Instant::now();
         let cursor = Cursor::new(bytes.clone());
         let reader = BufReader::new(cursor);
         let decoder = Decoder::new(reader)
             .map_err(|err| format!("failed to decode audio `{source}`: {err}"))?;
+        let decode_elapsed = decode_begin.elapsed();
+
+        let duration_probe_begin = Instant::now();
         let total_duration = if from_end > 0.0 {
             let mut state = self
                 .state
                 .lock()
                 .map_err(|_| "audio mutex poisoned".to_string())?;
-            Some(Self::duration_for_source_locked(&mut state, source, bytes.clone()))
+            let known = state
+                .cache
+                .get(source)
+                .and_then(|entry| entry.duration)
+                .or_else(|| decoder.total_duration());
+            if let Some(entry) = state.cache.get_mut(source) {
+                entry.duration = known;
+                entry.duration_known = true;
+            }
+            known
         } else {
             None
-        }
-        .flatten();
+        };
+        let duration_probe_elapsed = duration_probe_begin.elapsed();
 
+        let sink_setup_begin = Instant::now();
         let sink =
             Sink::try_new(&self.handle).map_err(|err| format!("failed to create sink: {err}"))?;
         sink.set_speed(speed.max(0.01));
+        let sink_setup_elapsed = sink_setup_begin.elapsed();
 
+        let append_begin = Instant::now();
         let trim_start = Duration::from_secs_f32(from_start.max(0.0));
         let trim_end = Duration::from_secs_f32(from_end.max(0.0));
         if let Some(total_duration) = total_duration {
@@ -220,7 +266,9 @@ impl BarkPlayer {
         } else {
             sink.append(decoder.skip_duration(trim_start));
         }
+        let append_elapsed = append_begin.elapsed();
 
+        let activate_begin = Instant::now();
         let mut state = self
             .state
             .lock()
@@ -260,6 +308,27 @@ impl BarkPlayer {
         });
         Self::evict_unreserved_unused_locked(&mut state, Instant::now());
         Self::enforce_cache_soft_limit_locked(&mut state);
+        let activate_elapsed = activate_begin.elapsed();
+        let total_elapsed = play_begin.elapsed();
+        println!(
+            "[audio_timing] play source={} cache_hit={} source={} static_lookup_us={:.3} pawdio_decompress_us={:.3} disk_read_us={:.3} decode_us={:.3} duration_probe_us={:.3} sink_setup_us={:.3} append_us={:.3} activate_us={:.3} total_us={:.3}",
+            source,
+            cache_hit,
+            match load_stats.kind {
+                SourceLoadKind::Cache => "cache",
+                SourceLoadKind::Static => "static",
+                SourceLoadKind::Disk => "disk",
+            },
+            load_stats.static_lookup.as_secs_f64() * 1_000_000.0,
+            load_stats.pawdio_decompress.as_secs_f64() * 1_000_000.0,
+            load_stats.disk_read.as_secs_f64() * 1_000_000.0,
+            decode_elapsed.as_secs_f64() * 1_000_000.0,
+            duration_probe_elapsed.as_secs_f64() * 1_000_000.0,
+            sink_setup_elapsed.as_secs_f64() * 1_000_000.0,
+            append_elapsed.as_secs_f64() * 1_000_000.0,
+            activate_elapsed.as_secs_f64() * 1_000_000.0,
+            total_elapsed.as_secs_f64() * 1_000_000.0
+        );
         Ok(())
     }
 
@@ -269,21 +338,41 @@ impl BarkPlayer {
         };
         let now = Instant::now();
         Self::prune_finished_playbacks_locked(&mut state, now);
-        let bytes = Self::get_or_load_asset_locked(&mut state, source, false).ok()?;
+        let (bytes, _, _) =
+            Self::get_or_load_asset_locked(&mut state, source, false, self.static_audio_lookup)
+                .ok()?;
         Self::duration_for_source_locked(&mut state, source, bytes).map(|d| d.as_secs_f32())
     }
 
     pub fn load_source(&self, source: &str, reserved: bool) -> Result<(), String> {
+        let load_begin = Instant::now();
         let mut state = self
             .state
             .lock()
             .map_err(|_| "audio mutex poisoned".to_string())?;
         let now = Instant::now();
         Self::prune_finished_playbacks_locked(&mut state, now);
-        let _ = Self::get_or_load_asset_locked(&mut state, source, reserved)
-            .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
+        let (_, cache_hit, load_stats) =
+            Self::get_or_load_asset_locked(&mut state, source, reserved, self.static_audio_lookup)
+                .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
         Self::evict_unreserved_unused_locked(&mut state, now);
         Self::enforce_cache_soft_limit_locked(&mut state);
+        let total_elapsed = load_begin.elapsed();
+        println!(
+            "[audio_timing] preload source={} reserved={} cache_hit={} source={} static_lookup_us={:.3} pawdio_decompress_us={:.3} disk_read_us={:.3} total_us={:.3}",
+            source,
+            reserved,
+            cache_hit,
+            match load_stats.kind {
+                SourceLoadKind::Cache => "cache",
+                SourceLoadKind::Static => "static",
+                SourceLoadKind::Disk => "disk",
+            },
+            load_stats.static_lookup.as_secs_f64() * 1_000_000.0,
+            load_stats.pawdio_decompress.as_secs_f64() * 1_000_000.0,
+            load_stats.disk_read.as_secs_f64() * 1_000_000.0,
+            total_elapsed.as_secs_f64() * 1_000_000.0
+        );
         Ok(())
     }
 
@@ -469,16 +558,57 @@ impl BarkPlayer {
         state: &mut AudioState,
         source: &str,
         reserved: bool,
-    ) -> Result<Arc<[u8]>, String> {
+        static_audio_lookup: Option<fn(&str) -> Option<&'static [u8]>>,
+    ) -> Result<(Arc<[u8]>, bool, SourceLoadStats), String> {
         if let Some(existing) = state.cache.get_mut(source) {
             if reserved {
                 existing.reserved = true;
             }
             existing.last_touched = Instant::now();
-            return Ok(existing.bytes.clone());
+            return Ok((existing.bytes.clone(), true, SourceLoadStats::cache_hit()));
         }
 
-        let bytes = perro_io::load_asset(source).map_err(|err| err.to_string())?;
+        let (bytes, load_stats) = if let Some(lookup) = static_audio_lookup {
+            let lookup_begin = Instant::now();
+            let looked_up = lookup(source);
+            let lookup_elapsed = lookup_begin.elapsed();
+            if let Some(blob) = looked_up {
+                let (decoded, decompress_elapsed) = decode_static_pawdio(blob)?;
+                (
+                    decoded,
+                    SourceLoadStats {
+                        kind: SourceLoadKind::Static,
+                        static_lookup: lookup_elapsed,
+                        pawdio_decompress: decompress_elapsed,
+                        disk_read: Duration::ZERO,
+                    },
+                )
+            } else {
+                let disk_begin = Instant::now();
+                let disk = perro_io::load_asset(source).map_err(|err| err.to_string())?;
+                (
+                    disk,
+                    SourceLoadStats {
+                        kind: SourceLoadKind::Disk,
+                        static_lookup: lookup_elapsed,
+                        pawdio_decompress: Duration::ZERO,
+                        disk_read: disk_begin.elapsed(),
+                    },
+                )
+            }
+        } else {
+            let disk_begin = Instant::now();
+            let disk = perro_io::load_asset(source).map_err(|err| err.to_string())?;
+            (
+                disk,
+                SourceLoadStats {
+                    kind: SourceLoadKind::Disk,
+                    static_lookup: Duration::ZERO,
+                    pawdio_decompress: Duration::ZERO,
+                    disk_read: disk_begin.elapsed(),
+                },
+            )
+        };
         let shared: Arc<[u8]> = Arc::from(bytes.into_boxed_slice());
         state.cache_bytes = state.cache_bytes.saturating_add(shared.len());
         state.cache.insert(
@@ -491,7 +621,7 @@ impl BarkPlayer {
                 last_touched: Instant::now(),
             },
         );
-        Ok(shared)
+        Ok((shared, false, load_stats))
     }
 
     fn duration_for_source_locked(
@@ -619,13 +749,62 @@ impl BarkPlayer {
     }
 }
 
+fn decode_static_pawdio(blob: &[u8]) -> Result<(Vec<u8>, Duration), String> {
+    const MAGIC: &[u8; 6] = b"PAWDIO";
+    const HEADER_LEN_V1: usize = 14;
+    const HEADER_LEN_V2: usize = 18;
+    const FLAG_ZLIB: u32 = 1;
+    if blob.len() < HEADER_LEN_V1 {
+        return Err("static audio blob too small".to_string());
+    }
+    if &blob[..6] != MAGIC {
+        return Ok((blob.to_vec(), Duration::ZERO));
+    }
+    let version = u32::from_le_bytes([blob[6], blob[7], blob[8], blob[9]]);
+    if version != 1 && version != 2 {
+        return Err(format!("unsupported .pawdio version {version}"));
+    }
+    let (flags, raw_len, payload) = if version == 1 {
+        let raw_len = u32::from_le_bytes([blob[10], blob[11], blob[12], blob[13]]) as usize;
+        (FLAG_ZLIB, raw_len, &blob[HEADER_LEN_V1..])
+    } else {
+        if blob.len() < HEADER_LEN_V2 {
+            return Err("static audio blob v2 too small".to_string());
+        }
+        let flags = u32::from_le_bytes([blob[10], blob[11], blob[12], blob[13]]);
+        let raw_len = u32::from_le_bytes([blob[14], blob[15], blob[16], blob[17]]) as usize;
+        (flags, raw_len, &blob[HEADER_LEN_V2..])
+    };
+
+    if (flags & FLAG_ZLIB) != 0 {
+        let decompress_begin = Instant::now();
+        let decompressed = perro_io::decompress_zlib(payload).map_err(|err| err.to_string())?;
+        let decompress_elapsed = decompress_begin.elapsed();
+        if decompressed.len() != raw_len {
+            return Err(format!(
+                "invalid .pawdio length: expected {raw_len}, got {}",
+                decompressed.len()
+            ));
+        }
+        return Ok((decompressed, decompress_elapsed));
+    }
+
+    if payload.len() != raw_len {
+        return Err(format!(
+            "invalid .pawdio raw payload length: expected {raw_len}, got {}",
+            payload.len()
+        ));
+    }
+    Ok((payload.to_vec(), Duration::ZERO))
+}
+
 impl AudioController {
-    pub fn new() -> Result<Self, String> {
+    pub fn new(static_audio_lookup: Option<fn(&str) -> Option<&'static [u8]>>) -> Result<Self, String> {
         let (tx, rx) = mpsc::channel::<AudioCommand>();
         std::thread::Builder::new()
             .name("perro_bark_audio".to_string())
             .spawn(move || {
-                let Ok(player) = BarkPlayer::new() else {
+                let Ok(player) = BarkPlayer::new(static_audio_lookup) else {
                     return;
                 };
 

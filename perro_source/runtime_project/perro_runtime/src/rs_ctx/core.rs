@@ -1,6 +1,6 @@
 use super::state::RuntimeResourceState;
 use crate::cns::TerrainStore;
-use crate::runtime_project::StaticMaterialLookup;
+use crate::runtime_project::{StaticAudioLookup, StaticMaterialLookup};
 use perro_bark::AudioController;
 use perro_render_bridge::{RenderCommand, RenderEvent};
 use std::sync::{Arc, Mutex};
@@ -15,11 +15,12 @@ pub struct RuntimeResourceApi {
 impl RuntimeResourceApi {
     pub(crate) fn new(
         static_material_lookup: Option<StaticMaterialLookup>,
+        static_audio_lookup: Option<StaticAudioLookup>,
         terrain_store: Arc<Mutex<TerrainStore>>,
     ) -> Arc<Self> {
         Arc::new(Self {
             state: Mutex::new(RuntimeResourceState::new()),
-            bark: Mutex::new(AudioController::new().ok()),
+            bark: Mutex::new(AudioController::new(static_audio_lookup).ok()),
             static_material_lookup,
             terrain_store,
         })

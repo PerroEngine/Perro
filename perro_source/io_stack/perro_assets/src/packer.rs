@@ -29,6 +29,7 @@ const SKIP_MODELS: &[&str] = &["glb", "gltf"];
 
 // Resources compiled into static runtime tables
 const SKIP_RESOURCES: &[&str] = &["pmat", "ppart", "pmesh"];
+const SKIP_AUDIO: &[&str] = &["mp3", "wav", "ogg", "flac", "aac", "m4a"];
 
 fn should_skip(path: &str) -> bool {
     let ext = path.rsplit('.').next().unwrap_or("");
@@ -37,6 +38,7 @@ fn should_skip(path: &str) -> bool {
         || SKIP_IMAGES.contains(&ext)
         || SKIP_MODELS.contains(&ext)
         || SKIP_RESOURCES.contains(&ext)
+        || SKIP_AUDIO.contains(&ext)
 }
 
 #[derive(Debug, Clone)]
