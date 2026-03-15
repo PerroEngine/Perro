@@ -22,6 +22,19 @@ perro_cli install
 
 `--path` defaults to the current working directory when omitted.
 
+## Project Placement
+
+Recommended workflow:
+
+1. Put temporary test/sandbox projects under `playground/` in this repo.
+2. Put real game/application projects outside this monorepo (for example `D:\GameProjects\MyGame`) and open those project folders directly in VS Code.
+
+Why:
+
+1. External projects are cleaner to work with because project-local `.vscode/settings.json` is the active workspace config when you open that folder directly.
+2. Internal `playground/*` projects can still be edited from the monorepo root, but they depend on repo-root `.vscode/settings.json` rust-analyzer wiring.
+3. Running `perro_cli check/dev/build --path <internal_project>` now refreshes root workspace wiring for all detected `playground/*` projects (including existing ones), so linked-project drift is reduced.
+
 ## `check`
 
 Command:

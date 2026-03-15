@@ -159,10 +159,11 @@ fn build_project_crate(project_root: &Path) -> Result<(), CompilerError> {
 }
 
 fn export_project_binary(project_root: &Path, target_dir: &Path) -> Result<(), CompilerError> {
-    let bin_name = read_project_binary_name(project_root)?;
+    let package_bin_name = read_project_binary_name(project_root)?;
+    let output_bin_name = read_project_output_binary_name(project_root, &package_bin_name)?;
     let built_bin = target_dir
         .join("release")
-        .join(platform_binary_name(&bin_name));
+        .join(platform_binary_name(&package_bin_name));
     if !built_bin.exists() {
         return Err(CompilerError::SceneParse(format!(
             "project binary not found after build: {}",
@@ -172,9 +173,64 @@ fn export_project_binary(project_root: &Path, target_dir: &Path) -> Result<(), C
 
     let output_dir = project_root.join(".output");
     fs::create_dir_all(&output_dir)?;
-    let output_bin = output_dir.join(platform_binary_name(&bin_name));
-    fs::copy(&built_bin, &output_bin)?;
+    let copied_bin = output_dir.join(platform_binary_name(&package_bin_name));
+    let output_bin = output_dir.join(platform_binary_name(&output_bin_name));
+    fs::copy(&built_bin, &copied_bin)?;
+    rename_exported_binary(&copied_bin, &output_bin)?;
     println!("exported project binary: {}", output_bin.display());
+    Ok(())
+}
+
+fn rename_exported_binary(source: &Path, dest: &Path) -> Result<(), CompilerError> {
+    if source == dest {
+        return Ok(());
+    }
+
+    let source_str = source.to_string_lossy();
+    let dest_str = dest.to_string_lossy();
+    let case_only_rename = cfg!(target_os = "windows") && source_str.eq_ignore_ascii_case(&dest_str);
+
+    if case_only_rename {
+        return rename_exported_binary_via_temp(source, dest);
+    }
+
+    if dest.exists() {
+        fs::remove_file(dest)?;
+    }
+
+    match fs::rename(source, dest) {
+        Ok(()) => Ok(()),
+        Err(err) => Err(CompilerError::Io(err)),
+    }
+}
+
+fn rename_exported_binary_via_temp(source: &Path, dest: &Path) -> Result<(), CompilerError> {
+    let Some(parent) = source.parent() else {
+        return Err(CompilerError::SceneParse(format!(
+            "failed to rename export: source has no parent: {}",
+            source.display()
+        )));
+    };
+    let ext = source.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let mut tmp = parent.join(if ext.is_empty() {
+        "__perro_export_tmp__".to_string()
+    } else {
+        format!("__perro_export_tmp__.{ext}")
+    });
+    let mut idx = 0usize;
+    while tmp.exists() {
+        idx += 1;
+        tmp = parent.join(if ext.is_empty() {
+            format!("__perro_export_tmp__{idx}")
+        } else {
+            format!("__perro_export_tmp__{idx}.{ext}")
+        });
+    }
+    fs::rename(source, &tmp)?;
+    if dest.exists() {
+        fs::remove_file(dest)?;
+    }
+    fs::rename(tmp, dest)?;
     Ok(())
 }
 
@@ -215,6 +271,34 @@ fn read_project_binary_name(project_root: &Path) -> Result<String, CompilerError
         "failed to resolve package.name from {}",
         manifest_path.display()
     )))
+}
+
+fn read_project_output_binary_name(
+    project_root: &Path,
+    fallback_name: &str,
+) -> Result<String, CompilerError> {
+    let config = load_project_toml(project_root)
+        .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    let sanitized = sanitize_output_binary_name(&config.name);
+    if sanitized.is_empty() {
+        Ok(fallback_name.to_string())
+    } else {
+        Ok(sanitized)
+    }
+}
+
+fn sanitize_output_binary_name(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for c in input.trim().chars() {
+        let invalid = matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*');
+        if invalid || c.is_control() {
+            out.push('_');
+        } else {
+            out.push(c);
+        }
+    }
+
+    out.trim_matches([' ', '.']).to_string()
 }
 
 fn ensure_project_dependency_line(

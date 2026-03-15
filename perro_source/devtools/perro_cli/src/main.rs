@@ -280,14 +280,19 @@ fn update_workspace_vscode_linked_projects(
     project_dir: &Path,
 ) -> Result<(), String> {
     let settings_path = workspace_root.join(".vscode").join("settings.json");
-    if !settings_path.exists() {
-        return Ok(());
-    }
-
-    let raw = fs::read_to_string(&settings_path)
-        .map_err(|err| format!("failed to read {}: {err}", settings_path.display()))?;
-    let mut json: Value = serde_json::from_str(&raw)
-        .map_err(|err| format!("failed to parse {} as JSON: {err}", settings_path.display()))?;
+    let mut json: Value = if settings_path.exists() {
+        let raw = fs::read_to_string(&settings_path)
+            .map_err(|err| format!("failed to read {}: {err}", settings_path.display()))?;
+        serde_json::from_str(&raw).map_err(|err| {
+            format!("failed to parse {} as JSON: {err}", settings_path.display())
+        })?
+    } else {
+        if let Some(parent) = settings_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+        }
+        Value::Object(Default::default())
+    };
     let Some(root) = json.as_object_mut() else {
         return Err(format!(
             "expected {} to contain a JSON object",
@@ -298,37 +303,6 @@ fn update_workspace_vscode_linked_projects(
     let workspace_root = workspace_root
         .canonicalize()
         .unwrap_or_else(|_| workspace_root.to_path_buf());
-    let scripts_manifest = project_dir
-        .join(".perro")
-        .join("scripts")
-        .join("Cargo.toml")
-        .canonicalize()
-        .unwrap_or_else(|_| {
-            project_dir
-                .join(".perro")
-                .join("scripts")
-                .join("Cargo.toml")
-        });
-    let res_dir = project_dir
-        .join("res")
-        .canonicalize()
-        .unwrap_or_else(|_| project_dir.join("res"));
-    let Ok(rel) = scripts_manifest
-        .strip_prefix(&workspace_root)
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
-    else {
-        // External project path: skip workspace-level VS Code wiring.
-        return Ok(());
-    };
-    let Ok(rel_res) = res_dir
-        .strip_prefix(&workspace_root)
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
-    else {
-        // External project path: skip workspace-level VS Code wiring.
-        return Ok(());
-    };
-    let vfs_entry = format!("${{workspaceFolder}}/{rel_res}/");
-
     let entry = root
         .entry("rust-analyzer.linkedProjects".to_string())
         .or_insert_with(|| Value::Array(Vec::new()));
@@ -352,11 +326,10 @@ fn update_workspace_vscode_linked_projects(
         full.exists()
     });
 
-    let already_present = arr.iter().any(|v| v.as_str() == Some(rel.as_str()));
-    if already_present {
-        // Keep going to also normalize/update vfs.extraIncludes.
-    } else {
-        arr.push(Value::String(rel));
+    for rel in workspace_internal_project_manifests(&workspace_root, project_dir)? {
+        if !arr.iter().any(|v| v.as_str() == Some(rel.as_str())) {
+            arr.push(Value::String(rel));
+        }
     }
 
     let vfs = root
@@ -380,11 +353,13 @@ fn update_workspace_vscode_linked_projects(
         workspace_root.join(trimmed).exists()
     });
 
-    let vfs_present = vfs_arr
-        .iter()
-        .any(|v| v.as_str() == Some(vfs_entry.as_str()));
-    if !vfs_present {
-        vfs_arr.push(Value::String(vfs_entry));
+    for vfs_entry in workspace_internal_project_vfs_entries(&workspace_root, project_dir)? {
+        if !vfs_arr
+            .iter()
+            .any(|v| v.as_str() == Some(vfs_entry.as_str()))
+        {
+            vfs_arr.push(Value::String(vfs_entry));
+        }
     }
 
     let rendered = serde_json::to_string_pretty(&json).map_err(|err| {
@@ -396,6 +371,84 @@ fn update_workspace_vscode_linked_projects(
     fs::write(&settings_path, format!("{rendered}\n"))
         .map_err(|err| format!("failed to write {}: {err}", settings_path.display()))?;
     Ok(())
+}
+
+fn workspace_internal_project_roots(
+    workspace_root: &Path,
+    _project_dir: &Path,
+) -> Result<Vec<PathBuf>, String> {
+    let mut roots = Vec::new();
+
+    let playground_root = workspace_root.join("playground");
+    if playground_root.exists() {
+        let entries = fs::read_dir(&playground_root).map_err(|err| {
+            format!(
+                "failed to read playground directory {}: {err}",
+                playground_root.display()
+            )
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|err| {
+                format!(
+                    "failed to read playground directory entry in {}: {err}",
+                    playground_root.display()
+                )
+            })?;
+            let path = entry.path();
+            if !path.is_dir() || !path.join("project.toml").exists() {
+                continue;
+            }
+            roots.push(path);
+        }
+    }
+
+    roots.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
+    roots.dedup();
+    Ok(roots)
+}
+
+fn workspace_internal_project_manifests(
+    workspace_root: &Path,
+    project_dir: &Path,
+) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    for root in workspace_internal_project_roots(workspace_root, project_dir)? {
+        let scripts_manifest = root
+            .join(".perro")
+            .join("scripts")
+            .join("Cargo.toml")
+            .canonicalize()
+            .unwrap_or_else(|_| root.join(".perro").join("scripts").join("Cargo.toml"));
+        let Ok(rel) = scripts_manifest
+            .strip_prefix(workspace_root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+        else {
+            continue;
+        };
+        out.push(rel);
+    }
+    Ok(out)
+}
+
+fn workspace_internal_project_vfs_entries(
+    workspace_root: &Path,
+    project_dir: &Path,
+) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    for root in workspace_internal_project_roots(workspace_root, project_dir)? {
+        let res_dir = root
+            .join("res")
+            .canonicalize()
+            .unwrap_or_else(|_| root.join("res"));
+        let Ok(rel_res) = res_dir
+            .strip_prefix(workspace_root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+        else {
+            continue;
+        };
+        out.push(format!("${{workspaceFolder}}/{rel_res}/"));
+    }
+    Ok(out)
 }
 
 fn update_project_vscode_linked_projects(project_dir: &Path) -> Result<(), String> {
@@ -470,6 +523,8 @@ fn scripts_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
     log_step("Building Scripts");
     compile_scripts(&project_dir)
         .map(|_| {
@@ -487,6 +542,8 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
 
     log_step("Building Scripts");
     compile_scripts(&project_dir).map_err(|err| {
@@ -619,6 +676,8 @@ fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
     log_step("Building Project Bundle");
     compile_project_bundle(&project_dir)
         .map(|_| {
