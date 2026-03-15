@@ -290,6 +290,7 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
 
     let crate_name = crate_name_from_project_name(project_name);
     write_if_missing(root.join(".gitignore"), &default_gitignore())?;
+    write_if_missing(root.join("README.md"), &default_project_readme_md(project_name))?;
     write_if_missing(res_dir.join("main.scn"), &default_main_scene())?;
     write_if_missing(
         res_scripts_dir.join("script.rs"),
@@ -640,6 +641,54 @@ fn default_main_scene() -> String {
 [/main]
 "#
     .to_string()
+}
+
+fn default_project_readme_md(project_name: &str) -> String {
+    format!(
+        r#"# {project_name}
+
+Welcome to your Perro project. This README is a quick map of how things fit together.
+
+## Project Layout
+- `project.toml` is the project config (main scene, icon, graphics defaults).
+- `res/` holds your assets, scripts, and scenes. `res://` paths resolve into this folder.
+- `res/main.scn` is the default scene because `project.toml` points to it by default.
+- `.perro/` contains generated Rust crates (project, scripts, dev runner). You generally don’t touch these.
+  - `project/` is the static project crate produced by `perro build`. It bakes assets and links scripts into the final executable.
+  - `scripts/` is generated from any `.rs` file under `res/` plus Perro’s internal glue. It gets overwritten on build, so don’t edit it directly.
+  - `dev_runner/` is built and run by `perro dev`. It loads the scripts dynamic library in dev mode.
+  - Output from `perro build` goes to `.output/` for convenience so you do not have to dig through `target/`.
+
+## Common Commands
+- `perro new` creates a project (you just ran this).
+- `perro dev` builds scripts and runs the dev runner.
+- `perro check` builds scripts only.
+- `perro build` builds the full static bundle.
+- `perro format` runs rustfmt for all `.rs` scripts under `res/`.
+- If you run these inside the project root, you do not need `--path`.
+
+## Scenes And Scripts
+- Scenes are `.scn` files under `res/`.
+- Script files are Rust files under `res/` (any `.rs` file under `res/`).
+- You attach scripts to nodes in scenes using a `script` field with a `res://` path.
+- Example:
+```text
+[Player]
+    script = "res://scripts/player.rs"
+    [Node2D]
+            position = (0, 0)
+    [/Node2D]
+[/Player]
+```
+- Use `res://` paths to reference files in res/
+- Use `user://` when you want user data, either to read or write. On Windows this resolves to:
+  `C:\Users\<You>\AppData\Local\<ProjectName>\data\...`
+- You cannot write to res in release
+
+## Documentation
+The comprehensive docs live in the main Perro repository on GitHub: `https://github.com/PerroEngine/Perro/blob/main/docs/index.md`
+"#
+    )
 }
 
 pub fn default_script_example_rs() -> String {

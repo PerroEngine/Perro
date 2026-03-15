@@ -3,6 +3,7 @@ use perro_project::create_new_project;
 use serde_json::Value;
 use std::env;
 use std::fs;
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -68,7 +69,9 @@ fn print_usage() {
     eprintln!(
         "  perro_cli install                          # add `perro` source-mode command (PowerShell)"
     );
-    eprintln!("  perro_cli new [--path <parent_dir>] [--name <project_name>]");
+    eprintln!(
+        "  perro_cli new [--path <parent_dir>] [--name <project_name>] [--build-scripts] [--open] [--no-open]"
+    );
 }
 
 fn parse_flag_value(args: &[String], flag: &str) -> Option<String> {
@@ -256,14 +259,16 @@ fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
             project_dir.display()
         )
     })?;
-    log_step("Building Scripts");
-    compile_scripts(&project_dir).map_err(|err| {
-        format!(
-            "scripts pipeline failed for {}: {err}",
-            project_dir.display()
-        )
-    })?;
-    log_done("Scripts Built");
+    if args.iter().any(|a| a == "--build-scripts") {
+        log_step("Building Scripts");
+        compile_scripts(&project_dir).map_err(|err| {
+            format!(
+                "scripts pipeline failed for {}: {err}",
+                project_dir.display()
+            )
+        })?;
+        log_done("Scripts Built");
+    }
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
 
@@ -272,7 +277,60 @@ fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
         project_name,
         project_dir.display()
     );
+    maybe_open_project_in_new_window(args, &project_dir)?;
     Ok(())
+}
+
+fn maybe_open_project_in_new_window(args: &[String], project_dir: &Path) -> Result<(), String> {
+    let force_open = args.iter().any(|a| a == "--open");
+    let suppress_prompt = args.iter().any(|a| a == "--no-open");
+    let can_prompt = io::stdin().is_terminal();
+
+    let should_open = if force_open {
+        true
+    } else if suppress_prompt || !can_prompt {
+        false
+    } else {
+        prompt_yes_no("Open the project in a new window? [y/N] ")? 
+    };
+
+    if !should_open {
+        return Ok(());
+    }
+
+    let readme = project_dir.join("README.md");
+    let mut cmd = Command::new("code");
+    cmd.arg("-n").arg(project_dir);
+    if readme.exists() {
+        cmd.arg(&readme);
+    }
+    let status = cmd.status()
+        .map_err(|err| {
+            format!(
+                "failed to launch VS Code. Ensure the `code` command is available on PATH: {err}"
+            )
+        })?;
+
+    if !status.success() {
+        return Err(format!(
+            "VS Code launch failed with exit code {:?}",
+            status.code()
+        ));
+    }
+    Ok(())
+}
+
+fn prompt_yes_no(prompt: &str) -> Result<bool, String> {
+    print!("{prompt}");
+    io::stdout()
+        .flush()
+        .map_err(|err| format!("failed to flush prompt: {err}"))?;
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|err| format!("failed to read input: {err}"))?;
+    let answer = input.trim().to_ascii_lowercase();
+    Ok(matches!(answer.as_str(), "y" | "yes"))
 }
 
 fn update_workspace_vscode_linked_projects(

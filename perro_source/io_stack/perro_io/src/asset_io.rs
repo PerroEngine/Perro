@@ -61,7 +61,8 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
 
         let base = data_local_dir()
             .unwrap_or_else(std::env::temp_dir)
-            .join(app_name);
+            .join(app_name)
+            .join("data");
         return ResolvedPath::Disk(base.join(stripped));
     }
 

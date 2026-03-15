@@ -1370,6 +1370,8 @@ fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
     let mut methods = Vec::new();
     let mut depth = 0_i32;
     let mut pending_attrs: Vec<String> = Vec::new();
+    let mut sig_buf: Option<String> = None;
+    let mut sig_paren_depth: i32 = 0;
 
     for line in body.lines() {
         if depth == 0
@@ -1379,17 +1381,59 @@ fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
             continue;
         }
         let l = strip_line_comment(line);
-        if depth == 0
-            && let Some(mut method) = parse_script_method_signature(l.trim())
-        {
-            method.attrs = dedup_attrs(&pending_attrs);
-            pending_attrs.clear();
-            methods.push(method);
+        let trimmed = l.trim();
+
+        if depth == 0 {
+            if let Some(buf) = sig_buf.as_mut() {
+                if !trimmed.is_empty() {
+                    buf.push(' ');
+                    buf.push_str(trimmed);
+                }
+                sig_paren_depth += paren_delta(trimmed);
+                if sig_paren_depth <= 0 {
+                    if let Some(mut method) = parse_script_method_signature(buf.trim()) {
+                        method.attrs = dedup_attrs(&pending_attrs);
+                        pending_attrs.clear();
+                        methods.push(method);
+                    }
+                    sig_buf = None;
+                    sig_paren_depth = 0;
+                }
+            } else if trimmed.starts_with("fn ") || trimmed.starts_with("pub fn ") {
+                sig_buf = Some(trimmed.to_string());
+                sig_paren_depth = paren_delta(trimmed);
+                if sig_paren_depth <= 0 {
+                    if let Some(mut method) = parse_script_method_signature(trimmed) {
+                        method.attrs = dedup_attrs(&pending_attrs);
+                        pending_attrs.clear();
+                        methods.push(method);
+                    }
+                    sig_buf = None;
+                    sig_paren_depth = 0;
+                }
+            } else if let Some(mut method) = parse_script_method_signature(trimmed) {
+                method.attrs = dedup_attrs(&pending_attrs);
+                pending_attrs.clear();
+                methods.push(method);
+            }
         }
+
         depth += brace_delta(l);
     }
 
     methods
+}
+
+fn paren_delta(s: &str) -> i32 {
+    let mut depth = 0_i32;
+    for c in s.chars() {
+        if c == '(' {
+            depth += 1;
+        } else if c == ')' {
+            depth -= 1;
+        }
+    }
+    depth
 }
 
 fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
