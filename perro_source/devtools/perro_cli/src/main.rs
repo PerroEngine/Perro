@@ -143,17 +143,13 @@ fn install_command(args: &[String]) -> Result<(), String> {
     } else {
         default_powershell_profile_paths()
     };
-    let repo_root = normalize_powershell_path(&workspace_root()).replace('\\', "\\\\");
+    let workspace_manifest = normalize_powershell_path(&workspace_root().join("Cargo.toml"))
+        .replace('\\', "\\\\");
     let snippet = format!(
         "{PROFILE_SNIPPET_BEGIN}\n\
 function perro {{\n\
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)\n\
-    Push-Location \"{repo_root}\"\n\
-    try {{\n\
-        cargo run -p perro_cli -- @Args\n\
-    }} finally {{\n\
-        Pop-Location\n\
-    }}\n\
+    cargo run --manifest-path \"{workspace_manifest}\" -p perro_cli -- @Args\n\
 }}\n\
 {PROFILE_SNIPPET_END}\n"
     );

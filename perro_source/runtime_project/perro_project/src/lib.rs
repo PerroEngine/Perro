@@ -272,6 +272,7 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     let project_crate = perro_dir.join("project");
     let scripts_crate = perro_dir.join("scripts");
     let dev_runner_crate = perro_dir.join("dev_runner");
+    let scripts_cargo_config = scripts_crate.join(".cargo");
     let project_src = project_crate.join("src");
     let project_static_src = project_src.join("static");
     let project_embedded = project_crate.join("embedded");
@@ -284,6 +285,7 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     fs::create_dir_all(&project_static_src)?;
     fs::create_dir_all(&project_embedded)?;
     fs::create_dir_all(&scripts_src)?;
+    fs::create_dir_all(&scripts_cargo_config)?;
     fs::create_dir_all(&dev_runner_src)?;
 
     let crate_name = crate_name_from_project_name(project_name);
@@ -300,6 +302,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     write_if_missing(
         scripts_crate.join("Cargo.toml"),
         &default_scripts_crate_toml(),
+    )?;
+    write_if_missing(
+        scripts_cargo_config.join("config.toml"),
+        &default_scripts_cargo_config_toml(),
     )?;
     write_if_missing(
         dev_runner_crate.join("Cargo.toml"),
@@ -932,6 +938,13 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rust_analyzer)"] }
     .to_string()
 }
 
+fn default_scripts_cargo_config_toml() -> String {
+    r#"[build]
+target-dir = "../../target"
+"#
+    .to_string()
+}
+
 fn default_dev_runner_crate_toml() -> String {
     r#"[workspace]
 
@@ -1153,6 +1166,11 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
         .join(".perro")
         .join("dev_runner")
         .join("Cargo.toml");
+    let scripts_cargo_config = project_root
+        .join(".perro")
+        .join("scripts")
+        .join(".cargo")
+        .join("config.toml");
     ensure_project_manifest_deps(&project_manifest)?;
     ensure_scripts_manifest_deps(&scripts_manifest)?;
     ensure_dev_runner_manifest_deps(&dev_runner_manifest)?;
@@ -1160,7 +1178,18 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
     ensure_patch_block_in_manifest(&project_manifest)?;
     ensure_patch_block_in_manifest(&scripts_manifest)?;
     ensure_patch_block_in_manifest(&dev_runner_manifest)?;
+    ensure_scripts_target_dir_config(&scripts_cargo_config)?;
     Ok(())
+}
+
+fn ensure_scripts_target_dir_config(path: &Path) -> std::io::Result<()> {
+    if path.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, default_scripts_cargo_config_toml())
 }
 
 fn ensure_project_manifest_deps(path: &Path) -> std::io::Result<()> {
