@@ -1,5 +1,5 @@
 use perro_compiler::{compile_project_bundle, compile_scripts};
-use perro_project::create_new_project;
+use perro_project::{create_new_project, default_script_empty_rs};
 use serde_json::Value;
 use std::env;
 use std::fs;
@@ -40,6 +40,8 @@ fn main() {
     } else {
         match command {
             "new" => new_command(&args, &cwd),
+            "new_script" => new_script_command(&args, &cwd),
+            "new_scene" => new_scene_command(&args, &cwd),
             "install" => install_command(&args),
             "check" => scripts_command(&args, &cwd),
             "build" => project_command(&args, &cwd),
@@ -69,8 +71,12 @@ fn print_usage() {
     eprintln!(
         "  perro_cli install                          # add `perro` source-mode command (PowerShell)"
     );
+    eprintln!("  perro_cli new [--path <parent_dir>] [--name <project_name>]");
     eprintln!(
-        "  perro_cli new [--path <parent_dir>] [--name <project_name>] [--build-scripts] [--open] [--no-open]"
+        "  perro_cli new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>]"
+    );
+    eprintln!(
+        "  perro_cli new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--template 2D|3D]"
     );
 }
 
@@ -95,6 +101,105 @@ fn resolve_local_path(input: &str, local_root: &Path) -> PathBuf {
         return local_root.join(rel);
     }
     PathBuf::from(input)
+}
+
+fn find_project_root(start: &Path) -> Option<PathBuf> {
+    for ancestor in start.ancestors() {
+        if ancestor.join("project.toml").exists() {
+            return Some(ancestor.to_path_buf());
+        }
+    }
+    None
+}
+
+fn sanitize_script_file_name(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("script name cannot be empty".to_string());
+    }
+    if trimmed.contains('/') || trimmed.contains('\\') {
+        return Err("script name must not include path separators".to_string());
+    }
+    let mut out = String::with_capacity(trimmed.len() + 3);
+    for c in trimmed.chars() {
+        let invalid = matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*');
+        if invalid {
+            out.push('_');
+        } else {
+            out.push(c);
+        }
+    }
+    let mut rendered = out.trim_matches('.').to_string();
+    if rendered.is_empty() {
+        return Err("script name must include at least one valid character".to_string());
+    }
+    if !rendered.ends_with(".rs") {
+        rendered.push_str(".rs");
+    }
+    Ok(rendered)
+}
+
+fn sanitize_scene_file_name(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("scene name cannot be empty".to_string());
+    }
+    if trimmed.contains('/') || trimmed.contains('\\') {
+        return Err("scene name must not include path separators".to_string());
+    }
+    let mut out = String::with_capacity(trimmed.len() + 4);
+    for c in trimmed.chars() {
+        let invalid = matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*');
+        if invalid {
+            out.push('_');
+        } else {
+            out.push(c);
+        }
+    }
+    let mut rendered = out.trim_matches('.').to_string();
+    if rendered.is_empty() {
+        return Err("scene name must include at least one valid character".to_string());
+    }
+    if !rendered.ends_with(".scn") {
+        rendered.push_str(".scn");
+    }
+    Ok(rendered)
+}
+
+fn resolve_res_subdir(input: &str, res_root: &Path) -> Result<PathBuf, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Ok(res_root.to_path_buf());
+    }
+    let rel = if let Some(stripped) = trimmed.strip_prefix("res://") {
+        stripped.trim_start_matches('/').trim_start_matches('\\')
+    } else if trimmed.starts_with('/') || trimmed.starts_with('\\') {
+        trimmed.trim_start_matches('/').trim_start_matches('\\')
+    } else {
+        trimmed
+    };
+
+    let rel_path = PathBuf::from(rel);
+    if rel_path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("res subdir cannot contain `..` segments".to_string());
+    }
+    Ok(res_root.join(rel_path))
+}
+
+fn write_new_file(path: &Path, contents: &str) -> Result<(), String> {
+    if path.exists() {
+        return Err(format!("file already exists: {}", path.display()));
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    }
+    fs::write(path, contents)
+        .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
+    Ok(())
 }
 
 fn sanitize_project_dir_name(name: &str) -> String {
@@ -246,6 +351,9 @@ fn replace_or_append_snippet(existing: &str, snippet: &str) -> Result<String, St
 }
 
 fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    if args.iter().any(|a| a == "--build-scripts" || a == "--open" || a == "--no-open") {
+        return Err("`perro new` only accepts --path and --name".to_string());
+    }
     let base_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
@@ -259,16 +367,6 @@ fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
             project_dir.display()
         )
     })?;
-    if args.iter().any(|a| a == "--build-scripts") {
-        log_step("Building Scripts");
-        compile_scripts(&project_dir).map_err(|err| {
-            format!(
-                "scripts pipeline failed for {}: {err}",
-                project_dir.display()
-            )
-        })?;
-        log_done("Scripts Built");
-    }
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
 
@@ -277,23 +375,168 @@ fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
         project_name,
         project_dir.display()
     );
-    maybe_open_project_in_new_window(args, &project_dir)?;
+    maybe_open_project_in_new_window(&project_dir)?;
     Ok(())
 }
 
-fn maybe_open_project_in_new_window(args: &[String], project_dir: &Path) -> Result<(), String> {
-    let force_open = args.iter().any(|a| a == "--open");
-    let suppress_prompt = args.iter().any(|a| a == "--no-open");
-    let can_prompt = io::stdin().is_terminal();
+fn new_script_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let Some(raw_name) = parse_flag_value(args, "--name") else {
+        return Err("missing required flag `--name`".to_string());
+    };
+    let file_name = sanitize_script_file_name(&raw_name)?;
 
-    let should_open = if force_open {
-        true
-    } else if suppress_prompt || !can_prompt {
-        false
+    let project_dir = if let Some(raw_project) = parse_flag_value(args, "--path") {
+        resolve_local_path(&raw_project, cwd)
     } else {
-        prompt_yes_no("Open the project in a new window? [y/N] ")? 
+        find_project_root(cwd).ok_or_else(|| {
+            "could not find project.toml. Run from a project directory or pass --path <project_dir>."
+                .to_string()
+        })?
+    };
+    let res_root = project_dir.join("res");
+    if !res_root.exists() {
+        return Err(format!(
+            "res directory not found at {}",
+            res_root.display()
+        ));
+    }
+
+    let target_dir = if let Some(raw_path) = parse_flag_value(args, "--res") {
+        resolve_res_subdir(&raw_path, &res_root)?
+    } else {
+        res_root
     };
 
+    let target_path = target_dir.join(file_name);
+    write_new_file(&target_path, &default_script_empty_rs())?;
+    println!("created script at {}", target_path.display());
+    maybe_open_file_in_editor(args, &target_path)?;
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
+    log_step("Building Scripts");
+    compile_scripts(&project_dir)
+        .map(|_| {
+            log_done("Scripts Built");
+        })
+        .map_err(|err| {
+            format!(
+                "scripts pipeline failed for {}: {err}",
+                project_dir.display()
+            )
+        })?;
+    Ok(())
+}
+
+fn parse_scene_template(args: &[String]) -> Result<SceneTemplate, String> {
+    let Some(raw) = parse_flag_value(args, "--template") else {
+        return Ok(SceneTemplate::TwoD);
+    };
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "2d" => Ok(SceneTemplate::TwoD),
+        "3d" => Ok(SceneTemplate::ThreeD),
+        _ => Err("invalid --template value. Use 2D or 3D.".to_string()),
+    }
+}
+
+enum SceneTemplate {
+    TwoD,
+    ThreeD,
+}
+
+fn default_scene_2d() -> String {
+    r#"@root = main
+
+[main]
+
+[Node2D]
+    position = (0, 0)
+[/Node2D]
+[/main]
+"#
+    .to_string()
+}
+
+fn default_scene_3d() -> String {
+    r#"@root = main
+
+[main]
+
+[Node3D]
+    position = (0, 0, 0)
+[/Node3D]
+[/main]
+"#
+    .to_string()
+}
+
+fn new_scene_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let Some(raw_name) = parse_flag_value(args, "--name") else {
+        return Err("missing required flag `--name`".to_string());
+    };
+    let file_name = sanitize_scene_file_name(&raw_name)?;
+    let template = parse_scene_template(args)?;
+
+    let project_dir = if let Some(raw_project) = parse_flag_value(args, "--path") {
+        resolve_local_path(&raw_project, cwd)
+    } else {
+        find_project_root(cwd).ok_or_else(|| {
+            "could not find project.toml. Run from a project directory or pass --path <project_dir>."
+                .to_string()
+        })?
+    };
+    let res_root = project_dir.join("res");
+    if !res_root.exists() {
+        return Err(format!(
+            "res directory not found at {}",
+            res_root.display()
+        ));
+    }
+
+    let target_dir = if let Some(raw_path) = parse_flag_value(args, "--res") {
+        resolve_res_subdir(&raw_path, &res_root)?
+    } else {
+        res_root
+    };
+
+    let target_path = target_dir.join(file_name);
+    let contents = match template {
+        SceneTemplate::TwoD => default_scene_2d(),
+        SceneTemplate::ThreeD => default_scene_3d(),
+    };
+    write_new_file(&target_path, &contents)?;
+    println!("created scene at {}", target_path.display());
+    maybe_open_file_in_editor(args, &target_path)?;
+    Ok(())
+}
+
+fn maybe_open_file_in_editor(args: &[String], file_path: &Path) -> Result<(), String> {
+    if args.iter().any(|a| a == "--no-open") {
+        return Ok(());
+    }
+    let status = Command::new("code")
+        .arg("-g")
+        .arg(file_path)
+        .status()
+        .map_err(|err| {
+            format!(
+                "failed to launch VS Code. Ensure the `code` command is available on PATH: {err}"
+            )
+        })?;
+    if !status.success() {
+        return Err(format!(
+            "VS Code launch failed with exit code {:?}",
+            status.code()
+        ));
+    }
+    Ok(())
+}
+
+fn maybe_open_project_in_new_window(project_dir: &Path) -> Result<(), String> {
+    let can_prompt = io::stdin().is_terminal();
+    if !can_prompt {
+        return Ok(());
+    }
+    let should_open = prompt_yes_no("Open the project in a new window? [y/N] ")?;
     if !should_open {
         return Ok(());
     }
@@ -304,12 +547,11 @@ fn maybe_open_project_in_new_window(args: &[String], project_dir: &Path) -> Resu
     if readme.exists() {
         cmd.arg(&readme);
     }
-    let status = cmd.status()
-        .map_err(|err| {
-            format!(
-                "failed to launch VS Code. Ensure the `code` command is available on PATH: {err}"
-            )
-        })?;
+    let status = cmd.status().map_err(|err| {
+        format!(
+            "failed to launch VS Code. Ensure the `code` command is available on PATH: {err}"
+        )
+    })?;
 
     if !status.success() {
         return Err(format!(

@@ -649,6 +649,8 @@ fn default_project_readme_md(project_name: &str) -> String {
 
 Welcome to your Perro project. This README is a quick map of how things fit together.
 
+Run `perro check` to sync scripts and get rust-analyzer working.
+
 ## Project Layout
 - `project.toml` is the project config (main scene, icon, graphics defaults).
 - `res/` holds your assets, scripts, and scenes. `res://` paths resolve into this folder.
@@ -665,6 +667,8 @@ Welcome to your Perro project. This README is a quick map of how things fit toge
 - `perro check` builds scripts only.
 - `perro build` builds the full static bundle.
 - `perro format` runs rustfmt for all `.rs` scripts under `res/`.
+- `perro new_script` creates a new script template in `res/` (use `--res` for subfolders).
+- `perro new_scene` creates a new scene template in `res/` (use `--res` and `--template 2D|3D`).
 - If you run these inside the project root, you do not need `--path`.
 
 ## Scenes And Scripts

@@ -1,11 +1,14 @@
 # Perro CLI
 
-This document covers Perro CLI in command-first style:
+This document covers Perro CLI in command-first style. Commands are shown using `perro`, assuming you ran `perro_cli install` and restarted PowerShell, or installed from crates.io when available.
 
 - `check`
 - `dev`
 - `build`
 - `format`
+- `new`
+- `new_script`
+- `new_scene`
 - `install`
 
 ## Quick Map
@@ -13,11 +16,14 @@ This document covers Perro CLI in command-first style:
 Preferred usage:
 
 ```powershell
-perro_cli check [--path <project_dir>]
-perro_cli dev [--path <project_dir>]
-perro_cli build [--path <project_dir>]
-perro_cli format [--path <project_dir>]
-perro_cli install
+perro check [--path <project_dir>]
+perro dev [--path <project_dir>]
+perro build [--path <project_dir>]
+perro format [--path <project_dir>]
+perro new [--path <parent_dir>] [--name <project_name>]
+perro new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>] [--no-open]
+perro new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--template 2D|3D] [--no-open]
+perro install
 ```
 
 `--path` defaults to the current working directory when omitted.
@@ -26,7 +32,7 @@ perro_cli install
 
 Recommended workflow:
 
-1. Put temporary test/sandbox projects under `playground/` in this repo.
+1. Put temporary test/sandbox projects under `playground/` in this repo to be shared.
 2. Put real game/application projects outside this monorepo (for example `D:\GameProjects\MyGame`) and open those project folders directly in VS Code.
 
 Why:
@@ -40,7 +46,7 @@ Why:
 Command:
 
 ```powershell
-perro_cli check --path <project_dir>
+perro check --path <project_dir>
 ```
 
 What it does:
@@ -51,12 +57,37 @@ What it does:
 
 Use this when you only need script compilation/update.
 
+## `new`
+
+Command:
+
+```powershell
+perro new [--path <parent_dir>] [--name <project_name>]
+```
+
+What it does:
+
+1. Creates a new project directory under `<parent_dir>` (defaults to current working directory).
+2. Writes default project files (`project.toml`, `res/main.scn`, scripts scaffold, and `.perro` crates).
+3. Prompts to open the project in VS Code.
+
+Notes:
+
+- If you run this inside a directory you want to contain projects, you can omit `--path`.
+
+Examples:
+
+```powershell
+perro new --path D:\GameProjects --name MyGame
+perro new --name MyGame
+```
+
 ## `dev`
 
 Command:
 
 ```powershell
-perro_cli dev --path <project_dir>
+perro dev --path <project_dir>
 ```
 
 What it does:
@@ -72,7 +103,7 @@ Use this for local development runs.
 Command:
 
 ```powershell
-perro_cli build --path <project_dir>
+perro build --path <project_dir>
 ```
 
 What it does:
@@ -91,7 +122,7 @@ Use this for full static project bundle generation and build.
 Command:
 
 ```powershell
-perro_cli format --path <project_dir>
+perro format --path <project_dir>
 ```
 
 What it does:
@@ -105,7 +136,7 @@ What it does:
 Command:
 
 ```powershell
-perro_cli install
+perro install
 ```
 
 What it does:
@@ -118,4 +149,65 @@ After running install, open a new PowerShell and use:
 ```powershell
 perro new --path D:\GameProjects --name MyGame
 perro check --path D:\GameProjects\MyGame
+```
+
+## `new_script`
+
+Command:
+
+```powershell
+perro new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>] [--no-open]
+```
+
+What it does:
+
+1. Resolves `<project_dir>` (defaults to current working directory, walking up to find `project.toml`).
+2. Resolves `<res_subdir>` relative to the project `res` root.
+3. Creates a new `*.rs` script using the empty script template.
+4. Opens the new file in VS Code (disable with `--no-open`).
+
+Notes:
+
+- `--res` accepts `res://` or `/`-style paths, for example `res://scripts` or `/scripts`.
+- `--name` can be passed without `.rs`; the extension is added automatically.
+
+Examples:
+
+```powershell
+perro new_script --name PlayerController
+perro new_script --name PlayerController --res /scripts
+perro new_script --name PlayerController --path D:\GameProjects\MyGame --res res://scripts
+perro new_script --name PlayerController --no-open
+```
+
+## `new_scene`
+
+Command:
+
+```powershell
+perro new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--template 2D|3D] [--no-open]
+```
+
+What it does:
+
+1. Resolves `<project_dir>` (defaults to current working directory, walking up to find `project.toml`).
+2. Resolves `<res_subdir>` relative to the project `res` root.
+3. Creates a new `*.scn` scene using the selected template.
+4. Opens the new file in VS Code (disable with `--no-open`).
+
+Notes:
+
+- `--template` defaults to `2D`.
+- `--res` accepts `res://` or `/`-style paths, for example `res://scenes` or `/scenes`.
+- `--name` can be passed without `.scn`; the extension is added automatically.
+- `--name` must be a file name only (no path separators).
+
+Examples:
+
+```powershell
+perro new_scene --name Main
+perro new_scene --name Main3D --template 3D
+perro new_scene --name Main --res /scenes
+perro new_scene --name Main --path D:\GameProjects\MyGame --res res://scenes --template 2D
+perro new_scene --name Main --no-open
 ```
