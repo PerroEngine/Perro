@@ -6,6 +6,7 @@ This document covers Perro CLI in command-first style. Commands are shown using 
 - `dev`
 - `build`
 - `format`
+- `clean`
 - `new`
 - `new_script`
 - `new_scene`
@@ -20,6 +21,7 @@ perro check [--path <project_dir>]
 perro dev [--path <project_dir>]
 perro build [--path <project_dir>]
 perro format [--path <project_dir>]
+perro clean [--path <project_dir>]
 perro new [--path <parent_dir>] [--name <project_name>]
 perro new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>] [--no-open]
 perro new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--template 2D|3D] [--no-open]
@@ -130,6 +132,18 @@ What it does:
 1. Resolves your path to that project's `res` root.
 2. Recursively finds all `*.rs` files under `res/**`.
 3. Runs `rustfmt` on those files.
+
+## `clean`
+
+Command:
+
+```powershell
+perro clean [--path <project_dir>]
+```
+
+What it does:
+
+1. Removes the project's `target/` directory (defaults to current project).
 
 ## `install`
 

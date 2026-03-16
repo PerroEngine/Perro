@@ -42,6 +42,7 @@ fn main() {
             "new" => new_command(&args, &cwd),
             "new_script" => new_script_command(&args, &cwd),
             "new_scene" => new_scene_command(&args, &cwd),
+            "clean" => clean_command(&args, &cwd),
             "install" => install_command(&args),
             "check" => scripts_command(&args, &cwd),
             "build" => project_command(&args, &cwd),
@@ -68,6 +69,7 @@ fn print_usage() {
     eprintln!("  perro_cli build [--path <project_dir>]    # full static project bundle + build");
     eprintln!("  perro_cli dev [--path <project_dir>]      # build scripts + run dev runner");
     eprintln!("  perro_cli format [--path <project_dir>]   # rustfmt .rs under project res only");
+    eprintln!("  perro_cli clean [--path <project_dir>]    # remove project target/");
     eprintln!(
         "  perro_cli install                          # add `perro` source-mode command (PowerShell)"
     );
@@ -506,6 +508,43 @@ fn new_scene_command(args: &[String], cwd: &Path) -> Result<(), String> {
     write_new_file(&target_path, &contents)?;
     println!("created scene at {}", target_path.display());
     maybe_open_file_in_editor(args, &target_path)?;
+    Ok(())
+}
+
+fn clean_command(args: &[String], _cwd: &Path) -> Result<(), String> {
+    let project_dir = parse_flag_value(args, "--path")
+        .map(|p| resolve_local_path(&p, _cwd))
+        .or_else(|| find_project_root(_cwd))
+        .ok_or_else(|| {
+            "could not find project.toml. Run from a project directory or pass --path <project_dir>."
+                .to_string()
+        })?;
+    if !project_dir.join("project.toml").exists() {
+        return Err(format!(
+            "invalid --path `{}` for clean. Use project root (directory containing project.toml).",
+            project_dir.display()
+        ));
+    }
+
+    let target_dir = project_dir.join("target");
+    if !target_dir.exists() {
+        log_note("No project target/ directory to clean");
+        return Ok(());
+    }
+
+    if let Ok(current_exe) = env::current_exe() {
+        if current_exe.starts_with(&target_dir) {
+            return Err(
+                "cannot clean while running from the project's target/. Use the installed `perro` command or run from another location."
+                    .to_string(),
+            );
+        }
+    }
+
+    log_step("Cleaning Project Target");
+    fs::remove_dir_all(&target_dir)
+        .map_err(|err| format!("failed to remove {}: {err}", target_dir.display()))?;
+    log_done("Project Target Cleaned");
     Ok(())
 }
 

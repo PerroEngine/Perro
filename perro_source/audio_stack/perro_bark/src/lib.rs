@@ -310,25 +310,7 @@ impl BarkPlayer {
         Self::enforce_cache_soft_limit_locked(&mut state);
         let activate_elapsed = activate_begin.elapsed();
         let total_elapsed = play_begin.elapsed();
-        println!(
-            "[audio_timing] play source={} cache_hit={} source={} static_lookup_us={:.3} pawdio_decompress_us={:.3} disk_read_us={:.3} decode_us={:.3} duration_probe_us={:.3} sink_setup_us={:.3} append_us={:.3} activate_us={:.3} total_us={:.3}",
-            source,
-            cache_hit,
-            match load_stats.kind {
-                SourceLoadKind::Cache => "cache",
-                SourceLoadKind::Static => "static",
-                SourceLoadKind::Disk => "disk",
-            },
-            load_stats.static_lookup.as_secs_f64() * 1_000_000.0,
-            load_stats.pawdio_decompress.as_secs_f64() * 1_000_000.0,
-            load_stats.disk_read.as_secs_f64() * 1_000_000.0,
-            decode_elapsed.as_secs_f64() * 1_000_000.0,
-            duration_probe_elapsed.as_secs_f64() * 1_000_000.0,
-            sink_setup_elapsed.as_secs_f64() * 1_000_000.0,
-            append_elapsed.as_secs_f64() * 1_000_000.0,
-            activate_elapsed.as_secs_f64() * 1_000_000.0,
-            total_elapsed.as_secs_f64() * 1_000_000.0
-        );
+      
         Ok(())
     }
 
@@ -358,21 +340,7 @@ impl BarkPlayer {
         Self::evict_unreserved_unused_locked(&mut state, now);
         Self::enforce_cache_soft_limit_locked(&mut state);
         let total_elapsed = load_begin.elapsed();
-        println!(
-            "[audio_timing] preload source={} reserved={} cache_hit={} source={} static_lookup_us={:.3} pawdio_decompress_us={:.3} disk_read_us={:.3} total_us={:.3}",
-            source,
-            reserved,
-            cache_hit,
-            match load_stats.kind {
-                SourceLoadKind::Cache => "cache",
-                SourceLoadKind::Static => "static",
-                SourceLoadKind::Disk => "disk",
-            },
-            load_stats.static_lookup.as_secs_f64() * 1_000_000.0,
-            load_stats.pawdio_decompress.as_secs_f64() * 1_000_000.0,
-            load_stats.disk_read.as_secs_f64() * 1_000_000.0,
-            total_elapsed.as_secs_f64() * 1_000_000.0
-        );
+       
         Ok(())
     }
 
