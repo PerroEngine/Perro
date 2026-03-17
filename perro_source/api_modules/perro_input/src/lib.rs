@@ -1,46 +1,421 @@
+mod gamepad;
+mod joycon;
 mod keycode;
 mod mouse_button;
 
+pub use gamepad::{GamepadAxis, GamepadButton, GamepadState};
+pub use joycon::{JoyConAxis, JoyConButton, JoyConState};
 pub use keycode::KeyCode;
 pub use mouse_button::MouseButton;
 use perro_structs::Vector2;
 
 #[derive(Clone, Debug)]
 pub struct InputSnapshot {
-    down: Vec<u64>,
-    pressed: Vec<u64>,
-    released: Vec<u64>,
-    mouse_down: u8,
-    mouse_pressed: u8,
-    mouse_released: u8,
-    mouse_delta_x: f32,
-    mouse_delta_y: f32,
-    mouse_wheel_x: f32,
-    mouse_wheel_y: f32,
-    mouse_position_x: f32,
-    mouse_position_y: f32,
-    viewport_width: f32,
-    viewport_height: f32,
+    keyboard: KeyboardState,
+    mouse: MouseState,
+    gamepads: Vec<GamepadState>,
+    joycons: Vec<JoyConState>,
 }
 
 impl InputSnapshot {
+    pub fn new() -> Self {
+        Self {
+            keyboard: KeyboardState::new(),
+            mouse: MouseState::new(),
+            gamepads: Vec::new(),
+            joycons: Vec::new(),
+        }
+    }
+
+    #[inline]
+    pub fn begin_frame(&mut self) {
+        self.keyboard.begin_frame();
+        self.mouse.begin_frame();
+        for pad in &mut self.gamepads {
+            pad.begin_frame();
+        }
+        for jc in &mut self.joycons {
+            jc.begin_frame();
+        }
+    }
+
+    #[inline]
+    pub fn set_key_state(&mut self, key: KeyCode, is_down: bool) {
+        self.keyboard.set_key_state(key, is_down);
+    }
+
+    #[inline]
+    pub fn is_key_down(&self, key: KeyCode) -> bool {
+        self.keyboard.is_key_down(key)
+    }
+
+    #[inline]
+    pub fn is_key_pressed(&self, key: KeyCode) -> bool {
+        self.keyboard.is_key_pressed(key)
+    }
+
+    #[inline]
+    pub fn is_key_released(&self, key: KeyCode) -> bool {
+        self.keyboard.is_key_released(key)
+    }
+
+    #[inline]
+    pub fn set_mouse_button_state(&mut self, button: MouseButton, is_down: bool) {
+        self.mouse.set_button_state(button, is_down);
+    }
+
+    #[inline]
+    pub fn add_mouse_delta(&mut self, dx: f32, dy: f32) {
+        self.mouse.add_delta(dx, dy);
+    }
+
+    #[inline]
+    pub fn add_mouse_wheel(&mut self, dx: f32, dy: f32) {
+        self.mouse.add_wheel(dx, dy);
+    }
+
+    #[inline]
+    pub fn set_mouse_position(&mut self, x: f32, y: f32) {
+        self.mouse.set_position(x, y);
+    }
+
+    #[inline]
+    pub fn set_viewport_size(&mut self, width: u32, height: u32) {
+        self.mouse.set_viewport_size(width, height);
+    }
+
+    #[inline]
+    pub fn gamepads(&self) -> &[GamepadState] {
+        &self.gamepads
+    }
+
+    #[inline]
+    pub fn joycons(&self) -> &[JoyConState] {
+        &self.joycons
+    }
+
+    #[inline]
+    pub fn gamepad_mut(&mut self, index: usize) -> &mut GamepadState {
+        if self.gamepads.len() <= index {
+            self.gamepads.resize_with(index + 1, GamepadState::new);
+        }
+        &mut self.gamepads[index]
+    }
+
+    #[inline]
+    pub fn joycon_mut(&mut self, index: usize) -> &mut JoyConState {
+        if self.joycons.len() <= index {
+            self.joycons.resize_with(index + 1, JoyConState::new);
+        }
+        &mut self.joycons[index]
+    }
+
+    #[inline]
+    pub fn set_gamepad_button_state(
+        &mut self,
+        index: usize,
+        button: GamepadButton,
+        is_down: bool,
+    ) {
+        self.gamepad_mut(index).set_button_state(button, is_down);
+    }
+
+    #[inline]
+    pub fn set_gamepad_axis(&mut self, index: usize, axis: GamepadAxis, value: f32) {
+        self.gamepad_mut(index).set_axis(axis, value);
+    }
+
+    #[inline]
+    pub fn set_joycon_button_state(
+        &mut self,
+        index: usize,
+        button: JoyConButton,
+        is_down: bool,
+    ) {
+        self.joycon_mut(index).set_button_state(button, is_down);
+    }
+
+    #[inline]
+    pub fn set_joycon_axis(&mut self, index: usize, axis: JoyConAxis, value: f32) {
+        self.joycon_mut(index).set_axis(axis, value);
+    }
+
+    #[inline]
+    pub fn is_mouse_down(&self, button: MouseButton) -> bool {
+        self.mouse.is_button_down(button)
+    }
+
+    #[inline]
+    pub fn is_mouse_pressed(&self, button: MouseButton) -> bool {
+        self.mouse.is_button_pressed(button)
+    }
+
+    #[inline]
+    pub fn is_mouse_released(&self, button: MouseButton) -> bool {
+        self.mouse.is_button_released(button)
+    }
+
+    #[inline]
+    pub fn mouse_delta(&self) -> Vector2 {
+        self.mouse.delta()
+    }
+
+    #[inline]
+    pub fn mouse_wheel(&self) -> Vector2 {
+        self.mouse.wheel()
+    }
+
+    #[inline]
+    pub fn mouse_position(&self) -> Vector2 {
+        self.mouse.position()
+    }
+
+    #[inline]
+    pub fn viewport_size(&self) -> Vector2 {
+        self.mouse.viewport_size()
+    }
+}
+
+impl Default for InputSnapshot {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub trait InputAPI {
+    fn keyboard(&self) -> &KeyboardState;
+    fn mouse(&self) -> &MouseState;
+    fn gamepads(&self) -> &[GamepadState];
+    fn joycons(&self) -> &[JoyConState];
+}
+
+impl InputAPI for InputSnapshot {
+    #[inline]
+    fn keyboard(&self) -> &KeyboardState {
+        &self.keyboard
+    }
+
+    #[inline]
+    fn mouse(&self) -> &MouseState {
+        &self.mouse
+    }
+
+    #[inline]
+    fn gamepads(&self) -> &[GamepadState] {
+        self.gamepads()
+    }
+
+    #[inline]
+    fn joycons(&self) -> &[JoyConState] {
+        self.joycons()
+    }
+}
+
+pub struct InputContext<'ipt, IP: InputAPI + ?Sized> {
+    ipt: &'ipt IP,
+}
+
+#[allow(non_snake_case)]
+impl<'ipt, IP: InputAPI + ?Sized> InputContext<'ipt, IP> {
+    pub fn new(ipt: &'ipt IP) -> Self {
+        Self { ipt }
+    }
+
+    #[inline]
+    pub fn Keys(&self) -> KeyModule<'_, IP> {
+        KeyModule::new(self.ipt)
+    }
+
+    #[inline]
+    pub fn Mouse(&self) -> MouseModule<'_, IP> {
+        MouseModule::new(self.ipt)
+    }
+
+    #[inline]
+    pub fn Keyboard(&self) -> KeyboardModule<'_, IP> {
+        KeyboardModule::new(self.ipt)
+    }
+
+    #[inline]
+    pub fn MouseState(&self) -> MouseStateModule<'_, IP> {
+        MouseStateModule::new(self.ipt)
+    }
+
+    #[inline]
+    pub fn Gamepads(&self) -> GamepadModule<'_, IP> {
+        GamepadModule::new(self.ipt)
+    }
+
+    #[inline]
+    pub fn JoyCons(&self) -> JoyConModule<'_, IP> {
+        JoyConModule::new(self.ipt)
+    }
+}
+
+pub struct KeyModule<'ipt, IP: InputAPI + ?Sized> {
+    ipt: &'ipt IP,
+}
+
+impl<'ipt, IP: InputAPI + ?Sized> KeyModule<'ipt, IP> {
+    pub fn new(ipt: &'ipt IP) -> Self {
+        Self { ipt }
+    }
+
+    #[inline]
+    pub fn down(&self, key: KeyCode) -> bool {
+        self.ipt.keyboard().is_key_down(key)
+    }
+
+    #[inline]
+    pub fn pressed(&self, key: KeyCode) -> bool {
+        self.ipt.keyboard().is_key_pressed(key)
+    }
+
+    #[inline]
+    pub fn released(&self, key: KeyCode) -> bool {
+        self.ipt.keyboard().is_key_released(key)
+    }
+}
+
+pub struct MouseModule<'ipt, IP: InputAPI + ?Sized> {
+    ipt: &'ipt IP,
+}
+
+impl<'ipt, IP: InputAPI + ?Sized> MouseModule<'ipt, IP> {
+    pub fn new(ipt: &'ipt IP) -> Self {
+        Self { ipt }
+    }
+
+    #[inline]
+    pub fn down(&self, button: MouseButton) -> bool {
+        self.ipt.mouse().is_button_down(button)
+    }
+
+    #[inline]
+    pub fn pressed(&self, button: MouseButton) -> bool {
+        self.ipt.mouse().is_button_pressed(button)
+    }
+
+    #[inline]
+    pub fn released(&self, button: MouseButton) -> bool {
+        self.ipt.mouse().is_button_released(button)
+    }
+
+    #[inline]
+    pub fn delta(&self) -> Vector2 {
+        self.ipt.mouse().delta()
+    }
+
+    #[inline]
+    pub fn wheel(&self) -> Vector2 {
+        self.ipt.mouse().wheel()
+    }
+
+    #[inline]
+    pub fn position(&self) -> Vector2 {
+        self.ipt.mouse().position()
+    }
+
+    #[inline]
+    pub fn viewport_size(&self) -> Vector2 {
+        self.ipt.mouse().viewport_size()
+    }
+}
+
+pub struct KeyboardModule<'ipt, IP: InputAPI + ?Sized> {
+    ipt: &'ipt IP,
+}
+
+impl<'ipt, IP: InputAPI + ?Sized> KeyboardModule<'ipt, IP> {
+    pub fn new(ipt: &'ipt IP) -> Self {
+        Self { ipt }
+    }
+
+    #[inline]
+    pub fn state(&self) -> &'ipt KeyboardState {
+        self.ipt.keyboard()
+    }
+
+    #[inline]
+    pub fn down(&self, key: KeyCode) -> bool {
+        self.ipt.keyboard().is_key_down(key)
+    }
+
+    #[inline]
+    pub fn pressed(&self, key: KeyCode) -> bool {
+        self.ipt.keyboard().is_key_pressed(key)
+    }
+
+    #[inline]
+    pub fn released(&self, key: KeyCode) -> bool {
+        self.ipt.keyboard().is_key_released(key)
+    }
+}
+
+pub struct MouseStateModule<'ipt, IP: InputAPI + ?Sized> {
+    ipt: &'ipt IP,
+}
+
+impl<'ipt, IP: InputAPI + ?Sized> MouseStateModule<'ipt, IP> {
+    pub fn new(ipt: &'ipt IP) -> Self {
+        Self { ipt }
+    }
+
+    #[inline]
+    pub fn state(&self) -> &'ipt MouseState {
+        self.ipt.mouse()
+    }
+
+    #[inline]
+    pub fn down(&self, button: MouseButton) -> bool {
+        self.ipt.mouse().is_button_down(button)
+    }
+
+    #[inline]
+    pub fn pressed(&self, button: MouseButton) -> bool {
+        self.ipt.mouse().is_button_pressed(button)
+    }
+
+    #[inline]
+    pub fn released(&self, button: MouseButton) -> bool {
+        self.ipt.mouse().is_button_released(button)
+    }
+
+    #[inline]
+    pub fn delta(&self) -> Vector2 {
+        self.ipt.mouse().delta()
+    }
+
+    #[inline]
+    pub fn wheel(&self) -> Vector2 {
+        self.ipt.mouse().wheel()
+    }
+
+    #[inline]
+    pub fn position(&self) -> Vector2 {
+        self.ipt.mouse().position()
+    }
+
+    #[inline]
+    pub fn viewport_size(&self) -> Vector2 {
+        self.ipt.mouse().viewport_size()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct KeyboardState {
+    down: Vec<u64>,
+    pressed: Vec<u64>,
+    released: Vec<u64>,
+}
+
+impl KeyboardState {
     pub fn new() -> Self {
         let words = KeyCode::COUNT.div_ceil(64);
         Self {
             down: vec![0; words],
             pressed: vec![0; words],
             released: vec![0; words],
-            mouse_down: 0,
-            mouse_pressed: 0,
-            mouse_released: 0,
-            mouse_delta_x: 0.0,
-            mouse_delta_y: 0.0,
-            mouse_wheel_x: 0.0,
-            mouse_wheel_y: 0.0,
-            mouse_position_x: 0.0,
-            mouse_position_y: 0.0,
-            viewport_width: 1.0,
-            viewport_height: 1.0,
         }
     }
 
@@ -48,12 +423,6 @@ impl InputSnapshot {
     pub fn begin_frame(&mut self) {
         self.pressed.fill(0);
         self.released.fill(0);
-        self.mouse_pressed = 0;
-        self.mouse_released = 0;
-        self.mouse_delta_x = 0.0;
-        self.mouse_delta_y = 0.0;
-        self.mouse_wheel_x = 0.0;
-        self.mouse_wheel_y = 0.0;
     }
 
     #[inline]
@@ -90,37 +459,94 @@ impl InputSnapshot {
     }
 
     #[inline]
-    pub fn set_mouse_button_state(&mut self, button: MouseButton, is_down: bool) {
-        let bit = button.bit();
-        let was_down = self.mouse_down & bit != 0;
+    fn test(&self, bits: &[u64], key: KeyCode) -> bool {
+        let idx = key.as_index();
+        let word = idx / 64;
+        let bit = 1_u64 << (idx % 64);
+        bits[word] & bit != 0
+    }
+}
 
-        if is_down {
-            if !was_down {
-                self.mouse_down |= bit;
-                self.mouse_pressed |= bit;
-            }
-        } else if was_down {
-            self.mouse_down &= !bit;
-            self.mouse_released |= bit;
+impl Default for KeyboardState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MouseState {
+    down: u8,
+    pressed: u8,
+    released: u8,
+    delta_x: f32,
+    delta_y: f32,
+    wheel_x: f32,
+    wheel_y: f32,
+    position_x: f32,
+    position_y: f32,
+    viewport_width: f32,
+    viewport_height: f32,
+}
+
+impl MouseState {
+    pub fn new() -> Self {
+        Self {
+            down: 0,
+            pressed: 0,
+            released: 0,
+            delta_x: 0.0,
+            delta_y: 0.0,
+            wheel_x: 0.0,
+            wheel_y: 0.0,
+            position_x: 0.0,
+            position_y: 0.0,
+            viewport_width: 1.0,
+            viewport_height: 1.0,
         }
     }
 
     #[inline]
-    pub fn add_mouse_delta(&mut self, dx: f32, dy: f32) {
-        self.mouse_delta_x += dx;
-        self.mouse_delta_y += dy;
+    pub fn begin_frame(&mut self) {
+        self.pressed = 0;
+        self.released = 0;
+        self.delta_x = 0.0;
+        self.delta_y = 0.0;
+        self.wheel_x = 0.0;
+        self.wheel_y = 0.0;
     }
 
     #[inline]
-    pub fn add_mouse_wheel(&mut self, dx: f32, dy: f32) {
-        self.mouse_wheel_x += dx;
-        self.mouse_wheel_y += dy;
+    pub fn set_button_state(&mut self, button: MouseButton, is_down: bool) {
+        let bit = button.bit();
+        let was_down = self.down & bit != 0;
+
+        if is_down {
+            if !was_down {
+                self.down |= bit;
+                self.pressed |= bit;
+            }
+        } else if was_down {
+            self.down &= !bit;
+            self.released |= bit;
+        }
     }
 
     #[inline]
-    pub fn set_mouse_position(&mut self, x: f32, y: f32) {
-        self.mouse_position_x = x;
-        self.mouse_position_y = y;
+    pub fn add_delta(&mut self, dx: f32, dy: f32) {
+        self.delta_x += dx;
+        self.delta_y += dy;
+    }
+
+    #[inline]
+    pub fn add_wheel(&mut self, dx: f32, dy: f32) {
+        self.wheel_x += dx;
+        self.wheel_y += dy;
+    }
+
+    #[inline]
+    pub fn set_position(&mut self, x: f32, y: f32) {
+        self.position_x = x;
+        self.position_y = y;
     }
 
     #[inline]
@@ -130,208 +556,84 @@ impl InputSnapshot {
     }
 
     #[inline]
-    pub fn is_mouse_down(&self, button: MouseButton) -> bool {
-        self.mouse_down & button.bit() != 0
+    pub fn is_button_down(&self, button: MouseButton) -> bool {
+        self.down & button.bit() != 0
     }
 
     #[inline]
-    pub fn is_mouse_pressed(&self, button: MouseButton) -> bool {
-        self.mouse_pressed & button.bit() != 0
+    pub fn is_button_pressed(&self, button: MouseButton) -> bool {
+        self.pressed & button.bit() != 0
     }
 
     #[inline]
-    pub fn is_mouse_released(&self, button: MouseButton) -> bool {
-        self.mouse_released & button.bit() != 0
+    pub fn is_button_released(&self, button: MouseButton) -> bool {
+        self.released & button.bit() != 0
     }
 
     #[inline]
-    pub fn mouse_delta(&self) -> Vector2 {
-        Vector2::new(self.mouse_delta_x, self.mouse_delta_y)
+    pub fn delta(&self) -> Vector2 {
+        Vector2::new(self.delta_x, self.delta_y)
     }
 
     #[inline]
-    pub fn mouse_wheel(&self) -> Vector2 {
-        Vector2::new(self.mouse_wheel_x, self.mouse_wheel_y)
+    pub fn wheel(&self) -> Vector2 {
+        Vector2::new(self.wheel_x, self.wheel_y)
     }
 
     #[inline]
-    pub fn mouse_position(&self) -> Vector2 {
-        Vector2::new(self.mouse_position_x, self.mouse_position_y)
+    pub fn position(&self) -> Vector2 {
+        Vector2::new(self.position_x, self.position_y)
     }
 
     #[inline]
     pub fn viewport_size(&self) -> Vector2 {
         Vector2::new(self.viewport_width, self.viewport_height)
     }
-
-    #[inline]
-    fn test(&self, bits: &[u64], key: KeyCode) -> bool {
-        let idx = key.as_index();
-        let word = idx / 64;
-        let bit = 1_u64 << (idx % 64);
-        bits[word] & bit != 0
-    }
 }
 
-impl Default for InputSnapshot {
+impl Default for MouseState {
     fn default() -> Self {
         Self::new()
     }
 }
 
-pub trait InputAPI {
-    fn is_key_down(&self, key: KeyCode) -> bool;
-    fn is_key_pressed(&self, key: KeyCode) -> bool;
-    fn is_key_released(&self, key: KeyCode) -> bool;
-    fn is_mouse_down(&self, button: MouseButton) -> bool;
-    fn is_mouse_pressed(&self, button: MouseButton) -> bool;
-    fn is_mouse_released(&self, button: MouseButton) -> bool;
-    fn mouse_delta(&self) -> Vector2;
-    fn mouse_wheel(&self) -> Vector2;
-    fn mouse_position(&self) -> Vector2;
-    fn viewport_size(&self) -> Vector2;
-}
-
-impl InputAPI for InputSnapshot {
-    #[inline]
-    fn is_key_down(&self, key: KeyCode) -> bool {
-        self.is_key_down(key)
-    }
-
-    #[inline]
-    fn is_key_pressed(&self, key: KeyCode) -> bool {
-        self.is_key_pressed(key)
-    }
-
-    #[inline]
-    fn is_key_released(&self, key: KeyCode) -> bool {
-        self.is_key_released(key)
-    }
-
-    #[inline]
-    fn is_mouse_down(&self, button: MouseButton) -> bool {
-        self.is_mouse_down(button)
-    }
-
-    #[inline]
-    fn is_mouse_pressed(&self, button: MouseButton) -> bool {
-        self.is_mouse_pressed(button)
-    }
-
-    #[inline]
-    fn is_mouse_released(&self, button: MouseButton) -> bool {
-        self.is_mouse_released(button)
-    }
-
-    #[inline]
-    fn mouse_delta(&self) -> Vector2 {
-        self.mouse_delta()
-    }
-
-    #[inline]
-    fn mouse_wheel(&self) -> Vector2 {
-        self.mouse_wheel()
-    }
-
-    #[inline]
-    fn mouse_position(&self) -> Vector2 {
-        self.mouse_position()
-    }
-
-    #[inline]
-    fn viewport_size(&self) -> Vector2 {
-        self.viewport_size()
-    }
-}
-
-pub struct InputContext<'ipt, IP: InputAPI + ?Sized> {
+pub struct GamepadModule<'ipt, IP: InputAPI + ?Sized> {
     ipt: &'ipt IP,
 }
 
-#[allow(non_snake_case)]
-impl<'ipt, IP: InputAPI + ?Sized> InputContext<'ipt, IP> {
+impl<'ipt, IP: InputAPI + ?Sized> GamepadModule<'ipt, IP> {
     pub fn new(ipt: &'ipt IP) -> Self {
         Self { ipt }
     }
 
     #[inline]
-    pub fn Keys(&self) -> KeyModule<'_, IP> {
-        KeyModule::new(self.ipt)
+    pub fn all(&self) -> &'ipt [GamepadState] {
+        self.ipt.gamepads()
     }
 
     #[inline]
-    pub fn Mouse(&self) -> MouseModule<'_, IP> {
-        MouseModule::new(self.ipt)
+    pub fn get(&self, index: usize) -> Option<&'ipt GamepadState> {
+        self.ipt.gamepads().get(index)
     }
 }
 
-pub struct KeyModule<'ipt, IP: InputAPI + ?Sized> {
+pub struct JoyConModule<'ipt, IP: InputAPI + ?Sized> {
     ipt: &'ipt IP,
 }
 
-impl<'ipt, IP: InputAPI + ?Sized> KeyModule<'ipt, IP> {
+impl<'ipt, IP: InputAPI + ?Sized> JoyConModule<'ipt, IP> {
     pub fn new(ipt: &'ipt IP) -> Self {
         Self { ipt }
     }
 
     #[inline]
-    pub fn down(&self, key: KeyCode) -> bool {
-        self.ipt.is_key_down(key)
+    pub fn all(&self) -> &'ipt [JoyConState] {
+        self.ipt.joycons()
     }
 
     #[inline]
-    pub fn pressed(&self, key: KeyCode) -> bool {
-        self.ipt.is_key_pressed(key)
-    }
-
-    #[inline]
-    pub fn released(&self, key: KeyCode) -> bool {
-        self.ipt.is_key_released(key)
-    }
-}
-
-pub struct MouseModule<'ipt, IP: InputAPI + ?Sized> {
-    ipt: &'ipt IP,
-}
-
-impl<'ipt, IP: InputAPI + ?Sized> MouseModule<'ipt, IP> {
-    pub fn new(ipt: &'ipt IP) -> Self {
-        Self { ipt }
-    }
-
-    #[inline]
-    pub fn down(&self, button: MouseButton) -> bool {
-        self.ipt.is_mouse_down(button)
-    }
-
-    #[inline]
-    pub fn pressed(&self, button: MouseButton) -> bool {
-        self.ipt.is_mouse_pressed(button)
-    }
-
-    #[inline]
-    pub fn released(&self, button: MouseButton) -> bool {
-        self.ipt.is_mouse_released(button)
-    }
-
-    #[inline]
-    pub fn delta(&self) -> Vector2 {
-        self.ipt.mouse_delta()
-    }
-
-    #[inline]
-    pub fn wheel(&self) -> Vector2 {
-        self.ipt.mouse_wheel()
-    }
-
-    #[inline]
-    pub fn position(&self) -> Vector2 {
-        self.ipt.mouse_position()
-    }
-
-    #[inline]
-    pub fn viewport_size(&self) -> Vector2 {
-        self.ipt.viewport_size()
+    pub fn get(&self, index: usize) -> Option<&'ipt JoyConState> {
+        self.ipt.joycons().get(index)
     }
 }
 
@@ -407,9 +709,11 @@ macro_rules! viewport_size {
 
 pub mod prelude {
     pub use crate::{
-        InputAPI, InputContext, InputSnapshot, KeyCode, KeyModule, MouseButton, MouseModule,
-        key_down, key_pressed, key_released, mouse_delta, mouse_down, mouse_position,
-        mouse_pressed, mouse_released, mouse_wheel, viewport_size,
+        GamepadAxis, GamepadButton, GamepadModule, GamepadState, InputAPI, InputContext,
+        InputSnapshot, JoyConAxis, JoyConButton, JoyConModule, JoyConState, KeyCode, KeyModule,
+        KeyboardModule, KeyboardState, MouseButton, MouseModule, MouseState, MouseStateModule,
+        key_down, key_pressed, key_released, mouse_delta, mouse_down, mouse_position, mouse_pressed,
+        mouse_released, mouse_wheel, viewport_size,
     };
     pub use perro_structs::Vector2;
 }

@@ -7,7 +7,10 @@ use crate::{
 use ahash::{AHashMap, AHashSet};
 use libloading::Library;
 use perro_ids::{MaterialID, MeshID, NodeID, TagID, TextureID};
-use perro_input::{InputContext, InputSnapshot, KeyCode, MouseButton};
+use perro_input::{
+    GamepadAxis, GamepadButton, InputContext, InputSnapshot, JoyConAxis, JoyConButton, KeyCode,
+    MouseButton,
+};
 use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType, SceneNodeData, Spatial};
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
 use perro_resource_context::ResourceContext;
@@ -482,6 +485,36 @@ impl Runtime {
     #[inline]
     pub fn set_viewport_size(&mut self, width: u32, height: u32) {
         self.input.set_viewport_size(width, height);
+    }
+
+    #[inline]
+    pub fn set_gamepad_button_state(
+        &mut self,
+        index: usize,
+        button: GamepadButton,
+        is_down: bool,
+    ) {
+        self.input.set_gamepad_button_state(index, button, is_down);
+    }
+
+    #[inline]
+    pub fn set_gamepad_axis(&mut self, index: usize, axis: GamepadAxis, value: f32) {
+        self.input.set_gamepad_axis(index, axis, value);
+    }
+
+    #[inline]
+    pub fn set_joycon_button_state(
+        &mut self,
+        index: usize,
+        button: JoyConButton,
+        is_down: bool,
+    ) {
+        self.input.set_joycon_button_state(index, button, is_down);
+    }
+
+    #[inline]
+    pub fn set_joycon_axis(&mut self, index: usize, axis: JoyConAxis, value: f32) {
+        self.input.set_joycon_axis(index, axis, value);
     }
 
     pub fn queue_render_command(&mut self, command: RenderCommand) {

@@ -1,5 +1,7 @@
 use perro_graphics::GraphicsBackend;
-use perro_input::{KeyCode, MouseButton};
+use perro_input::{
+    GamepadAxis, GamepadButton, JoyConAxis, JoyConButton, KeyCode, MouseButton,
+};
 use perro_render_bridge::RenderEvent;
 use perro_runtime::Runtime;
 use std::sync::Arc;
@@ -84,6 +86,36 @@ impl<B: GraphicsBackend> App<B> {
     #[inline]
     pub fn set_viewport_size(&mut self, width: u32, height: u32) {
         self.runtime.set_viewport_size(width, height);
+    }
+
+    #[inline]
+    pub fn set_gamepad_button_state(
+        &mut self,
+        index: usize,
+        button: GamepadButton,
+        is_down: bool,
+    ) {
+        self.runtime.set_gamepad_button_state(index, button, is_down);
+    }
+
+    #[inline]
+    pub fn set_gamepad_axis(&mut self, index: usize, axis: GamepadAxis, value: f32) {
+        self.runtime.set_gamepad_axis(index, axis, value);
+    }
+
+    #[inline]
+    pub fn set_joycon_button_state(
+        &mut self,
+        index: usize,
+        button: JoyConButton,
+        is_down: bool,
+    ) {
+        self.runtime.set_joycon_button_state(index, button, is_down);
+    }
+
+    #[inline]
+    pub fn set_joycon_axis(&mut self, index: usize, axis: JoyConAxis, value: f32) {
+        self.runtime.set_joycon_axis(index, axis, value);
     }
 
     #[inline]
