@@ -1,6 +1,8 @@
 use crate::{Runtime, runtime_project::ProviderMode};
+#[cfg(feature = "profile")]
 use perro_ids::NodeID;
 use perro_io::{ProjectRoot, set_project_root};
+#[cfg(feature = "profile")]
 use std::collections::HashMap;
 #[cfg(feature = "profile")]
 use std::time::{Duration, Instant};

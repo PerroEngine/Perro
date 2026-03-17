@@ -1,9 +1,9 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GamepadButton {
-    South,
-    East,
-    West,
-    North,
+    Bottom,
+    Right,
+    Left,
+    Top,
     DpadUp,
     DpadDown,
     DpadLeft,

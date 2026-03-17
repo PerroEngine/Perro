@@ -612,10 +612,10 @@ impl BarkPlayer {
             let looked_up = lookup(source);
             #[cfg(feature = "profile")]
             let lookup_elapsed = lookup_begin.elapsed();
-            #[cfg(not(feature = "profile"))]
-            let lookup_elapsed = Duration::ZERO;
             if let Some(blob) = looked_up {
                 let (decoded, decompress_elapsed) = decode_static_pawdio(blob)?;
+                #[cfg(not(feature = "profile"))]
+                let _ = decompress_elapsed;
                 #[cfg(feature = "profile")]
                 let stats = SourceLoadStats {
                     kind: SourceLoadKind::Static,

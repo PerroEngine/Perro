@@ -23,10 +23,9 @@ use perro_scene::{
     StaticNodeEntry, StaticNodeType, StaticScene, StaticSceneValue,
 };
 use perro_structs::{Quaternion, Vector2, Vector3};
-use std::{
-    borrow::Cow,
-    time::Duration,
-};
+use std::borrow::Cow;
+#[cfg(feature = "profile")]
+use std::time::Duration;
 #[cfg(feature = "profile")]
 use std::time::Instant;
 
@@ -76,8 +75,6 @@ pub(super) fn load_runtime_scene_from_disk(
     let bytes = load_asset(path).map_err(|err| format!("failed to load scene `{path}`: {err}"))?;
     #[cfg(feature = "profile")]
     let source_load = source_load_start.elapsed();
-    #[cfg(not(feature = "profile"))]
-    let source_load = Duration::ZERO;
 
     let source = std::str::from_utf8(&bytes)
         .map_err(|err| format!("scene `{path}` is not valid UTF-8: {err}"))?;
@@ -86,8 +83,6 @@ pub(super) fn load_runtime_scene_from_disk(
     let scene = Parser::new(source).parse_scene();
     #[cfg(feature = "profile")]
     let parse = parse_start.elapsed();
-    #[cfg(not(feature = "profile"))]
-    let parse = Duration::ZERO;
     #[cfg(feature = "profile")]
     let stats = RuntimeSceneLoadStats { source_load, parse };
     #[cfg(not(feature = "profile"))]

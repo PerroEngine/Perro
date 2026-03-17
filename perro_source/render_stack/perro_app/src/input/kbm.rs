@@ -24,7 +24,7 @@ impl KbmInput {
         match event {
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key
-                    && let Some(key) = map_winit_key_code(*code)
+                    && let Some(key) = map_winit_key_code(code)
                 {
                     app.set_key_state(key, event.state == ElementState::Pressed);
                 }

@@ -1,5 +1,6 @@
 {
   "rust-analyzer.linkedProjects": [
+    "Cargo.toml",
     "playground/Audio/.perro/scripts/Cargo.toml",
     "playground/Skeletal/.perro/scripts/Cargo.toml",
     "playground/ThreeDTest/.perro/scripts/Cargo.toml",
