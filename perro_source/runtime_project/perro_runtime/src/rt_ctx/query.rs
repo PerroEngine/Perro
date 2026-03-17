@@ -4,6 +4,7 @@ use perro_ids::NodeID;
 use perro_ids::TagID;
 use perro_nodes::{NodeType, SceneNode};
 use perro_runtime_context::sub_apis::{QueryExpr, QueryScope, TagQuery};
+#[cfg(feature = "profile")]
 use std::time::Instant;
 
 const PARALLEL_MIN_NODES: usize = 10_000;
@@ -23,26 +24,33 @@ fn query_node_ids_with_worker_override(
     worker_override: Option<usize>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
 ) -> Vec<NodeID> {
+    #[cfg(feature = "profile")]
     let start = Instant::now();
     let slot_count = arena.slot_count();
     if slot_count <= 1 {
-        print_query_timing(
-            &query,
-            0,
-            slot_count,
-            start.elapsed().as_secs_f64() * 1_000_000.0,
-        );
+        #[cfg(feature = "profile")]
+        {
+            print_query_timing(
+                &query,
+                0,
+                slot_count,
+                start.elapsed().as_secs_f64() * 1_000_000.0,
+            );
+        }
         return Vec::new();
     }
 
     let plan = QueryPlan::from_query(&query.expr);
     if plan.exact_type_mask == 0 || plan.base_type_mask == 0 {
-        print_query_timing(
-            &query,
-            0,
-            slot_count,
-            start.elapsed().as_secs_f64() * 1_000_000.0,
-        );
+        #[cfg(feature = "profile")]
+        {
+            print_query_timing(
+                &query,
+                0,
+                slot_count,
+                start.elapsed().as_secs_f64() * 1_000_000.0,
+            );
+        }
         return Vec::new();
     }
     let out = match query.scope {
@@ -85,12 +93,15 @@ fn query_node_ids_with_worker_override(
         }
     };
 
-    print_query_timing(
-        &query,
-        out.len(),
-        slot_count,
-        start.elapsed().as_secs_f64() * 1_000_000.0,
-    );
+    #[cfg(feature = "profile")]
+    {
+        print_query_timing(
+            &query,
+            out.len(),
+            slot_count,
+            start.elapsed().as_secs_f64() * 1_000_000.0,
+        );
+    }
     out
 }
 
@@ -381,6 +392,7 @@ fn allowed_type_mask_inner(expr: &QueryExpr, kind: TypeFilterKind) -> u64 {
     }
 }
 
+#[cfg(feature = "profile")]
 fn print_query_timing(query: &TagQuery, matches: usize, slot_count: usize, elapsed_us: f64) {
     #[cfg(not(debug_assertions))]
     {

@@ -25,13 +25,19 @@ use perro_scene::{
 use perro_structs::{Quaternion, Vector2, Vector3};
 use std::{
     borrow::Cow,
-    time::{Duration, Instant},
+    time::Duration,
 };
+#[cfg(feature = "profile")]
+use std::time::Instant;
 
+#[cfg(feature = "profile")]
 pub(super) struct RuntimeSceneLoadStats {
     pub(super) source_load: Duration,
     pub(super) parse: Duration,
 }
+
+#[cfg(not(feature = "profile"))]
+pub(super) struct RuntimeSceneLoadStats;
 
 pub(super) struct PreparedScene {
     pub(super) root_key: Option<String>,
@@ -65,16 +71,28 @@ type SceneNodeExtraction = (
 pub(super) fn load_runtime_scene_from_disk(
     path: &str,
 ) -> Result<(RuntimeScene, RuntimeSceneLoadStats), String> {
+    #[cfg(feature = "profile")]
     let source_load_start = Instant::now();
     let bytes = load_asset(path).map_err(|err| format!("failed to load scene `{path}`: {err}"))?;
+    #[cfg(feature = "profile")]
     let source_load = source_load_start.elapsed();
+    #[cfg(not(feature = "profile"))]
+    let source_load = Duration::ZERO;
 
     let source = std::str::from_utf8(&bytes)
         .map_err(|err| format!("scene `{path}` is not valid UTF-8: {err}"))?;
+    #[cfg(feature = "profile")]
     let parse_start = Instant::now();
     let scene = Parser::new(source).parse_scene();
+    #[cfg(feature = "profile")]
     let parse = parse_start.elapsed();
-    Ok((scene, RuntimeSceneLoadStats { source_load, parse }))
+    #[cfg(not(feature = "profile"))]
+    let parse = Duration::ZERO;
+    #[cfg(feature = "profile")]
+    let stats = RuntimeSceneLoadStats { source_load, parse };
+    #[cfg(not(feature = "profile"))]
+    let stats = RuntimeSceneLoadStats;
+    Ok((scene, stats))
 }
 
 pub(super) fn prepare_static_scene(scene: &'static StaticScene) -> Result<PreparedScene, String> {

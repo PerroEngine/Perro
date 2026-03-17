@@ -10,6 +10,9 @@ perro_render_bridge = "0.1.0"
 perro_scripting = "0.1.0"
 perro_input = "0.1.0"
 
+[features]
+profile = ["perro_runtime/profile"]
+
 [target.'cfg(target_os = "windows")'.dependencies]
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
 

@@ -47,6 +47,7 @@ fn main() {
             "check" => scripts_command(&args, &cwd),
             "build" => project_command(&args, &cwd),
             "dev" => dev_command(&args, &cwd),
+            "flamegraph" => flamegraph_command(&args, &cwd),
             "format" => format_command(&args, &cwd),
             _ => {
                 print_usage();
@@ -66,8 +67,9 @@ fn print_usage() {
     eprintln!(
         "  perro_cli check [--path <project_dir>]    # scripts-only compile (.perro/scripts)"
     );
-    eprintln!("  perro_cli build [--path <project_dir>]    # full static project bundle + build");
-    eprintln!("  perro_cli dev [--path <project_dir>]      # build scripts + run dev runner");
+    eprintln!("  perro_cli build [--path <project_dir>] [--profile]    # full static project bundle + build");
+    eprintln!("  perro_cli dev [--path <project_dir>] [--profile]      # build scripts + run dev runner");
+    eprintln!("  perro_cli flamegraph [--path <project_dir>] [--profile] [--root]    # run cargo flamegraph for dev runner");
     eprintln!("  perro_cli format [--path <project_dir>]   # rustfmt .rs under project res only");
     eprintln!("  perro_cli clean [--path <project_dir>]    # remove project target/");
     eprintln!(
@@ -878,6 +880,7 @@ fn scripts_command(args: &[String], cwd: &Path) -> Result<(), String> {
 }
 
 fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let profile = args.iter().any(|a| a == "--profile");
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
@@ -897,12 +900,16 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let target_dir = project_dir.join("target");
     log_step("Building Dev Runner");
 
-    let build_status = Command::new("cargo")
+    let mut build_cmd = Command::new("cargo");
+    build_cmd
         .arg("build")
         .arg("--release")
         .env("CARGO_TARGET_DIR", &target_dir)
-        .current_dir(&dev_runner_dir)
-        .status()
+        .current_dir(&dev_runner_dir);
+    if profile {
+        build_cmd.arg("--features").arg("profile");
+    }
+    let build_status = build_cmd.status()
         .map_err(|err| {
             format!(
                 "failed to build project dev runner from {}: {err}",
@@ -944,6 +951,62 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         ));
     }
     log_done("Dev Runner Finished");
+    Ok(())
+}
+
+fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let profile = args.iter().any(|a| a == "--profile");
+    let root = args.iter().any(|a| a == "--root");
+    let project_dir = parse_flag_value(args, "--path")
+        .map(|p| resolve_local_path(&p, cwd))
+        .unwrap_or_else(|| cwd.to_path_buf());
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
+
+    log_step("Building Scripts");
+    compile_scripts(&project_dir).map_err(|err| {
+        format!(
+            "scripts pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })?;
+    log_done("Scripts Built");
+
+    let dev_runner_dir = project_dir.join(".perro").join("dev_runner");
+    let target_dir = project_dir.join("target");
+    log_step("Running Flamegraph");
+
+    let mut cmd = Command::new("cargo");
+    cmd.arg("flamegraph")
+        .arg("--release")
+        .env("CARGO_TARGET_DIR", &target_dir)
+        .env("CARGO_PROFILE_RELEASE_DEBUG", "true")
+        .current_dir(&dev_runner_dir);
+    if root {
+        cmd.arg("--root");
+    }
+    if profile {
+        cmd.arg("--features").arg("profile");
+    }
+    cmd.arg("--")
+        .arg("--path")
+        .arg(project_dir.to_string_lossy().to_string());
+
+    let status = cmd.status().map_err(|err| {
+        format!(
+            "failed to run cargo flamegraph from {}: {err}",
+            dev_runner_dir.display()
+        )
+    })?;
+
+    if !status.success() {
+        return Err(format!(
+            "cargo flamegraph failed with exit code {:?}",
+            status.code()
+        ));
+    }
+
+    log_done("Flamegraph Complete");
     Ok(())
 }
 
@@ -1012,13 +1075,14 @@ fn collect_rs_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
 }
 
 fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let profile = args.iter().any(|a| a == "--profile");
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
     log_step("Building Project Bundle");
-    compile_project_bundle(&project_dir)
+    compile_project_bundle(&project_dir, profile)
         .map(|_| {
             log_done("Project Bundle Built");
         })

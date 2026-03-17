@@ -24,3 +24,6 @@ perro_project = "0.1.0"
 perro_particle_math = "0.1.0"
 perro_terrain = "0.1.0"
 perro_bark = "0.1.0"
+
+[features]
+profile = ["perro_bark/profile"]

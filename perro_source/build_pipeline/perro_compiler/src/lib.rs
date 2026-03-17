@@ -89,7 +89,7 @@ pub fn compile_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError
     Ok(copied)
 }
 
-pub fn compile_project_bundle(project_root: &Path) -> Result<(), CompilerError> {
+pub fn compile_project_bundle(project_root: &Path, profile: bool) -> Result<(), CompilerError> {
     ensure_source_overrides(project_root)?;
     let cfg = load_project_toml(project_root)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
@@ -119,7 +119,7 @@ pub fn compile_project_bundle(project_root: &Path) -> Result<(), CompilerError> 
         .map_err(|err| CompilerError::SceneParse(format!("static mod generation failed: {err}")))?;
     generate_embedded_main(project_root)?;
     generate_perro_assets(project_root)?;
-    build_project_crate(project_root)?;
+    build_project_crate(project_root, profile)?;
     Ok(())
 }
 
@@ -141,15 +141,18 @@ fn reset_embedded_dir(project_root: &Path) -> Result<(), CompilerError> {
     Ok(())
 }
 
-fn build_project_crate(project_root: &Path) -> Result<(), CompilerError> {
+fn build_project_crate(project_root: &Path, profile: bool) -> Result<(), CompilerError> {
     let project_crate = project_root.join(".perro").join("project");
     let target_dir = project_root.join("target");
-    let status = Command::new("cargo")
-        .arg("build")
+    let mut cmd = Command::new("cargo");
+    cmd.arg("build")
         .arg("--release")
         .env("CARGO_TARGET_DIR", &target_dir)
-        .current_dir(project_crate)
-        .status()?;
+        .current_dir(project_crate);
+    if profile {
+        cmd.arg("--features").arg("profile");
+    }
+    let status = cmd.status()?;
 
     if !status.success() {
         return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));

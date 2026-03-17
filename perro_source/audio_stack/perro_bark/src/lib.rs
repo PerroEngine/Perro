@@ -39,6 +39,7 @@ struct AudioState {
     cache_bytes: usize,
 }
 
+#[cfg(feature = "profile")]
 #[derive(Clone, Copy)]
 enum SourceLoadKind {
     Cache,
@@ -46,6 +47,7 @@ enum SourceLoadKind {
     Disk,
 }
 
+#[cfg(feature = "profile")]
 #[derive(Clone, Copy)]
 struct SourceLoadStats {
     kind: SourceLoadKind,
@@ -54,13 +56,24 @@ struct SourceLoadStats {
     disk_read: Duration,
 }
 
+#[cfg(not(feature = "profile"))]
+#[derive(Clone, Copy)]
+struct SourceLoadStats;
+
 impl SourceLoadStats {
     const fn cache_hit() -> Self {
-        Self {
-            kind: SourceLoadKind::Cache,
-            static_lookup: Duration::ZERO,
-            pawdio_decompress: Duration::ZERO,
-            disk_read: Duration::ZERO,
+        #[cfg(feature = "profile")]
+        {
+            Self {
+                kind: SourceLoadKind::Cache,
+                static_lookup: Duration::ZERO,
+                pawdio_decompress: Duration::ZERO,
+                disk_read: Duration::ZERO,
+            }
+        }
+        #[cfg(not(feature = "profile"))]
+        {
+            Self
         }
     }
 }
@@ -188,6 +201,7 @@ impl BarkPlayer {
         from_start: f32,
         from_end: f32,
     ) -> Result<(), String> {
+        #[cfg(feature = "profile")]
         let play_begin = Instant::now();
         let (bytes, cache_hit, load_stats) = {
             let mut state = self
@@ -202,13 +216,16 @@ impl BarkPlayer {
             (bytes, cache_hit, load_stats)
         };
 
+        #[cfg(feature = "profile")]
         let decode_begin = Instant::now();
         let cursor = Cursor::new(bytes.clone());
         let reader = BufReader::new(cursor);
         let decoder = Decoder::new(reader)
             .map_err(|err| format!("failed to decode audio `{source}`: {err}"))?;
+        #[cfg(feature = "profile")]
         let decode_elapsed = decode_begin.elapsed();
 
+        #[cfg(feature = "profile")]
         let duration_probe_begin = Instant::now();
         let total_duration = if from_end > 0.0 {
             let mut state = self
@@ -228,14 +245,18 @@ impl BarkPlayer {
         } else {
             None
         };
+        #[cfg(feature = "profile")]
         let duration_probe_elapsed = duration_probe_begin.elapsed();
 
+        #[cfg(feature = "profile")]
         let sink_setup_begin = Instant::now();
         let sink =
             Sink::try_new(&self.handle).map_err(|err| format!("failed to create sink: {err}"))?;
         sink.set_speed(speed.max(0.01));
+        #[cfg(feature = "profile")]
         let sink_setup_elapsed = sink_setup_begin.elapsed();
 
+        #[cfg(feature = "profile")]
         let append_begin = Instant::now();
         let trim_start = Duration::from_secs_f32(from_start.max(0.0));
         let trim_end = Duration::from_secs_f32(from_end.max(0.0));
@@ -266,8 +287,10 @@ impl BarkPlayer {
         } else {
             sink.append(decoder.skip_duration(trim_start));
         }
+        #[cfg(feature = "profile")]
         let append_elapsed = append_begin.elapsed();
 
+        #[cfg(feature = "profile")]
         let activate_begin = Instant::now();
         let mut state = self
             .state
@@ -308,9 +331,34 @@ impl BarkPlayer {
         });
         Self::evict_unreserved_unused_locked(&mut state, Instant::now());
         Self::enforce_cache_soft_limit_locked(&mut state);
-        let activate_elapsed = activate_begin.elapsed();
-        let total_elapsed = play_begin.elapsed();
-      
+        #[cfg(feature = "profile")]
+        {
+            let activate_elapsed = activate_begin.elapsed();
+            let total_elapsed = play_begin.elapsed();
+            println!(
+                "[audio_timing] play source={} cache_hit={} source={} static_lookup_us={:.3} pawdio_decompress_us={:.3} disk_read_us={:.3} decode_us={:.3} duration_probe_us={:.3} sink_setup_us={:.3} append_us={:.3} activate_us={:.3} total_us={:.3}",
+                source,
+                cache_hit,
+                match load_stats.kind {
+                    SourceLoadKind::Cache => "cache",
+                    SourceLoadKind::Static => "static",
+                    SourceLoadKind::Disk => "disk",
+                },
+                load_stats.static_lookup.as_secs_f64() * 1_000_000.0,
+                load_stats.pawdio_decompress.as_secs_f64() * 1_000_000.0,
+                load_stats.disk_read.as_secs_f64() * 1_000_000.0,
+                decode_elapsed.as_secs_f64() * 1_000_000.0,
+                duration_probe_elapsed.as_secs_f64() * 1_000_000.0,
+                sink_setup_elapsed.as_secs_f64() * 1_000_000.0,
+                append_elapsed.as_secs_f64() * 1_000_000.0,
+                activate_elapsed.as_secs_f64() * 1_000_000.0,
+                total_elapsed.as_secs_f64() * 1_000_000.0
+            );
+        }
+        #[cfg(not(feature = "profile"))]
+        {
+            let _ = (cache_hit, load_stats);
+        }
         Ok(())
     }
 
@@ -327,6 +375,7 @@ impl BarkPlayer {
     }
 
     pub fn load_source(&self, source: &str, reserved: bool) -> Result<(), String> {
+        #[cfg(feature = "profile")]
         let load_begin = Instant::now();
         let mut state = self
             .state
@@ -339,8 +388,29 @@ impl BarkPlayer {
                 .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
         Self::evict_unreserved_unused_locked(&mut state, now);
         Self::enforce_cache_soft_limit_locked(&mut state);
-        let total_elapsed = load_begin.elapsed();
-       
+        #[cfg(feature = "profile")]
+        {
+            let total_elapsed = load_begin.elapsed();
+            println!(
+                "[audio_timing] preload source={} reserved={} cache_hit={} source={} static_lookup_us={:.3} pawdio_decompress_us={:.3} disk_read_us={:.3} total_us={:.3}",
+                source,
+                reserved,
+                cache_hit,
+                match load_stats.kind {
+                    SourceLoadKind::Cache => "cache",
+                    SourceLoadKind::Static => "static",
+                    SourceLoadKind::Disk => "disk",
+                },
+                load_stats.static_lookup.as_secs_f64() * 1_000_000.0,
+                load_stats.pawdio_decompress.as_secs_f64() * 1_000_000.0,
+                load_stats.disk_read.as_secs_f64() * 1_000_000.0,
+                total_elapsed.as_secs_f64() * 1_000_000.0
+            );
+        }
+        #[cfg(not(feature = "profile"))]
+        {
+            let _ = (cache_hit, load_stats);
+        }
         Ok(())
     }
 
@@ -537,45 +607,54 @@ impl BarkPlayer {
         }
 
         let (bytes, load_stats) = if let Some(lookup) = static_audio_lookup {
+            #[cfg(feature = "profile")]
             let lookup_begin = Instant::now();
             let looked_up = lookup(source);
+            #[cfg(feature = "profile")]
             let lookup_elapsed = lookup_begin.elapsed();
+            #[cfg(not(feature = "profile"))]
+            let lookup_elapsed = Duration::ZERO;
             if let Some(blob) = looked_up {
                 let (decoded, decompress_elapsed) = decode_static_pawdio(blob)?;
-                (
-                    decoded,
-                    SourceLoadStats {
-                        kind: SourceLoadKind::Static,
-                        static_lookup: lookup_elapsed,
-                        pawdio_decompress: decompress_elapsed,
-                        disk_read: Duration::ZERO,
-                    },
-                )
+                #[cfg(feature = "profile")]
+                let stats = SourceLoadStats {
+                    kind: SourceLoadKind::Static,
+                    static_lookup: lookup_elapsed,
+                    pawdio_decompress: decompress_elapsed,
+                    disk_read: Duration::ZERO,
+                };
+                #[cfg(not(feature = "profile"))]
+                let stats = SourceLoadStats;
+                (decoded, stats)
             } else {
+                #[cfg(feature = "profile")]
                 let disk_begin = Instant::now();
                 let disk = perro_io::load_asset(source).map_err(|err| err.to_string())?;
-                (
-                    disk,
-                    SourceLoadStats {
-                        kind: SourceLoadKind::Disk,
-                        static_lookup: lookup_elapsed,
-                        pawdio_decompress: Duration::ZERO,
-                        disk_read: disk_begin.elapsed(),
-                    },
-                )
-            }
-        } else {
-            let disk_begin = Instant::now();
-            let disk = perro_io::load_asset(source).map_err(|err| err.to_string())?;
-            (
-                disk,
-                SourceLoadStats {
+                #[cfg(feature = "profile")]
+                let stats = SourceLoadStats {
                     kind: SourceLoadKind::Disk,
-                    static_lookup: Duration::ZERO,
+                    static_lookup: lookup_elapsed,
                     pawdio_decompress: Duration::ZERO,
                     disk_read: disk_begin.elapsed(),
-                },
-            )
+                };
+                #[cfg(not(feature = "profile"))]
+                let stats = SourceLoadStats;
+                (disk, stats)
+            }
+        } else {
+            #[cfg(feature = "profile")]
+            let disk_begin = Instant::now();
+            let disk = perro_io::load_asset(source).map_err(|err| err.to_string())?;
+            #[cfg(feature = "profile")]
+            let stats = SourceLoadStats {
+                kind: SourceLoadKind::Disk,
+                static_lookup: Duration::ZERO,
+                pawdio_decompress: Duration::ZERO,
+                disk_read: disk_begin.elapsed(),
+            };
+            #[cfg(not(feature = "profile"))]
+            let stats = SourceLoadStats;
+            (disk, stats)
         };
         let shared: Arc<[u8]> = Arc::from(bytes.into_boxed_slice());
         state.cache_bytes = state.cache_bytes.saturating_add(shared.len());
@@ -745,9 +824,13 @@ fn decode_static_pawdio(blob: &[u8]) -> Result<(Vec<u8>, Duration), String> {
     };
 
     if (flags & FLAG_ZLIB) != 0 {
+        #[cfg(feature = "profile")]
         let decompress_begin = Instant::now();
         let decompressed = perro_io::decompress_zlib(payload).map_err(|err| err.to_string())?;
+        #[cfg(feature = "profile")]
         let decompress_elapsed = decompress_begin.elapsed();
+        #[cfg(not(feature = "profile"))]
+        let decompress_elapsed = Duration::ZERO;
         if decompressed.len() != raw_len {
             return Err(format!(
                 "invalid .pawdio length: expected {raw_len}, got {}",

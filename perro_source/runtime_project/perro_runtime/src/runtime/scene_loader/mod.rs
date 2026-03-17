@@ -2,6 +2,7 @@ use crate::{Runtime, runtime_project::ProviderMode};
 use perro_ids::NodeID;
 use perro_io::{ProjectRoot, set_project_root};
 use std::collections::HashMap;
+#[cfg(feature = "profile")]
 use std::time::{Duration, Instant};
 
 mod merge;
@@ -10,6 +11,7 @@ mod prepare;
 use merge::merge_prepared_scene;
 use prepare::{load_runtime_scene_from_disk, prepare_runtime_scene, prepare_static_scene};
 
+#[cfg(feature = "profile")]
 struct SceneLoadStats {
     mode_label: &'static str,
     source_load: Option<Duration>,
@@ -20,6 +22,7 @@ struct SceneLoadStats {
 
 impl Runtime {
     pub(crate) fn load_boot_scene(&mut self) -> Result<(), String> {
+        #[cfg(feature = "profile")]
         let boot_start = Instant::now();
         let (project_root, project_name, main_scene_path, static_lookup, perro_assets_bytes) = {
             let project = self
@@ -90,43 +93,71 @@ impl Runtime {
         self.script_library = None;
         self.node_tag_index.clear();
         let mode_label;
-        let mut source_load = None;
-        let mut parse = None;
-        let node_insert;
+        #[cfg(feature = "profile")]
+        let mut source_load: Option<Duration> = None;
+        #[cfg(feature = "profile")]
+        let mut parse: Option<Duration> = None;
+        #[cfg(feature = "profile")]
+        let mut node_insert = Duration::ZERO;
         let script_nodes;
         match self.provider_mode {
             ProviderMode::Dynamic => {
                 mode_label = "dynamic";
                 let (runtime_scene, load_stats) = load_runtime_scene_from_disk(&main_scene_path)?;
-                source_load = Some(load_stats.source_load);
-                parse = Some(load_stats.parse);
+                #[cfg(feature = "profile")]
+                {
+                    source_load = Some(load_stats.source_load);
+                    parse = Some(load_stats.parse);
+                }
                 let prepared = prepare_runtime_scene(runtime_scene)?;
+                #[cfg(feature = "profile")]
                 let node_insert_start = Instant::now();
                 script_nodes = merge_prepared_scene(self, prepared)?;
-                node_insert = node_insert_start.elapsed();
+                #[cfg(feature = "profile")]
+                {
+                    node_insert = node_insert_start.elapsed();
+                }
+                #[cfg(not(feature = "profile"))]
+                {
+                    let _ = (load_stats,);
+                }
             }
             ProviderMode::Static => match static_lookup.and_then(|lookup| lookup(&main_scene_path))
             {
                 Some(scene) => {
                     mode_label = "static";
                     let prepared = prepare_static_scene(scene)?;
+                    #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
                     script_nodes = merge_prepared_scene(self, prepared)?;
-                    node_insert = node_insert_start.elapsed();
+                    #[cfg(feature = "profile")]
+                    let node_insert = node_insert_start.elapsed();
                 }
                 None => {
                     mode_label = "static_fallback_dynamic";
                     let (runtime_scene, load_stats) =
                         load_runtime_scene_from_disk(&main_scene_path)?;
-                    source_load = Some(load_stats.source_load);
-                    parse = Some(load_stats.parse);
+                    #[cfg(feature = "profile")]
+                    {
+                        source_load = Some(load_stats.source_load);
+                        parse = Some(load_stats.parse);
+                    }
                     let prepared = prepare_runtime_scene(runtime_scene)?;
+                    #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
                     script_nodes = merge_prepared_scene(self, prepared)?;
-                    node_insert = node_insert_start.elapsed();
+                    #[cfg(feature = "profile")]
+                    {
+                        node_insert = node_insert_start.elapsed();
+                    }
+                    #[cfg(not(feature = "profile"))]
+                    {
+                        let _ = (load_stats,);
+                    }
                 }
             },
         }
+        #[cfg(feature = "profile")]
         let script_paths_by_node: HashMap<NodeID, String> = script_nodes
             .iter()
             .map(|(id, script_path)| (*id, script_path.clone()))
@@ -134,18 +165,26 @@ impl Runtime {
         self.rebuild_internal_node_schedules();
         self.rebuild_node_tag_index();
         self.attach_scene_scripts(script_nodes)?;
-        let stats = SceneLoadStats {
-            mode_label,
-            source_load,
-            parse,
-            node_insert,
-            total_excluding_debug_print: boot_start.elapsed(),
-        };
-        debug_print_scene_load(self, &main_scene_path, stats, &script_paths_by_node);
+        #[cfg(not(feature = "profile"))]
+        {
+            let _ = mode_label;
+        }
+        #[cfg(feature = "profile")]
+        {
+            let stats = SceneLoadStats {
+                mode_label,
+                source_load,
+                parse,
+                node_insert,
+                total_excluding_debug_print: boot_start.elapsed(),
+            };
+            debug_print_scene_load(self, &main_scene_path, stats, &script_paths_by_node);
+        }
         Ok(())
     }
 }
 
+#[cfg(feature = "profile")]
 fn debug_print_scene_load(
     runtime: &Runtime,
     path: &str,
@@ -164,16 +203,19 @@ fn debug_print_scene_load(
     print_scene_tree(runtime, NodeID::ROOT, "", 0, script_paths_by_node);
 }
 
+#[cfg(feature = "profile")]
 fn as_us(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1_000_000.0
 }
 
+#[cfg(feature = "profile")]
 fn fmt_duration(duration: Option<Duration>) -> String {
     duration
         .map(|value| format!("{:.3}", as_us(value)))
         .unwrap_or_else(|| "n/a".to_string())
 }
 
+#[cfg(feature = "profile")]
 fn print_scene_tree(
     runtime: &Runtime,
     node: NodeID,
@@ -211,10 +253,14 @@ fn print_scene_tree(
     }
 }
 
+#[cfg(feature = "profile")]
 const ANSI_RESET: &str = "\x1b[0m";
+#[cfg(feature = "profile")]
 const ANSI_WHITE: &str = "\x1b[97m";
+#[cfg(feature = "profile")]
 const ANSI_ORANGE: &str = "\x1b[38;5;208m";
 
+#[cfg(feature = "profile")]
 fn depth_color(depth: usize) -> &'static str {
     if depth == 0 { ANSI_WHITE } else { "" }
 }

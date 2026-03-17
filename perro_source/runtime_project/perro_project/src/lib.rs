@@ -939,6 +939,9 @@ perro_scene = "0.1.0"
 perro_render_bridge = "0.1.0"
 scripts = {{ path = "../scripts" }}
 
+[features]
+profile = ["perro_app/profile"]
+
 [profile.release]
 opt-level = 3
 lto = "fat"
@@ -1009,6 +1012,12 @@ edition = "2024"
 [dependencies]
 perro_app = "0.1.0"
 perro_project = "0.1.0"
+
+[features]
+profile = ["perro_app/profile"]
+
+[profile.release]
+debug = true
 "#
     .to_string()
 }
@@ -1225,8 +1234,11 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
         .join(".cargo")
         .join("config.toml");
     ensure_project_manifest_deps(&project_manifest)?;
+    ensure_project_manifest_features(&project_manifest)?;
     ensure_scripts_manifest_deps(&scripts_manifest)?;
     ensure_dev_runner_manifest_deps(&dev_runner_manifest)?;
+    ensure_dev_runner_manifest_features(&dev_runner_manifest)?;
+    ensure_dev_runner_manifest_profile_debug(&dev_runner_manifest)?;
     ensure_scripts_manifest_rust_analyzer_cfg(&scripts_manifest)?;
     ensure_patch_block_in_manifest(&project_manifest)?;
     ensure_patch_block_in_manifest(&scripts_manifest)?;
@@ -1269,6 +1281,45 @@ fn ensure_project_manifest_deps(path: &Path) -> std::io::Result<()> {
 
     if !deps_table.contains_key("perro") {
         deps_table.insert("perro".to_string(), Value::String("0.1.0".to_string()));
+        changed = true;
+    }
+
+    if !changed {
+        return Ok(());
+    }
+
+    let rendered = toml::to_string(&value)
+        .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
+    fs::write(path, rendered)
+}
+
+fn ensure_project_manifest_features(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let src = fs::read_to_string(path)?;
+    let Ok(mut value) = src.parse::<Value>() else {
+        return Ok(());
+    };
+    let Some(root) = value.as_table_mut() else {
+        return Ok(());
+    };
+
+    let features = root
+        .entry("features")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(features_table) = features.as_table_mut() else {
+        return Ok(());
+    };
+
+    let mut changed = false;
+
+    if !features_table.contains_key("profile") {
+        features_table.insert(
+            "profile".to_string(),
+            Value::Array(vec![Value::String("perro_app/profile".to_string())]),
+        );
         changed = true;
     }
 
@@ -1348,6 +1399,87 @@ fn ensure_dev_runner_manifest_deps(path: &Path) -> std::io::Result<()> {
             "perro_project".to_string(),
             Value::String("0.1.0".to_string()),
         );
+        changed = true;
+    }
+
+    if !changed {
+        return Ok(());
+    }
+
+    let rendered = toml::to_string(&value)
+        .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
+    fs::write(path, rendered)
+}
+
+fn ensure_dev_runner_manifest_features(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let src = fs::read_to_string(path)?;
+    let Ok(mut value) = src.parse::<Value>() else {
+        return Ok(());
+    };
+    let Some(root) = value.as_table_mut() else {
+        return Ok(());
+    };
+
+    let features = root
+        .entry("features")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(features_table) = features.as_table_mut() else {
+        return Ok(());
+    };
+
+    let mut changed = false;
+
+    if !features_table.contains_key("profile") {
+        features_table.insert(
+            "profile".to_string(),
+            Value::Array(vec![Value::String("perro_app/profile".to_string())]),
+        );
+        changed = true;
+    }
+
+    if !changed {
+        return Ok(());
+    }
+
+    let rendered = toml::to_string(&value)
+        .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
+    fs::write(path, rendered)
+}
+
+fn ensure_dev_runner_manifest_profile_debug(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let src = fs::read_to_string(path)?;
+    let Ok(mut value) = src.parse::<Value>() else {
+        return Ok(());
+    };
+    let Some(root) = value.as_table_mut() else {
+        return Ok(());
+    };
+
+    let profile = root
+        .entry("profile")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(profile_table) = profile.as_table_mut() else {
+        return Ok(());
+    };
+    let release = profile_table
+        .entry("release")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(release_table) = release.as_table_mut() else {
+        return Ok(());
+    };
+
+    let mut changed = false;
+
+    if !release_table.contains_key("debug") {
+        release_table.insert("debug".to_string(), Value::Boolean(true));
         changed = true;
     }
 
