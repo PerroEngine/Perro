@@ -150,4 +150,5 @@ impl<B: GraphicsBackend> App<B> {
 }
 
 pub mod entry;
+pub mod input;
 pub mod winit_runner;
