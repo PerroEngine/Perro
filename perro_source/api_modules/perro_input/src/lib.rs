@@ -2,11 +2,15 @@ mod gamepad;
 mod joycon;
 mod keycode;
 mod mouse_button;
+mod player;
 
 pub use gamepad::{GamepadAxis, GamepadButton, GamepadState};
-pub use joycon::{JoyConAxis, JoyConButton, JoyConState};
+pub use joycon::{
+    JoyConButton, JoyConSide, JoyConState,
+};
 pub use keycode::KeyCode;
 pub use mouse_button::MouseButton;
+pub use player::{PlayerBinding, PlayerModule, PlayerState};
 use perro_structs::Vector2;
 
 #[derive(Clone, Debug)]
@@ -15,6 +19,7 @@ pub struct InputSnapshot {
     mouse: MouseState,
     gamepads: Vec<GamepadState>,
     joycons: Vec<JoyConState>,
+    players: Vec<PlayerState>,
 }
 
 impl InputSnapshot {
@@ -24,6 +29,7 @@ impl InputSnapshot {
             mouse: MouseState::new(),
             gamepads: Vec::new(),
             joycons: Vec::new(),
+            players: Vec::new(),
         }
     }
 
@@ -36,6 +42,9 @@ impl InputSnapshot {
         }
         for jc in &mut self.joycons {
             jc.begin_frame();
+        }
+        for player in &mut self.players {
+            player.begin_frame();
         }
     }
 
@@ -95,6 +104,21 @@ impl InputSnapshot {
     }
 
     #[inline]
+    pub fn players(&self) -> &[PlayerState] {
+        &self.players
+    }
+
+    #[inline]
+    pub fn joycon_side(&self, side: JoyConSide) -> Option<&JoyConState> {
+        self.joycons.iter().find(|jc| jc.side() == side)
+    }
+
+    #[inline]
+    pub fn joycon_side_mut(&mut self, side: JoyConSide) -> Option<&mut JoyConState> {
+        self.joycons.iter_mut().find(|jc| jc.side() == side)
+    }
+
+    #[inline]
     pub fn gamepad_mut(&mut self, index: usize) -> &mut GamepadState {
         if self.gamepads.len() <= index {
             self.gamepads.resize_with(index + 1, GamepadState::new);
@@ -105,9 +129,28 @@ impl InputSnapshot {
     #[inline]
     pub fn joycon_mut(&mut self, index: usize) -> &mut JoyConState {
         if self.joycons.len() <= index {
-            self.joycons.resize_with(index + 1, JoyConState::new);
+            self.joycons.resize_with(index + 1, || {
+                if index % 2 == 0 {
+                    JoyConState::new(JoyConSide::LJoyCon)
+                } else {
+                    JoyConState::new(JoyConSide::RJoyCon)
+                }
+            });
         }
         &mut self.joycons[index]
+    }
+
+    #[inline]
+    pub fn player_mut(&mut self, index: usize) -> &mut PlayerState {
+        if self.players.len() <= index {
+            self.players.resize_with(index + 1, PlayerState::new);
+        }
+        &mut self.players[index]
+    }
+
+    #[inline]
+    pub fn bind_player(&mut self, index: usize, binding: PlayerBinding) {
+        self.player_mut(index).set_binding(binding);
     }
 
     #[inline]
@@ -126,18 +169,42 @@ impl InputSnapshot {
     }
 
     #[inline]
+    pub fn set_gamepad_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.gamepad_mut(index).set_gyro(x, y, z);
+    }
+
+    #[inline]
+    pub fn set_gamepad_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.gamepad_mut(index).set_accel(x, y, z);
+    }
+
+    #[inline]
     pub fn set_joycon_button_state(
         &mut self,
         index: usize,
         button: JoyConButton,
         is_down: bool,
     ) {
-        self.joycon_mut(index).set_button_state(button, is_down);
+        let state = self.joycon_mut(index);
+        state.set_button_state(button, is_down);
     }
 
     #[inline]
-    pub fn set_joycon_axis(&mut self, index: usize, axis: JoyConAxis, value: f32) {
-        self.joycon_mut(index).set_axis(axis, value);
+    pub fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32) {
+        let state = self.joycon_mut(index);
+        state.set_stick(x, y);
+    }
+
+    #[inline]
+    pub fn set_joycon_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        let state = self.joycon_mut(index);
+        state.set_gyro(x, y, z);
+    }
+
+    #[inline]
+    pub fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        let state = self.joycon_mut(index);
+        state.set_accel(x, y, z);
     }
 
     #[inline]
@@ -187,6 +254,7 @@ pub trait InputAPI {
     fn mouse(&self) -> &MouseState;
     fn gamepads(&self) -> &[GamepadState];
     fn joycons(&self) -> &[JoyConState];
+    fn players(&self) -> &[PlayerState];
 }
 
 impl InputAPI for InputSnapshot {
@@ -208,6 +276,11 @@ impl InputAPI for InputSnapshot {
     #[inline]
     fn joycons(&self) -> &[JoyConState] {
         self.joycons()
+    }
+
+    #[inline]
+    fn players(&self) -> &[PlayerState] {
+        self.players()
     }
 }
 
@@ -249,6 +322,12 @@ impl<'ipt, IP: InputAPI + ?Sized> InputContext<'ipt, IP> {
     #[inline]
     pub fn JoyCons(&self) -> JoyConModule<'_, IP> {
         JoyConModule::new(self.ipt)
+    }
+
+    #[inline]
+    /// Access Player bindings and state.
+    pub fn Players(&self) -> PlayerModule<'_, IP> {
+        PlayerModule::new(self.ipt)
     }
 }
 
@@ -622,16 +701,19 @@ pub struct JoyConModule<'ipt, IP: InputAPI + ?Sized> {
 }
 
 impl<'ipt, IP: InputAPI + ?Sized> JoyConModule<'ipt, IP> {
+    /// Creates a Joy-Con access wrapper.
     pub fn new(ipt: &'ipt IP) -> Self {
         Self { ipt }
     }
 
     #[inline]
+    /// Returns all Joy-Con states (each entry is a single Joy-Con controller).
     pub fn all(&self) -> &'ipt [JoyConState] {
         self.ipt.joycons()
     }
 
     #[inline]
+    /// Returns the Joy-Con at the given index.
     pub fn get(&self, index: usize) -> Option<&'ipt JoyConState> {
         self.ipt.joycons().get(index)
     }
@@ -710,10 +792,14 @@ macro_rules! viewport_size {
 pub mod prelude {
     pub use crate::{
         GamepadAxis, GamepadButton, GamepadModule, GamepadState, InputAPI, InputContext,
-        InputSnapshot, JoyConAxis, JoyConButton, JoyConModule, JoyConState, KeyCode, KeyModule,
-        KeyboardModule, KeyboardState, MouseButton, MouseModule, MouseState, MouseStateModule,
-        key_down, key_pressed, key_released, mouse_delta, mouse_down, mouse_position, mouse_pressed,
-        mouse_released, mouse_wheel, viewport_size,
+        InputSnapshot, JoyConModule, JoyConSide, JoyConState, KeyCode, KeyModule, KeyboardModule,
+        KeyboardState, MouseButton, MouseModule, MouseState, MouseStateModule, PlayerBinding,
+        PlayerModule, PlayerState, key_down, key_pressed, key_released, mouse_delta, mouse_down,
+        mouse_position, mouse_pressed, mouse_released, mouse_wheel, viewport_size, joycon_list,
+        joycon_down, joycon_get, joycon_side, joycon_pressed, joycon_released, joycon_stick,
+        joycon_gyro, joycon_accel, gamepad_list, gamepad_get, gamepad_down, gamepad_pressed,
+        gamepad_released, gamepad_left_stick, gamepad_right_stick, gamepad_gyro, gamepad_accel,
+        player_list, player_get, player_bind,
     };
     pub use perro_structs::Vector2;
 }

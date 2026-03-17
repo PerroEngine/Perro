@@ -1,39 +1,37 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum JoyConButton {
-    Up,
-    Down,
-    Left,
-    Right,
-    Minus,
-    Plus,
-    Home,
-    Capture,
-    L,
-    R,
-    ZL,
-    ZR,
-    Stick,
-    SL,
-    SR,
-}
-
-impl JoyConButton {
-    pub const COUNT: usize = 15;
-
-    #[inline]
-    pub fn as_index(self) -> usize {
-        self as usize
-    }
+pub enum JoyConSide {
+    LJoyCon,
+    RJoyCon,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum JoyConAxis {
-    StickX,
-    StickY,
+pub enum JoyConButton {
+    /// Left Joy-Con: Up. Right Joy-Con: X.
+    Top,
+    /// Left Joy-Con: Down. Right Joy-Con: B.
+    Bottom,
+    /// Left Joy-Con: Left. Right Joy-Con: Y.
+    Left,
+    /// Left Joy-Con: Right. Right Joy-Con: A.
+    Right,
+    /// Left Joy-Con: L. Right Joy-Con: R.
+    Bumper,
+    /// Left Joy-Con: ZL. Right Joy-Con: ZR.
+    Trigger,
+    /// Left Joy-Con: Stick press. Right Joy-Con: Stick press.
+    Stick,
+    /// Left Joy-Con: SL. Right Joy-Con: SL.
+    SL,
+    /// Left Joy-Con: SR. Right Joy-Con: SR.
+    SR,
+    /// Left Joy-Con: Minus. Right Joy-Con: Plus.
+    Start,
+    /// Left Joy-Con: Capture. Right Joy-Con: Home.
+    Meta,
 }
 
-impl JoyConAxis {
-    pub const COUNT: usize = 2;
+impl JoyConButton {
+    pub const COUNT: usize = 11;
 
     #[inline]
     pub fn as_index(self) -> usize {
@@ -43,21 +41,42 @@ impl JoyConAxis {
 
 #[derive(Clone, Debug)]
 pub struct JoyConState {
+    side: JoyConSide,
     buttons_down: Vec<u64>,
     buttons_pressed: Vec<u64>,
     buttons_released: Vec<u64>,
-    axes: [f32; JoyConAxis::COUNT],
+    stick_x: f32,
+    stick_y: f32,
+    gyro: perro_structs::Vector3,
+    accel: perro_structs::Vector3,
 }
 
 impl JoyConState {
-    pub fn new() -> Self {
+    pub fn new(side: JoyConSide) -> Self {
         let words = JoyConButton::COUNT.div_ceil(64);
         Self {
+            side,
             buttons_down: vec![0; words],
             buttons_pressed: vec![0; words],
             buttons_released: vec![0; words],
-            axes: [0.0; JoyConAxis::COUNT],
+            stick_x: 0.0,
+            stick_y: 0.0,
+            gyro: perro_structs::Vector3::new(0.0, 0.0, 0.0),
+            accel: perro_structs::Vector3::new(0.0, 0.0, 0.0),
         }
+    }
+
+    #[inline]
+    pub fn side(&self) -> JoyConSide {
+        self.side
+    }
+
+    #[inline]
+    pub fn set_side(&mut self, side: JoyConSide) {
+        self.side = side;
+        self.buttons_down.fill(0);
+        self.buttons_pressed.fill(0);
+        self.buttons_released.fill(0);
     }
 
     #[inline]
@@ -85,8 +104,44 @@ impl JoyConState {
     }
 
     #[inline]
-    pub fn set_axis(&mut self, axis: JoyConAxis, value: f32) {
-        self.axes[axis.as_index()] = value;
+    pub fn set_stick(&mut self, x: f32, y: f32) {
+        self.stick_x = x;
+        self.stick_y = y;
+    }
+
+    #[inline]
+    pub fn set_gyro(&mut self, x: f32, y: f32, z: f32) {
+        self.gyro = perro_structs::Vector3::new(x, y, z);
+    }
+
+    #[inline]
+    pub fn set_accel(&mut self, x: f32, y: f32, z: f32) {
+        self.accel = perro_structs::Vector3::new(x, y, z);
+    }
+
+    #[inline]
+    pub fn stick_x(&self) -> f32 {
+        self.stick_x
+    }
+
+    #[inline]
+    pub fn stick_y(&self) -> f32 {
+        self.stick_y
+    }
+
+    #[inline]
+    pub fn stick(&self) -> perro_structs::Vector2 {
+        perro_structs::Vector2::new(self.stick_x, self.stick_y)
+    }
+
+    #[inline]
+    pub fn gyro(&self) -> perro_structs::Vector3 {
+        self.gyro
+    }
+
+    #[inline]
+    pub fn accel(&self) -> perro_structs::Vector3 {
+        self.accel
     }
 
     #[inline]
@@ -105,11 +160,6 @@ impl JoyConState {
     }
 
     #[inline]
-    pub fn axis(&self, axis: JoyConAxis) -> f32 {
-        self.axes[axis.as_index()]
-    }
-
-    #[inline]
     fn test(&self, bits: &[u64], button: JoyConButton) -> bool {
         let idx = button.as_index();
         let word = idx / 64;
@@ -120,6 +170,93 @@ impl JoyConState {
 
 impl Default for JoyConState {
     fn default() -> Self {
-        Self::new()
+        Self::new(JoyConSide::LJoyCon)
     }
+}
+
+#[macro_export]
+macro_rules! joycon_list {
+    ($ipt:expr) => {
+        $ipt.JoyCons().all()
+    };
+}
+
+#[macro_export]
+macro_rules! joycon_get {
+    ($ipt:expr, $index:expr) => {
+        $ipt.JoyCons().get($index)
+    };
+}
+
+#[macro_export]
+macro_rules! joycon_side {
+    ($ipt:expr, $index:expr) => {
+        $ipt.JoyCons().get($index).map(|jc| jc.side())
+    };
+}
+
+#[macro_export]
+macro_rules! joycon_down {
+    ($ipt:expr, $index:expr, $button:expr) => {
+        $ipt
+            .JoyCons()
+            .get($index)
+            .map(|jc| jc.is_button_down($button))
+            .unwrap_or(false)
+    };
+}
+
+#[macro_export]
+macro_rules! joycon_pressed {
+    ($ipt:expr, $index:expr, $button:expr) => {
+        $ipt
+            .JoyCons()
+            .get($index)
+            .map(|jc| jc.is_button_pressed($button))
+            .unwrap_or(false)
+    };
+}
+
+#[macro_export]
+macro_rules! joycon_released {
+    ($ipt:expr, $index:expr, $button:expr) => {
+        $ipt
+            .JoyCons()
+            .get($index)
+            .map(|jc| jc.is_button_released($button))
+            .unwrap_or(false)
+    };
+}
+
+#[macro_export]
+macro_rules! joycon_stick {
+    ($ipt:expr, $index:expr) => {
+        $ipt
+            .JoyCons()
+            .get($index)
+            .map(|jc| jc.stick())
+            .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+    };
+}
+
+#[macro_export]
+macro_rules! joycon_gyro {
+    ($ipt:expr, $index:expr) => {
+        $ipt
+            .JoyCons()
+            .get($index)
+            .map(|jc| jc.gyro())
+            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+    };
+}
+
+#[macro_export]
+macro_rules! joycon_accel {
+    ($ipt:expr, $index:expr) => {
+        $ipt
+            .JoyCons()
+            .get($index)
+            .map(|jc| jc.accel())
+            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+    };
 }

@@ -8,8 +8,7 @@ use ahash::{AHashMap, AHashSet};
 use libloading::Library;
 use perro_ids::{MaterialID, MeshID, NodeID, TagID, TextureID};
 use perro_input::{
-    GamepadAxis, GamepadButton, InputContext, InputSnapshot, JoyConAxis, JoyConButton, KeyCode,
-    MouseButton,
+    GamepadAxis, GamepadButton, InputContext, InputSnapshot, JoyConButton, KeyCode, MouseButton,
 };
 use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType, SceneNodeData, Spatial};
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
@@ -503,18 +502,38 @@ impl Runtime {
     }
 
     #[inline]
+    pub fn set_gamepad_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.input.set_gamepad_gyro(index, x, y, z);
+    }
+
+    #[inline]
+    pub fn set_gamepad_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.input.set_gamepad_accel(index, x, y, z);
+    }
+
+    #[inline]
     pub fn set_joycon_button_state(
         &mut self,
         index: usize,
-        button: JoyConButton,
+        button: perro_input::JoyConButton,
         is_down: bool,
     ) {
         self.input.set_joycon_button_state(index, button, is_down);
     }
 
     #[inline]
-    pub fn set_joycon_axis(&mut self, index: usize, axis: JoyConAxis, value: f32) {
-        self.input.set_joycon_axis(index, axis, value);
+    pub fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32) {
+        self.input.set_joycon_stick(index, x, y);
+    }
+
+    #[inline]
+    pub fn set_joycon_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.input.set_joycon_gyro(index, x, y, z);
+    }
+
+    #[inline]
+    pub fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.input.set_joycon_accel(index, x, y, z);
     }
 
     pub fn queue_render_command(&mut self, command: RenderCommand) {

@@ -9,11 +9,17 @@ Purpose:
 Accessors:
 - `ipt.Keys()`
 - `ipt.Mouse()`
+- `ipt.Gamepads()`
+- `ipt.JoyCons()`
+- `ipt.Players()`
 
 ## Input Modules
 
 - [Keys Module](input_modules/keys.md)
 - [Mouse Module](input_modules/mouse.md)
+- [Gamepads Module](input_modules/gamepads.md)
+- [Joy-Cons Module](input_modules/joycons.md)
+- [Players Module](input_modules/players.md)
 
 Each module page contains:
 - Macro reference

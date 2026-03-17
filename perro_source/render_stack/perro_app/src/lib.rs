@@ -1,6 +1,6 @@
 use perro_graphics::GraphicsBackend;
 use perro_input::{
-    GamepadAxis, GamepadButton, JoyConAxis, JoyConButton, KeyCode, MouseButton,
+    GamepadAxis, GamepadButton, JoyConButton, KeyCode, MouseButton,
 };
 use perro_render_bridge::RenderEvent;
 use perro_runtime::Runtime;
@@ -104,6 +104,16 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn set_gamepad_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.runtime.set_gamepad_gyro(index, x, y, z);
+    }
+
+    #[inline]
+    pub fn set_gamepad_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.runtime.set_gamepad_accel(index, x, y, z);
+    }
+
+    #[inline]
     pub fn set_joycon_button_state(
         &mut self,
         index: usize,
@@ -114,8 +124,18 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
-    pub fn set_joycon_axis(&mut self, index: usize, axis: JoyConAxis, value: f32) {
-        self.runtime.set_joycon_axis(index, axis, value);
+    pub fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32) {
+        self.runtime.set_joycon_stick(index, x, y);
+    }
+
+    #[inline]
+    pub fn set_joycon_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.runtime.set_joycon_gyro(index, x, y, z);
+    }
+
+    #[inline]
+    pub fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.runtime.set_joycon_accel(index, x, y, z);
     }
 
     #[inline]
