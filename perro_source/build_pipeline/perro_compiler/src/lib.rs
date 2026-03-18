@@ -356,9 +356,64 @@ fn generate_embedded_main(project_root: &Path) -> Result<(), CompilerError> {
         "perro_render_bridge = \"0.1.0\"",
     )?;
 
+    let embedded_block = format!(
+        "let root = project_root();\n\
+perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedProject {{\n\
+  project: perro_app::entry::StaticEmbeddedProjectInfo {{\n\
+        project_root: &root,\n\
+        project_name: \"{name}\",\n\
+        main_scene: \"{main_scene}\",\n\
+        icon: \"{icon}\",\n\
+        virtual_width: {w},\n\
+        virtual_height: {h},\n\
+  }},\n\
+  graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
+        vsync: {vsync},\n\
+        msaa: {msaa},\n\
+        meshlets: {meshlets},\n\
+        dev_meshlets: {dev_meshlets},\n\
+        release_meshlets: {release_meshlets},\n\
+        meshlet_debug_view: {meshlet_debug_view},\n\
+        occlusion_culling: {occlusion_culling},\n\
+        particle_sim_default: {particle_sim_default},\n\
+  }},\n\
+  runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {{\n\
+        target_fps: {target_fps},\n\
+        target_fixed_update: {target_fixed_update},\n\
+  }},\n\
+  assets: perro_app::entry::StaticEmbeddedAssetsConfig {{\n\
+        perro_assets: PERRO_ASSETS,\n\
+        scene_lookup: static_assets::scenes::lookup_scene,\n\
+        material_lookup: static_assets::materials::lookup_material,\n\
+        particle_lookup: static_assets::particles::lookup_particle,\n\
+        mesh_lookup: static_assets::meshes::lookup_mesh,\n\
+        texture_lookup: static_assets::textures::lookup_texture,\n\
+        audio_lookup: static_assets::audios::lookup_audio,\n\
+        static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\
+  }},\n\
+}})\n\
+.expect(\"failed to run embedded static project\");",
+        name = escape_str(&cfg.name),
+        main_scene = escape_str(&cfg.main_scene),
+        icon = escape_str(&cfg.icon),
+        w = cfg.virtual_width,
+        h = cfg.virtual_height,
+        vsync = cfg.vsync,
+        msaa = cfg.msaa,
+        meshlets = cfg.meshlets,
+        dev_meshlets = cfg.dev_meshlets,
+        release_meshlets = cfg.release_meshlets,
+        meshlet_debug_view = cfg.meshlet_debug_view,
+        occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
+        particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
+        target_fps = emit_optional_f32(cfg.target_fps),
+        target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
+    );
+    let embedded_block = indent_block(&embedded_block, 2);
+
     let main_src = format!(
         "#[path = \"static/mod.rs\"]\n\
-mod static_assets;\n\n\
+  mod static_assets;\n\n\
 static PERRO_ASSETS: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n\
 fn project_root() -> std::path::PathBuf {{\n\
     if let Ok(exe) = std::env::current_exe() {{\n\
@@ -376,51 +431,11 @@ fn project_root() -> std::path::PathBuf {{\n\
         return root.canonicalize().unwrap_or(root);\n\
     }}\n\
     std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(\".\"))\n\
-}}\n\n\
-fn main() {{\n\
-    let root = project_root();\n\
-    perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedProject {{\n\
-        project_root: &root,\n\
-        project_name: \"{name}\",\n\
-        main_scene: \"{main_scene}\",\n\
-        icon: \"{icon}\",\n\
-        virtual_width: {w},\n\
-        virtual_height: {h},\n\
-        vsync: {vsync},\n\
-        target_fps: {target_fps},\n\
-        target_fixed_update: {target_fixed_update},\n\
-        msaa: {msaa},\n\
-        meshlets: {meshlets},\n\
-        dev_meshlets: {dev_meshlets},\n\
-        release_meshlets: {release_meshlets},\n\
-        meshlet_debug_view: {meshlet_debug_view},\n\
-        occlusion_culling: {occlusion_culling},\n\
-        particle_sim_default: {particle_sim_default},\n\
-        perro_assets: PERRO_ASSETS,\n\
-        scene_lookup: static_assets::scenes::lookup_scene,\n\
-        material_lookup: static_assets::materials::lookup_material,\n\
-        particle_lookup: static_assets::particles::lookup_particle,\n\
-        mesh_lookup: static_assets::meshes::lookup_mesh,\n\
-        texture_lookup: static_assets::textures::lookup_texture,\n\
-        audio_lookup: static_assets::audios::lookup_audio,\n\
-        static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\
-    }}).expect(\"failed to run embedded static project\");\n\
-}}\n",
-        name = escape_str(&cfg.name),
-        main_scene = escape_str(&cfg.main_scene),
-        icon = escape_str(&cfg.icon),
-        w = cfg.virtual_width,
-        h = cfg.virtual_height,
-        vsync = cfg.vsync,
-        msaa = cfg.msaa,
-        meshlets = cfg.meshlets,
-        dev_meshlets = cfg.dev_meshlets,
-        release_meshlets = cfg.release_meshlets,
-        meshlet_debug_view = cfg.meshlet_debug_view,
-        occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
-        particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
-        target_fps = emit_optional_f32(cfg.target_fps),
-        target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
+  }}\n\n\
+  fn main() {{\n\
+{embedded_block}\n\
+  }}\n",
+        embedded_block = embedded_block,
     );
     fs::write(project_src.join("main.rs"), main_src)?;
     Ok(())
@@ -461,10 +476,25 @@ fn emit_particle_sim_default_expr(mode: perro_project::ParticleSimDefault) -> &'
 
 fn emit_optional_f32(value: Option<f32>) -> String {
     match value {
-        Some(v) if v.is_finite() => format!("Some({})", v),
+        Some(v) if v.is_finite() => format!("Some({}f32)", v),
         _ => "None".to_string(),
     }
 }
+
+fn indent_block(src: &str, spaces: usize) -> String {
+    let pad = " ".repeat(spaces);
+    src.lines()
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("{pad}{line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 
 fn write_scripts_lib(
     scripts_src: &Path,

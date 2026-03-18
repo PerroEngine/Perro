@@ -105,8 +105,10 @@ mod backend {
                 if let Some(handle) = self.devices.remove(&serial) {
                     handle.stop.store(true, Ordering::Relaxed);
                 }
-                if let Some(index) = self.assigned.remove(&serial) {
-                    self.free_indices.push(index);
+                if let Some(index) = self.assigned.get(&serial).copied() {
+                    if !self.free_indices.contains(&index) {
+                        self.free_indices.push(index);
+                    }
                     self.last_buttons.retain(|(idx, _), _| *idx != index);
                 }
             }
@@ -114,15 +116,21 @@ mod backend {
 
         fn assign_index(&mut self, serial: &str, _side: JoyConSide) -> usize {
             if let Some(idx) = self.assigned.get(serial) {
+                self.free_indices.retain(|free| *free != *idx);
                 return *idx;
             }
-            let index = if self.free_indices.is_empty() {
+            const MAX_PERSISTENT_JOYCON_SLOTS: usize = 12;
+            let index = if self.next_index < MAX_PERSISTENT_JOYCON_SLOTS {
                 let idx = self.next_index;
                 self.next_index = self.next_index.saturating_add(1);
                 idx
-            } else {
+            } else if !self.free_indices.is_empty() {
                 self.free_indices.sort_unstable();
                 self.free_indices.remove(0)
+            } else {
+                let idx = self.next_index;
+                self.next_index = self.next_index.saturating_add(1);
+                idx
             };
             self.assigned.insert(serial.to_string(), index);
             index

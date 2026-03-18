@@ -1192,35 +1192,44 @@ fn project_root() -> std::path::PathBuf {
     std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
 }
 
-fn main() {
-    let root = project_root();
-        perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedProject {
-            project_root: &root,
-            project_name: "__PROJECT_NAME__",
-            main_scene: "res://main.scn",
-            icon: "res://icon.png",
-            virtual_width: 1920,
-            virtual_height: 1080,
-            vsync: false,
-            target_fps: None,
-            target_fixed_update: Some(60.0),
-            msaa: true,
-            meshlets: false,
-            dev_meshlets: false,
-            release_meshlets: true,
-            meshlet_debug_view: false,
-        occlusion_culling: perro_app::entry::OcclusionCulling::Gpu,
-        particle_sim_default: perro_app::entry::ParticleSimDefault::Cpu,
-        perro_assets: PERRO_ASSETS,
-        scene_lookup: static_assets::scenes::lookup_scene,
-        material_lookup: static_assets::materials::lookup_material,
-        particle_lookup: static_assets::particles::lookup_particle,
-        mesh_lookup: static_assets::meshes::lookup_mesh,
-        texture_lookup: static_assets::textures::lookup_texture,
-        audio_lookup: static_assets::audios::lookup_audio,
-        static_script_registry: Some(scripts::SCRIPT_REGISTRY),
-    }).expect("failed to run embedded static project");
-}
+  fn main() {
+      let root = project_root();
+      perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedProject {
+          project: perro_app::entry::StaticEmbeddedProjectInfo {
+              project_root: &root,
+              project_name: "__PROJECT_NAME__",
+              main_scene: "res://main.scn",
+              icon: "res://icon.png",
+              virtual_width: 1920,
+              virtual_height: 1080,
+          },
+          graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {
+              vsync: false,
+              msaa: true,
+              meshlets: false,
+              dev_meshlets: false,
+              release_meshlets: true,
+              meshlet_debug_view: false,
+              occlusion_culling: perro_app::entry::OcclusionCulling::Gpu,
+              particle_sim_default: perro_app::entry::ParticleSimDefault::Cpu,
+          },
+          runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {
+              target_fps: None,
+              target_fixed_update: Some(60.0),
+          },
+          assets: perro_app::entry::StaticEmbeddedAssetsConfig {
+              perro_assets: PERRO_ASSETS,
+              scene_lookup: static_assets::scenes::lookup_scene,
+              material_lookup: static_assets::materials::lookup_material,
+              particle_lookup: static_assets::particles::lookup_particle,
+              mesh_lookup: static_assets::meshes::lookup_mesh,
+              texture_lookup: static_assets::textures::lookup_texture,
+              audio_lookup: static_assets::audios::lookup_audio,
+              static_script_registry: Some(scripts::SCRIPT_REGISTRY),
+          },
+      })
+      .expect("failed to run embedded static project");
+  }
 "#
     .replace("__PROJECT_NAME__", project_name)
 }

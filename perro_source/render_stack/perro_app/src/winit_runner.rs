@@ -150,6 +150,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let mut runtime_update_duration = Duration::ZERO;
         let present_duration;
 
+        // Poll device inputs before update so scripts see the latest state.
+        self.gamepad_input.begin_frame(&mut self.app);
+        self.joycon_input.begin_frame(&mut self.app);
+
         if let Some(step) = self.fixed_timestep {
             self.fixed_accumulator += frame_delta.as_secs_f32();
             let mut steps = 0u32;
@@ -216,10 +220,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
             window.request_redraw();
         }
 
+        // Clear per-frame pressed/released flags after update to preserve
+        // window events that arrived since the last frame.
         self.app.begin_input_frame();
-        self.gamepad_input.begin_frame(&mut self.app);
-        self.joycon_input.begin_frame(&mut self.app);
-
     }
 }
 
@@ -302,6 +305,11 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if event_loop.exiting() {
+            return;
+        }
+        if self.fixed_timestep.is_none() && target_frame_duration(self.fps_cap).is_none() {
+            // Uncapped: tick here to reduce latency between redraw events.
+            self.step_frame(Instant::now());
             return;
         }
         if let Some(window) = &self.window {

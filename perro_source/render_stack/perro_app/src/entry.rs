@@ -99,15 +99,23 @@ pub fn run_static_project_from_path(
 }
 
 pub struct StaticEmbeddedProject<'a> {
+    pub project: StaticEmbeddedProjectInfo<'a>,
+    pub graphics: StaticEmbeddedGraphicsConfig,
+    pub runtime: StaticEmbeddedRuntimeConfig,
+    pub assets: StaticEmbeddedAssetsConfig,
+}
+
+pub struct StaticEmbeddedProjectInfo<'a> {
     pub project_root: &'a Path,
     pub project_name: &'static str,
     pub main_scene: &'static str,
     pub icon: &'static str,
     pub virtual_width: u32,
     pub virtual_height: u32,
+}
+
+pub struct StaticEmbeddedGraphicsConfig {
     pub vsync: bool,
-    pub target_fps: Option<f32>,
-    pub target_fixed_update: Option<f32>,
     pub msaa: bool,
     pub meshlets: bool,
     pub dev_meshlets: bool,
@@ -115,6 +123,14 @@ pub struct StaticEmbeddedProject<'a> {
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
+}
+
+pub struct StaticEmbeddedRuntimeConfig {
+    pub target_fps: Option<f32>,
+    pub target_fixed_update: Option<f32>,
+}
+
+pub struct StaticEmbeddedAssetsConfig {
     pub perro_assets: &'static [u8],
     pub scene_lookup: perro_runtime::StaticSceneLookup,
     pub material_lookup: perro_runtime::StaticMaterialLookup,
@@ -129,39 +145,40 @@ pub fn run_static_embedded_project(
     input: StaticEmbeddedProject<'_>,
 ) -> Result<(), ProjectLoadError> {
     let static_config = perro_runtime::StaticProjectConfig::new(
-        input.project_name,
-        input.main_scene,
-        input.icon,
-        input.virtual_width,
-        input.virtual_height,
+        input.project.project_name,
+        input.project.main_scene,
+        input.project.icon,
+        input.project.virtual_width,
+        input.project.virtual_height,
     )
-    .with_vsync(input.vsync)
-    .with_target_fps(input.target_fps)
-    .with_target_fixed_update(input.target_fixed_update)
-    .with_msaa(input.msaa)
-    .with_meshlets(input.meshlets)
-    .with_dev_meshlets(input.dev_meshlets)
-    .with_release_meshlets(input.release_meshlets)
-    .with_meshlet_debug_view(input.meshlet_debug_view)
-    .with_occlusion_culling(input.occlusion_culling)
-    .with_particle_sim_default(input.particle_sim_default);
-    let mut project = RuntimeProject::from_static(static_config, input.project_root.to_path_buf());
+    .with_vsync(input.graphics.vsync)
+    .with_target_fps(input.runtime.target_fps)
+    .with_target_fixed_update(input.runtime.target_fixed_update)
+    .with_msaa(input.graphics.msaa)
+    .with_meshlets(input.graphics.meshlets)
+    .with_dev_meshlets(input.graphics.dev_meshlets)
+    .with_release_meshlets(input.graphics.release_meshlets)
+    .with_meshlet_debug_view(input.graphics.meshlet_debug_view)
+    .with_occlusion_culling(input.graphics.occlusion_culling)
+    .with_particle_sim_default(input.graphics.particle_sim_default);
+    let mut project =
+        RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf());
 
     project = project
-        .with_static_scene_lookup(input.scene_lookup)
-        .with_static_material_lookup(input.material_lookup)
-        .with_static_particle_lookup(input.particle_lookup)
-        .with_static_audio_lookup(input.audio_lookup)
-        .with_perro_assets_bytes(input.perro_assets);
+        .with_static_scene_lookup(input.assets.scene_lookup)
+        .with_static_material_lookup(input.assets.material_lookup)
+        .with_static_particle_lookup(input.assets.particle_lookup)
+        .with_static_audio_lookup(input.assets.audio_lookup)
+        .with_perro_assets_bytes(input.assets.perro_assets);
 
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, true)
-        .with_static_mesh_lookup(input.mesh_lookup)
-        .with_static_texture_lookup(input.texture_lookup);
+        .with_static_mesh_lookup(input.assets.mesh_lookup)
+        .with_static_texture_lookup(input.assets.texture_lookup);
     let runtime = Runtime::from_project_with_script_registry(
         project,
         ProviderMode::Static,
-        input.static_script_registry,
+        input.assets.static_script_registry,
     );
     let app = App::new(runtime, graphics);
     let fps_cap = app.runtime.project().map(|p| p.config.target_fps).flatten().unwrap_or(0.0);

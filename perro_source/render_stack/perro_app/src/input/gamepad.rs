@@ -43,11 +43,12 @@ mod backend {
     #[derive(Default)]
     pub struct GamepadBackend {
         gilrs: Option<Gilrs>,
-        assigned: HashMap<GamepadId, usize>,
+        id_to_uuid: HashMap<GamepadId, [u8; 16]>,
+        uuid_to_index: HashMap<[u8; 16], usize>,
+        index_to_uuid: Vec<Option<[u8; 16]>>,
         free_indices: Vec<usize>,
         next_index: usize,
         down: HashSet<(GamepadId, GamepadButton)>,
-        assigned_uuids: HashMap<GamepadId, [u8; 16]>,
         uuid_in_use: HashSet<[u8; 16]>,
     }
 
@@ -61,6 +62,11 @@ mod backend {
             while let Some(event) = gilrs.next_event() {
                 self.handle_event(app, &gilrs, event);
             }
+            // Some controllers/drivers (notably on Windows) can miss or coalesce
+            // button events. Sync the current state each frame to avoid dropped
+            // pressed edges.
+            self.sync_buttons(app, &gilrs);
+            self.sync_axes(app, &gilrs);
 
             self.gilrs = Some(gilrs);
         }
@@ -93,12 +99,9 @@ mod backend {
                     }
                 }
                 EventType::Disconnected => {
-                    if let Some(index) = self.assigned.remove(&id) {
-                        self.free_indices.push(index);
-                        clear_gamepad(app, index);
-                    }
+                    self.handle_disconnect(app, id);
                     self.down.retain(|(gp_id, _)| *gp_id != id);
-                    if let Some(uuid) = self.assigned_uuids.remove(&id) {
+                    if let Some(uuid) = self.id_to_uuid.remove(&id) {
                         self.uuid_in_use.remove(&uuid);
                     }
                 }
@@ -181,8 +184,8 @@ mod backend {
         }
 
         fn assign_index_if_unique(&mut self, gilrs: &Gilrs, id: GamepadId) -> Option<usize> {
-            if let Some(idx) = self.assigned.get(&id) {
-                return Some(*idx);
+            if let Some(uuid) = self.id_to_uuid.get(&id) {
+                return self.uuid_to_index.get(uuid).copied();
             }
             let gp = gilrs.gamepad(id);
             if is_joycon(&gp) {
@@ -192,26 +195,92 @@ mod backend {
             if self.uuid_in_use.contains(&uuid) {
                 return None;
             }
-            let index = self.assign_index(id);
+            let index = if let Some(idx) = self.uuid_to_index.get(&uuid) {
+                *idx
+            } else {
+                self.assign_index(uuid)
+            };
+            self.free_indices.retain(|free| *free != index);
             self.uuid_in_use.insert(uuid);
-            self.assigned_uuids.insert(id, uuid);
+            self.id_to_uuid.insert(id, uuid);
             Some(index)
         }
 
-        fn assign_index(&mut self, id: GamepadId) -> usize {
-            if let Some(idx) = self.assigned.get(&id) {
-                return *idx;
+        fn handle_disconnect<B: GraphicsBackend>(&mut self, app: &mut App<B>, id: GamepadId) {
+            let Some(uuid) = self.id_to_uuid.get(&id).copied() else {
+                return;
+            };
+            let Some(index) = self.uuid_to_index.get(&uuid).copied() else {
+                return;
+            };
+            if !self.free_indices.contains(&index) {
+                self.free_indices.push(index);
             }
-            let index = if self.free_indices.is_empty() {
+            clear_gamepad(app, index);
+        }
+
+        fn assign_index(&mut self, uuid: [u8; 16]) -> usize {
+            const MAX_PERSISTENT_GAMEPAD_SLOTS: usize = 12;
+
+            let index = if self.next_index < MAX_PERSISTENT_GAMEPAD_SLOTS {
                 let idx = self.next_index;
                 self.next_index = self.next_index.saturating_add(1);
                 idx
-            } else {
+            } else if !self.free_indices.is_empty() {
                 self.free_indices.sort_unstable();
-                self.free_indices.remove(0)
+                let idx = self.free_indices.remove(0);
+                if let Some(old_uuid) = self.index_to_uuid.get(idx).and_then(|v| *v) {
+                    self.uuid_to_index.remove(&old_uuid);
+                }
+                idx
+            } else {
+                let idx = self.next_index;
+                self.next_index = self.next_index.saturating_add(1);
+                idx
             };
-            self.assigned.insert(id, index);
+
+            if self.index_to_uuid.len() <= index {
+                self.index_to_uuid.resize(index + 1, None);
+            }
+            self.index_to_uuid[index] = Some(uuid);
+            self.uuid_to_index.insert(uuid, index);
             index
+        }
+
+        fn sync_buttons<B: GraphicsBackend>(&mut self, app: &mut App<B>, gilrs: &Gilrs) {
+            for (id, gp) in gilrs.gamepads() {
+                if is_joycon(&gp) {
+                    continue;
+                }
+                let Some(_index) = self.assign_index_if_unique(gilrs, id) else {
+                    continue;
+                };
+                for button in ALL_BUTTONS {
+                    let Some(gilrs_button) = map_button_to_gilrs(button) else {
+                        continue;
+                    };
+                    let is_down = gp.is_pressed(gilrs_button);
+                    self.set_button(app, gilrs, id, button, is_down);
+                }
+            }
+        }
+
+        fn sync_axes<B: GraphicsBackend>(&mut self, app: &mut App<B>, gilrs: &Gilrs) {
+            for (id, gp) in gilrs.gamepads() {
+                if is_joycon(&gp) {
+                    continue;
+                }
+                let Some(index) = self.assign_index_if_unique(gilrs, id) else {
+                    continue;
+                };
+                for axis in ALL_AXES {
+                    let Some(gilrs_axis) = map_axis_to_gilrs(axis) else {
+                        continue;
+                    };
+                    let value = gp.value(gilrs_axis);
+                    app.set_gamepad_axis(index, axis, value);
+                }
+            }
         }
     }
 
@@ -239,6 +308,30 @@ mod backend {
         Some(mapped)
     }
 
+    fn map_button_to_gilrs(button: GamepadButton) -> Option<Button> {
+        let mapped = match button {
+            GamepadButton::Bottom => Button::South,
+            GamepadButton::Right => Button::East,
+            GamepadButton::Left => Button::West,
+            GamepadButton::Top => Button::North,
+            GamepadButton::DpadUp => Button::DPadUp,
+            GamepadButton::DpadDown => Button::DPadDown,
+            GamepadButton::DpadLeft => Button::DPadLeft,
+            GamepadButton::DpadRight => Button::DPadRight,
+            GamepadButton::Start => Button::Start,
+            GamepadButton::Select => Button::Select,
+            GamepadButton::Home => Button::Mode,
+            GamepadButton::Capture => return None,
+            GamepadButton::L1 => Button::LeftTrigger,
+            GamepadButton::R1 => Button::RightTrigger,
+            GamepadButton::L2 => Button::LeftTrigger2,
+            GamepadButton::R2 => Button::RightTrigger2,
+            GamepadButton::L3 => Button::LeftThumb,
+            GamepadButton::R3 => Button::RightThumb,
+        };
+        Some(mapped)
+    }
+
     fn map_axis(axis: Axis) -> Option<GamepadAxis> {
         let mapped = match axis {
             Axis::LeftStickX => GamepadAxis::LeftStickX,
@@ -248,6 +341,18 @@ mod backend {
             Axis::LeftZ => GamepadAxis::LeftTrigger,
             Axis::RightZ => GamepadAxis::RightTrigger,
             _ => return None,
+        };
+        Some(mapped)
+    }
+
+    fn map_axis_to_gilrs(axis: GamepadAxis) -> Option<Axis> {
+        let mapped = match axis {
+            GamepadAxis::LeftStickX => Axis::LeftStickX,
+            GamepadAxis::LeftStickY => Axis::LeftStickY,
+            GamepadAxis::RightStickX => Axis::RightStickX,
+            GamepadAxis::RightStickY => Axis::RightStickY,
+            GamepadAxis::LeftTrigger => Axis::LeftZ,
+            GamepadAxis::RightTrigger => Axis::RightZ,
         };
         Some(mapped)
     }
