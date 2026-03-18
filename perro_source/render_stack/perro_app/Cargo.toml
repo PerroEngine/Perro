@@ -11,10 +11,7 @@ perro_scripting = "0.1.0"
 perro_input = "0.1.0"
 hidapi = "2.6.3"
 btleplug = "0.11.8"
-uuid = { version = "1", default-features = false }
-tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "sync", "time", "net", "macros"] }
-futures = "0.3"
-thiserror = "1.0"
+gilrs = "0.11"
 
 [features]
 profile = ["perro_runtime/profile"]

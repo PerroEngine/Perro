@@ -25,6 +25,7 @@ Each module page contains:
 - Macro reference
 - `ipt.<Module>()` methods
 - Examples
+- Binding notes for player and device mappings
 
 ## Simple Example
 

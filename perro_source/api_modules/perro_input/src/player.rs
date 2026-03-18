@@ -25,7 +25,7 @@ impl PlayerState {
     pub fn begin_frame(&mut self) {}
 
     #[inline]
-    pub fn binding(&self) -> PlayerBinding {
+    pub fn get_binding(&self) -> PlayerBinding {
         self.binding
     }
 
@@ -35,7 +35,7 @@ impl PlayerState {
     }
 
     #[inline]
-    pub fn kbm<'a>(
+    pub fn get_kbm<'a>(
         &self,
         keyboard: &'a KeyboardState,
         mouse: &'a MouseState,
@@ -47,7 +47,7 @@ impl PlayerState {
     }
 
     #[inline]
-    pub fn gamepad<'a>(&self, gamepads: &'a [GamepadState]) -> Option<&'a GamepadState> {
+    pub fn get_gamepad<'a>(&self, gamepads: &'a [GamepadState]) -> Option<&'a GamepadState> {
         match self.binding {
             PlayerBinding::Gamepad { index } => gamepads.get(index),
             _ => None,
@@ -55,7 +55,7 @@ impl PlayerState {
     }
 
     #[inline]
-    pub fn joycon_single<'a>(&self, joycons: &'a [JoyConState]) -> Option<&'a JoyConState> {
+    pub fn get_joycon_single<'a>(&self, joycons: &'a [JoyConState]) -> Option<&'a JoyConState> {
         match self.binding {
             PlayerBinding::JoyConSingle { index } => joycons.get(index),
             _ => None,
@@ -63,7 +63,7 @@ impl PlayerState {
     }
 
     #[inline]
-    pub fn joycon_pair<'a>(
+    pub fn get_joycon_pair<'a>(
         &self,
         joycons: &'a [JoyConState],
     ) -> Option<(&'a JoyConState, &'a JoyConState)> {

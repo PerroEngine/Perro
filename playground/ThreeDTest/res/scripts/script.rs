@@ -33,8 +33,6 @@ lifecycle!({
 
         let speed = get_var!(ctx, mesh_id, var!("speed"));
 
-        player_bind!(ipt, 0, PlayerBinding::JoyConPair { left: 0, right: 1 });
-
 
     }
 
@@ -48,16 +46,13 @@ lifecycle!({
 
 
 
-        if let Some(player) = player_get!(ipt, 0) {
-    if let PlayerBinding::JoyConPair { left, right } = player.binding() {
-        if joycon_pressed!(ipt, left, JoyConButton::Top) {
-            println!("Player 1 left Joy‑Con Top pressed");
-        }
-        if joycon_pressed!(ipt, right, JoyConButton::Bottom) {
-            println!("Player 1 right Joy‑Con Bottom pressed");
-        }
+    if gamepad_down!(ipt, 0, GamepadButton::Bottom) {
+        println!("Gamepad 0 Bottom button pressed");
     }
-}
+
+        if joycon_pressed!(ipt, 0, JoyConButton::Bottom) {
+        println!("JoyCon 0 Bottom button down");
+    }
         
 
         let dt = delta_time!(ctx);

@@ -33,6 +33,11 @@ Inputs:
 - `index: usize`
 - `button: JoyConButton`
 
+Bindings:
+- Joy-Con indices are assigned by the engine in connection/order-detected sequence.
+- Use the player system to map those indices to your game’s notion of a player.
+- Player bindings that use Joy-Cons are configured via `PlayerBinding::JoyConSingle { index }` and `PlayerBinding::JoyConPair { left, right }`.
+
 `JoyConButton` mapping:
 - `Top`: Left Joy-Con Up / Right Joy-Con X
 - `Bottom`: Left Joy-Con Down / Right Joy-Con B

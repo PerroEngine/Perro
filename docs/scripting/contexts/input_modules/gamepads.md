@@ -4,6 +4,11 @@ Access:
 
 - `ipt.Gamepads()`
 
+Purpose:
+
+- Read raw gamepad input as the engine detects controllers.
+- Use the player system to map engine-assigned indices to your game’s notion of a player.
+
 Macros:
 
 - `gamepad_list!(ipt) -> &[GamepadState]`
@@ -37,6 +42,11 @@ Inputs:
 - `index: usize`
 - `button: GamepadButton`
 - `axis: GamepadAxis`
+
+Bindings:
+
+- Gamepad indices are assigned by the engine in connection/order-detected sequence.
+- Map indices to players via `PlayerBinding::Gamepad { index }` when you need stable player associations.
 
 Source of truth:
 

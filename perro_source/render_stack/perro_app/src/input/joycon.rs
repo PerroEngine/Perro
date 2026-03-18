@@ -36,6 +36,7 @@ mod backend {
         rx: Option<Receiver<JoyConEvent>>,
         tx: Option<Sender<JoyConEvent>>,
         last_scan: Option<Instant>,
+        last_buttons: HashMap<(usize, JoyConSide), ButtonBits>,
     }
 
     impl JoyConBackend {
@@ -105,6 +106,7 @@ mod backend {
                 }
                 if let Some(index) = self.assigned.remove(&serial) {
                     self.free_indices.push(index);
+                    self.last_buttons.retain(|(idx, _), _| *idx != index);
                 }
             }
         }
@@ -175,12 +177,16 @@ mod backend {
                 return;
             };
             while let Ok(event) = rx.try_recv() {
-                apply_report(app, event);
+                apply_report(app, event, &mut self.last_buttons);
             }
         }
     }
 
-    fn apply_report<B: GraphicsBackend>(app: &mut App<B>, event: JoyConEvent) {
+    fn apply_report<B: GraphicsBackend>(
+        app: &mut App<B>,
+        event: JoyConEvent,
+        last_buttons: &mut HashMap<(usize, JoyConSide), ButtonBits>,
+    ) {
         let (
             index,
             side,
@@ -195,7 +201,10 @@ mod backend {
             accel_z,
         ) = event;
 
-        apply_buttons(app, index, side, &buttons);
+        let key = (index, side);
+        let prev = last_buttons.get(&key).copied();
+        apply_buttons(app, index, side, &buttons, prev.as_ref());
+        last_buttons.insert(key, buttons);
         app.set_joycon_stick(index, stick_x, stick_y);
         app.set_joycon_gyro(index, gyro_x, gyro_y, gyro_z);
         app.set_joycon_accel(index, accel_x, accel_y, accel_z);
@@ -206,34 +215,83 @@ mod backend {
         index: usize,
         side: JoyConSide,
         buttons: &ButtonBits,
+        prev: Option<&ButtonBits>,
     ) {
         let map = |b: JoyConButton| buttons[b.as_index()];
+        let changed = |b: JoyConButton| match prev {
+            Some(prev_bits) => prev_bits[b.as_index()] != buttons[b.as_index()],
+            None => true,
+        };
         match side {
             JoyConSide::LJoyCon => {
-                app.set_joycon_button_state(index, JoyConButton::Top, map(JoyConButton::Top));
-                app.set_joycon_button_state(index, JoyConButton::Bottom, map(JoyConButton::Bottom));
-                app.set_joycon_button_state(index, JoyConButton::Left, map(JoyConButton::Left));
-                app.set_joycon_button_state(index, JoyConButton::Right, map(JoyConButton::Right));
-                app.set_joycon_button_state(index, JoyConButton::Bumper, map(JoyConButton::Bumper));
-                app.set_joycon_button_state(index, JoyConButton::Trigger, map(JoyConButton::Trigger));
-                app.set_joycon_button_state(index, JoyConButton::Stick, map(JoyConButton::Stick));
-                app.set_joycon_button_state(index, JoyConButton::SL, map(JoyConButton::SL));
-                app.set_joycon_button_state(index, JoyConButton::SR, map(JoyConButton::SR));
-                app.set_joycon_button_state(index, JoyConButton::Start, map(JoyConButton::Start));
-                app.set_joycon_button_state(index, JoyConButton::Meta, map(JoyConButton::Meta));
+                if changed(JoyConButton::Top) {
+                    app.set_joycon_button_state(index, JoyConButton::Top, map(JoyConButton::Top));
+                }
+                if changed(JoyConButton::Bottom) {
+                    app.set_joycon_button_state(index, JoyConButton::Bottom, map(JoyConButton::Bottom));
+                }
+                if changed(JoyConButton::Left) {
+                    app.set_joycon_button_state(index, JoyConButton::Left, map(JoyConButton::Left));
+                }
+                if changed(JoyConButton::Right) {
+                    app.set_joycon_button_state(index, JoyConButton::Right, map(JoyConButton::Right));
+                }
+                if changed(JoyConButton::Bumper) {
+                    app.set_joycon_button_state(index, JoyConButton::Bumper, map(JoyConButton::Bumper));
+                }
+                if changed(JoyConButton::Trigger) {
+                    app.set_joycon_button_state(index, JoyConButton::Trigger, map(JoyConButton::Trigger));
+                }
+                if changed(JoyConButton::Stick) {
+                    app.set_joycon_button_state(index, JoyConButton::Stick, map(JoyConButton::Stick));
+                }
+                if changed(JoyConButton::SL) {
+                    app.set_joycon_button_state(index, JoyConButton::SL, map(JoyConButton::SL));
+                }
+                if changed(JoyConButton::SR) {
+                    app.set_joycon_button_state(index, JoyConButton::SR, map(JoyConButton::SR));
+                }
+                if changed(JoyConButton::Start) {
+                    app.set_joycon_button_state(index, JoyConButton::Start, map(JoyConButton::Start));
+                }
+                if changed(JoyConButton::Meta) {
+                    app.set_joycon_button_state(index, JoyConButton::Meta, map(JoyConButton::Meta));
+                }
             }
             JoyConSide::RJoyCon => {
-                app.set_joycon_button_state(index, JoyConButton::Top, map(JoyConButton::Top));
-                app.set_joycon_button_state(index, JoyConButton::Bottom, map(JoyConButton::Bottom));
-                app.set_joycon_button_state(index, JoyConButton::Left, map(JoyConButton::Left));
-                app.set_joycon_button_state(index, JoyConButton::Right, map(JoyConButton::Right));
-                app.set_joycon_button_state(index, JoyConButton::Bumper, map(JoyConButton::Bumper));
-                app.set_joycon_button_state(index, JoyConButton::Trigger, map(JoyConButton::Trigger));
-                app.set_joycon_button_state(index, JoyConButton::Stick, map(JoyConButton::Stick));
-                app.set_joycon_button_state(index, JoyConButton::SL, map(JoyConButton::SL));
-                app.set_joycon_button_state(index, JoyConButton::SR, map(JoyConButton::SR));
-                app.set_joycon_button_state(index, JoyConButton::Start, map(JoyConButton::Start));
-                app.set_joycon_button_state(index, JoyConButton::Meta, map(JoyConButton::Meta));
+                if changed(JoyConButton::Top) {
+                    app.set_joycon_button_state(index, JoyConButton::Top, map(JoyConButton::Top));
+                }
+                if changed(JoyConButton::Bottom) {
+                    app.set_joycon_button_state(index, JoyConButton::Bottom, map(JoyConButton::Bottom));
+                }
+                if changed(JoyConButton::Left) {
+                    app.set_joycon_button_state(index, JoyConButton::Left, map(JoyConButton::Left));
+                }
+                if changed(JoyConButton::Right) {
+                    app.set_joycon_button_state(index, JoyConButton::Right, map(JoyConButton::Right));
+                }
+                if changed(JoyConButton::Bumper) {
+                    app.set_joycon_button_state(index, JoyConButton::Bumper, map(JoyConButton::Bumper));
+                }
+                if changed(JoyConButton::Trigger) {
+                    app.set_joycon_button_state(index, JoyConButton::Trigger, map(JoyConButton::Trigger));
+                }
+                if changed(JoyConButton::Stick) {
+                    app.set_joycon_button_state(index, JoyConButton::Stick, map(JoyConButton::Stick));
+                }
+                if changed(JoyConButton::SL) {
+                    app.set_joycon_button_state(index, JoyConButton::SL, map(JoyConButton::SL));
+                }
+                if changed(JoyConButton::SR) {
+                    app.set_joycon_button_state(index, JoyConButton::SR, map(JoyConButton::SR));
+                }
+                if changed(JoyConButton::Start) {
+                    app.set_joycon_button_state(index, JoyConButton::Start, map(JoyConButton::Start));
+                }
+                if changed(JoyConButton::Meta) {
+                    app.set_joycon_button_state(index, JoyConButton::Meta, map(JoyConButton::Meta));
+                }
             }
         }
     }
