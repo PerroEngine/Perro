@@ -33,15 +33,33 @@ lifecycle!({
 
         let speed = get_var!(ctx, mesh_id, var!("speed"));
 
+        player_bind!(ipt, 0, PlayerBinding::JoyConPair { left: 0, right: 1 });
+
+
     }
 
     fn on_update(
         &self,
         ctx: &mut RuntimeContext<'_, RT>,
         res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
+        ipt: &InputContext<'_, IP>,
         self_id: NodeID,
     ) {
+
+
+
+        if let Some(player) = player_get!(ipt, 0) {
+    if let PlayerBinding::JoyConPair { left, right } = player.binding() {
+        if joycon_pressed!(ipt, left, JoyConButton::Top) {
+            println!("Player 1 left Joy‑Con Top pressed");
+        }
+        if joycon_pressed!(ipt, right, JoyConButton::Bottom) {
+            println!("Player 1 right Joy‑Con Bottom pressed");
+        }
+    }
+}
+        
+
         let dt = delta_time!(ctx);
         let (speed, timer) = with_state_mut!(ctx, ExampleState, self_id, |state| {
             

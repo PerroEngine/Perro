@@ -12,6 +12,7 @@ pub use keycode::KeyCode;
 pub use mouse_button::MouseButton;
 pub use player::{PlayerBinding, PlayerModule, PlayerState};
 use perro_structs::Vector2;
+use std::cell::RefCell;
 
 #[derive(Clone, Debug)]
 pub struct InputSnapshot {
@@ -20,6 +21,7 @@ pub struct InputSnapshot {
     gamepads: Vec<GamepadState>,
     joycons: Vec<JoyConState>,
     players: Vec<PlayerState>,
+    commands: RefCell<Vec<InputCommand>>,
 }
 
 impl InputSnapshot {
@@ -30,11 +32,13 @@ impl InputSnapshot {
             gamepads: Vec::new(),
             joycons: Vec::new(),
             players: Vec::new(),
+            commands: RefCell::new(Vec::new()),
         }
     }
 
     #[inline]
     pub fn begin_frame(&mut self) {
+        self.apply_queued_commands();
         self.keyboard.begin_frame();
         self.mouse.begin_frame();
         for pad in &mut self.gamepads {
@@ -154,6 +158,24 @@ impl InputSnapshot {
     }
 
     #[inline]
+    pub fn apply_queued_commands(&mut self) {
+        let mut pending = {
+            let mut commands = self.commands.borrow_mut();
+            if commands.is_empty() {
+                return;
+            }
+            commands.drain(..).collect::<Vec<_>>()
+        };
+        for command in pending.drain(..) {
+            match command {
+                InputCommand::BindPlayer { index, binding } => {
+                    self.bind_player(index, binding);
+                }
+            }
+        }
+    }
+
+    #[inline]
     pub fn set_gamepad_button_state(
         &mut self,
         index: usize,
@@ -249,12 +271,21 @@ impl Default for InputSnapshot {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum InputCommand {
+    BindPlayer { index: usize, binding: PlayerBinding },
+}
+
 pub trait InputAPI {
     fn keyboard(&self) -> &KeyboardState;
     fn mouse(&self) -> &MouseState;
     fn gamepads(&self) -> &[GamepadState];
     fn joycons(&self) -> &[JoyConState];
     fn players(&self) -> &[PlayerState];
+    #[inline]
+    fn command_buffer(&self) -> Option<&RefCell<Vec<InputCommand>>> {
+        None
+    }
 }
 
 impl InputAPI for InputSnapshot {
@@ -281,6 +312,11 @@ impl InputAPI for InputSnapshot {
     #[inline]
     fn players(&self) -> &[PlayerState] {
         self.players()
+    }
+
+    #[inline]
+    fn command_buffer(&self) -> Option<&RefCell<Vec<InputCommand>>> {
+        Some(&self.commands)
     }
 }
 
@@ -328,6 +364,15 @@ impl<'ipt, IP: InputAPI + ?Sized> InputContext<'ipt, IP> {
     /// Access Player bindings and state.
     pub fn Players(&self) -> PlayerModule<'_, IP> {
         PlayerModule::new(self.ipt)
+    }
+
+    #[inline]
+    pub fn bind_player(&self, index: usize, binding: PlayerBinding) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer
+                .borrow_mut()
+                .push(InputCommand::BindPlayer { index, binding });
+        }
     }
 }
 
@@ -792,14 +837,14 @@ macro_rules! viewport_size {
 pub mod prelude {
     pub use crate::{
         GamepadAxis, GamepadButton, GamepadModule, GamepadState, InputAPI, InputContext,
-        InputSnapshot, JoyConModule, JoyConSide, JoyConState, KeyCode, KeyModule, KeyboardModule,
-        KeyboardState, MouseButton, MouseModule, MouseState, MouseStateModule, PlayerBinding,
-        PlayerModule, PlayerState, key_down, key_pressed, key_released, mouse_delta, mouse_down,
-        mouse_position, mouse_pressed, mouse_released, mouse_wheel, viewport_size, joycon_list,
-        joycon_down, joycon_get, joycon_side, joycon_pressed, joycon_released, joycon_stick,
-        joycon_gyro, joycon_accel, gamepad_list, gamepad_get, gamepad_down, gamepad_pressed,
-        gamepad_released, gamepad_left_stick, gamepad_right_stick, gamepad_gyro, gamepad_accel,
-        player_list, player_get, player_bind,
+        InputSnapshot, JoyConButton, JoyConModule, JoyConSide, JoyConState, KeyCode, KeyModule,
+        KeyboardModule, KeyboardState, MouseButton, MouseModule, MouseState, MouseStateModule,
+        PlayerBinding, PlayerModule, PlayerState, key_down, key_pressed, key_released, mouse_delta,
+        mouse_down, mouse_position, mouse_pressed, mouse_released, mouse_wheel, viewport_size,
+        joycon_list, joycon_down, joycon_get, joycon_side, joycon_pressed, joycon_released,
+        joycon_stick, joycon_gyro, joycon_accel, gamepad_list, gamepad_get, gamepad_down,
+        gamepad_pressed, gamepad_released, gamepad_left_stick, gamepad_right_stick, gamepad_gyro,
+        gamepad_accel, player_list, player_get, player_bind,
     };
     pub use perro_structs::Vector2;
 }

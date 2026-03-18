@@ -144,6 +144,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let work_start = Instant::now();
         let mut runtime_update_duration = Duration::ZERO;
         let present_duration;
+
         if let Some(step) = self.fixed_timestep {
             self.fixed_accumulator += frame_delta.as_secs_f32();
             let mut steps = 0u32;
@@ -207,9 +208,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
             window.request_redraw();
         }
 
+        self.app.begin_input_frame();
         self.gamepad_input.begin_frame(&mut self.app);
         self.joycon_input.begin_frame(&mut self.app);
-        self.app.begin_input_frame();
+
     }
 }
 

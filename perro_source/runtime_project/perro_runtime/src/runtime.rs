@@ -8,7 +8,7 @@ use ahash::{AHashMap, AHashSet};
 use libloading::Library;
 use perro_ids::{MaterialID, MeshID, NodeID, TagID, TextureID};
 use perro_input::{
-    GamepadAxis, GamepadButton, InputContext, InputSnapshot, JoyConButton, KeyCode, MouseButton,
+    GamepadAxis, GamepadButton, InputContext, InputSnapshot, KeyCode, MouseButton,
 };
 use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType, SceneNodeData, Spatial};
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
@@ -453,6 +453,7 @@ impl Runtime {
 
     #[inline]
     pub fn begin_input_frame(&mut self) {
+        self.input.apply_queued_commands();
         self.input.begin_frame();
     }
 
