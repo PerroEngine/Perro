@@ -884,6 +884,9 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
+    let project_dir = project_dir
+        .canonicalize()
+        .unwrap_or(project_dir);
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
 
@@ -960,6 +963,9 @@ fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
+    let project_dir = project_dir
+        .canonicalize()
+        .unwrap_or(project_dir);
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
 

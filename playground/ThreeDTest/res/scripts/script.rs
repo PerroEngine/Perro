@@ -36,13 +36,7 @@ lifecycle!({
         ipt: &InputContext<'_, IP>,
         self_id: NodeID,
     ) {
-        if gamepad_pressed!(ipt, 0, GamepadButton::Bottom) {
-            println!("Gamepad 0 Bottom button pressed");
-        }
-
-        if joycon_pressed!(ipt, 0, JoyConButton::Bottom) {
-            println!("JoyCon 0 Bottom button down");
-        }
+       
 
         let dt = delta_time!(ctx);
         let (speed, timer) = with_state_mut!(ctx, ExampleState, self_id, |state| {
