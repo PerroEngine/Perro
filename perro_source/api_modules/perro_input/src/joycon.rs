@@ -42,9 +42,9 @@ impl JoyConButton {
 #[derive(Clone, Debug)]
 pub struct JoyConState {
     side: JoyConSide,
-    buttons_down: Vec<u64>,
-    buttons_pressed: Vec<u64>,
-    buttons_released: Vec<u64>,
+    buttons_down: [u64; JoyConState::BUTTON_WORDS],
+    buttons_pressed: [u64; JoyConState::BUTTON_WORDS],
+    buttons_released: [u64; JoyConState::BUTTON_WORDS],
     stick_x: f32,
     stick_y: f32,
     gyro: perro_structs::Vector3,
@@ -52,13 +52,14 @@ pub struct JoyConState {
 }
 
 impl JoyConState {
+    const BUTTON_WORDS: usize = (JoyConButton::COUNT + 63) / 64;
+
     pub fn new(side: JoyConSide) -> Self {
-        let words = JoyConButton::COUNT.div_ceil(64);
         Self {
             side,
-            buttons_down: vec![0; words],
-            buttons_pressed: vec![0; words],
-            buttons_released: vec![0; words],
+            buttons_down: [0; JoyConState::BUTTON_WORDS],
+            buttons_pressed: [0; JoyConState::BUTTON_WORDS],
+            buttons_released: [0; JoyConState::BUTTON_WORDS],
             stick_x: 0.0,
             stick_y: 0.0,
             gyro: perro_structs::Vector3::new(0.0, 0.0, 0.0),
@@ -66,12 +67,12 @@ impl JoyConState {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn side(&self) -> JoyConSide {
         self.side
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn set_side(&mut self, side: JoyConSide) {
         self.side = side;
         self.buttons_down.fill(0);
@@ -79,13 +80,13 @@ impl JoyConState {
         self.buttons_released.fill(0);
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn begin_frame(&mut self) {
         self.buttons_pressed.fill(0);
         self.buttons_released.fill(0);
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn set_button_state(&mut self, button: JoyConButton, is_down: bool) {
         let idx = button.as_index();
         let word = idx / 64;
@@ -103,64 +104,64 @@ impl JoyConState {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn set_stick(&mut self, x: f32, y: f32) {
         self.stick_x = x;
         self.stick_y = y;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn set_gyro(&mut self, x: f32, y: f32, z: f32) {
         self.gyro = perro_structs::Vector3::new(x, y, z);
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn set_accel(&mut self, x: f32, y: f32, z: f32) {
         self.accel = perro_structs::Vector3::new(x, y, z);
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn stick_x(&self) -> f32 {
         self.stick_x
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn stick_y(&self) -> f32 {
         self.stick_y
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn stick(&self) -> perro_structs::Vector2 {
         perro_structs::Vector2::new(self.stick_x, self.stick_y)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn gyro(&self) -> perro_structs::Vector3 {
         self.gyro
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn accel(&self) -> perro_structs::Vector3 {
         self.accel
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_button_down(&self, button: JoyConButton) -> bool {
         self.test(&self.buttons_down, button)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_button_pressed(&self, button: JoyConButton) -> bool {
         self.test(&self.buttons_pressed, button)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_button_released(&self, button: JoyConButton) -> bool {
         self.test(&self.buttons_released, button)
     }
 
-    #[inline]
-    fn test(&self, bits: &[u64], button: JoyConButton) -> bool {
+    #[inline(always)]
+    fn test(&self, bits: &[u64; JoyConState::BUTTON_WORDS], button: JoyConButton) -> bool {
         let idx = button.as_index();
         let word = idx / 64;
         let bit = 1_u64 << (idx % 64);
@@ -177,86 +178,101 @@ impl Default for JoyConState {
 #[macro_export]
 macro_rules! joycon_list {
     ($ipt:expr) => {
-        $ipt.JoyCons().all()
+        {
+            let jc = $ipt.JoyCons();
+            jc.all()
+        }
     };
 }
 
 #[macro_export]
 macro_rules! joycon_get {
     ($ipt:expr, $index:expr) => {
-        $ipt.JoyCons().get($index)
+        {
+            let jc = $ipt.JoyCons();
+            jc.get($index)
+        }
     };
 }
 
 #[macro_export]
 macro_rules! joycon_side {
     ($ipt:expr, $index:expr) => {
-        $ipt.JoyCons().get($index).map(|jc| jc.side())
+        {
+            let jc = $ipt.JoyCons();
+            jc.get($index).map(|jc| jc.side())
+        }
     };
 }
 
 #[macro_export]
 macro_rules! joycon_down {
     ($ipt:expr, $index:expr, $button:expr) => {
-        $ipt
-            .JoyCons()
-            .get($index)
-            .map(|jc| jc.is_button_down($button))
-            .unwrap_or(false)
+        {
+            let jc = $ipt.JoyCons();
+            jc.get($index)
+                .map(|jc| jc.is_button_down($button))
+                .unwrap_or(false)
+        }
     };
 }
 
 #[macro_export]
 macro_rules! joycon_pressed {
     ($ipt:expr, $index:expr, $button:expr) => {
-        $ipt
-            .JoyCons()
-            .get($index)
-            .map(|jc| jc.is_button_pressed($button))
-            .unwrap_or(false)
+        {
+            let jc = $ipt.JoyCons();
+            jc.get($index)
+                .map(|jc| jc.is_button_pressed($button))
+                .unwrap_or(false)
+        }
     };
 }
 
 #[macro_export]
 macro_rules! joycon_released {
     ($ipt:expr, $index:expr, $button:expr) => {
-        $ipt
-            .JoyCons()
-            .get($index)
-            .map(|jc| jc.is_button_released($button))
-            .unwrap_or(false)
+        {
+            let jc = $ipt.JoyCons();
+            jc.get($index)
+                .map(|jc| jc.is_button_released($button))
+                .unwrap_or(false)
+        }
     };
 }
 
 #[macro_export]
 macro_rules! joycon_stick {
     ($ipt:expr, $index:expr) => {
-        $ipt
-            .JoyCons()
-            .get($index)
-            .map(|jc| jc.stick())
-            .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+        {
+            let jc = $ipt.JoyCons();
+            jc.get($index)
+                .map(|jc| jc.stick())
+                .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+        }
     };
 }
 
 #[macro_export]
 macro_rules! joycon_gyro {
     ($ipt:expr, $index:expr) => {
-        $ipt
-            .JoyCons()
-            .get($index)
-            .map(|jc| jc.gyro())
-            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+        {
+            let jc = $ipt.JoyCons();
+            jc.get($index)
+                .map(|jc| jc.gyro())
+                .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+        }
     };
 }
 
 #[macro_export]
 macro_rules! joycon_accel {
     ($ipt:expr, $index:expr) => {
-        $ipt
-            .JoyCons()
-            .get($index)
-            .map(|jc| jc.accel())
-            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+        {
+            let jc = $ipt.JoyCons();
+            jc.get($index)
+                .map(|jc| jc.accel())
+                .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+        }
     };
 }

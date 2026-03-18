@@ -387,6 +387,8 @@ fn main() {{\n\
         virtual_width: {w},\n\
         virtual_height: {h},\n\
         vsync: {vsync},\n\
+        target_fps: {target_fps},\n\
+        target_fixed_update: {target_fixed_update},\n\
         msaa: {msaa},\n\
         meshlets: {meshlets},\n\
         dev_meshlets: {dev_meshlets},\n\
@@ -417,6 +419,8 @@ fn main() {{\n\
         meshlet_debug_view = cfg.meshlet_debug_view,
         occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
         particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
+        target_fps = emit_optional_f32(cfg.target_fps),
+        target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
     );
     fs::write(project_src.join("main.rs"), main_src)?;
     Ok(())
@@ -452,6 +456,13 @@ fn emit_particle_sim_default_expr(mode: perro_project::ParticleSimDefault) -> &'
         perro_project::ParticleSimDefault::GpuCompute => {
             "perro_app::entry::ParticleSimDefault::GpuCompute"
         }
+    }
+}
+
+fn emit_optional_f32(value: Option<f32>) -> String {
+    match value {
+        Some(v) if v.is_finite() => format!("Some({})", v),
+        _ => "None".to_string(),
     }
 }
 

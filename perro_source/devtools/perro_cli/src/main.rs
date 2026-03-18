@@ -361,6 +361,7 @@ fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let base_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
+    let base_dir = base_dir.canonicalize().unwrap_or(base_dir);
     let project_name =
         parse_flag_value(args, "--name").unwrap_or_else(|| DEFAULT_PROJECT_NAME.to_string());
     let project_dir = base_dir.join(sanitize_project_dir_name(&project_name));
@@ -397,6 +398,7 @@ fn new_script_command(args: &[String], cwd: &Path) -> Result<(), String> {
                 .to_string()
         })?
     };
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
     let res_root = project_dir.join("res");
     if !res_root.exists() {
         return Err(format!(
@@ -488,6 +490,7 @@ fn new_scene_command(args: &[String], cwd: &Path) -> Result<(), String> {
                 .to_string()
         })?
     };
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
     let res_root = project_dir.join("res");
     if !res_root.exists() {
         return Err(format!(
@@ -521,6 +524,7 @@ fn clean_command(args: &[String], _cwd: &Path) -> Result<(), String> {
             "could not find project.toml. Run from a project directory or pass --path <project_dir>."
                 .to_string()
         })?;
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
     if !project_dir.join("project.toml").exists() {
         return Err(format!(
             "invalid --path `{}` for clean. Use project root (directory containing project.toml).",
@@ -864,6 +868,7 @@ fn scripts_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
     log_step("Building Scripts");
@@ -1020,6 +1025,7 @@ fn format_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let base_path = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
+    let base_path = base_path.canonicalize().unwrap_or(base_path);
     let res_dir = resolve_res_root_for_format(&base_path)?;
     let mut script_files = Vec::new();
     collect_rs_files_recursive(&res_dir, &mut script_files)?;
@@ -1085,6 +1091,9 @@ fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
+    let project_dir = project_dir
+        .canonicalize()
+        .unwrap_or(project_dir);
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
     log_step("Building Project Bundle");

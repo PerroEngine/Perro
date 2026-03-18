@@ -380,12 +380,12 @@ impl<'ipt, IP: InputAPI + ?Sized> InputContext<'ipt, IP> {
         MouseStateModule::new(self.ipt)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn Gamepads(&self) -> GamepadModule<'_, IP> {
         GamepadModule::new(self.ipt)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn JoyCons(&self) -> JoyConModule<'_, IP> {
         JoyConModule::new(self.ipt)
     }
@@ -756,16 +756,17 @@ pub struct GamepadModule<'ipt, IP: InputAPI + ?Sized> {
 }
 
 impl<'ipt, IP: InputAPI + ?Sized> GamepadModule<'ipt, IP> {
+    #[inline(always)]
     pub fn new(ipt: &'ipt IP) -> Self {
         Self { ipt }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn all(&self) -> &'ipt [GamepadState] {
         self.ipt.gamepads()
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get(&self, index: usize) -> Option<&'ipt GamepadState> {
         self.ipt.gamepads().get(index)
     }
@@ -777,17 +778,18 @@ pub struct JoyConModule<'ipt, IP: InputAPI + ?Sized> {
 
 impl<'ipt, IP: InputAPI + ?Sized> JoyConModule<'ipt, IP> {
     /// Creates a Joy-Con access wrapper.
+    #[inline(always)]
     pub fn new(ipt: &'ipt IP) -> Self {
         Self { ipt }
     }
 
-    #[inline]
+    #[inline(always)]
     /// Returns all Joy-Con states (each entry is a single Joy-Con controller).
     pub fn all(&self) -> &'ipt [JoyConState] {
         self.ipt.joycons()
     }
 
-    #[inline]
+    #[inline(always)]
     /// Returns the Joy-Con at the given index.
     pub fn get(&self, index: usize) -> Option<&'ipt JoyConState> {
         self.ipt.joycons().get(index)

@@ -76,12 +76,14 @@ struct RunnerState<B: GraphicsBackend> {
     title: String,
     window: Option<Arc<Window>>,
     last_frame_start: Instant,
+    last_frame_end: Instant,
     next_frame_deadline: Instant,
     run_start: Instant,
     batch_start: Instant,
     batch_work: Duration,
     batch_runtime_update: Duration,
     batch_present: Duration,
+    batch_idle: Duration,
     batch_sim_delta_seconds: f64,
     fixed_timestep: Option<f32>,
     fps_cap: f32,
@@ -99,10 +101,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
             app,
             title: title.to_owned(),
             window: None,
-            fps_cap: fps_cap.max(1.0),
+            fps_cap,
             fixed_timestep: fixed_timestep.filter(|v| *v > 0.0),
             fixed_accumulator: 0.0,
             last_frame_start: now,
+            last_frame_end: now,
             next_frame_deadline: now,
             run_start: now,
             batch_frames: 0,
@@ -110,6 +113,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             batch_work: Duration::ZERO,
             batch_runtime_update: Duration::ZERO,
             batch_present: Duration::ZERO,
+            batch_idle: Duration::ZERO,
             batch_sim_delta_seconds: 0.0,
             kbm_input: crate::input::KbmInput::new(),
             gamepad_input: crate::input::GamepadInput::new(),
@@ -141,6 +145,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         self.app.set_elapsed_time(elapsed_since_start.as_secs_f32());
         let mut simulated_delta_seconds = frame_delta.as_secs_f64();
 
+        let idle_duration = frame_start.saturating_duration_since(self.last_frame_end);
         let work_start = Instant::now();
         let mut runtime_update_duration = Duration::ZERO;
         let present_duration;
@@ -159,26 +164,26 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 // Drop excess accumulated time to avoid spiral-of-death behavior.
                 self.fixed_accumulator = 0.0;
             }
-            let present_start = Instant::now();
-            self.app.present();
-            present_duration = present_start.elapsed();
             simulated_delta_seconds = step as f64 * steps as f64;
-        } else {
-            let update_start = Instant::now();
-            self.app.update_runtime(frame_delta.as_secs_f32());
-            runtime_update_duration = update_start.elapsed();
-            let present_start = Instant::now();
-            self.app.present();
-            present_duration = present_start.elapsed();
         }
+
+        let update_start = Instant::now();
+        self.app.update_runtime(frame_delta.as_secs_f32());
+        runtime_update_duration += update_start.elapsed();
+
+        let present_start = Instant::now();
+        self.app.present();
+        present_duration = present_start.elapsed();
         let work_duration = work_start.elapsed();
 
         let frame_end = Instant::now();
+        self.last_frame_end = frame_end;
 
         self.batch_frames = self.batch_frames.saturating_add(1);
         self.batch_work += work_duration;
         self.batch_runtime_update += runtime_update_duration;
         self.batch_present += present_duration;
+        self.batch_idle += idle_duration;
         self.batch_sim_delta_seconds += simulated_delta_seconds;
 
         let batch_elapsed_secs = frame_end.duration_since(self.batch_start).as_secs_f32();
@@ -189,16 +194,19 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 self.batch_runtime_update.as_micros() as f64 / self.batch_frames as f64;
             let present_ms = self.batch_present.as_secs_f64() * 1_000.0;
             let avg_present_us = (present_ms * 1_000.0) / self.batch_frames as f64;
+            let idle_ms = self.batch_idle.as_secs_f64() * 1_000.0;
+            let avg_idle_us = (idle_ms * 1_000.0) / self.batch_frames as f64;
 
             println!(
-                "update: ({:.3}us avg) | frame present:  ({:.3}us avg) | total: ({:.3}us avg)",
-                avg_runtime_update_us, avg_present_us, avg_work_us,
+                "update: ({:.3}us avg) | frame present: ({:.3}us avg) | idle: ({:.3}us avg) | total: ({:.3}us avg)",
+                avg_runtime_update_us, avg_present_us, avg_idle_us, avg_work_us,
             );
 
             self.batch_frames = 0;
             self.batch_work = Duration::ZERO;
             self.batch_runtime_update = Duration::ZERO;
             self.batch_present = Duration::ZERO;
+            self.batch_idle = Duration::ZERO;
             self.batch_sim_delta_seconds = 0.0;
             self.batch_start = frame_end;
         }
@@ -235,6 +243,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             self.window = Some(window);
             let now = Instant::now();
             self.last_frame_start = now;
+            self.last_frame_end = now;
             self.next_frame_deadline = now;
             self.run_start = now;
             self.fixed_accumulator = 0.0;
@@ -243,6 +252,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             self.batch_work = Duration::ZERO;
             self.batch_runtime_update = Duration::ZERO;
             self.batch_present = Duration::ZERO;
+            self.batch_idle = Duration::ZERO;
             self.batch_sim_delta_seconds = 0.0;
         }
     }

@@ -50,34 +50,35 @@ impl GamepadAxis {
 
 #[derive(Clone, Debug)]
 pub struct GamepadState {
-    buttons_down: Vec<u64>,
-    buttons_pressed: Vec<u64>,
-    buttons_released: Vec<u64>,
+    buttons_down: [u64; GamepadState::BUTTON_WORDS],
+    buttons_pressed: [u64; GamepadState::BUTTON_WORDS],
+    buttons_released: [u64; GamepadState::BUTTON_WORDS],
     axes: [f32; GamepadAxis::COUNT],
     gyro: perro_structs::Vector3,
     accel: perro_structs::Vector3,
 }
 
 impl GamepadState {
+    const BUTTON_WORDS: usize = (GamepadButton::COUNT + 63) / 64;
+
     pub fn new() -> Self {
-        let words = GamepadButton::COUNT.div_ceil(64);
         Self {
-            buttons_down: vec![0; words],
-            buttons_pressed: vec![0; words],
-            buttons_released: vec![0; words],
+            buttons_down: [0; GamepadState::BUTTON_WORDS],
+            buttons_pressed: [0; GamepadState::BUTTON_WORDS],
+            buttons_released: [0; GamepadState::BUTTON_WORDS],
             axes: [0.0; GamepadAxis::COUNT],
             gyro: perro_structs::Vector3::new(0.0, 0.0, 0.0),
             accel: perro_structs::Vector3::new(0.0, 0.0, 0.0),
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn begin_frame(&mut self) {
         self.buttons_pressed.fill(0);
         self.buttons_released.fill(0);
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn set_button_state(&mut self, button: GamepadButton, is_down: bool) {
         let idx = button.as_index();
         let word = idx / 64;
@@ -95,42 +96,42 @@ impl GamepadState {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn set_axis(&mut self, axis: GamepadAxis, value: f32) {
         self.axes[axis.as_index()] = value;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn set_gyro(&mut self, x: f32, y: f32, z: f32) {
         self.gyro = perro_structs::Vector3::new(x, y, z);
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn set_accel(&mut self, x: f32, y: f32, z: f32) {
         self.accel = perro_structs::Vector3::new(x, y, z);
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_button_down(&self, button: GamepadButton) -> bool {
         self.test(&self.buttons_down, button)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_button_pressed(&self, button: GamepadButton) -> bool {
         self.test(&self.buttons_pressed, button)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_button_released(&self, button: GamepadButton) -> bool {
         self.test(&self.buttons_released, button)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn axis(&self, axis: GamepadAxis) -> f32 {
         self.axes[axis.as_index()]
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn left_stick(&self) -> perro_structs::Vector2 {
         perro_structs::Vector2::new(
             self.axis(GamepadAxis::LeftStickX),
@@ -138,7 +139,7 @@ impl GamepadState {
         )
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn right_stick(&self) -> perro_structs::Vector2 {
         perro_structs::Vector2::new(
             self.axis(GamepadAxis::RightStickX),
@@ -146,18 +147,18 @@ impl GamepadState {
         )
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn gyro(&self) -> perro_structs::Vector3 {
         self.gyro
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn accel(&self) -> perro_structs::Vector3 {
         self.accel
     }
 
-    #[inline]
-    fn test(&self, bits: &[u64], button: GamepadButton) -> bool {
+    #[inline(always)]
+    fn test(&self, bits: &[u64; GamepadState::BUTTON_WORDS], button: GamepadButton) -> bool {
         let idx = button.as_index();
         let word = idx / 64;
         let bit = 1_u64 << (idx % 64);
@@ -174,90 +175,103 @@ impl Default for GamepadState {
 #[macro_export]
 macro_rules! gamepad_list {
     ($ipt:expr) => {
-        $ipt.Gamepads().all()
+        {
+            let gp = $ipt.Gamepads();
+            gp.all()
+        }
     };
 }
 
 #[macro_export]
 macro_rules! gamepad_get {
     ($ipt:expr, $index:expr) => {
-        $ipt.Gamepads().get($index)
+        {
+            let gp = $ipt.Gamepads();
+            gp.get($index)
+        }
     };
 }
 
 #[macro_export]
 macro_rules! gamepad_down {
     ($ipt:expr, $index:expr, $button:expr) => {
-        $ipt
-            .Gamepads()
-            .get($index)
-            .map(|gp| gp.is_button_down($button))
-            .unwrap_or(false)
+        {
+            let gp = $ipt.Gamepads();
+            gp.get($index)
+                .map(|gp| gp.is_button_down($button))
+                .unwrap_or(false)
+        }
     };
 }
 
 #[macro_export]
 macro_rules! gamepad_pressed {
     ($ipt:expr, $index:expr, $button:expr) => {
-        $ipt
-            .Gamepads()
-            .get($index)
-            .map(|gp| gp.is_button_pressed($button))
-            .unwrap_or(false)
+        {
+            let gp = $ipt.Gamepads();
+            gp.get($index)
+                .map(|gp| gp.is_button_pressed($button))
+                .unwrap_or(false)
+        }
     };
 }
 
 #[macro_export]
 macro_rules! gamepad_released {
     ($ipt:expr, $index:expr, $button:expr) => {
-        $ipt
-            .Gamepads()
-            .get($index)
-            .map(|gp| gp.is_button_released($button))
-            .unwrap_or(false)
+        {
+            let gp = $ipt.Gamepads();
+            gp.get($index)
+                .map(|gp| gp.is_button_released($button))
+                .unwrap_or(false)
+        }
     };
 }
 
 #[macro_export]
 macro_rules! gamepad_left_stick {
     ($ipt:expr, $index:expr) => {
-        $ipt
-            .Gamepads()
-            .get($index)
-            .map(|gp| gp.left_stick())
-            .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+        {
+            let gp = $ipt.Gamepads();
+            gp.get($index)
+                .map(|gp| gp.left_stick())
+                .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+        }
     };
 }
 
 #[macro_export]
 macro_rules! gamepad_right_stick {
     ($ipt:expr, $index:expr) => {
-        $ipt
-            .Gamepads()
-            .get($index)
-            .map(|gp| gp.right_stick())
-            .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+        {
+            let gp = $ipt.Gamepads();
+            gp.get($index)
+                .map(|gp| gp.right_stick())
+                .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+        }
     };
 }
 
 #[macro_export]
 macro_rules! gamepad_gyro {
     ($ipt:expr, $index:expr) => {
-        $ipt
-            .Gamepads()
-            .get($index)
-            .map(|gp| gp.gyro())
-            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+        {
+            let gp = $ipt.Gamepads();
+            gp.get($index)
+                .map(|gp| gp.gyro())
+                .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+        }
     };
 }
 
 #[macro_export]
 macro_rules! gamepad_accel {
     ($ipt:expr, $index:expr) => {
-        $ipt
-            .Gamepads()
-            .get($index)
-            .map(|gp| gp.accel())
-            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+        {
+            let gp = $ipt.Gamepads();
+            gp.get($index)
+                .map(|gp| gp.accel())
+                .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+        }
     };
 }

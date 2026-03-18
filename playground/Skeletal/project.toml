@@ -13,3 +13,7 @@ release_meshlets = true
 meshlet_debug_view = false
 occlusion_culling = "gpu"
 particle_sim_default = "cpu"
+
+[runtime]
+target_fps = "uncapped"
+target_fixed_update = 60
