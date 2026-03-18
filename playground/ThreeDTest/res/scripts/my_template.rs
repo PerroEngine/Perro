@@ -1,6 +1,5 @@
 use perro::prelude::*;
 
-
 // Script is authored against a node type. This default template uses Node2D.
 type SelfNodeType = Node2D;
 
@@ -33,9 +32,8 @@ lifecycle!({
     ) {
         // with_state! gives read-only state access and returns data from the closure.
         // with_state_mut! gives mutable state access; it can mutate and optionally return data.
-        let count = with_state!(ctx, ExampleState, node, |state| {
-            state.count
-        }).unwrap_or_default();
+        let count =
+            with_state!(ctx, ExampleState, node, |state| { state.count }).unwrap_or_default();
         log_info!(count);
     }
 
@@ -46,7 +44,8 @@ lifecycle!({
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         _self: NodeID,
-    ) {}
+    ) {
+    }
 
     // on_update is called every frame. This is where most behavior logic goes.
     fn on_update(
@@ -121,7 +120,8 @@ lifecycle!({
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         _self: NodeID,
-    ) {}
+    ) {
+    }
 
     // on_removal is called when the script instance is removed from a node or the node is removed from the scene. This can be used for cleanup.
     fn on_removal(
@@ -130,32 +130,36 @@ lifecycle!({
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         _self: NodeID,
-    ) {}
+    ) {
+    }
 });
 
 methods!({
     // methods! defines callable behavior methods (local or cross-script via call_method!)...
-    fn bump_count(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _ipt: &InputContext<'_, IP>, node: NodeID) {
+    fn bump_count(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        node: NodeID,
+    ) {
         //  Use `with_state_mut!` for mutable access to state
         with_state_mut!(ctx, ExampleState, node, |state| {
             state.count += 1;
         });
     }
 
-    fn test(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, ipt: &InputContext<'_, IP>, node: NodeID, param1: i32, msg: &str) {
+    fn test(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        res: &ResourceContext<'_, RS>,
+        ipt: &InputContext<'_, IP>,
+        node: NodeID,
+        param1: i32,
+        msg: &str,
+    ) {
         log_info!(param1);
         log_info!(msg);
         self.bump_count(ctx, res, ipt, node);
     }
 });
-
-
-
-
-
-
-
-
-
-
-

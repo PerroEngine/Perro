@@ -1,6 +1,5 @@
 use perro::prelude::*;
 
-
 type SelfNodeType = ParticleEmitter3D;
 
 #[State]
@@ -22,7 +21,8 @@ lifecycle!({
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         _self: NodeID,
-    ) {}
+    ) {
+    }
 
     fn on_update(
         &self,
@@ -43,7 +43,8 @@ lifecycle!({
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         _self: NodeID,
-    ) {}
+    ) {
+    }
 
     fn on_removal(
         &self,
@@ -51,17 +52,17 @@ lifecycle!({
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         _self: NodeID,
-    ) {}
+    ) {
+    }
 });
 
 methods!({
-    fn default_method(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _ipt: &InputContext<'_, IP>, _self: NodeID) {}
+    fn default_method(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self: NodeID,
+    ) {
+    }
 });
-
-
-
-
-
-
-
-

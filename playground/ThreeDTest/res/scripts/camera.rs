@@ -1,6 +1,5 @@
 use perro::prelude::*;
 
-
 type SelfNodeType = Camera3D;
 
 #[State]
@@ -48,7 +47,6 @@ pub struct CameraState {
     editor_apply_cooldown: f32,
 }
 
-
 lifecycle!({
     fn on_init(
         &self,
@@ -60,8 +58,11 @@ lifecycle!({
         let _ = self.ensure_preview_emitter(ctx, _res, _ipt, node);
         let (speed, look_sensitivity) = with_state!(ctx, CameraState, node, |state| {
             (state.move_speed, state.look_sensitivity)
-        }).unwrap_or_default();
-        log_info!(format!("camera move_speed={speed} look_sensitivity={look_sensitivity}"));
+        })
+        .unwrap_or_default();
+        log_info!(format!(
+            "camera move_speed={speed} look_sensitivity={look_sensitivity}"
+        ));
     }
 
     fn on_all_init(
@@ -70,7 +71,8 @@ lifecycle!({
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         _self: NodeID,
-    ) {}
+    ) {
+    }
 
     fn on_update(
         &self,
@@ -99,15 +101,31 @@ lifecycle!({
         let mut new_mode = None;
         let mut new_shape = None;
 
-        if ipt.Keys().pressed(KeyCode::Digit1) { new_mode = Some(1); }
-        if ipt.Keys().pressed(KeyCode::Digit2) { new_mode = Some(2); }
-        if ipt.Keys().pressed(KeyCode::Digit3) { new_mode = Some(3); }
-        if ipt.Keys().pressed(KeyCode::Digit4) { new_mode = Some(4); }
-        if ipt.Keys().pressed(KeyCode::Digit5) { new_mode = Some(5); }
+        if ipt.Keys().pressed(KeyCode::Digit1) {
+            new_mode = Some(1);
+        }
+        if ipt.Keys().pressed(KeyCode::Digit2) {
+            new_mode = Some(2);
+        }
+        if ipt.Keys().pressed(KeyCode::Digit3) {
+            new_mode = Some(3);
+        }
+        if ipt.Keys().pressed(KeyCode::Digit4) {
+            new_mode = Some(4);
+        }
+        if ipt.Keys().pressed(KeyCode::Digit5) {
+            new_mode = Some(5);
+        }
 
-        if ipt.Keys().pressed(KeyCode::Digit6) { new_shape = Some(1); }
-        if ipt.Keys().pressed(KeyCode::Digit7) { new_shape = Some(2); }
-        if ipt.Keys().pressed(KeyCode::Digit8) { new_shape = Some(3); }
+        if ipt.Keys().pressed(KeyCode::Digit6) {
+            new_shape = Some(1);
+        }
+        if ipt.Keys().pressed(KeyCode::Digit7) {
+            new_shape = Some(2);
+        }
+        if ipt.Keys().pressed(KeyCode::Digit8) {
+            new_shape = Some(3);
+        }
 
         if new_mode.is_some() || new_shape.is_some() {
             with_state_mut!(ctx, CameraState, node, |state| {
@@ -120,7 +138,18 @@ lifecycle!({
             });
         }
 
-        let (move_speed, yaw, pitch, editor_size, editor_basis, editor_delta, editor_smooth_strength, editor_set_height_y, editor_mode, editor_shape) = with_state_mut!(ctx, CameraState, node, |state| {
+        let (
+            move_speed,
+            yaw,
+            pitch,
+            editor_size,
+            editor_basis,
+            editor_delta,
+            editor_smooth_strength,
+            editor_set_height_y,
+            editor_mode,
+            editor_shape,
+        ) = with_state_mut!(ctx, CameraState, node, |state| {
             state.editor_apply_cooldown = (state.editor_apply_cooldown - dt).max(0.0);
 
             if wheel_y != 0.0 {
@@ -165,7 +194,8 @@ lifecycle!({
                 state.editor_mode,
                 state.editor_shape,
             )
-        }).unwrap_or((8.0, 0.0, 0.0, 8.0, 0.5, 0.5, 0.35, 0.0, 1, 1));
+        })
+        .unwrap_or((8.0, 0.0, 0.0, 8.0, 0.5, 0.5, 0.35, 0.0, 1, 1));
 
         // Ground movement is yaw-only (Minecraft style): pitch never curves movement.
         let basis_forward_x = -yaw.sin();
@@ -220,7 +250,8 @@ lifecycle!({
             .first()
             .copied()
             .unwrap_or(NodeID::nil());
-        let terrain_id = with_node!(ctx, TerrainInstance3D, terrain_node, |terrain| terrain.terrain);
+        let terrain_id = with_node!(ctx, TerrainInstance3D, terrain_node, |terrain| terrain
+            .terrain);
         let preview = self.ensure_preview_emitter(ctx, res, ipt, node);
 
         if terrain_id.is_nil() || viewport.x <= 0.0 || viewport.y <= 0.0 {
@@ -241,7 +272,7 @@ lifecycle!({
             mouse_pos.y,
             viewport.x,
             viewport.y,
-            yaw, 
+            yaw,
             pitch,
             deg_to_rad!(fov_deg),
         );
@@ -274,7 +305,8 @@ lifecycle!({
                     } else {
                         false
                     }
-                }).unwrap_or(false);
+                })
+                .unwrap_or(false);
 
                 if should_apply {
                     let _ = res.Terrain().brush_op(
@@ -305,7 +337,8 @@ lifecycle!({
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         _self: NodeID,
-    ) {}
+    ) {
+    }
 
     fn on_removal(
         &self,
@@ -313,15 +346,25 @@ lifecycle!({
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         _self: NodeID,
-    ) {}
+    ) {
+    }
 });
 
 methods!({
-    fn bob(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _ipt: &InputContext<'_, IP>, node: NodeID, _param1: i32, _j: &str) {
+    fn bob(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        node: NodeID,
+        _param1: i32,
+        _j: &str,
+    ) {
         let _j = with_state_mut!(ctx, CameraState, node, |state| {
             state.move_speed += 1.0;
             state.move_speed
-        }).unwrap_or_default();
+        })
+        .unwrap_or_default();
     }
 
     fn ensure_preview_emitter(
@@ -331,9 +374,12 @@ methods!({
         _ipt: &InputContext<'_, IP>,
         camera_node: NodeID,
     ) -> NodeID {
-        if let Some(id) = query!(ctx, all(is[ParticleEmitter3D], tags["terrain_editor_preview"]))
-            .first()
-            .copied()
+        if let Some(id) = query!(
+            ctx,
+            all(is[ParticleEmitter3D], tags["terrain_editor_preview"])
+        )
+        .first()
+        .copied()
         {
             return id;
         }
@@ -346,9 +392,8 @@ methods!({
             tags!["terrain_editor_preview"],
             parent_id
         );
-        let brush_size = with_state!(ctx, CameraState, camera_node, |s| {
-            s.editor_size
-        }).unwrap_or(0.0);
+        let brush_size =
+            with_state!(ctx, CameraState, camera_node, |s| { s.editor_size }).unwrap_or(0.0);
 
         with_node_mut!(ctx, ParticleEmitter3D, emitter_id, |emitter| {
             emitter.profile = "res://particles/test.ppart".to_string();
@@ -361,7 +406,6 @@ methods!({
         });
         emitter_id
     }
-
 });
 
 fn brush_shape_from_index(shape: i32) -> BrushShape {

@@ -4,7 +4,7 @@ use perro_graphics::GraphicsBackend;
 mod backend {
     use super::*;
     use hidapi::HidApi;
-    use perro_input::{JoyConButton, JoyConSide};
+    use perro_input::{JoyConButton, JoyConIndex, JoyConSide};
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::{self, Receiver, Sender};
@@ -90,6 +90,7 @@ mod backend {
                     continue;
                 }
                 let index = self.assign_index(&serial, side);
+                log_joycon_connected(index, side, &serial);
                 self.spawn_device_thread(serial, pid, side, index);
             }
 
@@ -428,6 +429,14 @@ mod backend {
         device.write(&cmd2)?;
 
         Ok(())
+    }
+
+    fn log_joycon_connected(index: usize, side: JoyConSide, serial: &str) {
+        let idx = JoyConIndex(index);
+        eprintln!(
+            "[joycon] connected index={:?} side={:?} serial={}",
+            idx, side, serial
+        );
     }
 }
 
