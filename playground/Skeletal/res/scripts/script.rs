@@ -44,15 +44,12 @@ fn on_update(
 
 if dir != 0.0 {
     if let Some(rot) = with_node_mut!(ctx, SelfNodeType, self_id, |node| {
-        node.bones.get_mut(1).map(|bone| {
+        node.bones.get_mut(2).map(|bone| {
+            bone.rest.rotation.rotate_z(speed * dt * dir);
             bone.rest.rotation.rotate_y(speed * dt * dir);
             bone.rest.rotation
         })
     }) {
-        log_info!(format!(
-            "bone[1] rot = {:?}",
-            rot.unwrap_or_default().to_quat()
-        ));
     }
 }
 

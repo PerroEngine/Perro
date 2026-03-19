@@ -24,6 +24,8 @@ pub(super) fn geometry(
             vertices.push(MeshVertex {
                 pos: p.to_array(),
                 normal: n.to_array(),
+                joints: [0, 0, 0, 0],
+                weights: [1.0, 0.0, 0.0, 0.0],
             });
         }
     }
@@ -42,6 +44,8 @@ pub(super) fn geometry(
             vertices.push(MeshVertex {
                 pos: p.to_array(),
                 normal: n.to_array(),
+                joints: [0, 0, 0, 0],
+                weights: [1.0, 0.0, 0.0, 0.0],
             });
         }
     }

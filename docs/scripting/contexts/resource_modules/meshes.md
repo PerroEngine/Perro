@@ -63,3 +63,8 @@ glTF sub-asset access:
 - `res://path/to/model.glb:mesh[1]`
 
 Use the `:mesh[index]` suffix to target a specific mesh inside a glTF/glb.
+
+Skinning note:
+
+- If the mesh contains `JOINTS_0/WEIGHTS_0` and a `MeshInstance3D` is bound to a `Skeleton3D`,
+  the mesh will be skinned using that skeleton.

@@ -21,14 +21,20 @@ pub(super) fn push_triangle(
     vertices.push(MeshVertex {
         pos: a,
         normal: normal.to_array(),
+        joints: [0, 0, 0, 0],
+        weights: [1.0, 0.0, 0.0, 0.0],
     });
     vertices.push(MeshVertex {
         pos: bv.to_array(),
         normal: normal.to_array(),
+        joints: [0, 0, 0, 0],
+        weights: [1.0, 0.0, 0.0, 0.0],
     });
     vertices.push(MeshVertex {
         pos: cv.to_array(),
         normal: normal.to_array(),
+        joints: [0, 0, 0, 0],
+        weights: [1.0, 0.0, 0.0, 0.0],
     });
     indices.extend_from_slice(&[base, base + 1, base + 2]);
 }

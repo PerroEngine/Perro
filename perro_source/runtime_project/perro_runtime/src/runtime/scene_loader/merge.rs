@@ -25,6 +25,7 @@ pub(super) fn merge_prepared_scene(
     let mut key_to: HashMap<String, NodeID> = HashMap::with_capacity(nodes.len());
     let mut key_order: Vec<String> = Vec::with_capacity(nodes.len());
     let mut parent_pairs = Vec::with_capacity(nodes.len());
+    let mut mesh_skeleton_links: Vec<(NodeID, String)> = Vec::new();
     let resource_api = runtime.resource_api.clone();
 
     for pending in nodes {
@@ -37,6 +38,7 @@ pub(super) fn merge_prepared_scene(
             material_source,
             material_inline,
             skeleton_source,
+            mesh_skeleton_target,
         } = pending;
 
         if key_to.contains_key(&key) {
@@ -69,6 +71,9 @@ pub(super) fn merge_prepared_scene(
                 }
             }
         }
+        if let Some(target) = mesh_skeleton_target {
+            mesh_skeleton_links.push((node, target));
+        }
         if let Some(parent_key) = parent_key {
             parent_pairs.push((key.clone(), parent_key));
         }
@@ -100,6 +105,17 @@ pub(super) fn merge_prepared_scene(
     for (parent, child) in edges {
         if let Some(parent) = runtime.nodes.get_mut(parent) {
             parent.add_child(child);
+        }
+    }
+
+    for (mesh_node, target_key) in mesh_skeleton_links {
+        let target = *key_to
+            .get(&target_key)
+            .ok_or_else(|| format!("mesh skeleton target `{target_key}` not found"))?;
+        if let Some(node_data) = runtime.nodes.get_mut(mesh_node) {
+            if let SceneNodeData::MeshInstance3D(mesh) = &mut node_data.data {
+                mesh.skeleton = target;
+            }
         }
     }
 

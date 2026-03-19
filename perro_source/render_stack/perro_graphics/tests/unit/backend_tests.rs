@@ -119,12 +119,14 @@ fn draw_3d_updates_retained_state_per_node() {
         material: created_materials[0],
         node: node_a,
         model: model_a,
+        skeleton: None,
     })));
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: created_meshes[1],
         material: created_materials[1],
         node: node_b,
         model: model_b,
+        skeleton: None,
     })));
     graphics.draw_frame();
 
@@ -136,6 +138,7 @@ fn draw_3d_updates_retained_state_per_node() {
             kind: Draw3DKind::Mesh(created_meshes[0]),
             material: Some(created_materials[0]),
             model: model_a,
+            skeleton: None,
         })
     );
     assert_eq!(
@@ -145,6 +148,7 @@ fn draw_3d_updates_retained_state_per_node() {
             kind: Draw3DKind::Mesh(created_meshes[1]),
             material: Some(created_materials[1]),
             model: model_b,
+            skeleton: None,
         })
     );
 }
@@ -194,6 +198,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         material: material_id,
         node,
         model: first_model,
+        skeleton: None,
     })));
     graphics.draw_frame();
     assert_eq!(
@@ -203,6 +208,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             kind: Draw3DKind::Mesh(mesh_id),
             material: Some(material_id),
             model: first_model,
+            skeleton: None,
         })
     );
 
@@ -218,6 +224,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         material: material_id,
         node,
         model: second_model,
+        skeleton: None,
     })));
     graphics.draw_frame();
 
@@ -228,6 +235,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             kind: Draw3DKind::Mesh(mesh_id),
             material: Some(material_id),
             model: second_model,
+            skeleton: None,
         })
     );
 }
@@ -277,6 +285,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         material: material_id,
         node,
         model: first_model,
+        skeleton: None,
     })));
     graphics.draw_frame();
 
@@ -292,6 +301,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         material: missing_material,
         node,
         model: second_model,
+        skeleton: None,
     })));
     graphics.draw_frame();
 
@@ -302,6 +312,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
             kind: Draw3DKind::Mesh(mesh_id),
             material: Some(material_id),
             model: second_model,
+            skeleton: None,
         })
     );
 }

@@ -9,6 +9,8 @@ pub(super) fn geometry() -> (Vec<MeshVertex>, Vec<u16>) {
         .map(|vertex| MeshVertex {
             pos: [vertex.position.x, vertex.position.y, vertex.position.z],
             normal: [0.0, 1.0, 0.0],
+            joints: [0, 0, 0, 0],
+            weights: [1.0, 0.0, 0.0, 0.0],
         })
         .collect::<Vec<_>>();
 

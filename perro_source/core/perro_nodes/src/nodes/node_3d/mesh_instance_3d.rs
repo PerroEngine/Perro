@@ -1,5 +1,5 @@
 use crate::node_3d::Node3D;
-use perro_ids::{MaterialID, MeshID};
+use perro_ids::{MaterialID, MeshID, NodeID};
 use std::ops::{Deref, DerefMut};
 
 impl Deref for MeshInstance3D {
@@ -20,6 +20,7 @@ pub struct MeshInstance3D {
     pub base: Node3D,
     pub mesh: MeshID,
     pub material: MaterialID,
+    pub skeleton: NodeID,
 }
 
 impl MeshInstance3D {
@@ -28,6 +29,7 @@ impl MeshInstance3D {
             base: Node3D::new(),
             mesh: MeshID::nil(),
             material: MaterialID::nil(),
+            skeleton: NodeID::nil(),
         }
     }
 }

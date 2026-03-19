@@ -22,6 +22,7 @@
 parent = skel
     [MeshInstance3D]
     mesh = "res://skeleton.glb:mesh[0]"
+    skeleton = skel
         [Node3D]
         [/Node3D]
     [/MeshInstance3D]

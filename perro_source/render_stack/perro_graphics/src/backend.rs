@@ -262,8 +262,10 @@ impl PerroGraphics {
                         material,
                         node,
                         model,
+                        skeleton,
                     } => {
-                        self.renderer_3d.queue_draw(node, mesh, material, model);
+                        self.renderer_3d
+                            .queue_draw(node, mesh, material, model, skeleton);
                     }
                     Command3D::DrawTerrain { node, model } => {
                         self.renderer_3d.queue_terrain(node, model);

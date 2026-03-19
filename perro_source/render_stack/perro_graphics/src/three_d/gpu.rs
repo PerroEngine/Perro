@@ -69,6 +69,8 @@ struct SpotLightGpu {
 struct MeshVertex {
     pos: [f32; 3],
     normal: [f32; 3],
+    joints: [u16; 4],
+    weights: [f32; 4],
 }
 
 #[repr(C)]
@@ -82,6 +84,7 @@ struct InstanceGpu {
     pbr_params: [f32; 4], // roughness, metallic, occlusion_strength, normal_scale
     emissive_factor: [f32; 3], // rgb
     material_params: [f32; 4], // alpha_mode, alpha_cutoff, double_sided, reserved
+    skeleton_params: [u32; 4], // start, count, unused, unused
 }
 
 #[repr(C)]
@@ -135,6 +138,9 @@ pub struct Gpu3D {
     pipeline_depth_prepass_double_sided: wgpu::RenderPipeline,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    skeleton_buffer: wgpu::Buffer,
+    skeleton_capacity: usize,
+    staged_skeletons: Vec<[[f32; 4]; 4]>,
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
     staged_instances: Vec<InstanceGpu>,
@@ -314,19 +320,31 @@ impl Gpu3D {
         let shader = create_mesh_shader_module(device);
         let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_camera3d_bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(
-                        std::num::NonZeroU64::new(std::mem::size_of::<Scene3DUniform>() as u64)
-                            .expect("camera uniform size must be non-zero"),
-                    ),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(
+                            std::num::NonZeroU64::new(std::mem::size_of::<Scene3DUniform>() as u64)
+                                .expect("camera uniform size must be non-zero"),
+                        ),
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
         });
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_camera3d_buffer"),
@@ -334,13 +352,26 @@ impl Gpu3D {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let skeleton_capacity = 1usize;
+        let skeleton_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_skeleton_palette_buffer"),
+            size: (skeleton_capacity * std::mem::size_of::<[[f32; 4]; 4]>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_camera3d_bg"),
             layout: &camera_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: skeleton_buffer.as_entire_binding(),
+                },
+            ],
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -687,6 +718,9 @@ impl Gpu3D {
             pipeline_depth_prepass_double_sided,
             camera_buffer,
             camera_bind_group,
+            skeleton_buffer,
+            skeleton_capacity,
+            staged_skeletons: Vec::new(),
             instance_buffer,
             instance_capacity,
             staged_instances: Vec::new(),
@@ -955,6 +989,7 @@ impl Gpu3D {
 
         self.staged_instances.clear();
         self.staged_instances.reserve(draws.len());
+        self.staged_skeletons.clear();
         self.draw_batches.clear();
         self.draw_batches.reserve(draws.len());
         self.frustum_cull_staging.clear();
@@ -1073,11 +1108,22 @@ impl Gpu3D {
                     } else {
                         None
                     };
+                let (skeleton_start, skeleton_count) = if let Some(skeleton) = &draw.skeleton {
+                    let start = self.staged_skeletons.len() as u32;
+                    let count = skeleton.matrices.len() as u32;
+                    self.staged_skeletons
+                        .extend_from_slice(skeleton.matrices.as_ref());
+                    (start, count)
+                } else {
+                    (0, 0)
+                };
                 let built_instance = build_instance(
                     draw.model,
                     &material,
                     self.meshlet_debug_view,
                     debug_color(draw.node.as_u64()),
+                    skeleton_start,
+                    skeleton_count,
                 );
                 if is_debug_point {
                     if debug_point_instances.is_empty() {
@@ -1110,6 +1156,15 @@ impl Gpu3D {
                     );
                 }
             } else {
+                let (skeleton_start, skeleton_count) = if let Some(skeleton) = &draw.skeleton {
+                    let start = self.staged_skeletons.len() as u32;
+                    let count = skeleton.matrices.len() as u32;
+                    self.staged_skeletons
+                        .extend_from_slice(skeleton.matrices.as_ref());
+                    (start, count)
+                } else {
+                    (0, 0)
+                };
                 for meshlet in mesh_asset.meshlets.iter().copied() {
                     if !self.frustum_cull_enabled
                         && !meshlet_in_frustum(draw.model, meshlet, &frustum)
@@ -1125,6 +1180,8 @@ impl Gpu3D {
                         &material,
                         self.meshlet_debug_view,
                         debug_color((draw.node.as_u64() << 32) ^ meshlet.index_start as u64),
+                        skeleton_start,
+                        skeleton_count,
                     ));
                     // Conservative retained-mode behavior: keep meshlet batches gated by
                     // whole-object bounds so visible objects do not lose arbitrary meshlets.
@@ -1209,6 +1266,14 @@ impl Gpu3D {
                 &self.instance_buffer,
                 0,
                 bytemuck::cast_slice(&self.staged_instances),
+            );
+        }
+        self.ensure_skeleton_capacity(device, self.staged_skeletons.len().max(1));
+        if !self.staged_skeletons.is_empty() {
+            queue.write_buffer(
+                &self.skeleton_buffer,
+                0,
+                bytemuck::cast_slice(&self.staged_skeletons),
             );
         }
         self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
@@ -1490,6 +1555,37 @@ impl Gpu3D {
             mapped_at_creation: false,
         });
         self.instance_capacity = new_capacity;
+    }
+
+    fn ensure_skeleton_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        if needed <= self.skeleton_capacity {
+            return;
+        }
+        let mut new_capacity = self.skeleton_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.skeleton_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_skeleton_palette_buffer"),
+            size: (new_capacity * std::mem::size_of::<[[f32; 4]; 4]>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_camera3d_bg"),
+            layout: &self.camera_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.skeleton_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        self.skeleton_capacity = new_capacity;
     }
 
     fn ensure_frustum_cull_capacity(&mut self, device: &wgpu::Device, needed: usize) {
@@ -2057,6 +2153,8 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
         .map(|v| MeshVertex {
             pos: v.position,
             normal: v.normal,
+            joints: v.joints,
+            weights: v.weights,
         })
         .collect();
     if vertices
@@ -2131,7 +2229,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if version != 1 {
+    if version != 1 && version != 2 {
         return None;
     }
     let vertex_count = u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize;
@@ -2143,7 +2241,8 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         return None;
     }
 
-    let vertex_bytes = vertex_count.checked_mul(24)?;
+    let vertex_stride = if version == 1 { 24 } else { 48 };
+    let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
     let index_bytes = index_count.checked_mul(4)?;
     let meshlet_bytes = meshlet_count.checked_mul(24)?;
     let required = vertex_bytes
@@ -2155,18 +2254,39 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
 
     let mut vertices = Vec::with_capacity(vertex_count);
     for i in 0..vertex_count {
-        let off = i * 24;
+        let off = i * vertex_stride;
+        let pos = [
+            f32::from_le_bytes(raw[off..off + 4].try_into().ok()?),
+            f32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?),
+            f32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?),
+        ];
+        let normal = [
+            f32::from_le_bytes(raw[off + 12..off + 16].try_into().ok()?),
+            f32::from_le_bytes(raw[off + 16..off + 20].try_into().ok()?),
+            f32::from_le_bytes(raw[off + 20..off + 24].try_into().ok()?),
+        ];
+        let (joints, weights) = if version == 2 {
+            let joints = [
+                u16::from_le_bytes(raw[off + 24..off + 26].try_into().ok()?),
+                u16::from_le_bytes(raw[off + 26..off + 28].try_into().ok()?),
+                u16::from_le_bytes(raw[off + 28..off + 30].try_into().ok()?),
+                u16::from_le_bytes(raw[off + 30..off + 32].try_into().ok()?),
+            ];
+            let weights = [
+                f32::from_le_bytes(raw[off + 32..off + 36].try_into().ok()?),
+                f32::from_le_bytes(raw[off + 36..off + 40].try_into().ok()?),
+                f32::from_le_bytes(raw[off + 40..off + 44].try_into().ok()?),
+                f32::from_le_bytes(raw[off + 44..off + 48].try_into().ok()?),
+            ];
+            (joints, weights)
+        } else {
+            ([0, 0, 0, 0], [1.0, 0.0, 0.0, 0.0])
+        };
         vertices.push(MeshVertex {
-            pos: [
-                f32::from_le_bytes(raw[off..off + 4].try_into().ok()?),
-                f32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?),
-                f32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?),
-            ],
-            normal: [
-                f32::from_le_bytes(raw[off + 12..off + 16].try_into().ok()?),
-                f32::from_le_bytes(raw[off + 16..off + 20].try_into().ok()?),
-                f32::from_le_bytes(raw[off + 20..off + 24].try_into().ok()?),
-            ],
+            pos,
+            normal,
+            joints,
+            weights,
         });
     }
 
@@ -2218,11 +2338,33 @@ fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> {
             .read_normals()
             .map(|iter| iter.collect())
             .unwrap_or_default();
+        let joints: Vec<[u16; 4]> = reader
+            .read_joints(0)
+            .map(|iter| iter.into_u16().collect())
+            .unwrap_or_default();
+        let mut weights: Vec<[f32; 4]> = reader
+            .read_weights(0)
+            .map(|iter| iter.into_f32().collect())
+            .unwrap_or_default();
+        if weights.is_empty() && !joints.is_empty() {
+            weights = vec![[1.0, 0.0, 0.0, 0.0]; joints.len()];
+        }
         let base_vertex = vertices.len() as u32;
         for (i, position) in positions.iter().copied().enumerate() {
+            let joint = joints.get(i).copied().unwrap_or([0, 0, 0, 0]);
+            let mut weight = weights.get(i).copied().unwrap_or([1.0, 0.0, 0.0, 0.0]);
+            let sum = weight.iter().copied().sum::<f32>();
+            if sum > 0.0 {
+                let inv = sum.recip();
+                weight.iter_mut().for_each(|w| *w *= inv);
+            } else {
+                weight = [1.0, 0.0, 0.0, 0.0];
+            }
             vertices.push(MeshVertex {
                 pos: position,
                 normal: normals.get(i).copied().unwrap_or([0.0, 1.0, 0.0]),
+                joints: joint,
+                weights: weight,
             });
         }
         if let Some(idx) = reader.read_indices() {
@@ -2431,6 +2573,16 @@ fn create_pipeline(
                             shader_location: 1,
                             format: wgpu::VertexFormat::Float32x3,
                         },
+                        wgpu::VertexAttribute {
+                            offset: 24,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Uint16x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 32,
+                            shader_location: 3,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
                     ],
                 },
                 wgpu::VertexBufferLayout {
@@ -2439,43 +2591,48 @@ fn create_pipeline(
                     attributes: &[
                         wgpu::VertexAttribute {
                             offset: 0,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 16,
-                            shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
                             shader_location: 4,
                             format: wgpu::VertexFormat::Float32x4,
                         },
                         wgpu::VertexAttribute {
-                            offset: 48,
+                            offset: 16,
                             shader_location: 5,
                             format: wgpu::VertexFormat::Float32x4,
                         },
                         wgpu::VertexAttribute {
-                            offset: 64,
+                            offset: 32,
                             shader_location: 6,
                             format: wgpu::VertexFormat::Float32x4,
                         },
                         wgpu::VertexAttribute {
-                            offset: 80,
+                            offset: 48,
                             shader_location: 7,
                             format: wgpu::VertexFormat::Float32x4,
                         },
                         wgpu::VertexAttribute {
-                            offset: 96,
+                            offset: 64,
                             shader_location: 8,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 80,
+                            shader_location: 9,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 96,
+                            shader_location: 10,
                             format: wgpu::VertexFormat::Float32x3,
                         },
                         wgpu::VertexAttribute {
                             offset: 108,
-                            shader_location: 9,
+                            shader_location: 11,
                             format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 124,
+                            shader_location: 12,
+                            format: wgpu::VertexFormat::Uint32x4,
                         },
                     ],
                 },
@@ -2534,11 +2691,23 @@ fn create_depth_prepass_pipeline(
                 wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<MeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[wgpu::VertexAttribute {
-                        offset: 0,
-                        shader_location: 0,
-                        format: wgpu::VertexFormat::Float32x3,
-                    }],
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 24,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Uint16x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 32,
+                            shader_location: 3,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                    ],
                 },
                 wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<InstanceGpu>() as u64,
@@ -2546,23 +2715,28 @@ fn create_depth_prepass_pipeline(
                     attributes: &[
                         wgpu::VertexAttribute {
                             offset: 0,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 16,
-                            shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
                             shader_location: 4,
                             format: wgpu::VertexFormat::Float32x4,
                         },
                         wgpu::VertexAttribute {
-                            offset: 48,
+                            offset: 16,
                             shader_location: 5,
                             format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 32,
+                            shader_location: 6,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 48,
+                            shader_location: 7,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 124,
+                            shader_location: 12,
+                            format: wgpu::VertexFormat::Uint32x4,
                         },
                     ],
                 },
@@ -2621,6 +2795,8 @@ fn build_instance(
     material: &perro_render_bridge::Material3D,
     debug_view: bool,
     debug_color: [f32; 4],
+    skeleton_start: u32,
+    skeleton_count: u32,
 ) -> InstanceGpu {
     let (color, pbr_params, emissive_factor, debug_flag) = if debug_view {
         (debug_color, [0.5, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0], 1.0)
@@ -2652,6 +2828,7 @@ fn build_instance(
             if material.double_sided { 1.0 } else { 0.0 },
             debug_flag,
         ],
+        skeleton_params: [skeleton_start, skeleton_count, 0, 0],
     }
 }
 

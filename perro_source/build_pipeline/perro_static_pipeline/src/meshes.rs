@@ -8,13 +8,15 @@ use std::{
 };
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
-const PMESH_VERSION: u32 = 1;
+const PMESH_VERSION: u32 = 2;
 const MESHLET_TRIANGLES: usize = 64;
 
 #[derive(Clone, Copy)]
 struct PackedVertex {
     position: [f32; 3],
     normal: [f32; 3],
+    joints: [u16; 4],
+    weights: [f32; 4],
 }
 
 #[derive(Clone, Copy)]
@@ -178,9 +180,34 @@ fn build_gltf_mesh_entries(
             .read_normals()
             .map(|iter| iter.collect())
             .unwrap_or_default();
+        let joints: Vec<[u16; 4]> = reader
+            .read_joints(0)
+            .map(|iter| iter.into_u16().collect())
+            .unwrap_or_default();
+        let mut weights: Vec<[f32; 4]> = reader
+            .read_weights(0)
+            .map(|iter| iter.into_f32().collect())
+            .unwrap_or_default();
+        if weights.is_empty() && !joints.is_empty() {
+            weights = vec![[1.0, 0.0, 0.0, 0.0]; joints.len()];
+        }
         for (index, position) in positions.enumerate() {
             let normal = normals.get(index).copied().unwrap_or([0.0, 1.0, 0.0]);
-            vertices.push(PackedVertex { position, normal });
+            let joint = joints.get(index).copied().unwrap_or([0, 0, 0, 0]);
+            let mut weight = weights.get(index).copied().unwrap_or([1.0, 0.0, 0.0, 0.0]);
+            let sum = weight.iter().copied().sum::<f32>();
+            if sum > 0.0 {
+                let inv = sum.recip();
+                weight.iter_mut().for_each(|w| *w *= inv);
+            } else {
+                weight = [1.0, 0.0, 0.0, 0.0];
+            }
+            vertices.push(PackedVertex {
+                position,
+                normal,
+                joints: joint,
+                weights: weight,
+            });
         }
         if vertices.is_empty() {
             continue;
@@ -219,7 +246,10 @@ fn encode_pmesh(
     meshlets: &[PackedMeshlet],
 ) -> io::Result<Vec<u8>> {
     let mut raw = Vec::<u8>::with_capacity(
-        vertices.len() * (6 * std::mem::size_of::<f32>())
+        vertices.len()
+            * ((6 * std::mem::size_of::<f32>())
+                + (4 * std::mem::size_of::<u16>())
+                + (4 * std::mem::size_of::<f32>()))
             + std::mem::size_of_val(indices)
             + meshlets.len() * (2 * std::mem::size_of::<u32>() + 4 * std::mem::size_of::<f32>()),
     );
@@ -231,6 +261,14 @@ fn encode_pmesh(
         write_f32(&mut raw, vertex.normal[0]);
         write_f32(&mut raw, vertex.normal[1]);
         write_f32(&mut raw, vertex.normal[2]);
+        write_u16(&mut raw, vertex.joints[0]);
+        write_u16(&mut raw, vertex.joints[1]);
+        write_u16(&mut raw, vertex.joints[2]);
+        write_u16(&mut raw, vertex.joints[3]);
+        write_f32(&mut raw, vertex.weights[0]);
+        write_f32(&mut raw, vertex.weights[1]);
+        write_f32(&mut raw, vertex.weights[2]);
+        write_f32(&mut raw, vertex.weights[3]);
     }
     for &index in indices {
         raw.extend_from_slice(&index.to_le_bytes());
@@ -387,6 +425,10 @@ fn meshlet_bounds(vertices: &[PackedVertex], indices: &[u32]) -> Option<([f32; 3
 }
 
 fn write_f32(out: &mut Vec<u8>, value: f32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn write_u16(out: &mut Vec<u8>, value: u16) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 

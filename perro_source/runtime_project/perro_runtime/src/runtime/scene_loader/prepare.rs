@@ -59,6 +59,7 @@ pub(super) struct PendingNode {
     pub(super) material_source: Option<String>,
     pub(super) material_inline: Option<Material3D>,
     pub(super) skeleton_source: Option<String>,
+    pub(super) mesh_skeleton_target: Option<String>,
 }
 
 type SceneNodeExtraction = (
@@ -67,6 +68,7 @@ type SceneNodeExtraction = (
     Option<String>,
     Option<String>,
     Option<Material3D>,
+    Option<String>,
     Option<String>,
 );
 
@@ -98,8 +100,15 @@ pub(super) fn prepare_static_scene(scene: &'static StaticScene) -> Result<Prepar
     let mut scripts = Vec::new();
 
     for static_node in scene.nodes {
-        let (node, texture_source, mesh_source, material_source, material_inline, skeleton_source) =
-            scene_node_from_static_entry(static_node)?;
+        let (
+            node,
+            texture_source,
+            mesh_source,
+            material_source,
+            material_inline,
+            skeleton_source,
+            mesh_skeleton_target,
+        ) = scene_node_from_static_entry(static_node)?;
         if let Some(script) = static_node.script {
             scripts.push(PendingScript {
                 node_key: static_node.key.0.to_string(),
@@ -115,6 +124,7 @@ pub(super) fn prepare_static_scene(scene: &'static StaticScene) -> Result<Prepar
             material_source,
             material_inline,
             skeleton_source,
+            mesh_skeleton_target,
         });
     }
 
@@ -131,8 +141,15 @@ pub(super) fn prepare_runtime_scene(scene: RuntimeScene) -> Result<PreparedScene
     let mut scripts = Vec::new();
 
     for entry in nodes {
-        let (node, texture_source, mesh_source, material_source, material_inline, skeleton_source) =
-            scene_node_from_runtime_entry(&entry)?;
+        let (
+            node,
+            texture_source,
+            mesh_source,
+            material_source,
+            material_inline,
+            skeleton_source,
+            mesh_skeleton_target,
+        ) = scene_node_from_runtime_entry(&entry)?;
         if let Some(script) = entry.script {
             scripts.push(PendingScript {
                 node_key: entry.key.clone(),
@@ -148,6 +165,7 @@ pub(super) fn prepare_runtime_scene(scene: RuntimeScene) -> Result<PreparedScene
             material_source,
             material_inline,
             skeleton_source,
+            mesh_skeleton_target,
         });
     }
 
@@ -175,6 +193,7 @@ fn scene_node_from_static_entry(entry: &StaticNodeEntry) -> Result<SceneNodeExtr
     let material_source_explicit = extract_material_source_static(&entry.data);
     let material_inline = extract_material_inline_static(&entry.data);
     let skeleton_source = extract_skeleton_source_static(&entry.data);
+    let mesh_skeleton_target = extract_mesh_skeleton_target_static(&entry.data);
     let model_source = extract_model_source_static(&entry.data);
     let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref()
     {
@@ -197,6 +216,7 @@ fn scene_node_from_static_entry(entry: &StaticNodeEntry) -> Result<SceneNodeExtr
         material_source,
         material_inline,
         skeleton_source,
+        mesh_skeleton_target,
     ))
 }
 
@@ -218,6 +238,7 @@ fn scene_node_from_runtime_entry(entry: &RuntimeNodeEntry) -> Result<SceneNodeEx
     let material_source_explicit = extract_material_source(&entry.data);
     let material_inline = extract_material_inline(&entry.data);
     let skeleton_source = extract_skeleton_source(&entry.data);
+    let mesh_skeleton_target = extract_mesh_skeleton_target(&entry.data);
     let model_source = extract_model_source(&entry.data);
     let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref()
     {
@@ -240,6 +261,7 @@ fn scene_node_from_runtime_entry(entry: &RuntimeNodeEntry) -> Result<SceneNodeEx
         material_source,
         material_inline,
         skeleton_source,
+        mesh_skeleton_target,
     ))
 }
 
@@ -1447,6 +1469,15 @@ fn extract_skeleton_source(data: &RuntimeNodeData) -> Option<String> {
     })
 }
 
+fn extract_mesh_skeleton_target(data: &RuntimeNodeData) -> Option<String> {
+    if data.ty != "MeshInstance3D" {
+        return None;
+    }
+    data.fields
+        .iter()
+        .find_map(|(name, value)| (name == "skeleton").then(|| as_asset_source(value)).flatten())
+}
+
 // Static value parsers
 fn as_bool_static(value: &StaticSceneValue) -> Option<bool> {
     match value {
@@ -1870,6 +1901,17 @@ fn extract_model_source_static(data: &StaticNodeData) -> Option<String> {
 
 fn extract_skeleton_source_static(data: &StaticNodeData) -> Option<String> {
     if data.ty != StaticNodeType::Skeleton3D {
+        return None;
+    }
+    data.fields.iter().find_map(|(name, value)| {
+        (*name == "skeleton")
+            .then(|| as_asset_source_static(value))
+            .flatten()
+    })
+}
+
+fn extract_mesh_skeleton_target_static(data: &StaticNodeData) -> Option<String> {
+    if data.ty != StaticNodeType::MeshInstance3D {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {

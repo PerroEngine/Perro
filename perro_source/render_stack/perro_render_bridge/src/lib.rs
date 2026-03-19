@@ -1,6 +1,7 @@
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 pub use perro_particle_math::Op as ParticleExprOp3D;
 use std::borrow::Cow;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RenderRequestID(pub u64);
@@ -289,12 +290,19 @@ pub struct Sprite2DCommand {
 pub struct RuntimeMeshVertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
+    pub joints: [u16; 4],
+    pub weights: [f32; 4],
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuntimeMeshData {
     pub vertices: Vec<RuntimeMeshVertex>,
     pub indices: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SkeletonPalette {
+    pub matrices: Arc<[[[f32; 4]; 4]]>,
 }
 
 #[derive(Debug, Clone)]
@@ -373,6 +381,7 @@ pub enum Command3D {
         material: MaterialID,
         node: NodeID,
         model: [[f32; 4]; 4],
+        skeleton: Option<SkeletonPalette>,
     },
     DrawTerrain {
         node: NodeID,

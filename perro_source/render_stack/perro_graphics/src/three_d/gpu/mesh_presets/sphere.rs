@@ -23,6 +23,8 @@ pub(super) fn geometry(
             vertices.push(MeshVertex {
                 pos: (n * 0.5).to_array(),
                 normal: n.to_array(),
+                joints: [0, 0, 0, 0],
+                weights: [1.0, 0.0, 0.0, 0.0],
             });
         }
     }

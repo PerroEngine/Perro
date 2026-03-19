@@ -3,7 +3,7 @@ use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, PointLight3DState, RayLight3DState,
-    SpotLight3DState,
+    SkeletonPalette, SpotLight3DState,
 };
 use std::collections::HashMap;
 
@@ -15,12 +15,13 @@ pub enum Draw3DKind {
     DebugEdgeCylinder,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Draw3DInstance {
     pub node: NodeID,
     pub kind: Draw3DKind,
     pub material: Option<MaterialID>,
     pub model: [[f32; 4]; 4],
+    pub skeleton: Option<SkeletonPalette>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -65,12 +66,14 @@ impl Renderer3D {
         mesh: MeshID,
         material: MaterialID,
         model: [[f32; 4]; 4],
+        skeleton: Option<SkeletonPalette>,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
             kind: Draw3DKind::Mesh(mesh),
             material: Some(material),
             model,
+            skeleton,
         });
     }
 
@@ -80,6 +83,7 @@ impl Renderer3D {
             kind: Draw3DKind::Terrain64,
             material: None,
             model,
+            skeleton: None,
         });
     }
 
@@ -91,6 +95,7 @@ impl Renderer3D {
                 kind: Draw3DKind::DebugPointCube,
                 material: None,
                 model: debug_point_model(position, size).to_cols_array_2d(),
+                skeleton: None,
             },
         );
     }
@@ -110,6 +115,7 @@ impl Renderer3D {
                     kind: Draw3DKind::DebugEdgeCylinder,
                     material: None,
                     model: model.to_cols_array_2d(),
+                    skeleton: None,
                 },
             );
         } else {
@@ -178,6 +184,9 @@ impl Renderer3D {
                     if material_ready {
                         retained.material = draw.material;
                     }
+                    if draw.skeleton.is_some() {
+                        retained.skeleton = draw.skeleton;
+                    }
                 }
                 stats.rejected_draws = stats.rejected_draws.saturating_add(1);
             }
@@ -205,7 +214,7 @@ impl Renderer3D {
     }
 
     pub fn retained_draw(&self, node: NodeID) -> Option<Draw3DInstance> {
-        self.retained_draws.get(&node).copied()
+        self.retained_draws.get(&node).cloned()
     }
 
     pub fn retained_draw_count(&self) -> usize {
@@ -213,11 +222,11 @@ impl Renderer3D {
     }
 
     pub fn retained_draws(&self) -> impl Iterator<Item = Draw3DInstance> + '_ {
-        self.retained_draws.values().copied()
+        self.retained_draws.values().cloned()
     }
 
     pub fn all_draws(&self) -> impl Iterator<Item = Draw3DInstance> + '_ {
-        self.retained_draws.values().copied()
+        self.retained_draws.values().cloned()
     }
 
     pub fn camera(&self) -> Camera3DState {

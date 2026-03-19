@@ -28,6 +28,7 @@ Important behavior:
 - Bones are **data-only**. Mutate the `Skeleton3D.bones` Vec if you need runtime edits.
 - This module does **not** return a handle/ID; it returns data by value.
 - Repeated calls return a new copy (safe to edit without affecting cache).
+- To skin a mesh, bind a `MeshInstance3D` to a `Skeleton3D` node (scene `skeleton = "NodeName"`).
 
 Example:
 

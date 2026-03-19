@@ -30,21 +30,26 @@ struct Scene3D {
 
 @group(0) @binding(0)
 var<uniform> scene: Scene3D;
+@group(0) @binding(1)
+var<storage, read> skeletons: array<mat4x4<f32>>;
 
 struct VertexInput {
     @location(0) pos: vec3<f32>,
     @location(1) normal: vec3<f32>,
+    @location(2) joints: vec4<u32>,
+    @location(3) weights: vec4<f32>,
 };
 
 struct InstanceInput {
-    @location(2) model_0: vec4<f32>,
-    @location(3) model_1: vec4<f32>,
-    @location(4) model_2: vec4<f32>,
-    @location(5) model_3: vec4<f32>,
-    @location(6) color: vec4<f32>,
-    @location(7) pbr_params: vec4<f32>,
-    @location(8) emissive_factor: vec3<f32>,
-    @location(9) material_params: vec4<f32>,
+    @location(4) model_0: vec4<f32>,
+    @location(5) model_1: vec4<f32>,
+    @location(6) model_2: vec4<f32>,
+    @location(7) model_3: vec4<f32>,
+    @location(8) color: vec4<f32>,
+    @location(9) pbr_params: vec4<f32>,
+    @location(10) emissive_factor: vec3<f32>,
+    @location(11) material_params: vec4<f32>,
+    @location(12) skeleton_params: vec4<u32>,
 };
 
 struct VertexOutput {
@@ -69,9 +74,21 @@ struct FragmentInput {
 
 @vertex
 fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
+    var pos = v.pos;
+    var normal = v.normal;
+    if inst.skeleton_params.y > 0u {
+        let base = inst.skeleton_params.x;
+        let m0 = skeletons[base + v.joints.x] * v.weights.x;
+        let m1 = skeletons[base + v.joints.y] * v.weights.y;
+        let m2 = skeletons[base + v.joints.z] * v.weights.z;
+        let m3 = skeletons[base + v.joints.w] * v.weights.w;
+        let skin = m0 + m1 + m2 + m3;
+        pos = (skin * vec4<f32>(pos, 1.0)).xyz;
+        normal = (skin * vec4<f32>(normal, 0.0)).xyz;
+    }
     let model = mat4x4<f32>(inst.model_0, inst.model_1, inst.model_2, inst.model_3);
-    let world = model * vec4<f32>(v.pos, 1.0);
-    let normal_ws = normalize((model * vec4<f32>(v.normal, 0.0)).xyz);
+    let world = model * vec4<f32>(pos, 1.0);
+    let normal_ws = normalize((model * vec4<f32>(normal, 0.0)).xyz);
 
     var out: VertexOutput;
     out.clip_pos = scene.view_proj * world;

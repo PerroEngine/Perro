@@ -11,10 +11,12 @@ use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
     ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
     PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID,
-    ResourceCommand, RuntimeMeshData, RuntimeMeshVertex, SpotLight3DState,
+    ResourceCommand, RuntimeMeshData, RuntimeMeshVertex, SkeletonPalette, SpotLight3DState,
 };
 use perro_terrain::{ChunkCoord, TerrainChunk};
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 impl Runtime {
     fn mesh_request(node: NodeID) -> RenderRequestID {
@@ -46,6 +48,7 @@ impl Runtime {
         let mut visible_now = std::mem::take(&mut self.render_3d.visible_now);
         visible_now.clear();
         self.render_3d.removed_nodes.clear();
+        let mut skeleton_cache: HashMap<NodeID, SkeletonPalette> = HashMap::new();
 
         for node in traversal_ids.iter().copied() {
             let effective_visible = self.is_effectively_visible(node);
@@ -200,20 +203,39 @@ impl Runtime {
                 SceneNodeData::MeshInstance3D(mesh) => Some((
                     mesh.mesh,
                     mesh.material,
+                    mesh.skeleton,
                     mesh.transform.to_mat4().to_cols_array_2d(),
                 )),
                 _ => None,
             });
-            if let Some((mesh, material, model)) = mesh_data
+            if let Some((mesh, material, skeleton, model)) = mesh_data
                 && effective_visible
                 && let Some((mesh, material)) =
                     self.resolve_render_mesh_assets(node, mesh, material)
             {
+                let skeleton_palette = if !skeleton.is_nil() {
+                    if let Some(cached) = skeleton_cache.get(&skeleton) {
+                        Some(cached.clone())
+                    } else if let Some(palette) =
+                        build_skeleton_palette(&self.nodes, skeleton)
+                    {
+                        let palette = SkeletonPalette {
+                            matrices: Arc::from(palette.into_boxed_slice()),
+                        };
+                        skeleton_cache.insert(skeleton, palette.clone());
+                        Some(palette)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::Draw {
                     mesh,
                     material,
                     node,
                     model,
+                    skeleton: skeleton_palette,
                 })));
                 visible_now.insert(node);
             }
@@ -526,6 +548,7 @@ impl Runtime {
                     material,
                     node,
                     model: model.to_cols_array_2d(),
+                    skeleton: None,
                 })));
             }
         }
@@ -826,6 +849,8 @@ fn terrain_chunk_to_runtime_mesh(chunk: &TerrainChunk) -> Option<RuntimeMeshData
             RuntimeMeshVertex {
                 position: [v.position.x, v.position.y, v.position.z],
                 normal: [n.x, n.y, n.z],
+                joints: [0, 0, 0, 0],
+                weights: [1.0, 0.0, 0.0, 0.0],
             }
         })
         .collect();
@@ -859,6 +884,42 @@ fn terrain_chunk_hash(chunk: &TerrainChunk) -> u64 {
         h = h.rotate_left(11).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     }
     h
+}
+
+fn build_skeleton_palette(
+    nodes: &crate::cns::NodeArena,
+    skeleton_id: NodeID,
+) -> Option<Vec<[[f32; 4]; 4]>> {
+    let skeleton_node = nodes.get(skeleton_id)?;
+    let skeleton = match &skeleton_node.data {
+        SceneNodeData::Skeleton3D(skeleton) => skeleton,
+        _ => return None,
+    };
+    if skeleton.bones.is_empty() {
+        return None;
+    }
+
+    let mut global = vec![Mat4::IDENTITY; skeleton.bones.len()];
+    for (i, bone) in skeleton.bones.iter().enumerate() {
+        let local = bone.rest.to_mat4();
+        if bone.parent >= 0 {
+            let parent = bone.parent as usize;
+            if parent < global.len() {
+                global[i] = global[parent] * local;
+            } else {
+                global[i] = local;
+            }
+        } else {
+            global[i] = local;
+        }
+    }
+
+    let mut out = Vec::with_capacity(skeleton.bones.len());
+    for (i, bone) in skeleton.bones.iter().enumerate() {
+        let joint = global[i] * bone.inv_bind.to_mat4();
+        out.push(joint.to_cols_array_2d());
+    }
+    Some(out)
 }
 
 fn debug_edge_thickness(edge_len: f32) -> f32 {
