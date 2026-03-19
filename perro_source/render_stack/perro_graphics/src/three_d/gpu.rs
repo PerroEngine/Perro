@@ -557,7 +557,7 @@ impl Gpu3D {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_mesh_pipeline_layout"),
-            bind_group_layouts: &[&camera_bgl],
+            bind_group_layouts: &[Some(&camera_bgl)],
             immediate_size: 0,
         });
         let pipeline_culled = create_pipeline(
@@ -687,7 +687,7 @@ impl Gpu3D {
         });
         let frustum_cull_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_frustum_cull_layout"),
-            bind_group_layouts: &[&frustum_cull_bgl],
+            bind_group_layouts: &[Some(&frustum_cull_bgl)],
             immediate_size: 0,
         });
         let frustum_cull_pipeline =
@@ -855,7 +855,7 @@ impl Gpu3D {
             layout: Some(
                 &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("perro_hiz_copy_layout"),
-                    bind_group_layouts: &[&hiz_copy_bgl],
+                    bind_group_layouts: &[Some(&hiz_copy_bgl)],
                     immediate_size: 0,
                 }),
             ),
@@ -870,7 +870,7 @@ impl Gpu3D {
                 layout: Some(
                     &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                         label: Some("perro_hiz_downsample_layout"),
-                        bind_group_layouts: &[&hiz_downsample_bgl],
+                        bind_group_layouts: &[Some(&hiz_downsample_bgl)],
                         immediate_size: 0,
                     }),
                 ),
@@ -884,7 +884,7 @@ impl Gpu3D {
             layout: Some(
                 &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("perro_hiz_cull_layout"),
-                    bind_group_layouts: &[&hiz_cull_bgl],
+                    bind_group_layouts: &[Some(&hiz_cull_bgl)],
                     immediate_size: 0,
                 }),
             ),
@@ -1085,7 +1085,7 @@ impl Gpu3D {
         let shader_toon = create_toon_shader_module(device);
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_mesh_pipeline_layout"),
-            bind_group_layouts: &[&self.camera_bgl],
+            bind_group_layouts: &[Some(&self.camera_bgl)],
             immediate_size: 0,
         });
         self.pipeline_culled = create_pipeline(
@@ -2992,8 +2992,8 @@ fn create_pipeline(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::LessEqual,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
@@ -3087,8 +3087,8 @@ fn create_depth_prepass_pipeline(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_PREPASS_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::LessEqual,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),

@@ -632,7 +632,7 @@ fn create_rect_pipeline(
 ) -> wgpu::RenderPipeline {
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("perro_rect_pipeline_layout"),
-        bind_group_layouts: &[camera_bgl],
+        bind_group_layouts: &[Some(camera_bgl)],
         immediate_size: 0,
     });
 
@@ -713,7 +713,7 @@ fn create_sprite_pipeline(
 ) -> wgpu::RenderPipeline {
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("perro_sprite_pipeline_layout"),
-        bind_group_layouts: &[camera_bgl, texture_bgl],
+        bind_group_layouts: &[Some(camera_bgl), Some(texture_bgl)],
         immediate_size: 0,
     });
 

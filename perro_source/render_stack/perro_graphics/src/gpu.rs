@@ -69,7 +69,7 @@ impl Gpu {
         meshlet_debug_view: bool,
         occlusion_culling: OcclusionCullingMode,
     ) -> Option<Self> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::default();
         let surface = instance.create_surface(window.clone()).ok()?;
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -271,14 +271,15 @@ impl Gpu {
         );
 
         let frame = match self.surface.get_current_texture() {
-            Ok(frame) => frame,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+            wgpu::CurrentSurfaceTexture::Success(frame)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
                 self.surface.configure(&self.device, &self.config);
                 return;
             }
-            Err(wgpu::SurfaceError::OutOfMemory) => return,
-            Err(wgpu::SurfaceError::Timeout) => return,
-            Err(wgpu::SurfaceError::Other) => return,
+            wgpu::CurrentSurfaceTexture::Timeout
+            | wgpu::CurrentSurfaceTexture::Occluded
+            | wgpu::CurrentSurfaceTexture::Validation => return,
         };
 
         let swap_view = frame

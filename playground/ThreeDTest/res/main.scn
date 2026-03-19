@@ -201,6 +201,14 @@ script = "res://scripts/camera.rs"
 
     [Camera3D]
         active = true
+        post_processing = [
+            {
+                type = "custom",
+                shader = "res://shaders/post_rgb_split.wgsl",
+                params = [12.0, 0.6, 1.4]
+            },
+
+        ]
 
 
         [Node3D]

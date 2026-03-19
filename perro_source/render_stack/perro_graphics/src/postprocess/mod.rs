@@ -142,7 +142,7 @@ impl PostProcessor {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_post_pipeline_layout"),
-            bind_group_layouts: &[&bgl],
+            bind_group_layouts: &[Some(&bgl)],
             immediate_size: 0,
         });
         let shader = create_builtin_shader_module(device);
@@ -384,7 +384,7 @@ impl PostProcessor {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_post_pipeline_layout"),
-            bind_group_layouts: &[&self.bgl],
+            bind_group_layouts: &[Some(&self.bgl)],
             immediate_size: 0,
         });
         let pipeline = create_pipeline(device, &pipeline_layout, &shader, self.format);

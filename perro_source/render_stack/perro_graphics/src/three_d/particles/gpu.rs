@@ -225,7 +225,7 @@ impl GpuPointParticles3D {
         let shader = create_point_particles_shader_module(device);
         let cpu_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_particles3d_pipeline_layout"),
-            bind_group_layouts: &[&camera_bgl],
+            bind_group_layouts: &[Some(&camera_bgl)],
             immediate_size: 0,
         });
         let cpu_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -283,8 +283,8 @@ impl GpuPointParticles3D {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: PARTICLE_DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -352,8 +352,8 @@ impl GpuPointParticles3D {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: PARTICLE_DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -429,7 +429,7 @@ impl GpuPointParticles3D {
         let hybrid_shader = create_point_particles_gpu_shader_module(device);
         let hybrid_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_particles3d_hybrid_pipeline_layout"),
-            bind_group_layouts: &[&camera_bgl, &hybrid_emitters_bgl],
+            bind_group_layouts: &[Some(&camera_bgl), Some(&hybrid_emitters_bgl)],
             immediate_size: 0,
         });
         let hybrid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -462,8 +462,8 @@ impl GpuPointParticles3D {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: PARTICLE_DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -506,8 +506,8 @@ impl GpuPointParticles3D {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: PARTICLE_DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -627,7 +627,7 @@ impl GpuPointParticles3D {
         let compute_shader = create_point_particles_compute_shader_module(device);
         let compute_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_particles3d_compute_layout"),
-            bind_group_layouts: &[&camera_bgl, &compute_bgl],
+            bind_group_layouts: &[Some(&camera_bgl), Some(&compute_bgl)],
             immediate_size: 0,
         });
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -641,7 +641,7 @@ impl GpuPointParticles3D {
         let compute_render_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_particles3d_compute_render_layout"),
-                bind_group_layouts: &[&camera_bgl, &compute_render_bgl],
+                bind_group_layouts: &[Some(&camera_bgl), Some(&compute_render_bgl)],
                 immediate_size: 0,
             });
         let compute_render_pipeline =
@@ -675,8 +675,8 @@ impl GpuPointParticles3D {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: PARTICLE_DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -719,8 +719,8 @@ impl GpuPointParticles3D {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: PARTICLE_DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
