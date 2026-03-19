@@ -100,6 +100,7 @@ impl Runtime {
                                 far: *far,
                             },
                         },
+                        post_processing: Arc::from(camera.post_processing.as_ref()),
                     })
                 }
                 _ => None,

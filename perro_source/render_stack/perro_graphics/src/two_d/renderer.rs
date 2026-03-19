@@ -102,7 +102,7 @@ impl Renderer2D {
 
     #[inline]
     pub fn camera_uniform(&self) -> Camera2DUniform {
-        let view = compute_view_matrix(self.camera);
+        let view = compute_view_matrix(&self.camera);
         let ndc_scale = ndc_scale(self.viewport, self.virtual_size, self.camera.zoom);
         Camera2DUniform {
             view,
@@ -205,6 +205,10 @@ impl Renderer2D {
         self.retained_sprites.values().copied()
     }
 
+    pub fn camera(&self) -> Camera2DState {
+        self.camera.clone()
+    }
+
     fn upsert_retained_rect(&mut self, node: NodeID, rect: RectInstanceGpu) {
         if let Some(&idx) = self.node_to_rect_index.get(&node) {
             if self.retained_rects[idx] != rect {
@@ -295,7 +299,7 @@ fn ndc_scale(viewport: (u32, u32), virtual_size: [f32; 2], zoom: f32) -> [f32; 2
 }
 
 #[inline]
-fn compute_view_matrix(camera: Camera2DState) -> [[f32; 4]; 4] {
+fn compute_view_matrix(camera: &Camera2DState) -> [[f32; 4]; 4] {
     let angle = -camera.rotation_radians;
     let c = angle.cos();
     let s = angle.sin();

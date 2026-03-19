@@ -5,6 +5,7 @@ use perro_nodes::SceneNodeData;
 use perro_render_bridge::{
     Camera2DState, Command2D, RenderCommand, RenderRequestID, ResourceCommand, Sprite2DCommand,
 };
+use std::sync::Arc;
 
 impl Runtime {
     fn sprite_texture_request(node: NodeID) -> RenderRequestID {
@@ -43,6 +44,7 @@ impl Runtime {
                         position: [camera.transform.position.x, camera.transform.position.y],
                         rotation_radians: camera.transform.rotation,
                         zoom: camera.zoom,
+                        post_processing: Arc::from(camera.post_processing.as_ref()),
                     })
                 }
                 _ => None,

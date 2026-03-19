@@ -1213,7 +1213,7 @@ impl GpuPointParticles3D {
         }
 
         let uniform = CameraUniform {
-            view_proj: compute_view_proj(frame.camera, frame.width, frame.height)
+            view_proj: compute_view_proj(&frame.camera, frame.width, frame.height)
                 .to_cols_array_2d(),
             inv_view_size: [
                 1.0 / (frame.width.max(1) as f32),
@@ -2534,7 +2534,7 @@ fn encode_gpu_op(op: &Op) -> GpuExprOp {
     }
 }
 
-fn compute_view_proj(camera: Camera3DState, width: u32, height: u32) -> Mat4 {
+fn compute_view_proj(camera: &Camera3DState, width: u32, height: u32) -> Mat4 {
     let w = width.max(1) as f32;
     let h = height.max(1) as f32;
     let aspect = w / h;

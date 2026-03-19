@@ -1230,7 +1230,7 @@ impl Gpu3D {
         self.gpu_occlusion_enabled = gpu_occlusion_enabled && self.frustum_cull_enabled;
         self.cpu_occlusion_enabled = cpu_occlusion_enabled;
 
-        let uniform = build_scene_uniform(camera, lighting, width, height);
+        let uniform = build_scene_uniform(&camera, lighting, width, height);
         let scene_changed = self.last_scene != Some(uniform) || self.last_draws.as_slice() != draws;
         if self.last_scene != Some(uniform) {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
@@ -1241,7 +1241,7 @@ impl Gpu3D {
             // previous query visibility is stale and must not gate current frame.
             self.occlusion_state.clear();
         }
-        let view_proj = compute_view_proj_mat(camera, width, height);
+        let view_proj = compute_view_proj_mat(&camera, width, height);
         self.last_aspect = (width.max(1) as f32) / (height.max(1) as f32);
         self.last_proj_y_scale = projection_y_scale_from_projection(camera.projection);
 
@@ -1644,8 +1644,10 @@ impl Gpu3D {
         encoder: &mut wgpu::CommandEncoder,
         color_view: &wgpu::TextureView,
         clear_color: wgpu::Color,
+        depth_prepass_needed: bool,
     ) {
         let hiz_active = self.gpu_occlusion_enabled && !self.draw_batches.is_empty();
+        let depth_prepass_active = hiz_active || depth_prepass_needed;
         let query_count = if self.cpu_occlusion_enabled
             && self.pending_occlusion_query_count == 0
             && self.pending_occlusion_map_rx.is_none()
@@ -1669,7 +1671,7 @@ impl Gpu3D {
             let groups = (self.draw_batches.len() as u32).div_ceil(FRUSTUM_CULL_WORKGROUP_SIZE);
             cull_pass.dispatch_workgroups(groups, 1, 1);
         }
-        if hiz_active {
+        if depth_prepass_active {
             let mut prepass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_depth_prepass"),
                 color_attachments: &[],
@@ -1700,11 +1702,19 @@ impl Gpu3D {
                     prepass.set_pipeline(pipeline);
                     current_double_sided = Some(batch.double_sided);
                 }
-                let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
-                prepass.draw_indexed_indirect(&self.indirect_buffer, offset);
+                if self.frustum_cull_enabled {
+                    let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
+                    prepass.draw_indexed_indirect(&self.indirect_buffer, offset);
+                } else {
+                    let start = batch.mesh.index_start;
+                    let end = start + batch.mesh.index_count;
+                    let instances = batch.instance_start..batch.instance_start + batch.instance_count;
+                    prepass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+                }
             }
             drop(prepass);
-
+        }
+        if hiz_active {
             self.build_hiz_from_depth(device, encoder);
 
             let mut cull_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -1817,6 +1827,10 @@ impl Gpu3D {
 
     pub fn depth_view(&self) -> &wgpu::TextureView {
         &self.depth_view
+    }
+
+    pub fn depth_prepass_view(&self) -> &wgpu::TextureView {
+        &self.depth_prepass_view
     }
 
     fn ensure_instance_capacity(&mut self, device: &wgpu::Device, needed: usize) {
@@ -3235,11 +3249,11 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [f32; 4] {
     [r, g, b, 1.0]
 }
 
-fn compute_view_proj(camera: Camera3DState, width: u32, height: u32) -> [[f32; 4]; 4] {
+fn compute_view_proj(camera: &Camera3DState, width: u32, height: u32) -> [[f32; 4]; 4] {
     compute_view_proj_mat(camera, width, height).to_cols_array_2d()
 }
 
-fn compute_view_proj_mat(camera: Camera3DState, width: u32, height: u32) -> Mat4 {
+fn compute_view_proj_mat(camera: &Camera3DState, width: u32, height: u32) -> Mat4 {
     let w = width.max(1) as f32;
     let h = height.max(1) as f32;
     let aspect = w / h;
@@ -3459,13 +3473,13 @@ fn bounds_in_frustum(
 }
 
 fn build_scene_uniform(
-    camera: Camera3DState,
+    camera: &Camera3DState,
     lighting: &Lighting3DState,
     width: u32,
     height: u32,
 ) -> Scene3DUniform {
     let mut scene = Scene3DUniform {
-        view_proj: compute_view_proj(camera, width, height),
+        view_proj: compute_view_proj(&camera, width, height),
         ambient_and_counts: [0.0, 0.0, 0.0, 0.0],
         camera_pos: [
             camera.position[0],

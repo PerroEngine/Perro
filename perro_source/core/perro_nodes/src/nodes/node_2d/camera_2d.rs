@@ -1,6 +1,8 @@
+use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
 use crate::Node2D;
+use perro_structs::PostProcessEffect;
 
 impl Deref for Camera2D {
     type Target = Node2D;
@@ -20,6 +22,7 @@ pub struct Camera2D {
     pub base: Node2D,
     pub zoom: f32,
     pub active: bool,
+    pub post_processing: Cow<'static, [PostProcessEffect]>,
 }
 
 impl Camera2D {
@@ -28,6 +31,7 @@ impl Camera2D {
             base: Node2D::new(),
             zoom: 0f32,
             active: false,
+            post_processing: Cow::Borrowed(&[]),
         }
     }
 }

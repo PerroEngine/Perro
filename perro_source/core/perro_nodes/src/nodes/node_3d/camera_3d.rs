@@ -1,6 +1,8 @@
+use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
 use crate::node_3d::Node3D;
+use perro_structs::PostProcessEffect;
 
 impl Deref for Camera3D {
     type Target = Node3D;
@@ -20,6 +22,7 @@ pub struct Camera3D {
     pub base: Node3D,
     pub active: bool,
     pub projection: CameraProjection,
+    pub post_processing: Cow<'static, [PostProcessEffect]>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -98,6 +101,7 @@ impl Camera3D {
                 near: 0.1,
                 far: 1000.0,
             },
+            post_processing: Cow::Borrowed(&[]),
         }
     }
 

@@ -6,6 +6,7 @@ use perro_render_bridge::{
     SkeletonPalette, SpotLight3DState,
 };
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Draw3DKind {
@@ -210,7 +211,7 @@ impl Renderer3D {
             *slot = Some(*light);
         }
 
-        (self.camera, stats, lighting)
+        (self.camera.clone(), stats, lighting)
     }
 
     pub fn retained_draw(&self, node: NodeID) -> Option<Draw3DInstance> {
@@ -230,7 +231,7 @@ impl Renderer3D {
     }
 
     pub fn camera(&self) -> Camera3DState {
-        self.camera
+        self.camera.clone()
     }
 }
 
@@ -252,6 +253,7 @@ impl Default for Renderer3D {
                     near: 0.1,
                     far: 1000.0,
                 },
+                post_processing: Arc::from([]),
             },
         }
     }

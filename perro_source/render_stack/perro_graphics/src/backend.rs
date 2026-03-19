@@ -390,6 +390,7 @@ impl GraphicsBackend for PerroGraphics {
         self.process_commands(pending.drain(..));
         std::mem::swap(&mut pending, &mut self.frame.pending_commands);
         let (camera_2d, _stats, upload) = self.renderer_2d.prepare_frame(&self.resources);
+        let camera_2d_state = self.renderer_2d.camera();
         let (camera_3d, _stats_3d, lighting_3d) = self.renderer_3d.prepare_frame(&self.resources);
         self.particles_3d.prepare_frame();
         self.retained_draws_cache.clear();
@@ -431,6 +432,7 @@ impl GraphicsBackend for PerroGraphics {
                 draws_3d: &self.retained_draws_cache,
                 point_particles_3d: &self.retained_point_particles_cache,
                 camera_2d,
+                post_processing_2d: camera_2d_state.post_processing.clone(),
                 rects_2d: self.renderer_2d.retained_rects(),
                 upload_2d: &upload,
                 sprites_2d: &self.retained_sprites_cache,

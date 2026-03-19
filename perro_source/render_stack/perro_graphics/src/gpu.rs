@@ -1,5 +1,6 @@
 use crate::{
     backend::{OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup, StaticTextureLookup},
+    postprocess::PostProcessor,
     resources::ResourceStore,
     three_d::{
         gpu::{Gpu3D, Gpu3DConfig, Prepare3D},
@@ -36,6 +37,7 @@ pub struct Gpu {
     render_format: wgpu::TextureFormat,
     sample_count: u32,
     msaa_color: Option<MsaaColorTarget>,
+    post: PostProcessor,
     two_d: Gpu2D,
     three_d: Gpu3D,
     point_particles_3d: GpuPointParticles3D,
@@ -48,6 +50,7 @@ pub struct RenderFrame<'a> {
     pub draws_3d: &'a [Draw3DInstance],
     pub point_particles_3d: &'a [(NodeID, PointParticles3DState)],
     pub camera_2d: Camera2DUniform,
+    pub post_processing_2d: Arc<[perro_structs::PostProcessEffect]>,
     pub rects_2d: &'a [RectInstanceGpu],
     pub upload_2d: &'a RectUploadPlan,
     pub sprites_2d: &'a [Sprite2DCommand],
@@ -142,6 +145,7 @@ impl Gpu {
         let point_particles_3d = GpuPointParticles3D::new(&device, render_format, sample_count);
         let msaa_color =
             create_msaa_color_target(&device, render_format, width, height, sample_count);
+        let post = PostProcessor::new(&device, render_format, width, height);
 
         Some(Self {
             window_handle: window,
@@ -152,6 +156,7 @@ impl Gpu {
             render_format,
             sample_count,
             msaa_color,
+            post,
             two_d,
             three_d,
             point_particles_3d,
@@ -169,6 +174,7 @@ impl Gpu {
         self.config.height = height;
         self.surface.configure(&self.device, &self.config);
         self.three_d.resize(&self.device, width, height);
+        self.post.resize(&self.device, width, height);
         self.msaa_color = create_msaa_color_target(
             &self.device,
             self.render_format,
@@ -212,6 +218,7 @@ impl Gpu {
             draws_3d,
             point_particles_3d,
             camera_2d,
+            post_processing_2d,
             rects_2d,
             upload_2d,
             sprites_2d,
@@ -222,12 +229,16 @@ impl Gpu {
         // Keep window alive for the full surface lifetime.
         self.window_handle.id();
 
+        let camera_2d_prepare = camera_2d.clone();
+        let camera_3d_prepare = camera_3d.clone();
+        let camera_3d_particles = camera_3d.clone();
+
         self.two_d.prepare(
             &self.device,
             &self.queue,
             Prepare2D {
                 resources,
-                camera: camera_2d,
+                camera: camera_2d_prepare,
                 rects: rects_2d,
                 upload: upload_2d,
                 sprites: sprites_2d,
@@ -239,7 +250,7 @@ impl Gpu {
             &self.queue,
             Prepare3D {
                 resources,
-                camera: camera_3d,
+                camera: camera_3d_prepare,
                 lighting: lighting_3d,
                 draws: draws_3d,
                 width: self.config.width,
@@ -252,7 +263,7 @@ impl Gpu {
             &self.device,
             &self.queue,
             PreparePointParticles3D {
-                camera: camera_3d,
+                camera: camera_3d_particles,
                 emitters: point_particles_3d,
                 width: self.config.width,
                 height: self.config.height,
@@ -273,13 +284,32 @@ impl Gpu {
         let swap_view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let color_view = self
-            .msaa_color
-            .as_ref()
-            .map(|t| &t.view)
-            .unwrap_or(&swap_view);
+        let (post_chain, post_enabled) = if PostProcessor::has_effects(camera_3d.post_processing.as_ref()) {
+            (camera_3d.post_processing.as_ref(), true)
+        } else if PostProcessor::has_effects(post_processing_2d.as_ref()) {
+            (post_processing_2d.as_ref(), true)
+        } else {
+            (camera_3d.post_processing.as_ref(), false)
+        };
+        let depth_prepass_needed = post_enabled && PostProcessor::uses_depth(post_chain);
+        let scene_view = self.post.scene_view().clone();
+        let color_view = if post_enabled {
+            self.msaa_color
+                .as_ref()
+                .map(|t| &t.view)
+                .unwrap_or(&scene_view)
+        } else {
+            self.msaa_color
+                .as_ref()
+                .map(|t| &t.view)
+                .unwrap_or(&swap_view)
+        };
         let resolve_view = if self.sample_count > 1 {
-            Some(&swap_view)
+            if post_enabled {
+                Some(&scene_view)
+            } else {
+                Some(&swap_view)
+            }
         } else {
             None
         };
@@ -300,6 +330,7 @@ impl Gpu {
                 b: CLEAR_B,
                 a: 1.0,
             },
+            depth_prepass_needed,
         );
         self.point_particles_3d
             .render_pass(&mut encoder, color_view, self.three_d.depth_view());
@@ -311,6 +342,18 @@ impl Gpu {
         );
 
         self.queue.submit(Some(encoder.finish()));
+        if post_enabled {
+            self.post.apply_chain(
+                &self.device,
+                &self.queue,
+                &scene_view,
+                self.three_d.depth_prepass_view(),
+                &swap_view,
+                post_chain,
+                &camera_3d,
+                static_shader_lookup,
+            );
+        }
         frame.present();
     }
 

@@ -1,4 +1,5 @@
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
+use perro_structs::PostProcessEffect;
 pub use perro_particle_math::Op as ParticleExprOp3D;
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -13,18 +14,20 @@ impl RenderRequestID {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Camera2DState {
     pub position: [f32; 2],
     pub rotation_radians: f32,
     pub zoom: f32,
+    pub post_processing: Arc<[PostProcessEffect]>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Camera3DState {
     pub position: [f32; 3],
     pub rotation: [f32; 4],
     pub projection: CameraProjectionState,
+    pub post_processing: Arc<[PostProcessEffect]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -417,6 +420,7 @@ impl Default for Camera3DState {
             position: [0.0, 0.0, 0.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
             projection: CameraProjectionState::default(),
+            post_processing: Arc::from([]),
         }
     }
 }
@@ -437,6 +441,7 @@ impl Default for Camera2DState {
             position: [0.0, 0.0],
             rotation_radians: 0.0,
             zoom: 1.0,
+            post_processing: Arc::from([]),
         }
     }
 }

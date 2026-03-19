@@ -6,6 +6,7 @@ use perro_render_bridge::{
     Camera3DState, CameraProjectionState, Command2D, Command3D, Material3D, RenderBridge,
     RenderCommand, ResourceCommand, Sprite2DCommand,
 };
+use std::sync::Arc;
 
 #[test]
 fn sprite_texture_upsert_is_accepted_after_texture_creation() {
@@ -329,6 +330,7 @@ fn set_camera_3d_updates_retained_camera_state() {
                 near: 0.2,
                 far: 900.0,
             },
+            post_processing: Arc::from([]),
         },
     })));
     graphics.draw_frame();
@@ -343,6 +345,7 @@ fn set_camera_3d_updates_retained_camera_state() {
                 near: 0.2,
                 far: 900.0,
             },
+            post_processing: Arc::from([]),
         }
     );
 }
