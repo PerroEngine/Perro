@@ -8,11 +8,30 @@ You can reference it in scene/scripts like:
 material = "res://materials/mat.pmat"
 ```
 
+## Material Type (Required First Entry)
+
+`.pmat` now declares a **material preset** as the first entry:
+
+```txt
+type = standard
+```
+
+Valid values:
+
+- `standard`
+- `unlit`
+- `toon`
+- `custom`
+
+The `type` entry **must be the first non-empty line** (comments are allowed above it).
+
 ## Recommended Syntax (Key/Value)
 
 `.pmat` supports a clean line-based format:
 
 ```txt
+type = standard
+
 base_color_factor = (0.1, 0.5, 0.2, 1.0)
 metallic_factor = 1.0
 roughness_factor = 0.3
@@ -39,6 +58,8 @@ Comments:
 
 ## Supported Keys
 
+### Standard
+
 - `base_color_factor` (alias: `baseColorFactor`, `color`) vec3/vec4
 - `metallic_factor` (alias: `metallicFactor`) float
 - `roughness_factor` (alias: `roughnessFactor`) float
@@ -53,6 +74,50 @@ Comments:
 - `normal_texture` (alias: `normalTexture`) int
 - `occlusion_texture` (alias: `occlusionTexture`) int
 - `emissive_texture` (alias: `emissiveTexture`) int
+
+### Unlit
+
+- `base_color_factor` (alias: `baseColorFactor`, `color`) vec3/vec4
+- `emissive_factor` (alias: `emissiveFactor`) vec3/vec4
+- `alpha_mode` (alias: `alphaMode`) `OPAQUE | MASK | BLEND`
+- `alpha_cutoff` (alias: `alphaCutoff`) float
+- `double_sided` (alias: `doubleSided`) bool
+- `base_color_texture` (alias: `baseColorTexture`) int
+
+### Toon
+
+- `base_color_factor` (alias: `baseColorFactor`, `color`) vec3/vec4
+- `emissive_factor` (alias: `emissiveFactor`) vec3/vec4
+- `alpha_mode` (alias: `alphaMode`) `OPAQUE | MASK | BLEND`
+- `alpha_cutoff` (alias: `alphaCutoff`) float
+- `double_sided` (alias: `doubleSided`) bool
+- `base_color_texture` (alias: `baseColorTexture`) int
+- `ramp_texture` (alias: `rampTexture`) int
+- `band_count` (alias: `bandCount`) int
+- `rim_strength` (alias: `rimStrength`) float
+- `outline_width` (alias: `outlineWidth`) float
+
+### Custom
+
+Custom materials define a shader path and optional custom parameters:
+
+```txt
+type = custom
+shader_path = "res://shaders/custom.wgsl"
+
+params = {
+    glow = 1.25
+    tint = (1.0, 0.2, 0.4, 1.0)
+}
+```
+
+Supported custom param value types:
+
+- `float`, `int`, `bool`
+- `vec2`, `vec3`, `vec4`
+- `string` (for shader-specific tokens)
+
+See also: `docs/resources/shaders.md` for WGSL authoring notes and current limitations.
 
 ## Types
 

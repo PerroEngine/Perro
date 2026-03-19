@@ -13,7 +13,7 @@ use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;
 use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::pack_meshlets_from_positions;
-use perro_render_bridge::{Camera3DState, CameraProjectionState, Material3D, RuntimeMeshData};
+use perro_render_bridge::{Camera3DState, CameraProjectionState, Material3D, StandardMaterial3D, RuntimeMeshData};
 use std::{
     collections::HashMap,
     sync::{Arc, mpsc, mpsc::TryRecvError},
@@ -1041,26 +1041,26 @@ impl Gpu3D {
                 ),
             };
             let material = match draw.kind {
-                Draw3DKind::Terrain64 => Material3D {
-                    base_color_factor: [0.32, 0.56, 0.29, 1.0],
-                    roughness_factor: 0.92,
-                    metallic_factor: 0.0,
-                    ..Material3D::default()
-                },
-                Draw3DKind::DebugPointCube => Material3D {
-                    base_color_factor: [1.0, 0.92, 0.2, 1.0],
-                    roughness_factor: 0.35,
-                    metallic_factor: 0.0,
-                    emissive_factor: [0.35, 0.3, 0.06],
-                    ..Material3D::default()
-                },
-                Draw3DKind::DebugEdgeCylinder => Material3D {
-                    base_color_factor: [0.15, 0.95, 0.95, 1.0],
-                    roughness_factor: 0.6,
-                    metallic_factor: 0.0,
-                    emissive_factor: [0.06, 0.3, 0.3],
-                    ..Material3D::default()
-                },
+                Draw3DKind::Terrain64 => Material3D::Standard(StandardMaterial3D {
+                        base_color_factor: [0.32, 0.56, 0.29, 1.0],
+                        roughness_factor: 0.92,
+                        metallic_factor: 0.0,
+                        ..StandardMaterial3D::default()
+                    }),
+                Draw3DKind::DebugPointCube => Material3D::Standard(StandardMaterial3D {
+                        base_color_factor: [1.0, 0.92, 0.2, 1.0],
+                        roughness_factor: 0.35,
+                        metallic_factor: 0.0,
+                        emissive_factor: [0.35, 0.3, 0.06],
+                        ..StandardMaterial3D::default()
+                    }),
+                Draw3DKind::DebugEdgeCylinder => Material3D::Standard(StandardMaterial3D {
+                        base_color_factor: [0.15, 0.95, 0.95, 1.0],
+                        roughness_factor: 0.6,
+                        metallic_factor: 0.0,
+                        emissive_factor: [0.06, 0.3, 0.3],
+                        ..StandardMaterial3D::default()
+                    }),
                 Draw3DKind::Mesh(_) => draw
                     .material
                     .and_then(|id| resources.material(id))
@@ -1128,7 +1128,7 @@ impl Gpu3D {
                 if is_debug_point {
                     if debug_point_instances.is_empty() {
                         debug_points_double_sided =
-                            material.double_sided || self.meshlet_debug_view;
+                            material.standard_params().double_sided || self.meshlet_debug_view;
                         debug_points_local_center = mesh_asset.bounds_center;
                         debug_points_local_radius = mesh_asset.bounds_radius;
                     }
@@ -1136,7 +1136,8 @@ impl Gpu3D {
                     debug_points_count = debug_points_count.saturating_add(1);
                 } else if is_debug_edge {
                     if debug_edge_instances.is_empty() {
-                        debug_edges_double_sided = material.double_sided || self.meshlet_debug_view;
+                        debug_edges_double_sided =
+                            material.standard_params().double_sided || self.meshlet_debug_view;
                         debug_edges_local_center = mesh_asset.bounds_center;
                         debug_edges_local_radius = mesh_asset.bounds_radius;
                     }
@@ -1149,7 +1150,7 @@ impl Gpu3D {
                         &mut self.draw_batches,
                         mesh_asset.full,
                         instance,
-                        material.double_sided || self.meshlet_debug_view,
+                        material.standard_params().double_sided || self.meshlet_debug_view,
                         (mesh_asset.bounds_center, mesh_asset.bounds_radius),
                         occlusion_query,
                         is_terrain_mesh,
@@ -1195,7 +1196,7 @@ impl Gpu3D {
                             base_vertex: mesh_asset.full.base_vertex,
                         },
                         instance,
-                        material.double_sided || self.meshlet_debug_view,
+                        material.standard_params().double_sided || self.meshlet_debug_view,
                         (occlusion_center, occlusion_radius),
                         occlusion_query,
                         is_terrain_mesh,
@@ -2798,18 +2799,19 @@ fn build_instance(
     skeleton_start: u32,
     skeleton_count: u32,
 ) -> InstanceGpu {
+    let params = material.standard_params();
     let (color, pbr_params, emissive_factor, debug_flag) = if debug_view {
         (debug_color, [0.5, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0], 1.0)
     } else {
         (
-            material.base_color_factor,
+            params.base_color_factor,
             [
-                material.roughness_factor,
-                material.metallic_factor,
-                material.occlusion_strength,
-                material.normal_scale,
+                params.roughness_factor,
+                params.metallic_factor,
+                params.occlusion_strength,
+                params.normal_scale,
             ],
-            material.emissive_factor,
+            params.emissive_factor,
             0.0,
         )
     };
@@ -2823,9 +2825,9 @@ fn build_instance(
         pbr_params,
         emissive_factor,
         material_params: [
-            material.alpha_mode as f32,
-            material.alpha_cutoff,
-            if material.double_sided { 1.0 } else { 0.0 },
+            params.alpha_mode as f32,
+            params.alpha_cutoff,
+            if params.double_sided { 1.0 } else { 0.0 },
             debug_flag,
         ],
         skeleton_params: [skeleton_start, skeleton_count, 0, 0],

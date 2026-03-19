@@ -1,5 +1,5 @@
 use super::ResourceStore;
-use perro_render_bridge::Material3D;
+use perro_render_bridge::{Material3D, StandardMaterial3D};
 
 #[test]
 fn texture_slot_reuse_bumps_generation() {
@@ -22,10 +22,10 @@ fn material_source_reuses_existing() {
     let mat = Material3D::default();
     let first = store.create_material(mat, Some("res://materials/base.pmat"), false);
     let second = store.create_material(
-        Material3D {
+        Material3D::Standard(StandardMaterial3D {
             roughness_factor: 1.0,
-            ..Material3D::default()
-        },
+            ..StandardMaterial3D::default()
+        }),
         Some("res://materials/base.pmat"),
         false,
     );

@@ -60,6 +60,75 @@ let _same_id = material_reserve!(res, "res://models/rig.glb:mat[0]");
 let _ = material_drop!(res, "res://models/rig.glb:mat[0]");
 ```
 
+## Material3D Presets
+
+`Material3D` is a preset enum:
+
+- `Material3D::Standard(StandardMaterial3D)`
+- `Material3D::Unlit(UnlitMaterial3D)`
+- `Material3D::Toon(ToonMaterial3D)`
+- `Material3D::Custom(CustomMaterial3D)`
+
+Each preset has its own params struct. Custom materials carry a shader path and a list of typed params.
+
+See also: `docs/resources/shaders.md` for WGSL authoring notes and current limitations.
+
+## Programmatic Examples
+
+```rust
+use perro_render_bridge::{
+    CustomMaterial3D, CustomMaterialParam3D, CustomMaterialParamValue3D, Material3D,
+    StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D,
+};
+
+// Standard (PBR-ish)
+let standard_id = material_create!(
+    res,
+    Material3D::Standard(StandardMaterial3D {
+        base_color_factor: [0.8, 0.2, 0.2, 1.0],
+        roughness_factor: 0.4,
+        metallic_factor: 0.1,
+        ..StandardMaterial3D::default()
+    })
+);
+
+// Unlit
+let unlit_id = material_create!(
+    res,
+    Material3D::Unlit(UnlitMaterial3D {
+        base_color_factor: [0.2, 0.8, 0.9, 1.0],
+        ..UnlitMaterial3D::default()
+    })
+);
+
+// Toon
+let toon_id = material_create!(
+    res,
+    Material3D::Toon(ToonMaterial3D {
+        base_color_factor: [0.9, 0.9, 0.2, 1.0],
+        band_count: 3,
+        rim_strength: 0.4,
+        outline_width: 1.5,
+        ..ToonMaterial3D::default()
+    })
+);
+
+// Custom
+let custom_id = material_create!(
+    res,
+    Material3D::Custom(CustomMaterial3D::with_params(
+        "res://shaders/custom.wgsl",
+        vec![
+            CustomMaterialParam3D::named("glow", CustomMaterialParamValue3D::F32(1.25)),
+            CustomMaterialParam3D::named(
+                "tint",
+                CustomMaterialParamValue3D::Vec4([1.0, 0.2, 0.4, 1.0]),
+            ),
+        ],
+    ))
+);
+```
+
 glTF sub-asset access:
 
 - `res://path/to/model.gltf:mat[0]`
@@ -68,4 +137,5 @@ glTF sub-asset access:
 Use the `:mat[index]` suffix to target a specific material inside a glTF/glb.
 
 Direct `.pmat` sources:
+
 - `res://path/to/material.pmat`

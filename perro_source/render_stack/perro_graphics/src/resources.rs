@@ -359,7 +359,7 @@ impl ResourceStore {
 
     #[inline]
     pub fn material(&self, id: MaterialID) -> Option<Material3D> {
-        self.material_by.get(&id).copied()
+        self.material_by.get(&id).cloned()
     }
 
     #[inline]

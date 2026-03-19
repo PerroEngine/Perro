@@ -200,7 +200,7 @@ pub struct PointParticles3DState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Material3D {
+pub struct StandardMaterial3D {
     pub base_color_factor: [f32; 4],
     pub roughness_factor: f32,
     pub metallic_factor: f32,
@@ -218,9 +218,7 @@ pub struct Material3D {
     pub emissive_texture: u32,
 }
 
-pub const MATERIAL_TEXTURE_NONE: u32 = u32::MAX;
-
-impl Default for Material3D {
+impl Default for StandardMaterial3D {
     fn default() -> Self {
         Self {
             base_color_factor: [0.85, 0.85, 0.85, 1.0],
@@ -237,6 +235,179 @@ impl Default for Material3D {
             normal_texture: MATERIAL_TEXTURE_NONE,
             occlusion_texture: MATERIAL_TEXTURE_NONE,
             emissive_texture: MATERIAL_TEXTURE_NONE,
+        }
+    }
+}
+
+pub const MATERIAL_TEXTURE_NONE: u32 = u32::MAX;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UnlitMaterial3D {
+    pub base_color_factor: [f32; 4],
+    pub emissive_factor: [f32; 3],
+    pub alpha_mode: u32, // 0=OPAQUE, 1=MASK, 2=BLEND
+    pub alpha_cutoff: f32,
+    pub double_sided: bool,
+    // Texture slot indices (material-local index or NONE).
+    pub base_color_texture: u32,
+}
+
+impl Default for UnlitMaterial3D {
+    fn default() -> Self {
+        Self {
+            base_color_factor: [1.0, 1.0, 1.0, 1.0],
+            emissive_factor: [0.0, 0.0, 0.0],
+            alpha_mode: 0,
+            alpha_cutoff: 0.5,
+            double_sided: false,
+            base_color_texture: MATERIAL_TEXTURE_NONE,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ToonMaterial3D {
+    pub base_color_factor: [f32; 4],
+    pub emissive_factor: [f32; 3],
+    pub alpha_mode: u32, // 0=OPAQUE, 1=MASK, 2=BLEND
+    pub alpha_cutoff: f32,
+    pub double_sided: bool,
+    pub band_count: u32,
+    pub rim_strength: f32,
+    pub outline_width: f32,
+    // Texture slot indices (material-local index or NONE).
+    pub base_color_texture: u32,
+    pub ramp_texture: u32,
+}
+
+impl Default for ToonMaterial3D {
+    fn default() -> Self {
+        Self {
+            base_color_factor: [1.0, 1.0, 1.0, 1.0],
+            emissive_factor: [0.0, 0.0, 0.0],
+            alpha_mode: 0,
+            alpha_cutoff: 0.5,
+            double_sided: false,
+            band_count: 4,
+            rim_strength: 0.0,
+            outline_width: 0.0,
+            base_color_texture: MATERIAL_TEXTURE_NONE,
+            ramp_texture: MATERIAL_TEXTURE_NONE,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CustomMaterialParamValue3D {
+    F32(f32),
+    I32(i32),
+    Bool(bool),
+    Vec2([f32; 2]),
+    Vec3([f32; 3]),
+    Vec4([f32; 4]),
+    Str(Cow<'static, str>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CustomMaterialParam3D {
+    pub name: Option<Cow<'static, str>>,
+    pub value: CustomMaterialParamValue3D,
+}
+
+impl CustomMaterialParam3D {
+    #[inline]
+    pub fn named(name: impl Into<Cow<'static, str>>, value: CustomMaterialParamValue3D) -> Self {
+        Self {
+            name: Some(name.into()),
+            value,
+        }
+    }
+
+    #[inline]
+    pub fn unnamed(value: CustomMaterialParamValue3D) -> Self {
+        Self { name: None, value }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CustomMaterial3D {
+    pub shader_path: Cow<'static, str>,
+    pub params: Vec<CustomMaterialParam3D>,
+}
+
+impl CustomMaterial3D {
+    #[inline]
+    pub fn new(shader_path: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            shader_path: shader_path.into(),
+            params: Vec::new(),
+        }
+    }
+
+    #[inline]
+    pub fn with_params(
+        shader_path: impl Into<Cow<'static, str>>,
+        params: Vec<CustomMaterialParam3D>,
+    ) -> Self {
+        Self {
+            shader_path: shader_path.into(),
+            params,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Material3D {
+    Standard(StandardMaterial3D),
+    Unlit(UnlitMaterial3D),
+    Toon(ToonMaterial3D),
+    Custom(CustomMaterial3D),
+}
+
+impl Default for Material3D {
+    fn default() -> Self {
+        Self::Standard(StandardMaterial3D::default())
+    }
+}
+
+impl Material3D {
+    #[inline]
+    pub fn standard_params(&self) -> StandardMaterial3D {
+        match self {
+            Material3D::Standard(params) => *params,
+            Material3D::Unlit(params) => StandardMaterial3D {
+                base_color_factor: params.base_color_factor,
+                emissive_factor: params.emissive_factor,
+                alpha_mode: params.alpha_mode,
+                alpha_cutoff: params.alpha_cutoff,
+                double_sided: params.double_sided,
+                base_color_texture: params.base_color_texture,
+                metallic_roughness_texture: MATERIAL_TEXTURE_NONE,
+                normal_texture: MATERIAL_TEXTURE_NONE,
+                occlusion_texture: MATERIAL_TEXTURE_NONE,
+                emissive_texture: MATERIAL_TEXTURE_NONE,
+                roughness_factor: 1.0,
+                metallic_factor: 0.0,
+                occlusion_strength: 1.0,
+                normal_scale: 1.0,
+            },
+            Material3D::Toon(params) => StandardMaterial3D {
+                base_color_factor: params.base_color_factor,
+                emissive_factor: params.emissive_factor,
+                alpha_mode: params.alpha_mode,
+                alpha_cutoff: params.alpha_cutoff,
+                double_sided: params.double_sided,
+                base_color_texture: params.base_color_texture,
+                metallic_roughness_texture: MATERIAL_TEXTURE_NONE,
+                normal_texture: MATERIAL_TEXTURE_NONE,
+                occlusion_texture: MATERIAL_TEXTURE_NONE,
+                emissive_texture: MATERIAL_TEXTURE_NONE,
+                roughness_factor: 0.7,
+                metallic_factor: 0.0,
+                occlusion_strength: 1.0,
+                normal_scale: 1.0,
+            },
+            Material3D::Custom(_) => StandardMaterial3D::default(),
         }
     }
 }

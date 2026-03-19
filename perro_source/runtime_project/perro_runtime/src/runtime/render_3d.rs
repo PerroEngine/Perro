@@ -9,7 +9,8 @@ use perro_nodes::{
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
-    ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
+    StandardMaterial3D, ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D,
+    ParticleSimulationMode3D,
     PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID,
     ResourceCommand, RuntimeMeshData, RuntimeMeshVertex, SkeletonPalette, SpotLight3DState,
 };
@@ -437,12 +438,12 @@ impl Runtime {
             self.queue_render_command(RenderCommand::Resource(ResourceCommand::CreateMaterial {
                 request,
                 id: MaterialID::nil(),
-                material: Material3D {
-                    base_color_factor: [0.32, 0.56, 0.29, 1.0],
-                    roughness_factor: 0.92,
-                    metallic_factor: 0.0,
-                    ..Material3D::default()
-                },
+                material: Material3D::Standard(StandardMaterial3D {
+                        base_color_factor: [0.32, 0.56, 0.29, 1.0],
+                        roughness_factor: 0.92,
+                        metallic_factor: 0.0,
+                        ..StandardMaterial3D::default()
+                    }),
                 source: Some("__terrain_runtime_material__".to_string()),
                 reserved: false,
             }));
