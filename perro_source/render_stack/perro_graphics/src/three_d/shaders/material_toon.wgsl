@@ -74,7 +74,9 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     }
 
     let rim_strength = max(in.pbr_params.y, 0.0);
-    let rim = pow(1.0 - max(dot(n, v), 0.0), 2.0) * rim_strength;
+    let outline_width = max(in.pbr_params.z, 0.0);
+    let rim_power = 2.0 + outline_width * 4.0;
+    let rim = pow(1.0 - max(dot(n, v), 0.0), rim_power) * rim_strength;
 
     let color = albedo * light_rgb + in.emissive_factor + rim;
     return vec4<f32>(color, alpha);

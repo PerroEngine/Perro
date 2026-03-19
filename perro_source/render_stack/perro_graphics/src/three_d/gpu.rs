@@ -85,7 +85,7 @@ struct InstanceGpu {
     pbr_params: [f32; 4], // roughness, metallic, occlusion_strength, normal_scale
     emissive_factor: [f32; 3], // rgb
     material_params: [f32; 4], // alpha_mode, alpha_cutoff, double_sided, reserved
-    skeleton_params: [u32; 4], // start, count, unused, unused
+    skeleton_params: [u32; 4], // start, count, custom_params_offset, custom_params_len
 }
 
 #[repr(C)]
@@ -149,6 +149,9 @@ pub struct Gpu3D {
     skeleton_buffer: wgpu::Buffer,
     skeleton_capacity: usize,
     staged_skeletons: Vec<[[f32; 4]; 4]>,
+    custom_params_buffer: wgpu::Buffer,
+    custom_params_capacity: usize,
+    staged_custom_params: Vec<[f32; 4]>,
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
     staged_instances: Vec<InstanceGpu>,
@@ -270,7 +273,7 @@ struct MeshAssetRange {
     bounds_radius: f32,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct DrawBatch {
     mesh: MeshRange,
     instance_start: u32,
@@ -429,6 +432,20 @@ impl Gpu3D {
         }
     }
 
+    fn stage_custom_params(&mut self, material: &Material3D) -> (u32, u32) {
+        match material {
+            Material3D::Custom(custom) => {
+                let offset = self.staged_custom_params.len() as u32;
+                for param in &custom.params {
+                    self.staged_custom_params
+                        .push(encode_custom_param_value(&param.value));
+                }
+                (offset, custom.params.len() as u32)
+            }
+            _ => (0, 0),
+        }
+    }
+
     pub fn new(
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
@@ -474,6 +491,16 @@ impl Gpu3D {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -489,6 +516,13 @@ impl Gpu3D {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let custom_params_capacity = 1usize;
+        let custom_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_custom_material_params"),
+            size: (custom_params_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_camera3d_bg"),
             layout: &camera_bgl,
@@ -500,6 +534,10 @@ impl Gpu3D {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: skeleton_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: custom_params_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -889,6 +927,9 @@ impl Gpu3D {
             skeleton_buffer,
             skeleton_capacity,
             staged_skeletons: Vec::new(),
+            custom_params_buffer,
+            custom_params_capacity,
+            staged_custom_params: Vec::new(),
             instance_buffer,
             instance_capacity,
             staged_instances: Vec::new(),
@@ -1196,6 +1237,7 @@ impl Gpu3D {
         self.staged_instances.clear();
         self.staged_instances.reserve(draws.len());
         self.staged_skeletons.clear();
+        self.staged_custom_params.clear();
         self.draw_batches.clear();
         self.draw_batches.reserve(draws.len());
         self.frustum_cull_staging.clear();
@@ -1273,6 +1315,7 @@ impl Gpu3D {
                     .unwrap_or_default(),
             };
             let material_kind = self.material_pipeline_kind(device, &material);
+            let (custom_params_offset, custom_params_len) = self.stage_custom_params(&material);
             // CPU occlusion query mode works at object granularity.
             // Force whole-mesh batching in that mode so each object can be queried.
             let use_meshlets = !is_debug_point
@@ -1331,6 +1374,8 @@ impl Gpu3D {
                     debug_color(draw.node.as_u64()),
                     skeleton_start,
                     skeleton_count,
+                    custom_params_offset,
+                    custom_params_len,
                 );
                 if is_debug_point {
                     if debug_point_instances.is_empty() {
@@ -1391,6 +1436,8 @@ impl Gpu3D {
                         debug_color((draw.node.as_u64() << 32) ^ meshlet.index_start as u64),
                         skeleton_start,
                         skeleton_count,
+                        custom_params_offset,
+                        custom_params_len,
                     ));
                     // Conservative retained-mode behavior: keep meshlet batches gated by
                     // whole-object bounds so visible objects do not lose arbitrary meshlets.
@@ -1486,6 +1533,14 @@ impl Gpu3D {
                 &self.skeleton_buffer,
                 0,
                 bytemuck::cast_slice(&self.staged_skeletons),
+            );
+        }
+        self.ensure_custom_params_capacity(device, self.staged_custom_params.len().max(1));
+        if !self.staged_custom_params.is_empty() {
+            queue.write_buffer(
+                &self.custom_params_buffer,
+                0,
+                bytemuck::cast_slice(&self.staged_custom_params),
             );
         }
         self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
@@ -1792,9 +1847,48 @@ impl Gpu3D {
                     binding: 1,
                     resource: self.skeleton_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.custom_params_buffer.as_entire_binding(),
+                },
             ],
         });
         self.skeleton_capacity = new_capacity;
+    }
+
+    fn ensure_custom_params_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        if needed <= self.custom_params_capacity {
+            return;
+        }
+        let mut new_capacity = self.custom_params_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.custom_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_custom_material_params"),
+            size: (new_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_camera3d_bg"),
+            layout: &self.camera_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.skeleton_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.custom_params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        self.custom_params_capacity = new_capacity;
     }
 
     fn ensure_frustum_cull_capacity(&mut self, device: &wgpu::Device, needed: usize) {
@@ -3008,6 +3102,8 @@ fn build_instance(
     debug_color: [f32; 4],
     skeleton_start: u32,
     skeleton_count: u32,
+    custom_params_offset: u32,
+    custom_params_len: u32,
 ) -> InstanceGpu {
     let (color, pbr_params, emissive_factor, debug_flag) = if debug_view {
         (debug_color, [0.5, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0], 1.0)
@@ -3073,7 +3169,23 @@ fn build_instance(
             if params.double_sided { 1.0 } else { 0.0 },
             debug_flag,
         ],
-        skeleton_params: [skeleton_start, skeleton_count, 0, 0],
+        skeleton_params: [skeleton_start, skeleton_count, custom_params_offset, custom_params_len],
+    }
+}
+
+#[inline]
+fn encode_custom_param_value(
+    value: &perro_render_bridge::CustomMaterialParamValue3D,
+) -> [f32; 4] {
+    match value {
+        perro_render_bridge::CustomMaterialParamValue3D::F32(v) => [*v, 0.0, 0.0, 0.0],
+        perro_render_bridge::CustomMaterialParamValue3D::I32(v) => [*v as f32, 0.0, 0.0, 0.0],
+        perro_render_bridge::CustomMaterialParamValue3D::Bool(v) => {
+            [if *v { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0]
+        }
+        perro_render_bridge::CustomMaterialParamValue3D::Vec2(v) => [v[0], v[1], 0.0, 0.0],
+        perro_render_bridge::CustomMaterialParamValue3D::Vec3(v) => [v[0], v[1], v[2], 0.0],
+        perro_render_bridge::CustomMaterialParamValue3D::Vec4(v) => *v,
     }
 }
 

@@ -369,7 +369,7 @@ fn apply_standard_static(entries: &[(&str, StaticSceneValue)], out: &mut Standar
             }
             Some("pbrMetallicRoughness") => {
                 if let StaticSceneValue::Object(inner) = value {
-                    apply_standard_static(inner, out, any);
+                    apply_standard_static(*inner, out, any);
                 }
             }
             _ => {}
@@ -619,7 +619,6 @@ fn as_custom_param_value(value: &RuntimeValue) -> Option<CustomMaterialParamValu
         RuntimeValue::Vec4 { x, y, z, w } => {
             Some(CustomMaterialParamValue3D::Vec4([*x, *y, *z, *w]))
         }
-        RuntimeValue::Str(v) => Some(CustomMaterialParamValue3D::Str(v.clone().into())),
         _ => None,
     }
 }
@@ -743,7 +742,7 @@ fn as_color4_static(value: &StaticSceneValue) -> Option<[f32; 4]> {
 fn as_texture_slot_static(value: &StaticSceneValue) -> Option<u32> {
     match value {
         StaticSceneValue::I32(v) if *v >= 0 => Some(*v as u32),
-        StaticSceneValue::Object(entries) => entries.iter().find_map(|(name, inner)| match *name {
+        StaticSceneValue::Object(entries) => (*entries).iter().find_map(|(name, inner)| match *name {
             "index" | "slot" => match inner {
                 StaticSceneValue::I32(v) if *v >= 0 => Some(*v as u32),
                 _ => None,
@@ -766,7 +765,6 @@ fn as_custom_param_value_static(value: &StaticSceneValue) -> Option<CustomMateri
         StaticSceneValue::Vec4 { x, y, z, w } => {
             Some(CustomMaterialParamValue3D::Vec4([*x, *y, *z, *w]))
         }
-        StaticSceneValue::Str(v) => Some(CustomMaterialParamValue3D::Str((*v).into())),
         _ => None,
     }
 }
@@ -775,7 +773,7 @@ fn as_custom_params_static(value: &StaticSceneValue) -> Option<Vec<CustomMateria
     match value {
         StaticSceneValue::Object(entries) => {
             let mut out = Vec::new();
-            for (name, inner) in entries {
+            for (name, inner) in (*entries).iter() {
                 if let Some(val) = as_custom_param_value_static(inner) {
                     out.push(CustomMaterialParam3D {
                         name: Some((*name).into()),

@@ -115,7 +115,6 @@ Supported custom param value types:
 
 - `float`, `int`, `bool`
 - `vec2`, `vec3`, `vec4`
-- `string` (for shader-specific tokens)
 
 See also: `docs/resources/shaders.md` for WGSL authoring notes and current limitations.
 

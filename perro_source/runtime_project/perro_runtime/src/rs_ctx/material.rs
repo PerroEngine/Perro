@@ -112,7 +112,7 @@ impl RuntimeResourceApi {
             return None;
         }
         if let Some(lookup) = self.static_material_lookup {
-            return lookup(source).copied();
+            return lookup(source).cloned();
         }
         material_schema::load_from_source(source)
     }

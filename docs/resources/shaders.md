@@ -62,10 +62,69 @@ Notes for custom shaders:
 
 - `in.material_params` packs: `alpha_mode`, `alpha_cutoff`, `double_sided`, and a debug flag.
 - If you want alpha clipping or blending behavior, implement it in `shade_material`.
+- Use `custom_param(in, index)` to read custom params (each param is a vec4<f32>).
+
+### FragmentInput Fields
+
+`FragmentInput` provides the following fields:
+
+- `world_pos`: world-space position of the fragment.
+- `normal_ws`: world-space normal.
+- `color`: base color (from the material preset).
+- `pbr_params`: a generic `vec4` for preset-specific params.
+  - Standard: `(roughness, metallic, occlusion_strength, normal_scale)`
+  - Unlit: `(0, 0, 0, 0)`
+  - Toon: `(band_count, rim_strength, outline_width, 0)`
+- `emissive_factor`: emissive RGB from the preset.
+- `material_params`: `(alpha_mode, alpha_cutoff, double_sided, debug_flag)`
+- `custom_range`: `(offset, length)` for the custom params block.
+
+Example usage:
+
+```wgsl
+let base = in.color.rgb;
+let roughness = in.pbr_params.x; // if using Standard preset
+let alpha_mode = u32(in.material_params.x + 0.5);
+let glow = custom_param(in, 0u).x;
+```
+
+Custom param packing:
+
+- `F32`, `I32`, `Bool` -> `vec4(x, 0, 0, 0)`
+- `Vec2` -> `vec4(x, y, 0, 0)`
+- `Vec3` -> `vec4(x, y, z, 0)`
+- `Vec4` -> `vec4(x, y, z, w)`
+
+Custom param ordering:
+
+- `custom_param(in, 0u)` maps to the **first** entry in `CustomMaterial3D::params`.
+- Names are metadata only; ordering is what binds to indices.
+
+### Template Example (Complete File)
+
+```wgsl
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let base = in.color.rgb;
+    let alpha_mode = u32(in.material_params.x + 0.5);
+    let alpha_cutoff = clamp(in.material_params.y, 0.0, 1.0);
+    var alpha = clamp(in.color.a, 0.0, 1.0);
+    if alpha_mode == 1u && alpha < alpha_cutoff {
+        discard;
+    }
+    if alpha_mode == 0u {
+        alpha = 1.0;
+    }
+
+    let glow = custom_param(in, 0u).x;
+    let tint = custom_param(in, 1u);
+
+    let color = base * tint.rgb + glow;
+    return vec4<f32>(color, alpha);
+}
+```
 
 ### Current Limitations
 
-- Custom params from `CustomMaterial3D::params` are **not yet bound** to the shader.
-- Custom shaders must use the existing `FragmentInput` fields (color, pbr params, etc.).
-
-Once custom param binding is implemented, this doc will be expanded with the exact layout.
+- Custom params are packed into `vec4<f32>` slots.
+- Custom shaders can implement any shading model, but the only built-in inputs are the fields in
+  `FragmentInput` plus `custom_param(in, index)`.

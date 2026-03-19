@@ -723,7 +723,7 @@ impl Runtime {
                     .render_3d
                     .material_overrides
                     .get(&node)
-                    .copied()
+                    .cloned()
                     .or_else(|| {
                         self.render_3d
                             .material_sources
@@ -1012,10 +1012,10 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
         .project()
         .and_then(|project| project.static_material_lookup)
     {
-        if let Some(material) = lookup(source).copied() {
+        if let Some(material) = lookup(source).cloned() {
             return Some(material);
         }
-        if let Some(material) = lookup(path).copied() {
+        if let Some(material) = lookup(path).cloned() {
             return Some(material);
         }
     }

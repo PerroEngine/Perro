@@ -32,6 +32,8 @@ struct Scene3D {
 var<uniform> scene: Scene3D;
 @group(0) @binding(1)
 var<storage, read> skeletons: array<mat4x4<f32>>;
+@group(0) @binding(2)
+var<storage, read> custom_params: array<vec4<f32>>;
 
 struct VertexInput {
     @location(0) pos: vec3<f32>,
@@ -60,6 +62,7 @@ struct VertexOutput {
     @location(3) pbr_params: vec4<f32>,
     @location(4) emissive_factor: vec3<f32>,
     @location(5) material_params: vec4<f32>,
+    @location(6) custom_range: vec2<u32>,
 };
 
 struct FragmentInput {
@@ -70,6 +73,7 @@ struct FragmentInput {
     @location(3) pbr_params: vec4<f32>,
     @location(4) emissive_factor: vec3<f32>,
     @location(5) material_params: vec4<f32>,
+    @location(6) custom_range: vec2<u32>,
 };
 
 @vertex
@@ -98,7 +102,15 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.pbr_params = inst.pbr_params;
     out.emissive_factor = inst.emissive_factor;
     out.material_params = inst.material_params;
+    out.custom_range = vec2<u32>(inst.skeleton_params.z, inst.skeleton_params.w);
     return out;
+}
+
+fn custom_param(in: FragmentInput, index: u32) -> vec4<f32> {
+    if index >= in.custom_range.y {
+        return vec4<f32>(0.0);
+    }
+    return custom_params[in.custom_range.x + index];
 }
 
 fn distribution_ggx(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {
