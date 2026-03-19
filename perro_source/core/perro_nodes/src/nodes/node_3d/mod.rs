@@ -5,6 +5,7 @@ pub mod node_3d_base;
 pub mod particle_emitter_3d;
 pub mod point_light_3d;
 pub mod ray_light_3d;
+pub mod skeleton_3d;
 pub mod spot_light_3d;
 pub mod terrain_instance_3d;
 
@@ -15,5 +16,6 @@ pub use node_3d_base::*;
 pub use particle_emitter_3d::*;
 pub use point_light_3d::*;
 pub use ray_light_3d::*;
+pub use skeleton_3d::*;
 pub use spot_light_3d::*;
 pub use terrain_instance_3d::*;

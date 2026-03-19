@@ -2,6 +2,7 @@ use super::prepare::PreparedScene;
 use crate::Runtime;
 use perro_ids::NodeID;
 use perro_nodes::{SceneNode, SceneNodeData};
+use perro_resource_context::ResourceContext;
 use std::{borrow::Cow, collections::HashMap};
 
 pub(super) fn merge_prepared_scene(
@@ -24,6 +25,7 @@ pub(super) fn merge_prepared_scene(
     let mut key_to: HashMap<String, NodeID> = HashMap::with_capacity(nodes.len());
     let mut key_order: Vec<String> = Vec::with_capacity(nodes.len());
     let mut parent_pairs = Vec::with_capacity(nodes.len());
+    let resource_api = runtime.resource_api.clone();
 
     for pending in nodes {
         let super::prepare::PendingNode {
@@ -34,6 +36,7 @@ pub(super) fn merge_prepared_scene(
             mesh_source,
             material_source,
             material_inline,
+            skeleton_source,
         } = pending;
 
         if key_to.contains_key(&key) {
@@ -56,6 +59,15 @@ pub(super) fn merge_prepared_scene(
         }
         if let Some(material) = material_inline {
             runtime.render_3d.material_overrides.insert(node, material);
+        }
+        if let Some(source) = skeleton_source {
+            let res = ResourceContext::new(resource_api.as_ref());
+            let bones = res.Skeletons().load_bones(&source);
+            if let Some(node_data) = runtime.nodes.get_mut(node) {
+                if let SceneNodeData::Skeleton3D(skeleton) = &mut node_data.data {
+                    skeleton.bones = bones;
+                }
+            }
         }
         if let Some(parent_key) = parent_key {
             parent_pairs.push((key.clone(), parent_key));

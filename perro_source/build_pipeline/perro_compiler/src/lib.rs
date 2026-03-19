@@ -109,6 +109,9 @@ pub fn compile_project_bundle(project_root: &Path, profile: bool) -> Result<(), 
         cfg.meshlets && cfg.release_meshlets,
     )
     .map_err(|err| CompilerError::SceneParse(format!("mesh static generation failed: {err}")))?;
+    perro_static_pipeline::generate_static_skeletons(project_root).map_err(|err| {
+        CompilerError::SceneParse(format!("skeleton static generation failed: {err}"))
+    })?;
     perro_static_pipeline::generate_static_textures(project_root).map_err(|err| {
         CompilerError::SceneParse(format!("texture static generation failed: {err}"))
     })?;
@@ -387,6 +390,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         material_lookup: static_assets::materials::lookup_material,\n\
         particle_lookup: static_assets::particles::lookup_particle,\n\
         mesh_lookup: static_assets::meshes::lookup_mesh,\n\
+        skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\
         texture_lookup: static_assets::textures::lookup_texture,\n\
         audio_lookup: static_assets::audios::lookup_audio,\n\
         static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\

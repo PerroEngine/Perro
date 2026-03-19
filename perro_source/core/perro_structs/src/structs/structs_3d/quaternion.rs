@@ -78,6 +78,20 @@ impl Quaternion {
     pub fn rotate_xyz(&mut self, x: f32, y: f32, z: f32) -> &mut Self {
         self.rotate_x(x).rotate_y(y).rotate_z(z)
     }
+
+    /// Normalize the quaternion to unit length.
+    #[inline]
+    pub fn normalize(&mut self) -> &mut Self {
+        let len_sq = self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w;
+        if len_sq > 0.0 {
+            let inv_len = len_sq.sqrt().recip();
+            self.x *= inv_len;
+            self.y *= inv_len;
+            self.z *= inv_len;
+            self.w *= inv_len;
+        }
+        self
+    }
 }
 
 // Convenient conversions using From/Into traits

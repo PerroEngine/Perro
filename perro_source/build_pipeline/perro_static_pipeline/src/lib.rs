@@ -4,6 +4,7 @@ mod materials;
 mod meshes;
 mod particles;
 mod scenes;
+mod skeletons;
 mod textures;
 
 pub use audios::generate_static_audios;
@@ -12,6 +13,7 @@ pub use materials::generate_static_materials;
 pub use meshes::generate_static_meshes;
 pub use particles::generate_static_particles;
 pub use scenes::generate_static_scenes;
+pub use skeletons::generate_static_skeletons;
 pub use textures::generate_static_textures;
 
 use std::{
@@ -50,7 +52,7 @@ pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineErro
     fs::create_dir_all(&static_dir)?;
     fs::write(
         static_dir.join("mod.rs"),
-        "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod textures;\npub mod audios;\n",
+        "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod skeletons;\npub mod textures;\npub mod audios;\n",
     )?;
     Ok(())
 }

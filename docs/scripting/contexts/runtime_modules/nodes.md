@@ -86,6 +86,11 @@ Predicates:
 - `base[Node3D]`
 - `base_type[Node3D]`
 
+## Node Types
+
+See the full list and per-node notes here:
+- [Node Types](../../nodes.md)
+
 Composition examples:
 
 ```rust

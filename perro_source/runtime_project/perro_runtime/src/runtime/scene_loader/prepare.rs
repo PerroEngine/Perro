@@ -13,6 +13,7 @@ use perro_nodes::{
     particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
     point_light_3d::PointLight3D,
     ray_light_3d::RayLight3D,
+    skeleton_3d::Skeleton3D,
     spot_light_3d::SpotLight3D,
     sprite_2d::Sprite2D,
     terrain_instance_3d::TerrainInstance3D,
@@ -57,6 +58,7 @@ pub(super) struct PendingNode {
     pub(super) mesh_source: Option<String>,
     pub(super) material_source: Option<String>,
     pub(super) material_inline: Option<Material3D>,
+    pub(super) skeleton_source: Option<String>,
 }
 
 type SceneNodeExtraction = (
@@ -65,6 +67,7 @@ type SceneNodeExtraction = (
     Option<String>,
     Option<String>,
     Option<Material3D>,
+    Option<String>,
 );
 
 pub(super) fn load_runtime_scene_from_disk(
@@ -95,7 +98,7 @@ pub(super) fn prepare_static_scene(scene: &'static StaticScene) -> Result<Prepar
     let mut scripts = Vec::new();
 
     for static_node in scene.nodes {
-        let (node, texture_source, mesh_source, material_source, material_inline) =
+        let (node, texture_source, mesh_source, material_source, material_inline, skeleton_source) =
             scene_node_from_static_entry(static_node)?;
         if let Some(script) = static_node.script {
             scripts.push(PendingScript {
@@ -111,6 +114,7 @@ pub(super) fn prepare_static_scene(scene: &'static StaticScene) -> Result<Prepar
             mesh_source,
             material_source,
             material_inline,
+            skeleton_source,
         });
     }
 
@@ -127,7 +131,7 @@ pub(super) fn prepare_runtime_scene(scene: RuntimeScene) -> Result<PreparedScene
     let mut scripts = Vec::new();
 
     for entry in nodes {
-        let (node, texture_source, mesh_source, material_source, material_inline) =
+        let (node, texture_source, mesh_source, material_source, material_inline, skeleton_source) =
             scene_node_from_runtime_entry(&entry)?;
         if let Some(script) = entry.script {
             scripts.push(PendingScript {
@@ -143,6 +147,7 @@ pub(super) fn prepare_runtime_scene(scene: RuntimeScene) -> Result<PreparedScene
             mesh_source,
             material_source,
             material_inline,
+            skeleton_source,
         });
     }
 
@@ -169,6 +174,7 @@ fn scene_node_from_static_entry(entry: &StaticNodeEntry) -> Result<SceneNodeExtr
     let mesh_source_explicit = extract_mesh_source_static(&entry.data);
     let material_source_explicit = extract_material_source_static(&entry.data);
     let material_inline = extract_material_inline_static(&entry.data);
+    let skeleton_source = extract_skeleton_source_static(&entry.data);
     let model_source = extract_model_source_static(&entry.data);
     let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref()
     {
@@ -190,6 +196,7 @@ fn scene_node_from_static_entry(entry: &StaticNodeEntry) -> Result<SceneNodeExtr
         mesh_source,
         material_source,
         material_inline,
+        skeleton_source,
     ))
 }
 
@@ -210,6 +217,7 @@ fn scene_node_from_runtime_entry(entry: &RuntimeNodeEntry) -> Result<SceneNodeEx
     let mesh_source_explicit = extract_mesh_source(&entry.data);
     let material_source_explicit = extract_material_source(&entry.data);
     let material_inline = extract_material_inline(&entry.data);
+    let skeleton_source = extract_skeleton_source(&entry.data);
     let model_source = extract_model_source(&entry.data);
     let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref()
     {
@@ -231,6 +239,7 @@ fn scene_node_from_runtime_entry(entry: &RuntimeNodeEntry) -> Result<SceneNodeEx
         mesh_source,
         material_source,
         material_inline,
+        skeleton_source,
     ))
 }
 
@@ -244,6 +253,7 @@ fn scene_node_data_from_runtime(data: &RuntimeNodeData) -> Result<SceneNodeData,
         "MeshInstance3D" => Ok(SceneNodeData::MeshInstance3D(
             build_runtime_mesh_instance_3d(data),
         )),
+        "Skeleton3D" => Ok(SceneNodeData::Skeleton3D(build_runtime_skeleton_3d(data))),
         "TerrainInstance3D" => Ok(SceneNodeData::TerrainInstance3D(
             build_runtime_terrain_instance_3d(data),
         )),
@@ -275,6 +285,7 @@ fn scene_node_data_from_static(data: &StaticNodeData) -> Result<SceneNodeData, S
         StaticNodeType::MeshInstance3D => Ok(SceneNodeData::MeshInstance3D(
             build_static_mesh_instance_3d(data),
         )),
+        StaticNodeType::Skeleton3D => Ok(SceneNodeData::Skeleton3D(build_static_skeleton_3d(data))),
         StaticNodeType::TerrainInstance3D => Ok(SceneNodeData::TerrainInstance3D(
             build_static_terrain_instance_3d(data),
         )),
@@ -337,6 +348,16 @@ fn build_runtime_mesh_instance_3d(data: &RuntimeNodeData) -> MeshInstance3D {
     }
     apply_node_3d_fields(&mut node, &data.fields);
     apply_mesh_instance_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_runtime_skeleton_3d(data: &RuntimeNodeData) -> Skeleton3D {
+    let mut node = Skeleton3D::new();
+    if let Some(base) = &data.base {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_skeleton_3d_fields(&mut node, &data.fields);
     node
 }
 
@@ -446,6 +467,16 @@ fn build_static_mesh_instance_3d(data: &StaticNodeData) -> MeshInstance3D {
     }
     apply_node_3d_fields_static(&mut node, data.fields);
     apply_mesh_instance_3d_fields_static(&mut node, data.fields);
+    node
+}
+
+fn build_static_skeleton_3d(data: &StaticNodeData) -> Skeleton3D {
+    let mut node = Skeleton3D::new();
+    if let Some(base) = data.base {
+        apply_node_3d_data_static(&mut node, base);
+    }
+    apply_node_3d_fields_static(&mut node, data.fields);
+    apply_skeleton_3d_fields_static(&mut node, data.fields);
     node
 }
 
@@ -627,6 +658,8 @@ fn apply_node_3d_fields(node: &mut Node3D, fields: &[(String, RuntimeValue)]) {
 }
 
 fn apply_mesh_instance_3d_fields(_node: &mut MeshInstance3D, _fields: &[(String, RuntimeValue)]) {}
+
+fn apply_skeleton_3d_fields(_node: &mut Skeleton3D, _fields: &[(String, RuntimeValue)]) {}
 
 fn apply_terrain_instance_3d_fields(
     node: &mut TerrainInstance3D,
@@ -992,6 +1025,12 @@ fn apply_node_3d_fields_static(node: &mut Node3D, fields: &[(&str, StaticSceneVa
 
 fn apply_mesh_instance_3d_fields_static(
     _node: &mut MeshInstance3D,
+    _fields: &[(&str, StaticSceneValue)],
+) {
+}
+
+fn apply_skeleton_3d_fields_static(
+    _node: &mut Skeleton3D,
     _fields: &[(&str, StaticSceneValue)],
 ) {
 }
@@ -1395,6 +1434,17 @@ fn extract_model_source(data: &RuntimeNodeData) -> Option<String> {
     data.fields
         .iter()
         .find_map(|(name, value)| (name == "model").then(|| as_asset_source(value)).flatten())
+}
+
+fn extract_skeleton_source(data: &RuntimeNodeData) -> Option<String> {
+    if data.ty != "Skeleton3D" {
+        return None;
+    }
+    data.fields.iter().find_map(|(name, value)| {
+        (name == "skeleton")
+            .then(|| as_asset_source(value))
+            .flatten()
+    })
 }
 
 // Static value parsers
@@ -1813,6 +1863,17 @@ fn extract_model_source_static(data: &StaticNodeData) -> Option<String> {
     }
     data.fields.iter().find_map(|(name, value)| {
         (*name == "model")
+            .then(|| as_asset_source_static(value))
+            .flatten()
+    })
+}
+
+fn extract_skeleton_source_static(data: &StaticNodeData) -> Option<String> {
+    if data.ty != StaticNodeType::Skeleton3D {
+        return None;
+    }
+    data.fields.iter().find_map(|(name, value)| {
+        (*name == "skeleton")
             .then(|| as_asset_source_static(value))
             .flatten()
     })

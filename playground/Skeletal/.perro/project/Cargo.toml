@@ -1,27 +1,32 @@
-[workspace]
+[dependencies]
+perro = "0.1.0"
+perro_app = "0.1.0"
+perro_render_bridge = "0.1.0"
+perro_scene = "0.1.0"
+
+[dependencies.scripts]
+path = "../scripts"
+
+[features]
+profile = ["perro_app/profile"]
 
 [package]
+edition = "2024"
 name = "skeletal"
 version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-perro_app = "0.1.0"
-perro = "0.1.0"
-perro_scene = "0.1.0"
-perro_render_bridge = "0.1.0"
-scripts = { path = "../scripts" }
 
 [profile.release]
-opt-level = 3
-lto = "fat"
 codegen-units = 1
-panic = "abort"
-strip = "symbols"
-incremental = true
 debug = false
 debug-assertions = false
+incremental = true
+lto = "fat"
+opt-level = 3
 overflow-checks = false
+panic = "abort"
+strip = "symbols"
+
+[workspace]
 
 [patch.crates-io]
 perro_ids = { path = "../../../../perro_source/core/perro_ids" }

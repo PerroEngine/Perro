@@ -1,7 +1,50 @@
 @root = main
 
 [main]
-
 [Node3D]
 [/Node3D]
+
 [/main]
+
+[skel]
+    parent = @root
+    script = "res://scripts/script.rs"
+    [Skeleton3D]
+    skeleton = "res://skeleton.glb:skeleton[0]"
+        [Node3D]
+        position = (0, 0, 0)
+        [/Node3D]
+    [/Skeleton3D]
+[/skel]
+
+
+[Mesh]
+parent = skel
+    [MeshInstance3D]
+    mesh = "res://skeleton.glb:mesh[0]"
+        [Node3D]
+        [/Node3D]
+    [/MeshInstance3D]
+[/Mesh]
+
+
+[camera]
+parent = @root
+
+    [Camera3D]
+        active = true
+  
+
+        [Node3D]
+            position = (0, 0, 8)
+        [/Node3D]
+    [/Camera3D]
+[/camera]
+
+[ambient]
+parent = @root
+[AmbientLight3D]
+    color = (1.0, 1.0, 1.0)
+    intensity = 0.5
+[/AmbientLight3D]
+[/ambient]

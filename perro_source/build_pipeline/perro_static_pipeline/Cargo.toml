@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+perro_structs = "0.1.0"
 perro_io = "0.1.0"
 perro_meshlets = "0.1.0"
 perro_scene = "0.1.0"
 image = { version = "0.25.9", default-features = true }
-gltf = "1.4.1"
+gltf = { version = "1.4.1", features = ["import", "utils"] }
 rayon = "1.10"
 perro_particle_math = "0.1.0"

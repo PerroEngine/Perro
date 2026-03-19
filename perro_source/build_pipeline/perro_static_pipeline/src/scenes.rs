@@ -250,6 +250,7 @@ fn emit_static_node_type(ty: &str) -> Result<&'static str, StaticPipelineError> 
         "Camera2D" => Ok("StaticNodeType::Camera2D"),
         "Node3D" => Ok("StaticNodeType::Node3D"),
         "MeshInstance3D" => Ok("StaticNodeType::MeshInstance3D"),
+        "Skeleton3D" => Ok("StaticNodeType::Skeleton3D"),
         "Camera3D" => Ok("StaticNodeType::Camera3D"),
         "AmbientLight3D" => Ok("StaticNodeType::AmbientLight3D"),
         "RayLight3D" => Ok("StaticNodeType::RayLight3D"),

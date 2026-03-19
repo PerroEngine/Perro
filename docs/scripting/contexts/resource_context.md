@@ -14,6 +14,7 @@ Accessors:
 - `res.Audio()`
 - `res.Meshes()`
 - `res.Materials()`
+- `res.Skeletons()`
 - `res.Terrain()`
 
 ## Resource Modules
@@ -22,6 +23,7 @@ Accessors:
 - [Audio Module](resource_modules/audio.md)
 - [Meshes Module](resource_modules/meshes.md)
 - [Materials Module](resource_modules/materials.md)
+- [Skeletons Module](resource_modules/skeletons.md)
 - [Terrain Module](resource_modules/terrain.md)
 
 Each module page contains:
@@ -42,6 +44,7 @@ Reserve convention:
 let texture_id = texture_load!(res, "res://textures/smoke.png");
 let mesh_id = mesh_load!(res, "res://meshes/rock.glb");
 let material_id = material_load!(res, "res://materials/smoke.pmat");
+let bones = skeleton_load_bones!(res, "res://models/rig.gltf:skeleton[0]");
 let _reserved = texture_reserve!(res, "res://textures/smoke.png");
 let _ = mesh_drop!(res, "res://meshes/old.glb");
 

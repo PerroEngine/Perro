@@ -646,9 +646,9 @@ impl Runtime {
                             mesh_instance.mesh = id;
                         }
                     }
-                    crate::RuntimeRenderResult::Failed(_)
-                    | crate::RuntimeRenderResult::Texture(_)
-                    | crate::RuntimeRenderResult::Material(_) => {}
+                crate::RuntimeRenderResult::Failed(_)
+                | crate::RuntimeRenderResult::Texture(_)
+                | crate::RuntimeRenderResult::Material(_) => {}
                 }
             }
             if mesh.is_nil() {
@@ -688,9 +688,9 @@ impl Runtime {
                             mesh_instance.material = id;
                         }
                     }
-                    crate::RuntimeRenderResult::Failed(_)
-                    | crate::RuntimeRenderResult::Texture(_)
-                    | crate::RuntimeRenderResult::Mesh(_) => {}
+                crate::RuntimeRenderResult::Failed(_)
+                | crate::RuntimeRenderResult::Texture(_)
+                | crate::RuntimeRenderResult::Mesh(_) => {}
                 }
             }
             if material.is_nil() {

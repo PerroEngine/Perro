@@ -1,0 +1,73 @@
+# Node Types
+
+This page lists the built-in node types and their purpose. Nodes store **data-only** state.
+Rendering and resource loading are handled by the runtime and `ResourceContext`.
+
+## 2D Nodes
+
+`Node2D`
+- Base transform for 2D nodes (position, rotation, scale, z_index, visible).
+
+`Sprite2D`
+- Renders a textured quad.
+- Holds a `TextureID` (not raw pixels). Use `Texture` module to load.
+
+`Camera2D`
+- Active 2D camera (position/rotation/zoom).
+
+## 3D Nodes
+
+`Node3D`
+- Base transform for 3D nodes (position, rotation, scale, visible).
+
+`MeshInstance3D`
+- Renders a mesh with a material.
+- Holds `MeshID` and `MaterialID` instead of raw mesh/material data.
+- Reason: resource IDs allow caching, reuse, and async GPU upload.
+
+`TerrainInstance3D`
+- Runtime terrain renderer instance (terrain data is managed through `ResourceContext::Terrain()`).
+
+`Camera3D`
+- Active 3D camera with projection settings.
+
+`ParticleEmitter3D`
+- 3D particle emitter driven by a particle profile.
+
+Lights:
+- `AmbientLight3D`
+- `RayLight3D`
+- `PointLight3D`
+- `SpotLight3D`
+
+`Skeleton3D`
+- Holds `Vec<Bone3D>` (data-only).
+- Bones are loaded via `ResourceContext::Skeletons().load_bones(source)`.
+- Typical flow: scene specifies a `skeleton` path, and scene loader fills `bones`.
+
+## Bone3D
+
+`Bone3D` fields:
+- `name`: bone name
+- `parent`: parent bone index (`-1` for root)
+- `rest`: rest transform (local)
+- `inv_bind`: inverse bind transform
+
+## Skeleton Load Patterns
+
+From scene:
+```
+[Rig]
+    skeleton = "res://models/rig.gltf:skeleton[0]"
+    [Skeleton3D]
+    [/Skeleton3D]
+[/Rig]
+```
+
+From script:
+```rust
+let bones = skeleton_load_bones!(res, "res://models/rig.gltf:skeleton[0]");
+with_node_mut!(ctx, Skeleton3D, node_id, |skel| {
+    skel.bones = bones;
+});
+```

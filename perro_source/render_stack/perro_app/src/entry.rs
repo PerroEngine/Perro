@@ -136,6 +136,7 @@ pub struct StaticEmbeddedAssetsConfig {
     pub material_lookup: perro_runtime::StaticMaterialLookup,
     pub particle_lookup: perro_runtime::StaticParticleLookup,
     pub mesh_lookup: perro_graphics::StaticMeshLookup,
+    pub skeleton_lookup: perro_runtime::StaticSkeletonLookup,
     pub texture_lookup: perro_graphics::StaticTextureLookup,
     pub audio_lookup: perro_runtime::StaticAudioLookup,
     pub static_script_registry: Option<StaticScriptRegistry>,
@@ -168,6 +169,7 @@ pub fn run_static_embedded_project(
         .with_static_scene_lookup(input.assets.scene_lookup)
         .with_static_material_lookup(input.assets.material_lookup)
         .with_static_particle_lookup(input.assets.particle_lookup)
+        .with_static_skeleton_lookup(input.assets.skeleton_lookup)
         .with_static_audio_lookup(input.assets.audio_lookup)
         .with_perro_assets_bytes(input.assets.perro_assets);
 

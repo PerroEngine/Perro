@@ -10,6 +10,7 @@ Core pieces:
 
 See:
 - [Script Contexts](contexts/README.md)
+- [Node Types](nodes.md)
 - [Script State](state.md)
 - [Script Lifecycle](lifecycle.md)
 - [Script Methods](methods.md)
