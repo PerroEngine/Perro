@@ -1,4 +1,5 @@
 use perro::prelude::*;
+use std::borrow::Cow;
 
 type SelfNodeType = Camera3D;
 
@@ -46,6 +47,65 @@ lifecycle!({
         node: NodeID,
     ) {
         let dt = delta_time!(ctx);
+
+        let mut requested_post: Option<Cow<'static, [PostProcessEffect]>> = None;
+
+        if ipt.Keys().pressed(KeyCode::Digit0) {
+            requested_post = Some(Cow::Borrowed(&[]));
+        }
+        if ipt.Keys().pressed(KeyCode::Digit1) {
+            requested_post = Some(Cow::Owned(vec![PostProcessEffect::Blur { strength: 4.0 }]));
+        }
+        if ipt.Keys().pressed(KeyCode::Digit2) {
+            requested_post = Some(Cow::Owned(vec![PostProcessEffect::Pixelate { size: 10.0 }]));
+        }
+        if ipt.Keys().pressed(KeyCode::Digit3) {
+            requested_post = Some(Cow::Owned(vec![PostProcessEffect::Warp {
+                waves: 12.0,
+                strength: 6.0,
+            }]));
+        }
+        if ipt.Keys().pressed(KeyCode::Digit4) {
+            requested_post = Some(Cow::Owned(vec![PostProcessEffect::Vignette {
+                strength: 0.5,
+                radius: 0.35,
+                softness: 0.1,
+            }]));
+        }
+        if ipt.Keys().pressed(KeyCode::Digit5) {
+            requested_post = Some(Cow::Owned(vec![PostProcessEffect::Crt {
+                scanline_strength: 0.85,
+                curvature: 0.35,
+                chromatic: 5.0,
+                vignette: 0.2,
+            }]));
+        }
+        if ipt.Keys().pressed(KeyCode::Digit6) {
+            requested_post = Some(Cow::Owned(vec![PostProcessEffect::ColorFilter {
+                color: [1.0, 0.8, 0.6],
+                strength: 0.95,
+            }]));
+        }
+        if ipt.Keys().pressed(KeyCode::Digit7) {
+            requested_post = Some(Cow::Owned(vec![PostProcessEffect::ReverseFilter {
+                color: [0.1, 0.8, 0.2],
+                strength: 0.98,
+                softness: 0.3,
+            }]));
+        }
+        if ipt.Keys().pressed(KeyCode::Digit8) {
+            requested_post = Some(Cow::Owned(vec![PostProcessEffect::BlackWhite {
+                amount: 1.0,
+            }]));
+        }
+        if ipt.Keys().pressed(KeyCode::Digit9) {
+            requested_post = Some(Cow::Owned(vec![PostProcessEffect::Bloom {
+                threshold: 0.35,
+                radius: 2.0,
+                strength: 1.0,
+            }]));
+        }
+
         let middle_down = ipt.Mouse().down(MouseButton::Middle);
         let mouse_delta = ipt.Mouse().delta();
         let wheel = ipt.Mouse().wheel();
@@ -76,11 +136,21 @@ lifecycle!({
         let mut move_right = 0.0_f32;
         let mut y = 0.0_f32;
 
-        if ipt.Keys().down(KeyCode::KeyW) { move_forward += 1.0; }
-        if ipt.Keys().down(KeyCode::KeyS) { move_forward -= 1.0; }
-        if ipt.Keys().down(KeyCode::KeyA) { move_right -= 1.0; }
-        if ipt.Keys().down(KeyCode::KeyD) { move_right += 1.0; }
-        if ipt.Keys().down(KeyCode::Space) { y += 1.0; }
+        if ipt.Keys().down(KeyCode::KeyW) {
+            move_forward += 1.0;
+        }
+        if ipt.Keys().down(KeyCode::KeyS) {
+            move_forward -= 1.0;
+        }
+        if ipt.Keys().down(KeyCode::KeyA) {
+            move_right -= 1.0;
+        }
+        if ipt.Keys().down(KeyCode::KeyD) {
+            move_right += 1.0;
+        }
+        if ipt.Keys().down(KeyCode::Space) {
+            y += 1.0;
+        }
         if ipt.Keys().down(KeyCode::ShiftLeft) || ipt.Keys().down(KeyCode::ShiftRight) {
             y -= 1.0;
         }
@@ -102,6 +172,10 @@ lifecycle!({
             camera.position.x += move_x * step;
             camera.position.y += y * step;
             camera.position.z += move_z * step;
+
+            if let Some(post) = requested_post {
+                camera.post_processing = post;
+            }
         });
     }
 
@@ -124,6 +198,4 @@ lifecycle!({
     }
 });
 
-methods!({
-   
-});
+methods!({});

@@ -5,6 +5,37 @@ pub enum PostProcessEffect {
     Blur { strength: f32 },
     Pixelate { size: f32 },
     Warp { waves: f32, strength: f32 },
+    Vignette {
+        strength: f32,
+        radius: f32,
+        softness: f32,
+    },
+    Crt {
+        scanline_strength: f32,
+        curvature: f32,
+        chromatic: f32,
+        vignette: f32,
+    },
+    ColorFilter {
+        color: [f32; 3],
+        strength: f32,
+    },
+    ReverseFilter {
+        color: [f32; 3],
+        strength: f32,
+        softness: f32,
+    },
+    Bloom {
+        strength: f32,
+        threshold: f32,
+        radius: f32,
+    },
+    Saturate {
+        amount: f32,
+    },
+    BlackWhite {
+        amount: f32,
+    },
     Custom {
         shader_path: Cow<'static, str>,
         params: Cow<'static, [CustomPostParam]>,

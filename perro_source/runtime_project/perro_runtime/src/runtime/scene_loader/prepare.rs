@@ -1715,6 +1715,15 @@ fn post_effect_from_runtime(value: &RuntimeValue) -> Option<PostProcessEffect> {
     let mut strength: Option<f32> = None;
     let mut size: Option<f32> = None;
     let mut waves: Option<f32> = None;
+    let mut radius: Option<f32> = None;
+    let mut softness: Option<f32> = None;
+    let mut scanline_strength: Option<f32> = None;
+    let mut curvature: Option<f32> = None;
+    let mut chromatic: Option<f32> = None;
+    let mut vignette: Option<f32> = None;
+    let mut color: Option<[f32; 3]> = None;
+    let mut threshold: Option<f32> = None;
+    let mut amount: Option<f32> = None;
     let mut shader_path: Option<String> = None;
     let mut params: Option<Vec<CustomPostParam>> = None;
 
@@ -1728,6 +1737,19 @@ fn post_effect_from_runtime(value: &RuntimeValue) -> Option<PostProcessEffect> {
             "strength" => strength = as_f32(v),
             "size" => size = as_f32(v),
             "waves" => waves = as_f32(v),
+            "radius" => radius = as_f32(v),
+            "softness" | "feather" => softness = as_f32(v),
+            "scanlines" | "scanline_strength" => scanline_strength = as_f32(v),
+            "curvature" => curvature = as_f32(v),
+            "chromatic" | "chromatic_aberration" => chromatic = as_f32(v),
+            "vignette" => vignette = as_f32(v),
+            "color" | "tint" => {
+                if let Some(c) = as_vec3(v) {
+                    color = Some([c.x, c.y, c.z]);
+                }
+            }
+            "threshold" => threshold = as_f32(v),
+            "amount" => amount = as_f32(v),
             "shader" | "shader_path" => {
                 if let Some(s) = as_str(v) {
                     shader_path = Some(s.to_string());
@@ -1749,6 +1771,37 @@ fn post_effect_from_runtime(value: &RuntimeValue) -> Option<PostProcessEffect> {
             waves: waves.unwrap_or(1.0),
             strength: strength.unwrap_or(1.0),
         }),
+        "vignette" => Some(PostProcessEffect::Vignette {
+            strength: strength.unwrap_or(0.6),
+            radius: radius.unwrap_or(0.55),
+            softness: softness.unwrap_or(0.25),
+        }),
+        "crt" => Some(PostProcessEffect::Crt {
+            scanline_strength: scanline_strength.unwrap_or(0.35),
+            curvature: curvature.unwrap_or(0.15),
+            chromatic: chromatic.unwrap_or(1.0),
+            vignette: vignette.unwrap_or(0.25),
+        }),
+        "colorfilter" | "color_filter" | "filter" => Some(PostProcessEffect::ColorFilter {
+            color: color.unwrap_or([1.0, 1.0, 1.0]),
+            strength: strength.unwrap_or(1.0),
+        }),
+        "reversefilter" | "reverse_filter" | "reverse" => Some(PostProcessEffect::ReverseFilter {
+            color: color.unwrap_or([1.0, 1.0, 1.0]),
+            strength: strength.unwrap_or(1.0),
+            softness: softness.unwrap_or(0.2),
+        }),
+        "bloom" => Some(PostProcessEffect::Bloom {
+            strength: strength.unwrap_or(0.6),
+            threshold: threshold.unwrap_or(0.7),
+            radius: radius.unwrap_or(1.25),
+        }),
+        "saturate" | "saturation" => Some(PostProcessEffect::Saturate {
+            amount: amount.or(strength).unwrap_or(1.2),
+        }),
+        "black_white" | "blackwhite" | "bw" | "grayscale" => Some(PostProcessEffect::BlackWhite {
+            amount: amount.or(strength).unwrap_or(1.0),
+        }),
         "custom" => {
             let shader_path = shader_path?;
             let params = params.unwrap_or_default();
@@ -1769,6 +1822,15 @@ fn post_effect_from_static(value: &StaticSceneValue) -> Option<PostProcessEffect
     let mut strength: Option<f32> = None;
     let mut size: Option<f32> = None;
     let mut waves: Option<f32> = None;
+    let mut radius: Option<f32> = None;
+    let mut softness: Option<f32> = None;
+    let mut scanline_strength: Option<f32> = None;
+    let mut curvature: Option<f32> = None;
+    let mut chromatic: Option<f32> = None;
+    let mut vignette: Option<f32> = None;
+    let mut color: Option<[f32; 3]> = None;
+    let mut threshold: Option<f32> = None;
+    let mut amount: Option<f32> = None;
     let mut shader_path: Option<String> = None;
     let mut params: Option<Vec<CustomPostParam>> = None;
 
@@ -1782,6 +1844,19 @@ fn post_effect_from_static(value: &StaticSceneValue) -> Option<PostProcessEffect
             "strength" => strength = as_f32_static(v),
             "size" => size = as_f32_static(v),
             "waves" => waves = as_f32_static(v),
+            "radius" => radius = as_f32_static(v),
+            "softness" | "feather" => softness = as_f32_static(v),
+            "scanlines" | "scanline_strength" => scanline_strength = as_f32_static(v),
+            "curvature" => curvature = as_f32_static(v),
+            "chromatic" | "chromatic_aberration" => chromatic = as_f32_static(v),
+            "vignette" => vignette = as_f32_static(v),
+            "color" | "tint" => {
+                if let Some(c) = as_vec3_static(v) {
+                    color = Some([c.x, c.y, c.z]);
+                }
+            }
+            "threshold" => threshold = as_f32_static(v),
+            "amount" => amount = as_f32_static(v),
             "shader" | "shader_path" => {
                 if let Some(s) = as_str_static(v) {
                     shader_path = Some(s.to_string());
@@ -1802,6 +1877,37 @@ fn post_effect_from_static(value: &StaticSceneValue) -> Option<PostProcessEffect
         "warp" => Some(PostProcessEffect::Warp {
             waves: waves.unwrap_or(1.0),
             strength: strength.unwrap_or(1.0),
+        }),
+        "vignette" => Some(PostProcessEffect::Vignette {
+            strength: strength.unwrap_or(0.6),
+            radius: radius.unwrap_or(0.55),
+            softness: softness.unwrap_or(0.25),
+        }),
+        "crt" => Some(PostProcessEffect::Crt {
+            scanline_strength: scanline_strength.unwrap_or(0.35),
+            curvature: curvature.unwrap_or(0.15),
+            chromatic: chromatic.unwrap_or(1.0),
+            vignette: vignette.unwrap_or(0.25),
+        }),
+        "colorfilter" | "color_filter" | "filter" => Some(PostProcessEffect::ColorFilter {
+            color: color.unwrap_or([1.0, 1.0, 1.0]),
+            strength: strength.unwrap_or(1.0),
+        }),
+        "reversefilter" | "reverse_filter" | "reverse" => Some(PostProcessEffect::ReverseFilter {
+            color: color.unwrap_or([1.0, 1.0, 1.0]),
+            strength: strength.unwrap_or(1.0),
+            softness: softness.unwrap_or(0.2),
+        }),
+        "bloom" => Some(PostProcessEffect::Bloom {
+            strength: strength.unwrap_or(0.6),
+            threshold: threshold.unwrap_or(0.7),
+            radius: radius.unwrap_or(1.25),
+        }),
+        "saturate" | "saturation" => Some(PostProcessEffect::Saturate {
+            amount: amount.or(strength).unwrap_or(1.2),
+        }),
+        "black_white" | "blackwhite" | "bw" | "grayscale" => Some(PostProcessEffect::BlackWhite {
+            amount: amount.or(strength).unwrap_or(1.0),
         }),
         "custom" => {
             let shader_path = shader_path?;

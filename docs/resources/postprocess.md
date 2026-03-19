@@ -8,9 +8,26 @@ the active 2D camera.
 
 ## Built-In Effects
 
-- `blur` (`strength`)
-- `pixelate` (`size`)
-- `warp` (`waves`, `strength`)
+- `blur` (`strength`)  
+  3x3 blur; higher strength increases sample offset.
+- `pixelate` (`size`)  
+  Pixel size in screen pixels.
+- `warp` (`waves`, `strength`)  
+  Horizontal sine‑wave distortion.
+- `vignette` (`strength`, `radius`, `softness`)  
+  Darkens edges; `radius` is the start of falloff.
+- `crt` (`scanlines`, `curvature`, `chromatic`, `vignette`)  
+  Scanlines, mild screen curvature, chromatic offset, and a vignette.
+- `color_filter` (`color`, `strength`)  
+  Multiplies the scene by `color`, mixed by `strength`.
+- `reverse_filter` (`color`, `strength`, `softness`)  
+  Keeps colors close to `color` while others wash toward grayscale.
+- `bloom` (`strength`, `threshold`, `radius`)  
+  Bright‑only blur added back into the image.
+- `saturate` (`amount`)  
+  0 = grayscale, 1 = original, >1 boosts saturation.
+- `black_white` (`amount`)  
+  0 = original, 1 = full black & white.
 - `custom` (`shader`/`shader_path`, optional `params`)
 
 ## Scene Authoring
@@ -23,9 +40,16 @@ the active 2D camera.
     [Camera3D]
         active = true
 post_processing = [
-    { type = "blur", strength = 2.0 }
-    { type = "pixelate", size = 6.0 }
-    { type = "warp", waves = 8.0, strength = 3.0 }
+    { type = "blur", strength = 2.0 },
+    { type = "pixelate", size = 6.0 },
+    { type = "warp", waves = 8.0, strength = 3.0 },
+    { type = "vignette", strength = 0.6, radius = 0.55, softness = 0.25 },
+    { type = "crt", scanlines = 0.35, curvature = 0.15, chromatic = 1.0, vignette = 0.25 },
+    { type = "color_filter", color = (1.0, 0.8, 0.6), strength = 0.8 },
+    { type = "reverse_filter", color = (0.1, 0.8, 0.2), strength = 0.9, softness = 0.2 },
+    { type = "bloom", strength = 0.7, threshold = 0.75, radius = 1.5 },
+    { type = "saturate", amount = 1.2 },
+    { type = "black_white", amount = 1.0 },
     {
         type = "custom",
         shader = "res://shaders/post_edge.wgsl",
@@ -48,6 +72,16 @@ Borrowed (static slice):
 static FX: &[PostProcessEffect] = &[
     PostProcessEffect::Blur { strength: 2.0 },
     PostProcessEffect::Pixelate { size: 5.0 },
+    PostProcessEffect::Vignette {
+        strength: 0.6,
+        radius: 0.55,
+        softness: 0.25,
+    },
+    PostProcessEffect::ColorFilter {
+        color: [1.0, 0.8, 0.6],
+        strength: 0.8,
+    },
+    PostProcessEffect::BlackWhite { amount: 1.0 },
 ];
 
 with_node_mut!(ctx, Camera3D, cam_id, |cam| {
@@ -79,7 +113,7 @@ The engine provides a prelude with:
 
 - `input_tex` + `input_sampler` (color)
 - `depth_tex` (depth, if your shader uses it)
-- `post` uniform (resolution, inv_resolution, near, far, projection_mode)
+- `post` uniform (resolution, inv_resolution, near, far, projection_mode, time)
 - `custom_params` (optional `vec4<f32>` array from `params`)
 
 Use `type = "custom"` with `shader = "res://path/to/shader.wgsl"` in scenes, or

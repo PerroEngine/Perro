@@ -1,9 +1,32 @@
-pub const BUILTIN_POST_WGSL: &str = include_str!("shaders/postprocess_builtin.wgsl");
+const BUILTIN_POST_BODY_WGSL: &str = include_str!("shaders/postprocess_builtin_body.wgsl");
+const EFFECT_BLUR_WGSL: &str = include_str!("shaders/effects/blur.wgsl");
+const EFFECT_PIXELATE_WGSL: &str = include_str!("shaders/effects/pixelate.wgsl");
+const EFFECT_WARP_WGSL: &str = include_str!("shaders/effects/warp.wgsl");
+const EFFECT_VIGNETTE_WGSL: &str = include_str!("shaders/effects/vignette.wgsl");
+const EFFECT_CRT_WGSL: &str = include_str!("shaders/effects/crt.wgsl");
+const EFFECT_COLOR_FILTER_WGSL: &str = include_str!("shaders/effects/color_filter.wgsl");
+const EFFECT_REVERSE_FILTER_WGSL: &str = include_str!("shaders/effects/reverse_filter.wgsl");
+const EFFECT_BLOOM_WGSL: &str = include_str!("shaders/effects/bloom.wgsl");
+const EFFECT_SATURATE_WGSL: &str = include_str!("shaders/effects/saturate.wgsl");
+const EFFECT_BLACK_WHITE_WGSL: &str = include_str!("shaders/effects/black_white.wgsl");
 
 pub fn create_builtin_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
+    let mut wgsl = String::new();
+    wgsl.push_str(PRELUDE_WGSL);
+    wgsl.push_str(EFFECT_BLUR_WGSL);
+    wgsl.push_str(EFFECT_PIXELATE_WGSL);
+    wgsl.push_str(EFFECT_WARP_WGSL);
+    wgsl.push_str(EFFECT_VIGNETTE_WGSL);
+    wgsl.push_str(EFFECT_CRT_WGSL);
+    wgsl.push_str(EFFECT_COLOR_FILTER_WGSL);
+    wgsl.push_str(EFFECT_REVERSE_FILTER_WGSL);
+    wgsl.push_str(EFFECT_BLOOM_WGSL);
+    wgsl.push_str(EFFECT_SATURATE_WGSL);
+    wgsl.push_str(EFFECT_BLACK_WHITE_WGSL);
+    wgsl.push_str(BUILTIN_POST_BODY_WGSL);
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_post_builtin"),
-        source: wgpu::ShaderSource::Wgsl(BUILTIN_POST_WGSL.into()),
+        source: wgpu::ShaderSource::Wgsl(wgsl.into()),
     })
 }
 
@@ -28,6 +51,7 @@ struct PostUniform {
     inv_resolution: vec2<f32>,
     near: f32,
     far: f32,
+    time: vec2<f32>,
 };
 
 @group(0) @binding(0) var input_tex: texture_2d<f32>;

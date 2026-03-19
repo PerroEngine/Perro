@@ -12,6 +12,13 @@ const EFFECT_CUSTOM: u32 = 0;
 const EFFECT_BLUR: u32 = 1;
 const EFFECT_PIXELATE: u32 = 2;
 const EFFECT_WARP: u32 = 3;
+const EFFECT_VIGNETTE: u32 = 4;
+const EFFECT_CRT: u32 = 5;
+const EFFECT_COLOR_FILTER: u32 = 6;
+const EFFECT_REVERSE_FILTER: u32 = 7;
+const EFFECT_BLOOM: u32 = 8;
+const EFFECT_SATURATE: u32 = 9;
+const EFFECT_BLACK_WHITE: u32 = 10;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -28,7 +35,7 @@ struct PostUniform {
     inv_resolution: [f32; 2],
     near: f32,
     far: f32,
-    _pad1: [f32; 2],
+    time: [f32; 2],
 }
 
 pub struct PostProcessor {
@@ -48,6 +55,7 @@ pub struct PostProcessor {
     uniform_buffer: wgpu::Buffer,
     params_buffer: wgpu::Buffer,
     params_capacity: usize,
+    frame_counter: u64,
 }
 
 impl PostProcessor {
@@ -157,6 +165,7 @@ impl PostProcessor {
             uniform_buffer,
             params_buffer,
             params_capacity,
+            frame_counter: 0,
         }
     }
 
@@ -214,6 +223,8 @@ impl PostProcessor {
         let height = self.height.max(1) as f32;
         let inv_width = 1.0 / width;
         let inv_height = 1.0 / height;
+        self.frame_counter = self.frame_counter.wrapping_add(1);
+        let time = self.frame_counter as f32;
 
         let mut max_params = 0usize;
         for effect in effects {
@@ -270,7 +281,7 @@ impl PostProcessor {
                 inv_resolution: [inv_width, inv_height],
                 near,
                 far,
-                _pad1: [0.0, 0.0],
+                time: [time, time],
             };
             queue.write_buffer(&uniform_buffer, 0, bytemuck::bytes_of(&uniform));
 
@@ -495,6 +506,79 @@ fn encode_effect_params(
         PostProcessEffect::Warp { waves, strength } => (
             EFFECT_WARP,
             [*waves, *strength, 0.0, 0.0],
+            [0.0; 4],
+            [0.0; 4],
+            [0.0; 4],
+            Vec::new(),
+        ),
+        PostProcessEffect::Vignette {
+            strength,
+            radius,
+            softness,
+        } => (
+            EFFECT_VIGNETTE,
+            [*strength, *radius, *softness, 0.0],
+            [0.0; 4],
+            [0.0; 4],
+            [0.0; 4],
+            Vec::new(),
+        ),
+        PostProcessEffect::Crt {
+            scanline_strength,
+            curvature,
+            chromatic,
+            vignette,
+        } => (
+            EFFECT_CRT,
+            [*scanline_strength, *curvature, *chromatic, *vignette],
+            [0.0; 4],
+            [0.0; 4],
+            [0.0; 4],
+            Vec::new(),
+        ),
+        PostProcessEffect::ColorFilter { color, strength } => (
+            EFFECT_COLOR_FILTER,
+            [color[0], color[1], color[2], *strength],
+            [0.0; 4],
+            [0.0; 4],
+            [0.0; 4],
+            Vec::new(),
+        ),
+        PostProcessEffect::ReverseFilter {
+            color,
+            strength,
+            softness,
+        } => (
+            EFFECT_REVERSE_FILTER,
+            [color[0], color[1], color[2], *strength],
+            [*softness, 0.0, 0.0, 0.0],
+            [0.0; 4],
+            [0.0; 4],
+            Vec::new(),
+        ),
+        PostProcessEffect::Bloom {
+            strength,
+            threshold,
+            radius,
+        } => (
+            EFFECT_BLOOM,
+            [*strength, *threshold, *radius, 0.0],
+            [0.0; 4],
+            [0.0; 4],
+            [0.0; 4],
+            Vec::new(),
+        ),
+        PostProcessEffect::Saturate { amount } => (
+            EFFECT_SATURATE,
+            [*amount, 0.0, 0.0, 0.0],
+            [0.0; 4],
+            [0.0; 4],
+            [0.0; 4],
+            Vec::new(),
+        ),
+        PostProcessEffect::BlackWhite { amount } => (
+            EFFECT_BLACK_WHITE,
+            [*amount, 0.0, 0.0, 0.0],
             [0.0; 4],
             [0.0; 4],
             [0.0; 4],

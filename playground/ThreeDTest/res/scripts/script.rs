@@ -36,8 +36,6 @@ lifecycle!({
         ipt: &InputContext<'_, IP>,
         self_id: NodeID,
     ) {
-       
-
         let dt = delta_time!(ctx);
         let (speed, timer) = with_state_mut!(ctx, ExampleState, self_id, |state| {
             if state.timer >= 0.0 {
