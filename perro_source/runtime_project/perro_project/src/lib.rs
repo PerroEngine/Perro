@@ -354,6 +354,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         &default_static_textures_rs(),
     )?;
     write_if_missing(
+        project_static_src.join("shaders.rs"),
+        &default_static_shaders_rs(),
+    )?;
+    write_if_missing(
         project_static_src.join("meshes.rs"),
         &default_static_meshes_rs(),
     )?;
@@ -1229,6 +1233,7 @@ fn project_root() -> std::path::PathBuf {
               mesh_lookup: static_assets::meshes::lookup_mesh,
               skeleton_lookup: static_assets::skeletons::lookup_skeleton,
               texture_lookup: static_assets::textures::lookup_texture,
+              shader_lookup: static_assets::shaders::lookup_shader,
               audio_lookup: static_assets::audios::lookup_audio,
               static_script_registry: Some(scripts::SCRIPT_REGISTRY),
           },
@@ -1240,7 +1245,7 @@ fn project_root() -> std::path::PathBuf {
 }
 
 fn default_static_mod_rs() -> String {
-    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod skeletons;\npub mod textures;\npub mod audios;\n".to_string()
+    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\n".to_string()
 }
 
 fn default_static_scenes_rs() -> String {
@@ -1283,6 +1288,16 @@ fn default_static_textures_rs() -> String {
     r#"#![allow(unused_imports)]
 
 pub fn lookup_texture(_path: &str) -> Option<&'static [u8]> {
+    None
+}
+"#
+    .to_string()
+}
+
+fn default_static_shaders_rs() -> String {
+    r#"#![allow(unused_imports)]
+
+pub fn lookup_shader(_path: &str) -> Option<&'static str> {
     None
 }
 "#

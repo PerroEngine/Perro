@@ -1,5 +1,5 @@
 use crate::{
-    backend::{OcclusionCullingMode, StaticMeshLookup, StaticTextureLookup},
+    backend::{OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup, StaticTextureLookup},
     resources::ResourceStore,
     three_d::{
         gpu::{Gpu3D, Gpu3DConfig, Prepare3D},
@@ -53,6 +53,7 @@ pub struct RenderFrame<'a> {
     pub sprites_2d: &'a [Sprite2DCommand],
     pub static_texture_lookup: Option<StaticTextureLookup>,
     pub static_mesh_lookup: Option<StaticMeshLookup>,
+    pub static_shader_lookup: Option<StaticShaderLookup>,
 }
 
 impl Gpu {
@@ -216,6 +217,7 @@ impl Gpu {
             sprites_2d,
             static_texture_lookup,
             static_mesh_lookup,
+            static_shader_lookup,
         } = frame;
         // Keep window alive for the full surface lifetime.
         self.window_handle.id();
@@ -243,6 +245,7 @@ impl Gpu {
                 width: self.config.width,
                 height: self.config.height,
                 static_mesh_lookup,
+                static_shader_lookup,
             },
         );
         self.point_particles_3d.prepare(

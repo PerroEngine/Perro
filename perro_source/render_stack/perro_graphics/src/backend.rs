@@ -16,6 +16,7 @@ use winit::window::Window;
 
 pub type StaticTextureLookup = fn(path: &str) -> Option<&'static [u8]>;
 pub type StaticMeshLookup = fn(path: &str) -> Option<&'static [u8]>;
+pub type StaticShaderLookup = fn(path: &str) -> Option<&'static str>;
 const GC_INTERVAL_FRAMES: u32 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -61,6 +62,7 @@ pub struct PerroGraphics {
     smoothing_samples: u32,
     static_texture_lookup: Option<StaticTextureLookup>,
     static_mesh_lookup: Option<StaticMeshLookup>,
+    static_shader_lookup: Option<StaticShaderLookup>,
     meshlets_enabled: bool,
     dev_meshlets: bool,
     meshlet_debug_view: bool,
@@ -87,6 +89,7 @@ impl PerroGraphics {
             smoothing_samples: 4,
             static_texture_lookup: None,
             static_mesh_lookup: None,
+            static_shader_lookup: None,
             meshlets_enabled: false,
             dev_meshlets: false,
             meshlet_debug_view: false,
@@ -115,6 +118,11 @@ impl PerroGraphics {
 
     pub fn with_static_mesh_lookup(mut self, lookup: StaticMeshLookup) -> Self {
         self.static_mesh_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_static_shader_lookup(mut self, lookup: StaticShaderLookup) -> Self {
+        self.static_shader_lookup = Some(lookup);
         self
     }
 
@@ -428,6 +436,7 @@ impl GraphicsBackend for PerroGraphics {
                 sprites_2d: &self.retained_sprites_cache,
                 static_texture_lookup: self.static_texture_lookup,
                 static_mesh_lookup: self.static_mesh_lookup,
+                static_shader_lookup: self.static_shader_lookup,
             });
         }
     }

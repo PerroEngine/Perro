@@ -115,6 +115,9 @@ pub fn compile_project_bundle(project_root: &Path, profile: bool) -> Result<(), 
     perro_static_pipeline::generate_static_textures(project_root).map_err(|err| {
         CompilerError::SceneParse(format!("texture static generation failed: {err}"))
     })?;
+    perro_static_pipeline::generate_static_shaders(project_root).map_err(|err| {
+        CompilerError::SceneParse(format!("shader static generation failed: {err}"))
+    })?;
     perro_static_pipeline::generate_static_audios(project_root).map_err(|err| {
         CompilerError::SceneParse(format!("audio static generation failed: {err}"))
     })?;
@@ -392,6 +395,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         mesh_lookup: static_assets::meshes::lookup_mesh,\n\
         skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\
         texture_lookup: static_assets::textures::lookup_texture,\n\
+        shader_lookup: static_assets::shaders::lookup_shader,\n\
         audio_lookup: static_assets::audios::lookup_audio,\n\
         static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\
   }},\n\

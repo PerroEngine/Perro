@@ -75,7 +75,13 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
     match project_root_opt {
         Some(ProjectRoot::Disk { root, .. }) => {
             if let Some(stripped) = path.strip_prefix("res://") {
-                ResolvedPath::Disk(root.join("res").join(stripped))
+                let primary = root.join("res").join(stripped);
+                if primary.exists() {
+                    ResolvedPath::Disk(primary)
+                } else {
+                    // Fallback: if root already points at a res directory, avoid res/res.
+                    ResolvedPath::Disk(root.join(stripped))
+                }
             } else {
                 ResolvedPath::Disk(root.join(path))
             }
@@ -94,7 +100,12 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
 /// Load an asset fully into memory
 pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
     match resolve_path(path) {
-        ResolvedPath::Disk(pb) => fs::read(pb),
+        ResolvedPath::Disk(pb) => {
+            if path.ends_with(".wgsl") || path.ends_with(".pmat") {
+                eprintln!("[perro_io] load_asset {} -> {}", path, pb.display());
+            }
+            fs::read(pb)
+        }
         ResolvedPath::PerroAssets(virtual_path) => {
             if let Some(archive) = PERRO_ASSETS_ARCHIVE.read().unwrap().as_ref() {
                 archive.read_file(&virtual_path)

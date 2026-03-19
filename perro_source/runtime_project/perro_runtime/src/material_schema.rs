@@ -77,14 +77,38 @@ fn parse_pmat_key_values(text: &str) -> Option<Vec<(String, RuntimeValue)>> {
 }
 
 fn strip_line_comment(line: &str) -> &str {
-    let slash = line.find("//");
-    let hash = line.find('#');
-    match (slash, hash) {
-        (Some(a), Some(b)) => &line[..a.min(b)],
-        (Some(a), None) => &line[..a],
-        (None, Some(b)) => &line[..b],
-        (None, None) => line,
+    let bytes = line.as_bytes();
+    let mut in_string = false;
+    let mut escape = false;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_string {
+            if escape {
+                escape = false;
+            } else if b == b'\\' {
+                escape = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if b == b'"' {
+            in_string = true;
+            i += 1;
+            continue;
+        }
+        if b == b'#' {
+            return &line[..i];
+        }
+        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+            return &line[..i];
+        }
+        i += 1;
     }
+    line
 }
 
 fn parse_kv_value(text: &str) -> Option<RuntimeValue> {
@@ -157,7 +181,7 @@ fn material_from_runtime_entries(entries: &[(String, RuntimeValue)], any: &mut b
         MaterialType3D::Custom => {
             let mut params = CustomMaterial3D {
                 shader_path: "".into(),
-                params: Vec::new(),
+                params: std::borrow::Cow::Borrowed(&[]),
             };
             apply_custom_runtime(entries, &mut params, any);
             Material3D::Custom(params)
@@ -189,7 +213,7 @@ fn material_from_static_entries(entries: &[(&str, StaticSceneValue)], any: &mut 
         MaterialType3D::Custom => {
             let mut params = CustomMaterial3D {
                 shader_path: "".into(),
-                params: Vec::new(),
+                params: std::borrow::Cow::Borrowed(&[]),
             };
             apply_custom_static(entries, &mut params, any);
             Material3D::Custom(params)
@@ -325,7 +349,7 @@ fn apply_custom_runtime(entries: &[(String, RuntimeValue)], out: &mut CustomMate
             }
             Some("params") => {
                 if let Some(params) = as_custom_params(value) {
-                    out.params = params;
+                    out.params = std::borrow::Cow::Owned(params);
                     *any = true;
                 }
             }
@@ -424,7 +448,7 @@ fn apply_custom_static(entries: &[(&str, StaticSceneValue)], out: &mut CustomMat
             }
             Some("params") => {
                 if let Some(params) = as_custom_params_static(value) {
-                    out.params = params;
+                    out.params = std::borrow::Cow::Owned(params);
                     *any = true;
                 }
             }

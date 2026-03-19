@@ -7,7 +7,7 @@ Perro uses **WGSL** (`.wgsl`) for GPU shaders. Shaders are referenced by custom 
 Custom 3D materials are declared as:
 
 ```txt
-type = custom
+type = "custom"
 shader_path = "res://shaders/custom.wgsl"
 params = {
     glow = 1.25

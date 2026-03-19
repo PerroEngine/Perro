@@ -13,10 +13,11 @@ script = "res://scripts/script.rs"
 [MeshInstance3D]
     mesh = "__cube__"
     material = {
+        type = standard
         base_color_factor = (1.0, 0.2, 0.2, 1.0)
-        metallic_factor = 0.0
-        roughness_factor = 0.8
-        emissive_factor = (0.0, 0.0, 0.0)
+        metallic_factor = 0.15
+        roughness_factor = 0.75
+        emissive_factor = (0.02, 0.0, 0.0)
         alpha_mode = OPAQUE
         double_sided = false
     }
@@ -36,9 +37,12 @@ script = "res://scripts/script.rs"
 [MeshInstance3D]
     mesh = "__sq_pyr__"
     material = {
+        type = toon
         base_color_factor = (0.2, 0.8, 0.2, 1.0)
-        metallic_factor = 0.0
-        roughness_factor = 0.35
+        band_count = 3
+        rim_strength = 0.35
+        outline_width = 0.02
+        emissive_factor = (0.02, 0.05, 0.02)
         alpha_mode = OPAQUE
         double_sided = false
     }
@@ -58,9 +62,9 @@ script = "res://scripts/script.rs"
 [MeshInstance3D]
     mesh = "__tri_pyr__"
     material = {
+        type = unlit
         base_color_factor = (0.2, 0.4, 1.0, 1.0)
-        metallic_factor = 0.7
-        roughness_factor = 0.5
+        emissive_factor = (0.1, 0.15, 0.35)
         alpha_mode = OPAQUE
         double_sided = false
     }
@@ -80,10 +84,11 @@ script = "res://scripts/script.rs"
 [MeshInstance3D]
     mesh = "__cylinder__"
     material = {
+        type = standard
         base_color_factor = (1.0, 0.85, 0.2, 1.0)
-        metallic_factor = 0.0
-        roughness_factor = 0.6
-        emissive_factor = (0.05, 0.05, 0.0)
+        metallic_factor = 0.45
+        roughness_factor = 0.25
+        emissive_factor = (0.12, 0.1, 0.02)
         alpha_mode = OPAQUE
         double_sided = false
     }
@@ -103,9 +108,12 @@ script = "res://scripts/script.rs"
 [MeshInstance3D]
     mesh = "__sphere__"
     material = {
+        type = toon
         base_color_factor = (0.85, 0.2, 1.0, 0.65)
-        metallic_factor = 0.0
-        roughness_factor = 0.15
+        band_count = 5
+        rim_strength = 0.6
+        outline_width = 0.03
+        emissive_factor = (0.08, 0.02, 0.1)
         alpha_mode = BLEND
         double_sided = true
     }
@@ -125,9 +133,9 @@ script = "res://scripts/script.rs"
 [MeshInstance3D]
     mesh = "__cone__"
     material = {
+        type = unlit
         base_color_factor = (0.1, 0.9, 0.9, 1.0)
-        metallic_factor = 0.0
-        roughness_factor = 0.95
+        emissive_factor = (0.0, 0.2, 0.2)
         alpha_mode = OPAQUE
         double_sided = true
     }
@@ -146,13 +154,7 @@ script = "res://scripts/script.rs"
 
 [MeshInstance3D]
     mesh = "__tri_prism__"
-    material = {
-        base_color_factor = (1.0, 1.0, 1.0, 1.0)
-        metallic_factor = 1.0
-        roughness_factor = 0.65
-        alpha_mode = OPAQUE
-        double_sided = false
-    }
+    material = "res://materials/crazy.pmat"
     [Node3D]
         position = (0, 0, 80)
         scale = (15,15,15)
@@ -169,13 +171,20 @@ script = "res://scripts/script.rs"
 [MeshInstance3D]
     mesh = "__capsule__"
     material = {
-        base_color_factor = (0.0, 0.0, 0.0, 1.0)
-        metallic_factor = 0.0
-        roughness_factor = 0.05
-        emissive_factor = (0.9, 0.4, 0.1)
-        alpha_mode = OPAQUE
-        double_sided = false
+    type = "custom"
+    shader_path = "res://shaders/test_shader.wgsl"
+    base_color_factor = (0.1, 0.1, 0.12, 1.0)
+    emissive_factor = (0.2, 0.05, 0.35)
+    alpha_mode = "OPAQUE"
+    double_sided = false
+    params = {
+        freq = (0.35, 0.6, 0.9)
+        warp = 2.5
+        tint = (0.9, 0.6, 1.0, 1.0)
+        glow = 0.4
     }
+}
+
     [Node3D]
         position = (40, 0, 80)
         scale = (15,15,15)

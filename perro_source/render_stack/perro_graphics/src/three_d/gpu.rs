@@ -7,7 +7,7 @@ use super::{
         create_toon_shader_module, create_unlit_shader_module, build_material_shader,
     },
 };
-use crate::backend::{OcclusionCullingMode, StaticMeshLookup};
+use crate::backend::{OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup};
 use crate::resources::ResourceStore;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3, Vec4};
@@ -16,6 +16,7 @@ use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::pack_meshlets_from_positions;
 use perro_render_bridge::{Camera3DState, CameraProjectionState, Material3D, StandardMaterial3D, RuntimeMeshData};
 use std::{
+    borrow::Cow,
     collections::HashMap,
     sync::{Arc, mpsc, mpsc::TryRecvError},
 };
@@ -237,6 +238,7 @@ pub struct Prepare3D<'a> {
     pub width: u32,
     pub height: u32,
     pub static_mesh_lookup: Option<StaticMeshLookup>,
+    pub static_shader_lookup: Option<StaticShaderLookup>,
 }
 
 pub struct Gpu3DConfig {
@@ -295,7 +297,6 @@ enum MaterialPipelineKind {
 }
 
 struct CustomPipeline {
-    shader: wgpu::ShaderModule,
     pipeline_culled: wgpu::RenderPipeline,
     pipeline_double_sided: wgpu::RenderPipeline,
 }
@@ -331,13 +332,22 @@ impl Gpu3D {
         &mut self,
         device: &wgpu::Device,
         shader_path: &str,
+        static_shader_lookup: Option<StaticShaderLookup>,
     ) -> Option<&CustomPipeline> {
         if self.custom_pipelines.contains_key(shader_path) {
             return self.custom_pipelines.get(shader_path);
         }
-        let bytes = load_asset(shader_path).ok()?;
-        let src = std::str::from_utf8(&bytes).ok()?;
-        let wgsl = build_material_shader(src);
+        let src = if let Some(lookup) = static_shader_lookup {
+            lookup(shader_path).map(Cow::Borrowed)
+        } else {
+            None
+        }
+        .or_else(|| {
+            let bytes = load_asset(shader_path).ok()?;
+            let src = std::str::from_utf8(&bytes).ok()?;
+            Some(Cow::Owned(src.to_string()))
+        })?;
+        let wgsl = build_material_shader(src.as_ref());
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("perro_mesh_custom"),
             source: wgpu::ShaderSource::Wgsl(wgsl.into()),
@@ -361,7 +371,6 @@ impl Gpu3D {
         self.custom_pipelines.insert(
             shader_path.to_string(),
             CustomPipeline {
-                shader,
                 pipeline_culled,
                 pipeline_double_sided,
             },
@@ -373,6 +382,7 @@ impl Gpu3D {
         &mut self,
         device: &wgpu::Device,
         material: &Material3D,
+        static_shader_lookup: Option<StaticShaderLookup>,
     ) -> MaterialPipelineKind {
         match material {
             Material3D::Standard(_) => MaterialPipelineKind::Standard,
@@ -380,7 +390,10 @@ impl Gpu3D {
             Material3D::Toon(_) => MaterialPipelineKind::Toon,
             Material3D::Custom(custom) => {
                 let path = custom.shader_path.as_ref();
-                if self.ensure_custom_pipeline(device, path).is_some() {
+                if self
+                    .ensure_custom_pipeline(device, path, static_shader_lookup)
+                    .is_some()
+                {
                     MaterialPipelineKind::Custom(path.to_string())
                 } else {
                     MaterialPipelineKind::Standard
@@ -436,7 +449,7 @@ impl Gpu3D {
         match material {
             Material3D::Custom(custom) => {
                 let offset = self.staged_custom_params.len() as u32;
-                for param in &custom.params {
+                for param in custom.params.as_ref() {
                     self.staged_custom_params
                         .push(encode_custom_param_value(&param.value));
                 }
@@ -1207,6 +1220,7 @@ impl Gpu3D {
             width,
             height,
             static_mesh_lookup,
+            static_shader_lookup,
         } = frame;
         self.custom_mesh_ranges
             .retain(|source, _| resources.has_mesh_source(source));
@@ -1314,7 +1328,8 @@ impl Gpu3D {
                     .and_then(|id| resources.material(id))
                     .unwrap_or_default(),
             };
-            let material_kind = self.material_pipeline_kind(device, &material);
+            let material_kind =
+                self.material_pipeline_kind(device, &material, static_shader_lookup);
             let (custom_params_offset, custom_params_len) = self.stage_custom_params(&material);
             // CPU occlusion query mode works at object granularity.
             // Force whole-mesh batching in that mode so each object can be queried.

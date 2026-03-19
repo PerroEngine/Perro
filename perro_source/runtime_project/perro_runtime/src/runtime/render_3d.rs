@@ -1008,6 +1008,9 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
     }
 
     let (path, fragment) = split_source_fragment(source);
+    if path.ends_with(".pmat") {
+        eprintln!("[perro_runtime] load_material_from_source: {}", path);
+    }
     if let Some(lookup) = runtime
         .project()
         .and_then(|project| project.static_material_lookup)
@@ -1021,7 +1024,14 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
     }
 
     if path.ends_with(".pmat") {
-        return material_schema::load_from_source(path);
+        let mat = material_schema::load_from_source(path);
+        if let Some(Material3D::Custom(custom)) = mat.as_ref() {
+            eprintln!(
+                "[perro_runtime] custom material shader_path='{}'",
+                custom.shader_path
+            );
+        }
+        return mat;
     }
 
     if path.ends_with(".glb") || path.ends_with(".gltf") {

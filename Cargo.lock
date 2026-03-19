@@ -2442,6 +2442,7 @@ dependencies = [
  "perro_io",
  "perro_meshlets",
  "perro_particle_math",
+ "perro_render_bridge",
  "perro_scene",
  "perro_structs",
  "rayon",

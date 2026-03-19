@@ -138,6 +138,7 @@ pub struct StaticEmbeddedAssetsConfig {
     pub mesh_lookup: perro_graphics::StaticMeshLookup,
     pub skeleton_lookup: perro_runtime::StaticSkeletonLookup,
     pub texture_lookup: perro_graphics::StaticTextureLookup,
+    pub shader_lookup: perro_graphics::StaticShaderLookup,
     pub audio_lookup: perro_runtime::StaticAudioLookup,
     pub static_script_registry: Option<StaticScriptRegistry>,
 }
@@ -176,7 +177,8 @@ pub fn run_static_embedded_project(
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, true)
         .with_static_mesh_lookup(input.assets.mesh_lookup)
-        .with_static_texture_lookup(input.assets.texture_lookup);
+        .with_static_texture_lookup(input.assets.texture_lookup)
+        .with_static_shader_lookup(input.assets.shader_lookup);
     let runtime = Runtime::from_project_with_script_registry(
         project,
         ProviderMode::Static,

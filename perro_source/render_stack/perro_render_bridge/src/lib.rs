@@ -331,7 +331,7 @@ impl CustomMaterialParam3D {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CustomMaterial3D {
     pub shader_path: Cow<'static, str>,
-    pub params: Vec<CustomMaterialParam3D>,
+    pub params: Cow<'static, [CustomMaterialParam3D]>,
 }
 
 impl CustomMaterial3D {
@@ -339,7 +339,7 @@ impl CustomMaterial3D {
     pub fn new(shader_path: impl Into<Cow<'static, str>>) -> Self {
         Self {
             shader_path: shader_path.into(),
-            params: Vec::new(),
+            params: Cow::Borrowed(&[]),
         }
     }
 
@@ -350,7 +350,7 @@ impl CustomMaterial3D {
     ) -> Self {
         Self {
             shader_path: shader_path.into(),
-            params,
+            params: Cow::Owned(params),
         }
     }
 }

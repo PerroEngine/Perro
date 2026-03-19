@@ -22,28 +22,42 @@ std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
 }
 
 fn main() {
-let root = project_root();
-perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedProject {
-project_root: &root,
-project_name: "ThreeDTest",
-main_scene: "res://main.scn",
-icon: "res://icon.png",
-virtual_width: 1920,
-virtual_height: 1080,
-vsync: false,
-msaa: true,
-meshlets: true,
-dev_meshlets: true,
-release_meshlets: true,
-meshlet_debug_view: false,
-occlusion_culling: perro_app::entry::OcclusionCulling::Gpu,
-particle_sim_default: perro_app::entry::ParticleSimDefault::GpuCompute,
-perro_assets: PERRO_ASSETS,
-scene_lookup: static_assets::scenes::lookup_scene,
-material_lookup: static_assets::materials::lookup_material,
-particle_lookup: static_assets::particles::lookup_particle,
-mesh_lookup: static_assets::meshes::lookup_mesh,
-texture_lookup: static_assets::textures::lookup_texture,
-static_script_registry: Some(scripts::SCRIPT_REGISTRY),
-}).expect("failed to run embedded static project");
+  let root = project_root();
+  perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedProject {
+  project: perro_app::entry::StaticEmbeddedProjectInfo {
+  project_root: &root,
+  project_name: "ThreeDTest",
+  main_scene: "res://main.scn",
+  icon: "res://icon.png",
+  virtual_width: 1920,
+  virtual_height: 1080,
+  },
+  graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {
+  vsync: false,
+  msaa: true,
+  meshlets: true,
+  dev_meshlets: true,
+  release_meshlets: true,
+  meshlet_debug_view: false,
+  occlusion_culling: perro_app::entry::OcclusionCulling::Gpu,
+  particle_sim_default: perro_app::entry::ParticleSimDefault::GpuCompute,
+  },
+  runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {
+  target_fps: None,
+  target_fixed_update: Some(60f32),
+  },
+  assets: perro_app::entry::StaticEmbeddedAssetsConfig {
+  perro_assets: PERRO_ASSETS,
+  scene_lookup: static_assets::scenes::lookup_scene,
+  material_lookup: static_assets::materials::lookup_material,
+  particle_lookup: static_assets::particles::lookup_particle,
+  mesh_lookup: static_assets::meshes::lookup_mesh,
+  skeleton_lookup: static_assets::skeletons::lookup_skeleton,
+  texture_lookup: static_assets::textures::lookup_texture,
+  shader_lookup: static_assets::shaders::lookup_shader,
+  audio_lookup: static_assets::audios::lookup_audio,
+  static_script_registry: Some(scripts::SCRIPT_REGISTRY),
+  },
+  })
+  .expect("failed to run embedded static project");
 }

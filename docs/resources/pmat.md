@@ -13,7 +13,7 @@ material = "res://materials/mat.pmat"
 `.pmat` now declares a **material preset** as the first entry:
 
 ```txt
-type = standard
+type = "standard"
 ```
 
 Valid values:
@@ -30,7 +30,7 @@ The `type` entry **must be the first non-empty line** (comments are allowed abov
 `.pmat` supports a clean line-based format:
 
 ```txt
-type = standard
+type = "standard"
 
 base_color_factor = (0.1, 0.5, 0.2, 1.0)
 metallic_factor = 1.0
@@ -46,7 +46,7 @@ occlusion_strength = 1.0
 emissive_factor = (0.0, 0.0, 0.0)
 normal_scale = 1.0
 
-alpha_mode = OPAQUE
+alpha_mode = "OPAQUE"
 alpha_cutoff = 0.5
 double_sided = false
 ```
@@ -102,12 +102,62 @@ Comments:
 Custom materials define a shader path and optional custom parameters:
 
 ```txt
-type = custom
+type = "custom"
 shader_path = "res://shaders/custom.wgsl"
 
 params = {
     glow = 1.25
     tint = (1.0, 0.2, 0.4, 1.0)
+}
+```
+
+## Inline Materials (Scene)
+
+When defining materials inline in a `.scn` file, **string values must be quoted**:
+
+```scn
+material = {
+    type = "standard"
+    base_color_factor = (0.8, 0.2, 0.2, 1.0)
+    metallic_factor = 0.1
+    roughness_factor = 0.7
+    alpha_mode = "OPAQUE"
+    double_sided = false
+}
+```
+
+```scn
+material = {
+    type = "unlit"
+    base_color_factor = (0.2, 0.8, 1.0, 1.0)
+    emissive_factor = (0.1, 0.2, 0.3)
+    alpha_mode = "OPAQUE"
+    double_sided = false
+}
+```
+
+```scn
+material = {
+    type = "toon"
+    base_color_factor = (0.4, 1.0, 0.4, 1.0)
+    band_count = 3
+    rim_strength = 0.35
+    outline_width = 0.02
+    alpha_mode = "OPAQUE"
+    double_sided = false
+}
+```
+
+```scn
+material = {
+    type = "custom"
+    shader_path = "res://shaders/custom.wgsl"
+    alpha_mode = "OPAQUE"
+    double_sided = false
+    params = {
+        glow = 1.25
+        tint = (1.0, 0.2, 0.4, 1.0)
+    }
 }
 ```
 
