@@ -17,6 +17,7 @@ Rendering and resource loading are handled by the runtime and `ResourceContext`.
 `Camera2D`
 
 - Active 2D camera (position/rotation/zoom).
+- Supports camera post-processing via `post_processing` (see "Camera Post-Processing" below).
 
 ## 3D Nodes
 
@@ -41,6 +42,7 @@ Rendering and resource loading are handled by the runtime and `ResourceContext`.
 `Camera3D`
 
 - Active 3D camera with projection settings.
+- Supports camera post-processing via `post_processing` (see "Camera Post-Processing" below).
 
 `ParticleEmitter3D`
 
@@ -58,6 +60,11 @@ Lights:
 - Holds `Vec<Bone3D>` (data-only).
 - Bones are loaded via `ResourceContext::Skeletons().load_bones(source)`.
 - Typical flow: scene specifies a `skeleton` path, and scene loader fills `bones`.
+
+## Camera Post-Processing
+
+Post-processing is configured per camera using `post_processing`.
+See `docs/resources/postprocess.md` for full details and examples.
 
 ## Bone3D
 

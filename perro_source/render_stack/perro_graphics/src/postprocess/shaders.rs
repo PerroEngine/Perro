@@ -75,5 +75,4 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     return post_process(in.uv, color, depth);
 }
 
-fn post_process(uv: vec2<f32>, color: vec4<f32>, depth: f32) -> vec4<f32>;
 "#;

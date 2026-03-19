@@ -23,7 +23,7 @@ use perro_scene::{
     Parser, RuntimeNodeData, RuntimeNodeEntry, RuntimeScene, RuntimeValue, StaticNodeData,
     StaticNodeEntry, StaticNodeType, StaticScene, StaticSceneValue,
 };
-use perro_structs::{Quaternion, Vector2, Vector3};
+use perro_structs::{CustomPostParam, CustomPostParamValue, PostProcessEffect, Quaternion, Vector2, Vector3};
 use std::borrow::Cow;
 #[cfg(feature = "profile")]
 use std::time::Duration;
@@ -640,6 +640,11 @@ fn apply_camera_2d_fields(node: &mut Camera2D, fields: &[(String, RuntimeValue)]
                     node.zoom = v;
                 }
             }
+            "post_processing" => {
+                if let Some(v) = as_post_processing(value) {
+                    node.post_processing = Cow::Owned(v);
+                }
+            }
             "active" => {
                 if let Some(v) = as_bool(value) {
                     node.active = v;
@@ -775,6 +780,11 @@ fn apply_camera_3d_fields(node: &mut Camera3D, fields: &[(String, RuntimeValue)]
             "frustum_far" => {
                 if let Some(v) = as_f32(value) {
                     set_projection_frustum_far(node, v);
+                }
+            }
+            "post_processing" => {
+                if let Some(v) = as_post_processing(value) {
+                    node.post_processing = Cow::Owned(v);
                 }
             }
             "active" => {
@@ -1006,6 +1016,11 @@ fn apply_camera_2d_fields_static(node: &mut Camera2D, fields: &[(&str, StaticSce
                     node.zoom = v;
                 }
             }
+            "post_processing" => {
+                if let Some(v) = as_post_processing_static(value) {
+                    node.post_processing = Cow::Owned(v);
+                }
+            }
             "active" => {
                 if let Some(v) = as_bool_static(value) {
                     node.active = v;
@@ -1149,6 +1164,11 @@ fn apply_camera_3d_fields_static(node: &mut Camera3D, fields: &[(&str, StaticSce
             "frustum_far" => {
                 if let Some(v) = as_f32_static(value) {
                     set_projection_frustum_far(node, v);
+                }
+            }
+            "post_processing" => {
+                if let Some(v) = as_post_processing_static(value) {
+                    node.post_processing = Cow::Owned(v);
                 }
             }
             "active" => {
@@ -1566,7 +1586,7 @@ fn encode_runtime_value_for_pparticle(value: &RuntimeValue) -> Option<String> {
         RuntimeValue::Vec3 { x, y, z } => Some(format!("({x}, {y}, {z})")),
         RuntimeValue::Vec4 { x, y, z, w } => Some(format!("({x}, {y}, {z}, {w})")),
         RuntimeValue::Str(v) | RuntimeValue::Key(v) => Some(v.clone()),
-        RuntimeValue::Object(_) => None,
+        RuntimeValue::Object(_) | RuntimeValue::Array(_) => None,
     }
 }
 
@@ -1580,7 +1600,7 @@ fn encode_static_value_for_pparticle(value: &StaticSceneValue) -> Option<String>
         StaticSceneValue::Vec4 { x, y, z, w } => Some(format!("({x}, {y}, {z}, {w})")),
         StaticSceneValue::Str(v) => Some((*v).to_string()),
         StaticSceneValue::Key(v) => Some(v.0.to_string()),
-        StaticSceneValue::Object(_) => None,
+        StaticSceneValue::Object(_) | StaticSceneValue::Array(_) => None,
     }
 }
 
@@ -1631,6 +1651,246 @@ fn as_particle_params(value: &RuntimeValue) -> Option<Vec<f32>> {
             }
             Some(out)
         }
+        _ => None,
+    }
+}
+
+fn as_post_processing(value: &RuntimeValue) -> Option<Vec<PostProcessEffect>> {
+    match value {
+        RuntimeValue::Array(items) => {
+            let mut out = Vec::new();
+            for item in items {
+                out.push(post_effect_from_runtime(item)?);
+            }
+            Some(out)
+        }
+        RuntimeValue::Object(entries) => {
+            let mut indexed = Vec::<(usize, PostProcessEffect)>::new();
+            for (k, v) in entries {
+                let idx = parse_param_key_index(k)?;
+                let effect = post_effect_from_runtime(v)?;
+                indexed.push((idx, effect));
+            }
+            if indexed.is_empty() {
+                return Some(Vec::new());
+            }
+            indexed.sort_unstable_by_key(|(i, _)| *i);
+            Some(indexed.into_iter().map(|(_, e)| e).collect())
+        }
+        _ => None,
+    }
+}
+
+fn as_post_processing_static(value: &StaticSceneValue) -> Option<Vec<PostProcessEffect>> {
+    match value {
+        StaticSceneValue::Array(items) => {
+            let mut out = Vec::new();
+            for item in items.iter() {
+                out.push(post_effect_from_static(item)?);
+            }
+            Some(out)
+        }
+        StaticSceneValue::Object(entries) => {
+            let mut indexed = Vec::<(usize, PostProcessEffect)>::new();
+            for (k, v) in entries.iter() {
+                let idx = parse_param_key_index(k)?;
+                let effect = post_effect_from_static(v)?;
+                indexed.push((idx, effect));
+            }
+            if indexed.is_empty() {
+                return Some(Vec::new());
+            }
+            indexed.sort_unstable_by_key(|(i, _)| *i);
+            Some(indexed.into_iter().map(|(_, e)| e).collect())
+        }
+        _ => None,
+    }
+}
+
+fn post_effect_from_runtime(value: &RuntimeValue) -> Option<PostProcessEffect> {
+    let RuntimeValue::Object(entries) = value else {
+        return None;
+    };
+    let mut ty: Option<String> = None;
+    let mut strength: Option<f32> = None;
+    let mut size: Option<f32> = None;
+    let mut waves: Option<f32> = None;
+    let mut shader_path: Option<String> = None;
+    let mut params: Option<Vec<CustomPostParam>> = None;
+
+    for (k, v) in entries {
+        match k.as_str() {
+            "type" | "effect" => {
+                if let Some(s) = as_str(v) {
+                    ty = Some(s.trim().to_ascii_lowercase());
+                }
+            }
+            "strength" => strength = as_f32(v),
+            "size" => size = as_f32(v),
+            "waves" => waves = as_f32(v),
+            "shader" | "shader_path" => {
+                if let Some(s) = as_str(v) {
+                    shader_path = Some(s.to_string());
+                }
+            }
+            "params" => params = as_post_params(v),
+            _ => {}
+        }
+    }
+
+    match ty.as_deref()? {
+        "blur" => Some(PostProcessEffect::Blur {
+            strength: strength.unwrap_or(1.0),
+        }),
+        "pixel" | "pixelate" => Some(PostProcessEffect::Pixelate {
+            size: size.unwrap_or(1.0),
+        }),
+        "warp" => Some(PostProcessEffect::Warp {
+            waves: waves.unwrap_or(1.0),
+            strength: strength.unwrap_or(1.0),
+        }),
+        "custom" => {
+            let shader_path = shader_path?;
+            let params = params.unwrap_or_default();
+            Some(PostProcessEffect::Custom {
+                shader_path: Cow::Owned(shader_path),
+                params: Cow::Owned(params),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn post_effect_from_static(value: &StaticSceneValue) -> Option<PostProcessEffect> {
+    let StaticSceneValue::Object(entries) = value else {
+        return None;
+    };
+    let mut ty: Option<String> = None;
+    let mut strength: Option<f32> = None;
+    let mut size: Option<f32> = None;
+    let mut waves: Option<f32> = None;
+    let mut shader_path: Option<String> = None;
+    let mut params: Option<Vec<CustomPostParam>> = None;
+
+    for (k, v) in entries.iter() {
+        match *k {
+            "type" | "effect" => {
+                if let Some(s) = as_str_static(v) {
+                    ty = Some(s.trim().to_ascii_lowercase());
+                }
+            }
+            "strength" => strength = as_f32_static(v),
+            "size" => size = as_f32_static(v),
+            "waves" => waves = as_f32_static(v),
+            "shader" | "shader_path" => {
+                if let Some(s) = as_str_static(v) {
+                    shader_path = Some(s.to_string());
+                }
+            }
+            "params" => params = as_post_params_static(v),
+            _ => {}
+        }
+    }
+
+    match ty.as_deref()? {
+        "blur" => Some(PostProcessEffect::Blur {
+            strength: strength.unwrap_or(1.0),
+        }),
+        "pixel" | "pixelate" => Some(PostProcessEffect::Pixelate {
+            size: size.unwrap_or(1.0),
+        }),
+        "warp" => Some(PostProcessEffect::Warp {
+            waves: waves.unwrap_or(1.0),
+            strength: strength.unwrap_or(1.0),
+        }),
+        "custom" => {
+            let shader_path = shader_path?;
+            let params = params.unwrap_or_default();
+            Some(PostProcessEffect::Custom {
+                shader_path: Cow::Owned(shader_path),
+                params: Cow::Owned(params),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn as_post_params(value: &RuntimeValue) -> Option<Vec<CustomPostParam>> {
+    match value {
+        RuntimeValue::Array(items) => {
+            let mut out = Vec::new();
+            for item in items {
+                out.push(CustomPostParam::unnamed(
+                    post_param_value_from_runtime(item)?,
+                ));
+            }
+            Some(out)
+        }
+        RuntimeValue::Object(entries) => {
+            let mut indexed = Vec::<(usize, CustomPostParam)>::new();
+            for (k, v) in entries {
+                let idx = parse_param_key_index(k)?;
+                let value = post_param_value_from_runtime(v)?;
+                indexed.push((idx, CustomPostParam::unnamed(value)));
+            }
+            if indexed.is_empty() {
+                return Some(Vec::new());
+            }
+            indexed.sort_unstable_by_key(|(i, _)| *i);
+            Some(indexed.into_iter().map(|(_, v)| v).collect())
+        }
+        _ => None,
+    }
+}
+
+fn as_post_params_static(value: &StaticSceneValue) -> Option<Vec<CustomPostParam>> {
+    match value {
+        StaticSceneValue::Array(items) => {
+            let mut out = Vec::new();
+            for item in items.iter() {
+                out.push(CustomPostParam::unnamed(
+                    post_param_value_from_static(item)?,
+                ));
+            }
+            Some(out)
+        }
+        StaticSceneValue::Object(entries) => {
+            let mut indexed = Vec::<(usize, CustomPostParam)>::new();
+            for (k, v) in entries.iter() {
+                let idx = parse_param_key_index(k)?;
+                let value = post_param_value_from_static(v)?;
+                indexed.push((idx, CustomPostParam::unnamed(value)));
+            }
+            if indexed.is_empty() {
+                return Some(Vec::new());
+            }
+            indexed.sort_unstable_by_key(|(i, _)| *i);
+            Some(indexed.into_iter().map(|(_, v)| v).collect())
+        }
+        _ => None,
+    }
+}
+
+fn post_param_value_from_runtime(value: &RuntimeValue) -> Option<CustomPostParamValue> {
+    match value {
+        RuntimeValue::Bool(v) => Some(CustomPostParamValue::Bool(*v)),
+        RuntimeValue::I32(v) => Some(CustomPostParamValue::I32(*v)),
+        RuntimeValue::F32(v) => Some(CustomPostParamValue::F32(*v)),
+        RuntimeValue::Vec2 { x, y } => Some(CustomPostParamValue::Vec2([*x, *y])),
+        RuntimeValue::Vec3 { x, y, z } => Some(CustomPostParamValue::Vec3([*x, *y, *z])),
+        RuntimeValue::Vec4 { x, y, z, w } => Some(CustomPostParamValue::Vec4([*x, *y, *z, *w])),
+        _ => None,
+    }
+}
+
+fn post_param_value_from_static(value: &StaticSceneValue) -> Option<CustomPostParamValue> {
+    match value {
+        StaticSceneValue::Bool(v) => Some(CustomPostParamValue::Bool(*v)),
+        StaticSceneValue::I32(v) => Some(CustomPostParamValue::I32(*v)),
+        StaticSceneValue::F32(v) => Some(CustomPostParamValue::F32(*v)),
+        StaticSceneValue::Vec2 { x, y } => Some(CustomPostParamValue::Vec2([*x, *y])),
+        StaticSceneValue::Vec3 { x, y, z } => Some(CustomPostParamValue::Vec3([*x, *y, *z])),
+        StaticSceneValue::Vec4 { x, y, z, w } => Some(CustomPostParamValue::Vec4([*x, *y, *z, *w])),
         _ => None,
     }
 }

@@ -38,4 +38,5 @@ pub enum SceneValue {
     Str(&'static str),
     Key(SceneKey),
     Object(&'static [(&'static str, SceneValue)]),
+    Array(&'static [SceneValue]),
 }

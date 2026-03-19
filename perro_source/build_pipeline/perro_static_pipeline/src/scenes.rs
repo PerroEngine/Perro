@@ -311,6 +311,23 @@ fn emit_value_with_consts(
             out.push_str("];\n");
             format!("StaticSceneValue::Object({object_name})")
         }
+        RuntimeValue::Array(items) => {
+            let idx = *counter;
+            *counter += 1;
+            let array_name = format!("ARRAY_{}_{}", scene_ident, idx);
+            let mut nested_consts = String::new();
+            let mut array_entries = String::new();
+            for value in items {
+                let nested =
+                    emit_value_with_consts(&mut nested_consts, scene_ident, value, counter);
+                let _ = writeln!(array_entries, "    {},", nested);
+            }
+            out.push_str(&nested_consts);
+            let _ = writeln!(out, "const {array_name}: &[StaticSceneValue] = &[");
+            out.push_str(&array_entries);
+            out.push_str("];\n");
+            format!("StaticSceneValue::Array({array_name})")
+        }
     }
 }
 

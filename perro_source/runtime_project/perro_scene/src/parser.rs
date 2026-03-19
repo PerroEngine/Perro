@@ -156,6 +156,11 @@ impl<'a> Parser<'a> {
                             self.advance();
                             out
                         }
+                        Token::Number(n) => {
+                            let out = n.to_string();
+                            self.advance();
+                            out
+                        }
                         other => panic!("Expected object key, got {:?}", other),
                     };
 
@@ -194,6 +199,32 @@ impl<'a> Parser<'a> {
                 }
 
                 RuntimeValue::Object(entries)
+            }
+            Token::LBracket => {
+                self.advance();
+                let mut items = Vec::new();
+                loop {
+                    if self.current == Token::RBracket {
+                        self.advance();
+                        break;
+                    }
+
+                    let value = self.parse_value();
+                    items.push(value);
+
+                    match &self.current {
+                        Token::Comma => {
+                            self.advance();
+                            continue;
+                        }
+                        Token::RBracket => {
+                            self.advance();
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                RuntimeValue::Array(items)
             }
 
             _ => panic!("Invalid value token {:?}", self.current),

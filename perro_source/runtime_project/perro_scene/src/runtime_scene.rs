@@ -34,4 +34,5 @@ pub enum RuntimeValue {
     Str(String),
     Key(String),
     Object(Vec<(String, RuntimeValue)>),
+    Array(Vec<RuntimeValue>),
 }
