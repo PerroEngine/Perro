@@ -4,6 +4,7 @@ use super::{
         create_depth_prepass_shader_module, create_frustum_cull_shader_module,
         create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
         create_hiz_occlusion_cull_shader_module, create_mesh_shader_module,
+        create_toon_shader_module, create_unlit_shader_module, build_material_shader,
     },
 };
 use crate::backend::{OcclusionCullingMode, StaticMeshLookup};
@@ -131,11 +132,18 @@ struct HizCullParamsGpu {
 }
 
 pub struct Gpu3D {
+    color_format: wgpu::TextureFormat,
     camera_bgl: wgpu::BindGroupLayout,
+    material_pipeline_layout: wgpu::PipelineLayout,
     pipeline_culled: wgpu::RenderPipeline,
     pipeline_double_sided: wgpu::RenderPipeline,
+    pipeline_unlit_culled: wgpu::RenderPipeline,
+    pipeline_unlit_double_sided: wgpu::RenderPipeline,
+    pipeline_toon_culled: wgpu::RenderPipeline,
+    pipeline_toon_double_sided: wgpu::RenderPipeline,
     pipeline_depth_prepass_culled: wgpu::RenderPipeline,
     pipeline_depth_prepass_double_sided: wgpu::RenderPipeline,
+    custom_pipelines: HashMap<String, CustomPipeline>,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     skeleton_buffer: wgpu::Buffer,
@@ -268,10 +276,25 @@ struct DrawBatch {
     instance_start: u32,
     instance_count: u32,
     double_sided: bool,
+    material_kind: MaterialPipelineKind,
     local_center: [f32; 3],
     local_radius: f32,
     occlusion_query: Option<u32>,
     disable_hiz_occlusion: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum MaterialPipelineKind {
+    Standard,
+    Unlit,
+    Toon,
+    Custom(String),
+}
+
+struct CustomPipeline {
+    shader: wgpu::ShaderModule,
+    pipeline_culled: wgpu::RenderPipeline,
+    pipeline_double_sided: wgpu::RenderPipeline,
 }
 
 #[derive(Clone, Copy)]
@@ -301,6 +324,111 @@ struct DecodedMeshlet {
 }
 
 impl Gpu3D {
+    fn ensure_custom_pipeline(
+        &mut self,
+        device: &wgpu::Device,
+        shader_path: &str,
+    ) -> Option<&CustomPipeline> {
+        if self.custom_pipelines.contains_key(shader_path) {
+            return self.custom_pipelines.get(shader_path);
+        }
+        let bytes = load_asset(shader_path).ok()?;
+        let src = std::str::from_utf8(&bytes).ok()?;
+        let wgsl = build_material_shader(src);
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("perro_mesh_custom"),
+            source: wgpu::ShaderSource::Wgsl(wgsl.into()),
+        });
+        let pipeline_culled = create_pipeline(
+            device,
+            &self.material_pipeline_layout,
+            &shader,
+            self.color_format,
+            self.sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_double_sided = create_pipeline(
+            device,
+            &self.material_pipeline_layout,
+            &shader,
+            self.color_format,
+            self.sample_count,
+            None,
+        );
+        self.custom_pipelines.insert(
+            shader_path.to_string(),
+            CustomPipeline {
+                shader,
+                pipeline_culled,
+                pipeline_double_sided,
+            },
+        );
+        self.custom_pipelines.get(shader_path)
+    }
+
+    fn material_pipeline_kind(
+        &mut self,
+        device: &wgpu::Device,
+        material: &Material3D,
+    ) -> MaterialPipelineKind {
+        match material {
+            Material3D::Standard(_) => MaterialPipelineKind::Standard,
+            Material3D::Unlit(_) => MaterialPipelineKind::Unlit,
+            Material3D::Toon(_) => MaterialPipelineKind::Toon,
+            Material3D::Custom(custom) => {
+                let path = custom.shader_path.as_ref();
+                if self.ensure_custom_pipeline(device, path).is_some() {
+                    MaterialPipelineKind::Custom(path.to_string())
+                } else {
+                    MaterialPipelineKind::Standard
+                }
+            }
+        }
+    }
+
+    fn pipeline_for_batch(&self, batch: &DrawBatch) -> &wgpu::RenderPipeline {
+        match &batch.material_kind {
+            MaterialPipelineKind::Standard => {
+                if batch.double_sided {
+                    &self.pipeline_double_sided
+                } else {
+                    &self.pipeline_culled
+                }
+            }
+            MaterialPipelineKind::Unlit => {
+                if batch.double_sided {
+                    &self.pipeline_unlit_double_sided
+                } else {
+                    &self.pipeline_unlit_culled
+                }
+            }
+            MaterialPipelineKind::Toon => {
+                if batch.double_sided {
+                    &self.pipeline_toon_double_sided
+                } else {
+                    &self.pipeline_toon_culled
+                }
+            }
+            MaterialPipelineKind::Custom(path) => self
+                .custom_pipelines
+                .get(path)
+                .map(|pipeline| {
+                    if batch.double_sided {
+                        &pipeline.pipeline_double_sided
+                    } else {
+                        &pipeline.pipeline_culled
+                    }
+                })
+                .unwrap_or_else(|| {
+                    if batch.double_sided {
+                        &self.pipeline_double_sided
+                    } else {
+                        &self.pipeline_culled
+                    }
+                }),
+        }
+    }
+
     pub fn new(
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
@@ -318,6 +446,8 @@ impl Gpu3D {
         } = config;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(occlusion_culling);
         let shader = create_mesh_shader_module(device);
+        let shader_unlit = create_unlit_shader_module(device);
+        let shader_toon = create_toon_shader_module(device);
         let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_camera3d_bgl"),
             entries: &[
@@ -391,6 +521,38 @@ impl Gpu3D {
             device,
             &pipeline_layout,
             &shader,
+            color_format,
+            sample_count,
+            None,
+        );
+        let pipeline_unlit_culled = create_pipeline(
+            device,
+            &pipeline_layout,
+            &shader_unlit,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_unlit_double_sided = create_pipeline(
+            device,
+            &pipeline_layout,
+            &shader_unlit,
+            color_format,
+            sample_count,
+            None,
+        );
+        let pipeline_toon_culled = create_pipeline(
+            device,
+            &pipeline_layout,
+            &shader_toon,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_toon_double_sided = create_pipeline(
+            device,
+            &pipeline_layout,
+            &shader_toon,
             color_format,
             sample_count,
             None,
@@ -711,9 +873,15 @@ impl Gpu3D {
         });
 
         Self {
+            color_format,
             camera_bgl,
+            material_pipeline_layout: pipeline_layout,
             pipeline_culled,
             pipeline_double_sided,
+            pipeline_unlit_culled,
+            pipeline_unlit_double_sided,
+            pipeline_toon_culled,
+            pipeline_toon_double_sided,
             pipeline_depth_prepass_culled,
             pipeline_depth_prepass_double_sided,
             camera_buffer,
@@ -796,6 +964,7 @@ impl Gpu3D {
             last_occlusion_queried: 0,
             last_occlusion_visible: 0,
             last_occlusion_culled: 0,
+            custom_pipelines: HashMap::new(),
         }
     }
 
@@ -854,10 +1023,12 @@ impl Gpu3D {
         height: u32,
     ) {
         let sample_count = sample_count.max(1);
-        if self.sample_count == sample_count {
+        if self.sample_count == sample_count && self.color_format == color_format {
             return;
         }
         let shader = create_mesh_shader_module(device);
+        let shader_unlit = create_unlit_shader_module(device);
+        let shader_toon = create_toon_shader_module(device);
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_mesh_pipeline_layout"),
             bind_group_layouts: &[&self.camera_bgl],
@@ -879,6 +1050,38 @@ impl Gpu3D {
             sample_count,
             None,
         );
+        self.pipeline_unlit_culled = create_pipeline(
+            device,
+            &pipeline_layout,
+            &shader_unlit,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        self.pipeline_unlit_double_sided = create_pipeline(
+            device,
+            &pipeline_layout,
+            &shader_unlit,
+            color_format,
+            sample_count,
+            None,
+        );
+        self.pipeline_toon_culled = create_pipeline(
+            device,
+            &pipeline_layout,
+            &shader_toon,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        self.pipeline_toon_double_sided = create_pipeline(
+            device,
+            &pipeline_layout,
+            &shader_toon,
+            color_format,
+            sample_count,
+            None,
+        );
         let depth_prepass_shader = create_depth_prepass_shader_module(device);
         self.pipeline_depth_prepass_culled = create_depth_prepass_pipeline(
             device,
@@ -888,6 +1091,8 @@ impl Gpu3D {
         );
         self.pipeline_depth_prepass_double_sided =
             create_depth_prepass_pipeline(device, &pipeline_layout, &depth_prepass_shader, None);
+        self.material_pipeline_layout = pipeline_layout;
+        self.color_format = color_format;
         let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
         self.depth_texture = depth_texture;
         self.depth_view = depth_view;
@@ -904,6 +1109,7 @@ impl Gpu3D {
         self.hiz_mip_count = hiz_mip_count;
         self.hiz_size = hiz_size;
         self.sample_count = sample_count;
+        self.custom_pipelines.clear();
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(self.occlusion_mode);
         self.gpu_occlusion_enabled = gpu_occlusion_enabled;
         self.cpu_occlusion_enabled = cpu_occlusion_enabled;
@@ -1066,6 +1272,7 @@ impl Gpu3D {
                     .and_then(|id| resources.material(id))
                     .unwrap_or_default(),
             };
+            let material_kind = self.material_pipeline_kind(device, &material);
             // CPU occlusion query mode works at object granularity.
             // Force whole-mesh batching in that mode so each object can be queried.
             let use_meshlets = !is_debug_point
@@ -1151,6 +1358,7 @@ impl Gpu3D {
                         mesh_asset.full,
                         instance,
                         material.standard_params().double_sided || self.meshlet_debug_view,
+                        material_kind.clone(),
                         (mesh_asset.bounds_center, mesh_asset.bounds_radius),
                         occlusion_query,
                         is_terrain_mesh,
@@ -1197,6 +1405,7 @@ impl Gpu3D {
                         },
                         instance,
                         material.standard_params().double_sided || self.meshlet_debug_view,
+                        material_kind.clone(),
                         (occlusion_center, occlusion_radius),
                         occlusion_query,
                         is_terrain_mesh,
@@ -1220,6 +1429,7 @@ impl Gpu3D {
                 instance_start,
                 instance_count: debug_points_count,
                 double_sided: debug_points_double_sided,
+                material_kind: MaterialPipelineKind::Standard,
                 local_center: debug_points_local_center,
                 local_radius: debug_points_local_radius.max(0.0),
                 occlusion_query: None,
@@ -1237,6 +1447,7 @@ impl Gpu3D {
                 instance_start,
                 instance_count: debug_edges_count,
                 double_sided: debug_edges_double_sided,
+                material_kind: MaterialPipelineKind::Standard,
                 local_center: debug_edges_local_center,
                 local_radius: debug_edges_local_radius.max(0.0),
                 occlusion_query: None,
@@ -1483,16 +1694,13 @@ impl Gpu3D {
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        let mut current_double_sided = None;
+        let mut current_pipeline_key: Option<(MaterialPipelineKind, bool)> = None;
         for (i, batch) in self.draw_batches.iter().enumerate() {
-            if current_double_sided != Some(batch.double_sided) {
-                let pipeline = if batch.double_sided {
-                    &self.pipeline_double_sided
-                } else {
-                    &self.pipeline_culled
-                };
+            let key = (batch.material_kind.clone(), batch.double_sided);
+            if current_pipeline_key.as_ref() != Some(&key) {
+                let pipeline = self.pipeline_for_batch(batch);
                 pass.set_pipeline(pipeline);
-                current_double_sided = Some(batch.double_sided);
+                current_pipeline_key = Some(key);
             }
             if let Some(query_index) = batch.occlusion_query {
                 pass.begin_occlusion_query(query_index);
@@ -2773,6 +2981,7 @@ fn push_draw_batch(
     mesh: MeshRange,
     instance: u32,
     double_sided: bool,
+    material_kind: MaterialPipelineKind,
     local_bounds: ([f32; 3], f32),
     occlusion_query: Option<u32>,
     disable_hiz_occlusion: bool,
@@ -2783,6 +2992,7 @@ fn push_draw_batch(
         instance_start: instance,
         instance_count: 1,
         double_sided,
+        material_kind,
         local_center,
         local_radius: local_radius.max(0.0),
         occlusion_query,
@@ -2799,22 +3009,55 @@ fn build_instance(
     skeleton_start: u32,
     skeleton_count: u32,
 ) -> InstanceGpu {
-    let params = material.standard_params();
     let (color, pbr_params, emissive_factor, debug_flag) = if debug_view {
         (debug_color, [0.5, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0], 1.0)
     } else {
-        (
-            params.base_color_factor,
-            [
-                params.roughness_factor,
-                params.metallic_factor,
-                params.occlusion_strength,
-                params.normal_scale,
-            ],
-            params.emissive_factor,
-            0.0,
-        )
+        match material {
+            Material3D::Standard(params) => (
+                params.base_color_factor,
+                [
+                    params.roughness_factor,
+                    params.metallic_factor,
+                    params.occlusion_strength,
+                    params.normal_scale,
+                ],
+                params.emissive_factor,
+                0.0,
+            ),
+            Material3D::Unlit(params) => (
+                params.base_color_factor,
+                [0.0, 0.0, 0.0, 0.0],
+                params.emissive_factor,
+                0.0,
+            ),
+            Material3D::Toon(params) => (
+                params.base_color_factor,
+                [
+                    params.band_count as f32,
+                    params.rim_strength,
+                    params.outline_width,
+                    0.0,
+                ],
+                params.emissive_factor,
+                0.0,
+            ),
+            Material3D::Custom(_) => {
+                let params = material.standard_params();
+                (
+                    params.base_color_factor,
+                    [
+                        params.roughness_factor,
+                        params.metallic_factor,
+                        params.occlusion_strength,
+                        params.normal_scale,
+                    ],
+                    params.emissive_factor,
+                    0.0,
+                )
+            }
+        }
     };
+    let params = material.standard_params();
 
     InstanceGpu {
         model_0: model[0],

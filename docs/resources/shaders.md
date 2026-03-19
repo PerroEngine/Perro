@@ -31,16 +31,41 @@ let custom_id = material_create!(
 );
 ```
 
-### Current Status
+### How Custom Shaders Are Composed
 
-Custom shader execution is **not yet wired into the 3D renderer**. The engine currently renders using the standard 3D pipeline and does not bind custom shader code or parameters. The `shader_path` and `params` are stored for future use.
+Custom material shaders are composed at runtime:
 
-### Planned Interface (TBD)
+1. The engine injects a **shared prelude** (scene/lighting structs, vertex wiring, helpers).
+2. Your WGSL file is appended.
+3. The engine appends a tiny wrapper fragment function:
 
-When custom materials are fully supported, the shader is expected to:
+```wgsl
+@fragment
+fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
+    return shade_material(in);
+}
+```
 
-- Provide `vs_main` and `fs_main` entry points (consistent with other 3D shaders).
-- Consume the standard 3D instance data (model matrix, base color, PBR params).
-- Bind custom params supplied by `CustomMaterial3D::params`.
+### What You Need To Implement
 
-The exact binding layout and param mapping will be documented once the runtime pipeline is implemented.
+Your `.wgsl` only needs to define:
+
+```wgsl
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    // use in.color, in.pbr_params, in.emissive_factor, in.material_params
+}
+```
+
+You **do not** need to define `vs_main`, bind groups, or scene structs.
+
+Notes for custom shaders:
+
+- `in.material_params` packs: `alpha_mode`, `alpha_cutoff`, `double_sided`, and a debug flag.
+- If you want alpha clipping or blending behavior, implement it in `shade_material`.
+
+### Current Limitations
+
+- Custom params from `CustomMaterial3D::params` are **not yet bound** to the shader.
+- Custom shaders must use the existing `FragmentInput` fields (color, pbr params, etc.).
+
+Once custom param binding is implemented, this doc will be expanded with the exact layout.

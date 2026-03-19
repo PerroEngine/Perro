@@ -1,5 +1,8 @@
 mod regular {
-    pub const MESH_INSTANCED_WGSL: &str = include_str!("shaders/mesh_instanced.wgsl");
+    pub const PRELUDE_WGSL: &str = include_str!("shaders/prelude_3d.wgsl");
+    pub const MATERIAL_STANDARD_WGSL: &str = include_str!("shaders/material_standard.wgsl");
+    pub const MATERIAL_UNLIT_WGSL: &str = include_str!("shaders/material_unlit.wgsl");
+    pub const MATERIAL_TOON_WGSL: &str = include_str!("shaders/material_toon.wgsl");
     pub const DEPTH_PREPASS_WGSL: &str = include_str!("shaders/depth_prepass.wgsl");
 }
 
@@ -14,8 +17,34 @@ mod culling {
 pub fn create_mesh_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_mesh_instanced"),
-        source: wgpu::ShaderSource::Wgsl(regular::MESH_INSTANCED_WGSL.into()),
+        source: wgpu::ShaderSource::Wgsl(build_material_shader(regular::MATERIAL_STANDARD_WGSL)),
     })
+}
+
+#[inline]
+pub fn create_unlit_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_mesh_unlit"),
+        source: wgpu::ShaderSource::Wgsl(build_material_shader(regular::MATERIAL_UNLIT_WGSL)),
+    })
+}
+
+#[inline]
+pub fn create_toon_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_mesh_toon"),
+        source: wgpu::ShaderSource::Wgsl(build_material_shader(regular::MATERIAL_TOON_WGSL)),
+    })
+}
+
+#[inline]
+pub fn build_material_shader(material_wgsl: &str) -> String {
+    let mut out = String::new();
+    out.push_str(regular::PRELUDE_WGSL);
+    out.push('\n');
+    out.push_str(material_wgsl);
+    out.push_str("\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    return shade_material(in);\n}\n");
+    out
 }
 
 #[inline]
