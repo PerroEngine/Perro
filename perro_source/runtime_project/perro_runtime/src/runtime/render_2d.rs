@@ -44,7 +44,7 @@ impl Runtime {
                         position: [camera.transform.position.x, camera.transform.position.y],
                         rotation_radians: camera.transform.rotation,
                         zoom: camera.zoom,
-                        post_processing: Arc::from(camera.post_processing.as_ref()),
+                        post_processing: Arc::from(camera.post_processing.as_slice()),
                     })
                 }
                 _ => None,

@@ -99,10 +99,14 @@ lifecycle!({
             }]));
         }
         if ipt.Keys().pressed(KeyCode::Digit9) {
-            requested_post = Some(Cow::Owned(vec![PostProcessEffect::Bloom {
-                threshold: 0.35,
-                radius: 2.0,
-                strength: 1.0,
+            requested_post = Some(Cow::Owned(vec![PostProcessEffect::Custom {
+                shader_path: Cow::Borrowed("res://shaders/post_rgb_split.wgsl"),
+                params: Cow::Owned(vec![
+                    CustomPostParam::unnamed(CustomPostParamValue::F32(12.0)),
+                    CustomPostParam::unnamed(CustomPostParamValue::F32(0.6)),
+                    CustomPostParam::unnamed(CustomPostParamValue::F32(1.4)),
+                    CustomPostParam::unnamed(CustomPostParamValue::F32(0.2)),
+                ]),
             }]));
         }
 
@@ -174,7 +178,7 @@ lifecycle!({
             camera.position.z += move_z * step;
 
             if let Some(post) = requested_post {
-                camera.post_processing = post;
+                camera.post_processing = PostProcessSet::from_effects(post.into_owned());
             }
         });
     }

@@ -32,8 +32,12 @@ the active 2D camera.
 
 ## Scene Authoring
 
-`post_processing` can be an array or an object keyed by indices (`0`, `1`, `2`, or
-`p0`, `p1`, ...). Each entry is an effect object.
+`post_processing` can be an array or an object. Arrays keep order. Objects support two forms:
+
+- Indexed keys (`0`, `1`, `2`, or `p0`, `p1`, ...) to preserve explicit order.
+- Named keys (`bloom`, `blur2`, ...) to make effects addressable by name in scripts.
+
+Each entry is an effect object. You can also provide a `name` field inside the effect object.
 
 ```
 [MainCamera]
@@ -60,10 +64,25 @@ post_processing = [
 [/MainCamera]
 ```
 
+Named object form (keys become effect names):
+
+```
+[MainCamera]
+    [Camera3D]
+        active = true
+post_processing = {
+    bloom = { type = "bloom", strength = 0.7, threshold = 0.75, radius = 1.5 },
+    blur2 = { type = "blur", strength = 2.0 },
+    vignette = { type = "vignette", strength = 0.6, radius = 0.55, softness = 0.25 }
+}
+    [/Camera3D]
+[/MainCamera]
+```
+
 ## Programmatic (Scripts)
 
-`post_processing` is `Cow<'static, [PostProcessEffect]>`, so you can use borrowed static slices or
-owned vectors.
+`post_processing` is a `PostProcessSet` that stores an ordered list of effects with optional
+names. You can add, remove, rename, and query by name. Rendering still uses the underlying slice.
 
 Borrowed (static slice):
 
@@ -85,7 +104,7 @@ static FX: &[PostProcessEffect] = &[
 ];
 
 with_node_mut!(ctx, Camera3D, cam_id, |cam| {
-    cam.post_processing = Cow::Borrowed(FX);
+    cam.post_processing = PostProcessSet::from_effects(FX.to_vec());
 });
 ```
 
@@ -94,9 +113,47 @@ Owned:
 ```rust
 
 with_node_mut!(ctx, Camera3D, cam_id, |cam| {
-    cam.post_processing = Cow::Owned(vec![
+    cam.post_processing.add(
+        "warp",
         PostProcessEffect::Warp { waves: 6.0, strength: 2.0 },
-    ]);
+    );
+});
+```
+
+Get or mutate by name (Camera3D or Camera2D):
+
+```rust
+with_node_mut!(ctx, Camera3D, cam_id, |cam| {
+    if let Some(PostProcessEffect::Bloom { strength, .. }) =
+        cam.post_processing.get_mut("bloom")
+    {
+        *strength = 2.0;
+    }
+});
+```
+
+Read-only access with `with_node!`:
+
+```rust
+let bloom_strength = with_node!(ctx, Camera3D, cam_id, |cam| {
+    cam.post_processing
+        .get("bloom")
+        .and_then(|fx| match fx {
+            PostProcessEffect::Bloom { strength, .. } => Some(*strength),
+            _ => None,
+        })
+});
+```
+
+Enumerate names:
+
+```rust
+with_node!(ctx, Camera3D, cam_id, |cam| {
+    for name in cam.post_processing.names() {
+        if let Some(name) = name {
+            log::info!("post fx: {name}");
+        }
+    }
 });
 ```
 

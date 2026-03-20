@@ -23,7 +23,10 @@ use perro_scene::{
     Parser, RuntimeNodeData, RuntimeNodeEntry, RuntimeScene, RuntimeValue, StaticNodeData,
     StaticNodeEntry, StaticNodeType, StaticScene, StaticSceneValue,
 };
-use perro_structs::{CustomPostParam, CustomPostParamValue, PostProcessEffect, Quaternion, Vector2, Vector3};
+use perro_structs::{
+    CustomPostParam, CustomPostParamValue, PostProcessEffect, PostProcessSet, Quaternion, Vector2,
+    Vector3,
+};
 use std::borrow::Cow;
 #[cfg(feature = "profile")]
 use std::time::Duration;
@@ -642,7 +645,7 @@ fn apply_camera_2d_fields(node: &mut Camera2D, fields: &[(String, RuntimeValue)]
             }
             "post_processing" => {
                 if let Some(v) = as_post_processing(value) {
-                    node.post_processing = Cow::Owned(v);
+                    node.post_processing = v;
                 }
             }
             "active" => {
@@ -784,7 +787,7 @@ fn apply_camera_3d_fields(node: &mut Camera3D, fields: &[(String, RuntimeValue)]
             }
             "post_processing" => {
                 if let Some(v) = as_post_processing(value) {
-                    node.post_processing = Cow::Owned(v);
+                    node.post_processing = v;
                 }
             }
             "active" => {
@@ -1018,7 +1021,7 @@ fn apply_camera_2d_fields_static(node: &mut Camera2D, fields: &[(&str, StaticSce
             }
             "post_processing" => {
                 if let Some(v) = as_post_processing_static(value) {
-                    node.post_processing = Cow::Owned(v);
+                    node.post_processing = v;
                 }
             }
             "active" => {
@@ -1168,7 +1171,7 @@ fn apply_camera_3d_fields_static(node: &mut Camera3D, fields: &[(&str, StaticSce
             }
             "post_processing" => {
                 if let Some(v) = as_post_processing_static(value) {
-                    node.post_processing = Cow::Owned(v);
+                    node.post_processing = v;
                 }
             }
             "active" => {
@@ -1655,62 +1658,119 @@ fn as_particle_params(value: &RuntimeValue) -> Option<Vec<f32>> {
     }
 }
 
-fn as_post_processing(value: &RuntimeValue) -> Option<Vec<PostProcessEffect>> {
+fn as_post_processing(value: &RuntimeValue) -> Option<PostProcessSet> {
     match value {
         RuntimeValue::Array(items) => {
-            let mut out = Vec::new();
+            let mut effects = Vec::new();
+            let mut names = Vec::new();
             for item in items {
-                out.push(post_effect_from_runtime(item)?);
+                let (name, effect) = post_effect_from_runtime(item)?;
+                effects.push(effect);
+                names.push(name);
             }
-            Some(out)
+            Some(PostProcessSet::from_pairs(effects, names))
         }
         RuntimeValue::Object(entries) => {
-            let mut indexed = Vec::<(usize, PostProcessEffect)>::new();
-            for (k, v) in entries {
-                let idx = parse_param_key_index(k)?;
-                let effect = post_effect_from_runtime(v)?;
-                indexed.push((idx, effect));
+            let all_indexed = entries
+                .iter()
+                .all(|(k, _)| parse_param_key_index(k).is_some());
+            if all_indexed {
+                let mut indexed =
+                    Vec::<(usize, Option<Cow<'static, str>>, PostProcessEffect)>::new();
+                for (k, v) in entries {
+                    let idx = parse_param_key_index(k)?;
+                    let (name, effect) = post_effect_from_runtime(v)?;
+                    indexed.push((idx, name, effect));
+                }
+                if indexed.is_empty() {
+                    return Some(PostProcessSet::new());
+                }
+                indexed.sort_unstable_by_key(|(i, _, _)| *i);
+                let mut effects = Vec::with_capacity(indexed.len());
+                let mut names = Vec::with_capacity(indexed.len());
+                for (_, name, effect) in indexed {
+                    effects.push(effect);
+                    names.push(name);
+                }
+                Some(PostProcessSet::from_pairs(effects, names))
+            } else {
+                let mut effects = Vec::with_capacity(entries.len());
+                let mut names = Vec::with_capacity(entries.len());
+                for (k, v) in entries {
+                    let (mut name, effect) = post_effect_from_runtime(v)?;
+                    if name.is_none() {
+                        name = Some(Cow::Owned(k.clone()));
+                    }
+                    effects.push(effect);
+                    names.push(name);
+                }
+                Some(PostProcessSet::from_pairs(effects, names))
             }
-            if indexed.is_empty() {
-                return Some(Vec::new());
-            }
-            indexed.sort_unstable_by_key(|(i, _)| *i);
-            Some(indexed.into_iter().map(|(_, e)| e).collect())
         }
         _ => None,
     }
 }
 
-fn as_post_processing_static(value: &StaticSceneValue) -> Option<Vec<PostProcessEffect>> {
+fn as_post_processing_static(value: &StaticSceneValue) -> Option<PostProcessSet> {
     match value {
         StaticSceneValue::Array(items) => {
-            let mut out = Vec::new();
+            let mut effects = Vec::new();
+            let mut names = Vec::new();
             for item in items.iter() {
-                out.push(post_effect_from_static(item)?);
+                let (name, effect) = post_effect_from_static(item)?;
+                effects.push(effect);
+                names.push(name);
             }
-            Some(out)
+            Some(PostProcessSet::from_pairs(effects, names))
         }
         StaticSceneValue::Object(entries) => {
-            let mut indexed = Vec::<(usize, PostProcessEffect)>::new();
-            for (k, v) in entries.iter() {
-                let idx = parse_param_key_index(k)?;
-                let effect = post_effect_from_static(v)?;
-                indexed.push((idx, effect));
+            let all_indexed = entries
+                .iter()
+                .all(|(k, _)| parse_param_key_index(k).is_some());
+            if all_indexed {
+                let mut indexed =
+                    Vec::<(usize, Option<Cow<'static, str>>, PostProcessEffect)>::new();
+                for (k, v) in entries.iter() {
+                    let idx = parse_param_key_index(k)?;
+                    let (name, effect) = post_effect_from_static(v)?;
+                    indexed.push((idx, name, effect));
+                }
+                if indexed.is_empty() {
+                    return Some(PostProcessSet::new());
+                }
+                indexed.sort_unstable_by_key(|(i, _, _)| *i);
+                let mut effects = Vec::with_capacity(indexed.len());
+                let mut names = Vec::with_capacity(indexed.len());
+                for (_, name, effect) in indexed {
+                    effects.push(effect);
+                    names.push(name);
+                }
+                Some(PostProcessSet::from_pairs(effects, names))
+            } else {
+                let mut effects = Vec::with_capacity(entries.len());
+                let mut names = Vec::with_capacity(entries.len());
+                for (k, v) in entries.iter() {
+                    let (mut name, effect) = post_effect_from_static(v)?;
+                    if name.is_none() {
+                        name = Some(Cow::Borrowed(*k));
+                    }
+                    effects.push(effect);
+                    names.push(name);
+                }
+                Some(PostProcessSet::from_pairs(effects, names))
             }
-            if indexed.is_empty() {
-                return Some(Vec::new());
-            }
-            indexed.sort_unstable_by_key(|(i, _)| *i);
-            Some(indexed.into_iter().map(|(_, e)| e).collect())
         }
         _ => None,
     }
 }
 
-fn post_effect_from_runtime(value: &RuntimeValue) -> Option<PostProcessEffect> {
+fn post_effect_from_runtime(
+    value: &RuntimeValue,
+) -> Option<(Option<Cow<'static, str>>, PostProcessEffect)> {
     let RuntimeValue::Object(entries) = value else {
         return None;
     };
+    let mut name: Option<Cow<'static, str>> = None;
     let mut ty: Option<String> = None;
     let mut strength: Option<f32> = None;
     let mut size: Option<f32> = None;
@@ -1729,6 +1789,14 @@ fn post_effect_from_runtime(value: &RuntimeValue) -> Option<PostProcessEffect> {
 
     for (k, v) in entries {
         match k.as_str() {
+            "name" | "id" | "key" => {
+                if let Some(s) = as_str(v) {
+                    let s = s.trim();
+                    if !s.is_empty() {
+                        name = Some(Cow::Owned(s.to_string()));
+                    }
+                }
+            }
             "type" | "effect" => {
                 if let Some(s) = as_str(v) {
                     ty = Some(s.trim().to_ascii_lowercase());
@@ -1761,63 +1829,99 @@ fn post_effect_from_runtime(value: &RuntimeValue) -> Option<PostProcessEffect> {
     }
 
     match ty.as_deref()? {
-        "blur" => Some(PostProcessEffect::Blur {
-            strength: strength.unwrap_or(1.0),
-        }),
-        "pixel" | "pixelate" => Some(PostProcessEffect::Pixelate {
-            size: size.unwrap_or(1.0),
-        }),
-        "warp" => Some(PostProcessEffect::Warp {
-            waves: waves.unwrap_or(1.0),
-            strength: strength.unwrap_or(1.0),
-        }),
-        "vignette" => Some(PostProcessEffect::Vignette {
-            strength: strength.unwrap_or(0.6),
-            radius: radius.unwrap_or(0.55),
-            softness: softness.unwrap_or(0.25),
-        }),
-        "crt" => Some(PostProcessEffect::Crt {
-            scanline_strength: scanline_strength.unwrap_or(0.35),
-            curvature: curvature.unwrap_or(0.15),
-            chromatic: chromatic.unwrap_or(1.0),
-            vignette: vignette.unwrap_or(0.25),
-        }),
-        "colorfilter" | "color_filter" | "filter" => Some(PostProcessEffect::ColorFilter {
-            color: color.unwrap_or([1.0, 1.0, 1.0]),
-            strength: strength.unwrap_or(1.0),
-        }),
-        "reversefilter" | "reverse_filter" | "reverse" => Some(PostProcessEffect::ReverseFilter {
-            color: color.unwrap_or([1.0, 1.0, 1.0]),
-            strength: strength.unwrap_or(1.0),
-            softness: softness.unwrap_or(0.2),
-        }),
-        "bloom" => Some(PostProcessEffect::Bloom {
-            strength: strength.unwrap_or(0.6),
-            threshold: threshold.unwrap_or(0.7),
-            radius: radius.unwrap_or(1.25),
-        }),
-        "saturate" | "saturation" => Some(PostProcessEffect::Saturate {
-            amount: amount.or(strength).unwrap_or(1.2),
-        }),
-        "black_white" | "blackwhite" | "bw" | "grayscale" => Some(PostProcessEffect::BlackWhite {
-            amount: amount.or(strength).unwrap_or(1.0),
-        }),
+        "blur" => Some((
+            name,
+            PostProcessEffect::Blur {
+                strength: strength.unwrap_or(1.0),
+            },
+        )),
+        "pixel" | "pixelate" => Some((
+            name,
+            PostProcessEffect::Pixelate {
+                size: size.unwrap_or(1.0),
+            },
+        )),
+        "warp" => Some((
+            name,
+            PostProcessEffect::Warp {
+                waves: waves.unwrap_or(1.0),
+                strength: strength.unwrap_or(1.0),
+            },
+        )),
+        "vignette" => Some((
+            name,
+            PostProcessEffect::Vignette {
+                strength: strength.unwrap_or(0.6),
+                radius: radius.unwrap_or(0.55),
+                softness: softness.unwrap_or(0.25),
+            },
+        )),
+        "crt" => Some((
+            name,
+            PostProcessEffect::Crt {
+                scanline_strength: scanline_strength.unwrap_or(0.35),
+                curvature: curvature.unwrap_or(0.15),
+                chromatic: chromatic.unwrap_or(1.0),
+                vignette: vignette.unwrap_or(0.25),
+            },
+        )),
+        "colorfilter" | "color_filter" | "filter" => Some((
+            name,
+            PostProcessEffect::ColorFilter {
+                color: color.unwrap_or([1.0, 1.0, 1.0]),
+                strength: strength.unwrap_or(1.0),
+            },
+        )),
+        "reversefilter" | "reverse_filter" | "reverse" => Some((
+            name,
+            PostProcessEffect::ReverseFilter {
+                color: color.unwrap_or([1.0, 1.0, 1.0]),
+                strength: strength.unwrap_or(1.0),
+                softness: softness.unwrap_or(0.2),
+            },
+        )),
+        "bloom" => Some((
+            name,
+            PostProcessEffect::Bloom {
+                strength: strength.unwrap_or(0.6),
+                threshold: threshold.unwrap_or(0.7),
+                radius: radius.unwrap_or(1.25),
+            },
+        )),
+        "saturate" | "saturation" => Some((
+            name,
+            PostProcessEffect::Saturate {
+                amount: amount.or(strength).unwrap_or(1.2),
+            },
+        )),
+        "black_white" | "blackwhite" | "bw" | "grayscale" => Some((
+            name,
+            PostProcessEffect::BlackWhite {
+                amount: amount.or(strength).unwrap_or(1.0),
+            },
+        )),
         "custom" => {
             let shader_path = shader_path?;
             let params = params.unwrap_or_default();
-            Some(PostProcessEffect::Custom {
-                shader_path: Cow::Owned(shader_path),
-                params: Cow::Owned(params),
-            })
+            Some((
+                name,
+                PostProcessEffect::Custom {
+                    shader_path: Cow::Owned(shader_path),
+                    params: Cow::Owned(params),
+                },
+            ))
         }
         _ => None,
     }
 }
 
-fn post_effect_from_static(value: &StaticSceneValue) -> Option<PostProcessEffect> {
+fn post_effect_from_static(
+    value: &StaticSceneValue,
+) -> Option<(Option<Cow<'static, str>>, PostProcessEffect)> {
     let StaticSceneValue::Object(entries) = value else {
         return None;
     };
+    let mut name: Option<Cow<'static, str>> = None;
     let mut ty: Option<String> = None;
     let mut strength: Option<f32> = None;
     let mut size: Option<f32> = None;
@@ -1836,6 +1940,14 @@ fn post_effect_from_static(value: &StaticSceneValue) -> Option<PostProcessEffect
 
     for (k, v) in entries.iter() {
         match *k {
+            "name" | "id" | "key" => {
+                if let Some(s) = as_str_static(v) {
+                    let s = s.trim();
+                    if !s.is_empty() {
+                        name = Some(Cow::Borrowed(s));
+                    }
+                }
+            }
             "type" | "effect" => {
                 if let Some(s) = as_str_static(v) {
                     ty = Some(s.trim().to_ascii_lowercase());
@@ -1868,54 +1980,87 @@ fn post_effect_from_static(value: &StaticSceneValue) -> Option<PostProcessEffect
     }
 
     match ty.as_deref()? {
-        "blur" => Some(PostProcessEffect::Blur {
-            strength: strength.unwrap_or(1.0),
-        }),
-        "pixel" | "pixelate" => Some(PostProcessEffect::Pixelate {
-            size: size.unwrap_or(1.0),
-        }),
-        "warp" => Some(PostProcessEffect::Warp {
-            waves: waves.unwrap_or(1.0),
-            strength: strength.unwrap_or(1.0),
-        }),
-        "vignette" => Some(PostProcessEffect::Vignette {
-            strength: strength.unwrap_or(0.6),
-            radius: radius.unwrap_or(0.55),
-            softness: softness.unwrap_or(0.25),
-        }),
-        "crt" => Some(PostProcessEffect::Crt {
-            scanline_strength: scanline_strength.unwrap_or(0.35),
-            curvature: curvature.unwrap_or(0.15),
-            chromatic: chromatic.unwrap_or(1.0),
-            vignette: vignette.unwrap_or(0.25),
-        }),
-        "colorfilter" | "color_filter" | "filter" => Some(PostProcessEffect::ColorFilter {
-            color: color.unwrap_or([1.0, 1.0, 1.0]),
-            strength: strength.unwrap_or(1.0),
-        }),
-        "reversefilter" | "reverse_filter" | "reverse" => Some(PostProcessEffect::ReverseFilter {
-            color: color.unwrap_or([1.0, 1.0, 1.0]),
-            strength: strength.unwrap_or(1.0),
-            softness: softness.unwrap_or(0.2),
-        }),
-        "bloom" => Some(PostProcessEffect::Bloom {
-            strength: strength.unwrap_or(0.6),
-            threshold: threshold.unwrap_or(0.7),
-            radius: radius.unwrap_or(1.25),
-        }),
-        "saturate" | "saturation" => Some(PostProcessEffect::Saturate {
-            amount: amount.or(strength).unwrap_or(1.2),
-        }),
-        "black_white" | "blackwhite" | "bw" | "grayscale" => Some(PostProcessEffect::BlackWhite {
-            amount: amount.or(strength).unwrap_or(1.0),
-        }),
+        "blur" => Some((
+            name,
+            PostProcessEffect::Blur {
+                strength: strength.unwrap_or(1.0),
+            },
+        )),
+        "pixel" | "pixelate" => Some((
+            name,
+            PostProcessEffect::Pixelate {
+                size: size.unwrap_or(1.0),
+            },
+        )),
+        "warp" => Some((
+            name,
+            PostProcessEffect::Warp {
+                waves: waves.unwrap_or(1.0),
+                strength: strength.unwrap_or(1.0),
+            },
+        )),
+        "vignette" => Some((
+            name,
+            PostProcessEffect::Vignette {
+                strength: strength.unwrap_or(0.6),
+                radius: radius.unwrap_or(0.55),
+                softness: softness.unwrap_or(0.25),
+            },
+        )),
+        "crt" => Some((
+            name,
+            PostProcessEffect::Crt {
+                scanline_strength: scanline_strength.unwrap_or(0.35),
+                curvature: curvature.unwrap_or(0.15),
+                chromatic: chromatic.unwrap_or(1.0),
+                vignette: vignette.unwrap_or(0.25),
+            },
+        )),
+        "colorfilter" | "color_filter" | "filter" => Some((
+            name,
+            PostProcessEffect::ColorFilter {
+                color: color.unwrap_or([1.0, 1.0, 1.0]),
+                strength: strength.unwrap_or(1.0),
+            },
+        )),
+        "reversefilter" | "reverse_filter" | "reverse" => Some((
+            name,
+            PostProcessEffect::ReverseFilter {
+                color: color.unwrap_or([1.0, 1.0, 1.0]),
+                strength: strength.unwrap_or(1.0),
+                softness: softness.unwrap_or(0.2),
+            },
+        )),
+        "bloom" => Some((
+            name,
+            PostProcessEffect::Bloom {
+                strength: strength.unwrap_or(0.6),
+                threshold: threshold.unwrap_or(0.7),
+                radius: radius.unwrap_or(1.25),
+            },
+        )),
+        "saturate" | "saturation" => Some((
+            name,
+            PostProcessEffect::Saturate {
+                amount: amount.or(strength).unwrap_or(1.2),
+            },
+        )),
+        "black_white" | "blackwhite" | "bw" | "grayscale" => Some((
+            name,
+            PostProcessEffect::BlackWhite {
+                amount: amount.or(strength).unwrap_or(1.0),
+            },
+        )),
         "custom" => {
             let shader_path = shader_path?;
             let params = params.unwrap_or_default();
-            Some(PostProcessEffect::Custom {
-                shader_path: Cow::Owned(shader_path),
-                params: Cow::Owned(params),
-            })
+            Some((
+                name,
+                PostProcessEffect::Custom {
+                    shader_path: Cow::Owned(shader_path),
+                    params: Cow::Owned(params),
+                },
+            ))
         }
         _ => None,
     }
