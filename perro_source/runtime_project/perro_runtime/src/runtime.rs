@@ -5,16 +5,18 @@ use crate::{
     runtime_project::{ProviderMode, RuntimeProject},
 };
 use ahash::{AHashMap, AHashSet};
+use glam::{Mat3, Mat4};
 use libloading::Library;
 use perro_ids::{MaterialID, MeshID, NodeID, TagID, TextureID};
-use perro_input::{
-    GamepadAxis, GamepadButton, InputContext, InputSnapshot, KeyCode, MouseButton,
+use perro_input::{GamepadAxis, GamepadButton, InputContext, InputSnapshot, KeyCode, MouseButton};
+use perro_nodes::{
+    InternalFixedUpdate, InternalUpdate, Node2D, Node3D, NodeType, SceneNodeData, Spatial,
 };
-use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType, SceneNodeData, Spatial};
 use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
 use perro_resource_context::ResourceContext;
 use perro_runtime_context::RuntimeContext;
 use perro_scripting::ScriptConstructor;
+use perro_structs::{Transform2D, Transform3D};
 use perro_terrain::{ChunkCoord, TerrainData};
 use std::sync::{Arc, Mutex};
 
@@ -44,6 +46,13 @@ pub struct Runtime {
     traversal_stack: Vec<NodeID>,
     transform_visit_flags: Vec<u8>,
     transform_visit_indices: Vec<u32>,
+    global_transform_2d: Vec<Transform2D>,
+    global_transform_2d_valid: Vec<u8>,
+    global_transform_2d_generation: Vec<u32>,
+    global_transform_3d: Vec<Transform3D>,
+    global_transform_3d_valid: Vec<u8>,
+    global_transform_3d_generation: Vec<u32>,
+    global_chain_scratch: Vec<NodeID>,
     internal_update_nodes: Vec<NodeID>,
     internal_fixed_update_nodes: Vec<NodeID>,
     internal_update_pos: Vec<Option<usize>>,
@@ -300,6 +309,58 @@ impl DirtyState {
         }
     }
 
+    #[inline]
+    fn transform_mask(spatial: Spatial) -> u8 {
+        match spatial {
+            Spatial::TwoD => Self::FLAG_DIRTY_2D_TRANSFORM,
+            Spatial::ThreeD => Self::FLAG_DIRTY_3D_TRANSFORM,
+            Spatial::None => 0,
+        }
+    }
+
+    #[inline]
+    fn has_transform_dirty(&self, id: NodeID, spatial: Spatial) -> bool {
+        let index = id.index() as usize;
+        let mask = Self::transform_mask(spatial);
+        if mask == 0 {
+            return false;
+        }
+        self.node_flags
+            .get(index)
+            .copied()
+            .is_some_and(|flags| (flags & mask) != 0)
+    }
+
+    #[inline]
+    fn clear_transform_dirty(&mut self, id: NodeID, spatial: Spatial) {
+        let index = id.index() as usize;
+        let mask = Self::transform_mask(spatial);
+        if mask == 0 {
+            return;
+        }
+        if let Some(flags) = self.node_flags.get_mut(index) {
+            *flags &= !mask;
+        }
+    }
+
+    #[inline]
+    fn clear_transform_dirty_at_index(&mut self, index: usize, mask: u8) {
+        if let Some(flags) = self.node_flags.get_mut(index) {
+            *flags &= !mask;
+        }
+    }
+
+    #[inline]
+    fn dirty_indices(&self) -> &[u32] {
+        &self.dirty_indices
+    }
+
+    #[inline]
+    fn transform_flags_at(&self, index: usize) -> u8 {
+        self.node_flags.get(index).copied().unwrap_or(0)
+            & (Self::FLAG_DIRTY_2D_TRANSFORM | Self::FLAG_DIRTY_3D_TRANSFORM)
+    }
+
     fn mark_transform_root(&mut self, id: NodeID) {
         let index = id.index() as usize;
         if self.pending_transform_root_flags.len() <= index {
@@ -377,6 +438,13 @@ impl Runtime {
             traversal_stack: Vec::new(),
             transform_visit_flags: Vec::new(),
             transform_visit_indices: Vec::new(),
+            global_transform_2d: Vec::new(),
+            global_transform_2d_valid: Vec::new(),
+            global_transform_2d_generation: Vec::new(),
+            global_transform_3d: Vec::new(),
+            global_transform_3d_valid: Vec::new(),
+            global_transform_3d_generation: Vec::new(),
+            global_chain_scratch: Vec::new(),
             internal_update_nodes: Vec::new(),
             internal_fixed_update_nodes: Vec::new(),
             internal_update_pos: Vec::new(),
@@ -490,12 +558,7 @@ impl Runtime {
     }
 
     #[inline]
-    pub fn set_gamepad_button_state(
-        &mut self,
-        index: usize,
-        button: GamepadButton,
-        is_down: bool,
-    ) {
+    pub fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
         self.input.set_gamepad_button_state(index, button, is_down);
     }
 
@@ -626,6 +689,259 @@ impl Runtime {
         self.traversal_stack = stack;
         roots.clear();
         self.pending_transform_roots = roots;
+    }
+
+    #[inline]
+    fn ensure_global_2d_capacity(&mut self, index: usize) {
+        if self.global_transform_2d.len() <= index {
+            self.global_transform_2d
+                .resize(index + 1, Transform2D::IDENTITY);
+        }
+        if self.global_transform_2d_valid.len() <= index {
+            self.global_transform_2d_valid.resize(index + 1, 0);
+        }
+        if self.global_transform_2d_generation.len() <= index {
+            self.global_transform_2d_generation.resize(index + 1, 0);
+        }
+    }
+
+    #[inline]
+    fn ensure_global_3d_capacity(&mut self, index: usize) {
+        if self.global_transform_3d.len() <= index {
+            self.global_transform_3d
+                .resize(index + 1, Transform3D::IDENTITY);
+        }
+        if self.global_transform_3d_valid.len() <= index {
+            self.global_transform_3d_valid.resize(index + 1, 0);
+        }
+        if self.global_transform_3d_generation.len() <= index {
+            self.global_transform_3d_generation.resize(index + 1, 0);
+        }
+    }
+
+    fn is_global_2d_cached_clean(&self, id: NodeID) -> bool {
+        let index = id.index() as usize;
+        if self
+            .global_transform_2d_valid
+            .get(index)
+            .copied()
+            .unwrap_or(0)
+            == 0
+        {
+            return false;
+        }
+        if self
+            .global_transform_2d_generation
+            .get(index)
+            .copied()
+            .unwrap_or(u32::MAX)
+            != id.generation()
+        {
+            return false;
+        }
+        !self.dirty.has_transform_dirty(id, Spatial::TwoD)
+    }
+
+    fn is_global_3d_cached_clean(&self, id: NodeID) -> bool {
+        let index = id.index() as usize;
+        if self
+            .global_transform_3d_valid
+            .get(index)
+            .copied()
+            .unwrap_or(0)
+            == 0
+        {
+            return false;
+        }
+        if self
+            .global_transform_3d_generation
+            .get(index)
+            .copied()
+            .unwrap_or(u32::MAX)
+            != id.generation()
+        {
+            return false;
+        }
+        !self.dirty.has_transform_dirty(id, Spatial::ThreeD)
+    }
+
+    fn get_global_transform_2d(&mut self, id: NodeID) -> Option<Transform2D> {
+        if id.is_nil() || self.nodes.get(id).is_none() {
+            return None;
+        }
+        let start_index = id.index() as usize;
+        self.ensure_global_2d_capacity(start_index);
+        if self.is_global_2d_cached_clean(id) {
+            return self.global_transform_2d.get(start_index).copied();
+        }
+
+        let mut chain = std::mem::take(&mut self.global_chain_scratch);
+        chain.clear();
+
+        let mut cursor = id;
+        let mut parent_world = Mat3::IDENTITY;
+        let max_hops = self.nodes.len().saturating_add(1);
+        let mut hops = 0usize;
+
+        while hops < max_hops {
+            let Some((parent, _local)) = self.nodes.get(cursor).and_then(|node| {
+                node.with_base_ref::<Node2D, _>(|base| (node.parent, base.transform))
+            }) else {
+                break;
+            };
+            let index = cursor.index() as usize;
+            self.ensure_global_2d_capacity(index);
+            let dirty = self.dirty.has_transform_dirty(cursor, Spatial::TwoD);
+            let cached_clean = self.is_global_2d_cached_clean(cursor);
+            if cached_clean && !dirty {
+                parent_world = self.global_transform_2d[index].to_mat3();
+                break;
+            }
+            chain.push(cursor);
+
+            if parent.is_nil() {
+                break;
+            }
+            if self.nodes.get(parent).is_none() {
+                break;
+            }
+            cursor = parent;
+            hops += 1;
+        }
+
+        for chain_id in chain.iter().rev().copied() {
+            let Some((local, parent)) = self.nodes.get(chain_id).and_then(|node| {
+                node.with_base_ref::<Node2D, _>(|base| (base.transform, node.parent))
+            }) else {
+                continue;
+            };
+            let parent_is_2d = !parent.is_nil()
+                && self
+                    .nodes
+                    .get(parent)
+                    .and_then(|node| node.with_base_ref::<Node2D, _>(|_| ()))
+                    .is_some();
+            let (global, world) = if parent_is_2d {
+                let world = parent_world * local.to_mat3();
+                (Transform2D::from_mat3(world), world)
+            } else {
+                (local, local.to_mat3())
+            };
+            let index = chain_id.index() as usize;
+            self.ensure_global_2d_capacity(index);
+            self.global_transform_2d[index] = global;
+            self.global_transform_2d_valid[index] = 1;
+            self.global_transform_2d_generation[index] = chain_id.generation();
+            self.dirty.clear_transform_dirty(chain_id, Spatial::TwoD);
+            parent_world = world;
+        }
+
+        let result = self.global_transform_2d.get(start_index).copied();
+        chain.clear();
+        self.global_chain_scratch = chain;
+        result
+    }
+
+    fn get_global_transform_3d(&mut self, id: NodeID) -> Option<Transform3D> {
+        if id.is_nil() || self.nodes.get(id).is_none() {
+            return None;
+        }
+        let start_index = id.index() as usize;
+        self.ensure_global_3d_capacity(start_index);
+        if self.is_global_3d_cached_clean(id) {
+            return self.global_transform_3d.get(start_index).copied();
+        }
+
+        let mut chain = std::mem::take(&mut self.global_chain_scratch);
+        chain.clear();
+
+        let mut cursor = id;
+        let mut parent_world = Mat4::IDENTITY;
+        let max_hops = self.nodes.len().saturating_add(1);
+        let mut hops = 0usize;
+
+        while hops < max_hops {
+            let Some((parent, _local)) = self.nodes.get(cursor).and_then(|node| {
+                node.with_base_ref::<Node3D, _>(|base| (node.parent, base.transform))
+            }) else {
+                break;
+            };
+            let index = cursor.index() as usize;
+            self.ensure_global_3d_capacity(index);
+            let dirty = self.dirty.has_transform_dirty(cursor, Spatial::ThreeD);
+            let cached_clean = self.is_global_3d_cached_clean(cursor);
+            if cached_clean && !dirty {
+                parent_world = self.global_transform_3d[index].to_mat4();
+                break;
+            }
+            chain.push(cursor);
+
+            if parent.is_nil() {
+                break;
+            }
+            if self.nodes.get(parent).is_none() {
+                break;
+            }
+            cursor = parent;
+            hops += 1;
+        }
+
+        for chain_id in chain.iter().rev().copied() {
+            let Some((local, parent)) = self.nodes.get(chain_id).and_then(|node| {
+                node.with_base_ref::<Node3D, _>(|base| (base.transform, node.parent))
+            }) else {
+                continue;
+            };
+            let parent_is_3d = !parent.is_nil()
+                && self
+                    .nodes
+                    .get(parent)
+                    .and_then(|node| node.with_base_ref::<Node3D, _>(|_| ()))
+                    .is_some();
+            let (global, world) = if parent_is_3d {
+                let world = parent_world * local.to_mat4();
+                (Transform3D::from_mat4(world), world)
+            } else {
+                (local, local.to_mat4())
+            };
+            let index = chain_id.index() as usize;
+            self.ensure_global_3d_capacity(index);
+            self.global_transform_3d[index] = global;
+            self.global_transform_3d_valid[index] = 1;
+            self.global_transform_3d_generation[index] = chain_id.generation();
+            self.dirty.clear_transform_dirty(chain_id, Spatial::ThreeD);
+            parent_world = world;
+        }
+
+        let result = self.global_transform_3d.get(start_index).copied();
+        chain.clear();
+        self.global_chain_scratch = chain;
+        result
+    }
+
+    pub(crate) fn refresh_dirty_global_transforms(&mut self) {
+        let dirty_indices = self.dirty.dirty_indices().to_vec();
+        for raw_index in dirty_indices {
+            let index = raw_index as usize;
+            let flags = self.dirty.transform_flags_at(index);
+            if flags == 0 {
+                continue;
+            }
+            let Some((id, _)) = self.nodes.slot_get(index) else {
+                self.dirty.clear_transform_dirty_at_index(
+                    index,
+                    DirtyState::FLAG_DIRTY_2D_TRANSFORM | DirtyState::FLAG_DIRTY_3D_TRANSFORM,
+                );
+                continue;
+            };
+
+            if (flags & DirtyState::FLAG_DIRTY_2D_TRANSFORM) != 0 {
+                let _ = self.get_global_transform_2d(id);
+            }
+            if (flags & DirtyState::FLAG_DIRTY_3D_TRANSFORM) != 0 {
+                let _ = self.get_global_transform_3d(id);
+            }
+        }
     }
 
     fn run_update_schedule(&mut self) {

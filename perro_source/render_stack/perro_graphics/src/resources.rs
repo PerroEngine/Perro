@@ -316,7 +316,6 @@ impl ResourceStore {
         id
     }
 
-
     #[inline]
     pub fn has_texture(&self, id: TextureID) -> bool {
         self.textures.contains_parts(id.index(), id.generation())
@@ -541,7 +540,6 @@ impl ResourceStore {
         false
     }
 
-
     pub fn drop_texture(&mut self, id: TextureID) -> bool {
         self.drop_texture_inner(id, true)
     }
@@ -597,7 +595,6 @@ impl ResourceStore {
         self.material_meta_by.remove(&id);
         true
     }
-
 
     fn log_resource_created(
         &self,

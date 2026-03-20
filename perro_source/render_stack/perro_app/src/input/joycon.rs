@@ -6,9 +6,9 @@ mod backend {
     use hidapi::HidApi;
     use perro_input::{JoyConButton, JoyConIndex, JoyConSide};
     use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::{self, Receiver, Sender};
-    use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -25,7 +25,19 @@ mod backend {
     }
 
     type ButtonBits = [bool; JoyConButton::COUNT];
-    type JoyConEvent = (usize, JoyConSide, ButtonBits, f32, f32, f32, f32, f32, f32, f32, f32);
+    type JoyConEvent = (
+        usize,
+        JoyConSide,
+        ButtonBits,
+        f32,
+        f32,
+        f32,
+        f32,
+        f32,
+        f32,
+        f32,
+        f32,
+    );
 
     #[derive(Default)]
     pub struct JoyConBackend {
@@ -40,7 +52,6 @@ mod backend {
     }
 
     impl JoyConBackend {
-
         pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
             self.ensure_channel();
             self.scan_if_needed();
@@ -136,7 +147,13 @@ mod backend {
             index
         }
 
-        fn spawn_device_thread(&mut self, serial: String, pid: u16, side: JoyConSide, index: usize) {
+        fn spawn_device_thread(
+            &mut self,
+            serial: String,
+            pid: u16,
+            side: JoyConSide,
+            index: usize,
+        ) {
             let Some(tx) = self.tx.clone() else {
                 return;
             };
@@ -159,17 +176,8 @@ mod backend {
                             let data = &buffer[..size];
                             if let Some(payload) = decode_report(data, side) {
                                 let _ = tx.send((
-                                    index,
-                                    side,
-                                    payload.0,
-                                    payload.1,
-                                    payload.2,
-                                    payload.3,
-                                    payload.4,
-                                    payload.5,
-                                    payload.6,
-                                    payload.7,
-                                    payload.8,
+                                    index, side, payload.0, payload.1, payload.2, payload.3,
+                                    payload.4, payload.5, payload.6, payload.7, payload.8,
                                 ));
                             }
                         }
@@ -237,22 +245,42 @@ mod backend {
                     app.set_joycon_button_state(index, JoyConButton::Top, map(JoyConButton::Top));
                 }
                 if changed(JoyConButton::Bottom) {
-                    app.set_joycon_button_state(index, JoyConButton::Bottom, map(JoyConButton::Bottom));
+                    app.set_joycon_button_state(
+                        index,
+                        JoyConButton::Bottom,
+                        map(JoyConButton::Bottom),
+                    );
                 }
                 if changed(JoyConButton::Left) {
                     app.set_joycon_button_state(index, JoyConButton::Left, map(JoyConButton::Left));
                 }
                 if changed(JoyConButton::Right) {
-                    app.set_joycon_button_state(index, JoyConButton::Right, map(JoyConButton::Right));
+                    app.set_joycon_button_state(
+                        index,
+                        JoyConButton::Right,
+                        map(JoyConButton::Right),
+                    );
                 }
                 if changed(JoyConButton::Bumper) {
-                    app.set_joycon_button_state(index, JoyConButton::Bumper, map(JoyConButton::Bumper));
+                    app.set_joycon_button_state(
+                        index,
+                        JoyConButton::Bumper,
+                        map(JoyConButton::Bumper),
+                    );
                 }
                 if changed(JoyConButton::Trigger) {
-                    app.set_joycon_button_state(index, JoyConButton::Trigger, map(JoyConButton::Trigger));
+                    app.set_joycon_button_state(
+                        index,
+                        JoyConButton::Trigger,
+                        map(JoyConButton::Trigger),
+                    );
                 }
                 if changed(JoyConButton::Stick) {
-                    app.set_joycon_button_state(index, JoyConButton::Stick, map(JoyConButton::Stick));
+                    app.set_joycon_button_state(
+                        index,
+                        JoyConButton::Stick,
+                        map(JoyConButton::Stick),
+                    );
                 }
                 if changed(JoyConButton::SL) {
                     app.set_joycon_button_state(index, JoyConButton::SL, map(JoyConButton::SL));
@@ -261,7 +289,11 @@ mod backend {
                     app.set_joycon_button_state(index, JoyConButton::SR, map(JoyConButton::SR));
                 }
                 if changed(JoyConButton::Start) {
-                    app.set_joycon_button_state(index, JoyConButton::Start, map(JoyConButton::Start));
+                    app.set_joycon_button_state(
+                        index,
+                        JoyConButton::Start,
+                        map(JoyConButton::Start),
+                    );
                 }
                 if changed(JoyConButton::Meta) {
                     app.set_joycon_button_state(index, JoyConButton::Meta, map(JoyConButton::Meta));
@@ -272,22 +304,42 @@ mod backend {
                     app.set_joycon_button_state(index, JoyConButton::Top, map(JoyConButton::Top));
                 }
                 if changed(JoyConButton::Bottom) {
-                    app.set_joycon_button_state(index, JoyConButton::Bottom, map(JoyConButton::Bottom));
+                    app.set_joycon_button_state(
+                        index,
+                        JoyConButton::Bottom,
+                        map(JoyConButton::Bottom),
+                    );
                 }
                 if changed(JoyConButton::Left) {
                     app.set_joycon_button_state(index, JoyConButton::Left, map(JoyConButton::Left));
                 }
                 if changed(JoyConButton::Right) {
-                    app.set_joycon_button_state(index, JoyConButton::Right, map(JoyConButton::Right));
+                    app.set_joycon_button_state(
+                        index,
+                        JoyConButton::Right,
+                        map(JoyConButton::Right),
+                    );
                 }
                 if changed(JoyConButton::Bumper) {
-                    app.set_joycon_button_state(index, JoyConButton::Bumper, map(JoyConButton::Bumper));
+                    app.set_joycon_button_state(
+                        index,
+                        JoyConButton::Bumper,
+                        map(JoyConButton::Bumper),
+                    );
                 }
                 if changed(JoyConButton::Trigger) {
-                    app.set_joycon_button_state(index, JoyConButton::Trigger, map(JoyConButton::Trigger));
+                    app.set_joycon_button_state(
+                        index,
+                        JoyConButton::Trigger,
+                        map(JoyConButton::Trigger),
+                    );
                 }
                 if changed(JoyConButton::Stick) {
-                    app.set_joycon_button_state(index, JoyConButton::Stick, map(JoyConButton::Stick));
+                    app.set_joycon_button_state(
+                        index,
+                        JoyConButton::Stick,
+                        map(JoyConButton::Stick),
+                    );
                 }
                 if changed(JoyConButton::SL) {
                     app.set_joycon_button_state(index, JoyConButton::SL, map(JoyConButton::SL));
@@ -296,7 +348,11 @@ mod backend {
                     app.set_joycon_button_state(index, JoyConButton::SR, map(JoyConButton::SR));
                 }
                 if changed(JoyConButton::Start) {
-                    app.set_joycon_button_state(index, JoyConButton::Start, map(JoyConButton::Start));
+                    app.set_joycon_button_state(
+                        index,
+                        JoyConButton::Start,
+                        map(JoyConButton::Start),
+                    );
                 }
                 if changed(JoyConButton::Meta) {
                     app.set_joycon_button_state(index, JoyConButton::Meta, map(JoyConButton::Meta));
@@ -327,30 +383,118 @@ mod backend {
 
         match side {
             JoyConSide::LJoyCon => {
-                set_button(&mut buttons, JoyConButton::Top, (button_byte_left & 0x02) != 0);
-                set_button(&mut buttons, JoyConButton::Bottom, (button_byte_left & 0x01) != 0);
-                set_button(&mut buttons, JoyConButton::Left, (button_byte_left & 0x08) != 0);
-                set_button(&mut buttons, JoyConButton::Right, (button_byte_left & 0x04) != 0);
-                set_button(&mut buttons, JoyConButton::Bumper, (button_byte_left & 0x40) != 0);
-                set_button(&mut buttons, JoyConButton::Trigger, (button_byte_left & 0x80) != 0);
-                set_button(&mut buttons, JoyConButton::SL, (button_byte_left & 0x20) != 0);
-                set_button(&mut buttons, JoyConButton::SR, (button_byte_left & 0x10) != 0);
-                set_button(&mut buttons, JoyConButton::Start, (button_byte_shared & 0x01) != 0);
-                set_button(&mut buttons, JoyConButton::Meta, (button_byte_shared & 0x20) != 0);
-                set_button(&mut buttons, JoyConButton::Stick, (button_byte_shared & 0x08) != 0);
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Top,
+                    (button_byte_left & 0x02) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Bottom,
+                    (button_byte_left & 0x01) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Left,
+                    (button_byte_left & 0x08) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Right,
+                    (button_byte_left & 0x04) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Bumper,
+                    (button_byte_left & 0x40) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Trigger,
+                    (button_byte_left & 0x80) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::SL,
+                    (button_byte_left & 0x20) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::SR,
+                    (button_byte_left & 0x10) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Start,
+                    (button_byte_shared & 0x01) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Meta,
+                    (button_byte_shared & 0x20) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Stick,
+                    (button_byte_shared & 0x08) != 0,
+                );
             }
             JoyConSide::RJoyCon => {
-                set_button(&mut buttons, JoyConButton::Top, (button_byte_right & 0x02) != 0);
-                set_button(&mut buttons, JoyConButton::Bottom, (button_byte_right & 0x04) != 0);
-                set_button(&mut buttons, JoyConButton::Left, (button_byte_right & 0x01) != 0);
-                set_button(&mut buttons, JoyConButton::Right, (button_byte_right & 0x08) != 0);
-                set_button(&mut buttons, JoyConButton::Bumper, (button_byte_right & 0x40) != 0);
-                set_button(&mut buttons, JoyConButton::Trigger, (button_byte_right & 0x80) != 0);
-                set_button(&mut buttons, JoyConButton::SL, (button_byte_right & 0x20) != 0);
-                set_button(&mut buttons, JoyConButton::SR, (button_byte_right & 0x10) != 0);
-                set_button(&mut buttons, JoyConButton::Start, (button_byte_shared & 0x02) != 0);
-                set_button(&mut buttons, JoyConButton::Meta, (button_byte_shared & 0x10) != 0);
-                set_button(&mut buttons, JoyConButton::Stick, (button_byte_shared & 0x04) != 0);
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Top,
+                    (button_byte_right & 0x02) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Bottom,
+                    (button_byte_right & 0x04) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Left,
+                    (button_byte_right & 0x01) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Right,
+                    (button_byte_right & 0x08) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Bumper,
+                    (button_byte_right & 0x40) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Trigger,
+                    (button_byte_right & 0x80) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::SL,
+                    (button_byte_right & 0x20) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::SR,
+                    (button_byte_right & 0x10) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Start,
+                    (button_byte_shared & 0x02) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Meta,
+                    (button_byte_shared & 0x10) != 0,
+                );
+                set_button(
+                    &mut buttons,
+                    JoyConButton::Stick,
+                    (button_byte_shared & 0x04) != 0,
+                );
             }
         }
 
@@ -359,7 +503,9 @@ mod backend {
         let (accel_x, accel_y, accel_z) = decode_accel(data, offset);
         let (gyro_x, gyro_y, gyro_z) = decode_gyro(data, offset);
 
-        Some((buttons, stick_x, stick_y, gyro_x, gyro_y, gyro_z, accel_x, accel_y, accel_z))
+        Some((
+            buttons, stick_x, stick_y, gyro_x, gyro_y, gyro_z, accel_x, accel_y, accel_z,
+        ))
     }
 
     #[inline]

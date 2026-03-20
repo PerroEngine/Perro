@@ -12,11 +12,11 @@ pub use perro_variant as variant;
 
 #[allow(unused_imports)]
 pub mod prelude {
+    pub use perro_input::prelude::*;
     pub use perro_modules::log::*;
     pub use perro_modules::prelude::*;
     pub use perro_nodes::prelude::*;
     pub use perro_scripting::prelude::*;
-    pub use perro_input::prelude::*;
     pub use perro_structs::prelude::*;
     pub use perro_terrain::prelude::*;
 }

@@ -310,7 +310,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
 
     let crate_name = crate_name_from_project_name(project_name);
     write_if_missing(root.join(".gitignore"), &default_gitignore())?;
-    write_if_missing(root.join("README.md"), &default_project_readme_md(project_name))?;
+    write_if_missing(
+        root.join("README.md"),
+        &default_project_readme_md(project_name),
+    )?;
     write_if_missing(res_dir.join("main.scn"), &default_main_scene())?;
     write_if_missing(
         res_scripts_dir.join("script.rs"),

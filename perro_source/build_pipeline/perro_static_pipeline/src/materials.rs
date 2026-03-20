@@ -272,9 +272,7 @@ impl From<&MaterialLiteral> for MaterialKey {
                                 CustomParamValueKey::F32(x.to_bits())
                             }
                             CustomMaterialParamValue3D::I32(x) => CustomParamValueKey::I32(*x),
-                            CustomMaterialParamValue3D::Bool(x) => {
-                                CustomParamValueKey::Bool(*x)
-                            }
+                            CustomMaterialParamValue3D::Bool(x) => CustomParamValueKey::Bool(*x),
                             CustomMaterialParamValue3D::Vec2(v) => {
                                 CustomParamValueKey::Vec2([v[0].to_bits(), v[1].to_bits()])
                             }
@@ -405,7 +403,6 @@ fn strip_line_comment(line: &str) -> &str {
     line
 }
 
-
 fn pmat_looks_like_object(text: &str) -> bool {
     text.lines()
         .map(strip_line_comment)
@@ -507,7 +504,9 @@ fn apply_standard_runtime_entries(
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
             Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
             Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
-            Some("baseColorTexture") => set_texture_slot(value, any, |v| out.base_color_texture = v),
+            Some("baseColorTexture") => {
+                set_texture_slot(value, any, |v| out.base_color_texture = v)
+            }
             Some("metallicRoughnessTexture") => {
                 set_texture_slot(value, any, |v| out.metallic_roughness_texture = v)
             }
@@ -536,7 +535,9 @@ fn apply_unlit_runtime_entries(
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
             Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
             Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
-            Some("baseColorTexture") => set_texture_slot(value, any, |v| out.base_color_texture = v),
+            Some("baseColorTexture") => {
+                set_texture_slot(value, any, |v| out.base_color_texture = v)
+            }
             _ => {}
         }
     }
@@ -554,7 +555,9 @@ fn apply_toon_runtime_entries(
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
             Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
             Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
-            Some("baseColorTexture") => set_texture_slot(value, any, |v| out.base_color_texture = v),
+            Some("baseColorTexture") => {
+                set_texture_slot(value, any, |v| out.base_color_texture = v)
+            }
             Some("rampTexture") => set_texture_slot(value, any, |v| out.ramp_texture = v),
             Some("bandCount") => set_u32(value, any, |v| out.band_count = v),
             Some("rimStrength") => set_f32(value, any, |v| out.rim_strength = v),

@@ -1069,11 +1069,7 @@ fn apply_mesh_instance_3d_fields_static(
 ) {
 }
 
-fn apply_skeleton_3d_fields_static(
-    _node: &mut Skeleton3D,
-    _fields: &[(&str, StaticSceneValue)],
-) {
-}
+fn apply_skeleton_3d_fields_static(_node: &mut Skeleton3D, _fields: &[(&str, StaticSceneValue)]) {}
 
 fn apply_terrain_instance_3d_fields_static(
     node: &mut TerrainInstance3D,
@@ -1496,9 +1492,11 @@ fn extract_mesh_skeleton_target(data: &RuntimeNodeData) -> Option<String> {
     if data.ty != "MeshInstance3D" {
         return None;
     }
-    data.fields
-        .iter()
-        .find_map(|(name, value)| (name == "skeleton").then(|| as_asset_source(value)).flatten())
+    data.fields.iter().find_map(|(name, value)| {
+        (name == "skeleton")
+            .then(|| as_asset_source(value))
+            .flatten()
+    })
 }
 
 // Static value parsers
@@ -2071,9 +2069,9 @@ fn as_post_params(value: &RuntimeValue) -> Option<Vec<CustomPostParam>> {
         RuntimeValue::Array(items) => {
             let mut out = Vec::new();
             for item in items {
-                out.push(CustomPostParam::unnamed(
-                    post_param_value_from_runtime(item)?,
-                ));
+                out.push(CustomPostParam::unnamed(post_param_value_from_runtime(
+                    item,
+                )?));
             }
             Some(out)
         }
@@ -2099,9 +2097,9 @@ fn as_post_params_static(value: &StaticSceneValue) -> Option<Vec<CustomPostParam
         StaticSceneValue::Array(items) => {
             let mut out = Vec::new();
             for item in items.iter() {
-                out.push(CustomPostParam::unnamed(
-                    post_param_value_from_static(item)?,
-                ));
+                out.push(CustomPostParam::unnamed(post_param_value_from_static(
+                    item,
+                )?));
             }
             Some(out)
         }

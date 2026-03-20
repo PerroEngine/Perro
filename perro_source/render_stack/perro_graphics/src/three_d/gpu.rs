@@ -1,10 +1,10 @@
 use super::{
     renderer::{Draw3DInstance, Draw3DKind, Lighting3DState, MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS},
     shaders::{
-        create_depth_prepass_shader_module, create_frustum_cull_shader_module,
-        create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
-        create_hiz_occlusion_cull_shader_module, create_mesh_shader_module,
-        create_toon_shader_module, create_unlit_shader_module, build_material_shader,
+        build_material_shader, create_depth_prepass_shader_module,
+        create_frustum_cull_shader_module, create_hiz_depth_copy_shader_module,
+        create_hiz_downsample_shader_module, create_hiz_occlusion_cull_shader_module,
+        create_mesh_shader_module, create_toon_shader_module, create_unlit_shader_module,
     },
 };
 use crate::backend::{OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup};
@@ -14,7 +14,9 @@ use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;
 use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::pack_meshlets_from_positions;
-use perro_render_bridge::{Camera3DState, CameraProjectionState, Material3D, StandardMaterial3D, RuntimeMeshData};
+use perro_render_bridge::{
+    Camera3DState, CameraProjectionState, Material3D, RuntimeMeshData, StandardMaterial3D,
+};
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -1304,25 +1306,25 @@ impl Gpu3D {
             };
             let material = match draw.kind {
                 Draw3DKind::Terrain64 => Material3D::Standard(StandardMaterial3D {
-                        base_color_factor: [0.32, 0.56, 0.29, 1.0],
-                        roughness_factor: 0.92,
-                        metallic_factor: 0.0,
-                        ..StandardMaterial3D::default()
-                    }),
+                    base_color_factor: [0.32, 0.56, 0.29, 1.0],
+                    roughness_factor: 0.92,
+                    metallic_factor: 0.0,
+                    ..StandardMaterial3D::default()
+                }),
                 Draw3DKind::DebugPointCube => Material3D::Standard(StandardMaterial3D {
-                        base_color_factor: [1.0, 0.92, 0.2, 1.0],
-                        roughness_factor: 0.35,
-                        metallic_factor: 0.0,
-                        emissive_factor: [0.35, 0.3, 0.06],
-                        ..StandardMaterial3D::default()
-                    }),
+                    base_color_factor: [1.0, 0.92, 0.2, 1.0],
+                    roughness_factor: 0.35,
+                    metallic_factor: 0.0,
+                    emissive_factor: [0.35, 0.3, 0.06],
+                    ..StandardMaterial3D::default()
+                }),
                 Draw3DKind::DebugEdgeCylinder => Material3D::Standard(StandardMaterial3D {
-                        base_color_factor: [0.15, 0.95, 0.95, 1.0],
-                        roughness_factor: 0.6,
-                        metallic_factor: 0.0,
-                        emissive_factor: [0.06, 0.3, 0.3],
-                        ..StandardMaterial3D::default()
-                    }),
+                    base_color_factor: [0.15, 0.95, 0.95, 1.0],
+                    roughness_factor: 0.6,
+                    metallic_factor: 0.0,
+                    emissive_factor: [0.06, 0.3, 0.3],
+                    ..StandardMaterial3D::default()
+                }),
                 Draw3DKind::Mesh(_) => draw
                     .material
                     .and_then(|id| resources.material(id))
@@ -1708,7 +1710,8 @@ impl Gpu3D {
                 } else {
                     let start = batch.mesh.index_start;
                     let end = start + batch.mesh.index_count;
-                    let instances = batch.instance_start..batch.instance_start + batch.instance_count;
+                    let instances =
+                        batch.instance_start..batch.instance_start + batch.instance_count;
                     prepass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
                 }
             }
@@ -3198,14 +3201,17 @@ fn build_instance(
             if params.double_sided { 1.0 } else { 0.0 },
             debug_flag,
         ],
-        skeleton_params: [skeleton_start, skeleton_count, custom_params_offset, custom_params_len],
+        skeleton_params: [
+            skeleton_start,
+            skeleton_count,
+            custom_params_offset,
+            custom_params_len,
+        ],
     }
 }
 
 #[inline]
-fn encode_custom_param_value(
-    value: &perro_render_bridge::CustomMaterialParamValue3D,
-) -> [f32; 4] {
+fn encode_custom_param_value(value: &perro_render_bridge::CustomMaterialParamValue3D) -> [f32; 4] {
     match value {
         perro_render_bridge::CustomMaterialParamValue3D::F32(v) => [*v, 0.0, 0.0, 0.0],
         perro_render_bridge::CustomMaterialParamValue3D::I32(v) => [*v as f32, 0.0, 0.0, 0.0],

@@ -9,10 +9,10 @@ use perro_nodes::{
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
-    StandardMaterial3D, ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D,
-    ParticleSimulationMode3D,
+    ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
     PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID,
     ResourceCommand, RuntimeMeshData, RuntimeMeshVertex, SkeletonPalette, SpotLight3DState,
+    StandardMaterial3D,
 };
 use perro_terrain::{ChunkCoord, TerrainChunk};
 use std::borrow::Cow;
@@ -42,6 +42,7 @@ impl Runtime {
 
     pub fn extract_render_3d_commands(&mut self) {
         self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
 
         let mut traversal_ids = std::mem::take(&mut self.render_3d.traversal_ids);
         traversal_ids.clear();
@@ -54,58 +55,60 @@ impl Runtime {
         for node in traversal_ids.iter().copied() {
             let effective_visible = self.is_effectively_visible(node);
             let camera_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::Camera3D(camera) if camera.active && effective_visible => {
-                    Some(Camera3DState {
-                        position: [
-                            camera.transform.position.x,
-                            camera.transform.position.y,
-                            camera.transform.position.z,
-                        ],
-                        rotation: [
-                            camera.transform.rotation.x,
-                            camera.transform.rotation.y,
-                            camera.transform.rotation.z,
-                            camera.transform.rotation.w,
-                        ],
-                        projection: match &camera.projection {
-                            CameraProjection::Perspective {
-                                fov_y_degrees,
-                                near,
-                                far,
-                            } => CameraProjectionState::Perspective {
-                                fov_y_degrees: *fov_y_degrees,
-                                near: *near,
-                                far: *far,
-                            },
-                            CameraProjection::Orthographic { size, near, far } => {
-                                CameraProjectionState::Orthographic {
-                                    size: *size,
-                                    near: *near,
-                                    far: *far,
-                                }
-                            }
-                            CameraProjection::Frustum {
-                                left,
-                                right,
-                                bottom,
-                                top,
-                                near,
-                                far,
-                            } => CameraProjectionState::Frustum {
-                                left: *left,
-                                right: *right,
-                                bottom: *bottom,
-                                top: *top,
-                                near: *near,
-                                far: *far,
-                            },
+                SceneNodeData::Camera3D(camera) if camera.active && effective_visible => Some((
+                    camera.transform,
+                    match &camera.projection {
+                        CameraProjection::Perspective {
+                            fov_y_degrees,
+                            near,
+                            far,
+                        } => CameraProjectionState::Perspective {
+                            fov_y_degrees: *fov_y_degrees,
+                            near: *near,
+                            far: *far,
                         },
-                        post_processing: Arc::from(camera.post_processing.as_slice()),
-                    })
-                }
+                        CameraProjection::Orthographic { size, near, far } => {
+                            CameraProjectionState::Orthographic {
+                                size: *size,
+                                near: *near,
+                                far: *far,
+                            }
+                        }
+                        CameraProjection::Frustum {
+                            left,
+                            right,
+                            bottom,
+                            top,
+                            near,
+                            far,
+                        } => CameraProjectionState::Frustum {
+                            left: *left,
+                            right: *right,
+                            bottom: *bottom,
+                            top: *top,
+                            near: *near,
+                            far: *far,
+                        },
+                    },
+                    Arc::from(camera.post_processing.as_slice()),
+                )),
                 _ => None,
             });
-            if let Some(camera) = camera_data {
+            if let Some((local_transform, projection, post_processing)) = camera_data {
+                let global = self
+                    .get_global_transform_3d(node)
+                    .unwrap_or(local_transform);
+                let camera = Camera3DState {
+                    position: [global.position.x, global.position.y, global.position.z],
+                    rotation: [
+                        global.rotation.x,
+                        global.rotation.y,
+                        global.rotation.z,
+                        global.rotation.w,
+                    ],
+                    projection,
+                    post_processing,
+                };
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::SetCamera {
                     camera,
                 })));
@@ -133,15 +136,19 @@ impl Runtime {
                 SceneNodeData::RayLight3D(light)
                     if light.active && light.visible && effective_visible =>
                 {
-                    Some(RayLight3DState {
-                        direction: quaternion_forward(light.transform.rotation),
-                        color: light.color,
-                        intensity: light.intensity.max(0.0),
-                    })
+                    Some((light.transform, light.color, light.intensity))
                 }
                 _ => None,
             });
-            if let Some(light) = ray_light_data {
+            if let Some((local_transform, color, intensity)) = ray_light_data {
+                let global = self
+                    .get_global_transform_3d(node)
+                    .unwrap_or(local_transform);
+                let light = RayLight3DState {
+                    direction: quaternion_forward(global.rotation),
+                    color,
+                    intensity: intensity.max(0.0),
+                };
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(
                     Command3D::SetRayLight { node, light },
                 )));
@@ -152,20 +159,20 @@ impl Runtime {
                 SceneNodeData::PointLight3D(light)
                     if light.active && light.visible && effective_visible =>
                 {
-                    Some(PointLight3DState {
-                        position: [
-                            light.transform.position.x,
-                            light.transform.position.y,
-                            light.transform.position.z,
-                        ],
-                        color: light.color,
-                        intensity: light.intensity.max(0.0),
-                        range: light.range.max(0.001),
-                    })
+                    Some((light.transform, light.color, light.intensity, light.range))
                 }
                 _ => None,
             });
-            if let Some(light) = point_light_data {
+            if let Some((local_transform, color, intensity, range)) = point_light_data {
+                let global = self
+                    .get_global_transform_3d(node)
+                    .unwrap_or(local_transform);
+                let light = PointLight3DState {
+                    position: [global.position.x, global.position.y, global.position.z],
+                    color,
+                    intensity: intensity.max(0.0),
+                    range: range.max(0.001),
+                };
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(
                     Command3D::SetPointLight { node, light },
                 )));
@@ -176,25 +183,38 @@ impl Runtime {
                 SceneNodeData::SpotLight3D(light)
                     if light.active && light.visible && effective_visible =>
                 {
-                    Some(SpotLight3DState {
-                        position: [
-                            light.transform.position.x,
-                            light.transform.position.y,
-                            light.transform.position.z,
-                        ],
-                        direction: quaternion_forward(light.transform.rotation),
-                        color: light.color,
-                        intensity: light.intensity.max(0.0),
-                        range: light.range.max(0.001),
-                        inner_angle_radians: light.inner_angle_radians.max(0.0),
-                        outer_angle_radians: light
-                            .outer_angle_radians
-                            .max(light.inner_angle_radians),
-                    })
+                    Some((
+                        light.transform,
+                        light.color,
+                        light.intensity,
+                        light.range,
+                        light.inner_angle_radians,
+                        light.outer_angle_radians,
+                    ))
                 }
                 _ => None,
             });
-            if let Some(light) = spot_light_data {
+            if let Some((
+                local_transform,
+                color,
+                intensity,
+                range,
+                inner_angle_radians,
+                outer_angle_radians,
+            )) = spot_light_data
+            {
+                let global = self
+                    .get_global_transform_3d(node)
+                    .unwrap_or(local_transform);
+                let light = SpotLight3DState {
+                    position: [global.position.x, global.position.y, global.position.z],
+                    direction: quaternion_forward(global.rotation),
+                    color,
+                    intensity: intensity.max(0.0),
+                    range: range.max(0.001),
+                    inner_angle_radians: inner_angle_radians.max(0.0),
+                    outer_angle_radians: outer_angle_radians.max(inner_angle_radians),
+                };
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(
                     Command3D::SetSpotLight { node, light },
                 )));
@@ -202,25 +222,25 @@ impl Runtime {
             }
 
             let mesh_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::MeshInstance3D(mesh) => Some((
-                    mesh.mesh,
-                    mesh.material,
-                    mesh.skeleton,
-                    mesh.transform.to_mat4().to_cols_array_2d(),
-                )),
+                SceneNodeData::MeshInstance3D(mesh) => {
+                    Some((mesh.mesh, mesh.material, mesh.skeleton, mesh.transform))
+                }
                 _ => None,
             });
-            if let Some((mesh, material, skeleton, model)) = mesh_data
+            if let Some((mesh, material, skeleton, local_transform)) = mesh_data
                 && effective_visible
                 && let Some((mesh, material)) =
                     self.resolve_render_mesh_assets(node, mesh, material)
             {
+                let model = self
+                    .get_global_transform_3d(node)
+                    .unwrap_or(local_transform)
+                    .to_mat4()
+                    .to_cols_array_2d();
                 let skeleton_palette = if !skeleton.is_nil() {
                     if let Some(cached) = skeleton_cache.get(&skeleton) {
                         Some(cached.clone())
-                    } else if let Some(palette) =
-                        build_skeleton_palette(&self.nodes, skeleton)
-                    {
+                    } else if let Some(palette) = build_skeleton_palette(&self.nodes, skeleton) {
                         let palette = SkeletonPalette {
                             matrices: Arc::from(palette.into_boxed_slice()),
                         };
@@ -243,17 +263,21 @@ impl Runtime {
             }
             let terrain_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::TerrainInstance3D(terrain) => Some((
-                    terrain.transform.to_mat4(),
+                    terrain.transform,
                     terrain.show_debug_vertices,
                     terrain.show_debug_edges,
                     terrain.terrain,
                 )),
                 _ => None,
             });
-            if let Some((world_from_terrain, show_debug_vertices, show_debug_edges, terrain_id)) =
+            if let Some((local_transform, show_debug_vertices, show_debug_edges, terrain_id)) =
                 terrain_data
                 && effective_visible
             {
+                let world_from_terrain = self
+                    .get_global_transform_3d(node)
+                    .unwrap_or(local_transform)
+                    .to_mat4();
                 if !self.ensure_terrain_instance_data(node) {
                     continue;
                 }
@@ -355,11 +379,16 @@ impl Runtime {
                     .unwrap_or(perro_project::ParticleSimDefault::Cpu);
                 let sim_mode = resolve_particle_sim_mode(emitter.sim_mode, default_sim_mode);
                 let render_mode = resolve_particle_render_mode(emitter.render_mode);
+                let particle_model = self
+                    .get_global_transform_3d(node)
+                    .unwrap_or(emitter.transform)
+                    .to_mat4()
+                    .to_cols_array_2d();
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(
                     Command3D::UpsertPointParticles {
                         node,
                         particles: Box::new(PointParticles3DState {
-                            model: emitter.transform.to_mat4().to_cols_array_2d(),
+                            model: particle_model,
                             active: emitter.active,
                             looping: emitter.looping,
                             prewarm: emitter.prewarm,
@@ -440,11 +469,11 @@ impl Runtime {
                 request,
                 id: MaterialID::nil(),
                 material: Material3D::Standard(StandardMaterial3D {
-                        base_color_factor: [0.32, 0.56, 0.29, 1.0],
-                        roughness_factor: 0.92,
-                        metallic_factor: 0.0,
-                        ..StandardMaterial3D::default()
-                    }),
+                    base_color_factor: [0.32, 0.56, 0.29, 1.0],
+                    roughness_factor: 0.92,
+                    metallic_factor: 0.0,
+                    ..StandardMaterial3D::default()
+                }),
                 source: Some("__terrain_runtime_material__".to_string()),
                 reserved: false,
             }));
@@ -671,9 +700,9 @@ impl Runtime {
                             mesh_instance.mesh = id;
                         }
                     }
-                crate::RuntimeRenderResult::Failed(_)
-                | crate::RuntimeRenderResult::Texture(_)
-                | crate::RuntimeRenderResult::Material(_) => {}
+                    crate::RuntimeRenderResult::Failed(_)
+                    | crate::RuntimeRenderResult::Texture(_)
+                    | crate::RuntimeRenderResult::Material(_) => {}
                 }
             }
             if mesh.is_nil() {
@@ -713,9 +742,9 @@ impl Runtime {
                             mesh_instance.material = id;
                         }
                     }
-                crate::RuntimeRenderResult::Failed(_)
-                | crate::RuntimeRenderResult::Texture(_)
-                | crate::RuntimeRenderResult::Mesh(_) => {}
+                    crate::RuntimeRenderResult::Failed(_)
+                    | crate::RuntimeRenderResult::Texture(_)
+                    | crate::RuntimeRenderResult::Mesh(_) => {}
                 }
             }
             if material.is_nil() {

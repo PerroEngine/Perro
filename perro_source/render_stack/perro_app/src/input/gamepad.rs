@@ -3,7 +3,7 @@ use perro_graphics::GraphicsBackend;
 
 mod backend {
     use super::*;
-    use gilrs::{Axis, Button, EventType, Gilrs, GamepadId};
+    use gilrs::{Axis, Button, EventType, GamepadId, Gilrs};
     use perro_input::{GamepadAxis, GamepadButton, GamepadIndex};
     use std::collections::{HashMap, HashSet};
 

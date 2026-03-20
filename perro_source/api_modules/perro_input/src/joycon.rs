@@ -177,102 +177,84 @@ impl Default for JoyConState {
 
 #[macro_export]
 macro_rules! joycon_list {
-    ($ipt:expr) => {
-        {
-            let jc = $ipt.JoyCons();
-            jc.all()
-        }
-    };
+    ($ipt:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.all()
+    }};
 }
 
 #[macro_export]
 macro_rules! joycon_get {
-    ($ipt:expr, $index:expr) => {
-        {
-            let jc = $ipt.JoyCons();
-            jc.get($index)
-        }
-    };
+    ($ipt:expr, $index:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index)
+    }};
 }
 
 #[macro_export]
 macro_rules! joycon_side {
-    ($ipt:expr, $index:expr) => {
-        {
-            let jc = $ipt.JoyCons();
-            jc.get($index).map(|jc| jc.side())
-        }
-    };
+    ($ipt:expr, $index:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index).map(|jc| jc.side())
+    }};
 }
 
 #[macro_export]
 macro_rules! joycon_down {
-    ($ipt:expr, $index:expr, $button:expr) => {
-        {
-            let jc = $ipt.JoyCons();
-            jc.get($index)
-                .map(|jc| jc.is_button_down($button))
-                .unwrap_or(false)
-        }
-    };
+    ($ipt:expr, $index:expr, $button:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index)
+            .map(|jc| jc.is_button_down($button))
+            .unwrap_or(false)
+    }};
 }
 
 #[macro_export]
 macro_rules! joycon_pressed {
-    ($ipt:expr, $index:expr, $button:expr) => {
-        {
-            let jc = $ipt.JoyCons();
-            jc.get($index)
-                .map(|jc| jc.is_button_pressed($button))
-                .unwrap_or(false)
-        }
-    };
+    ($ipt:expr, $index:expr, $button:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index)
+            .map(|jc| jc.is_button_pressed($button))
+            .unwrap_or(false)
+    }};
 }
 
 #[macro_export]
 macro_rules! joycon_released {
-    ($ipt:expr, $index:expr, $button:expr) => {
-        {
-            let jc = $ipt.JoyCons();
-            jc.get($index)
-                .map(|jc| jc.is_button_released($button))
-                .unwrap_or(false)
-        }
-    };
+    ($ipt:expr, $index:expr, $button:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index)
+            .map(|jc| jc.is_button_released($button))
+            .unwrap_or(false)
+    }};
 }
 
 #[macro_export]
 macro_rules! joycon_stick {
-    ($ipt:expr, $index:expr) => {
-        {
-            let jc = $ipt.JoyCons();
-            jc.get($index)
-                .map(|jc| jc.stick())
-                .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
-        }
-    };
+    ($ipt:expr, $index:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index)
+            .map(|jc| jc.stick())
+            .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+    }};
 }
 
 #[macro_export]
 macro_rules! joycon_gyro {
-    ($ipt:expr, $index:expr) => {
-        {
-            let jc = $ipt.JoyCons();
-            jc.get($index)
-                .map(|jc| jc.gyro())
-                .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
-        }
-    };
+    ($ipt:expr, $index:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index)
+            .map(|jc| jc.gyro())
+            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+    }};
 }
 
 #[macro_export]
 macro_rules! joycon_accel {
-    ($ipt:expr, $index:expr) => {
-        {
-            let jc = $ipt.JoyCons();
-            jc.get($index)
-                .map(|jc| jc.accel())
-                .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
-        }
-    };
+    ($ipt:expr, $index:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index)
+            .map(|jc| jc.accel())
+            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+    }};
 }

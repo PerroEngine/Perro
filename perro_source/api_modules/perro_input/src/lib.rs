@@ -5,13 +5,11 @@ mod mouse_button;
 mod player;
 
 pub use gamepad::{GamepadAxis, GamepadButton, GamepadState};
-pub use joycon::{
-    JoyConButton, JoyConSide, JoyConState,
-};
+pub use joycon::{JoyConButton, JoyConSide, JoyConState};
 pub use keycode::KeyCode;
 pub use mouse_button::MouseButton;
-pub use player::{PlayerBinding, PlayerModule, PlayerState};
 use perro_structs::Vector2;
+pub use player::{PlayerBinding, PlayerModule, PlayerState};
 use std::cell::RefCell;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -206,12 +204,7 @@ impl InputSnapshot {
     }
 
     #[inline]
-    pub fn set_gamepad_button_state(
-        &mut self,
-        index: usize,
-        button: GamepadButton,
-        is_down: bool,
-    ) {
+    pub fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
         self.gamepad_mut(index).set_button_state(button, is_down);
     }
 
@@ -231,12 +224,7 @@ impl InputSnapshot {
     }
 
     #[inline]
-    pub fn set_joycon_button_state(
-        &mut self,
-        index: usize,
-        button: JoyConButton,
-        is_down: bool,
-    ) {
+    pub fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
         let state = self.joycon_mut(index);
         state.set_button_state(button, is_down);
     }
@@ -303,7 +291,10 @@ impl Default for InputSnapshot {
 
 #[derive(Clone, Debug)]
 pub enum InputCommand {
-    BindPlayer { index: usize, binding: PlayerBinding },
+    BindPlayer {
+        index: usize,
+        binding: PlayerBinding,
+    },
 }
 
 pub trait InputAPI {
@@ -871,13 +862,12 @@ pub mod prelude {
         GamepadAxis, GamepadButton, GamepadIndex, GamepadModule, GamepadState, InputAPI,
         InputContext, InputSnapshot, JoyConButton, JoyConIndex, JoyConModule, JoyConSide,
         JoyConState, KeyCode, KeyModule, KeyboardModule, KeyboardState, MouseButton, MouseModule,
-        MouseState, MouseStateModule, PlayerBinding, PlayerModule, PlayerState, key_down,
+        MouseState, MouseStateModule, PlayerBinding, PlayerModule, PlayerState, gamepad_accel,
+        gamepad_down, gamepad_get, gamepad_gyro, gamepad_left_stick, gamepad_list, gamepad_pressed,
+        gamepad_released, gamepad_right_stick, joycon_accel, joycon_down, joycon_get, joycon_gyro,
+        joycon_list, joycon_pressed, joycon_released, joycon_side, joycon_stick, key_down,
         key_pressed, key_released, mouse_delta, mouse_down, mouse_position, mouse_pressed,
-        mouse_released, mouse_wheel, viewport_size, joycon_list, joycon_down, joycon_get,
-        joycon_side, joycon_pressed, joycon_released, joycon_stick, joycon_gyro, joycon_accel,
-        gamepad_list, gamepad_get, gamepad_down, gamepad_pressed, gamepad_released,
-        gamepad_left_stick, gamepad_right_stick, gamepad_gyro, gamepad_accel, player_list,
-        player_get, player_bind,
+        mouse_released, mouse_wheel, player_bind, player_get, player_list, viewport_size,
     };
     pub use perro_structs::Vector2;
 }

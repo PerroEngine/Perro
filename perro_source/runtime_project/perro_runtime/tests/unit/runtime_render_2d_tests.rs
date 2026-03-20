@@ -1,6 +1,8 @@
 use super::Runtime;
 use perro_ids::TextureID;
-use perro_nodes::{SceneNode, SceneNodeData, camera_2d::Camera2D, sprite_2d::Sprite2D};
+use perro_nodes::{
+    SceneNode, SceneNodeData, camera_2d::Camera2D, node_2d::Node2D, sprite_2d::Sprite2D,
+};
 use perro_render_bridge::{Command2D, RenderCommand, RenderEvent, ResourceCommand};
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
@@ -107,5 +109,41 @@ fn active_camera_2d_emits_set_camera_command() {
         if camera.position == [128.0, -32.0]
             && camera.rotation_radians == 0.5
             && camera.zoom == 2.0
+    )));
+}
+
+#[test]
+fn sprite_under_parent_uses_global_transform() {
+    let mut runtime = Runtime::new();
+
+    let mut parent_node = Node2D::new();
+    parent_node.transform.position.x = 15.0;
+    let parent = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node2D(parent_node)));
+
+    let mut sprite = Sprite2D::new();
+    sprite.texture = TextureID::from_parts(8, 0);
+    sprite.transform.position.x = 1.0;
+    let child = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Sprite2D(sprite)));
+
+    if let Some(parent_node) = runtime.nodes.get_mut(parent) {
+        parent_node.add_child(child);
+    }
+    if let Some(child_node) = runtime.nodes.get_mut(child) {
+        child_node.parent = parent;
+    }
+    runtime.mark_transform_dirty_recursive(parent);
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertSprite { node, sprite })
+            if *node == child
+                && sprite.model[2][0] == 16.0
+                && sprite.model[2][1] == 0.0
     )));
 }

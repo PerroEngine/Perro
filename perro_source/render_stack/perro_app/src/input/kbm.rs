@@ -165,9 +165,7 @@ fn map_winit_key_code(code: winit::keyboard::KeyCode) -> Option<perro_input::Key
         winit::keyboard::KeyCode::NumpadAdd => Some(perro_input::KeyCode::NumpadAdd),
         winit::keyboard::KeyCode::NumpadBackspace => Some(perro_input::KeyCode::NumpadBackspace),
         winit::keyboard::KeyCode::NumpadClear => Some(perro_input::KeyCode::NumpadClear),
-        winit::keyboard::KeyCode::NumpadClearEntry => {
-            Some(perro_input::KeyCode::NumpadClearEntry)
-        }
+        winit::keyboard::KeyCode::NumpadClearEntry => Some(perro_input::KeyCode::NumpadClearEntry),
         winit::keyboard::KeyCode::NumpadComma => Some(perro_input::KeyCode::NumpadComma),
         winit::keyboard::KeyCode::NumpadDecimal => Some(perro_input::KeyCode::NumpadDecimal),
         winit::keyboard::KeyCode::NumpadDivide => Some(perro_input::KeyCode::NumpadDivide),
@@ -199,9 +197,7 @@ fn map_winit_key_code(code: winit::keyboard::KeyCode) -> Option<perro_input::Key
         winit::keyboard::KeyCode::ScrollLock => Some(perro_input::KeyCode::ScrollLock),
         winit::keyboard::KeyCode::Pause => Some(perro_input::KeyCode::Pause),
         winit::keyboard::KeyCode::BrowserBack => Some(perro_input::KeyCode::BrowserBack),
-        winit::keyboard::KeyCode::BrowserFavorites => {
-            Some(perro_input::KeyCode::BrowserFavorites)
-        }
+        winit::keyboard::KeyCode::BrowserFavorites => Some(perro_input::KeyCode::BrowserFavorites),
         winit::keyboard::KeyCode::BrowserForward => Some(perro_input::KeyCode::BrowserForward),
         winit::keyboard::KeyCode::BrowserHome => Some(perro_input::KeyCode::BrowserHome),
         winit::keyboard::KeyCode::BrowserRefresh => Some(perro_input::KeyCode::BrowserRefresh),

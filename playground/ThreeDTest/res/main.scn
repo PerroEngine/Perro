@@ -29,6 +29,29 @@ script = "res://scripts/script.rs"
 
 [/mesh1]
 
+[mesh1child]
+parent = mesh1
+
+
+[MeshInstance3D]
+    mesh = "__cube__"
+    material = {
+        type = standard
+        base_color_factor = (0.5, 0.5, 0.2, 1.0)
+        metallic_factor = 0.5
+        roughness_factor = 0.75
+        emissive_factor = (0.02, 0.0, 0.0)
+        alpha_mode = OPAQUE
+        double_sided = false
+    }
+    [Node3D]
+        position = (0, -25, 0)
+        scale = (15,15,15)
+    [/Node3D]
+[/MeshInstance3D]
+
+[/mesh1child]
+
 
 [mesh2]
 parent = @root

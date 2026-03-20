@@ -3,9 +3,16 @@ use std::fmt;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PostProcessEffect {
-    Blur { strength: f32 },
-    Pixelate { size: f32 },
-    Warp { waves: f32, strength: f32 },
+    Blur {
+        strength: f32,
+    },
+    Pixelate {
+        size: f32,
+    },
+    Warp {
+        waves: f32,
+        strength: f32,
+    },
     Vignette {
         strength: f32,
         radius: f32,
@@ -147,18 +154,12 @@ impl PostProcessSet {
     }
 
     pub fn get(&self, name: &str) -> Option<&PostProcessEffect> {
-        let idx = self
-            .names
-            .iter()
-            .position(|n| n.as_deref() == Some(name))?;
+        let idx = self.names.iter().position(|n| n.as_deref() == Some(name))?;
         self.effects.get(idx)
     }
 
     pub fn get_mut(&mut self, name: &str) -> Option<&mut PostProcessEffect> {
-        let idx = self
-            .names
-            .iter()
-            .position(|n| n.as_deref() == Some(name))?;
+        let idx = self.names.iter().position(|n| n.as_deref() == Some(name))?;
         self.effects.to_mut().get_mut(idx)
     }
 
@@ -184,10 +185,7 @@ impl PostProcessSet {
     }
 
     pub fn remove(&mut self, name: &str) -> Option<PostProcessEffect> {
-        let idx = self
-            .names
-            .iter()
-            .position(|n| n.as_deref() == Some(name))?;
+        let idx = self.names.iter().position(|n| n.as_deref() == Some(name))?;
         let names = self.names.to_mut();
         let effects = self.effects.to_mut();
         if idx >= effects.len() || idx >= names.len() {
@@ -198,10 +196,7 @@ impl PostProcessSet {
     }
 
     pub fn rename(&mut self, old: &str, new: impl Into<Cow<'static, str>>) -> bool {
-        let idx = self
-            .names
-            .iter()
-            .position(|n| n.as_deref() == Some(old));
+        let idx = self.names.iter().position(|n| n.as_deref() == Some(old));
         let Some(idx) = idx else { return false };
         self.names.to_mut()[idx] = Some(new.into());
         true

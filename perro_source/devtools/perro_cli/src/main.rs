@@ -67,9 +67,15 @@ fn print_usage() {
     eprintln!(
         "  perro_cli check [--path <project_dir>]    # scripts-only compile (.perro/scripts)"
     );
-    eprintln!("  perro_cli build [--path <project_dir>] [--profile]    # full static project bundle + build");
-    eprintln!("  perro_cli dev [--path <project_dir>] [--profile]      # build scripts + run dev runner");
-    eprintln!("  perro_cli flamegraph [--path <project_dir>] [--profile] [--root]    # run cargo flamegraph for dev runner");
+    eprintln!(
+        "  perro_cli build [--path <project_dir>] [--profile]    # full static project bundle + build"
+    );
+    eprintln!(
+        "  perro_cli dev [--path <project_dir>] [--profile]      # build scripts + run dev runner"
+    );
+    eprintln!(
+        "  perro_cli flamegraph [--path <project_dir>] [--profile] [--root]    # run cargo flamegraph for dev runner"
+    );
     eprintln!("  perro_cli format [--path <project_dir>]   # rustfmt .rs under project res only");
     eprintln!("  perro_cli clean [--path <project_dir>]    # remove project target/");
     eprintln!(
@@ -255,8 +261,8 @@ fn install_command(args: &[String]) -> Result<(), String> {
     } else {
         default_powershell_profile_paths()
     };
-    let workspace_manifest = normalize_powershell_path(&workspace_root().join("Cargo.toml"))
-        .replace('\\', "\\\\");
+    let workspace_manifest =
+        normalize_powershell_path(&workspace_root().join("Cargo.toml")).replace('\\', "\\\\");
     let snippet = format!(
         "{PROFILE_SNIPPET_BEGIN}\n\
 function perro {{\n\
@@ -355,7 +361,10 @@ fn replace_or_append_snippet(existing: &str, snippet: &str) -> Result<String, St
 }
 
 fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
-    if args.iter().any(|a| a == "--build-scripts" || a == "--open" || a == "--no-open") {
+    if args
+        .iter()
+        .any(|a| a == "--build-scripts" || a == "--open" || a == "--no-open")
+    {
         return Err("`perro new` only accepts --path and --name".to_string());
     }
     let base_dir = parse_flag_value(args, "--path")
@@ -401,10 +410,7 @@ fn new_script_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
     let res_root = project_dir.join("res");
     if !res_root.exists() {
-        return Err(format!(
-            "res directory not found at {}",
-            res_root.display()
-        ));
+        return Err(format!("res directory not found at {}", res_root.display()));
     }
 
     let target_dir = if let Some(raw_path) = parse_flag_value(args, "--res") {
@@ -493,10 +499,7 @@ fn new_scene_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
     let res_root = project_dir.join("res");
     if !res_root.exists() {
-        return Err(format!(
-            "res directory not found at {}",
-            res_root.display()
-        ));
+        return Err(format!("res directory not found at {}", res_root.display()));
     }
 
     let target_dir = if let Some(raw_path) = parse_flag_value(args, "--res") {
@@ -593,9 +596,7 @@ fn maybe_open_project_in_new_window(project_dir: &Path) -> Result<(), String> {
         cmd.arg(&readme);
     }
     let status = cmd.status().map_err(|err| {
-        format!(
-            "failed to launch VS Code. Ensure the `code` command is available on PATH: {err}"
-        )
+        format!("failed to launch VS Code. Ensure the `code` command is available on PATH: {err}")
     })?;
 
     if !status.success() {
@@ -628,9 +629,8 @@ fn update_workspace_vscode_linked_projects(
     let mut json: Value = if settings_path.exists() {
         let raw = fs::read_to_string(&settings_path)
             .map_err(|err| format!("failed to read {}: {err}", settings_path.display()))?;
-        serde_json::from_str(&raw).map_err(|err| {
-            format!("failed to parse {} as JSON: {err}", settings_path.display())
-        })?
+        serde_json::from_str(&raw)
+            .map_err(|err| format!("failed to parse {} as JSON: {err}", settings_path.display()))?
     } else {
         if let Some(parent) = settings_path.parent() {
             fs::create_dir_all(parent)
@@ -889,9 +889,7 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
-    let project_dir = project_dir
-        .canonicalize()
-        .unwrap_or(project_dir);
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
 
@@ -917,13 +915,12 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     if profile {
         build_cmd.arg("--features").arg("profile");
     }
-    let build_status = build_cmd.status()
-        .map_err(|err| {
-            format!(
-                "failed to build project dev runner from {}: {err}",
-                dev_runner_dir.display()
-            )
-        })?;
+    let build_status = build_cmd.status().map_err(|err| {
+        format!(
+            "failed to build project dev runner from {}: {err}",
+            dev_runner_dir.display()
+        )
+    })?;
 
     if !build_status.success() {
         return Err(format!(
@@ -968,9 +965,7 @@ fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
-    let project_dir = project_dir
-        .canonicalize()
-        .unwrap_or(project_dir);
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
 
@@ -1091,9 +1086,7 @@ fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
-    let project_dir = project_dir
-        .canonicalize()
-        .unwrap_or(project_dir);
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
     log_step("Building Project Bundle");

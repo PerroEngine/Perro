@@ -36,10 +36,7 @@ impl SkeletonAPI for RuntimeResourceApi {
 }
 
 fn load_bones_uncached(api: &RuntimeResourceApi, source: &str) -> Option<Vec<Bone3D>> {
-    if let Some(bytes) = api
-        .static_skeleton_lookup
-        .and_then(|lookup| lookup(source))
-    {
+    if let Some(bytes) = api.static_skeleton_lookup.and_then(|lookup| lookup(source)) {
         return decode_pskel(bytes).ok();
     }
 
@@ -289,7 +286,9 @@ fn read_inv_bind_mats(
     if accessor.sparse().is_some() {
         return Err("sparse inverse bind matrices not supported".to_string());
     }
-    let view = accessor.view().ok_or("inverse bind accessor missing view")?;
+    let view = accessor
+        .view()
+        .ok_or("inverse bind accessor missing view")?;
     let buffer = buffers
         .get(view.buffer().index())
         .ok_or("inverse bind buffer missing")?;
@@ -347,7 +346,10 @@ fn parse_pskel_text(source: &str) -> Result<Vec<Bone3D>, String> {
                 bones.push(bone);
                 continue;
             }
-            return Err(format!("pskel: closing [/bone] without open at line {}", line_no + 1));
+            return Err(format!(
+                "pskel: closing [/bone] without open at line {}",
+                line_no + 1
+            ));
         }
 
         let Some((key, value)) = line.split_once('=') else {
@@ -373,7 +375,10 @@ fn parse_pskel_text(source: &str) -> Result<Vec<Bone3D>, String> {
             "inv_scale" => bone.inv_bind.scale = parse_vec3(value, line_no + 1)?,
             "inv_rot" => bone.inv_bind.rotation = parse_quat(value, line_no + 1)?,
             _ => {
-                return Err(format!("pskel: unknown field `{key}` at line {}", line_no + 1));
+                return Err(format!(
+                    "pskel: unknown field `{key}` at line {}",
+                    line_no + 1
+                ));
             }
         }
     }
@@ -390,7 +395,10 @@ fn parse_bone_start(line: &str) -> Option<String> {
     if !line.starts_with("[bone") || !line.ends_with(']') {
         return None;
     }
-    let inner = line.trim_start_matches("[bone").trim_end_matches(']').trim();
+    let inner = line
+        .trim_start_matches("[bone")
+        .trim_end_matches(']')
+        .trim();
     if inner.is_empty() {
         return None;
     }
@@ -418,9 +426,7 @@ fn parse_tuple(value: &str, count: usize, line_no: usize) -> Result<Vec<f32>, St
         .ok_or_else(|| format!("pskel: expected tuple at line {line_no}"))?;
     let parts: Vec<_> = inner.split(',').map(|s| s.trim()).collect();
     if parts.len() != count {
-        return Err(format!(
-            "pskel: expected {count} values at line {line_no}"
-        ));
+        return Err(format!("pskel: expected {count} values at line {line_no}"));
     }
     let mut out = Vec::with_capacity(count);
     for part in parts {

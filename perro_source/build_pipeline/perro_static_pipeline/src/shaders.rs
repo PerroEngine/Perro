@@ -1,10 +1,6 @@
-use crate::{embedded_dir, res_dir, static_dir, StaticPipelineError};
+use crate::{StaticPipelineError, embedded_dir, res_dir, static_dir};
 use perro_io::walkdir::collect_file_paths;
-use std::{
-    fmt::Write as _,
-    fs,
-    path::Path,
-};
+use std::{fmt::Write as _, fs, path::Path};
 
 const SHADER_EXTENSIONS: &[&str] = &["wgsl"];
 

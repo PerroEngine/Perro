@@ -98,7 +98,6 @@ impl RuntimeResourceState {
         MaterialID::from_parts(index, generation)
     }
 
-
     pub(super) fn free_texture_id(&mut self, id: TextureID) -> bool {
         self.texture_slots.free_parts(id.index(), id.generation())
     }
@@ -110,5 +109,4 @@ impl RuntimeResourceState {
     pub(super) fn free_material_id(&mut self, id: MaterialID) -> bool {
         self.material_slots.free_parts(id.index(), id.generation())
     }
-
 }

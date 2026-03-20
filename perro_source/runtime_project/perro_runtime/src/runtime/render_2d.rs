@@ -14,6 +14,7 @@ impl Runtime {
 
     pub fn extract_render_2d_commands(&mut self) {
         self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
 
         let mut traversal_ids = std::mem::take(&mut self.render_2d.traversal_ids);
         traversal_ids.clear();
@@ -29,25 +30,38 @@ impl Runtime {
                 SceneNodeData::Sprite2D(sprite) => Some((
                     effective_visible && sprite.visible,
                     sprite.texture,
-                    sprite.transform.to_mat3().to_cols_array_2d(),
+                    sprite.transform,
                     sprite.z_index,
                 )),
                 _ => None,
             });
-            if let Some((visible, texture, model, z_index)) = sprite_data {
+            if let Some((visible, texture, local_transform, z_index)) = sprite_data {
+                let model = self
+                    .get_global_transform_2d(node)
+                    .unwrap_or(local_transform)
+                    .to_mat3()
+                    .to_cols_array_2d();
                 self.emit_sprite_2d(node, visible, texture, model, z_index, &mut visible_now);
             }
 
             let camera_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::Camera2D(camera) if camera.active && effective_visible => {
-                    Some(Camera2DState {
-                        position: [camera.transform.position.x, camera.transform.position.y],
-                        rotation_radians: camera.transform.rotation,
-                        zoom: camera.zoom,
-                        post_processing: Arc::from(camera.post_processing.as_slice()),
-                    })
-                }
+                SceneNodeData::Camera2D(camera) if camera.active && effective_visible => Some((
+                    camera.transform,
+                    camera.zoom,
+                    camera.post_processing.clone(),
+                )),
                 _ => None,
+            });
+            let camera_data = camera_data.map(|(local_transform, zoom, post_processing)| {
+                let global = self
+                    .get_global_transform_2d(node)
+                    .unwrap_or(local_transform);
+                Camera2DState {
+                    position: [global.position.x, global.position.y],
+                    rotation_radians: global.rotation,
+                    zoom,
+                    post_processing: Arc::from(post_processing.as_slice()),
+                }
             });
             if let Some(camera) = camera_data {
                 self.queue_render_command(RenderCommand::TwoD(Command2D::SetCamera { camera }));

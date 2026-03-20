@@ -189,7 +189,10 @@ fn material_from_runtime_entries(entries: &[(String, RuntimeValue)], any: &mut b
     }
 }
 
-fn material_from_static_entries(entries: &[(&str, StaticSceneValue)], any: &mut bool) -> Material3D {
+fn material_from_static_entries(
+    entries: &[(&str, StaticSceneValue)],
+    any: &mut bool,
+) -> Material3D {
     let kind = material_type_from_first_static(entries);
     if has_type_first_static(entries) {
         *any = true;
@@ -277,7 +280,11 @@ fn parse_material_type(value: &str) -> MaterialType3D {
     }
 }
 
-fn apply_standard_runtime(entries: &[(String, RuntimeValue)], out: &mut StandardMaterial3D, any: &mut bool) {
+fn apply_standard_runtime(
+    entries: &[(String, RuntimeValue)],
+    out: &mut StandardMaterial3D,
+    any: &mut bool,
+) {
     for (name, value) in entries {
         match canonical_standard_key(name) {
             Some("roughnessFactor") => set_f32(value, any, |v| out.roughness_factor = v),
@@ -289,7 +296,9 @@ fn apply_standard_runtime(entries: &[(String, RuntimeValue)], out: &mut Standard
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
             Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
             Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
-            Some("baseColorTexture") => set_texture_slot(value, any, |v| out.base_color_texture = v),
+            Some("baseColorTexture") => {
+                set_texture_slot(value, any, |v| out.base_color_texture = v)
+            }
             Some("metallicRoughnessTexture") => {
                 set_texture_slot(value, any, |v| out.metallic_roughness_texture = v)
             }
@@ -306,7 +315,11 @@ fn apply_standard_runtime(entries: &[(String, RuntimeValue)], out: &mut Standard
     }
 }
 
-fn apply_unlit_runtime(entries: &[(String, RuntimeValue)], out: &mut UnlitMaterial3D, any: &mut bool) {
+fn apply_unlit_runtime(
+    entries: &[(String, RuntimeValue)],
+    out: &mut UnlitMaterial3D,
+    any: &mut bool,
+) {
     for (name, value) in entries {
         match canonical_unlit_key(name) {
             Some("baseColorFactor") => set_color4(value, any, |v| out.base_color_factor = v),
@@ -314,13 +327,19 @@ fn apply_unlit_runtime(entries: &[(String, RuntimeValue)], out: &mut UnlitMateri
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
             Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
             Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
-            Some("baseColorTexture") => set_texture_slot(value, any, |v| out.base_color_texture = v),
+            Some("baseColorTexture") => {
+                set_texture_slot(value, any, |v| out.base_color_texture = v)
+            }
             _ => {}
         }
     }
 }
 
-fn apply_toon_runtime(entries: &[(String, RuntimeValue)], out: &mut ToonMaterial3D, any: &mut bool) {
+fn apply_toon_runtime(
+    entries: &[(String, RuntimeValue)],
+    out: &mut ToonMaterial3D,
+    any: &mut bool,
+) {
     for (name, value) in entries {
         match canonical_toon_key(name) {
             Some("baseColorFactor") => set_color4(value, any, |v| out.base_color_factor = v),
@@ -328,7 +347,9 @@ fn apply_toon_runtime(entries: &[(String, RuntimeValue)], out: &mut ToonMaterial
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
             Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
             Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
-            Some("baseColorTexture") => set_texture_slot(value, any, |v| out.base_color_texture = v),
+            Some("baseColorTexture") => {
+                set_texture_slot(value, any, |v| out.base_color_texture = v)
+            }
             Some("rampTexture") => set_texture_slot(value, any, |v| out.ramp_texture = v),
             Some("bandCount") => set_u32(value, any, |v| out.band_count = v),
             Some("rimStrength") => set_f32(value, any, |v| out.rim_strength = v),
@@ -338,7 +359,11 @@ fn apply_toon_runtime(entries: &[(String, RuntimeValue)], out: &mut ToonMaterial
     }
 }
 
-fn apply_custom_runtime(entries: &[(String, RuntimeValue)], out: &mut CustomMaterial3D, any: &mut bool) {
+fn apply_custom_runtime(
+    entries: &[(String, RuntimeValue)],
+    out: &mut CustomMaterial3D,
+    any: &mut bool,
+) {
     for (name, value) in entries {
         match canonical_custom_key(name) {
             Some("shaderPath") => {
@@ -358,20 +383,18 @@ fn apply_custom_runtime(entries: &[(String, RuntimeValue)], out: &mut CustomMate
     }
 }
 
-fn apply_standard_static(entries: &[(&str, StaticSceneValue)], out: &mut StandardMaterial3D, any: &mut bool) {
+fn apply_standard_static(
+    entries: &[(&str, StaticSceneValue)],
+    out: &mut StandardMaterial3D,
+    any: &mut bool,
+) {
     for (name, value) in entries {
         match canonical_standard_key(name) {
             Some("roughnessFactor") => set_f32_static(value, any, |v| out.roughness_factor = v),
             Some("metallicFactor") => set_f32_static(value, any, |v| out.metallic_factor = v),
-            Some("occlusionStrength") => {
-                set_f32_static(value, any, |v| out.occlusion_strength = v)
-            }
-            Some("emissiveFactor") => {
-                set_color3_static(value, any, |v| out.emissive_factor = v)
-            }
-            Some("baseColorFactor") => {
-                set_color4_static(value, any, |v| out.base_color_factor = v)
-            }
+            Some("occlusionStrength") => set_f32_static(value, any, |v| out.occlusion_strength = v),
+            Some("emissiveFactor") => set_color3_static(value, any, |v| out.emissive_factor = v),
+            Some("baseColorFactor") => set_color4_static(value, any, |v| out.base_color_factor = v),
             Some("normalScale") => set_f32_static(value, any, |v| out.normal_scale = v),
             Some("alphaCutoff") => set_f32_static(value, any, |v| out.alpha_cutoff = v),
             Some("alphaMode") => set_alpha_mode_static(value, any, |v| out.alpha_mode = v),
@@ -401,7 +424,11 @@ fn apply_standard_static(entries: &[(&str, StaticSceneValue)], out: &mut Standar
     }
 }
 
-fn apply_unlit_static(entries: &[(&str, StaticSceneValue)], out: &mut UnlitMaterial3D, any: &mut bool) {
+fn apply_unlit_static(
+    entries: &[(&str, StaticSceneValue)],
+    out: &mut UnlitMaterial3D,
+    any: &mut bool,
+) {
     for (name, value) in entries {
         match canonical_unlit_key(name) {
             Some("baseColorFactor") => set_color4_static(value, any, |v| out.base_color_factor = v),
@@ -417,7 +444,11 @@ fn apply_unlit_static(entries: &[(&str, StaticSceneValue)], out: &mut UnlitMater
     }
 }
 
-fn apply_toon_static(entries: &[(&str, StaticSceneValue)], out: &mut ToonMaterial3D, any: &mut bool) {
+fn apply_toon_static(
+    entries: &[(&str, StaticSceneValue)],
+    out: &mut ToonMaterial3D,
+    any: &mut bool,
+) {
     for (name, value) in entries {
         match canonical_toon_key(name) {
             Some("baseColorFactor") => set_color4_static(value, any, |v| out.base_color_factor = v),
@@ -437,7 +468,11 @@ fn apply_toon_static(entries: &[(&str, StaticSceneValue)], out: &mut ToonMateria
     }
 }
 
-fn apply_custom_static(entries: &[(&str, StaticSceneValue)], out: &mut CustomMaterial3D, any: &mut bool) {
+fn apply_custom_static(
+    entries: &[(&str, StaticSceneValue)],
+    out: &mut CustomMaterial3D,
+    any: &mut bool,
+) {
     for (name, value) in entries {
         match canonical_custom_key(name) {
             Some("shaderPath") => {
@@ -637,9 +672,7 @@ fn as_custom_param_value(value: &RuntimeValue) -> Option<CustomMaterialParamValu
         RuntimeValue::I32(v) => Some(CustomMaterialParamValue3D::I32(*v)),
         RuntimeValue::F32(v) => Some(CustomMaterialParamValue3D::F32(*v)),
         RuntimeValue::Vec2 { x, y } => Some(CustomMaterialParamValue3D::Vec2([*x, *y])),
-        RuntimeValue::Vec3 { x, y, z } => {
-            Some(CustomMaterialParamValue3D::Vec3([*x, *y, *z]))
-        }
+        RuntimeValue::Vec3 { x, y, z } => Some(CustomMaterialParamValue3D::Vec3([*x, *y, *z])),
         RuntimeValue::Vec4 { x, y, z, w } => {
             Some(CustomMaterialParamValue3D::Vec4([*x, *y, *z, *w]))
         }
@@ -766,13 +799,15 @@ fn as_color4_static(value: &StaticSceneValue) -> Option<[f32; 4]> {
 fn as_texture_slot_static(value: &StaticSceneValue) -> Option<u32> {
     match value {
         StaticSceneValue::I32(v) if *v >= 0 => Some(*v as u32),
-        StaticSceneValue::Object(entries) => (*entries).iter().find_map(|(name, inner)| match *name {
-            "index" | "slot" => match inner {
-                StaticSceneValue::I32(v) if *v >= 0 => Some(*v as u32),
+        StaticSceneValue::Object(entries) => {
+            (*entries).iter().find_map(|(name, inner)| match *name {
+                "index" | "slot" => match inner {
+                    StaticSceneValue::I32(v) if *v >= 0 => Some(*v as u32),
+                    _ => None,
+                },
                 _ => None,
-            },
-            _ => None,
-        }),
+            })
+        }
         _ => None,
     }
 }
@@ -783,9 +818,7 @@ fn as_custom_param_value_static(value: &StaticSceneValue) -> Option<CustomMateri
         StaticSceneValue::I32(v) => Some(CustomMaterialParamValue3D::I32(*v)),
         StaticSceneValue::F32(v) => Some(CustomMaterialParamValue3D::F32(*v)),
         StaticSceneValue::Vec2 { x, y } => Some(CustomMaterialParamValue3D::Vec2([*x, *y])),
-        StaticSceneValue::Vec3 { x, y, z } => {
-            Some(CustomMaterialParamValue3D::Vec3([*x, *y, *z]))
-        }
+        StaticSceneValue::Vec3 { x, y, z } => Some(CustomMaterialParamValue3D::Vec3([*x, *y, *z])),
         StaticSceneValue::Vec4 { x, y, z, w } => {
             Some(CustomMaterialParamValue3D::Vec4([*x, *y, *z, *w]))
         }

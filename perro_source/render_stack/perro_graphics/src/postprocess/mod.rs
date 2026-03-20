@@ -2,7 +2,7 @@ use crate::backend::StaticShaderLookup;
 use crate::postprocess::shaders::{build_post_shader, create_builtin_shader_module};
 use bytemuck::{Pod, Zeroable};
 use perro_io::load_asset;
-use perro_render_bridge::{CameraProjectionState, Camera3DState};
+use perro_render_bridge::{Camera3DState, CameraProjectionState};
 use perro_structs::{CustomPostParam, CustomPostParamValue, PostProcessEffect};
 use std::collections::HashMap;
 
@@ -59,10 +59,18 @@ pub struct PostProcessor {
 }
 
 impl PostProcessor {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, width: u32, height: u32) -> Self {
-        let (scene_texture, scene_view) = create_color_target(device, format, width, height, "perro_post_scene");
-        let (ping_a, ping_a_view) = create_color_target(device, format, width, height, "perro_post_ping_a");
-        let (ping_b, ping_b_view) = create_color_target(device, format, width, height, "perro_post_ping_b");
+    pub fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        let (scene_texture, scene_view) =
+            create_color_target(device, format, width, height, "perro_post_scene");
+        let (ping_a, ping_a_view) =
+            create_color_target(device, format, width, height, "perro_post_ping_a");
+        let (ping_b, ping_b_view) =
+            create_color_target(device, format, width, height, "perro_post_ping_b");
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("perro_post_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -228,12 +236,12 @@ impl PostProcessor {
 
         let mut max_params = 0usize;
         for effect in effects {
-            if let PostProcessEffect::Custom { shader_path, params } = effect {
-                self.ensure_custom_pipeline(
-                    device,
-                    shader_path.as_ref(),
-                    static_shader_lookup,
-                );
+            if let PostProcessEffect::Custom {
+                shader_path,
+                params,
+            } = effect
+            {
+                self.ensure_custom_pipeline(device, shader_path.as_ref(), static_shader_lookup);
                 max_params = max_params.max(params.len());
             }
         }
@@ -262,11 +270,7 @@ impl PostProcessor {
                 encode_effect_params(effect);
             let param_count = custom_params.len() as u32;
             if !custom_params.is_empty() {
-                queue.write_buffer(
-                    &params_buffer,
-                    0,
-                    bytemuck::cast_slice(&custom_params),
-                );
+                queue.write_buffer(&params_buffer, 0, bytemuck::cast_slice(&custom_params));
             }
             let uniform = PostUniform {
                 effect_type,
@@ -293,10 +297,7 @@ impl PostProcessor {
                 &ping_b_view
             };
             let pipeline = match custom_key {
-                Some(ref key) => self
-                    .custom_pipelines
-                    .get(key)
-                    .unwrap_or(&builtin_pipeline),
+                Some(ref key) => self.custom_pipelines.get(key).unwrap_or(&builtin_pipeline),
                 None => &builtin_pipeline,
             };
 

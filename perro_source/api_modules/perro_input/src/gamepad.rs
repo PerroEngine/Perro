@@ -174,104 +174,86 @@ impl Default for GamepadState {
 
 #[macro_export]
 macro_rules! gamepad_list {
-    ($ipt:expr) => {
-        {
-            let gp = $ipt.Gamepads();
-            gp.all()
-        }
-    };
+    ($ipt:expr) => {{
+        let gp = $ipt.Gamepads();
+        gp.all()
+    }};
 }
 
 #[macro_export]
 macro_rules! gamepad_get {
-    ($ipt:expr, $index:expr) => {
-        {
-            let gp = $ipt.Gamepads();
-            gp.get($index)
-        }
-    };
+    ($ipt:expr, $index:expr) => {{
+        let gp = $ipt.Gamepads();
+        gp.get($index)
+    }};
 }
 
 #[macro_export]
 macro_rules! gamepad_down {
-    ($ipt:expr, $index:expr, $button:expr) => {
-        {
-            let gp = $ipt.Gamepads();
-            gp.get($index)
-                .map(|gp| gp.is_button_down($button))
-                .unwrap_or(false)
-        }
-    };
+    ($ipt:expr, $index:expr, $button:expr) => {{
+        let gp = $ipt.Gamepads();
+        gp.get($index)
+            .map(|gp| gp.is_button_down($button))
+            .unwrap_or(false)
+    }};
 }
 
 #[macro_export]
 macro_rules! gamepad_pressed {
-    ($ipt:expr, $index:expr, $button:expr) => {
-        {
-            let gp = $ipt.Gamepads();
-            gp.get($index)
-                .map(|gp| gp.is_button_pressed($button))
-                .unwrap_or(false)
-        }
-    };
+    ($ipt:expr, $index:expr, $button:expr) => {{
+        let gp = $ipt.Gamepads();
+        gp.get($index)
+            .map(|gp| gp.is_button_pressed($button))
+            .unwrap_or(false)
+    }};
 }
 
 #[macro_export]
 macro_rules! gamepad_released {
-    ($ipt:expr, $index:expr, $button:expr) => {
-        {
-            let gp = $ipt.Gamepads();
-            gp.get($index)
-                .map(|gp| gp.is_button_released($button))
-                .unwrap_or(false)
-        }
-    };
+    ($ipt:expr, $index:expr, $button:expr) => {{
+        let gp = $ipt.Gamepads();
+        gp.get($index)
+            .map(|gp| gp.is_button_released($button))
+            .unwrap_or(false)
+    }};
 }
 
 #[macro_export]
 macro_rules! gamepad_left_stick {
-    ($ipt:expr, $index:expr) => {
-        {
-            let gp = $ipt.Gamepads();
-            gp.get($index)
-                .map(|gp| gp.left_stick())
-                .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
-        }
-    };
+    ($ipt:expr, $index:expr) => {{
+        let gp = $ipt.Gamepads();
+        gp.get($index)
+            .map(|gp| gp.left_stick())
+            .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+    }};
 }
 
 #[macro_export]
 macro_rules! gamepad_right_stick {
-    ($ipt:expr, $index:expr) => {
-        {
-            let gp = $ipt.Gamepads();
-            gp.get($index)
-                .map(|gp| gp.right_stick())
-                .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
-        }
-    };
+    ($ipt:expr, $index:expr) => {{
+        let gp = $ipt.Gamepads();
+        gp.get($index)
+            .map(|gp| gp.right_stick())
+            .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+    }};
 }
 
 #[macro_export]
 macro_rules! gamepad_gyro {
-    ($ipt:expr, $index:expr) => {
-        {
-            let gp = $ipt.Gamepads();
-            gp.get($index)
-                .map(|gp| gp.gyro())
-                .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
-        }
-    };
+    ($ipt:expr, $index:expr) => {{
+        let gp = $ipt.Gamepads();
+        gp.get($index)
+            .map(|gp| gp.gyro())
+            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+    }};
 }
 
 #[macro_export]
 macro_rules! gamepad_accel {
-    ($ipt:expr, $index:expr) => {
-        {
-            let gp = $ipt.Gamepads();
-            gp.get($index)
-                .map(|gp| gp.accel())
-                .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
-        }
-    };
+    ($ipt:expr, $index:expr) => {{
+        let gp = $ipt.Gamepads();
+        gp.get($index)
+            .map(|gp| gp.accel())
+            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+    }};
 }

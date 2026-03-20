@@ -285,13 +285,14 @@ impl Gpu {
         let swap_view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let (post_chain, post_enabled) = if PostProcessor::has_effects(camera_3d.post_processing.as_ref()) {
-            (camera_3d.post_processing.as_ref(), true)
-        } else if PostProcessor::has_effects(post_processing_2d.as_ref()) {
-            (post_processing_2d.as_ref(), true)
-        } else {
-            (camera_3d.post_processing.as_ref(), false)
-        };
+        let (post_chain, post_enabled) =
+            if PostProcessor::has_effects(camera_3d.post_processing.as_ref()) {
+                (camera_3d.post_processing.as_ref(), true)
+            } else if PostProcessor::has_effects(post_processing_2d.as_ref()) {
+                (post_processing_2d.as_ref(), true)
+            } else {
+                (camera_3d.post_processing.as_ref(), false)
+            };
         let depth_prepass_needed = post_enabled && PostProcessor::uses_depth(post_chain);
         let scene_view = self.post.scene_view().clone();
         let color_view = if post_enabled {

@@ -197,7 +197,8 @@ fn rename_exported_binary(source: &Path, dest: &Path) -> Result<(), CompilerErro
 
     let source_str = source.to_string_lossy();
     let dest_str = dest.to_string_lossy();
-    let case_only_rename = cfg!(target_os = "windows") && source_str.eq_ignore_ascii_case(&dest_str);
+    let case_only_rename =
+        cfg!(target_os = "windows") && source_str.eq_ignore_ascii_case(&dest_str);
 
     if case_only_rename {
         return rename_exported_binary_via_temp(source, dest);
@@ -502,7 +503,6 @@ fn indent_block(src: &str, spaces: usize) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
-
 
 fn write_scripts_lib(
     scripts_src: &Path,

@@ -17,7 +17,9 @@ mod culling {
 pub fn create_mesh_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_mesh_instanced"),
-        source: wgpu::ShaderSource::Wgsl(build_material_shader(regular::MATERIAL_STANDARD_WGSL).into()),
+        source: wgpu::ShaderSource::Wgsl(
+            build_material_shader(regular::MATERIAL_STANDARD_WGSL).into(),
+        ),
     })
 }
 
@@ -25,7 +27,9 @@ pub fn create_mesh_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
 pub fn create_unlit_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_mesh_unlit"),
-        source: wgpu::ShaderSource::Wgsl(build_material_shader(regular::MATERIAL_UNLIT_WGSL).into()),
+        source: wgpu::ShaderSource::Wgsl(
+            build_material_shader(regular::MATERIAL_UNLIT_WGSL).into(),
+        ),
     })
 }
 

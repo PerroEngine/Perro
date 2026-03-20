@@ -70,7 +70,12 @@ pub fn run_dev_project_from_path(
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, false);
     let app = create_dev_app(graphics, project);
-    let fps_cap = app.runtime.project().map(|p| p.config.target_fps).flatten().unwrap_or(0.0);
+    let fps_cap = app
+        .runtime
+        .project()
+        .map(|p| p.config.target_fps)
+        .flatten()
+        .unwrap_or(0.0);
     let fixed = app
         .runtime
         .project()
@@ -88,7 +93,12 @@ pub fn run_static_project_from_path(
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, true);
     let app = create_static_app(graphics, project);
-    let fps_cap = app.runtime.project().map(|p| p.config.target_fps).flatten().unwrap_or(0.0);
+    let fps_cap = app
+        .runtime
+        .project()
+        .map(|p| p.config.target_fps)
+        .flatten()
+        .unwrap_or(0.0);
     let fixed = app
         .runtime
         .project()
@@ -185,7 +195,12 @@ pub fn run_static_embedded_project(
         input.assets.static_script_registry,
     );
     let app = App::new(runtime, graphics);
-    let fps_cap = app.runtime.project().map(|p| p.config.target_fps).flatten().unwrap_or(0.0);
+    let fps_cap = app
+        .runtime
+        .project()
+        .map(|p| p.config.target_fps)
+        .flatten()
+        .unwrap_or(0.0);
     let fixed = app
         .runtime
         .project()

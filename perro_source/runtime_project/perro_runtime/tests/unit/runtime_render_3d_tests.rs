@@ -349,3 +349,45 @@ fn active_ambient_light_3d_emits_set_ambient_light_command() {
             )
     )));
 }
+
+#[test]
+fn mesh_under_parent_uses_global_transform() {
+    let mut runtime = Runtime::new();
+
+    let mut parent_node = Node3D::new();
+    parent_node.transform.position.x = 15.0;
+    let parent = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(parent_node)));
+
+    let mut mesh = MeshInstance3D::new();
+    mesh.mesh = MeshID::from_parts(41, 0);
+    mesh.material = MaterialID::from_parts(42, 0);
+    mesh.transform.position.x = 1.0;
+    let child = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+
+    if let Some(parent_node) = runtime.nodes.get_mut(parent) {
+        parent_node.add_child(child);
+    }
+    if let Some(child_node) = runtime.nodes.get_mut(child) {
+        child_node.parent = parent;
+    }
+    runtime.mark_transform_dirty_recursive(parent);
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(
+                command_3d.as_ref(),
+                Command3D::Draw { node, model, .. }
+                    if *node == child
+                        && model[3][0] == 16.0
+                        && model[3][1] == 0.0
+                        && model[3][2] == 0.0
+            )
+    )));
+}

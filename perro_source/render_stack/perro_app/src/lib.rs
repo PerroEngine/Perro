@@ -1,7 +1,5 @@
 use perro_graphics::GraphicsBackend;
-use perro_input::{
-    GamepadAxis, GamepadButton, JoyConButton, KeyCode, MouseButton,
-};
+use perro_input::{GamepadAxis, GamepadButton, JoyConButton, KeyCode, MouseButton};
 use perro_render_bridge::RenderEvent;
 use perro_runtime::Runtime;
 use std::sync::Arc;
@@ -89,13 +87,9 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
-    pub fn set_gamepad_button_state(
-        &mut self,
-        index: usize,
-        button: GamepadButton,
-        is_down: bool,
-    ) {
-        self.runtime.set_gamepad_button_state(index, button, is_down);
+    pub fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
+        self.runtime
+            .set_gamepad_button_state(index, button, is_down);
     }
 
     #[inline]
@@ -114,12 +108,7 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
-    pub fn set_joycon_button_state(
-        &mut self,
-        index: usize,
-        button: JoyConButton,
-        is_down: bool,
-    ) {
+    pub fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
         self.runtime.set_joycon_button_state(index, button, is_down);
     }
 
