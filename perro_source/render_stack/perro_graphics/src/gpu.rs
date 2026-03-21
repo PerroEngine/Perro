@@ -64,14 +64,66 @@ pub struct RenderFrame<'a> {
     pub rects_2d: &'a [RectInstanceGpu],
     pub upload_2d: &'a RectUploadPlan,
     pub sprites_2d: &'a [Sprite2DCommand],
-    pub saw_2d_commands: bool,
-    pub saw_3d_commands: bool,
+    pub frame_has_2d_commands: bool,
+    pub frame_has_3d_commands: bool,
+    pub frame_has_3d_particle_commands: bool,
     pub static_texture_lookup: Option<StaticTextureLookup>,
     pub static_mesh_lookup: Option<StaticMeshLookup>,
     pub static_shader_lookup: Option<StaticShaderLookup>,
 }
 
 impl Gpu {
+    pub fn render_idle_clear(&mut self) {
+        // Keep window alive for the full surface lifetime.
+        self.window_handle.id();
+
+        let frame = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                self.surface.configure(&self.device, &self.config);
+                return;
+            }
+            wgpu::CurrentSurfaceTexture::Timeout
+            | wgpu::CurrentSurfaceTexture::Occluded
+            | wgpu::CurrentSurfaceTexture::Validation => return,
+        };
+
+        let swap_view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("perro_idle_clear_encoder"),
+            });
+        {
+            let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("perro_idle_clear_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &swap_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: CLEAR_R,
+                            g: CLEAR_G,
+                            b: CLEAR_B,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+        }
+        self.queue.submit(Some(encoder.finish()));
+        frame.present();
+    }
+
     pub fn new(
         window: Arc<Window>,
         smoothing_samples: u32,
@@ -251,8 +303,9 @@ impl Gpu {
             rects_2d,
             upload_2d,
             sprites_2d,
-            saw_2d_commands,
-            saw_3d_commands,
+            frame_has_2d_commands,
+            frame_has_3d_commands,
+            frame_has_3d_particle_commands,
             static_texture_lookup,
             static_mesh_lookup,
             static_shader_lookup,
@@ -263,11 +316,13 @@ impl Gpu {
         let post_requested = PostProcessor::has_effects(camera_3d.post_processing.as_ref())
             || PostProcessor::has_effects(post_processing_2d.as_ref())
             || PostProcessor::has_effects(post_processing_global.as_ref());
-        let needs_2d = saw_2d_commands || upload_2d.draw_count > 0 || !sprites_2d.is_empty();
+        let needs_2d =
+            frame_has_2d_commands || upload_2d.draw_count > 0 || !sprites_2d.is_empty();
         let needs_3d = !draws_3d.is_empty();
         let needs_particles_3d = !point_particles_3d.is_empty();
         let needs_3d_pipeline =
-            saw_3d_commands || needs_3d || needs_particles_3d || post_requested;
+            frame_has_3d_commands || needs_3d || needs_particles_3d || post_requested;
+        let needs_3d_particles_path = frame_has_3d_particle_commands || needs_particles_3d;
 
         if needs_2d {
             if self.two_d.is_none() {
@@ -305,7 +360,7 @@ impl Gpu {
                     },
                 ));
             }
-            if needs_particles_3d && self.point_particles_3d.is_none() {
+            if needs_3d_particles_path && self.point_particles_3d.is_none() {
                 self.point_particles_3d = Some(GpuPointParticles3D::new(
                     &self.device,
                     self.render_format,
@@ -328,18 +383,23 @@ impl Gpu {
                     },
                 );
             }
-            if let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
-                point_particles_3d_gpu.prepare(
-                    &self.device,
-                    &self.queue,
-                    PreparePointParticles3D {
-                        camera: camera_3d.clone(),
-                        emitters: point_particles_3d,
-                        width: self.config.width,
-                        height: self.config.height,
-                    },
-                );
+            if needs_3d_particles_path {
+                if let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
+                    point_particles_3d_gpu.prepare(
+                        &self.device,
+                        &self.queue,
+                        PreparePointParticles3D {
+                            camera: camera_3d.clone(),
+                            emitters: point_particles_3d,
+                            width: self.config.width,
+                            height: self.config.height,
+                        },
+                    );
+                }
             }
+        }
+        if !needs_3d_particles_path {
+            self.point_particles_3d = None;
         }
 
         let frame = match self.surface.get_current_texture() {
