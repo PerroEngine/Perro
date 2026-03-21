@@ -72,9 +72,25 @@ struct BodyState3D {
     opaque_handle: u64,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct PendingImpulse2D {
+    id: NodeID,
+    direction: Vector2,
+    amount: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PendingImpulse3D {
+    id: NodeID,
+    direction: Vector3,
+    amount: f32,
+}
+
 pub(crate) struct PhysicsState {
     world_2d: PhysicsWorld2D,
     world_3d: PhysicsWorld3D,
+    pending_impulses_2d: Vec<PendingImpulse2D>,
+    pending_impulses_3d: Vec<PendingImpulse3D>,
     next_opaque_handle: u64,
 }
 
@@ -113,6 +129,8 @@ impl PhysicsState {
         Self {
             world_2d: PhysicsWorld2D::new(),
             world_3d: PhysicsWorld3D::new(),
+            pending_impulses_2d: Vec::new(),
+            pending_impulses_3d: Vec::new(),
             next_opaque_handle: 1,
         }
     }
@@ -120,6 +138,8 @@ impl PhysicsState {
     pub(crate) fn clear(&mut self) {
         self.world_2d = PhysicsWorld2D::new();
         self.world_3d = PhysicsWorld3D::new();
+        self.pending_impulses_2d.clear();
+        self.pending_impulses_3d.clear();
         self.next_opaque_handle = 1;
     }
 
@@ -180,10 +200,28 @@ impl Runtime {
         let bodies_3d = self.collect_body_descs_3d();
         self.sync_world_2d(&bodies_2d);
         self.sync_world_3d(&bodies_3d);
+        self.apply_pending_impulses_2d();
+        self.apply_pending_impulses_3d();
         self.step_world_2d();
         self.step_world_3d();
         self.sync_world_to_nodes_2d();
         self.sync_world_to_nodes_3d();
+    }
+
+    pub(crate) fn queue_impulse_2d(&mut self, id: NodeID, direction: Vector2, amount: f32) {
+        self.physics.pending_impulses_2d.push(PendingImpulse2D {
+            id,
+            direction,
+            amount,
+        });
+    }
+
+    pub(crate) fn queue_impulse_3d(&mut self, id: NodeID, direction: Vector3, amount: f32) {
+        self.physics.pending_impulses_3d.push(PendingImpulse3D {
+            id,
+            direction,
+            amount,
+        });
     }
 
     pub(crate) fn clear_physics(&mut self) {
@@ -520,6 +558,65 @@ impl Runtime {
             &(),
             &(),
         );
+    }
+
+    fn apply_pending_impulses_2d(&mut self) {
+        let mut pending = std::mem::take(&mut self.physics.pending_impulses_2d);
+        for impulse in pending.drain(..) {
+            let Some(state) = self.physics.world_2d.body_map.get(&impulse.id) else {
+                continue;
+            };
+            if state.kind != BodyKind::Rigid {
+                continue;
+            }
+            let Some(rb) = self.physics.world_2d.bodies.get_mut(state.handle) else {
+                continue;
+            };
+            let len_sq = impulse.direction.x * impulse.direction.x + impulse.direction.y * impulse.direction.y;
+            if len_sq <= 0.000_001 {
+                continue;
+            }
+            let inv_len = len_sq.sqrt().recip();
+            rb.apply_impulse(
+                na2::Vector2::new(
+                    impulse.direction.x * inv_len * impulse.amount,
+                    impulse.direction.y * inv_len * impulse.amount,
+                ),
+                true,
+            );
+        }
+        self.physics.pending_impulses_2d = pending;
+    }
+
+    fn apply_pending_impulses_3d(&mut self) {
+        let mut pending = std::mem::take(&mut self.physics.pending_impulses_3d);
+        for impulse in pending.drain(..) {
+            let Some(state) = self.physics.world_3d.body_map.get(&impulse.id) else {
+                continue;
+            };
+            if state.kind != BodyKind::Rigid {
+                continue;
+            }
+            let Some(rb) = self.physics.world_3d.bodies.get_mut(state.handle) else {
+                continue;
+            };
+            let len_sq = impulse.direction.x * impulse.direction.x
+                + impulse.direction.y * impulse.direction.y
+                + impulse.direction.z * impulse.direction.z;
+            if len_sq <= 0.000_001 {
+                continue;
+            }
+            let inv_len = len_sq.sqrt().recip();
+            rb.apply_impulse(
+                na3::Vector3::new(
+                    impulse.direction.x * inv_len * impulse.amount,
+                    impulse.direction.y * inv_len * impulse.amount,
+                    impulse.direction.z * inv_len * impulse.amount,
+                ),
+                true,
+            );
+        }
+        self.physics.pending_impulses_3d = pending;
     }
 
     fn sync_world_to_nodes_2d(&mut self) {

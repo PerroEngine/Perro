@@ -308,6 +308,16 @@ impl SignalAPI for DummyRuntime {
     }
 }
 
+impl PhysicsAPI for DummyRuntime {
+    fn apply_force_2d(&mut self, _body_id: NodeID, _direction: Vector2, _amount: f32) -> bool {
+        true
+    }
+
+    fn apply_force_3d(&mut self, _body_id: NodeID, _direction: Vector3, _amount: f32) -> bool {
+        true
+    }
+}
+
 #[test]
 fn script_macros_typecheck_and_forward() {
     let mut rt = DummyRuntime {
@@ -418,6 +428,13 @@ fn script_macros_typecheck_and_forward() {
         ),
         None
     );
+    assert!(apply_force!(&mut ctx, id, Vector2::new(1.0, 0.0), 8.0));
+    assert!(apply_force!(
+        &mut ctx,
+        id,
+        Vector3::new(0.0, 1.0, 0.0),
+        3.5
+    ));
     assert!(!script_attach!(&mut ctx, id, "res://scripts/a.rs"));
     assert!(!script_detach!(&mut ctx, id));
     let member = var!("x");

@@ -12,6 +12,7 @@ Runtime macros take `ctx` as argument 1.
 - [Nodes Module](runtime_modules/nodes.md)
 - [Scripts Module](runtime_modules/scripts.md)
 - [Signals Module](runtime_modules/signals.md)
+- [Physics Module](runtime_modules/physics.md)
 - [Helpers](runtime_modules/helpers.md)
 
 Each module page contains:
