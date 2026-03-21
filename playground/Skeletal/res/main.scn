@@ -12,7 +12,7 @@
     [Skeleton3D]
     skeleton = "res://skeleton.glb:skeleton[0]"
         [Node3D]
-        position = (0, 0, 0)
+        position = (0, -1, 0)
         [/Node3D]
     [/Skeleton3D]
 [/skel]
@@ -34,7 +34,6 @@ parent = @root
 
     [Camera3D]
         active = true
-  
 
         [Node3D]
             position = (0, 0, 8)
@@ -46,6 +45,6 @@ parent = @root
 parent = @root
 [AmbientLight3D]
     color = (1.0, 1.0, 1.0)
-    intensity = 0.5
+    intensity = 0.8
 [/AmbientLight3D]
 [/ambient]

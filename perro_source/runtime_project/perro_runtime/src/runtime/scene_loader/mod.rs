@@ -65,6 +65,7 @@ impl Runtime {
         }
 
         self.nodes.clear();
+        self.clear_physics();
         self.scripts = Default::default();
         self.pending_start_scripts.clear();
         self.pending_start_flags.clear();

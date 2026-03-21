@@ -23,6 +23,7 @@ use std::sync::{Arc, Mutex};
 mod render_2d;
 mod render_3d;
 mod scene_loader;
+mod physics;
 
 type RuntimeScriptCtor = ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>;
 type StaticScriptRegistry = &'static [(&'static str, RuntimeScriptCtor)];
@@ -57,6 +58,10 @@ pub struct Runtime {
     internal_fixed_update_nodes: Vec<NodeID>,
     internal_update_pos: Vec<Option<usize>>,
     internal_fixed_update_pos: Vec<Option<usize>>,
+    physics_body_nodes_2d: Vec<NodeID>,
+    physics_body_nodes_3d: Vec<NodeID>,
+    physics_body_pos_2d: Vec<Option<usize>>,
+    physics_body_pos_3d: Vec<Option<usize>>,
 
     render_2d: Render2DState,
     render_3d: Render3DState,
@@ -68,6 +73,7 @@ pub struct Runtime {
     pub(crate) node_tag_index: AHashMap<TagID, AHashSet<NodeID>>,
     pub(crate) resource_api: Arc<RuntimeResourceApi>,
     pub(crate) input: InputSnapshot,
+    physics: physics::PhysicsState,
 }
 
 pub struct Timing {
@@ -449,6 +455,10 @@ impl Runtime {
             internal_fixed_update_nodes: Vec::new(),
             internal_update_pos: Vec::new(),
             internal_fixed_update_pos: Vec::new(),
+            physics_body_nodes_2d: Vec::new(),
+            physics_body_nodes_3d: Vec::new(),
+            physics_body_pos_2d: Vec::new(),
+            physics_body_pos_3d: Vec::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
             terrain_store: terrain_store.clone(),
@@ -459,6 +469,7 @@ impl Runtime {
             node_tag_index: AHashMap::default(),
             resource_api: RuntimeResourceApi::new(None, None, None, terrain_store),
             input: InputSnapshot::new(),
+            physics: physics::PhysicsState::new(),
         }
     }
 
@@ -518,6 +529,7 @@ impl Runtime {
         self.time.fixed_delta = fixed_delta_time;
         self.schedules.snapshot_fixed(&self.scripts);
         self.run_fixed_schedule();
+        self.physics_fixed_step();
         self.run_internal_fixed_update_schedule();
     }
 
@@ -991,6 +1003,7 @@ impl Runtime {
     }
 
     pub(crate) fn register_internal_node_schedules(&mut self, id: NodeID, ty: NodeType) {
+        self.register_physics_body(id, ty);
         if matches!(ty.get_internal_update(), InternalUpdate::True) {
             let slot = id.index() as usize;
             if self.internal_update_pos.len() <= slot {
@@ -1016,6 +1029,7 @@ impl Runtime {
     }
 
     pub(crate) fn unregister_internal_node_schedules(&mut self, id: NodeID) {
+        self.unregister_physics_body(id);
         let slot = id.index() as usize;
 
         if let Some(Some(pos)) = self.internal_update_pos.get(slot).copied() {
@@ -1054,6 +1068,72 @@ impl Runtime {
         self.internal_fixed_update_nodes.clear();
         self.internal_update_pos.clear();
         self.internal_fixed_update_pos.clear();
+        self.physics_body_nodes_2d.clear();
+        self.physics_body_nodes_3d.clear();
+        self.physics_body_pos_2d.clear();
+        self.physics_body_pos_3d.clear();
+    }
+
+    fn register_physics_body(&mut self, id: NodeID, ty: NodeType) {
+        match ty {
+            NodeType::StaticBody2D | NodeType::RigidBody2D => {
+                let slot = id.index() as usize;
+                if self.physics_body_pos_2d.len() <= slot {
+                    self.physics_body_pos_2d.resize(slot + 1, None);
+                }
+                if self.physics_body_pos_2d[slot].is_none() {
+                    let pos = self.physics_body_nodes_2d.len();
+                    self.physics_body_nodes_2d.push(id);
+                    self.physics_body_pos_2d[slot] = Some(pos);
+                }
+            }
+            NodeType::StaticBody3D | NodeType::RigidBody3D => {
+                let slot = id.index() as usize;
+                if self.physics_body_pos_3d.len() <= slot {
+                    self.physics_body_pos_3d.resize(slot + 1, None);
+                }
+                if self.physics_body_pos_3d[slot].is_none() {
+                    let pos = self.physics_body_nodes_3d.len();
+                    self.physics_body_nodes_3d.push(id);
+                    self.physics_body_pos_3d[slot] = Some(pos);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn unregister_physics_body(&mut self, id: NodeID) {
+        let slot = id.index() as usize;
+
+        if let Some(Some(pos)) = self.physics_body_pos_2d.get(slot).copied() {
+            let last_pos = self.physics_body_nodes_2d.len().saturating_sub(1);
+            self.physics_body_nodes_2d.swap_remove(pos);
+            self.physics_body_pos_2d[slot] = None;
+            if pos <= last_pos.saturating_sub(1)
+                && let Some(moved) = self.physics_body_nodes_2d.get(pos).copied()
+            {
+                let moved_slot = moved.index() as usize;
+                if self.physics_body_pos_2d.len() <= moved_slot {
+                    self.physics_body_pos_2d.resize(moved_slot + 1, None);
+                }
+                self.physics_body_pos_2d[moved_slot] = Some(pos);
+            }
+        }
+
+        if let Some(Some(pos)) = self.physics_body_pos_3d.get(slot).copied() {
+            let last_pos = self.physics_body_nodes_3d.len().saturating_sub(1);
+            self.physics_body_nodes_3d.swap_remove(pos);
+            self.physics_body_pos_3d[slot] = None;
+            if pos <= last_pos.saturating_sub(1)
+                && let Some(moved) = self.physics_body_nodes_3d.get(pos).copied()
+            {
+                let moved_slot = moved.index() as usize;
+                if self.physics_body_pos_3d.len() <= moved_slot {
+                    self.physics_body_pos_3d.resize(moved_slot + 1, None);
+                }
+                self.physics_body_pos_3d[moved_slot] = Some(pos);
+            }
+        }
     }
 
     pub(crate) fn rebuild_node_tag_index(&mut self) {
@@ -1129,8 +1209,14 @@ impl Runtime {
             SceneNodeData::Node2D(node) => node.visible,
             SceneNodeData::Sprite2D(node) => node.visible,
             SceneNodeData::Camera2D(node) => node.visible,
+            SceneNodeData::CollisionShape2D(node) => node.visible,
+            SceneNodeData::StaticBody2D(node) => node.visible,
+            SceneNodeData::RigidBody2D(node) => node.visible,
             SceneNodeData::Node3D(node) => node.visible,
             SceneNodeData::MeshInstance3D(node) => node.visible,
+            SceneNodeData::CollisionShape3D(node) => node.visible,
+            SceneNodeData::StaticBody3D(node) => node.visible,
+            SceneNodeData::RigidBody3D(node) => node.visible,
             SceneNodeData::TerrainInstance3D(node) => node.visible,
             SceneNodeData::Camera3D(node) => node.visible,
             SceneNodeData::AmbientLight3D(node) => node.visible,

@@ -2,6 +2,7 @@ use crate::material_schema;
 use perro_ids::IntoTagID;
 use perro_io::load_asset;
 use perro_nodes::{
+    CollisionShape2D, CollisionShape3D, RigidBody2D, RigidBody3D, Shape2D, Shape3D,
     SceneNode, SceneNodeData,
     ambient_light_3d::AmbientLight3D,
     camera_2d::Camera2D,
@@ -17,6 +18,7 @@ use perro_nodes::{
     spot_light_3d::SpotLight3D,
     sprite_2d::Sprite2D,
     terrain_instance_3d::TerrainInstance3D,
+    Triangle2DKind, StaticBody2D, StaticBody3D,
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
@@ -274,10 +276,28 @@ fn scene_node_data_from_runtime(data: &RuntimeNodeData) -> Result<SceneNodeData,
         "Node2D" => Ok(SceneNodeData::Node2D(build_runtime_node_2d(data))),
         "Sprite2D" => Ok(SceneNodeData::Sprite2D(build_runtime_sprite_2d(data))),
         "Camera2D" => Ok(SceneNodeData::Camera2D(build_runtime_camera_2d(data))),
+        "CollisionShape2D" => Ok(SceneNodeData::CollisionShape2D(
+            build_runtime_collision_shape_2d(data),
+        )),
+        "StaticBody2D" => Ok(SceneNodeData::StaticBody2D(build_runtime_static_body_2d(
+            data,
+        ))),
+        "RigidBody2D" => Ok(SceneNodeData::RigidBody2D(build_runtime_rigid_body_2d(
+            data,
+        ))),
         "Node3D" => Ok(SceneNodeData::Node3D(build_runtime_node_3d(data))),
         "MeshInstance3D" => Ok(SceneNodeData::MeshInstance3D(
             build_runtime_mesh_instance_3d(data),
         )),
+        "CollisionShape3D" => Ok(SceneNodeData::CollisionShape3D(
+            build_runtime_collision_shape_3d(data),
+        )),
+        "StaticBody3D" => Ok(SceneNodeData::StaticBody3D(build_runtime_static_body_3d(
+            data,
+        ))),
+        "RigidBody3D" => Ok(SceneNodeData::RigidBody3D(build_runtime_rigid_body_3d(
+            data,
+        ))),
         "Skeleton3D" => Ok(SceneNodeData::Skeleton3D(build_runtime_skeleton_3d(data))),
         "TerrainInstance3D" => Ok(SceneNodeData::TerrainInstance3D(
             build_runtime_terrain_instance_3d(data),
@@ -306,9 +326,27 @@ fn scene_node_data_from_static(data: &StaticNodeData) -> Result<SceneNodeData, S
         StaticNodeType::Node2D => Ok(SceneNodeData::Node2D(build_static_node_2d(data))),
         StaticNodeType::Sprite2D => Ok(SceneNodeData::Sprite2D(build_static_sprite_2d(data))),
         StaticNodeType::Camera2D => Ok(SceneNodeData::Camera2D(build_static_camera_2d(data))),
+        StaticNodeType::CollisionShape2D => Ok(SceneNodeData::CollisionShape2D(
+            build_static_collision_shape_2d(data),
+        )),
+        StaticNodeType::StaticBody2D => Ok(SceneNodeData::StaticBody2D(
+            build_static_static_body_2d(data),
+        )),
+        StaticNodeType::RigidBody2D => Ok(SceneNodeData::RigidBody2D(
+            build_static_rigid_body_2d(data),
+        )),
         StaticNodeType::Node3D => Ok(SceneNodeData::Node3D(build_static_node_3d(data))),
         StaticNodeType::MeshInstance3D => Ok(SceneNodeData::MeshInstance3D(
             build_static_mesh_instance_3d(data),
+        )),
+        StaticNodeType::CollisionShape3D => Ok(SceneNodeData::CollisionShape3D(
+            build_static_collision_shape_3d(data),
+        )),
+        StaticNodeType::StaticBody3D => Ok(SceneNodeData::StaticBody3D(
+            build_static_static_body_3d(data),
+        )),
+        StaticNodeType::RigidBody3D => Ok(SceneNodeData::RigidBody3D(
+            build_static_rigid_body_3d(data),
         )),
         StaticNodeType::Skeleton3D => Ok(SceneNodeData::Skeleton3D(build_static_skeleton_3d(data))),
         StaticNodeType::TerrainInstance3D => Ok(SceneNodeData::TerrainInstance3D(
@@ -357,6 +395,36 @@ fn build_runtime_camera_2d(data: &RuntimeNodeData) -> Camera2D {
     }
     apply_node_2d_fields(&mut node, &data.fields);
     apply_camera_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_runtime_collision_shape_2d(data: &RuntimeNodeData) -> CollisionShape2D {
+    let mut node = CollisionShape2D::new();
+    if let Some(base) = &data.base {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_collision_shape_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_runtime_static_body_2d(data: &RuntimeNodeData) -> StaticBody2D {
+    let mut node = StaticBody2D::new();
+    if let Some(base) = &data.base {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_static_body_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_runtime_rigid_body_2d(data: &RuntimeNodeData) -> RigidBody2D {
+    let mut node = RigidBody2D::new();
+    if let Some(base) = &data.base {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_rigid_body_2d_fields(&mut node, &data.fields);
     node
 }
 
@@ -413,6 +481,36 @@ fn build_runtime_particle_emitter_3d(data: &RuntimeNodeData) -> ParticleEmitter3
     }
     apply_node_3d_fields(&mut node, &data.fields);
     apply_particle_emitter_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_runtime_collision_shape_3d(data: &RuntimeNodeData) -> CollisionShape3D {
+    let mut node = CollisionShape3D::new();
+    if let Some(base) = &data.base {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_collision_shape_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_runtime_static_body_3d(data: &RuntimeNodeData) -> StaticBody3D {
+    let mut node = StaticBody3D::new();
+    if let Some(base) = &data.base {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_static_body_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_runtime_rigid_body_3d(data: &RuntimeNodeData) -> RigidBody3D {
+    let mut node = RigidBody3D::new();
+    if let Some(base) = &data.base {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_rigid_body_3d_fields(&mut node, &data.fields);
     node
 }
 
@@ -479,6 +577,36 @@ fn build_static_camera_2d(data: &StaticNodeData) -> Camera2D {
     node
 }
 
+fn build_static_collision_shape_2d(data: &StaticNodeData) -> CollisionShape2D {
+    let mut node = CollisionShape2D::new();
+    if let Some(base) = data.base {
+        apply_node_2d_data_static(&mut node, base);
+    }
+    apply_node_2d_fields_static(&mut node, data.fields);
+    apply_collision_shape_2d_fields_static(&mut node, data.fields);
+    node
+}
+
+fn build_static_static_body_2d(data: &StaticNodeData) -> StaticBody2D {
+    let mut node = StaticBody2D::new();
+    if let Some(base) = data.base {
+        apply_node_2d_data_static(&mut node, base);
+    }
+    apply_node_2d_fields_static(&mut node, data.fields);
+    apply_static_body_2d_fields_static(&mut node, data.fields);
+    node
+}
+
+fn build_static_rigid_body_2d(data: &StaticNodeData) -> RigidBody2D {
+    let mut node = RigidBody2D::new();
+    if let Some(base) = data.base {
+        apply_node_2d_data_static(&mut node, base);
+    }
+    apply_node_2d_fields_static(&mut node, data.fields);
+    apply_rigid_body_2d_fields_static(&mut node, data.fields);
+    node
+}
+
 fn build_static_node_3d(data: &StaticNodeData) -> Node3D {
     let mut node = Node3D::new();
     apply_node_3d_data_static(&mut node, data);
@@ -532,6 +660,36 @@ fn build_static_particle_emitter_3d(data: &StaticNodeData) -> ParticleEmitter3D 
     }
     apply_node_3d_fields_static(&mut node, data.fields);
     apply_particle_emitter_3d_fields_static(&mut node, data.fields);
+    node
+}
+
+fn build_static_collision_shape_3d(data: &StaticNodeData) -> CollisionShape3D {
+    let mut node = CollisionShape3D::new();
+    if let Some(base) = data.base {
+        apply_node_3d_data_static(&mut node, base);
+    }
+    apply_node_3d_fields_static(&mut node, data.fields);
+    apply_collision_shape_3d_fields_static(&mut node, data.fields);
+    node
+}
+
+fn build_static_static_body_3d(data: &StaticNodeData) -> StaticBody3D {
+    let mut node = StaticBody3D::new();
+    if let Some(base) = data.base {
+        apply_node_3d_data_static(&mut node, base);
+    }
+    apply_node_3d_fields_static(&mut node, data.fields);
+    apply_static_body_3d_fields_static(&mut node, data.fields);
+    node
+}
+
+fn build_static_rigid_body_3d(data: &StaticNodeData) -> RigidBody3D {
+    let mut node = RigidBody3D::new();
+    if let Some(base) = data.base {
+        apply_node_3d_data_static(&mut node, base);
+    }
+    apply_node_3d_fields_static(&mut node, data.fields);
+    apply_rigid_body_3d_fields_static(&mut node, data.fields);
     node
 }
 
@@ -2338,6 +2496,562 @@ fn set_projection_frustum_near(node: &mut Camera3D, value: f32) {
 fn set_projection_frustum_far(node: &mut Camera3D, value: f32) {
     if let CameraProjection::Frustum { near, far, .. } = &mut node.projection {
         *far = value.max(*near + 0.001);
+    }
+}
+
+fn apply_collision_shape_2d_fields(
+    node: &mut CollisionShape2D,
+    fields: &[(String, RuntimeValue)],
+) {
+    for (name, value) in fields {
+        match name.as_str() {
+            "shape" => {
+                if let Some(shape) = as_shape_2d(value) {
+                    node.shape = shape;
+                }
+            }
+            "sensor" => {
+                if let Some(sensor) = as_bool(value) {
+                    node.sensor = sensor;
+                }
+            }
+            "friction" => {
+                if let Some(friction) = as_f32(value) {
+                    node.friction = friction;
+                }
+            }
+            "restitution" => {
+                if let Some(restitution) = as_f32(value) {
+                    node.restitution = restitution;
+                }
+            }
+            "density" => {
+                if let Some(density) = as_f32(value) {
+                    node.density = density;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_static_body_2d_fields(node: &mut StaticBody2D, fields: &[(String, RuntimeValue)]) {
+    for (name, value) in fields {
+        if name == "enabled" && let Some(enabled) = as_bool(value) {
+            node.enabled = enabled;
+        }
+    }
+}
+
+fn apply_rigid_body_2d_fields(node: &mut RigidBody2D, fields: &[(String, RuntimeValue)]) {
+    for (name, value) in fields {
+        match name.as_str() {
+            "enabled" => {
+                if let Some(enabled) = as_bool(value) {
+                    node.enabled = enabled;
+                }
+            }
+            "linear_velocity" | "velocity" => {
+                if let Some(velocity) = as_vec2(value) {
+                    node.linear_velocity = velocity;
+                }
+            }
+            "angular_velocity" => {
+                if let Some(angular_velocity) = as_f32(value) {
+                    node.angular_velocity = angular_velocity;
+                }
+            }
+            "gravity_scale" => {
+                if let Some(gravity_scale) = as_f32(value) {
+                    node.gravity_scale = gravity_scale;
+                }
+            }
+            "linear_damping" => {
+                if let Some(linear_damping) = as_f32(value) {
+                    node.linear_damping = linear_damping;
+                }
+            }
+            "angular_damping" => {
+                if let Some(angular_damping) = as_f32(value) {
+                    node.angular_damping = angular_damping;
+                }
+            }
+            "can_sleep" => {
+                if let Some(can_sleep) = as_bool(value) {
+                    node.can_sleep = can_sleep;
+                }
+            }
+            "lock_rotation" => {
+                if let Some(lock_rotation) = as_bool(value) {
+                    node.lock_rotation = lock_rotation;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_collision_shape_3d_fields(
+    node: &mut CollisionShape3D,
+    fields: &[(String, RuntimeValue)],
+) {
+    for (name, value) in fields {
+        match name.as_str() {
+            "shape" => {
+                if let Some(shape) = as_shape_3d(value) {
+                    node.shape = shape;
+                }
+            }
+            "sensor" => {
+                if let Some(sensor) = as_bool(value) {
+                    node.sensor = sensor;
+                }
+            }
+            "friction" => {
+                if let Some(friction) = as_f32(value) {
+                    node.friction = friction;
+                }
+            }
+            "restitution" => {
+                if let Some(restitution) = as_f32(value) {
+                    node.restitution = restitution;
+                }
+            }
+            "density" => {
+                if let Some(density) = as_f32(value) {
+                    node.density = density;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_static_body_3d_fields(node: &mut StaticBody3D, fields: &[(String, RuntimeValue)]) {
+    for (name, value) in fields {
+        if name == "enabled" && let Some(enabled) = as_bool(value) {
+            node.enabled = enabled;
+        }
+    }
+}
+
+fn apply_rigid_body_3d_fields(node: &mut RigidBody3D, fields: &[(String, RuntimeValue)]) {
+    for (name, value) in fields {
+        match name.as_str() {
+            "enabled" => {
+                if let Some(enabled) = as_bool(value) {
+                    node.enabled = enabled;
+                }
+            }
+            "linear_velocity" | "velocity" => {
+                if let Some(velocity) = as_vec3(value) {
+                    node.linear_velocity = velocity;
+                }
+            }
+            "angular_velocity" => {
+                if let Some(angular_velocity) = as_vec3(value) {
+                    node.angular_velocity = angular_velocity;
+                }
+            }
+            "gravity_scale" => {
+                if let Some(gravity_scale) = as_f32(value) {
+                    node.gravity_scale = gravity_scale;
+                }
+            }
+            "linear_damping" => {
+                if let Some(linear_damping) = as_f32(value) {
+                    node.linear_damping = linear_damping;
+                }
+            }
+            "angular_damping" => {
+                if let Some(angular_damping) = as_f32(value) {
+                    node.angular_damping = angular_damping;
+                }
+            }
+            "can_sleep" => {
+                if let Some(can_sleep) = as_bool(value) {
+                    node.can_sleep = can_sleep;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_collision_shape_2d_fields_static(
+    node: &mut CollisionShape2D,
+    fields: &[(&str, StaticSceneValue)],
+) {
+    for (name, value) in fields {
+        match *name {
+            "shape" => {
+                if let Some(shape) = as_shape_2d_static(value) {
+                    node.shape = shape;
+                }
+            }
+            "sensor" => {
+                if let Some(sensor) = as_bool_static(value) {
+                    node.sensor = sensor;
+                }
+            }
+            "friction" => {
+                if let Some(friction) = as_f32_static(value) {
+                    node.friction = friction;
+                }
+            }
+            "restitution" => {
+                if let Some(restitution) = as_f32_static(value) {
+                    node.restitution = restitution;
+                }
+            }
+            "density" => {
+                if let Some(density) = as_f32_static(value) {
+                    node.density = density;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_static_body_2d_fields_static(node: &mut StaticBody2D, fields: &[(&str, StaticSceneValue)]) {
+    for (name, value) in fields {
+        if *name == "enabled" && let Some(enabled) = as_bool_static(value) {
+            node.enabled = enabled;
+        }
+    }
+}
+
+fn apply_rigid_body_2d_fields_static(node: &mut RigidBody2D, fields: &[(&str, StaticSceneValue)]) {
+    for (name, value) in fields {
+        match *name {
+            "enabled" => {
+                if let Some(enabled) = as_bool_static(value) {
+                    node.enabled = enabled;
+                }
+            }
+            "linear_velocity" | "velocity" => {
+                if let Some(velocity) = as_vec2_static(value) {
+                    node.linear_velocity = velocity;
+                }
+            }
+            "angular_velocity" => {
+                if let Some(angular_velocity) = as_f32_static(value) {
+                    node.angular_velocity = angular_velocity;
+                }
+            }
+            "gravity_scale" => {
+                if let Some(gravity_scale) = as_f32_static(value) {
+                    node.gravity_scale = gravity_scale;
+                }
+            }
+            "linear_damping" => {
+                if let Some(linear_damping) = as_f32_static(value) {
+                    node.linear_damping = linear_damping;
+                }
+            }
+            "angular_damping" => {
+                if let Some(angular_damping) = as_f32_static(value) {
+                    node.angular_damping = angular_damping;
+                }
+            }
+            "can_sleep" => {
+                if let Some(can_sleep) = as_bool_static(value) {
+                    node.can_sleep = can_sleep;
+                }
+            }
+            "lock_rotation" => {
+                if let Some(lock_rotation) = as_bool_static(value) {
+                    node.lock_rotation = lock_rotation;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_collision_shape_3d_fields_static(
+    node: &mut CollisionShape3D,
+    fields: &[(&str, StaticSceneValue)],
+) {
+    for (name, value) in fields {
+        match *name {
+            "shape" => {
+                if let Some(shape) = as_shape_3d_static(value) {
+                    node.shape = shape;
+                }
+            }
+            "sensor" => {
+                if let Some(sensor) = as_bool_static(value) {
+                    node.sensor = sensor;
+                }
+            }
+            "friction" => {
+                if let Some(friction) = as_f32_static(value) {
+                    node.friction = friction;
+                }
+            }
+            "restitution" => {
+                if let Some(restitution) = as_f32_static(value) {
+                    node.restitution = restitution;
+                }
+            }
+            "density" => {
+                if let Some(density) = as_f32_static(value) {
+                    node.density = density;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_static_body_3d_fields_static(node: &mut StaticBody3D, fields: &[(&str, StaticSceneValue)]) {
+    for (name, value) in fields {
+        if *name == "enabled" && let Some(enabled) = as_bool_static(value) {
+            node.enabled = enabled;
+        }
+    }
+}
+
+fn apply_rigid_body_3d_fields_static(node: &mut RigidBody3D, fields: &[(&str, StaticSceneValue)]) {
+    for (name, value) in fields {
+        match *name {
+            "enabled" => {
+                if let Some(enabled) = as_bool_static(value) {
+                    node.enabled = enabled;
+                }
+            }
+            "linear_velocity" | "velocity" => {
+                if let Some(velocity) = as_vec3_static(value) {
+                    node.linear_velocity = velocity;
+                }
+            }
+            "angular_velocity" => {
+                if let Some(angular_velocity) = as_vec3_static(value) {
+                    node.angular_velocity = angular_velocity;
+                }
+            }
+            "gravity_scale" => {
+                if let Some(gravity_scale) = as_f32_static(value) {
+                    node.gravity_scale = gravity_scale;
+                }
+            }
+            "linear_damping" => {
+                if let Some(linear_damping) = as_f32_static(value) {
+                    node.linear_damping = linear_damping;
+                }
+            }
+            "angular_damping" => {
+                if let Some(angular_damping) = as_f32_static(value) {
+                    node.angular_damping = angular_damping;
+                }
+            }
+            "can_sleep" => {
+                if let Some(can_sleep) = as_bool_static(value) {
+                    node.can_sleep = can_sleep;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn as_shape_2d(value: &RuntimeValue) -> Option<Shape2D> {
+    let RuntimeValue::Object(entries) = value else {
+        return None;
+    };
+    let ty = entries.iter().find_map(|(k, v)| match k.as_str() {
+        "type" | "kind" => as_str(v).map(|s| s.to_ascii_lowercase()),
+        _ => None,
+    })?;
+    let width = entries
+        .iter()
+        .find_map(|(k, v)| (k == "width").then(|| as_f32(v)).flatten())
+        .unwrap_or(1.0);
+    let height = entries
+        .iter()
+        .find_map(|(k, v)| (k == "height").then(|| as_f32(v)).flatten())
+        .unwrap_or(width);
+    let radius = entries
+        .iter()
+        .find_map(|(k, v)| (k == "radius").then(|| as_f32(v)).flatten())
+        .unwrap_or(0.5);
+
+    match ty.as_str() {
+        "quad" | "rect" | "rectangle" => Some(Shape2D::Quad { width, height }),
+        "circle" => Some(Shape2D::Circle { radius }),
+        "tri" | "triangle" => {
+            let tri_kind = entries
+                .iter()
+                .find_map(|(k, v)| (k == "triangle").then(|| as_str(v)).flatten())
+                .or_else(|| {
+                    entries
+                        .iter()
+                        .find_map(|(k, v)| (k == "variant").then(|| as_str(v)).flatten())
+                })
+                .map(|raw| match raw.to_ascii_lowercase().as_str() {
+                    "right" => Triangle2DKind::Right,
+                    "isosceles" => Triangle2DKind::Isosceles,
+                    _ => Triangle2DKind::Equilateral,
+                })
+                .unwrap_or(Triangle2DKind::Equilateral);
+            Some(Shape2D::Triangle {
+                kind: tri_kind,
+                width,
+                height,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn as_shape_2d_static(value: &StaticSceneValue) -> Option<Shape2D> {
+    let StaticSceneValue::Object(entries) = value else {
+        return None;
+    };
+    let ty = entries.iter().find_map(|(k, v)| match *k {
+        "type" | "kind" => as_str_static(v).map(|s| s.to_ascii_lowercase()),
+        _ => None,
+    })?;
+    let width = entries
+        .iter()
+        .find_map(|(k, v)| (*k == "width").then(|| as_f32_static(v)).flatten())
+        .unwrap_or(1.0);
+    let height = entries
+        .iter()
+        .find_map(|(k, v)| (*k == "height").then(|| as_f32_static(v)).flatten())
+        .unwrap_or(width);
+    let radius = entries
+        .iter()
+        .find_map(|(k, v)| (*k == "radius").then(|| as_f32_static(v)).flatten())
+        .unwrap_or(0.5);
+
+    match ty.as_str() {
+        "quad" | "rect" | "rectangle" => Some(Shape2D::Quad { width, height }),
+        "circle" => Some(Shape2D::Circle { radius }),
+        "tri" | "triangle" => {
+            let tri_kind = entries
+                .iter()
+                .find_map(|(k, v)| (*k == "triangle").then(|| as_str_static(v)).flatten())
+                .or_else(|| {
+                    entries
+                        .iter()
+                        .find_map(|(k, v)| (*k == "variant").then(|| as_str_static(v)).flatten())
+                })
+                .map(|raw| match raw.to_ascii_lowercase().as_str() {
+                    "right" => Triangle2DKind::Right,
+                    "isosceles" => Triangle2DKind::Isosceles,
+                    _ => Triangle2DKind::Equilateral,
+                })
+                .unwrap_or(Triangle2DKind::Equilateral);
+            Some(Shape2D::Triangle {
+                kind: tri_kind,
+                width,
+                height,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn as_shape_3d(value: &RuntimeValue) -> Option<Shape3D> {
+    let RuntimeValue::Object(entries) = value else {
+        return None;
+    };
+    let ty = entries.iter().find_map(|(k, v)| match k.as_str() {
+        "type" | "kind" => as_str(v).map(|s| s.to_ascii_lowercase()),
+        _ => None,
+    })?;
+
+    let size = entries
+        .iter()
+        .find_map(|(k, v)| (k == "size").then(|| as_vec3(v)).flatten())
+        .unwrap_or(Vector3::ONE);
+    let radius = entries
+        .iter()
+        .find_map(|(k, v)| (k == "radius").then(|| as_f32(v)).flatten())
+        .unwrap_or(0.5);
+    let half_height = entries
+        .iter()
+        .find_map(|(k, v)| (k == "half_height").then(|| as_f32(v)).flatten())
+        .or_else(|| {
+            entries
+                .iter()
+                .find_map(|(k, v)| (k == "height").then(|| as_f32(v).map(|h| h * 0.5)).flatten())
+        })
+        .unwrap_or(0.5);
+
+    match ty.as_str() {
+        "cube" => Some(Shape3D::Cube { size }),
+        "sphere" => Some(Shape3D::Sphere { radius }),
+        "capsule" => Some(Shape3D::Capsule {
+            radius,
+            half_height,
+        }),
+        "cylinder" => Some(Shape3D::Cylinder {
+            radius,
+            half_height,
+        }),
+        "cone" => Some(Shape3D::Cone {
+            radius,
+            half_height,
+        }),
+        "tri_prism" | "triprism" => Some(Shape3D::TriPrism { size }),
+        "triangular_pyramid" | "tri_pyr" => Some(Shape3D::TriangularPyramid { size }),
+        "square_pyramid" | "sq_pyr" => Some(Shape3D::SquarePyramid { size }),
+        _ => None,
+    }
+}
+
+fn as_shape_3d_static(value: &StaticSceneValue) -> Option<Shape3D> {
+    let StaticSceneValue::Object(entries) = value else {
+        return None;
+    };
+    let ty = entries.iter().find_map(|(k, v)| match *k {
+        "type" | "kind" => as_str_static(v).map(|s| s.to_ascii_lowercase()),
+        _ => None,
+    })?;
+
+    let size = entries
+        .iter()
+        .find_map(|(k, v)| (*k == "size").then(|| as_vec3_static(v)).flatten())
+        .unwrap_or(Vector3::ONE);
+    let radius = entries
+        .iter()
+        .find_map(|(k, v)| (*k == "radius").then(|| as_f32_static(v)).flatten())
+        .unwrap_or(0.5);
+    let half_height = entries
+        .iter()
+        .find_map(|(k, v)| (*k == "half_height").then(|| as_f32_static(v)).flatten())
+        .or_else(|| {
+            entries.iter().find_map(|(k, v)| {
+                (*k == "height")
+                    .then(|| as_f32_static(v).map(|h| h * 0.5))
+                    .flatten()
+            })
+        })
+        .unwrap_or(0.5);
+
+    match ty.as_str() {
+        "cube" => Some(Shape3D::Cube { size }),
+        "sphere" => Some(Shape3D::Sphere { radius }),
+        "capsule" => Some(Shape3D::Capsule {
+            radius,
+            half_height,
+        }),
+        "cylinder" => Some(Shape3D::Cylinder {
+            radius,
+            half_height,
+        }),
+        "cone" => Some(Shape3D::Cone {
+            radius,
+            half_height,
+        }),
+        "tri_prism" | "triprism" => Some(Shape3D::TriPrism { size }),
+        "triangular_pyramid" | "tri_pyr" => Some(Shape3D::TriangularPyramid { size }),
+        "square_pyramid" | "sq_pyr" => Some(Shape3D::SquarePyramid { size }),
+        _ => None,
     }
 }
 

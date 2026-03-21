@@ -1,0 +1,8 @@
+@root = main
+
+[main]
+
+[Node3D]
+    position = (0, 0, 0)
+[/Node3D]
+[/main]
