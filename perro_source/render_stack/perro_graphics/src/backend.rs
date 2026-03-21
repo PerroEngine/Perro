@@ -8,8 +8,8 @@ use crate::{
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{
-    PostProcessingCommand, VisualAccessibilityCommand, Command2D, Command3D, PointParticles3DState,
-    RenderBridge, RenderCommand, RenderEvent, ResourceCommand, Sprite2DCommand,
+    Command2D, Command3D, PointParticles3DState, PostProcessingCommand, RenderBridge,
+    RenderCommand, RenderEvent, ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand,
 };
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
 use std::sync::Arc;

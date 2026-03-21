@@ -2,12 +2,15 @@
 
 Purpose:
 
-- Apply directional impulses to rigidbodies through `NodeID`.
-- Use one API for both one-shot impulses and sustained acceleration by controlling call frequency.
+- Apply directional forces or impulses to rigidbodies through `NodeID`.
+
+Force macro:
+
+- `apply_force!(ctx, body_id, direction, amount) -> bool`
 
 Impulse macro:
 
-- `apply_force!(ctx, body_id, direction, amount) -> bool`
+- `apply_impulse!(ctx, body_id, direction, amount) -> bool`
 
 Arguments:
 
@@ -18,10 +21,14 @@ Arguments:
 
 Behavior:
 
-- The engine normalizes `direction` and computes `impulse = direction * amount`.
-- Returns `false` if `body_id` is invalid or not a rigidbody of the matching dimension.
+- Force: the engine normalizes `direction` and integrates with fixed-step `dt`
+  (`impulse = direction * amount * fixed_dt`).
+- Impulse: the engine normalizes `direction` and computes immediate
+  `impulse = direction * amount`.
+- Returns `false` if `body_id` is invalid or not a rigidbody node of the matching dimension.
 - Calls are queued and applied in fixed-step physics before the world simulation step.
-- Call once for burst/knockback behavior; call repeatedly (for example every update/fixed-update) for constant behavior.
+- Use `apply_impulse!` for one-shot burst/knockback.
+- Use repeated `apply_force!` calls (for example every fixed-update) for sustained acceleration.
 
 Example:
 
@@ -29,12 +36,16 @@ Example:
 if ipt.Keys().is_pressed(KeyCode::W) {
     apply_force!(ctx, player_body_id, Vector3::new(0.0, 0.0, -1.0), 0.35);
 }
+
+if take_hit {
+    apply_impulse!(ctx, player_body_id, Vector3::new(1.0, 0.0, 0.0), 2.0);
+}
 ```
 
 Collision signals:
 
 - On first contact between two bodies, runtime emits a global signal per body:
-  - `"{BodyNodeName}_Collision"`
+  - `"{BodyNodeName}_Collided"`
 - Signal params:
   - `params[0]`: source body `NodeID`
   - `params[1]`: other body `NodeID`

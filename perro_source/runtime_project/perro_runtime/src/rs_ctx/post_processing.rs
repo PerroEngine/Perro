@@ -7,20 +7,15 @@ use std::borrow::Cow;
 impl PostProcessingAPI for RuntimeResourceApi {
     fn set_global_post_processing(&self, set: PostProcessSet) {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
-        state
-            .queued_commands
-            .push(RenderCommand::PostProcessing(PostProcessingCommand::SetGlobal(
-                set,
-            )));
+        state.queued_commands.push(RenderCommand::PostProcessing(
+            PostProcessingCommand::SetGlobal(set),
+        ));
     }
 
     fn add_global_post_processing_named(&self, name: Cow<'static, str>, effect: PostProcessEffect) {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         state.queued_commands.push(RenderCommand::PostProcessing(
-            PostProcessingCommand::AddGlobalNamed {
-                name,
-                effect,
-            },
+            PostProcessingCommand::AddGlobalNamed { name, effect },
         ));
     }
 

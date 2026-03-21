@@ -2,9 +2,8 @@ use crate::material_schema;
 use perro_ids::IntoTagID;
 use perro_io::load_asset;
 use perro_nodes::{
-    Area2D, Area3D, CollisionShape2D, CollisionShape3D, RigidBody2D, RigidBody3D, Shape2D,
-    Shape3D,
-    SceneNode, SceneNodeData,
+    Area2D, Area3D, CollisionShape2D, CollisionShape3D, RigidBody2D, RigidBody3D, SceneNode,
+    SceneNodeData, Shape2D, Shape3D, StaticBody2D, StaticBody3D, Triangle2DKind,
     ambient_light_3d::AmbientLight3D,
     camera_2d::Camera2D,
     camera_3d::{Camera3D, CameraProjection},
@@ -19,7 +18,6 @@ use perro_nodes::{
     spot_light_3d::SpotLight3D,
     sprite_2d::Sprite2D,
     terrain_instance_3d::TerrainInstance3D,
-    Triangle2DKind, StaticBody2D, StaticBody3D,
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
@@ -336,9 +334,9 @@ fn scene_node_data_from_static(data: &StaticNodeData) -> Result<SceneNodeData, S
             build_static_static_body_2d(data),
         )),
         StaticNodeType::Area2D => Ok(SceneNodeData::Area2D(build_static_area_2d(data))),
-        StaticNodeType::RigidBody2D => Ok(SceneNodeData::RigidBody2D(
-            build_static_rigid_body_2d(data),
-        )),
+        StaticNodeType::RigidBody2D => {
+            Ok(SceneNodeData::RigidBody2D(build_static_rigid_body_2d(data)))
+        }
         StaticNodeType::Node3D => Ok(SceneNodeData::Node3D(build_static_node_3d(data))),
         StaticNodeType::MeshInstance3D => Ok(SceneNodeData::MeshInstance3D(
             build_static_mesh_instance_3d(data),
@@ -350,9 +348,9 @@ fn scene_node_data_from_static(data: &StaticNodeData) -> Result<SceneNodeData, S
             build_static_static_body_3d(data),
         )),
         StaticNodeType::Area3D => Ok(SceneNodeData::Area3D(build_static_area_3d(data))),
-        StaticNodeType::RigidBody3D => Ok(SceneNodeData::RigidBody3D(
-            build_static_rigid_body_3d(data),
-        )),
+        StaticNodeType::RigidBody3D => {
+            Ok(SceneNodeData::RigidBody3D(build_static_rigid_body_3d(data)))
+        }
         StaticNodeType::Skeleton3D => Ok(SceneNodeData::Skeleton3D(build_static_skeleton_3d(data))),
         StaticNodeType::TerrainInstance3D => Ok(SceneNodeData::TerrainInstance3D(
             build_static_terrain_instance_3d(data),
@@ -2544,10 +2542,7 @@ fn set_projection_frustum_far(node: &mut Camera3D, value: f32) {
     }
 }
 
-fn apply_collision_shape_2d_fields(
-    node: &mut CollisionShape2D,
-    fields: &[(String, RuntimeValue)],
-) {
+fn apply_collision_shape_2d_fields(node: &mut CollisionShape2D, fields: &[(String, RuntimeValue)]) {
     for (name, value) in fields {
         match name.as_str() {
             "shape" => {
@@ -2582,7 +2577,9 @@ fn apply_collision_shape_2d_fields(
 
 fn apply_static_body_2d_fields(node: &mut StaticBody2D, fields: &[(String, RuntimeValue)]) {
     for (name, value) in fields {
-        if name == "enabled" && let Some(enabled) = as_bool(value) {
+        if name == "enabled"
+            && let Some(enabled) = as_bool(value)
+        {
             node.enabled = enabled;
         }
     }
@@ -2638,16 +2635,15 @@ fn apply_rigid_body_2d_fields(node: &mut RigidBody2D, fields: &[(String, Runtime
 
 fn apply_area_2d_fields(node: &mut Area2D, fields: &[(String, RuntimeValue)]) {
     for (name, value) in fields {
-        if name == "enabled" && let Some(enabled) = as_bool(value) {
+        if name == "enabled"
+            && let Some(enabled) = as_bool(value)
+        {
             node.enabled = enabled;
         }
     }
 }
 
-fn apply_collision_shape_3d_fields(
-    node: &mut CollisionShape3D,
-    fields: &[(String, RuntimeValue)],
-) {
+fn apply_collision_shape_3d_fields(node: &mut CollisionShape3D, fields: &[(String, RuntimeValue)]) {
     for (name, value) in fields {
         match name.as_str() {
             "shape" => {
@@ -2682,7 +2678,9 @@ fn apply_collision_shape_3d_fields(
 
 fn apply_static_body_3d_fields(node: &mut StaticBody3D, fields: &[(String, RuntimeValue)]) {
     for (name, value) in fields {
-        if name == "enabled" && let Some(enabled) = as_bool(value) {
+        if name == "enabled"
+            && let Some(enabled) = as_bool(value)
+        {
             node.enabled = enabled;
         }
     }
@@ -2733,7 +2731,9 @@ fn apply_rigid_body_3d_fields(node: &mut RigidBody3D, fields: &[(String, Runtime
 
 fn apply_area_3d_fields(node: &mut Area3D, fields: &[(String, RuntimeValue)]) {
     for (name, value) in fields {
-        if name == "enabled" && let Some(enabled) = as_bool(value) {
+        if name == "enabled"
+            && let Some(enabled) = as_bool(value)
+        {
             node.enabled = enabled;
         }
     }
@@ -2775,9 +2775,14 @@ fn apply_collision_shape_2d_fields_static(
     }
 }
 
-fn apply_static_body_2d_fields_static(node: &mut StaticBody2D, fields: &[(&str, StaticSceneValue)]) {
+fn apply_static_body_2d_fields_static(
+    node: &mut StaticBody2D,
+    fields: &[(&str, StaticSceneValue)],
+) {
     for (name, value) in fields {
-        if *name == "enabled" && let Some(enabled) = as_bool_static(value) {
+        if *name == "enabled"
+            && let Some(enabled) = as_bool_static(value)
+        {
             node.enabled = enabled;
         }
     }
@@ -2833,7 +2838,9 @@ fn apply_rigid_body_2d_fields_static(node: &mut RigidBody2D, fields: &[(&str, St
 
 fn apply_area_2d_fields_static(node: &mut Area2D, fields: &[(&str, StaticSceneValue)]) {
     for (name, value) in fields {
-        if *name == "enabled" && let Some(enabled) = as_bool_static(value) {
+        if *name == "enabled"
+            && let Some(enabled) = as_bool_static(value)
+        {
             node.enabled = enabled;
         }
     }
@@ -2875,9 +2882,14 @@ fn apply_collision_shape_3d_fields_static(
     }
 }
 
-fn apply_static_body_3d_fields_static(node: &mut StaticBody3D, fields: &[(&str, StaticSceneValue)]) {
+fn apply_static_body_3d_fields_static(
+    node: &mut StaticBody3D,
+    fields: &[(&str, StaticSceneValue)],
+) {
     for (name, value) in fields {
-        if *name == "enabled" && let Some(enabled) = as_bool_static(value) {
+        if *name == "enabled"
+            && let Some(enabled) = as_bool_static(value)
+        {
             node.enabled = enabled;
         }
     }
@@ -2928,7 +2940,9 @@ fn apply_rigid_body_3d_fields_static(node: &mut RigidBody3D, fields: &[(&str, St
 
 fn apply_area_3d_fields_static(node: &mut Area3D, fields: &[(&str, StaticSceneValue)]) {
     for (name, value) in fields {
-        if *name == "enabled" && let Some(enabled) = as_bool_static(value) {
+        if *name == "enabled"
+            && let Some(enabled) = as_bool_static(value)
+        {
             node.enabled = enabled;
         }
     }
@@ -3053,9 +3067,11 @@ fn as_shape_3d(value: &RuntimeValue) -> Option<Shape3D> {
         .iter()
         .find_map(|(k, v)| (k == "half_height").then(|| as_f32(v)).flatten())
         .or_else(|| {
-            entries
-                .iter()
-                .find_map(|(k, v)| (k == "height").then(|| as_f32(v).map(|h| h * 0.5)).flatten())
+            entries.iter().find_map(|(k, v)| {
+                (k == "height")
+                    .then(|| as_f32(v).map(|h| h * 0.5))
+                    .flatten()
+            })
         })
         .unwrap_or(0.5);
 

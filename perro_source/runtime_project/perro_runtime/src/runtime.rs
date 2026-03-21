@@ -20,10 +20,10 @@ use perro_structs::{Transform2D, Transform3D};
 use perro_terrain::{ChunkCoord, TerrainData};
 use std::sync::{Arc, Mutex};
 
+mod physics;
 mod render_2d;
 mod render_3d;
 mod scene_loader;
-mod physics;
 
 type RuntimeScriptCtor = ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>;
 type StaticScriptRegistry = &'static [(&'static str, RuntimeScriptCtor)];

@@ -1,6 +1,6 @@
 use self::shaders::create_accessibility_shader_module;
 use bytemuck::{Pod, Zeroable};
-use perro_structs::{VisualAccessibilitySettings, ColorBlindFilter};
+use perro_structs::{ColorBlindFilter, VisualAccessibilitySettings};
 
 mod shaders;
 
@@ -33,8 +33,13 @@ impl VisualAccessibilityProcessor {
         width: u32,
         height: u32,
     ) -> Self {
-        let (intermediate_texture, intermediate_view) =
-            create_color_target(device, format, width, height, "perro_visual_accessibility_intermediate");
+        let (intermediate_texture, intermediate_view) = create_color_target(
+            device,
+            format,
+            width,
+            height,
+            "perro_visual_accessibility_intermediate",
+        );
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("perro_visual_accessibility_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,

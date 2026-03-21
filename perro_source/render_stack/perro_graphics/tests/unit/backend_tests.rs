@@ -3,8 +3,8 @@ use crate::backend::GraphicsBackend;
 use crate::three_d::renderer::Draw3DKind;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
-    PostProcessingCommand, VisualAccessibilityCommand, Camera3DState, CameraProjectionState, Command2D,
-    Command3D, Material3D, RenderBridge, RenderCommand, ResourceCommand, Sprite2DCommand,
+    Camera3DState, CameraProjectionState, Command2D, Command3D, Material3D, PostProcessingCommand,
+    RenderBridge, RenderCommand, ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand,
 };
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;

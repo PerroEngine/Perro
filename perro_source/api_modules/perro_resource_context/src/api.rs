@@ -1,8 +1,7 @@
 use crate::sub_apis::{
-    PostProcessingAPI,
-    VisualAccessibilityAPI, AudioAPI, AudioModule, MaterialAPI, MaterialModule,
-    MeshAPI, MeshModule, SkeletonAPI, SkeletonModule, TerrainAPI, TerrainModule, TextureAPI,
-    TextureModule,
+    AudioAPI, AudioModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule, PostProcessingAPI,
+    SkeletonAPI, SkeletonModule, TerrainAPI, TerrainModule, TextureAPI, TextureModule,
+    VisualAccessibilityAPI,
 };
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet};
 
@@ -94,7 +93,8 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceContext<'res, R> {
         name: impl Into<std::borrow::Cow<'static, str>>,
         effect: PostProcessEffect,
     ) {
-        self.api.add_global_post_processing_named(name.into(), effect);
+        self.api
+            .add_global_post_processing_named(name.into(), effect);
     }
 
     #[inline]

@@ -17,8 +17,13 @@ impl Default for Triangle2DKind {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Shape2D {
-    Quad { width: f32, height: f32 },
-    Circle { radius: f32 },
+    Quad {
+        width: f32,
+        height: f32,
+    },
+    Circle {
+        radius: f32,
+    },
     Triangle {
         kind: Triangle2DKind,
         width: f32,

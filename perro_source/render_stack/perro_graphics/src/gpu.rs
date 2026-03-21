@@ -1,5 +1,4 @@
 use crate::{
-    visual_accessibility::VisualAccessibilityProcessor,
     backend::{OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup, StaticTextureLookup},
     postprocess::PostProcessor,
     resources::ResourceStore,
@@ -12,6 +11,7 @@ use crate::{
         gpu::{Gpu2D, Prepare2D},
         renderer::{Camera2DUniform, RectInstanceGpu, RectUploadPlan},
     },
+    visual_accessibility::VisualAccessibilityProcessor,
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{Camera3DState, PointParticles3DState, Sprite2DCommand};

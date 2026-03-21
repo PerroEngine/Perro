@@ -110,6 +110,20 @@ struct PendingImpulse3D {
     amount: f32,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct PendingForce2D {
+    id: NodeID,
+    direction: Vector2,
+    amount: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PendingForce3D {
+    id: NodeID,
+    direction: Vector3,
+    amount: f32,
+}
+
 pub(crate) struct PhysicsState {
     world_2d: PhysicsWorld2D,
     world_3d: PhysicsWorld3D,
@@ -117,6 +131,8 @@ pub(crate) struct PhysicsState {
     active_collision_pairs_3d: AHashSet<BodyPair>,
     active_area_overlaps_2d: AHashSet<AreaOverlap>,
     active_area_overlaps_3d: AHashSet<AreaOverlap>,
+    pending_forces_2d: Vec<PendingForce2D>,
+    pending_forces_3d: Vec<PendingForce3D>,
     pending_impulses_2d: Vec<PendingImpulse2D>,
     pending_impulses_3d: Vec<PendingImpulse3D>,
     next_opaque_handle: u64,
@@ -163,6 +179,8 @@ impl PhysicsState {
             active_collision_pairs_3d: AHashSet::default(),
             active_area_overlaps_2d: AHashSet::default(),
             active_area_overlaps_3d: AHashSet::default(),
+            pending_forces_2d: Vec::new(),
+            pending_forces_3d: Vec::new(),
             pending_impulses_2d: Vec::new(),
             pending_impulses_3d: Vec::new(),
             next_opaque_handle: 1,
@@ -176,6 +194,8 @@ impl PhysicsState {
         self.active_collision_pairs_3d.clear();
         self.active_area_overlaps_2d.clear();
         self.active_area_overlaps_3d.clear();
+        self.pending_forces_2d.clear();
+        self.pending_forces_3d.clear();
         self.pending_impulses_2d.clear();
         self.pending_impulses_3d.clear();
         self.next_opaque_handle = 1;
@@ -240,6 +260,8 @@ impl Runtime {
         let bodies_3d = self.collect_body_descs_3d();
         self.sync_world_2d(&bodies_2d);
         self.sync_world_3d(&bodies_3d);
+        self.apply_pending_forces_2d();
+        self.apply_pending_forces_3d();
         self.apply_pending_impulses_2d();
         self.apply_pending_impulses_3d();
         self.step_world_2d();
@@ -260,8 +282,24 @@ impl Runtime {
         });
     }
 
+    pub(crate) fn queue_force_2d(&mut self, id: NodeID, direction: Vector2, amount: f32) {
+        self.physics.pending_forces_2d.push(PendingForce2D {
+            id,
+            direction,
+            amount,
+        });
+    }
+
     pub(crate) fn queue_impulse_3d(&mut self, id: NodeID, direction: Vector3, amount: f32) {
         self.physics.pending_impulses_3d.push(PendingImpulse3D {
+            id,
+            direction,
+            amount,
+        });
+    }
+
+    pub(crate) fn queue_force_3d(&mut self, id: NodeID, direction: Vector3, amount: f32) {
+        self.physics.pending_forces_3d.push(PendingForce3D {
             id,
             direction,
             amount,
@@ -433,7 +471,10 @@ impl Runtime {
                 rb.set_position(transform_to_iso2(body.global), true);
 
                 if let Some(rigid) = body.rigid.as_ref() {
-                    rb.set_linvel(na2::Vector2::new(rigid.linear_velocity.x, rigid.linear_velocity.y), true);
+                    rb.set_linvel(
+                        na2::Vector2::new(rigid.linear_velocity.x, rigid.linear_velocity.y),
+                        true,
+                    );
                     rb.set_angvel(rigid.angular_velocity, true);
                     rb.set_gravity_scale(rigid.gravity_scale, true);
                     rb.set_linear_damping(rigid.linear_damping);
@@ -460,7 +501,10 @@ impl Runtime {
                     state.handle,
                     &mut self.physics.world_2d.bodies,
                 );
-                self.physics.world_2d.collider_owners.insert(handle, body.id);
+                self.physics
+                    .world_2d
+                    .collider_owners
+                    .insert(handle, body.id);
                 state.colliders.push(handle);
             }
         }
@@ -534,11 +578,19 @@ impl Runtime {
 
                 if let Some(rigid) = body.rigid.as_ref() {
                     rb.set_linvel(
-                        na3::Vector3::new(rigid.linear_velocity.x, rigid.linear_velocity.y, rigid.linear_velocity.z),
+                        na3::Vector3::new(
+                            rigid.linear_velocity.x,
+                            rigid.linear_velocity.y,
+                            rigid.linear_velocity.z,
+                        ),
                         true,
                     );
                     rb.set_angvel(
-                        na3::Vector3::new(rigid.angular_velocity.x, rigid.angular_velocity.y, rigid.angular_velocity.z),
+                        na3::Vector3::new(
+                            rigid.angular_velocity.x,
+                            rigid.angular_velocity.y,
+                            rigid.angular_velocity.z,
+                        ),
                         true,
                     );
                     rb.set_gravity_scale(rigid.gravity_scale, true);
@@ -566,7 +618,10 @@ impl Runtime {
                     state.handle,
                     &mut self.physics.world_3d.bodies,
                 );
-                self.physics.world_3d.collider_owners.insert(handle, body.id);
+                self.physics
+                    .world_3d
+                    .collider_owners
+                    .insert(handle, body.id);
                 state.colliders.push(handle);
             }
         }
@@ -648,7 +703,8 @@ impl Runtime {
             let Some(rb) = self.physics.world_2d.bodies.get_mut(state.handle) else {
                 continue;
             };
-            let len_sq = impulse.direction.x * impulse.direction.x + impulse.direction.y * impulse.direction.y;
+            let len_sq = impulse.direction.x * impulse.direction.x
+                + impulse.direction.y * impulse.direction.y;
             if len_sq <= 0.000_001 {
                 continue;
             }
@@ -662,6 +718,37 @@ impl Runtime {
             );
         }
         self.physics.pending_impulses_2d = pending;
+    }
+
+    fn apply_pending_forces_2d(&mut self) {
+        let mut pending = std::mem::take(&mut self.physics.pending_forces_2d);
+        let dt = self.time.fixed_delta.max(0.000_1);
+        for force in pending.drain(..) {
+            let Some(state) = self.physics.world_2d.body_map.get(&force.id) else {
+                continue;
+            };
+            if state.kind != BodyKind::Rigid {
+                continue;
+            }
+            let Some(rb) = self.physics.world_2d.bodies.get_mut(state.handle) else {
+                continue;
+            };
+            let len_sq =
+                force.direction.x * force.direction.x + force.direction.y * force.direction.y;
+            if len_sq <= 0.000_001 {
+                continue;
+            }
+            let inv_len = len_sq.sqrt().recip();
+            let impulse = force.amount * dt;
+            rb.apply_impulse(
+                na2::Vector2::new(
+                    force.direction.x * inv_len * impulse,
+                    force.direction.y * inv_len * impulse,
+                ),
+                true,
+            );
+        }
+        self.physics.pending_forces_2d = pending;
     }
 
     fn apply_pending_impulses_3d(&mut self) {
@@ -695,6 +782,39 @@ impl Runtime {
         self.physics.pending_impulses_3d = pending;
     }
 
+    fn apply_pending_forces_3d(&mut self) {
+        let mut pending = std::mem::take(&mut self.physics.pending_forces_3d);
+        let dt = self.time.fixed_delta.max(0.000_1);
+        for force in pending.drain(..) {
+            let Some(state) = self.physics.world_3d.body_map.get(&force.id) else {
+                continue;
+            };
+            if state.kind != BodyKind::Rigid {
+                continue;
+            }
+            let Some(rb) = self.physics.world_3d.bodies.get_mut(state.handle) else {
+                continue;
+            };
+            let len_sq = force.direction.x * force.direction.x
+                + force.direction.y * force.direction.y
+                + force.direction.z * force.direction.z;
+            if len_sq <= 0.000_001 {
+                continue;
+            }
+            let inv_len = len_sq.sqrt().recip();
+            let impulse = force.amount * dt;
+            rb.apply_impulse(
+                na3::Vector3::new(
+                    force.direction.x * inv_len * impulse,
+                    force.direction.y * inv_len * impulse,
+                    force.direction.z * inv_len * impulse,
+                ),
+                true,
+            );
+        }
+        self.physics.pending_forces_3d = pending;
+    }
+
     fn sync_world_to_nodes_2d(&mut self) {
         let ids: Vec<NodeID> = self.physics.world_2d.body_map.keys().copied().collect();
         for id in ids {
@@ -713,7 +833,9 @@ impl Runtime {
             let lin = Vector2::new(body.linvel().x, body.linvel().y);
             let ang = body.angvel();
 
-            let mut target = self.get_global_transform_2d(id).unwrap_or(Transform2D::IDENTITY);
+            let mut target = self
+                .get_global_transform_2d(id)
+                .unwrap_or(Transform2D::IDENTITY);
             target.position = position;
             target.rotation = rotation;
             let _ = NodeAPI::set_global_transform_2d(self, id, target);
@@ -740,14 +862,19 @@ impl Runtime {
             let Some(body) = self.physics.world_3d.bodies.get(state.handle) else {
                 continue;
             };
-            let position =
-                Vector3::new(body.translation().x, body.translation().y, body.translation().z);
+            let position = Vector3::new(
+                body.translation().x,
+                body.translation().y,
+                body.translation().z,
+            );
             let rot = body.rotation();
             let rotation = Quaternion::new(rot.i, rot.j, rot.k, rot.w);
             let lin = Vector3::new(body.linvel().x, body.linvel().y, body.linvel().z);
             let ang = Vector3::new(body.angvel().x, body.angvel().y, body.angvel().z);
 
-            let mut target = self.get_global_transform_3d(id).unwrap_or(Transform3D::IDENTITY);
+            let mut target = self
+                .get_global_transform_3d(id)
+                .unwrap_or(Transform3D::IDENTITY);
             target.position = position;
             target.rotation = rotation;
             let _ = NodeAPI::set_global_transform_3d(self, id, target);
@@ -856,7 +983,7 @@ impl Runtime {
             if node.name.is_empty() {
                 return;
             }
-            let signal_name = format!("{}_Collision", node.name);
+            let signal_name = format!("{}_Collided", node.name);
             SignalID::from_string(&signal_name)
         };
 
@@ -867,7 +994,9 @@ impl Runtime {
     fn emit_area_signals_2d(&mut self) {
         let mut current = AHashSet::default();
 
-        for (collider_a, collider_b, intersecting) in self.physics.world_2d.narrow_phase.intersection_pairs() {
+        for (collider_a, collider_b, intersecting) in
+            self.physics.world_2d.narrow_phase.intersection_pairs()
+        {
             if !intersecting {
                 continue;
             }
@@ -908,7 +1037,9 @@ impl Runtime {
     fn emit_area_signals_3d(&mut self) {
         let mut current = AHashSet::default();
 
-        for (collider_a, collider_b, intersecting) in self.physics.world_3d.narrow_phase.intersection_pairs() {
+        for (collider_a, collider_b, intersecting) in
+            self.physics.world_3d.narrow_phase.intersection_pairs()
+        {
             if !intersecting {
                 continue;
             }
@@ -1023,7 +1154,10 @@ fn build_rigid_body_2d(desc: &BodyDesc2D) -> r2::RigidBody {
 
     if let Some(rigid) = desc.rigid.as_ref() {
         builder = builder
-            .linvel(na2::Vector2::new(rigid.linear_velocity.x, rigid.linear_velocity.y))
+            .linvel(na2::Vector2::new(
+                rigid.linear_velocity.x,
+                rigid.linear_velocity.y,
+            ))
             .angvel(rigid.angular_velocity)
             .gravity_scale(rigid.gravity_scale)
             .linear_damping(rigid.linear_damping)
@@ -1049,8 +1183,16 @@ fn build_rigid_body_3d(desc: &BodyDesc3D) -> r3::RigidBody {
 
     if let Some(rigid) = desc.rigid.as_ref() {
         builder = builder
-            .linvel(na3::Vector3::new(rigid.linear_velocity.x, rigid.linear_velocity.y, rigid.linear_velocity.z))
-            .angvel(na3::Vector3::new(rigid.angular_velocity.x, rigid.angular_velocity.y, rigid.angular_velocity.z))
+            .linvel(na3::Vector3::new(
+                rigid.linear_velocity.x,
+                rigid.linear_velocity.y,
+                rigid.linear_velocity.z,
+            ))
+            .angvel(na3::Vector3::new(
+                rigid.angular_velocity.x,
+                rigid.angular_velocity.y,
+                rigid.angular_velocity.z,
+            ))
             .gravity_scale(rigid.gravity_scale)
             .linear_damping(rigid.linear_damping)
             .angular_damping(rigid.angular_damping)
@@ -1167,7 +1309,11 @@ fn collider_builder_3d(desc: &ShapeDesc3D) -> Option<r3::Collider> {
     )
 }
 
-fn triangle_points_2d(kind: Triangle2DKind, width: f32, height: f32) -> Option<[na2::Point2<f32>; 3]> {
+fn triangle_points_2d(
+    kind: Triangle2DKind,
+    width: f32,
+    height: f32,
+) -> Option<[na2::Point2<f32>; 3]> {
     let w = width.abs().max(0.0001);
     let mut h = height.abs().max(0.0001);
     let points = match kind {

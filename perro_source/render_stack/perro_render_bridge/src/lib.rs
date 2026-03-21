@@ -625,7 +625,10 @@ pub enum PostProcessingCommand {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VisualAccessibilityCommand {
-    EnableColorBlind { mode: ColorBlindFilter, strength: f32 },
+    EnableColorBlind {
+        mode: ColorBlindFilter,
+        strength: f32,
+    },
     DisableColorBlind,
 }
 
