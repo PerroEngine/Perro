@@ -20,6 +20,7 @@ use perro_render_bridge::{
 use std::{
     borrow::Cow,
     collections::HashMap,
+    ops::Range,
     sync::{Arc, mpsc, mpsc::TryRecvError},
 };
 use wgpu::util::DeviceExt;
@@ -172,6 +173,7 @@ pub struct Gpu3D {
     indirect_staging: Vec<DrawIndexedIndirectGpu>,
     draw_batches: Vec<DrawBatch>,
     last_draws: Vec<Draw3DInstance>,
+    last_draw_instance_ranges: Vec<Range<u32>>,
     last_scene: Option<Scene3DUniform>,
     mesh_vertices: Vec<MeshVertex>,
     mesh_indices: Vec<u32>,
@@ -962,6 +964,7 @@ impl Gpu3D {
             indirect_staging: Vec::new(),
             draw_batches: Vec::new(),
             last_draws: Vec::new(),
+            last_draw_instance_ranges: Vec::new(),
             last_scene: None,
             mesh_vertices: vertices,
             mesh_indices: indices,
@@ -1233,7 +1236,22 @@ impl Gpu3D {
         self.cpu_occlusion_enabled = cpu_occlusion_enabled;
 
         let uniform = build_scene_uniform(&camera, lighting, width, height);
-        let scene_changed = self.last_scene != Some(uniform) || self.last_draws.as_slice() != draws;
+        let draws_unchanged = self.last_draws.as_slice() == draws;
+        let transform_only_semantic = !draws_unchanged
+            && draws.len() == self.last_draws.len()
+            && self
+                .last_draws
+                .iter()
+                .zip(draws.iter())
+                .all(|(prev, next)| same_draw_except_model(prev, next));
+        let stable_instance_ranges = self.last_draw_instance_ranges.len() == draws.len()
+            && self.last_draw_instance_ranges.iter().all(|range| {
+                range.start <= range.end && (range.end as usize) <= self.staged_instances.len()
+            });
+        let transform_only_changed = !draws_unchanged
+            && transform_only_semantic
+            && stable_instance_ranges;
+        let scene_changed = self.last_scene != Some(uniform) || !draws_unchanged;
         if self.last_scene != Some(uniform) {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
             self.last_scene = Some(uniform);
@@ -1247,6 +1265,126 @@ impl Gpu3D {
         self.last_aspect = (width.max(1) as f32) / (height.max(1) as f32);
         self.last_proj_y_scale = projection_y_scale_from_projection(camera.projection);
 
+        if draws_unchanged {
+            if self.frustum_cull_enabled && !self.draw_batches.is_empty() {
+                let frustum = extract_frustum_planes(view_proj);
+                let mut planes = [[0.0f32; 4]; 6];
+                for (dst, plane) in planes.iter_mut().zip(frustum.iter()) {
+                    *dst = [plane.x, plane.y, plane.z, plane.w];
+                }
+                let cull_params = FrustumCullParamsGpu {
+                    planes,
+                    draw_count: self.draw_batches.len() as u32,
+                    _pad: [0; 3],
+                };
+                queue.write_buffer(
+                    &self.frustum_cull_params_buffer,
+                    0,
+                    bytemuck::bytes_of(&cull_params),
+                );
+                if self.gpu_occlusion_enabled {
+                    let hiz_params = HizCullParamsGpu {
+                        view_proj: uniform.view_proj,
+                        draw_count: self.draw_batches.len() as u32,
+                        hiz_mip_count: self.hiz_mip_count,
+                        hiz_width: self.hiz_size.0,
+                        hiz_height: self.hiz_size.1,
+                        aspect: self.last_aspect,
+                        proj_y_scale: self.last_proj_y_scale,
+                        depth_bias: HIZ_OCCLUSION_BIAS,
+                        _pad: 0,
+                    };
+                    queue.write_buffer(&self.hiz_cull_params, 0, bytemuck::bytes_of(&hiz_params));
+                }
+            }
+            self.last_total_drawn = self.staged_instances.len();
+            return;
+        }
+        if transform_only_changed {
+            for (draw, range) in draws.iter().zip(self.last_draw_instance_ranges.iter()) {
+                for instance in &mut self.staged_instances[range.start as usize..range.end as usize]
+                {
+                    instance.model_0 = draw.model[0];
+                    instance.model_1 = draw.model[1];
+                    instance.model_2 = draw.model[2];
+                    instance.model_3 = draw.model[3];
+                }
+            }
+            queue.write_buffer(
+                &self.instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.staged_instances),
+            );
+            if self.frustum_cull_enabled && !self.draw_batches.is_empty() {
+                let frustum = extract_frustum_planes(view_proj);
+                let mut planes = [[0.0f32; 4]; 6];
+                for (dst, plane) in planes.iter_mut().zip(frustum.iter()) {
+                    *dst = [plane.x, plane.y, plane.z, plane.w];
+                }
+                let cull_params = FrustumCullParamsGpu {
+                    planes,
+                    draw_count: self.draw_batches.len() as u32,
+                    _pad: [0; 3],
+                };
+                queue.write_buffer(
+                    &self.frustum_cull_params_buffer,
+                    0,
+                    bytemuck::bytes_of(&cull_params),
+                );
+
+                self.frustum_cull_staging.clear();
+                self.frustum_cull_staging.reserve(self.draw_batches.len());
+                for batch in &self.draw_batches {
+                    let instance = &self.staged_instances[batch.instance_start as usize];
+                    self.frustum_cull_staging.push(FrustumCullItemGpu {
+                        model_0: instance.model_0,
+                        model_1: instance.model_1,
+                        model_2: instance.model_2,
+                        model_3: instance.model_3,
+                        local_center_radius: [
+                            batch.local_center[0],
+                            batch.local_center[1],
+                            batch.local_center[2],
+                            batch.local_radius.max(0.0),
+                        ],
+                        cull_flags: [
+                            if batch.disable_hiz_occlusion {
+                                CULL_FLAG_DISABLE_HIZ_OCCLUSION
+                            } else {
+                                0
+                            },
+                            0,
+                            0,
+                            0,
+                        ],
+                    });
+                }
+                queue.write_buffer(
+                    &self.frustum_cull_items_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.frustum_cull_staging),
+                );
+                if self.gpu_occlusion_enabled {
+                    let hiz_params = HizCullParamsGpu {
+                        view_proj: uniform.view_proj,
+                        draw_count: self.draw_batches.len() as u32,
+                        hiz_mip_count: self.hiz_mip_count,
+                        hiz_width: self.hiz_size.0,
+                        hiz_height: self.hiz_size.1,
+                        aspect: self.last_aspect,
+                        proj_y_scale: self.last_proj_y_scale,
+                        depth_bias: HIZ_OCCLUSION_BIAS,
+                        _pad: 0,
+                    };
+                    queue.write_buffer(&self.hiz_cull_params, 0, bytemuck::bytes_of(&hiz_params));
+                }
+            }
+            self.last_draws.clear();
+            self.last_draws.extend_from_slice(draws);
+            self.last_total_drawn = self.staged_instances.len();
+            return;
+        }
+
         self.last_draws.clear();
         self.last_draws.extend_from_slice(draws);
 
@@ -1256,6 +1394,8 @@ impl Gpu3D {
         self.staged_custom_params.clear();
         self.draw_batches.clear();
         self.draw_batches.reserve(draws.len());
+        self.last_draw_instance_ranges.clear();
+        self.last_draw_instance_ranges.reserve(draws.len());
         self.frustum_cull_staging.clear();
         self.indirect_staging.clear();
         let mut total_meshlets = 0usize;
@@ -1277,6 +1417,7 @@ impl Gpu3D {
         let mut debug_edge_instances: Vec<InstanceGpu> = Vec::new();
 
         for draw in draws {
+            let draw_instance_start = self.staged_instances.len() as u32;
             let is_debug_point = matches!(draw.kind, Draw3DKind::DebugPointCube);
             let is_debug_edge = matches!(draw.kind, Draw3DKind::DebugEdgeCylinder);
             let (mesh_asset, is_terrain_mesh) = match draw.kind {
@@ -1357,12 +1498,16 @@ impl Gpu3D {
                     &frustum,
                 )
             {
+                self.last_draw_instance_ranges
+                    .push(draw_instance_start..(self.staged_instances.len() as u32));
                 continue;
             }
 
             if !use_meshlets {
                 let occlusion_key = draw.node.as_u64();
                 if self.cpu_occlusion_enabled && !self.should_probe_or_draw(occlusion_key) {
+                    self.last_draw_instance_ranges
+                        .push(draw_instance_start..(self.staged_instances.len() as u32));
                     continue;
                 }
                 let occlusion_query =
@@ -1476,6 +1621,8 @@ impl Gpu3D {
                     );
                 }
             }
+            self.last_draw_instance_ranges
+                .push(draw_instance_start..(self.staged_instances.len() as u32));
         }
         if !debug_point_instances.is_empty() {
             debug_points_start = Some(self.staged_instances.len() as u32);
@@ -3222,6 +3369,11 @@ fn encode_custom_param_value(value: &perro_render_bridge::CustomMaterialParamVal
         perro_render_bridge::CustomMaterialParamValue3D::Vec3(v) => [v[0], v[1], v[2], 0.0],
         perro_render_bridge::CustomMaterialParamValue3D::Vec4(v) => *v,
     }
+}
+
+#[inline]
+fn same_draw_except_model(a: &Draw3DInstance, b: &Draw3DInstance) -> bool {
+    a.node == b.node && a.kind == b.kind && a.material == b.material && a.skeleton == b.skeleton
 }
 
 #[inline]

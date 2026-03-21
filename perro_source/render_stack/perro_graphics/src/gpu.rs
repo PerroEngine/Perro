@@ -25,6 +25,16 @@ const CLEAR_G: f64 = 0.009134058702220787;
 const CLEAR_B: f64 = 0.008568125618069307;
 const SMOOTH_SAMPLE_COUNT: u32 = 4;
 
+pub const DIRTY_2D: u32 = 1 << 0;
+pub const DIRTY_3D: u32 = 1 << 1;
+pub const DIRTY_PARTICLES_3D: u32 = 1 << 2;
+pub const DIRTY_CAMERA_2D: u32 = 1 << 3;
+pub const DIRTY_CAMERA_3D: u32 = 1 << 4;
+pub const DIRTY_LIGHTS_3D: u32 = 1 << 5;
+pub const DIRTY_RESOURCES: u32 = 1 << 6;
+pub const DIRTY_POSTFX: u32 = 1 << 7;
+pub const DIRTY_ACCESSIBILITY: u32 = 1 << 8;
+
 struct MsaaColorTarget {
     _texture: wgpu::Texture,
     view: wgpu::TextureView,
@@ -64,9 +74,7 @@ pub struct RenderFrame<'a> {
     pub rects_2d: &'a [RectInstanceGpu],
     pub upload_2d: &'a RectUploadPlan,
     pub sprites_2d: &'a [Sprite2DCommand],
-    pub frame_has_2d_commands: bool,
-    pub frame_has_3d_commands: bool,
-    pub frame_has_3d_particle_commands: bool,
+    pub frame_dirty_bits: u32,
     pub static_texture_lookup: Option<StaticTextureLookup>,
     pub static_mesh_lookup: Option<StaticMeshLookup>,
     pub static_shader_lookup: Option<StaticShaderLookup>,
@@ -303,9 +311,7 @@ impl Gpu {
             rects_2d,
             upload_2d,
             sprites_2d,
-            frame_has_2d_commands,
-            frame_has_3d_commands,
-            frame_has_3d_particle_commands,
+            frame_dirty_bits,
             static_texture_lookup,
             static_mesh_lookup,
             static_shader_lookup,
@@ -316,13 +322,22 @@ impl Gpu {
         let post_requested = PostProcessor::has_effects(camera_3d.post_processing.as_ref())
             || PostProcessor::has_effects(post_processing_2d.as_ref())
             || PostProcessor::has_effects(post_processing_global.as_ref());
-        let needs_2d =
-            frame_has_2d_commands || upload_2d.draw_count > 0 || !sprites_2d.is_empty();
+        let has = |bit: u32| (frame_dirty_bits & bit) != 0;
+        let needs_2d = has(DIRTY_2D)
+            || has(DIRTY_CAMERA_2D)
+            || (has(DIRTY_RESOURCES) && !sprites_2d.is_empty())
+            || upload_2d.draw_count > 0
+            || !sprites_2d.is_empty();
         let needs_3d = !draws_3d.is_empty();
         let needs_particles_3d = !point_particles_3d.is_empty();
-        let needs_3d_pipeline =
-            frame_has_3d_commands || needs_3d || needs_particles_3d || post_requested;
-        let needs_3d_particles_path = frame_has_3d_particle_commands || needs_particles_3d;
+        let needs_3d_pipeline = has(DIRTY_3D)
+            || has(DIRTY_CAMERA_3D)
+            || has(DIRTY_LIGHTS_3D)
+            || (has(DIRTY_RESOURCES) && needs_3d)
+            || needs_3d
+            || needs_particles_3d
+            || post_requested;
+        let needs_3d_particles_path = has(DIRTY_PARTICLES_3D) || needs_particles_3d;
 
         if needs_2d {
             if self.two_d.is_none() {

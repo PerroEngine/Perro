@@ -1,5 +1,8 @@
 use crate::{
-    gpu::{Gpu, RenderFrame},
+    gpu::{
+        Gpu, RenderFrame, DIRTY_2D, DIRTY_3D, DIRTY_ACCESSIBILITY, DIRTY_CAMERA_2D,
+        DIRTY_CAMERA_3D, DIRTY_LIGHTS_3D, DIRTY_PARTICLES_3D, DIRTY_POSTFX, DIRTY_RESOURCES,
+    },
     resources::ResourceStore,
     three_d::particles::renderer::Particles3DRenderer,
     three_d::renderer::Renderer3D,
@@ -427,19 +430,32 @@ impl GraphicsBackend for PerroGraphics {
         }
         let mut pending = Vec::new();
         std::mem::swap(&mut pending, &mut self.frame.pending_commands);
-        let mut frame_has_2d_commands = false;
-        let mut frame_has_3d_commands = false;
-        let mut frame_has_3d_particle_commands = false;
+        let mut frame_dirty_bits = 0u32;
         for command in &pending {
             match command {
-                RenderCommand::TwoD(_) => frame_has_2d_commands = true,
-                RenderCommand::ThreeD(cmd_3d) => {
-                    frame_has_3d_commands = true;
-                    if matches!(&**cmd_3d, Command3D::UpsertPointParticles { .. }) {
-                        frame_has_3d_particle_commands = true;
+                RenderCommand::TwoD(cmd_2d) => {
+                    frame_dirty_bits |= DIRTY_2D;
+                    if matches!(cmd_2d, Command2D::SetCamera { .. }) {
+                        frame_dirty_bits |= DIRTY_CAMERA_2D;
                     }
                 }
-                _ => {}
+                RenderCommand::ThreeD(cmd_3d) => {
+                    frame_dirty_bits |= DIRTY_3D;
+                    match &**cmd_3d {
+                        Command3D::SetCamera { .. } => frame_dirty_bits |= DIRTY_CAMERA_3D,
+                        Command3D::SetAmbientLight { .. }
+                        | Command3D::SetRayLight { .. }
+                        | Command3D::SetPointLight { .. }
+                        | Command3D::SetSpotLight { .. } => frame_dirty_bits |= DIRTY_LIGHTS_3D,
+                        Command3D::UpsertPointParticles { .. } => {
+                            frame_dirty_bits |= DIRTY_PARTICLES_3D
+                        }
+                        _ => {}
+                    }
+                }
+                RenderCommand::Resource(_) => frame_dirty_bits |= DIRTY_RESOURCES,
+                RenderCommand::PostProcessing(_) => frame_dirty_bits |= DIRTY_POSTFX,
+                RenderCommand::VisualAccessibility(_) => frame_dirty_bits |= DIRTY_ACCESSIBILITY,
             }
         }
         self.process_commands(pending.drain(..));
@@ -493,9 +509,7 @@ impl GraphicsBackend for PerroGraphics {
                 rects_2d: self.renderer_2d.retained_rects(),
                 upload_2d: &upload,
                 sprites_2d: &self.retained_sprites_cache,
-                frame_has_2d_commands,
-                frame_has_3d_commands,
-                frame_has_3d_particle_commands,
+                frame_dirty_bits,
                 static_texture_lookup: self.static_texture_lookup,
                 static_mesh_lookup: self.static_mesh_lookup,
                 static_shader_lookup: self.static_shader_lookup,
