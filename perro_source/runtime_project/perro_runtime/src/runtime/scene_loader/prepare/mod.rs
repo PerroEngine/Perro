@@ -1,0 +1,12 @@
+include!("core.rs");
+include!("common/values_runtime.rs");
+include!("common/assets.rs");
+include!("common/post_processing.rs");
+include!("nodes/two_d/base.rs");
+include!("nodes/two_d/camera.rs");
+include!("nodes/two_d/physics.rs");
+include!("nodes/three_d/base.rs");
+include!("nodes/three_d/camera.rs");
+include!("nodes/three_d/particles.rs");
+include!("nodes/three_d/lights.rs");
+include!("nodes/three_d/physics.rs");

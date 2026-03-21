@@ -60,15 +60,26 @@ fn bench_internal_schedule_unregister() {
         ids.push(id);
         let slot = id.index() as usize;
         if runtime.internal_updates.internal_update_pos.len() <= slot {
-            runtime.internal_updates.internal_update_pos.resize(slot + 1, None);
+            runtime
+                .internal_updates
+                .internal_update_pos
+                .resize(slot + 1, None);
         }
         if runtime.internal_updates.internal_fixed_update_pos.len() <= slot {
-            runtime.internal_updates.internal_fixed_update_pos.resize(slot + 1, None);
+            runtime
+                .internal_updates
+                .internal_fixed_update_pos
+                .resize(slot + 1, None);
         }
-        runtime.internal_updates.internal_update_pos[slot] = Some(runtime.internal_updates.internal_update_nodes.len());
+        runtime.internal_updates.internal_update_pos[slot] =
+            Some(runtime.internal_updates.internal_update_nodes.len());
         runtime.internal_updates.internal_update_nodes.push(id);
-        runtime.internal_updates.internal_fixed_update_pos[slot] = Some(runtime.internal_updates.internal_fixed_update_nodes.len());
-        runtime.internal_updates.internal_fixed_update_nodes.push(id);
+        runtime.internal_updates.internal_fixed_update_pos[slot] =
+            Some(runtime.internal_updates.internal_fixed_update_nodes.len());
+        runtime
+            .internal_updates
+            .internal_fixed_update_nodes
+            .push(id);
     }
 
     let start = std::time::Instant::now();
@@ -82,6 +93,10 @@ fn bench_internal_schedule_unregister() {
     );
 
     assert!(runtime.internal_updates.internal_update_nodes.is_empty());
-    assert!(runtime.internal_updates.internal_fixed_update_nodes.is_empty());
+    assert!(
+        runtime
+            .internal_updates
+            .internal_fixed_update_nodes
+            .is_empty()
+    );
 }
-

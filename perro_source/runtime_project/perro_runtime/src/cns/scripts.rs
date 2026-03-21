@@ -56,7 +56,8 @@ impl Runtime {
         }
 
         let ctor = *self
-            .script_runtime.dynamic_script_registry
+            .script_runtime
+            .dynamic_script_registry
             .get(script_path)
             .ok_or_else(|| {
                 format!("script `{script_path}` is not present in the dynamic script registry")
@@ -188,7 +189,8 @@ impl Runtime {
                 let path = std::str::from_utf8(bytes)
                     .map_err(|err| format!("scripts registry entry {i} path is not UTF-8: {err}"))?
                     .to_string();
-                self.script_runtime.dynamic_script_registry
+                self.script_runtime
+                    .dynamic_script_registry
                     .insert(path, ctor.assume_init());
             }
         }
@@ -278,6 +280,3 @@ fn scripts_dylib_suffix() -> &'static str {
 fn scripts_dylib_suffix() -> &'static str {
     ".dylib"
 }
-
-
-

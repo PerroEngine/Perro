@@ -23,7 +23,13 @@ impl Runtime {
         let mut queued = std::mem::take(&mut self.script_runtime.pending_start_scripts);
         for id in queued.drain(..) {
             let slot = id.index() as usize;
-            let still_pending = self.script_runtime.pending_start_flags.get(slot).copied().flatten() == Some(id);
+            let still_pending = self
+                .script_runtime
+                .pending_start_flags
+                .get(slot)
+                .copied()
+                .flatten()
+                == Some(id);
             if !still_pending {
                 continue;
             }
@@ -33,4 +39,3 @@ impl Runtime {
         self.script_runtime.pending_start_scripts = queued;
     }
 }
-

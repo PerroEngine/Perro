@@ -25,7 +25,9 @@ impl Runtime {
         if matches!(ty.get_internal_update(), InternalUpdate::True) {
             let slot = id.index() as usize;
             if self.internal_updates.internal_update_pos.len() <= slot {
-                self.internal_updates.internal_update_pos.resize(slot + 1, None);
+                self.internal_updates
+                    .internal_update_pos
+                    .resize(slot + 1, None);
             }
             if self.internal_updates.internal_update_pos[slot].is_none() {
                 let pos = self.internal_updates.internal_update_nodes.len();
@@ -53,11 +55,19 @@ impl Runtime {
         let slot = id.index() as usize;
 
         if let Some(Some(pos)) = self.internal_updates.internal_update_pos.get(slot).copied() {
-            let last_pos = self.internal_updates.internal_update_nodes.len().saturating_sub(1);
+            let last_pos = self
+                .internal_updates
+                .internal_update_nodes
+                .len()
+                .saturating_sub(1);
             self.internal_updates.internal_update_nodes.swap_remove(pos);
             self.internal_updates.internal_update_pos[slot] = None;
             if pos <= last_pos.saturating_sub(1)
-                && let Some(moved) = self.internal_updates.internal_update_nodes.get(pos).copied()
+                && let Some(moved) = self
+                    .internal_updates
+                    .internal_update_nodes
+                    .get(pos)
+                    .copied()
             {
                 let moved_slot = moved.index() as usize;
                 if self.internal_updates.internal_update_pos.len() <= moved_slot {
@@ -80,7 +90,9 @@ impl Runtime {
                 .internal_fixed_update_nodes
                 .len()
                 .saturating_sub(1);
-            self.internal_updates.internal_fixed_update_nodes.swap_remove(pos);
+            self.internal_updates
+                .internal_fixed_update_nodes
+                .swap_remove(pos);
             self.internal_updates.internal_fixed_update_pos[slot] = None;
             if pos <= last_pos.saturating_sub(1)
                 && let Some(moved) = self
@@ -116,7 +128,9 @@ impl Runtime {
             NodeType::StaticBody2D | NodeType::Area2D | NodeType::RigidBody2D => {
                 let slot = id.index() as usize;
                 if self.internal_updates.physics_body_pos_2d.len() <= slot {
-                    self.internal_updates.physics_body_pos_2d.resize(slot + 1, None);
+                    self.internal_updates
+                        .physics_body_pos_2d
+                        .resize(slot + 1, None);
                 }
                 if self.internal_updates.physics_body_pos_2d[slot].is_none() {
                     let pos = self.internal_updates.physics_body_nodes_2d.len();
@@ -127,7 +141,9 @@ impl Runtime {
             NodeType::StaticBody3D | NodeType::Area3D | NodeType::RigidBody3D => {
                 let slot = id.index() as usize;
                 if self.internal_updates.physics_body_pos_3d.len() <= slot {
-                    self.internal_updates.physics_body_pos_3d.resize(slot + 1, None);
+                    self.internal_updates
+                        .physics_body_pos_3d
+                        .resize(slot + 1, None);
                 }
                 if self.internal_updates.physics_body_pos_3d[slot].is_none() {
                     let pos = self.internal_updates.physics_body_nodes_3d.len();
@@ -143,11 +159,19 @@ impl Runtime {
         let slot = id.index() as usize;
 
         if let Some(Some(pos)) = self.internal_updates.physics_body_pos_2d.get(slot).copied() {
-            let last_pos = self.internal_updates.physics_body_nodes_2d.len().saturating_sub(1);
+            let last_pos = self
+                .internal_updates
+                .physics_body_nodes_2d
+                .len()
+                .saturating_sub(1);
             self.internal_updates.physics_body_nodes_2d.swap_remove(pos);
             self.internal_updates.physics_body_pos_2d[slot] = None;
             if pos <= last_pos.saturating_sub(1)
-                && let Some(moved) = self.internal_updates.physics_body_nodes_2d.get(pos).copied()
+                && let Some(moved) = self
+                    .internal_updates
+                    .physics_body_nodes_2d
+                    .get(pos)
+                    .copied()
             {
                 let moved_slot = moved.index() as usize;
                 if self.internal_updates.physics_body_pos_2d.len() <= moved_slot {
@@ -160,11 +184,19 @@ impl Runtime {
         }
 
         if let Some(Some(pos)) = self.internal_updates.physics_body_pos_3d.get(slot).copied() {
-            let last_pos = self.internal_updates.physics_body_nodes_3d.len().saturating_sub(1);
+            let last_pos = self
+                .internal_updates
+                .physics_body_nodes_3d
+                .len()
+                .saturating_sub(1);
             self.internal_updates.physics_body_nodes_3d.swap_remove(pos);
             self.internal_updates.physics_body_pos_3d[slot] = None;
             if pos <= last_pos.saturating_sub(1)
-                && let Some(moved) = self.internal_updates.physics_body_nodes_3d.get(pos).copied()
+                && let Some(moved) = self
+                    .internal_updates
+                    .physics_body_nodes_3d
+                    .get(pos)
+                    .copied()
             {
                 let moved_slot = moved.index() as usize;
                 if self.internal_updates.physics_body_pos_3d.len() <= moved_slot {
@@ -181,7 +213,11 @@ impl Runtime {
         self.node_index.node_tag_index.clear();
         for (id, node) in self.nodes.iter() {
             for &tag in node.tags_slice() {
-                self.node_index.node_tag_index.entry(tag).or_default().insert(id);
+                self.node_index
+                    .node_tag_index
+                    .entry(tag)
+                    .or_default()
+                    .insert(id);
             }
         }
     }
@@ -240,4 +276,3 @@ impl Runtime {
         perro_internal_updates::internal_fixed_update_node(&mut ctx, &res, &ipt, id);
     }
 }
-

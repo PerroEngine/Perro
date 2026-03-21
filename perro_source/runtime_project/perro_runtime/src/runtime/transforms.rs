@@ -63,7 +63,9 @@ impl Runtime {
                 .resize(index + 1, Transform2D::IDENTITY);
         }
         if self.transforms.global_transform_2d_valid.len() <= index {
-            self.transforms.global_transform_2d_valid.resize(index + 1, 0);
+            self.transforms
+                .global_transform_2d_valid
+                .resize(index + 1, 0);
         }
         if self.transforms.global_transform_2d_generation.len() <= index {
             self.transforms
@@ -80,7 +82,9 @@ impl Runtime {
                 .resize(index + 1, Transform3D::IDENTITY);
         }
         if self.transforms.global_transform_3d_valid.len() <= index {
-            self.transforms.global_transform_3d_valid.resize(index + 1, 0);
+            self.transforms
+                .global_transform_3d_valid
+                .resize(index + 1, 0);
         }
         if self.transforms.global_transform_3d_generation.len() <= index {
             self.transforms
@@ -146,7 +150,11 @@ impl Runtime {
         let start_index = id.index() as usize;
         self.ensure_global_2d_capacity(start_index);
         if self.is_global_2d_cached_clean(id) {
-            return self.transforms.global_transform_2d.get(start_index).copied();
+            return self
+                .transforms
+                .global_transform_2d
+                .get(start_index)
+                .copied();
         }
 
         let mut chain = std::mem::take(&mut self.transforms.global_chain_scratch);
@@ -210,7 +218,11 @@ impl Runtime {
             parent_world = world;
         }
 
-        let result = self.transforms.global_transform_2d.get(start_index).copied();
+        let result = self
+            .transforms
+            .global_transform_2d
+            .get(start_index)
+            .copied();
         chain.clear();
         self.transforms.global_chain_scratch = chain;
         result
@@ -223,7 +235,11 @@ impl Runtime {
         let start_index = id.index() as usize;
         self.ensure_global_3d_capacity(start_index);
         if self.is_global_3d_cached_clean(id) {
-            return self.transforms.global_transform_3d.get(start_index).copied();
+            return self
+                .transforms
+                .global_transform_3d
+                .get(start_index)
+                .copied();
         }
 
         let mut chain = std::mem::take(&mut self.transforms.global_chain_scratch);
@@ -287,7 +303,11 @@ impl Runtime {
             parent_world = world;
         }
 
-        let result = self.transforms.global_transform_3d.get(start_index).copied();
+        let result = self
+            .transforms
+            .global_transform_3d
+            .get(start_index)
+            .copied();
         chain.clear();
         self.transforms.global_chain_scratch = chain;
         result

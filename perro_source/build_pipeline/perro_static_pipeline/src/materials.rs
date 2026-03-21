@@ -3,9 +3,9 @@ use perro_io::walkdir::collect_file_paths;
 use perro_render_bridge::{
     CustomMaterialParamValue3D, StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D,
 };
-use perro_scene::{Parser, RuntimeValue};
+use perro_scene::{Parser, SceneObjectField, SceneValue};
 use rayon::prelude::*;
-use std::{collections::HashMap, fmt::Write as _, fs, io, path::Path};
+use std::{borrow::Cow, collections::HashMap, fmt::Write as _, fs, io, path::Path};
 
 pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
@@ -295,14 +295,14 @@ impl From<&MaterialLiteral> for MaterialKey {
     }
 }
 
-fn material_from_runtime_value(value: &RuntimeValue) -> Option<MaterialLiteral> {
-    let RuntimeValue::Object(entries) = value else {
+fn material_from_runtime_value(value: &SceneValue) -> Option<MaterialLiteral> {
+    let SceneValue::Object(entries) = value else {
         return None;
     };
-    material_from_runtime_entries(entries)
+    material_from_runtime_entries(entries.as_ref())
 }
 
-fn material_from_runtime_entries(entries: &[(String, RuntimeValue)]) -> Option<MaterialLiteral> {
+fn material_from_runtime_entries(entries: &[SceneObjectField]) -> Option<MaterialLiteral> {
     let mut any = false;
     let kind = material_type_from_first_runtime(entries);
     match kind {
@@ -347,7 +347,7 @@ fn load_pmat_literal(source: &str) -> Option<MaterialLiteral> {
     material_from_runtime_entries(&entries)
 }
 
-fn parse_pmat_key_values(text: &str) -> Option<Vec<(String, RuntimeValue)>> {
+fn parse_pmat_key_values(text: &str) -> Option<Vec<SceneObjectField>> {
     let mut entries = Vec::new();
     for raw_line in text.lines() {
         let line = strip_line_comment(raw_line).trim();
@@ -355,7 +355,7 @@ fn parse_pmat_key_values(text: &str) -> Option<Vec<(String, RuntimeValue)>> {
             continue;
         }
         let (raw_key, raw_value) = line.split_once('=')?;
-        let key = raw_key.trim().to_string();
+        let key: Cow<'static, str> = Cow::Owned(raw_key.trim().to_string());
         if key.is_empty() {
             continue;
         }
@@ -411,43 +411,43 @@ fn pmat_looks_like_object(text: &str) -> bool {
         .is_some_and(|line| line.starts_with('{'))
 }
 
-fn parse_kv_value(text: &str) -> Option<RuntimeValue> {
+fn parse_kv_value(text: &str) -> Option<SceneValue> {
     let text = text.trim();
     if let Some(value) = parse_vec_value(text) {
         return Some(value);
     }
     if text.eq_ignore_ascii_case("true") {
-        return Some(RuntimeValue::Bool(true));
+        return Some(SceneValue::Bool(true));
     }
     if text.eq_ignore_ascii_case("false") {
-        return Some(RuntimeValue::Bool(false));
+        return Some(SceneValue::Bool(false));
     }
     if let Some(inner) = text.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
-        return Some(RuntimeValue::Str(inner.to_string()));
+        return Some(SceneValue::Str(Cow::Owned(inner.to_string())));
     }
     if let Ok(v) = text.parse::<i32>() {
-        return Some(RuntimeValue::I32(v));
+        return Some(SceneValue::I32(v));
     }
     if let Ok(v) = text.parse::<f32>() {
-        return Some(RuntimeValue::F32(v));
+        return Some(SceneValue::F32(v));
     }
-    Some(RuntimeValue::Str(text.to_string()))
+    Some(SceneValue::Str(Cow::Owned(text.to_string())))
 }
 
-fn parse_vec_value(text: &str) -> Option<RuntimeValue> {
+fn parse_vec_value(text: &str) -> Option<SceneValue> {
     let inner = text.strip_prefix('(')?.strip_suffix(')')?;
     let numbers = inner
         .split(',')
         .map(|token| token.trim().parse::<f32>().ok())
         .collect::<Option<Vec<_>>>()?;
     match numbers.as_slice() {
-        [x, y] => Some(RuntimeValue::Vec2 { x: *x, y: *y }),
-        [x, y, z] => Some(RuntimeValue::Vec3 {
+        [x, y] => Some(SceneValue::Vec2 { x: *x, y: *y }),
+        [x, y, z] => Some(SceneValue::Vec3 {
             x: *x,
             y: *y,
             z: *z,
         }),
-        [x, y, z, w] => Some(RuntimeValue::Vec4 {
+        [x, y, z, w] => Some(SceneValue::Vec4 {
             x: *x,
             y: *y,
             z: *z,
@@ -457,15 +457,16 @@ fn parse_vec_value(text: &str) -> Option<RuntimeValue> {
     }
 }
 
-fn material_type_from_first_runtime(entries: &[(String, RuntimeValue)]) -> MaterialType {
+fn material_type_from_first_runtime(entries: &[SceneObjectField]) -> MaterialType {
     let Some((name, value)) = entries.first() else {
         return MaterialType::Standard;
     };
-    if !name.eq_ignore_ascii_case("type") {
+    if !name.as_ref().eq_ignore_ascii_case("type") {
         return MaterialType::Standard;
     }
     match value {
-        RuntimeValue::Str(v) | RuntimeValue::Key(v) => parse_material_type(v),
+        SceneValue::Str(v) => parse_material_type(v.as_ref()),
+        SceneValue::Key(v) => parse_material_type(v.as_ref()),
         _ => MaterialType::Standard,
     }
 }
@@ -489,12 +490,12 @@ enum MaterialType {
 }
 
 fn apply_standard_runtime_entries(
-    entries: &[(String, RuntimeValue)],
+    entries: &[SceneObjectField],
     out: &mut StandardMaterial3D,
     any: &mut bool,
 ) {
-    for (name, value) in entries {
-        match canonical_standard_key(name) {
+    for (name, value) in entries.as_ref() {
+        match canonical_standard_key(name.as_ref()) {
             Some("roughnessFactor") => set_f32(value, any, |v| out.roughness_factor = v),
             Some("metallicFactor") => set_f32(value, any, |v| out.metallic_factor = v),
             Some("occlusionStrength") => set_f32(value, any, |v| out.occlusion_strength = v),
@@ -514,8 +515,8 @@ fn apply_standard_runtime_entries(
             Some("occlusionTexture") => set_texture_slot(value, any, |v| out.occlusion_texture = v),
             Some("emissiveTexture") => set_texture_slot(value, any, |v| out.emissive_texture = v),
             Some("pbrMetallicRoughness") => {
-                if let RuntimeValue::Object(inner) = value {
-                    apply_standard_runtime_entries(inner, out, any);
+                if let SceneValue::Object(inner) = value {
+                    apply_standard_runtime_entries(inner.as_ref(), out, any);
                 }
             }
             _ => {}
@@ -524,12 +525,12 @@ fn apply_standard_runtime_entries(
 }
 
 fn apply_unlit_runtime_entries(
-    entries: &[(String, RuntimeValue)],
+    entries: &[SceneObjectField],
     out: &mut UnlitMaterial3D,
     any: &mut bool,
 ) {
-    for (name, value) in entries {
-        match canonical_unlit_key(name) {
+    for (name, value) in entries.as_ref() {
+        match canonical_unlit_key(name.as_ref()) {
             Some("baseColorFactor") => set_color4(value, any, |v| out.base_color_factor = v),
             Some("emissiveFactor") => set_color3(value, any, |v| out.emissive_factor = v),
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
@@ -544,12 +545,12 @@ fn apply_unlit_runtime_entries(
 }
 
 fn apply_toon_runtime_entries(
-    entries: &[(String, RuntimeValue)],
+    entries: &[SceneObjectField],
     out: &mut ToonMaterial3D,
     any: &mut bool,
 ) {
-    for (name, value) in entries {
-        match canonical_toon_key(name) {
+    for (name, value) in entries.as_ref() {
+        match canonical_toon_key(name.as_ref()) {
             Some("baseColorFactor") => set_color4(value, any, |v| out.base_color_factor = v),
             Some("emissiveFactor") => set_color3(value, any, |v| out.emissive_factor = v),
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
@@ -568,12 +569,12 @@ fn apply_toon_runtime_entries(
 }
 
 fn apply_custom_runtime_entries(
-    entries: &[(String, RuntimeValue)],
+    entries: &[SceneObjectField],
     out: &mut CustomMaterialLiteral,
     any: &mut bool,
 ) {
-    for (name, value) in entries {
-        match canonical_custom_key(name) {
+    for (name, value) in entries.as_ref() {
+        match canonical_custom_key(name.as_ref()) {
             Some("shaderPath") => {
                 if let Some(v) = as_string_value(value) {
                     out.shader_path = v;
@@ -654,108 +655,114 @@ fn canonical_custom_key(name: &str) -> Option<&'static str> {
     }
 }
 
-fn set_f32(value: &RuntimeValue, any: &mut bool, set: impl FnOnce(f32)) {
+fn set_f32(value: &SceneValue, any: &mut bool, set: impl FnOnce(f32)) {
     if let Some(v) = as_f32(value) {
         set(v);
         *any = true;
     }
 }
 
-fn set_u32(value: &RuntimeValue, any: &mut bool, set: impl FnOnce(u32)) {
+fn set_u32(value: &SceneValue, any: &mut bool, set: impl FnOnce(u32)) {
     if let Some(v) = as_u32(value) {
         set(v);
         *any = true;
     }
 }
 
-fn set_bool(value: &RuntimeValue, any: &mut bool, set: impl FnOnce(bool)) {
+fn set_bool(value: &SceneValue, any: &mut bool, set: impl FnOnce(bool)) {
     if let Some(v) = as_bool(value) {
         set(v);
         *any = true;
     }
 }
 
-fn set_alpha_mode(value: &RuntimeValue, any: &mut bool, set: impl FnOnce(u32)) {
+fn set_alpha_mode(value: &SceneValue, any: &mut bool, set: impl FnOnce(u32)) {
     if let Some(v) = as_alpha_mode(value) {
         set(v);
         *any = true;
     }
 }
 
-fn set_color4(value: &RuntimeValue, any: &mut bool, set: impl FnOnce([f32; 4])) {
+fn set_color4(value: &SceneValue, any: &mut bool, set: impl FnOnce([f32; 4])) {
     if let Some(v) = as_color4(value) {
         set(v);
         *any = true;
     }
 }
 
-fn set_color3(value: &RuntimeValue, any: &mut bool, set: impl FnOnce([f32; 3])) {
+fn set_color3(value: &SceneValue, any: &mut bool, set: impl FnOnce([f32; 3])) {
     if let Some(v) = as_color4(value) {
         set([v[0], v[1], v[2]]);
         *any = true;
     }
 }
 
-fn set_texture_slot(value: &RuntimeValue, any: &mut bool, set: impl FnOnce(u32)) {
+fn set_texture_slot(value: &SceneValue, any: &mut bool, set: impl FnOnce(u32)) {
     if let Some(v) = as_texture_slot(value) {
         set(v);
         *any = true;
     }
 }
 
-fn as_f32(value: &RuntimeValue) -> Option<f32> {
+fn as_f32(value: &SceneValue) -> Option<f32> {
     match value {
-        RuntimeValue::F32(v) => Some(*v),
-        RuntimeValue::I32(v) => Some(*v as f32),
+        SceneValue::F32(v) => Some(*v),
+        SceneValue::I32(v) => Some(*v as f32),
         _ => None,
     }
 }
 
-fn as_u32(value: &RuntimeValue) -> Option<u32> {
+fn as_u32(value: &SceneValue) -> Option<u32> {
     match value {
-        RuntimeValue::I32(v) if *v >= 0 => Some(*v as u32),
-        RuntimeValue::F32(v) if *v >= 0.0 => Some(*v as u32),
+        SceneValue::I32(v) if *v >= 0 => Some(*v as u32),
+        SceneValue::F32(v) if *v >= 0.0 => Some(*v as u32),
         _ => None,
     }
 }
 
-fn as_bool(value: &RuntimeValue) -> Option<bool> {
+fn as_bool(value: &SceneValue) -> Option<bool> {
     match value {
-        RuntimeValue::Bool(v) => Some(*v),
+        SceneValue::Bool(v) => Some(*v),
         _ => None,
     }
 }
 
-fn as_alpha_mode(value: &RuntimeValue) -> Option<u32> {
+fn as_alpha_mode(value: &SceneValue) -> Option<u32> {
     match value {
-        RuntimeValue::Str(v) | RuntimeValue::Key(v) => match v.as_str() {
+        SceneValue::Str(v) => match v.as_ref() {
             "OPAQUE" | "opaque" => Some(0),
             "MASK" | "mask" => Some(1),
             "BLEND" | "blend" => Some(2),
             _ => None,
         },
-        RuntimeValue::I32(v) if (0..=2).contains(v) => Some(*v as u32),
+        SceneValue::Key(v) => match v.as_ref() {
+            "OPAQUE" | "opaque" => Some(0),
+            "MASK" | "mask" => Some(1),
+            "BLEND" | "blend" => Some(2),
+            _ => None,
+        },
+        SceneValue::I32(v) if (0..=2).contains(v) => Some(*v as u32),
         _ => None,
     }
 }
 
-fn as_color4(value: &RuntimeValue) -> Option<[f32; 4]> {
+fn as_color4(value: &SceneValue) -> Option<[f32; 4]> {
     match value {
-        RuntimeValue::Vec4 { x, y, z, w } => Some([*x, *y, *z, *w]),
-        RuntimeValue::Vec3 { x, y, z } => Some([*x, *y, *z, 1.0]),
+        SceneValue::Vec4 { x, y, z, w } => Some([*x, *y, *z, *w]),
+        SceneValue::Vec3 { x, y, z } => Some([*x, *y, *z, 1.0]),
         _ => None,
     }
 }
 
-fn as_texture_slot(value: &RuntimeValue) -> Option<u32> {
+fn as_texture_slot(value: &SceneValue) -> Option<u32> {
     match value {
-        RuntimeValue::I32(v) if *v >= 0 => Some(*v as u32),
-        RuntimeValue::Object(entries) => {
+        SceneValue::I32(v) if *v >= 0 => Some(*v as u32),
+        SceneValue::Object(entries) => {
             entries
                 .iter()
-                .find_map(|(name, inner)| match name.as_str() {
+                .find_map(|(name, inner)| match name.as_ref() {
                     "index" | "slot" => match inner {
-                        RuntimeValue::I32(v) if *v >= 0 => Some(*v as u32),
+                        SceneValue::I32(v) if *v >= 0 => Some(*v as u32),
                         _ => None,
                     },
                     _ => None,
@@ -765,35 +772,34 @@ fn as_texture_slot(value: &RuntimeValue) -> Option<u32> {
     }
 }
 
-fn as_string_value(value: &RuntimeValue) -> Option<String> {
+fn as_string_value(value: &SceneValue) -> Option<String> {
     match value {
-        RuntimeValue::Str(v) | RuntimeValue::Key(v) => Some(v.clone()),
+        SceneValue::Str(v) => Some(v.to_string()),
+        SceneValue::Key(v) => Some(v.to_string()),
         _ => None,
     }
 }
 
-fn as_custom_param_value(value: &RuntimeValue) -> Option<CustomMaterialParamValue3D> {
+fn as_custom_param_value(value: &SceneValue) -> Option<CustomMaterialParamValue3D> {
     match value {
-        RuntimeValue::Bool(v) => Some(CustomMaterialParamValue3D::Bool(*v)),
-        RuntimeValue::I32(v) => Some(CustomMaterialParamValue3D::I32(*v)),
-        RuntimeValue::F32(v) => Some(CustomMaterialParamValue3D::F32(*v)),
-        RuntimeValue::Vec2 { x, y } => Some(CustomMaterialParamValue3D::Vec2([*x, *y])),
-        RuntimeValue::Vec3 { x, y, z } => Some(CustomMaterialParamValue3D::Vec3([*x, *y, *z])),
-        RuntimeValue::Vec4 { x, y, z, w } => {
-            Some(CustomMaterialParamValue3D::Vec4([*x, *y, *z, *w]))
-        }
+        SceneValue::Bool(v) => Some(CustomMaterialParamValue3D::Bool(*v)),
+        SceneValue::I32(v) => Some(CustomMaterialParamValue3D::I32(*v)),
+        SceneValue::F32(v) => Some(CustomMaterialParamValue3D::F32(*v)),
+        SceneValue::Vec2 { x, y } => Some(CustomMaterialParamValue3D::Vec2([*x, *y])),
+        SceneValue::Vec3 { x, y, z } => Some(CustomMaterialParamValue3D::Vec3([*x, *y, *z])),
+        SceneValue::Vec4 { x, y, z, w } => Some(CustomMaterialParamValue3D::Vec4([*x, *y, *z, *w])),
         _ => None,
     }
 }
 
-fn as_custom_params(value: &RuntimeValue) -> Option<Vec<CustomParamLiteral>> {
+fn as_custom_params(value: &SceneValue) -> Option<Vec<CustomParamLiteral>> {
     match value {
-        RuntimeValue::Object(entries) => {
+        SceneValue::Object(entries) => {
             let mut out = Vec::new();
-            for (name, inner) in entries {
+            for (name, inner) in entries.as_ref() {
                 if let Some(val) = as_custom_param_value(inner) {
                     out.push(CustomParamLiteral {
-                        name: Some(name.clone()),
+                        name: Some(name.to_string()),
                         value: val,
                     });
                 }

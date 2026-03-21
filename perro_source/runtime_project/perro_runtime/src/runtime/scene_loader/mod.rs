@@ -11,7 +11,7 @@ mod merge;
 mod prepare;
 
 use merge::merge_prepared_scene;
-use prepare::{load_runtime_scene_from_disk, prepare_runtime_scene, prepare_static_scene};
+use prepare::{load_runtime_scene_from_disk, prepare_scene};
 
 #[cfg(feature = "profile")]
 struct SceneLoadStats {
@@ -112,7 +112,7 @@ impl Runtime {
                     source_load = Some(load_stats.source_load);
                     parse = Some(load_stats.parse);
                 }
-                let prepared = prepare_runtime_scene(runtime_scene)?;
+                let prepared = prepare_scene(&runtime_scene)?;
                 #[cfg(feature = "profile")]
                 let node_insert_start = Instant::now();
                 script_nodes = merge_prepared_scene(self, prepared)?;
@@ -129,7 +129,7 @@ impl Runtime {
             {
                 Some(scene) => {
                     mode_label = "static";
-                    let prepared = prepare_static_scene(scene)?;
+                    let prepared = prepare_scene(scene)?;
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
                     script_nodes = merge_prepared_scene(self, prepared)?;
@@ -145,7 +145,7 @@ impl Runtime {
                         source_load = Some(load_stats.source_load);
                         parse = Some(load_stats.parse);
                     }
-                    let prepared = prepare_runtime_scene(runtime_scene)?;
+                    let prepared = prepare_scene(&runtime_scene)?;
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
                     script_nodes = merge_prepared_scene(self, prepared)?;
@@ -267,4 +267,3 @@ const ANSI_ORANGE: &str = "\x1b[38;5;208m";
 fn depth_color(depth: usize) -> &'static str {
     if depth == 0 { ANSI_WHITE } else { "" }
 }
-

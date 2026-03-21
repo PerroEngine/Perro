@@ -1,5 +1,5 @@
 use perro_render_bridge::{Material3D, ParticleProfile3D};
-use perro_scene::StaticScene;
+use perro_scene::Scene;
 use std::{collections::BTreeMap, path::PathBuf};
 
 pub use perro_project::{
@@ -16,7 +16,7 @@ pub enum ProviderMode {
     Static,
 }
 
-pub type StaticSceneLookup = fn(&str) -> Option<&'static StaticScene>;
+pub type StaticSceneLookup = fn(&str) -> Option<&'static Scene>;
 pub type StaticMaterialLookup = fn(&str) -> Option<&'static Material3D>;
 pub type StaticParticleLookup = fn(&str) -> Option<&'static ParticleProfile3D>;
 pub type StaticSkeletonLookup = fn(&str) -> Option<&'static [u8]>;

@@ -10,9 +10,9 @@ use std::sync::{Arc, Mutex};
 mod input_bridge;
 mod internal_updates;
 mod physics;
-mod render_bridge;
 mod render_2d;
 mod render_3d;
+mod render_bridge;
 mod scene_loader;
 mod scheduling;
 mod state;
@@ -148,7 +148,6 @@ impl Runtime {
         self.physics_fixed_step();
         self.run_internal_fixed_update_schedule();
     }
-
 }
 
 impl Default for Runtime {

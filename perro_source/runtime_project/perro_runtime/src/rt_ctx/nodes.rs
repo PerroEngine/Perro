@@ -23,7 +23,8 @@ fn cached_slot_for(runtime: &mut Runtime, id: perro_ids::NodeID) -> Option<(usiz
         return Some(resolved);
     }
 
-    if let Some((cached_id, cached_index, cached_generation)) = runtime.script_runtime.last_node_lookup
+    if let Some((cached_id, cached_index, cached_generation)) =
+        runtime.script_runtime.last_node_lookup
         && cached_id == id
         && runtime
             .nodes
@@ -364,7 +365,11 @@ impl NodeAPI for Runtime {
             }
         }
         for tag in new_tags {
-            self.node_index.node_tag_index.entry(tag).or_default().insert(node_id);
+            self.node_index
+                .node_tag_index
+                .entry(tag)
+                .or_default()
+                .insert(node_id);
         }
         true
     }
@@ -383,7 +388,11 @@ impl NodeAPI for Runtime {
             added = true;
         }
         if added {
-            self.node_index.node_tag_index.entry(tag).or_default().insert(node_id);
+            self.node_index
+                .node_tag_index
+                .entry(tag)
+                .or_default()
+                .insert(node_id);
         }
         true
     }
@@ -565,4 +574,3 @@ impl NodeAPI for Runtime {
 #[cfg(test)]
 #[path = "../../tests/unit/rt_ctx_nodes_transform_api_tests.rs"]
 mod tests;
-

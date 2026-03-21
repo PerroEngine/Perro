@@ -1,13 +1,17 @@
-// parser.rs - Parse into runtime types
-use crate::{Lexer, RuntimeNodeData, RuntimeNodeEntry, RuntimeScene, RuntimeValue, Token};
+// parser.rs - Parse into scene types
+use crate::{
+    Lexer, Scene, SceneKey, SceneNodeData, SceneNodeDataBase, SceneNodeEntry, SceneObjectField,
+    SceneValue, SceneValueKey, Token,
+};
 use perro_structs::Quaternion;
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 pub struct Parser<'a> {
     src: &'a str,
     lexer: Lexer<'a>,
     current: Token,
-    vars: HashMap<String, RuntimeValue>,
+    vars: HashMap<String, SceneValue>,
 }
 
 impl<'a> Parser<'a> {
@@ -43,7 +47,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn collect_vars(mut self) -> HashMap<String, RuntimeValue> {
+    fn collect_vars(mut self) -> HashMap<String, SceneValue> {
         while self.current != Token::Eof {
             if self.current == Token::At {
                 self.advance();
@@ -60,18 +64,18 @@ impl<'a> Parser<'a> {
         self.vars
     }
 
-    fn parse_value(&mut self) -> RuntimeValue {
+    fn parse_value(&mut self) -> SceneValue {
         match &self.current {
             Token::Number(n) => {
                 let v = *n;
                 self.advance();
-                RuntimeValue::F32(v)
+                SceneValue::F32(v)
             }
 
             Token::String(s) => {
                 let v = s.clone();
                 self.advance();
-                RuntimeValue::Str(v)
+                SceneValue::Str(Cow::Owned(v))
             }
 
             Token::At => {
@@ -86,7 +90,7 @@ impl<'a> Parser<'a> {
             Token::Ident(name) => {
                 let key = name.clone();
                 self.advance();
-                RuntimeValue::Key(key)
+                SceneValue::Key(SceneValueKey::from(key))
             }
 
             Token::LParen => {
@@ -106,16 +110,16 @@ impl<'a> Parser<'a> {
                 self.expect(Token::RParen);
 
                 match nums.len() {
-                    2 => RuntimeValue::Vec2 {
+                    2 => SceneValue::Vec2 {
                         x: nums[0],
                         y: nums[1],
                     },
-                    3 => RuntimeValue::Vec3 {
+                    3 => SceneValue::Vec3 {
                         x: nums[0],
                         y: nums[1],
                         z: nums[2],
                     },
-                    4 => RuntimeValue::Vec4 {
+                    4 => SceneValue::Vec4 {
                         x: nums[0],
                         y: nums[1],
                         z: nums[2],
@@ -127,12 +131,12 @@ impl<'a> Parser<'a> {
 
             Token::True => {
                 self.advance();
-                RuntimeValue::Bool(true)
+                SceneValue::Bool(true)
             }
 
             Token::False => {
                 self.advance();
-                RuntimeValue::Bool(false)
+                SceneValue::Bool(false)
             }
 
             // inside parse_value(), in the Token::LBrace => { ... } arm
@@ -198,7 +202,12 @@ impl<'a> Parser<'a> {
                     }
                 }
 
-                RuntimeValue::Object(entries)
+                SceneValue::Object(Cow::Owned(
+                    entries
+                        .into_iter()
+                        .map(|(k, v)| (Cow::Owned(k), v))
+                        .collect(),
+                ))
             }
             Token::LBracket => {
                 self.advance();
@@ -224,14 +233,14 @@ impl<'a> Parser<'a> {
                         _ => {}
                     }
                 }
-                RuntimeValue::Array(items)
+                SceneValue::Array(Cow::Owned(items))
             }
 
             _ => panic!("Invalid value token {:?}", self.current),
         }
     }
 
-    fn parse_type_block_after_lbracket(&mut self) -> RuntimeNodeData {
+    fn parse_type_block_after_lbracket(&mut self) -> SceneNodeData {
         let ty = self.expect_ident();
         self.expect(Token::RBracket);
 
@@ -250,7 +259,7 @@ impl<'a> Parser<'a> {
                         break;
                     } else {
                         let nested = self.parse_type_block_after_lbracket();
-                        base = Some(Box::new(nested));
+                        base = Some(SceneNodeDataBase::Owned(Box::new(nested)));
                     }
                 }
 
@@ -258,7 +267,7 @@ impl<'a> Parser<'a> {
                     let key = self.expect_ident();
                     self.expect(Token::Equals);
                     let val = self.parse_value();
-                    fields.push((key, val));
+                    fields.push((Cow::Owned(key), val));
                 }
 
                 _ => self.advance(),
@@ -266,10 +275,14 @@ impl<'a> Parser<'a> {
         }
 
         normalize_node_fields_for_type(&ty, &mut fields);
-        RuntimeNodeData { ty, fields, base }
+        SceneNodeData {
+            ty: Cow::Owned(ty.clone()),
+            fields: Cow::Owned(fields),
+            base,
+        }
     }
 
-    fn parse_type_block(&mut self) -> RuntimeNodeData {
+    fn parse_type_block(&mut self) -> SceneNodeData {
         self.expect(Token::LBracket);
         self.parse_type_block_after_lbracket()
     }
@@ -297,7 +310,8 @@ impl<'a> Parser<'a> {
                         .cloned()
                         .unwrap_or_else(|| panic!("Unknown variable @{name}"));
                     match resolved {
-                        RuntimeValue::Str(tag) | RuntimeValue::Key(tag) => tags.push(tag),
+                        SceneValue::Str(tag) => tags.push(tag.to_string()),
+                        SceneValue::Key(key) => tags.push(key.to_string()),
                         _ => panic!("tags variable @{name} must resolve to a string or key"),
                     }
                 }
@@ -320,7 +334,7 @@ impl<'a> Parser<'a> {
         tags
     }
 
-    fn parse_scene_inner(mut self) -> RuntimeScene {
+    fn parse_scene_inner(mut self) -> Scene {
         let mut nodes = Vec::new();
         let mut root = None;
 
@@ -336,8 +350,11 @@ impl<'a> Parser<'a> {
                             Token::Ident(key) => {
                                 let k = key.clone();
                                 self.advance();
-                                root = Some(k.clone());
-                                self.vars.insert("root".to_string(), RuntimeValue::Key(k));
+                                root = Some(SceneKey::from(k.clone()));
+                                self.vars.insert(
+                                    "root".to_string(),
+                                    SceneValue::Key(SceneValueKey::from(k)),
+                                );
                             }
                             _ => panic!("root must be a scene key"),
                         }
@@ -368,19 +385,19 @@ impl<'a> Parser<'a> {
                         match k.as_ref() {
                             "name" => {
                                 name = Some(match v {
-                                    RuntimeValue::Str(s) => s,
+                                    SceneValue::Str(s) => s.to_string(),
                                     _ => panic!("name must be a string"),
                                 })
                             }
                             "parent" => {
                                 parent = Some(match v {
-                                    RuntimeValue::Key(k) => k,
+                                    SceneValue::Key(k) => k.to_string(),
                                     _ => panic!("parent must be a key"),
                                 })
                             }
                             "script" => {
                                 script = Some(match v {
-                                    RuntimeValue::Str(s) => s,
+                                    SceneValue::Str(s) => s.to_string(),
                                     _ => panic!("script must be a string"),
                                 })
                             }
@@ -398,12 +415,13 @@ impl<'a> Parser<'a> {
 
                     let name = name.or_else(|| Some(key.clone()));
 
-                    nodes.push(RuntimeNodeEntry {
-                        key,
-                        name,
-                        tags,
-                        parent,
-                        script,
+                    nodes.push(SceneNodeEntry {
+                        key: SceneKey::from(key),
+                        name: name.map(Cow::Owned),
+                        tags: Cow::Owned(tags.into_iter().map(Cow::Owned).collect()),
+                        children: Cow::Owned(Vec::new()),
+                        parent: parent.map(SceneKey::from),
+                        script: script.map(Cow::Owned),
                         data,
                     });
                 }
@@ -412,17 +430,20 @@ impl<'a> Parser<'a> {
             }
         }
 
-        RuntimeScene { nodes, root }
+        Scene {
+            nodes: Cow::Owned(nodes),
+            root,
+        }
     }
 
-    pub fn parse_scene(self) -> RuntimeScene {
+    pub fn parse_scene(self) -> Scene {
         let vars = Parser::new(self.src).collect_vars();
         let mut parser = Parser::new(self.src);
         parser.vars = vars;
         parser.parse_scene_inner()
     }
 
-    pub fn parse_value_literal(mut self) -> RuntimeValue {
+    pub fn parse_value_literal(mut self) -> SceneValue {
         let value = self.parse_value();
         if self.current != Token::Eof {
             panic!("Expected end of value, got {:?}", self.current);
@@ -431,7 +452,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<(String, RuntimeValue)>) {
+fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<SceneObjectField>) {
     if ty != "Node3D" {
         return;
     }
@@ -440,16 +461,16 @@ fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<(String, RuntimeVal
     let mut rotation_deg_xyz = None;
 
     for (name, value) in fields.iter_mut() {
-        if name == "rotation" {
+        if name.as_ref() == "rotation" {
             rotation_present = true;
-            if let RuntimeValue::Vec3 { x, y, z } = value.clone() {
+            if let SceneValue::Vec3 { x, y, z } = value.clone() {
                 *value = euler_xyz_radians_to_quat_value(x, y, z);
             }
             continue;
         }
 
-        if name == "rotation_deg" {
-            if let RuntimeValue::Vec3 { x, y, z } = value.clone() {
+        if name.as_ref() == "rotation_deg" {
+            if let SceneValue::Vec3 { x, y, z } = value.clone() {
                 rotation_deg_xyz = Some((x, y, z));
             }
             continue;
@@ -458,7 +479,7 @@ fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<(String, RuntimeVal
 
     if !rotation_present && let Some((x_deg, y_deg, z_deg)) = rotation_deg_xyz {
         fields.push((
-            "rotation".to_string(),
+            Cow::Borrowed("rotation"),
             euler_xyz_radians_to_quat_value(
                 x_deg.to_radians(),
                 y_deg.to_radians(),
@@ -467,13 +488,13 @@ fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<(String, RuntimeVal
         ));
     }
 
-    fields.retain(|(name, _)| name != "rotation_deg");
+    fields.retain(|(name, _)| name.as_ref() != "rotation_deg");
 }
 
-fn euler_xyz_radians_to_quat_value(x: f32, y: f32, z: f32) -> RuntimeValue {
+fn euler_xyz_radians_to_quat_value(x: f32, y: f32, z: f32) -> SceneValue {
     let mut rotation = Quaternion::IDENTITY;
     rotation.rotate_xyz(x, y, z);
-    RuntimeValue::Vec4 {
+    SceneValue::Vec4 {
         x: rotation.x,
         y: rotation.y,
         z: rotation.z,

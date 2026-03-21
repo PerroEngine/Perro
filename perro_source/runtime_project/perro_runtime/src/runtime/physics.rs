@@ -1401,4 +1401,3 @@ fn transform_to_iso3(transform: Transform3D) -> na3::Isometry3<f32> {
         rotation,
     )
 }
-

@@ -15,7 +15,9 @@ impl Runtime {
     pub(crate) fn queue_start_script(&mut self, id: NodeID) {
         let slot = id.index() as usize;
         if self.script_runtime.pending_start_flags.len() <= slot {
-            self.script_runtime.pending_start_flags.resize(slot + 1, None);
+            self.script_runtime
+                .pending_start_flags
+                .resize(slot + 1, None);
         }
         if self.script_runtime.pending_start_flags[slot] == Some(id) {
             return;
@@ -27,7 +29,9 @@ impl Runtime {
     #[inline(always)]
     pub(crate) fn unqueue_start_script(&mut self, id: NodeID) {
         let slot = id.index() as usize;
-        if slot < self.script_runtime.pending_start_flags.len() && self.script_runtime.pending_start_flags[slot] == Some(id) {
+        if slot < self.script_runtime.pending_start_flags.len()
+            && self.script_runtime.pending_start_flags[slot] == Some(id)
+        {
             self.script_runtime.pending_start_flags[slot] = None;
         }
     }
@@ -105,7 +109,9 @@ impl Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputContext<'_, perro_input::InputSnapshot> =
             unsafe { InputContext::new(&*input_ptr) };
-        self.script_runtime.active_script_stack.push((instance_index, id));
+        self.script_runtime
+            .active_script_stack
+            .push((instance_index, id));
         let mut ctx = RuntimeContext::new(self);
         behavior.on_update(&mut ctx, &res, &ipt, id);
         let _ = self.script_runtime.active_script_stack.pop();
@@ -128,7 +134,9 @@ impl Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputContext<'_, perro_input::InputSnapshot> =
             unsafe { InputContext::new(&*input_ptr) };
-        self.script_runtime.active_script_stack.push((instance_index, id));
+        self.script_runtime
+            .active_script_stack
+            .push((instance_index, id));
         let mut ctx = RuntimeContext::new(self);
         behavior.on_fixed_update(&mut ctx, &res, &ipt, id);
         let _ = self.script_runtime.active_script_stack.pop();
@@ -251,4 +259,3 @@ impl ScriptAPI for Runtime {
         behavior.has_attribute(member, attribute)
     }
 }
-

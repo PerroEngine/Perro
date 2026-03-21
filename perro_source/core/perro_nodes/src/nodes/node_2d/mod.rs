@@ -1,5 +1,6 @@
 pub mod camera_2d;
 pub mod node_2d_base;
+#[path = "physics/physics_2d.rs"]
 pub mod physics_2d;
 pub mod sprite_2d;
 

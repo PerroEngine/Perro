@@ -1254,9 +1254,9 @@ fn default_static_mod_rs() -> String {
 fn default_static_scenes_rs() -> String {
     r#"#![allow(unused_imports)]
 
-use perro_scene::StaticScene;
+use perro_scene::Scene;
 
-pub fn lookup_scene(_path: &str) -> Option<&'static StaticScene> {
+pub fn lookup_scene(_path: &str) -> Option<&'static Scene> {
     None
 }
 "#

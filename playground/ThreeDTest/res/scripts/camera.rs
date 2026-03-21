@@ -31,7 +31,7 @@ lifecycle!({
         //enable_colorblind_filter!(res, ColorBlindFilter::Protan, 0.8);
         //enable_colorblind_filter!(res, ColorBlindFilter::Deuteran, 0.8);
         //enable_colorblind_filter!(res, ColorBlindFilter::Tritan, 0.8);
-        enable_colorblind_filter!(res, ColorBlindFilter::Achroma, 0.8);
+        //enable_colorblind_filter!(res, ColorBlindFilter::Achroma, 0.8);
         
     }
 
