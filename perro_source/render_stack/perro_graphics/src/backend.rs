@@ -71,6 +71,8 @@ pub struct PerroGraphics {
     retained_draws_cache: Vec<Draw3DInstance>,
     retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,
     retained_sprites_cache: Vec<Sprite2DCommand>,
+    saw_2d_commands: bool,
+    saw_3d_commands: bool,
     global_post_processing: PostProcessSet,
     accessibility: VisualAccessibilitySettings,
     frame_index: u32,
@@ -87,7 +89,7 @@ impl PerroGraphics {
             gpu: None,
             events: Vec::new(),
             viewport: (0, 0),
-            vsync_enabled: false,
+            vsync_enabled: true,
             smoothing_enabled: true,
             smoothing_samples: 4,
             static_texture_lookup: None,
@@ -100,6 +102,8 @@ impl PerroGraphics {
             retained_draws_cache: Vec::new(),
             retained_point_particles_cache: Vec::new(),
             retained_sprites_cache: Vec::new(),
+            saw_2d_commands: false,
+            saw_3d_commands: false,
             global_post_processing: PostProcessSet::new(),
             accessibility: VisualAccessibilitySettings::default(),
             frame_index: 0,
@@ -257,15 +261,19 @@ impl PerroGraphics {
                 },
                 RenderCommand::TwoD(cmd_2d) => match cmd_2d {
                     Command2D::UpsertSprite { node, sprite } => {
+                        self.saw_2d_commands = true;
                         self.renderer_2d.queue_sprite(node, sprite);
                     }
                     Command2D::UpsertRect { node, rect } => {
+                        self.saw_2d_commands = true;
                         self.renderer_2d.queue_rect(node, rect);
                     }
                     Command2D::RemoveNode { node } => {
+                        self.saw_2d_commands = true;
                         self.renderer_2d.remove_node(node);
                     }
                     Command2D::SetCamera { camera } => {
+                        self.saw_2d_commands = true;
                         self.renderer_2d.set_camera(camera);
                     }
                 },
@@ -277,10 +285,12 @@ impl PerroGraphics {
                         model,
                         skeleton,
                     } => {
+                        self.saw_3d_commands = true;
                         self.renderer_3d
                             .queue_draw(node, mesh, material, model, skeleton);
                     }
                     Command3D::DrawTerrain { node, model } => {
+                        self.saw_3d_commands = true;
                         self.renderer_3d.queue_terrain(node, model);
                     }
                     Command3D::DrawDebugPoint3D {
@@ -288,6 +298,7 @@ impl PerroGraphics {
                         position,
                         size,
                     } => {
+                        self.saw_3d_commands = true;
                         self.renderer_3d.queue_debug_point(node, position, size);
                     }
                     Command3D::DrawDebugLine3D {
@@ -296,28 +307,36 @@ impl PerroGraphics {
                         end,
                         thickness,
                     } => {
+                        self.saw_3d_commands = true;
                         self.renderer_3d
                             .queue_debug_line(node, start, end, thickness);
                     }
                     Command3D::SetCamera { camera } => {
+                        self.saw_3d_commands = true;
                         self.renderer_3d.set_camera(camera);
                     }
                     Command3D::SetAmbientLight { node, light } => {
+                        self.saw_3d_commands = true;
                         self.renderer_3d.set_ambient_light(node, light);
                     }
                     Command3D::SetRayLight { node, light } => {
+                        self.saw_3d_commands = true;
                         self.renderer_3d.set_ray_light(node, light);
                     }
                     Command3D::SetPointLight { node, light } => {
+                        self.saw_3d_commands = true;
                         self.renderer_3d.set_point_light(node, light);
                     }
                     Command3D::SetSpotLight { node, light } => {
+                        self.saw_3d_commands = true;
                         self.renderer_3d.set_spot_light(node, light);
                     }
                     Command3D::UpsertPointParticles { node, particles } => {
+                        self.saw_3d_commands = true;
                         self.particles_3d.queue_point_particles(node, *particles);
                     }
                     Command3D::RemoveNode { node } => {
+                        self.saw_3d_commands = true;
                         self.renderer_3d.remove_node(node);
                         self.particles_3d.remove_node(node);
                     }
@@ -472,6 +491,8 @@ impl GraphicsBackend for PerroGraphics {
                 rects_2d: self.renderer_2d.retained_rects(),
                 upload_2d: &upload,
                 sprites_2d: &self.retained_sprites_cache,
+                saw_2d_commands: self.saw_2d_commands,
+                saw_3d_commands: self.saw_3d_commands,
                 static_texture_lookup: self.static_texture_lookup,
                 static_mesh_lookup: self.static_mesh_lookup,
                 static_shader_lookup: self.static_shader_lookup,

@@ -227,7 +227,7 @@ script = "res://scripts/camera.rs"
        
 
         [Node3D]
-            position = (0, 0, 5)
+            position = (50, 0, 120)
         [/Node3D]
     [/Camera3D]
 [/camera]

@@ -125,8 +125,8 @@ struct PendingForce3D {
 }
 
 pub(crate) struct PhysicsState {
-    world_2d: PhysicsWorld2D,
-    world_3d: PhysicsWorld3D,
+    world_2d: Option<PhysicsWorld2D>,
+    world_3d: Option<PhysicsWorld3D>,
     active_collision_pairs_2d: AHashSet<BodyPair>,
     active_collision_pairs_3d: AHashSet<BodyPair>,
     active_area_overlaps_2d: AHashSet<AreaOverlap>,
@@ -173,8 +173,8 @@ struct PhysicsWorld3D {
 impl PhysicsState {
     pub(crate) fn new() -> Self {
         Self {
-            world_2d: PhysicsWorld2D::new(),
-            world_3d: PhysicsWorld3D::new(),
+            world_2d: None,
+            world_3d: None,
             active_collision_pairs_2d: AHashSet::default(),
             active_collision_pairs_3d: AHashSet::default(),
             active_area_overlaps_2d: AHashSet::default(),
@@ -188,8 +188,8 @@ impl PhysicsState {
     }
 
     pub(crate) fn clear(&mut self) {
-        self.world_2d = PhysicsWorld2D::new();
-        self.world_3d = PhysicsWorld3D::new();
+        self.world_2d = None;
+        self.world_3d = None;
         self.active_collision_pairs_2d.clear();
         self.active_collision_pairs_3d.clear();
         self.active_area_overlaps_2d.clear();
@@ -206,6 +206,7 @@ impl PhysicsState {
         self.next_opaque_handle = self.next_opaque_handle.saturating_add(1);
         handle
     }
+
 }
 
 impl Default for PhysicsState {
@@ -431,17 +432,27 @@ impl Runtime {
     }
 
     fn sync_world_2d(&mut self, bodies: &[BodyDesc2D]) {
+        if bodies.is_empty() {
+            if let Some(world) = self.physics.world_2d.take() {
+                let ids: Vec<NodeID> = world.body_map.keys().copied().collect();
+                for id in ids {
+                    self.set_body_handle_2d(id, None);
+                }
+            }
+            return;
+        }
+        let mut world = self
+            .physics
+            .world_2d
+            .take()
+            .unwrap_or_else(PhysicsWorld2D::new);
         let mut alive = AHashSet::default();
         for body in bodies {
             alive.insert(body.id);
-            if !self.physics.world_2d.body_map.contains_key(&body.id) {
-                let rb_handle = self
-                    .physics
-                    .world_2d
-                    .bodies
-                    .insert(build_rigid_body_2d(body));
+            if !world.body_map.contains_key(&body.id) {
+                let rb_handle = world.bodies.insert(build_rigid_body_2d(body));
                 let opaque = self.physics.alloc_opaque_handle();
-                self.physics.world_2d.body_map.insert(
+                world.body_map.insert(
                     body.id,
                     BodyState2D {
                         handle: rb_handle,
@@ -453,12 +464,12 @@ impl Runtime {
                 self.set_body_handle_2d(body.id, Some(opaque));
             }
 
-            let Some(state) = self.physics.world_2d.body_map.get_mut(&body.id) else {
+            let Some(state) = world.body_map.get_mut(&body.id) else {
                 continue;
             };
 
             state.kind = body.kind;
-            if let Some(rb) = self.physics.world_2d.bodies.get_mut(state.handle) {
+            if let Some(rb) = world.bodies.get_mut(state.handle) {
                 rb.set_enabled(body.enabled);
                 rb.set_body_type(
                     match body.kind {
@@ -483,11 +494,10 @@ impl Runtime {
             }
 
             for handle in state.colliders.drain(..) {
-                self.physics.world_2d.collider_owners.remove(&handle);
-                let _ = self.physics.world_2d.colliders.remove(
+                let _ = world.colliders.remove(
                     handle,
-                    &mut self.physics.world_2d.islands,
-                    &mut self.physics.world_2d.bodies,
+                    &mut world.islands,
+                    &mut world.bodies,
                     true,
                 );
             }
@@ -496,22 +506,17 @@ impl Runtime {
                 let Some(builder) = collider_builder_2d(shape) else {
                     continue;
                 };
-                let handle = self.physics.world_2d.colliders.insert_with_parent(
+                let handle = world.colliders.insert_with_parent(
                     builder,
                     state.handle,
-                    &mut self.physics.world_2d.bodies,
+                    &mut world.bodies,
                 );
-                self.physics
-                    .world_2d
-                    .collider_owners
-                    .insert(handle, body.id);
+                world.collider_owners.insert(handle, body.id);
                 state.colliders.push(handle);
             }
         }
 
-        let stale: Vec<NodeID> = self
-            .physics
-            .world_2d
+        let stale: Vec<NodeID> = world
             .body_map
             .keys()
             .copied()
@@ -519,35 +524,46 @@ impl Runtime {
             .collect();
 
         for id in stale {
-            if let Some(state) = self.physics.world_2d.body_map.remove(&id) {
+            if let Some(state) = world.body_map.remove(&id) {
                 for handle in &state.colliders {
-                    self.physics.world_2d.collider_owners.remove(handle);
+                    world.collider_owners.remove(handle);
                 }
-                let _ = self.physics.world_2d.bodies.remove(
+                let _ = world.bodies.remove(
                     state.handle,
-                    &mut self.physics.world_2d.islands,
-                    &mut self.physics.world_2d.colliders,
-                    &mut self.physics.world_2d.impulse_joints,
-                    &mut self.physics.world_2d.multibody_joints,
+                    &mut world.islands,
+                    &mut world.colliders,
+                    &mut world.impulse_joints,
+                    &mut world.multibody_joints,
                     true,
                 );
             }
             self.set_body_handle_2d(id, None);
         }
+        self.physics.world_2d = Some(world);
     }
 
     fn sync_world_3d(&mut self, bodies: &[BodyDesc3D]) {
+        if bodies.is_empty() {
+            if let Some(world) = self.physics.world_3d.take() {
+                let ids: Vec<NodeID> = world.body_map.keys().copied().collect();
+                for id in ids {
+                    self.set_body_handle_3d(id, None);
+                }
+            }
+            return;
+        }
+        let mut world = self
+            .physics
+            .world_3d
+            .take()
+            .unwrap_or_else(PhysicsWorld3D::new);
         let mut alive = AHashSet::default();
         for body in bodies {
             alive.insert(body.id);
-            if !self.physics.world_3d.body_map.contains_key(&body.id) {
-                let rb_handle = self
-                    .physics
-                    .world_3d
-                    .bodies
-                    .insert(build_rigid_body_3d(body));
+            if !world.body_map.contains_key(&body.id) {
+                let rb_handle = world.bodies.insert(build_rigid_body_3d(body));
                 let opaque = self.physics.alloc_opaque_handle();
-                self.physics.world_3d.body_map.insert(
+                world.body_map.insert(
                     body.id,
                     BodyState3D {
                         handle: rb_handle,
@@ -559,12 +575,12 @@ impl Runtime {
                 self.set_body_handle_3d(body.id, Some(opaque));
             }
 
-            let Some(state) = self.physics.world_3d.body_map.get_mut(&body.id) else {
+            let Some(state) = world.body_map.get_mut(&body.id) else {
                 continue;
             };
 
             state.kind = body.kind;
-            if let Some(rb) = self.physics.world_3d.bodies.get_mut(state.handle) {
+            if let Some(rb) = world.bodies.get_mut(state.handle) {
                 rb.set_enabled(body.enabled);
                 rb.set_body_type(
                     match body.kind {
@@ -600,11 +616,10 @@ impl Runtime {
             }
 
             for handle in state.colliders.drain(..) {
-                self.physics.world_3d.collider_owners.remove(&handle);
-                let _ = self.physics.world_3d.colliders.remove(
+                let _ = world.colliders.remove(
                     handle,
-                    &mut self.physics.world_3d.islands,
-                    &mut self.physics.world_3d.bodies,
+                    &mut world.islands,
+                    &mut world.bodies,
                     true,
                 );
             }
@@ -613,22 +628,17 @@ impl Runtime {
                 let Some(builder) = collider_builder_3d(shape) else {
                     continue;
                 };
-                let handle = self.physics.world_3d.colliders.insert_with_parent(
+                let handle = world.colliders.insert_with_parent(
                     builder,
                     state.handle,
-                    &mut self.physics.world_3d.bodies,
+                    &mut world.bodies,
                 );
-                self.physics
-                    .world_3d
-                    .collider_owners
-                    .insert(handle, body.id);
+                world.collider_owners.insert(handle, body.id);
                 state.colliders.push(handle);
             }
         }
 
-        let stale: Vec<NodeID> = self
-            .physics
-            .world_3d
+        let stale: Vec<NodeID> = world
             .body_map
             .keys()
             .copied()
@@ -636,36 +646,40 @@ impl Runtime {
             .collect();
 
         for id in stale {
-            if let Some(state) = self.physics.world_3d.body_map.remove(&id) {
+            if let Some(state) = world.body_map.remove(&id) {
                 for handle in &state.colliders {
-                    self.physics.world_3d.collider_owners.remove(handle);
+                    world.collider_owners.remove(handle);
                 }
-                let _ = self.physics.world_3d.bodies.remove(
+                let _ = world.bodies.remove(
                     state.handle,
-                    &mut self.physics.world_3d.islands,
-                    &mut self.physics.world_3d.colliders,
-                    &mut self.physics.world_3d.impulse_joints,
-                    &mut self.physics.world_3d.multibody_joints,
+                    &mut world.islands,
+                    &mut world.colliders,
+                    &mut world.impulse_joints,
+                    &mut world.multibody_joints,
                     true,
                 );
             }
             self.set_body_handle_3d(id, None);
         }
+        self.physics.world_3d = Some(world);
     }
 
     fn step_world_2d(&mut self) {
-        self.physics.world_2d.integration_parameters.dt = self.time.fixed_delta.max(0.000_1);
-        self.physics.world_2d.pipeline.step(
-            &self.physics.world_2d.gravity,
-            &self.physics.world_2d.integration_parameters,
-            &mut self.physics.world_2d.islands,
-            &mut self.physics.world_2d.broad_phase,
-            &mut self.physics.world_2d.narrow_phase,
-            &mut self.physics.world_2d.bodies,
-            &mut self.physics.world_2d.colliders,
-            &mut self.physics.world_2d.impulse_joints,
-            &mut self.physics.world_2d.multibody_joints,
-            &mut self.physics.world_2d.ccd_solver,
+        let Some(world) = self.physics.world_2d.as_mut() else {
+            return;
+        };
+        world.integration_parameters.dt = self.time.fixed_delta.max(0.000_1);
+        world.pipeline.step(
+            &world.gravity,
+            &world.integration_parameters,
+            &mut world.islands,
+            &mut world.broad_phase,
+            &mut world.narrow_phase,
+            &mut world.bodies,
+            &mut world.colliders,
+            &mut world.impulse_joints,
+            &mut world.multibody_joints,
+            &mut world.ccd_solver,
             None,
             &(),
             &(),
@@ -673,18 +687,21 @@ impl Runtime {
     }
 
     fn step_world_3d(&mut self) {
-        self.physics.world_3d.integration_parameters.dt = self.time.fixed_delta.max(0.000_1);
-        self.physics.world_3d.pipeline.step(
-            &self.physics.world_3d.gravity,
-            &self.physics.world_3d.integration_parameters,
-            &mut self.physics.world_3d.islands,
-            &mut self.physics.world_3d.broad_phase,
-            &mut self.physics.world_3d.narrow_phase,
-            &mut self.physics.world_3d.bodies,
-            &mut self.physics.world_3d.colliders,
-            &mut self.physics.world_3d.impulse_joints,
-            &mut self.physics.world_3d.multibody_joints,
-            &mut self.physics.world_3d.ccd_solver,
+        let Some(world) = self.physics.world_3d.as_mut() else {
+            return;
+        };
+        world.integration_parameters.dt = self.time.fixed_delta.max(0.000_1);
+        world.pipeline.step(
+            &world.gravity,
+            &world.integration_parameters,
+            &mut world.islands,
+            &mut world.broad_phase,
+            &mut world.narrow_phase,
+            &mut world.bodies,
+            &mut world.colliders,
+            &mut world.impulse_joints,
+            &mut world.multibody_joints,
+            &mut world.ccd_solver,
             None,
             &(),
             &(),
@@ -693,14 +710,17 @@ impl Runtime {
 
     fn apply_pending_impulses_2d(&mut self) {
         let mut pending = std::mem::take(&mut self.physics.pending_impulses_2d);
+        let Some(world) = self.physics.world_2d.as_mut() else {
+            return;
+        };
         for impulse in pending.drain(..) {
-            let Some(state) = self.physics.world_2d.body_map.get(&impulse.id) else {
+            let Some(state) = world.body_map.get(&impulse.id) else {
                 continue;
             };
             if state.kind != BodyKind::Rigid {
                 continue;
             }
-            let Some(rb) = self.physics.world_2d.bodies.get_mut(state.handle) else {
+            let Some(rb) = world.bodies.get_mut(state.handle) else {
                 continue;
             };
             let len_sq = impulse.direction.x * impulse.direction.x
@@ -722,15 +742,18 @@ impl Runtime {
 
     fn apply_pending_forces_2d(&mut self) {
         let mut pending = std::mem::take(&mut self.physics.pending_forces_2d);
+        let Some(world) = self.physics.world_2d.as_mut() else {
+            return;
+        };
         let dt = self.time.fixed_delta.max(0.000_1);
         for force in pending.drain(..) {
-            let Some(state) = self.physics.world_2d.body_map.get(&force.id) else {
+            let Some(state) = world.body_map.get(&force.id) else {
                 continue;
             };
             if state.kind != BodyKind::Rigid {
                 continue;
             }
-            let Some(rb) = self.physics.world_2d.bodies.get_mut(state.handle) else {
+            let Some(rb) = world.bodies.get_mut(state.handle) else {
                 continue;
             };
             let len_sq =
@@ -753,14 +776,17 @@ impl Runtime {
 
     fn apply_pending_impulses_3d(&mut self) {
         let mut pending = std::mem::take(&mut self.physics.pending_impulses_3d);
+        let Some(world) = self.physics.world_3d.as_mut() else {
+            return;
+        };
         for impulse in pending.drain(..) {
-            let Some(state) = self.physics.world_3d.body_map.get(&impulse.id) else {
+            let Some(state) = world.body_map.get(&impulse.id) else {
                 continue;
             };
             if state.kind != BodyKind::Rigid {
                 continue;
             }
-            let Some(rb) = self.physics.world_3d.bodies.get_mut(state.handle) else {
+            let Some(rb) = world.bodies.get_mut(state.handle) else {
                 continue;
             };
             let len_sq = impulse.direction.x * impulse.direction.x
@@ -784,15 +810,18 @@ impl Runtime {
 
     fn apply_pending_forces_3d(&mut self) {
         let mut pending = std::mem::take(&mut self.physics.pending_forces_3d);
+        let Some(world) = self.physics.world_3d.as_mut() else {
+            return;
+        };
         let dt = self.time.fixed_delta.max(0.000_1);
         for force in pending.drain(..) {
-            let Some(state) = self.physics.world_3d.body_map.get(&force.id) else {
+            let Some(state) = world.body_map.get(&force.id) else {
                 continue;
             };
             if state.kind != BodyKind::Rigid {
                 continue;
             }
-            let Some(rb) = self.physics.world_3d.bodies.get_mut(state.handle) else {
+            let Some(rb) = world.bodies.get_mut(state.handle) else {
                 continue;
             };
             let len_sq = force.direction.x * force.direction.x
@@ -816,16 +845,30 @@ impl Runtime {
     }
 
     fn sync_world_to_nodes_2d(&mut self) {
-        let ids: Vec<NodeID> = self.physics.world_2d.body_map.keys().copied().collect();
+        let Some(world) = self.physics.world_2d.as_ref() else {
+            return;
+        };
+        let ids: Vec<NodeID> = world.body_map.keys().copied().collect();
         for id in ids {
-            let Some(state) = self.physics.world_2d.body_map.get(&id).cloned() else {
+            let Some(state) = self
+                .physics
+                .world_2d
+                .as_ref()
+                .and_then(|w| w.body_map.get(&id))
+                .cloned()
+            else {
                 continue;
             };
             self.set_body_handle_2d(id, Some(state.opaque_handle));
             if state.kind != BodyKind::Rigid {
                 continue;
             }
-            let Some(body) = self.physics.world_2d.bodies.get(state.handle) else {
+            let Some(body) = self
+                .physics
+                .world_2d
+                .as_ref()
+                .and_then(|w| w.bodies.get(state.handle))
+            else {
                 continue;
             };
             let position = Vector2::new(body.translation().x, body.translation().y);
@@ -850,16 +893,30 @@ impl Runtime {
     }
 
     fn sync_world_to_nodes_3d(&mut self) {
-        let ids: Vec<NodeID> = self.physics.world_3d.body_map.keys().copied().collect();
+        let Some(world) = self.physics.world_3d.as_ref() else {
+            return;
+        };
+        let ids: Vec<NodeID> = world.body_map.keys().copied().collect();
         for id in ids {
-            let Some(state) = self.physics.world_3d.body_map.get(&id).cloned() else {
+            let Some(state) = self
+                .physics
+                .world_3d
+                .as_ref()
+                .and_then(|w| w.body_map.get(&id))
+                .cloned()
+            else {
                 continue;
             };
             self.set_body_handle_3d(id, Some(state.opaque_handle));
             if state.kind != BodyKind::Rigid {
                 continue;
             }
-            let Some(body) = self.physics.world_3d.bodies.get(state.handle) else {
+            let Some(body) = self
+                .physics
+                .world_3d
+                .as_ref()
+                .and_then(|w| w.bodies.get(state.handle))
+            else {
                 continue;
             };
             let position = Vector3::new(
@@ -911,17 +968,21 @@ impl Runtime {
     }
 
     fn emit_collision_signals_2d(&mut self) {
+        let Some(world) = self.physics.world_2d.as_ref() else {
+            self.physics.active_collision_pairs_2d.clear();
+            return;
+        };
         let mut current_pairs = AHashSet::default();
         let mut entered_pairs = Vec::new();
 
-        for pair in self.physics.world_2d.narrow_phase.contact_pairs() {
+        for pair in world.narrow_phase.contact_pairs() {
             if !pair.has_any_active_contact {
                 continue;
             }
-            let Some(&a) = self.physics.world_2d.collider_owners.get(&pair.collider1) else {
+            let Some(&a) = world.collider_owners.get(&pair.collider1) else {
                 continue;
             };
-            let Some(&b) = self.physics.world_2d.collider_owners.get(&pair.collider2) else {
+            let Some(&b) = world.collider_owners.get(&pair.collider2) else {
                 continue;
             };
             if a == b {
@@ -940,17 +1001,21 @@ impl Runtime {
     }
 
     fn emit_collision_signals_3d(&mut self) {
+        let Some(world) = self.physics.world_3d.as_ref() else {
+            self.physics.active_collision_pairs_3d.clear();
+            return;
+        };
         let mut current_pairs = AHashSet::default();
         let mut entered_pairs = Vec::new();
 
-        for pair in self.physics.world_3d.narrow_phase.contact_pairs() {
+        for pair in world.narrow_phase.contact_pairs() {
             if !pair.has_any_active_contact {
                 continue;
             }
-            let Some(&a) = self.physics.world_3d.collider_owners.get(&pair.collider1) else {
+            let Some(&a) = world.collider_owners.get(&pair.collider1) else {
                 continue;
             };
-            let Some(&b) = self.physics.world_3d.collider_owners.get(&pair.collider2) else {
+            let Some(&b) = world.collider_owners.get(&pair.collider2) else {
                 continue;
             };
             if a == b {
@@ -992,36 +1057,28 @@ impl Runtime {
     }
 
     fn emit_area_signals_2d(&mut self) {
+        let Some(world) = self.physics.world_2d.as_ref() else {
+            self.physics.active_area_overlaps_2d.clear();
+            return;
+        };
         let mut current = AHashSet::default();
 
-        for (collider_a, collider_b, intersecting) in
-            self.physics.world_2d.narrow_phase.intersection_pairs()
-        {
+        for (collider_a, collider_b, intersecting) in world.narrow_phase.intersection_pairs() {
             if !intersecting {
                 continue;
             }
-            let Some(&a) = self.physics.world_2d.collider_owners.get(&collider_a) else {
+            let Some(&a) = world.collider_owners.get(&collider_a) else {
                 continue;
             };
-            let Some(&b) = self.physics.world_2d.collider_owners.get(&collider_b) else {
+            let Some(&b) = world.collider_owners.get(&collider_b) else {
                 continue;
             };
             if a == b {
                 continue;
             }
 
-            let kind_a = self
-                .physics
-                .world_2d
-                .body_map
-                .get(&a)
-                .map(|state| state.kind);
-            let kind_b = self
-                .physics
-                .world_2d
-                .body_map
-                .get(&b)
-                .map(|state| state.kind);
+            let kind_a = world.body_map.get(&a).map(|state| state.kind);
+            let kind_b = world.body_map.get(&b).map(|state| state.kind);
 
             if kind_a == Some(BodyKind::Area) {
                 current.insert(AreaOverlap { area: a, other: b });
@@ -1035,36 +1092,28 @@ impl Runtime {
     }
 
     fn emit_area_signals_3d(&mut self) {
+        let Some(world) = self.physics.world_3d.as_ref() else {
+            self.physics.active_area_overlaps_3d.clear();
+            return;
+        };
         let mut current = AHashSet::default();
 
-        for (collider_a, collider_b, intersecting) in
-            self.physics.world_3d.narrow_phase.intersection_pairs()
-        {
+        for (collider_a, collider_b, intersecting) in world.narrow_phase.intersection_pairs() {
             if !intersecting {
                 continue;
             }
-            let Some(&a) = self.physics.world_3d.collider_owners.get(&collider_a) else {
+            let Some(&a) = world.collider_owners.get(&collider_a) else {
                 continue;
             };
-            let Some(&b) = self.physics.world_3d.collider_owners.get(&collider_b) else {
+            let Some(&b) = world.collider_owners.get(&collider_b) else {
                 continue;
             };
             if a == b {
                 continue;
             }
 
-            let kind_a = self
-                .physics
-                .world_3d
-                .body_map
-                .get(&a)
-                .map(|state| state.kind);
-            let kind_b = self
-                .physics
-                .world_3d
-                .body_map
-                .get(&b)
-                .map(|state| state.kind);
+            let kind_a = world.body_map.get(&a).map(|state| state.kind);
+            let kind_b = world.body_map.get(&b).map(|state| state.kind);
 
             if kind_a == Some(BodyKind::Area) {
                 current.insert(AreaOverlap { area: a, other: b });
