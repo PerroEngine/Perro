@@ -1,5 +1,6 @@
 use perro_ids::{IntoTagID, NodeID, TagID};
 use perro_nodes::{NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData};
+use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -293,6 +294,58 @@ pub trait NodeAPI {
 
     /// Executes a node query and returns matching node IDs.
     fn query_nodes(&mut self, query: TagQuery) -> Vec<NodeID>;
+
+    /// Returns the current global/world transform for a 2D spatial node.
+    fn get_global_transform_2d(&mut self, node_id: NodeID) -> Option<Transform2D>;
+
+    /// Returns the current global/world transform for a 3D spatial node.
+    fn get_global_transform_3d(&mut self, node_id: NodeID) -> Option<Transform3D>;
+
+    /// Sets a 2D node's local transform so its resulting global transform matches `global`.
+    fn set_global_transform_2d(&mut self, node_id: NodeID, global: Transform2D) -> bool;
+
+    /// Sets a 3D node's local transform so its resulting global transform matches `global`.
+    fn set_global_transform_3d(&mut self, node_id: NodeID, global: Transform3D) -> bool;
+
+    /// Converts a point from node-local 2D space to global/world 2D space.
+    fn to_global_point_2d(&mut self, node_id: NodeID, local: Vector2) -> Option<Vector2>;
+
+    /// Converts a point from global/world 2D space to node-local 2D space.
+    fn to_local_point_2d(&mut self, node_id: NodeID, global: Vector2) -> Option<Vector2>;
+
+    /// Converts a point from node-local 3D space to global/world 3D space.
+    fn to_global_point_3d(&mut self, node_id: NodeID, local: Vector3) -> Option<Vector3>;
+
+    /// Converts a point from global/world 3D space to node-local 3D space.
+    fn to_local_point_3d(&mut self, node_id: NodeID, global: Vector3) -> Option<Vector3>;
+
+    /// Converts a local 2D transform (relative to `node_id`) into global/world space.
+    fn to_global_transform_2d(
+        &mut self,
+        node_id: NodeID,
+        local: Transform2D,
+    ) -> Option<Transform2D>;
+
+    /// Converts a global/world 2D transform into local space relative to `node_id`.
+    fn to_local_transform_2d(
+        &mut self,
+        node_id: NodeID,
+        global: Transform2D,
+    ) -> Option<Transform2D>;
+
+    /// Converts a local 3D transform (relative to `node_id`) into global/world space.
+    fn to_global_transform_3d(
+        &mut self,
+        node_id: NodeID,
+        local: Transform3D,
+    ) -> Option<Transform3D>;
+
+    /// Converts a global/world 3D transform into local space relative to `node_id`.
+    fn to_local_transform_3d(
+        &mut self,
+        node_id: NodeID,
+        global: Transform3D,
+    ) -> Option<Transform3D>;
 }
 
 pub struct NodeModule<'rt, R: NodeAPI + ?Sized> {
@@ -429,6 +482,70 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
     pub fn query(&mut self, query: TagQuery) -> Vec<NodeID> {
         self.rt.query_nodes(query)
     }
+
+    pub fn get_global_transform_2d(&mut self, node_id: NodeID) -> Option<Transform2D> {
+        self.rt.get_global_transform_2d(node_id)
+    }
+
+    pub fn get_global_transform_3d(&mut self, node_id: NodeID) -> Option<Transform3D> {
+        self.rt.get_global_transform_3d(node_id)
+    }
+
+    pub fn set_global_transform_2d(&mut self, node_id: NodeID, global: Transform2D) -> bool {
+        self.rt.set_global_transform_2d(node_id, global)
+    }
+
+    pub fn set_global_transform_3d(&mut self, node_id: NodeID, global: Transform3D) -> bool {
+        self.rt.set_global_transform_3d(node_id, global)
+    }
+
+    pub fn to_global_point_2d(&mut self, node_id: NodeID, local: Vector2) -> Option<Vector2> {
+        self.rt.to_global_point_2d(node_id, local)
+    }
+
+    pub fn to_local_point_2d(&mut self, node_id: NodeID, global: Vector2) -> Option<Vector2> {
+        self.rt.to_local_point_2d(node_id, global)
+    }
+
+    pub fn to_global_point_3d(&mut self, node_id: NodeID, local: Vector3) -> Option<Vector3> {
+        self.rt.to_global_point_3d(node_id, local)
+    }
+
+    pub fn to_local_point_3d(&mut self, node_id: NodeID, global: Vector3) -> Option<Vector3> {
+        self.rt.to_local_point_3d(node_id, global)
+    }
+
+    pub fn to_global_transform_2d(
+        &mut self,
+        node_id: NodeID,
+        local: Transform2D,
+    ) -> Option<Transform2D> {
+        self.rt.to_global_transform_2d(node_id, local)
+    }
+
+    pub fn to_local_transform_2d(
+        &mut self,
+        node_id: NodeID,
+        global: Transform2D,
+    ) -> Option<Transform2D> {
+        self.rt.to_local_transform_2d(node_id, global)
+    }
+
+    pub fn to_global_transform_3d(
+        &mut self,
+        node_id: NodeID,
+        local: Transform3D,
+    ) -> Option<Transform3D> {
+        self.rt.to_global_transform_3d(node_id, local)
+    }
+
+    pub fn to_local_transform_3d(
+        &mut self,
+        node_id: NodeID,
+        global: Transform3D,
+    ) -> Option<Transform3D> {
+        self.rt.to_local_transform_3d(node_id, global)
+    }
 }
 
 /// Node access macros.
@@ -553,6 +670,7 @@ macro_rules! create_node {
 /// - hierarchy (`get_node_parent_id!`, `get_node_children_ids!`)
 /// - runtime typing (`get_node_type!`)
 /// - tags (`get_node_tags!`, `tag_set!`, `tag_add!`, `tag_remove!`)
+/// - global transform helpers (`get_global_transform_*`, `set_global_transform_*`, `to_*`)
 ///
 /// Gets node display name.
 /// Usage: `get_node_name!(ctx, node_id) -> Option<Cow<'static, str>>`.
@@ -648,6 +766,114 @@ macro_rules! reparent_multi {
 macro_rules! remove_node {
     ($ctx:expr, $id:expr) => {
         $ctx.Nodes().remove_node($id)
+    };
+}
+
+/// Gets global/world transform for a 2D spatial node.
+/// Usage: `get_global_transform_2d!(ctx, node_id) -> Option<Transform2D>`.
+#[macro_export]
+macro_rules! get_global_transform_2d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_global_transform_2d($id)
+    };
+}
+
+/// Gets global/world transform for a 3D spatial node.
+/// Usage: `get_global_transform_3d!(ctx, node_id) -> Option<Transform3D>`.
+#[macro_export]
+macro_rules! get_global_transform_3d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_global_transform_3d($id)
+    };
+}
+
+/// Sets global/world transform for a 2D spatial node.
+/// Usage: `set_global_transform_2d!(ctx, node_id, transform) -> bool`.
+#[macro_export]
+macro_rules! set_global_transform_2d {
+    ($ctx:expr, $id:expr, $transform:expr) => {
+        $ctx.Nodes().set_global_transform_2d($id, $transform)
+    };
+}
+
+/// Sets global/world transform for a 3D spatial node.
+/// Usage: `set_global_transform_3d!(ctx, node_id, transform) -> bool`.
+#[macro_export]
+macro_rules! set_global_transform_3d {
+    ($ctx:expr, $id:expr, $transform:expr) => {
+        $ctx.Nodes().set_global_transform_3d($id, $transform)
+    };
+}
+
+/// Converts local 2D point to global/world point.
+/// Usage: `to_global_point_2d!(ctx, node_id, local_point) -> Option<Vector2>`.
+#[macro_export]
+macro_rules! to_global_point_2d {
+    ($ctx:expr, $id:expr, $point:expr) => {
+        $ctx.Nodes().to_global_point_2d($id, $point)
+    };
+}
+
+/// Converts global/world 2D point to local point.
+/// Usage: `to_local_point_2d!(ctx, node_id, global_point) -> Option<Vector2>`.
+#[macro_export]
+macro_rules! to_local_point_2d {
+    ($ctx:expr, $id:expr, $point:expr) => {
+        $ctx.Nodes().to_local_point_2d($id, $point)
+    };
+}
+
+/// Converts local 3D point to global/world point.
+/// Usage: `to_global_point_3d!(ctx, node_id, local_point) -> Option<Vector3>`.
+#[macro_export]
+macro_rules! to_global_point_3d {
+    ($ctx:expr, $id:expr, $point:expr) => {
+        $ctx.Nodes().to_global_point_3d($id, $point)
+    };
+}
+
+/// Converts global/world 3D point to local point.
+/// Usage: `to_local_point_3d!(ctx, node_id, global_point) -> Option<Vector3>`.
+#[macro_export]
+macro_rules! to_local_point_3d {
+    ($ctx:expr, $id:expr, $point:expr) => {
+        $ctx.Nodes().to_local_point_3d($id, $point)
+    };
+}
+
+/// Converts local 2D transform to global/world transform.
+/// Usage: `to_global_transform_2d!(ctx, node_id, local_transform) -> Option<Transform2D>`.
+#[macro_export]
+macro_rules! to_global_transform_2d {
+    ($ctx:expr, $id:expr, $transform:expr) => {
+        $ctx.Nodes().to_global_transform_2d($id, $transform)
+    };
+}
+
+/// Converts global/world 2D transform to local transform.
+/// Usage: `to_local_transform_2d!(ctx, node_id, global_transform) -> Option<Transform2D>`.
+#[macro_export]
+macro_rules! to_local_transform_2d {
+    ($ctx:expr, $id:expr, $transform:expr) => {
+        $ctx.Nodes().to_local_transform_2d($id, $transform)
+    };
+}
+
+/// Converts local 3D transform to global/world transform.
+/// Usage: `to_global_transform_3d!(ctx, node_id, local_transform) -> Option<Transform3D>`.
+#[macro_export]
+macro_rules! to_global_transform_3d {
+    ($ctx:expr, $id:expr, $transform:expr) => {
+        $ctx.Nodes().to_global_transform_3d($id, $transform)
+    };
+}
+
+/// Converts global/world 3D transform to local transform.
+/// Usage: `to_local_transform_3d!(ctx, node_id, global_transform) -> Option<Transform3D>`.
+#[macro_export]
+macro_rules! to_local_transform_3d {
+    ($ctx:expr, $id:expr, $transform:expr) => {
+        $ctx.Nodes().to_local_transform_3d($id, $transform)
     };
 }
 

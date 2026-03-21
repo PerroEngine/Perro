@@ -16,6 +16,7 @@ Accessors:
 - `res.Materials()`
 - `res.Skeletons()`
 - `res.Terrain()`
+- `res.Accessibility()`
 
 ## Resource Modules
 
@@ -25,6 +26,7 @@ Accessors:
 - [Materials Module](resource_modules/materials.md)
 - [Skeletons Module](resource_modules/skeletons.md)
 - [Terrain Module](resource_modules/terrain.md)
+- [Accessibility Module](resource_modules/accessibility.md)
 
 Each module page contains:
 

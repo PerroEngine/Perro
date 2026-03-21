@@ -1,14 +1,32 @@
 use crate::sub_apis::{
-    AudioAPI, AudioModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule, SkeletonAPI,
-    SkeletonModule, TerrainAPI, TerrainModule, TextureAPI, TextureModule,
+    AccessibilityAPI, AccessibilityModule, AudioAPI, AudioModule, MaterialAPI, MaterialModule,
+    MeshAPI, MeshModule, SkeletonAPI, SkeletonModule, TerrainAPI, TerrainModule, TextureAPI,
+    TextureModule,
 };
+use perro_structs::ColorBlindFilter;
 
 pub trait ResourceAPI:
-    AudioAPI + TextureAPI + MeshAPI + MaterialAPI + SkeletonAPI + TerrainAPI + Send + Sync
+    AccessibilityAPI
+    + AudioAPI
+    + TextureAPI
+    + MeshAPI
+    + MaterialAPI
+    + SkeletonAPI
+    + TerrainAPI
+    + Send
+    + Sync
 {
 }
 impl<T> ResourceAPI for T where
-    T: AudioAPI + TextureAPI + MeshAPI + MaterialAPI + SkeletonAPI + TerrainAPI + Send + Sync
+    T: AccessibilityAPI
+        + AudioAPI
+        + TextureAPI
+        + MeshAPI
+        + MaterialAPI
+        + SkeletonAPI
+        + TerrainAPI
+        + Send
+        + Sync
 {
 }
 
@@ -50,5 +68,20 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceContext<'res, R> {
     #[inline]
     pub fn Terrain(&self) -> TerrainModule<'_, R> {
         TerrainModule::new(self.api)
+    }
+
+    #[inline]
+    pub fn Accessibility(&self) -> AccessibilityModule<'_, R> {
+        AccessibilityModule::new(self.api)
+    }
+
+    #[inline]
+    pub fn enable_colorblind_filter(&self, mode: ColorBlindFilter, strength: f32) {
+        self.api.enable_color_blind_filter(mode, strength);
+    }
+
+    #[inline]
+    pub fn disable_colorblind_filter(&self) {
+        self.api.disable_color_blind_filter();
     }
 }

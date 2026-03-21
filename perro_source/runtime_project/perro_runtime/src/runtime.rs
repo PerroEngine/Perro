@@ -765,7 +765,7 @@ impl Runtime {
         !self.dirty.has_transform_dirty(id, Spatial::ThreeD)
     }
 
-    fn get_global_transform_2d(&mut self, id: NodeID) -> Option<Transform2D> {
+    pub(crate) fn get_global_transform_2d(&mut self, id: NodeID) -> Option<Transform2D> {
         if id.is_nil() || self.nodes.get(id).is_none() {
             return None;
         }
@@ -842,7 +842,7 @@ impl Runtime {
         result
     }
 
-    fn get_global_transform_3d(&mut self, id: NodeID) -> Option<Transform3D> {
+    pub(crate) fn get_global_transform_3d(&mut self, id: NodeID) -> Option<Transform3D> {
         if id.is_nil() || self.nodes.get(id).is_none() {
             return None;
         }

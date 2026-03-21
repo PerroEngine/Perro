@@ -1,8 +1,10 @@
 use perro_ids::{IntoTagID, TagID};
 use perro_nodes::{
-    NodeBaseDispatch, NodeType, NodeTypeDispatch, Renderable, SceneNode, SceneNodeData,
+    Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, Renderable, SceneNode,
+    SceneNodeData,
 };
 use perro_runtime_context::sub_apis::{NodeAPI, TagQuery};
+use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
 
 use crate::Runtime;
@@ -410,4 +412,156 @@ impl NodeAPI for Runtime {
     fn query_nodes(&mut self, query: TagQuery) -> Vec<perro_ids::NodeID> {
         super::query::query_node_ids(&self.nodes, query, Some(&self.node_tag_index))
     }
+
+    fn get_global_transform_2d(&mut self, node_id: perro_ids::NodeID) -> Option<Transform2D> {
+        Runtime::get_global_transform_2d(self, node_id)
+    }
+
+    fn get_global_transform_3d(&mut self, node_id: perro_ids::NodeID) -> Option<Transform3D> {
+        Runtime::get_global_transform_3d(self, node_id)
+    }
+
+    fn set_global_transform_2d(&mut self, node_id: perro_ids::NodeID, global: Transform2D) -> bool {
+        let parent = match self.nodes.get(node_id) {
+            Some(node) => node.parent,
+            None => return false,
+        };
+        let parent_global = if parent.is_nil() {
+            None
+        } else {
+            self.nodes
+                .get(parent)
+                .and_then(|node| node.with_base_ref::<Node2D, _>(|_| ()))
+                .and_then(|_| Runtime::get_global_transform_2d(self, parent))
+        };
+        let local = match parent_global {
+            Some(parent_global) => {
+                let local_mat = parent_global.to_mat3().inverse() * global.to_mat3();
+                Transform2D::from_mat3(local_mat)
+            }
+            None => global,
+        };
+        self.with_base_node_mut::<Node2D, _, _>(node_id, |node| {
+            node.transform = local;
+        })
+        .is_some()
+    }
+
+    fn set_global_transform_3d(&mut self, node_id: perro_ids::NodeID, global: Transform3D) -> bool {
+        let parent = match self.nodes.get(node_id) {
+            Some(node) => node.parent,
+            None => return false,
+        };
+        let parent_global = if parent.is_nil() {
+            None
+        } else {
+            self.nodes
+                .get(parent)
+                .and_then(|node| node.with_base_ref::<Node3D, _>(|_| ()))
+                .and_then(|_| Runtime::get_global_transform_3d(self, parent))
+        };
+        let local = match parent_global {
+            Some(parent_global) => {
+                let local_mat = parent_global.to_mat4().inverse() * global.to_mat4();
+                Transform3D::from_mat4(local_mat)
+            }
+            None => global,
+        };
+        self.with_base_node_mut::<Node3D, _, _>(node_id, |node| {
+            node.transform = local;
+        })
+        .is_some()
+    }
+
+    fn to_global_point_2d(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        local: Vector2,
+    ) -> Option<Vector2> {
+        let global = Runtime::get_global_transform_2d(self, node_id)?;
+        let p = global.to_mat3() * glam::Vec3::new(local.x, local.y, 1.0);
+        Some(Vector2::new(p.x, p.y))
+    }
+
+    fn to_local_point_2d(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        global: Vector2,
+    ) -> Option<Vector2> {
+        let basis = Runtime::get_global_transform_2d(self, node_id)?
+            .to_mat3()
+            .inverse();
+        let p = basis * glam::Vec3::new(global.x, global.y, 1.0);
+        Some(Vector2::new(p.x, p.y))
+    }
+
+    fn to_global_point_3d(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        local: Vector3,
+    ) -> Option<Vector3> {
+        let global = Runtime::get_global_transform_3d(self, node_id)?;
+        let p = global.to_mat4().transform_point3(local.into());
+        Some(p.into())
+    }
+
+    fn to_local_point_3d(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        global: Vector3,
+    ) -> Option<Vector3> {
+        let basis = Runtime::get_global_transform_3d(self, node_id)?
+            .to_mat4()
+            .inverse();
+        let p = basis.transform_point3(global.into());
+        Some(p.into())
+    }
+
+    fn to_global_transform_2d(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        local: Transform2D,
+    ) -> Option<Transform2D> {
+        let global_basis = Runtime::get_global_transform_2d(self, node_id)?.to_mat3();
+        let world = global_basis * local.to_mat3();
+        Some(Transform2D::from_mat3(world))
+    }
+
+    fn to_local_transform_2d(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        global: Transform2D,
+    ) -> Option<Transform2D> {
+        let inv_basis = Runtime::get_global_transform_2d(self, node_id)?
+            .to_mat3()
+            .inverse();
+        let local = inv_basis * global.to_mat3();
+        Some(Transform2D::from_mat3(local))
+    }
+
+    fn to_global_transform_3d(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        local: Transform3D,
+    ) -> Option<Transform3D> {
+        let global_basis = Runtime::get_global_transform_3d(self, node_id)?.to_mat4();
+        let world = global_basis * local.to_mat4();
+        Some(Transform3D::from_mat4(world))
+    }
+
+    fn to_local_transform_3d(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        global: Transform3D,
+    ) -> Option<Transform3D> {
+        let inv_basis = Runtime::get_global_transform_3d(self, node_id)?
+            .to_mat4()
+            .inverse();
+        let local = inv_basis * global.to_mat4();
+        Some(Transform3D::from_mat4(local))
+    }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/rt_ctx_nodes_transform_api_tests.rs"]
+mod tests;

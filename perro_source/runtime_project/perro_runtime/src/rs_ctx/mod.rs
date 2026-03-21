@@ -1,3 +1,4 @@
+mod accessibility;
 mod audio;
 mod core;
 mod material;

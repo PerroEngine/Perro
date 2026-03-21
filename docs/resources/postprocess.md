@@ -6,6 +6,9 @@ effects are applied in sequence (stacked) and run after 3D + particles + 2D.
 If multiple cameras are active, the post chain used is the active 3D camera if present, otherwise
 the active 2D camera.
 
+Accessibility settings are separate from post-processing and run as a global final pass after this
+camera chain. See [Accessibility](accessibility.md).
+
 ## Built-In Effects
 
 - `blur` (`strength`)  

@@ -24,10 +24,13 @@ lifecycle!({
     fn on_init(
         &self,
         ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
+        res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         node: NodeID,
     ) {
+        //enable_colorblind_filter!(res, ColorBlindFilter::Deuteranopia, 0.8);
+        //enable_colorblind_filter!(res, ColorBlindFilter::Protanopia, 0.8);
+        //enable_colorblind_filter!(res, ColorBlindFilter::Tritanopia, 0.8);
     }
 
     fn on_all_init(
@@ -57,7 +60,7 @@ lifecycle!({
             requested_post = Some(Cow::Owned(vec![PostProcessEffect::Blur { strength: 4.0 }]));
         }
         if ipt.Keys().pressed(KeyCode::Digit2) {
-            requested_post = Some(Cow::Owned(vec![PostProcessEffect::Pixelate { size: 10.0 }]));
+            requested_post = Some(Cow::Owned(vec![PostProcessEffect::Pixelate { size: 6.0 }]));
         }
         if ipt.Keys().pressed(KeyCode::Digit3) {
             requested_post = Some(Cow::Owned(vec![PostProcessEffect::Warp {

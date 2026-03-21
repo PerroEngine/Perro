@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use perro_ids::{IntoTagID, NodeID, TagID};
 use perro_nodes::prelude::Node2D;
+use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::any::Any;
 
 struct DummyRuntime {
@@ -123,6 +124,94 @@ impl NodeAPI for DummyRuntime {
 
     fn query_nodes(&mut self, _query: TagQuery) -> Vec<NodeID> {
         Vec::new()
+    }
+
+    fn get_global_transform_2d(&mut self, _node_id: NodeID) -> Option<perro_structs::Transform2D> {
+        None
+    }
+
+    fn get_global_transform_3d(&mut self, _node_id: NodeID) -> Option<perro_structs::Transform3D> {
+        None
+    }
+
+    fn set_global_transform_2d(
+        &mut self,
+        _node_id: NodeID,
+        _global: perro_structs::Transform2D,
+    ) -> bool {
+        false
+    }
+
+    fn set_global_transform_3d(
+        &mut self,
+        _node_id: NodeID,
+        _global: perro_structs::Transform3D,
+    ) -> bool {
+        false
+    }
+
+    fn to_global_point_2d(
+        &mut self,
+        _node_id: NodeID,
+        _local: perro_structs::Vector2,
+    ) -> Option<perro_structs::Vector2> {
+        None
+    }
+
+    fn to_local_point_2d(
+        &mut self,
+        _node_id: NodeID,
+        _global: perro_structs::Vector2,
+    ) -> Option<perro_structs::Vector2> {
+        None
+    }
+
+    fn to_global_point_3d(
+        &mut self,
+        _node_id: NodeID,
+        _local: perro_structs::Vector3,
+    ) -> Option<perro_structs::Vector3> {
+        None
+    }
+
+    fn to_local_point_3d(
+        &mut self,
+        _node_id: NodeID,
+        _global: perro_structs::Vector3,
+    ) -> Option<perro_structs::Vector3> {
+        None
+    }
+
+    fn to_global_transform_2d(
+        &mut self,
+        _node_id: NodeID,
+        _local: perro_structs::Transform2D,
+    ) -> Option<perro_structs::Transform2D> {
+        None
+    }
+
+    fn to_local_transform_2d(
+        &mut self,
+        _node_id: NodeID,
+        _global: perro_structs::Transform2D,
+    ) -> Option<perro_structs::Transform2D> {
+        None
+    }
+
+    fn to_global_transform_3d(
+        &mut self,
+        _node_id: NodeID,
+        _local: perro_structs::Transform3D,
+    ) -> Option<perro_structs::Transform3D> {
+        None
+    }
+
+    fn to_local_transform_3d(
+        &mut self,
+        _node_id: NodeID,
+        _global: perro_structs::Transform3D,
+    ) -> Option<perro_structs::Transform3D> {
+        None
     }
 }
 
@@ -257,6 +346,78 @@ fn script_macros_typecheck_and_forward() {
     assert!(!reparent!(&mut ctx, NodeID::new(1), id));
     assert_eq!(reparent_multi!(&mut ctx, NodeID::new(1), [id]), 0);
     assert!(!remove_node!(&mut ctx, id));
+    assert_eq!(get_global_transform_2d!(&mut ctx, id), None);
+    assert_eq!(get_global_transform_3d!(&mut ctx, id), None);
+    assert!(!set_global_transform_2d!(
+        &mut ctx,
+        id,
+        Transform2D::new(Vector2::new(1.0, 2.0), 0.5, Vector2::ONE)
+    ));
+    assert!(!set_global_transform_3d!(
+        &mut ctx,
+        id,
+        Transform3D::new(
+            Vector3::new(1.0, 2.0, 3.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        )
+    ));
+    assert_eq!(
+        to_global_point_2d!(&mut ctx, id, Vector2::new(1.0, 0.0)),
+        None
+    );
+    assert_eq!(
+        to_local_point_2d!(&mut ctx, id, Vector2::new(1.0, 0.0)),
+        None
+    );
+    assert_eq!(
+        to_global_point_3d!(&mut ctx, id, Vector3::new(1.0, 0.0, 0.0)),
+        None
+    );
+    assert_eq!(
+        to_local_point_3d!(&mut ctx, id, Vector3::new(1.0, 0.0, 0.0)),
+        None
+    );
+    assert_eq!(
+        to_global_transform_2d!(
+            &mut ctx,
+            id,
+            Transform2D::new(Vector2::new(1.0, 2.0), 0.5, Vector2::ONE)
+        ),
+        None
+    );
+    assert_eq!(
+        to_local_transform_2d!(
+            &mut ctx,
+            id,
+            Transform2D::new(Vector2::new(1.0, 2.0), 0.5, Vector2::ONE)
+        ),
+        None
+    );
+    assert_eq!(
+        to_global_transform_3d!(
+            &mut ctx,
+            id,
+            Transform3D::new(
+                Vector3::new(1.0, 2.0, 3.0),
+                Quaternion::IDENTITY,
+                Vector3::ONE
+            )
+        ),
+        None
+    );
+    assert_eq!(
+        to_local_transform_3d!(
+            &mut ctx,
+            id,
+            Transform3D::new(
+                Vector3::new(1.0, 2.0, 3.0),
+                Quaternion::IDENTITY,
+                Vector3::ONE
+            )
+        ),
+        None
+    );
     assert!(!script_attach!(&mut ctx, id, "res://scripts/a.rs"));
     assert!(!script_detach!(&mut ctx, id));
     let member = var!("x");

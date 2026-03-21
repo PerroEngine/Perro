@@ -47,6 +47,21 @@ Metadata/hierarchy macros:
 - `reparent_multi!(ctx, parent_id, child_ids) -> usize`
 - `remove_node!(ctx, node_id) -> bool`
 
+Global transform macros:
+
+- `get_global_transform_2d!(ctx, node_id) -> Option<Transform2D>`
+- `get_global_transform_3d!(ctx, node_id) -> Option<Transform3D>`
+- `set_global_transform_2d!(ctx, node_id, global_transform) -> bool`
+- `set_global_transform_3d!(ctx, node_id, global_transform) -> bool`
+- `to_global_point_2d!(ctx, node_id, local_point) -> Option<Vector2>`
+- `to_local_point_2d!(ctx, node_id, global_point) -> Option<Vector2>`
+- `to_global_point_3d!(ctx, node_id, local_point) -> Option<Vector3>`
+- `to_local_point_3d!(ctx, node_id, global_point) -> Option<Vector3>`
+- `to_global_transform_2d!(ctx, node_id, local_transform) -> Option<Transform2D>`
+- `to_local_transform_2d!(ctx, node_id, global_transform) -> Option<Transform2D>`
+- `to_global_transform_3d!(ctx, node_id, local_transform) -> Option<Transform3D>`
+- `to_local_transform_3d!(ctx, node_id, global_transform) -> Option<Transform3D>`
+
 Tag/query macros:
 
 - `get_node_tags!(ctx, node_id) -> Option<Vec<TagID>>`
@@ -120,5 +135,23 @@ for id in ids {
     let _ = with_base_node_mut!(ctx, Node3D, id, |node| {
         node.transform.position.y += 0.1;
     });
+}
+```
+
+Global transform example:
+
+```rust
+// Read world transform
+if let Some(world) = get_global_transform_3d!(ctx, self_id) {
+    // Move 1 meter up in world space while keeping parent relation
+    let mut target = world;
+    target.position.y += 1.0;
+    let _ = set_global_transform_3d!(ctx, self_id, target);
+}
+
+// Convert a local offset to world point
+let muzzle_local = Vector3::new(0.0, 0.0, -1.0);
+if let Some(muzzle_world) = to_global_point_3d!(ctx, self_id, muzzle_local) {
+    // Use world-space point for spawning/projectiles/etc.
 }
 ```

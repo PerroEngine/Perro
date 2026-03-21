@@ -1,4 +1,5 @@
 use crate::{
+    accessibility::AccessibilityProcessor,
     backend::{OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup, StaticTextureLookup},
     postprocess::PostProcessor,
     resources::ResourceStore,
@@ -14,6 +15,7 @@ use crate::{
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{Camera3DState, PointParticles3DState, Sprite2DCommand};
+use perro_structs::AccessibilitySettings;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -38,6 +40,7 @@ pub struct Gpu {
     sample_count: u32,
     msaa_color: Option<MsaaColorTarget>,
     post: PostProcessor,
+    accessibility: AccessibilityProcessor,
     two_d: Gpu2D,
     three_d: Gpu3D,
     point_particles_3d: GpuPointParticles3D,
@@ -51,6 +54,7 @@ pub struct RenderFrame<'a> {
     pub point_particles_3d: &'a [(NodeID, PointParticles3DState)],
     pub camera_2d: Camera2DUniform,
     pub post_processing_2d: Arc<[perro_structs::PostProcessEffect]>,
+    pub accessibility: AccessibilitySettings,
     pub rects_2d: &'a [RectInstanceGpu],
     pub upload_2d: &'a RectUploadPlan,
     pub sprites_2d: &'a [Sprite2DCommand],
@@ -146,6 +150,7 @@ impl Gpu {
         let msaa_color =
             create_msaa_color_target(&device, render_format, width, height, sample_count);
         let post = PostProcessor::new(&device, render_format, width, height);
+        let accessibility = AccessibilityProcessor::new(&device, render_format, width, height);
 
         Some(Self {
             window_handle: window,
@@ -157,6 +162,7 @@ impl Gpu {
             sample_count,
             msaa_color,
             post,
+            accessibility,
             two_d,
             three_d,
             point_particles_3d,
@@ -175,6 +181,7 @@ impl Gpu {
         self.surface.configure(&self.device, &self.config);
         self.three_d.resize(&self.device, width, height);
         self.post.resize(&self.device, width, height);
+        self.accessibility.resize(&self.device, width, height);
         self.msaa_color = create_msaa_color_target(
             &self.device,
             self.render_format,
@@ -219,6 +226,7 @@ impl Gpu {
             point_particles_3d,
             camera_2d,
             post_processing_2d,
+            accessibility,
             rects_2d,
             upload_2d,
             sprites_2d,
@@ -293,9 +301,10 @@ impl Gpu {
             } else {
                 (camera_3d.post_processing.as_ref(), false)
             };
+        let accessibility_enabled = self.accessibility.has_settings(accessibility);
         let depth_prepass_needed = post_enabled && PostProcessor::uses_depth(post_chain);
         let scene_view = self.post.scene_view().clone();
-        let color_view = if post_enabled {
+        let color_view = if post_enabled || accessibility_enabled {
             self.msaa_color
                 .as_ref()
                 .map(|t| &t.view)
@@ -307,7 +316,7 @@ impl Gpu {
                 .unwrap_or(&swap_view)
         };
         let resolve_view = if self.sample_count > 1 {
-            if post_enabled {
+            if post_enabled || accessibility_enabled {
                 Some(&scene_view)
             } else {
                 Some(&swap_view)
@@ -345,15 +354,34 @@ impl Gpu {
 
         self.queue.submit(Some(encoder.finish()));
         if post_enabled {
+            let post_target = if accessibility_enabled {
+                self.accessibility.intermediate_view()
+            } else {
+                &swap_view
+            };
             self.post.apply_chain(
                 &self.device,
                 &self.queue,
                 &scene_view,
                 self.three_d.depth_prepass_view(),
-                &swap_view,
+                post_target,
                 post_chain,
                 &camera_3d,
                 static_shader_lookup,
+            );
+        }
+        if accessibility_enabled {
+            let accessibility_input_view = if post_enabled {
+                self.accessibility.intermediate_view().clone()
+            } else {
+                scene_view.clone()
+            };
+            self.accessibility.apply(
+                &self.device,
+                &self.queue,
+                &accessibility_input_view,
+                &swap_view,
+                accessibility,
             );
         }
         frame.present();

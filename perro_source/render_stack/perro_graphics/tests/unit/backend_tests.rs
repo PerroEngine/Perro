@@ -3,9 +3,10 @@ use crate::backend::GraphicsBackend;
 use crate::three_d::renderer::Draw3DKind;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
-    Camera3DState, CameraProjectionState, Command2D, Command3D, Material3D, RenderBridge,
-    RenderCommand, ResourceCommand, Sprite2DCommand,
+    AccessibilityCommand, Camera3DState, CameraProjectionState, Command2D, Command3D, Material3D,
+    RenderBridge, RenderCommand, ResourceCommand, Sprite2DCommand,
 };
+use perro_structs::ColorBlindFilter;
 use std::sync::Arc;
 
 #[test]
@@ -424,4 +425,29 @@ fn rejected_sprite_texture_swap_keeps_previous_texture_binding() {
             z_index: 7,
         })
     );
+}
+
+#[test]
+fn accessibility_command_updates_global_accessibility_state() {
+    let mut graphics = PerroGraphics::new();
+    graphics.submit(RenderCommand::Accessibility(
+        AccessibilityCommand::EnableColorBlind {
+            mode: ColorBlindFilter::Deuteranopia,
+            strength: 0.75,
+        },
+    ));
+    graphics.draw_frame();
+
+    let filter = graphics
+        .accessibility
+        .color_blind
+        .expect("color blind filter should be enabled");
+    assert_eq!(filter.filter, ColorBlindFilter::Deuteranopia);
+    assert_eq!(filter.strength, 0.75);
+
+    graphics.submit(RenderCommand::Accessibility(
+        AccessibilityCommand::DisableColorBlind,
+    ));
+    graphics.draw_frame();
+    assert_eq!(graphics.accessibility.color_blind, None);
 }

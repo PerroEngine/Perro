@@ -1,6 +1,6 @@
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 pub use perro_particle_math::Op as ParticleExprOp3D;
-use perro_structs::PostProcessEffect;
+use perro_structs::{ColorBlindFilter, PostProcessEffect};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -606,6 +606,13 @@ pub enum RenderCommand {
     Resource(ResourceCommand),
     TwoD(Command2D),
     ThreeD(Box<Command3D>),
+    Accessibility(AccessibilityCommand),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AccessibilityCommand {
+    EnableColorBlind { mode: ColorBlindFilter, strength: f32 },
+    DisableColorBlind,
 }
 
 #[derive(Debug, Clone)]

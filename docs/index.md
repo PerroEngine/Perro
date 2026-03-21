@@ -16,3 +16,4 @@
 - [`.ppart` Format](resources/ppart.md)
 - [`.pskel` Format](resources/pskel.md)
 - [Post Processing](resources/postprocess.md)
+- [Accessibility](resources/accessibility.md)

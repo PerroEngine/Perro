@@ -3,6 +3,7 @@ pub mod sub_apis;
 
 pub use perro_ids;
 pub use perro_nodes;
+pub use perro_structs;
 pub use perro_variant;
 
 pub use api::RuntimeContext;
@@ -16,11 +17,15 @@ pub mod prelude {
     };
     pub use crate::{
         attribute, attributes_of, call_method, create_node, delta_time, elapsed_time,
-        fixed_delta_time, get_node_children_ids, get_node_name, get_node_parent_id, get_node_tags,
-        get_node_type, get_var, has_attribute, member, members_with, query, query_first,
-        remove_node, reparent, reparent_multi, script_attach, script_detach, set_node_name,
-        set_var, signal_connect, signal_disconnect, signal_emit, tag_add, tag_remove, tag_set,
-        with_base_node, with_base_node_mut, with_node, with_node_mut, with_state, with_state_mut,
+        fixed_delta_time, get_global_transform_2d, get_global_transform_3d, get_node_children_ids,
+        get_node_name, get_node_parent_id, get_node_tags, get_node_type, get_var, has_attribute,
+        member, members_with, query, query_first, remove_node, reparent, reparent_multi,
+        script_attach, script_detach, set_global_transform_2d, set_global_transform_3d,
+        set_node_name, set_var, signal_connect, signal_disconnect, signal_emit, tag_add,
+        tag_remove, tag_set, to_global_point_2d, to_global_point_3d, to_global_transform_2d,
+        to_global_transform_3d, to_local_point_2d, to_local_point_3d, to_local_transform_2d,
+        to_local_transform_3d, with_base_node, with_base_node_mut, with_node, with_node_mut,
+        with_state, with_state_mut,
     };
     pub use perro_ids::{func, method, sid, signal, smid, tag, tags, var};
     pub use perro_variant::{params, variant};

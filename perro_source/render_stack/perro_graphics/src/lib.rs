@@ -1,3 +1,4 @@
+mod accessibility;
 mod backend;
 mod gpu;
 mod postprocess;
