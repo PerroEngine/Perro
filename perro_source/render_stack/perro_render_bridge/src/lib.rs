@@ -1,6 +1,6 @@
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 pub use perro_particle_math::Op as ParticleExprOp3D;
-use perro_structs::{ColorBlindFilter, PostProcessEffect};
+use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -606,7 +606,21 @@ pub enum RenderCommand {
     Resource(ResourceCommand),
     TwoD(Command2D),
     ThreeD(Box<Command3D>),
+    PostProcessing(PostProcessingCommand),
     VisualAccessibility(VisualAccessibilityCommand),
+}
+
+#[derive(Debug, Clone)]
+pub enum PostProcessingCommand {
+    SetGlobal(PostProcessSet),
+    AddGlobalNamed {
+        name: Cow<'static, str>,
+        effect: PostProcessEffect,
+    },
+    AddGlobalUnnamed(PostProcessEffect),
+    RemoveGlobalByName(Cow<'static, str>),
+    RemoveGlobalByIndex(usize),
+    ClearGlobal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

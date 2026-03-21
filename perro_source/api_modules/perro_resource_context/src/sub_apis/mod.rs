@@ -1,3 +1,4 @@
+mod post_processing;
 mod visual_accessibility;
 mod audio;
 mod material;
@@ -6,6 +7,7 @@ mod skeleton;
 mod terrain;
 mod texture;
 
+pub use post_processing::PostProcessingAPI;
 pub use visual_accessibility::VisualAccessibilityAPI;
 pub use audio::{Audio, AudioAPI, AudioModule, bus_id};
 pub use material::{MaterialAPI, MaterialModule};

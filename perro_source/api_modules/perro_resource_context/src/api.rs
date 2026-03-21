@@ -1,12 +1,14 @@
 use crate::sub_apis::{
+    PostProcessingAPI,
     VisualAccessibilityAPI, AudioAPI, AudioModule, MaterialAPI, MaterialModule,
     MeshAPI, MeshModule, SkeletonAPI, SkeletonModule, TerrainAPI, TerrainModule, TextureAPI,
     TextureModule,
 };
-use perro_structs::ColorBlindFilter;
+use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet};
 
 pub trait ResourceAPI:
-    VisualAccessibilityAPI
+    PostProcessingAPI
+    + VisualAccessibilityAPI
     + AudioAPI
     + TextureAPI
     + MeshAPI
@@ -18,7 +20,8 @@ pub trait ResourceAPI:
 {
 }
 impl<T> ResourceAPI for T where
-    T: VisualAccessibilityAPI
+    T: PostProcessingAPI
+        + VisualAccessibilityAPI
         + AudioAPI
         + TextureAPI
         + MeshAPI
@@ -78,5 +81,39 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceContext<'res, R> {
     #[inline]
     pub fn disable_colorblind_filter(&self) {
         self.api.disable_color_blind_filter();
+    }
+
+    #[inline]
+    pub fn set_global_post_processing(&self, set: PostProcessSet) {
+        self.api.set_global_post_processing(set);
+    }
+
+    #[inline]
+    pub fn add_global_post_processing_named(
+        &self,
+        name: impl Into<std::borrow::Cow<'static, str>>,
+        effect: PostProcessEffect,
+    ) {
+        self.api.add_global_post_processing_named(name.into(), effect);
+    }
+
+    #[inline]
+    pub fn add_global_post_processing(&self, effect: PostProcessEffect) {
+        self.api.add_global_post_processing(effect);
+    }
+
+    #[inline]
+    pub fn remove_global_post_processing_by_name(&self, name: &str) -> bool {
+        self.api.remove_global_post_processing_by_name(name)
+    }
+
+    #[inline]
+    pub fn remove_global_post_processing_by_index(&self, index: usize) -> bool {
+        self.api.remove_global_post_processing_by_index(index)
+    }
+
+    #[inline]
+    pub fn clear_global_post_processing(&self) {
+        self.api.clear_global_post_processing();
     }
 }

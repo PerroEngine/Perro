@@ -16,6 +16,8 @@ Accessors:
 - `res.Materials()`
 - `res.Skeletons()`
 - `res.Terrain()`
+- Direct global post-processing methods (no accessor)
+- Direct visual accessibility methods (no accessor)
 
 ## Resource Modules
 
@@ -25,6 +27,8 @@ Accessors:
 - [Materials Module](resource_modules/materials.md)
 - [Skeletons Module](resource_modules/skeletons.md)
 - [Terrain Module](resource_modules/terrain.md)
+- [Global Post Processing](resource_modules/post_processing.md)
+- [Visual Accessibility](resource_modules/visual_accessibility.md)
 
 Each module page contains:
 

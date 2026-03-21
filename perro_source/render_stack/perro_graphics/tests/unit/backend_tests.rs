@@ -3,10 +3,10 @@ use crate::backend::GraphicsBackend;
 use crate::three_d::renderer::Draw3DKind;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
-    VisualAccessibilityCommand, Camera3DState, CameraProjectionState, Command2D, Command3D, Material3D,
-    RenderBridge, RenderCommand, ResourceCommand, Sprite2DCommand,
+    PostProcessingCommand, VisualAccessibilityCommand, Camera3DState, CameraProjectionState, Command2D,
+    Command3D, Material3D, RenderBridge, RenderCommand, ResourceCommand, Sprite2DCommand,
 };
-use perro_structs::ColorBlindFilter;
+use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
 
 #[test]
@@ -450,4 +450,56 @@ fn accessibility_command_updates_global_accessibility_state() {
     ));
     graphics.draw_frame();
     assert_eq!(graphics.accessibility.color_blind, None);
+}
+
+#[test]
+fn post_processing_commands_update_global_post_processing_state() {
+    let mut graphics = PerroGraphics::new();
+    graphics.submit(RenderCommand::PostProcessing(
+        PostProcessingCommand::AddGlobalNamed {
+            name: "crt".into(),
+            effect: PostProcessEffect::Crt {
+                scanline_strength: 0.25,
+                curvature: 0.1,
+                chromatic: 0.5,
+                vignette: 0.2,
+            },
+        },
+    ));
+    graphics.submit(RenderCommand::PostProcessing(
+        PostProcessingCommand::AddGlobalUnnamed(PostProcessEffect::Bloom {
+            strength: 0.7,
+            threshold: 0.8,
+            radius: 1.2,
+        }),
+    ));
+    graphics.draw_frame();
+
+    assert_eq!(graphics.global_post_processing.len(), 2);
+    assert!(matches!(
+        graphics.global_post_processing.get("crt"),
+        Some(PostProcessEffect::Crt { .. })
+    ));
+
+    graphics.submit(RenderCommand::PostProcessing(
+        PostProcessingCommand::RemoveGlobalByName("crt".into()),
+    ));
+    graphics.submit(RenderCommand::PostProcessing(
+        PostProcessingCommand::RemoveGlobalByIndex(0),
+    ));
+    graphics.draw_frame();
+    assert!(graphics.global_post_processing.is_empty());
+
+    let set = PostProcessSet::from_effects(vec![PostProcessEffect::Blur { strength: 2.0 }]);
+    graphics.submit(RenderCommand::PostProcessing(
+        PostProcessingCommand::SetGlobal(set),
+    ));
+    graphics.draw_frame();
+    assert_eq!(graphics.global_post_processing.len(), 1);
+
+    graphics.submit(RenderCommand::PostProcessing(
+        PostProcessingCommand::ClearGlobal,
+    ));
+    graphics.draw_frame();
+    assert!(graphics.global_post_processing.is_empty());
 }

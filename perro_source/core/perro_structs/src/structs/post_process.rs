@@ -186,13 +186,16 @@ impl PostProcessSet {
 
     pub fn remove(&mut self, name: &str) -> Option<PostProcessEffect> {
         let idx = self.names.iter().position(|n| n.as_deref() == Some(name))?;
-        let names = self.names.to_mut();
-        let effects = self.effects.to_mut();
-        if idx >= effects.len() || idx >= names.len() {
+        self.remove_index(idx)
+    }
+
+    pub fn remove_index(&mut self, index: usize) -> Option<PostProcessEffect> {
+        self.sync_lengths();
+        if index >= self.effects.len() {
             return None;
         }
-        names.remove(idx);
-        Some(effects.remove(idx))
+        self.names.to_mut().remove(index);
+        Some(self.effects.to_mut().remove(index))
     }
 
     pub fn rename(&mut self, old: &str, new: impl Into<Cow<'static, str>>) -> bool {

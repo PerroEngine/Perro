@@ -54,6 +54,7 @@ pub struct RenderFrame<'a> {
     pub point_particles_3d: &'a [(NodeID, PointParticles3DState)],
     pub camera_2d: Camera2DUniform,
     pub post_processing_2d: Arc<[perro_structs::PostProcessEffect]>,
+    pub post_processing_global: Arc<[perro_structs::PostProcessEffect]>,
     pub accessibility: VisualAccessibilitySettings,
     pub rects_2d: &'a [RectInstanceGpu],
     pub upload_2d: &'a RectUploadPlan,
@@ -227,6 +228,7 @@ impl Gpu {
             point_particles_3d,
             camera_2d,
             post_processing_2d,
+            post_processing_global,
             accessibility,
             rects_2d,
             upload_2d,
@@ -294,7 +296,7 @@ impl Gpu {
         let swap_view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let (post_chain, post_enabled) =
+        let (camera_post_chain, camera_post_enabled) =
             if PostProcessor::has_effects(camera_3d.post_processing.as_ref()) {
                 (camera_3d.post_processing.as_ref(), true)
             } else if PostProcessor::has_effects(post_processing_2d.as_ref()) {
@@ -302,8 +304,13 @@ impl Gpu {
             } else {
                 (camera_3d.post_processing.as_ref(), false)
             };
+        let global_post_chain = post_processing_global.as_ref();
+        let global_post_enabled = PostProcessor::has_effects(global_post_chain);
+        let post_enabled = camera_post_enabled || global_post_enabled;
         let accessibility_enabled = self.accessibility.has_settings(accessibility);
-        let depth_prepass_needed = post_enabled && PostProcessor::uses_depth(post_chain);
+        let depth_prepass_needed = (camera_post_enabled
+            && PostProcessor::uses_depth(camera_post_chain))
+            || (global_post_enabled && PostProcessor::uses_depth(global_post_chain));
         let scene_view = self.post.scene_view().clone();
         let color_view = if post_enabled || accessibility_enabled {
             self.msaa_color
@@ -354,7 +361,39 @@ impl Gpu {
         );
 
         self.queue.submit(Some(encoder.finish()));
-        if post_enabled {
+        if camera_post_enabled && global_post_enabled {
+            let camera_post_target = self.accessibility.intermediate_view();
+            self.post.apply_chain(
+                &self.device,
+                &self.queue,
+                &scene_view,
+                self.three_d.depth_prepass_view(),
+                camera_post_target,
+                camera_post_chain,
+                &camera_3d,
+                static_shader_lookup,
+            );
+            let global_post_target = if accessibility_enabled {
+                &scene_view
+            } else {
+                &swap_view
+            };
+            self.post.apply_chain(
+                &self.device,
+                &self.queue,
+                camera_post_target,
+                self.three_d.depth_prepass_view(),
+                global_post_target,
+                global_post_chain,
+                &camera_3d,
+                static_shader_lookup,
+            );
+        } else if camera_post_enabled || global_post_enabled {
+            let (post_chain, post_input) = if camera_post_enabled {
+                (camera_post_chain, &scene_view)
+            } else {
+                (global_post_chain, &scene_view)
+            };
             let post_target = if accessibility_enabled {
                 self.accessibility.intermediate_view()
             } else {
@@ -363,7 +402,7 @@ impl Gpu {
             self.post.apply_chain(
                 &self.device,
                 &self.queue,
-                &scene_view,
+                post_input,
                 self.three_d.depth_prepass_view(),
                 post_target,
                 post_chain,
@@ -372,7 +411,9 @@ impl Gpu {
             );
         }
         if accessibility_enabled {
-            let accessibility_input_view = if post_enabled {
+            let accessibility_input_view = if camera_post_enabled && global_post_enabled {
+                scene_view.clone()
+            } else if post_enabled {
                 self.accessibility.intermediate_view().clone()
             } else {
                 scene_view.clone()

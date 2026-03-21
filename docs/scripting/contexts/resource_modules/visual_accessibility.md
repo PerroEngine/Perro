@@ -30,7 +30,7 @@ Behavior:
 
 - Visual accessibility is global (not per camera).
 - Only one color-blind filter can be active at a time.
-- Visual accessibility is applied after camera post-processing as the final render pass.
+- Visual accessibility is applied after camera and global post-processing as the final render pass.
 
 Example:
 

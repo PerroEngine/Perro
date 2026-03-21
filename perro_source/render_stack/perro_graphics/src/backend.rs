@@ -8,10 +8,10 @@ use crate::{
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{
-    VisualAccessibilityCommand, Command2D, Command3D, PointParticles3DState, RenderBridge, RenderCommand,
-    RenderEvent, ResourceCommand, Sprite2DCommand,
+    PostProcessingCommand, VisualAccessibilityCommand, Command2D, Command3D, PointParticles3DState,
+    RenderBridge, RenderCommand, RenderEvent, ResourceCommand, Sprite2DCommand,
 };
-use perro_structs::VisualAccessibilitySettings;
+use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -71,6 +71,7 @@ pub struct PerroGraphics {
     retained_draws_cache: Vec<Draw3DInstance>,
     retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,
     retained_sprites_cache: Vec<Sprite2DCommand>,
+    global_post_processing: PostProcessSet,
     accessibility: VisualAccessibilitySettings,
     frame_index: u32,
 }
@@ -99,6 +100,7 @@ impl PerroGraphics {
             retained_draws_cache: Vec::new(),
             retained_point_particles_cache: Vec::new(),
             retained_sprites_cache: Vec::new(),
+            global_post_processing: PostProcessSet::new(),
             accessibility: VisualAccessibilitySettings::default(),
             frame_index: 0,
         }
@@ -329,6 +331,26 @@ impl PerroGraphics {
                         self.accessibility.color_blind = None;
                     }
                 },
+                RenderCommand::PostProcessing(command) => match command {
+                    PostProcessingCommand::SetGlobal(set) => {
+                        self.global_post_processing = set;
+                    }
+                    PostProcessingCommand::AddGlobalNamed { name, effect } => {
+                        self.global_post_processing.add(name, effect);
+                    }
+                    PostProcessingCommand::AddGlobalUnnamed(effect) => {
+                        self.global_post_processing.add_unnamed(effect);
+                    }
+                    PostProcessingCommand::RemoveGlobalByName(name) => {
+                        self.global_post_processing.remove(name.as_ref());
+                    }
+                    PostProcessingCommand::RemoveGlobalByIndex(index) => {
+                        self.global_post_processing.remove_index(index);
+                    }
+                    PostProcessingCommand::ClearGlobal => {
+                        self.global_post_processing.clear();
+                    }
+                },
             }
         }
     }
@@ -445,6 +467,7 @@ impl GraphicsBackend for PerroGraphics {
                 point_particles_3d: &self.retained_point_particles_cache,
                 camera_2d,
                 post_processing_2d: camera_2d_state.post_processing.clone(),
+                post_processing_global: self.global_post_processing.as_slice().into(),
                 accessibility: self.accessibility,
                 rects_2d: self.renderer_2d.retained_rects(),
                 upload_2d: &upload,

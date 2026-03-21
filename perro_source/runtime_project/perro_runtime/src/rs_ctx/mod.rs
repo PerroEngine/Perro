@@ -1,3 +1,4 @@
+mod post_processing;
 mod visual_accessibility;
 mod audio;
 mod core;

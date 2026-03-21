@@ -1,13 +1,17 @@
 # Post Processing
 
-Post-processing is configured **per camera** using `post_processing`. This is an **ordered chain**:
-effects are applied in sequence (stacked) and run after 3D + particles + 2D.
+Post-processing can be configured as:
+
+- **Per camera** using `post_processing` on `Camera2D`/`Camera3D`.
+- **Global** using `ResourceContext` post-processing methods/macros.
+
+Each chain is ordered: effects are applied in sequence (stacked) and run after 3D + particles + 2D.
 
 If multiple cameras are active, the post chain used is the active 3D camera if present, otherwise
 the active 2D camera.
 
-Visual accessibility settings are separate from post-processing and run as a global final pass after this
-camera chain. See [Visual Accessibility](visual_accessibility.md).
+Visual accessibility settings are separate from post-processing and run as a global final pass after
+camera + global post-processing. See [Visual Accessibility](visual_accessibility.md).
 
 ## Built-In Effects
 
