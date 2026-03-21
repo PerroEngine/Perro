@@ -66,11 +66,11 @@ Lights:
 Post-processing is configured per camera using `post_processing`.
 See `docs/resources/postprocess.md` for full details and examples.
 
-## Accessibility
+## Visual Accessibility
 
-Accessibility is configured globally through `ResourceContext` (not per-camera).
+Visual accessibility is configured globally through `ResourceContext` (not per-camera).
 It runs after camera post-processing as the final pass.
-See [Accessibility](../resources/accessibility.md).
+See [Visual Accessibility](../resources/visual_accessibility.md).
 
 ## Bone3D
 

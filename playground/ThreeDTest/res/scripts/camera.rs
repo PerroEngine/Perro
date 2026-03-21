@@ -28,9 +28,11 @@ lifecycle!({
         _ipt: &InputContext<'_, IP>,
         node: NodeID,
     ) {
-        //enable_colorblind_filter!(res, ColorBlindFilter::Deuteranopia, 0.8);
-        //enable_colorblind_filter!(res, ColorBlindFilter::Protanopia, 0.8);
-        //enable_colorblind_filter!(res, ColorBlindFilter::Tritanopia, 0.8);
+        //enable_colorblind_filter!(res, ColorBlindFilter::Protan, 0.8);
+        //enable_colorblind_filter!(res, ColorBlindFilter::Deuteran, 0.8);
+        //enable_colorblind_filter!(res, ColorBlindFilter::Tritan, 0.8);
+        enable_colorblind_filter!(res, ColorBlindFilter::Achroma, 0.8);
+        
     }
 
     fn on_all_init(

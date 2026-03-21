@@ -1,6 +1,6 @@
 use self::shaders::create_accessibility_shader_module;
 use bytemuck::{Pod, Zeroable};
-use perro_structs::{AccessibilitySettings, ColorBlindFilter};
+use perro_structs::{VisualAccessibilitySettings, ColorBlindFilter};
 
 mod shaders;
 
@@ -14,7 +14,7 @@ struct AccessibilityUniform {
     params0: [f32; 4],
 }
 
-pub struct AccessibilityProcessor {
+pub struct VisualAccessibilityProcessor {
     format: wgpu::TextureFormat,
     width: u32,
     height: u32,
@@ -26,7 +26,7 @@ pub struct AccessibilityProcessor {
     uniform_buffer: wgpu::Buffer,
 }
 
-impl AccessibilityProcessor {
+impl VisualAccessibilityProcessor {
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
@@ -34,9 +34,9 @@ impl AccessibilityProcessor {
         height: u32,
     ) -> Self {
         let (intermediate_texture, intermediate_view) =
-            create_color_target(device, format, width, height, "perro_accessibility_intermediate");
+            create_color_target(device, format, width, height, "perro_visual_accessibility_intermediate");
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("perro_accessibility_sampler"),
+            label: Some("perro_visual_accessibility_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -46,7 +46,7 @@ impl AccessibilityProcessor {
             ..Default::default()
         });
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("perro_accessibility_bgl"),
+            label: Some("perro_visual_accessibility_bgl"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -82,19 +82,19 @@ impl AccessibilityProcessor {
             ],
         });
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_accessibility_uniform"),
+            label: Some("perro_visual_accessibility_uniform"),
             size: std::mem::size_of::<AccessibilityUniform>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_accessibility_pipeline_layout"),
+            label: Some("perro_visual_accessibility_pipeline_layout"),
             bind_group_layouts: &[Some(&bgl)],
             immediate_size: 0,
         });
         let shader = create_accessibility_shader_module(device);
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_accessibility_pipeline"),
+            label: Some("perro_visual_accessibility_pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -149,13 +149,13 @@ impl AccessibilityProcessor {
             self.format,
             width,
             height,
-            "perro_accessibility_intermediate",
+            "perro_visual_accessibility_intermediate",
         );
         self.intermediate_texture = intermediate_texture;
         self.intermediate_view = intermediate_view;
     }
 
-    pub fn has_settings(&self, settings: AccessibilitySettings) -> bool {
+    pub fn has_settings(&self, settings: VisualAccessibilitySettings) -> bool {
         settings.color_blind.is_some()
     }
 
@@ -169,15 +169,16 @@ impl AccessibilityProcessor {
         queue: &wgpu::Queue,
         input_view: &wgpu::TextureView,
         output_view: &wgpu::TextureView,
-        settings: AccessibilitySettings,
+        settings: VisualAccessibilitySettings,
     ) {
         let Some(color_blind) = settings.color_blind else {
             return;
         };
         let mode = match color_blind.filter {
-            ColorBlindFilter::Protanopia => 0,
-            ColorBlindFilter::Deuteranopia => 1,
-            ColorBlindFilter::Tritanopia => 2,
+            ColorBlindFilter::Protan => 0,
+            ColorBlindFilter::Deuteran => 1,
+            ColorBlindFilter::Tritan => 2,
+            ColorBlindFilter::Achroma => 3,
         };
         let uniform = AccessibilityUniform {
             mode,
@@ -189,7 +190,7 @@ impl AccessibilityProcessor {
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniform));
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_accessibility_bg"),
+            label: Some("perro_visual_accessibility_bg"),
             layout: &self.bgl,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -208,11 +209,11 @@ impl AccessibilityProcessor {
         });
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("perro_accessibility_encoder"),
+            label: Some("perro_visual_accessibility_encoder"),
         });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("perro_accessibility_pass"),
+                label: Some("perro_visual_accessibility_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: output_view,
                     resolve_target: None,

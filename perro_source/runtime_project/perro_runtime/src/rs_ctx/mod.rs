@@ -1,4 +1,4 @@
-mod accessibility;
+mod visual_accessibility;
 mod audio;
 mod core;
 mod material;

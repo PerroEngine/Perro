@@ -1,4 +1,4 @@
-mod accessibility;
+mod visual_accessibility;
 mod audio;
 mod material;
 mod mesh;
@@ -6,7 +6,7 @@ mod skeleton;
 mod terrain;
 mod texture;
 
-pub use accessibility::{AccessibilityAPI, AccessibilityModule};
+pub use visual_accessibility::VisualAccessibilityAPI;
 pub use audio::{Audio, AudioAPI, AudioModule, bus_id};
 pub use material::{MaterialAPI, MaterialModule};
 pub use mesh::{MeshAPI, MeshModule};

@@ -8,10 +8,10 @@ use crate::{
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{
-    AccessibilityCommand, Command2D, Command3D, PointParticles3DState, RenderBridge, RenderCommand,
+    VisualAccessibilityCommand, Command2D, Command3D, PointParticles3DState, RenderBridge, RenderCommand,
     RenderEvent, ResourceCommand, Sprite2DCommand,
 };
-use perro_structs::AccessibilitySettings;
+use perro_structs::VisualAccessibilitySettings;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -71,7 +71,7 @@ pub struct PerroGraphics {
     retained_draws_cache: Vec<Draw3DInstance>,
     retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,
     retained_sprites_cache: Vec<Sprite2DCommand>,
-    accessibility: AccessibilitySettings,
+    accessibility: VisualAccessibilitySettings,
     frame_index: u32,
 }
 
@@ -99,7 +99,7 @@ impl PerroGraphics {
             retained_draws_cache: Vec::new(),
             retained_point_particles_cache: Vec::new(),
             retained_sprites_cache: Vec::new(),
-            accessibility: AccessibilitySettings::default(),
+            accessibility: VisualAccessibilitySettings::default(),
             frame_index: 0,
         }
     }
@@ -320,12 +320,12 @@ impl PerroGraphics {
                         self.particles_3d.remove_node(node);
                     }
                 },
-                RenderCommand::Accessibility(command) => match command {
-                    AccessibilityCommand::EnableColorBlind { mode, strength } => {
+                RenderCommand::VisualAccessibility(command) => match command {
+                    VisualAccessibilityCommand::EnableColorBlind { mode, strength } => {
                         self.accessibility.color_blind =
                             Some(perro_structs::ColorBlindSetting::new(mode, strength));
                     }
-                    AccessibilityCommand::DisableColorBlind => {
+                    VisualAccessibilityCommand::DisableColorBlind => {
                         self.accessibility.color_blind = None;
                     }
                 },

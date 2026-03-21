@@ -1,8 +1,9 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorBlindFilter {
-    Protanopia,
-    Deuteranopia,
-    Tritanopia,
+    Protan,
+    Deuteran,
+    Tritan,
+    Achroma,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -19,11 +20,11 @@ impl ColorBlindSetting {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct AccessibilitySettings {
+pub struct VisualAccessibilitySettings {
     pub color_blind: Option<ColorBlindSetting>,
 }
 
-impl AccessibilitySettings {
+impl VisualAccessibilitySettings {
     #[inline]
     pub const fn new() -> Self {
         Self { color_blind: None }

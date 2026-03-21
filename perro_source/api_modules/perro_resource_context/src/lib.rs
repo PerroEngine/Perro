@@ -6,9 +6,9 @@ pub use api::ResourceContext;
 pub mod prelude {
     pub use crate::api::{ResourceAPI, ResourceContext};
     pub use crate::sub_apis::{
-        AccessibilityAPI, AccessibilityModule, Audio, AudioAPI, AudioBusID, AudioModule,
-        MaterialAPI, MaterialModule, MeshAPI, MeshModule, SkeletonAPI, SkeletonModule, TerrainAPI,
-        TerrainModule, TextureAPI, TextureModule,
+        VisualAccessibilityAPI, Audio, AudioAPI, AudioBusID, AudioModule, MaterialAPI,
+        MaterialModule, MeshAPI, MeshModule, SkeletonAPI, SkeletonModule, TerrainAPI, TerrainModule,
+        TextureAPI, TextureModule,
     };
     pub use crate::{
         audio_bus, audio_bus_pause, audio_bus_resume, audio_bus_set_speed, audio_bus_set_volume,

@@ -1,12 +1,12 @@
 use crate::sub_apis::{
-    AccessibilityAPI, AccessibilityModule, AudioAPI, AudioModule, MaterialAPI, MaterialModule,
+    VisualAccessibilityAPI, AudioAPI, AudioModule, MaterialAPI, MaterialModule,
     MeshAPI, MeshModule, SkeletonAPI, SkeletonModule, TerrainAPI, TerrainModule, TextureAPI,
     TextureModule,
 };
 use perro_structs::ColorBlindFilter;
 
 pub trait ResourceAPI:
-    AccessibilityAPI
+    VisualAccessibilityAPI
     + AudioAPI
     + TextureAPI
     + MeshAPI
@@ -18,7 +18,7 @@ pub trait ResourceAPI:
 {
 }
 impl<T> ResourceAPI for T where
-    T: AccessibilityAPI
+    T: VisualAccessibilityAPI
         + AudioAPI
         + TextureAPI
         + MeshAPI
@@ -68,11 +68,6 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceContext<'res, R> {
     #[inline]
     pub fn Terrain(&self) -> TerrainModule<'_, R> {
         TerrainModule::new(self.api)
-    }
-
-    #[inline]
-    pub fn Accessibility(&self) -> AccessibilityModule<'_, R> {
-        AccessibilityModule::new(self.api)
     }
 
     #[inline]

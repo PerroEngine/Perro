@@ -1,5 +1,5 @@
 use crate::{
-    accessibility::AccessibilityProcessor,
+    visual_accessibility::VisualAccessibilityProcessor,
     backend::{OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup, StaticTextureLookup},
     postprocess::PostProcessor,
     resources::ResourceStore,
@@ -15,7 +15,7 @@ use crate::{
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{Camera3DState, PointParticles3DState, Sprite2DCommand};
-use perro_structs::AccessibilitySettings;
+use perro_structs::VisualAccessibilitySettings;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -40,7 +40,7 @@ pub struct Gpu {
     sample_count: u32,
     msaa_color: Option<MsaaColorTarget>,
     post: PostProcessor,
-    accessibility: AccessibilityProcessor,
+    accessibility: VisualAccessibilityProcessor,
     two_d: Gpu2D,
     three_d: Gpu3D,
     point_particles_3d: GpuPointParticles3D,
@@ -54,7 +54,7 @@ pub struct RenderFrame<'a> {
     pub point_particles_3d: &'a [(NodeID, PointParticles3DState)],
     pub camera_2d: Camera2DUniform,
     pub post_processing_2d: Arc<[perro_structs::PostProcessEffect]>,
-    pub accessibility: AccessibilitySettings,
+    pub accessibility: VisualAccessibilitySettings,
     pub rects_2d: &'a [RectInstanceGpu],
     pub upload_2d: &'a RectUploadPlan,
     pub sprites_2d: &'a [Sprite2DCommand],
@@ -150,7 +150,8 @@ impl Gpu {
         let msaa_color =
             create_msaa_color_target(&device, render_format, width, height, sample_count);
         let post = PostProcessor::new(&device, render_format, width, height);
-        let accessibility = AccessibilityProcessor::new(&device, render_format, width, height);
+        let accessibility =
+            VisualAccessibilityProcessor::new(&device, render_format, width, height);
 
         Some(Self {
             window_handle: window,

@@ -606,11 +606,11 @@ pub enum RenderCommand {
     Resource(ResourceCommand),
     TwoD(Command2D),
     ThreeD(Box<Command3D>),
-    Accessibility(AccessibilityCommand),
+    VisualAccessibility(VisualAccessibilityCommand),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AccessibilityCommand {
+pub enum VisualAccessibilityCommand {
     EnableColorBlind { mode: ColorBlindFilter, strength: f32 },
     DisableColorBlind,
 }
