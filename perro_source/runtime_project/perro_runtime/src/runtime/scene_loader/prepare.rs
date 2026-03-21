@@ -2,7 +2,8 @@ use crate::material_schema;
 use perro_ids::IntoTagID;
 use perro_io::load_asset;
 use perro_nodes::{
-    CollisionShape2D, CollisionShape3D, RigidBody2D, RigidBody3D, Shape2D, Shape3D,
+    Area2D, Area3D, CollisionShape2D, CollisionShape3D, RigidBody2D, RigidBody3D, Shape2D,
+    Shape3D,
     SceneNode, SceneNodeData,
     ambient_light_3d::AmbientLight3D,
     camera_2d::Camera2D,
@@ -282,6 +283,7 @@ fn scene_node_data_from_runtime(data: &RuntimeNodeData) -> Result<SceneNodeData,
         "StaticBody2D" => Ok(SceneNodeData::StaticBody2D(build_runtime_static_body_2d(
             data,
         ))),
+        "Area2D" => Ok(SceneNodeData::Area2D(build_runtime_area_2d(data))),
         "RigidBody2D" => Ok(SceneNodeData::RigidBody2D(build_runtime_rigid_body_2d(
             data,
         ))),
@@ -295,6 +297,7 @@ fn scene_node_data_from_runtime(data: &RuntimeNodeData) -> Result<SceneNodeData,
         "StaticBody3D" => Ok(SceneNodeData::StaticBody3D(build_runtime_static_body_3d(
             data,
         ))),
+        "Area3D" => Ok(SceneNodeData::Area3D(build_runtime_area_3d(data))),
         "RigidBody3D" => Ok(SceneNodeData::RigidBody3D(build_runtime_rigid_body_3d(
             data,
         ))),
@@ -332,6 +335,7 @@ fn scene_node_data_from_static(data: &StaticNodeData) -> Result<SceneNodeData, S
         StaticNodeType::StaticBody2D => Ok(SceneNodeData::StaticBody2D(
             build_static_static_body_2d(data),
         )),
+        StaticNodeType::Area2D => Ok(SceneNodeData::Area2D(build_static_area_2d(data))),
         StaticNodeType::RigidBody2D => Ok(SceneNodeData::RigidBody2D(
             build_static_rigid_body_2d(data),
         )),
@@ -345,6 +349,7 @@ fn scene_node_data_from_static(data: &StaticNodeData) -> Result<SceneNodeData, S
         StaticNodeType::StaticBody3D => Ok(SceneNodeData::StaticBody3D(
             build_static_static_body_3d(data),
         )),
+        StaticNodeType::Area3D => Ok(SceneNodeData::Area3D(build_static_area_3d(data))),
         StaticNodeType::RigidBody3D => Ok(SceneNodeData::RigidBody3D(
             build_static_rigid_body_3d(data),
         )),
@@ -425,6 +430,16 @@ fn build_runtime_rigid_body_2d(data: &RuntimeNodeData) -> RigidBody2D {
     }
     apply_node_2d_fields(&mut node, &data.fields);
     apply_rigid_body_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_runtime_area_2d(data: &RuntimeNodeData) -> Area2D {
+    let mut node = Area2D::new();
+    if let Some(base) = &data.base {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_area_2d_fields(&mut node, &data.fields);
     node
 }
 
@@ -511,6 +526,16 @@ fn build_runtime_rigid_body_3d(data: &RuntimeNodeData) -> RigidBody3D {
     }
     apply_node_3d_fields(&mut node, &data.fields);
     apply_rigid_body_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_runtime_area_3d(data: &RuntimeNodeData) -> Area3D {
+    let mut node = Area3D::new();
+    if let Some(base) = &data.base {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_area_3d_fields(&mut node, &data.fields);
     node
 }
 
@@ -607,6 +632,16 @@ fn build_static_rigid_body_2d(data: &StaticNodeData) -> RigidBody2D {
     node
 }
 
+fn build_static_area_2d(data: &StaticNodeData) -> Area2D {
+    let mut node = Area2D::new();
+    if let Some(base) = data.base {
+        apply_node_2d_data_static(&mut node, base);
+    }
+    apply_node_2d_fields_static(&mut node, data.fields);
+    apply_area_2d_fields_static(&mut node, data.fields);
+    node
+}
+
 fn build_static_node_3d(data: &StaticNodeData) -> Node3D {
     let mut node = Node3D::new();
     apply_node_3d_data_static(&mut node, data);
@@ -690,6 +725,16 @@ fn build_static_rigid_body_3d(data: &StaticNodeData) -> RigidBody3D {
     }
     apply_node_3d_fields_static(&mut node, data.fields);
     apply_rigid_body_3d_fields_static(&mut node, data.fields);
+    node
+}
+
+fn build_static_area_3d(data: &StaticNodeData) -> Area3D {
+    let mut node = Area3D::new();
+    if let Some(base) = data.base {
+        apply_node_3d_data_static(&mut node, base);
+    }
+    apply_node_3d_fields_static(&mut node, data.fields);
+    apply_area_3d_fields_static(&mut node, data.fields);
     node
 }
 
@@ -2591,6 +2636,14 @@ fn apply_rigid_body_2d_fields(node: &mut RigidBody2D, fields: &[(String, Runtime
     }
 }
 
+fn apply_area_2d_fields(node: &mut Area2D, fields: &[(String, RuntimeValue)]) {
+    for (name, value) in fields {
+        if name == "enabled" && let Some(enabled) = as_bool(value) {
+            node.enabled = enabled;
+        }
+    }
+}
+
 fn apply_collision_shape_3d_fields(
     node: &mut CollisionShape3D,
     fields: &[(String, RuntimeValue)],
@@ -2674,6 +2727,14 @@ fn apply_rigid_body_3d_fields(node: &mut RigidBody3D, fields: &[(String, Runtime
                 }
             }
             _ => {}
+        }
+    }
+}
+
+fn apply_area_3d_fields(node: &mut Area3D, fields: &[(String, RuntimeValue)]) {
+    for (name, value) in fields {
+        if name == "enabled" && let Some(enabled) = as_bool(value) {
+            node.enabled = enabled;
         }
     }
 }
@@ -2770,6 +2831,14 @@ fn apply_rigid_body_2d_fields_static(node: &mut RigidBody2D, fields: &[(&str, St
     }
 }
 
+fn apply_area_2d_fields_static(node: &mut Area2D, fields: &[(&str, StaticSceneValue)]) {
+    for (name, value) in fields {
+        if *name == "enabled" && let Some(enabled) = as_bool_static(value) {
+            node.enabled = enabled;
+        }
+    }
+}
+
 fn apply_collision_shape_3d_fields_static(
     node: &mut CollisionShape3D,
     fields: &[(&str, StaticSceneValue)],
@@ -2853,6 +2922,14 @@ fn apply_rigid_body_3d_fields_static(node: &mut RigidBody3D, fields: &[(&str, St
                 }
             }
             _ => {}
+        }
+    }
+}
+
+fn apply_area_3d_fields_static(node: &mut Area3D, fields: &[(&str, StaticSceneValue)]) {
+    for (name, value) in fields {
+        if *name == "enabled" && let Some(enabled) = as_bool_static(value) {
+            node.enabled = enabled;
         }
     }
 }

@@ -5,8 +5,8 @@ use crate::mesh_instance_3d::MeshInstance3D;
 use crate::node_2d::Node2D;
 use crate::node_3d::Node3D;
 use crate::particle_emitter_3d::ParticleEmitter3D;
-use crate::physics_2d::{CollisionShape2D, RigidBody2D, StaticBody2D};
-use crate::physics_3d::{CollisionShape3D, RigidBody3D, StaticBody3D};
+use crate::physics_2d::{Area2D, CollisionShape2D, RigidBody2D, StaticBody2D};
+use crate::physics_3d::{Area3D, CollisionShape3D, RigidBody3D, StaticBody3D};
 use crate::point_light_3d::PointLight3D;
 use crate::ray_light_3d::RayLight3D;
 use crate::skeleton_3d::Skeleton3D;
@@ -627,6 +627,7 @@ define_scene_nodes! {
         Sprite2D => (Node2D, Sprite2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         CollisionShape2D => (Node2D, CollisionShape2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         StaticBody2D => (Node2D, StaticBody2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        Area2D => (Node2D, Area2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         RigidBody2D => (Node2D, RigidBody2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
     }
     3d: {
@@ -635,6 +636,7 @@ define_scene_nodes! {
         MeshInstance3D => (Node3D, MeshInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         CollisionShape3D => (Node3D, CollisionShape3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         StaticBody3D => (Node3D, StaticBody3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        Area3D => (Node3D, Area3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         RigidBody3D => (Node3D, RigidBody3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         Skeleton3D => (Node3D, Skeleton3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         TerrainInstance3D => (Node3D, TerrainInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

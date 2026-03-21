@@ -1076,7 +1076,7 @@ impl Runtime {
 
     fn register_physics_body(&mut self, id: NodeID, ty: NodeType) {
         match ty {
-            NodeType::StaticBody2D | NodeType::RigidBody2D => {
+            NodeType::StaticBody2D | NodeType::Area2D | NodeType::RigidBody2D => {
                 let slot = id.index() as usize;
                 if self.physics_body_pos_2d.len() <= slot {
                     self.physics_body_pos_2d.resize(slot + 1, None);
@@ -1087,7 +1087,7 @@ impl Runtime {
                     self.physics_body_pos_2d[slot] = Some(pos);
                 }
             }
-            NodeType::StaticBody3D | NodeType::RigidBody3D => {
+            NodeType::StaticBody3D | NodeType::Area3D | NodeType::RigidBody3D => {
                 let slot = id.index() as usize;
                 if self.physics_body_pos_3d.len() <= slot {
                     self.physics_body_pos_3d.resize(slot + 1, None);
@@ -1211,11 +1211,13 @@ impl Runtime {
             SceneNodeData::Camera2D(node) => node.visible,
             SceneNodeData::CollisionShape2D(node) => node.visible,
             SceneNodeData::StaticBody2D(node) => node.visible,
+            SceneNodeData::Area2D(node) => node.visible,
             SceneNodeData::RigidBody2D(node) => node.visible,
             SceneNodeData::Node3D(node) => node.visible,
             SceneNodeData::MeshInstance3D(node) => node.visible,
             SceneNodeData::CollisionShape3D(node) => node.visible,
             SceneNodeData::StaticBody3D(node) => node.visible,
+            SceneNodeData::Area3D(node) => node.visible,
             SceneNodeData::RigidBody3D(node) => node.visible,
             SceneNodeData::TerrainInstance3D(node) => node.visible,
             SceneNodeData::Camera3D(node) => node.visible,

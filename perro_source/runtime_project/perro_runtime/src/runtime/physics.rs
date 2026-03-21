@@ -1,18 +1,20 @@
 use crate::Runtime;
 use ahash::{AHashMap, AHashSet};
-use perro_ids::NodeID;
+use perro_ids::{NodeID, SignalID};
 use perro_nodes::{
     CollisionShape2D, CollisionShape3D, RigidBody2D, RigidBody3D, SceneNodeData, Shape2D, Shape3D,
     Triangle2DKind,
 };
-use perro_runtime_context::sub_apis::NodeAPI;
+use perro_runtime_context::sub_apis::{NodeAPI, SignalAPI};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
+use perro_variant::Variant;
 use rapier2d::{na as na2, prelude as r2};
 use rapier3d::{na as na3, prelude as r3};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BodyKind {
     Static,
+    Area,
     Rigid,
 }
 
@@ -72,6 +74,28 @@ struct BodyState3D {
     opaque_handle: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct BodyPair {
+    a: NodeID,
+    b: NodeID,
+}
+
+impl BodyPair {
+    fn sorted(a: NodeID, b: NodeID) -> Self {
+        if a.as_u64() <= b.as_u64() {
+            Self { a, b }
+        } else {
+            Self { a: b, b: a }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct AreaOverlap {
+    area: NodeID,
+    other: NodeID,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct PendingImpulse2D {
     id: NodeID,
@@ -89,6 +113,10 @@ struct PendingImpulse3D {
 pub(crate) struct PhysicsState {
     world_2d: PhysicsWorld2D,
     world_3d: PhysicsWorld3D,
+    active_collision_pairs_2d: AHashSet<BodyPair>,
+    active_collision_pairs_3d: AHashSet<BodyPair>,
+    active_area_overlaps_2d: AHashSet<AreaOverlap>,
+    active_area_overlaps_3d: AHashSet<AreaOverlap>,
     pending_impulses_2d: Vec<PendingImpulse2D>,
     pending_impulses_3d: Vec<PendingImpulse3D>,
     next_opaque_handle: u64,
@@ -106,6 +134,7 @@ struct PhysicsWorld2D {
     impulse_joints: r2::ImpulseJointSet,
     multibody_joints: r2::MultibodyJointSet,
     ccd_solver: r2::CCDSolver,
+    collider_owners: AHashMap<r2::ColliderHandle, NodeID>,
     body_map: AHashMap<NodeID, BodyState2D>,
 }
 
@@ -121,6 +150,7 @@ struct PhysicsWorld3D {
     impulse_joints: r3::ImpulseJointSet,
     multibody_joints: r3::MultibodyJointSet,
     ccd_solver: r3::CCDSolver,
+    collider_owners: AHashMap<r3::ColliderHandle, NodeID>,
     body_map: AHashMap<NodeID, BodyState3D>,
 }
 
@@ -129,6 +159,10 @@ impl PhysicsState {
         Self {
             world_2d: PhysicsWorld2D::new(),
             world_3d: PhysicsWorld3D::new(),
+            active_collision_pairs_2d: AHashSet::default(),
+            active_collision_pairs_3d: AHashSet::default(),
+            active_area_overlaps_2d: AHashSet::default(),
+            active_area_overlaps_3d: AHashSet::default(),
             pending_impulses_2d: Vec::new(),
             pending_impulses_3d: Vec::new(),
             next_opaque_handle: 1,
@@ -138,6 +172,10 @@ impl PhysicsState {
     pub(crate) fn clear(&mut self) {
         self.world_2d = PhysicsWorld2D::new();
         self.world_3d = PhysicsWorld3D::new();
+        self.active_collision_pairs_2d.clear();
+        self.active_collision_pairs_3d.clear();
+        self.active_area_overlaps_2d.clear();
+        self.active_area_overlaps_3d.clear();
         self.pending_impulses_2d.clear();
         self.pending_impulses_3d.clear();
         self.next_opaque_handle = 1;
@@ -170,6 +208,7 @@ impl PhysicsWorld2D {
             impulse_joints: r2::ImpulseJointSet::new(),
             multibody_joints: r2::MultibodyJointSet::new(),
             ccd_solver: r2::CCDSolver::new(),
+            collider_owners: AHashMap::default(),
             body_map: AHashMap::default(),
         }
     }
@@ -189,6 +228,7 @@ impl PhysicsWorld3D {
             impulse_joints: r3::ImpulseJointSet::new(),
             multibody_joints: r3::MultibodyJointSet::new(),
             ccd_solver: r3::CCDSolver::new(),
+            collider_owners: AHashMap::default(),
             body_map: AHashMap::default(),
         }
     }
@@ -206,6 +246,10 @@ impl Runtime {
         self.step_world_3d();
         self.sync_world_to_nodes_2d();
         self.sync_world_to_nodes_3d();
+        self.emit_collision_signals_2d();
+        self.emit_collision_signals_3d();
+        self.emit_area_signals_2d();
+        self.emit_area_signals_3d();
     }
 
     pub(crate) fn queue_impulse_2d(&mut self, id: NodeID, direction: Vector2, amount: f32) {
@@ -244,6 +288,12 @@ impl Runtime {
                     None,
                     node.children_slice().to_vec(),
                 ),
+                SceneNodeData::Area2D(body) => (
+                    BodyKind::Area,
+                    body.enabled,
+                    None,
+                    node.children_slice().to_vec(),
+                ),
                 SceneNodeData::RigidBody2D(body) => (
                     BodyKind::Rigid,
                     body.enabled,
@@ -262,7 +312,11 @@ impl Runtime {
                     continue;
                 };
                 if let SceneNodeData::CollisionShape2D(shape) = &child.data {
-                    shapes.push(shape_desc_2d(shape));
+                    let mut desc = shape_desc_2d(shape);
+                    if kind == BodyKind::Area {
+                        desc.sensor = true;
+                    }
+                    shapes.push(desc);
                 }
             }
 
@@ -294,6 +348,12 @@ impl Runtime {
                     None,
                     node.children_slice().to_vec(),
                 ),
+                SceneNodeData::Area3D(body) => (
+                    BodyKind::Area,
+                    body.enabled,
+                    None,
+                    node.children_slice().to_vec(),
+                ),
                 SceneNodeData::RigidBody3D(body) => (
                     BodyKind::Rigid,
                     body.enabled,
@@ -312,7 +372,11 @@ impl Runtime {
                     continue;
                 };
                 if let SceneNodeData::CollisionShape3D(shape) = &child.data {
-                    shapes.push(shape_desc_3d(shape));
+                    let mut desc = shape_desc_3d(shape);
+                    if kind == BodyKind::Area {
+                        desc.sensor = true;
+                    }
+                    shapes.push(desc);
                 }
             }
 
@@ -361,6 +425,7 @@ impl Runtime {
                 rb.set_body_type(
                     match body.kind {
                         BodyKind::Static => r2::RigidBodyType::Fixed,
+                        BodyKind::Area => r2::RigidBodyType::Fixed,
                         BodyKind::Rigid => r2::RigidBodyType::Dynamic,
                     },
                     true,
@@ -377,6 +442,7 @@ impl Runtime {
             }
 
             for handle in state.colliders.drain(..) {
+                self.physics.world_2d.collider_owners.remove(&handle);
                 let _ = self.physics.world_2d.colliders.remove(
                     handle,
                     &mut self.physics.world_2d.islands,
@@ -394,6 +460,7 @@ impl Runtime {
                     state.handle,
                     &mut self.physics.world_2d.bodies,
                 );
+                self.physics.world_2d.collider_owners.insert(handle, body.id);
                 state.colliders.push(handle);
             }
         }
@@ -409,6 +476,9 @@ impl Runtime {
 
         for id in stale {
             if let Some(state) = self.physics.world_2d.body_map.remove(&id) {
+                for handle in &state.colliders {
+                    self.physics.world_2d.collider_owners.remove(handle);
+                }
                 let _ = self.physics.world_2d.bodies.remove(
                     state.handle,
                     &mut self.physics.world_2d.islands,
@@ -455,6 +525,7 @@ impl Runtime {
                 rb.set_body_type(
                     match body.kind {
                         BodyKind::Static => r3::RigidBodyType::Fixed,
+                        BodyKind::Area => r3::RigidBodyType::Fixed,
                         BodyKind::Rigid => r3::RigidBodyType::Dynamic,
                     },
                     true,
@@ -477,6 +548,7 @@ impl Runtime {
             }
 
             for handle in state.colliders.drain(..) {
+                self.physics.world_3d.collider_owners.remove(&handle);
                 let _ = self.physics.world_3d.colliders.remove(
                     handle,
                     &mut self.physics.world_3d.islands,
@@ -494,6 +566,7 @@ impl Runtime {
                     state.handle,
                     &mut self.physics.world_3d.bodies,
                 );
+                self.physics.world_3d.collider_owners.insert(handle, body.id);
                 state.colliders.push(handle);
             }
         }
@@ -509,6 +582,9 @@ impl Runtime {
 
         for id in stale {
             if let Some(state) = self.physics.world_3d.body_map.remove(&id) {
+                for handle in &state.colliders {
+                    self.physics.world_3d.collider_owners.remove(handle);
+                }
                 let _ = self.physics.world_3d.bodies.remove(
                     state.handle,
                     &mut self.physics.world_3d.islands,
@@ -689,6 +765,7 @@ impl Runtime {
         if let Some(node) = self.nodes.get_mut(id) {
             match &mut node.data {
                 SceneNodeData::StaticBody2D(body) => body.physics_handle = handle,
+                SceneNodeData::Area2D(body) => body.physics_handle = handle,
                 SceneNodeData::RigidBody2D(body) => body.physics_handle = handle,
                 _ => {}
             }
@@ -699,10 +776,217 @@ impl Runtime {
         if let Some(node) = self.nodes.get_mut(id) {
             match &mut node.data {
                 SceneNodeData::StaticBody3D(body) => body.physics_handle = handle,
+                SceneNodeData::Area3D(body) => body.physics_handle = handle,
                 SceneNodeData::RigidBody3D(body) => body.physics_handle = handle,
                 _ => {}
             }
         }
+    }
+
+    fn emit_collision_signals_2d(&mut self) {
+        let mut current_pairs = AHashSet::default();
+        let mut entered_pairs = Vec::new();
+
+        for pair in self.physics.world_2d.narrow_phase.contact_pairs() {
+            if !pair.has_any_active_contact {
+                continue;
+            }
+            let Some(&a) = self.physics.world_2d.collider_owners.get(&pair.collider1) else {
+                continue;
+            };
+            let Some(&b) = self.physics.world_2d.collider_owners.get(&pair.collider2) else {
+                continue;
+            };
+            if a == b {
+                continue;
+            }
+
+            let key = BodyPair::sorted(a, b);
+            current_pairs.insert(key);
+            if !self.physics.active_collision_pairs_2d.contains(&key) {
+                entered_pairs.push(key);
+            }
+        }
+
+        self.physics.active_collision_pairs_2d = current_pairs;
+        self.emit_collision_signals_for_pairs(&entered_pairs);
+    }
+
+    fn emit_collision_signals_3d(&mut self) {
+        let mut current_pairs = AHashSet::default();
+        let mut entered_pairs = Vec::new();
+
+        for pair in self.physics.world_3d.narrow_phase.contact_pairs() {
+            if !pair.has_any_active_contact {
+                continue;
+            }
+            let Some(&a) = self.physics.world_3d.collider_owners.get(&pair.collider1) else {
+                continue;
+            };
+            let Some(&b) = self.physics.world_3d.collider_owners.get(&pair.collider2) else {
+                continue;
+            };
+            if a == b {
+                continue;
+            }
+
+            let key = BodyPair::sorted(a, b);
+            current_pairs.insert(key);
+            if !self.physics.active_collision_pairs_3d.contains(&key) {
+                entered_pairs.push(key);
+            }
+        }
+
+        self.physics.active_collision_pairs_3d = current_pairs;
+        self.emit_collision_signals_for_pairs(&entered_pairs);
+    }
+
+    fn emit_collision_signals_for_pairs(&mut self, pairs: &[BodyPair]) {
+        for pair in pairs {
+            self.emit_collision_signal_for_node(pair.a, pair.b);
+            self.emit_collision_signal_for_node(pair.b, pair.a);
+        }
+    }
+
+    fn emit_collision_signal_for_node(&mut self, source: NodeID, other: NodeID) {
+        let signal_id = {
+            let Some(node) = self.nodes.get(source) else {
+                return;
+            };
+            if node.name.is_empty() {
+                return;
+            }
+            let signal_name = format!("{}_Collision", node.name);
+            SignalID::from_string(&signal_name)
+        };
+
+        let params = [Variant::from(source), Variant::from(other)];
+        let _ = SignalAPI::signal_emit(self, signal_id, &params);
+    }
+
+    fn emit_area_signals_2d(&mut self) {
+        let mut current = AHashSet::default();
+
+        for (collider_a, collider_b, intersecting) in self.physics.world_2d.narrow_phase.intersection_pairs() {
+            if !intersecting {
+                continue;
+            }
+            let Some(&a) = self.physics.world_2d.collider_owners.get(&collider_a) else {
+                continue;
+            };
+            let Some(&b) = self.physics.world_2d.collider_owners.get(&collider_b) else {
+                continue;
+            };
+            if a == b {
+                continue;
+            }
+
+            let kind_a = self
+                .physics
+                .world_2d
+                .body_map
+                .get(&a)
+                .map(|state| state.kind);
+            let kind_b = self
+                .physics
+                .world_2d
+                .body_map
+                .get(&b)
+                .map(|state| state.kind);
+
+            if kind_a == Some(BodyKind::Area) {
+                current.insert(AreaOverlap { area: a, other: b });
+            }
+            if kind_b == Some(BodyKind::Area) {
+                current.insert(AreaOverlap { area: b, other: a });
+            }
+        }
+
+        self.emit_area_overlap_signals(current, true);
+    }
+
+    fn emit_area_signals_3d(&mut self) {
+        let mut current = AHashSet::default();
+
+        for (collider_a, collider_b, intersecting) in self.physics.world_3d.narrow_phase.intersection_pairs() {
+            if !intersecting {
+                continue;
+            }
+            let Some(&a) = self.physics.world_3d.collider_owners.get(&collider_a) else {
+                continue;
+            };
+            let Some(&b) = self.physics.world_3d.collider_owners.get(&collider_b) else {
+                continue;
+            };
+            if a == b {
+                continue;
+            }
+
+            let kind_a = self
+                .physics
+                .world_3d
+                .body_map
+                .get(&a)
+                .map(|state| state.kind);
+            let kind_b = self
+                .physics
+                .world_3d
+                .body_map
+                .get(&b)
+                .map(|state| state.kind);
+
+            if kind_a == Some(BodyKind::Area) {
+                current.insert(AreaOverlap { area: a, other: b });
+            }
+            if kind_b == Some(BodyKind::Area) {
+                current.insert(AreaOverlap { area: b, other: a });
+            }
+        }
+
+        self.emit_area_overlap_signals(current, false);
+    }
+
+    fn emit_area_overlap_signals(&mut self, current: AHashSet<AreaOverlap>, is_2d: bool) {
+        let previous = if is_2d {
+            std::mem::take(&mut self.physics.active_area_overlaps_2d)
+        } else {
+            std::mem::take(&mut self.physics.active_area_overlaps_3d)
+        };
+
+        for overlap in current.iter().copied() {
+            if !previous.contains(&overlap) {
+                self.emit_area_signal(overlap.area, overlap.other, "Entered");
+            }
+            self.emit_area_signal(overlap.area, overlap.other, "Occupied");
+        }
+
+        for overlap in previous.iter().copied() {
+            if !current.contains(&overlap) {
+                self.emit_area_signal(overlap.area, overlap.other, "Exited");
+            }
+        }
+
+        if is_2d {
+            self.physics.active_area_overlaps_2d = current;
+        } else {
+            self.physics.active_area_overlaps_3d = current;
+        }
+    }
+
+    fn emit_area_signal(&mut self, area: NodeID, other: NodeID, action: &str) {
+        let signal_id = {
+            let Some(node) = self.nodes.get(area) else {
+                return;
+            };
+            if node.name.is_empty() {
+                return;
+            }
+            let signal_name = format!("{}_{}", node.name, action);
+            SignalID::from_string(&signal_name)
+        };
+
+        let params = [Variant::from(area), Variant::from(other)];
+        let _ = SignalAPI::signal_emit(self, signal_id, &params);
     }
 }
 
@@ -731,6 +1015,7 @@ fn shape_desc_3d(shape: &CollisionShape3D) -> ShapeDesc3D {
 fn build_rigid_body_2d(desc: &BodyDesc2D) -> r2::RigidBody {
     let mut builder = match desc.kind {
         BodyKind::Static => r2::RigidBodyBuilder::fixed(),
+        BodyKind::Area => r2::RigidBodyBuilder::fixed(),
         BodyKind::Rigid => r2::RigidBodyBuilder::dynamic(),
     }
     .position(transform_to_iso2(desc.global))
@@ -756,6 +1041,7 @@ fn build_rigid_body_2d(desc: &BodyDesc2D) -> r2::RigidBody {
 fn build_rigid_body_3d(desc: &BodyDesc3D) -> r3::RigidBody {
     let mut builder = match desc.kind {
         BodyKind::Static => r3::RigidBodyBuilder::fixed(),
+        BodyKind::Area => r3::RigidBodyBuilder::fixed(),
         BodyKind::Rigid => r3::RigidBodyBuilder::dynamic(),
     }
     .position(transform_to_iso3(desc.global))

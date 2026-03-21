@@ -101,6 +101,43 @@ impl DerefMut for StaticBody3D {
 }
 
 #[derive(Clone, Debug)]
+pub struct Area3D {
+    pub base: Node3D,
+    pub enabled: bool,
+    pub physics_handle: Option<u64>,
+}
+
+impl Default for Area3D {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Area3D {
+    pub const fn new() -> Self {
+        Self {
+            base: Node3D::new(),
+            enabled: true,
+            physics_handle: None,
+        }
+    }
+}
+
+impl Deref for Area3D {
+    type Target = Node3D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for Area3D {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct RigidBody3D {
     pub base: Node3D,
     pub enabled: bool,

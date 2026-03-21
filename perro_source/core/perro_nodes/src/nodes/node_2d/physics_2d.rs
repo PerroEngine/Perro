@@ -119,6 +119,43 @@ impl DerefMut for StaticBody2D {
 }
 
 #[derive(Clone, Debug)]
+pub struct Area2D {
+    pub base: Node2D,
+    pub enabled: bool,
+    pub physics_handle: Option<u64>,
+}
+
+impl Default for Area2D {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Area2D {
+    pub const fn new() -> Self {
+        Self {
+            base: Node2D::new(),
+            enabled: true,
+            physics_handle: None,
+        }
+    }
+}
+
+impl Deref for Area2D {
+    type Target = Node2D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for Area2D {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct RigidBody2D {
     pub base: Node2D,
     pub enabled: bool,

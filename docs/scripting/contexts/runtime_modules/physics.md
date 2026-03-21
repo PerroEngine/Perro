@@ -30,3 +30,23 @@ if ipt.Keys().is_pressed(KeyCode::W) {
     apply_force!(ctx, player_body_id, Vector3::new(0.0, 0.0, -1.0), 0.35);
 }
 ```
+
+Collision signals:
+
+- On first contact between two bodies, runtime emits a global signal per body:
+  - `"{BodyNodeName}_Collision"`
+- Signal params:
+  - `params[0]`: source body `NodeID`
+  - `params[1]`: other body `NodeID`
+- Emitted for `RigidBody2D/StaticBody2D` and `RigidBody3D/StaticBody3D` contacts.
+
+Area signals:
+
+- Areas emit overlap lifecycle signals using exact action suffixes:
+  - `"{AreaNodeName}_Entered"`
+  - `"{AreaNodeName}_Occupied"`
+  - `"{AreaNodeName}_Exited"`
+- Emitted for `Area2D` and `Area3D` when their overlap set changes.
+- Signal params:
+  - `params[0]`: area `NodeID`
+  - `params[1]`: other overlapped body `NodeID`
