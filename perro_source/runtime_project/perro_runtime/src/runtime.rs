@@ -1,18 +1,16 @@
 use crate::{
-    cns::{NodeArena, ScriptCollection, SignalConnection, SignalRegistry, TerrainStore},
+    cns::{NodeArena, ScriptCollection, TerrainStore},
     render_result::RuntimeRenderResult,
     rs_ctx::RuntimeResourceApi,
     runtime_project::{ProviderMode, RuntimeProject},
 };
-use ahash::{AHashMap, AHashSet};
 use glam::{Mat3, Mat4};
-use libloading::Library;
-use perro_ids::{MaterialID, MeshID, NodeID, TagID, TextureID};
+use perro_ids::NodeID;
 use perro_input::{GamepadAxis, GamepadButton, InputContext, InputSnapshot, KeyCode, MouseButton};
 use perro_nodes::{
     InternalFixedUpdate, InternalUpdate, Node2D, Node3D, NodeType, SceneNodeData, Spatial,
 };
-use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
+use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
 use perro_resource_context::ResourceContext;
 use perro_runtime_context::RuntimeContext;
 use perro_scripting::ScriptConstructor;
@@ -24,6 +22,12 @@ mod physics;
 mod render_2d;
 mod render_3d;
 mod scene_loader;
+mod state;
+use state::{
+    DirtyState, InternalUpdateState, NodeIndexState, Render2DState, Render3DState, RenderState,
+    ScriptRuntimeState, ScriptSchedules, SignalRuntimeState, TransformRuntimeState,
+};
+pub(crate) use state::{TerrainChunkMeshKey, TerrainChunkMeshState, TerrainDebugState};
 
 type RuntimeScriptCtor = ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>;
 type StaticScriptRegistry = &'static [(&'static str, RuntimeScriptCtor)];
@@ -37,40 +41,17 @@ pub struct Runtime {
     pub nodes: NodeArena,
     pub(crate) scripts: ScriptCollection<Self>,
     schedules: ScriptSchedules,
-    pub(crate) active_script_stack: Vec<(usize, NodeID)>,
-    pub(crate) last_node_lookup: Option<(NodeID, usize, u32)>,
-    pub(crate) pending_start_scripts: Vec<NodeID>,
-    pub(crate) pending_start_flags: Vec<Option<NodeID>>,
+    pub(crate) script_runtime: ScriptRuntimeState,
     render: RenderState,
     dirty: DirtyState,
-    pending_transform_roots: Vec<NodeID>,
-    traversal_stack: Vec<NodeID>,
-    transform_visit_flags: Vec<u8>,
-    transform_visit_indices: Vec<u32>,
-    global_transform_2d: Vec<Transform2D>,
-    global_transform_2d_valid: Vec<u8>,
-    global_transform_2d_generation: Vec<u32>,
-    global_transform_3d: Vec<Transform3D>,
-    global_transform_3d_valid: Vec<u8>,
-    global_transform_3d_generation: Vec<u32>,
-    global_chain_scratch: Vec<NodeID>,
-    internal_update_nodes: Vec<NodeID>,
-    internal_fixed_update_nodes: Vec<NodeID>,
-    internal_update_pos: Vec<Option<usize>>,
-    internal_fixed_update_pos: Vec<Option<usize>>,
-    physics_body_nodes_2d: Vec<NodeID>,
-    physics_body_nodes_3d: Vec<NodeID>,
-    physics_body_pos_2d: Vec<Option<usize>>,
-    physics_body_pos_3d: Vec<Option<usize>>,
+    transforms: TransformRuntimeState,
+    internal_updates: InternalUpdateState,
 
     render_2d: Render2DState,
     render_3d: Render3DState,
     pub(crate) terrain_store: Arc<Mutex<TerrainStore>>,
-    pub(crate) signals: SignalRegistry,
-    pub(crate) signal_emit_scratch: Vec<SignalConnection>,
-    pub(crate) script_library: Option<Library>,
-    pub(crate) dynamic_script_registry: AHashMap<String, RuntimeScriptCtor>,
-    pub(crate) node_tag_index: AHashMap<TagID, AHashSet<NodeID>>,
+    pub(crate) signal_runtime: SignalRuntimeState,
+    pub(crate) node_index: NodeIndexState,
     pub(crate) resource_api: Arc<RuntimeResourceApi>,
     pub(crate) input: InputSnapshot,
     physics: physics::PhysicsState,
@@ -80,344 +61,6 @@ pub struct Timing {
     pub fixed_delta: f32,
     pub delta: f32,
     pub elapsed: f32,
-}
-
-/// Scratch buffers used to snapshot script update/fixed schedules without allocating each frame.
-struct ScriptSchedules {
-    update_slots: Vec<(usize, NodeID)>,
-    fixed_slots: Vec<(usize, NodeID)>,
-    update_epoch: u64,
-    fixed_epoch: u64,
-}
-
-impl ScriptSchedules {
-    #[inline]
-    fn new() -> Self {
-        Self {
-            update_slots: Vec::new(),
-            fixed_slots: Vec::new(),
-            update_epoch: u64::MAX,
-            fixed_epoch: u64::MAX,
-        }
-    }
-
-    fn snapshot_update<R: perro_runtime_context::api::RuntimeAPI + ?Sized>(
-        &mut self,
-        scripts: &ScriptCollection<R>,
-    ) {
-        let epoch = scripts.schedule_epoch();
-        if self.update_epoch == epoch {
-            return;
-        }
-
-        let needed = scripts.update_schedule_len();
-        if self.update_slots.capacity() < needed {
-            self.update_slots
-                .reserve(needed - self.update_slots.capacity());
-        }
-        self.update_slots.clear();
-        scripts.append_update_slots(&mut self.update_slots);
-        self.update_epoch = epoch;
-    }
-
-    fn snapshot_fixed<R: perro_runtime_context::api::RuntimeAPI + ?Sized>(
-        &mut self,
-        scripts: &ScriptCollection<R>,
-    ) {
-        let epoch = scripts.schedule_epoch();
-        if self.fixed_epoch == epoch {
-            return;
-        }
-
-        let needed = scripts.fixed_schedule_len();
-        if self.fixed_slots.capacity() < needed {
-            self.fixed_slots
-                .reserve(needed - self.fixed_slots.capacity());
-        }
-        self.fixed_slots.clear();
-        scripts.append_fixed_update_slots(&mut self.fixed_slots);
-        self.fixed_epoch = epoch;
-    }
-}
-
-/// Runtime-side render exchange state:
-/// queued outgoing commands and resolved incoming request results.
-struct RenderState {
-    pending_commands: Vec<RenderCommand>,
-    resolved_requests: AHashMap<RenderRequestID, RuntimeRenderResult>,
-    inflight_requests: AHashSet<RenderRequestID>,
-}
-
-impl RenderState {
-    fn new() -> Self {
-        Self {
-            pending_commands: Vec::new(),
-            resolved_requests: AHashMap::default(),
-            inflight_requests: AHashSet::default(),
-        }
-    }
-
-    fn queue_command(&mut self, command: RenderCommand) {
-        self.pending_commands.push(command);
-    }
-
-    fn drain_commands(&mut self, out: &mut Vec<RenderCommand>) {
-        out.append(&mut self.pending_commands);
-    }
-
-    fn apply_event(&mut self, event: RenderEvent) {
-        match event {
-            RenderEvent::MeshCreated { request, id } => {
-                self.inflight_requests.remove(&request);
-                self.resolved_requests
-                    .insert(request, RuntimeRenderResult::Mesh(id));
-            }
-            RenderEvent::TextureCreated { request, id } => {
-                self.inflight_requests.remove(&request);
-                self.resolved_requests
-                    .insert(request, RuntimeRenderResult::Texture(id));
-            }
-            RenderEvent::MaterialCreated { request, id } => {
-                self.inflight_requests.remove(&request);
-                self.resolved_requests
-                    .insert(request, RuntimeRenderResult::Material(id));
-            }
-            RenderEvent::Failed { request, reason } => {
-                self.inflight_requests.remove(&request);
-                self.resolved_requests
-                    .insert(request, RuntimeRenderResult::Failed(reason));
-            }
-        }
-    }
-
-    fn take_result(&mut self, request: RenderRequestID) -> Option<RuntimeRenderResult> {
-        self.resolved_requests.remove(&request)
-    }
-
-    fn is_inflight(&self, request: RenderRequestID) -> bool {
-        self.inflight_requests.contains(&request)
-    }
-
-    fn mark_inflight(&mut self, request: RenderRequestID) {
-        self.inflight_requests.insert(request);
-    }
-}
-
-/// Runtime-side dirty tracking for downstream systems (rendering, transform propagation).
-struct DirtyState {
-    node_flags: Vec<u8>,
-    dirty_indices: Vec<u32>,
-    pending_transform_roots: Vec<NodeID>,
-    pending_transform_root_flags: Vec<u8>,
-}
-
-struct Render2DState {
-    traversal_ids: Vec<NodeID>,
-    visible_now: AHashSet<NodeID>,
-    prev_visible: AHashSet<NodeID>,
-    retained_sprite_textures: AHashMap<NodeID, TextureID>,
-    texture_sources: AHashMap<NodeID, String>,
-    removed_nodes: Vec<NodeID>,
-}
-
-impl Render2DState {
-    fn new() -> Self {
-        Self {
-            traversal_ids: Vec::new(),
-            visible_now: AHashSet::default(),
-            prev_visible: AHashSet::default(),
-            retained_sprite_textures: AHashMap::default(),
-            texture_sources: AHashMap::default(),
-            removed_nodes: Vec::new(),
-        }
-    }
-}
-
-struct Render3DState {
-    traversal_ids: Vec<NodeID>,
-    visible_now: AHashSet<NodeID>,
-    prev_visible: AHashSet<NodeID>,
-    mesh_sources: AHashMap<NodeID, String>,
-    material_sources: AHashMap<NodeID, String>,
-    material_overrides: AHashMap<NodeID, Material3D>,
-    terrain_material: MaterialID,
-    terrain_chunk_meshes: AHashMap<TerrainChunkMeshKey, TerrainChunkMeshState>,
-    terrain_debug_state: AHashMap<NodeID, TerrainDebugState>,
-    particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile3D>,
-    removed_nodes: Vec<NodeID>,
-}
-
-impl Render3DState {
-    fn new() -> Self {
-        Self {
-            traversal_ids: Vec::new(),
-            visible_now: AHashSet::default(),
-            prev_visible: AHashSet::default(),
-            mesh_sources: AHashMap::default(),
-            material_sources: AHashMap::default(),
-            material_overrides: AHashMap::default(),
-            terrain_material: MaterialID::nil(),
-            terrain_chunk_meshes: AHashMap::default(),
-            terrain_debug_state: AHashMap::default(),
-            particle_path_cache: AHashMap::default(),
-            removed_nodes: Vec::new(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct TerrainChunkMeshKey {
-    node: NodeID,
-    coord: ChunkCoord,
-}
-
-#[derive(Clone, Debug)]
-struct TerrainChunkMeshState {
-    source: String,
-    hash: u64,
-    mesh: MeshID,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct TerrainDebugState {
-    signature: u64,
-    point_count: u32,
-    edge_count: u32,
-}
-
-impl DirtyState {
-    const FLAG_RERENDER: u8 = 1 << 0;
-    const FLAG_DIRTY_2D_TRANSFORM: u8 = 1 << 1;
-    const FLAG_DIRTY_3D_TRANSFORM: u8 = 1 << 2;
-
-    fn new() -> Self {
-        Self {
-            node_flags: Vec::new(),
-            dirty_indices: Vec::new(),
-            pending_transform_roots: Vec::new(),
-            pending_transform_root_flags: Vec::new(),
-        }
-    }
-
-    fn mark_rerender(&mut self, id: NodeID) {
-        self.mark(id, Self::FLAG_RERENDER);
-    }
-
-    fn mark_transform(&mut self, id: NodeID, spatial: Spatial) {
-        match spatial {
-            Spatial::TwoD => {
-                self.mark(id, Self::FLAG_DIRTY_2D_TRANSFORM);
-            }
-            Spatial::ThreeD => {
-                self.mark(id, Self::FLAG_DIRTY_3D_TRANSFORM);
-            }
-            Spatial::None => {}
-        }
-    }
-
-    #[inline]
-    fn transform_mask(spatial: Spatial) -> u8 {
-        match spatial {
-            Spatial::TwoD => Self::FLAG_DIRTY_2D_TRANSFORM,
-            Spatial::ThreeD => Self::FLAG_DIRTY_3D_TRANSFORM,
-            Spatial::None => 0,
-        }
-    }
-
-    #[inline]
-    fn has_transform_dirty(&self, id: NodeID, spatial: Spatial) -> bool {
-        let index = id.index() as usize;
-        let mask = Self::transform_mask(spatial);
-        if mask == 0 {
-            return false;
-        }
-        self.node_flags
-            .get(index)
-            .copied()
-            .is_some_and(|flags| (flags & mask) != 0)
-    }
-
-    #[inline]
-    fn clear_transform_dirty(&mut self, id: NodeID, spatial: Spatial) {
-        let index = id.index() as usize;
-        let mask = Self::transform_mask(spatial);
-        if mask == 0 {
-            return;
-        }
-        if let Some(flags) = self.node_flags.get_mut(index) {
-            *flags &= !mask;
-        }
-    }
-
-    #[inline]
-    fn clear_transform_dirty_at_index(&mut self, index: usize, mask: u8) {
-        if let Some(flags) = self.node_flags.get_mut(index) {
-            *flags &= !mask;
-        }
-    }
-
-    #[inline]
-    fn dirty_indices(&self) -> &[u32] {
-        &self.dirty_indices
-    }
-
-    #[inline]
-    fn transform_flags_at(&self, index: usize) -> u8 {
-        self.node_flags.get(index).copied().unwrap_or(0)
-            & (Self::FLAG_DIRTY_2D_TRANSFORM | Self::FLAG_DIRTY_3D_TRANSFORM)
-    }
-
-    fn mark_transform_root(&mut self, id: NodeID) {
-        let index = id.index() as usize;
-        if self.pending_transform_root_flags.len() <= index {
-            self.pending_transform_root_flags.resize(index + 1, 0);
-        }
-        if self.pending_transform_root_flags[index] == 0 {
-            self.pending_transform_root_flags[index] = 1;
-            self.pending_transform_roots.push(id);
-        }
-    }
-
-    fn take_pending_transform_roots(&mut self, out: &mut Vec<NodeID>) {
-        out.clear();
-        out.append(&mut self.pending_transform_roots);
-        for id in out.iter().copied() {
-            let index = id.index() as usize;
-            if index < self.pending_transform_root_flags.len() {
-                self.pending_transform_root_flags[index] = 0;
-            }
-        }
-    }
-
-    #[inline]
-    fn mark(&mut self, id: NodeID, flag: u8) {
-        let index = id.index() as usize;
-        if self.node_flags.len() <= index {
-            self.node_flags.resize(index + 1, 0);
-        }
-        let entry = &mut self.node_flags[index];
-        if *entry == 0 {
-            self.dirty_indices.push(index as u32);
-        }
-        *entry |= flag;
-    }
-
-    fn clear(&mut self) {
-        for &index in &self.dirty_indices {
-            let i = index as usize;
-            if i < self.node_flags.len() {
-                self.node_flags[i] = 0;
-            }
-        }
-        self.dirty_indices.clear();
-
-        for id in self.pending_transform_roots.drain(..) {
-            let index = id.index() as usize;
-            if index < self.pending_transform_root_flags.len() {
-                self.pending_transform_root_flags[index] = 0;
-            }
-        }
-    }
 }
 
 impl Runtime {
@@ -433,40 +76,17 @@ impl Runtime {
             nodes: NodeArena::new(),
             scripts: ScriptCollection::new(),
             schedules: ScriptSchedules::new(),
-            active_script_stack: Vec::new(),
-            last_node_lookup: None,
-            pending_start_scripts: Vec::new(),
-            pending_start_flags: Vec::new(),
+            script_runtime: ScriptRuntimeState::new(),
             project: None,
             render: RenderState::new(),
             dirty: DirtyState::new(),
-            pending_transform_roots: Vec::new(),
-            traversal_stack: Vec::new(),
-            transform_visit_flags: Vec::new(),
-            transform_visit_indices: Vec::new(),
-            global_transform_2d: Vec::new(),
-            global_transform_2d_valid: Vec::new(),
-            global_transform_2d_generation: Vec::new(),
-            global_transform_3d: Vec::new(),
-            global_transform_3d_valid: Vec::new(),
-            global_transform_3d_generation: Vec::new(),
-            global_chain_scratch: Vec::new(),
-            internal_update_nodes: Vec::new(),
-            internal_fixed_update_nodes: Vec::new(),
-            internal_update_pos: Vec::new(),
-            internal_fixed_update_pos: Vec::new(),
-            physics_body_nodes_2d: Vec::new(),
-            physics_body_nodes_3d: Vec::new(),
-            physics_body_pos_2d: Vec::new(),
-            physics_body_pos_3d: Vec::new(),
+            transforms: TransformRuntimeState::new(),
+            internal_updates: InternalUpdateState::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
             terrain_store: terrain_store.clone(),
-            signals: SignalRegistry::new(),
-            signal_emit_scratch: Vec::new(),
-            script_library: None,
-            dynamic_script_registry: AHashMap::default(),
-            node_tag_index: AHashMap::default(),
+            signal_runtime: SignalRuntimeState::new(),
+            node_index: NodeIndexState::new(),
             resource_api: RuntimeResourceApi::new(None, None, None, terrain_store),
             input: InputSnapshot::new(),
             physics: physics::PhysicsState::new(),
@@ -497,7 +117,7 @@ impl Runtime {
         if let Some(entries) = script_registry {
             for (path, ctor) in entries {
                 runtime
-                    .dynamic_script_registry
+                    .script_runtime.dynamic_script_registry
                     .insert((*path).to_string(), *ctor);
             }
         }
@@ -655,14 +275,14 @@ impl Runtime {
     }
 
     pub(crate) fn propagate_pending_transform_dirty(&mut self) {
-        let mut roots = std::mem::take(&mut self.pending_transform_roots);
+        let mut roots = std::mem::take(&mut self.transforms.pending_transform_roots);
         self.dirty.take_pending_transform_roots(&mut roots);
         if roots.is_empty() {
-            self.pending_transform_roots = roots;
+            self.transforms.pending_transform_roots = roots;
             return;
         }
 
-        let mut stack = std::mem::take(&mut self.traversal_stack);
+        let mut stack = std::mem::take(&mut self.transforms.traversal_stack);
         stack.clear();
 
         for root in roots.iter().copied() {
@@ -672,14 +292,14 @@ impl Runtime {
             stack.push(root);
             while let Some(id) = stack.pop() {
                 let index = id.index() as usize;
-                if self.transform_visit_flags.len() <= index {
-                    self.transform_visit_flags.resize(index + 1, 0);
+                if self.transforms.transform_visit_flags.len() <= index {
+                    self.transforms.transform_visit_flags.resize(index + 1, 0);
                 }
-                if self.transform_visit_flags[index] != 0 {
+                if self.transforms.transform_visit_flags[index] != 0 {
                     continue;
                 }
-                self.transform_visit_flags[index] = 1;
-                self.transform_visit_indices.push(index as u32);
+                self.transforms.transform_visit_flags[index] = 1;
+                self.transforms.transform_visit_indices.push(index as u32);
 
                 let Some(node) = self.nodes.get(id) else {
                     continue;
@@ -689,52 +309,52 @@ impl Runtime {
             }
         }
 
-        for &index in &self.transform_visit_indices {
+        for &index in &self.transforms.transform_visit_indices {
             let i = index as usize;
-            if i < self.transform_visit_flags.len() {
-                self.transform_visit_flags[i] = 0;
+            if i < self.transforms.transform_visit_flags.len() {
+                self.transforms.transform_visit_flags[i] = 0;
             }
         }
-        self.transform_visit_indices.clear();
+        self.transforms.transform_visit_indices.clear();
 
         stack.clear();
-        self.traversal_stack = stack;
+        self.transforms.traversal_stack = stack;
         roots.clear();
-        self.pending_transform_roots = roots;
+        self.transforms.pending_transform_roots = roots;
     }
 
     #[inline]
     fn ensure_global_2d_capacity(&mut self, index: usize) {
-        if self.global_transform_2d.len() <= index {
-            self.global_transform_2d
+        if self.transforms.global_transform_2d.len() <= index {
+            self.transforms.global_transform_2d
                 .resize(index + 1, Transform2D::IDENTITY);
         }
-        if self.global_transform_2d_valid.len() <= index {
-            self.global_transform_2d_valid.resize(index + 1, 0);
+        if self.transforms.global_transform_2d_valid.len() <= index {
+            self.transforms.global_transform_2d_valid.resize(index + 1, 0);
         }
-        if self.global_transform_2d_generation.len() <= index {
-            self.global_transform_2d_generation.resize(index + 1, 0);
+        if self.transforms.global_transform_2d_generation.len() <= index {
+            self.transforms.global_transform_2d_generation.resize(index + 1, 0);
         }
     }
 
     #[inline]
     fn ensure_global_3d_capacity(&mut self, index: usize) {
-        if self.global_transform_3d.len() <= index {
-            self.global_transform_3d
+        if self.transforms.global_transform_3d.len() <= index {
+            self.transforms.global_transform_3d
                 .resize(index + 1, Transform3D::IDENTITY);
         }
-        if self.global_transform_3d_valid.len() <= index {
-            self.global_transform_3d_valid.resize(index + 1, 0);
+        if self.transforms.global_transform_3d_valid.len() <= index {
+            self.transforms.global_transform_3d_valid.resize(index + 1, 0);
         }
-        if self.global_transform_3d_generation.len() <= index {
-            self.global_transform_3d_generation.resize(index + 1, 0);
+        if self.transforms.global_transform_3d_generation.len() <= index {
+            self.transforms.global_transform_3d_generation.resize(index + 1, 0);
         }
     }
 
     fn is_global_2d_cached_clean(&self, id: NodeID) -> bool {
         let index = id.index() as usize;
         if self
-            .global_transform_2d_valid
+            .transforms.global_transform_2d_valid
             .get(index)
             .copied()
             .unwrap_or(0)
@@ -743,7 +363,7 @@ impl Runtime {
             return false;
         }
         if self
-            .global_transform_2d_generation
+            .transforms.global_transform_2d_generation
             .get(index)
             .copied()
             .unwrap_or(u32::MAX)
@@ -757,7 +377,7 @@ impl Runtime {
     fn is_global_3d_cached_clean(&self, id: NodeID) -> bool {
         let index = id.index() as usize;
         if self
-            .global_transform_3d_valid
+            .transforms.global_transform_3d_valid
             .get(index)
             .copied()
             .unwrap_or(0)
@@ -766,7 +386,7 @@ impl Runtime {
             return false;
         }
         if self
-            .global_transform_3d_generation
+            .transforms.global_transform_3d_generation
             .get(index)
             .copied()
             .unwrap_or(u32::MAX)
@@ -784,10 +404,10 @@ impl Runtime {
         let start_index = id.index() as usize;
         self.ensure_global_2d_capacity(start_index);
         if self.is_global_2d_cached_clean(id) {
-            return self.global_transform_2d.get(start_index).copied();
+            return self.transforms.global_transform_2d.get(start_index).copied();
         }
 
-        let mut chain = std::mem::take(&mut self.global_chain_scratch);
+        let mut chain = std::mem::take(&mut self.transforms.global_chain_scratch);
         chain.clear();
 
         let mut cursor = id;
@@ -806,7 +426,7 @@ impl Runtime {
             let dirty = self.dirty.has_transform_dirty(cursor, Spatial::TwoD);
             let cached_clean = self.is_global_2d_cached_clean(cursor);
             if cached_clean && !dirty {
-                parent_world = self.global_transform_2d[index].to_mat3();
+                parent_world = self.transforms.global_transform_2d[index].to_mat3();
                 break;
             }
             chain.push(cursor);
@@ -841,16 +461,16 @@ impl Runtime {
             };
             let index = chain_id.index() as usize;
             self.ensure_global_2d_capacity(index);
-            self.global_transform_2d[index] = global;
-            self.global_transform_2d_valid[index] = 1;
-            self.global_transform_2d_generation[index] = chain_id.generation();
+            self.transforms.global_transform_2d[index] = global;
+            self.transforms.global_transform_2d_valid[index] = 1;
+            self.transforms.global_transform_2d_generation[index] = chain_id.generation();
             self.dirty.clear_transform_dirty(chain_id, Spatial::TwoD);
             parent_world = world;
         }
 
-        let result = self.global_transform_2d.get(start_index).copied();
+        let result = self.transforms.global_transform_2d.get(start_index).copied();
         chain.clear();
-        self.global_chain_scratch = chain;
+        self.transforms.global_chain_scratch = chain;
         result
     }
 
@@ -861,10 +481,10 @@ impl Runtime {
         let start_index = id.index() as usize;
         self.ensure_global_3d_capacity(start_index);
         if self.is_global_3d_cached_clean(id) {
-            return self.global_transform_3d.get(start_index).copied();
+            return self.transforms.global_transform_3d.get(start_index).copied();
         }
 
-        let mut chain = std::mem::take(&mut self.global_chain_scratch);
+        let mut chain = std::mem::take(&mut self.transforms.global_chain_scratch);
         chain.clear();
 
         let mut cursor = id;
@@ -883,7 +503,7 @@ impl Runtime {
             let dirty = self.dirty.has_transform_dirty(cursor, Spatial::ThreeD);
             let cached_clean = self.is_global_3d_cached_clean(cursor);
             if cached_clean && !dirty {
-                parent_world = self.global_transform_3d[index].to_mat4();
+                parent_world = self.transforms.global_transform_3d[index].to_mat4();
                 break;
             }
             chain.push(cursor);
@@ -918,16 +538,16 @@ impl Runtime {
             };
             let index = chain_id.index() as usize;
             self.ensure_global_3d_capacity(index);
-            self.global_transform_3d[index] = global;
-            self.global_transform_3d_valid[index] = 1;
-            self.global_transform_3d_generation[index] = chain_id.generation();
+            self.transforms.global_transform_3d[index] = global;
+            self.transforms.global_transform_3d_valid[index] = 1;
+            self.transforms.global_transform_3d_generation[index] = chain_id.generation();
             self.dirty.clear_transform_dirty(chain_id, Spatial::ThreeD);
             parent_world = world;
         }
 
-        let result = self.global_transform_3d.get(start_index).copied();
+        let result = self.transforms.global_transform_3d.get(start_index).copied();
         chain.clear();
-        self.global_chain_scratch = chain;
+        self.transforms.global_chain_scratch = chain;
         result
     }
 
@@ -975,24 +595,24 @@ impl Runtime {
     }
 
     fn run_start_schedule(&mut self) {
-        let mut queued = std::mem::take(&mut self.pending_start_scripts);
+        let mut queued = std::mem::take(&mut self.script_runtime.pending_start_scripts);
         for id in queued.drain(..) {
             let slot = id.index() as usize;
-            let still_pending = self.pending_start_flags.get(slot).copied().flatten() == Some(id);
+            let still_pending = self.script_runtime.pending_start_flags.get(slot).copied().flatten() == Some(id);
             if !still_pending {
                 continue;
             }
-            self.pending_start_flags[slot] = None;
+            self.script_runtime.pending_start_flags[slot] = None;
             self.call_start_script(id);
         }
-        self.pending_start_scripts = queued;
+        self.script_runtime.pending_start_scripts = queued;
     }
 
     pub(crate) fn rebuild_internal_node_schedules(&mut self) {
-        self.internal_update_nodes.clear();
-        self.internal_fixed_update_nodes.clear();
-        self.internal_update_pos.clear();
-        self.internal_fixed_update_pos.clear();
+        self.internal_updates.internal_update_nodes.clear();
+        self.internal_updates.internal_fixed_update_nodes.clear();
+        self.internal_updates.internal_update_pos.clear();
+        self.internal_updates.internal_fixed_update_pos.clear();
         let mut pairs = Vec::new();
         for (id, node) in self.nodes.iter() {
             pairs.push((id, node.node_type()));
@@ -1006,24 +626,24 @@ impl Runtime {
         self.register_physics_body(id, ty);
         if matches!(ty.get_internal_update(), InternalUpdate::True) {
             let slot = id.index() as usize;
-            if self.internal_update_pos.len() <= slot {
-                self.internal_update_pos.resize(slot + 1, None);
+            if self.internal_updates.internal_update_pos.len() <= slot {
+                self.internal_updates.internal_update_pos.resize(slot + 1, None);
             }
-            if self.internal_update_pos[slot].is_none() {
-                let pos = self.internal_update_nodes.len();
-                self.internal_update_nodes.push(id);
-                self.internal_update_pos[slot] = Some(pos);
+            if self.internal_updates.internal_update_pos[slot].is_none() {
+                let pos = self.internal_updates.internal_update_nodes.len();
+                self.internal_updates.internal_update_nodes.push(id);
+                self.internal_updates.internal_update_pos[slot] = Some(pos);
             }
         }
         if matches!(ty.get_internal_fixed_update(), InternalFixedUpdate::True) {
             let slot = id.index() as usize;
-            if self.internal_fixed_update_pos.len() <= slot {
-                self.internal_fixed_update_pos.resize(slot + 1, None);
+            if self.internal_updates.internal_fixed_update_pos.len() <= slot {
+                self.internal_updates.internal_fixed_update_pos.resize(slot + 1, None);
             }
-            if self.internal_fixed_update_pos[slot].is_none() {
-                let pos = self.internal_fixed_update_nodes.len();
-                self.internal_fixed_update_nodes.push(id);
-                self.internal_fixed_update_pos[slot] = Some(pos);
+            if self.internal_updates.internal_fixed_update_pos[slot].is_none() {
+                let pos = self.internal_updates.internal_fixed_update_nodes.len();
+                self.internal_updates.internal_fixed_update_nodes.push(id);
+                self.internal_updates.internal_fixed_update_pos[slot] = Some(pos);
             }
         }
     }
@@ -1032,70 +652,70 @@ impl Runtime {
         self.unregister_physics_body(id);
         let slot = id.index() as usize;
 
-        if let Some(Some(pos)) = self.internal_update_pos.get(slot).copied() {
-            let last_pos = self.internal_update_nodes.len().saturating_sub(1);
-            self.internal_update_nodes.swap_remove(pos);
-            self.internal_update_pos[slot] = None;
+        if let Some(Some(pos)) = self.internal_updates.internal_update_pos.get(slot).copied() {
+            let last_pos = self.internal_updates.internal_update_nodes.len().saturating_sub(1);
+            self.internal_updates.internal_update_nodes.swap_remove(pos);
+            self.internal_updates.internal_update_pos[slot] = None;
             if pos <= last_pos.saturating_sub(1)
-                && let Some(moved) = self.internal_update_nodes.get(pos).copied()
+                && let Some(moved) = self.internal_updates.internal_update_nodes.get(pos).copied()
             {
                 let moved_slot = moved.index() as usize;
-                if self.internal_update_pos.len() <= moved_slot {
-                    self.internal_update_pos.resize(moved_slot + 1, None);
+                if self.internal_updates.internal_update_pos.len() <= moved_slot {
+                    self.internal_updates.internal_update_pos.resize(moved_slot + 1, None);
                 }
-                self.internal_update_pos[moved_slot] = Some(pos);
+                self.internal_updates.internal_update_pos[moved_slot] = Some(pos);
             }
         }
 
-        if let Some(Some(pos)) = self.internal_fixed_update_pos.get(slot).copied() {
-            let last_pos = self.internal_fixed_update_nodes.len().saturating_sub(1);
-            self.internal_fixed_update_nodes.swap_remove(pos);
-            self.internal_fixed_update_pos[slot] = None;
+        if let Some(Some(pos)) = self.internal_updates.internal_fixed_update_pos.get(slot).copied() {
+            let last_pos = self.internal_updates.internal_fixed_update_nodes.len().saturating_sub(1);
+            self.internal_updates.internal_fixed_update_nodes.swap_remove(pos);
+            self.internal_updates.internal_fixed_update_pos[slot] = None;
             if pos <= last_pos.saturating_sub(1)
-                && let Some(moved) = self.internal_fixed_update_nodes.get(pos).copied()
+                && let Some(moved) = self.internal_updates.internal_fixed_update_nodes.get(pos).copied()
             {
                 let moved_slot = moved.index() as usize;
-                if self.internal_fixed_update_pos.len() <= moved_slot {
-                    self.internal_fixed_update_pos.resize(moved_slot + 1, None);
+                if self.internal_updates.internal_fixed_update_pos.len() <= moved_slot {
+                    self.internal_updates.internal_fixed_update_pos.resize(moved_slot + 1, None);
                 }
-                self.internal_fixed_update_pos[moved_slot] = Some(pos);
+                self.internal_updates.internal_fixed_update_pos[moved_slot] = Some(pos);
             }
         }
     }
 
     pub(crate) fn clear_internal_node_schedules(&mut self) {
-        self.internal_update_nodes.clear();
-        self.internal_fixed_update_nodes.clear();
-        self.internal_update_pos.clear();
-        self.internal_fixed_update_pos.clear();
-        self.physics_body_nodes_2d.clear();
-        self.physics_body_nodes_3d.clear();
-        self.physics_body_pos_2d.clear();
-        self.physics_body_pos_3d.clear();
+        self.internal_updates.internal_update_nodes.clear();
+        self.internal_updates.internal_fixed_update_nodes.clear();
+        self.internal_updates.internal_update_pos.clear();
+        self.internal_updates.internal_fixed_update_pos.clear();
+        self.internal_updates.physics_body_nodes_2d.clear();
+        self.internal_updates.physics_body_nodes_3d.clear();
+        self.internal_updates.physics_body_pos_2d.clear();
+        self.internal_updates.physics_body_pos_3d.clear();
     }
 
     fn register_physics_body(&mut self, id: NodeID, ty: NodeType) {
         match ty {
             NodeType::StaticBody2D | NodeType::Area2D | NodeType::RigidBody2D => {
                 let slot = id.index() as usize;
-                if self.physics_body_pos_2d.len() <= slot {
-                    self.physics_body_pos_2d.resize(slot + 1, None);
+                if self.internal_updates.physics_body_pos_2d.len() <= slot {
+                    self.internal_updates.physics_body_pos_2d.resize(slot + 1, None);
                 }
-                if self.physics_body_pos_2d[slot].is_none() {
-                    let pos = self.physics_body_nodes_2d.len();
-                    self.physics_body_nodes_2d.push(id);
-                    self.physics_body_pos_2d[slot] = Some(pos);
+                if self.internal_updates.physics_body_pos_2d[slot].is_none() {
+                    let pos = self.internal_updates.physics_body_nodes_2d.len();
+                    self.internal_updates.physics_body_nodes_2d.push(id);
+                    self.internal_updates.physics_body_pos_2d[slot] = Some(pos);
                 }
             }
             NodeType::StaticBody3D | NodeType::Area3D | NodeType::RigidBody3D => {
                 let slot = id.index() as usize;
-                if self.physics_body_pos_3d.len() <= slot {
-                    self.physics_body_pos_3d.resize(slot + 1, None);
+                if self.internal_updates.physics_body_pos_3d.len() <= slot {
+                    self.internal_updates.physics_body_pos_3d.resize(slot + 1, None);
                 }
-                if self.physics_body_pos_3d[slot].is_none() {
-                    let pos = self.physics_body_nodes_3d.len();
-                    self.physics_body_nodes_3d.push(id);
-                    self.physics_body_pos_3d[slot] = Some(pos);
+                if self.internal_updates.physics_body_pos_3d[slot].is_none() {
+                    let pos = self.internal_updates.physics_body_nodes_3d.len();
+                    self.internal_updates.physics_body_nodes_3d.push(id);
+                    self.internal_updates.physics_body_pos_3d[slot] = Some(pos);
                 }
             }
             _ => {}
@@ -1105,66 +725,66 @@ impl Runtime {
     fn unregister_physics_body(&mut self, id: NodeID) {
         let slot = id.index() as usize;
 
-        if let Some(Some(pos)) = self.physics_body_pos_2d.get(slot).copied() {
-            let last_pos = self.physics_body_nodes_2d.len().saturating_sub(1);
-            self.physics_body_nodes_2d.swap_remove(pos);
-            self.physics_body_pos_2d[slot] = None;
+        if let Some(Some(pos)) = self.internal_updates.physics_body_pos_2d.get(slot).copied() {
+            let last_pos = self.internal_updates.physics_body_nodes_2d.len().saturating_sub(1);
+            self.internal_updates.physics_body_nodes_2d.swap_remove(pos);
+            self.internal_updates.physics_body_pos_2d[slot] = None;
             if pos <= last_pos.saturating_sub(1)
-                && let Some(moved) = self.physics_body_nodes_2d.get(pos).copied()
+                && let Some(moved) = self.internal_updates.physics_body_nodes_2d.get(pos).copied()
             {
                 let moved_slot = moved.index() as usize;
-                if self.physics_body_pos_2d.len() <= moved_slot {
-                    self.physics_body_pos_2d.resize(moved_slot + 1, None);
+                if self.internal_updates.physics_body_pos_2d.len() <= moved_slot {
+                    self.internal_updates.physics_body_pos_2d.resize(moved_slot + 1, None);
                 }
-                self.physics_body_pos_2d[moved_slot] = Some(pos);
+                self.internal_updates.physics_body_pos_2d[moved_slot] = Some(pos);
             }
         }
 
-        if let Some(Some(pos)) = self.physics_body_pos_3d.get(slot).copied() {
-            let last_pos = self.physics_body_nodes_3d.len().saturating_sub(1);
-            self.physics_body_nodes_3d.swap_remove(pos);
-            self.physics_body_pos_3d[slot] = None;
+        if let Some(Some(pos)) = self.internal_updates.physics_body_pos_3d.get(slot).copied() {
+            let last_pos = self.internal_updates.physics_body_nodes_3d.len().saturating_sub(1);
+            self.internal_updates.physics_body_nodes_3d.swap_remove(pos);
+            self.internal_updates.physics_body_pos_3d[slot] = None;
             if pos <= last_pos.saturating_sub(1)
-                && let Some(moved) = self.physics_body_nodes_3d.get(pos).copied()
+                && let Some(moved) = self.internal_updates.physics_body_nodes_3d.get(pos).copied()
             {
                 let moved_slot = moved.index() as usize;
-                if self.physics_body_pos_3d.len() <= moved_slot {
-                    self.physics_body_pos_3d.resize(moved_slot + 1, None);
+                if self.internal_updates.physics_body_pos_3d.len() <= moved_slot {
+                    self.internal_updates.physics_body_pos_3d.resize(moved_slot + 1, None);
                 }
-                self.physics_body_pos_3d[moved_slot] = Some(pos);
+                self.internal_updates.physics_body_pos_3d[moved_slot] = Some(pos);
             }
         }
     }
 
     pub(crate) fn rebuild_node_tag_index(&mut self) {
-        self.node_tag_index.clear();
+        self.node_index.node_tag_index.clear();
         for (id, node) in self.nodes.iter() {
             for &tag in node.tags_slice() {
-                self.node_tag_index.entry(tag).or_default().insert(id);
+                self.node_index.node_tag_index.entry(tag).or_default().insert(id);
             }
         }
     }
 
     fn run_internal_update_schedule(&mut self) {
-        let schedule = std::mem::take(&mut self.internal_update_nodes);
+        let schedule = std::mem::take(&mut self.internal_updates.internal_update_nodes);
         for id in schedule.iter().copied() {
             if self.nodes.get(id).is_none() {
                 continue;
             }
             self.call_internal_update_node(id);
         }
-        self.internal_update_nodes = schedule;
+        self.internal_updates.internal_update_nodes = schedule;
     }
 
     fn run_internal_fixed_update_schedule(&mut self) {
-        let schedule = std::mem::take(&mut self.internal_fixed_update_nodes);
+        let schedule = std::mem::take(&mut self.internal_updates.internal_fixed_update_nodes);
         for id in schedule.iter().copied() {
             if self.nodes.get(id).is_none() {
                 continue;
             }
             self.call_internal_fixed_update_node(id);
         }
-        self.internal_fixed_update_nodes = schedule;
+        self.internal_updates.internal_fixed_update_nodes = schedule;
     }
 
     fn call_internal_update_node(&mut self, id: NodeID) {
@@ -1306,3 +926,6 @@ impl Default for Runtime {
 #[cfg(test)]
 #[path = "../tests/unit/runtime_hotpath_tests.rs"]
 mod runtime_hotpath_tests;
+
+
+

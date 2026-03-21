@@ -14,21 +14,21 @@ impl Runtime {
     #[inline(always)]
     pub(crate) fn queue_start_script(&mut self, id: NodeID) {
         let slot = id.index() as usize;
-        if self.pending_start_flags.len() <= slot {
-            self.pending_start_flags.resize(slot + 1, None);
+        if self.script_runtime.pending_start_flags.len() <= slot {
+            self.script_runtime.pending_start_flags.resize(slot + 1, None);
         }
-        if self.pending_start_flags[slot] == Some(id) {
+        if self.script_runtime.pending_start_flags[slot] == Some(id) {
             return;
         }
-        self.pending_start_flags[slot] = Some(id);
-        self.pending_start_scripts.push(id);
+        self.script_runtime.pending_start_flags[slot] = Some(id);
+        self.script_runtime.pending_start_scripts.push(id);
     }
 
     #[inline(always)]
     pub(crate) fn unqueue_start_script(&mut self, id: NodeID) {
         let slot = id.index() as usize;
-        if slot < self.pending_start_flags.len() && self.pending_start_flags[slot] == Some(id) {
-            self.pending_start_flags[slot] = None;
+        if slot < self.script_runtime.pending_start_flags.len() && self.script_runtime.pending_start_flags[slot] == Some(id) {
+            self.script_runtime.pending_start_flags[slot] = None;
         }
     }
 
@@ -84,7 +84,7 @@ impl Runtime {
     pub(crate) fn remove_script_instance(&mut self, id: NodeID) -> bool {
         self.call_removal_script(id);
         self.unqueue_start_script(id);
-        self.signals.disconnect_script(id);
+        self.signal_runtime.registry.disconnect_script(id);
         self.scripts.remove(id).is_some()
     }
 
@@ -105,10 +105,10 @@ impl Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputContext<'_, perro_input::InputSnapshot> =
             unsafe { InputContext::new(&*input_ptr) };
-        self.active_script_stack.push((instance_index, id));
+        self.script_runtime.active_script_stack.push((instance_index, id));
         let mut ctx = RuntimeContext::new(self);
         behavior.on_update(&mut ctx, &res, &ipt, id);
-        let _ = self.active_script_stack.pop();
+        let _ = self.script_runtime.active_script_stack.pop();
     }
 
     #[inline(always)]
@@ -128,10 +128,10 @@ impl Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputContext<'_, perro_input::InputSnapshot> =
             unsafe { InputContext::new(&*input_ptr) };
-        self.active_script_stack.push((instance_index, id));
+        self.script_runtime.active_script_stack.push((instance_index, id));
         let mut ctx = RuntimeContext::new(self);
         behavior.on_fixed_update(&mut ctx, &res, &ipt, id);
-        let _ = self.active_script_stack.pop();
+        let _ = self.script_runtime.active_script_stack.pop();
     }
 }
 
@@ -140,7 +140,7 @@ impl ScriptAPI for Runtime {
     where
         F: FnOnce(&T) -> V,
     {
-        if let Some(&(instance_index, active_id)) = self.active_script_stack.last()
+        if let Some(&(instance_index, active_id)) = self.script_runtime.active_script_stack.last()
             && active_id == script_id
         {
             return self
@@ -154,7 +154,7 @@ impl ScriptAPI for Runtime {
     where
         F: FnOnce(&mut T) -> V,
     {
-        if let Some(&(instance_index, active_id)) = self.active_script_stack.last()
+        if let Some(&(instance_index, active_id)) = self.script_runtime.active_script_stack.last()
             && active_id == script_id
         {
             return self
@@ -251,3 +251,4 @@ impl ScriptAPI for Runtime {
         behavior.has_attribute(member, attribute)
     }
 }
+

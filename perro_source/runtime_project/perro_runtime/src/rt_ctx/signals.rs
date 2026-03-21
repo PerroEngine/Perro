@@ -14,7 +14,7 @@ impl SignalAPI for Runtime {
         signal: SignalID,
         function: ScriptMemberID,
     ) -> bool {
-        self.signals.connect(signal, script_id, function)
+        self.signal_runtime.registry.connect(signal, script_id, function)
     }
 
     fn signal_disconnect(
@@ -23,13 +23,13 @@ impl SignalAPI for Runtime {
         signal: SignalID,
         function: ScriptMemberID,
     ) -> bool {
-        self.signals.disconnect(signal, script_id, function)
+        self.signal_runtime.registry.disconnect(signal, script_id, function)
     }
 
     fn signal_emit(&mut self, signal: SignalID, params: &[Variant]) -> usize {
         let mut calls = 0usize;
 
-        if let Some(connection) = self.signals.single_signal_connection(signal) {
+        if let Some(connection) = self.signal_runtime.registry.single_signal_connection(signal) {
             let behavior = self
                 .scripts
                 .get_instance(connection.script_id)
@@ -57,9 +57,9 @@ impl SignalAPI for Runtime {
             return calls;
         }
 
-        let mut pending = std::mem::take(&mut self.signal_emit_scratch);
+        let mut pending = std::mem::take(&mut self.signal_runtime.emit_scratch);
         pending.clear();
-        self.signals.copy_signal_connections(signal, &mut pending);
+        self.signal_runtime.registry.copy_signal_connections(signal, &mut pending);
 
         for connection in pending.iter().copied() {
             let behavior = match self.scripts.get_instance(connection.script_id) {
@@ -88,7 +88,8 @@ impl SignalAPI for Runtime {
         }
 
         pending.clear();
-        self.signal_emit_scratch = pending;
+        self.signal_runtime.emit_scratch = pending;
         calls
     }
 }
+

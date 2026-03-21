@@ -311,7 +311,7 @@ impl Runtime {
     }
 
     fn collect_body_descs_2d(&mut self) -> Vec<BodyDesc2D> {
-        let ids = self.physics_body_nodes_2d.clone();
+        let ids = self.internal_updates.physics_body_nodes_2d.clone();
 
         let mut out = Vec::new();
         for id in ids {
@@ -371,7 +371,7 @@ impl Runtime {
     }
 
     fn collect_body_descs_3d(&mut self) -> Vec<BodyDesc3D> {
-        let ids = self.physics_body_nodes_3d.clone();
+        let ids = self.internal_updates.physics_body_nodes_3d.clone();
 
         let mut out = Vec::new();
         for id in ids {
@@ -1401,3 +1401,4 @@ fn transform_to_iso3(transform: Transform3D) -> na3::Isometry3<f32> {
         rotation,
     )
 }
+

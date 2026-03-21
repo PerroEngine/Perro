@@ -15,15 +15,15 @@ fn cached_slot_for(runtime: &mut Runtime, id: perro_ids::NodeID) -> Option<(usiz
         return None;
     }
 
-    if let Some(&(_, active_id)) = runtime.active_script_stack.last()
+    if let Some(&(_, active_id)) = runtime.script_runtime.active_script_stack.last()
         && active_id == id
     {
         let resolved = (active_id.index() as usize, active_id.generation());
-        runtime.last_node_lookup = Some((active_id, resolved.0, resolved.1));
+        runtime.script_runtime.last_node_lookup = Some((active_id, resolved.0, resolved.1));
         return Some(resolved);
     }
 
-    if let Some((cached_id, cached_index, cached_generation)) = runtime.last_node_lookup
+    if let Some((cached_id, cached_index, cached_generation)) = runtime.script_runtime.last_node_lookup
         && cached_id == id
         && runtime
             .nodes
@@ -39,11 +39,11 @@ fn cached_slot_for(runtime: &mut Runtime, id: perro_ids::NodeID) -> Option<(usiz
         .slot_get_checked(resolved.0, resolved.1)
         .is_some()
     {
-        runtime.last_node_lookup = Some((id, resolved.0, resolved.1));
+        runtime.script_runtime.last_node_lookup = Some((id, resolved.0, resolved.1));
         return Some(resolved);
     }
 
-    runtime.last_node_lookup = None;
+    runtime.script_runtime.last_node_lookup = None;
     None
 }
 
@@ -278,12 +278,12 @@ impl NodeAPI for Runtime {
             Some(node) => {
                 for &tag in node.tags_slice() {
                     let mut remove_entry = false;
-                    if let Some(set) = self.node_tag_index.get_mut(&tag) {
+                    if let Some(set) = self.node_index.node_tag_index.get_mut(&tag) {
                         set.remove(&node_id);
                         remove_entry = set.is_empty();
                     }
                     if remove_entry {
-                        self.node_tag_index.remove(&tag);
+                        self.node_index.node_tag_index.remove(&tag);
                     }
                 }
                 let terrain_id = match &node.data {
@@ -354,17 +354,17 @@ impl NodeAPI for Runtime {
 
         for tag in old_tags {
             if !new_tags.contains(&tag)
-                && let Some(set) = self.node_tag_index.get_mut(&tag)
+                && let Some(set) = self.node_index.node_tag_index.get_mut(&tag)
             {
                 set.remove(&node_id);
                 let remove_entry = set.is_empty();
                 if remove_entry {
-                    self.node_tag_index.remove(&tag);
+                    self.node_index.node_tag_index.remove(&tag);
                 }
             }
         }
         for tag in new_tags {
-            self.node_tag_index.entry(tag).or_default().insert(node_id);
+            self.node_index.node_tag_index.entry(tag).or_default().insert(node_id);
         }
         true
     }
@@ -383,7 +383,7 @@ impl NodeAPI for Runtime {
             added = true;
         }
         if added {
-            self.node_tag_index.entry(tag).or_default().insert(node_id);
+            self.node_index.node_tag_index.entry(tag).or_default().insert(node_id);
         }
         true
     }
@@ -398,11 +398,11 @@ impl NodeAPI for Runtime {
         let tag = tag.into_tag_id();
         if node.has_tag(tag) {
             node.remove_tag(tag);
-            if let Some(set) = self.node_tag_index.get_mut(&tag) {
+            if let Some(set) = self.node_index.node_tag_index.get_mut(&tag) {
                 set.remove(&node_id);
                 let remove_entry = set.is_empty();
                 if remove_entry {
-                    self.node_tag_index.remove(&tag);
+                    self.node_index.node_tag_index.remove(&tag);
                 }
             }
         }
@@ -410,7 +410,7 @@ impl NodeAPI for Runtime {
     }
 
     fn query_nodes(&mut self, query: TagQuery) -> Vec<perro_ids::NodeID> {
-        super::query::query_node_ids(&self.nodes, query, Some(&self.node_tag_index))
+        super::query::query_node_ids(&self.nodes, query, Some(&self.node_index.node_tag_index))
     }
 
     fn get_global_transform_2d(&mut self, node_id: perro_ids::NodeID) -> Option<Transform2D> {
@@ -565,3 +565,4 @@ impl NodeAPI for Runtime {
 #[cfg(test)]
 #[path = "../../tests/unit/rt_ctx_nodes_transform_api_tests.rs"]
 mod tests;
+

@@ -6,5 +6,5 @@
 [Node3D]
     position = (0, 0, 0)
 [/Node3D]
-[RigidBody3D]
+[/RigidBody3D]
 [/main]

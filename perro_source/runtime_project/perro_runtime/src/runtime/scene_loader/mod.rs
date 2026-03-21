@@ -67,8 +67,8 @@ impl Runtime {
         self.nodes.clear();
         self.clear_physics();
         self.scripts = Default::default();
-        self.pending_start_scripts.clear();
-        self.pending_start_flags.clear();
+        self.script_runtime.pending_start_scripts.clear();
+        self.script_runtime.pending_start_flags.clear();
         self.clear_internal_node_schedules();
         self.render_2d.traversal_ids.clear();
         self.render_2d.visible_now.clear();
@@ -91,10 +91,10 @@ impl Runtime {
             .expect("terrain store mutex poisoned")
             .clear();
         if self.provider_mode == ProviderMode::Dynamic {
-            self.dynamic_script_registry.clear();
+            self.script_runtime.dynamic_script_registry.clear();
         }
-        self.script_library = None;
-        self.node_tag_index.clear();
+        self.script_runtime.script_library = None;
+        self.node_index.node_tag_index.clear();
         let mode_label;
         #[cfg(feature = "profile")]
         let mut source_load: Option<Duration> = None;
@@ -267,3 +267,4 @@ const ANSI_ORANGE: &str = "\x1b[38;5;208m";
 fn depth_color(depth: usize) -> &'static str {
     if depth == 0 { ANSI_WHITE } else { "" }
 }
+
