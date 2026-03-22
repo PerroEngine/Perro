@@ -1,4 +1,5 @@
-use super::Runtime;
+use super::{Runtime, UpdateScheduleTiming};
+use std::time::Instant;
 
 impl Runtime {
     pub(crate) fn run_update_schedule(&mut self) {
@@ -37,5 +38,36 @@ impl Runtime {
             self.call_start_script(id);
         }
         self.script_runtime.pending_start_scripts = queued;
+    }
+
+    pub(crate) fn run_update_schedule_timed(&mut self) -> UpdateScheduleTiming {
+        let schedule_start = Instant::now();
+        let mut scripts_total = std::time::Duration::ZERO;
+        let mut script_count = 0u32;
+        let mut slowest_script = std::time::Duration::ZERO;
+        let mut slowest_script_id = None;
+
+        let mut i = 0;
+        while i < self.schedules.update_slots.len() {
+            let (instance_index, id) = self.schedules.update_slots[i];
+            let script_start = Instant::now();
+            self.call_update_script_scheduled(instance_index, id);
+            let script_duration = script_start.elapsed();
+            scripts_total += script_duration;
+            script_count = script_count.saturating_add(1);
+            if script_duration > slowest_script {
+                slowest_script = script_duration;
+                slowest_script_id = Some(id);
+            }
+            i += 1;
+        }
+
+        UpdateScheduleTiming {
+            total: schedule_start.elapsed(),
+            scripts_total,
+            script_count,
+            slowest_script_id,
+            slowest_script,
+        }
     }
 }

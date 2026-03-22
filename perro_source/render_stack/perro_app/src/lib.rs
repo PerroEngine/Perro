@@ -3,6 +3,7 @@ use perro_input::{GamepadAxis, GamepadButton, JoyConButton, KeyCode, MouseButton
 use perro_render_bridge::RenderEvent;
 use perro_runtime::Runtime;
 use std::sync::Arc;
+use std::time::Duration;
 use winit::window::Window;
 
 pub struct App<B: GraphicsBackend> {
@@ -10,6 +11,18 @@ pub struct App<B: GraphicsBackend> {
     pub graphics: B,
     command_buffer: Vec<perro_render_bridge::RenderCommand>,
     event_buffer: Vec<RenderEvent>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PresentTiming {
+    pub extract_2d: Duration,
+    pub extract_3d: Duration,
+    pub drain_commands: Duration,
+    pub submit_commands: Duration,
+    pub draw_frame: Duration,
+    pub drain_events: Duration,
+    pub apply_events: Duration,
+    pub total: Duration,
 }
 
 impl<B: GraphicsBackend> App<B> {
@@ -47,8 +60,8 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
-    pub fn update_runtime(&mut self, delta_time: f32) {
-        self.runtime.update(delta_time);
+    pub fn update_runtime(&mut self, delta_time: f32) -> perro_runtime::RuntimeUpdateTiming {
+        self.runtime.update_timed(delta_time)
     }
 
     #[inline]
@@ -134,16 +147,52 @@ impl<B: GraphicsBackend> App<B> {
 
     #[inline]
     pub fn present(&mut self) {
+        let _ = self.present_timed();
+    }
+
+    #[inline]
+    pub fn present_timed(&mut self) -> PresentTiming {
+        let total_start = std::time::Instant::now();
+
+        let extract_2d_start = std::time::Instant::now();
         self.runtime.extract_render_2d_commands();
+        let extract_2d = extract_2d_start.elapsed();
+
+        let extract_3d_start = std::time::Instant::now();
         self.runtime.extract_render_3d_commands();
+        let extract_3d = extract_3d_start.elapsed();
+
+        let drain_commands_start = std::time::Instant::now();
         self.runtime.drain_render_commands(&mut self.command_buffer);
+        let drain_commands = drain_commands_start.elapsed();
+
+        let submit_start = std::time::Instant::now();
         self.graphics.submit_many(self.command_buffer.drain(..));
+        let submit_commands = submit_start.elapsed();
 
+        let draw_frame_start = std::time::Instant::now();
         self.graphics.draw_frame();
+        let draw_frame = draw_frame_start.elapsed();
 
+        let drain_events_start = std::time::Instant::now();
         self.graphics.drain_events(&mut self.event_buffer);
+        let drain_events = drain_events_start.elapsed();
+
+        let apply_events_start = std::time::Instant::now();
         self.runtime
             .apply_render_events(self.event_buffer.drain(..));
+        let apply_events = apply_events_start.elapsed();
+
+        PresentTiming {
+            extract_2d,
+            extract_3d,
+            drain_commands,
+            submit_commands,
+            draw_frame,
+            drain_events,
+            apply_events,
+            total: total_start.elapsed(),
+        }
     }
 
     #[inline]
@@ -153,7 +202,7 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     pub fn frame(&mut self, delta_time: f32) {
-        self.update_runtime(delta_time);
+        let _ = self.update_runtime(delta_time);
         self.present();
     }
 }

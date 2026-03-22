@@ -3,9 +3,11 @@ use crate::{
     rs_ctx::RuntimeResourceApi,
     runtime_project::{ProviderMode, RuntimeProject},
 };
+use perro_ids::NodeID;
 use perro_input::InputSnapshot;
 use perro_scripting::ScriptConstructor;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 mod input_bridge;
 mod internal_updates;
@@ -56,6 +58,24 @@ pub struct Timing {
     pub fixed_delta: f32,
     pub delta: f32,
     pub elapsed: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct UpdateScheduleTiming {
+    pub total: Duration,
+    pub scripts_total: Duration,
+    pub script_count: u32,
+    pub slowest_script_id: Option<NodeID>,
+    pub slowest_script: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RuntimeUpdateTiming {
+    pub start_schedule: Duration,
+    pub snapshot_update: Duration,
+    pub update_schedule: UpdateScheduleTiming,
+    pub internal_update: Duration,
+    pub total: Duration,
 }
 
 impl Runtime {
@@ -138,6 +158,34 @@ impl Runtime {
         self.schedules.snapshot_update(&self.scripts);
         self.run_update_schedule();
         self.run_internal_update_schedule();
+    }
+
+    #[inline]
+    pub fn update_timed(&mut self, delta_time: f32) -> RuntimeUpdateTiming {
+        let total_start = std::time::Instant::now();
+        self.time.delta = delta_time;
+
+        let start_schedule_start = std::time::Instant::now();
+        self.run_start_schedule();
+        let start_schedule = start_schedule_start.elapsed();
+
+        let snapshot_start = std::time::Instant::now();
+        self.schedules.snapshot_update(&self.scripts);
+        let snapshot_update = snapshot_start.elapsed();
+
+        let update_schedule = self.run_update_schedule_timed();
+
+        let internal_start = std::time::Instant::now();
+        self.run_internal_update_schedule();
+        let internal_update = internal_start.elapsed();
+
+        RuntimeUpdateTiming {
+            start_schedule,
+            snapshot_update,
+            update_schedule,
+            internal_update,
+            total: total_start.elapsed(),
+        }
     }
 
     #[inline]

@@ -81,8 +81,24 @@ struct RunnerState<B: GraphicsBackend> {
     run_start: Instant,
     batch_start: Instant,
     batch_work: Duration,
+    batch_simulation: Duration,
     batch_runtime_update: Duration,
+    batch_input_poll: Duration,
+    batch_fixed_update: Duration,
+    batch_runtime_start_schedule: Duration,
+    batch_runtime_snapshot_update: Duration,
+    batch_runtime_script_update: Duration,
+    batch_runtime_internal_update: Duration,
+    batch_runtime_slowest_script: Duration,
+    batch_runtime_script_count: u64,
     batch_present: Duration,
+    batch_present_extract_2d: Duration,
+    batch_present_extract_3d: Duration,
+    batch_present_drain_commands: Duration,
+    batch_present_submit_commands: Duration,
+    batch_present_draw_frame: Duration,
+    batch_present_drain_events: Duration,
+    batch_present_apply_events: Duration,
     batch_idle: Duration,
     batch_sim_delta_seconds: f64,
     fixed_timestep: Option<f32>,
@@ -111,8 +127,24 @@ impl<B: GraphicsBackend> RunnerState<B> {
             batch_frames: 0,
             batch_start: now,
             batch_work: Duration::ZERO,
+            batch_simulation: Duration::ZERO,
             batch_runtime_update: Duration::ZERO,
+            batch_input_poll: Duration::ZERO,
+            batch_fixed_update: Duration::ZERO,
+            batch_runtime_start_schedule: Duration::ZERO,
+            batch_runtime_snapshot_update: Duration::ZERO,
+            batch_runtime_script_update: Duration::ZERO,
+            batch_runtime_internal_update: Duration::ZERO,
+            batch_runtime_slowest_script: Duration::ZERO,
+            batch_runtime_script_count: 0,
             batch_present: Duration::ZERO,
+            batch_present_extract_2d: Duration::ZERO,
+            batch_present_extract_3d: Duration::ZERO,
+            batch_present_drain_commands: Duration::ZERO,
+            batch_present_submit_commands: Duration::ZERO,
+            batch_present_draw_frame: Duration::ZERO,
+            batch_present_drain_events: Duration::ZERO,
+            batch_present_apply_events: Duration::ZERO,
             batch_idle: Duration::ZERO,
             batch_sim_delta_seconds: 0.0,
             kbm_input: crate::input::KbmInput::new(),
@@ -150,9 +182,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let mut runtime_update_duration = Duration::ZERO;
         let present_duration;
 
+        let simulation_start = Instant::now();
+        let input_poll_start = Instant::now();
         // Poll device inputs before update so scripts see the latest state.
         self.gamepad_input.begin_frame(&mut self.app);
         self.joycon_input.begin_frame(&mut self.app);
+        let input_poll_duration = input_poll_start.elapsed();
+        let fixed_start = Instant::now();
 
         if let Some(step) = self.fixed_timestep {
             self.fixed_accumulator += frame_delta.as_secs_f32();
@@ -171,13 +207,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
             simulated_delta_seconds = step as f64 * steps as f64;
         }
 
-        let update_start = Instant::now();
-        self.app.update_runtime(frame_delta.as_secs_f32());
-        runtime_update_duration += update_start.elapsed();
+        let fixed_duration = fixed_start.elapsed();
+        let runtime_timing = self.app.update_runtime(frame_delta.as_secs_f32());
+        runtime_update_duration += runtime_timing.total;
+        let simulation_duration = simulation_start.elapsed();
 
-        let present_start = Instant::now();
-        self.app.present();
-        present_duration = present_start.elapsed();
+        let present_timing = self.app.present_timed();
+        present_duration = present_timing.total;
         let work_duration = work_start.elapsed();
 
         let frame_end = Instant::now();
@@ -185,8 +221,26 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
         self.batch_frames = self.batch_frames.saturating_add(1);
         self.batch_work += work_duration;
+        self.batch_simulation += simulation_duration;
         self.batch_runtime_update += runtime_update_duration;
+        self.batch_input_poll += input_poll_duration;
+        self.batch_fixed_update += fixed_duration;
+        self.batch_runtime_start_schedule += runtime_timing.start_schedule;
+        self.batch_runtime_snapshot_update += runtime_timing.snapshot_update;
+        self.batch_runtime_script_update += runtime_timing.update_schedule.scripts_total;
+        self.batch_runtime_internal_update += runtime_timing.internal_update;
+        self.batch_runtime_script_count += runtime_timing.update_schedule.script_count as u64;
+        if runtime_timing.update_schedule.slowest_script > self.batch_runtime_slowest_script {
+            self.batch_runtime_slowest_script = runtime_timing.update_schedule.slowest_script;
+        }
         self.batch_present += present_duration;
+        self.batch_present_extract_2d += present_timing.extract_2d;
+        self.batch_present_extract_3d += present_timing.extract_3d;
+        self.batch_present_drain_commands += present_timing.drain_commands;
+        self.batch_present_submit_commands += present_timing.submit_commands;
+        self.batch_present_draw_frame += present_timing.draw_frame;
+        self.batch_present_drain_events += present_timing.drain_events;
+        self.batch_present_apply_events += present_timing.apply_events;
         self.batch_idle += idle_duration;
         self.batch_sim_delta_seconds += simulated_delta_seconds;
 
@@ -194,22 +248,81 @@ impl<B: GraphicsBackend> RunnerState<B> {
         if batch_elapsed_secs >= LOG_INTERVAL_SECONDS && self.batch_frames > 0 {
             let work_ms = self.batch_work.as_secs_f64() * 1_000.0;
             let avg_work_us = (work_ms * 1_000.0) / self.batch_frames as f64;
+            let avg_simulation_us = self.batch_simulation.as_micros() as f64 / self.batch_frames as f64;
             let avg_runtime_update_us =
                 self.batch_runtime_update.as_micros() as f64 / self.batch_frames as f64;
+            let avg_input_poll_us = self.batch_input_poll.as_micros() as f64 / self.batch_frames as f64;
+            let avg_fixed_update_us = self.batch_fixed_update.as_micros() as f64 / self.batch_frames as f64;
             let present_ms = self.batch_present.as_secs_f64() * 1_000.0;
             let avg_present_us = (present_ms * 1_000.0) / self.batch_frames as f64;
             let idle_ms = self.batch_idle.as_secs_f64() * 1_000.0;
             let avg_idle_us = (idle_ms * 1_000.0) / self.batch_frames as f64;
+            let avg_runtime_script_update_us =
+                self.batch_runtime_script_update.as_micros() as f64 / self.batch_frames as f64;
+            let avg_runtime_script_count = self.batch_runtime_script_count as f64 / self.batch_frames as f64;
 
+            let avg_present_extract_2d_us =
+                self.batch_present_extract_2d.as_micros() as f64 / self.batch_frames as f64;
+            let avg_present_extract_3d_us =
+                self.batch_present_extract_3d.as_micros() as f64 / self.batch_frames as f64;
+            let avg_present_drain_commands_us =
+                self.batch_present_drain_commands.as_micros() as f64 / self.batch_frames as f64;
+            let avg_present_submit_commands_us =
+                self.batch_present_submit_commands.as_micros() as f64 / self.batch_frames as f64;
+            let avg_present_draw_frame_us =
+                self.batch_present_draw_frame.as_micros() as f64 / self.batch_frames as f64;
+            let avg_present_drain_events_us =
+                self.batch_present_drain_events.as_micros() as f64 / self.batch_frames as f64;
+            let avg_present_apply_events_us =
+                self.batch_present_apply_events.as_micros() as f64 / self.batch_frames as f64;
             println!(
-                "update: ({:.3}us avg) | frame present: ({:.3}us avg) | idle: ({:.3}us avg) | total: ({:.3}us avg)",
-                avg_runtime_update_us, avg_present_us, avg_idle_us, avg_work_us,
+                "update: ({:.3}us avg) | frame present: ({:.3}us avg) | total: ({:.3}us avg) | idle: ({:.3}us avg)",
+                avg_simulation_us, avg_present_us, avg_work_us,avg_idle_us
             );
+            println!(
+                "simulation breakdown: input=({:.3}us) fixed=({:.3}us) runtime=({:.3}us)",
+                avg_input_poll_us,
+                avg_fixed_update_us,
+                avg_runtime_update_us
+            );
+            println!(
+                "user scripts: ({:.3}us avg) | script calls/frame: ({:.2}) | slowest script: ({:.3}us)",
+                avg_runtime_script_update_us,
+                avg_runtime_script_count,
+                self.batch_runtime_slowest_script.as_micros() as f64
+            );
+            println!(
+                "present breakdown: extract2d=({:.3}us) extract3d=({:.3}us) drain=({:.3}us) submit=({:.3}us) draw=({:.3}us) events_drain=({:.3}us) events_apply=({:.3}us)",
+                avg_present_extract_2d_us,
+                avg_present_extract_3d_us,
+                avg_present_drain_commands_us,
+                avg_present_submit_commands_us,
+                avg_present_draw_frame_us,
+                avg_present_drain_events_us,
+                avg_present_apply_events_us
+            );
+            println!("---");
 
             self.batch_frames = 0;
             self.batch_work = Duration::ZERO;
+            self.batch_simulation = Duration::ZERO;
             self.batch_runtime_update = Duration::ZERO;
+            self.batch_input_poll = Duration::ZERO;
+            self.batch_fixed_update = Duration::ZERO;
+            self.batch_runtime_start_schedule = Duration::ZERO;
+            self.batch_runtime_snapshot_update = Duration::ZERO;
+            self.batch_runtime_script_update = Duration::ZERO;
+            self.batch_runtime_internal_update = Duration::ZERO;
+            self.batch_runtime_slowest_script = Duration::ZERO;
+            self.batch_runtime_script_count = 0;
             self.batch_present = Duration::ZERO;
+            self.batch_present_extract_2d = Duration::ZERO;
+            self.batch_present_extract_3d = Duration::ZERO;
+            self.batch_present_drain_commands = Duration::ZERO;
+            self.batch_present_submit_commands = Duration::ZERO;
+            self.batch_present_draw_frame = Duration::ZERO;
+            self.batch_present_drain_events = Duration::ZERO;
+            self.batch_present_apply_events = Duration::ZERO;
             self.batch_idle = Duration::ZERO;
             self.batch_sim_delta_seconds = 0.0;
             self.batch_start = frame_end;
@@ -253,8 +366,24 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             self.batch_start = now;
             self.batch_frames = 0;
             self.batch_work = Duration::ZERO;
+            self.batch_simulation = Duration::ZERO;
             self.batch_runtime_update = Duration::ZERO;
+            self.batch_input_poll = Duration::ZERO;
+            self.batch_fixed_update = Duration::ZERO;
+            self.batch_runtime_start_schedule = Duration::ZERO;
+            self.batch_runtime_snapshot_update = Duration::ZERO;
+            self.batch_runtime_script_update = Duration::ZERO;
+            self.batch_runtime_internal_update = Duration::ZERO;
+            self.batch_runtime_slowest_script = Duration::ZERO;
+            self.batch_runtime_script_count = 0;
             self.batch_present = Duration::ZERO;
+            self.batch_present_extract_2d = Duration::ZERO;
+            self.batch_present_extract_3d = Duration::ZERO;
+            self.batch_present_drain_commands = Duration::ZERO;
+            self.batch_present_submit_commands = Duration::ZERO;
+            self.batch_present_draw_frame = Duration::ZERO;
+            self.batch_present_drain_events = Duration::ZERO;
+            self.batch_present_apply_events = Duration::ZERO;
             self.batch_idle = Duration::ZERO;
             self.batch_sim_delta_seconds = 0.0;
         }

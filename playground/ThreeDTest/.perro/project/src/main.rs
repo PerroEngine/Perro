@@ -43,7 +43,7 @@ fn main() {
   particle_sim_default: perro_app::entry::ParticleSimDefault::GpuCompute,
   },
   runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {
-  target_fps: None,
+  target_fps: Some(360f32),
   target_fixed_update: Some(60f32),
   },
   assets: perro_app::entry::StaticEmbeddedAssetsConfig {

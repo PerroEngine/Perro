@@ -13,7 +13,7 @@ pub use perro_input::InputSnapshot as RuntimeInputApi;
 pub use perro_project::{bootstrap_project, create_new_project};
 pub use render_result::RuntimeRenderResult;
 pub use rs_ctx::RuntimeResourceApi;
-pub use runtime::Runtime;
+pub use runtime::{Runtime, RuntimeUpdateTiming};
 pub use runtime_project::{
     OcclusionCulling, ParticleSimDefault, ProjectLoadError, ProviderMode, RuntimeProject,
     RuntimeProjectConfig, StaticAudioLookup, StaticMaterialLookup, StaticParticleLookup,
