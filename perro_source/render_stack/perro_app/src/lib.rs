@@ -182,6 +182,8 @@ impl<B: GraphicsBackend> App<B> {
         self.runtime
             .apply_render_events(self.event_buffer.drain(..));
         let apply_events = apply_events_start.elapsed();
+        // Dirty markers are per-frame extraction hints; clear after a full frame.
+        self.runtime.clear_dirty_flags();
 
         PresentTiming {
             extract_2d,

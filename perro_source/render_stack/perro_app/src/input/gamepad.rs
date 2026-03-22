@@ -39,6 +39,7 @@ mod backend {
     const JOYCON_VENDOR_ID: u16 = 0x057E;
     const JOYCON_1_LEFT_PID: u16 = 0x2006;
     const JOYCON_1_RIGHT_PID: u16 = 0x2007;
+    const STATE_SYNC_INTERVAL_FRAMES: u32 = 4;
 
     #[derive(Default)]
     pub struct GamepadBackend {
@@ -50,6 +51,7 @@ mod backend {
         next_index: usize,
         down: HashSet<(GamepadId, GamepadButton)>,
         uuid_in_use: HashSet<[u8; 16]>,
+        state_sync_frame_counter: u32,
     }
 
     impl GamepadBackend {
@@ -62,11 +64,19 @@ mod backend {
             while let Some(event) = gilrs.next_event() {
                 self.handle_event(app, &gilrs, event);
             }
+
             // Some controllers/drivers (notably on Windows) can miss or coalesce
-            // button events. Sync the current state each frame to avoid dropped
-            // pressed edges.
-            self.sync_buttons(app, &gilrs);
-            self.sync_axes(app, &gilrs);
+            // button events. Keep a periodic sync as a safety net, but avoid
+            // full per-frame scans when there are no active gamepads.
+            self.state_sync_frame_counter = self.state_sync_frame_counter.wrapping_add(1);
+            let should_sync = !self.uuid_in_use.is_empty()
+                && self
+                    .state_sync_frame_counter
+                    .is_multiple_of(STATE_SYNC_INTERVAL_FRAMES);
+            if should_sync {
+                self.sync_buttons(app, &gilrs);
+                self.sync_axes(app, &gilrs);
+            }
 
             self.gilrs = Some(gilrs);
         }
@@ -248,13 +258,12 @@ mod backend {
         }
 
         fn sync_buttons<B: GraphicsBackend>(&mut self, app: &mut App<B>, gilrs: &Gilrs) {
-            for (id, gp) in gilrs.gamepads() {
-                if is_joycon(&gp) {
+            let ids: Vec<GamepadId> = self.id_to_uuid.keys().copied().collect();
+            for id in ids {
+                let gp = gilrs.gamepad(id);
+                if !gp.is_connected() || is_joycon(&gp) {
                     continue;
                 }
-                let Some(_index) = self.assign_index_if_unique(gilrs, id) else {
-                    continue;
-                };
                 for button in ALL_BUTTONS {
                     let Some(gilrs_button) = map_button_to_gilrs(button) else {
                         continue;
@@ -266,11 +275,13 @@ mod backend {
         }
 
         fn sync_axes<B: GraphicsBackend>(&mut self, app: &mut App<B>, gilrs: &Gilrs) {
-            for (id, gp) in gilrs.gamepads() {
-                if is_joycon(&gp) {
+            let ids: Vec<GamepadId> = self.id_to_uuid.keys().copied().collect();
+            for id in ids {
+                let gp = gilrs.gamepad(id);
+                if !gp.is_connected() || is_joycon(&gp) {
                     continue;
                 }
-                let Some(index) = self.assign_index_if_unique(gilrs, id) else {
+                let Some(index) = self.id_to_uuid.get(&id).and_then(|u| self.uuid_to_index.get(u)).copied() else {
                     continue;
                 };
                 for axis in ALL_AXES {
