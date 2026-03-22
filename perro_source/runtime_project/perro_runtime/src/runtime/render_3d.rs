@@ -269,13 +269,22 @@ impl Runtime {
                 } else {
                     None
                 };
-                self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::Draw {
+                let draw_state = crate::runtime::state::RetainedMeshDrawState {
                     mesh,
                     material,
-                    node,
                     model,
-                    skeleton: skeleton_palette,
-                })));
+                    skeleton: skeleton_palette.clone(),
+                };
+                if self.render_3d.retained_mesh_draws.get(&node) != Some(&draw_state) {
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::Draw {
+                        mesh,
+                        material,
+                        node,
+                        model,
+                        skeleton: skeleton_palette,
+                    })));
+                    self.render_3d.retained_mesh_draws.insert(node, draw_state);
+                }
                 visible_now.insert(node);
             }
             let terrain_data = self.nodes.get(node).and_then(|node| match &node.data {
@@ -462,6 +471,7 @@ impl Runtime {
             self.render_3d.retained_ray_lights.remove(&node);
             self.render_3d.retained_point_lights.remove(&node);
             self.render_3d.retained_spot_lights.remove(&node);
+            self.render_3d.retained_mesh_draws.remove(&node);
             self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
                 node,
             })));

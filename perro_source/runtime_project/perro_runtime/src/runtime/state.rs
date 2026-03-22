@@ -8,7 +8,7 @@ use perro_ids::{MaterialID, MeshID, NodeID, TagID, TextureID};
 use perro_nodes::Spatial;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, Material3D, PointLight3DState, RayLight3DState,
-    RenderCommand, RenderEvent, RenderRequestID, SpotLight3DState,
+    RenderCommand, RenderEvent, RenderRequestID, SkeletonPalette, SpotLight3DState,
 };
 use perro_structs::{Transform2D, Transform3D};
 use perro_terrain::ChunkCoord;
@@ -286,6 +286,7 @@ pub(crate) struct Render3DState {
     pub(crate) retained_ray_lights: AHashMap<NodeID, RayLight3DState>,
     pub(crate) retained_point_lights: AHashMap<NodeID, PointLight3DState>,
     pub(crate) retained_spot_lights: AHashMap<NodeID, SpotLight3DState>,
+    pub(crate) retained_mesh_draws: AHashMap<NodeID, RetainedMeshDrawState>,
     pub(crate) removed_nodes: Vec<NodeID>,
 }
 
@@ -307,9 +308,18 @@ impl Render3DState {
             retained_ray_lights: AHashMap::default(),
             retained_point_lights: AHashMap::default(),
             retained_spot_lights: AHashMap::default(),
+            retained_mesh_draws: AHashMap::default(),
             removed_nodes: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RetainedMeshDrawState {
+    pub(crate) mesh: MeshID,
+    pub(crate) material: MaterialID,
+    pub(crate) model: [[f32; 4]; 4],
+    pub(crate) skeleton: Option<SkeletonPalette>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

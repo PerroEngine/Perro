@@ -55,6 +55,11 @@ pub struct Gpu {
     two_d: Option<Gpu2D>,
     three_d: Option<Gpu3D>,
     point_particles_3d: Option<GpuPointParticles3D>,
+    last_prepare_3d_camera: Option<Camera3DState>,
+    last_prepare_3d_lighting: Option<Lighting3DState>,
+    last_prepare_3d_draws: Vec<Draw3DInstance>,
+    last_prepare_3d_width: u32,
+    last_prepare_3d_height: u32,
     meshlets_enabled: bool,
     dev_meshlets: bool,
     meshlet_debug_view: bool,
@@ -208,7 +213,7 @@ impl Gpu {
             present_mode,
             alpha_mode,
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency: 1,
         };
         surface.configure(&device, &config);
 
@@ -249,6 +254,11 @@ impl Gpu {
             two_d: Some(two_d),
             three_d: Some(three_d),
             point_particles_3d: Some(point_particles_3d),
+            last_prepare_3d_camera: None,
+            last_prepare_3d_lighting: None,
+            last_prepare_3d_draws: Vec::new(),
+            last_prepare_3d_width: width,
+            last_prepare_3d_height: height,
             meshlets_enabled,
             dev_meshlets,
             meshlet_debug_view,
@@ -279,6 +289,9 @@ impl Gpu {
             height,
             self.sample_count,
         );
+        // Force next 3D prepare to refresh viewport-dependent GPU state.
+        self.last_prepare_3d_width = 0;
+        self.last_prepare_3d_height = 0;
     }
 
     pub fn set_smoothing_samples(&mut self, samples: u32) {
@@ -354,6 +367,11 @@ impl Gpu {
             || needs_particles_3d
             || post_requested;
         let needs_3d_particles_path = has(DIRTY_PARTICLES_3D) || needs_particles_3d;
+        let three_d_content_changed = self.last_prepare_3d_camera.as_ref() != Some(&camera_3d)
+            || self.last_prepare_3d_lighting.as_ref() != Some(lighting_3d)
+            || self.last_prepare_3d_draws.as_slice() != draws_3d
+            || self.last_prepare_3d_width != self.config.width
+            || self.last_prepare_3d_height != self.config.height;
 
         let prepare_2d_start = Instant::now();
         if needs_2d {
@@ -407,20 +425,35 @@ impl Gpu {
                 ));
             }
             if let Some(three_d) = self.three_d.as_mut() {
-                three_d.prepare(
-                    &self.device,
-                    &self.queue,
-                    Prepare3D {
-                        resources,
-                        camera: camera_3d.clone(),
-                        lighting: lighting_3d,
-                        draws: draws_3d,
-                        width: self.config.width,
-                        height: self.config.height,
-                        static_mesh_lookup,
-                        static_shader_lookup,
-                    },
-                );
+                if has(DIRTY_3D)
+                    || has(DIRTY_CAMERA_3D)
+                    || has(DIRTY_LIGHTS_3D)
+                    || has(DIRTY_RESOURCES)
+                    || needs_3d_particles_path
+                    || post_requested
+                    || three_d_content_changed
+                {
+                    three_d.prepare(
+                        &self.device,
+                        &self.queue,
+                        Prepare3D {
+                            resources,
+                            camera: camera_3d.clone(),
+                            lighting: lighting_3d,
+                            draws: draws_3d,
+                            width: self.config.width,
+                            height: self.config.height,
+                            static_mesh_lookup,
+                            static_shader_lookup,
+                        },
+                    );
+                    self.last_prepare_3d_camera = Some(camera_3d.clone());
+                    self.last_prepare_3d_lighting = Some(*lighting_3d);
+                    self.last_prepare_3d_draws.clear();
+                    self.last_prepare_3d_draws.extend_from_slice(draws_3d);
+                    self.last_prepare_3d_width = self.config.width;
+                    self.last_prepare_3d_height = self.config.height;
+                }
             }
             if needs_3d_particles_path {
                 if let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
