@@ -109,9 +109,14 @@ impl Runtime {
                     projection,
                     post_processing,
                 };
-                self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::SetCamera {
-                    camera,
-                })));
+                if self.render_3d.last_camera.as_ref() != Some(&camera) {
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                        Command3D::SetCamera {
+                            camera: camera.clone(),
+                        },
+                    )));
+                    self.render_3d.last_camera = Some(camera);
+                }
             }
 
             let ambient_light_data = self.nodes.get(node).and_then(|node| match &node.data {
@@ -126,9 +131,12 @@ impl Runtime {
                 _ => None,
             });
             if let Some(light) = ambient_light_data {
-                self.queue_render_command(RenderCommand::ThreeD(Box::new(
-                    Command3D::SetAmbientLight { node, light },
-                )));
+                if self.render_3d.retained_ambient_lights.get(&node).copied() != Some(light) {
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                        Command3D::SetAmbientLight { node, light },
+                    )));
+                    self.render_3d.retained_ambient_lights.insert(node, light);
+                }
                 visible_now.insert(node);
             }
 
@@ -149,9 +157,12 @@ impl Runtime {
                     color,
                     intensity: intensity.max(0.0),
                 };
-                self.queue_render_command(RenderCommand::ThreeD(Box::new(
-                    Command3D::SetRayLight { node, light },
-                )));
+                if self.render_3d.retained_ray_lights.get(&node).copied() != Some(light) {
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                        Command3D::SetRayLight { node, light },
+                    )));
+                    self.render_3d.retained_ray_lights.insert(node, light);
+                }
                 visible_now.insert(node);
             }
 
@@ -173,9 +184,12 @@ impl Runtime {
                     intensity: intensity.max(0.0),
                     range: range.max(0.001),
                 };
-                self.queue_render_command(RenderCommand::ThreeD(Box::new(
-                    Command3D::SetPointLight { node, light },
-                )));
+                if self.render_3d.retained_point_lights.get(&node).copied() != Some(light) {
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                        Command3D::SetPointLight { node, light },
+                    )));
+                    self.render_3d.retained_point_lights.insert(node, light);
+                }
                 visible_now.insert(node);
             }
 
@@ -215,9 +229,12 @@ impl Runtime {
                     inner_angle_radians: inner_angle_radians.max(0.0),
                     outer_angle_radians: outer_angle_radians.max(inner_angle_radians),
                 };
-                self.queue_render_command(RenderCommand::ThreeD(Box::new(
-                    Command3D::SetSpotLight { node, light },
-                )));
+                if self.render_3d.retained_spot_lights.get(&node).copied() != Some(light) {
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                        Command3D::SetSpotLight { node, light },
+                    )));
+                    self.render_3d.retained_spot_lights.insert(node, light);
+                }
                 visible_now.insert(node);
             }
 
@@ -441,6 +458,10 @@ impl Runtime {
             if let Some(prev) = self.render_3d.terrain_debug_state.remove(&node) {
                 Self::queue_remove_terrain_debug_nodes(self, node, prev);
             }
+            self.render_3d.retained_ambient_lights.remove(&node);
+            self.render_3d.retained_ray_lights.remove(&node);
+            self.render_3d.retained_point_lights.remove(&node);
+            self.render_3d.retained_spot_lights.remove(&node);
             self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
                 node,
             })));

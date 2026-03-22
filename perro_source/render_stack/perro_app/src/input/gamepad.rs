@@ -40,6 +40,7 @@ mod backend {
     const JOYCON_1_LEFT_PID: u16 = 0x2006;
     const JOYCON_1_RIGHT_PID: u16 = 0x2007;
     const STATE_SYNC_INTERVAL_FRAMES: u32 = 4;
+    const IDLE_POLL_INTERVAL_FRAMES: u32 = 4;
 
     #[derive(Default)]
     pub struct GamepadBackend {
@@ -52,6 +53,7 @@ mod backend {
         down: HashSet<(GamepadId, GamepadButton)>,
         uuid_in_use: HashSet<[u8; 16]>,
         state_sync_frame_counter: u32,
+        idle_poll_frame_counter: u32,
     }
 
     impl GamepadBackend {
@@ -60,6 +62,20 @@ mod backend {
             let Some(mut gilrs) = self.gilrs.take() else {
                 return;
             };
+
+            // When no non-JoyCon gamepad is active, throttle gilrs polling.
+            // This keeps hot-loop overhead low for KBM-only projects while still
+            // discovering new controllers quickly.
+            if self.uuid_in_use.is_empty() {
+                self.idle_poll_frame_counter = self.idle_poll_frame_counter.wrapping_add(1);
+                if !self
+                    .idle_poll_frame_counter
+                    .is_multiple_of(IDLE_POLL_INTERVAL_FRAMES)
+                {
+                    self.gilrs = Some(gilrs);
+                    return;
+                }
+            }
 
             while let Some(event) = gilrs.next_event() {
                 self.handle_event(app, &gilrs, event);
@@ -281,7 +297,12 @@ mod backend {
                 if !gp.is_connected() || is_joycon(&gp) {
                     continue;
                 }
-                let Some(index) = self.id_to_uuid.get(&id).and_then(|u| self.uuid_to_index.get(u)).copied() else {
+                let Some(index) = self
+                    .id_to_uuid
+                    .get(&id)
+                    .and_then(|u| self.uuid_to_index.get(u))
+                    .copied()
+                else {
                     continue;
                 };
                 for axis in ALL_AXES {

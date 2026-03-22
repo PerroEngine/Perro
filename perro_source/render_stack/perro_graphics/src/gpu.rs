@@ -17,6 +17,7 @@ use perro_ids::NodeID;
 use perro_render_bridge::{Camera3DState, PointParticles3DState, Sprite2DCommand};
 use perro_structs::VisualAccessibilitySettings;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use winit::window::Window;
 
 // Linear-space clear color for sRGB hex #1C1817.
@@ -78,6 +79,19 @@ pub struct RenderFrame<'a> {
     pub static_texture_lookup: Option<StaticTextureLookup>,
     pub static_mesh_lookup: Option<StaticMeshLookup>,
     pub static_shader_lookup: Option<StaticShaderLookup>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RenderGpuTiming {
+    pub prepare_2d: Duration,
+    pub prepare_3d: Duration,
+    pub acquire: Duration,
+    pub encode_main: Duration,
+    pub submit_main: Duration,
+    pub post_process: Duration,
+    pub accessibility: Duration,
+    pub present: Duration,
+    pub total: Duration,
 }
 
 impl Gpu {
@@ -297,7 +311,9 @@ impl Gpu {
         );
     }
 
-    pub fn render(&mut self, frame: RenderFrame<'_>) {
+    pub fn render(&mut self, frame: RenderFrame<'_>) -> RenderGpuTiming {
+        let total_start = Instant::now();
+        let mut timing = RenderGpuTiming::default();
         let RenderFrame {
             resources,
             camera_3d,
@@ -339,9 +355,14 @@ impl Gpu {
             || post_requested;
         let needs_3d_particles_path = has(DIRTY_PARTICLES_3D) || needs_particles_3d;
 
+        let prepare_2d_start = Instant::now();
         if needs_2d {
             if self.two_d.is_none() {
-                self.two_d = Some(Gpu2D::new(&self.device, self.render_format, self.sample_count));
+                self.two_d = Some(Gpu2D::new(
+                    &self.device,
+                    self.render_format,
+                    self.sample_count,
+                ));
             }
             if let Some(two_d) = self.two_d.as_mut() {
                 two_d.prepare(
@@ -358,6 +379,9 @@ impl Gpu {
                 );
             }
         }
+        timing.prepare_2d = prepare_2d_start.elapsed();
+
+        let prepare_3d_start = Instant::now();
         if needs_3d_pipeline {
             if self.three_d.is_none() {
                 self.three_d = Some(Gpu3D::new(
@@ -416,18 +440,27 @@ impl Gpu {
         if !needs_3d_particles_path {
             self.point_particles_3d = None;
         }
+        timing.prepare_3d = prepare_3d_start.elapsed();
 
+        let acquire_start = Instant::now();
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
                 self.surface.configure(&self.device, &self.config);
-                return;
+                timing.acquire = acquire_start.elapsed();
+                timing.total = total_start.elapsed();
+                return timing;
             }
             wgpu::CurrentSurfaceTexture::Timeout
             | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Validation => return,
+            | wgpu::CurrentSurfaceTexture::Validation => {
+                timing.acquire = acquire_start.elapsed();
+                timing.total = total_start.elapsed();
+                return timing;
+            }
         };
+        timing.acquire = acquire_start.elapsed();
 
         let swap_view = frame
             .texture
@@ -469,6 +502,7 @@ impl Gpu {
             None
         };
 
+        let encode_start = Instant::now();
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -522,8 +556,13 @@ impl Gpu {
                 upload_2d.draw_count as u32,
             );
         }
+        timing.encode_main = encode_start.elapsed();
 
+        let submit_start = Instant::now();
         self.queue.submit(Some(encoder.finish()));
+        timing.submit_main = submit_start.elapsed();
+
+        let post_start = Instant::now();
         if camera_post_enabled && global_post_enabled {
             let camera_post_target = self.accessibility.intermediate_view();
             self.post.apply_chain(
@@ -582,6 +621,9 @@ impl Gpu {
                 static_shader_lookup,
             );
         }
+        timing.post_process = post_start.elapsed();
+
+        let accessibility_start = Instant::now();
         if accessibility_enabled {
             let accessibility_input_view = if camera_post_enabled && global_post_enabled {
                 scene_view.clone()
@@ -598,7 +640,12 @@ impl Gpu {
                 accessibility,
             );
         }
+        timing.accessibility = accessibility_start.elapsed();
+        let present_start = Instant::now();
         frame.present();
+        timing.present = present_start.elapsed();
+        timing.total = total_start.elapsed();
+        timing
     }
 
     pub fn virtual_size() -> [f32; 2] {
@@ -655,8 +702,8 @@ fn choose_present_mode(modes: &[wgpu::PresentMode], vsync_enabled: bool) -> wgpu
         .as_slice()
     } else {
         [
-            wgpu::PresentMode::Immediate,
             wgpu::PresentMode::Mailbox,
+            wgpu::PresentMode::Immediate,
             wgpu::PresentMode::AutoNoVsync,
         ]
         .as_slice()

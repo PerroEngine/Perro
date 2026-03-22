@@ -1,7 +1,7 @@
 use crate::{
     gpu::{
-        Gpu, RenderFrame, DIRTY_2D, DIRTY_3D, DIRTY_ACCESSIBILITY, DIRTY_CAMERA_2D,
-        DIRTY_CAMERA_3D, DIRTY_LIGHTS_3D, DIRTY_PARTICLES_3D, DIRTY_POSTFX, DIRTY_RESOURCES,
+        DIRTY_2D, DIRTY_3D, DIRTY_ACCESSIBILITY, DIRTY_CAMERA_2D, DIRTY_CAMERA_3D, DIRTY_LIGHTS_3D,
+        DIRTY_PARTICLES_3D, DIRTY_POSTFX, DIRTY_RESOURCES, Gpu, RenderFrame, RenderGpuTiming,
     },
     resources::ResourceStore,
     three_d::particles::renderer::Particles3DRenderer,
@@ -16,6 +16,7 @@ use perro_render_bridge::{
 };
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use winit::window::Window;
 
 pub type StaticTextureLookup = fn(path: &str) -> Option<&'static [u8]>;
@@ -38,6 +39,27 @@ pub trait GraphicsBackend: RenderBridge {
     fn set_smoothing_samples(&mut self, samples: u32);
 
     fn draw_frame(&mut self);
+    fn draw_frame_timed(&mut self) -> Option<DrawFrameTiming> {
+        self.draw_frame();
+        None
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DrawFrameTiming {
+    pub process_commands: Duration,
+    pub prepare_cpu: Duration,
+    pub gpu_prepare_2d: Duration,
+    pub gpu_prepare_3d: Duration,
+    pub gpu_acquire: Duration,
+    pub gpu_encode_main: Duration,
+    pub gpu_submit_main: Duration,
+    pub gpu_post_process: Duration,
+    pub gpu_accessibility: Duration,
+    pub gpu_present: Duration,
+    pub gpu_total: Duration,
+    pub total: Duration,
+    pub idle_clear: bool,
 }
 
 #[derive(Default)]
@@ -422,11 +444,20 @@ impl GraphicsBackend for PerroGraphics {
     }
 
     fn draw_frame(&mut self) {
+        let _ = self.draw_frame_timed();
+    }
+
+    fn draw_frame_timed(&mut self) -> Option<DrawFrameTiming> {
+        let total_start = Instant::now();
         if self.frame.pending_commands.is_empty() {
             if let Some(gpu) = &mut self.gpu {
                 gpu.render_idle_clear();
             }
-            return;
+            return Some(DrawFrameTiming {
+                total: total_start.elapsed(),
+                idle_clear: true,
+                ..DrawFrameTiming::default()
+            });
         }
         let mut pending = Vec::new();
         std::mem::swap(&mut pending, &mut self.frame.pending_commands);
@@ -458,8 +489,11 @@ impl GraphicsBackend for PerroGraphics {
                 RenderCommand::VisualAccessibility(_) => frame_dirty_bits |= DIRTY_ACCESSIBILITY,
             }
         }
+        let process_start = Instant::now();
         self.process_commands(pending.drain(..));
+        let process_commands = process_start.elapsed();
         std::mem::swap(&mut pending, &mut self.frame.pending_commands);
+        let prepare_start = Instant::now();
         let (camera_2d, _stats, upload) = self.renderer_2d.prepare_frame(&self.resources);
         let camera_2d_state = self.renderer_2d.camera();
         let (camera_3d, _stats_3d, lighting_3d) = self.renderer_3d.prepare_frame(&self.resources);
@@ -494,9 +528,11 @@ impl GraphicsBackend for PerroGraphics {
             self.resources
                 .gc_unused(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
         }
+        let prepare_cpu = prepare_start.elapsed();
 
+        let mut gpu_timing = RenderGpuTiming::default();
         if let Some(gpu) = &mut self.gpu {
-            gpu.render(RenderFrame {
+            gpu_timing = gpu.render(RenderFrame {
                 resources: &self.resources,
                 camera_3d,
                 lighting_3d: &lighting_3d,
@@ -515,6 +551,21 @@ impl GraphicsBackend for PerroGraphics {
                 static_shader_lookup: self.static_shader_lookup,
             });
         }
+        Some(DrawFrameTiming {
+            process_commands,
+            prepare_cpu,
+            gpu_prepare_2d: gpu_timing.prepare_2d,
+            gpu_prepare_3d: gpu_timing.prepare_3d,
+            gpu_acquire: gpu_timing.acquire,
+            gpu_encode_main: gpu_timing.encode_main,
+            gpu_submit_main: gpu_timing.submit_main,
+            gpu_post_process: gpu_timing.post_process,
+            gpu_accessibility: gpu_timing.accessibility,
+            gpu_present: gpu_timing.present,
+            gpu_total: gpu_timing.total,
+            total: total_start.elapsed(),
+            idle_clear: false,
+        })
     }
 }
 

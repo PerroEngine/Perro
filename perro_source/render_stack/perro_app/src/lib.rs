@@ -20,6 +20,16 @@ pub struct PresentTiming {
     pub drain_commands: Duration,
     pub submit_commands: Duration,
     pub draw_frame: Duration,
+    pub draw_process_commands: Duration,
+    pub draw_prepare_cpu: Duration,
+    pub draw_gpu_prepare_2d: Duration,
+    pub draw_gpu_prepare_3d: Duration,
+    pub draw_gpu_acquire: Duration,
+    pub draw_gpu_encode_main: Duration,
+    pub draw_gpu_submit_main: Duration,
+    pub draw_gpu_post_process: Duration,
+    pub draw_gpu_accessibility: Duration,
+    pub draw_gpu_present: Duration,
     pub drain_events: Duration,
     pub apply_events: Duration,
     pub total: Duration,
@@ -171,7 +181,7 @@ impl<B: GraphicsBackend> App<B> {
         let submit_commands = submit_start.elapsed();
 
         let draw_frame_start = std::time::Instant::now();
-        self.graphics.draw_frame();
+        let draw_timing = self.graphics.draw_frame_timed();
         let draw_frame = draw_frame_start.elapsed();
 
         let drain_events_start = std::time::Instant::now();
@@ -191,6 +201,46 @@ impl<B: GraphicsBackend> App<B> {
             drain_commands,
             submit_commands,
             draw_frame,
+            draw_process_commands: draw_timing
+                .as_ref()
+                .map(|t| t.process_commands)
+                .unwrap_or(Duration::ZERO),
+            draw_prepare_cpu: draw_timing
+                .as_ref()
+                .map(|t| t.prepare_cpu)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_prepare_2d: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_prepare_2d)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_prepare_3d: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_prepare_3d)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_acquire: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_acquire)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_encode_main: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_encode_main)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_submit_main: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_submit_main)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_post_process: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_post_process)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_accessibility: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_accessibility)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_present: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_present)
+                .unwrap_or(Duration::ZERO),
             drain_events,
             apply_events,
             total: total_start.elapsed(),

@@ -1248,9 +1248,8 @@ impl Gpu3D {
             && self.last_draw_instance_ranges.iter().all(|range| {
                 range.start <= range.end && (range.end as usize) <= self.staged_instances.len()
             });
-        let transform_only_changed = !draws_unchanged
-            && transform_only_semantic
-            && stable_instance_ranges;
+        let transform_only_changed =
+            !draws_unchanged && transform_only_semantic && stable_instance_ranges;
         let scene_changed = self.last_scene != Some(uniform) || !draws_unchanged;
         if self.last_scene != Some(uniform) {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));

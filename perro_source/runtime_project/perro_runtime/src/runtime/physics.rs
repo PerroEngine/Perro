@@ -206,7 +206,6 @@ impl PhysicsState {
         self.next_opaque_handle = self.next_opaque_handle.saturating_add(1);
         handle
     }
-
 }
 
 impl Default for PhysicsState {
@@ -494,23 +493,19 @@ impl Runtime {
             }
 
             for handle in state.colliders.drain(..) {
-                let _ = world.colliders.remove(
-                    handle,
-                    &mut world.islands,
-                    &mut world.bodies,
-                    true,
-                );
+                let _ = world
+                    .colliders
+                    .remove(handle, &mut world.islands, &mut world.bodies, true);
             }
 
             for shape in &body.shapes {
                 let Some(builder) = collider_builder_2d(shape) else {
                     continue;
                 };
-                let handle = world.colliders.insert_with_parent(
-                    builder,
-                    state.handle,
-                    &mut world.bodies,
-                );
+                let handle =
+                    world
+                        .colliders
+                        .insert_with_parent(builder, state.handle, &mut world.bodies);
                 world.collider_owners.insert(handle, body.id);
                 state.colliders.push(handle);
             }
@@ -616,23 +611,19 @@ impl Runtime {
             }
 
             for handle in state.colliders.drain(..) {
-                let _ = world.colliders.remove(
-                    handle,
-                    &mut world.islands,
-                    &mut world.bodies,
-                    true,
-                );
+                let _ = world
+                    .colliders
+                    .remove(handle, &mut world.islands, &mut world.bodies, true);
             }
 
             for shape in &body.shapes {
                 let Some(builder) = collider_builder_3d(shape) else {
                     continue;
                 };
-                let handle = world.colliders.insert_with_parent(
-                    builder,
-                    state.handle,
-                    &mut world.bodies,
-                );
+                let handle =
+                    world
+                        .colliders
+                        .insert_with_parent(builder, state.handle, &mut world.bodies);
                 world.collider_owners.insert(handle, body.id);
                 state.colliders.push(handle);
             }

@@ -6,7 +6,10 @@ use crate::{
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{MaterialID, MeshID, NodeID, TagID, TextureID};
 use perro_nodes::Spatial;
-use perro_render_bridge::{Material3D, RenderCommand, RenderEvent, RenderRequestID};
+use perro_render_bridge::{
+    AmbientLight3DState, Camera3DState, Material3D, PointLight3DState, RayLight3DState,
+    RenderCommand, RenderEvent, RenderRequestID, SpotLight3DState,
+};
 use perro_structs::{Transform2D, Transform3D};
 use perro_terrain::ChunkCoord;
 
@@ -278,6 +281,11 @@ pub(crate) struct Render3DState {
     pub(crate) terrain_chunk_meshes: AHashMap<TerrainChunkMeshKey, TerrainChunkMeshState>,
     pub(crate) terrain_debug_state: AHashMap<NodeID, TerrainDebugState>,
     pub(crate) particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile3D>,
+    pub(crate) last_camera: Option<Camera3DState>,
+    pub(crate) retained_ambient_lights: AHashMap<NodeID, AmbientLight3DState>,
+    pub(crate) retained_ray_lights: AHashMap<NodeID, RayLight3DState>,
+    pub(crate) retained_point_lights: AHashMap<NodeID, PointLight3DState>,
+    pub(crate) retained_spot_lights: AHashMap<NodeID, SpotLight3DState>,
     pub(crate) removed_nodes: Vec<NodeID>,
 }
 
@@ -294,6 +302,11 @@ impl Render3DState {
             terrain_chunk_meshes: AHashMap::default(),
             terrain_debug_state: AHashMap::default(),
             particle_path_cache: AHashMap::default(),
+            last_camera: None,
+            retained_ambient_lights: AHashMap::default(),
+            retained_ray_lights: AHashMap::default(),
+            retained_point_lights: AHashMap::default(),
+            retained_spot_lights: AHashMap::default(),
             removed_nodes: Vec::new(),
         }
     }
