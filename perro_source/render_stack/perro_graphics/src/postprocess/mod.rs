@@ -215,6 +215,7 @@ impl PostProcessor {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
         input_view: &wgpu::TextureView,
         depth_view: &wgpu::TextureView,
         output_view: &wgpu::TextureView,
@@ -328,9 +329,6 @@ impl PostProcessor {
                 ],
             });
 
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("perro_post_encoder"),
-            });
             {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("perro_post_pass"),
@@ -352,7 +350,6 @@ impl PostProcessor {
                 pass.set_bind_group(0, &bind_group, &[]);
                 pass.draw(0..3, 0..1);
             }
-            queue.submit(Some(encoder.finish()));
 
             current_input = target_view;
             use_ping_a = !use_ping_a;

@@ -172,6 +172,7 @@ impl VisualAccessibilityProcessor {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
         input_view: &wgpu::TextureView,
         output_view: &wgpu::TextureView,
         settings: VisualAccessibilitySettings,
@@ -213,9 +214,6 @@ impl VisualAccessibilityProcessor {
             ],
         });
 
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("perro_visual_accessibility_encoder"),
-        });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_visual_accessibility_pass"),
@@ -237,7 +235,6 @@ impl VisualAccessibilityProcessor {
             pass.set_bind_group(0, &bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
-        queue.submit(Some(encoder.finish()));
     }
 }
 

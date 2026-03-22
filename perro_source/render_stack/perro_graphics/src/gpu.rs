@@ -593,16 +593,13 @@ impl Gpu {
         }
         timing.encode_main = encode_start.elapsed();
 
-        let submit_start = Instant::now();
-        self.queue.submit(Some(encoder.finish()));
-        timing.submit_main = submit_start.elapsed();
-
         let post_start = Instant::now();
         if camera_post_enabled && global_post_enabled {
             let camera_post_target = self.accessibility.intermediate_view();
             self.post.apply_chain(
                 &self.device,
                 &self.queue,
+                &mut encoder,
                 &scene_view,
                 self.three_d
                     .as_ref()
@@ -621,6 +618,7 @@ impl Gpu {
             self.post.apply_chain(
                 &self.device,
                 &self.queue,
+                &mut encoder,
                 camera_post_target,
                 self.three_d
                     .as_ref()
@@ -645,6 +643,7 @@ impl Gpu {
             self.post.apply_chain(
                 &self.device,
                 &self.queue,
+                &mut encoder,
                 post_input,
                 self.three_d
                     .as_ref()
@@ -670,12 +669,16 @@ impl Gpu {
             self.accessibility.apply(
                 &self.device,
                 &self.queue,
+                &mut encoder,
                 &accessibility_input_view,
                 &swap_view,
                 accessibility,
             );
         }
         timing.accessibility = accessibility_start.elapsed();
+        let submit_start = Instant::now();
+        self.queue.submit(Some(encoder.finish()));
+        timing.submit_main = submit_start.elapsed();
         let present_start = Instant::now();
         frame.present();
         timing.present = present_start.elapsed();

@@ -20,6 +20,7 @@ use perro_render_bridge::{
 };
 use std::{
     borrow::Cow,
+    cmp::Ordering,
     ops::Range,
     sync::{Arc, mpsc, mpsc::TryRecvError},
 };
@@ -1690,6 +1691,7 @@ impl Gpu3D {
                 disable_hiz_occlusion: false,
             });
         }
+        self.draw_batches.sort_unstable_by(compare_draw_batch_keys);
         self.debug_frustum_visible_est = 0;
         for batch in &self.draw_batches {
             let model =
@@ -3416,6 +3418,36 @@ fn encode_custom_param_value(value: &perro_render_bridge::CustomMaterialParamVal
         perro_render_bridge::CustomMaterialParamValue3D::Vec2(v) => [v[0], v[1], 0.0, 0.0],
         perro_render_bridge::CustomMaterialParamValue3D::Vec3(v) => [v[0], v[1], v[2], 0.0],
         perro_render_bridge::CustomMaterialParamValue3D::Vec4(v) => *v,
+    }
+}
+
+#[inline]
+fn compare_draw_batch_keys(a: &DrawBatch, b: &DrawBatch) -> Ordering {
+    a.double_sided
+        .cmp(&b.double_sided)
+        .then_with(|| compare_material_pipeline_kind(&a.material_kind, &b.material_kind))
+        .then_with(|| a.mesh.index_start.cmp(&b.mesh.index_start))
+        .then_with(|| a.mesh.base_vertex.cmp(&b.mesh.base_vertex))
+        .then_with(|| a.instance_start.cmp(&b.instance_start))
+}
+
+#[inline]
+fn compare_material_pipeline_kind(a: &MaterialPipelineKind, b: &MaterialPipelineKind) -> Ordering {
+    material_pipeline_kind_rank(a)
+        .cmp(&material_pipeline_kind_rank(b))
+        .then_with(|| match (a, b) {
+            (MaterialPipelineKind::Custom(ka), MaterialPipelineKind::Custom(kb)) => ka.cmp(kb),
+            _ => Ordering::Equal,
+        })
+}
+
+#[inline]
+fn material_pipeline_kind_rank(kind: &MaterialPipelineKind) -> u8 {
+    match kind {
+        MaterialPipelineKind::Standard => 0,
+        MaterialPipelineKind::Unlit => 1,
+        MaterialPipelineKind::Toon => 2,
+        MaterialPipelineKind::Custom(_) => 3,
     }
 }
 
