@@ -81,10 +81,9 @@ struct MeshVertex {
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct InstanceGpu {
-    model_0: [f32; 4],
-    model_1: [f32; 4],
-    model_2: [f32; 4],
-    model_3: [f32; 4],
+    model_row_0: [f32; 4],
+    model_row_1: [f32; 4],
+    model_row_2: [f32; 4],
     color: [f32; 4],
     pbr_params: [f32; 4], // roughness, metallic, occlusion_strength, normal_scale
     emissive_factor: [f32; 3], // rgb
@@ -1303,10 +1302,24 @@ impl Gpu3D {
             for (draw, range) in draws.iter().zip(self.last_draw_instance_ranges.iter()) {
                 for instance in &mut self.staged_instances[range.start as usize..range.end as usize]
                 {
-                    instance.model_0 = draw.model[0];
-                    instance.model_1 = draw.model[1];
-                    instance.model_2 = draw.model[2];
-                    instance.model_3 = draw.model[3];
+                    instance.model_row_0 = [
+                        draw.model[0][0],
+                        draw.model[1][0],
+                        draw.model[2][0],
+                        draw.model[3][0],
+                    ];
+                    instance.model_row_1 = [
+                        draw.model[0][1],
+                        draw.model[1][1],
+                        draw.model[2][1],
+                        draw.model[3][1],
+                    ];
+                    instance.model_row_2 = [
+                        draw.model[0][2],
+                        draw.model[1][2],
+                        draw.model[2][2],
+                        draw.model[3][2],
+                    ];
                 }
             }
             queue.write_buffer(
@@ -1335,11 +1348,12 @@ impl Gpu3D {
                 self.frustum_cull_staging.reserve(self.draw_batches.len());
                 for batch in &self.draw_batches {
                     let instance = &self.staged_instances[batch.instance_start as usize];
+                    let model_cols = model_cols_from_affine_rows(instance);
                     self.frustum_cull_staging.push(FrustumCullItemGpu {
-                        model_0: instance.model_0,
-                        model_1: instance.model_1,
-                        model_2: instance.model_2,
-                        model_3: instance.model_3,
+                        model_0: model_cols[0],
+                        model_1: model_cols[1],
+                        model_2: model_cols[2],
+                        model_3: model_cols[3],
                         local_center_radius: [
                             batch.local_center[0],
                             batch.local_center[1],
@@ -1666,12 +1680,8 @@ impl Gpu3D {
         }
         self.debug_frustum_visible_est = 0;
         for batch in &self.draw_batches {
-            let model = [
-                self.staged_instances[batch.instance_start as usize].model_0,
-                self.staged_instances[batch.instance_start as usize].model_1,
-                self.staged_instances[batch.instance_start as usize].model_2,
-                self.staged_instances[batch.instance_start as usize].model_3,
-            ];
+            let model =
+                model_cols_from_affine_rows(&self.staged_instances[batch.instance_start as usize]);
             if bounds_in_frustum(model, batch.local_center, batch.local_radius, &frustum) {
                 self.debug_frustum_visible_est = self.debug_frustum_visible_est.saturating_add(1);
             }
@@ -1713,6 +1723,9 @@ impl Gpu3D {
             self.frustum_cull_staging
                 .reserve(self.draw_batches.len() - self.frustum_cull_staging.len());
             for batch in &self.draw_batches {
+                let model_cols = model_cols_from_affine_rows(
+                    &self.staged_instances[batch.instance_start as usize],
+                );
                 self.indirect_staging.push(DrawIndexedIndirectGpu {
                     index_count: batch.mesh.index_count,
                     instance_count: batch.instance_count,
@@ -1721,10 +1734,10 @@ impl Gpu3D {
                     first_instance: batch.instance_start,
                 });
                 self.frustum_cull_staging.push(FrustumCullItemGpu {
-                    model_0: self.staged_instances[batch.instance_start as usize].model_0,
-                    model_1: self.staged_instances[batch.instance_start as usize].model_1,
-                    model_2: self.staged_instances[batch.instance_start as usize].model_2,
-                    model_3: self.staged_instances[batch.instance_start as usize].model_3,
+                    model_0: model_cols[0],
+                    model_1: model_cols[1],
+                    model_2: model_cols[2],
+                    model_3: model_cols[3],
                     local_center_radius: [
                         batch.local_center[0],
                         batch.local_center[1],
@@ -3098,21 +3111,16 @@ fn create_pipeline(
                         wgpu::VertexAttribute {
                             offset: 80,
                             shader_location: 9,
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Float32x3,
                         },
                         wgpu::VertexAttribute {
-                            offset: 96,
+                            offset: 92,
                             shader_location: 10,
-                            format: wgpu::VertexFormat::Float32x3,
+                            format: wgpu::VertexFormat::Float32x4,
                         },
                         wgpu::VertexAttribute {
                             offset: 108,
                             shader_location: 11,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 124,
-                            shader_location: 12,
                             format: wgpu::VertexFormat::Uint32x4,
                         },
                     ],
@@ -3215,8 +3223,8 @@ fn create_depth_prepass_pipeline(
                             format: wgpu::VertexFormat::Float32x4,
                         },
                         wgpu::VertexAttribute {
-                            offset: 124,
-                            shader_location: 12,
+                            offset: 108,
+                            shader_location: 11,
                             format: wgpu::VertexFormat::Uint32x4,
                         },
                     ],
@@ -3334,10 +3342,9 @@ fn build_instance(
     let params = material.standard_params();
 
     InstanceGpu {
-        model_0: model[0],
-        model_1: model[1],
-        model_2: model[2],
-        model_3: model[3],
+        model_row_0: [model[0][0], model[1][0], model[2][0], model[3][0]],
+        model_row_1: [model[0][1], model[1][1], model[2][1], model[3][1]],
+        model_row_2: [model[0][2], model[1][2], model[2][2], model[3][2]],
         color,
         pbr_params,
         emissive_factor,
@@ -3354,6 +3361,36 @@ fn build_instance(
             custom_params_len,
         ],
     }
+}
+
+#[inline]
+fn model_cols_from_affine_rows(inst: &InstanceGpu) -> [[f32; 4]; 4] {
+    [
+        [
+            inst.model_row_0[0],
+            inst.model_row_1[0],
+            inst.model_row_2[0],
+            0.0,
+        ],
+        [
+            inst.model_row_0[1],
+            inst.model_row_1[1],
+            inst.model_row_2[1],
+            0.0,
+        ],
+        [
+            inst.model_row_0[2],
+            inst.model_row_1[2],
+            inst.model_row_2[2],
+            0.0,
+        ],
+        [
+            inst.model_row_0[3],
+            inst.model_row_1[3],
+            inst.model_row_2[3],
+            1.0,
+        ],
+    ]
 }
 
 #[inline]

@@ -43,15 +43,14 @@ struct VertexInput {
 };
 
 struct InstanceInput {
-    @location(4) model_0: vec4<f32>,
-    @location(5) model_1: vec4<f32>,
-    @location(6) model_2: vec4<f32>,
-    @location(7) model_3: vec4<f32>,
-    @location(8) color: vec4<f32>,
-    @location(9) pbr_params: vec4<f32>,
-    @location(10) emissive_factor: vec3<f32>,
-    @location(11) material_params: vec4<f32>,
-    @location(12) skeleton_params: vec4<u32>,
+    @location(4) model_row_0: vec4<f32>,
+    @location(5) model_row_1: vec4<f32>,
+    @location(6) model_row_2: vec4<f32>,
+    @location(7) color: vec4<f32>,
+    @location(8) pbr_params: vec4<f32>,
+    @location(9) emissive_factor: vec3<f32>,
+    @location(10) material_params: vec4<f32>,
+    @location(11) skeleton_params: vec4<u32>,
 };
 
 struct VertexOutput {
@@ -90,9 +89,18 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
         pos = (skin * vec4<f32>(pos, 1.0)).xyz;
         normal = (skin * vec4<f32>(normal, 0.0)).xyz;
     }
-    let model = mat4x4<f32>(inst.model_0, inst.model_1, inst.model_2, inst.model_3);
-    let world = model * vec4<f32>(pos, 1.0);
-    let normal_ws = normalize((model * vec4<f32>(normal, 0.0)).xyz);
+    let p = vec4<f32>(pos, 1.0);
+    let world = vec4<f32>(
+        dot(inst.model_row_0, p),
+        dot(inst.model_row_1, p),
+        dot(inst.model_row_2, p),
+        1.0,
+    );
+    let normal_ws = normalize(vec3<f32>(
+        dot(inst.model_row_0.xyz, normal),
+        dot(inst.model_row_1.xyz, normal),
+        dot(inst.model_row_2.xyz, normal),
+    ));
 
     var out: VertexOutput;
     out.clip_pos = scene.view_proj * world;

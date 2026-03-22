@@ -14,11 +14,10 @@ struct VertexInput {
 }
 
 struct InstanceInput {
-    @location(4) model_0: vec4<f32>,
-    @location(5) model_1: vec4<f32>,
-    @location(6) model_2: vec4<f32>,
-    @location(7) model_3: vec4<f32>,
-    @location(12) skeleton_params: vec4<u32>,
+    @location(4) model_row_0: vec4<f32>,
+    @location(5) model_row_1: vec4<f32>,
+    @location(6) model_row_2: vec4<f32>,
+    @location(11) skeleton_params: vec4<u32>,
 }
 
 @vertex
@@ -33,6 +32,12 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> @builtin(position) vec4<f32> 
         let skin = m0 + m1 + m2 + m3;
         pos = (skin * vec4<f32>(pos, 1.0)).xyz;
     }
-    let model = mat4x4<f32>(inst.model_0, inst.model_1, inst.model_2, inst.model_3);
-    return scene.view_proj * (model * vec4<f32>(pos, 1.0));
+    let p = vec4<f32>(pos, 1.0);
+    let world = vec4<f32>(
+        dot(inst.model_row_0, p),
+        dot(inst.model_row_1, p),
+        dot(inst.model_row_2, p),
+        1.0,
+    );
+    return scene.view_proj * world;
 }
