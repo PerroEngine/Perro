@@ -49,6 +49,7 @@ mod backend {
         tx: Option<Sender<JoyConEvent>>,
         last_scan: Option<Instant>,
         last_buttons: HashMap<(usize, JoyConSide), ButtonBits>,
+        stale_serials: Vec<String>,
     }
 
     impl JoyConBackend {
@@ -82,7 +83,7 @@ mod backend {
                 return;
             };
 
-            let mut seen_serials = HashSet::new();
+            let mut seen_serials: HashSet<&str> = HashSet::new();
             for dev in api.device_list() {
                 if dev.vendor_id() != JOYCON_VENDOR_ID {
                     continue;
@@ -93,26 +94,27 @@ mod backend {
                     JOYCON_1_RIGHT_PID => JoyConSide::RJoyCon,
                     _ => continue,
                 };
-                let Some(serial) = dev.serial_number().map(|s| s.to_string()) else {
+                let Some(serial) = dev.serial_number() else {
                     continue;
                 };
-                seen_serials.insert(serial.clone());
-                if self.devices.contains_key(&serial) {
+                seen_serials.insert(serial);
+                if self.devices.contains_key(serial) {
                     continue;
                 }
-                let index = self.assign_index(&serial, side);
-                log_joycon_connected(index, side, &serial);
-                self.spawn_device_thread(serial, pid, side, index);
+                let index = self.assign_index(serial, side);
+                log_joycon_connected(index, side, serial);
+                self.spawn_device_thread(serial.to_string(), pid, side, index);
             }
 
             // Drop device handles not seen this scan.
-            let stale: Vec<String> = self
-                .devices
-                .keys()
-                .filter(|s| !seen_serials.contains(*s))
-                .cloned()
-                .collect();
-            for serial in stale {
+            self.stale_serials.clear();
+            self.stale_serials.extend(
+                self.devices
+                    .keys()
+                    .filter(|serial| !seen_serials.contains(serial.as_str()))
+                    .cloned(),
+            );
+            for serial in self.stale_serials.drain(..) {
                 if let Some(handle) = self.devices.remove(&serial) {
                     handle.stop.store(true, Ordering::Relaxed);
                 }
@@ -570,17 +572,15 @@ mod backend {
     }
 
     fn enable_sensors(device: &hidapi::HidDevice) -> Result<(), hidapi::HidError> {
-        let mut cmd = vec![0x01, 0x00];
-        cmd.extend_from_slice(&[0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40]);
-        cmd.push(0x40);
-        cmd.push(0x01);
-        device.write(&cmd)?;
+        const CMD_ENABLE_IMU: [u8; 12] = [
+            0x01, 0x00, 0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40, 0x40, 0x01,
+        ];
+        const CMD_SET_REPORT_30: [u8; 12] = [
+            0x01, 0x01, 0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40, 0x03, 0x30,
+        ];
 
-        let mut cmd2 = vec![0x01, 0x01];
-        cmd2.extend_from_slice(&[0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40]);
-        cmd2.push(0x03);
-        cmd2.push(0x30);
-        device.write(&cmd2)?;
+        device.write(&CMD_ENABLE_IMU)?;
+        device.write(&CMD_SET_REPORT_30)?;
 
         Ok(())
     }

@@ -52,6 +52,7 @@ mod backend {
         next_index: usize,
         down: HashSet<(GamepadId, GamepadButton)>,
         uuid_in_use: HashSet<[u8; 16]>,
+        sync_ids: Vec<GamepadId>,
         state_sync_frame_counter: u32,
         idle_poll_frame_counter: u32,
     }
@@ -274,8 +275,9 @@ mod backend {
         }
 
         fn sync_buttons<B: GraphicsBackend>(&mut self, app: &mut App<B>, gilrs: &Gilrs) {
-            let ids: Vec<GamepadId> = self.id_to_uuid.keys().copied().collect();
-            for id in ids {
+            self.sync_ids.clear();
+            self.sync_ids.extend(self.id_to_uuid.keys().copied());
+            while let Some(id) = self.sync_ids.pop() {
                 let gp = gilrs.gamepad(id);
                 if !gp.is_connected() || is_joycon(&gp) {
                     continue;
@@ -291,8 +293,9 @@ mod backend {
         }
 
         fn sync_axes<B: GraphicsBackend>(&mut self, app: &mut App<B>, gilrs: &Gilrs) {
-            let ids: Vec<GamepadId> = self.id_to_uuid.keys().copied().collect();
-            for id in ids {
+            self.sync_ids.clear();
+            self.sync_ids.extend(self.id_to_uuid.keys().copied());
+            for id in self.sync_ids.iter().copied() {
                 let gp = gilrs.gamepad(id);
                 if !gp.is_connected() || is_joycon(&gp) {
                     continue;
