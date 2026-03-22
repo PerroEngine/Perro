@@ -1,3 +1,4 @@
+use ahash::AHashMap;
 use super::{
     renderer::{Draw3DInstance, Draw3DKind, Lighting3DState, MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS},
     shaders::{
@@ -19,7 +20,6 @@ use perro_render_bridge::{
 };
 use std::{
     borrow::Cow,
-    collections::HashMap,
     ops::Range,
     sync::{Arc, mpsc, mpsc::TryRecvError},
 };
@@ -146,7 +146,7 @@ pub struct Gpu3D {
     pipeline_toon_double_sided: wgpu::RenderPipeline,
     pipeline_depth_prepass_culled: wgpu::RenderPipeline,
     pipeline_depth_prepass_double_sided: wgpu::RenderPipeline,
-    custom_pipelines: HashMap<String, CustomPipeline>,
+    custom_pipelines: AHashMap<String, CustomPipeline>,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     skeleton_buffer: wgpu::Buffer,
@@ -172,6 +172,7 @@ pub struct Gpu3D {
     indirect_staging: Vec<DrawIndexedIndirectGpu>,
     draw_batches: Vec<DrawBatch>,
     last_draws: Vec<Draw3DInstance>,
+    last_draws_revision: u64,
     last_draw_instance_ranges: Vec<Range<u32>>,
     last_scene: Option<Scene3DUniform>,
     mesh_vertices: Vec<MeshVertex>,
@@ -180,10 +181,10 @@ pub struct Gpu3D {
     index_buffer: wgpu::Buffer,
     vertex_capacity: usize,
     index_capacity: usize,
-    builtin_mesh_ranges: HashMap<&'static str, MeshRange>,
-    builtin_mesh_bounds: HashMap<&'static str, ([f32; 3], f32)>,
-    builtin_meshlets: HashMap<&'static str, Arc<[MeshletRange]>>,
-    custom_mesh_ranges: HashMap<String, MeshAssetRange>,
+    builtin_mesh_ranges: AHashMap<&'static str, MeshRange>,
+    builtin_mesh_bounds: AHashMap<&'static str, ([f32; 3], f32)>,
+    builtin_meshlets: AHashMap<&'static str, Arc<[MeshletRange]>>,
+    custom_mesh_ranges: AHashMap<String, MeshAssetRange>,
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
     depth_prepass_texture: wgpu::Texture,
@@ -219,7 +220,7 @@ pub struct Gpu3D {
     last_total_meshlets: usize,
     last_total_drawn: usize,
     occlusion_frame: u64,
-    occlusion_state: HashMap<u64, OcclusionState>,
+    occlusion_state: AHashMap<u64, OcclusionState>,
     occlusion_query_set: Option<wgpu::QuerySet>,
     occlusion_query_capacity: u32,
     occlusion_resolve_buffer: Option<wgpu::Buffer>,
@@ -238,6 +239,7 @@ pub struct Prepare3D<'a> {
     pub camera: Camera3DState,
     pub lighting: &'a Lighting3DState,
     pub draws: &'a [Draw3DInstance],
+    pub draws_revision: u64,
     pub width: u32,
     pub height: u32,
     pub static_mesh_lookup: Option<StaticMeshLookup>,
@@ -963,6 +965,7 @@ impl Gpu3D {
             indirect_staging: Vec::new(),
             draw_batches: Vec::new(),
             last_draws: Vec::new(),
+            last_draws_revision: u64::MAX,
             last_draw_instance_ranges: Vec::new(),
             last_scene: None,
             mesh_vertices: vertices,
@@ -974,7 +977,7 @@ impl Gpu3D {
             builtin_mesh_ranges,
             builtin_mesh_bounds,
             builtin_meshlets,
-            custom_mesh_ranges: HashMap::new(),
+            custom_mesh_ranges: AHashMap::new(),
             depth_texture,
             depth_view,
             depth_prepass_texture,
@@ -1010,7 +1013,7 @@ impl Gpu3D {
             last_total_meshlets: 0,
             last_total_drawn: 0,
             occlusion_frame: 0,
-            occlusion_state: HashMap::new(),
+            occlusion_state: AHashMap::new(),
             occlusion_query_set: None,
             occlusion_query_capacity: 0,
             occlusion_resolve_buffer: None,
@@ -1022,7 +1025,7 @@ impl Gpu3D {
             last_occlusion_queried: 0,
             last_occlusion_visible: 0,
             last_occlusion_culled: 0,
-            custom_pipelines: HashMap::new(),
+            custom_pipelines: AHashMap::new(),
         }
     }
 
@@ -1197,14 +1200,18 @@ impl Gpu3D {
 
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: Prepare3D<'_>) {
         if self.gpu_occlusion_enabled {
-            let _ = device.poll(wgpu::PollType::Poll);
+            if self.pending_hiz_debug_map_rx.is_some() {
+                let _ = device.poll(wgpu::PollType::Poll);
+            }
             if self.pending_hiz_debug_count > 0 && self.pending_hiz_debug_map_rx.is_none() {
                 self.request_hiz_debug_map_async();
             }
             self.consume_hiz_debug_results();
         }
         if self.cpu_occlusion_enabled {
-            let _ = device.poll(wgpu::PollType::Poll);
+            if self.pending_occlusion_map_rx.is_some() {
+                let _ = device.poll(wgpu::PollType::Poll);
+            }
             if self.pending_occlusion_query_count > 0 && self.pending_occlusion_map_rx.is_none() {
                 self.request_occlusion_map_async();
             }
@@ -1221,6 +1228,7 @@ impl Gpu3D {
             camera,
             lighting,
             draws,
+            draws_revision,
             width,
             height,
             static_mesh_lookup,
@@ -1235,7 +1243,7 @@ impl Gpu3D {
         self.cpu_occlusion_enabled = cpu_occlusion_enabled;
 
         let uniform = build_scene_uniform(&camera, lighting, width, height);
-        let draws_unchanged = self.last_draws.as_slice() == draws;
+        let draws_unchanged = self.last_draws_revision == draws_revision;
         let transform_only_semantic = !draws_unchanged
             && draws.len() == self.last_draws.len()
             && self
@@ -1299,7 +1307,6 @@ impl Gpu3D {
             return;
         }
         if transform_only_changed {
-            let instance_stride = std::mem::size_of::<InstanceGpu>() as u64;
             for (draw, range) in draws.iter().zip(self.last_draw_instance_ranges.iter()) {
                 for instance in &mut self.staged_instances[range.start as usize..range.end as usize]
                 {
@@ -1322,16 +1329,13 @@ impl Gpu3D {
                         draw.model[3][2],
                     ];
                 }
-                if range.start < range.end {
-                    let offset = range.start as u64 * instance_stride;
-                    queue.write_buffer(
-                        &self.instance_buffer,
-                        offset,
-                        bytemuck::cast_slice(
-                            &self.staged_instances[range.start as usize..range.end as usize],
-                        ),
-                    );
-                }
+            }
+            if !self.staged_instances.is_empty() {
+                queue.write_buffer(
+                    &self.instance_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.staged_instances),
+                );
             }
             if self.frustum_cull_enabled && !self.draw_batches.is_empty() {
                 let frustum = extract_frustum_planes(view_proj);
@@ -1400,12 +1404,14 @@ impl Gpu3D {
             }
             self.last_draws.clear();
             self.last_draws.extend_from_slice(draws);
+            self.last_draws_revision = draws_revision;
             self.last_total_drawn = self.staged_instances.len();
             return;
         }
 
         self.last_draws.clear();
         self.last_draws.extend_from_slice(draws);
+        self.last_draws_revision = draws_revision;
 
         self.staged_instances.clear();
         self.staged_instances.reserve(draws.len());
@@ -2945,9 +2951,9 @@ fn create_hiz_texture(
 fn compute_builtin_mesh_bounds(
     vertices: &[MeshVertex],
     indices: &[u32],
-    ranges: &HashMap<&'static str, MeshRange>,
-) -> HashMap<&'static str, ([f32; 3], f32)> {
-    let mut out = HashMap::new();
+    ranges: &AHashMap<&'static str, MeshRange>,
+) -> AHashMap<&'static str, ([f32; 3], f32)> {
+    let mut out = AHashMap::new();
     for (name, range) in ranges {
         let start = range.index_start as usize;
         let end = start

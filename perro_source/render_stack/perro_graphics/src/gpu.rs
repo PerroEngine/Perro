@@ -57,7 +57,7 @@ pub struct Gpu {
     point_particles_3d: Option<GpuPointParticles3D>,
     last_prepare_3d_camera: Option<Camera3DState>,
     last_prepare_3d_lighting: Option<Lighting3DState>,
-    last_prepare_3d_draws: Vec<Draw3DInstance>,
+    last_prepare_3d_draws_revision: u64,
     last_prepare_3d_width: u32,
     last_prepare_3d_height: u32,
     meshlets_enabled: bool,
@@ -72,6 +72,7 @@ pub struct RenderFrame<'a> {
     pub camera_3d: Camera3DState,
     pub lighting_3d: &'a Lighting3DState,
     pub draws_3d: &'a [Draw3DInstance],
+    pub draws_3d_revision: u64,
     pub point_particles_3d: &'a [(NodeID, PointParticles3DState)],
     pub camera_2d: Camera2DUniform,
     pub post_processing_2d: Arc<[perro_structs::PostProcessEffect]>,
@@ -256,7 +257,7 @@ impl Gpu {
             point_particles_3d: Some(point_particles_3d),
             last_prepare_3d_camera: None,
             last_prepare_3d_lighting: None,
-            last_prepare_3d_draws: Vec::new(),
+            last_prepare_3d_draws_revision: u64::MAX,
             last_prepare_3d_width: width,
             last_prepare_3d_height: height,
             meshlets_enabled,
@@ -332,6 +333,7 @@ impl Gpu {
             camera_3d,
             lighting_3d,
             draws_3d,
+            draws_3d_revision,
             point_particles_3d,
             camera_2d,
             post_processing_2d,
@@ -369,7 +371,7 @@ impl Gpu {
         let needs_3d_particles_path = has(DIRTY_PARTICLES_3D) || needs_particles_3d;
         let three_d_content_changed = self.last_prepare_3d_camera.as_ref() != Some(&camera_3d)
             || self.last_prepare_3d_lighting.as_ref() != Some(lighting_3d)
-            || self.last_prepare_3d_draws.as_slice() != draws_3d
+            || self.last_prepare_3d_draws_revision != draws_3d_revision
             || self.last_prepare_3d_width != self.config.width
             || self.last_prepare_3d_height != self.config.height;
 
@@ -441,6 +443,7 @@ impl Gpu {
                             camera: camera_3d.clone(),
                             lighting: lighting_3d,
                             draws: draws_3d,
+                            draws_revision: draws_3d_revision,
                             width: self.config.width,
                             height: self.config.height,
                             static_mesh_lookup,
@@ -449,8 +452,7 @@ impl Gpu {
                     );
                     self.last_prepare_3d_camera = Some(camera_3d.clone());
                     self.last_prepare_3d_lighting = Some(*lighting_3d);
-                    self.last_prepare_3d_draws.clear();
-                    self.last_prepare_3d_draws.extend_from_slice(draws_3d);
+                    self.last_prepare_3d_draws_revision = draws_3d_revision;
                     self.last_prepare_3d_width = self.config.width;
                     self.last_prepare_3d_height = self.config.height;
                 }

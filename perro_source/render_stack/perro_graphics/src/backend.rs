@@ -94,6 +94,7 @@ pub struct PerroGraphics {
     meshlet_debug_view: bool,
     occlusion_culling: OcclusionCullingMode,
     retained_draws_cache: Vec<Draw3DInstance>,
+    retained_draws_cache_revision: u64,
     retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,
     retained_sprites_cache: Vec<Sprite2DCommand>,
     global_post_processing: PostProcessSet,
@@ -123,6 +124,7 @@ impl PerroGraphics {
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCullingMode::Gpu,
             retained_draws_cache: Vec::new(),
+            retained_draws_cache_revision: u64::MAX,
             retained_point_particles_cache: Vec::new(),
             retained_sprites_cache: Vec::new(),
             global_post_processing: PostProcessSet::new(),
@@ -498,11 +500,14 @@ impl GraphicsBackend for PerroGraphics {
         let camera_2d_state = self.renderer_2d.camera();
         let (camera_3d, _stats_3d, lighting_3d) = self.renderer_3d.prepare_frame(&self.resources);
         self.particles_3d.prepare_frame();
-        self.retained_draws_cache.clear();
-        self.retained_draws_cache
-            .extend(self.renderer_3d.all_draws());
-        self.retained_draws_cache
-            .sort_unstable_by_key(|draw| draw.node.as_u64());
+        let draws_revision = self.renderer_3d.draw_revision();
+        if draws_revision != self.retained_draws_cache_revision {
+            self.retained_draws_cache.clear();
+            self.retained_draws_cache.extend(self.renderer_3d.all_draws());
+            self.retained_draws_cache
+                .sort_unstable_by_key(|draw| draw.node.as_u64());
+            self.retained_draws_cache_revision = draws_revision;
+        }
         self.retained_point_particles_cache.clear();
         self.retained_point_particles_cache
             .extend(self.particles_3d.retained_point_particles());
@@ -537,6 +542,7 @@ impl GraphicsBackend for PerroGraphics {
                 camera_3d,
                 lighting_3d: &lighting_3d,
                 draws_3d: &self.retained_draws_cache,
+                draws_3d_revision: self.retained_draws_cache_revision,
                 point_particles_3d: &self.retained_point_particles_cache,
                 camera_2d,
                 post_processing_2d: camera_2d_state.post_processing.clone(),

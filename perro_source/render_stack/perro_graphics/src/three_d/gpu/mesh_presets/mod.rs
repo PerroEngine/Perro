@@ -1,5 +1,5 @@
+use ahash::AHashMap;
 use super::{MeshRange, MeshVertex, MeshletRange};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 mod capsule;
@@ -16,8 +16,8 @@ mod triangular_pyramid;
 type BuiltinMeshBuffer = (
     Vec<MeshVertex>,
     Vec<u32>,
-    HashMap<&'static str, MeshRange>,
-    HashMap<&'static str, Arc<[MeshletRange]>>,
+    AHashMap<&'static str, MeshRange>,
+    AHashMap<&'static str, Arc<[MeshletRange]>>,
 );
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -66,8 +66,8 @@ pub(super) fn build_builtin_mesh_buffer() -> BuiltinMeshBuffer {
 
     let mut all_vertices = Vec::new();
     let mut all_indices = Vec::new();
-    let mut ranges = HashMap::new();
-    let mut meshlets = HashMap::new();
+    let mut ranges = AHashMap::new();
+    let mut meshlets = AHashMap::new();
 
     for (name, (vertices, indices)) in presets {
         let base_vertex = all_vertices.len() as i32;
@@ -96,7 +96,7 @@ fn deduplicate_mesh(
 ) -> (Vec<MeshVertex>, Vec<u32>) {
     let mut unique_vertices = Vec::with_capacity(vertices.len());
     let mut remap = vec![0u16; vertices.len()];
-    let mut vertex_to_index = HashMap::with_capacity(vertices.len());
+    let mut vertex_to_index = AHashMap::with_capacity(vertices.len());
 
     for (old_index, vertex) in vertices.into_iter().enumerate() {
         let key = MeshVertexKey::from(vertex);

@@ -1,3 +1,4 @@
+use ahash::AHashMap;
 use crate::resources::ResourceStore;
 use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MaterialID, MeshID, NodeID};
@@ -5,7 +6,6 @@ use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, PointLight3DState, RayLight3DState,
     SkeletonPalette, SpotLight3DState,
 };
-use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -44,12 +44,13 @@ pub const MAX_SPOT_LIGHTS: usize = 8;
 
 pub struct Renderer3D {
     queued_draws: Vec<Draw3DInstance>,
-    retained_draws: HashMap<NodeID, Draw3DInstance>,
-    ambient_lights: HashMap<NodeID, AmbientLight3DState>,
-    ray_lights: HashMap<NodeID, RayLight3DState>,
-    point_lights: HashMap<NodeID, PointLight3DState>,
-    spot_lights: HashMap<NodeID, SpotLight3DState>,
+    retained_draws: AHashMap<NodeID, Draw3DInstance>,
+    ambient_lights: AHashMap<NodeID, AmbientLight3DState>,
+    ray_lights: AHashMap<NodeID, RayLight3DState>,
+    point_lights: AHashMap<NodeID, PointLight3DState>,
+    spot_lights: AHashMap<NodeID, SpotLight3DState>,
     camera: Camera3DState,
+    draw_revision: u64,
 }
 
 impl Renderer3D {
@@ -89,16 +90,18 @@ impl Renderer3D {
     }
 
     pub fn queue_debug_point(&mut self, node: NodeID, position: [f32; 3], size: f32) {
-        self.retained_draws.insert(
+        let next = Draw3DInstance {
             node,
-            Draw3DInstance {
-                node,
-                kind: Draw3DKind::DebugPointCube,
-                material: None,
-                model: debug_point_model(position, size).to_cols_array_2d(),
-                skeleton: None,
-            },
-        );
+            kind: Draw3DKind::DebugPointCube,
+            material: None,
+            model: debug_point_model(position, size).to_cols_array_2d(),
+            skeleton: None,
+        };
+        let changed = self.retained_draws.get(&node) != Some(&next);
+        if changed {
+            self.retained_draws.insert(node, next);
+            self.draw_revision = self.draw_revision.wrapping_add(1);
+        }
     }
 
     pub fn queue_debug_line(
@@ -109,23 +112,27 @@ impl Renderer3D {
         thickness: f32,
     ) {
         if let Some(model) = debug_line_model(start, end, thickness) {
-            self.retained_draws.insert(
+            let next = Draw3DInstance {
                 node,
-                Draw3DInstance {
-                    node,
-                    kind: Draw3DKind::DebugEdgeCylinder,
-                    material: None,
-                    model: model.to_cols_array_2d(),
-                    skeleton: None,
-                },
-            );
-        } else {
-            self.retained_draws.remove(&node);
+                kind: Draw3DKind::DebugEdgeCylinder,
+                material: None,
+                model: model.to_cols_array_2d(),
+                skeleton: None,
+            };
+            let changed = self.retained_draws.get(&node) != Some(&next);
+            if changed {
+                self.retained_draws.insert(node, next);
+                self.draw_revision = self.draw_revision.wrapping_add(1);
+            }
+        } else if self.retained_draws.remove(&node).is_some() {
+            self.draw_revision = self.draw_revision.wrapping_add(1);
         }
     }
 
     pub fn remove_node(&mut self, node: NodeID) {
-        self.retained_draws.remove(&node);
+        if self.retained_draws.remove(&node).is_some() {
+            self.draw_revision = self.draw_revision.wrapping_add(1);
+        }
         self.ambient_lights.remove(&node);
         self.ray_lights.remove(&node);
         self.point_lights.remove(&node);
@@ -153,6 +160,7 @@ impl Renderer3D {
         resources: &ResourceStore,
     ) -> (Camera3DState, Renderer3DStats, Lighting3DState) {
         let mut stats = Renderer3DStats::default();
+        let mut draws_changed = false;
 
         for draw in self.queued_draws.drain(..) {
             let material_ready = draw
@@ -172,25 +180,44 @@ impl Renderer3D {
                 | Draw3DKind::DebugEdgeCylinder => material_ready,
             };
             if draw_ready {
-                self.retained_draws.insert(draw.node, draw);
+                let changed = self.retained_draws.get(&draw.node) != Some(&draw);
+                if changed {
+                    self.retained_draws.insert(draw.node, draw);
+                    draws_changed = true;
+                }
                 stats.accepted_draws = stats.accepted_draws.saturating_add(1);
             } else {
                 if let Some(retained) = self.retained_draws.get_mut(&draw.node) {
                     // Keep previous mesh/material bindings until replacements exist,
                     // but continue applying latest transform updates.
-                    retained.model = draw.model;
+                    if retained.model != draw.model {
+                        retained.model = draw.model;
+                        draws_changed = true;
+                    }
                     if mesh_ready {
-                        retained.kind = draw.kind;
+                        if retained.kind != draw.kind {
+                            retained.kind = draw.kind;
+                            draws_changed = true;
+                        }
                     }
                     if material_ready {
-                        retained.material = draw.material;
+                        if retained.material != draw.material {
+                            retained.material = draw.material;
+                            draws_changed = true;
+                        }
                     }
                     if draw.skeleton.is_some() {
-                        retained.skeleton = draw.skeleton;
+                        if retained.skeleton != draw.skeleton {
+                            retained.skeleton = draw.skeleton;
+                            draws_changed = true;
+                        }
                     }
                 }
                 stats.rejected_draws = stats.rejected_draws.saturating_add(1);
             }
+        }
+        if draws_changed {
+            self.draw_revision = self.draw_revision.wrapping_add(1);
         }
 
         let mut lighting = Lighting3DState::default();
@@ -230,6 +257,10 @@ impl Renderer3D {
         self.retained_draws.values().cloned()
     }
 
+    pub fn draw_revision(&self) -> u64 {
+        self.draw_revision
+    }
+
     pub fn camera(&self) -> Camera3DState {
         self.camera.clone()
     }
@@ -239,11 +270,11 @@ impl Default for Renderer3D {
     fn default() -> Self {
         Self {
             queued_draws: Vec::new(),
-            retained_draws: HashMap::new(),
-            ambient_lights: HashMap::new(),
-            ray_lights: HashMap::new(),
-            point_lights: HashMap::new(),
-            spot_lights: HashMap::new(),
+            retained_draws: AHashMap::new(),
+            ambient_lights: AHashMap::new(),
+            ray_lights: AHashMap::new(),
+            point_lights: AHashMap::new(),
+            spot_lights: AHashMap::new(),
             // Keep a usable fallback view if no Camera3D node is active.
             camera: Camera3DState {
                 position: [0.0, 0.0, 6.0],
@@ -255,6 +286,7 @@ impl Default for Renderer3D {
                 },
                 post_processing: Arc::from([]),
             },
+            draw_revision: 0,
         }
     }
 }

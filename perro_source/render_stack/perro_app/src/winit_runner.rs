@@ -14,16 +14,14 @@ const DEFAULT_FPS_CAP: f32 = 60.0;
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 8;
 const LOG_INTERVAL_SECONDS: f32 = 2.5;
-const FPS_CAP_COMPENSATION: f32 = 1.01;
 const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
 
 #[inline]
 fn target_frame_duration(fps_cap: f32) -> Option<Duration> {
-    let effective_fps = fps_cap * FPS_CAP_COMPENSATION;
-    if !effective_fps.is_finite() || effective_fps <= 0.0 {
+    if !fps_cap.is_finite() || fps_cap <= 0.0 {
         return None;
     }
-    let secs = 1.0f64 / effective_fps as f64;
+    let secs = 1.0f64 / fps_cap as f64;
     if !secs.is_finite() || secs <= 0.0 {
         return None;
     }
