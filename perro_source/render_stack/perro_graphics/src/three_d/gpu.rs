@@ -1299,6 +1299,7 @@ impl Gpu3D {
             return;
         }
         if transform_only_changed {
+            let instance_stride = std::mem::size_of::<InstanceGpu>() as u64;
             for (draw, range) in draws.iter().zip(self.last_draw_instance_ranges.iter()) {
                 for instance in &mut self.staged_instances[range.start as usize..range.end as usize]
                 {
@@ -1321,12 +1322,17 @@ impl Gpu3D {
                         draw.model[3][2],
                     ];
                 }
+                if range.start < range.end {
+                    let offset = range.start as u64 * instance_stride;
+                    queue.write_buffer(
+                        &self.instance_buffer,
+                        offset,
+                        bytemuck::cast_slice(
+                            &self.staged_instances[range.start as usize..range.end as usize],
+                        ),
+                    );
+                }
             }
-            queue.write_buffer(
-                &self.instance_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_instances),
-            );
             if self.frustum_cull_enabled && !self.draw_batches.is_empty() {
                 let frustum = extract_frustum_planes(view_proj);
                 let mut planes = [[0.0f32; 4]; 6];
