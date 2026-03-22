@@ -40,7 +40,7 @@ mod backend {
     const JOYCON_1_LEFT_PID: u16 = 0x2006;
     const JOYCON_1_RIGHT_PID: u16 = 0x2007;
     const STATE_SYNC_INTERVAL_FRAMES: u32 = 4;
-    const IDLE_POLL_INTERVAL_FRAMES: u32 = 4;
+    const IDLE_POLL_INTERVAL_FRAMES: u32 = 8;
 
     #[derive(Default)]
     pub struct GamepadBackend {

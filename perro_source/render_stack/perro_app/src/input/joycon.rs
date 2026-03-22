@@ -16,7 +16,8 @@ mod backend {
     const JOYCON_1_LEFT_PID: u16 = 0x2006;
     const JOYCON_1_RIGHT_PID: u16 = 0x2007;
     const REPORT_LEN: usize = 64;
-    const SCAN_INTERVAL: Duration = Duration::from_secs(2);
+    const SCAN_INTERVAL_BASE: Duration = Duration::from_secs(2);
+    const SCAN_INTERVAL_MAX: Duration = Duration::from_secs(8);
     const READ_TIMEOUT: Duration = Duration::from_millis(8);
 
     #[derive(Debug)]
@@ -48,6 +49,7 @@ mod backend {
         rx: Option<Receiver<JoyConEvent>>,
         tx: Option<Sender<JoyConEvent>>,
         last_scan: Option<Instant>,
+        scan_interval: Duration,
         last_buttons: HashMap<(usize, JoyConSide), ButtonBits>,
         stale_serials: Vec<String>,
     }
@@ -69,10 +71,13 @@ mod backend {
         }
 
         fn scan_if_needed(&mut self) {
+            if self.scan_interval.is_zero() {
+                self.scan_interval = SCAN_INTERVAL_BASE;
+            }
             let now = Instant::now();
             let scan_due = self
                 .last_scan
-                .map(|t| now.duration_since(t) >= SCAN_INTERVAL)
+                .map(|t| now.duration_since(t) >= self.scan_interval)
                 .unwrap_or(true);
             if !scan_due {
                 return;
@@ -124,6 +129,13 @@ mod backend {
                     }
                     self.last_buttons.retain(|(idx, _), _| *idx != index);
                 }
+            }
+
+            // Back off scans when no JoyCons are around; reset when any are found.
+            if seen_serials.is_empty() && self.devices.is_empty() {
+                self.scan_interval = (self.scan_interval * 2).min(SCAN_INTERVAL_MAX);
+            } else {
+                self.scan_interval = SCAN_INTERVAL_BASE;
             }
         }
 
