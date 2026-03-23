@@ -3,6 +3,7 @@ use perro_ids::IntoTagID;
 use perro_io::load_asset;
 use perro_nodes::{
     ambient_light_3d::AmbientLight3D,
+    animation_player::AnimationPlayer,
     camera_2d::Camera2D,
     camera_3d::{Camera3D, CameraProjection},
     mesh_instance_3d::MeshInstance3D,
@@ -211,6 +212,7 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "ParticleEmitter3D" => Ok(SceneNodeData::ParticleEmitter3D(build_particle_emitter_3d(
             data,
         ))),
+        "AnimationPlayer" => Ok(SceneNodeData::AnimationPlayer(build_animation_player(data))),
         "AmbientLight3D" => Ok(SceneNodeData::AmbientLight3D(build_ambient_light_3d(data))),
         "RayLight3D" => Ok(SceneNodeData::RayLight3D(build_ray_light_3d(data))),
         "PointLight3D" => Ok(SceneNodeData::PointLight3D(build_point_light_3d(data))),

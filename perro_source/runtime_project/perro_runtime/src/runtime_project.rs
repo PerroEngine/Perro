@@ -1,3 +1,4 @@
+use perro_animation::AnimationClip;
 use perro_render_bridge::{Material3D, ParticleProfile3D};
 use perro_scene::Scene;
 use std::{collections::BTreeMap, path::PathBuf};
@@ -19,6 +20,7 @@ pub enum ProviderMode {
 pub type StaticSceneLookup = fn(&str) -> Option<&'static Scene>;
 pub type StaticMaterialLookup = fn(&str) -> Option<&'static Material3D>;
 pub type StaticParticleLookup = fn(&str) -> Option<&'static ParticleProfile3D>;
+pub type StaticAnimationLookup = fn(&str) -> Option<&'static AnimationClip>;
 pub type StaticSkeletonLookup = fn(&str) -> Option<&'static [u8]>;
 pub type StaticAudioLookup = fn(&str) -> Option<&'static [u8]>;
 
@@ -32,6 +34,7 @@ pub struct RuntimeProject {
     pub static_scene_lookup: Option<StaticSceneLookup>,
     pub static_material_lookup: Option<StaticMaterialLookup>,
     pub static_particle_lookup: Option<StaticParticleLookup>,
+    pub static_animation_lookup: Option<StaticAnimationLookup>,
     pub static_skeleton_lookup: Option<StaticSkeletonLookup>,
     pub static_audio_lookup: Option<StaticAudioLookup>,
     pub perro_assets_bytes: Option<&'static [u8]>,
@@ -48,6 +51,7 @@ impl RuntimeProject {
             static_scene_lookup: None,
             static_material_lookup: None,
             static_particle_lookup: None,
+            static_animation_lookup: None,
             static_skeleton_lookup: None,
             static_audio_lookup: None,
             perro_assets_bytes: None,
@@ -64,6 +68,7 @@ impl RuntimeProject {
             static_scene_lookup: None,
             static_material_lookup: None,
             static_particle_lookup: None,
+            static_animation_lookup: None,
             static_skeleton_lookup: None,
             static_audio_lookup: None,
             perro_assets_bytes: None,
@@ -89,6 +94,7 @@ impl RuntimeProject {
             static_scene_lookup: None,
             static_material_lookup: None,
             static_particle_lookup: None,
+            static_animation_lookup: None,
             static_skeleton_lookup: None,
             static_audio_lookup: None,
             perro_assets_bytes: None,
@@ -112,6 +118,11 @@ impl RuntimeProject {
 
     pub fn with_static_particle_lookup(mut self, lookup: StaticParticleLookup) -> Self {
         self.static_particle_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_static_animation_lookup(mut self, lookup: StaticAnimationLookup) -> Self {
+        self.static_animation_lookup = Some(lookup);
         self
     }
 

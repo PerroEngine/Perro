@@ -1,5 +1,5 @@
-use crate::prelude::*;
-use perro_ids::{IntoTagID, NodeID, TagID};
+use crate::{prelude::*, sub_apis::AnimationAPI};
+use perro_ids::{AnimationID, IntoTagID, NodeID, TagID};
 use perro_nodes::prelude::Node2D;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::any::Any;
@@ -322,6 +322,40 @@ impl PhysicsAPI for DummyRuntime {
     }
 
     fn apply_impulse_3d(&mut self, _body_id: NodeID, _direction: Vector3, _amount: f32) -> bool {
+        true
+    }
+}
+
+impl AnimationAPI for DummyRuntime {
+    fn animation_set_clip(&mut self, _player: NodeID, _animation: AnimationID) -> bool {
+        true
+    }
+
+    fn animation_play(&mut self, _player: NodeID) -> bool {
+        true
+    }
+
+    fn animation_pause(&mut self, _player: NodeID, _paused: bool) -> bool {
+        true
+    }
+
+    fn animation_seek_time(&mut self, _player: NodeID, _time_seconds: f32) -> bool {
+        true
+    }
+
+    fn animation_seek_frame(&mut self, _player: NodeID, _frame: u32) -> bool {
+        true
+    }
+
+    fn animation_set_speed(&mut self, _player: NodeID, _speed: f32) -> bool {
+        true
+    }
+
+    fn animation_bind(&mut self, _player: NodeID, _track: &str, _node: NodeID) -> bool {
+        true
+    }
+
+    fn animation_clear_bindings(&mut self, _player: NodeID) -> bool {
         true
     }
 }

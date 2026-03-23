@@ -1,3 +1,4 @@
+mod animation;
 mod audio;
 mod core;
 mod material;

@@ -28,6 +28,7 @@ impl Runtime {
             SceneNodeData::SpotLight3D(node) => node.visible,
             SceneNodeData::ParticleEmitter3D(node) => node.visible,
             SceneNodeData::Skeleton3D(node) => node.visible,
+            SceneNodeData::AnimationPlayer(node) => node.visible,
         }
     }
 

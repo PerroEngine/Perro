@@ -6,6 +6,7 @@ include!("nodes/two_d/base.rs");
 include!("nodes/two_d/camera.rs");
 include!("nodes/two_d/physics.rs");
 include!("nodes/three_d/base.rs");
+include!("nodes/three_d/animation.rs");
 include!("nodes/three_d/camera.rs");
 include!("nodes/three_d/particles.rs");
 include!("nodes/three_d/lights.rs");

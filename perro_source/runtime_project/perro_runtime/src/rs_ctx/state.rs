@@ -1,6 +1,8 @@
-use perro_ids::{MaterialID, MeshID, TextureID};
+use perro_animation::AnimationClip;
+use perro_ids::{AnimationID, MaterialID, MeshID, TextureID};
 use perro_render_bridge::{RenderCommand, RenderRequestID};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 #[derive(Default)]
 struct LocalSlotArena {
@@ -46,6 +48,7 @@ pub(super) struct RuntimeResourceState {
     texture_slots: LocalSlotArena,
     mesh_slots: LocalSlotArena,
     material_slots: LocalSlotArena,
+    animation_slots: LocalSlotArena,
     pub(super) queued_commands: Vec<RenderCommand>,
     pub(super) texture_by_source: HashMap<String, TextureID>,
     pub(super) texture_pending_by_source: HashMap<String, RenderRequestID>,
@@ -65,6 +68,8 @@ pub(super) struct RuntimeResourceState {
     pub(super) material_pending_id_by_request: HashMap<RenderRequestID, MaterialID>,
     pub(super) material_reserve_pending: HashSet<String>,
     pub(super) material_drop_pending: HashSet<String>,
+    pub(super) animation_by_source: HashMap<String, AnimationID>,
+    pub(super) animation_data_by_id: HashMap<AnimationID, Arc<AnimationClip>>,
 }
 
 impl RuntimeResourceState {
@@ -108,5 +113,14 @@ impl RuntimeResourceState {
 
     pub(super) fn free_material_id(&mut self, id: MaterialID) -> bool {
         self.material_slots.free_parts(id.index(), id.generation())
+    }
+
+    pub(super) fn allocate_animation_id(&mut self) -> AnimationID {
+        let (index, generation) = self.animation_slots.allocate_parts();
+        AnimationID::from_parts(index, generation)
+    }
+
+    pub(super) fn free_animation_id(&mut self, id: AnimationID) -> bool {
+        self.animation_slots.free_parts(id.index(), id.generation())
     }
 }

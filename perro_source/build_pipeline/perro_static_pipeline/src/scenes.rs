@@ -273,6 +273,7 @@ fn emit_static_node_type(ty: &str) -> Result<&'static str, StaticPipelineError> 
         "PointLight3D" => Ok("PointLight3D"),
         "SpotLight3D" => Ok("SpotLight3D"),
         "ParticleEmitter3D" => Ok("ParticleEmitter3D"),
+        "AnimationPlayer" => Ok("AnimationPlayer"),
         _ => Err(StaticPipelineError::SceneParse(format!(
             "unsupported static node type `{ty}`"
         ))),

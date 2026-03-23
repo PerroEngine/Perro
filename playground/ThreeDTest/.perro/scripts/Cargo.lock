@@ -981,6 +981,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "perro_animation"
+version = "0.1.0"
+dependencies = [
+ "perro_ids",
+]
+
+[[package]]
 name = "perro_assets"
 version = "0.1.0"
 dependencies = [
@@ -1040,6 +1047,7 @@ dependencies = [
 name = "perro_nodes"
 version = "0.1.0"
 dependencies = [
+ "perro_animation",
  "perro_ids",
  "perro_structs",
 ]
@@ -1068,6 +1076,7 @@ dependencies = [
 name = "perro_resource_context"
 version = "0.1.0"
 dependencies = [
+ "perro_animation",
  "perro_ids",
  "perro_nodes",
  "perro_render_bridge",
@@ -1083,6 +1092,7 @@ dependencies = [
  "glam",
  "gltf",
  "libloading",
+ "perro_animation",
  "perro_bark",
  "perro_ids",
  "perro_input",

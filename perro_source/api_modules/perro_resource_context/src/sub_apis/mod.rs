@@ -1,3 +1,4 @@
+mod animation;
 mod audio;
 mod material;
 mod mesh;
@@ -8,6 +9,7 @@ mod texture;
 mod visual_accessibility;
 
 pub use audio::{Audio, AudioAPI, AudioModule, bus_id};
+pub use animation::{AnimationAPI, AnimationModule};
 pub use material::{MaterialAPI, MaterialModule};
 pub use mesh::{MeshAPI, MeshModule};
 pub use perro_ids::AudioBusID;

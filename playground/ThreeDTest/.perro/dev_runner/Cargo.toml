@@ -16,6 +16,7 @@ debug = true
 [workspace]
 
 [patch.crates-io]
+perro_animation = { path = "../../../../perro_source/core/perro_animation" }
 perro_ids = { path = "../../../../perro_source/core/perro_ids" }
 perro_nodes = { path = "../../../../perro_source/core/perro_nodes" }
 perro_particle_math = { path = "../../../../perro_source/core/perro_particle_math" }

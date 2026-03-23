@@ -353,6 +353,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         &default_static_particles_rs(),
     )?;
     write_if_missing(
+        project_static_src.join("animations.rs"),
+        &default_static_animations_rs(),
+    )?;
+    write_if_missing(
         project_static_src.join("textures.rs"),
         &default_static_textures_rs(),
     )?;
@@ -1233,6 +1237,7 @@ fn project_root() -> std::path::PathBuf {
               scene_lookup: static_assets::scenes::lookup_scene,
               material_lookup: static_assets::materials::lookup_material,
               particle_lookup: static_assets::particles::lookup_particle,
+              animation_lookup: static_assets::animations::lookup_animation,
               mesh_lookup: static_assets::meshes::lookup_mesh,
               skeleton_lookup: static_assets::skeletons::lookup_skeleton,
               texture_lookup: static_assets::textures::lookup_texture,
@@ -1248,7 +1253,7 @@ fn project_root() -> std::path::PathBuf {
 }
 
 fn default_static_mod_rs() -> String {
-    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod meshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\n".to_string()
+    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod animations;\npub mod meshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\n".to_string()
 }
 
 fn default_static_scenes_rs() -> String {
@@ -1281,6 +1286,18 @@ fn default_static_particles_rs() -> String {
 use perro_render_bridge::ParticleProfile3D;
 
 pub fn lookup_particle(_path: &str) -> Option<&'static ParticleProfile3D> {
+    None
+}
+"#
+    .to_string()
+}
+
+fn default_static_animations_rs() -> String {
+    r#"#![allow(unused_imports)]
+
+use perro_animation::AnimationClip;
+
+pub fn lookup_animation(_path: &str) -> Option<&'static AnimationClip> {
     None
 }
 "#
@@ -1831,6 +1848,7 @@ fn expand_transitive_perro_deps(engine_root: &Path, crates: &mut BTreeSet<String
 
 fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
     match crate_name {
+        "perro_animation" => Some("perro_source/core/perro_animation"),
         "perro_nodes" => Some("perro_source/core/perro_nodes"),
         "perro_structs" => Some("perro_source/core/perro_structs"),
         "perro_ids" => Some("perro_source/core/perro_ids"),

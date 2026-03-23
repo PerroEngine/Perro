@@ -2381,6 +2381,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
+name = "perro_animation"
+version = "0.1.0"
+dependencies = [
+ "perro_ids",
+]
+
+[[package]]
 name = "perro_app"
 version = "0.1.0"
 dependencies = [
@@ -2479,6 +2486,7 @@ version = "0.1.0"
 name = "perro_nodes"
 version = "0.1.0"
 dependencies = [
+ "perro_animation",
  "perro_ids",
  "perro_structs",
 ]
@@ -2507,6 +2515,7 @@ dependencies = [
 name = "perro_resource_context"
 version = "0.1.0"
 dependencies = [
+ "perro_animation",
  "perro_ids",
  "perro_nodes",
  "perro_render_bridge",
@@ -2522,6 +2531,7 @@ dependencies = [
  "glam",
  "gltf",
  "libloading",
+ "perro_animation",
  "perro_bark",
  "perro_ids",
  "perro_input",

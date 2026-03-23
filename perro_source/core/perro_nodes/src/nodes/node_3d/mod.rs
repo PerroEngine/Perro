@@ -1,5 +1,6 @@
 #[path = "lights/ambient_light_3d.rs"]
 pub mod ambient_light_3d;
+pub mod animation_player;
 pub mod camera_3d;
 pub mod mesh_instance_3d;
 pub mod node_3d_base;
@@ -16,6 +17,7 @@ pub mod spot_light_3d;
 pub mod terrain_instance_3d;
 
 pub use ambient_light_3d::*;
+pub use animation_player::*;
 pub use camera_3d::*;
 pub use mesh_instance_3d::*;
 pub use node_3d_base::*;

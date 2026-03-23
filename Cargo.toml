@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "perro_source/core/perro_ids",
+    "perro_source/core/perro_animation",
     "perro_source/core/perro_nodes",
     "perro_source/core/perro_structs",
     "perro_source/core/perro_variant",
@@ -43,6 +44,7 @@ resolver = "3"
 perro_nodes = {path = "perro_source/core/perro_nodes"}
 perro_structs = {path = "perro_source/core/perro_structs"}
 perro_ids = {path = "perro_source/core/perro_ids"}
+perro_animation = {path = "perro_source/core/perro_animation"}
 perro_variant = {path="perro_source/core/perro_variant"}
 perro_particle_math = {path = "perro_source/core/perro_particle_math"}
 perro_terrain = {path = "perro_source/core/perro_terrain"}

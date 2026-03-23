@@ -1,5 +1,6 @@
 use super::prepare::PreparedScene;
 use crate::Runtime;
+use perro_animation::AnimationNodeBinding;
 use perro_ids::NodeID;
 use perro_nodes::{SceneNode, SceneNodeData};
 use perro_resource_context::ResourceContext;
@@ -25,6 +26,7 @@ pub(super) fn merge_prepared_scene(
     let mut key_to: HashMap<String, NodeID> = HashMap::with_capacity(nodes.len());
     let mut key_order: Vec<String> = Vec::with_capacity(nodes.len());
     let mut parent_pairs = Vec::with_capacity(nodes.len());
+    let mut animation_players: Vec<NodeID> = Vec::new();
     let mut mesh_skeleton_links: Vec<(NodeID, String)> = Vec::new();
     let resource_api = runtime.resource_api.clone();
 
@@ -47,7 +49,12 @@ pub(super) fn merge_prepared_scene(
 
         let node = runtime.nodes.insert(node);
         if let Some(inserted) = runtime.nodes.get(node) {
-            runtime.register_internal_node_schedules(node, inserted.node_type());
+            let ty = inserted.node_type();
+            let is_animation_player = matches!(inserted.data, SceneNodeData::AnimationPlayer(_));
+            runtime.register_internal_node_schedules(node, ty);
+            if is_animation_player {
+                animation_players.push(node);
+            }
         }
         let _ = runtime.ensure_terrain_instance_data(node);
         if let Some(source) = texture_source {
@@ -116,6 +123,25 @@ pub(super) fn merge_prepared_scene(
             if let SceneNodeData::MeshInstance3D(mesh) = &mut node_data.data {
                 mesh.skeleton = target;
             }
+        }
+    }
+
+    for player_id in animation_players {
+        let Some(node_data) = runtime.nodes.get_mut(player_id) else {
+            continue;
+        };
+        let SceneNodeData::AnimationPlayer(player) = &mut node_data.data else {
+            continue;
+        };
+        player.runtime_bindings.clear();
+        for binding in &player.scene_bindings {
+            let Some(target_id) = key_to.get(binding.node.as_ref()).copied() else {
+                continue;
+            };
+            player.runtime_bindings.push(AnimationNodeBinding {
+                track: binding.track.clone(),
+                node: target_id,
+            });
         }
     }
 

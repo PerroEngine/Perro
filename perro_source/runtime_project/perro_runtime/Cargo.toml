@@ -12,6 +12,7 @@ rapier2d = "0.23"
 rapier3d = "0.23"
 
 perro_ids = "0.1.0"
+perro_animation = "0.1.0"
 perro_nodes = "0.1.0"
 perro_structs = "0.1.0"
 perro_runtime_context = "0.1.0"

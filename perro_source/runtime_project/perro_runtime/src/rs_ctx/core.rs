@@ -1,6 +1,8 @@
 use super::state::RuntimeResourceState;
 use crate::cns::TerrainStore;
-use crate::runtime_project::{StaticAudioLookup, StaticMaterialLookup, StaticSkeletonLookup};
+use crate::runtime_project::{
+    StaticAnimationLookup, StaticAudioLookup, StaticMaterialLookup, StaticSkeletonLookup,
+};
 use perro_bark::AudioController;
 use perro_render_bridge::{RenderCommand, RenderEvent};
 use std::{
@@ -13,6 +15,7 @@ pub struct RuntimeResourceApi {
     pub(super) bark: Mutex<Option<AudioController>>,
     pub(super) static_material_lookup: Option<StaticMaterialLookup>,
     pub(super) static_skeleton_lookup: Option<StaticSkeletonLookup>,
+    pub(super) static_animation_lookup: Option<StaticAnimationLookup>,
     pub(crate) terrain_store: Arc<Mutex<TerrainStore>>,
     pub(super) skeleton_bones_cache: Mutex<HashMap<String, Vec<perro_nodes::skeleton_3d::Bone3D>>>,
 }
@@ -22,6 +25,7 @@ impl RuntimeResourceApi {
         static_material_lookup: Option<StaticMaterialLookup>,
         static_audio_lookup: Option<StaticAudioLookup>,
         static_skeleton_lookup: Option<StaticSkeletonLookup>,
+        static_animation_lookup: Option<StaticAnimationLookup>,
         terrain_store: Arc<Mutex<TerrainStore>>,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -29,6 +33,7 @@ impl RuntimeResourceApi {
             bark: Mutex::new(AudioController::new(static_audio_lookup).ok()),
             static_material_lookup,
             static_skeleton_lookup,
+            static_animation_lookup,
             terrain_store,
             skeleton_bones_cache: Mutex::new(HashMap::new()),
         })
