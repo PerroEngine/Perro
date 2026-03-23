@@ -1,4 +1,4 @@
-use crate::{prelude::*, sub_apis::AnimationAPI};
+use crate::{prelude::*, sub_apis::AnimPlayerAPI};
 use perro_ids::{AnimationID, IntoTagID, NodeID, TagID};
 use perro_nodes::prelude::Node2D;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
@@ -326,7 +326,7 @@ impl PhysicsAPI for DummyRuntime {
     }
 }
 
-impl AnimationAPI for DummyRuntime {
+impl AnimPlayerAPI for DummyRuntime {
     fn animation_set_clip(&mut self, _player: NodeID, _animation: AnimationID) -> bool {
         true
     }

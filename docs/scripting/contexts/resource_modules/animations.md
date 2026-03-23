@@ -45,9 +45,9 @@ let _ = animation_drop!(res, "res://animations/hero_run.panim");
 ## Typical Runtime Flow With `AnimationPlayer` (using RuntimeContext)
 
 1. `animation_load!(res, source)` to get `AnimationID`
-2. `animation_set_clip!(ctx, animation_player_id, animation_id)`
-3. `animation_bind!(ctx, animation_player_id, ["ClipObjectName": target_node_id, ...])`
-4. `animation_play!(ctx, animation_player_id)`
+2. `anim_player_set_clip!(ctx, animation_player_id, animation_id)`
+3. `anim_player_bind!(ctx, animation_player_id, ["ClipObjectName": target_node_id, ...])`
+4. `anim_player_play!(ctx, animation_player_id)`
 
 Binding note:
 

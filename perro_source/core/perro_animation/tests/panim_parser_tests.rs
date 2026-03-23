@@ -1,4 +1,7 @@
-use perro_animation::{AnimationEase, AnimationInterpolation, AnimationParam, AnimationTrackValue, parse_panim};
+use perro_animation::{
+    AnimationBoneSelector, AnimationEase, AnimationInterpolation, AnimationParam,
+    AnimationTrackValue, parse_panim,
+};
 use perro_scene::{MeshInstance3DField, Node2DField, Node3DField, NodeField, Sprite2DField};
 
 #[test]
@@ -472,4 +475,108 @@ fps = 30
 
     let err = parse_panim(src).expect_err("expected parse failure");
     assert!(err.contains("invalid object reference"));
+}
+
+#[test]
+fn parses_skeleton_bone_tracks_by_index_and_name() {
+    let src = r#"
+[Animation]
+name = "BoneClip"
+fps = 30
+[/Animation]
+
+[Objects]
+@Rig = Skeleton3D
+[/Objects]
+
+[Frame0]
+@Rig {
+    bones[0].position = (1,2,3)
+    bone["Spine"].rotation = (0,0,0,1)
+}
+[/Frame0]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+    assert_eq!(clip.object_tracks.len(), 2);
+
+    let index_track = clip
+        .object_tracks
+        .iter()
+        .find(|t| {
+            matches!(
+                &t.bone_target,
+                Some(target) if matches!(target.selector, AnimationBoneSelector::Index(0))
+            )
+        })
+        .expect("index bone track");
+    assert!(matches!(
+        index_track.keys[0].value,
+        AnimationTrackValue::Transform3D(_)
+    ));
+
+    let name_track = clip
+        .object_tracks
+        .iter()
+        .find(|t| {
+            matches!(
+                &t.bone_target,
+                Some(target)
+                    if matches!(
+                        &target.selector,
+                        AnimationBoneSelector::Name(name) if name.as_ref() == "Spine"
+                    )
+            )
+        })
+        .expect("named bone track");
+    assert!(matches!(
+        name_track.keys[0].value,
+        AnimationTrackValue::Transform3D(_)
+    ));
+}
+
+#[test]
+fn skeleton_bone_track_controls_persist() {
+    let src = r#"
+[Animation]
+name = "BoneControls"
+fps = 30
+[/Animation]
+
+[Objects]
+@Rig = Skeleton3D
+[/Objects]
+
+[Frame0]
+@Rig {
+    bones[0].position.interp = "step"
+    bones[0].position.ease = "ease_in"
+    bones[0].position = (0,0,0)
+}
+[/Frame0]
+
+[Frame10]
+@Rig {
+    bones[0].position = (5,0,0)
+}
+[/Frame10]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+    let track = clip
+        .object_tracks
+        .iter()
+        .find(|t| {
+            matches!(
+                &t.bone_target,
+                Some(target) if matches!(target.selector, AnimationBoneSelector::Index(0))
+            )
+        })
+        .expect("bone track");
+
+    assert_eq!(track.keys.len(), 2);
+    assert_eq!(track.keys[0].interpolation, AnimationInterpolation::Step);
+    assert_eq!(track.keys[1].interpolation, AnimationInterpolation::Step);
+    assert_eq!(track.keys[0].ease, AnimationEase::EaseIn);
+    assert_eq!(track.keys[1].ease, AnimationEase::EaseIn);
 }

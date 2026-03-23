@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use perro_animation::{
-    AnimationEase, AnimationEvent, AnimationEventScope, AnimationInterpolation, AnimationObjectTrack,
-    AnimationParam, AnimationTrackValue,
+    AnimationBoneSelector, AnimationEase, AnimationEvent, AnimationEventScope,
+    AnimationInterpolation, AnimationObjectTrack, AnimationParam, AnimationTrackValue,
 };
 use perro_scene::{
     Camera3DField, Light3DField, MeshInstance3DField, Node2DField, Node3DField, NodeField,
@@ -10,7 +10,7 @@ use perro_scene::{
 use perro_nodes::animation_player::{AnimationObjectBinding, AnimationPlaybackType};
 use perro_nodes::{
     AmbientLight3D, AnimationPlayer, Camera3D, MeshInstance3D, Node2D, Node3D, PointLight3D,
-    RayLight3D, Sprite2D, SpotLight3D,
+    RayLight3D, Skeleton3D, Sprite2D, SpotLight3D,
 };
 use perro_runtime_context::perro_structs::{Quaternion, Vector2, Vector3};
 use perro_runtime_context::perro_variant::Variant;
@@ -441,6 +441,11 @@ fn apply_track<RT>(
         return;
     };
 
+    if let Some(bone_target) = &track.bone_target {
+        apply_skeleton_bone_track(ctx, node_id, bone_target, &value);
+        return;
+    }
+
     match track.field {
         NodeField::Node2D(Node2DField::Position)
         | NodeField::Node2D(Node2DField::Rotation)
@@ -695,6 +700,31 @@ fn apply_track<RT>(
         }
         _ => {}
     }
+}
+
+fn apply_skeleton_bone_track<RT>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    node_id: NodeID,
+    bone_target: &perro_animation::AnimationBoneTarget,
+    value: &AnimationTrackValue,
+) where
+    RT: RuntimeAPI + ?Sized,
+{
+    let AnimationTrackValue::Transform3D(rest) = value else {
+        return;
+    };
+    let rest = *rest;
+    let _ = with_base_node_mut!(ctx, Skeleton3D, node_id, |skeleton| {
+        let bone = match &bone_target.selector {
+            AnimationBoneSelector::Index(index) => skeleton.bones.get_mut(*index as usize),
+            AnimationBoneSelector::Name(name) => {
+                skeleton.bones.iter_mut().find(|bone| bone.name.as_ref() == name.as_ref())
+            }
+        };
+        if let Some(bone) = bone {
+            bone.rest = rest;
+        }
+    });
 }
 
 #[inline]

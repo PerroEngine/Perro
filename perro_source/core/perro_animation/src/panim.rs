@@ -1,13 +1,13 @@
 use crate::{
     AnimationClip, AnimationEvent, AnimationEventScope, AnimationFrameEvent,
-    AnimationEase, AnimationInterpolation, AnimationObject, AnimationObjectKey,
+    AnimationBoneSelector, AnimationBoneTarget, AnimationEase, AnimationInterpolation, AnimationObject, AnimationObjectKey,
     AnimationObjectTrack,
     AnimationParam, AnimationTrackValue,
 };
 use perro_scene::{
     Camera3DField, Light3DField, MeshInstance3DField, Node2DField, Node3DField, NodeField,
-    PointLight3DField, SceneValue, Sprite2DField, SpotLight3DField, Parser as SceneParser,
-    resolve_node_field,
+    PointLight3DField, SceneValue, Skeleton3DField, Sprite2DField, SpotLight3DField,
+    Parser as SceneParser, resolve_node_field,
 };
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;

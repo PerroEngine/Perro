@@ -188,6 +188,20 @@ Semantics:
 
 - `range`, `inner_angle_radians`, `outer_angle_radians`
 
+`Skeleton3D`:
+
+- `bones[index].position`, `bones[index].rotation`, `bones[index].scale`
+- `bone[index].position`, `bone[index].rotation`, `bone[index].scale`
+- `bones["name"].position`, `bones["name"].rotation`, `bones["name"].scale`
+- `bone["name"].position`, `bone["name"].rotation`, `bone["name"].scale`
+
+Notes:
+
+- Bone tracks target `rest` transforms on `Skeleton3D.bones`.
+- `position/rotation/scale` share one transform track per targeted bone.
+- Track controls are supported on bone channels, for example:
+  `bones[0].position.interp = "step"` and `bones[0].position.ease = "ease_in"`.
+
 ## Events
 
 Global event in frame:

@@ -5,7 +5,7 @@ mod script;
 mod signal;
 mod time;
 
-pub use animation::{AnimationAPI, AnimationModule};
+pub use animation::{AnimPlayerAPI, AnimPlayerModule};
 pub use node::{IntoNodeTags, NodeAPI, NodeModule, QueryExpr, QueryScope, TagQuery};
 pub use physics::{IntoImpulseDirection, PhysicsAPI, PhysicsModule};
 pub use script::{Attribute, IntoScriptMemberID, Member, ScriptAPI, ScriptModule};

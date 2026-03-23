@@ -1,8 +1,8 @@
 use crate::Runtime;
 use perro_nodes::AnimationPlayer;
-use perro_runtime_context::sub_apis::{AnimationAPI, NodeAPI};
+use perro_runtime_context::sub_apis::{AnimPlayerAPI, NodeAPI};
 
-impl AnimationAPI for Runtime {
+impl AnimPlayerAPI for Runtime {
     fn animation_set_clip(
         &mut self,
         player: perro_ids::NodeID,

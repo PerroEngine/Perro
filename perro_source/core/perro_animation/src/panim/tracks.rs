@@ -9,6 +9,7 @@ struct ObjectState3D {
 
 struct TrackAccumulator {
     field: NodeField,
+    bone_target: Option<AnimationBoneTarget>,
     interpolation: AnimationInterpolation,
     ease: AnimationEase,
     keys: BTreeMap<u32, TrackKey>,
@@ -34,8 +35,9 @@ fn build_tracks_and_events(
         u32,
         usize,
         String,
-        &'static str,
+        String,
         NodeField,
+        Option<AnimationBoneTarget>,
         Option<AnimationInterpolation>,
         Option<AnimationEase>,
     )>::new();
@@ -51,6 +53,7 @@ fn build_tracks_and_events(
                 object,
                 channel_key,
                 field,
+                bone_target,
                 interpolation,
                 ease,
             } => controls.push((
@@ -59,6 +62,7 @@ fn build_tracks_and_events(
                 object,
                 channel_key,
                 field,
+                bone_target,
                 interpolation,
                 ease,
             )),
@@ -79,12 +83,13 @@ fn build_tracks_and_events(
 
     let mut state_2d = HashMap::<String, ObjectState2D>::new();
     let mut state_3d = HashMap::<String, ObjectState3D>::new();
-    let mut tracks_map = BTreeMap::<(String, &'static str), TrackAccumulator>::new();
+    let mut bone_state_3d = HashMap::<(String, String), ObjectState3D>::new();
+    let mut tracks_map = BTreeMap::<(String, String), TrackAccumulator>::new();
     let mut control_index = 0usize;
 
     for (frame, sequence, object, field) in fields {
         while control_index < controls.len() {
-            let (c_frame, c_seq, c_object, channel_key, c_field, interp, ease) =
+            let (c_frame, c_seq, c_object, channel_key, c_field, c_bone_target, interp, ease) =
                 &controls[control_index];
             if *c_frame > frame || (*c_frame == frame && *c_seq > sequence) {
                 break;
@@ -92,8 +97,9 @@ fn build_tracks_and_events(
             apply_track_control(
                 &mut tracks_map,
                 c_object.clone(),
-                *channel_key,
+                channel_key,
                 *c_field,
+                c_bone_target.clone(),
                 *interp,
                 *ease,
                 default_interpolation,
@@ -120,6 +126,17 @@ fn build_tracks_and_events(
                     object,
                     action,
                     &mut state_3d,
+                    &mut tracks_map,
+                    default_interpolation,
+                    default_ease,
+                );
+            }
+            ObjectFieldAction::SkeletonBone(action) => {
+                apply_skeleton_bone_action(
+                    frame,
+                    object,
+                    action,
+                    &mut bone_state_3d,
                     &mut tracks_map,
                     default_interpolation,
                     default_ease,
@@ -189,12 +206,14 @@ fn build_tracks_and_events(
     }
 
     while control_index < controls.len() {
-        let (_, _, object, channel_key, field, interpolation, ease) = &controls[control_index];
+        let (_, _, object, channel_key, field, bone_target, interpolation, ease) =
+            &controls[control_index];
         apply_track_control(
             &mut tracks_map,
             object.clone(),
-            *channel_key,
+            channel_key,
             *field,
+            bone_target.clone(),
             *interpolation,
             *ease,
             default_interpolation,
@@ -217,6 +236,7 @@ fn build_tracks_and_events(
         object_tracks.push(AnimationObjectTrack {
             object: object.into(),
             field: track.field,
+            bone_target: track.bone_target,
             interpolation: track.interpolation,
             ease: track.ease,
             keys: Cow::Owned(keys),
@@ -232,7 +252,7 @@ fn apply_node_2d_action(
     object: String,
     action: Node2DAction,
     state_2d: &mut HashMap<String, ObjectState2D>,
-    tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
     default_interpolation: AnimationInterpolation,
     default_ease: AnimationEase,
 ) {
@@ -317,7 +337,7 @@ fn apply_node_3d_action(
     object: String,
     action: Node3DAction,
     state_3d: &mut HashMap<String, ObjectState3D>,
-    tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
     default_interpolation: AnimationInterpolation,
     default_ease: AnimationEase,
 ) {
@@ -385,11 +405,78 @@ fn apply_node_3d_action(
     }
 }
 
+fn apply_skeleton_bone_action(
+    frame: u32,
+    object: String,
+    action: SkeletonBoneAction,
+    bone_state_3d: &mut HashMap<(String, String), ObjectState3D>,
+    tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
+) {
+    match action {
+        SkeletonBoneAction::Position(selector, value) => {
+            let selector_key = bone_selector_key(&selector);
+            let state = bone_state_3d
+                .entry((object.clone(), selector_key.clone()))
+                .or_insert_with(default_object_state_3d);
+            state.transform.position = value;
+            insert_track_key_with_bone_target(
+                tracks_map,
+                object,
+                &format!("skeleton3d.bones[{selector_key}].transform"),
+                NodeField::Skeleton3D(Skeleton3DField::Skeleton),
+                Some(AnimationBoneTarget { selector }),
+                frame,
+                AnimationTrackValue::Transform3D(state.transform),
+                default_interpolation,
+                default_ease,
+            );
+        }
+        SkeletonBoneAction::Rotation(selector, value) => {
+            let selector_key = bone_selector_key(&selector);
+            let state = bone_state_3d
+                .entry((object.clone(), selector_key.clone()))
+                .or_insert_with(default_object_state_3d);
+            state.transform.rotation = value;
+            insert_track_key_with_bone_target(
+                tracks_map,
+                object,
+                &format!("skeleton3d.bones[{selector_key}].transform"),
+                NodeField::Skeleton3D(Skeleton3DField::Skeleton),
+                Some(AnimationBoneTarget { selector }),
+                frame,
+                AnimationTrackValue::Transform3D(state.transform),
+                default_interpolation,
+                default_ease,
+            );
+        }
+        SkeletonBoneAction::Scale(selector, value) => {
+            let selector_key = bone_selector_key(&selector);
+            let state = bone_state_3d
+                .entry((object.clone(), selector_key.clone()))
+                .or_insert_with(default_object_state_3d);
+            state.transform.scale = value;
+            insert_track_key_with_bone_target(
+                tracks_map,
+                object,
+                &format!("skeleton3d.bones[{selector_key}].transform"),
+                NodeField::Skeleton3D(Skeleton3DField::Skeleton),
+                Some(AnimationBoneTarget { selector }),
+                frame,
+                AnimationTrackValue::Transform3D(state.transform),
+                default_interpolation,
+                default_ease,
+            );
+        }
+    }
+}
+
 fn apply_sprite_2d_action(
     frame: u32,
     object: String,
     action: Sprite2DAction,
-    tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
     default_interpolation: AnimationInterpolation,
     default_ease: AnimationEase,
 ) {
@@ -411,7 +498,7 @@ fn apply_mesh_instance_3d_action(
     frame: u32,
     object: String,
     action: MeshInstance3DAction,
-    tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
     default_interpolation: AnimationInterpolation,
     default_ease: AnimationEase,
 ) {
@@ -443,7 +530,7 @@ fn apply_camera_3d_action(
     frame: u32,
     object: String,
     action: Camera3DAction,
-    tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
     default_interpolation: AnimationInterpolation,
     default_ease: AnimationEase,
 ) {
@@ -595,7 +682,7 @@ fn apply_light_3d_action(
     frame: u32,
     object: String,
     action: Light3DAction,
-    tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
     default_interpolation: AnimationInterpolation,
     default_ease: AnimationEase,
 ) {
@@ -637,7 +724,7 @@ fn apply_point_light_3d_action(
     frame: u32,
     object: String,
     action: PointLight3DAction,
-    tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
     default_interpolation: AnimationInterpolation,
     default_ease: AnimationEase,
 ) {
@@ -659,7 +746,7 @@ fn apply_spot_light_3d_action(
     frame: u32,
     object: String,
     action: SpotLight3DAction,
-    tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
     default_interpolation: AnimationInterpolation,
     default_ease: AnimationEase,
 ) {
@@ -709,20 +796,52 @@ fn default_object_state_3d() -> ObjectState3D {
     }
 }
 
+fn bone_selector_key(selector: &AnimationBoneSelector) -> String {
+    match selector {
+        AnimationBoneSelector::Index(index) => index.to_string(),
+        AnimationBoneSelector::Name(name) => name.to_string(),
+    }
+}
+
 fn insert_track_key(
-    tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
     object: String,
-    channel_key: &'static str,
+    channel_key: &str,
     field: NodeField,
     frame: u32,
     value: AnimationTrackValue,
     default_interpolation: AnimationInterpolation,
     default_ease: AnimationEase,
 ) {
+    insert_track_key_with_bone_target(
+        tracks_map,
+        object,
+        channel_key,
+        field,
+        None,
+        frame,
+        value,
+        default_interpolation,
+        default_ease,
+    );
+}
+
+fn insert_track_key_with_bone_target(
+    tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
+    object: String,
+    channel_key: &str,
+    field: NodeField,
+    bone_target: Option<AnimationBoneTarget>,
+    frame: u32,
+    value: AnimationTrackValue,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
+) {
     let entry = tracks_map
-        .entry((object, channel_key))
+        .entry((object, channel_key.to_string()))
         .or_insert_with(|| TrackAccumulator {
             field,
+            bone_target,
             interpolation: default_interpolation,
             ease: default_ease,
             keys: BTreeMap::new(),
@@ -738,19 +857,21 @@ fn insert_track_key(
 }
 
 fn apply_track_control(
-    tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
     object: String,
-    channel_key: &'static str,
+    channel_key: &str,
     field: NodeField,
+    bone_target: Option<AnimationBoneTarget>,
     interpolation: Option<AnimationInterpolation>,
     ease: Option<AnimationEase>,
     default_interpolation: AnimationInterpolation,
     default_ease: AnimationEase,
 ) {
     let entry = tracks_map
-        .entry((object, channel_key))
+        .entry((object, channel_key.to_string()))
         .or_insert_with(|| TrackAccumulator {
             field,
+            bone_target,
             interpolation: default_interpolation,
             ease: default_ease,
             keys: BTreeMap::new(),
@@ -762,5 +883,3 @@ fn apply_track_control(
         entry.ease = ease;
     }
 }
-
-

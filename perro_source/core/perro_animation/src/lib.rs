@@ -39,6 +39,7 @@ pub struct AnimationObject {
 pub struct AnimationObjectTrack {
     pub object: Cow<'static, str>,
     pub field: NodeField,
+    pub bone_target: Option<AnimationBoneTarget>,
     pub interpolation: AnimationInterpolation,
     pub ease: AnimationEase,
     pub keys: Cow<'static, [AnimationObjectKey]>,
@@ -49,11 +50,23 @@ impl Default for AnimationObjectTrack {
         Self {
             object: Cow::Borrowed(""),
             field: NodeField::Node3D(Node3DField::Visible),
+            bone_target: None,
             interpolation: AnimationInterpolation::Linear,
             ease: AnimationEase::Linear,
             keys: Cow::Borrowed(&[]),
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AnimationBoneTarget {
+    pub selector: AnimationBoneSelector,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AnimationBoneSelector {
+    Index(u32),
+    Name(Cow<'static, str>),
 }
 
 #[derive(Clone, Debug)]

@@ -1,14 +1,14 @@
 use crate::sub_apis::{
-    AnimationAPI, AnimationModule, NodeAPI, NodeModule, PhysicsAPI, PhysicsModule, ScriptAPI,
+    AnimPlayerAPI, AnimPlayerModule, NodeAPI, NodeModule, PhysicsAPI, PhysicsModule, ScriptAPI,
     ScriptModule, SignalAPI, SignalModule, TimeAPI, TimeModule,
 };
 
 pub trait RuntimeAPI:
-    TimeAPI + NodeAPI + ScriptAPI + SignalAPI + PhysicsAPI + AnimationAPI
+    TimeAPI + NodeAPI + ScriptAPI + SignalAPI + PhysicsAPI + AnimPlayerAPI
 {
 }
 impl<T> RuntimeAPI for T where
-    T: TimeAPI + NodeAPI + ScriptAPI + SignalAPI + PhysicsAPI + AnimationAPI
+    T: TimeAPI + NodeAPI + ScriptAPI + SignalAPI + PhysicsAPI + AnimPlayerAPI
 {
 }
 
@@ -48,8 +48,8 @@ impl<'rt, RT: RuntimeAPI + ?Sized> RuntimeContext<'rt, RT> {
     }
 
     #[inline]
-    pub fn Animations(&mut self) -> AnimationModule<'_, RT> {
-        AnimationModule::new(self.rt)
+    pub fn AnimPlayer(&mut self) -> AnimPlayerModule<'_, RT> {
+        AnimPlayerModule::new(self.rt)
     }
 
     #[inline]

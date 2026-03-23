@@ -1,6 +1,6 @@
 use perro_ids::{AnimationID, NodeID};
 
-pub trait AnimationAPI {
+pub trait AnimPlayerAPI {
     fn animation_set_clip(&mut self, player: NodeID, animation: AnimationID) -> bool;
     fn animation_play(&mut self, player: NodeID) -> bool;
     fn animation_pause(&mut self, player: NodeID, paused: bool) -> bool;
@@ -11,11 +11,11 @@ pub trait AnimationAPI {
     fn animation_clear_bindings(&mut self, player: NodeID) -> bool;
 }
 
-pub struct AnimationModule<'rt, R: AnimationAPI + ?Sized> {
+pub struct AnimPlayerModule<'rt, R: AnimPlayerAPI + ?Sized> {
     rt: &'rt mut R,
 }
 
-impl<'rt, R: AnimationAPI + ?Sized> AnimationModule<'rt, R> {
+impl<'rt, R: AnimPlayerAPI + ?Sized> AnimPlayerModule<'rt, R> {
     pub fn new(rt: &'rt mut R) -> Self {
         Self { rt }
     }
@@ -64,42 +64,42 @@ impl<'rt, R: AnimationAPI + ?Sized> AnimationModule<'rt, R> {
 #[macro_export]
 macro_rules! anim_player_set_clip {
     ($ctx:expr, $player:expr, $animation:expr) => {
-        $ctx.Animations().set_clip($player, $animation)
+        $ctx.AnimPlayer().set_clip($player, $animation)
     };
 }
 
 #[macro_export]
 macro_rules! anim_player_play {
     ($ctx:expr, $player:expr) => {
-        $ctx.Animations().play($player)
+        $ctx.AnimPlayer().play($player)
     };
 }
 
 #[macro_export]
 macro_rules! anim_player_pause {
     ($ctx:expr, $player:expr, $paused:expr) => {
-        $ctx.Animations().pause($player, $paused)
+        $ctx.AnimPlayer().pause($player, $paused)
     };
 }
 
 #[macro_export]
 macro_rules! anim_player_seek_time {
     ($ctx:expr, $player:expr, $time:expr) => {
-        $ctx.Animations().seek_time($player, $time)
+        $ctx.AnimPlayer().seek_time($player, $time)
     };
 }
 
 #[macro_export]
 macro_rules! anim_player_seek_frame {
     ($ctx:expr, $player:expr, $frame:expr) => {
-        $ctx.Animations().seek_frame($player, $frame)
+        $ctx.AnimPlayer().seek_frame($player, $frame)
     };
 }
 
 #[macro_export]
 macro_rules! anim_player_set_speed {
     ($ctx:expr, $player:expr, $speed:expr) => {
-        $ctx.Animations().set_speed($player, $speed)
+        $ctx.AnimPlayer().set_speed($player, $speed)
     };
 }
 
@@ -109,7 +109,7 @@ macro_rules! anim_player_bind {
         let __player = $player;
         let mut __all_ok = true;
         $(
-            __all_ok = $ctx.Animations().bind(__player, $track, $node) && __all_ok;
+            __all_ok = $ctx.AnimPlayer().bind(__player, $track, $node) && __all_ok;
         )*
         __all_ok
     }};
@@ -117,81 +117,18 @@ macro_rules! anim_player_bind {
         let __player = $player;
         let mut __all_ok = true;
         $(
-            __all_ok = $ctx.Animations().bind(__player, $track, $node) && __all_ok;
+            __all_ok = $ctx.AnimPlayer().bind(__player, $track, $node) && __all_ok;
         )*
         __all_ok
     }};
     ($ctx:expr, $player:expr, $track:expr, $node:expr) => {
-        $ctx.Animations().bind($player, $track, $node)
+        $ctx.AnimPlayer().bind($player, $track, $node)
     };
 }
 
 #[macro_export]
 macro_rules! anim_player_clear_bindings {
     ($ctx:expr, $player:expr) => {
-        $ctx.Animations().clear_bindings($player)
-    };
-}
-
-// Backward-compatible aliases.
-#[macro_export]
-macro_rules! animation_set_clip {
-    ($ctx:expr, $player:expr, $animation:expr) => {
-        $crate::anim_player_set_clip!($ctx, $player, $animation)
-    };
-}
-
-#[macro_export]
-macro_rules! animation_play {
-    ($ctx:expr, $player:expr) => {
-        $crate::anim_player_play!($ctx, $player)
-    };
-}
-
-#[macro_export]
-macro_rules! animation_pause {
-    ($ctx:expr, $player:expr, $paused:expr) => {
-        $crate::anim_player_pause!($ctx, $player, $paused)
-    };
-}
-
-#[macro_export]
-macro_rules! animation_seek_time {
-    ($ctx:expr, $player:expr, $time:expr) => {
-        $crate::anim_player_seek_time!($ctx, $player, $time)
-    };
-}
-
-#[macro_export]
-macro_rules! animation_seek_frame {
-    ($ctx:expr, $player:expr, $frame:expr) => {
-        $crate::anim_player_seek_frame!($ctx, $player, $frame)
-    };
-}
-
-#[macro_export]
-macro_rules! animation_set_speed {
-    ($ctx:expr, $player:expr, $speed:expr) => {
-        $crate::anim_player_set_speed!($ctx, $player, $speed)
-    };
-}
-
-#[macro_export]
-macro_rules! animation_bind {
-    ($ctx:expr, $player:expr, [ $($track:tt : $node:expr),* $(,)? ]) => {
-        $crate::anim_player_bind!($ctx, $player, [ $($track : $node),* ])
-    };
-    ($ctx:expr, $player:expr, { $($track:expr => $node:expr),* $(,)? }) => {
-        $crate::anim_player_bind!($ctx, $player, { $($track => $node),* })
-    };
-    ($ctx:expr, $player:expr, $track:expr, $node:expr) => {
-        $crate::anim_player_bind!($ctx, $player, $track, $node)
-    };
-}
-
-#[macro_export]
-macro_rules! animation_clear_bindings {
-    ($ctx:expr, $player:expr) => {
-        $crate::anim_player_clear_bindings!($ctx, $player)
+        $ctx.AnimPlayer().clear_bindings($player)
     };
 }

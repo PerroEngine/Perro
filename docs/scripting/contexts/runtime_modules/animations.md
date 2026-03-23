@@ -2,7 +2,7 @@
 
 Access:
 
-- `ctx.Animations()`
+- `ctx.AnimPlayer()`
 
 Macros:
 
@@ -12,22 +12,21 @@ Macros:
 - `anim_player_seek_time!(ctx, animation_player_id, seconds) -> bool`
 - `anim_player_seek_frame!(ctx, animation_player_id, frame) -> bool`
 - `anim_player_set_speed!(ctx, animation_player_id, speed) -> bool`
-- `anim_player_bind!(ctx, animation_player_id, track, node_id) -> bool`
+- `anim_player_bind!(ctx, animation_player_id, track_name, node_id) -> bool`
 - `anim_player_bind!(ctx, animation_player_id, ["Track": node_id, ...]) -> bool`
 - `anim_player_bind!(ctx, animation_player_id, {"Track" => node_id, ...}) -> bool`
 - `anim_player_clear_bindings!(ctx, animation_player_id) -> bool`
-- Legacy aliases remain available: `animation_*`
 
 Methods:
 
-- `ctx.Animations().set_clip(animation_player_id, animation_id) -> bool`
-- `ctx.Animations().play(animation_player_id) -> bool`
-- `ctx.Animations().pause(animation_player_id, paused) -> bool`
-- `ctx.Animations().seek_time(animation_player_id, seconds) -> bool`
-- `ctx.Animations().seek_frame(animation_player_id, frame) -> bool`
-- `ctx.Animations().set_speed(animation_player_id, speed) -> bool`
-- `ctx.Animations().bind(animation_player_id, track, node_id) -> bool`
-- `ctx.Animations().clear_bindings(animation_player_id) -> bool`
+- `ctx.AnimPlayer().set_clip(animation_player_id, animation_id) -> bool`
+- `ctx.AnimPlayer().play(animation_player_id) -> bool`
+- `ctx.AnimPlayer().pause(animation_player_id, paused) -> bool`
+- `ctx.AnimPlayer().seek_time(animation_player_id, seconds) -> bool`
+- `ctx.AnimPlayer().seek_frame(animation_player_id, frame) -> bool`
+- `ctx.AnimPlayer().set_speed(animation_player_id, speed) -> bool`
+- `ctx.AnimPlayer().bind(animation_player_id, track, node_id) -> bool`
+- `ctx.AnimPlayer().clear_bindings(animation_player_id) -> bool`
 
 ## What `animation_player_id` Is
 
