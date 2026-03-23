@@ -61,15 +61,22 @@ impl RuntimeResourceApi {
             return lookup(source).map(|clip| Arc::new(clip.clone()));
         }
 
-        // First pass: dynamic disk parsing is not implemented yet.
-        // The runtime still caches a default clip so IDs remain stable.
-        let _ = source;
+        if source.ends_with(".panim")
+            && let Ok(bytes) = perro_io::load_asset(source)
+            && let Ok(text) = std::str::from_utf8(&bytes)
+            && let Ok(clip) = perro_animation::parse_panim(text)
+        {
+            return Some(Arc::new(clip));
+        }
+
         Some(Arc::new(AnimationClip {
             name: Cow::Borrowed("Animation"),
             fps: 60.0,
-            frame_count: 1,
-            duration: 0.0,
-            tracks: Cow::Borrowed(&[]),
+            total_frames: 1,
+            looping: true,
+            objects: Cow::Borrowed(&[]),
+            object_tracks: Cow::Borrowed(&[]),
+            frame_events: Cow::Borrowed(&[]),
         }))
     }
 }

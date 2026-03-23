@@ -1,4 +1,3 @@
-use ahash::AHashMap;
 use super::{
     renderer::{Draw3DInstance, Draw3DKind, Lighting3DState, MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS},
     shaders::{
@@ -10,6 +9,7 @@ use super::{
 };
 use crate::backend::{OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup};
 use crate::resources::ResourceStore;
+use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;

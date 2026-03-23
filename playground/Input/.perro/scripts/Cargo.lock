@@ -985,6 +985,7 @@ name = "perro_animation"
 version = "0.1.0"
 dependencies = [
  "perro_ids",
+ "perro_scene",
  "perro_structs",
 ]
 
@@ -1049,7 +1050,6 @@ dependencies = [
 name = "perro_nodes"
 version = "0.1.0"
 dependencies = [
- "perro_animation",
  "perro_ids",
  "perro_structs",
 ]

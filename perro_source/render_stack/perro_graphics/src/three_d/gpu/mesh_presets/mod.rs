@@ -1,5 +1,5 @@
-use ahash::AHashMap;
 use super::{MeshRange, MeshVertex, MeshletRange};
+use ahash::AHashMap;
 use std::sync::Arc;
 
 mod capsule;

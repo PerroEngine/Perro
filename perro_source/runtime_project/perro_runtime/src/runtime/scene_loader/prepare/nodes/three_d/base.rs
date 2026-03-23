@@ -42,29 +42,31 @@ fn apply_node_3d_data(target: &mut Node3D, data: &SceneDefNodeData) {
 }
 
 fn apply_node_3d_fields(node: &mut Node3D, fields: &[SceneObjectField]) {
-    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
-            "position" => {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("Node3D", name) {
+            Some(NodeField::Position3D) => {
                 if let Some(v) = as_vec3(value) {
                     node.transform.position = v;
                 }
             }
-            "scale" => {
+            Some(NodeField::Scale3D) => {
                 if let Some(v) = as_vec3(value) {
                     node.transform.scale = v;
                 }
             }
-            "rotation" => {
+            Some(NodeField::Rotation3D) => {
                 if let Some(v) = as_quat(value) {
                     node.transform.rotation = v;
                 }
             }
-            "visible" => {
+            Some(NodeField::Visible3D) => {
                 if let Some(v) = as_bool(value) {
                     node.visible = v;
                 }
             }
             _ => {}
-        });
+        }
+    });
 }
 
 fn apply_mesh_instance_3d_fields(_node: &mut MeshInstance3D, _fields: &[SceneObjectField]) {}

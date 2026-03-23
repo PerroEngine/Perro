@@ -5,5 +5,4 @@ edition = "2024"
 
 [dependencies]
 perro_ids = "0.1.0"
-perro_animation = "0.1.0"
 perro_structs = "0.1.0"

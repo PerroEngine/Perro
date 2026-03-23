@@ -22,8 +22,9 @@ use perro_nodes::{
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
-    Parser, Scene, SceneNodeData as SceneDefNodeData, SceneNodeEntry as SceneDefNodeEntry,
-    SceneFieldIterRef, SceneObjectField, SceneValue,
+    NodeField, Parser, Scene, SceneNodeData as SceneDefNodeData,
+    SceneNodeEntry as SceneDefNodeEntry, SceneFieldIterRef, SceneObjectField, SceneValue,
+    resolve_node_field,
 };
 use perro_structs::{
     CustomPostParam, CustomPostParamValue, PostProcessEffect, PostProcessSet, Quaternion, Vector2,

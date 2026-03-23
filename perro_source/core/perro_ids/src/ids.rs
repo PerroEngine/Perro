@@ -135,7 +135,6 @@ define_generational!(
     "Animation ID - allocated by animation system. Index + generation."
 );
 define_generational!(
-
     TerrainID,
     "Terrain ID — allocated by terrain system. Index + generation."
 );
@@ -286,7 +285,3 @@ impl ScriptMemberID {
         Self(string_to_u64(s))
     }
 }
-
-
-
-

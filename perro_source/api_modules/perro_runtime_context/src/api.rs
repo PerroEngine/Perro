@@ -3,7 +3,10 @@ use crate::sub_apis::{
     ScriptModule, SignalAPI, SignalModule, TimeAPI, TimeModule,
 };
 
-pub trait RuntimeAPI: TimeAPI + NodeAPI + ScriptAPI + SignalAPI + PhysicsAPI + AnimationAPI {}
+pub trait RuntimeAPI:
+    TimeAPI + NodeAPI + ScriptAPI + SignalAPI + PhysicsAPI + AnimationAPI
+{
+}
 impl<T> RuntimeAPI for T where
     T: TimeAPI + NodeAPI + ScriptAPI + SignalAPI + PhysicsAPI + AnimationAPI
 {

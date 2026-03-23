@@ -503,7 +503,8 @@ impl GraphicsBackend for PerroGraphics {
         let draws_revision = self.renderer_3d.draw_revision();
         if draws_revision != self.retained_draws_cache_revision {
             self.retained_draws_cache.clear();
-            self.retained_draws_cache.extend(self.renderer_3d.all_draws());
+            self.retained_draws_cache
+                .extend(self.renderer_3d.all_draws());
             self.retained_draws_cache
                 .sort_unstable_by_key(|draw| draw.node.as_u64());
             self.retained_draws_cache_revision = draws_revision;

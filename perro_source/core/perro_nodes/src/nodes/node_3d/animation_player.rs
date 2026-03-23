@@ -1,5 +1,4 @@
 use crate::node_3d::Node3D;
-use perro_animation::AnimationNodeBinding;
 use perro_ids::AnimationID;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
@@ -25,6 +24,12 @@ pub struct InternalAnimationData {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct AnimationObjectBinding {
+    pub object: Cow<'static, str>,
+    pub node: perro_ids::NodeID,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct AnimationPlayer {
     pub base: Node3D,
     pub animation: AnimationID,
@@ -33,7 +38,7 @@ pub struct AnimationPlayer {
     pub speed: f32,
     pub paused: bool,
     pub looping: bool,
-    pub bindings: Cow<'static, [AnimationNodeBinding]>,
+    pub bindings: Cow<'static, [AnimationObjectBinding]>,
     pub internal: InternalAnimationData,
 }
 
@@ -90,13 +95,13 @@ impl AnimationPlayer {
     }
 
     #[inline]
-    pub fn set_binding(&mut self, track: &str, node: perro_ids::NodeID) {
+    pub fn set_binding(&mut self, object: &str, node: perro_ids::NodeID) {
         let bindings = self.bindings.to_mut();
-        if let Some(binding) = bindings.iter_mut().find(|b| b.track.as_ref() == track) {
+        if let Some(binding) = bindings.iter_mut().find(|b| b.object.as_ref() == object) {
             binding.node = node;
         } else {
-            bindings.push(AnimationNodeBinding {
-                track: track.to_string().into(),
+            bindings.push(AnimationObjectBinding {
+                object: object.to_string().into(),
                 node,
             });
         }

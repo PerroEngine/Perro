@@ -1,6 +1,14 @@
 use crate::prelude::*;
-use perro_animation::{AnimationChannel, AnimationTrack, AnimationTrackValues};
-use perro_nodes::{AnimationPlayer, Node2D, Node3D};
+use perro_animation::{
+    AnimationChannel, AnimationInterpolation, AnimationObjectTrack, AnimationTrackValue,
+    Camera3DChannel, Light3DChannel, Node2DChannel, Node3DChannel, PointLight3DChannel,
+    SpotLight3DChannel,
+};
+use perro_nodes::animation_player::AnimationObjectBinding;
+use perro_nodes::{
+    AmbientLight3D, AnimationPlayer, Camera3D, Node2D, Node3D, PointLight3D, RayLight3D,
+    SpotLight3D,
+};
 use std::sync::Arc;
 
 type SelfNodeType = AnimationPlayer;
@@ -23,7 +31,7 @@ pub fn internal_update<RT, R, IP>(
     let Some(clip) = animation_get!(res, animation_id) else {
         return;
     };
-    if clip.tracks.is_empty() {
+    if clip.object_tracks.is_empty() {
         return;
     }
 
@@ -52,7 +60,7 @@ pub fn internal_fixed_update<RT, R, IP>(
 
 struct AnimationStep {
     frame: u32,
-    bindings: Vec<perro_animation::AnimationNodeBinding>,
+    bindings: Vec<AnimationObjectBinding>,
     should_apply: bool,
 }
 
@@ -69,21 +77,19 @@ where
         let previous_frame = player.current_frame;
 
         if !player.paused {
+            let duration = clip.duration_seconds();
             player.current_time = advance_time(
                 player.current_time,
                 delta_seconds * player.speed,
-                clip.duration,
+                duration,
                 player.looping,
             );
-            player.current_frame = time_to_frame(
-                player.current_time,
-                clip.fps,
-                clip.frame_count,
-                player.looping,
-            );
-        } else {
+            let frame_count = clip.frame_count();
             player.current_frame =
-                clamp_frame(player.current_frame, clip.frame_count, player.looping);
+                time_to_frame(player.current_time, clip.fps, frame_count, player.looping);
+        } else {
+            let frame_count = clip.frame_count();
+            player.current_frame = clamp_frame(player.current_frame, frame_count, player.looping);
         }
 
         let binding_hash = hash_bindings(&player.bindings);
@@ -115,14 +121,14 @@ fn apply_clip_frame<RT>(
     ctx: &mut RuntimeContext<'_, RT>,
     clip: &Arc<perro_animation::AnimationClip>,
     frame: u32,
-    bindings: &[perro_animation::AnimationNodeBinding],
+    bindings: &[AnimationObjectBinding],
 ) where
     RT: RuntimeAPI + ?Sized,
 {
-    for track in clip.tracks.iter() {
+    for track in clip.object_tracks.iter() {
         for binding in bindings
             .iter()
-            .filter(|b| b.track.as_ref() == track.key.as_ref())
+            .filter(|b| b.object.as_ref() == track.object.as_ref())
         {
             apply_track(ctx, binding.node, track, frame);
         }
@@ -132,40 +138,291 @@ fn apply_clip_frame<RT>(
 fn apply_track<RT>(
     ctx: &mut RuntimeContext<'_, RT>,
     node_id: NodeID,
-    track: &AnimationTrack,
+    track: &AnimationObjectTrack,
     frame: u32,
 ) where
     RT: RuntimeAPI + ?Sized,
 {
-    match track.channel {
-        AnimationChannel::Transform2D => {
-            if let Some(value) = sample_transform2d(&track.values, frame) {
-                let _ = with_base_node_mut!(ctx, Node2D, node_id, |node| {
-                    node.transform = value;
-                });
-            }
-        }
-        AnimationChannel::Transform3D => {
-            if let Some(value) = sample_transform3d(&track.values, frame) {
-                let _ = with_base_node_mut!(ctx, Node3D, node_id, |node| {
-                    node.transform = value;
-                });
-            }
-        }
-        AnimationChannel::NodeVisible => {
-            if let Some(value) = sample_bool(&track.values, frame) {
-                if with_base_node_mut!(ctx, Node3D, node_id, |node| {
-                    node.visible = value;
-                })
-                .is_none()
-                {
+    let Some(value) = sample_track_value(track, frame) else {
+        return;
+    };
+
+    match &track.channel {
+        AnimationChannel::Node2D(channel) => match channel {
+            Node2DChannel::Transform => {
+                if let AnimationTrackValue::Transform2D(value) = value {
                     let _ = with_base_node_mut!(ctx, Node2D, node_id, |node| {
-                        node.visible = value;
+                        node.transform = *value;
                     });
                 }
             }
+            Node2DChannel::Visible => {
+                if let AnimationTrackValue::Bool(value) = value {
+                    let _ = with_base_node_mut!(ctx, Node2D, node_id, |node| {
+                        node.visible = *value;
+                    });
+                }
+            }
+        },
+        AnimationChannel::Node3D(channel) => match channel {
+            Node3DChannel::Transform => {
+                if let AnimationTrackValue::Transform3D(value) = value {
+                    let _ = with_base_node_mut!(ctx, Node3D, node_id, |node| {
+                        node.transform = *value;
+                    });
+                }
+            }
+            Node3DChannel::Visible => {
+                if let AnimationTrackValue::Bool(value) = value {
+                    let _ = with_base_node_mut!(ctx, Node3D, node_id, |node| {
+                        node.visible = *value;
+                    });
+                }
+            }
+        },
+        AnimationChannel::Camera3D(channel) => {
+            if let Some(v) = as_f32_track(value) {
+                let _ = with_base_node_mut!(ctx, Camera3D, node_id, |camera| match channel {
+                    Camera3DChannel::Zoom => apply_camera_zoom(camera, v),
+                    Camera3DChannel::PerspectiveFovYDegrees => {
+                        if let perro_nodes::CameraProjection::Perspective {
+                            fov_y_degrees, ..
+                        } = &mut camera.projection
+                        {
+                            *fov_y_degrees = v.clamp(10.0, 120.0);
+                        }
+                    }
+                    Camera3DChannel::PerspectiveNear => {
+                        if let perro_nodes::CameraProjection::Perspective { near, far, .. } =
+                            &mut camera.projection
+                        {
+                            *near = v.max(0.001);
+                            if *far <= *near {
+                                *far = *near + 0.001;
+                            }
+                        }
+                    }
+                    Camera3DChannel::PerspectiveFar => {
+                        if let perro_nodes::CameraProjection::Perspective { near, far, .. } =
+                            &mut camera.projection
+                        {
+                            *far = v.max(*near + 0.001);
+                        }
+                    }
+                    Camera3DChannel::OrthographicSize => {
+                        if let perro_nodes::CameraProjection::Orthographic { size, .. } =
+                            &mut camera.projection
+                        {
+                            *size = v.abs().max(0.001);
+                        }
+                    }
+                    Camera3DChannel::OrthographicNear => {
+                        if let perro_nodes::CameraProjection::Orthographic { near, far, .. } =
+                            &mut camera.projection
+                        {
+                            *near = v.max(0.001);
+                            if *far <= *near {
+                                *far = *near + 0.001;
+                            }
+                        }
+                    }
+                    Camera3DChannel::OrthographicFar => {
+                        if let perro_nodes::CameraProjection::Orthographic { near, far, .. } =
+                            &mut camera.projection
+                        {
+                            *far = v.max(*near + 0.001);
+                        }
+                    }
+                    Camera3DChannel::FrustumLeft => {
+                        if let perro_nodes::CameraProjection::Frustum { left, right, .. } =
+                            &mut camera.projection
+                        {
+                            *left = v;
+                            if *right <= *left {
+                                *right = *left + 0.001;
+                            }
+                        }
+                    }
+                    Camera3DChannel::FrustumRight => {
+                        if let perro_nodes::CameraProjection::Frustum { left, right, .. } =
+                            &mut camera.projection
+                        {
+                            *right = v.max(*left + 0.001);
+                        }
+                    }
+                    Camera3DChannel::FrustumBottom => {
+                        if let perro_nodes::CameraProjection::Frustum { bottom, top, .. } =
+                            &mut camera.projection
+                        {
+                            *bottom = v;
+                            if *top <= *bottom {
+                                *top = *bottom + 0.001;
+                            }
+                        }
+                    }
+                    Camera3DChannel::FrustumTop => {
+                        if let perro_nodes::CameraProjection::Frustum { bottom, top, .. } =
+                            &mut camera.projection
+                        {
+                            *top = v.max(*bottom + 0.001);
+                        }
+                    }
+                    Camera3DChannel::FrustumNear => {
+                        if let perro_nodes::CameraProjection::Frustum { near, far, .. } =
+                            &mut camera.projection
+                        {
+                            *near = v.max(0.001);
+                            if *far <= *near {
+                                *far = *near + 0.001;
+                            }
+                        }
+                    }
+                    Camera3DChannel::FrustumFar => {
+                        if let perro_nodes::CameraProjection::Frustum { near, far, .. } =
+                            &mut camera.projection
+                        {
+                            *far = v.max(*near + 0.001);
+                        }
+                    }
+                    Camera3DChannel::Active => {}
+                });
+            }
+            if matches!(channel, Camera3DChannel::Active)
+                && let AnimationTrackValue::Bool(active) = value
+            {
+                let _ = with_base_node_mut!(ctx, Camera3D, node_id, |camera| {
+                    camera.active = *active;
+                });
+            }
+        }
+        AnimationChannel::Light3D(channel) => match channel {
+            Light3DChannel::Color => {
+                if let AnimationTrackValue::Vec3(color) = value {
+                    let c = *color;
+                    if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.color = c).is_none() {
+                        if with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.color = c)
+                            .is_none()
+                        {
+                            if with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.color = c)
+                                .is_none()
+                            {
+                                let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| n
+                                    .color =
+                                    c);
+                            }
+                        }
+                    }
+                }
+            }
+            Light3DChannel::Intensity => {
+                if let Some(v) = as_f32_track(value) {
+                    if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.intensity = v).is_none()
+                    {
+                        if with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.intensity = v)
+                            .is_none()
+                        {
+                            if with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.intensity = v)
+                                .is_none()
+                            {
+                                let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| {
+                                    n.intensity = v
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            Light3DChannel::Active => {
+                if let AnimationTrackValue::Bool(v) = value {
+                    if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.active = *v).is_none() {
+                        if with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.active = *v)
+                            .is_none()
+                        {
+                            if with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.active = *v)
+                                .is_none()
+                            {
+                                let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| {
+                                    n.active = *v
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        AnimationChannel::PointLight3D(channel) => match channel {
+            PointLight3DChannel::Range => {
+                if let Some(v) = as_f32_track(value) {
+                    let _ = with_base_node_mut!(ctx, PointLight3D, node_id, |node| {
+                        node.range = v;
+                    });
+                }
+            }
+        },
+        AnimationChannel::SpotLight3D(channel) => {
+            if let Some(v) = as_f32_track(value) {
+                let _ = with_base_node_mut!(ctx, SpotLight3D, node_id, |node| match channel {
+                    SpotLight3DChannel::Range => node.range = v,
+                    SpotLight3DChannel::InnerAngleRadians => node.inner_angle_radians = v,
+                    SpotLight3DChannel::OuterAngleRadians => node.outer_angle_radians = v,
+                });
+            }
         }
         AnimationChannel::Custom(_) => {}
+    }
+}
+
+#[inline]
+fn as_f32_track(value: &AnimationTrackValue) -> Option<f32> {
+    match value {
+        AnimationTrackValue::F32(v) => Some(*v),
+        AnimationTrackValue::I32(v) => Some(*v as f32),
+        AnimationTrackValue::U32(v) => Some(*v as f32),
+        _ => None,
+    }
+}
+
+fn apply_camera_zoom(camera: &mut Camera3D, zoom: f32) {
+    let zoom = if zoom.is_finite() && zoom > 0.0 {
+        zoom
+    } else {
+        1.0
+    };
+    let fov_y_degrees = (60.0 / zoom).clamp(10.0, 120.0);
+    if let perro_nodes::CameraProjection::Perspective {
+        fov_y_degrees: fov, ..
+    } = &mut camera.projection
+    {
+        *fov = fov_y_degrees;
+    }
+}
+
+fn sample_track_value(track: &AnimationObjectTrack, frame: u32) -> Option<&AnimationTrackValue> {
+    if track.keys.is_empty() {
+        return None;
+    }
+
+    let mut prev_index = None::<usize>;
+    let mut next_index = None::<usize>;
+    for (index, key) in track.keys.iter().enumerate() {
+        if key.frame <= frame {
+            prev_index = Some(index);
+        } else {
+            next_index = Some(index);
+            break;
+        }
+    }
+
+    let prev_index = prev_index.or(Some(0))?;
+    let prev = &track.keys[prev_index].value;
+
+    match track.interpolation {
+        AnimationInterpolation::Step => Some(prev),
+        AnimationInterpolation::Linear => {
+            // Linear interpolation for typed payloads will be added as parser/runtime finalization.
+            let _ = next_index;
+            Some(prev)
+        }
     }
 }
 
@@ -204,47 +461,12 @@ fn clamp_frame(frame: u32, frame_count: u32, looping: bool) -> u32 {
     }
 }
 
-fn sample_transform2d(
-    values: &AnimationTrackValues,
-    frame: u32,
-) -> Option<perro_runtime_context::perro_structs::Transform2D> {
-    let AnimationTrackValues::Transform2D(values) = values else {
-        return None;
-    };
-    sample(values.as_ref(), frame).copied()
-}
-
-fn sample_transform3d(
-    values: &AnimationTrackValues,
-    frame: u32,
-) -> Option<perro_runtime_context::perro_structs::Transform3D> {
-    let AnimationTrackValues::Transform3D(values) = values else {
-        return None;
-    };
-    sample(values.as_ref(), frame).copied()
-}
-
-fn sample_bool(values: &AnimationTrackValues, frame: u32) -> Option<bool> {
-    let AnimationTrackValues::Bool(values) = values else {
-        return None;
-    };
-    sample(values.as_ref(), frame).copied()
-}
-
-fn sample<T>(values: &[T], frame: u32) -> Option<&T> {
-    if values.is_empty() {
-        return None;
-    }
-    let idx = usize::min(frame as usize, values.len() - 1);
-    values.get(idx)
-}
-
-fn hash_bindings(bindings: &[perro_animation::AnimationNodeBinding]) -> u64 {
+fn hash_bindings(bindings: &[AnimationObjectBinding]) -> u64 {
     let mut h = 0x9E37_79B9_7F4A_7C15u64 ^ bindings.len() as u64;
     for binding in bindings {
         h ^= binding.node.as_u64();
         h = h.rotate_left(7).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        for b in binding.track.as_bytes() {
+        for b in binding.object.as_bytes() {
             h ^= *b as u64;
             h = h.rotate_left(5).wrapping_mul(0x94D0_49BB_1331_11EB);
         }

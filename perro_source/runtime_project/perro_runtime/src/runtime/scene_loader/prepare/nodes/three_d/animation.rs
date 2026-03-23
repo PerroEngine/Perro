@@ -68,14 +68,14 @@ fn parse_animation_bindings(value: &SceneValue) -> Option<Vec<(String, String)>>
             continue;
         };
 
-        let mut track = None::<String>;
+        let mut object = None::<String>;
         let mut node = None::<String>;
 
         for (name, value) in entries.as_ref() {
             match name.as_ref() {
-                "track" => {
+                "object" | "track" => {
                     if let Some(v) = as_str(value) {
-                        track = Some(v.to_string());
+                        object = Some(v.to_string());
                     }
                 }
                 "node" => {
@@ -87,8 +87,8 @@ fn parse_animation_bindings(value: &SceneValue) -> Option<Vec<(String, String)>>
             }
         }
 
-        if let (Some(track), Some(node)) = (track, node) {
-            out.push((track, node));
+        if let (Some(object), Some(node)) = (object, node) {
+            out.push((object, node));
         }
     }
 

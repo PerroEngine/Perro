@@ -1,7 +1,7 @@
 use super::prepare::PreparedScene;
 use crate::Runtime;
-use perro_animation::AnimationNodeBinding;
 use perro_ids::NodeID;
+use perro_nodes::animation_player::AnimationObjectBinding;
 use perro_nodes::{SceneNode, SceneNodeData};
 use perro_resource_context::ResourceContext;
 use std::{borrow::Cow, collections::HashMap};
@@ -144,12 +144,12 @@ pub(super) fn merge_prepared_scene(
             continue;
         };
         let mut resolved = Vec::with_capacity(scene_bindings.len());
-        for (track, node_key) in scene_bindings {
+        for (object, node_key) in scene_bindings {
             let Some(target_id) = key_to.get(node_key.as_str()).copied() else {
                 continue;
             };
-            resolved.push(AnimationNodeBinding {
-                track: track.into(),
+            resolved.push(AnimationObjectBinding {
+                object: object.into(),
                 node: target_id,
             });
         }
