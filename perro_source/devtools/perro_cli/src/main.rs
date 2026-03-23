@@ -42,6 +42,7 @@ fn main() {
             "new" => new_command(&args, &cwd),
             "new_script" => new_script_command(&args, &cwd),
             "new_scene" => new_scene_command(&args, &cwd),
+            "new_animation" => new_animation_command(&args, &cwd),
             "clean" => clean_command(&args, &cwd),
             "install" => install_command(&args),
             "check" => scripts_command(&args, &cwd),
@@ -87,6 +88,9 @@ fn print_usage() {
     );
     eprintln!(
         "  perro_cli new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--template 2D|3D]"
+    );
+    eprintln!(
+        "  perro_cli new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>]"
     );
 }
 
@@ -172,6 +176,33 @@ fn sanitize_scene_file_name(name: &str) -> Result<String, String> {
     }
     if !rendered.ends_with(".scn") {
         rendered.push_str(".scn");
+    }
+    Ok(rendered)
+}
+
+fn sanitize_animation_file_name(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("animation name cannot be empty".to_string());
+    }
+    if trimmed.contains('/') || trimmed.contains('\\') {
+        return Err("animation name must not include path separators".to_string());
+    }
+    let mut out = String::with_capacity(trimmed.len() + 6);
+    for c in trimmed.chars() {
+        let invalid = matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*');
+        if invalid {
+            out.push('_');
+        } else {
+            out.push(c);
+        }
+    }
+    let mut rendered = out.trim_matches('.').to_string();
+    if rendered.is_empty() {
+        return Err("animation name must include at least one valid character".to_string());
+    }
+    if !rendered.ends_with(".panim") {
+        rendered.push_str(".panim");
     }
     Ok(rendered)
 }
@@ -387,7 +418,7 @@ fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
     println!(
         "created project `{}` at {}",
         project_name,
-        project_dir.display()
+        normalize_powershell_path(&project_dir)
     );
     maybe_open_project_in_new_window(&project_dir)?;
     Ok(())
@@ -421,7 +452,7 @@ fn new_script_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
     let target_path = target_dir.join(file_name);
     write_new_file(&target_path, &default_script_empty_rs())?;
-    println!("created script at {}", target_path.display());
+    println!("created script at {}", normalize_powershell_path(&target_path));
     maybe_open_file_in_editor(args, &target_path)?;
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
@@ -477,6 +508,26 @@ fn default_scene_3d() -> String {
     position = (0, 0, 0)
 [/Node3D]
 [/main]
+
+[camera]
+parent = @root
+
+[Camera3D]
+    active = true
+    [Node3D]
+        position = (0, 0, 8)
+    [/Node3D]
+[/Camera3D]
+[/camera]
+
+[ambient]
+parent = @root
+
+[AmbientLight3D]
+    color = (1.0, 1.0, 1.0)
+    intensity = 0.8
+[/AmbientLight3D]
+[/ambient]
 "#
     .to_string()
 }
@@ -514,7 +565,74 @@ fn new_scene_command(args: &[String], cwd: &Path) -> Result<(), String> {
         SceneTemplate::ThreeD => default_scene_3d(),
     };
     write_new_file(&target_path, &contents)?;
-    println!("created scene at {}", target_path.display());
+    println!("created scene at {}", normalize_powershell_path(&target_path));
+    maybe_open_file_in_editor(args, &target_path)?;
+    Ok(())
+}
+
+fn default_animation_panim(animation_name: &str) -> String {
+    r#"[Animation]
+name = "__ANIMATION_NAME__"
+fps = 60
+default_interp = "interpolate"
+default_ease = "linear"
+[/Animation]
+
+[Objects]
+@Target = Node3D
+[/Objects]
+
+[Frame0]
+@Target {
+    position = (0, 0, 0)
+}
+[/Frame0]
+
+[Frame30]
+@Target {
+    position = (2, 0, 0)
+}
+[/Frame30]
+"#
+    .replace("__ANIMATION_NAME__", animation_name)
+}
+
+fn new_animation_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let Some(raw_name) = parse_flag_value(args, "--name") else {
+        return Err("missing required flag `--name`".to_string());
+    };
+    let file_name = sanitize_animation_file_name(&raw_name)?;
+
+    let project_dir = if let Some(raw_project) = parse_flag_value(args, "--path") {
+        resolve_local_path(&raw_project, cwd)
+    } else {
+        find_project_root(cwd).ok_or_else(|| {
+            "could not find project.toml. Run from a project directory or pass --path <project_dir>."
+                .to_string()
+        })?
+    };
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    let res_root = project_dir.join("res");
+    if !res_root.exists() {
+        return Err(format!("res directory not found at {}", res_root.display()));
+    }
+
+    let target_dir = if let Some(raw_path) = parse_flag_value(args, "--res") {
+        resolve_res_subdir(&raw_path, &res_root)?
+    } else {
+        res_root.join("animations")
+    };
+
+    let target_path = target_dir.join(file_name);
+    let animation_name = target_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("NewAnimation");
+    write_new_file(&target_path, &default_animation_panim(animation_name))?;
+    println!(
+        "created animation at {}",
+        normalize_powershell_path(&target_path)
+    );
     maybe_open_file_in_editor(args, &target_path)?;
     Ok(())
 }
@@ -561,9 +679,10 @@ fn maybe_open_file_in_editor(args: &[String], file_path: &Path) -> Result<(), St
     if args.iter().any(|a| a == "--no-open") {
         return Ok(());
     }
+    let file_arg = normalize_powershell_path(file_path);
     let status = Command::new("code")
         .arg("-g")
-        .arg(file_path)
+        .arg(file_arg)
         .status()
         .map_err(|err| {
             format!(
@@ -591,9 +710,9 @@ fn maybe_open_project_in_new_window(project_dir: &Path) -> Result<(), String> {
 
     let readme = project_dir.join("README.md");
     let mut cmd = Command::new("code");
-    cmd.arg("-n").arg(project_dir);
+    cmd.arg("-n").arg(normalize_powershell_path(project_dir));
     if readme.exists() {
-        cmd.arg(&readme);
+        cmd.arg(normalize_powershell_path(&readme));
     }
     let status = cmd.status().map_err(|err| {
         format!("failed to launch VS Code. Ensure the `code` command is available on PATH: {err}")

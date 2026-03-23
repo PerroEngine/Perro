@@ -18,8 +18,8 @@ pub mod prelude {
     };
     pub use crate::{
         anim_player_bind, anim_player_clear_bindings, anim_player_pause, anim_player_play,
-        anim_player_seek_frame, anim_player_seek_time, anim_player_set_clip,
-        anim_player_set_speed, apply_force, apply_impulse, attribute, attributes_of, call_method,
+        anim_player_seek_frame, anim_player_set_clip, anim_player_set_speed, apply_force,
+        apply_impulse, attribute, attributes_of, call_method,
         create_node, delta_time, elapsed_time, fixed_delta_time, get_global_transform_2d,
         get_global_transform_3d, get_node_children_ids, get_node_name, get_node_parent_id,
         get_node_tags, get_node_type, get_var, has_attribute, member, members_with, query,

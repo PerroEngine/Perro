@@ -9,7 +9,6 @@ Macros:
 - `anim_player_set_clip!(ctx, animation_player_id, animation_id) -> bool`
 - `anim_player_play!(ctx, animation_player_id) -> bool`
 - `anim_player_pause!(ctx, animation_player_id, paused) -> bool`
-- `anim_player_seek_time!(ctx, animation_player_id, seconds) -> bool`
 - `anim_player_seek_frame!(ctx, animation_player_id, frame) -> bool`
 - `anim_player_set_speed!(ctx, animation_player_id, speed) -> bool`
 - `anim_player_bind!(ctx, animation_player_id, track_name, node_id) -> bool`
@@ -22,7 +21,6 @@ Methods:
 - `ctx.AnimPlayer().set_clip(animation_player_id, animation_id) -> bool`
 - `ctx.AnimPlayer().play(animation_player_id) -> bool`
 - `ctx.AnimPlayer().pause(animation_player_id, paused) -> bool`
-- `ctx.AnimPlayer().seek_time(animation_player_id, seconds) -> bool`
 - `ctx.AnimPlayer().seek_frame(animation_player_id, frame) -> bool`
 - `ctx.AnimPlayer().set_speed(animation_player_id, speed) -> bool`
 - `ctx.AnimPlayer().bind(animation_player_id, track, node_id) -> bool`
@@ -75,7 +73,6 @@ let _ = anim_player_bind!(ctx, animation_player_id, [
 
 - `play`: unpauses player.
 - `pause(true)`: pauses player.
-- `seek_time`: sets playback time in seconds.
 - `seek_frame`: sets current frame directly.
 - `set_speed`: multiplies playback speed.
 

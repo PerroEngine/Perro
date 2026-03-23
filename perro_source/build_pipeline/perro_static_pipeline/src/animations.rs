@@ -115,3 +115,69 @@ fn escape_str(input: &str) -> String {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    const TEST_PANIM_SRC: &str = r#"
+[Animation]
+name = "PipelineClip"
+fps = 24
+[/Animation]
+
+[Objects]
+@Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    position = (0,0,0)
+}
+[/Frame0]
+"#;
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("perro_static_pipeline_{label}_{ts}"))
+    }
+
+    #[test]
+    fn static_animation_pipeline_keeps_source_and_generates_lookup() {
+        let root = unique_temp_dir("animations");
+        let source_rel = Path::new("animations").join("hero_run.panim");
+        let source_abs = root.join("res").join(&source_rel);
+        std::fs::create_dir_all(source_abs.parent().expect("source parent should exist"))
+            .expect("failed to create source parent");
+        std::fs::write(&source_abs, TEST_PANIM_SRC).expect("failed to write source panim");
+
+        generate_static_animations(&root).expect("static animation generation should succeed");
+
+        let embedded_abs = root
+            .join(".perro")
+            .join("project")
+            .join("embedded")
+            .join("animations")
+            .join(&source_rel);
+        let embedded_text =
+            std::fs::read_to_string(&embedded_abs).expect("embedded panim should be written");
+        assert_eq!(embedded_text, TEST_PANIM_SRC);
+
+        let generated_rs = root
+            .join(".perro")
+            .join("project")
+            .join("src")
+            .join("static")
+            .join("animations.rs");
+        let generated_src =
+            std::fs::read_to_string(generated_rs).expect("generated animations.rs should exist");
+        assert!(generated_src.contains("parse_panim"));
+        assert!(generated_src.contains("pub fn lookup_animation(path: &str)"));
+        assert!(generated_src.contains("\"res://animations/hero_run.panim\""));
+    }
+}

@@ -6,6 +6,7 @@ pub struct InternalAnimationData {
     pub last_applied_animation: AnimationID,
     pub last_applied_frame: u32,
     pub last_binding_hash: u64,
+    pub playback_frame: f32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -25,7 +26,6 @@ pub enum AnimationPlaybackType {
 #[derive(Clone, Debug, Default)]
 pub struct AnimationPlayer {
     pub animation: AnimationID,
-    pub current_time: f32,
     pub current_frame: u32,
     pub speed: f32,
     pub paused: bool,
@@ -38,7 +38,6 @@ impl AnimationPlayer {
     pub const fn new() -> Self {
         Self {
             animation: AnimationID::nil(),
-            current_time: 0.0,
             current_frame: 0,
             speed: 1.0,
             paused: false,
@@ -48,6 +47,7 @@ impl AnimationPlayer {
                 last_applied_animation: AnimationID::nil(),
                 last_applied_frame: 0,
                 last_binding_hash: 0,
+                playback_frame: 0.0,
             },
         }
     }
@@ -55,9 +55,9 @@ impl AnimationPlayer {
     #[inline]
     pub fn set_animation(&mut self, animation: AnimationID) {
         self.animation = animation;
-        self.current_time = 0.0;
         self.current_frame = 0;
         self.internal.last_applied_animation = AnimationID::nil();
+        self.internal.playback_frame = 0.0;
     }
 
     #[inline]
@@ -71,13 +71,9 @@ impl AnimationPlayer {
     }
 
     #[inline]
-    pub fn set_current_time(&mut self, time_seconds: f32) {
-        self.current_time = time_seconds.max(0.0);
-    }
-
-    #[inline]
     pub fn set_current_frame(&mut self, frame: u32) {
         self.current_frame = frame;
+        self.internal.playback_frame = frame as f32;
     }
 
     #[inline]

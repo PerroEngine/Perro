@@ -1,0 +1,76 @@
+@root = main
+
+[main]
+
+[Node3D]
+    position = (0, 0, 0)
+[/Node3D]
+[/main]
+
+
+[animatedCube]
+parent = @root
+
+[MeshInstance3D]
+    mesh = "__cube__"
+    material = {
+        type = standard
+        base_color_factor = (1.0, 0.2, 0.2, 1.0)
+        metallic_factor = 0.15
+        roughness_factor = 0.75
+        emissive_factor = (0.02, 0.0, 0.0)
+        alpha_mode = OPAQUE
+        double_sided = false
+    }
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/MeshInstance3D]
+[/animatedCube]
+
+[animator]
+parent = @root
+    [AnimationPlayer]
+        animation = "res://animations/cube.panim"
+        bindings = [{Target = animatedCube}]
+        playback = "boomerang"
+    [/AnimationPlayer]
+[/animator]
+
+
+[camera]
+parent = @root
+
+    [Camera3D]
+        active = true
+       
+
+        [Node3D]
+            position = (0, 0, 5)
+        [/Node3D]
+    [/Camera3D]
+[/camera]
+
+[sun]
+parent = @root
+
+[RayLight3D]
+    color = (1.0, 0.98, 0.92)
+    intensity = 1.0
+    active = true
+
+    [Node3D]
+        position = (0, 0, 0)
+        rotation_deg = (0, 1, 0)
+    [/Node3D]
+[/RayLight3D]
+[/sun]
+
+[ambient]
+parent = @root
+
+[AmbientLight3D]
+    color = (1.0, 1.0, 1.0)
+    intensity = 0.3
+[/AmbientLight3D]
+[/ambient]

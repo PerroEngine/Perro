@@ -10,6 +10,7 @@ This document covers Perro CLI in command-first style. Commands are shown using 
 - `new`
 - `new_script`
 - `new_scene`
+- `new_animation`
 - `install`
 
 ## Quick Map
@@ -25,6 +26,7 @@ perro clean [--path <project_dir>]
 perro new [--path <parent_dir>] [--name <project_name>]
 perro new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>] [--no-open]
 perro new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--template 2D|3D] [--no-open]
+perro new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>] [--no-open]
 perro install
 ```
 
@@ -224,4 +226,35 @@ perro new_scene --name Main3D --template 3D
 perro new_scene --name Main --res /scenes
 perro new_scene --name Main --path D:\GameProjects\MyGame --res res://scenes --template 2D
 perro new_scene --name Main --no-open
+```
+
+## `new_animation`
+
+Command:
+
+```powershell
+perro new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>] [--no-open]
+```
+
+What it does:
+
+1. Resolves `<project_dir>` (defaults to current working directory, walking up to find `project.toml`).
+2. Resolves `<res_subdir>` relative to the project `res` root.
+3. Creates a new `*.panim` animation clip using the default animation template.
+4. Opens the new file in VS Code (disable with `--no-open`).
+
+Notes:
+
+- Defaults to `res/animations` when `--res` is omitted.
+- `--res` accepts `res://` or `/`-style paths, for example `res://animations` or `/animations`.
+- `--name` can be passed without `.panim`; the extension is added automatically.
+- `--name` must be a file name only (no path separators).
+
+Examples:
+
+```powershell
+perro new_animation --name CubeMove
+perro new_animation --name HeroRun --res /animations
+perro new_animation --name HeroRun --path D:\GameProjects\MyGame --res res://animations
+perro new_animation --name HeroRun --no-open
 ```

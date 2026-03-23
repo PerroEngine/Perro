@@ -211,6 +211,7 @@ emit_signal = { name="hit", params=[1, "light"] }
 ```
 
 Object-scoped events:
+-Target variables/methods on this runtime node
 
 ```ini
 @Hero {
@@ -221,8 +222,7 @@ Object-scoped events:
 
 Event notes:
 
-- `emit_signal` should be authored as a frame/global event.
-- object-scoped `emit_signal` does not provide object-targeted runtime behavior today.
+
 - params/value support direct object references:
 - `@Object` resolves to that object's bound runtime `NodeID`.
 - `@Object.field` resolves to the current frame value of that field on the bound runtime node.

@@ -339,10 +339,6 @@ impl AnimPlayerAPI for DummyRuntime {
         true
     }
 
-    fn animation_seek_time(&mut self, _player: NodeID, _time_seconds: f32) -> bool {
-        true
-    }
-
     fn animation_seek_frame(&mut self, _player: NodeID, _frame: u32) -> bool {
         true
     }

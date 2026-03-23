@@ -4,7 +4,6 @@ pub trait AnimPlayerAPI {
     fn animation_set_clip(&mut self, player: NodeID, animation: AnimationID) -> bool;
     fn animation_play(&mut self, player: NodeID) -> bool;
     fn animation_pause(&mut self, player: NodeID, paused: bool) -> bool;
-    fn animation_seek_time(&mut self, player: NodeID, time_seconds: f32) -> bool;
     fn animation_seek_frame(&mut self, player: NodeID, frame: u32) -> bool;
     fn animation_set_speed(&mut self, player: NodeID, speed: f32) -> bool;
     fn animation_bind(&mut self, player: NodeID, track: &str, node: NodeID) -> bool;
@@ -33,11 +32,6 @@ impl<'rt, R: AnimPlayerAPI + ?Sized> AnimPlayerModule<'rt, R> {
     #[inline]
     pub fn pause(&mut self, player: NodeID, paused: bool) -> bool {
         self.rt.animation_pause(player, paused)
-    }
-
-    #[inline]
-    pub fn seek_time(&mut self, player: NodeID, time_seconds: f32) -> bool {
-        self.rt.animation_seek_time(player, time_seconds)
     }
 
     #[inline]
@@ -79,13 +73,6 @@ macro_rules! anim_player_play {
 macro_rules! anim_player_pause {
     ($ctx:expr, $player:expr, $paused:expr) => {
         $ctx.AnimPlayer().pause($player, $paused)
-    };
-}
-
-#[macro_export]
-macro_rules! anim_player_seek_time {
-    ($ctx:expr, $player:expr, $time:expr) => {
-        $ctx.AnimPlayer().seek_time($player, $time)
     };
 }
 

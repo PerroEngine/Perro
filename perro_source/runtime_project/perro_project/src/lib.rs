@@ -741,10 +741,30 @@ fn default_main_scene() -> String {
 
 [main]
 
-[Node2D]
-    position = (0, 0)
-[/Node2D]
+[Node3D]
+    position = (0, 0, 0)
+[/Node3D]
 [/main]
+
+[camera]
+parent = @root
+
+[Camera3D]
+    active = true
+    [Node3D]
+        position = (0, 0, 8)
+    [/Node3D]
+[/Camera3D]
+[/camera]
+
+[ambient]
+parent = @root
+
+[AmbientLight3D]
+    color = (1.0, 1.0, 1.0)
+    intensity = 0.8
+[/AmbientLight3D]
+[/ambient]
 "#
     .to_string()
 }
@@ -775,6 +795,7 @@ Run `perro check` to sync scripts and get rust-analyzer working.
 - `perro format` runs rustfmt for all `.rs` scripts under `res/`.
 - `perro new_script` creates a new script template in `res/` (use `--res` for subfolders).
 - `perro new_scene` creates a new scene template in `res/` (use `--res` and `--template 2D|3D`).
+- `perro new_animation` creates a new `.panim` animation clip template (defaults to `res/animations`).
 - If you run these inside the project root, you do not need `--path`.
 
 ## Scenes And Scripts

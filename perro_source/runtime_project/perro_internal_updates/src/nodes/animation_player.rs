@@ -81,26 +81,21 @@ where
 {
     with_node_mut!(ctx, SelfNodeType, self_id, |player| {
         let previous_frame = player.current_frame;
+        let frame_count = clip.frame_count();
 
         if !player.paused {
-            let duration = clip.duration_seconds();
-            player.current_time = advance_time(
-                player.current_time,
-                delta_seconds * player.speed,
-                duration,
-                player.playback_type,
-            );
-            let frame_count = clip.frame_count();
-            player.current_frame = time_to_frame(
-                player.current_time,
-                clip.fps,
+            player.internal.playback_frame = advance_playback_frame(
+                player.internal.playback_frame,
+                delta_seconds * clip.fps.max(0.0) * player.speed,
                 frame_count,
                 player.playback_type,
             );
+            player.current_frame =
+                playback_frame_to_frame(player.internal.playback_frame, frame_count, player.playback_type);
         } else {
-            let frame_count = clip.frame_count();
             player.current_frame =
                 clamp_frame(player.current_frame, frame_count, player.playback_type);
+            player.internal.playback_frame = player.current_frame as f32;
         }
 
         let binding_hash = hash_bindings(&player.bindings);
@@ -886,32 +881,23 @@ fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
-fn advance_time(
-    current_time: f32,
-    dt: f32,
-    duration: f32,
-    playback_type: AnimationPlaybackType,
-) -> f32 {
-    let next = current_time + dt;
-    normalize_playback_time(next, duration, playback_type)
-}
-
-fn time_to_frame(
-    time: f32,
-    fps: f32,
+fn advance_playback_frame(
+    current_frame: f32,
+    delta_frames: f32,
     frame_count: u32,
     playback_type: AnimationPlaybackType,
-) -> u32 {
+) -> f32 {
+    let next = current_frame + delta_frames;
+    normalize_playback_frame(next, frame_count, playback_type)
+}
+
+fn playback_frame_to_frame(frame: f32, frame_count: u32, playback_type: AnimationPlaybackType) -> u32 {
     if frame_count <= 1 {
         return 0;
     }
-    if fps <= 0.0 {
-        return clamp_frame(0, frame_count, playback_type);
-    }
-    let duration = frame_count.saturating_sub(1) as f32 / fps;
-    let normalized = normalize_playback_time(time, duration, playback_type);
-    let frame = (normalized.max(0.0) * fps).floor() as u32;
-    clamp_frame(frame, frame_count, playback_type)
+    let normalized = normalize_playback_frame(frame, frame_count, playback_type);
+    let discrete = normalized.max(0.0).floor() as u32;
+    clamp_frame(discrete, frame_count, playback_type)
 }
 
 fn clamp_frame(frame: u32, frame_count: u32, playback_type: AnimationPlaybackType) -> u32 {
@@ -933,17 +919,25 @@ fn clamp_frame(frame: u32, frame_count: u32, playback_type: AnimationPlaybackTyp
     }
 }
 
-fn normalize_playback_time(time: f32, duration: f32, playback_type: AnimationPlaybackType) -> f32 {
-    if duration <= 0.0 {
+fn normalize_playback_frame(
+    frame: f32,
+    frame_count: u32,
+    playback_type: AnimationPlaybackType,
+) -> f32 {
+    if frame_count <= 1 {
         return 0.0;
     }
+    let last = frame_count.saturating_sub(1) as f32;
     match playback_type {
-        AnimationPlaybackType::Once => time.clamp(0.0, duration),
-        AnimationPlaybackType::Loop => time.rem_euclid(duration),
+        AnimationPlaybackType::Once => frame.clamp(0.0, last),
+        AnimationPlaybackType::Loop => frame.rem_euclid(frame_count as f32),
         AnimationPlaybackType::Boomerang => {
-            let period = duration * 2.0;
-            let wrapped = time.rem_euclid(period);
-            if wrapped <= duration {
+            let period = last * 2.0;
+            if period <= 0.0 {
+                return 0.0;
+            }
+            let wrapped = frame.rem_euclid(period);
+            if wrapped <= last {
                 wrapped
             } else {
                 period - wrapped

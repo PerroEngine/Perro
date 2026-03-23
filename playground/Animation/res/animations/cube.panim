@@ -1,0 +1,26 @@
+[Animation]
+name = "Cube"
+fps = 60
+default_interp = "interpolate"
+default_ease = "linear"
+[/Animation]
+
+[Objects]
+@Target = MeshInstance3D
+[/Objects]
+
+[Frame0]
+@Target {
+    position = (-4, 0, 0)
+    rotation = (0, 0, 0)
+    scale = (1,1,1)
+}
+[/Frame0]
+
+[Frame30]
+@Target {
+    position = (4, 0, 0)
+    rotation = (0, 135, 0)
+    scale = (5,5,5)
+}
+[/Frame30]

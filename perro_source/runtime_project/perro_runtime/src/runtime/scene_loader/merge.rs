@@ -198,6 +198,13 @@ pub(super) fn merge_prepared_scene(
         }
     }
 
+    // Force initial frame extraction for freshly merged scene content, even with no scripts.
+    runtime.mark_transform_dirty_recursive(engine_root);
+    runtime.mark_needs_rerender(engine_root);
+    for node_id in key_to.values().copied() {
+        runtime.mark_needs_rerender(node_id);
+    }
+
     let mut script_nodes = Vec::with_capacity(scripts.len());
     for pending_script in scripts {
         let id = *key_to.get(&pending_script.node_key).ok_or_else(|| {

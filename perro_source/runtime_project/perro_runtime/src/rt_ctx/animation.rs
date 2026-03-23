@@ -28,13 +28,6 @@ impl AnimPlayerAPI for Runtime {
         .is_some()
     }
 
-    fn animation_seek_time(&mut self, player: perro_ids::NodeID, time_seconds: f32) -> bool {
-        self.with_node_mut::<AnimationPlayer, _, _>(player, |node| {
-            node.set_current_time(time_seconds);
-        })
-        .is_some()
-    }
-
     fn animation_seek_frame(&mut self, player: perro_ids::NodeID, frame: u32) -> bool {
         self.with_node_mut::<AnimationPlayer, _, _>(player, |node| {
             node.set_current_frame(frame);

@@ -451,7 +451,12 @@ impl GraphicsBackend for PerroGraphics {
 
     fn draw_frame_timed(&mut self) -> Option<DrawFrameTiming> {
         let total_start = Instant::now();
-        if self.frame.pending_commands.is_empty() {
+        let has_pending = !self.frame.pending_commands.is_empty();
+        let has_retained_scene = self.renderer_2d.retained_sprite_count() > 0
+            || !self.renderer_2d.retained_rects().is_empty()
+            || self.renderer_3d.retained_draw_count() > 0
+            || self.particles_3d.retained_point_particles().next().is_some();
+        if !has_pending && !has_retained_scene {
             if let Some(gpu) = &mut self.gpu {
                 gpu.render_idle_clear();
             }
