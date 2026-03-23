@@ -10,6 +10,7 @@ Purpose:
 
 Accessors:
 
+- `res.Animations()`
 - `res.Textures()`
 - `res.Audio()`
 - `res.Meshes()`
@@ -21,6 +22,7 @@ Accessors:
 
 ## Resource Modules
 
+- [Animations Module](resource_modules/animations.md)
 - [Textures Module](resource_modules/textures.md)
 - [Audio Module](resource_modules/audio.md)
 - [Meshes Module](resource_modules/meshes.md)

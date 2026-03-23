@@ -144,7 +144,6 @@ pub enum AnimationPlayerField {
     Animation,
     Bindings,
     Speed,
-    Playing,
     Paused,
     Playback,
 }
@@ -307,9 +306,8 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "animation" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Animation)),
             "bindings" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Bindings)),
             "speed" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Speed)),
-            "playing" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Playing)),
             "paused" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Paused)),
-            "playback" | "loop" | "looping" => {
+            "playback" => {
                 Some(NodeField::AnimationPlayer(AnimationPlayerField::Playback))
             }
             _ => None,

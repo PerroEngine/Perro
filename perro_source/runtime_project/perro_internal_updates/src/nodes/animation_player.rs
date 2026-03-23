@@ -30,7 +30,7 @@ pub fn internal_update<RT, R, IP>(
         return;
     }
 
-    let Some(clip) = animation_get!(res, animation_id) else {
+    let Some(clip) = res.Animations().get(animation_id) else {
         return;
     };
     if clip.object_tracks.is_empty() {

@@ -16,11 +16,6 @@ fn apply_animation_player_fields(node: &mut AnimationPlayer, fields: &[SceneObje
                     node.speed = v;
                 }
             }
-            Some(NodeField::AnimationPlayer(AnimationPlayerField::Playing)) => {
-                if let Some(v) = as_bool(value) {
-                    node.paused = !v;
-                }
-            }
             Some(NodeField::AnimationPlayer(AnimationPlayerField::Paused)) => {
                 if let Some(v) = as_bool(value) {
                     node.paused = v;
@@ -29,12 +24,6 @@ fn apply_animation_player_fields(node: &mut AnimationPlayer, fields: &[SceneObje
             Some(NodeField::AnimationPlayer(AnimationPlayerField::Playback)) => {
                 if let Some(playback_type) = parse_animation_playback_type(value) {
                     node.playback_type = playback_type;
-                } else if let Some(v) = as_bool(value) {
-                    node.playback_type = if v {
-                        perro_nodes::AnimationPlaybackType::Loop
-                    } else {
-                        perro_nodes::AnimationPlaybackType::Once
-                    };
                 }
             }
             _ => {}
@@ -92,27 +81,15 @@ fn parse_animation_bindings(value: &SceneValue) -> Option<Vec<(String, String)>>
             continue;
         };
 
-        let mut object = None::<String>;
-        let mut node = None::<String>;
-
         for (name, value) in entries.as_ref() {
-            match name.as_ref() {
-                "object" | "track" => {
-                    if let Some(v) = as_str(value) {
-                        object = Some(v.to_string());
-                    }
-                }
-                "node" => {
-                    if let Some(v) = as_str(value) {
-                        node = Some(v.to_string());
-                    }
-                }
-                _ => {}
+            // Map-only binding form: { Hero = bob } / { "Hero": bob }.
+            // Legacy object/node form is intentionally ignored.
+            if matches!(name.as_ref(), "object" | "track" | "node") {
+                continue;
             }
-        }
-
-        if let (Some(object), Some(node)) = (object, node) {
-            out.push((object, node));
+            if let Some(v) = as_str(value) {
+                out.push((name.to_string(), v.to_string()));
+            }
         }
     }
 

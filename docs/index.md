@@ -12,6 +12,7 @@
 - [Script Methods](scripting/methods.md)
 
 ## Resources
+- [`.panim` Format](resources/panim.md)
 - [`.pmat` Format](resources/pmat.md)
 - [`.ppart` Format](resources/ppart.md)
 - [`.pskel` Format](resources/pskel.md)

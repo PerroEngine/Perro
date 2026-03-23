@@ -10,6 +10,7 @@ Runtime macros take `ctx` as argument 1.
 
 - [Time Module](runtime_modules/time.md)
 - [Nodes Module](runtime_modules/nodes.md)
+- [Animations Module](runtime_modules/animations.md)
 - [Scripts Module](runtime_modules/scripts.md)
 - [Signals Module](runtime_modules/signals.md)
 - [Physics Module](runtime_modules/physics.md)

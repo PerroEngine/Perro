@@ -48,6 +48,13 @@ Rendering and resource loading are handled by the runtime and `ResourceContext`.
 
 - 3D particle emitter driven by a particle profile.
 
+`AnimationPlayer`
+
+- Plays an `AnimationClip` resource and applies tracks to bound scene nodes.
+- `animation` points to clip source/ID; tracks are mapped by object name via `bindings`.
+- `playback` supports `once`, `loop`, `boomerang`.
+- Runtime control is exposed through Animation macros in Runtime Context.
+
 Lights:
 
 - `AmbientLight3D`

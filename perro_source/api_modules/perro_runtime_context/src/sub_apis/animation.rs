@@ -105,6 +105,22 @@ macro_rules! animation_set_speed {
 
 #[macro_export]
 macro_rules! animation_bind {
+    ($ctx:expr, $player:expr, [ $($track:tt : $node:expr),* $(,)? ]) => {{
+        let __player = $player;
+        let mut __all_ok = true;
+        $(
+            __all_ok = $ctx.Animations().bind(__player, $track, $node) && __all_ok;
+        )*
+        __all_ok
+    }};
+    ($ctx:expr, $player:expr, { $($track:expr => $node:expr),* $(,)? }) => {{
+        let __player = $player;
+        let mut __all_ok = true;
+        $(
+            __all_ok = $ctx.Animations().bind(__player, $track, $node) && __all_ok;
+        )*
+        __all_ok
+    }};
     ($ctx:expr, $player:expr, $track:expr, $node:expr) => {
         $ctx.Animations().bind($player, $track, $node)
     };

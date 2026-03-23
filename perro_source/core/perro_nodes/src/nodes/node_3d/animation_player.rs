@@ -58,7 +58,7 @@ impl AnimationPlayer {
             current_time: 0.0,
             current_frame: 0,
             speed: 1.0,
-            paused: true,
+            paused: false,
             playback_type: AnimationPlaybackType::Loop,
             bindings: Cow::Borrowed(&[]),
             internal: InternalAnimationData {

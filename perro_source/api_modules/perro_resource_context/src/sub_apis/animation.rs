@@ -59,10 +59,3 @@ macro_rules! animation_drop {
         $res.Animations().drop($source)
     };
 }
-
-#[macro_export]
-macro_rules! animation_get {
-    ($res:expr, $id:expr) => {
-        $res.Animations().get($id)
-    };
-}
