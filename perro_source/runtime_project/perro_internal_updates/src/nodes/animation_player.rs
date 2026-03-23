@@ -89,6 +89,7 @@ where
                 delta_seconds * clip.fps.max(0.0) * player.speed,
                 frame_count,
                 player.playback_type,
+                &mut player.internal.boomerang_direction,
             );
             player.current_frame =
                 playback_frame_to_frame(player.internal.playback_frame, frame_count, player.playback_type);
@@ -886,9 +887,58 @@ fn advance_playback_frame(
     delta_frames: f32,
     frame_count: u32,
     playback_type: AnimationPlaybackType,
+    boomerang_direction: &mut f32,
 ) -> f32 {
-    let next = current_frame + delta_frames;
-    normalize_playback_frame(next, frame_count, playback_type)
+    if frame_count <= 1 {
+        *boomerang_direction = 1.0;
+        return 0.0;
+    }
+
+    match playback_type {
+        AnimationPlaybackType::Boomerang => advance_boomerang_frame(
+            current_frame,
+            delta_frames,
+            frame_count,
+            boomerang_direction,
+        ),
+        _ => {
+            *boomerang_direction = 1.0;
+            let next = current_frame + delta_frames;
+            normalize_playback_frame(next, frame_count, playback_type)
+        }
+    }
+}
+
+fn advance_boomerang_frame(
+    current_frame: f32,
+    delta_frames: f32,
+    frame_count: u32,
+    boomerang_direction: &mut f32,
+) -> f32 {
+    if frame_count <= 1 {
+        *boomerang_direction = 1.0;
+        return 0.0;
+    }
+
+    let mut dir = if boomerang_direction.is_sign_negative() {
+        -1.0
+    } else {
+        1.0
+    };
+    let last = frame_count.saturating_sub(1) as f32;
+    let mut next = current_frame + delta_frames * dir;
+
+    while next > last {
+        next = (2.0 * last) - next;
+        dir *= -1.0;
+    }
+    while next < 0.0 {
+        next = -next;
+        dir *= -1.0;
+    }
+
+    *boomerang_direction = dir;
+    next
 }
 
 fn playback_frame_to_frame(frame: f32, frame_count: u32, playback_type: AnimationPlaybackType) -> u32 {
@@ -957,4 +1007,34 @@ fn hash_bindings(bindings: &[AnimationObjectBinding]) -> u64 {
         }
     }
     h
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn boomerang_keeps_moving_after_turnaround() {
+        let mut dir = 1.0_f32;
+        let frame_count = 6_u32; // 0..5
+        let mut frame = 0.0_f32;
+        let mut sampled = Vec::new();
+
+        for _ in 0..20 {
+            frame = advance_playback_frame(
+                frame,
+                1.0,
+                frame_count,
+                AnimationPlaybackType::Boomerang,
+                &mut dir,
+            );
+            sampled.push(playback_frame_to_frame(
+                frame,
+                frame_count,
+                AnimationPlaybackType::Boomerang,
+            ));
+        }
+
+        assert_eq!(sampled, vec![1, 2, 3, 4, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0]);
+    }
 }

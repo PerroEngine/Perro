@@ -370,6 +370,11 @@ fn generate_embedded_main(project_root: &Path) -> Result<(), CompilerError> {
         "perro_animation",
         "perro_animation = \"0.1.0\"",
     )?;
+    ensure_project_dependency_line(
+        project_root,
+        "perro_structs",
+        "perro_structs = \"0.1.0\"",
+    )?;
 
     let embedded_block = format!(
         "let root = project_root();\n\

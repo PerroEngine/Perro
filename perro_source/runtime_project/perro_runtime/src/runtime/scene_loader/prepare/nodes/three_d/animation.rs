@@ -29,16 +29,18 @@ fn apply_animation_player_fields(node: &mut AnimationPlayer, fields: &[SceneObje
 
 fn parse_animation_playback_type(value: &SceneValue) -> Option<perro_nodes::AnimationPlaybackType> {
     let token = as_str(value)?.trim();
-    if token.eq_ignore_ascii_case("once") {
-        return Some(perro_nodes::AnimationPlaybackType::Once);
+    let normalized = token
+        .to_ascii_lowercase()
+        .replace([' ', '-', '_'], "");
+
+    match normalized.as_str() {
+        "once" => Some(perro_nodes::AnimationPlaybackType::Once),
+        "loop" => Some(perro_nodes::AnimationPlaybackType::Loop),
+        "boomerang" | "pingpong" => {
+            Some(perro_nodes::AnimationPlaybackType::Boomerang)
+        }
+        _ => None,
     }
-    if token.eq_ignore_ascii_case("loop") {
-        return Some(perro_nodes::AnimationPlaybackType::Loop);
-    }
-    if token.eq_ignore_ascii_case("boomerang") {
-        return Some(perro_nodes::AnimationPlaybackType::Boomerang);
-    }
-    None
 }
 
 fn extract_animation_source(data: &SceneDefNodeData) -> Option<String> {

@@ -1064,6 +1064,8 @@ perro_app = "0.1.0"
 perro = "0.1.0"
 perro_scene = "0.1.0"
 perro_render_bridge = "0.1.0"
+perro_animation = "0.1.0"
+perro_structs = "0.1.0"
 scripts = {{ path = "../scripts" }}
 
 [features]

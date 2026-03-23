@@ -7,6 +7,7 @@ pub struct InternalAnimationData {
     pub last_applied_frame: u32,
     pub last_binding_hash: u64,
     pub playback_frame: f32,
+    pub boomerang_direction: f32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -48,6 +49,7 @@ impl AnimationPlayer {
                 last_applied_frame: 0,
                 last_binding_hash: 0,
                 playback_frame: 0.0,
+                boomerang_direction: 1.0,
             },
         }
     }
@@ -58,6 +60,7 @@ impl AnimationPlayer {
         self.current_frame = 0;
         self.internal.last_applied_animation = AnimationID::nil();
         self.internal.playback_frame = 0.0;
+        self.internal.boomerang_direction = 1.0;
     }
 
     #[inline]
@@ -74,6 +77,7 @@ impl AnimationPlayer {
     pub fn set_current_frame(&mut self, frame: u32) {
         self.current_frame = frame;
         self.internal.playback_frame = frame as f32;
+        self.internal.boomerang_direction = 1.0;
     }
 
     #[inline]
