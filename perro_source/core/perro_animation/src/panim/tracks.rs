@@ -8,25 +8,60 @@ struct ObjectState3D {
 }
 
 struct TrackAccumulator {
-    channel: AnimationChannel,
+    field: NodeField,
     interpolation: AnimationInterpolation,
-    keys: BTreeMap<u32, AnimationTrackValue>,
+    ease: AnimationEase,
+    keys: BTreeMap<u32, TrackKey>,
+}
+
+#[derive(Clone, Debug)]
+struct TrackKey {
+    value: AnimationTrackValue,
+    interpolation: AnimationInterpolation,
+    ease: AnimationEase,
 }
 
 fn build_tracks_and_events(
     mut actions: Vec<FrameAction>,
     _object_types: &HashMap<String, String>,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
 ) -> Result<(Vec<AnimationObjectTrack>, Vec<AnimationFrameEvent>), String> {
     let mut frame_events = Vec::<AnimationFrameEvent>::new();
 
-    let mut fields = Vec::<(u32, String, ObjectFieldAction)>::new();
-    for action in actions.drain(..) {
+    let mut fields = Vec::<(u32, usize, String, ObjectFieldAction)>::new();
+    let mut controls = Vec::<(
+        u32,
+        usize,
+        String,
+        &'static str,
+        NodeField,
+        Option<AnimationInterpolation>,
+        Option<AnimationEase>,
+    )>::new();
+    for (sequence, action) in actions.drain(..).enumerate() {
         match action {
             FrameAction::Field {
                 frame,
                 object,
                 field,
-            } => fields.push((frame, object, field)),
+            } => fields.push((frame, sequence, object, field)),
+            FrameAction::TrackControl {
+                frame,
+                object,
+                channel_key,
+                field,
+                interpolation,
+                ease,
+            } => controls.push((
+                frame,
+                sequence,
+                object,
+                channel_key,
+                field,
+                interpolation,
+                ease,
+            )),
             FrameAction::Event {
                 frame,
                 scope,
@@ -39,45 +74,151 @@ fn build_tracks_and_events(
         }
     }
 
-    fields.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    fields.sort_by_key(|(frame, sequence, ..)| (*frame, *sequence));
+    controls.sort_by_key(|(frame, sequence, ..)| (*frame, *sequence));
 
     let mut state_2d = HashMap::<String, ObjectState2D>::new();
     let mut state_3d = HashMap::<String, ObjectState3D>::new();
     let mut tracks_map = BTreeMap::<(String, &'static str), TrackAccumulator>::new();
+    let mut control_index = 0usize;
 
-    for (frame, object, field) in fields {
+    for (frame, sequence, object, field) in fields {
+        while control_index < controls.len() {
+            let (c_frame, c_seq, c_object, channel_key, c_field, interp, ease) =
+                &controls[control_index];
+            if *c_frame > frame || (*c_frame == frame && *c_seq > sequence) {
+                break;
+            }
+            apply_track_control(
+                &mut tracks_map,
+                c_object.clone(),
+                *channel_key,
+                *c_field,
+                *interp,
+                *ease,
+                default_interpolation,
+                default_ease,
+            );
+            control_index += 1;
+        }
+
         match field {
             ObjectFieldAction::Node2D(action) => {
-                apply_node_2d_action(frame, object, action, &mut state_2d, &mut tracks_map);
+                apply_node_2d_action(
+                    frame,
+                    object,
+                    action,
+                    &mut state_2d,
+                    &mut tracks_map,
+                    default_interpolation,
+                    default_ease,
+                );
             }
             ObjectFieldAction::Node3D(action) => {
-                apply_node_3d_action(frame, object, action, &mut state_3d, &mut tracks_map);
+                apply_node_3d_action(
+                    frame,
+                    object,
+                    action,
+                    &mut state_3d,
+                    &mut tracks_map,
+                    default_interpolation,
+                    default_ease,
+                );
+            }
+            ObjectFieldAction::Sprite2D(action) => {
+                apply_sprite_2d_action(
+                    frame,
+                    object,
+                    action,
+                    &mut tracks_map,
+                    default_interpolation,
+                    default_ease,
+                );
+            }
+            ObjectFieldAction::MeshInstance3D(action) => {
+                apply_mesh_instance_3d_action(
+                    frame,
+                    object,
+                    action,
+                    &mut tracks_map,
+                    default_interpolation,
+                    default_ease,
+                );
             }
             ObjectFieldAction::Camera3D(action) => {
-                apply_camera_3d_action(frame, object, action, &mut tracks_map);
+                apply_camera_3d_action(
+                    frame,
+                    object,
+                    action,
+                    &mut tracks_map,
+                    default_interpolation,
+                    default_ease,
+                );
             }
             ObjectFieldAction::Light3D(action) => {
-                apply_light_3d_action(frame, object, action, &mut tracks_map);
+                apply_light_3d_action(
+                    frame,
+                    object,
+                    action,
+                    &mut tracks_map,
+                    default_interpolation,
+                    default_ease,
+                );
             }
             ObjectFieldAction::PointLight3D(action) => {
-                apply_point_light_3d_action(frame, object, action, &mut tracks_map);
+                apply_point_light_3d_action(
+                    frame,
+                    object,
+                    action,
+                    &mut tracks_map,
+                    default_interpolation,
+                    default_ease,
+                );
             }
             ObjectFieldAction::SpotLight3D(action) => {
-                apply_spot_light_3d_action(frame, object, action, &mut tracks_map);
+                apply_spot_light_3d_action(
+                    frame,
+                    object,
+                    action,
+                    &mut tracks_map,
+                    default_interpolation,
+                    default_ease,
+                );
             }
         }
+    }
+
+    while control_index < controls.len() {
+        let (_, _, object, channel_key, field, interpolation, ease) = &controls[control_index];
+        apply_track_control(
+            &mut tracks_map,
+            object.clone(),
+            *channel_key,
+            *field,
+            *interpolation,
+            *ease,
+            default_interpolation,
+            default_ease,
+        );
+        control_index += 1;
     }
 
     let mut object_tracks = Vec::<AnimationObjectTrack>::new();
     for ((object, _), track) in tracks_map {
         let mut keys = Vec::<AnimationObjectKey>::new();
-        for (frame, value) in track.keys {
-            keys.push(AnimationObjectKey { frame, value });
+        for (frame, key) in track.keys {
+            keys.push(AnimationObjectKey {
+                frame,
+                interpolation: key.interpolation,
+                ease: key.ease,
+                value: key.value,
+            });
         }
         object_tracks.push(AnimationObjectTrack {
             object: object.into(),
-            channel: track.channel,
+            field: track.field,
             interpolation: track.interpolation,
+            ease: track.ease,
             keys: Cow::Owned(keys),
         });
     }
@@ -92,6 +233,8 @@ fn apply_node_2d_action(
     action: Node2DAction,
     state_2d: &mut HashMap<String, ObjectState2D>,
     tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
 ) {
     match action {
         Node2DAction::Position(v) => {
@@ -103,9 +246,11 @@ fn apply_node_2d_action(
                 tracks_map,
                 object,
                 "node2d.transform",
-                AnimationChannel::Node2D(Node2DChannel::Transform),
+                NodeField::Node2D(Node2DField::Position),
                 frame,
                 AnimationTrackValue::Transform2D(state.transform),
+                default_interpolation,
+                default_ease,
             );
         }
         Node2DAction::Rotation(v) => {
@@ -117,9 +262,11 @@ fn apply_node_2d_action(
                 tracks_map,
                 object,
                 "node2d.transform",
-                AnimationChannel::Node2D(Node2DChannel::Transform),
+                NodeField::Node2D(Node2DField::Position),
                 frame,
                 AnimationTrackValue::Transform2D(state.transform),
+                default_interpolation,
+                default_ease,
             );
         }
         Node2DAction::Scale(v) => {
@@ -131,9 +278,11 @@ fn apply_node_2d_action(
                 tracks_map,
                 object,
                 "node2d.transform",
-                AnimationChannel::Node2D(Node2DChannel::Transform),
+                NodeField::Node2D(Node2DField::Position),
                 frame,
                 AnimationTrackValue::Transform2D(state.transform),
+                default_interpolation,
+                default_ease,
             );
         }
         Node2DAction::Visible(v) => {
@@ -141,9 +290,23 @@ fn apply_node_2d_action(
                 tracks_map,
                 object,
                 "node2d.visible",
-                AnimationChannel::Node2D(Node2DChannel::Visible),
+                NodeField::Node2D(Node2DField::Visible),
                 frame,
                 AnimationTrackValue::Bool(v),
+                default_interpolation,
+                default_ease,
+            );
+        }
+        Node2DAction::ZIndex(v) => {
+            insert_track_key(
+                tracks_map,
+                object,
+                "node2d.z_index",
+                NodeField::Node2D(Node2DField::ZIndex),
+                frame,
+                AnimationTrackValue::I32(v),
+                default_interpolation,
+                default_ease,
             );
         }
     }
@@ -155,6 +318,8 @@ fn apply_node_3d_action(
     action: Node3DAction,
     state_3d: &mut HashMap<String, ObjectState3D>,
     tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
 ) {
     match action {
         Node3DAction::Position(v) => {
@@ -166,9 +331,11 @@ fn apply_node_3d_action(
                 tracks_map,
                 object,
                 "node3d.transform",
-                AnimationChannel::Node3D(Node3DChannel::Transform),
+                NodeField::Node3D(Node3DField::Position),
                 frame,
                 AnimationTrackValue::Transform3D(state.transform),
+                default_interpolation,
+                default_ease,
             );
         }
         Node3DAction::Rotation(v) => {
@@ -180,9 +347,11 @@ fn apply_node_3d_action(
                 tracks_map,
                 object,
                 "node3d.transform",
-                AnimationChannel::Node3D(Node3DChannel::Transform),
+                NodeField::Node3D(Node3DField::Position),
                 frame,
                 AnimationTrackValue::Transform3D(state.transform),
+                default_interpolation,
+                default_ease,
             );
         }
         Node3DAction::Scale(v) => {
@@ -194,9 +363,11 @@ fn apply_node_3d_action(
                 tracks_map,
                 object,
                 "node3d.transform",
-                AnimationChannel::Node3D(Node3DChannel::Transform),
+                NodeField::Node3D(Node3DField::Position),
                 frame,
                 AnimationTrackValue::Transform3D(state.transform),
+                default_interpolation,
+                default_ease,
             );
         }
         Node3DAction::Visible(v) => {
@@ -204,11 +375,67 @@ fn apply_node_3d_action(
                 tracks_map,
                 object,
                 "node3d.visible",
-                AnimationChannel::Node3D(Node3DChannel::Visible),
+                NodeField::Node3D(Node3DField::Visible),
                 frame,
                 AnimationTrackValue::Bool(v),
+                default_interpolation,
+                default_ease,
             );
         }
+    }
+}
+
+fn apply_sprite_2d_action(
+    frame: u32,
+    object: String,
+    action: Sprite2DAction,
+    tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
+) {
+    match action {
+        Sprite2DAction::Texture(path) => insert_track_key(
+            tracks_map,
+            object,
+            "sprite2d.texture",
+            NodeField::Sprite2D(Sprite2DField::Texture),
+            frame,
+            AnimationTrackValue::AssetPath(path.into()),
+            default_interpolation,
+            default_ease,
+        ),
+    }
+}
+
+fn apply_mesh_instance_3d_action(
+    frame: u32,
+    object: String,
+    action: MeshInstance3DAction,
+    tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
+) {
+    match action {
+        MeshInstance3DAction::Mesh(path) => insert_track_key(
+            tracks_map,
+            object,
+            "mesh_instance3d.mesh",
+            NodeField::MeshInstance3D(MeshInstance3DField::Mesh),
+            frame,
+            AnimationTrackValue::AssetPath(path.into()),
+            default_interpolation,
+            default_ease,
+        ),
+        MeshInstance3DAction::Material(path) => insert_track_key(
+            tracks_map,
+            object,
+            "mesh_instance3d.material",
+            NodeField::MeshInstance3D(MeshInstance3DField::Material),
+            frame,
+            AnimationTrackValue::AssetPath(path.into()),
+            default_interpolation,
+            default_ease,
+        ),
     }
 }
 
@@ -217,119 +444,149 @@ fn apply_camera_3d_action(
     object: String,
     action: Camera3DAction,
     tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
 ) {
     match action {
         Camera3DAction::Zoom(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.zoom",
-            AnimationChannel::Camera3D(Camera3DChannel::Zoom),
+            NodeField::Camera3D(Camera3DField::Zoom),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Camera3DAction::PerspectiveFovYDegrees(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.perspective_fovy_degrees",
-            AnimationChannel::Camera3D(Camera3DChannel::PerspectiveFovYDegrees),
+            NodeField::Camera3D(Camera3DField::PerspectiveFovYDegrees),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Camera3DAction::PerspectiveNear(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.perspective_near",
-            AnimationChannel::Camera3D(Camera3DChannel::PerspectiveNear),
+            NodeField::Camera3D(Camera3DField::PerspectiveNear),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Camera3DAction::PerspectiveFar(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.perspective_far",
-            AnimationChannel::Camera3D(Camera3DChannel::PerspectiveFar),
+            NodeField::Camera3D(Camera3DField::PerspectiveFar),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Camera3DAction::OrthographicSize(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.orthographic_size",
-            AnimationChannel::Camera3D(Camera3DChannel::OrthographicSize),
+            NodeField::Camera3D(Camera3DField::OrthographicSize),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Camera3DAction::OrthographicNear(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.orthographic_near",
-            AnimationChannel::Camera3D(Camera3DChannel::OrthographicNear),
+            NodeField::Camera3D(Camera3DField::OrthographicNear),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Camera3DAction::OrthographicFar(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.orthographic_far",
-            AnimationChannel::Camera3D(Camera3DChannel::OrthographicFar),
+            NodeField::Camera3D(Camera3DField::OrthographicFar),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Camera3DAction::FrustumLeft(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.frustum_left",
-            AnimationChannel::Camera3D(Camera3DChannel::FrustumLeft),
+            NodeField::Camera3D(Camera3DField::FrustumLeft),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Camera3DAction::FrustumRight(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.frustum_right",
-            AnimationChannel::Camera3D(Camera3DChannel::FrustumRight),
+            NodeField::Camera3D(Camera3DField::FrustumRight),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Camera3DAction::FrustumBottom(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.frustum_bottom",
-            AnimationChannel::Camera3D(Camera3DChannel::FrustumBottom),
+            NodeField::Camera3D(Camera3DField::FrustumBottom),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Camera3DAction::FrustumTop(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.frustum_top",
-            AnimationChannel::Camera3D(Camera3DChannel::FrustumTop),
+            NodeField::Camera3D(Camera3DField::FrustumTop),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Camera3DAction::FrustumNear(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.frustum_near",
-            AnimationChannel::Camera3D(Camera3DChannel::FrustumNear),
+            NodeField::Camera3D(Camera3DField::FrustumNear),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Camera3DAction::FrustumFar(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.frustum_far",
-            AnimationChannel::Camera3D(Camera3DChannel::FrustumFar),
+            NodeField::Camera3D(Camera3DField::FrustumFar),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Camera3DAction::Active(v) => insert_track_key(
             tracks_map,
             object,
             "camera3d.active",
-            AnimationChannel::Camera3D(Camera3DChannel::Active),
+            NodeField::Camera3D(Camera3DField::Active),
             frame,
             AnimationTrackValue::Bool(v),
+            default_interpolation,
+            default_ease,
         ),
     }
 }
@@ -339,31 +596,39 @@ fn apply_light_3d_action(
     object: String,
     action: Light3DAction,
     tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
 ) {
     match action {
         Light3DAction::Color(v) => insert_track_key(
             tracks_map,
             object,
             "light3d.color",
-            AnimationChannel::Light3D(Light3DChannel::Color),
+            NodeField::Light3D(Light3DField::Color),
             frame,
             AnimationTrackValue::Vec3(v),
+            default_interpolation,
+            default_ease,
         ),
         Light3DAction::Intensity(v) => insert_track_key(
             tracks_map,
             object,
             "light3d.intensity",
-            AnimationChannel::Light3D(Light3DChannel::Intensity),
+            NodeField::Light3D(Light3DField::Intensity),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         Light3DAction::Active(v) => insert_track_key(
             tracks_map,
             object,
             "light3d.active",
-            AnimationChannel::Light3D(Light3DChannel::Active),
+            NodeField::Light3D(Light3DField::Active),
             frame,
             AnimationTrackValue::Bool(v),
+            default_interpolation,
+            default_ease,
         ),
     }
 }
@@ -373,15 +638,19 @@ fn apply_point_light_3d_action(
     object: String,
     action: PointLight3DAction,
     tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
 ) {
     match action {
         PointLight3DAction::Range(v) => insert_track_key(
             tracks_map,
             object,
             "point_light3d.range",
-            AnimationChannel::PointLight3D(PointLight3DChannel::Range),
+            NodeField::PointLight3D(PointLight3DField::Range),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
     }
 }
@@ -391,31 +660,39 @@ fn apply_spot_light_3d_action(
     object: String,
     action: SpotLight3DAction,
     tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
 ) {
     match action {
         SpotLight3DAction::Range(v) => insert_track_key(
             tracks_map,
             object,
             "spot_light3d.range",
-            AnimationChannel::SpotLight3D(SpotLight3DChannel::Range),
+            NodeField::SpotLight3D(SpotLight3DField::Range),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         SpotLight3DAction::InnerAngleRadians(v) => insert_track_key(
             tracks_map,
             object,
             "spot_light3d.inner_angle_radians",
-            AnimationChannel::SpotLight3D(SpotLight3DChannel::InnerAngleRadians),
+            NodeField::SpotLight3D(SpotLight3DField::InnerAngleRadians),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
         SpotLight3DAction::OuterAngleRadians(v) => insert_track_key(
             tracks_map,
             object,
             "spot_light3d.outer_angle_radians",
-            AnimationChannel::SpotLight3D(SpotLight3DChannel::OuterAngleRadians),
+            NodeField::SpotLight3D(SpotLight3DField::OuterAngleRadians),
             frame,
             AnimationTrackValue::F32(v),
+            default_interpolation,
+            default_ease,
         ),
     }
 }
@@ -436,16 +713,54 @@ fn insert_track_key(
     tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
     object: String,
     channel_key: &'static str,
-    channel: AnimationChannel,
+    field: NodeField,
     frame: u32,
     value: AnimationTrackValue,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
 ) {
     let entry = tracks_map
         .entry((object, channel_key))
         .or_insert_with(|| TrackAccumulator {
-            channel,
-            interpolation: AnimationInterpolation::Step,
+            field,
+            interpolation: default_interpolation,
+            ease: default_ease,
             keys: BTreeMap::new(),
         });
-    entry.keys.insert(frame, value);
+    entry.keys.insert(
+        frame,
+        TrackKey {
+            value,
+            interpolation: entry.interpolation,
+            ease: entry.ease,
+        },
+    );
 }
+
+fn apply_track_control(
+    tracks_map: &mut BTreeMap<(String, &'static str), TrackAccumulator>,
+    object: String,
+    channel_key: &'static str,
+    field: NodeField,
+    interpolation: Option<AnimationInterpolation>,
+    ease: Option<AnimationEase>,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
+) {
+    let entry = tracks_map
+        .entry((object, channel_key))
+        .or_insert_with(|| TrackAccumulator {
+            field,
+            interpolation: default_interpolation,
+            ease: default_ease,
+            keys: BTreeMap::new(),
+        });
+    if let Some(interpolation) = interpolation {
+        entry.interpolation = interpolation;
+    }
+    if let Some(ease) = ease {
+        entry.ease = ease;
+    }
+}
+
+

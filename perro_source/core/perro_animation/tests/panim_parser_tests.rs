@@ -1,0 +1,389 @@
+use perro_animation::{AnimationEase, AnimationInterpolation, AnimationTrackValue, parse_panim};
+use perro_scene::{MeshInstance3DField, Node2DField, Node3DField, NodeField, Sprite2DField};
+
+#[test]
+fn parses_sparse_keyframes_and_events() {
+    let src = r#"
+[Animation]
+name = "AttackA"
+fps = 30
+[/Animation]
+
+[Objects]
+@Player = MeshInstance3D
+[/Objects]
+
+[Frame0]
+@Player {
+    position = (0,0,0)
+    rotation = (0,0,0,1)
+    scale = (1,1,1)
+    visible = true
+}
+[/Frame0]
+
+[Frame25]
+@Player {
+    call_method = { name="slash", params=[1.0] }
+}
+[/Frame25]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+    assert_eq!(clip.name.as_ref(), "AttackA");
+    assert_eq!(clip.fps, 30.0);
+    assert_eq!(clip.total_frames, 26);
+    assert_eq!(clip.objects.len(), 1);
+    assert_eq!(clip.object_tracks.len(), 2);
+    assert_eq!(clip.frame_events.len(), 1);
+    assert_eq!(clip.frame_events[0].frame, 25);
+}
+
+#[test]
+fn parses_asset_field_tracks_with_vars() {
+    let src = r#"
+@mesh = "res://meshes/hero.glb:mesh[0]"
+@mat = "res://materials/hero.mat"
+@tex = "res://textures/hero.png"
+
+[Animation]
+name = "SwapAssets"
+fps = 24
+[/Animation]
+
+[Objects]
+@HeroMesh = MeshInstance3D
+@HeroSprite = Sprite2D
+[/Objects]
+
+[Frame0]
+@HeroMesh {
+    mesh = @mesh
+    material = @mat
+}
+@HeroSprite {
+    texture = @tex
+}
+[/Frame0]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+    assert_eq!(clip.object_tracks.len(), 3);
+
+    let mut mesh_track = None;
+    let mut material_track = None;
+    let mut texture_track = None;
+    for track in clip.object_tracks.iter() {
+        match track.field {
+            NodeField::MeshInstance3D(MeshInstance3DField::Mesh) => mesh_track = Some(track),
+            NodeField::MeshInstance3D(MeshInstance3DField::Material) => material_track = Some(track),
+            NodeField::Sprite2D(Sprite2DField::Texture) => texture_track = Some(track),
+            _ => {}
+        }
+    }
+
+    let mesh_track = mesh_track.expect("mesh track");
+    let material_track = material_track.expect("material track");
+    let texture_track = texture_track.expect("texture track");
+
+    assert!(matches!(
+        mesh_track.keys[0].value,
+        AnimationTrackValue::AssetPath(_)
+    ));
+    assert!(matches!(
+        material_track.keys[0].value,
+        AnimationTrackValue::AssetPath(_)
+    ));
+    assert!(matches!(
+        texture_track.keys[0].value,
+        AnimationTrackValue::AssetPath(_)
+    ));
+}
+
+#[test]
+fn parses_persistent_track_controls() {
+    let src = r#"
+[Animation]
+name = "InterpModes"
+fps = 30
+default_interp = "interpolate"
+default_ease = "ease_in_out"
+[/Animation]
+
+[Objects]
+@Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    position.interp = "interpolate"
+    position.ease = "ease_in"
+    position = (0,0,0)
+}
+[/Frame0]
+
+[Frame10]
+@Hero {
+    position.ease = "ease_out"
+    position = (10,0,0)
+}
+[/Frame10]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+    let track = clip
+        .object_tracks
+        .iter()
+        .find(|t| matches!(t.field, NodeField::Node3D(Node3DField::Position)))
+        .expect("position track");
+    assert_eq!(track.keys.len(), 2);
+    assert_eq!(track.keys[0].interpolation, AnimationInterpolation::Linear);
+    assert_eq!(track.keys[0].ease, AnimationEase::EaseIn);
+    assert_eq!(track.keys[1].interpolation, AnimationInterpolation::Linear);
+    assert_eq!(track.keys[1].ease, AnimationEase::EaseOut);
+}
+
+#[test]
+fn parses_node2d_z_index_track() {
+    let src = r#"
+[Animation]
+name = "LayerSwap"
+fps = 30
+[/Animation]
+
+[Objects]
+@Hud = Node2D
+[/Objects]
+
+[Frame0]
+@Hud {
+    z_index = 1
+}
+[/Frame0]
+
+[Frame5]
+@Hud {
+    z_index = 4
+}
+[/Frame5]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+    let track = clip
+        .object_tracks
+        .iter()
+        .find(|t| matches!(t.field, NodeField::Node2D(Node2DField::ZIndex)))
+        .expect("z_index track");
+    assert_eq!(track.keys.len(), 2);
+    assert!(matches!(track.keys[0].value, AnimationTrackValue::I32(1)));
+    assert!(matches!(track.keys[1].value, AnimationTrackValue::I32(4)));
+}
+
+#[test]
+fn parses_every_interp_and_ease_combo_on_defaults() {
+    let interp_cases = [
+        ("step", AnimationInterpolation::Step),
+        ("interpolate", AnimationInterpolation::Linear),
+        ("linear", AnimationInterpolation::Linear),
+        ("lerp", AnimationInterpolation::Linear),
+        ("slerp", AnimationInterpolation::Linear),
+    ];
+    let ease_cases = [
+        ("linear", AnimationEase::Linear),
+        ("ease_in", AnimationEase::EaseIn),
+        ("ease_out", AnimationEase::EaseOut),
+        ("ease_in_out", AnimationEase::EaseInOut),
+        ("easein", AnimationEase::EaseIn),
+        ("easeout", AnimationEase::EaseOut),
+        ("easeinout", AnimationEase::EaseInOut),
+        ("in", AnimationEase::EaseIn),
+        ("out", AnimationEase::EaseOut),
+    ];
+
+    for (interp_token, interp_expected) in interp_cases {
+        for (ease_token, ease_expected) in ease_cases {
+            let src = format!(
+                r#"
+[Animation]
+name = "Combo"
+fps = 30
+default_interp = "{interp_token}"
+default_ease = "{ease_token}"
+[/Animation]
+
+[Objects]
+@Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {{
+    position = (0,0,0)
+}}
+[/Frame0]
+
+[Frame10]
+@Hero {{
+    position = (10,0,0)
+}}
+[/Frame10]
+"#
+            );
+
+            let clip = parse_panim(&src).unwrap_or_else(|e| {
+                panic!(
+                    "failed parsing combo interp={} ease={}: {}",
+                    interp_token, ease_token, e
+                )
+            });
+            let track = clip
+                .object_tracks
+                .iter()
+                .find(|t| matches!(t.field, NodeField::Node3D(Node3DField::Position)))
+                .expect("position track");
+            assert_eq!(track.keys.len(), 2);
+            assert_eq!(
+                track.keys[0].interpolation, interp_expected,
+                "interp token {}",
+                interp_token
+            );
+            assert_eq!(track.keys[1].interpolation, interp_expected);
+            assert_eq!(track.keys[0].ease, ease_expected, "ease token {}", ease_token);
+            assert_eq!(track.keys[1].ease, ease_expected);
+        }
+    }
+}
+
+#[test]
+fn track_controls_persist_until_reset() {
+    let src = r#"
+[Animation]
+name = "Persist"
+fps = 30
+[/Animation]
+
+[Objects]
+@Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    position.interp = "step"
+    position.ease = "ease_in"
+    position = (0,0,0)
+}
+[/Frame0]
+
+[Frame5]
+@Hero {
+    position = (5,0,0)
+}
+[/Frame5]
+
+[Frame8]
+@Hero {
+    position.interp = "interpolate"
+    position.ease = "ease_out"
+    position = (8,0,0)
+}
+[/Frame8]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+    let track = clip
+        .object_tracks
+        .iter()
+        .find(|t| matches!(t.field, NodeField::Node3D(Node3DField::Position)))
+        .expect("position track");
+
+    assert_eq!(track.keys.len(), 3);
+    assert_eq!(track.keys[0].interpolation, AnimationInterpolation::Step);
+    assert_eq!(track.keys[1].interpolation, AnimationInterpolation::Step);
+    assert_eq!(track.keys[2].interpolation, AnimationInterpolation::Linear);
+    assert_eq!(track.keys[0].ease, AnimationEase::EaseIn);
+    assert_eq!(track.keys[1].ease, AnimationEase::EaseIn);
+    assert_eq!(track.keys[2].ease, AnimationEase::EaseOut);
+}
+
+#[test]
+fn track_control_only_affects_following_keys_in_same_frame() {
+    let src = r#"
+[Animation]
+name = "Order"
+fps = 30
+[/Animation]
+
+[Objects]
+@Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    position = (0,0,0)
+    position.interp = "step"
+    position.ease = "ease_in"
+}
+[/Frame0]
+
+[Frame10]
+@Hero {
+    position = (10,0,0)
+}
+[/Frame10]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+    let track = clip
+        .object_tracks
+        .iter()
+        .find(|t| matches!(t.field, NodeField::Node3D(Node3DField::Position)))
+        .expect("position track");
+
+    assert_eq!(track.keys.len(), 2);
+    assert_eq!(track.keys[0].interpolation, AnimationInterpolation::Linear);
+    assert_eq!(track.keys[0].ease, AnimationEase::Linear);
+    assert_eq!(track.keys[1].interpolation, AnimationInterpolation::Step);
+    assert_eq!(track.keys[1].ease, AnimationEase::EaseIn);
+}
+
+#[test]
+fn rejects_unknown_interp_and_ease_tokens() {
+    let bad_interp = r#"
+[Animation]
+name = "BadInterp"
+fps = 30
+[/Animation]
+
+[Objects]
+@Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    position.interp = "cubic"
+    position = (0,0,0)
+}
+[/Frame0]
+"#;
+    let err = parse_panim(bad_interp).expect_err("expected parse failure");
+    assert!(err.contains("unknown interpolation"));
+
+    let bad_ease = r#"
+[Animation]
+name = "BadEase"
+fps = 30
+[/Animation]
+
+[Objects]
+@Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    position.ease = "bounce"
+    position = (0,0,0)
+}
+[/Frame0]
+"#;
+    let err = parse_panim(bad_ease).expect_err("expected parse failure");
+    assert!(err.contains("unknown ease"));
+}

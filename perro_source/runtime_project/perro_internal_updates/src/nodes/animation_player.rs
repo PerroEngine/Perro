@@ -1,13 +1,15 @@
 use crate::prelude::*;
 use perro_animation::{
-    AnimationChannel, AnimationInterpolation, AnimationObjectTrack, AnimationTrackValue,
-    Camera3DChannel, Light3DChannel, Node2DChannel, Node3DChannel, PointLight3DChannel,
-    SpotLight3DChannel,
+    AnimationEase, AnimationInterpolation, AnimationObjectTrack, AnimationTrackValue,
+};
+use perro_scene::{
+    Camera3DField, Light3DField, MeshInstance3DField, Node2DField, Node3DField, NodeField,
+    PointLight3DField, Sprite2DField, SpotLight3DField,
 };
 use perro_nodes::animation_player::{AnimationObjectBinding, AnimationPlaybackType};
 use perro_nodes::{
-    AmbientLight3D, AnimationPlayer, Camera3D, Node2D, Node3D, PointLight3D, RayLight3D,
-    SpotLight3D,
+    AmbientLight3D, AnimationPlayer, Camera3D, MeshInstance3D, Node2D, Node3D, PointLight3D,
+    RayLight3D, Sprite2D, SpotLight3D,
 };
 use std::sync::Arc;
 
@@ -43,7 +45,7 @@ pub fn internal_update<RT, R, IP>(
         return;
     }
 
-    apply_clip_frame(ctx, &clip, step.frame, &step.bindings);
+    apply_clip_frame(ctx, res, &clip, step.frame, &step.bindings);
 }
 
 pub fn internal_fixed_update<RT, R, IP>(
@@ -124,6 +126,7 @@ where
 
 fn apply_clip_frame<RT>(
     ctx: &mut RuntimeContext<'_, RT>,
+    res: &ResourceContext<'_, impl ResourceAPI + ?Sized>,
     clip: &Arc<perro_animation::AnimationClip>,
     frame: u32,
     bindings: &[AnimationObjectBinding],
@@ -135,13 +138,14 @@ fn apply_clip_frame<RT>(
             .iter()
             .filter(|b| b.object.as_ref() == track.object.as_ref())
         {
-            apply_track(ctx, binding.node, track, frame);
+            apply_track(ctx, res, binding.node, track, frame);
         }
     }
 }
 
 fn apply_track<RT>(
     ctx: &mut RuntimeContext<'_, RT>,
+    res: &ResourceContext<'_, impl ResourceAPI + ?Sized>,
     node_id: NodeID,
     track: &AnimationObjectTrack,
     frame: u32,
@@ -152,44 +156,75 @@ fn apply_track<RT>(
         return;
     };
 
-    match &track.channel {
-        AnimationChannel::Node2D(channel) => match channel {
-            Node2DChannel::Transform => {
-                if let AnimationTrackValue::Transform2D(value) = value {
-                    let _ = with_base_node_mut!(ctx, Node2D, node_id, |node| {
-                        node.transform = *value;
-                    });
-                }
+    match track.field {
+        NodeField::Node2D(Node2DField::Position)
+        | NodeField::Node2D(Node2DField::Rotation)
+        | NodeField::Node2D(Node2DField::Scale) => {
+            if let AnimationTrackValue::Transform2D(value) = value {
+                let _ = with_base_node_mut!(ctx, Node2D, node_id, |node| {
+                    node.transform = value;
+                });
             }
-            Node2DChannel::Visible => {
-                if let AnimationTrackValue::Bool(value) = value {
-                    let _ = with_base_node_mut!(ctx, Node2D, node_id, |node| {
-                        node.visible = *value;
-                    });
-                }
+        }
+        NodeField::Node2D(Node2DField::Visible) => {
+            if let AnimationTrackValue::Bool(value) = value {
+                let _ = with_base_node_mut!(ctx, Node2D, node_id, |node| {
+                    node.visible = value;
+                });
             }
-        },
-        AnimationChannel::Node3D(channel) => match channel {
-            Node3DChannel::Transform => {
-                if let AnimationTrackValue::Transform3D(value) = value {
-                    let _ = with_base_node_mut!(ctx, Node3D, node_id, |node| {
-                        node.transform = *value;
-                    });
-                }
+        }
+        NodeField::Node2D(Node2DField::ZIndex) => {
+            if let Some(value) = as_i32_track(&value) {
+                let _ = with_base_node_mut!(ctx, Node2D, node_id, |node| {
+                    node.z_index = value;
+                });
             }
-            Node3DChannel::Visible => {
-                if let AnimationTrackValue::Bool(value) = value {
-                    let _ = with_base_node_mut!(ctx, Node3D, node_id, |node| {
-                        node.visible = *value;
-                    });
-                }
+        }
+        NodeField::Node3D(Node3DField::Position)
+        | NodeField::Node3D(Node3DField::Rotation)
+        | NodeField::Node3D(Node3DField::Scale) => {
+            if let AnimationTrackValue::Transform3D(value) = value {
+                let _ = with_base_node_mut!(ctx, Node3D, node_id, |node| {
+                    node.transform = value;
+                });
             }
-        },
-        AnimationChannel::Camera3D(channel) => {
-            if let Some(v) = as_f32_track(value) {
+        }
+        NodeField::Node3D(Node3DField::Visible) => {
+            if let AnimationTrackValue::Bool(value) = value {
+                let _ = with_base_node_mut!(ctx, Node3D, node_id, |node| {
+                    node.visible = value;
+                });
+            }
+        }
+        NodeField::Sprite2D(Sprite2DField::Texture) => {
+            if let AnimationTrackValue::AssetPath(path) = value {
+                let id = texture_load!(res, path.as_ref());
+                let _ = with_base_node_mut!(ctx, Sprite2D, node_id, |node| {
+                    node.texture = id;
+                });
+            }
+        }
+        NodeField::MeshInstance3D(MeshInstance3DField::Mesh) => {
+            if let AnimationTrackValue::AssetPath(path) = value {
+                let id = mesh_load!(res, path.as_ref());
+                let _ = with_base_node_mut!(ctx, MeshInstance3D, node_id, |node| {
+                    node.mesh = id;
+                });
+            }
+        }
+        NodeField::MeshInstance3D(MeshInstance3DField::Material) => {
+            if let AnimationTrackValue::AssetPath(path) = value {
+                let id = material_load!(res, path.as_ref());
+                let _ = with_base_node_mut!(ctx, MeshInstance3D, node_id, |node| {
+                    node.material = id;
+                });
+            }
+        }
+        NodeField::Camera3D(channel) => {
+            if let Some(v) = as_f32_track(&value) {
                 let _ = with_base_node_mut!(ctx, Camera3D, node_id, |camera| match channel {
-                    Camera3DChannel::Zoom => apply_camera_zoom(camera, v),
-                    Camera3DChannel::PerspectiveFovYDegrees => {
+                    Camera3DField::Zoom => apply_camera_zoom(camera, v),
+                    Camera3DField::PerspectiveFovYDegrees => {
                         if let perro_nodes::CameraProjection::Perspective {
                             fov_y_degrees, ..
                         } = &mut camera.projection
@@ -197,7 +232,7 @@ fn apply_track<RT>(
                             *fov_y_degrees = v.clamp(10.0, 120.0);
                         }
                     }
-                    Camera3DChannel::PerspectiveNear => {
+                    Camera3DField::PerspectiveNear => {
                         if let perro_nodes::CameraProjection::Perspective { near, far, .. } =
                             &mut camera.projection
                         {
@@ -207,21 +242,21 @@ fn apply_track<RT>(
                             }
                         }
                     }
-                    Camera3DChannel::PerspectiveFar => {
+                    Camera3DField::PerspectiveFar => {
                         if let perro_nodes::CameraProjection::Perspective { near, far, .. } =
                             &mut camera.projection
                         {
                             *far = v.max(*near + 0.001);
                         }
                     }
-                    Camera3DChannel::OrthographicSize => {
+                    Camera3DField::OrthographicSize => {
                         if let perro_nodes::CameraProjection::Orthographic { size, .. } =
                             &mut camera.projection
                         {
                             *size = v.abs().max(0.001);
                         }
                     }
-                    Camera3DChannel::OrthographicNear => {
+                    Camera3DField::OrthographicNear => {
                         if let perro_nodes::CameraProjection::Orthographic { near, far, .. } =
                             &mut camera.projection
                         {
@@ -231,14 +266,14 @@ fn apply_track<RT>(
                             }
                         }
                     }
-                    Camera3DChannel::OrthographicFar => {
+                    Camera3DField::OrthographicFar => {
                         if let perro_nodes::CameraProjection::Orthographic { near, far, .. } =
                             &mut camera.projection
                         {
                             *far = v.max(*near + 0.001);
                         }
                     }
-                    Camera3DChannel::FrustumLeft => {
+                    Camera3DField::FrustumLeft => {
                         if let perro_nodes::CameraProjection::Frustum { left, right, .. } =
                             &mut camera.projection
                         {
@@ -248,14 +283,14 @@ fn apply_track<RT>(
                             }
                         }
                     }
-                    Camera3DChannel::FrustumRight => {
+                    Camera3DField::FrustumRight => {
                         if let perro_nodes::CameraProjection::Frustum { left, right, .. } =
                             &mut camera.projection
                         {
                             *right = v.max(*left + 0.001);
                         }
                     }
-                    Camera3DChannel::FrustumBottom => {
+                    Camera3DField::FrustumBottom => {
                         if let perro_nodes::CameraProjection::Frustum { bottom, top, .. } =
                             &mut camera.projection
                         {
@@ -265,14 +300,14 @@ fn apply_track<RT>(
                             }
                         }
                     }
-                    Camera3DChannel::FrustumTop => {
+                    Camera3DField::FrustumTop => {
                         if let perro_nodes::CameraProjection::Frustum { bottom, top, .. } =
                             &mut camera.projection
                         {
                             *top = v.max(*bottom + 0.001);
                         }
                     }
-                    Camera3DChannel::FrustumNear => {
+                    Camera3DField::FrustumNear => {
                         if let perro_nodes::CameraProjection::Frustum { near, far, .. } =
                             &mut camera.projection
                         {
@@ -282,28 +317,30 @@ fn apply_track<RT>(
                             }
                         }
                     }
-                    Camera3DChannel::FrustumFar => {
+                    Camera3DField::FrustumFar => {
                         if let perro_nodes::CameraProjection::Frustum { near, far, .. } =
                             &mut camera.projection
                         {
                             *far = v.max(*near + 0.001);
                         }
                     }
-                    Camera3DChannel::Active => {}
+                    Camera3DField::Active
+                    | Camera3DField::Projection
+                    | Camera3DField::PostProcessing => {}
                 });
             }
-            if matches!(channel, Camera3DChannel::Active)
+            if matches!(channel, Camera3DField::Active)
                 && let AnimationTrackValue::Bool(active) = value
             {
                 let _ = with_base_node_mut!(ctx, Camera3D, node_id, |camera| {
-                    camera.active = *active;
+                    camera.active = active;
                 });
             }
         }
-        AnimationChannel::Light3D(channel) => match channel {
-            Light3DChannel::Color => {
+        NodeField::Light3D(channel) => match channel {
+            Light3DField::Color => {
                 if let AnimationTrackValue::Vec3(color) = value {
-                    let c = *color;
+                    let c = color;
                     if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.color = c).is_none() {
                         if with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.color = c)
                             .is_none()
@@ -311,16 +348,16 @@ fn apply_track<RT>(
                             if with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.color = c)
                                 .is_none()
                             {
-                                let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| n
-                                    .color =
-                                    c);
+                                let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| {
+                                    n.color = c
+                                });
                             }
                         }
                     }
                 }
             }
-            Light3DChannel::Intensity => {
-                if let Some(v) = as_f32_track(value) {
+            Light3DField::Intensity => {
+                if let Some(v) = as_f32_track(&value) {
                     if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.intensity = v).is_none()
                     {
                         if with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.intensity = v)
@@ -337,17 +374,17 @@ fn apply_track<RT>(
                     }
                 }
             }
-            Light3DChannel::Active => {
+            Light3DField::Active => {
                 if let AnimationTrackValue::Bool(v) = value {
-                    if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.active = *v).is_none() {
-                        if with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.active = *v)
+                    if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.active = v).is_none() {
+                        if with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.active = v)
                             .is_none()
                         {
-                            if with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.active = *v)
+                            if with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.active = v)
                                 .is_none()
                             {
                                 let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| {
-                                    n.active = *v
+                                    n.active = v
                                 });
                             }
                         }
@@ -355,25 +392,23 @@ fn apply_track<RT>(
                 }
             }
         },
-        AnimationChannel::PointLight3D(channel) => match channel {
-            PointLight3DChannel::Range => {
-                if let Some(v) = as_f32_track(value) {
-                    let _ = with_base_node_mut!(ctx, PointLight3D, node_id, |node| {
-                        node.range = v;
-                    });
-                }
-            }
-        },
-        AnimationChannel::SpotLight3D(channel) => {
-            if let Some(v) = as_f32_track(value) {
-                let _ = with_base_node_mut!(ctx, SpotLight3D, node_id, |node| match channel {
-                    SpotLight3DChannel::Range => node.range = v,
-                    SpotLight3DChannel::InnerAngleRadians => node.inner_angle_radians = v,
-                    SpotLight3DChannel::OuterAngleRadians => node.outer_angle_radians = v,
+        NodeField::PointLight3D(PointLight3DField::Range) => {
+            if let Some(v) = as_f32_track(&value) {
+                let _ = with_base_node_mut!(ctx, PointLight3D, node_id, |node| {
+                    node.range = v;
                 });
             }
         }
-        AnimationChannel::Custom(_) => {}
+        NodeField::SpotLight3D(channel) => {
+            if let Some(v) = as_f32_track(&value) {
+                let _ = with_base_node_mut!(ctx, SpotLight3D, node_id, |node| match channel {
+                    SpotLight3DField::Range => node.range = v,
+                    SpotLight3DField::InnerAngleRadians => node.inner_angle_radians = v,
+                    SpotLight3DField::OuterAngleRadians => node.outer_angle_radians = v,
+                });
+            }
+        }
+        _ => {}
     }
 }
 
@@ -383,6 +418,27 @@ fn as_f32_track(value: &AnimationTrackValue) -> Option<f32> {
         AnimationTrackValue::F32(v) => Some(*v),
         AnimationTrackValue::I32(v) => Some(*v as f32),
         AnimationTrackValue::U32(v) => Some(*v as f32),
+        _ => None,
+    }
+}
+
+#[inline]
+fn as_i32_track(value: &AnimationTrackValue) -> Option<i32> {
+    match value {
+        AnimationTrackValue::I32(v) => Some(*v),
+        AnimationTrackValue::U32(v) => i32::try_from(*v).ok(),
+        AnimationTrackValue::F32(v) => {
+            if v.is_finite() {
+                let rounded = v.round();
+                if rounded >= i32::MIN as f32 && rounded <= i32::MAX as f32 {
+                    Some(rounded as i32)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }
@@ -402,7 +458,7 @@ fn apply_camera_zoom(camera: &mut Camera3D, zoom: f32) {
     }
 }
 
-fn sample_track_value(track: &AnimationObjectTrack, frame: u32) -> Option<&AnimationTrackValue> {
+fn sample_track_value(track: &AnimationObjectTrack, frame: u32) -> Option<AnimationTrackValue> {
     if track.keys.is_empty() {
         return None;
     }
@@ -419,16 +475,100 @@ fn sample_track_value(track: &AnimationObjectTrack, frame: u32) -> Option<&Anima
     }
 
     let prev_index = prev_index.or(Some(0))?;
-    let prev = &track.keys[prev_index].value;
+    let prev_key = &track.keys[prev_index];
+    let prev = &prev_key.value;
 
-    match track.interpolation {
-        AnimationInterpolation::Step => Some(prev),
+    let interpolation = prev_key.interpolation;
+    let ease = prev_key.ease;
+    match interpolation {
+        AnimationInterpolation::Step => Some(prev.clone()),
         AnimationInterpolation::Linear => {
-            // Linear interpolation for typed payloads will be added as parser/runtime finalization.
-            let _ = next_index;
-            Some(prev)
+            let Some(next_index) = next_index else {
+                return Some(prev.clone());
+            };
+            let next_key = &track.keys[next_index];
+            let frame_span = next_key.frame.saturating_sub(prev_key.frame);
+            if frame_span == 0 {
+                return Some(prev.clone());
+            }
+
+            let local = frame.saturating_sub(prev_key.frame);
+            let t = (local as f32 / frame_span as f32).clamp(0.0, 1.0);
+            let t = ease_sample(ease, t);
+            Some(interpolate_values(prev, &next_key.value, t))
         }
     }
+}
+
+#[inline]
+fn ease_sample(ease: AnimationEase, t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    match ease {
+        AnimationEase::Linear => t,
+        AnimationEase::EaseIn => t * t,
+        AnimationEase::EaseOut => 1.0 - (1.0 - t) * (1.0 - t),
+        AnimationEase::EaseInOut => {
+            if t < 0.5 {
+                2.0 * t * t
+            } else {
+                1.0 - ((-2.0 * t + 2.0) * (-2.0 * t + 2.0)) * 0.5
+            }
+        }
+    }
+}
+
+fn interpolate_values(a: &AnimationTrackValue, b: &AnimationTrackValue, t: f32) -> AnimationTrackValue {
+    match (a, b) {
+        (AnimationTrackValue::F32(a), AnimationTrackValue::F32(b)) => {
+            AnimationTrackValue::F32(lerp_f32(*a, *b, t))
+        }
+        (AnimationTrackValue::I32(a), AnimationTrackValue::I32(b)) => {
+            AnimationTrackValue::I32(lerp_f32(*a as f32, *b as f32, t).round() as i32)
+        }
+        (AnimationTrackValue::U32(a), AnimationTrackValue::U32(b)) => {
+            AnimationTrackValue::U32(lerp_f32(*a as f32, *b as f32, t).round().max(0.0) as u32)
+        }
+        (AnimationTrackValue::Vec2(a), AnimationTrackValue::Vec2(b)) => {
+            AnimationTrackValue::Vec2([lerp_f32(a[0], b[0], t), lerp_f32(a[1], b[1], t)])
+        }
+        (AnimationTrackValue::Vec3(a), AnimationTrackValue::Vec3(b)) => AnimationTrackValue::Vec3([
+            lerp_f32(a[0], b[0], t),
+            lerp_f32(a[1], b[1], t),
+            lerp_f32(a[2], b[2], t),
+        ]),
+        (AnimationTrackValue::Vec4(a), AnimationTrackValue::Vec4(b)) => AnimationTrackValue::Vec4([
+            lerp_f32(a[0], b[0], t),
+            lerp_f32(a[1], b[1], t),
+            lerp_f32(a[2], b[2], t),
+            lerp_f32(a[3], b[3], t),
+        ]),
+        (AnimationTrackValue::Transform2D(a), AnimationTrackValue::Transform2D(b)) => {
+            let mut out = *a;
+            out.position.x = lerp_f32(a.position.x, b.position.x, t);
+            out.position.y = lerp_f32(a.position.y, b.position.y, t);
+            out.rotation = lerp_f32(a.rotation, b.rotation, t);
+            out.scale.x = lerp_f32(a.scale.x, b.scale.x, t);
+            out.scale.y = lerp_f32(a.scale.y, b.scale.y, t);
+            AnimationTrackValue::Transform2D(out)
+        }
+        (AnimationTrackValue::Transform3D(a), AnimationTrackValue::Transform3D(b)) => {
+            let mut out = *a;
+            out.position.x = lerp_f32(a.position.x, b.position.x, t);
+            out.position.y = lerp_f32(a.position.y, b.position.y, t);
+            out.position.z = lerp_f32(a.position.z, b.position.z, t);
+            out.scale.x = lerp_f32(a.scale.x, b.scale.x, t);
+            out.scale.y = lerp_f32(a.scale.y, b.scale.y, t);
+            out.scale.z = lerp_f32(a.scale.z, b.scale.z, t);
+            out.rotation = a.rotation.to_quat().slerp(b.rotation.to_quat(), t).into();
+            AnimationTrackValue::Transform3D(out)
+        }
+        _ => a.clone(),
+    }
+}
+
+#[inline]
+fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
 }
 
 fn advance_time(

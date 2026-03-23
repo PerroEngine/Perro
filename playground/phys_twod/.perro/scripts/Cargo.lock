@@ -1027,6 +1027,7 @@ dependencies = [
  "perro_nodes",
  "perro_resource_context",
  "perro_runtime_context",
+ "perro_scene",
 ]
 
 [[package]]

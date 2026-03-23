@@ -1,12 +1,13 @@
 use crate::{
-    AnimationChannel, AnimationClip, AnimationEvent, AnimationEventScope, AnimationFrameEvent,
-    AnimationInterpolation, AnimationObject, AnimationObjectKey, AnimationObjectTrack,
-    AnimationParam, AnimationTrackValue, Camera3DChannel, Light3DChannel, Node2DChannel,
-    Node3DChannel, PointLight3DChannel, SpotLight3DChannel,
+    AnimationClip, AnimationEvent, AnimationEventScope, AnimationFrameEvent,
+    AnimationEase, AnimationInterpolation, AnimationObject, AnimationObjectKey,
+    AnimationObjectTrack,
+    AnimationParam, AnimationTrackValue,
 };
 use perro_scene::{
-    Camera3DField, Light3DField, Node2DField, Node3DField, NodeField, PointLight3DField,
-    SceneValue, SpotLight3DField, Parser as SceneParser, resolve_node_field,
+    Camera3DField, Light3DField, MeshInstance3DField, Node2DField, Node3DField, NodeField,
+    PointLight3DField, SceneValue, Sprite2DField, SpotLight3DField, Parser as SceneParser,
+    resolve_node_field,
 };
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
@@ -17,4 +18,3 @@ include!("panim/fields.rs");
 include!("panim/tracks.rs");
 include!("panim/events.rs");
 include!("panim/syntax.rs");
-include!("panim/tests.rs");

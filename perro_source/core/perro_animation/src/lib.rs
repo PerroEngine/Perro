@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use perro_scene::{Node3DField, NodeField};
 mod panim;
 pub use panim::parse_panim;
 
@@ -34,17 +35,32 @@ pub struct AnimationObject {
     pub node_type: Cow<'static, str>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct AnimationObjectTrack {
     pub object: Cow<'static, str>,
-    pub channel: AnimationChannel,
+    pub field: NodeField,
     pub interpolation: AnimationInterpolation,
+    pub ease: AnimationEase,
     pub keys: Cow<'static, [AnimationObjectKey]>,
+}
+
+impl Default for AnimationObjectTrack {
+    fn default() -> Self {
+        Self {
+            object: Cow::Borrowed(""),
+            field: NodeField::Node3D(Node3DField::Visible),
+            interpolation: AnimationInterpolation::Linear,
+            ease: AnimationEase::Linear,
+            keys: Cow::Borrowed(&[]),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct AnimationObjectKey {
     pub frame: u32,
+    pub interpolation: AnimationInterpolation,
+    pub ease: AnimationEase,
     pub value: AnimationTrackValue,
 }
 
@@ -52,6 +68,8 @@ impl Default for AnimationObjectKey {
     fn default() -> Self {
         Self {
             frame: 0,
+            interpolation: AnimationInterpolation::Linear,
+            ease: AnimationEase::Linear,
             value: AnimationTrackValue::F32(0.0),
         }
     }
@@ -116,78 +134,22 @@ impl Default for AnimationParam {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AnimationChannel {
-    Node2D(Node2DChannel),
-    Node3D(Node3DChannel),
-    Camera3D(Camera3DChannel),
-    Light3D(Light3DChannel),
-    PointLight3D(PointLight3DChannel),
-    SpotLight3D(SpotLight3DChannel),
-    Custom(Cow<'static, str>),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Node2DChannel {
-    Transform,
-    Visible,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Node3DChannel {
-    Transform,
-    Visible,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Camera3DChannel {
-    Zoom,
-    PerspectiveFovYDegrees,
-    PerspectiveNear,
-    PerspectiveFar,
-    OrthographicSize,
-    OrthographicNear,
-    OrthographicFar,
-    FrustumLeft,
-    FrustumRight,
-    FrustumBottom,
-    FrustumTop,
-    FrustumNear,
-    FrustumFar,
-    Active,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Light3DChannel {
-    Color,
-    Intensity,
-    Active,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PointLight3DChannel {
-    Range,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SpotLight3DChannel {
-    Range,
-    InnerAngleRadians,
-    OuterAngleRadians,
-}
-
-impl Default for AnimationChannel {
-    fn default() -> Self {
-        Self::Custom(Cow::Borrowed("custom"))
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum AnimationInterpolation {
     #[default]
-    Step,
     Linear,
+    Step,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum AnimationEase {
+    #[default]
+    Linear,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
 }
 
 #[derive(Clone, Debug)]
@@ -199,6 +161,7 @@ pub enum AnimationTrackValue {
     Vec2([f32; 2]),
     Vec3([f32; 3]),
     Vec4([f32; 4]),
+    AssetPath(Cow<'static, str>),
     Transform2D(perro_structs::Transform2D),
     Transform3D(perro_structs::Transform3D),
 }

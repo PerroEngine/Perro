@@ -6,6 +6,7 @@ pub fn parse_panim(source: &str) -> Result<AnimationClip, String> {
 struct PanimParser<'a> {
     lines: Vec<&'a str>,
     index: usize,
+    vars: HashMap<String, SceneValue>,
 }
 
 impl<'a> PanimParser<'a> {
@@ -13,12 +14,15 @@ impl<'a> PanimParser<'a> {
         Self {
             lines: source.lines().collect(),
             index: 0,
+            vars: HashMap::new(),
         }
     }
 
     fn parse(&mut self) -> Result<AnimationClip, String> {
         let mut name = Cow::Borrowed("Animation");
         let mut fps = 60.0f32;
+        let mut default_interpolation = AnimationInterpolation::Linear;
+        let mut default_ease = AnimationEase::Linear;
         let mut objects: Vec<AnimationObject> = Vec::new();
         let mut object_types = HashMap::<String, String>::new();
         let mut frame_actions: Vec<FrameAction> = Vec::new();
@@ -29,11 +33,18 @@ impl<'a> PanimParser<'a> {
             if line.is_empty() {
                 continue;
             }
+            if let Some((name, value_src)) = parse_top_level_var_assign(line) {
+                let value = self.parse_value_with_vars(value_src, line_no)?;
+                self.vars.insert(name.to_string(), value);
+                continue;
+            }
 
             if line.eq_ignore_ascii_case("[Animation]") {
-                let (n, f) = self.parse_animation_block(line_no)?;
+                let (n, f, interp, ease) = self.parse_animation_block(line_no)?;
                 name = Cow::Owned(n);
                 fps = f;
+                default_interpolation = interp;
+                default_ease = ease;
                 continue;
             }
             if line.eq_ignore_ascii_case("[Objects]") {
@@ -58,7 +69,12 @@ impl<'a> PanimParser<'a> {
         }
 
         let (object_tracks, mut frame_events) =
-            build_tracks_and_events(frame_actions, &object_types)?;
+            build_tracks_and_events(
+                frame_actions,
+                &object_types,
+                default_interpolation,
+                default_ease,
+            )?;
         frame_events.sort_by_key(|e| e.frame);
 
         let total_frames = max_frame.saturating_add(1).max(1);
@@ -73,9 +89,14 @@ impl<'a> PanimParser<'a> {
         })
     }
 
-    fn parse_animation_block(&mut self, start_line: usize) -> Result<(String, f32), String> {
+    fn parse_animation_block(
+        &mut self,
+        start_line: usize,
+    ) -> Result<(String, f32, AnimationInterpolation, AnimationEase), String> {
         let mut name = String::from("Animation");
         let mut fps = 60.0f32;
+        let mut default_interpolation = AnimationInterpolation::Linear;
+        let mut default_ease = AnimationEase::Linear;
 
         while let Some((line_no, line)) = self.next_line() {
             let line = strip_comment(line).trim();
@@ -89,13 +110,13 @@ impl<'a> PanimParser<'a> {
                         start_line
                     ));
                 }
-                return Ok((name, fps));
+                return Ok((name, fps, default_interpolation, default_ease));
             }
 
             let Some((k, v)) = split_key_value(line) else {
                 return Err(format!("line {}: expected `key = value`", line_no));
             };
-            let value = parse_scene_value(v, line_no)?;
+            let value = self.parse_value_with_vars(v, line_no)?;
             match k {
                 "name" => {
                     name = as_text(&value)
@@ -106,6 +127,12 @@ impl<'a> PanimParser<'a> {
                     fps = value
                         .as_f32()
                         .ok_or_else(|| format!("line {}: fps must be a number", line_no))?;
+                }
+                "default_interp" | "default_interpolation" => {
+                    default_interpolation = parse_interpolation_value(&value, line_no)?;
+                }
+                "default_ease" | "default_easing" => {
+                    default_ease = parse_ease_value(&value, line_no)?;
                 }
                 _ => {}
             }
@@ -142,7 +169,7 @@ impl<'a> PanimParser<'a> {
                 return Err(format!("line {}: object name cannot be empty", line_no));
             }
 
-            let ty_value = parse_scene_value(ty.trim(), line_no)?;
+            let ty_value = self.parse_value_with_vars(ty.trim(), line_no)?;
             let ty = as_text(&ty_value)
                 .ok_or_else(|| format!("line {}: object type must be text", line_no))?;
             objects.push(AnimationObject {
@@ -248,7 +275,13 @@ impl<'a> PanimParser<'a> {
                     event: parse_call_method(v, line_no)?,
                 }),
                 _ => {
-                    let value = parse_scene_value(v, line_no)?;
+                    let value = self.parse_value_with_vars(v, line_no)?;
+                    if let Some(action) = parse_track_control_action(
+                        frame, &object, node_type, k, &value, line_no,
+                    )? {
+                        actions.push(action);
+                        continue;
+                    }
                     actions.push(parse_object_field_action(
                         frame, &object, node_type, k, &value, line_no,
                     )?);
@@ -271,5 +304,39 @@ impl<'a> PanimParser<'a> {
         self.index += 1;
         Some((line_no, line))
     }
+
+    fn parse_value_with_vars(&self, value_src: &str, line_no: usize) -> Result<SceneValue, String> {
+        let value_src = value_src.trim();
+        if let Some(var_name) = value_src.strip_prefix('@')
+            && !var_name.is_empty()
+            && var_name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return self
+                .vars
+                .get(var_name)
+                .cloned()
+                .ok_or_else(|| format!("line {}: unknown variable `@{}`", line_no, var_name));
+        }
+        parse_scene_value(value_src, line_no)
+    }
+}
+
+fn parse_top_level_var_assign(line: &str) -> Option<(&str, &str)> {
+    let rest = line.strip_prefix('@')?;
+    let (name, value) = rest.split_once('=')?;
+    let name = name.trim();
+    let value = value.trim();
+    if name.is_empty() || value.is_empty() {
+        return None;
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return None;
+    }
+    Some((name, value))
 }
 
