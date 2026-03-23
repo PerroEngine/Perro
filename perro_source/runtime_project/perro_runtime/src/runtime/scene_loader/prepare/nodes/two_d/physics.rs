@@ -39,39 +39,43 @@ fn build_area_2d(data: &SceneDefNodeData) -> Area2D {
 }
 
 fn apply_collision_shape_2d_fields(node: &mut CollisionShape2D, fields: &[SceneObjectField]) {
-    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
-            "shape" => {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("CollisionShape2D", name) {
+            Some(NodeField::CollisionShape2D(CollisionShape2DField::Shape)) => {
                 if let Some(shape) = as_shape_2d(value) {
                     node.shape = shape;
                 }
             }
-            "sensor" => {
+            Some(NodeField::CollisionShape2D(CollisionShape2DField::Sensor)) => {
                 if let Some(sensor) = as_bool(value) {
                     node.sensor = sensor;
                 }
             }
-            "friction" => {
+            Some(NodeField::CollisionShape2D(CollisionShape2DField::Friction)) => {
                 if let Some(friction) = as_f32(value) {
                     node.friction = friction;
                 }
             }
-            "restitution" => {
+            Some(NodeField::CollisionShape2D(CollisionShape2DField::Restitution)) => {
                 if let Some(restitution) = as_f32(value) {
                     node.restitution = restitution;
                 }
             }
-            "density" => {
+            Some(NodeField::CollisionShape2D(CollisionShape2DField::Density)) => {
                 if let Some(density) = as_f32(value) {
                     node.density = density;
                 }
             }
             _ => {}
-        });
+        }
+    });
 }
 
 fn apply_static_body_2d_fields(node: &mut StaticBody2D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
-        if name == "enabled" {
+        if resolve_node_field("StaticBody2D", name)
+            == Some(NodeField::StaticBody2D(StaticBody2DField::Enabled))
+        {
             if let Some(enabled) = as_bool(value) {
                 node.enabled = enabled;
             }
@@ -80,54 +84,56 @@ fn apply_static_body_2d_fields(node: &mut StaticBody2D, fields: &[SceneObjectFie
 }
 
 fn apply_rigid_body_2d_fields(node: &mut RigidBody2D, fields: &[SceneObjectField]) {
-    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
-            "enabled" => {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("RigidBody2D", name) {
+            Some(NodeField::RigidBody2D(RigidBody2DField::Enabled)) => {
                 if let Some(enabled) = as_bool(value) {
                     node.enabled = enabled;
                 }
             }
-            "linear_velocity" | "velocity" => {
+            Some(NodeField::RigidBody2D(RigidBody2DField::LinearVelocity)) => {
                 if let Some(velocity) = as_vec2(value) {
                     node.linear_velocity = velocity;
                 }
             }
-            "angular_velocity" => {
+            Some(NodeField::RigidBody2D(RigidBody2DField::AngularVelocity)) => {
                 if let Some(angular_velocity) = as_f32(value) {
                     node.angular_velocity = angular_velocity;
                 }
             }
-            "gravity_scale" => {
+            Some(NodeField::RigidBody2D(RigidBody2DField::GravityScale)) => {
                 if let Some(gravity_scale) = as_f32(value) {
                     node.gravity_scale = gravity_scale;
                 }
             }
-            "linear_damping" => {
+            Some(NodeField::RigidBody2D(RigidBody2DField::LinearDamping)) => {
                 if let Some(linear_damping) = as_f32(value) {
                     node.linear_damping = linear_damping;
                 }
             }
-            "angular_damping" => {
+            Some(NodeField::RigidBody2D(RigidBody2DField::AngularDamping)) => {
                 if let Some(angular_damping) = as_f32(value) {
                     node.angular_damping = angular_damping;
                 }
             }
-            "can_sleep" => {
+            Some(NodeField::RigidBody2D(RigidBody2DField::CanSleep)) => {
                 if let Some(can_sleep) = as_bool(value) {
                     node.can_sleep = can_sleep;
                 }
             }
-            "lock_rotation" => {
+            Some(NodeField::RigidBody2D(RigidBody2DField::LockRotation)) => {
                 if let Some(lock_rotation) = as_bool(value) {
                     node.lock_rotation = lock_rotation;
                 }
             }
             _ => {}
-        });
+        }
+    });
 }
 
 fn apply_area_2d_fields(node: &mut Area2D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
-        if name == "enabled" {
+        if resolve_node_field("Area2D", name) == Some(NodeField::Area2D(Area2DField::Enabled)) {
             if let Some(enabled) = as_bool(value) {
                 node.enabled = enabled;
             }

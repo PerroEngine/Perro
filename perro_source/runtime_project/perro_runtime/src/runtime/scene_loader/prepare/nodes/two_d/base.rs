@@ -24,27 +24,27 @@ fn apply_node_2d_data(target: &mut Node2D, data: &SceneDefNodeData) {
 fn apply_node_2d_fields(node: &mut Node2D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         match resolve_node_field("Node2D", name) {
-            Some(NodeField::Position2D) => {
+            Some(NodeField::Node2D(Node2DField::Position)) => {
                 if let Some((x, y)) = value.as_vec2() {
                     node.transform.position = Vector2 { x, y };
                 }
             }
-            Some(NodeField::Scale2D) => {
+            Some(NodeField::Node2D(Node2DField::Scale)) => {
                 if let Some((x, y)) = value.as_vec2() {
                     node.transform.scale = Vector2 { x, y };
                 }
             }
-            Some(NodeField::Rotation2D) => {
+            Some(NodeField::Node2D(Node2DField::Rotation)) => {
                 if let Some(v) = value.as_f32() {
                     node.transform.rotation = v;
                 }
             }
-            Some(NodeField::ZIndex2D) => {
+            Some(NodeField::Node2D(Node2DField::ZIndex)) => {
                 if let Some(v) = value.as_i32() {
                     node.z_index = v;
                 }
             }
-            Some(NodeField::Visible2D) => {
+            Some(NodeField::Node2D(Node2DField::Visible)) => {
                 if let Some(v) = value.as_bool() {
                     node.visible = v;
                 }

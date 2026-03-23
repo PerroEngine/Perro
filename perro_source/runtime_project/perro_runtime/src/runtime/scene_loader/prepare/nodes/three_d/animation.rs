@@ -9,37 +9,36 @@ fn build_animation_player(data: &SceneDefNodeData) -> AnimationPlayer {
 }
 
 fn apply_animation_player_fields(node: &mut AnimationPlayer, fields: &[SceneObjectField]) {
-    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
-        "speed" => {
-            if let Some(v) = as_f32(value) {
-                node.speed = v;
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("AnimationPlayer", name) {
+            Some(NodeField::AnimationPlayer(AnimationPlayerField::Speed)) => {
+                if let Some(v) = as_f32(value) {
+                    node.speed = v;
+                }
             }
-        }
-        "playing" => {
-            if let Some(v) = as_bool(value) {
-                node.paused = !v;
+            Some(NodeField::AnimationPlayer(AnimationPlayerField::Playing)) => {
+                if let Some(v) = as_bool(value) {
+                    node.paused = !v;
+                }
             }
-        }
-        "paused" => {
-            if let Some(v) = as_bool(value) {
-                node.paused = v;
+            Some(NodeField::AnimationPlayer(AnimationPlayerField::Paused)) => {
+                if let Some(v) = as_bool(value) {
+                    node.paused = v;
+                }
             }
-        }
-        "playback" => {
-            if let Some(playback_type) = parse_animation_playback_type(value) {
-                node.playback_type = playback_type;
+            Some(NodeField::AnimationPlayer(AnimationPlayerField::Playback)) => {
+                if let Some(playback_type) = parse_animation_playback_type(value) {
+                    node.playback_type = playback_type;
+                } else if let Some(v) = as_bool(value) {
+                    node.playback_type = if v {
+                        perro_nodes::AnimationPlaybackType::Loop
+                    } else {
+                        perro_nodes::AnimationPlaybackType::Once
+                    };
+                }
             }
+            _ => {}
         }
-        "loop" | "looping" => {
-            if let Some(v) = as_bool(value) {
-                node.playback_type = if v {
-                    perro_nodes::AnimationPlaybackType::Loop
-                } else {
-                    perro_nodes::AnimationPlaybackType::Once
-                };
-            }
-        }
-        _ => {}
     });
 }
 
@@ -62,7 +61,8 @@ fn extract_animation_source(data: &SceneDefNodeData) -> Option<String> {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
-        (name == "animation")
+        (resolve_node_field("AnimationPlayer", name)
+            == Some(NodeField::AnimationPlayer(AnimationPlayerField::Animation)))
             .then(|| as_asset_source(value))
             .flatten()
     })
@@ -71,7 +71,8 @@ fn extract_animation_source(data: &SceneDefNodeData) -> Option<String> {
 fn extract_animation_scene_bindings(data: &SceneDefNodeData) -> Vec<(String, String)> {
     let mut out = Vec::new();
     SceneFieldIterRef::new(&data.fields).for_each(|name, value| {
-        if name == "bindings"
+        if resolve_node_field("AnimationPlayer", name)
+            == Some(NodeField::AnimationPlayer(AnimationPlayerField::Bindings))
             && let Some(bindings) = parse_animation_bindings(value)
         {
             out = bindings;

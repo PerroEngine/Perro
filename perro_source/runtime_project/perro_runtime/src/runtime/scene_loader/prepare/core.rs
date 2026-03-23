@@ -22,9 +22,13 @@ use perro_nodes::{
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
-    NodeField, Parser, Scene, SceneNodeData as SceneDefNodeData,
-    SceneNodeEntry as SceneDefNodeEntry, SceneFieldIterRef, SceneObjectField, SceneValue,
-    resolve_node_field,
+    AnimationPlayerField, Area2DField, Area3DField, Camera2DField, Camera3DField,
+    CollisionShape2DField, CollisionShape3DField, Light3DField, MeshInstance3DField, Node2DField,
+    Node3DField, NodeField, Parser, ParticleEmitter3DField, PointLight3DField,
+    RayLight3DField, RigidBody2DField, RigidBody3DField, Scene, SceneFieldIterRef,
+    SceneNodeData as SceneDefNodeData, SceneNodeEntry as SceneDefNodeEntry, SceneObjectField,
+    SceneValue, Skeleton3DField, SpotLight3DField, Sprite2DField, StaticBody2DField,
+    StaticBody3DField, TerrainInstance3DField, resolve_node_field,
 };
 use perro_structs::{
     CustomPostParam, CustomPostParamValue, PostProcessEffect, PostProcessSet, Quaternion, Vector2,

@@ -3,112 +3,204 @@ use std::str::FromStr;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeField {
-    // Node2D base
-    Position2D,
-    Rotation2D,
-    Scale2D,
-    Visible2D,
-    ZIndex2D,
-    // Node3D base
-    Position3D,
-    Rotation3D,
-    Scale3D,
-    Visible3D,
-    // Camera2D
-    Camera2DZoom,
-    Camera2DPostProcessing,
-    Camera2DActive,
-    // Physics 2D
-    CollisionShape2DShape,
-    CollisionShape2DSensor,
-    CollisionShape2DFriction,
-    CollisionShape2DRestitution,
-    CollisionShape2DDensity,
-    StaticBody2DEnabled,
-    RigidBody2DEnabled,
-    RigidBody2DLinearVelocity,
-    RigidBody2DAngularVelocity,
-    RigidBody2DGravityScale,
-    RigidBody2DLinearDamping,
-    RigidBody2DAngularDamping,
-    RigidBody2DCanSleep,
-    RigidBody2DLockRotation,
-    Area2DEnabled,
-    // Mesh/Skeleton/Terrain
-    MeshInstance3DMesh,
-    MeshInstance3DMaterial,
-    MeshInstance3DModel,
-    MeshInstance3DSkeleton,
-    Skeleton3DSkeleton,
-    Terrain3DShowDebugVertices,
-    Terrain3DShowDebugEdges,
-    // Camera3D
-    Camera3DZoom,
-    Camera3DProjection,
-    Camera3DPerspectiveFovYDegrees,
-    Camera3DPerspectiveNear,
-    Camera3DPerspectiveFar,
-    Camera3DOrthographicSize,
-    Camera3DOrthographicNear,
-    Camera3DOrthographicFar,
-    Camera3DFrustumLeft,
-    Camera3DFrustumRight,
-    Camera3DFrustumBottom,
-    Camera3DFrustumTop,
-    Camera3DFrustumNear,
-    Camera3DFrustumFar,
-    Camera3DPostProcessing,
-    Camera3DActive,
-    // ParticleEmitter3D
-    ParticleEmitter3DActive,
-    ParticleEmitter3DLooping,
-    ParticleEmitter3DPrewarm,
-    ParticleEmitter3DSpawnRate,
-    ParticleEmitter3DSeed,
-    ParticleEmitter3DParams,
-    ParticleEmitter3DProfile,
-    ParticleEmitter3DSimMode,
-    ParticleEmitter3DRenderMode,
-    // AnimationPlayer
-    AnimationPlayerAnimation,
-    AnimationPlayerBindings,
-    AnimationPlayerSpeed,
-    AnimationPlayerPlaying,
-    AnimationPlayerPaused,
-    AnimationPlayerPlayback,
-    // Lights
-    AmbientLight3DColor,
-    AmbientLight3DIntensity,
-    AmbientLight3DActive,
-    RayLight3DColor,
-    RayLight3DIntensity,
-    RayLight3DActive,
-    RayLight3DVisible,
-    PointLight3DColor,
-    PointLight3DIntensity,
-    PointLight3DRange,
-    PointLight3DActive,
-    SpotLight3DColor,
-    SpotLight3DIntensity,
-    SpotLight3DRange,
-    SpotLight3DInnerAngleRadians,
-    SpotLight3DOuterAngleRadians,
-    SpotLight3DActive,
-    // Physics 3D
-    CollisionShape3DShape,
-    CollisionShape3DSensor,
-    CollisionShape3DFriction,
-    CollisionShape3DRestitution,
-    CollisionShape3DDensity,
-    StaticBody3DEnabled,
-    RigidBody3DEnabled,
-    RigidBody3DLinearVelocity,
-    RigidBody3DAngularVelocity,
-    RigidBody3DGravityScale,
-    RigidBody3DLinearDamping,
-    RigidBody3DAngularDamping,
-    RigidBody3DCanSleep,
-    Area3DEnabled,
+    Node2D(Node2DField),
+    Node3D(Node3DField),
+    Camera2D(Camera2DField),
+    Sprite2D(Sprite2DField),
+    CollisionShape2D(CollisionShape2DField),
+    StaticBody2D(StaticBody2DField),
+    RigidBody2D(RigidBody2DField),
+    Area2D(Area2DField),
+    MeshInstance3D(MeshInstance3DField),
+    Skeleton3D(Skeleton3DField),
+    TerrainInstance3D(TerrainInstance3DField),
+    Camera3D(Camera3DField),
+    ParticleEmitter3D(ParticleEmitter3DField),
+    AnimationPlayer(AnimationPlayerField),
+    Light3D(Light3DField),
+    RayLight3D(RayLight3DField),
+    PointLight3D(PointLight3DField),
+    SpotLight3D(SpotLight3DField),
+    CollisionShape3D(CollisionShape3DField),
+    StaticBody3D(StaticBody3DField),
+    RigidBody3D(RigidBody3DField),
+    Area3D(Area3DField),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Node2DField {
+    Position,
+    Rotation,
+    Scale,
+    Visible,
+    ZIndex,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Node3DField {
+    Position,
+    Rotation,
+    Scale,
+    Visible,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Camera2DField {
+    Zoom,
+    PostProcessing,
+    Active,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sprite2DField {
+    Texture,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CollisionShape2DField {
+    Shape,
+    Sensor,
+    Friction,
+    Restitution,
+    Density,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StaticBody2DField {
+    Enabled,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RigidBody2DField {
+    Enabled,
+    LinearVelocity,
+    AngularVelocity,
+    GravityScale,
+    LinearDamping,
+    AngularDamping,
+    CanSleep,
+    LockRotation,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Area2DField {
+    Enabled,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MeshInstance3DField {
+    Mesh,
+    Material,
+    Model,
+    Skeleton,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Skeleton3DField {
+    Skeleton,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TerrainInstance3DField {
+    ShowDebugVertices,
+    ShowDebugEdges,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Camera3DField {
+    Zoom,
+    Projection,
+    PerspectiveFovYDegrees,
+    PerspectiveNear,
+    PerspectiveFar,
+    OrthographicSize,
+    OrthographicNear,
+    OrthographicFar,
+    FrustumLeft,
+    FrustumRight,
+    FrustumBottom,
+    FrustumTop,
+    FrustumNear,
+    FrustumFar,
+    PostProcessing,
+    Active,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParticleEmitter3DField {
+    Active,
+    Looping,
+    Prewarm,
+    SpawnRate,
+    Seed,
+    Params,
+    Profile,
+    SimMode,
+    RenderMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnimationPlayerField {
+    Animation,
+    Bindings,
+    Speed,
+    Playing,
+    Paused,
+    Playback,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Light3DField {
+    Color,
+    Intensity,
+    Active,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RayLight3DField {
+    Visible,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PointLight3DField {
+    Range,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpotLight3DField {
+    Range,
+    InnerAngleRadians,
+    OuterAngleRadians,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CollisionShape3DField {
+    Shape,
+    Sensor,
+    Friction,
+    Restitution,
+    Density,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StaticBody3DField {
+    Enabled,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RigidBody3DField {
+    Enabled,
+    LinearVelocity,
+    AngularVelocity,
+    GravityScale,
+    LinearDamping,
+    AngularDamping,
+    CanSleep,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Area3DField {
+    Enabled,
 }
 
 pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField> {
@@ -120,149 +212,164 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
 
     match node_type {
         NodeType::Camera2D => match field {
-            "zoom" => Some(NodeField::Camera2DZoom),
-            "post_processing" => Some(NodeField::Camera2DPostProcessing),
-            "active" => Some(NodeField::Camera2DActive),
+            "zoom" => Some(NodeField::Camera2D(Camera2DField::Zoom)),
+            "post_processing" => Some(NodeField::Camera2D(Camera2DField::PostProcessing)),
+            "active" => Some(NodeField::Camera2D(Camera2DField::Active)),
+            _ => None,
+        },
+        NodeType::Sprite2D => match field {
+            "texture" => Some(NodeField::Sprite2D(Sprite2DField::Texture)),
             _ => None,
         },
         NodeType::CollisionShape2D => match field {
-            "shape" => Some(NodeField::CollisionShape2DShape),
-            "sensor" => Some(NodeField::CollisionShape2DSensor),
-            "friction" => Some(NodeField::CollisionShape2DFriction),
-            "restitution" => Some(NodeField::CollisionShape2DRestitution),
-            "density" => Some(NodeField::CollisionShape2DDensity),
+            "shape" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Shape)),
+            "sensor" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Sensor)),
+            "friction" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Friction)),
+            "restitution" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Restitution)),
+            "density" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Density)),
             _ => None,
         },
         NodeType::StaticBody2D => match field {
-            "enabled" => Some(NodeField::StaticBody2DEnabled),
+            "enabled" => Some(NodeField::StaticBody2D(StaticBody2DField::Enabled)),
             _ => None,
         },
         NodeType::RigidBody2D => match field {
-            "enabled" => Some(NodeField::RigidBody2DEnabled),
-            "linear_velocity" | "velocity" => Some(NodeField::RigidBody2DLinearVelocity),
-            "angular_velocity" => Some(NodeField::RigidBody2DAngularVelocity),
-            "gravity_scale" => Some(NodeField::RigidBody2DGravityScale),
-            "linear_damping" => Some(NodeField::RigidBody2DLinearDamping),
-            "angular_damping" => Some(NodeField::RigidBody2DAngularDamping),
-            "can_sleep" => Some(NodeField::RigidBody2DCanSleep),
-            "lock_rotation" => Some(NodeField::RigidBody2DLockRotation),
+            "enabled" => Some(NodeField::RigidBody2D(RigidBody2DField::Enabled)),
+            "linear_velocity" | "velocity" => {
+                Some(NodeField::RigidBody2D(RigidBody2DField::LinearVelocity))
+            }
+            "angular_velocity" => Some(NodeField::RigidBody2D(RigidBody2DField::AngularVelocity)),
+            "gravity_scale" => Some(NodeField::RigidBody2D(RigidBody2DField::GravityScale)),
+            "linear_damping" => Some(NodeField::RigidBody2D(RigidBody2DField::LinearDamping)),
+            "angular_damping" => Some(NodeField::RigidBody2D(RigidBody2DField::AngularDamping)),
+            "can_sleep" => Some(NodeField::RigidBody2D(RigidBody2DField::CanSleep)),
+            "lock_rotation" => Some(NodeField::RigidBody2D(RigidBody2DField::LockRotation)),
             _ => None,
         },
         NodeType::Area2D => match field {
-            "enabled" => Some(NodeField::Area2DEnabled),
+            "enabled" => Some(NodeField::Area2D(Area2DField::Enabled)),
             _ => None,
         },
         NodeType::MeshInstance3D => match field {
-            "mesh" => Some(NodeField::MeshInstance3DMesh),
-            "material" => Some(NodeField::MeshInstance3DMaterial),
-            "model" => Some(NodeField::MeshInstance3DModel),
-            "skeleton" => Some(NodeField::MeshInstance3DSkeleton),
+            "mesh" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Mesh)),
+            "material" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Material)),
+            "model" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Model)),
+            "skeleton" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Skeleton)),
             _ => None,
         },
         NodeType::Skeleton3D => match field {
-            "skeleton" => Some(NodeField::Skeleton3DSkeleton),
+            "skeleton" => Some(NodeField::Skeleton3D(Skeleton3DField::Skeleton)),
             _ => None,
         },
         NodeType::TerrainInstance3D => match field {
-            "show_debug_vertices" => Some(NodeField::Terrain3DShowDebugVertices),
-            "show_debug_edges" => Some(NodeField::Terrain3DShowDebugEdges),
+            "show_debug_vertices" => Some(NodeField::TerrainInstance3D(
+                TerrainInstance3DField::ShowDebugVertices,
+            )),
+            "show_debug_edges" => Some(NodeField::TerrainInstance3D(
+                TerrainInstance3DField::ShowDebugEdges,
+            )),
             _ => None,
         },
         NodeType::Camera3D => match field {
-            "zoom" => Some(NodeField::Camera3DZoom),
-            "projection" => Some(NodeField::Camera3DProjection),
-            "perspective_fov_y_degrees" => Some(NodeField::Camera3DPerspectiveFovYDegrees),
-            "perspective_near" => Some(NodeField::Camera3DPerspectiveNear),
-            "perspective_far" => Some(NodeField::Camera3DPerspectiveFar),
-            "orthographic_size" => Some(NodeField::Camera3DOrthographicSize),
-            "orthographic_near" => Some(NodeField::Camera3DOrthographicNear),
-            "orthographic_far" => Some(NodeField::Camera3DOrthographicFar),
-            "frustum_left" => Some(NodeField::Camera3DFrustumLeft),
-            "frustum_right" => Some(NodeField::Camera3DFrustumRight),
-            "frustum_bottom" => Some(NodeField::Camera3DFrustumBottom),
-            "frustum_top" => Some(NodeField::Camera3DFrustumTop),
-            "frustum_near" => Some(NodeField::Camera3DFrustumNear),
-            "frustum_far" => Some(NodeField::Camera3DFrustumFar),
-            "post_processing" => Some(NodeField::Camera3DPostProcessing),
-            "active" => Some(NodeField::Camera3DActive),
+            "zoom" => Some(NodeField::Camera3D(Camera3DField::Zoom)),
+            "projection" => Some(NodeField::Camera3D(Camera3DField::Projection)),
+            "perspective_fov_y_degrees" => {
+                Some(NodeField::Camera3D(Camera3DField::PerspectiveFovYDegrees))
+            }
+            "perspective_near" => Some(NodeField::Camera3D(Camera3DField::PerspectiveNear)),
+            "perspective_far" => Some(NodeField::Camera3D(Camera3DField::PerspectiveFar)),
+            "orthographic_size" => Some(NodeField::Camera3D(Camera3DField::OrthographicSize)),
+            "orthographic_near" => Some(NodeField::Camera3D(Camera3DField::OrthographicNear)),
+            "orthographic_far" => Some(NodeField::Camera3D(Camera3DField::OrthographicFar)),
+            "frustum_left" => Some(NodeField::Camera3D(Camera3DField::FrustumLeft)),
+            "frustum_right" => Some(NodeField::Camera3D(Camera3DField::FrustumRight)),
+            "frustum_bottom" => Some(NodeField::Camera3D(Camera3DField::FrustumBottom)),
+            "frustum_top" => Some(NodeField::Camera3D(Camera3DField::FrustumTop)),
+            "frustum_near" => Some(NodeField::Camera3D(Camera3DField::FrustumNear)),
+            "frustum_far" => Some(NodeField::Camera3D(Camera3DField::FrustumFar)),
+            "post_processing" => Some(NodeField::Camera3D(Camera3DField::PostProcessing)),
+            "active" => Some(NodeField::Camera3D(Camera3DField::Active)),
             _ => None,
         },
         NodeType::ParticleEmitter3D => match field {
-            "active" => Some(NodeField::ParticleEmitter3DActive),
-            "looping" => Some(NodeField::ParticleEmitter3DLooping),
-            "prewarm" => Some(NodeField::ParticleEmitter3DPrewarm),
-            "spawn_rate" => Some(NodeField::ParticleEmitter3DSpawnRate),
-            "seed" => Some(NodeField::ParticleEmitter3DSeed),
-            "params" => Some(NodeField::ParticleEmitter3DParams),
-            "profile" => Some(NodeField::ParticleEmitter3DProfile),
-            "sim_mode" => Some(NodeField::ParticleEmitter3DSimMode),
-            "render_mode" => Some(NodeField::ParticleEmitter3DRenderMode),
+            "active" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Active)),
+            "looping" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Looping)),
+            "prewarm" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Prewarm)),
+            "spawn_rate" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::SpawnRate)),
+            "seed" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Seed)),
+            "params" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Params)),
+            "profile" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Profile)),
+            "sim_mode" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::SimMode)),
+            "render_mode" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::RenderMode)),
             _ => None,
         },
         NodeType::AnimationPlayer => match field {
-            "animation" => Some(NodeField::AnimationPlayerAnimation),
-            "bindings" => Some(NodeField::AnimationPlayerBindings),
-            "speed" => Some(NodeField::AnimationPlayerSpeed),
-            "playing" => Some(NodeField::AnimationPlayerPlaying),
-            "paused" => Some(NodeField::AnimationPlayerPaused),
-            "playback" | "loop" | "looping" => Some(NodeField::AnimationPlayerPlayback),
+            "animation" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Animation)),
+            "bindings" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Bindings)),
+            "speed" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Speed)),
+            "playing" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Playing)),
+            "paused" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Paused)),
+            "playback" | "loop" | "looping" => {
+                Some(NodeField::AnimationPlayer(AnimationPlayerField::Playback))
+            }
             _ => None,
         },
-        NodeType::AmbientLight3D => match field {
-            "color" => Some(NodeField::AmbientLight3DColor),
-            "intensity" => Some(NodeField::AmbientLight3DIntensity),
-            "active" => Some(NodeField::AmbientLight3DActive),
-            _ => None,
-        },
+        NodeType::AmbientLight3D => resolve_light3d_common(field).map(NodeField::Light3D),
         NodeType::RayLight3D => match field {
-            "color" => Some(NodeField::RayLight3DColor),
-            "intensity" => Some(NodeField::RayLight3DIntensity),
-            "active" => Some(NodeField::RayLight3DActive),
-            "visible" => Some(NodeField::RayLight3DVisible),
-            _ => None,
+            "visible" => Some(NodeField::RayLight3D(RayLight3DField::Visible)),
+            _ => resolve_light3d_common(field).map(NodeField::Light3D),
         },
         NodeType::PointLight3D => match field {
-            "color" => Some(NodeField::PointLight3DColor),
-            "intensity" => Some(NodeField::PointLight3DIntensity),
-            "range" => Some(NodeField::PointLight3DRange),
-            "active" => Some(NodeField::PointLight3DActive),
-            _ => None,
+            "range" => Some(NodeField::PointLight3D(PointLight3DField::Range)),
+            _ => resolve_light3d_common(field).map(NodeField::Light3D),
         },
         NodeType::SpotLight3D => match field {
-            "color" => Some(NodeField::SpotLight3DColor),
-            "intensity" => Some(NodeField::SpotLight3DIntensity),
-            "range" => Some(NodeField::SpotLight3DRange),
-            "inner_angle_radians" => Some(NodeField::SpotLight3DInnerAngleRadians),
-            "outer_angle_radians" => Some(NodeField::SpotLight3DOuterAngleRadians),
-            "active" => Some(NodeField::SpotLight3DActive),
-            _ => None,
+            "range" => Some(NodeField::SpotLight3D(SpotLight3DField::Range)),
+            "inner_angle_radians" => {
+                Some(NodeField::SpotLight3D(SpotLight3DField::InnerAngleRadians))
+            }
+            "outer_angle_radians" => {
+                Some(NodeField::SpotLight3D(SpotLight3DField::OuterAngleRadians))
+            }
+            _ => resolve_light3d_common(field).map(NodeField::Light3D),
         },
         NodeType::CollisionShape3D => match field {
-            "shape" => Some(NodeField::CollisionShape3DShape),
-            "sensor" => Some(NodeField::CollisionShape3DSensor),
-            "friction" => Some(NodeField::CollisionShape3DFriction),
-            "restitution" => Some(NodeField::CollisionShape3DRestitution),
-            "density" => Some(NodeField::CollisionShape3DDensity),
+            "shape" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Shape)),
+            "sensor" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Sensor)),
+            "friction" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Friction)),
+            "restitution" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Restitution)),
+            "density" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Density)),
             _ => None,
         },
         NodeType::StaticBody3D => match field {
-            "enabled" => Some(NodeField::StaticBody3DEnabled),
+            "enabled" => Some(NodeField::StaticBody3D(StaticBody3DField::Enabled)),
             _ => None,
         },
         NodeType::RigidBody3D => match field {
-            "enabled" => Some(NodeField::RigidBody3DEnabled),
-            "linear_velocity" | "velocity" => Some(NodeField::RigidBody3DLinearVelocity),
-            "angular_velocity" => Some(NodeField::RigidBody3DAngularVelocity),
-            "gravity_scale" => Some(NodeField::RigidBody3DGravityScale),
-            "linear_damping" => Some(NodeField::RigidBody3DLinearDamping),
-            "angular_damping" => Some(NodeField::RigidBody3DAngularDamping),
-            "can_sleep" => Some(NodeField::RigidBody3DCanSleep),
+            "enabled" => Some(NodeField::RigidBody3D(RigidBody3DField::Enabled)),
+            "linear_velocity" | "velocity" => {
+                Some(NodeField::RigidBody3D(RigidBody3DField::LinearVelocity))
+            }
+            "angular_velocity" => Some(NodeField::RigidBody3D(RigidBody3DField::AngularVelocity)),
+            "gravity_scale" => Some(NodeField::RigidBody3D(RigidBody3DField::GravityScale)),
+            "linear_damping" => Some(NodeField::RigidBody3D(RigidBody3DField::LinearDamping)),
+            "angular_damping" => Some(NodeField::RigidBody3D(RigidBody3DField::AngularDamping)),
+            "can_sleep" => Some(NodeField::RigidBody3D(RigidBody3DField::CanSleep)),
             _ => None,
         },
         NodeType::Area3D => match field {
-            "enabled" => Some(NodeField::Area3DEnabled),
+            "enabled" => Some(NodeField::Area3D(Area3DField::Enabled)),
             _ => None,
         },
+        _ => None,
+    }
+}
+
+fn resolve_light3d_common(field: &str) -> Option<Light3DField> {
+    match field {
+        "color" => Some(Light3DField::Color),
+        "intensity" => Some(Light3DField::Intensity),
+        "active" => Some(Light3DField::Active),
         _ => None,
     }
 }
@@ -270,21 +377,21 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
 fn resolve_base_node_field(node_type: NodeType, field: &str) -> Option<NodeField> {
     if node_type.is_a(NodeType::Node2D) {
         return match field {
-            "position" => Some(NodeField::Position2D),
-            "rotation" => Some(NodeField::Rotation2D),
-            "scale" => Some(NodeField::Scale2D),
-            "visible" => Some(NodeField::Visible2D),
-            "z_index" => Some(NodeField::ZIndex2D),
+            "position" => Some(NodeField::Node2D(Node2DField::Position)),
+            "rotation" => Some(NodeField::Node2D(Node2DField::Rotation)),
+            "scale" => Some(NodeField::Node2D(Node2DField::Scale)),
+            "visible" => Some(NodeField::Node2D(Node2DField::Visible)),
+            "z_index" => Some(NodeField::Node2D(Node2DField::ZIndex)),
             _ => None,
         };
     }
 
     if node_type.is_a(NodeType::Node3D) {
         return match field {
-            "position" => Some(NodeField::Position3D),
-            "rotation" => Some(NodeField::Rotation3D),
-            "scale" => Some(NodeField::Scale3D),
-            "visible" => Some(NodeField::Visible3D),
+            "position" => Some(NodeField::Node3D(Node3DField::Position)),
+            "rotation" => Some(NodeField::Node3D(Node3DField::Rotation)),
+            "scale" => Some(NodeField::Node3D(Node3DField::Scale)),
+            "visible" => Some(NodeField::Node3D(Node3DField::Visible)),
             _ => None,
         };
     }

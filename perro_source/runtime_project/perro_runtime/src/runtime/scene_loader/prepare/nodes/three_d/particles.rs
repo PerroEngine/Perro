@@ -9,56 +9,58 @@ fn build_particle_emitter_3d(data: &SceneDefNodeData) -> ParticleEmitter3D {
 }
 
 fn apply_particle_emitter_3d_fields(node: &mut ParticleEmitter3D, fields: &[SceneObjectField]) {
-    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
-            "active" => {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("ParticleEmitter3D", name) {
+            Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Active)) => {
                 if let Some(v) = as_bool(value) {
                     node.active = v;
                 }
             }
-            "looping" => {
+            Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Looping)) => {
                 if let Some(v) = as_bool(value) {
                     node.looping = v;
                 }
             }
-            "prewarm" => {
+            Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Prewarm)) => {
                 if let Some(v) = as_bool(value) {
                     node.prewarm = v;
                 }
             }
-            "spawn_rate" => {
+            Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::SpawnRate)) => {
                 if let Some(v) = as_f32(value) {
                     node.spawn_rate = v.max(0.0);
                 }
             }
-            "seed" => {
+            Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Seed)) => {
                 if let Some(v) = as_i32(value) {
                     node.seed = v.max(0) as u32;
                 }
             }
-            "params" => {
+            Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Params)) => {
                 if let Some(v) = as_particle_params(value) {
                     node.params = v;
                 }
             }
-            "profile" => {
+            Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Profile)) => {
                 if let Some(v) = as_asset_source(value) {
                     node.profile = v;
                 } else if let SceneValue::Object(entries) = value {
                     node.profile = inline_pparticle(entries);
                 }
             }
-            "sim_mode" => {
+            Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::SimMode)) => {
                 if let Some(v) = as_particle_sim_mode(value) {
                     node.sim_mode = v;
                 }
             }
-            "render_mode" => {
+            Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::RenderMode)) => {
                 if let Some(v) = as_particle_render_mode(value) {
                     node.render_mode = v;
                 }
             }
             _ => {}
-        });
+        }
+    });
 }
 
 fn inline_pparticle(entries: &[SceneObjectField]) -> String {

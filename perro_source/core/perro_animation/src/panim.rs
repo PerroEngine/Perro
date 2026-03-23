@@ -4,7 +4,10 @@ use crate::{
     AnimationParam, AnimationTrackValue, Camera3DChannel, Light3DChannel, Node2DChannel,
     Node3DChannel, PointLight3DChannel, SpotLight3DChannel,
 };
-use perro_scene::{NodeField, Parser as SceneParser, SceneValue, resolve_node_field};
+use perro_scene::{
+    Camera3DField, Light3DField, Node2DField, Node3DField, NodeField, PointLight3DField,
+    SceneValue, SpotLight3DField, Parser as SceneParser, resolve_node_field,
+};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};

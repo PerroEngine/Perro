@@ -1,130 +1,3 @@
-enum PAnimNodeField {
-    Node2D(Node2DField),
-    Node3D(Node3DField),
-    Camera3D(Camera3DField),
-    Light3D(Light3DField),
-    PointLight3D(PointLight3DField),
-    SpotLight3D(SpotLight3DField),
-    NotAnimatable(NodeField),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Node2DField {
-    Position,
-    Rotation,
-    Scale,
-    Visible,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Node3DField {
-    Position,
-    Rotation,
-    Scale,
-    Visible,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Camera3DField {
-    Zoom,
-    PerspectiveFovYDegrees,
-    PerspectiveNear,
-    PerspectiveFar,
-    OrthographicSize,
-    OrthographicNear,
-    OrthographicFar,
-    FrustumLeft,
-    FrustumRight,
-    FrustumBottom,
-    FrustumTop,
-    FrustumNear,
-    FrustumFar,
-    Active,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Light3DField {
-    Color,
-    Intensity,
-    Active,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PointLight3DField {
-    Range,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SpotLight3DField {
-    Range,
-    InnerAngleRadians,
-    OuterAngleRadians,
-}
-
-fn resolve_panim_node_field(node_type: &str, field: &str) -> Option<PAnimNodeField> {
-    let field = resolve_node_field(node_type, field)?;
-    Some(match field {
-        NodeField::Position2D => PAnimNodeField::Node2D(Node2DField::Position),
-        NodeField::Rotation2D => PAnimNodeField::Node2D(Node2DField::Rotation),
-        NodeField::Scale2D => PAnimNodeField::Node2D(Node2DField::Scale),
-        NodeField::Visible2D => PAnimNodeField::Node2D(Node2DField::Visible),
-
-        NodeField::Position3D => PAnimNodeField::Node3D(Node3DField::Position),
-        NodeField::Rotation3D => PAnimNodeField::Node3D(Node3DField::Rotation),
-        NodeField::Scale3D => PAnimNodeField::Node3D(Node3DField::Scale),
-        NodeField::Visible3D => PAnimNodeField::Node3D(Node3DField::Visible),
-
-        NodeField::Camera3DZoom => PAnimNodeField::Camera3D(Camera3DField::Zoom),
-        NodeField::Camera3DPerspectiveFovYDegrees => {
-            PAnimNodeField::Camera3D(Camera3DField::PerspectiveFovYDegrees)
-        }
-        NodeField::Camera3DPerspectiveNear => {
-            PAnimNodeField::Camera3D(Camera3DField::PerspectiveNear)
-        }
-        NodeField::Camera3DPerspectiveFar => {
-            PAnimNodeField::Camera3D(Camera3DField::PerspectiveFar)
-        }
-        NodeField::Camera3DOrthographicSize => {
-            PAnimNodeField::Camera3D(Camera3DField::OrthographicSize)
-        }
-        NodeField::Camera3DOrthographicNear => {
-            PAnimNodeField::Camera3D(Camera3DField::OrthographicNear)
-        }
-        NodeField::Camera3DOrthographicFar => {
-            PAnimNodeField::Camera3D(Camera3DField::OrthographicFar)
-        }
-        NodeField::Camera3DFrustumLeft => PAnimNodeField::Camera3D(Camera3DField::FrustumLeft),
-        NodeField::Camera3DFrustumRight => PAnimNodeField::Camera3D(Camera3DField::FrustumRight),
-        NodeField::Camera3DFrustumBottom => PAnimNodeField::Camera3D(Camera3DField::FrustumBottom),
-        NodeField::Camera3DFrustumTop => PAnimNodeField::Camera3D(Camera3DField::FrustumTop),
-        NodeField::Camera3DFrustumNear => PAnimNodeField::Camera3D(Camera3DField::FrustumNear),
-        NodeField::Camera3DFrustumFar => PAnimNodeField::Camera3D(Camera3DField::FrustumFar),
-        NodeField::Camera3DActive => PAnimNodeField::Camera3D(Camera3DField::Active),
-
-        NodeField::AmbientLight3DColor
-        | NodeField::RayLight3DColor
-        | NodeField::PointLight3DColor
-        | NodeField::SpotLight3DColor => PAnimNodeField::Light3D(Light3DField::Color),
-        NodeField::AmbientLight3DIntensity
-        | NodeField::RayLight3DIntensity
-        | NodeField::PointLight3DIntensity
-        | NodeField::SpotLight3DIntensity => PAnimNodeField::Light3D(Light3DField::Intensity),
-        NodeField::AmbientLight3DActive
-        | NodeField::RayLight3DActive
-        | NodeField::PointLight3DActive
-        | NodeField::SpotLight3DActive => PAnimNodeField::Light3D(Light3DField::Active),
-        NodeField::PointLight3DRange => PAnimNodeField::PointLight3D(PointLight3DField::Range),
-        NodeField::SpotLight3DRange => PAnimNodeField::SpotLight3D(SpotLight3DField::Range),
-        NodeField::SpotLight3DInnerAngleRadians => {
-            PAnimNodeField::SpotLight3D(SpotLight3DField::InnerAngleRadians)
-        }
-        NodeField::SpotLight3DOuterAngleRadians => {
-            PAnimNodeField::SpotLight3D(SpotLight3DField::OuterAngleRadians)
-        }
-        other => PAnimNodeField::NotAnimatable(other),
-    })
-}
-
 fn parse_object_field_action(
     frame: u32,
     object: &str,
@@ -133,7 +6,7 @@ fn parse_object_field_action(
     value: &SceneValue,
     line_no: usize,
 ) -> Result<FrameAction, String> {
-    let resolved = resolve_panim_node_field(node_type, key).ok_or_else(|| {
+    let resolved = resolve_node_field(node_type, key).ok_or_else(|| {
         format!(
             "line {}: unsupported object key `{}` for node type `{}`",
             line_no, key, node_type
@@ -141,32 +14,46 @@ fn parse_object_field_action(
     })?;
 
     let object_field = match resolved {
-        PAnimNodeField::Node2D(field) => {
-            ObjectFieldAction::Node2D(parse_node_2d_action(field, value, key, line_no)?)
-        }
-        PAnimNodeField::Node3D(field) => {
-            ObjectFieldAction::Node3D(parse_node_3d_action(field, value, key, line_no)?)
-        }
-        PAnimNodeField::Camera3D(field) => {
-            ObjectFieldAction::Camera3D(parse_camera_3d_action(field, value, key, line_no)?)
-        }
-        PAnimNodeField::Light3D(field) => {
-            ObjectFieldAction::Light3D(parse_light_3d_action(field, value, key, line_no)?)
-        }
-        PAnimNodeField::PointLight3D(field) => ObjectFieldAction::PointLight3D(
-            parse_point_light_3d_action(field, value, key, line_no)?,
-        ),
-        PAnimNodeField::SpotLight3D(field) => {
-            ObjectFieldAction::SpotLight3D(parse_spot_light_3d_action(field, value, key, line_no)?)
-        }
-
-        PAnimNodeField::NotAnimatable(NodeField::ZIndex2D) => {
+        NodeField::Node2D(Node2DField::ZIndex) => {
             return Err(format!(
                 "line {}: `z_index` is valid for `{}` but not yet animatable",
                 line_no, node_type
             ));
         }
-        PAnimNodeField::NotAnimatable(_field) => {
+        NodeField::Node2D(field) => {
+            ObjectFieldAction::Node2D(parse_node_2d_action(field, value, key, line_no)?)
+        }
+        NodeField::Node3D(field) => {
+            ObjectFieldAction::Node3D(parse_node_3d_action(field, value, key, line_no)?)
+        }
+        NodeField::Camera3D(
+            field @ (Camera3DField::Zoom
+            | Camera3DField::PerspectiveFovYDegrees
+            | Camera3DField::PerspectiveNear
+            | Camera3DField::PerspectiveFar
+            | Camera3DField::OrthographicSize
+            | Camera3DField::OrthographicNear
+            | Camera3DField::OrthographicFar
+            | Camera3DField::FrustumLeft
+            | Camera3DField::FrustumRight
+            | Camera3DField::FrustumBottom
+            | Camera3DField::FrustumTop
+            | Camera3DField::FrustumNear
+            | Camera3DField::FrustumFar
+            | Camera3DField::Active),
+        ) => {
+            ObjectFieldAction::Camera3D(parse_camera_3d_action(field, value, key, line_no)?)
+        }
+        NodeField::Light3D(field) => {
+            ObjectFieldAction::Light3D(parse_light_3d_action(field, value, key, line_no)?)
+        }
+        NodeField::PointLight3D(field) => ObjectFieldAction::PointLight3D(
+            parse_point_light_3d_action(field, value, key, line_no)?,
+        ),
+        NodeField::SpotLight3D(field) => {
+            ObjectFieldAction::SpotLight3D(parse_spot_light_3d_action(field, value, key, line_no)?)
+        }
+        _ => {
             return Err(format!(
                 "line {}: `{}` is valid for `{}` but not yet animatable in `.panim`",
                 line_no, key, node_type
@@ -192,6 +79,12 @@ fn parse_node_2d_action(
         Node2DField::Rotation => Node2DAction::Rotation(expect_f32(value, key, line_no)?),
         Node2DField::Scale => Node2DAction::Scale(expect_vec2(value, key, line_no)?),
         Node2DField::Visible => Node2DAction::Visible(expect_bool(value, key, line_no)?),
+        Node2DField::ZIndex => {
+            return Err(format!(
+                "line {}: `z_index` is valid but not animatable in `.panim`",
+                line_no
+            ));
+        }
     })
 }
 
@@ -246,6 +139,12 @@ fn parse_camera_3d_action(
         Camera3DField::FrustumNear => Camera3DAction::FrustumNear(expect_f32(value, key, line_no)?),
         Camera3DField::FrustumFar => Camera3DAction::FrustumFar(expect_f32(value, key, line_no)?),
         Camera3DField::Active => Camera3DAction::Active(expect_bool(value, key, line_no)?),
+        Camera3DField::Projection | Camera3DField::PostProcessing => {
+            return Err(format!(
+                "line {}: `{}` is valid but not animatable in `.panim`",
+                line_no, key
+            ));
+        }
     })
 }
 

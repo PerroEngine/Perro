@@ -9,89 +9,91 @@ fn build_camera_3d(data: &SceneDefNodeData) -> Camera3D {
 }
 
 fn apply_camera_3d_fields(node: &mut Camera3D, fields: &[SceneObjectField]) {
-    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
-            "zoom" => {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("Camera3D", name) {
+            Some(NodeField::Camera3D(Camera3DField::Zoom)) => {
                 if let Some(v) = as_f32(value) {
                     apply_zoom_compat_projection(node, v);
                 }
             }
-            "projection" => {
+            Some(NodeField::Camera3D(Camera3DField::Projection)) => {
                 if let Some(v) = as_str(value) {
                     set_projection_mode(node, v);
                 }
             }
-            "perspective_fov_y_degrees" => {
+            Some(NodeField::Camera3D(Camera3DField::PerspectiveFovYDegrees)) => {
                 if let Some(v) = as_f32(value) {
                     set_projection_fov(node, v);
                 }
             }
-            "perspective_near" => {
+            Some(NodeField::Camera3D(Camera3DField::PerspectiveNear)) => {
                 if let Some(v) = as_f32(value) {
                     set_projection_perspective_near(node, v);
                 }
             }
-            "perspective_far" => {
+            Some(NodeField::Camera3D(Camera3DField::PerspectiveFar)) => {
                 if let Some(v) = as_f32(value) {
                     set_projection_perspective_far(node, v);
                 }
             }
-            "orthographic_size" => {
+            Some(NodeField::Camera3D(Camera3DField::OrthographicSize)) => {
                 if let Some(v) = as_f32(value) {
                     set_projection_ortho_size(node, v);
                 }
             }
-            "orthographic_near" => {
+            Some(NodeField::Camera3D(Camera3DField::OrthographicNear)) => {
                 if let Some(v) = as_f32(value) {
                     set_projection_ortho_near(node, v);
                 }
             }
-            "orthographic_far" => {
+            Some(NodeField::Camera3D(Camera3DField::OrthographicFar)) => {
                 if let Some(v) = as_f32(value) {
                     set_projection_ortho_far(node, v);
                 }
             }
-            "frustum_left" => {
+            Some(NodeField::Camera3D(Camera3DField::FrustumLeft)) => {
                 if let Some(v) = as_f32(value) {
                     set_projection_frustum_left(node, v);
                 }
             }
-            "frustum_right" => {
+            Some(NodeField::Camera3D(Camera3DField::FrustumRight)) => {
                 if let Some(v) = as_f32(value) {
                     set_projection_frustum_right(node, v);
                 }
             }
-            "frustum_bottom" => {
+            Some(NodeField::Camera3D(Camera3DField::FrustumBottom)) => {
                 if let Some(v) = as_f32(value) {
                     set_projection_frustum_bottom(node, v);
                 }
             }
-            "frustum_top" => {
+            Some(NodeField::Camera3D(Camera3DField::FrustumTop)) => {
                 if let Some(v) = as_f32(value) {
                     set_projection_frustum_top(node, v);
                 }
             }
-            "frustum_near" => {
+            Some(NodeField::Camera3D(Camera3DField::FrustumNear)) => {
                 if let Some(v) = as_f32(value) {
                     set_projection_frustum_near(node, v);
                 }
             }
-            "frustum_far" => {
+            Some(NodeField::Camera3D(Camera3DField::FrustumFar)) => {
                 if let Some(v) = as_f32(value) {
                     set_projection_frustum_far(node, v);
                 }
             }
-            "post_processing" => {
+            Some(NodeField::Camera3D(Camera3DField::PostProcessing)) => {
                 if let Some(v) = as_post_processing(value) {
                     node.post_processing = v;
                 }
             }
-            "active" => {
+            Some(NodeField::Camera3D(Camera3DField::Active)) => {
                 if let Some(v) = as_bool(value) {
                     node.active = v;
                 }
             }
             _ => {}
-        });
+        }
+    });
 }
 
 fn apply_zoom_compat_projection(node: &mut Camera3D, zoom: f32) {
