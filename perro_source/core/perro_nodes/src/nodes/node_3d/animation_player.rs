@@ -1,5 +1,5 @@
 use crate::node_3d::Node3D;
-use perro_animation::{AnimationNodeBinding, AnimationSceneBinding};
+use perro_animation::AnimationNodeBinding;
 use perro_ids::AnimationID;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
@@ -18,34 +18,92 @@ impl DerefMut for AnimationPlayer {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct InternalAnimationData {
+    pub last_applied_animation: AnimationID,
+    pub last_applied_frame: u32,
+    pub last_binding_hash: u64,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct AnimationPlayer {
     pub base: Node3D,
-    pub animation_source: Option<Cow<'static, str>>,
     pub animation: AnimationID,
     pub current_time: f32,
     pub current_frame: u32,
     pub speed: f32,
-    pub playing: bool,
     pub paused: bool,
     pub looping: bool,
-    pub scene_bindings: Vec<AnimationSceneBinding>,
-    pub runtime_bindings: Vec<AnimationNodeBinding>,
+    pub bindings: Cow<'static, [AnimationNodeBinding]>,
+    pub internal: InternalAnimationData,
 }
 
 impl AnimationPlayer {
     pub const fn new() -> Self {
         Self {
             base: Node3D::new(),
-            animation_source: None,
             animation: AnimationID::nil(),
             current_time: 0.0,
             current_frame: 0,
             speed: 1.0,
-            playing: false,
-            paused: false,
+            paused: true,
             looping: true,
-            scene_bindings: Vec::new(),
-            runtime_bindings: Vec::new(),
+            bindings: Cow::Borrowed(&[]),
+            internal: InternalAnimationData {
+                last_applied_animation: AnimationID::nil(),
+                last_applied_frame: 0,
+                last_binding_hash: 0,
+            },
         }
+    }
+
+    #[inline]
+    pub fn set_animation(&mut self, animation: AnimationID) {
+        self.animation = animation;
+        self.current_time = 0.0;
+        self.current_frame = 0;
+        self.internal.last_applied_animation = AnimationID::nil();
+    }
+
+    #[inline]
+    pub fn set_speed(&mut self, speed: f32) {
+        self.speed = speed;
+    }
+
+    #[inline]
+    pub fn set_current_time(&mut self, time_seconds: f32) {
+        self.current_time = time_seconds.max(0.0);
+    }
+
+    #[inline]
+    pub fn set_current_frame(&mut self, frame: u32) {
+        self.current_frame = frame;
+    }
+
+    #[inline]
+    pub fn play(&mut self) {
+        self.paused = false;
+    }
+
+    #[inline]
+    pub fn pause(&mut self, paused: bool) {
+        self.paused = paused;
+    }
+
+    #[inline]
+    pub fn set_binding(&mut self, track: &str, node: perro_ids::NodeID) {
+        let bindings = self.bindings.to_mut();
+        if let Some(binding) = bindings.iter_mut().find(|b| b.track.as_ref() == track) {
+            binding.node = node;
+        } else {
+            bindings.push(AnimationNodeBinding {
+                track: track.to_string().into(),
+                node,
+            });
+        }
+    }
+
+    #[inline]
+    pub fn clear_bindings(&mut self) {
+        self.bindings.to_mut().clear();
     }
 }

@@ -30,12 +30,8 @@ impl Default for AnimationTrack {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AnimationChannel {
-    Node2DPosition,
-    Node2DRotation,
-    Node2DScale,
-    Node3DPosition,
-    Node3DRotation,
-    Node3DScale,
+    Transform2D,
+    Transform3D,
     NodeVisible,
     Custom(Cow<'static, str>),
 }
@@ -54,6 +50,8 @@ pub enum AnimationTrackValues {
     Vec2(Cow<'static, [[f32; 2]]>),
     Vec3(Cow<'static, [[f32; 3]]>),
     Vec4(Cow<'static, [[f32; 4]]>),
+    Transform2D(Cow<'static, [perro_structs::Transform2D]>),
+    Transform3D(Cow<'static, [perro_structs::Transform3D]>),
     Bool(Cow<'static, [bool]>),
 }
 
@@ -67,10 +65,4 @@ impl Default for AnimationTrackValues {
 pub struct AnimationNodeBinding {
     pub track: Cow<'static, str>,
     pub node: perro_ids::NodeID,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct AnimationSceneBinding {
-    pub track: Cow<'static, str>,
-    pub node: Cow<'static, str>,
 }

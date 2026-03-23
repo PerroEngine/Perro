@@ -59,12 +59,14 @@ pub(super) struct PendingNode {
     pub(super) key: String,
     pub(super) parent_key: Option<String>,
     pub(super) node: SceneNode,
+    pub(super) animation_source: Option<String>,
     pub(super) texture_source: Option<String>,
     pub(super) mesh_source: Option<String>,
     pub(super) material_source: Option<String>,
     pub(super) material_inline: Option<Material3D>,
     pub(super) skeleton_source: Option<String>,
     pub(super) mesh_skeleton_target: Option<String>,
+    pub(super) animation_bindings: Vec<(String, String)>,
 }
 
 type SceneNodeExtraction = (
@@ -72,9 +74,11 @@ type SceneNodeExtraction = (
     Option<String>,
     Option<String>,
     Option<String>,
+    Option<String>,
     Option<Material3D>,
     Option<String>,
     Option<String>,
+    Vec<(String, String)>,
 );
 
 pub(super) fn load_runtime_scene_from_disk(
@@ -107,12 +111,14 @@ pub(super) fn prepare_scene(scene: &Scene) -> Result<PreparedScene, String> {
     for entry in scene.nodes.as_ref() {
         let (
             node,
+            animation_source,
             texture_source,
             mesh_source,
             material_source,
             material_inline,
             skeleton_source,
             mesh_skeleton_target,
+            animation_bindings,
         ) = scene_node_from_entry(entry)?;
         if let Some(script) = &entry.script {
             scripts.push(PendingScript {
@@ -124,12 +130,14 @@ pub(super) fn prepare_scene(scene: &Scene) -> Result<PreparedScene, String> {
             key: entry.key.as_ref().to_string(),
             parent_key: entry.parent.as_ref().map(|p| p.as_ref().to_string()),
             node,
+            animation_source,
             texture_source,
             mesh_source,
             material_source,
             material_inline,
             skeleton_source,
             mesh_skeleton_target,
+            animation_bindings,
         });
     }
 
@@ -153,11 +161,13 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
         node.set_tag_ids(Some(tags));
     }
     let texture_source = extract_texture_source(&entry.data);
+    let animation_source = extract_animation_source(&entry.data);
     let mesh_source_explicit = extract_mesh_source(&entry.data);
     let material_source_explicit = extract_material_source(&entry.data);
     let material_inline = extract_material_inline(&entry.data);
     let skeleton_source = extract_skeleton_source(&entry.data);
     let mesh_skeleton_target = extract_mesh_skeleton_target(&entry.data);
+    let animation_bindings = extract_animation_scene_bindings(&entry.data);
     let model_source = extract_model_source(&entry.data);
     let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref()
     {
@@ -175,12 +185,14 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
     };
     Ok((
         node,
+        animation_source,
         texture_source,
         mesh_source,
         material_source,
         material_inline,
         skeleton_source,
         mesh_skeleton_target,
+        animation_bindings,
     ))
 }
 

@@ -26,7 +26,7 @@ pub(super) fn merge_prepared_scene(
     let mut key_to: HashMap<String, NodeID> = HashMap::with_capacity(nodes.len());
     let mut key_order: Vec<String> = Vec::with_capacity(nodes.len());
     let mut parent_pairs = Vec::with_capacity(nodes.len());
-    let mut animation_players: Vec<NodeID> = Vec::new();
+    let mut animation_player_bindings: Vec<(NodeID, Vec<(String, String)>)> = Vec::new();
     let mut mesh_skeleton_links: Vec<(NodeID, String)> = Vec::new();
     let resource_api = runtime.resource_api.clone();
 
@@ -35,12 +35,14 @@ pub(super) fn merge_prepared_scene(
             key,
             parent_key,
             node,
+            animation_source,
             texture_source,
             mesh_source,
             material_source,
             material_inline,
             skeleton_source,
             mesh_skeleton_target,
+            animation_bindings,
         } = pending;
 
         if key_to.contains_key(&key) {
@@ -50,13 +52,21 @@ pub(super) fn merge_prepared_scene(
         let node = runtime.nodes.insert(node);
         if let Some(inserted) = runtime.nodes.get(node) {
             let ty = inserted.node_type();
-            let is_animation_player = matches!(inserted.data, SceneNodeData::AnimationPlayer(_));
             runtime.register_internal_node_schedules(node, ty);
-            if is_animation_player {
-                animation_players.push(node);
-            }
+        }
+        if !animation_bindings.is_empty() {
+            animation_player_bindings.push((node, animation_bindings));
         }
         let _ = runtime.ensure_terrain_instance_data(node);
+        if let Some(source) = animation_source {
+            let res = ResourceContext::new(resource_api.as_ref());
+            let animation = res.Animations().load(&source);
+            if let Some(node_data) = runtime.nodes.get_mut(node)
+                && let SceneNodeData::AnimationPlayer(player) = &mut node_data.data
+            {
+                player.set_animation(animation);
+            }
+        }
         if let Some(source) = texture_source {
             runtime.render_2d.texture_sources.insert(node, source);
         }
@@ -126,23 +136,24 @@ pub(super) fn merge_prepared_scene(
         }
     }
 
-    for player_id in animation_players {
+    for (player_id, scene_bindings) in animation_player_bindings {
         let Some(node_data) = runtime.nodes.get_mut(player_id) else {
             continue;
         };
         let SceneNodeData::AnimationPlayer(player) = &mut node_data.data else {
             continue;
         };
-        player.runtime_bindings.clear();
-        for binding in &player.scene_bindings {
-            let Some(target_id) = key_to.get(binding.node.as_ref()).copied() else {
+        let mut resolved = Vec::with_capacity(scene_bindings.len());
+        for (track, node_key) in scene_bindings {
+            let Some(target_id) = key_to.get(node_key.as_str()).copied() else {
                 continue;
             };
-            player.runtime_bindings.push(AnimationNodeBinding {
-                track: binding.track.clone(),
+            resolved.push(AnimationNodeBinding {
+                track: track.into(),
                 node: target_id,
             });
         }
+        player.bindings = Cow::Owned(resolved);
     }
 
     let mut top_level_roots: Vec<NodeID> = Vec::new();

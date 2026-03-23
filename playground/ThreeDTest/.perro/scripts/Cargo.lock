@@ -985,6 +985,7 @@ name = "perro_animation"
 version = "0.1.0"
 dependencies = [
  "perro_ids",
+ "perro_structs",
 ]
 
 [[package]]
@@ -1019,6 +1020,7 @@ dependencies = [
 name = "perro_internal_updates"
 version = "0.1.0"
 dependencies = [
+ "perro_animation",
  "perro_ids",
  "perro_input",
  "perro_nodes",
