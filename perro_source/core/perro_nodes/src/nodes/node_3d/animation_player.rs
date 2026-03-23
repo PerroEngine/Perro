@@ -29,6 +29,14 @@ pub struct AnimationObjectBinding {
     pub node: perro_ids::NodeID,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AnimationPlaybackType {
+    Once,
+    #[default]
+    Loop,
+    Boomerang,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct AnimationPlayer {
     pub base: Node3D,
@@ -37,7 +45,7 @@ pub struct AnimationPlayer {
     pub current_frame: u32,
     pub speed: f32,
     pub paused: bool,
-    pub looping: bool,
+    pub playback_type: AnimationPlaybackType,
     pub bindings: Cow<'static, [AnimationObjectBinding]>,
     pub internal: InternalAnimationData,
 }
@@ -51,7 +59,7 @@ impl AnimationPlayer {
             current_frame: 0,
             speed: 1.0,
             paused: true,
-            looping: true,
+            playback_type: AnimationPlaybackType::Loop,
             bindings: Cow::Borrowed(&[]),
             internal: InternalAnimationData {
                 last_applied_animation: AnimationID::nil(),
@@ -72,6 +80,11 @@ impl AnimationPlayer {
     #[inline]
     pub fn set_speed(&mut self, speed: f32) {
         self.speed = speed;
+    }
+
+    #[inline]
+    pub fn set_playback_type(&mut self, playback_type: AnimationPlaybackType) {
+        self.playback_type = playback_type;
     }
 
     #[inline]

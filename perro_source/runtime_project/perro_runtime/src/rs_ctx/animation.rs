@@ -73,7 +73,6 @@ impl RuntimeResourceApi {
             name: Cow::Borrowed("Animation"),
             fps: 60.0,
             total_frames: 1,
-            looping: true,
             objects: Cow::Borrowed(&[]),
             object_tracks: Cow::Borrowed(&[]),
             frame_events: Cow::Borrowed(&[]),

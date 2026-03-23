@@ -7,7 +7,6 @@ pub struct AnimationClip {
     pub name: Cow<'static, str>,
     pub fps: f32,
     pub total_frames: u32,
-    pub looping: bool,
     pub objects: Cow<'static, [AnimationObject]>,
     pub object_tracks: Cow<'static, [AnimationObjectTrack]>,
     pub frame_events: Cow<'static, [AnimationFrameEvent]>,

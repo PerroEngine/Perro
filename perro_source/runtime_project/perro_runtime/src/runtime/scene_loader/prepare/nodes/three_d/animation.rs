@@ -25,13 +25,36 @@ fn apply_animation_player_fields(node: &mut AnimationPlayer, fields: &[SceneObje
                 node.paused = v;
             }
         }
+        "playback" => {
+            if let Some(playback_type) = parse_animation_playback_type(value) {
+                node.playback_type = playback_type;
+            }
+        }
         "loop" | "looping" => {
             if let Some(v) = as_bool(value) {
-                node.looping = v;
+                node.playback_type = if v {
+                    perro_nodes::AnimationPlaybackType::Loop
+                } else {
+                    perro_nodes::AnimationPlaybackType::Once
+                };
             }
         }
         _ => {}
     });
+}
+
+fn parse_animation_playback_type(value: &SceneValue) -> Option<perro_nodes::AnimationPlaybackType> {
+    let token = as_str(value)?;
+    if token.eq_ignore_ascii_case("once") {
+        return Some(perro_nodes::AnimationPlaybackType::Once);
+    }
+    if token.eq_ignore_ascii_case("loop") {
+        return Some(perro_nodes::AnimationPlaybackType::Loop);
+    }
+    if token.eq_ignore_ascii_case("boomerang") {
+        return Some(perro_nodes::AnimationPlaybackType::Boomerang);
+    }
+    None
 }
 
 fn extract_animation_source(data: &SceneDefNodeData) -> Option<String> {

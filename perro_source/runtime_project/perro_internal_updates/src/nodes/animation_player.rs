@@ -4,7 +4,7 @@ use perro_animation::{
     Camera3DChannel, Light3DChannel, Node2DChannel, Node3DChannel, PointLight3DChannel,
     SpotLight3DChannel,
 };
-use perro_nodes::animation_player::AnimationObjectBinding;
+use perro_nodes::animation_player::{AnimationObjectBinding, AnimationPlaybackType};
 use perro_nodes::{
     AmbientLight3D, AnimationPlayer, Camera3D, Node2D, Node3D, PointLight3D, RayLight3D,
     SpotLight3D,
@@ -82,14 +82,19 @@ where
                 player.current_time,
                 delta_seconds * player.speed,
                 duration,
-                player.looping,
+                player.playback_type,
             );
             let frame_count = clip.frame_count();
-            player.current_frame =
-                time_to_frame(player.current_time, clip.fps, frame_count, player.looping);
+            player.current_frame = time_to_frame(
+                player.current_time,
+                clip.fps,
+                frame_count,
+                player.playback_type,
+            );
         } else {
             let frame_count = clip.frame_count();
-            player.current_frame = clamp_frame(player.current_frame, frame_count, player.looping);
+            player.current_frame =
+                clamp_frame(player.current_frame, frame_count, player.playback_type);
         }
 
         let binding_hash = hash_bindings(&player.bindings);
@@ -426,38 +431,69 @@ fn sample_track_value(track: &AnimationObjectTrack, frame: u32) -> Option<&Anima
     }
 }
 
-fn advance_time(current_time: f32, dt: f32, duration: f32, looping: bool) -> f32 {
+fn advance_time(
+    current_time: f32,
+    dt: f32,
+    duration: f32,
+    playback_type: AnimationPlaybackType,
+) -> f32 {
     let next = current_time + dt;
-    if duration > 0.0 {
-        if looping {
-            next.rem_euclid(duration)
-        } else {
-            next.clamp(0.0, duration)
-        }
-    } else {
-        0.0
-    }
+    normalize_playback_time(next, duration, playback_type)
 }
 
-fn time_to_frame(time: f32, fps: f32, frame_count: u32, looping: bool) -> u32 {
+fn time_to_frame(
+    time: f32,
+    fps: f32,
+    frame_count: u32,
+    playback_type: AnimationPlaybackType,
+) -> u32 {
     if frame_count <= 1 {
         return 0;
     }
     if fps <= 0.0 {
-        return clamp_frame(0, frame_count, looping);
+        return clamp_frame(0, frame_count, playback_type);
     }
-    let frame = (time.max(0.0) * fps).floor() as u32;
-    clamp_frame(frame, frame_count, looping)
+    let duration = frame_count.saturating_sub(1) as f32 / fps;
+    let normalized = normalize_playback_time(time, duration, playback_type);
+    let frame = (normalized.max(0.0) * fps).floor() as u32;
+    clamp_frame(frame, frame_count, playback_type)
 }
 
-fn clamp_frame(frame: u32, frame_count: u32, looping: bool) -> u32 {
+fn clamp_frame(frame: u32, frame_count: u32, playback_type: AnimationPlaybackType) -> u32 {
     if frame_count <= 1 {
         return 0;
     }
-    if looping {
-        frame % frame_count
-    } else {
-        frame.min(frame_count.saturating_sub(1))
+    let last = frame_count.saturating_sub(1);
+    match playback_type {
+        AnimationPlaybackType::Once => frame.min(last),
+        AnimationPlaybackType::Loop => frame % frame_count,
+        AnimationPlaybackType::Boomerang => {
+            let period = last.saturating_mul(2);
+            if period == 0 {
+                return 0;
+            }
+            let pos = frame % period;
+            if pos <= last { pos } else { period - pos }
+        }
+    }
+}
+
+fn normalize_playback_time(time: f32, duration: f32, playback_type: AnimationPlaybackType) -> f32 {
+    if duration <= 0.0 {
+        return 0.0;
+    }
+    match playback_type {
+        AnimationPlaybackType::Once => time.clamp(0.0, duration),
+        AnimationPlaybackType::Loop => time.rem_euclid(duration),
+        AnimationPlaybackType::Boomerang => {
+            let period = duration * 2.0;
+            let wrapped = time.rem_euclid(period);
+            if wrapped <= duration {
+                wrapped
+            } else {
+                period - wrapped
+            }
+        }
     }
 }
 

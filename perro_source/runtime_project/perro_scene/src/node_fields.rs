@@ -75,7 +75,7 @@ pub enum NodeField {
     AnimationPlayerSpeed,
     AnimationPlayerPlaying,
     AnimationPlayerPaused,
-    AnimationPlayerLooping,
+    AnimationPlayerPlayback,
     // Lights
     AmbientLight3DColor,
     AmbientLight3DIntensity,
@@ -205,7 +205,7 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "speed" => Some(NodeField::AnimationPlayerSpeed),
             "playing" => Some(NodeField::AnimationPlayerPlaying),
             "paused" => Some(NodeField::AnimationPlayerPaused),
-            "loop" | "looping" => Some(NodeField::AnimationPlayerLooping),
+            "playback" | "loop" | "looping" => Some(NodeField::AnimationPlayerPlayback),
             _ => None,
         },
         NodeType::AmbientLight3D => match field {
