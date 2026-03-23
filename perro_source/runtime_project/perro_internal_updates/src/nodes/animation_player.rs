@@ -1,16 +1,20 @@
 use crate::prelude::*;
 use perro_animation::{
-    AnimationEase, AnimationInterpolation, AnimationObjectTrack, AnimationTrackValue,
+    AnimationEase, AnimationEvent, AnimationEventScope, AnimationInterpolation, AnimationObjectTrack,
+    AnimationParam, AnimationTrackValue,
 };
 use perro_scene::{
     Camera3DField, Light3DField, MeshInstance3DField, Node2DField, Node3DField, NodeField,
-    PointLight3DField, Sprite2DField, SpotLight3DField,
+    PointLight3DField, Sprite2DField, SpotLight3DField, resolve_node_field,
 };
 use perro_nodes::animation_player::{AnimationObjectBinding, AnimationPlaybackType};
 use perro_nodes::{
     AmbientLight3D, AnimationPlayer, Camera3D, MeshInstance3D, Node2D, Node3D, PointLight3D,
     RayLight3D, Sprite2D, SpotLight3D,
 };
+use perro_runtime_context::perro_structs::{Quaternion, Vector2, Vector3};
+use perro_runtime_context::perro_variant::Variant;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 type SelfNodeType = AnimationPlayer;
@@ -140,6 +144,287 @@ fn apply_clip_frame<RT>(
         {
             apply_track(ctx, res, binding.node, track, frame);
         }
+    }
+
+    apply_frame_events(ctx, clip, frame, bindings);
+}
+
+fn apply_frame_events<RT>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    clip: &Arc<perro_animation::AnimationClip>,
+    frame: u32,
+    bindings: &[AnimationObjectBinding],
+) where
+    RT: RuntimeAPI + ?Sized,
+{
+    if clip.frame_events.is_empty() {
+        return;
+    }
+
+    let binding_map: HashMap<&str, NodeID> = bindings
+        .iter()
+        .map(|b| (b.object.as_ref(), b.node))
+        .collect();
+    let object_type_map: HashMap<&str, &str> = clip
+        .objects
+        .iter()
+        .map(|o| (o.name.as_ref(), o.node_type.as_ref()))
+        .collect();
+
+    for entry in clip.frame_events.iter().filter(|entry| entry.frame == frame) {
+        match &entry.event {
+            AnimationEvent::EmitSignal { name, params } => {
+                let values = resolve_event_params(ctx, params, &binding_map, &object_type_map);
+                let signal_id = signal!(name.as_ref());
+                let _ = signal_emit!(ctx, signal_id, &values);
+            }
+            AnimationEvent::SetVar { name, value } => {
+                let Some(target) = scope_target_node(&entry.scope, &binding_map) else {
+                    continue;
+                };
+                let resolved = resolve_animation_param(ctx, value, &binding_map, &object_type_map);
+                set_var!(ctx, target, name.as_ref(), resolved);
+            }
+            AnimationEvent::CallMethod { name, params } => {
+                let Some(target) = scope_target_node(&entry.scope, &binding_map) else {
+                    continue;
+                };
+                let values = resolve_event_params(ctx, params, &binding_map, &object_type_map);
+                let _ = call_method!(ctx, target, name.as_ref(), &values);
+            }
+        }
+    }
+}
+
+fn scope_target_node(scope: &AnimationEventScope, binding_map: &HashMap<&str, NodeID>) -> Option<NodeID> {
+    match scope {
+        AnimationEventScope::Global => None,
+        AnimationEventScope::Object(object) => binding_map.get(object.as_ref()).copied(),
+    }
+}
+
+fn resolve_event_params<RT>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    params: &[AnimationParam],
+    binding_map: &HashMap<&str, NodeID>,
+    object_type_map: &HashMap<&str, &str>,
+) -> Vec<Variant>
+where
+    RT: RuntimeAPI + ?Sized,
+{
+    params
+        .iter()
+        .map(|param| resolve_animation_param(ctx, param, binding_map, object_type_map))
+        .collect()
+}
+
+fn resolve_animation_param<RT>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    param: &AnimationParam,
+    binding_map: &HashMap<&str, NodeID>,
+    object_type_map: &HashMap<&str, &str>,
+) -> Variant
+where
+    RT: RuntimeAPI + ?Sized,
+{
+    match param {
+        AnimationParam::Bool(v) => (*v).into(),
+        AnimationParam::I32(v) => (*v).into(),
+        AnimationParam::U32(v) => (*v).into(),
+        AnimationParam::F32(v) => (*v).into(),
+        AnimationParam::Vec2(v) => Vector2::new(v[0], v[1]).into(),
+        AnimationParam::Vec3(v) => Vector3::new(v[0], v[1], v[2]).into(),
+        AnimationParam::Vec4(v) => {
+            let mut q = Quaternion::new(v[0], v[1], v[2], v[3]);
+            q.normalize();
+            q.into()
+        }
+        AnimationParam::String(v) => v.as_ref().into(),
+        AnimationParam::Transform2D(v) => (*v).into(),
+        AnimationParam::Transform3D(v) => (*v).into(),
+        AnimationParam::ObjectNode(object) => binding_map
+            .get(object.as_ref())
+            .copied()
+            .map(Variant::from)
+            .unwrap_or(Variant::Null),
+        AnimationParam::ObjectField { object, field } => {
+            let Some(node_id) = binding_map.get(object.as_ref()).copied() else {
+                return Variant::Null;
+            };
+            let Some(node_type_name) = object_type_map.get(object.as_ref()).copied() else {
+                return Variant::Null;
+            };
+            let Some(field) = resolve_node_field(node_type_name, field.as_ref()) else {
+                return Variant::Null;
+            };
+            read_node_field_variant(ctx, node_id, field).unwrap_or(Variant::Null)
+        }
+    }
+}
+
+fn read_node_field_variant<RT>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    node_id: NodeID,
+    field: NodeField,
+) -> Option<Variant>
+where
+    RT: RuntimeAPI + ?Sized,
+{
+    match field {
+        NodeField::Node2D(Node2DField::Position) => with_base_node!(ctx, Node2D, node_id, |node| {
+            Variant::from(node.transform.position)
+        }),
+        NodeField::Node2D(Node2DField::Rotation) => with_base_node!(ctx, Node2D, node_id, |node| {
+            Variant::from(node.transform.rotation)
+        }),
+        NodeField::Node2D(Node2DField::Scale) => with_base_node!(ctx, Node2D, node_id, |node| {
+            Variant::from(node.transform.scale)
+        }),
+        NodeField::Node2D(Node2DField::Visible) => {
+            with_base_node!(ctx, Node2D, node_id, |node| Variant::from(node.visible))
+        }
+        NodeField::Node2D(Node2DField::ZIndex) => {
+            with_base_node!(ctx, Node2D, node_id, |node| Variant::from(node.z_index))
+        }
+        NodeField::Node3D(Node3DField::Position) => with_base_node!(ctx, Node3D, node_id, |node| {
+            Variant::from(node.transform.position)
+        }),
+        NodeField::Node3D(Node3DField::Rotation) => with_base_node!(ctx, Node3D, node_id, |node| {
+            Variant::from(node.transform.rotation)
+        }),
+        NodeField::Node3D(Node3DField::Scale) => with_base_node!(ctx, Node3D, node_id, |node| {
+            Variant::from(node.transform.scale)
+        }),
+        NodeField::Node3D(Node3DField::Visible) => {
+            with_base_node!(ctx, Node3D, node_id, |node| Variant::from(node.visible))
+        }
+        NodeField::Sprite2D(Sprite2DField::Texture) => {
+            with_base_node!(ctx, Sprite2D, node_id, |node| Variant::from(node.texture))
+        }
+        NodeField::Camera3D(Camera3DField::Zoom) => with_base_node!(ctx, Camera3D, node_id, |camera| {
+            match camera.projection {
+                perro_nodes::CameraProjection::Perspective { fov_y_degrees, .. } => {
+                    Variant::from((60.0 / fov_y_degrees.max(0.001)).max(0.001))
+                }
+                _ => Variant::from(1.0_f32),
+            }
+        }),
+        NodeField::Camera3D(Camera3DField::PerspectiveFovYDegrees) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| match camera.projection {
+                perro_nodes::CameraProjection::Perspective { fov_y_degrees, .. } => {
+                    Variant::from(fov_y_degrees)
+                }
+                _ => Variant::Null,
+            })
+        }
+        NodeField::Camera3D(Camera3DField::PerspectiveNear) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| match camera.projection {
+                perro_nodes::CameraProjection::Perspective { near, .. } => Variant::from(near),
+                _ => Variant::Null,
+            })
+        }
+        NodeField::Camera3D(Camera3DField::PerspectiveFar) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| match camera.projection {
+                perro_nodes::CameraProjection::Perspective { far, .. } => Variant::from(far),
+                _ => Variant::Null,
+            })
+        }
+        NodeField::Camera3D(Camera3DField::OrthographicSize) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| match camera.projection {
+                perro_nodes::CameraProjection::Orthographic { size, .. } => Variant::from(size),
+                _ => Variant::Null,
+            })
+        }
+        NodeField::Camera3D(Camera3DField::OrthographicNear) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| match camera.projection {
+                perro_nodes::CameraProjection::Orthographic { near, .. } => Variant::from(near),
+                _ => Variant::Null,
+            })
+        }
+        NodeField::Camera3D(Camera3DField::OrthographicFar) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| match camera.projection {
+                perro_nodes::CameraProjection::Orthographic { far, .. } => Variant::from(far),
+                _ => Variant::Null,
+            })
+        }
+        NodeField::Camera3D(Camera3DField::FrustumLeft) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| match camera.projection {
+                perro_nodes::CameraProjection::Frustum { left, .. } => Variant::from(left),
+                _ => Variant::Null,
+            })
+        }
+        NodeField::Camera3D(Camera3DField::FrustumRight) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| match camera.projection {
+                perro_nodes::CameraProjection::Frustum { right, .. } => Variant::from(right),
+                _ => Variant::Null,
+            })
+        }
+        NodeField::Camera3D(Camera3DField::FrustumBottom) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| match camera.projection {
+                perro_nodes::CameraProjection::Frustum { bottom, .. } => Variant::from(bottom),
+                _ => Variant::Null,
+            })
+        }
+        NodeField::Camera3D(Camera3DField::FrustumTop) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| match camera.projection {
+                perro_nodes::CameraProjection::Frustum { top, .. } => Variant::from(top),
+                _ => Variant::Null,
+            })
+        }
+        NodeField::Camera3D(Camera3DField::FrustumNear) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| match camera.projection {
+                perro_nodes::CameraProjection::Frustum { near, .. } => Variant::from(near),
+                _ => Variant::Null,
+            })
+        }
+        NodeField::Camera3D(Camera3DField::FrustumFar) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| match camera.projection {
+                perro_nodes::CameraProjection::Frustum { far, .. } => Variant::from(far),
+                _ => Variant::Null,
+            })
+        }
+        NodeField::Camera3D(Camera3DField::Active) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| Variant::from(camera.active))
+        }
+        NodeField::Light3D(Light3DField::Color) => with_base_node!(ctx, RayLight3D, node_id, |n| {
+            Variant::from(Vector3::new(n.color[0], n.color[1], n.color[2]))
+        })
+        .or_else(|| with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(Vector3::new(n.color[0], n.color[1], n.color[2]))))
+        .or_else(|| with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(Vector3::new(n.color[0], n.color[1], n.color[2]))))
+        .or_else(|| with_base_node!(ctx, AmbientLight3D, node_id, |n| Variant::from(Vector3::new(n.color[0], n.color[1], n.color[2])))),
+        NodeField::Light3D(Light3DField::Intensity) => {
+            with_base_node!(ctx, RayLight3D, node_id, |n| Variant::from(n.intensity))
+                .or_else(|| with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(n.intensity)))
+                .or_else(|| with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(n.intensity)))
+                .or_else(|| {
+                    with_base_node!(ctx, AmbientLight3D, node_id, |n| Variant::from(n.intensity))
+                })
+        }
+        NodeField::Light3D(Light3DField::Active) => with_base_node!(ctx, RayLight3D, node_id, |n| {
+            Variant::from(n.active)
+        })
+        .or_else(|| with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(n.active)))
+        .or_else(|| with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(n.active)))
+        .or_else(|| with_base_node!(ctx, AmbientLight3D, node_id, |n| Variant::from(n.active))),
+        NodeField::PointLight3D(PointLight3DField::Range) => {
+            with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(n.range))
+        }
+        NodeField::SpotLight3D(SpotLight3DField::Range) => {
+            with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(n.range))
+        }
+        NodeField::SpotLight3D(SpotLight3DField::InnerAngleRadians) => with_base_node!(
+            ctx,
+            SpotLight3D,
+            node_id,
+            |n| Variant::from(n.inner_angle_radians)
+        ),
+        NodeField::SpotLight3D(SpotLight3DField::OuterAngleRadians) => with_base_node!(
+            ctx,
+            SpotLight3D,
+            node_id,
+            |n| Variant::from(n.outer_angle_radians)
+        ),
+        _ => None,
     }
 }
 

@@ -1,4 +1,4 @@
-use perro_animation::{AnimationEase, AnimationInterpolation, AnimationTrackValue, parse_panim};
+use perro_animation::{AnimationEase, AnimationInterpolation, AnimationParam, AnimationTrackValue, parse_panim};
 use perro_scene::{MeshInstance3DField, Node2DField, Node3DField, NodeField, Sprite2DField};
 
 #[test]
@@ -386,4 +386,90 @@ fps = 30
 "#;
     let err = parse_panim(bad_ease).expect_err("expected parse failure");
     assert!(err.contains("unknown ease"));
+}
+
+#[test]
+fn parses_object_node_and_field_param_references() {
+    let src = r#"
+[Animation]
+name = "Refs"
+fps = 30
+[/Animation]
+
+[Objects]
+@Hero = Node3D
+@Target = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    position = (1,2,3)
+}
+@Target {
+    position = (4,5,6)
+    call_method = { name="aim_at", params=[@Hero, @Hero.position] }
+    set_var = { name="cached_target", value=@Hero }
+}
+[/Frame0]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+    assert_eq!(clip.frame_events.len(), 2);
+
+    let call_event = clip
+        .frame_events
+        .iter()
+        .find(|e| matches!(e.event, perro_animation::AnimationEvent::CallMethod { .. }))
+        .expect("call_method event");
+    if let perro_animation::AnimationEvent::CallMethod { params, .. } = &call_event.event {
+        assert_eq!(params.len(), 2);
+        assert!(matches!(
+            &params[0],
+            AnimationParam::ObjectNode(object) if object.as_ref() == "Hero"
+        ));
+        assert!(matches!(
+            &params[1],
+            AnimationParam::ObjectField { object, field }
+                if object.as_ref() == "Hero" && field.as_ref() == "position"
+        ));
+    } else {
+        panic!("expected call_method");
+    }
+
+    let set_event = clip
+        .frame_events
+        .iter()
+        .find(|e| matches!(e.event, perro_animation::AnimationEvent::SetVar { .. }))
+        .expect("set_var event");
+    if let perro_animation::AnimationEvent::SetVar { value, .. } = &set_event.event {
+        assert!(matches!(
+            value,
+            AnimationParam::ObjectNode(object) if object.as_ref() == "Hero"
+        ));
+    } else {
+        panic!("expected set_var");
+    }
+}
+
+#[test]
+fn rejects_invalid_reference_tokens() {
+    let src = r#"
+[Animation]
+name = "BadRef"
+fps = 30
+[/Animation]
+
+[Objects]
+@Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    call_method = { name="broken", params=[@1Hero.position] }
+}
+[/Frame0]
+"#;
+
+    let err = parse_panim(src).expect_err("expected parse failure");
+    assert!(err.contains("invalid object reference"));
 }

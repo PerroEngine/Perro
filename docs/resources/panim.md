@@ -209,8 +209,21 @@ Event notes:
 
 - `emit_signal` should be authored as a frame/global event.
 - object-scoped `emit_signal` does not provide object-targeted runtime behavior today.
-- `set_var` / `call_method` event payload params currently accept literal values only.
-- param references like `@OtherObject.field` are not currently supported.
+- params/value support direct object references:
+- `@Object` resolves to that object's bound runtime `NodeID`.
+- `@Object.field` resolves to the current frame value of that field on the bound runtime node.
+- reference params are supported in `emit_signal.params`, `call_method.params`, and `set_var.value`.
+
+Example:
+
+```ini
+[Frame20]
+@Hero {
+    call_method = { name="aim_at", params=[@Target, @Target.position] }
+    set_var = { name="tracked_target", value=@Target }
+}
+[/Frame20]
+```
 
 ## Variables
 

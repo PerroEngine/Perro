@@ -145,6 +145,7 @@ macro_rules! define_scene_nodes {
         base: { $($base_variant:ident $(=> $base_ty:ty)?),* $(,)? }
         2d: { $($variant_2d:ident => ($parent_2d:ident, $ty_2d:ty, $renderable_2d:expr, $internal_update_2d:expr, $internal_fixed_update_2d:expr)),* $(,)? }
         3d: { $($variant_3d:ident => ($parent_3d:ident, $ty_3d:ty, $renderable_3d:expr, $internal_update_3d:expr, $internal_fixed_update_3d:expr)),* $(,)? }
+        resource: { $($variant_resource:ident => ($parent_resource:ident, $ty_resource:ty, $renderable_resource:expr, $internal_update_resource:expr, $internal_fixed_update_resource:expr)),* $(,)? }
     ) => {
         #[derive(Clone, Debug)]
         pub struct SceneNode {
@@ -163,6 +164,7 @@ macro_rules! define_scene_nodes {
             )*
             $($variant_2d($ty_2d),)*
             $($variant_3d($ty_3d),)*
+            $($variant_resource($ty_resource),)*
         }
 
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -171,6 +173,7 @@ macro_rules! define_scene_nodes {
             $($base_variant,)*
             $($variant_2d,)*
             $($variant_3d,)*
+            $($variant_resource,)*
         }
 
         impl SceneNode {
@@ -246,6 +249,10 @@ macro_rules! define_scene_nodes {
                         SceneNodeData::$variant_3d(_) =>
                             NodeType::$variant_3d,
                     )*
+                    $(
+                        SceneNodeData::$variant_resource(_) =>
+                            NodeType::$variant_resource,
+                    )*
                 }
             }
 
@@ -256,6 +263,7 @@ macro_rules! define_scene_nodes {
                     )*
                     $(SceneNodeData::$variant_2d(_) => Spatial::TwoD,)*
                     $(SceneNodeData::$variant_3d(_) => Spatial::ThreeD,)*
+                    $(SceneNodeData::$variant_resource(_) => Spatial::None,)*
                 }
             }
 
@@ -384,6 +392,7 @@ macro_rules! define_scene_nodes {
                     $(stringify!($base_variant) => Ok(NodeType::$base_variant),)*
                     $(stringify!($variant_2d) => Ok(NodeType::$variant_2d),)*
                     $(stringify!($variant_3d) => Ok(NodeType::$variant_3d),)*
+                    $(stringify!($variant_resource) => Ok(NodeType::$variant_resource),)*
                     _ => Err(format!("Unknown node type: {}", s)),
                 }
             }
@@ -394,6 +403,7 @@ macro_rules! define_scene_nodes {
                 $(NodeType::$base_variant,)*
                 $(NodeType::$variant_2d,)*
                 $(NodeType::$variant_3d,)*
+                $(NodeType::$variant_resource,)*
             ];
 
             pub const fn as_str(&self) -> &'static str {
@@ -401,6 +411,7 @@ macro_rules! define_scene_nodes {
                     $(NodeType::$base_variant => stringify!($base_variant),)*
                     $(NodeType::$variant_2d => stringify!($variant_2d),)*
                     $(NodeType::$variant_3d => stringify!($variant_3d),)*
+                    $(NodeType::$variant_resource => stringify!($variant_resource),)*
                 }
             }
 
@@ -409,6 +420,7 @@ macro_rules! define_scene_nodes {
                     $(NodeType::$base_variant => None,)*
                     $(NodeType::$variant_2d => $crate::__node_parent_opt!($parent_2d),)*
                     $(NodeType::$variant_3d => $crate::__node_parent_opt!($parent_3d),)*
+                    $(NodeType::$variant_resource => $crate::__node_parent_opt!($parent_resource),)*
                 }
             }
 
@@ -436,6 +448,7 @@ macro_rules! define_scene_nodes {
                     $(NodeType::$base_variant => Spatial::None,)*
                     $(NodeType::$variant_2d => Spatial::TwoD,)*
                     $(NodeType::$variant_3d => Spatial::ThreeD,)*
+                    $(NodeType::$variant_resource => Spatial::None,)*
                 }
             }
 
@@ -444,6 +457,7 @@ macro_rules! define_scene_nodes {
                     $(NodeType::$base_variant => InternalUpdate::False,)*
                     $(NodeType::$variant_2d => $internal_update_2d,)*
                     $(NodeType::$variant_3d => $internal_update_3d,)*
+                    $(NodeType::$variant_resource => $internal_update_resource,)*
                 }
             }
 
@@ -452,6 +466,7 @@ macro_rules! define_scene_nodes {
                     $(NodeType::$base_variant => InternalFixedUpdate::False,)*
                     $(NodeType::$variant_2d => $internal_fixed_update_2d,)*
                     $(NodeType::$variant_3d => $internal_fixed_update_3d,)*
+                    $(NodeType::$variant_resource => $internal_fixed_update_resource,)*
                 }
             }
 
@@ -481,6 +496,12 @@ macro_rules! define_scene_nodes {
         $(impl From<$ty_3d> for SceneNodeData {
             fn from(value: $ty_3d) -> Self {
                 SceneNodeData::$variant_3d(value)
+            }
+        })*
+
+        $(impl From<$ty_resource> for SceneNodeData {
+            fn from(value: $ty_resource) -> Self {
+                SceneNodeData::$variant_resource(value)
             }
         })*
 
@@ -549,6 +570,32 @@ macro_rules! define_scene_nodes {
             #[inline]
             fn snapshot_transform(value: &Self) -> Option<Self::TransformSnapshot> {
                 Some(value.transform)
+            }
+        })*
+
+        $(impl NodeTypeDispatch for $ty_resource {
+            const NODE_TYPE: NodeType = NodeType::$variant_resource;
+            const SPATIAL: Spatial = Spatial::None;
+            const RENDERABLE: Renderable = $renderable_resource;
+            const INTERNAL_UPDATE: InternalUpdate = $internal_update_resource;
+            const INTERNAL_FIXED_UPDATE: InternalFixedUpdate = $internal_fixed_update_resource;
+            type TransformSnapshot = ();
+
+            fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
+                match data {
+                    SceneNodeData::$variant_resource(inner) => Some(f(inner)),
+                    _ => None,
+                }
+            }
+
+            fn with_mut<R>(
+                data: &mut SceneNodeData,
+                f: impl FnOnce(&mut Self) -> R,
+            ) -> Option<R> {
+                match data {
+                    SceneNodeData::$variant_resource(inner) => Some(f(inner)),
+                    _ => None,
+                }
             }
         })*
 
@@ -642,11 +689,13 @@ define_scene_nodes! {
         Skeleton3D => (Node3D, Skeleton3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         TerrainInstance3D => (Node3D, TerrainInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         ParticleEmitter3D => (Node3D, ParticleEmitter3D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
-        AnimationPlayer => (Node3D, AnimationPlayer, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
         //Lights
         AmbientLight3D => (None, AmbientLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         RayLight3D => (Node3D, RayLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         PointLight3D => (Node3D, PointLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         SpotLight3D => (Node3D, SpotLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False)
+    }
+    resource: {
+        AnimationPlayer => (None, AnimationPlayer, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False)
     }
 }

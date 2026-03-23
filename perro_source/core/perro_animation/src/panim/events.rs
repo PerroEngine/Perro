@@ -1,5 +1,5 @@
 fn parse_emit_signal(value: &str, line_no: usize) -> Result<AnimationEvent, String> {
-    let value = parse_scene_value(value, line_no)?;
+    let value = parse_scene_value_with_refs(value, line_no)?;
     let fields = as_object(&value).ok_or_else(|| format!("line {}: expected object", line_no))?;
 
     let mut name = None::<String>;
@@ -24,7 +24,7 @@ fn parse_emit_signal(value: &str, line_no: usize) -> Result<AnimationEvent, Stri
 }
 
 fn parse_set_var(value: &str, line_no: usize) -> Result<AnimationEvent, String> {
-    let value = parse_scene_value(value, line_no)?;
+    let value = parse_scene_value_with_refs(value, line_no)?;
     let fields = as_object(&value).ok_or_else(|| format!("line {}: expected object", line_no))?;
 
     let mut name = None::<String>;
@@ -51,7 +51,7 @@ fn parse_set_var(value: &str, line_no: usize) -> Result<AnimationEvent, String> 
 }
 
 fn parse_call_method(value: &str, line_no: usize) -> Result<AnimationEvent, String> {
-    let value = parse_scene_value(value, line_no)?;
+    let value = parse_scene_value_with_refs(value, line_no)?;
     let fields = as_object(&value).ok_or_else(|| format!("line {}: expected object", line_no))?;
 
     let mut name = None::<String>;
@@ -92,8 +92,8 @@ fn parse_param(value: &SceneValue, line_no: usize) -> Result<AnimationParam, Str
         SceneValue::Bool(v) => Ok(AnimationParam::Bool(*v)),
         SceneValue::I32(v) => Ok(AnimationParam::I32(*v)),
         SceneValue::F32(v) => Ok(AnimationParam::F32(*v)),
-        SceneValue::Str(v) => Ok(AnimationParam::String(v.clone())),
-        SceneValue::Key(v) => Ok(AnimationParam::String(v.0.clone())),
+        SceneValue::Str(v) => parse_text_param(v.as_ref(), line_no),
+        SceneValue::Key(v) => parse_text_param(v.0.as_ref(), line_no),
         SceneValue::Vec2 { x, y } => Ok(AnimationParam::Vec2([*x, *y])),
         SceneValue::Vec3 { x, y, z } => Ok(AnimationParam::Vec3([*x, *y, *z])),
         SceneValue::Vec4 { x, y, z, w } => Ok(AnimationParam::Vec4([*x, *y, *z, *w])),
@@ -145,5 +145,115 @@ fn parse_param(value: &SceneValue, line_no: usize) -> Result<AnimationParam, Str
         }
         _ => Err(format!("line {}: unsupported param value", line_no)),
     }
+}
+
+fn parse_text_param(value: &str, line_no: usize) -> Result<AnimationParam, String> {
+    if let Some(rest) = value.strip_prefix('@') {
+        return parse_reference_param(rest, line_no);
+    }
+    Ok(AnimationParam::String(Cow::Owned(value.to_string())))
+}
+
+fn parse_reference_param(rest: &str, line_no: usize) -> Result<AnimationParam, String> {
+    let Some((object, field)) = rest.split_once('.') else {
+        if is_ident(rest) {
+            return Ok(AnimationParam::ObjectNode(rest.to_string().into()));
+        }
+        return Err(format!("line {}: invalid object reference `@{}`", line_no, rest));
+    };
+
+    if !is_ident(object) || !is_ident(field) {
+        return Err(format!("line {}: invalid object reference `@{}`", line_no, rest));
+    }
+
+    Ok(AnimationParam::ObjectField {
+        object: object.to_string().into(),
+        field: field.to_string().into(),
+    })
+}
+
+fn is_ident(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn parse_scene_value_with_refs(value: &str, line_no: usize) -> Result<SceneValue, String> {
+    match parse_scene_value(value, line_no) {
+        Ok(parsed) => Ok(parsed),
+        Err(_) => {
+            if !value.contains('@') {
+                return parse_scene_value(value, line_no);
+            }
+            let rewritten = rewrite_reference_tokens(value);
+            parse_scene_value(&rewritten, line_no)
+        }
+    }
+}
+
+fn rewrite_reference_tokens(src: &str) -> String {
+    let bytes = src.as_bytes();
+    let mut out = String::with_capacity(src.len() + 16);
+    let mut i = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    while i < bytes.len() {
+        let ch = bytes[i] as char;
+        if in_string {
+            out.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if ch == '"' {
+            in_string = true;
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+
+        if ch != '@' {
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+
+        let mut end = i + 1;
+        while end < bytes.len() {
+            let c = bytes[end] as char;
+            if c.is_ascii_whitespace()
+                || matches!(c, ',' | ']' | '}' | ')' | ':' | '=')
+            {
+                break;
+            }
+            end += 1;
+        }
+
+        if end > i + 1 {
+            out.push('"');
+            out.push_str(&src[i..end]);
+            out.push('"');
+            i = end;
+            continue;
+        }
+
+        out.push(ch);
+        i += 1;
+    }
+
+    out
 }
 

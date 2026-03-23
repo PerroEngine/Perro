@@ -126,6 +126,11 @@ pub enum AnimationParam {
     String(Cow<'static, str>),
     Transform2D(perro_structs::Transform2D),
     Transform3D(perro_structs::Transform3D),
+    ObjectNode(Cow<'static, str>),
+    ObjectField {
+        object: Cow<'static, str>,
+        field: Cow<'static, str>,
+    },
 }
 
 impl Default for AnimationParam {

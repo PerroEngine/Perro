@@ -1,9 +1,5 @@
 fn build_animation_player(data: &SceneDefNodeData) -> AnimationPlayer {
     let mut node = AnimationPlayer::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
     apply_animation_player_fields(&mut node, &data.fields);
     node
 }
