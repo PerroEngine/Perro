@@ -12,15 +12,15 @@ default_ease = "linear"
 [Frame0]
 @Target {
     position = (-4, 0, 0)
-    rotation = (0, 0, 0)
+    rotation = (0, 0, 0, 1)
     scale = (1,1,1)
 }
 [/Frame0]
 
-[Frame30]
+[Frame75]
 @Target {
     position = (4, 0, 0)
     rotation = (0, 135, 0)
-    scale = (5,5,5)
+    scale = (1,2,1)
 }
-[/Frame30]
+[/Frame75]

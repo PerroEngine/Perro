@@ -28,7 +28,7 @@ fn apply_animation_player_fields(node: &mut AnimationPlayer, fields: &[SceneObje
 }
 
 fn parse_animation_playback_type(value: &SceneValue) -> Option<perro_nodes::AnimationPlaybackType> {
-    let token = as_str(value)?;
+    let token = as_str(value)?.trim();
     if token.eq_ignore_ascii_case("once") {
         return Some(perro_nodes::AnimationPlaybackType::Once);
     }

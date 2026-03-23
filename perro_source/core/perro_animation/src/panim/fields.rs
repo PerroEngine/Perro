@@ -382,12 +382,21 @@ fn expect_color3(value: &SceneValue, key: &str, line_no: usize) -> Result<[f32; 
 }
 
 fn expect_quat(value: &SceneValue, key: &str, line_no: usize) -> Result<Quaternion, String> {
-    let (x, y, z, w) = value
-        .as_vec4()
-        .ok_or_else(|| format!("line {}: `{}` expects vec4", line_no, key))?;
-    let mut quat = Quaternion::new(x, y, z, w);
-    quat.normalize();
-    Ok(quat)
+    if let Some((x, y, z, w)) = value.as_vec4() {
+        let mut quat = Quaternion::new(x, y, z, w);
+        quat.normalize();
+        return Ok(quat);
+    }
+
+    // Keep parity with scene parser behavior: Node3D rotation accepts Euler XYZ radians.
+    if let Some((x, y, z)) = value.as_vec3() {
+        let mut rotation = Quaternion::IDENTITY;
+        rotation.rotate_xyz(x, y, z);
+        rotation.normalize();
+        return Ok(rotation);
+    }
+
+    Err(format!("line {}: `{}` expects vec4 or vec3 (Euler radians)", line_no, key))
 }
 
 fn expect_asset_path(value: &SceneValue, key: &str, line_no: usize) -> Result<String, String> {

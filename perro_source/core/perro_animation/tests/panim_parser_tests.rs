@@ -43,6 +43,67 @@ fps = 30
 }
 
 #[test]
+fn parses_node3d_rotation_from_euler_vec3() {
+    let src = r#"
+[Animation]
+name = "EulerRotation"
+fps = 30
+[/Animation]
+
+[Objects]
+@Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    rotation = (0, 0, 0)
+}
+[/Frame0]
+
+[Frame10]
+@Hero {
+    rotation = (0, 1.5707964, 0)
+}
+[/Frame10]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+    let track = clip
+        .object_tracks
+        .iter()
+        .find(|t| matches!(t.field, NodeField::Node3D(Node3DField::Position)))
+        .expect("node3d transform track");
+
+    assert_eq!(track.keys.len(), 2);
+    let AnimationTrackValue::Transform3D(t0) = track.keys[0].value else {
+        panic!("expected transform3d key at frame 0");
+    };
+    let AnimationTrackValue::Transform3D(t1) = track.keys[1].value else {
+        panic!("expected transform3d key at frame 10");
+    };
+
+    // Identity at frame 0.
+    assert!((t0.rotation.x - 0.0).abs() < 1e-5);
+    assert!((t0.rotation.y - 0.0).abs() < 1e-5);
+    assert!((t0.rotation.z - 0.0).abs() < 1e-5);
+    assert!((t0.rotation.w - 1.0).abs() < 1e-5);
+
+    // Non-identity quaternion should be produced for a non-zero Euler key.
+    let norm = (t1.rotation.x * t1.rotation.x
+        + t1.rotation.y * t1.rotation.y
+        + t1.rotation.z * t1.rotation.z
+        + t1.rotation.w * t1.rotation.w)
+        .sqrt();
+    assert!((norm - 1.0).abs() < 1e-4);
+    assert!(
+        (t1.rotation.x - 0.0).abs() > 1e-5
+            || (t1.rotation.y - 0.0).abs() > 1e-5
+            || (t1.rotation.z - 0.0).abs() > 1e-5
+            || (t1.rotation.w - 1.0).abs() > 1e-5
+    );
+}
+
+#[test]
 fn parses_asset_field_tracks_with_vars() {
     let src = r#"
 @mesh = "res://meshes/hero.glb:mesh[0]"
