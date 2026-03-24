@@ -4,7 +4,8 @@ use super::{
         build_material_shader, create_depth_prepass_shader_module,
         create_frustum_cull_shader_module, create_hiz_depth_copy_shader_module,
         create_hiz_downsample_shader_module, create_hiz_occlusion_cull_shader_module,
-        create_mesh_shader_module, create_toon_shader_module, create_unlit_shader_module,
+        create_mesh_shader_module, create_sky_shader_module, create_toon_shader_module,
+        create_unlit_shader_module,
     },
 };
 use crate::backend::{OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup};
@@ -45,6 +46,19 @@ struct Scene3DUniform {
     ray_light: RayLightGpu,
     point_lights: [PointLightGpu; MAX_POINT_LIGHTS],
     spot_lights: [SpotLightGpu; MAX_SPOT_LIGHTS],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+struct SkyUniform {
+    inv_view_proj: [[f32; 4]; 4],
+    camera_pos: [f32; 4],
+    day_colors: [[f32; 4]; 3],
+    night_colors: [[f32; 4]; 3],
+    params0: [f32; 4], // cloud_size, cloud_density, cloud_variance, time_of_day
+    params1: [f32; 4], // star_size, star_scatter, star_gleam, sky_angle
+    params2: [f32; 4], // sun_size, moon_size, day_weight, time_phase
+    wind: [f32; 4],
 }
 
 #[repr(C)]
@@ -138,7 +152,9 @@ struct HizCullParamsGpu {
 pub struct Gpu3D {
     color_format: wgpu::TextureFormat,
     camera_bgl: wgpu::BindGroupLayout,
+    sky_bgl: wgpu::BindGroupLayout,
     material_pipeline_layout: wgpu::PipelineLayout,
+    sky_pipeline: wgpu::RenderPipeline,
     pipeline_culled: wgpu::RenderPipeline,
     pipeline_double_sided: wgpu::RenderPipeline,
     pipeline_unlit_culled: wgpu::RenderPipeline,
@@ -150,6 +166,8 @@ pub struct Gpu3D {
     custom_pipelines: AHashMap<String, CustomPipeline>,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    sky_buffer: wgpu::Buffer,
+    sky_bind_group: wgpu::BindGroup,
     skeleton_buffer: wgpu::Buffer,
     skeleton_capacity: usize,
     staged_skeletons: Vec<[[f32; 4]; 4]>,
@@ -176,6 +194,8 @@ pub struct Gpu3D {
     last_draws_revision: u64,
     last_draw_instance_ranges: Vec<Range<u32>>,
     last_scene: Option<Scene3DUniform>,
+    last_sky: Option<SkyUniform>,
+    sky_enabled: bool,
     mesh_vertices: Vec<MeshVertex>,
     mesh_indices: Vec<u32>,
     vertex_buffer: wgpu::Buffer,
@@ -484,6 +504,7 @@ impl Gpu3D {
         let shader = create_mesh_shader_module(device);
         let shader_unlit = create_unlit_shader_module(device);
         let shader_toon = create_toon_shader_module(device);
+        let sky_shader = create_sky_shader_module(device);
         let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_camera3d_bgl"),
             entries: &[
@@ -522,9 +543,31 @@ impl Gpu3D {
                 },
             ],
         });
+        let sky_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_sky3d_bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(
+                        std::num::NonZeroU64::new(std::mem::size_of::<SkyUniform>() as u64)
+                            .expect("sky uniform size must be non-zero"),
+                    ),
+                },
+                count: None,
+            }],
+        });
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_camera3d_buffer"),
             size: std::mem::size_of::<Scene3DUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let sky_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_sky3d_buffer"),
+            size: std::mem::size_of::<SkyUniform>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -560,12 +603,32 @@ impl Gpu3D {
                 },
             ],
         });
+        let sky_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_sky3d_bg"),
+            layout: &sky_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: sky_buffer.as_entire_binding(),
+            }],
+        });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_mesh_pipeline_layout"),
             bind_group_layouts: &[Some(&camera_bgl)],
             immediate_size: 0,
         });
+        let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("perro_sky3d_pipeline_layout"),
+            bind_group_layouts: &[Some(&sky_bgl)],
+            immediate_size: 0,
+        });
+        let sky_pipeline = create_sky_pipeline(
+            device,
+            &sky_pipeline_layout,
+            &sky_shader,
+            color_format,
+            sample_count,
+        );
         let pipeline_culled = create_pipeline(
             device,
             &pipeline_layout,
@@ -932,7 +995,9 @@ impl Gpu3D {
         Self {
             color_format,
             camera_bgl,
+            sky_bgl,
             material_pipeline_layout: pipeline_layout,
+            sky_pipeline,
             pipeline_culled,
             pipeline_double_sided,
             pipeline_unlit_culled,
@@ -943,6 +1008,8 @@ impl Gpu3D {
             pipeline_depth_prepass_double_sided,
             camera_buffer,
             camera_bind_group,
+            sky_buffer,
+            sky_bind_group,
             skeleton_buffer,
             skeleton_capacity,
             staged_skeletons: Vec::new(),
@@ -969,6 +1036,8 @@ impl Gpu3D {
             last_draws_revision: u64::MAX,
             last_draw_instance_ranges: Vec::new(),
             last_scene: None,
+            last_sky: None,
+            sky_enabled: false,
             mesh_vertices: vertices,
             mesh_indices: indices,
             vertex_buffer,
@@ -1091,9 +1160,15 @@ impl Gpu3D {
         let shader = create_mesh_shader_module(device);
         let shader_unlit = create_unlit_shader_module(device);
         let shader_toon = create_toon_shader_module(device);
+        let sky_shader = create_sky_shader_module(device);
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_mesh_pipeline_layout"),
             bind_group_layouts: &[Some(&self.camera_bgl)],
+            immediate_size: 0,
+        });
+        let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("perro_sky3d_pipeline_layout"),
+            bind_group_layouts: &[Some(&self.sky_bgl)],
             immediate_size: 0,
         });
         self.pipeline_culled = create_pipeline(
@@ -1153,6 +1228,13 @@ impl Gpu3D {
         );
         self.pipeline_depth_prepass_double_sided =
             create_depth_prepass_pipeline(device, &pipeline_layout, &depth_prepass_shader, None);
+        self.sky_pipeline = create_sky_pipeline(
+            device,
+            &sky_pipeline_layout,
+            &sky_shader,
+            color_format,
+            sample_count,
+        );
         self.material_pipeline_layout = pipeline_layout;
         self.color_format = color_format;
         let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
@@ -1244,6 +1326,14 @@ impl Gpu3D {
         self.cpu_occlusion_enabled = cpu_occlusion_enabled;
 
         let uniform = build_scene_uniform(&camera, lighting, width, height);
+        let sky_uniform = build_sky_uniform(&camera, lighting, width, height);
+        self.sky_enabled = sky_uniform.is_some();
+        if self.last_sky != sky_uniform {
+            if let Some(sky) = sky_uniform {
+                queue.write_buffer(&self.sky_buffer, 0, bytemuck::bytes_of(&sky));
+            }
+            self.last_sky = sky_uniform;
+        }
         let draws_unchanged = self.last_draws_revision == draws_revision;
         let transform_only_semantic = !draws_unchanged
             && draws.len() == self.last_draws.len()
@@ -1920,13 +2010,40 @@ impl Gpu3D {
                 }
             }
         }
+        if self.sky_enabled {
+            let mut sky_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("perro_sky3d_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(clear_color),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            sky_pass.set_pipeline(&self.sky_pipeline);
+            sky_pass.set_bind_group(0, &self.sky_bind_group, &[]);
+            sky_pass.draw(0..3, 0..1);
+            drop(sky_pass);
+        }
+        let color_load = if self.sky_enabled {
+            wgpu::LoadOp::Load
+        } else {
+            wgpu::LoadOp::Clear(clear_color)
+        };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_mesh_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: color_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(clear_color),
+                    load: color_load,
                     store: wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
@@ -3052,6 +3169,52 @@ fn create_depth_prepass_texture(
     (texture, view)
 }
 
+fn create_sky_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    color_format: wgpu::TextureFormat,
+    sample_count: u32,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("perro_sky3d_pipeline"),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            buffers: &[],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: color_format,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: sample_count,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 fn create_pipeline(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
@@ -3851,6 +4014,71 @@ fn build_scene_uniform(
     scene.ambient_and_counts[2] = spot_count;
 
     scene
+}
+
+fn build_sky_uniform(
+    camera: &Camera3DState,
+    lighting: &Lighting3DState,
+    width: u32,
+    height: u32,
+) -> Option<SkyUniform> {
+    let sky = lighting.sky.as_ref()?;
+    let view_proj = compute_view_proj_mat(camera, width, height);
+    let inv_view_proj = view_proj.inverse();
+    let inv = if inv_view_proj.is_finite() {
+        inv_view_proj.to_cols_array_2d()
+    } else {
+        Mat4::IDENTITY.to_cols_array_2d()
+    };
+    let t_day = day_weight_from_time(sky.time.time_of_day);
+    let day_colors = gradient_triplet(sky.day_colors.as_ref());
+    let night_colors = gradient_triplet(sky.night_colors.as_ref());
+    Some(SkyUniform {
+        inv_view_proj: inv,
+        camera_pos: [camera.position[0], camera.position[1], camera.position[2], 0.0],
+        day_colors,
+        night_colors,
+        params0: [
+            sky.cloud_size.max(0.0),
+            sky.cloud_density.clamp(0.0, 1.0),
+            sky.cloud_variance.clamp(0.0, 1.0),
+            sky.time.time_of_day.rem_euclid(1.0),
+        ],
+        params1: [
+            sky.star_size.max(0.0),
+            sky.star_scatter.clamp(0.0, 1.0),
+            sky.star_gleam.max(0.0),
+            sky.sky_angle,
+        ],
+        params2: [
+            sky.sun_size.max(0.0),
+            sky.moon_size.max(0.0),
+            t_day,
+            sky.time.time_of_day.rem_euclid(1.0),
+        ],
+        wind: [sky.cloud_wind_vector[0], sky.cloud_wind_vector[1], 0.0, 0.0],
+    })
+}
+
+fn gradient_triplet(colors: &[[f32; 3]]) -> [[f32; 4]; 3] {
+    if colors.is_empty() {
+        return [[0.0, 0.0, 0.0, 1.0]; 3];
+    }
+    if colors.len() == 1 {
+        return [
+            [colors[0][0], colors[0][1], colors[0][2], 1.0],
+            [colors[0][0], colors[0][1], colors[0][2], 1.0],
+            [colors[0][0], colors[0][1], colors[0][2], 1.0],
+        ];
+    }
+    let first = colors[0];
+    let middle = sample_gradient(colors, 0.5);
+    let last = colors[colors.len() - 1];
+    [
+        [first[0], first[1], first[2], 1.0],
+        [middle[0], middle[1], middle[2], 1.0],
+        [last[0], last[1], last[2], 1.0],
+    ]
 }
 
 fn day_weight_from_time(time_of_day: f32) -> f32 {

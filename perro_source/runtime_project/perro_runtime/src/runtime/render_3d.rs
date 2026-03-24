@@ -155,6 +155,7 @@ impl Runtime {
                         cloud_size: sky.clouds.size,
                         cloud_density: sky.clouds.density,
                         cloud_variance: sky.clouds.variance,
+                        cloud_wind_vector: sky.clouds.wind_vector,
                         star_size: sky.stars.size,
                         star_scatter: sky.stars.scatter,
                         star_gleam: sky.stars.gleam,

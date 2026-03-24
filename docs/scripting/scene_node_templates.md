@@ -9,31 +9,6 @@ Conventions used below:
 - `script = "res://path/to/script.rs"` is an example script path.
 - `res://path/to/...` placeholders show expected path shape.
 
-## Visual Color-Coding Option
-
-If your docs renderer allows inline HTML/CSS, you can color-code templates like this:
-
-- Scene node wrapper key (`[name]`) in purple.
-- `2D` types in blue shades (darker for deeper ancestor nesting).
-- `3D` types in orange shades (darker for deeper ancestor nesting).
-
-```html
-<pre><code><span style="color:#8b5cf6;">[player]</span>
-parent = @root
-script = "res://path/to/script.rs"
-
-    <span style="color:#3b82f6;">[Sprite2D]</span>
-        texture = "res://path/to/texture.png"
-        <span style="color:#1d4ed8;">[Node2D]</span>
-            position = (0, 0)
-        <span style="color:#1e40af;">[/Node2D]</span>
-    <span style="color:#2563eb;">[/Sprite2D]</span>
-<span style="color:#7c3aed;">[/player]</span>
-</code></pre>
-```
-
-If your renderer strips inline styles, use the plain text templates below.
-
 General wrapper (it might look like this):
 
 ```text
@@ -374,6 +349,7 @@ script = "res://path/to/script.rs"
         cloud_size = 0.5
         cloud_density = 0.35
         cloud_variance = 0.3
+        wind_vector = (0.06, 0.015)
         star_size = 1.0
         star_scatter = 0.25
         star_gleam = 0.4

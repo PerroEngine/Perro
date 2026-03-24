@@ -191,6 +191,13 @@ fn apply_sky_3d_fields(node: &mut Sky3D, fields: &[SceneObjectField]) {
                     node.clouds.variance = v;
                 }
             }
+            Some(NodeField::Sky3D(Sky3DField::CloudWindVector)) => {
+                if let Some(v) = as_vec2(value) {
+                    node.clouds.wind_vector = [v.x, v.y];
+                } else if let Some(v) = as_vec3(value) {
+                    node.clouds.wind_vector = [v.x, v.y];
+                }
+            }
             Some(NodeField::Sky3D(Sky3DField::StarSize)) => {
                 if let Some(v) = as_f32(value) {
                     node.stars.size = v;

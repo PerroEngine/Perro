@@ -6,6 +6,7 @@ pub struct SkyClouds {
     pub size: f32,
     pub density: f32,
     pub variance: f32,
+    pub wind_vector: [f32; 2],
 }
 
 impl SkyClouds {
@@ -14,6 +15,7 @@ impl SkyClouds {
             size: 0.5,
             density: 0.35,
             variance: 0.3,
+            wind_vector: [0.06, 0.015],
         }
     }
 }

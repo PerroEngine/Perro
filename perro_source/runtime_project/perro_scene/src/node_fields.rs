@@ -173,6 +173,7 @@ pub enum Sky3DField {
     CloudSize,
     CloudDensity,
     CloudVariance,
+    CloudWindVector,
     StarSize,
     StarScatter,
     StarGleam,
@@ -408,6 +409,9 @@ fn resolve_sky3d_field(field: &str) -> Option<Sky3DField> {
         "cloud_density" | "clouds_density" | "clouds.density" => Some(Sky3DField::CloudDensity),
         "cloud_variance" | "clouds_variance" | "clouds.variance" => {
             Some(Sky3DField::CloudVariance)
+        }
+        "wind_vector" | "cloud_wind" | "clouds_wind" | "clouds.wind" => {
+            Some(Sky3DField::CloudWindVector)
         }
         "star_size" | "stars_size" | "stars.size" => Some(Sky3DField::StarSize),
         "star_scatter" | "stars_scatter" | "stars.scatter" => Some(Sky3DField::StarScatter),

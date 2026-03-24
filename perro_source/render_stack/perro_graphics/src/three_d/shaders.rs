@@ -4,6 +4,7 @@ mod regular {
     pub const MATERIAL_UNLIT_WGSL: &str = include_str!("shaders/material_unlit.wgsl");
     pub const MATERIAL_TOON_WGSL: &str = include_str!("shaders/material_toon.wgsl");
     pub const DEPTH_PREPASS_WGSL: &str = include_str!("shaders/depth_prepass.wgsl");
+    pub const SKY3D_WGSL: &str = include_str!("shaders/sky3d.wgsl");
 }
 
 mod culling {
@@ -56,6 +57,14 @@ pub fn create_depth_prepass_shader_module(device: &wgpu::Device) -> wgpu::Shader
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_depth_prepass"),
         source: wgpu::ShaderSource::Wgsl(regular::DEPTH_PREPASS_WGSL.into()),
+    })
+}
+
+#[inline]
+pub fn create_sky_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_sky3d"),
+        source: wgpu::ShaderSource::Wgsl(regular::SKY3D_WGSL.into()),
     })
 }
 

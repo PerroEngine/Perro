@@ -100,6 +100,7 @@ pub struct Sky3DState {
     pub cloud_size: f32,
     pub cloud_density: f32,
     pub cloud_variance: f32,
+    pub cloud_wind_vector: [f32; 2],
     pub star_size: f32,
     pub star_scatter: f32,
     pub star_gleam: f32,
