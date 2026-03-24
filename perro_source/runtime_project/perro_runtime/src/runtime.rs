@@ -26,6 +26,7 @@ use state::{
     ScriptRuntimeState, ScriptSchedules, SignalRuntimeState, TransformRuntimeState,
 };
 pub(crate) use state::{TerrainChunkMeshKey, TerrainChunkMeshState, TerrainDebugState};
+pub(crate) use scene_loader::PendingScriptAttach;
 
 type RuntimeScriptCtor = ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>;
 type StaticScriptRegistry = &'static [(&'static str, RuntimeScriptCtor)];

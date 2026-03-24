@@ -1,7 +1,8 @@
 use crate::{Runtime, runtime_project::ProviderMode};
-#[cfg(feature = "profile")]
 use perro_ids::NodeID;
+use perro_ids::ScriptMemberID;
 use perro_io::{ProjectRoot, set_project_root};
+use perro_variant::Variant;
 #[cfg(feature = "profile")]
 use std::collections::HashMap;
 #[cfg(feature = "profile")]
@@ -12,6 +13,12 @@ mod prepare;
 
 use merge::merge_prepared_scene;
 use prepare::{load_runtime_scene_from_disk, prepare_scene};
+
+pub(crate) struct PendingScriptAttach {
+    pub(crate) node_id: NodeID,
+    pub(crate) script_path: String,
+    pub(crate) scene_injected_vars: Vec<(ScriptMemberID, Variant)>,
+}
 
 #[cfg(feature = "profile")]
 struct SceneLoadStats {
@@ -163,7 +170,7 @@ impl Runtime {
         #[cfg(feature = "profile")]
         let script_paths_by_node: HashMap<NodeID, String> = script_nodes
             .iter()
-            .map(|(id, script_path)| (*id, script_path.clone()))
+            .map(|it| (it.node_id, it.script_path.clone()))
             .collect();
         self.rebuild_internal_node_schedules();
         self.rebuild_node_tag_index();

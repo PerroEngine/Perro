@@ -373,6 +373,7 @@ impl<'a> Parser<'a> {
                     let mut tags = Vec::new();
                     let mut parent = None;
                     let mut script = None;
+                    let mut script_vars: Vec<SceneObjectField> = Vec::new();
 
                     while matches!(self.current, Token::Ident(_)) {
                         let k = self.expect_ident();
@@ -401,6 +402,15 @@ impl<'a> Parser<'a> {
                                     _ => panic!("script must be a string"),
                                 })
                             }
+                            "script_vars" => match v {
+                                SceneValue::Object(entries) => {
+                                    script_vars = entries
+                                        .iter()
+                                        .map(|(k, v)| (Cow::Owned(k.to_string()), v.clone()))
+                                        .collect();
+                                }
+                                _ => panic!("script_vars must be an object"),
+                            },
                             _ => {}
                         }
                     }
@@ -422,6 +432,7 @@ impl<'a> Parser<'a> {
                         children: Cow::Owned(Vec::new()),
                         parent: parent.map(SceneKey::from),
                         script: script.map(Cow::Owned),
+                        script_vars: Cow::Owned(script_vars),
                         data,
                     });
                 }

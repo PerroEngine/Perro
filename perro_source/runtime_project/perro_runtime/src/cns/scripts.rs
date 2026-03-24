@@ -1,8 +1,10 @@
 use crate::{Runtime, runtime_project::ProviderMode};
+use perro_ids::ScriptMemberID;
 use perro_input::InputContext;
 use perro_resource_context::ResourceContext;
 use perro_runtime_context::RuntimeContext;
 use perro_scripting::{ScriptBehavior, ScriptConstructor};
+use perro_variant::Variant;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -12,7 +14,7 @@ use std::{
 impl Runtime {
     pub(crate) fn attach_scene_scripts(
         &mut self,
-        script_nodes: Vec<(perro_ids::NodeID, String)>,
+        script_nodes: Vec<crate::runtime::PendingScriptAttach>,
     ) -> Result<(), String> {
         let project_root = self
             .project()
@@ -37,8 +39,12 @@ impl Runtime {
             }
         }
 
-        for (id, script_path) in script_nodes {
-            self.attach_script_instance(id, &script_path)?;
+        for pending in script_nodes {
+            self.attach_script_instance(
+                pending.node_id,
+                &pending.script_path,
+                &pending.scene_injected_vars,
+            )?;
         }
 
         Ok(())
@@ -48,6 +54,7 @@ impl Runtime {
         &mut self,
         node: perro_ids::NodeID,
         script_path: &str,
+        scene_injected_vars: &[(ScriptMemberID, Variant)],
     ) -> Result<(), String> {
         if node.is_nil() || self.nodes.get(node).is_none() {
             return Err(format!(
@@ -81,6 +88,11 @@ impl Runtime {
             self.remove_script_instance(node);
         }
         self.scripts.insert(node, Arc::clone(&behavior), state);
+        let _ = self.scripts.with_instance_mut(node, |instance| {
+            instance
+                .behavior
+                .apply_scene_injected_vars(instance.state.as_mut(), scene_injected_vars);
+        });
 
         if flags.has_init() {
             let resource_api = self.resource_api.clone();

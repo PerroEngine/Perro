@@ -9,7 +9,7 @@ use perro_render_bridge::{
 use std::sync::Arc;
 use std::time::Instant;
 
-const SKY_DAY_SECONDS: f32 = 1_440.0;
+const SKY_DAY_SECONDS: f32 = 1580.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Draw3DKind {

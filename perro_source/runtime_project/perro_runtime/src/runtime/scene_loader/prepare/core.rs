@@ -59,6 +59,7 @@ pub(super) struct PreparedScene {
 pub(super) struct PendingScript {
     pub(super) node_key: String,
     pub(super) script_path: String,
+    pub(super) scene_injected_vars: Vec<(String, SceneValue)>,
 }
 
 pub(super) struct PendingNode {
@@ -130,6 +131,11 @@ pub(super) fn prepare_scene(scene: &Scene) -> Result<PreparedScene, String> {
             scripts.push(PendingScript {
                 node_key: entry.key.as_ref().to_string(),
                 script_path: script.to_string(),
+                scene_injected_vars: entry
+                    .script_vars
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect(),
             });
         }
         prepared_nodes.push(PendingNode {

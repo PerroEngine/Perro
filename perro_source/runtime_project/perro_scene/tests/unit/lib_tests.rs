@@ -83,3 +83,44 @@ fn scene_key_and_value_key_as_ref() {
     assert_eq!(key.as_ref(), "player");
     assert_eq!(value_key.as_ref(), "root");
 }
+
+#[test]
+fn parse_script_vars_object() {
+    let src = r#"
+    [main]
+    script = "res://main.rs"
+    script_vars = { "cam": Camera, speed: 2.5, enabled: true }
+    [Node]
+    [/Node]
+    [/main]
+
+    [Camera]
+    [Node]
+    [/Node]
+    [/Camera]
+    "#;
+
+    let scene = Parser::new(src).parse_scene();
+    let main = scene
+        .nodes
+        .iter()
+        .find(|n| n.key.as_ref() == "main")
+        .expect("main node");
+
+    assert_eq!(main.script_vars.len(), 3);
+    assert!(
+        main.script_vars
+            .iter()
+            .any(|(name, _)| name.as_ref() == "cam")
+    );
+    assert!(
+        main.script_vars
+            .iter()
+            .any(|(name, _)| name.as_ref() == "speed")
+    );
+    assert!(
+        main.script_vars
+            .iter()
+            .any(|(name, _)| name.as_ref() == "enabled")
+    );
+}

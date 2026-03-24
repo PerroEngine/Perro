@@ -1,15 +1,19 @@
-use super::prepare::PreparedScene;
+use super::{PendingScriptAttach, prepare::PreparedScene};
 use crate::Runtime;
-use perro_ids::NodeID;
+use perro_ids::{NodeID, ScriptMemberID};
 use perro_nodes::animation_player::AnimationObjectBinding;
 use perro_nodes::{SceneNode, SceneNodeData};
 use perro_resource_context::ResourceContext;
-use std::{borrow::Cow, collections::HashMap};
+use perro_scene::SceneValue;
+use perro_structs::{Vector2, Vector3};
+use perro_variant::Variant;
+use std::sync::Arc;
+use std::{borrow::Cow, collections::BTreeMap, collections::HashMap};
 
 pub(super) fn merge_prepared_scene(
     runtime: &mut Runtime,
     prepared: PreparedScene,
-) -> Result<Vec<(NodeID, String)>, String> {
+) -> Result<Vec<PendingScriptAttach>, String> {
     let PreparedScene {
         root_key,
         nodes,
@@ -213,8 +217,59 @@ pub(super) fn merge_prepared_scene(
                 pending_script.node_key
             )
         })?;
-        script_nodes.push((id, pending_script.script_path));
+        let scene_injected_vars = pending_script
+            .scene_injected_vars
+            .iter()
+            .map(|(name, value)| {
+                Ok((
+                    ScriptMemberID::from_string(name.as_str()),
+                    scene_value_to_variant(value, &key_to),
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        script_nodes.push(PendingScriptAttach {
+            node_id: id,
+            script_path: pending_script.script_path,
+            scene_injected_vars,
+        });
     }
 
     Ok(script_nodes)
+}
+
+fn scene_value_to_variant(value: &SceneValue, key_to: &HashMap<String, NodeID>) -> Variant {
+    match value {
+        SceneValue::Bool(v) => Variant::from(*v),
+        SceneValue::I32(v) => Variant::from(*v),
+        SceneValue::F32(v) => Variant::from(*v),
+        SceneValue::Vec2 { x, y } => Variant::from(Vector2::new(*x, *y)),
+        SceneValue::Vec3 { x, y, z } => Variant::from(Vector3::new(*x, *y, *z)),
+        SceneValue::Vec4 { x, y, z, w } => Variant::Array(vec![
+            Variant::from(*x),
+            Variant::from(*y),
+            Variant::from(*z),
+            Variant::from(*w),
+        ]),
+        SceneValue::Str(v) => Variant::from(v.to_string()),
+        SceneValue::Key(v) => {
+            if let Some(id) = key_to.get(v.as_ref()) {
+                Variant::from(*id)
+            } else {
+                Variant::from(v.to_string())
+            }
+        }
+        SceneValue::Object(entries) => {
+            let mut out = BTreeMap::new();
+            for (k, v) in entries.iter() {
+                out.insert(Arc::<str>::from(k.as_ref()), scene_value_to_variant(v, key_to));
+            }
+            Variant::Object(out)
+        }
+        SceneValue::Array(items) => Variant::Array(
+            items
+                .iter()
+                .map(|v| scene_value_to_variant(v, key_to))
+                .collect(),
+        ),
+    }
 }

@@ -1,4 +1,4 @@
-use perro::prelude::*;
+use perro::{ids::NodeID, prelude::*};
 use std::borrow::Cow;
 
 type SelfNodeType = Camera3D;
@@ -6,11 +6,11 @@ type SelfNodeType = Camera3D;
 #[State]
 pub struct CameraState {
     #[default = 24.0]
-    ///@Expose
+     
     move_speed: f32,
 
     #[default = 0.0025]
-    ///@Expose
+     
     look_sensitivity: f32,
 
     #[default = 0.0]
@@ -18,6 +18,10 @@ pub struct CameraState {
 
     #[default = 0.0]
     pitch: f32,
+
+    mesh: NodeID,
+
+    print_name: String,
 }
 
 lifecycle!({
@@ -32,7 +36,14 @@ lifecycle!({
         //enable_colorblind_filter!(res, ColorBlindFilter::Deuteran, 0.8);
         //enable_colorblind_filter!(res, ColorBlindFilter::Tritan, 0.8);
         //enable_colorblind_filter!(res, ColorBlindFilter::Achroma, 0.8);
-        
+        let (mesh_id, print_name) = with_state!(ctx, CameraState, node, |state| (state.mesh, state.print_name.clone())).unwrap_or_else(|| {
+            println!("Camera node {} has no mesh exposed variable, defaulting to self", node);
+            (node, String::new())
+        });
+
+        let name = get_node_name!(ctx, mesh_id);
+        println!("Camera node {} has external mesh exposed variable named '{:?}'", node, name);
+        println!("Camera node {} has external print_name variable named '{}'", node, print_name);
     }
 
     fn on_all_init(

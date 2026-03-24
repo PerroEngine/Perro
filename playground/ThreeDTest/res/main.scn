@@ -9,7 +9,6 @@
 [mesh1]
 parent = @root
 script = "res://scripts/script.rs"
-
 [MeshInstance3D]
     mesh = "__cube__"
     material = {
@@ -221,7 +220,7 @@ script = "res://scripts/script.rs"
 [camera]
 parent = @root
 script = "res://scripts/camera.rs"
-
+script_vars = {"mesh": mesh8, "print_name": "Bob"}
     [Camera3D]
         active = true
        
@@ -278,7 +277,7 @@ parent = @root
         ]
         sky_angle = 35.0
         style = "realistic"
-        time_of_day = 0.15
+        time_of_day = 0.2
         time_paused = false
         time_scale = 1.0
         cloud_size = 0.65
@@ -286,7 +285,7 @@ parent = @root
         cloud_variance = 0.4
         wind_vector = (-0.4, 0.2)
         star_size = 5.0
-        star_scatter = 0.1
+        star_scatter = 0.7
         star_gleam = 0.8
         moon_size = 1.5
         sun_size = 1.75

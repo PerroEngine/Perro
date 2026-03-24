@@ -163,7 +163,7 @@ fn emit_static_scene_const(
             tags_name
         };
         node_entries.push_str(&format!(
-            "    SceneNodeEntry {{ key: SceneKey(Cow::Borrowed(\"{key}\")), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, data: {data} }},\n",
+            "    SceneNodeEntry {{ key: SceneKey(Cow::Borrowed(\"{key}\")), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, script_vars: Cow::Borrowed({script_vars}), data: {data} }},\n",
             key = escape_str(node.key.as_ref()),
             name = opt_static_str(&node.name),
             tags = tags_ref,
@@ -176,6 +176,29 @@ fn emit_static_scene_const(
                 None => "None".to_string(),
             },
             script = opt_static_str(&node.script),
+            script_vars = if node.script_vars.is_empty() {
+                uses_empty_fields = true;
+                "EMPTY_SCENE_FIELDS".to_string()
+            } else {
+                let script_vars_name = format!("SCRIPT_VARS_{}_{}", scene_ident, index);
+                let mut nested_consts = String::new();
+                let mut script_var_entries = String::new();
+                for (name, value) in node.script_vars.as_ref() {
+                    let emitted =
+                        emit_value_with_consts(&mut nested_consts, &scene_ident, value, &mut counter);
+                    let _ = writeln!(
+                        script_var_entries,
+                        "    (Cow::Borrowed(\"{}\"), {}),",
+                        escape_str(name.as_ref()),
+                        emitted
+                    );
+                }
+                out.push_str(&nested_consts);
+                let _ = writeln!(out, "const {script_vars_name}: &[SceneObjectField] = &[");
+                out.push_str(&script_var_entries);
+                out.push_str("];\n");
+                script_vars_name
+            },
             data = data_const,
         ));
     }

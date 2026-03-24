@@ -62,7 +62,7 @@ pub trait ScriptBehavior<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: 
     }
     fn get_var(&self, state: &dyn Any, var: ScriptMemberID) -> Variant;
     fn set_var(&self, state: &mut dyn Any, var: ScriptMemberID, value: &Variant);
-    fn apply_exposed_vars(&self, state: &mut dyn Any, vars: &[(ScriptMemberID, Variant)]) {
+    fn apply_scene_injected_vars(&self, state: &mut dyn Any, vars: &[(ScriptMemberID, Variant)]) {
         for (var, value) in vars {
             self.set_var(state, *var, value);
         }
