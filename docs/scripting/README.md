@@ -11,6 +11,7 @@ Core pieces:
 See:
 - [Script Contexts](contexts/README.md)
 - [Node Types](nodes.md)
+- [Scene Node Templates](scene_node_templates.md)
 - [Script State](state.md)
 - [Script Lifecycle](lifecycle.md)
 - [Script Methods](methods.md)

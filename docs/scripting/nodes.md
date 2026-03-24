@@ -19,6 +19,13 @@ Rendering and resource loading are handled by the runtime and `ResourceContext`.
 - Active 2D camera (position/rotation/zoom).
 - Supports camera post-processing via `post_processing` (see "Camera Post-Processing" below).
 
+Physics 2D:
+
+- `CollisionShape2D`
+- `StaticBody2D`
+- `RigidBody2D`
+- `Area2D`
+
 ## 3D Nodes
 
 `Node3D`
@@ -58,15 +65,29 @@ Rendering and resource loading are handled by the runtime and `ResourceContext`.
 Lights:
 
 - `AmbientLight3D`
+- `Sky3D`
 - `RayLight3D`
 - `PointLight3D`
 - `SpotLight3D`
+
+Physics 3D:
+
+- `CollisionShape3D`
+- `StaticBody3D`
+- `RigidBody3D`
+- `Area3D`
 
 `Skeleton3D`
 
 - Holds `Vec<Bone3D>` (data-only).
 - Bones are loaded via `ResourceContext::Skeletons().load_bones(source)`.
 - Typical flow: scene specifies a `skeleton` path, and scene loader fills `bones`.
+
+## Scene Authoring Templates
+
+For copy/paste scene node authoring templates (with all exposed fields, including nil/empty-default fields), see:
+
+- [Scene Node Templates](scene_node_templates.md)
 
 ## Camera Post-Processing
 
@@ -92,7 +113,7 @@ See [Visual Accessibility](../resources/visual_accessibility.md).
 
 From scene:
 
-```
+```text
 [Rig]
     [Skeleton3D]
         skeleton = "res://models/rig.gltf:skeleton[0]"
@@ -117,7 +138,7 @@ with_node_mut!(ctx, Skeleton3D, node_id, |skel| {
 });
 ```
 
-Swapping a mesh’s skeleton at runtime (Mesh must have vertex weights):
+Swapping a mesh's skeleton at runtime (Mesh must have vertex weights):
 
 ```rust
 with_node_mut!(ctx, MeshInstance3D, mesh_id, |mesh| {
