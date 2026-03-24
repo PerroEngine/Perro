@@ -277,7 +277,6 @@ parent = @root
             (0.15, 0.20, 0.45)   # stylized moonlit blue
         ]
         sky_angle = 35.0
-        style = "realistic"
         time_of_day = 0.15
         time_paused = false
         time_scale = 1.0

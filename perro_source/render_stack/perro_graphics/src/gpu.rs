@@ -214,7 +214,7 @@ impl Gpu {
             present_mode,
             alpha_mode,
             view_formats: vec![],
-            desired_maximum_frame_latency: 1,
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
 
@@ -552,7 +552,6 @@ impl Gpu {
         });
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.render_pass(
-                &self.device,
                 &mut encoder,
                 color_view,
                 clear_color,
@@ -785,9 +784,9 @@ fn create_msaa_color_target(
 fn choose_present_mode(modes: &[wgpu::PresentMode], vsync_enabled: bool) -> wgpu::PresentMode {
     let preferred = if vsync_enabled {
         [
-            wgpu::PresentMode::FifoRelaxed,
             wgpu::PresentMode::Fifo,
             wgpu::PresentMode::AutoVsync,
+            wgpu::PresentMode::FifoRelaxed,
         ]
         .as_slice()
     } else {

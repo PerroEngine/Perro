@@ -224,6 +224,8 @@ pub struct Gpu3D {
     hiz_copy_bgl: wgpu::BindGroupLayout,
     hiz_downsample_bgl: wgpu::BindGroupLayout,
     hiz_cull_bgl: wgpu::BindGroupLayout,
+    hiz_copy_bind_group: Option<wgpu::BindGroup>,
+    hiz_downsample_bind_groups: Vec<wgpu::BindGroup>,
     hiz_cull_params: wgpu::Buffer,
     hiz_cull_bind_group: wgpu::BindGroup,
     hiz_debug_readback_buffer: wgpu::Buffer,
@@ -993,7 +995,7 @@ impl Gpu3D {
             ],
         });
 
-        Self {
+        let mut gpu = Self {
             color_format,
             camera_bgl,
             sky_bgl,
@@ -1066,6 +1068,8 @@ impl Gpu3D {
             hiz_copy_bgl,
             hiz_downsample_bgl,
             hiz_cull_bgl,
+            hiz_copy_bind_group: None,
+            hiz_downsample_bind_groups: Vec::new(),
             hiz_cull_params,
             hiz_cull_bind_group,
             hiz_debug_readback_buffer,
@@ -1097,7 +1101,9 @@ impl Gpu3D {
             last_occlusion_visible: 0,
             last_occlusion_culled: 0,
             custom_pipelines: AHashMap::new(),
-        }
+        };
+        gpu.rebuild_hiz_bind_groups(device);
+        gpu
     }
 
     pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -1122,6 +1128,7 @@ impl Gpu3D {
         self.hiz_sample_view = hiz_sample_view;
         self.hiz_mip_count = hiz_mip_count;
         self.hiz_size = hiz_size;
+        self.rebuild_hiz_bind_groups(device);
         self.hiz_cull_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_hiz_cull_bg"),
             layout: &self.hiz_cull_bgl,
@@ -1253,6 +1260,7 @@ impl Gpu3D {
         self.hiz_sample_view = hiz_sample_view;
         self.hiz_mip_count = hiz_mip_count;
         self.hiz_size = hiz_size;
+        self.rebuild_hiz_bind_groups(device);
         self.sample_count = sample_count;
         self.custom_pipelines.clear();
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(self.occlusion_mode);
@@ -1906,7 +1914,6 @@ impl Gpu3D {
 
     pub fn render_pass(
         &mut self,
-        device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         color_view: &wgpu::TextureView,
         clear_color: wgpu::Color,
@@ -1982,7 +1989,7 @@ impl Gpu3D {
             drop(prepass);
         }
         if hiz_active {
-            self.build_hiz_from_depth(device, encoder);
+            self.build_hiz_from_depth(encoder);
 
             let mut cull_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("perro_hiz_occlusion_cull_pass"),
@@ -2289,11 +2296,50 @@ impl Gpu3D {
         self.indirect_capacity = new_capacity;
     }
 
-    fn build_hiz_from_depth(&self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+    fn build_hiz_from_depth(&self, encoder: &mut wgpu::CommandEncoder) {
+        let Some(copy_bg) = self.hiz_copy_bind_group.as_ref() else {
+            return;
+        };
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("perro_hiz_copy_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.hiz_copy_pipeline);
+            pass.set_bind_group(0, copy_bg, &[]);
+            let groups_x = self.hiz_size.0.div_ceil(HIZ_WORKGROUP_SIZE_X);
+            let groups_y = self.hiz_size.1.div_ceil(HIZ_WORKGROUP_SIZE_Y);
+            pass.dispatch_workgroups(groups_x, groups_y, 1);
+        }
+        let mut src_w = self.hiz_size.0;
+        let mut src_h = self.hiz_size.1;
+        for downsample_bg in &self.hiz_downsample_bind_groups {
+            let dst_w = (src_w / 2).max(1);
+            let dst_h = (src_h / 2).max(1);
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("perro_hiz_downsample_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.hiz_downsample_pipeline);
+            pass.set_bind_group(0, downsample_bg, &[]);
+            pass.dispatch_workgroups(
+                dst_w.div_ceil(HIZ_WORKGROUP_SIZE_X),
+                dst_h.div_ceil(HIZ_WORKGROUP_SIZE_Y),
+                1,
+            );
+            src_w = dst_w;
+            src_h = dst_h;
+        }
+    }
+
+    fn rebuild_hiz_bind_groups(&mut self, device: &wgpu::Device) {
         if self.hiz_mip_views.is_empty() {
+            self.hiz_copy_bind_group = None;
+            self.hiz_downsample_bind_groups.clear();
             return;
         }
-        let copy_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+
+        self.hiz_copy_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_hiz_copy_bg"),
             layout: &self.hiz_copy_bgl,
             entries: &[
@@ -2306,50 +2352,29 @@ impl Gpu3D {
                     resource: wgpu::BindingResource::TextureView(&self.hiz_mip_views[0]),
                 },
             ],
-        });
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("perro_hiz_copy_pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.hiz_copy_pipeline);
-            pass.set_bind_group(0, &copy_bg, &[]);
-            let groups_x = self.hiz_size.0.div_ceil(HIZ_WORKGROUP_SIZE_X);
-            let groups_y = self.hiz_size.1.div_ceil(HIZ_WORKGROUP_SIZE_Y);
-            pass.dispatch_workgroups(groups_x, groups_y, 1);
-        }
-        let mut src_w = self.hiz_size.0;
-        let mut src_h = self.hiz_size.1;
+        }));
+
+        self.hiz_downsample_bind_groups.clear();
+        self.hiz_downsample_bind_groups
+            .reserve(self.hiz_mip_count.saturating_sub(1) as usize);
         for mip in 1..self.hiz_mip_count as usize {
-            let downsample_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("perro_hiz_downsample_bg"),
-                layout: &self.hiz_downsample_bgl,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&self.hiz_mip_views[mip - 1]),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&self.hiz_mip_views[mip]),
-                    },
-                ],
-            });
-            let dst_w = (src_w / 2).max(1);
-            let dst_h = (src_h / 2).max(1);
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("perro_hiz_downsample_pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.hiz_downsample_pipeline);
-            pass.set_bind_group(0, &downsample_bg, &[]);
-            pass.dispatch_workgroups(
-                dst_w.div_ceil(HIZ_WORKGROUP_SIZE_X),
-                dst_h.div_ceil(HIZ_WORKGROUP_SIZE_Y),
-                1,
-            );
-            src_w = dst_w;
-            src_h = dst_h;
+            self.hiz_downsample_bind_groups
+                .push(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("perro_hiz_downsample_bg"),
+                    layout: &self.hiz_downsample_bgl,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(
+                                &self.hiz_mip_views[mip - 1],
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(&self.hiz_mip_views[mip]),
+                        },
+                    ],
+                }));
         }
     }
 
