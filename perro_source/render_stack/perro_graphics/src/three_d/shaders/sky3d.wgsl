@@ -7,7 +7,7 @@ struct SkyUniform {
     params0: vec4<f32>, // cloud_size, cloud_density, cloud_variance, time_of_day
     params1: vec4<f32>, // star_size, star_scatter, star_gleam, sky_angle
     params2: vec4<f32>, // sun_size, moon_size, day_weight, cloud_time_seconds
-    wind: vec4<f32>, // x,y cloud wind, z style_blend (0 toon, 1 realistic)
+    wind: vec4<f32>, // x,y cloud wind, z style_blend (0 toon, 1 realistic), w reserved
 };
 
 @group(0) @binding(0)
@@ -40,6 +40,45 @@ fn noise2(p: vec2<f32>) -> f32 {
     let nx0 = mix(n00, n10, u.x);
     let nx1 = mix(n01, n11, u.x);
     return mix(nx0, nx1, u.y);
+}
+
+fn grad2(cell: vec2<f32>) -> vec2<f32> {
+    let a = hash12(cell) * 6.28318530718;
+    return vec2<f32>(cos(a), sin(a));
+}
+
+fn perlin2(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * (3.0 - 2.0 * f);
+
+    let g00 = grad2(i + vec2<f32>(0.0, 0.0));
+    let g10 = grad2(i + vec2<f32>(1.0, 0.0));
+    let g01 = grad2(i + vec2<f32>(0.0, 1.0));
+    let g11 = grad2(i + vec2<f32>(1.0, 1.0));
+
+    let n00 = dot(g00, f - vec2<f32>(0.0, 0.0));
+    let n10 = dot(g10, f - vec2<f32>(1.0, 0.0));
+    let n01 = dot(g01, f - vec2<f32>(0.0, 1.0));
+    let n11 = dot(g11, f - vec2<f32>(1.0, 1.0));
+
+    let nx0 = mix(n00, n10, u.x);
+    let nx1 = mix(n01, n11, u.x);
+    return mix(nx0, nx1, u.y) * 0.5 + 0.5;
+}
+
+fn perlin_fbm(p: vec2<f32>, octaves: i32) -> f32 {
+    var q = p;
+    var amp = 0.5;
+    var sum = 0.0;
+    var norm = 0.0;
+    for (var i = 0; i < octaves; i++) {
+        sum += perlin2(q) * amp;
+        norm += amp;
+        q = q * 2.0 + vec2<f32>(31.0, -19.0);
+        amp *= 0.5;
+    }
+    return sum / max(norm, 1.0e-5);
 }
 
 fn fbm2(p: vec2<f32>) -> f32 {
@@ -95,6 +134,7 @@ fn stylize_cloud_tint(base: vec3<f32>, sat: f32, gamma: f32, lift: f32) -> vec3<
 
 const PRIME_X: i32 = 501125321;
 const PRIME_Y: i32 = 1136930381;
+const CLOUD_BASE_HEIGHT: f32 = 0.1;
 
 fn _cubic_lerp(a: f32, b: f32, c: f32, d: f32, t: f32) -> f32 {
     let p = d - c - (a - b);
@@ -234,6 +274,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     let sky_time      = sky.params2.w;
     let day_t_runtime = sky.params2.z;
+    let style_blend_global = clamp(sky.wind.z, 0.0, 1.0);
     let day_from_sun  = smoothstep(-0.14, 0.28, sun_dir.y);
     let day_t         = mix(day_t_runtime, day_from_sun, 0.75);
     let night_t       = clamp(1.0 - day_t, 0.0, 1.0);
@@ -403,7 +444,11 @@ if (day_t < 0.8) {
             let flourish = 0.96 + 0.04 * sin(sky_time * 1.2);
             let flare = (core_bloom * 0.52 + mid_bloom * 0.92 + far_bloom * 1.36) * bloom_noise * twinkle * flourish;
             let flare_col = mix(vec3<f32>(1.0, 0.84, 0.40), vec3<f32>(1.0, 0.62, 0.34), evening_t);
-            let flare_amt = clamp(flare * day_t * halo_vis * (1.0 - horizon_amount * 0.75) * 0.52, 0.0, 2.0);
+            let flare_amt = clamp(
+                flare * day_t * halo_vis * (1.0 - horizon_amount * 0.75) * 0.52 * mix(1.0, 0.46, style_blend_global),
+                0.0,
+                2.0
+            );
             color += flare_col * flare_amt * sun_visibility;
         }
     }
@@ -447,7 +492,7 @@ if (day_t < 0.8) {
     // matching the Godot shader. Everything else — smoothstep layering, sun
     // pass-through, time-of-day tinting — is kept from the WGSL version.
     var cloud_mask = 0.0;
-    if (ray.y > -0.06) {
+    if (ray.y > CLOUD_BASE_HEIGHT) {
         let cloud_size     = clamp(sky.params0.x, 0.0, 1.0);
         let cloud_variance = clamp(sky.params0.z, 0.0, 1.0);
         let style_blend    = clamp(sky.wind.z, 0.0, 1.0);
@@ -456,48 +501,48 @@ if (day_t < 0.8) {
         let wind_dir       = wind / wind_len;
 
         // Same UV projection as Godot: denser shapes near zenith, stretched near horizon
-        let sky_uv_y    = max(ray.y + 0.06, 0.015);
+        let sky_uv_y    = max(ray.y - CLOUD_BASE_HEIGHT, 0.015);
         let sky_uv      = ray.xz / sqrt(sky_uv_y);
         let cloud_clock = cloud_time_seconds * (0.011 + wind_len * 0.06);
         let clouds_scale     = mix(1.55, 0.55, cloud_size);
         let clouds_fuzziness = mix(0.035, 0.24, cloud_variance);
         let coverage_bias    = mix(0.02, 0.14, cloud_density);
-        let macro_shape      = gen_fractal_ping_pong(
-            sky_uv * (clouds_scale * 0.45) + vec2<f32>(41.0, -29.0), 7, 0.5
-        );
+        let macro_uv = sky_uv * (clouds_scale * 0.45) + vec2<f32>(41.0, -29.0);
+        let macro_warp = vec2<f32>(
+            perlin_fbm(macro_uv * 0.55 + vec2<f32>(13.0, -7.0), 2),
+            perlin_fbm(macro_uv * 0.55 + vec2<f32>(-5.0, 11.0), 2)
+        ) - vec2<f32>(0.5, 0.5);
+        let macro_shape = perlin_fbm(macro_uv + macro_warp * 1.35, 3);
         let macro_bias       = smoothstep(0.35, 1.0, macro_shape) * 0.22;
 
         // Three cloud layers — speed ratios and seed offsets match Godot exactly
         var drift = wind_dir * cloud_clock;
-        let noise_top_raw = gen_fractal_ping_pong(
-            (sky_uv + drift) * clouds_scale, 0, 0.5
-        );
+        let top_uv = (sky_uv + drift) * clouds_scale;
+        let top_warp = vec2<f32>(
+            perlin_fbm(top_uv * 0.7 + vec2<f32>(19.0, -23.0), 2),
+            perlin_fbm(top_uv * 0.7 + vec2<f32>(-17.0, 29.0), 2)
+        ) - vec2<f32>(0.5, 0.5);
+        let noise_top_raw = perlin_fbm(top_uv + top_warp * 0.95, 4);
 
         drift = wind_dir * cloud_clock * 0.89 + vec2<f32>(0.009, -0.013);
-        let noise_middle_raw = gen_fractal_ping_pong(
-            (sky_uv + drift) * clouds_scale, 1, 0.75
-        );
+        let mid_uv = (sky_uv + drift) * clouds_scale;
+        let mid_warp = vec2<f32>(
+            perlin_fbm(mid_uv * 0.68 + vec2<f32>(7.0, -31.0), 2),
+            perlin_fbm(mid_uv * 0.68 + vec2<f32>(-29.0, 5.0), 2)
+        ) - vec2<f32>(0.5, 0.5);
+        let noise_middle_raw = perlin_fbm(mid_uv + mid_warp * 0.82, 4);
 
         drift = wind_dir * cloud_clock * 0.79 + vec2<f32>(-0.014, 0.006);
-        let noise_bottom_raw = gen_fractal_ping_pong(
-            (sky_uv + drift) * clouds_scale, 2, 1.0
+        let bot_uv = (sky_uv + drift) * clouds_scale;
+        let bot_warp = vec2<f32>(
+            perlin_fbm(bot_uv * 0.72 + vec2<f32>(-13.0, 17.0), 2),
+            perlin_fbm(bot_uv * 0.72 + vec2<f32>(23.0, -11.0), 2)
+        ) - vec2<f32>(0.5, 0.5);
+        let noise_bottom_raw = perlin_fbm(bot_uv + bot_warp * 0.74, 4);
+        let detail_micro = perlin_fbm(
+            (sky_uv + wind_dir * cloud_clock * 1.21 + vec2<f32>(9.0, -13.0)) * (clouds_scale * 1.75),
+            3
         );
-        let detail_wisp = gen_fractal_ping_pong(
-            (sky_uv + wind_dir * cloud_clock * 1.33 + vec2<f32>(19.0, -31.0)) * (clouds_scale * 2.15),
-            11,
-            1.15
-        );
-        let detail_puff = gen_fractal_ping_pong(
-            (sky_uv + wind_dir * cloud_clock * 0.57 + vec2<f32>(-7.0, 23.0)) * (clouds_scale * 0.90),
-            13,
-            0.55
-        );
-        let detail_erosion_fine = gen_fractal_ping_pong(
-            (sky_uv + wind_dir * cloud_clock * 1.75 + vec2<f32>(29.0, -17.0)) * (clouds_scale * 3.10),
-            17,
-            1.65
-        );
-
         // Godot smoothstep layering: each lower layer bleeds into the one above,
         // giving the illusion that clouds have internal depth and weight.
         let noise_bottom = smoothstep(clouds_cutoff, clouds_cutoff + clouds_fuzziness,
@@ -507,39 +552,66 @@ if (day_t < 0.8) {
         let noise_top_s  = smoothstep(clouds_cutoff, clouds_cutoff + clouds_fuzziness,
                                       noise_top_raw + noise_middle * 0.42 + coverage_bias * 0.70 + macro_bias * 0.50) * 1.22;
 
-        var clouds_base = clamp(noise_top_s * 0.85 + noise_middle * 1.08 + noise_bottom * 1.25, 0.0, 1.0);
+        // Secondary altitude layers:
+        // lower deck (~75% height): broader, heavier, slightly faster drift
+        // upper deck (~150% height): finer, thinner, slower drift
+        let low_layer_uv = (sky_uv + wind_dir * cloud_clock * 1.18 + vec2<f32>(-27.0, 14.0))
+            * (clouds_scale * 0.78);
+        let high_layer_uv = (sky_uv + wind_dir * cloud_clock * 0.64 + vec2<f32>(33.0, -21.0))
+            * (clouds_scale * 1.34);
+        let low_layer_raw = perlin_fbm(low_layer_uv, 3);
+        let high_layer_raw = perlin_fbm(high_layer_uv, 3);
+        let low_layer = smoothstep(
+            clouds_cutoff - 0.06,
+            clouds_cutoff + clouds_fuzziness + 0.10,
+            low_layer_raw + coverage_bias * 1.05 + macro_bias * 0.55
+        );
+        let high_layer = smoothstep(
+            clouds_cutoff + 0.02,
+            clouds_cutoff + clouds_fuzziness + 0.06,
+            high_layer_raw + coverage_bias * 0.75 + macro_bias * 0.32
+        );
+
+        var clouds_base = clamp(
+            noise_top_s * 0.80
+                + noise_middle * 1.00
+                + noise_bottom * 1.15
+                + low_layer * 0.48
+                + high_layer * 0.30,
+            0.0,
+            1.0
+        );
         clouds_base = pow(clouds_base, mix(1.0, 0.72, cloud_density));
         clouds_base = clamp(clouds_base + cloud_density * 0.14 + macro_bias * 0.18, 0.0, 1.0);
 
-        let realistic_erosion = smoothstep(0.12, 0.96, detail_wisp);
-        let realistic_puffs = smoothstep(0.40, 0.92, detail_puff);
-        let realistic_fine_breakup = smoothstep(0.28, 0.88, detail_erosion_fine);
+        let realistic_erosion = smoothstep(0.18, 0.88, noise_top_raw);
+        let realistic_puffs = smoothstep(0.34, 0.90, noise_middle_raw);
+        let realistic_fine_breakup = smoothstep(0.22, 0.86, noise_bottom_raw);
 
-        // Old "realistic" profile is now the Toon branch (it reads more stylized).
+
         var clouds_amount_toon = clouds_base * mix(0.80, 1.06, realistic_puffs);
         clouds_amount_toon *= mix(1.06, 0.68, realistic_erosion);
         clouds_amount_toon *= mix(1.0, 0.86, realistic_fine_breakup);
         clouds_amount_toon = pow(clouds_amount_toon, 1.12);
         clouds_amount_toon = clamp(clouds_amount_toon, 0.0, 1.0);
 
-        // New realistic profile: finer erosion + wispy veil, less blobby mass.
-        let wisp_filaments = gen_fractal_ping_pong(
-            (sky_uv + wind_dir * cloud_clock * 2.05 + vec2<f32>(-43.0, 37.0)) * (clouds_scale * 4.25),
-            23,
-            2.10
-        );
-        let wisp_mask = smoothstep(0.44, 0.90, wisp_filaments);
+        // New realistic profile: reduced-cost approximation from existing layers.
+        let wisp_mask = smoothstep(0.34, 0.84, noise_top_s * (1.0 - noise_bottom));
         let upper_veil = smoothstep(0.10, 0.72, noise_top_s) * (1.0 - smoothstep(0.56, 1.0, noise_bottom));
-        var clouds_amount_real = clouds_base * mix(0.72, 0.98, realistic_puffs);
-        clouds_amount_real *= mix(1.10, 0.52, realistic_erosion);
-        clouds_amount_real *= mix(1.0, 0.74, realistic_fine_breakup);
-        clouds_amount_real += upper_veil * wisp_mask * 0.16;
+        let curved_mass = smoothstep(0.22, 0.86, noise_top_s * 0.72 + noise_middle * 0.28);
+        var clouds_amount_real = clouds_base * mix(0.82, 0.96, realistic_puffs);
+        clouds_amount_real *= mix(1.02, 0.70, realistic_erosion);
+        clouds_amount_real *= mix(1.0, 0.84, realistic_fine_breakup);
+        clouds_amount_real = mix(clouds_amount_real, curved_mass, 0.26);
+        clouds_amount_real += upper_veil * wisp_mask * 0.24;
+        let micro_break = smoothstep(0.32, 0.86, detail_micro);
+        clouds_amount_real *= mix(1.08, 0.86, micro_break);
         clouds_amount_real = pow(clouds_amount_real, 1.28);
         clouds_amount_real = clamp(clouds_amount_real, 0.0, 1.0);
 
         var clouds_amount = mix(clouds_amount_toon, clouds_amount_real, style_blend);
         // Continuous horizon blend so clouds do not hard-cut at y ~= 0.
-        let horizon_continuity = smoothstep(-0.06, 0.08, ray.y);
+        let horizon_continuity = smoothstep(CLOUD_BASE_HEIGHT, CLOUD_BASE_HEIGHT + 0.14, ray.y);
         clouds_amount *= horizon_continuity;
 
         let clouds_edge_color_toon   = vec3<f32>(0.84, 0.86, 0.92);
@@ -549,28 +621,34 @@ if (day_t < 0.8) {
         var clouds_color_toon = mix(vec3<f32>(0.0), clouds_top_color_toon, noise_top_s);
         clouds_color_toon = mix(clouds_color_toon, clouds_middle_color_toon, noise_middle);
         clouds_color_toon = mix(clouds_color_toon, clouds_bottom_color_toon, noise_bottom);
+        clouds_color_toon += vec3<f32>(0.06, 0.07, 0.09) * low_layer;
+        clouds_color_toon += vec3<f32>(0.04, 0.05, 0.06) * high_layer;
         clouds_color_toon = mix(clouds_edge_color_toon, clouds_color_toon, noise_top_s);
         let toon_shadow = smoothstep(0.26, 0.90, realistic_erosion) * (0.12 + (1.0 - realistic_puffs) * 0.22);
         clouds_color_toon *= vec3<f32>(1.0 - toon_shadow * 0.10, 1.0 - toon_shadow * 0.08, 1.0 - toon_shadow * 0.06);
         let toon_lobe = smoothstep(0.52, 0.95, realistic_puffs) * (1.0 - realistic_erosion * 0.70);
         clouds_color_toon += vec3<f32>(0.12, 0.12, 0.13) * toon_lobe;
 
-        let clouds_edge_color_real   = vec3<f32>(0.76, 0.80, 0.88);
-        let clouds_top_color_real    = vec3<f32>(0.98, 0.99, 1.00);
-        let clouds_middle_color_real = vec3<f32>(0.86, 0.89, 0.95);
-        let clouds_bottom_color_real = vec3<f32>(0.74, 0.78, 0.86);
+        let clouds_edge_color_real   = vec3<f32>(0.74, 0.78, 0.86);
+        let clouds_top_color_real    = vec3<f32>(0.90, 0.92, 0.95);
+        let clouds_middle_color_real = vec3<f32>(0.82, 0.86, 0.92);
+        let clouds_bottom_color_real = vec3<f32>(0.70, 0.74, 0.82);
         var clouds_color_real = mix(vec3<f32>(0.0), clouds_top_color_real, noise_top_s);
         clouds_color_real = mix(clouds_color_real, clouds_middle_color_real, noise_middle);
         clouds_color_real = mix(clouds_color_real, clouds_bottom_color_real, noise_bottom);
+        clouds_color_real += vec3<f32>(0.04, 0.05, 0.07) * low_layer;
+        clouds_color_real += vec3<f32>(0.03, 0.04, 0.05) * high_layer;
         clouds_color_real = mix(clouds_edge_color_real, clouds_color_real, noise_top_s);
-        let self_shadow = smoothstep(0.20, 0.92, realistic_erosion) * (0.18 + (1.0 - realistic_puffs) * 0.34);
-        clouds_color_real *= vec3<f32>(1.0 - self_shadow * 0.18, 1.0 - self_shadow * 0.14, 1.0 - self_shadow * 0.10);
-        let fiber = smoothstep(0.28, 0.88, wisp_filaments);
+        let micro_contrast = smoothstep(0.22, 0.82, detail_micro);
+        clouds_color_real *= mix(0.90, 1.04, micro_contrast);
+        let self_shadow = smoothstep(0.20, 0.92, realistic_erosion) * (0.22 + (1.0 - realistic_puffs) * 0.40);
+        clouds_color_real *= vec3<f32>(1.0 - self_shadow * 0.28, 1.0 - self_shadow * 0.24, 1.0 - self_shadow * 0.18);
+        let fiber = smoothstep(0.24, 0.82, noise_top_s * (1.0 - noise_middle));
         let wisp_cool = vec3<f32>(0.88, 0.95, 1.05);
-        clouds_color_real = mix(clouds_color_real, clouds_color_real * wisp_cool, fiber * upper_veil * 0.24);
+        clouds_color_real = mix(clouds_color_real, clouds_color_real * wisp_cool, fiber * upper_veil * 0.20);
         let edge_hint = smoothstep(0.18, 0.78, clamp((noise_top_s - noise_middle * 0.45) + (1.0 - noise_bottom) * 0.12, 0.0, 1.0));
         let silver_lining = pow(clamp(1.0 - abs(dot(ray, sun_dir)), 0.0, 1.0), 7.0) * edge_hint;
-        clouds_color_real += vec3<f32>(1.02, 1.00, 0.94) * silver_lining * 0.16;
+        clouds_color_real += vec3<f32>(0.94, 0.92, 0.88) * silver_lining * 0.08;
 
         // Sun shining through clouds — only on the day side
         let sun_dist_c = distance(ray, sun_dir);
@@ -583,7 +661,7 @@ if (day_t < 0.8) {
                                        vec3<f32>(0.0), vec3<f32>(1.0));
             let sun_punch = pow(1.0 - clamp(sun_dist_c, 0.0, 1.0), 5.0);
             clouds_color_toon = mix(clouds_color_toon, sun_col_clouds_toon, sun_punch);
-            clouds_color_real = mix(clouds_color_real, sun_col_clouds_real, sun_punch * 0.65);
+            clouds_color_real = mix(clouds_color_real, sun_col_clouds_real, sun_punch * 0.42);
         }
 
         // Time-of-day tinting — kept from the WGSL version (richer than Godot's
@@ -599,22 +677,24 @@ if (day_t < 0.8) {
             vec3<f32>(0.0), vec3<f32>(2.0)
         );
         clouds_color_toon = clouds_color_toon * mix(vec3<f32>(1.0), sky_tint, 0.26);
-        clouds_color_real = clouds_color_real * mix(vec3<f32>(1.0), sky_tint, 0.14);
+        clouds_color_real = clouds_color_real * mix(vec3<f32>(1.0), sky_tint, 0.10);
 
         let edge_band = clamp((noise_top_s - noise_middle * 0.45) + (1.0 - noise_bottom) * 0.12, 0.0, 1.0);
         let edge_glow = smoothstep(0.18, 0.78, edge_band);
         let edge_tint_base = clamp(mix(day_tint, eve_tint, evening_t) * vec3<f32>(1.10, 1.00, 1.20),
                               vec3<f32>(0.0), vec3<f32>(2.0));
-        let edge_phase = fract(detail_wisp * 1.65 + detail_puff * 0.85 + cloud_time_seconds * 0.035);
+        let edge_phase = fract(noise_top_raw * 1.25 + noise_middle_raw * 0.95 + cloud_time_seconds * 0.035);
         let rim_yellow = vec3<f32>(1.20, 1.03, 0.68);
         let rim_pink   = vec3<f32>(1.20, 0.74, 1.00);
         let rim_blue   = vec3<f32>(0.72, 0.92, 1.25);
         let rim_warm   = mix(rim_yellow, rim_pink, smoothstep(0.18, 0.56, edge_phase));
         let rim_mix    = mix(rim_warm, rim_blue, smoothstep(0.52, 0.90, edge_phase));
         let edge_tint  = clamp(mix(edge_tint_base, rim_mix, 0.55), vec3<f32>(0.0), vec3<f32>(2.2));
+        let micro_edge = smoothstep(0.30, 0.85, detail_micro) * (1.0 - smoothstep(0.85, 1.0, noise_bottom));
         clouds_color_toon += edge_tint * edge_glow * 0.56;
-        clouds_color_real += edge_tint * edge_glow * 0.20;
+        clouds_color_real += edge_tint * edge_glow * (0.12 + micro_edge * 0.06);
 
+        clouds_color_real = min(clouds_color_real, vec3<f32>(1.15, 1.12, 1.10));
         var clouds_color = mix(clouds_color_toon, clouds_color_real, style_blend);
 
         // Fade clouds toward sky colour at night — clamp(night_t, 0, 0.98) mirrors Godot

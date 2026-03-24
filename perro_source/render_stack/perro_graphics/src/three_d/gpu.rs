@@ -59,7 +59,7 @@ struct SkyUniform {
     params0: [f32; 4], // cloud_size, cloud_density, cloud_variance, time_of_day
     params1: [f32; 4], // star_size, star_scatter, star_gleam, sky_angle
     params2: [f32; 4], // sun_size, moon_size, day_weight, cloud_time_seconds
-    wind: [f32; 4], // x,y = cloud wind, z = style_blend (0 toon, 1 realistic)
+    wind: [f32; 4], // x,y = cloud wind, z = style_blend (0 toon, 1 realistic), w = reserved
 }
 
 #[repr(C)]
