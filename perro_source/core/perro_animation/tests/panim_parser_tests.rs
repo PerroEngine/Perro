@@ -104,6 +104,75 @@ fps = 30
 }
 
 #[test]
+fn sparse_node3d_transform_key_interpolates_missing_rotation_component() {
+    let src = r#"
+[Animation]
+name = "SparseTransformMidpoint"
+fps = 60
+default_interp = "interpolate"
+default_ease = "linear"
+[/Animation]
+
+[Objects]
+@Target = MeshInstance3D
+[/Objects]
+
+[Frame0]
+@Target {
+    position = (-4, 0, 0)
+    rotation = (0, 0, 0, 1)
+    scale = (1, 1, 1)
+}
+[/Frame0]
+
+[Frame50]
+@Target {
+    position = (0, 1, 1)
+    scale = (1, 3, 1)
+}
+[/Frame50]
+
+[Frame100]
+@Target {
+    position = (2, 0, 2)
+    rotation = (0, 1.5707964, 0)
+    scale = (1, 1, 1)
+}
+[/Frame100]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+    let track = clip
+        .object_tracks
+        .iter()
+        .find(|t| matches!(t.field, NodeField::Node3D(Node3DField::Position)))
+        .expect("node3d transform track");
+
+    assert_eq!(track.keys.len(), 3);
+    let AnimationTrackValue::Transform3D(t0) = track.keys[0].value else {
+        panic!("expected transform3d key at frame 0");
+    };
+    let AnimationTrackValue::Transform3D(t50) = track.keys[1].value else {
+        panic!("expected transform3d key at frame 50");
+    };
+    let AnimationTrackValue::Transform3D(t100) = track.keys[2].value else {
+        panic!("expected transform3d key at frame 100");
+    };
+
+    // Sparse frame should not force identity rotation; it should be inferred between neighbors.
+    let d0 = (t50.rotation.x - t0.rotation.x).abs()
+        + (t50.rotation.y - t0.rotation.y).abs()
+        + (t50.rotation.z - t0.rotation.z).abs()
+        + (t50.rotation.w - t0.rotation.w).abs();
+    let d1 = (t50.rotation.x - t100.rotation.x).abs()
+        + (t50.rotation.y - t100.rotation.y).abs()
+        + (t50.rotation.z - t100.rotation.z).abs()
+        + (t50.rotation.w - t100.rotation.w).abs();
+    assert!(d0 > 1e-4);
+    assert!(d1 > 1e-4);
+}
+
+#[test]
 fn parses_asset_field_tracks_with_vars() {
     let src = r#"
 @mesh = "res://meshes/hero.glb:mesh[0]"

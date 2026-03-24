@@ -1,31 +1,29 @@
 @root = main
 
 [main]
-
-[Node3D]
-    position = (0, 0, 0)
-[/Node3D]
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
 [/main]
 
 
 [animatedCube]
 parent = @root
-
-[MeshInstance3D]
-    mesh = "__cube__"
-    material = {
-        type = standard
-        base_color_factor = (1.0, 0.2, 0.2, 1.0)
-        metallic_factor = 0.15
-        roughness_factor = 0.75
-        emissive_factor = (0.02, 0.0, 0.0)
-        alpha_mode = OPAQUE
-        double_sided = false
-    }
-    [Node3D]
-        position = (0, 0, 0)
-    [/Node3D]
-[/MeshInstance3D]
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = {
+            type = standard
+            base_color_factor = (1.0, 0.2, 0.2, 1.0)
+            metallic_factor = 0.15
+            roughness_factor = 0.75
+            emissive_factor = (0.02, 0.0, 0.0)
+            alpha_mode = OPAQUE
+            double_sided = false
+        }
+        [Node3D]
+            position = (0, 0, 0)
+        [/Node3D]
+    [/MeshInstance3D]
 [/animatedCube]
 
 [animator]

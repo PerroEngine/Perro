@@ -20,7 +20,17 @@ struct TrackKey {
     value: AnimationTrackValue,
     interpolation: AnimationInterpolation,
     ease: AnimationEase,
+    transform2d_mask: u8,
+    transform3d_mask: u8,
 }
+
+const MASK_POS_2D: u8 = 1 << 0;
+const MASK_ROT_2D: u8 = 1 << 1;
+const MASK_SCALE_2D: u8 = 1 << 2;
+
+const MASK_POS_3D: u8 = 1 << 0;
+const MASK_ROT_3D: u8 = 1 << 1;
+const MASK_SCALE_3D: u8 = 1 << 2;
 
 fn build_tracks_and_events(
     mut actions: Vec<FrameAction>,
@@ -222,6 +232,8 @@ fn build_tracks_and_events(
         control_index += 1;
     }
 
+    resolve_sparse_transform_components(&mut tracks_map);
+
     let mut object_tracks = Vec::<AnimationObjectTrack>::new();
     for ((object, _), track) in tracks_map {
         let mut keys = Vec::<AnimationObjectKey>::new();
@@ -269,6 +281,8 @@ fn apply_node_2d_action(
                 NodeField::Node2D(Node2DField::Position),
                 frame,
                 AnimationTrackValue::Transform2D(state.transform),
+                MASK_POS_2D,
+                0,
                 default_interpolation,
                 default_ease,
             );
@@ -285,6 +299,8 @@ fn apply_node_2d_action(
                 NodeField::Node2D(Node2DField::Position),
                 frame,
                 AnimationTrackValue::Transform2D(state.transform),
+                MASK_ROT_2D,
+                0,
                 default_interpolation,
                 default_ease,
             );
@@ -301,6 +317,8 @@ fn apply_node_2d_action(
                 NodeField::Node2D(Node2DField::Position),
                 frame,
                 AnimationTrackValue::Transform2D(state.transform),
+                MASK_SCALE_2D,
+                0,
                 default_interpolation,
                 default_ease,
             );
@@ -313,6 +331,8 @@ fn apply_node_2d_action(
                 NodeField::Node2D(Node2DField::Visible),
                 frame,
                 AnimationTrackValue::Bool(v),
+                0,
+                0,
                 default_interpolation,
                 default_ease,
             );
@@ -325,6 +345,8 @@ fn apply_node_2d_action(
                 NodeField::Node2D(Node2DField::ZIndex),
                 frame,
                 AnimationTrackValue::I32(v),
+                0,
+                0,
                 default_interpolation,
                 default_ease,
             );
@@ -354,6 +376,8 @@ fn apply_node_3d_action(
                 NodeField::Node3D(Node3DField::Position),
                 frame,
                 AnimationTrackValue::Transform3D(state.transform),
+                0,
+                MASK_POS_3D,
                 default_interpolation,
                 default_ease,
             );
@@ -370,6 +394,8 @@ fn apply_node_3d_action(
                 NodeField::Node3D(Node3DField::Position),
                 frame,
                 AnimationTrackValue::Transform3D(state.transform),
+                0,
+                MASK_ROT_3D,
                 default_interpolation,
                 default_ease,
             );
@@ -386,6 +412,8 @@ fn apply_node_3d_action(
                 NodeField::Node3D(Node3DField::Position),
                 frame,
                 AnimationTrackValue::Transform3D(state.transform),
+                0,
+                MASK_SCALE_3D,
                 default_interpolation,
                 default_ease,
             );
@@ -398,6 +426,8 @@ fn apply_node_3d_action(
                 NodeField::Node3D(Node3DField::Visible),
                 frame,
                 AnimationTrackValue::Bool(v),
+                0,
+                0,
                 default_interpolation,
                 default_ease,
             );
@@ -429,6 +459,8 @@ fn apply_skeleton_bone_action(
                 Some(AnimationBoneTarget { selector }),
                 frame,
                 AnimationTrackValue::Transform3D(state.transform),
+                0,
+                MASK_POS_3D,
                 default_interpolation,
                 default_ease,
             );
@@ -447,6 +479,8 @@ fn apply_skeleton_bone_action(
                 Some(AnimationBoneTarget { selector }),
                 frame,
                 AnimationTrackValue::Transform3D(state.transform),
+                0,
+                MASK_ROT_3D,
                 default_interpolation,
                 default_ease,
             );
@@ -465,6 +499,8 @@ fn apply_skeleton_bone_action(
                 Some(AnimationBoneTarget { selector }),
                 frame,
                 AnimationTrackValue::Transform3D(state.transform),
+                0,
+                MASK_SCALE_3D,
                 default_interpolation,
                 default_ease,
             );
@@ -488,6 +524,8 @@ fn apply_sprite_2d_action(
             NodeField::Sprite2D(Sprite2DField::Texture),
             frame,
             AnimationTrackValue::AssetPath(path.into()),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -510,6 +548,8 @@ fn apply_mesh_instance_3d_action(
             NodeField::MeshInstance3D(MeshInstance3DField::Mesh),
             frame,
             AnimationTrackValue::AssetPath(path.into()),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -520,6 +560,8 @@ fn apply_mesh_instance_3d_action(
             NodeField::MeshInstance3D(MeshInstance3DField::Material),
             frame,
             AnimationTrackValue::AssetPath(path.into()),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -542,6 +584,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::Zoom),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -552,6 +596,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::PerspectiveFovYDegrees),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -562,6 +608,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::PerspectiveNear),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -572,6 +620,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::PerspectiveFar),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -582,6 +632,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::OrthographicSize),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -592,6 +644,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::OrthographicNear),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -602,6 +656,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::OrthographicFar),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -612,6 +668,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::FrustumLeft),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -622,6 +680,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::FrustumRight),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -632,6 +692,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::FrustumBottom),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -642,6 +704,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::FrustumTop),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -652,6 +716,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::FrustumNear),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -662,6 +728,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::FrustumFar),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -672,6 +740,8 @@ fn apply_camera_3d_action(
             NodeField::Camera3D(Camera3DField::Active),
             frame,
             AnimationTrackValue::Bool(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -694,6 +764,8 @@ fn apply_light_3d_action(
             NodeField::Light3D(Light3DField::Color),
             frame,
             AnimationTrackValue::Vec3(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -704,6 +776,8 @@ fn apply_light_3d_action(
             NodeField::Light3D(Light3DField::Intensity),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -714,6 +788,8 @@ fn apply_light_3d_action(
             NodeField::Light3D(Light3DField::Active),
             frame,
             AnimationTrackValue::Bool(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -736,6 +812,8 @@ fn apply_point_light_3d_action(
             NodeField::PointLight3D(PointLight3DField::Range),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -758,6 +836,8 @@ fn apply_spot_light_3d_action(
             NodeField::SpotLight3D(SpotLight3DField::Range),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -768,6 +848,8 @@ fn apply_spot_light_3d_action(
             NodeField::SpotLight3D(SpotLight3DField::InnerAngleRadians),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -778,6 +860,8 @@ fn apply_spot_light_3d_action(
             NodeField::SpotLight3D(SpotLight3DField::OuterAngleRadians),
             frame,
             AnimationTrackValue::F32(v),
+            0,
+            0,
             default_interpolation,
             default_ease,
         ),
@@ -810,6 +894,8 @@ fn insert_track_key(
     field: NodeField,
     frame: u32,
     value: AnimationTrackValue,
+    transform2d_mask: u8,
+    transform3d_mask: u8,
     default_interpolation: AnimationInterpolation,
     default_ease: AnimationEase,
 ) {
@@ -821,6 +907,8 @@ fn insert_track_key(
         None,
         frame,
         value,
+        transform2d_mask,
+        transform3d_mask,
         default_interpolation,
         default_ease,
     );
@@ -834,6 +922,8 @@ fn insert_track_key_with_bone_target(
     bone_target: Option<AnimationBoneTarget>,
     frame: u32,
     value: AnimationTrackValue,
+    transform2d_mask: u8,
+    transform3d_mask: u8,
     default_interpolation: AnimationInterpolation,
     default_ease: AnimationEase,
 ) {
@@ -846,14 +936,24 @@ fn insert_track_key_with_bone_target(
             ease: default_ease,
             keys: BTreeMap::new(),
         });
-    entry.keys.insert(
-        frame,
-        TrackKey {
-            value,
-            interpolation: entry.interpolation,
-            ease: entry.ease,
-        },
-    );
+    if let Some(existing) = entry.keys.get_mut(&frame) {
+        existing.value = value;
+        existing.interpolation = entry.interpolation;
+        existing.ease = entry.ease;
+        existing.transform2d_mask |= transform2d_mask;
+        existing.transform3d_mask |= transform3d_mask;
+    } else {
+        entry.keys.insert(
+            frame,
+            TrackKey {
+                value,
+                interpolation: entry.interpolation,
+                ease: entry.ease,
+                transform2d_mask,
+                transform3d_mask,
+            },
+        );
+    }
 }
 
 fn apply_track_control(
@@ -882,4 +982,211 @@ fn apply_track_control(
     if let Some(ease) = ease {
         entry.ease = ease;
     }
+}
+
+fn resolve_sparse_transform_components(tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>) {
+    for track in tracks_map.values_mut() {
+        match track.field {
+            NodeField::Node2D(Node2DField::Position) => resolve_sparse_transform2d(track),
+            NodeField::Node3D(Node3DField::Position) | NodeField::Skeleton3D(Skeleton3DField::Skeleton) => {
+                resolve_sparse_transform3d(track)
+            }
+            _ => {}
+        }
+    }
+}
+
+fn resolve_sparse_transform2d(track: &mut TrackAccumulator) {
+    let snapshot: Vec<(u32, TrackKey)> = track.keys.iter().map(|(f, k)| (*f, k.clone())).collect();
+    for (frame, key) in track.keys.iter_mut() {
+        let AnimationTrackValue::Transform2D(mut out) = key.value else {
+            continue;
+        };
+        if key.transform2d_mask & MASK_POS_2D == 0
+            && let Some(position) = sample_transform2d_position(&snapshot, *frame)
+        {
+            out.position = position;
+        }
+        if key.transform2d_mask & MASK_ROT_2D == 0
+            && let Some(rotation) = sample_transform2d_rotation(&snapshot, *frame)
+        {
+            out.rotation = rotation;
+        }
+        if key.transform2d_mask & MASK_SCALE_2D == 0
+            && let Some(scale) = sample_transform2d_scale(&snapshot, *frame)
+        {
+            out.scale = scale;
+        }
+        key.value = AnimationTrackValue::Transform2D(out);
+    }
+}
+
+fn resolve_sparse_transform3d(track: &mut TrackAccumulator) {
+    let snapshot: Vec<(u32, TrackKey)> = track.keys.iter().map(|(f, k)| (*f, k.clone())).collect();
+    for (frame, key) in track.keys.iter_mut() {
+        let AnimationTrackValue::Transform3D(mut out) = key.value else {
+            continue;
+        };
+        if key.transform3d_mask & MASK_POS_3D == 0
+            && let Some(position) = sample_transform3d_position(&snapshot, *frame)
+        {
+            out.position = position;
+        }
+        if key.transform3d_mask & MASK_ROT_3D == 0
+            && let Some(rotation) = sample_transform3d_rotation(&snapshot, *frame)
+        {
+            out.rotation = rotation;
+        }
+        if key.transform3d_mask & MASK_SCALE_3D == 0
+            && let Some(scale) = sample_transform3d_scale(&snapshot, *frame)
+        {
+            out.scale = scale;
+        }
+        key.value = AnimationTrackValue::Transform3D(out);
+    }
+}
+
+fn sample_transform2d_position(snapshot: &[(u32, TrackKey)], frame: u32) -> Option<Vector2> {
+    sample_component_2d(snapshot, frame, MASK_POS_2D, |t| t.position, |a, b, t| {
+        Vector2::new(lerp_f32(a.x, b.x, t), lerp_f32(a.y, b.y, t))
+    })
+}
+
+fn sample_transform2d_rotation(snapshot: &[(u32, TrackKey)], frame: u32) -> Option<f32> {
+    sample_component_2d(snapshot, frame, MASK_ROT_2D, |t| t.rotation, |a, b, t| lerp_f32(a, b, t))
+}
+
+fn sample_transform2d_scale(snapshot: &[(u32, TrackKey)], frame: u32) -> Option<Vector2> {
+    sample_component_2d(snapshot, frame, MASK_SCALE_2D, |t| t.scale, |a, b, t| {
+        Vector2::new(lerp_f32(a.x, b.x, t), lerp_f32(a.y, b.y, t))
+    })
+}
+
+fn sample_transform3d_position(snapshot: &[(u32, TrackKey)], frame: u32) -> Option<Vector3> {
+    sample_component_3d(snapshot, frame, MASK_POS_3D, |t| t.position, |a, b, t| {
+        Vector3::new(
+            lerp_f32(a.x, b.x, t),
+            lerp_f32(a.y, b.y, t),
+            lerp_f32(a.z, b.z, t),
+        )
+    })
+}
+
+fn sample_transform3d_rotation(snapshot: &[(u32, TrackKey)], frame: u32) -> Option<Quaternion> {
+    sample_component_3d(snapshot, frame, MASK_ROT_3D, |t| t.rotation, |a, b, t| {
+        a.to_quat().slerp(b.to_quat(), t).into()
+    })
+}
+
+fn sample_transform3d_scale(snapshot: &[(u32, TrackKey)], frame: u32) -> Option<Vector3> {
+    sample_component_3d(snapshot, frame, MASK_SCALE_3D, |t| t.scale, |a, b, t| {
+        Vector3::new(
+            lerp_f32(a.x, b.x, t),
+            lerp_f32(a.y, b.y, t),
+            lerp_f32(a.z, b.z, t),
+        )
+    })
+}
+
+fn sample_component_2d<T: Copy>(
+    snapshot: &[(u32, TrackKey)],
+    frame: u32,
+    mask: u8,
+    read: impl Fn(Transform2D) -> T,
+    lerp: impl Fn(T, T, f32) -> T,
+) -> Option<T> {
+    let mut prev = None::<(u32, &TrackKey, T)>;
+    let mut next = None::<(u32, &TrackKey, T)>;
+    for (f, key) in snapshot {
+        if key.transform2d_mask & mask == 0 {
+            continue;
+        }
+        let AnimationTrackValue::Transform2D(value) = key.value else {
+            continue;
+        };
+        let comp = read(value);
+        if *f <= frame {
+            prev = Some((*f, key, comp));
+        } else {
+            next = Some((*f, key, comp));
+            break;
+        }
+    }
+    resolve_sample(frame, prev, next, lerp)
+}
+
+fn sample_component_3d<T: Copy>(
+    snapshot: &[(u32, TrackKey)],
+    frame: u32,
+    mask: u8,
+    read: impl Fn(Transform3D) -> T,
+    lerp: impl Fn(T, T, f32) -> T,
+) -> Option<T> {
+    let mut prev = None::<(u32, &TrackKey, T)>;
+    let mut next = None::<(u32, &TrackKey, T)>;
+    for (f, key) in snapshot {
+        if key.transform3d_mask & mask == 0 {
+            continue;
+        }
+        let AnimationTrackValue::Transform3D(value) = key.value else {
+            continue;
+        };
+        let comp = read(value);
+        if *f <= frame {
+            prev = Some((*f, key, comp));
+        } else {
+            next = Some((*f, key, comp));
+            break;
+        }
+    }
+    resolve_sample(frame, prev, next, lerp)
+}
+
+fn resolve_sample<T: Copy>(
+    frame: u32,
+    prev: Option<(u32, &TrackKey, T)>,
+    next: Option<(u32, &TrackKey, T)>,
+    lerp: impl Fn(T, T, f32) -> T,
+) -> Option<T> {
+    match (prev, next) {
+        (None, None) => None,
+        (Some((_, _, value)), None) => Some(value),
+        (None, Some((_, _, value))) => Some(value),
+        (Some((prev_frame, prev_key, prev_value)), Some((next_frame, _, next_value))) => {
+            if prev_frame == next_frame {
+                return Some(prev_value);
+            }
+            match prev_key.interpolation {
+                AnimationInterpolation::Step => Some(prev_value),
+                AnimationInterpolation::Linear => {
+                    let local = frame.saturating_sub(prev_frame);
+                    let span = next_frame.saturating_sub(prev_frame).max(1);
+                    let t = ease_sample(prev_key.ease, local as f32 / span as f32);
+                    Some(lerp(prev_value, next_value, t))
+                }
+            }
+        }
+    }
+}
+
+#[inline]
+fn ease_sample(ease: AnimationEase, t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    match ease {
+        AnimationEase::Linear => t,
+        AnimationEase::EaseIn => t * t,
+        AnimationEase::EaseOut => 1.0 - (1.0 - t) * (1.0 - t),
+        AnimationEase::EaseInOut => {
+            if t < 0.5 {
+                2.0 * t * t
+            } else {
+                1.0 - ((-2.0 * t + 2.0) * (-2.0 * t + 2.0)) * 0.5
+            }
+        }
+    }
+}
+
+#[inline]
+fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
 }
