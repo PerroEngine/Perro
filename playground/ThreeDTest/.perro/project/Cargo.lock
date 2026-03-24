@@ -2398,6 +2398,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "perro_animation"
+version = "0.1.0"
+dependencies = [
+ "perro_ids",
+ "perro_scene",
+ "perro_structs",
+]
+
+[[package]]
 name = "perro_app"
 version = "0.1.0"
 dependencies = [
@@ -2465,11 +2474,13 @@ dependencies = [
 name = "perro_internal_updates"
 version = "0.1.0"
 dependencies = [
+ "perro_animation",
  "perro_ids",
  "perro_input",
  "perro_nodes",
  "perro_resource_context",
  "perro_runtime_context",
+ "perro_scene",
 ]
 
 [[package]]
@@ -2525,6 +2536,7 @@ dependencies = [
 name = "perro_resource_context"
 version = "0.1.0"
 dependencies = [
+ "perro_animation",
  "perro_ids",
  "perro_nodes",
  "perro_render_bridge",
@@ -2540,6 +2552,7 @@ dependencies = [
  "glam",
  "gltf",
  "libloading",
+ "perro_animation",
  "perro_bark",
  "perro_ids",
  "perro_input",
@@ -3453,9 +3466,11 @@ name = "threedtest"
 version = "0.1.0"
 dependencies = [
  "perro",
+ "perro_animation",
  "perro_app",
  "perro_render_bridge",
  "perro_scene",
+ "perro_structs",
  "scripts",
 ]
 

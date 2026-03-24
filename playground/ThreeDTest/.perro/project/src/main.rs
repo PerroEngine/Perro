@@ -51,6 +51,7 @@ fn main() {
   scene_lookup: static_assets::scenes::lookup_scene,
   material_lookup: static_assets::materials::lookup_material,
   particle_lookup: static_assets::particles::lookup_particle,
+  animation_lookup: static_assets::animations::lookup_animation,
   mesh_lookup: static_assets::meshes::lookup_mesh,
   skeleton_lookup: static_assets::skeletons::lookup_skeleton,
   texture_lookup: static_assets::textures::lookup_texture,
