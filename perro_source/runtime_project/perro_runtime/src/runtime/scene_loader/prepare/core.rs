@@ -14,7 +14,7 @@ use perro_nodes::{
     point_light_3d::PointLight3D,
     ray_light_3d::RayLight3D,
     skeleton_3d::Skeleton3D,
-    sky_3d::Sky3D,
+    sky_3d::{Sky3D, SkyStyle},
     spot_light_3d::SpotLight3D,
     sprite_2d::Sprite2D,
     terrain_instance_3d::TerrainInstance3D,

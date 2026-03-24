@@ -162,6 +162,7 @@ impl Runtime {
                         star_gleam: sky.stars.gleam,
                         moon_size: sky.moon.size,
                         sun_size: sky.sun.size,
+                        style_blend: sky.style.blend_factor(),
                         sky_shader: sky.sky_shader.clone(),
                     })
                 }

@@ -59,7 +59,7 @@ struct SkyUniform {
     params0: [f32; 4], // cloud_size, cloud_density, cloud_variance, time_of_day
     params1: [f32; 4], // star_size, star_scatter, star_gleam, sky_angle
     params2: [f32; 4], // sun_size, moon_size, day_weight, cloud_time_seconds
-    wind: [f32; 4],
+    wind: [f32; 4], // x,y = cloud wind, z = style_blend (0 toon, 1 realistic)
 }
 
 #[repr(C)]
@@ -3944,24 +3944,32 @@ fn build_scene_uniform(
         };
         scene.ambient_and_counts[3] = 1.0;
     } else if let Some(sky) = lighting.sky.as_ref() {
-        let (sun_dir, moon_dir) = sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
-        let sun_amt = day_weight_from_time(sky.time.time_of_day).powf(1.3);
-        let moon_amt = (1.0 - day_weight_from_time(sky.time.time_of_day)).powf(1.8);
-        let use_sun = sun_amt >= moon_amt;
-        let dir = if use_sun { sun_dir } else { moon_dir };
-        let color = if use_sun {
-            [1.0, 0.94, 0.82]
-        } else {
-            [0.58, 0.66, 0.92]
-        };
-        let size_scale = if use_sun { sky.sun_size } else { sky.moon_size };
+        let (sun_dir, _) = sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
+        let day_amt = day_weight_from_time(sky.time.time_of_day).powf(1.20);
+        let dusk_amt = evening_weight_from_time(sky.time.time_of_day) * (1.0 - day_amt * 0.55);
+        let noon_amt = day_amt * day_amt;
+        let dir = sun_dir;
+        let warm = [1.0, 0.62, 0.42];
+        let noon = [1.0, 0.97, 0.90];
+        let mut color = [
+            warm[0] + (noon[0] - warm[0]) * noon_amt,
+            warm[1] + (noon[1] - warm[1]) * noon_amt,
+            warm[2] + (noon[2] - warm[2]) * noon_amt,
+        ];
+        color = [
+            color[0] + (1.0 - color[0]) * dusk_amt * 0.12,
+            color[1] + (0.78 - color[1]) * dusk_amt * 0.22,
+            color[2] + (0.58 - color[2]) * dusk_amt * 0.32,
+        ];
+        let size_scale = sky.sun_size.max(0.1);
+        let intensity = ((day_amt * 1.35) + (dusk_amt * 0.22)) * size_scale;
         scene.ray_light = RayLightGpu {
             direction: [dir.x, dir.y, dir.z, 0.0],
             color_intensity: [
                 color[0],
                 color[1],
                 color[2],
-                ((sun_amt.max(moon_amt) * 1.35) * size_scale.max(0.1)).max(0.0),
+                intensity.max(0.0),
             ],
         };
         scene.ambient_and_counts[3] = 1.0;
@@ -4061,7 +4069,12 @@ fn build_sky_uniform(
             t_day,
             lighting.sky_cloud_time_seconds.max(0.0),
         ],
-        wind: [sky.cloud_wind_vector[0], sky.cloud_wind_vector[1], 0.0, 0.0],
+        wind: [
+            sky.cloud_wind_vector[0],
+            sky.cloud_wind_vector[1],
+            sky.style_blend.clamp(0.0, 1.0),
+            0.0,
+        ],
     })
 }
 
@@ -4100,7 +4113,7 @@ fn evening_weight_from_time(time_of_day: f32) -> f32 {
 
 fn sun_moon_dirs_from_time(time_of_day: f32, sky_angle: f32) -> (Vec3, Vec3) {
     let t = time_of_day.rem_euclid(1.0);
-    let theta = (t * std::f32::consts::TAU) + sky_angle;
+    let theta = (t * std::f32::consts::TAU) - std::f32::consts::FRAC_PI_2 + sky_angle;
     let sun = Vec3::new(theta.cos(), theta.sin(), -0.25).normalize_or_zero();
     let moon = -sun;
     (sun, moon)

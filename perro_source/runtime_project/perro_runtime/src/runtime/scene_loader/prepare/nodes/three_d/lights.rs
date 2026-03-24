@@ -228,6 +228,15 @@ fn apply_sky_3d_fields(node: &mut Sky3D, fields: &[SceneObjectField]) {
                     node.sun.size = v;
                 }
             }
+            Some(NodeField::Sky3D(Sky3DField::Style)) => {
+                if let Some(v) = as_str(value) {
+                    node.style = if v.eq_ignore_ascii_case("realistic") || v.eq_ignore_ascii_case("real") {
+                        SkyStyle::Realistic
+                    } else {
+                        SkyStyle::Toon
+                    };
+                }
+            }
             Some(NodeField::Sky3D(Sky3DField::SkyShader)) => {
                 if let Some(v) = as_str(value) {
                     node.sky_shader = Some(Cow::Owned(v.to_string()));

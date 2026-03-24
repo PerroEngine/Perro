@@ -107,6 +107,7 @@ pub struct Sky3DState {
     pub star_gleam: f32,
     pub moon_size: f32,
     pub sun_size: f32,
+    pub style_blend: f32,
     pub sky_shader: Option<Cow<'static, str>>,
 }
 

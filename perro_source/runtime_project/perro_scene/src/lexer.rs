@@ -48,6 +48,15 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn skip_until_newline(&mut self) {
+        while let Some(c) = self.peek {
+            if c == '\n' || c == '\r' {
+                break;
+            }
+            self.bump();
+        }
+    }
+
     pub fn next_token(&mut self) -> Token {
         self.skip_ws();
 
@@ -67,7 +76,20 @@ impl<'a> Lexer<'a> {
             ':' => Token::Colon,
             '[' => Token::LBracket,
             ']' => Token::RBracket,
-            '/' => Token::Slash,
+            '/' => {
+                // Support // line comments while preserving '/' token for closing tags.
+                if self.peek == Some('/') {
+                    self.bump();
+                    self.skip_until_newline();
+                    return self.next_token();
+                }
+                Token::Slash
+            }
+            '#' => {
+                // Support # line comments.
+                self.skip_until_newline();
+                self.next_token()
+            }
 
             '"' => {
                 let mut s = String::new();
@@ -80,13 +102,18 @@ impl<'a> Lexer<'a> {
                 Token::String(s)
             }
 
-            c if c.is_ascii_digit() || c == '-' => {
+            c if c.is_ascii_digit()
+                || (c == '-' && matches!(self.peek, Some(p) if p.is_ascii_digit() || p == '.')) =>
+            {
                 let mut s = String::new();
                 s.push(c);
-                while matches!(self.peek, Some(p) if p.is_ascii_digit() || p == '.') {
+                while matches!(self.peek, Some(p) if p.is_ascii_digit() || p == '.' || p == 'e' || p == 'E' || p == '+' || p == '-') {
                     s.push(self.bump().unwrap());
                 }
-                Token::Number(s.parse().unwrap())
+                match s.parse::<f32>() {
+                    Ok(v) => Token::Number(v),
+                    Err(_) => self.next_token(),
+                }
             }
 
             c if c.is_alphanumeric() || c == '_' => {

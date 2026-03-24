@@ -180,6 +180,7 @@ pub enum Sky3DField {
     StarGleam,
     MoonSize,
     SunSize,
+    Style,
     SkyShader,
     Active,
 }
@@ -420,6 +421,7 @@ fn resolve_sky3d_field(field: &str) -> Option<Sky3DField> {
         "star_gleam" | "stars_gleam" | "stars.gleam" => Some(Sky3DField::StarGleam),
         "moon_size" | "moon.size" => Some(Sky3DField::MoonSize),
         "sun_size" | "sun.size" => Some(Sky3DField::SunSize),
+        "style" | "sky_style" | "sampler" => Some(Sky3DField::Style),
         "sky_shader" | "shader" => Some(Sky3DField::SkyShader),
         "active" => Some(Sky3DField::Active),
         _ => None,

@@ -1,6 +1,27 @@
 use perro_structs::Transform3D;
 use std::borrow::Cow;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SkyStyle {
+    Toon,
+    Realistic,
+}
+
+impl SkyStyle {
+    pub const fn blend_factor(self) -> f32 {
+        match self {
+            Self::Toon => 0.0,
+            Self::Realistic => 1.0,
+        }
+    }
+}
+
+impl Default for SkyStyle {
+    fn default() -> Self {
+        Self::Toon
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SkyClouds {
     pub size: f32,
@@ -120,6 +141,7 @@ pub struct Sky3D {
     pub stars: SkyStars,
     pub sun: SkySun,
     pub moon: SkyMoon,
+    pub style: SkyStyle,
     pub sky_shader: Option<Cow<'static, str>>,
 }
 
@@ -142,6 +164,7 @@ impl Sky3D {
             stars: SkyStars::new(),
             sun: SkySun::new(),
             moon: SkyMoon::new(),
+            style: SkyStyle::Toon,
             sky_shader: None,
         }
     }
