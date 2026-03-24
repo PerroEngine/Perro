@@ -145,6 +145,7 @@ impl Runtime {
                 SceneNodeData::Sky3D(sky) if sky.active && sky.visible && effective_visible => {
                     Some(Sky3DState {
                         day_colors: Arc::from(sky.day_colors.as_ref()),
+                        evening_colors: Arc::from(sky.evening_colors.as_ref()),
                         night_colors: Arc::from(sky.night_colors.as_ref()),
                         sky_angle: sky.sky_angle,
                         time: SkyTime3DState {

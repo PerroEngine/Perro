@@ -1,6 +1,17 @@
-use glam::Quat;
+use super::vector3::Vector3;
+use glam::{Mat3, Quat, Vec3};
 
 /// A quaternion representing rotation in 3D space.
+///
+/// # Example
+///
+/// ```rust
+/// use perro_structs::{Quaternion, Vector3};
+///
+/// let q = Quaternion::looking_at(Vector3::new(0.0, 0.0, -1.0), Vector3::new(0.0, 1.0, 0.0));
+/// let fwd = q.rotate_vector3(Vector3::new(0.0, 0.0, -1.0));
+/// assert!((fwd.z + 1.0).abs() < 1e-5);
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Quaternion {
     pub x: f32,
@@ -47,6 +58,135 @@ impl Quaternion {
             z: quat.z,
             w: quat.w,
         }
+    }
+
+    /// Returns a normalized copy of this quaternion.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::Quaternion;
+    ///
+    /// let q = Quaternion::new(0.0, 0.0, 2.0, 2.0).normalized();
+    /// let len2 = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+    /// assert!((len2 - 1.0).abs() < 1e-6);
+    /// ```
+    #[inline]
+    pub fn normalized(self) -> Self {
+        Self::from_quat(self.to_quat().normalize())
+    }
+
+    /// Returns the inverse rotation.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::{Quaternion, Vector3};
+    ///
+    /// let q = Quaternion::new(0.0, 0.70710677, 0.0, 0.70710677).normalized();
+    /// let v = q.rotate_vector3(Vector3::new(0.0, 0.0, -1.0));
+    /// let back = q.inverse().rotate_vector3(v);
+    /// assert!((back.z + 1.0).abs() < 1e-5);
+    /// ```
+    #[inline]
+    pub fn inverse(self) -> Self {
+        Self::from_quat(self.to_quat().inverse())
+    }
+
+    /// Quaternion multiplication (`self * rhs`).
+    #[inline]
+    pub fn mul_quat(self, rhs: Self) -> Self {
+        Self::from_quat(self.to_quat() * rhs.to_quat())
+    }
+
+    /// Rotates a `Vector3` by this quaternion.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::{Quaternion, Vector3};
+    ///
+    /// let q = Quaternion::new(0.0, 0.70710677, 0.0, 0.70710677).normalized();
+    /// let v = q.rotate_vector3(Vector3::new(0.0, 0.0, -1.0));
+    /// assert!((v.x + 1.0).abs() < 1e-5);
+    /// ```
+    #[inline]
+    pub fn rotate_vector3(self, v: Vector3) -> Vector3 {
+        let out = self.to_quat() * Vec3::new(v.x, v.y, v.z);
+        Vector3::new(out.x, out.y, out.z)
+    }
+
+    /// Spherical interpolation between two quaternions.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::Quaternion;
+    ///
+    /// let a = Quaternion::IDENTITY;
+    /// let b = Quaternion::new(0.0, 1.0, 0.0, 0.0).normalized();
+    /// let mid = a.slerp(b, 0.5);
+    /// let len2 = mid.x * mid.x + mid.y * mid.y + mid.z * mid.z + mid.w * mid.w;
+    /// assert!((len2 - 1.0).abs() < 1e-5);
+    /// ```
+    #[inline]
+    pub fn slerp(self, to: Self, t: f32) -> Self {
+        Self::from_quat(self.to_quat().slerp(to.to_quat(), t))
+    }
+
+    /// Builds a quaternion that points local -Z toward `direction` while keeping `up` as close as possible.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::{Quaternion, Vector3};
+    ///
+    /// let q = Quaternion::looking_at(Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0));
+    /// let fwd = q.rotate_vector3(Vector3::new(0.0, 0.0, -1.0));
+    /// assert!((fwd.x - 1.0).abs() < 1e-4);
+    /// ```
+    #[inline]
+    pub fn looking_at(direction: Vector3, up: Vector3) -> Self {
+        let forward = Vec3::new(direction.x, direction.y, direction.z).normalize_or_zero();
+        if forward.length_squared() <= f32::EPSILON {
+            return Self::IDENTITY;
+        }
+
+        let mut up_vec = Vec3::new(up.x, up.y, up.z).normalize_or_zero();
+        if up_vec.length_squared() <= f32::EPSILON {
+            up_vec = Vec3::Y;
+        }
+
+        let mut right = forward.cross(up_vec).normalize_or_zero();
+        if right.length_squared() <= f32::EPSILON {
+            let fallback_up = if forward.y.abs() < 0.999 { Vec3::Y } else { Vec3::Z };
+            right = forward.cross(fallback_up).normalize_or_zero();
+            if right.length_squared() <= f32::EPSILON {
+                return Self::IDENTITY;
+            }
+        }
+
+        let corrected_up = right.cross(forward).normalize_or_zero();
+        let basis = Mat3::from_cols(right, corrected_up, -forward);
+        Self::from_quat(Quat::from_mat3(&basis).normalize())
+    }
+
+    /// Sets this quaternion to a look rotation.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::{Quaternion, Vector3};
+    ///
+    /// let mut q = Quaternion::IDENTITY;
+    /// q.look_at(Vector3::new(0.0, 0.0, -1.0), Vector3::new(0.0, 1.0, 0.0));
+    /// let fwd = q.rotate_vector3(Vector3::new(0.0, 0.0, -1.0));
+    /// assert!((fwd.z + 1.0).abs() < 1e-5);
+    /// ```
+    #[inline]
+    pub fn look_at(&mut self, direction: Vector3, up: Vector3) -> &mut Self {
+        *self = Self::looking_at(direction, up);
+        self
     }
 
     /// Rotate around local X axis by `radians`.

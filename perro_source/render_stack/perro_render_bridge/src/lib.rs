@@ -94,6 +94,7 @@ pub struct SkyTime3DState {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sky3DState {
     pub day_colors: Arc<[[f32; 3]]>,
+    pub evening_colors: Arc<[[f32; 3]]>,
     pub night_colors: Arc<[[f32; 3]]>,
     pub sky_angle: f32,
     pub time: SkyTime3DState,

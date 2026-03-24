@@ -340,11 +340,20 @@ parent = PARENTKEY
 script = "res://path/to/script.rs"
     [Sky3D]
         day_colors = [
-        (0.55, 0.82, 1.0),
-        (0.38, 0.68, 0.95),
-        (0.18, 0.45, 0.82)
+            (0.55, 0.82, 1.0),
+            (0.38, 0.68, 0.95),
+            (0.18, 0.45, 0.82)
         ]
-        night_colors = [(0.01, 0.02, 0.06), (0.04, 0.06, 0.15), (0.09, 0.12, 0.25)]
+        evening_colors = [
+            (1.00, 0.62, 0.40),
+            (0.95, 0.42, 0.58),
+            (0.42, 0.20, 0.42)
+        ]
+        night_colors = [
+            (0.01, 0.02, 0.06),
+            (0.04, 0.06, 0.15),
+            (0.09, 0.12, 0.25)
+        ]
         sky_angle = 0.0
         time = { time_of_day = 0.25 paused = false scale = 1.0 }
         time_of_day = 0.25
@@ -353,7 +362,7 @@ script = "res://path/to/script.rs"
         cloud_size = 0.85
         cloud_density = 0.72
         cloud_variance = 0.28
-        wind_vector = (0.06, 0.015)
+        wind_vector = (0.1, 0.1)
         star_size = 1.0
         star_scatter = 0.25
         star_gleam = 0.4

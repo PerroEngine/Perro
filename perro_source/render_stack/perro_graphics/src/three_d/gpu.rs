@@ -54,10 +54,11 @@ struct SkyUniform {
     inv_view_proj: [[f32; 4]; 4],
     camera_pos: [f32; 4],
     day_colors: [[f32; 4]; 3],
+    evening_colors: [[f32; 4]; 3],
     night_colors: [[f32; 4]; 3],
     params0: [f32; 4], // cloud_size, cloud_density, cloud_variance, time_of_day
     params1: [f32; 4], // star_size, star_scatter, star_gleam, sky_angle
-    params2: [f32; 4], // sun_size, moon_size, day_weight, time_phase
+    params2: [f32; 4], // sun_size, moon_size, day_weight, cloud_time_seconds
     wind: [f32; 4],
 }
 
@@ -3907,9 +3908,11 @@ fn build_scene_uniform(
 
     if let Some(sky) = lighting.sky.as_ref() {
         let day_color = sample_gradient(sky.day_colors.as_ref(), 0.55);
+        let evening_color = sample_gradient(sky.evening_colors.as_ref(), 0.55);
         let night_color = sample_gradient(sky.night_colors.as_ref(), 0.55);
         let t_day = day_weight_from_time(sky.time.time_of_day);
-        let ambient_rgb = lerp3(night_color, day_color, t_day);
+        let t_evening = evening_weight_from_time(sky.time.time_of_day);
+        let ambient_rgb = lerp3(lerp3(night_color, day_color, t_day), evening_color, t_evening);
         let ambient_strength = (0.08 + 0.32 * t_day).max(0.0);
         scene.ambient_color = [
             ambient_rgb[0].max(0.0),
@@ -4032,11 +4035,13 @@ fn build_sky_uniform(
     };
     let t_day = day_weight_from_time(sky.time.time_of_day);
     let day_colors = gradient_triplet(sky.day_colors.as_ref());
+    let evening_colors = gradient_triplet(sky.evening_colors.as_ref());
     let night_colors = gradient_triplet(sky.night_colors.as_ref());
     Some(SkyUniform {
         inv_view_proj: inv,
         camera_pos: [camera.position[0], camera.position[1], camera.position[2], 0.0],
         day_colors,
+        evening_colors,
         night_colors,
         params0: [
             sky.cloud_size.max(0.0),
@@ -4054,7 +4059,7 @@ fn build_sky_uniform(
             sky.sun_size.max(0.0),
             sky.moon_size.max(0.0),
             t_day,
-            sky.time.time_of_day.rem_euclid(1.0),
+            lighting.sky_cloud_time_seconds.max(0.0),
         ],
         wind: [sky.cloud_wind_vector[0], sky.cloud_wind_vector[1], 0.0, 0.0],
     })
@@ -4085,6 +4090,12 @@ fn day_weight_from_time(time_of_day: f32) -> f32 {
     let t = time_of_day.rem_euclid(1.0);
     let a = (t * std::f32::consts::TAU) - std::f32::consts::FRAC_PI_2;
     ((a.sin() + 1.0) * 0.5).clamp(0.0, 1.0)
+}
+
+fn evening_weight_from_time(time_of_day: f32) -> f32 {
+    let t = time_of_day.rem_euclid(1.0);
+    let dist = ((t - 0.75 + 0.5).rem_euclid(1.0) - 0.5).abs();
+    (1.0 - (dist / 0.23)).clamp(0.0, 1.0)
 }
 
 fn sun_moon_dirs_from_time(time_of_day: f32, sky_angle: f32) -> (Vec3, Vec3) {

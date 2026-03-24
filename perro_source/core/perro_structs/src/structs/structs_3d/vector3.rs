@@ -1,7 +1,17 @@
 use glam::Vec3;
 use std::fmt;
 
-/// A simple 3D vector struct that holds (x,y,z) values
+/// A 3D vector with `x`, `y`, and `z` components.
+///
+/// # Example
+///
+/// ```rust
+/// use perro_structs::Vector3;
+///
+/// let from = Vector3::new(0.0, 0.0, 0.0);
+/// let to = Vector3::new(0.0, 0.0, -3.0);
+/// assert_eq!(from.distance_to(to), 3.0);
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Vector3 {
     pub x: f32,
@@ -38,6 +48,7 @@ impl Vector3 {
     };
 
     /// Creates a new 3D vector
+    #[inline]
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
     }
@@ -61,36 +72,119 @@ impl Vector3 {
     // ------------------ Math Ops ------------------
 
     /// Dot product between this vector and another
+    #[inline]
     pub fn dot(self, rhs: Self) -> f32 {
         self.to_glam().dot(rhs.to_glam())
     }
 
     /// Cross product returns a vector perpendicular to both inputs
+    #[inline]
     pub fn cross(self, rhs: Self) -> Self {
         Self::from_glam(self.to_glam().cross(rhs.to_glam()))
     }
 
     /// Squared length (avoids a sqrt when only comparing distances)
+    #[inline]
     pub fn length_squared(&self) -> f32 {
         self.to_glam().length_squared()
     }
 
     /// Magnitude (length) of the vector
+    #[inline]
     pub fn length(&self) -> f32 {
         self.to_glam().length()
     }
 
     /// Returns a new `Vector3` with length = 1 (same direction)
+    #[inline]
     pub fn normalized(&self) -> Self {
         Self::from_glam(self.to_glam().normalize_or_zero())
     }
 
-    /// Distance between two vectors
+    /// Distance between two vectors.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::Vector3;
+    ///
+    /// let d = Vector3::distance(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 3.0));
+    /// assert_eq!(d, 3.0);
+    /// ```
+    #[inline]
     pub fn distance(a: Self, b: Self) -> f32 {
         a.to_glam().distance(b.to_glam())
     }
 
+    /// Distance from this vector to another vector.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::Vector3;
+    ///
+    /// let d = Vector3::new(1.0, 2.0, 3.0).distance_to(Vector3::new(1.0, 2.0, 6.0));
+    /// assert_eq!(d, 3.0);
+    /// ```
+    #[inline]
+    pub fn distance_to(self, other: Self) -> f32 {
+        self.to_glam().distance(other.to_glam())
+    }
+
+    /// Normalized direction from this vector to another vector.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::Vector3;
+    ///
+    /// let dir = Vector3::new(0.0, 0.0, 0.0).direction_to(Vector3::new(0.0, 0.0, -2.0));
+    /// assert_eq!(dir, Vector3::new(0.0, 0.0, -1.0));
+    /// ```
+    #[inline]
+    pub fn direction_to(self, other: Self) -> Self {
+        Self::from_glam((other.to_glam() - self.to_glam()).normalize_or_zero())
+    }
+
+    /// Angle in radians from this vector to another vector.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::Vector3;
+    ///
+    /// let a = Vector3::new(1.0, 0.0, 0.0);
+    /// let b = Vector3::new(0.0, 1.0, 0.0);
+    /// assert!((a.angle_to(b) - core::f32::consts::FRAC_PI_2).abs() < 1e-6);
+    /// ```
+    #[inline]
+    pub fn angle_to(self, other: Self) -> f32 {
+        self.to_glam().angle_between(other.to_glam())
+    }
+
+    /// Projects this vector onto another vector.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::Vector3;
+    ///
+    /// let v = Vector3::new(2.0, 3.0, 0.0);
+    /// let x = Vector3::new(1.0, 0.0, 0.0);
+    /// assert_eq!(v.project_on(x), Vector3::new(2.0, 0.0, 0.0));
+    /// ```
+    #[inline]
+    pub fn project_on(self, onto: Self) -> Self {
+        let onto_len_sq = onto.length_squared();
+        if onto_len_sq <= f32::EPSILON {
+            return Self::ZERO;
+        }
+        let scale = self.dot(onto) / onto_len_sq;
+        Self::new(onto.x * scale, onto.y * scale, onto.z * scale)
+    }
+
     /// Linear interpolation between two vectors
+    #[inline]
     pub fn lerp(a: Self, b: Self, t: f32) -> Self {
         Self::from_glam(a.to_glam().lerp(b.to_glam(), t))
     }

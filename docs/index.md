@@ -6,6 +6,7 @@
 ## Scripting
 - [Scripting Overview](scripting/README.md)
 - [Script Contexts](scripting/contexts/README.md)
+- [Math Types](scripting/math_types.md)
 - [Node Types](scripting/nodes.md)
 - [Script State](scripting/state.md)
 - [Script Lifecycle](scripting/lifecycle.md)

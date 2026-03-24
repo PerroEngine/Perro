@@ -690,12 +690,19 @@ impl Gpu {
 fn sky_clear_color(lighting: &Lighting3DState) -> Option<wgpu::Color> {
     let sky = lighting.sky.as_ref()?;
     let day = sample_gradient_color(sky.day_colors.as_ref(), 0.32);
+    let evening = sample_gradient_color(sky.evening_colors.as_ref(), 0.32);
     let night = sample_gradient_color(sky.night_colors.as_ref(), 0.32);
     let day_t = day_weight(sky.time.time_of_day);
-    let c = [
+    let evening_t = evening_weight(sky.time.time_of_day);
+    let base = [
         night[0] + (day[0] - night[0]) * day_t,
         night[1] + (day[1] - night[1]) * day_t,
         night[2] + (day[2] - night[2]) * day_t,
+    ];
+    let c = [
+        base[0] + (evening[0] - base[0]) * evening_t,
+        base[1] + (evening[1] - base[1]) * evening_t,
+        base[2] + (evening[2] - base[2]) * evening_t,
     ];
     Some(wgpu::Color {
         r: c[0].clamp(0.0, 1.0) as f64,
@@ -728,6 +735,12 @@ fn day_weight(time_of_day: f32) -> f32 {
     let t = time_of_day.rem_euclid(1.0);
     let a = (t * std::f32::consts::TAU) - std::f32::consts::FRAC_PI_2;
     ((a.sin() + 1.0) * 0.5).clamp(0.0, 1.0)
+}
+
+fn evening_weight(time_of_day: f32) -> f32 {
+    let t = time_of_day.rem_euclid(1.0);
+    let dist = ((t - 0.75 + 0.5).rem_euclid(1.0) - 0.5).abs();
+    (1.0 - (dist / 0.23)).clamp(0.0, 1.0)
 }
 
 fn normalize_sample_count(samples: u32) -> u32 {

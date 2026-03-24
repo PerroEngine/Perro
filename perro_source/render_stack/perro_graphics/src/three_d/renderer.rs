@@ -38,6 +38,7 @@ pub struct Renderer3DStats {
 pub struct Lighting3DState {
     pub ambient_light: Option<AmbientLight3DState>,
     pub sky: Option<Sky3DState>,
+    pub sky_cloud_time_seconds: f32,
     pub ray_light: Option<RayLight3DState>,
     pub point_lights: [Option<PointLight3DState>; MAX_POINT_LIGHTS],
     pub spot_lights: [Option<SpotLight3DState>; MAX_SPOT_LIGHTS],
@@ -57,6 +58,7 @@ pub struct Renderer3D {
     camera: Camera3DState,
     draw_revision: u64,
     last_frame_time: Option<Instant>,
+    cloud_time_seconds: f32,
 }
 
 impl Renderer3D {
@@ -178,6 +180,7 @@ impl Renderer3D {
             .map(|prev| now.duration_since(prev).as_secs_f32())
             .unwrap_or(0.0);
         self.last_frame_time = Some(now);
+        self.cloud_time_seconds = (self.cloud_time_seconds + dt.max(0.0)).rem_euclid(1.0e9);
 
         for draw in self.queued_draws.drain(..) {
             let material_ready = draw
@@ -241,13 +244,15 @@ impl Renderer3D {
         if let Some((_, ambient)) = self.ambient_lights.iter().next() {
             lighting.ambient_light = Some(*ambient);
         }
-        if let Some((_, sky)) = self.skies.iter().next() {
-            let mut sky = sky.clone();
-            if !sky.time.paused {
-                let scaled = dt.max(0.0) * sky.time.scale.max(0.0) / SKY_DAY_SECONDS;
-                sky.time.time_of_day = (sky.time.time_of_day + scaled).rem_euclid(1.0);
+        if let Some((&sky_node, _)) = self.skies.iter().next() {
+            if let Some(sky) = self.skies.get_mut(&sky_node) {
+                if !sky.time.paused {
+                    let scaled = dt.max(0.0) * sky.time.scale.max(0.0) / SKY_DAY_SECONDS;
+                    sky.time.time_of_day = (sky.time.time_of_day + scaled).rem_euclid(1.0);
+                }
+                lighting.sky = Some(sky.clone());
+                lighting.sky_cloud_time_seconds = self.cloud_time_seconds;
             }
-            lighting.sky = Some(sky);
         }
         if let Some((_, ray)) = self.ray_lights.iter().next() {
             lighting.ray_light = Some(*ray);
@@ -314,6 +319,7 @@ impl Default for Renderer3D {
             },
             draw_revision: 0,
             last_frame_time: None,
+            cloud_time_seconds: 0.0,
         }
     }
 }
