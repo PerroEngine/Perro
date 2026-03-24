@@ -312,20 +312,24 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var moon_amount = 0.0;
     let moon_size_ctrl = clamp(sky.params2.y, 0.0, 5.0);
     let moon_size      = mix(0.004, 0.040, clamp(moon_size_ctrl / 5.0, 0.0, 1.0)) * 3.0;
-    if (day_t < 0.5) {
+    
+    // Fade out moon when 25 degrees below horizon (exactly at -0.4226)
+    let moon_elevation = dot(ray, moon_dir);
+    let moon_visibility = smoothstep(-0.46, -0.42, moon_elevation); // Fade out at exactly 25° below horizon
+    
+    if (day_t < 0.5 && moon_visibility > 0.0) {
         let moon_horizon_vis = smoothstep(-0.24, 0.06, moon_dir.y);
         let moon_night_vis = smoothstep(0.45, 0.88, night_t);
-        // Moon grows slightly near the horizon, same formula as Godot
-        let moon_size_adj = moon_size + cos(moon_dir.y * 3.14159265) * moon_size * 0.20;
-        let moon_dist     = distance(ray, moon_dir) / moon_size_adj;
+        // Fixed size - no longer changes with elevation
+        let moon_dist     = distance(ray, moon_dir) / moon_size;
         let moon_blur     = 0.1;
         moon_amount = clamp((1.0 - moon_dist) / moon_blur, 0.0, 1.0);
-        moon_amount *= moon_horizon_vis * moon_night_vis;
+        moon_amount *= moon_horizon_vis * moon_night_vis * moon_visibility;
 
         if (moon_amount > 0.0) {
             // Phase shading: sphere intersection gives a surface normal,
             // then N·L from the sun position determines the lit crescent.
-            let moon_intersect = sphere_intersect(ray, moon_dir, moon_size_adj);
+            let moon_intersect = sphere_intersect(ray, moon_dir, moon_size);
             let moon_normal    = normalize(moon_dir - ray * moon_intersect);
             let moon_ndotl     = pow(clamp(dot(moon_normal, -sun_dir), 0.0, 1.0), 1.8);
             moon_amount *= 1.0 - horizon_amount;
@@ -335,7 +339,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let moon_ref = normalize(mix(moon_ref_a, moon_ref_b, moon_ref_blend));
             let moon_tan = normalize(moon_ref - moon_dir * dot(moon_ref, moon_dir));
             let moon_bit = normalize(cross(moon_dir, moon_tan));
-            let moon_local = vec2<f32>(dot(ray, moon_tan), dot(ray, moon_bit)) / max(moon_size_adj, 1.0e-4);
+            let moon_local = vec2<f32>(dot(ray, moon_tan), dot(ray, moon_bit)) / max(moon_size, 1.0e-4);
             // Larger, darker, softer crater fields (less sharp).
             let moon_fbm_base = fbm2(moon_local * 2.25 + vec2<f32>(7.0, -11.0));
             let moon_fbm_detail = fbm2(moon_local * 5.4 + vec2<f32>(-3.0, 13.0));
@@ -360,12 +364,18 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Visible on the day side (day_t > 0.5), mirrors Godot's !is_night guard.
     let sun_size_ctrl = clamp(sky.params2.x, 0.0, 8.0);
     let sun_size = mix(0.006, 0.055, clamp(sun_size_ctrl / 8.0, 0.0, 1.0)) * 3.0;
-    if (sun_dir.y > -0.34) {
-        let sun_size_adj = sun_size + cos(sun_dir.y * 3.14159265) * sun_size * 0.15;
+    
+    // Fade out sun when 25 degrees below horizon (exactly at -0.4226)
+    let sun_elevation = dot(ray, sun_dir);
+    let sun_visibility = smoothstep(-0.46, -0.42, sun_elevation); // Fade out at exactly 25° below horizon
+
+    // Only render sun if it's roughly in front of the camera
+    if (sun_dir.y > -0.34 && sun_elevation > 0.0 && sun_visibility > 0.0) {
+        // Fixed size - no longer changes with elevation
         let sun_up = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 0.0, 1.0), abs(sun_dir.y) > 0.95);
         let sun_tan = normalize(cross(sun_up, sun_dir));
         let sun_bit = normalize(cross(sun_dir, sun_tan));
-        let sun_local = vec2<f32>(dot(ray, sun_tan), dot(ray, sun_bit)) / max(sun_size_adj, 1.0e-4);
+        let sun_local = vec2<f32>(dot(ray, sun_tan), dot(ray, sun_bit)) / max(sun_size, 1.0e-4);
         let sun_r = length(sun_local);
         let sun_vis = smoothstep(-0.30, -0.06, sun_dir.y);
         let twilight_size_boost = 1.0 + evening_t_raw * 0.95;
@@ -387,7 +397,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             sun_col *= 1.0 + evening_t_raw * mix(0.55, 0.26, sunrise_twilight);
 
             sun_amount = clamp(sun_amount * (1.0 - moon_amount), 0.0, 1.0);
-            sun_amount *= mix(1.0, 1.0 - horizon_amount, 0.25);
+            sun_amount *= mix(1.0, 1.0 - horizon_amount, 0.25) * sun_visibility;
             let sun_core_amount = sun_amount * 0.36;
 
             // HDR levelling: scale bright colour down by amount to avoid uniform blow-out
@@ -409,10 +419,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let flare = (core_bloom * 0.52 + mid_bloom * 0.92 + far_bloom * 1.36) * bloom_noise * twinkle * flourish;
             let flare_col = mix(vec3<f32>(1.0, 0.84, 0.40), vec3<f32>(1.0, 0.62, 0.34), evening_t);
             let flare_amt = clamp(flare * day_t * halo_vis * (1.0 - horizon_amount * 0.75) * 0.52, 0.0, 2.0);
-            color += flare_col * flare_amt;
+            color += flare_col * flare_amt * sun_visibility;
         }
     }
-
+    
     // ── Stars ─────────────────────────────────────────────────
     // Same UV projection as Godot (ray.xz / sqrt(ray.y)) with a slow
     // rotation over time matching Godot's stars_speed * time * 0.005.
