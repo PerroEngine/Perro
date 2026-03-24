@@ -3742,6 +3742,20 @@ fn build_scene_uniform(
         }; MAX_SPOT_LIGHTS],
     };
 
+    if let Some(sky) = lighting.sky.as_ref() {
+        let day_color = sample_gradient(sky.day_colors.as_ref(), 0.55);
+        let night_color = sample_gradient(sky.night_colors.as_ref(), 0.55);
+        let t_day = day_weight_from_time(sky.time.time_of_day);
+        let ambient_rgb = lerp3(night_color, day_color, t_day);
+        let ambient_strength = (0.08 + 0.32 * t_day).max(0.0);
+        scene.ambient_color = [
+            ambient_rgb[0].max(0.0),
+            ambient_rgb[1].max(0.0),
+            ambient_rgb[2].max(0.0),
+            ambient_strength,
+        ];
+    }
+
     if let Some(ambient) = lighting.ambient_light {
         scene.ambient_color = [
             ambient.color[0].max(0.0),
@@ -3760,6 +3774,28 @@ fn build_scene_uniform(
                 ray.color[1].max(0.0),
                 ray.color[2].max(0.0),
                 ray.intensity.max(0.0),
+            ],
+        };
+        scene.ambient_and_counts[3] = 1.0;
+    } else if let Some(sky) = lighting.sky.as_ref() {
+        let (sun_dir, moon_dir) = sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
+        let sun_amt = day_weight_from_time(sky.time.time_of_day).powf(1.3);
+        let moon_amt = (1.0 - day_weight_from_time(sky.time.time_of_day)).powf(1.8);
+        let use_sun = sun_amt >= moon_amt;
+        let dir = if use_sun { sun_dir } else { moon_dir };
+        let color = if use_sun {
+            [1.0, 0.94, 0.82]
+        } else {
+            [0.58, 0.66, 0.92]
+        };
+        let size_scale = if use_sun { sky.sun_size } else { sky.moon_size };
+        scene.ray_light = RayLightGpu {
+            direction: [dir.x, dir.y, dir.z, 0.0],
+            color_intensity: [
+                color[0],
+                color[1],
+                color[2],
+                ((sun_amt.max(moon_amt) * 1.35) * size_scale.max(0.1)).max(0.0),
             ],
         };
         scene.ambient_and_counts[3] = 1.0;
@@ -3815,4 +3851,41 @@ fn build_scene_uniform(
     scene.ambient_and_counts[2] = spot_count;
 
     scene
+}
+
+fn day_weight_from_time(time_of_day: f32) -> f32 {
+    let t = time_of_day.rem_euclid(1.0);
+    let a = (t * std::f32::consts::TAU) - std::f32::consts::FRAC_PI_2;
+    ((a.sin() + 1.0) * 0.5).clamp(0.0, 1.0)
+}
+
+fn sun_moon_dirs_from_time(time_of_day: f32, sky_angle: f32) -> (Vec3, Vec3) {
+    let t = time_of_day.rem_euclid(1.0);
+    let theta = (t * std::f32::consts::TAU) + sky_angle;
+    let sun = Vec3::new(theta.cos(), theta.sin(), -0.25).normalize_or_zero();
+    let moon = -sun;
+    (sun, moon)
+}
+
+fn sample_gradient(colors: &[[f32; 3]], t: f32) -> [f32; 3] {
+    if colors.is_empty() {
+        return [0.0, 0.0, 0.0];
+    }
+    if colors.len() == 1 {
+        return colors[0];
+    }
+    let n = colors.len() - 1;
+    let f = t.clamp(0.0, 1.0) * n as f32;
+    let i = f.floor() as usize;
+    let j = (i + 1).min(n);
+    let u = (f - i as f32).clamp(0.0, 1.0);
+    lerp3(colors[i], colors[j], u)
+}
+
+fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+    ]
 }

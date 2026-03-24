@@ -23,6 +23,7 @@ impl Runtime {
             SceneNodeData::TerrainInstance3D(node) => node.visible,
             SceneNodeData::Camera3D(node) => node.visible,
             SceneNodeData::AmbientLight3D(node) => node.visible,
+            SceneNodeData::Sky3D(node) => node.visible,
             SceneNodeData::RayLight3D(node) => node.visible,
             SceneNodeData::PointLight3D(node) => node.visible,
             SceneNodeData::SpotLight3D(node) => node.visible,

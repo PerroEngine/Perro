@@ -332,6 +332,9 @@ impl PerroGraphics {
                     Command3D::SetAmbientLight { node, light } => {
                         self.renderer_3d.set_ambient_light(node, light);
                     }
+                    Command3D::SetSky { node, sky } => {
+                        self.renderer_3d.set_sky(node, *sky);
+                    }
                     Command3D::SetRayLight { node, light } => {
                         self.renderer_3d.set_ray_light(node, light);
                     }
@@ -482,6 +485,7 @@ impl GraphicsBackend for PerroGraphics {
                     match &**cmd_3d {
                         Command3D::SetCamera { .. } => frame_dirty_bits |= DIRTY_CAMERA_3D,
                         Command3D::SetAmbientLight { .. }
+                        | Command3D::SetSky { .. }
                         | Command3D::SetRayLight { .. }
                         | Command3D::SetPointLight { .. }
                         | Command3D::SetSpotLight { .. } => frame_dirty_bits |= DIRTY_LIGHTS_3D,

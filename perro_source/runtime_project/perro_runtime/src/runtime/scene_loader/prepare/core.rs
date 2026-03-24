@@ -14,6 +14,7 @@ use perro_nodes::{
     point_light_3d::PointLight3D,
     ray_light_3d::RayLight3D,
     skeleton_3d::Skeleton3D,
+    sky_3d::Sky3D,
     spot_light_3d::SpotLight3D,
     sprite_2d::Sprite2D,
     terrain_instance_3d::TerrainInstance3D,
@@ -27,7 +28,7 @@ use perro_scene::{
     Node3DField, NodeField, Parser, ParticleEmitter3DField, PointLight3DField,
     RayLight3DField, RigidBody2DField, RigidBody3DField, Scene, SceneFieldIterRef,
     SceneNodeData as SceneDefNodeData, SceneNodeEntry as SceneDefNodeEntry, SceneObjectField,
-    SceneValue, Skeleton3DField, SpotLight3DField, Sprite2DField, StaticBody2DField,
+    SceneValue, Skeleton3DField, Sky3DField, SpotLight3DField, Sprite2DField, StaticBody2DField,
     StaticBody3DField, TerrainInstance3DField, resolve_node_field,
 };
 use perro_structs::{
@@ -231,6 +232,7 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         ))),
         "AnimationPlayer" => Ok(SceneNodeData::AnimationPlayer(build_animation_player(data))),
         "AmbientLight3D" => Ok(SceneNodeData::AmbientLight3D(build_ambient_light_3d(data))),
+        "Sky3D" => Ok(SceneNodeData::Sky3D(build_sky_3d(data))),
         "RayLight3D" => Ok(SceneNodeData::RayLight3D(build_ray_light_3d(data))),
         "PointLight3D" => Ok(SceneNodeData::PointLight3D(build_point_light_3d(data))),
         "SpotLight3D" => Ok(SceneNodeData::SpotLight3D(build_spot_light_3d(data))),

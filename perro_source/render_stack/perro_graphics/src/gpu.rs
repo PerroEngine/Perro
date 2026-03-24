@@ -451,7 +451,7 @@ impl Gpu {
                         },
                     );
                     self.last_prepare_3d_camera = Some(camera_3d.clone());
-                    self.last_prepare_3d_lighting = Some(*lighting_3d);
+                    self.last_prepare_3d_lighting = Some(lighting_3d.clone());
                     self.last_prepare_3d_draws_revision = draws_3d_revision;
                     self.last_prepare_3d_width = self.config.width;
                     self.last_prepare_3d_height = self.config.height;
@@ -544,17 +544,18 @@ impl Gpu {
                 label: Some("perro_main_encoder"),
             });
 
+        let clear_color = sky_clear_color(lighting_3d).unwrap_or(wgpu::Color {
+            r: CLEAR_R,
+            g: CLEAR_G,
+            b: CLEAR_B,
+            a: 1.0,
+        });
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.render_pass(
                 &self.device,
                 &mut encoder,
                 color_view,
-                wgpu::Color {
-                    r: CLEAR_R,
-                    g: CLEAR_G,
-                    b: CLEAR_B,
-                    a: 1.0,
-                },
+                clear_color,
                 depth_prepass_needed,
             );
             if let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
@@ -567,12 +568,7 @@ impl Gpu {
                     view: color_view,
                     resolve_target: resolve_view,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: CLEAR_R,
-                            g: CLEAR_G,
-                            b: CLEAR_B,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(clear_color),
                         store: wgpu::StoreOp::Store,
                     },
                     depth_slice: None,
@@ -689,6 +685,49 @@ impl Gpu {
     pub fn virtual_size() -> [f32; 2] {
         Gpu2D::virtual_size()
     }
+}
+
+fn sky_clear_color(lighting: &Lighting3DState) -> Option<wgpu::Color> {
+    let sky = lighting.sky.as_ref()?;
+    let day = sample_gradient_color(sky.day_colors.as_ref(), 0.32);
+    let night = sample_gradient_color(sky.night_colors.as_ref(), 0.32);
+    let day_t = day_weight(sky.time.time_of_day);
+    let c = [
+        night[0] + (day[0] - night[0]) * day_t,
+        night[1] + (day[1] - night[1]) * day_t,
+        night[2] + (day[2] - night[2]) * day_t,
+    ];
+    Some(wgpu::Color {
+        r: c[0].clamp(0.0, 1.0) as f64,
+        g: c[1].clamp(0.0, 1.0) as f64,
+        b: c[2].clamp(0.0, 1.0) as f64,
+        a: 1.0,
+    })
+}
+
+fn sample_gradient_color(colors: &[[f32; 3]], t: f32) -> [f32; 3] {
+    if colors.is_empty() {
+        return [CLEAR_R as f32, CLEAR_G as f32, CLEAR_B as f32];
+    }
+    if colors.len() == 1 {
+        return colors[0];
+    }
+    let n = colors.len() - 1;
+    let f = t.clamp(0.0, 1.0) * n as f32;
+    let i = f.floor() as usize;
+    let j = (i + 1).min(n);
+    let u = f - i as f32;
+    [
+        colors[i][0] + (colors[j][0] - colors[i][0]) * u,
+        colors[i][1] + (colors[j][1] - colors[i][1]) * u,
+        colors[i][2] + (colors[j][2] - colors[i][2]) * u,
+    ]
+}
+
+fn day_weight(time_of_day: f32) -> f32 {
+    let t = time_of_day.rem_euclid(1.0);
+    let a = (t * std::f32::consts::TAU) - std::f32::consts::FRAC_PI_2;
+    ((a.sin() + 1.0) * 0.5).clamp(0.0, 1.0)
 }
 
 fn normalize_sample_count(samples: u32) -> u32 {

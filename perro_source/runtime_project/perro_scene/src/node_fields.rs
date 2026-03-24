@@ -18,6 +18,7 @@ pub enum NodeField {
     ParticleEmitter3D(ParticleEmitter3DField),
     AnimationPlayer(AnimationPlayerField),
     Light3D(Light3DField),
+    Sky3D(Sky3DField),
     RayLight3D(RayLight3DField),
     PointLight3D(PointLight3DField),
     SpotLight3D(SpotLight3DField),
@@ -158,6 +159,27 @@ pub enum Light3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RayLight3DField {
     Visible,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sky3DField {
+    DayColors,
+    NightColors,
+    SkyAngle,
+    Time,
+    TimeOfDay,
+    TimePaused,
+    TimeScale,
+    CloudSize,
+    CloudDensity,
+    CloudVariance,
+    StarSize,
+    StarScatter,
+    StarGleam,
+    MoonSize,
+    SunSize,
+    SkyShader,
+    Active,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -313,6 +335,7 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             _ => None,
         },
         NodeType::AmbientLight3D => resolve_light3d_common(field).map(NodeField::Light3D),
+        NodeType::Sky3D => resolve_sky3d_field(field).map(NodeField::Sky3D),
         NodeType::RayLight3D => match field {
             "visible" => Some(NodeField::RayLight3D(RayLight3DField::Visible)),
             _ => resolve_light3d_common(field).map(NodeField::Light3D),
@@ -368,6 +391,31 @@ fn resolve_light3d_common(field: &str) -> Option<Light3DField> {
         "color" => Some(Light3DField::Color),
         "intensity" => Some(Light3DField::Intensity),
         "active" => Some(Light3DField::Active),
+        _ => None,
+    }
+}
+
+fn resolve_sky3d_field(field: &str) -> Option<Sky3DField> {
+    match field {
+        "sky_colors" | "colors" | "day_colors" => Some(Sky3DField::DayColors),
+        "night_colors" => Some(Sky3DField::NightColors),
+        "sky_angle" | "angle" => Some(Sky3DField::SkyAngle),
+        "time" => Some(Sky3DField::Time),
+        "time_of_day" | "time.time_of_day" => Some(Sky3DField::TimeOfDay),
+        "time_paused" | "pause_time" | "time.paused" => Some(Sky3DField::TimePaused),
+        "time_scale" | "time_speed" | "time.scale" => Some(Sky3DField::TimeScale),
+        "cloud_size" | "clouds_size" | "clouds.size" => Some(Sky3DField::CloudSize),
+        "cloud_density" | "clouds_density" | "clouds.density" => Some(Sky3DField::CloudDensity),
+        "cloud_variance" | "clouds_variance" | "clouds.variance" => {
+            Some(Sky3DField::CloudVariance)
+        }
+        "star_size" | "stars_size" | "stars.size" => Some(Sky3DField::StarSize),
+        "star_scatter" | "stars_scatter" | "stars.scatter" => Some(Sky3DField::StarScatter),
+        "star_gleam" | "stars_gleam" | "stars.gleam" => Some(Sky3DField::StarGleam),
+        "moon_size" | "moon.size" => Some(Sky3DField::MoonSize),
+        "sun_size" | "sun.size" => Some(Sky3DField::SunSize),
+        "sky_shader" | "shader" => Some(Sky3DField::SkyShader),
+        "active" => Some(Sky3DField::Active),
         _ => None,
     }
 }

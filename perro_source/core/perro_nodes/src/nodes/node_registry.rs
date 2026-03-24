@@ -11,6 +11,7 @@ use crate::physics_3d::{Area3D, CollisionShape3D, RigidBody3D, StaticBody3D};
 use crate::point_light_3d::PointLight3D;
 use crate::ray_light_3d::RayLight3D;
 use crate::skeleton_3d::Skeleton3D;
+use crate::sky_3d::Sky3D;
 use crate::spot_light_3d::SpotLight3D;
 use crate::sprite_2d::Sprite2D;
 use crate::terrain_instance_3d::TerrainInstance3D;
@@ -691,6 +692,7 @@ define_scene_nodes! {
         ParticleEmitter3D => (Node3D, ParticleEmitter3D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         //Lights
         AmbientLight3D => (None, AmbientLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        Sky3D => (None, Sky3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         RayLight3D => (Node3D, RayLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         PointLight3D => (Node3D, PointLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         SpotLight3D => (Node3D, SpotLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False)

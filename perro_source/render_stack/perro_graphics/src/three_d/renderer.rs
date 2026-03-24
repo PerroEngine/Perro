@@ -4,9 +4,12 @@ use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, PointLight3DState, RayLight3DState,
-    SkeletonPalette, SpotLight3DState,
+    SkeletonPalette, Sky3DState, SpotLight3DState,
 };
 use std::sync::Arc;
+use std::time::Instant;
+
+const SKY_DAY_SECONDS: f32 = 240.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Draw3DKind {
@@ -31,9 +34,10 @@ pub struct Renderer3DStats {
     pub rejected_draws: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Lighting3DState {
     pub ambient_light: Option<AmbientLight3DState>,
+    pub sky: Option<Sky3DState>,
     pub ray_light: Option<RayLight3DState>,
     pub point_lights: [Option<PointLight3DState>; MAX_POINT_LIGHTS],
     pub spot_lights: [Option<SpotLight3DState>; MAX_SPOT_LIGHTS],
@@ -46,11 +50,13 @@ pub struct Renderer3D {
     queued_draws: Vec<Draw3DInstance>,
     retained_draws: AHashMap<NodeID, Draw3DInstance>,
     ambient_lights: AHashMap<NodeID, AmbientLight3DState>,
+    skies: AHashMap<NodeID, Sky3DState>,
     ray_lights: AHashMap<NodeID, RayLight3DState>,
     point_lights: AHashMap<NodeID, PointLight3DState>,
     spot_lights: AHashMap<NodeID, SpotLight3DState>,
     camera: Camera3DState,
     draw_revision: u64,
+    last_frame_time: Option<Instant>,
 }
 
 impl Renderer3D {
@@ -134,6 +140,7 @@ impl Renderer3D {
             self.draw_revision = self.draw_revision.wrapping_add(1);
         }
         self.ambient_lights.remove(&node);
+        self.skies.remove(&node);
         self.ray_lights.remove(&node);
         self.point_lights.remove(&node);
         self.spot_lights.remove(&node);
@@ -141,6 +148,10 @@ impl Renderer3D {
 
     pub fn set_ambient_light(&mut self, node: NodeID, light: AmbientLight3DState) {
         self.ambient_lights.insert(node, light);
+    }
+
+    pub fn set_sky(&mut self, node: NodeID, sky: Sky3DState) {
+        self.skies.insert(node, sky);
     }
 
     pub fn set_ray_light(&mut self, node: NodeID, light: RayLight3DState) {
@@ -161,6 +172,12 @@ impl Renderer3D {
     ) -> (Camera3DState, Renderer3DStats, Lighting3DState) {
         let mut stats = Renderer3DStats::default();
         let mut draws_changed = false;
+        let now = Instant::now();
+        let dt = self
+            .last_frame_time
+            .map(|prev| now.duration_since(prev).as_secs_f32())
+            .unwrap_or(0.0);
+        self.last_frame_time = Some(now);
 
         for draw in self.queued_draws.drain(..) {
             let material_ready = draw
@@ -224,6 +241,14 @@ impl Renderer3D {
         if let Some((_, ambient)) = self.ambient_lights.iter().next() {
             lighting.ambient_light = Some(*ambient);
         }
+        if let Some((_, sky)) = self.skies.iter().next() {
+            let mut sky = sky.clone();
+            if !sky.time.paused {
+                let scaled = dt.max(0.0) * sky.time.scale.max(0.0) / SKY_DAY_SECONDS;
+                sky.time.time_of_day = (sky.time.time_of_day + scaled).rem_euclid(1.0);
+            }
+            lighting.sky = Some(sky);
+        }
         if let Some((_, ray)) = self.ray_lights.iter().next() {
             lighting.ray_light = Some(*ray);
         }
@@ -272,6 +297,7 @@ impl Default for Renderer3D {
             queued_draws: Vec::new(),
             retained_draws: AHashMap::new(),
             ambient_lights: AHashMap::new(),
+            skies: AHashMap::new(),
             ray_lights: AHashMap::new(),
             point_lights: AHashMap::new(),
             spot_lights: AHashMap::new(),
@@ -287,6 +313,7 @@ impl Default for Renderer3D {
                 post_processing: Arc::from([]),
             },
             draw_revision: 0,
+            last_frame_time: None,
         }
     }
 }

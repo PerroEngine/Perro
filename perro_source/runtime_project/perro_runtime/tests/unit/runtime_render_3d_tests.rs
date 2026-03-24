@@ -4,6 +4,7 @@ use perro_nodes::{
     CameraProjection, SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D,
     camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, node_3d::Node3D,
     ray_light_3d::RayLight3D, terrain_instance_3d::TerrainInstance3D,
+    sky_3d::Sky3D,
 };
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
@@ -346,6 +347,37 @@ fn active_ambient_light_3d_emits_set_ambient_light_command() {
                 command_3d.as_ref(),
                 Command3D::SetAmbientLight { light, .. }
                     if light.color == [0.25, 0.3, 0.4] && light.intensity == 0.2
+            )
+    )));
+}
+
+#[test]
+fn active_sky_3d_emits_set_sky_command() {
+    let mut runtime = Runtime::new();
+    let mut sky = Sky3D::new();
+    sky.day_colors = std::borrow::Cow::Owned(vec![[0.4, 0.6, 0.9], [0.9, 0.95, 1.0]]);
+    sky.night_colors = std::borrow::Cow::Owned(vec![[0.01, 0.02, 0.05], [0.04, 0.08, 0.18]]);
+    sky.time.time_of_day = 0.67;
+    sky.time.paused = true;
+    sky.time.scale = 0.25;
+    sky.active = true;
+    runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Sky3D(sky)));
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(
+                command_3d.as_ref(),
+                Command3D::SetSky { sky, .. }
+                    if sky.time.time_of_day == 0.67
+                        && sky.time.paused
+                        && sky.time.scale == 0.25
+                        && sky.day_colors.len() == 2
+                        && sky.night_colors.len() == 2
             )
     )));
 }

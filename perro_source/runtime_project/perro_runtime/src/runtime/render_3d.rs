@@ -11,7 +11,8 @@ use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
     ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
     PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID,
-    ResourceCommand, RuntimeMeshData, RuntimeMeshVertex, SkeletonPalette, SpotLight3DState,
+    ResourceCommand, RuntimeMeshData, RuntimeMeshVertex, SkeletonPalette, Sky3DState,
+    SkyTime3DState, SpotLight3DState,
     StandardMaterial3D,
 };
 use perro_terrain::{ChunkCoord, TerrainChunk};
@@ -136,6 +137,41 @@ impl Runtime {
                         Command3D::SetAmbientLight { node, light },
                     )));
                     self.render_3d.retained_ambient_lights.insert(node, light);
+                }
+                visible_now.insert(node);
+            }
+
+            let sky_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::Sky3D(sky) if sky.active && sky.visible && effective_visible => {
+                    Some(Sky3DState {
+                        day_colors: Arc::from(sky.day_colors.as_ref()),
+                        night_colors: Arc::from(sky.night_colors.as_ref()),
+                        sky_angle: sky.sky_angle,
+                        time: SkyTime3DState {
+                            time_of_day: sky.time.time_of_day,
+                            paused: sky.time.paused,
+                            scale: sky.time.scale,
+                        },
+                        cloud_size: sky.clouds.size,
+                        cloud_density: sky.clouds.density,
+                        cloud_variance: sky.clouds.variance,
+                        star_size: sky.stars.size,
+                        star_scatter: sky.stars.scatter,
+                        star_gleam: sky.stars.gleam,
+                        moon_size: sky.moon.size,
+                        sun_size: sky.sun.size,
+                        sky_shader: sky.sky_shader.clone(),
+                    })
+                }
+                _ => None,
+            });
+            if let Some(sky) = sky_data {
+                if self.render_3d.retained_skies.get(&node) != Some(&sky) {
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::SetSky {
+                        node,
+                        sky: Box::new(sky.clone()),
+                    })));
+                    self.render_3d.retained_skies.insert(node, sky);
                 }
                 visible_now.insert(node);
             }
@@ -468,6 +504,7 @@ impl Runtime {
                 Self::queue_remove_terrain_debug_nodes(self, node, prev);
             }
             self.render_3d.retained_ambient_lights.remove(&node);
+            self.render_3d.retained_skies.remove(&node);
             self.render_3d.retained_ray_lights.remove(&node);
             self.render_3d.retained_point_lights.remove(&node);
             self.render_3d.retained_spot_lights.remove(&node);

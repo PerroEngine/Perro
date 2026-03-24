@@ -35,6 +35,34 @@ parent = @root
     [/AnimationPlayer]
 [/animator]
 
+[animatedCube2]
+parent = @root
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = {
+            type = standard
+            base_color_factor = (0.0, 0.5, 0.2, 1.0)
+            metallic_factor = 0.15
+            roughness_factor = 0.75
+            emissive_factor = (0.02, 0.0, 0.0)
+            alpha_mode = OPAQUE
+            double_sided = false
+        }
+        [Node3D]
+            position = (0, -1, 0)
+        [/Node3D]
+    [/MeshInstance3D]
+[/animatedCube2]
+
+[animator2]
+parent = @root
+    [AnimationPlayer]
+        animation = "res://animations/cube.panim"
+        bindings = [{Target = animatedCube2}]
+        playback = "boomerang"
+    [/AnimationPlayer]
+[/animator2]
+
 
 [camera]
 parent = @root

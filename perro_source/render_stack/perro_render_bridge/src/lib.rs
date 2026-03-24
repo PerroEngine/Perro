@@ -85,6 +85,30 @@ pub struct SpotLight3DState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct SkyTime3DState {
+    pub time_of_day: f32,
+    pub paused: bool,
+    pub scale: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sky3DState {
+    pub day_colors: Arc<[[f32; 3]]>,
+    pub night_colors: Arc<[[f32; 3]]>,
+    pub sky_angle: f32,
+    pub time: SkyTime3DState,
+    pub cloud_size: f32,
+    pub cloud_density: f32,
+    pub cloud_variance: f32,
+    pub star_size: f32,
+    pub star_scatter: f32,
+    pub star_gleam: f32,
+    pub moon_size: f32,
+    pub sun_size: f32,
+    pub sky_shader: Option<Cow<'static, str>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum ParticlePath3D {
     None,
     Ballistic,
@@ -579,6 +603,10 @@ pub enum Command3D {
     SetAmbientLight {
         node: NodeID,
         light: AmbientLight3DState,
+    },
+    SetSky {
+        node: NodeID,
+        sky: Box<Sky3DState>,
     },
     SetRayLight {
         node: NodeID,
