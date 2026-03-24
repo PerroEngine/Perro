@@ -12,9 +12,9 @@ pub struct SkyClouds {
 impl SkyClouds {
     pub const fn new() -> Self {
         Self {
-            size: 0.5,
-            density: 0.35,
-            variance: 0.3,
+            size: 0.72,
+            density: 0.58,
+            variance: 0.52,
             wind_vector: [0.06, 0.015],
         }
     }
