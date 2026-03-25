@@ -36,6 +36,7 @@ use perro_structs::{
     Vector3,
 };
 use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 #[cfg(feature = "profile")]
 use std::time::Duration;
 #[cfg(feature = "profile")]
@@ -112,45 +113,26 @@ pub(super) fn load_runtime_scene_from_disk(
 }
 
 pub(super) fn prepare_scene(scene: &Scene) -> Result<PreparedScene, String> {
+    let mut include_stack = HashSet::new();
+    prepare_scene_with_stack(scene, &mut include_stack)
+}
+
+fn prepare_scene_with_stack(
+    scene: &Scene,
+    include_stack: &mut HashSet<String>,
+) -> Result<PreparedScene, String> {
     let mut prepared_nodes = Vec::with_capacity(scene.nodes.len());
     let mut scripts = Vec::new();
 
     for entry in scene.nodes.as_ref() {
-        let (
-            node,
-            animation_source,
-            texture_source,
-            mesh_source,
-            material_source,
-            material_inline,
-            skeleton_source,
-            mesh_skeleton_target,
-            animation_bindings,
-        ) = scene_node_from_entry(entry)?;
-        if let Some(script) = &entry.script {
-            scripts.push(PendingScript {
-                node_key: entry.key.as_ref().to_string(),
-                script_path: script.to_string(),
-                scene_injected_vars: entry
-                    .script_vars
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), v.clone()))
-                    .collect(),
-            });
-        }
-        prepared_nodes.push(PendingNode {
-            key: entry.key.as_ref().to_string(),
-            parent_key: entry.parent.as_ref().map(|p| p.as_ref().to_string()),
-            node,
-            animation_source,
-            texture_source,
-            mesh_source,
-            material_source,
-            material_inline,
-            skeleton_source,
-            mesh_skeleton_target,
-            animation_bindings,
-        });
+        push_entry_prepared(
+            entry,
+            None,
+            &HashMap::new(),
+            &mut prepared_nodes,
+            &mut scripts,
+            include_stack,
+        )?;
     }
 
     Ok(PreparedScene {
@@ -158,6 +140,176 @@ pub(super) fn prepare_scene(scene: &Scene) -> Result<PreparedScene, String> {
         nodes: prepared_nodes,
         scripts,
     })
+}
+
+fn push_entry_prepared(
+    entry: &SceneDefNodeEntry,
+    key_override: Option<&str>,
+    key_map: &HashMap<String, String>,
+    prepared_nodes: &mut Vec<PendingNode>,
+    scripts: &mut Vec<PendingScript>,
+    include_stack: &mut HashSet<String>,
+) -> Result<(), String> {
+    let key = key_override
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| remap_key(entry.key.as_ref(), key_map));
+    let parent_key = entry
+        .parent
+        .as_ref()
+        .map(|p| remap_key(p.as_ref(), key_map));
+
+    let (
+        node,
+        animation_source,
+        texture_source,
+        mesh_source,
+        material_source,
+        material_inline,
+        skeleton_source,
+        mesh_skeleton_target,
+        animation_bindings,
+    ) = scene_node_from_entry(entry)?;
+
+    prepared_nodes.push(PendingNode {
+        key: key.clone(),
+        parent_key,
+        node,
+        animation_source,
+        texture_source,
+        mesh_source,
+        material_source,
+        material_inline,
+        skeleton_source,
+        mesh_skeleton_target: mesh_skeleton_target.map(|v| remap_key(v.as_str(), key_map)),
+        animation_bindings: animation_bindings
+            .into_iter()
+            .map(|(object, target)| (object, remap_key(target.as_str(), key_map)))
+            .collect(),
+    });
+
+    if let Some(script) = &entry.script {
+        scripts.push(PendingScript {
+            node_key: key.clone(),
+            script_path: script.to_string(),
+            scene_injected_vars: entry
+                .script_vars
+                .iter()
+                .map(|(k, v)| (k.to_string(), remap_scene_value_keys(v, key_map)))
+                .collect(),
+        });
+    }
+
+    if let Some(root_of_path) = &entry.root_of {
+        expand_root_of_into_host(
+            key.as_str(),
+            root_of_path.as_ref(),
+            prepared_nodes,
+            scripts,
+            include_stack,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn expand_root_of_into_host(
+    host_key: &str,
+    path: &str,
+    prepared_nodes: &mut Vec<PendingNode>,
+    scripts: &mut Vec<PendingScript>,
+    include_stack: &mut HashSet<String>,
+) -> Result<(), String> {
+    if include_stack.contains(path) {
+        return Err(format!(
+            "root_of cycle detected while loading `{path}` for host `{host_key}`"
+        ));
+    }
+    include_stack.insert(path.to_string());
+
+    let (import_scene, _) = load_runtime_scene_from_disk(path)?;
+    let import_root = import_scene
+        .root
+        .as_ref()
+        .map(|v| v.as_ref().to_string())
+        .ok_or_else(|| format!("root_of scene `{path}` has no @root"))?;
+
+    let mut map = HashMap::<String, String>::new();
+    map.insert(import_root.clone(), host_key.to_string());
+    for node in import_scene.nodes.as_ref() {
+        let source_key = node.key.as_ref().to_string();
+        if source_key == import_root {
+            continue;
+        }
+        map.insert(source_key.clone(), format!("{host_key}::{source_key}"));
+    }
+
+    for node in import_scene.nodes.as_ref() {
+        if node.key.as_ref() == import_root {
+            continue;
+        }
+        let remapped_key = map
+            .get(node.key.as_ref())
+            .cloned()
+            .ok_or_else(|| format!("missing remap key for `{}` in root_of `{path}`", node.key.as_ref()))?;
+        push_entry_prepared(
+            node,
+            Some(remapped_key.as_str()),
+            &map,
+            prepared_nodes,
+            scripts,
+            include_stack,
+        )?;
+    }
+
+    include_stack.remove(path);
+    Ok(())
+}
+
+fn remap_key(key: &str, key_map: &HashMap<String, String>) -> String {
+    key_map
+        .get(key)
+        .cloned()
+        .unwrap_or_else(|| key.to_string())
+}
+
+fn remap_scene_value_keys(value: &SceneValue, key_map: &HashMap<String, String>) -> SceneValue {
+    match value {
+        SceneValue::Bool(v) => SceneValue::Bool(*v),
+        SceneValue::I32(v) => SceneValue::I32(*v),
+        SceneValue::F32(v) => SceneValue::F32(*v),
+        SceneValue::Vec2 { x, y } => SceneValue::Vec2 { x: *x, y: *y },
+        SceneValue::Vec3 { x, y, z } => SceneValue::Vec3 {
+            x: *x,
+            y: *y,
+            z: *z,
+        },
+        SceneValue::Vec4 { x, y, z, w } => SceneValue::Vec4 {
+            x: *x,
+            y: *y,
+            z: *z,
+            w: *w,
+        },
+        SceneValue::Str(v) => SceneValue::Str(v.clone()),
+        SceneValue::Key(v) => {
+            let next = key_map
+                .get(v.as_ref())
+                .cloned()
+                .unwrap_or_else(|| v.as_ref().to_string());
+            SceneValue::Key(next.into())
+        }
+        SceneValue::Object(fields) => SceneValue::Object(Cow::Owned(
+            fields
+                .iter()
+                .map(|(k, v)| (k.clone(), remap_scene_value_keys(v, key_map)))
+                .collect(),
+        )),
+        SceneValue::Array(items) => SceneValue::Array(Cow::Owned(
+            items
+                .iter()
+                .map(|v| remap_scene_value_keys(v, key_map))
+                .collect(),
+        )),
+    }
 }
 fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtraction, String> {
     let mut node = SceneNode::new(scene_node_data_from(&entry.data)?);

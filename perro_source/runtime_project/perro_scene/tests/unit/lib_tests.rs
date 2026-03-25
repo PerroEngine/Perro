@@ -124,3 +124,22 @@ fn parse_script_vars_object() {
             .any(|(name, _)| name.as_ref() == "enabled")
     );
 }
+
+#[test]
+fn parse_root_of_header() {
+    let src = r#"
+    [main]
+    root_of = "res://child.scn"
+    [Node]
+    [/Node]
+    [/main]
+    "#;
+
+    let scene = Parser::new(src).parse_scene();
+    let main = scene
+        .nodes
+        .iter()
+        .find(|n| n.key.as_ref() == "main")
+        .expect("main node");
+    assert_eq!(main.root_of.as_deref(), Some("res://child.scn"));
+}

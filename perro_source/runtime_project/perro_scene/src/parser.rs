@@ -373,6 +373,7 @@ impl<'a> Parser<'a> {
                     let mut tags = Vec::new();
                     let mut parent = None;
                     let mut script = None;
+                    let mut root_of = None;
                     let mut script_vars: Vec<SceneObjectField> = Vec::new();
 
                     while matches!(self.current, Token::Ident(_)) {
@@ -400,6 +401,12 @@ impl<'a> Parser<'a> {
                                 script = Some(match v {
                                     SceneValue::Str(s) => s.to_string(),
                                     _ => panic!("script must be a string"),
+                                })
+                            }
+                            "root_of" => {
+                                root_of = Some(match v {
+                                    SceneValue::Str(s) => s.to_string(),
+                                    _ => panic!("root_of must be a string"),
                                 })
                             }
                             "script_vars" => match v {
@@ -432,6 +439,7 @@ impl<'a> Parser<'a> {
                         children: Cow::Owned(Vec::new()),
                         parent: parent.map(SceneKey::from),
                         script: script.map(Cow::Owned),
+                        root_of: root_of.map(Cow::Owned),
                         script_vars: Cow::Owned(script_vars),
                         data,
                     });

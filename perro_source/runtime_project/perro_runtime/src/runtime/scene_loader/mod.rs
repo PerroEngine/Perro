@@ -3,7 +3,6 @@ use perro_ids::NodeID;
 use perro_ids::ScriptMemberID;
 use perro_io::{ProjectRoot, set_project_root};
 use perro_variant::Variant;
-#[cfg(feature = "profile")]
 use std::collections::HashMap;
 #[cfg(feature = "profile")]
 use std::time::{Duration, Instant};
@@ -167,7 +166,6 @@ impl Runtime {
                 }
             },
         }
-        #[cfg(feature = "profile")]
         let script_paths_by_node: HashMap<NodeID, String> = script_nodes
             .iter()
             .map(|it| (it.node_id, it.script_path.clone()))
@@ -180,37 +178,63 @@ impl Runtime {
             let _ = mode_label;
         }
         #[cfg(feature = "profile")]
-        {
-            let stats = SceneLoadStats {
-                mode_label,
-                source_load,
-                parse,
-                node_insert,
-                total_excluding_debug_print: boot_start.elapsed(),
-            };
-            debug_print_scene_load(self, &main_scene_path, stats, &script_paths_by_node);
-        }
+        let stats = SceneLoadStats {
+            mode_label,
+            source_load,
+            parse,
+            node_insert,
+            total_excluding_debug_print: boot_start.elapsed(),
+        };
+        #[cfg(feature = "profile")]
+        println!(
+            "[scene_load] mode={} path={} total_us={:.3} source_us={} parse_us={} insert_us={:.3}",
+            stats.mode_label,
+            main_scene_path,
+            as_us(stats.total_excluding_debug_print),
+            fmt_duration(stats.source_load),
+            fmt_duration(stats.parse),
+            as_us(stats.node_insert),
+        );
+        debug_print_scene_load(self, &main_scene_path, &script_paths_by_node);
         Ok(())
     }
 }
 
-#[cfg(feature = "profile")]
 fn debug_print_scene_load(
     runtime: &Runtime,
     path: &str,
-    stats: SceneLoadStats,
     script_paths_by_node: &HashMap<NodeID, String>,
 ) {
+    #[cfg(not(feature = "profile"))]
+    {
+        println!("[scene_load] path={path}");
+    }
+    print_scene_tree(runtime, NodeID::ROOT, "", script_paths_by_node);
+}
+
+fn print_scene_tree(
+    runtime: &Runtime,
+    node: NodeID,
+    indent: &str,
+    script_paths_by_node: &HashMap<NodeID, String>,
+) {
+    let Some(node_ref) = runtime.nodes.get(node) else {
+        return;
+    };
+    let script_suffix = script_paths_by_node
+        .get(&node)
+        .map(|script_path| format!(" script={script_path}"))
+        .unwrap_or_default();
     println!(
-        "[scene_load] mode={} path={} total_us={:.3} source_us={} parse_us={} insert_us={:.3}",
-        stats.mode_label,
-        path,
-        as_us(stats.total_excluding_debug_print),
-        fmt_duration(stats.source_load),
-        fmt_duration(stats.parse),
-        as_us(stats.node_insert),
+        "{indent}- [{node}] {} ({}){}",
+        node_ref.name.as_ref(),
+        node_ref.node_type(),
+        script_suffix
     );
-    print_scene_tree(runtime, NodeID::ROOT, "", 0, script_paths_by_node);
+    let child_indent = format!("{indent}  ");
+    for child in node_ref.children_slice() {
+        print_scene_tree(runtime, *child, &child_indent, script_paths_by_node);
+    }
 }
 
 #[cfg(feature = "profile")]
@@ -223,54 +247,4 @@ fn fmt_duration(duration: Option<Duration>) -> String {
     duration
         .map(|value| format!("{:.3}", as_us(value)))
         .unwrap_or_else(|| "n/a".to_string())
-}
-
-#[cfg(feature = "profile")]
-fn print_scene_tree(
-    runtime: &Runtime,
-    node: NodeID,
-    indent: &str,
-    depth: usize,
-    script_paths_by_node: &HashMap<NodeID, String>,
-) {
-    let Some(node_ref) = runtime.nodes.get(node) else {
-        return;
-    };
-    let color = depth_color(depth);
-    let script_suffix = script_paths_by_node
-        .get(&node)
-        .map(|script_path| format!(" {}script={}{}", ANSI_ORANGE, script_path, color))
-        .unwrap_or_default();
-    println!(
-        "{}{}- [{}] {} ({}){}{}",
-        color,
-        indent,
-        node,
-        node_ref.name.as_ref(),
-        node_ref.node_type(),
-        script_suffix,
-        ANSI_RESET,
-    );
-    let child_indent = format!("{indent}  ");
-    for child in node_ref.children_slice() {
-        print_scene_tree(
-            runtime,
-            *child,
-            &child_indent,
-            depth + 1,
-            script_paths_by_node,
-        );
-    }
-}
-
-#[cfg(feature = "profile")]
-const ANSI_RESET: &str = "\x1b[0m";
-#[cfg(feature = "profile")]
-const ANSI_WHITE: &str = "\x1b[97m";
-#[cfg(feature = "profile")]
-const ANSI_ORANGE: &str = "\x1b[38;5;208m";
-
-#[cfg(feature = "profile")]
-fn depth_color(depth: usize) -> &'static str {
-    if depth == 0 { ANSI_WHITE } else { "" }
 }

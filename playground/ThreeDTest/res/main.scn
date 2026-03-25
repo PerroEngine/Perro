@@ -216,6 +216,28 @@ script = "res://scripts/script.rs"
 [/mesh8]
 
 
+[rootOfSecondScene]
+parent = @root
+root_of = "res://second.scn"
+
+    [Node3D]
+        position = (25, 25, 0)
+    [/Node3D]
+
+
+[/rootOfSecondScene]
+
+[rootOfSecondScene2]
+parent = @root
+root_of = "res://second.scn"
+
+    [Node3D]
+        position = (75, 50, 0)
+    [/Node3D]
+
+
+[/rootOfSecondScene2]
+
 
 [camera]
 parent = @root

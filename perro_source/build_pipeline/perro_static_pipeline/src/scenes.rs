@@ -163,7 +163,7 @@ fn emit_static_scene_const(
             tags_name
         };
         node_entries.push_str(&format!(
-            "    SceneNodeEntry {{ key: SceneKey(Cow::Borrowed(\"{key}\")), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, script_vars: Cow::Borrowed({script_vars}), data: {data} }},\n",
+            "    SceneNodeEntry {{ key: SceneKey(Cow::Borrowed(\"{key}\")), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, root_of: {root_of}, script_vars: Cow::Borrowed({script_vars}), data: {data} }},\n",
             key = escape_str(node.key.as_ref()),
             name = opt_static_str(&node.name),
             tags = tags_ref,
@@ -176,6 +176,7 @@ fn emit_static_scene_const(
                 None => "None".to_string(),
             },
             script = opt_static_str(&node.script),
+            root_of = opt_static_str(&node.root_of),
             script_vars = if node.script_vars.is_empty() {
                 uses_empty_fields = true;
                 "EMPTY_SCENE_FIELDS".to_string()
