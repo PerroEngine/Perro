@@ -212,6 +212,12 @@ impl NodeAPI for Runtime {
     }
 
     fn reparent(&mut self, parent_id: perro_ids::NodeID, child_id: perro_ids::NodeID) -> bool {
+        enum SpatialGlobal {
+            TwoD(Transform2D),
+            ThreeD(Transform3D),
+            None,
+        }
+
         if child_id.is_nil() {
             return false;
         }
@@ -227,6 +233,28 @@ impl NodeAPI for Runtime {
         if old_parent == parent_id {
             return true;
         }
+
+        let child_global = if self
+            .nodes
+            .get(child_id)
+            .and_then(|node| node.with_base_ref::<Node2D, _>(|_| ()))
+            .is_some()
+        {
+            Runtime::get_global_transform_2d(self, child_id)
+                .map(SpatialGlobal::TwoD)
+                .unwrap_or(SpatialGlobal::None)
+        } else if self
+            .nodes
+            .get(child_id)
+            .and_then(|node| node.with_base_ref::<Node3D, _>(|_| ()))
+            .is_some()
+        {
+            Runtime::get_global_transform_3d(self, child_id)
+                .map(SpatialGlobal::ThreeD)
+                .unwrap_or(SpatialGlobal::None)
+        } else {
+            SpatialGlobal::None
+        };
 
         if !old_parent.is_nil()
             && let Some(parent) = self.nodes.get_mut(old_parent)
@@ -248,6 +276,54 @@ impl NodeAPI for Runtime {
             } else {
                 return false;
             }
+        }
+
+        match child_global {
+            SpatialGlobal::TwoD(global) => {
+                let parent_global = if parent_id.is_nil() {
+                    None
+                } else {
+                    self.nodes
+                        .get(parent_id)
+                        .and_then(|node| node.with_base_ref::<Node2D, _>(|_| ()))
+                        .and_then(|_| Runtime::get_global_transform_2d(self, parent_id))
+                };
+                let local = match parent_global {
+                    Some(parent_global) => {
+                        let local_mat = parent_global.to_mat3().inverse() * global.to_mat3();
+                        Transform2D::from_mat3(local_mat)
+                    }
+                    None => global,
+                };
+                if let Some(child) = self.nodes.get_mut(child_id) {
+                    let _ = child.with_base_mut::<Node2D, _>(|node| {
+                        node.transform = local;
+                    });
+                }
+            }
+            SpatialGlobal::ThreeD(global) => {
+                let parent_global = if parent_id.is_nil() {
+                    None
+                } else {
+                    self.nodes
+                        .get(parent_id)
+                        .and_then(|node| node.with_base_ref::<Node3D, _>(|_| ()))
+                        .and_then(|_| Runtime::get_global_transform_3d(self, parent_id))
+                };
+                let local = match parent_global {
+                    Some(parent_global) => {
+                        let local_mat = parent_global.to_mat4().inverse() * global.to_mat4();
+                        Transform3D::from_mat4(local_mat)
+                    }
+                    None => global,
+                };
+                if let Some(child) = self.nodes.get_mut(child_id) {
+                    let _ = child.with_base_mut::<Node3D, _>(|node| {
+                        node.transform = local;
+                    });
+                }
+            }
+            SpatialGlobal::None => {}
         }
 
         self.mark_transform_dirty_recursive(child_id);

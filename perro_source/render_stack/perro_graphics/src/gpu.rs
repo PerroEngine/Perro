@@ -353,22 +353,27 @@ impl Gpu {
         let post_requested = PostProcessor::has_effects(camera_3d.post_processing.as_ref())
             || PostProcessor::has_effects(post_processing_2d.as_ref())
             || PostProcessor::has_effects(post_processing_global.as_ref());
+
         let has = |bit: u32| (frame_dirty_bits & bit) != 0;
+
         let needs_2d = has(DIRTY_2D)
             || has(DIRTY_CAMERA_2D)
             || (has(DIRTY_RESOURCES) && !sprites_2d.is_empty())
             || upload_2d.draw_count > 0
             || !sprites_2d.is_empty();
+
         let needs_3d = !draws_3d.is_empty();
         let needs_particles_3d = !point_particles_3d.is_empty();
+
         let needs_3d_pipeline = has(DIRTY_3D)
             || has(DIRTY_CAMERA_3D)
             || has(DIRTY_LIGHTS_3D)
-            || (has(DIRTY_RESOURCES) && needs_3d)
             || needs_3d
             || needs_particles_3d
             || post_requested;
+
         let needs_3d_particles_path = has(DIRTY_PARTICLES_3D) || needs_particles_3d;
+
         let three_d_content_changed = self.last_prepare_3d_camera.as_ref() != Some(&camera_3d)
             || self.last_prepare_3d_lighting.as_ref() != Some(lighting_3d)
             || self.last_prepare_3d_draws_revision != draws_3d_revision

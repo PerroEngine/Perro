@@ -136,3 +136,51 @@ fn get_set_global_transform_2d_and_point_conversion() {
     assert!(approx(local.x, 1.0));
     assert!(approx(local.y, 0.0));
 }
+
+#[test]
+fn reparent_preserves_child_global_transform_3d() {
+    let mut runtime = Runtime::new();
+
+    let mut parent_a = Node3D::new();
+    parent_a.transform.position = Vector3::new(10.0, 0.0, 0.0);
+    let parent_a_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(parent_a)));
+
+    let mut parent_b = Node3D::new();
+    parent_b.transform.position = Vector3::new(-5.0, 0.0, 0.0);
+    let parent_b_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(parent_b)));
+
+    let mut child = Node3D::new();
+    child.transform.position = Vector3::new(2.0, 0.0, 0.0);
+    let child_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(child)));
+
+    if let Some(parent) = runtime.nodes.get_mut(parent_a_id) {
+        parent.add_child(child_id);
+    }
+    if let Some(child) = runtime.nodes.get_mut(child_id) {
+        child.parent = parent_a_id;
+    }
+    runtime.mark_transform_dirty_recursive(parent_a_id);
+
+    let before = runtime
+        .get_global_transform_3d(child_id)
+        .expect("child global before reparent must exist");
+    assert!(runtime.reparent(parent_b_id, child_id));
+
+    let after = runtime
+        .get_global_transform_3d(child_id)
+        .expect("child global after reparent must exist");
+    assert!(approx(before.position.x, after.position.x));
+    assert!(approx(before.position.y, after.position.y));
+    assert!(approx(before.position.z, after.position.z));
+
+    let local = runtime
+        .with_base_node::<Node3D, _, _>(child_id, |node| node.transform)
+        .expect("child local must exist");
+    assert!(approx(local.position.x, 17.0));
+}
