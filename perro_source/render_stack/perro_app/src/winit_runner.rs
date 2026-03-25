@@ -198,7 +198,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let idle_duration = frame_start.saturating_duration_since(self.last_frame_end);
         let work_start = Instant::now();
         let mut runtime_update_duration = Duration::ZERO;
-        let present_duration;
+        
 
         let simulation_start = Instant::now();
         let input_poll_start = Instant::now();
@@ -231,7 +231,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let simulation_duration = simulation_start.elapsed();
 
         let present_timing = self.app.present_timed();
-        present_duration = present_timing.total;
+        let present_duration = present_timing.total;
         let work_duration = work_start.elapsed();
 
         let frame_end = Instant::now();

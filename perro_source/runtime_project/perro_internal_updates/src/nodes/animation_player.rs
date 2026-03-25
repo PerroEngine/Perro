@@ -627,55 +627,43 @@ fn apply_track<RT>(
             Light3DField::Color => {
                 if let AnimationTrackValue::Vec3(color) = value {
                     let c = color;
-                    if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.color = c).is_none() {
-                        if with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.color = c)
+                    if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.color = c).is_none()
+                        && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.color = c)
                             .is_none()
-                        {
-                            if with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.color = c)
+                            && with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.color = c)
                                 .is_none()
                             {
                                 let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| {
                                     n.color = c
                                 });
                             }
-                        }
-                    }
                 }
             }
             Light3DField::Intensity => {
-                if let Some(v) = as_f32_track(&value) {
-                    if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.intensity = v).is_none()
-                    {
-                        if with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.intensity = v)
+                if let Some(v) = as_f32_track(&value)
+                    && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.intensity = v).is_none()
+                        && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.intensity = v)
                             .is_none()
-                        {
-                            if with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.intensity = v)
+                            && with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.intensity = v)
                                 .is_none()
                             {
                                 let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| {
                                     n.intensity = v
                                 });
                             }
-                        }
-                    }
-                }
             }
             Light3DField::Active => {
-                if let AnimationTrackValue::Bool(v) = value {
-                    if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.active = v).is_none() {
-                        if with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.active = v)
+                if let AnimationTrackValue::Bool(v) = value
+                    && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.active = v).is_none()
+                        && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.active = v)
                             .is_none()
-                        {
-                            if with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.active = v)
+                            && with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.active = v)
                                 .is_none()
                             {
                                 let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| {
                                     n.active = v
                                 });
                             }
-                        }
-                    }
-                }
             }
         },
         NodeField::PointLight3D(PointLight3DField::Range) => {

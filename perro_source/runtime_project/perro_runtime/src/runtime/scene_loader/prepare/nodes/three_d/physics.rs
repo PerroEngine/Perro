@@ -75,11 +75,9 @@ fn apply_static_body_3d_fields(node: &mut StaticBody3D, fields: &[SceneObjectFie
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         if resolve_node_field("StaticBody3D", name)
             == Some(NodeField::StaticBody3D(StaticBody3DField::Enabled))
-        {
-            if let Some(enabled) = as_bool(value) {
+            && let Some(enabled) = as_bool(value) {
                 node.enabled = enabled;
             }
-        }
     });
 }
 
@@ -128,11 +126,10 @@ fn apply_rigid_body_3d_fields(node: &mut RigidBody3D, fields: &[SceneObjectField
 
 fn apply_area_3d_fields(node: &mut Area3D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
-        if resolve_node_field("Area3D", name) == Some(NodeField::Area3D(Area3DField::Enabled)) {
-            if let Some(enabled) = as_bool(value) {
+        if resolve_node_field("Area3D", name) == Some(NodeField::Area3D(Area3DField::Enabled))
+            && let Some(enabled) = as_bool(value) {
                 node.enabled = enabled;
             }
-        }
     });
 }
 

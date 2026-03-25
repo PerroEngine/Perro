@@ -52,7 +52,7 @@ pub struct JoyConState {
 }
 
 impl JoyConState {
-    const BUTTON_WORDS: usize = (JoyConButton::COUNT + 63) / 64;
+    const BUTTON_WORDS: usize = JoyConButton::COUNT.div_ceil(64);
 
     pub fn new(side: JoyConSide) -> Self {
         Self {

@@ -1053,7 +1053,7 @@ fn sample_transform2d_position(snapshot: &[(u32, TrackKey)], frame: u32) -> Opti
 }
 
 fn sample_transform2d_rotation(snapshot: &[(u32, TrackKey)], frame: u32) -> Option<f32> {
-    sample_component_2d(snapshot, frame, MASK_ROT_2D, |t| t.rotation, |a, b, t| lerp_f32(a, b, t))
+    sample_component_2d(snapshot, frame, MASK_ROT_2D, |t| t.rotation, lerp_f32)
 }
 
 fn sample_transform2d_scale(snapshot: &[(u32, TrackKey)], frame: u32) -> Option<Vector2> {

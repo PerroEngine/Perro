@@ -162,7 +162,7 @@ impl InputSnapshot {
     pub fn joycon_mut(&mut self, index: usize) -> &mut JoyConState {
         if self.joycons.len() <= index {
             self.joycons.resize_with(index + 1, || {
-                if index % 2 == 0 {
+                if index.is_multiple_of(2) {
                     JoyConState::new(JoyConSide::LJoyCon)
                 } else {
                     JoyConState::new(JoyConSide::RJoyCon)

@@ -659,14 +659,13 @@ fn clean_command(args: &[String], _cwd: &Path) -> Result<(), String> {
         return Ok(());
     }
 
-    if let Ok(current_exe) = env::current_exe() {
-        if current_exe.starts_with(&target_dir) {
+    if let Ok(current_exe) = env::current_exe()
+        && current_exe.starts_with(&target_dir) {
             return Err(
                 "cannot clean while running from the project's target/. Use the installed `perro` command or run from another location."
                     .to_string(),
             );
         }
-    }
 
     log_step("Cleaning Project Target");
     fs::remove_dir_all(&target_dir)

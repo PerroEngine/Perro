@@ -222,7 +222,7 @@ fn parse_material_type(value: &str) -> MaterialType3D {
 }
 
 fn apply_standard(entries: &[SceneObjectField], out: &mut StandardMaterial3D, any: &mut bool) {
-    for (name, value) in entries.as_ref() {
+    for (name, value) in entries {
         match canonical_standard_key(name) {
             Some("roughnessFactor") => set_f32(value, any, |v| out.roughness_factor = v),
             Some("metallicFactor") => set_f32(value, any, |v| out.metallic_factor = v),
@@ -253,7 +253,7 @@ fn apply_standard(entries: &[SceneObjectField], out: &mut StandardMaterial3D, an
 }
 
 fn apply_unlit(entries: &[SceneObjectField], out: &mut UnlitMaterial3D, any: &mut bool) {
-    for (name, value) in entries.as_ref() {
+    for (name, value) in entries {
         match canonical_unlit_key(name) {
             Some("baseColorFactor") => set_color4(value, any, |v| out.base_color_factor = v),
             Some("emissiveFactor") => set_color3(value, any, |v| out.emissive_factor = v),
@@ -269,7 +269,7 @@ fn apply_unlit(entries: &[SceneObjectField], out: &mut UnlitMaterial3D, any: &mu
 }
 
 fn apply_toon(entries: &[SceneObjectField], out: &mut ToonMaterial3D, any: &mut bool) {
-    for (name, value) in entries.as_ref() {
+    for (name, value) in entries {
         match canonical_toon_key(name) {
             Some("baseColorFactor") => set_color4(value, any, |v| out.base_color_factor = v),
             Some("emissiveFactor") => set_color3(value, any, |v| out.emissive_factor = v),
@@ -289,11 +289,11 @@ fn apply_toon(entries: &[SceneObjectField], out: &mut ToonMaterial3D, any: &mut 
 }
 
 fn apply_custom(entries: &[SceneObjectField], out: &mut CustomMaterial3D, any: &mut bool) {
-    for (name, value) in entries.as_ref() {
+    for (name, value) in entries {
         match canonical_custom_key(name) {
             Some("shaderPath") => {
                 if let SceneValue::Str(v) = value {
-                    out.shader_path = v.clone().into();
+                    out.shader_path = v.clone();
                     *any = true;
                 }
             }
@@ -501,7 +501,7 @@ fn as_custom_params(value: &SceneValue) -> Option<Vec<CustomMaterialParam3D>> {
             for (name, inner) in entries.as_ref() {
                 if let Some(val) = as_custom_param_value(inner) {
                     out.push(CustomMaterialParam3D {
-                        name: Some(name.clone().into()),
+                        name: Some(name.clone()),
                         value: val,
                     });
                 }

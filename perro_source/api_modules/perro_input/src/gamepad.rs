@@ -59,7 +59,7 @@ pub struct GamepadState {
 }
 
 impl GamepadState {
-    const BUTTON_WORDS: usize = (GamepadButton::COUNT + 63) / 64;
+    const BUTTON_WORDS: usize = GamepadButton::COUNT.div_ceil(64);
 
     pub fn new() -> Self {
         Self {

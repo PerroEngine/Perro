@@ -86,11 +86,10 @@ pub(super) fn merge_prepared_scene(
         if let Some(source) = skeleton_source {
             let res = ResourceContext::new(resource_api.as_ref());
             let bones = res.Skeletons().load_bones(&source);
-            if let Some(node_data) = runtime.nodes.get_mut(node) {
-                if let SceneNodeData::Skeleton3D(skeleton) = &mut node_data.data {
+            if let Some(node_data) = runtime.nodes.get_mut(node)
+                && let SceneNodeData::Skeleton3D(skeleton) = &mut node_data.data {
                     skeleton.bones = bones;
                 }
-            }
         }
         if let Some(target) = mesh_skeleton_target {
             mesh_skeleton_links.push((node, target));
@@ -133,11 +132,10 @@ pub(super) fn merge_prepared_scene(
         let target = *key_to
             .get(&target_key)
             .ok_or_else(|| format!("mesh skeleton target `{target_key}` not found"))?;
-        if let Some(node_data) = runtime.nodes.get_mut(mesh_node) {
-            if let SceneNodeData::MeshInstance3D(mesh) = &mut node_data.data {
+        if let Some(node_data) = runtime.nodes.get_mut(mesh_node)
+            && let SceneNodeData::MeshInstance3D(mesh) = &mut node_data.data {
                 mesh.skeleton = target;
             }
-        }
     }
 
     for (player_id, scene_bindings) in animation_player_bindings {

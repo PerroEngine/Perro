@@ -459,7 +459,7 @@ fn parse_pskel_text(source: &str) -> Result<Vec<BoneLiteral>, String> {
         }
     }
 
-    if let Some(_) = current {
+    if current.is_some() {
         return Err("pskel: missing [/bone] at end".to_string());
     }
 

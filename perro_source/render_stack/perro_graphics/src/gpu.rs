@@ -395,7 +395,7 @@ impl Gpu {
                     &self.queue,
                     Prepare2D {
                         resources,
-                        camera: camera_2d.clone(),
+                        camera: camera_2d,
                         rects: rects_2d,
                         upload: upload_2d,
                         sprites: sprites_2d,
@@ -431,14 +431,14 @@ impl Gpu {
                     self.sample_count,
                 ));
             }
-            if let Some(three_d) = self.three_d.as_mut() {
-                if has(DIRTY_3D)
+            if let Some(three_d) = self.three_d.as_mut()
+                && (has(DIRTY_3D)
                     || has(DIRTY_CAMERA_3D)
                     || has(DIRTY_LIGHTS_3D)
                     || has(DIRTY_RESOURCES)
                     || needs_3d_particles_path
                     || post_requested
-                    || three_d_content_changed
+                    || three_d_content_changed)
                 {
                     three_d.prepare(
                         &self.device,
@@ -461,9 +461,8 @@ impl Gpu {
                     self.last_prepare_3d_width = self.config.width;
                     self.last_prepare_3d_height = self.config.height;
                 }
-            }
-            if needs_3d_particles_path {
-                if let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
+            if needs_3d_particles_path
+                && let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
                     point_particles_3d_gpu.prepare(
                         &self.device,
                         &self.queue,
@@ -475,7 +474,6 @@ impl Gpu {
                         },
                     );
                 }
-            }
         }
         if !needs_3d_particles_path {
             self.point_particles_3d = None;

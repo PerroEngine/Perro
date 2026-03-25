@@ -494,7 +494,7 @@ fn apply_standard_runtime_entries(
     out: &mut StandardMaterial3D,
     any: &mut bool,
 ) {
-    for (name, value) in entries.as_ref() {
+    for (name, value) in entries {
         match canonical_standard_key(name.as_ref()) {
             Some("roughnessFactor") => set_f32(value, any, |v| out.roughness_factor = v),
             Some("metallicFactor") => set_f32(value, any, |v| out.metallic_factor = v),
@@ -529,7 +529,7 @@ fn apply_unlit_runtime_entries(
     out: &mut UnlitMaterial3D,
     any: &mut bool,
 ) {
-    for (name, value) in entries.as_ref() {
+    for (name, value) in entries {
         match canonical_unlit_key(name.as_ref()) {
             Some("baseColorFactor") => set_color4(value, any, |v| out.base_color_factor = v),
             Some("emissiveFactor") => set_color3(value, any, |v| out.emissive_factor = v),
@@ -549,7 +549,7 @@ fn apply_toon_runtime_entries(
     out: &mut ToonMaterial3D,
     any: &mut bool,
 ) {
-    for (name, value) in entries.as_ref() {
+    for (name, value) in entries {
         match canonical_toon_key(name.as_ref()) {
             Some("baseColorFactor") => set_color4(value, any, |v| out.base_color_factor = v),
             Some("emissiveFactor") => set_color3(value, any, |v| out.emissive_factor = v),
@@ -573,7 +573,7 @@ fn apply_custom_runtime_entries(
     out: &mut CustomMaterialLiteral,
     any: &mut bool,
 ) {
-    for (name, value) in entries.as_ref() {
+    for (name, value) in entries {
         match canonical_custom_key(name.as_ref()) {
             Some("shaderPath") => {
                 if let Some(v) = as_string_value(value) {

@@ -75,11 +75,9 @@ fn apply_static_body_2d_fields(node: &mut StaticBody2D, fields: &[SceneObjectFie
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         if resolve_node_field("StaticBody2D", name)
             == Some(NodeField::StaticBody2D(StaticBody2DField::Enabled))
-        {
-            if let Some(enabled) = as_bool(value) {
+            && let Some(enabled) = as_bool(value) {
                 node.enabled = enabled;
             }
-        }
     });
 }
 
@@ -133,11 +131,10 @@ fn apply_rigid_body_2d_fields(node: &mut RigidBody2D, fields: &[SceneObjectField
 
 fn apply_area_2d_fields(node: &mut Area2D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
-        if resolve_node_field("Area2D", name) == Some(NodeField::Area2D(Area2DField::Enabled)) {
-            if let Some(enabled) = as_bool(value) {
+        if resolve_node_field("Area2D", name) == Some(NodeField::Area2D(Area2DField::Enabled))
+            && let Some(enabled) = as_bool(value) {
                 node.enabled = enabled;
             }
-        }
     });
 }
 

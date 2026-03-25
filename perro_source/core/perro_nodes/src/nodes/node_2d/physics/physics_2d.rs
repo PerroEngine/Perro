@@ -3,17 +3,14 @@ use perro_structs::Vector2;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Default)]
 pub enum Triangle2DKind {
+    #[default]
     Equilateral,
     Right,
     Isosceles,
 }
 
-impl Default for Triangle2DKind {
-    fn default() -> Self {
-        Self::Equilateral
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Shape2D {

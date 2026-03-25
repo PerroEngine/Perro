@@ -3906,7 +3906,7 @@ fn build_scene_uniform(
     height: u32,
 ) -> Scene3DUniform {
     let mut scene = Scene3DUniform {
-        view_proj: compute_view_proj(&camera, width, height),
+        view_proj: compute_view_proj(camera, width, height),
         ambient_and_counts: [0.0, 0.0, 0.0, 0.0],
         camera_pos: [
             camera.position[0],

@@ -2,7 +2,9 @@ use perro_structs::Transform3D;
 use std::borrow::Cow;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum SkyStyle {
+    #[default]
     Toon,
     Realistic,
 }
@@ -16,11 +18,6 @@ impl SkyStyle {
     }
 }
 
-impl Default for SkyStyle {
-    fn default() -> Self {
-        Self::Toon
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct SkyClouds {

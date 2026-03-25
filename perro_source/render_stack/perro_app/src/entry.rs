@@ -73,14 +73,12 @@ pub fn run_dev_project_from_path(
     let fps_cap = app
         .runtime
         .project()
-        .map(|p| p.config.target_fps)
-        .flatten()
+        .and_then(|p| p.config.target_fps)
         .unwrap_or(0.0);
     let fixed = app
         .runtime
         .project()
-        .map(|p| p.config.target_fixed_update)
-        .flatten();
+        .and_then(|p| p.config.target_fixed_update);
     WinitRunner::new().run_with_fps_cap_and_timestep(app, &window_title, fps_cap, fixed);
     Ok(())
 }
@@ -96,14 +94,12 @@ pub fn run_static_project_from_path(
     let fps_cap = app
         .runtime
         .project()
-        .map(|p| p.config.target_fps)
-        .flatten()
+        .and_then(|p| p.config.target_fps)
         .unwrap_or(0.0);
     let fixed = app
         .runtime
         .project()
-        .map(|p| p.config.target_fixed_update)
-        .flatten();
+        .and_then(|p| p.config.target_fixed_update);
     WinitRunner::new().run_with_fps_cap_and_timestep(app, &window_title, fps_cap, fixed);
     Ok(())
 }
@@ -200,14 +196,12 @@ pub fn run_static_embedded_project(
     let fps_cap = app
         .runtime
         .project()
-        .map(|p| p.config.target_fps)
-        .flatten()
+        .and_then(|p| p.config.target_fps)
         .unwrap_or(0.0);
     let fixed = app
         .runtime
         .project()
-        .map(|p| p.config.target_fixed_update)
-        .flatten();
+        .and_then(|p| p.config.target_fixed_update);
     WinitRunner::new().run_with_fps_cap_and_timestep(app, &window_title, fps_cap, fixed);
     Ok(())
 }
