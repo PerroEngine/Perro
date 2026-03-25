@@ -273,6 +273,14 @@ impl Renderer3D {
         self.retained_draws.len()
     }
 
+    pub fn has_retained_non_draw_state(&self) -> bool {
+        !self.ambient_lights.is_empty()
+            || !self.skies.is_empty()
+            || !self.ray_lights.is_empty()
+            || !self.point_lights.is_empty()
+            || !self.spot_lights.is_empty()
+    }
+
     pub fn retained_draws(&self) -> impl Iterator<Item = Draw3DInstance> + '_ {
         self.retained_draws.values().cloned()
     }
