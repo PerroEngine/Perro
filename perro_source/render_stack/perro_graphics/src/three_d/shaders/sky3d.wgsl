@@ -189,7 +189,6 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
 // ──────────────────────────────────────────────────────────────
 // Fragment shader
 // ──────────────────────────────────────────────────────────────
-
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let ndc     = vec4<f32>(in.uv * 2.0 - 1.0, 1.0, 1.0);
@@ -287,10 +286,46 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let moon_size      = mix(0.004, 0.040, clamp(moon_size_ctrl / 5.0, 0.0, 1.0)) * 2.8;
     let moon_dir_n     = normalize(moon_dir);
 
+    // ── Moon cloud cover ──────────────────────────────────────
+    var moon_cloud_cover = 0.0;
+    if (moon_dir.y > CLOUD_BASE_HEIGHT && day_t < 0.8) {
+        let moon_uv_y      = max(moon_dir.y - CLOUD_BASE_HEIGHT, 0.003) * 0.85;
+        let moon_sky_uv    = moon_dir.xz / sqrt(moon_uv_y);
+        let cloud_clock_m  = sky_time
+            * (0.011 + length(vec2<f32>(sky.wind.x, sky.wind.y)) * 0.06);
+        let wind_s_m       = vec2<f32>(sky.wind.x, sky.wind.y);
+        let wind_dir_m     = wind_s_m / max(length(wind_s_m), 1.0e-4);
+        let cloud_size_m   = clamp(sky.params0.x, 0.0, 1.0);
+        let clouds_scale_m = mix(1.55, 0.55, cloud_size_m);
+        let drift_m        = wind_dir_m * cloud_clock_m * 1.12
+                           + vec2<f32>(-0.014, -0.005);
+        let moon_cloud_uv  = (moon_sky_uv + drift_m) * clouds_scale_m;
+        let moon_cloud_raw     = perlin_fbm(moon_cloud_uv, 2);
+        let cloud_density_m    = clamp(sky.params0.y, 0.0, 1.0);
+        let clouds_cutoff_m    = mix(0.8, 0.52, cloud_density_m);
+        let cloud_variance_m   = clamp(sky.params0.z, 0.0, 1.0);
+        let clouds_fuzziness_m = mix(0.035, 0.28, cloud_variance_m);
+        moon_cloud_cover = smoothstep(
+            clouds_cutoff_m - 0.08,
+            clouds_cutoff_m + clouds_fuzziness_m + 0.12,
+            moon_cloud_raw + cloud_density_m * 0.10
+        );
+        let moon_cover_fade = smoothstep(
+            CLOUD_BASE_HEIGHT,
+            CLOUD_BASE_HEIGHT + 0.2,
+            moon_dir.y
+        );
+        moon_cloud_cover *= moon_cover_fade;
+    }
+
     if (day_t < 0.8) {
         let moon_dist = distance(ray, moon_dir_n) / moon_size;
         let moon_blur = 0.2;
         moon_amount   = clamp((1.0 - moon_dist) / moon_blur, 0.0, 1.0);
+
+        // Fade moon when clouds cover it
+        let moon_cloud_fade = 1.0 - clamp(moon_cloud_cover * 0.65, 0.0, 0.85);
+        moon_amount *= moon_cloud_fade;
 
         if (moon_amount > 0.0) {
             let moon_ref_a     = vec3<f32>(1.0, 0.0, 0.0);
@@ -347,13 +382,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             clouds_cutoff_s + clouds_fuzziness_s + 0.12,
             sun_cloud_raw + cloud_density_s * 0.10
         );
-         let sun_cover_fade = smoothstep(
+        let sun_cover_fade = smoothstep(
             CLOUD_BASE_HEIGHT,
             CLOUD_BASE_HEIGHT + 0.2,
-           sun_dir.y
-       );
-
-       sun_cloud_cover *= sun_cover_fade;
+            sun_dir.y
+        );
+        sun_cloud_cover *= sun_cover_fade / 10.0;
     }
 
     // ── Sun ───────────────────────────────────────────────────
@@ -376,18 +410,21 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let sun_r     = length(sun_local);
 
         let sun_vis            = smoothstep(-0.30, -0.06, sun_dir.y);
-        let twilight_size_boost = 1.0 + evening_t_raw * 0.8;
-        let sun_growth         = mix(0.46, 0.72, sun_vis) * twilight_size_boost;
+        let twilight_size_boost = 1.0 + evening_t_raw * 0.55;
+        let sun_growth         = mix(0.52, 0.82, sun_vis) * twilight_size_boost;
         let sun_pulse          = 1.0 + 0.035 * sin(sky_time * 1.25);
         let sun_radius_anim    = sun_growth * sun_pulse;
         let sun_blur           = 0.22;
         let sun_r_anim         = sun_r / max(sun_radius_anim, 0.20);
         let cloud_diffusion    = mix(sun_blur, sun_blur * 3.5, sun_cloud_cover);
+
+        // Clouds dim and blur the sun disk — power curve so partial cover
+        let cloud_dim  = mix(1.0, 0.1, pow(sun_cloud_cover, 2.4));
         var sun_amount = clamp((1.0 - sun_r_anim) / cloud_diffusion, 0.0, 1.0);
-        sun_amount *= mix(1.0, 0.5, sun_cloud_cover);
+        sun_amount    *= mix(1.0, 0.38, sun_cloud_cover) * cloud_dim;
 
         if (sun_r < 4.5 && sun_vis > 0.0) {
-            let sun_day_col      = vec3<f32>(9.8,  6.9, 1.35);
+            let sun_day_col        = vec3<f32>(7.8,  6.9, 1.35);
             let sun_set_col_strong = vec3<f32>(16.0, 3.8, 1.0);
             let sun_set_col_dawn   = vec3<f32>(11.4, 7.3, 3.1);
             let sun_set_col = mix(sun_set_col_strong, sun_set_col_dawn,
@@ -395,7 +432,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             var sun_col = mix(sun_day_col, sun_set_col,
                 pow(evening_t_raw, 0.72) * mix(1.0, 0.72, sunrise_twilight));
             sun_col  = color_saturate(sun_col, mix(1.0, 0.74, sunrise_twilight));
-            sun_col *= 1.0 + evening_t_raw * mix(0.55, 0.26, sunrise_twilight);
+            sun_col *= 1.0 + evening_t_raw * mix(0.25, 0.15, sunrise_twilight);
+
+            // Dim sun colour itself when heavily cloud-occluded
+            sun_col *= mix(1.0, 0.22, pow(sun_cloud_cover, 1.2));
 
             sun_amount  = clamp(sun_amount * (1.0 - moon_amount), 0.0, 1.0);
             sun_amount *= mix(1.0, 1.0 - horizon_amount, 0.25) * sun_visibility;
@@ -406,7 +446,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             }
             color = mix(color, sun_col, sun_core_amount);
 
-            let halo_vis    = smoothstep(-0.02, 0.22, sun_dir.y);
+            let halo_vis    = smoothstep(-0.02, 0.25, sun_dir.y);
             let halo_growth = mix(0.35, 1.0, halo_vis);
             let sun_r_halo  = sun_r_anim / max(halo_growth, 0.15);
             let core_bloom  = exp(-sun_r_halo * sun_r_halo * 2.7);
@@ -419,8 +459,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 * sin(sky_time * 2.0
                 + atan2(sun_local.y, sun_local.x) * 1.6);
             let flourish = 0.96 + 0.04 * sin(sky_time * 1.2);
-            let flare    = (core_bloom * 0.52 + mid_bloom * 0.92 + far_bloom * 1.36)
-                         * bloom_noise * twinkle * flourish;
+            let flare = (core_bloom * 0.52 + mid_bloom * 0.72 + far_bloom * 0.55)
+                    * bloom_noise * twinkle * flourish;
             let flare_col = mix(
                 vec3<f32>(1.0, 0.84, 0.40),
                 vec3<f32>(1.0, 0.62, 0.34),
@@ -431,15 +471,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                     * 0.52
                     * mix(1.0, 0.46, style_blend_global)
                     * mix(1.0, 0.18, sun_cloud_cover),
-                0.0, 2.0
+                0.0, 0.8  // was 2.0
             );
             color += flare_col * flare_amt * sun_visibility;
         }
     }
 
     // ── Atmospheric scatter: sky glow in front of cloud-occluded sun ──
-    // First pass: add warm haze to the clear sky before the cloud composite
-    // so cloud-edge pixels receive a lit background.
     {
         let scatter_angle = clamp(dot(ray, sun_dir), 0.0, 1.0);
         let scatter_wide  = exp(-max(1.0 - scatter_angle, 0.0) * 2.8) * 0.30;
@@ -507,18 +545,23 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let clouds_fuzziness = mix(0.035, 0.24, cloud_variance);
         let coverage_bias    = mix(0.02,  0.14, cloud_density);
 
-            // ── Wind shear ────────────────────────────────────────
-       // Clouds further from the camera (larger sky_uv magnitude)
-        // drift at a progressively different angle, up to ±25°.
-        // Each layer gets its own shear seed so they separate over time.
-        let MAX_SHEAR_RAD = 0.436; // 25 degrees in radians
-        // sky_uv magnitude grows quickly; clamp at a reasonable far-field value
+        // ── Night wisp turbulence ─────────────────────────────
+        // Two sub-wind pocket fields that pull clouds apart at night.
+        // Ramps with night_t so daytime clouds are completely unaffected.
+        let night_pocket_strength = clamp(night_t * 0.72, 0.0, 1.0);
+        let night_turb_uv = sky_uv * (clouds_scale * 0.62)
+            + wind_dir * cloud_clock * 1.55
+            + vec2<f32>(81.0, -53.0);
+        let night_pocket_a = perlin_fbm(night_turb_uv * 1.30
+            + vec2<f32>( 17.0,  -9.0), 3) * 2.0 - 1.0;
+        let night_pocket_b = perlin_fbm(night_turb_uv * 0.85
+            + vec2<f32>(-31.0,  23.0), 3) * 2.0 - 1.0;
+
+        // ── Wind shear ────────────────────────────────────────
+        let MAX_SHEAR_RAD = 0.436;
         let dist_t = clamp(length(sky_uv) / 6.0, 0.0, 1.0);
-        // Low-frequency spatial variation so the shear field isn't uniform —
-        // some regions curve left, others right.
         let shear_field = perlin_fbm(sky_uv * 0.08 + vec2<f32>(53.0, -37.0), 2)
-                        * 2.0 - 1.0; // remap to [-1, 1]
-        // Per-layer angle offsets (radians) — top drifts most, bottom least
+                        * 2.0 - 1.0;
         let shear_top = MAX_SHEAR_RAD * dist_t * shear_field;
         let shear_mid = MAX_SHEAR_RAD * dist_t * shear_field
                       * mix(0.68, 0.82, hash12(vec2<f32>(71.0, 13.0)));
@@ -557,9 +600,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let noise_middle_raw = perlin_fbm(mid_uv + mid_warp * 0.82, 4);
 
         // ── Bottom layer ──────────────────────────────────────
+        // Uses a tighter scale (1.32x) so the dark shadow underside has a
+        // smaller footprint than the top, giving clouds that flare wider
+        // at the crown — like real cumulonimbus anvils.
         drift = rotate2(wind_dir, shear_bot) * cloud_clock * 0.83
               + vec2<f32>(-0.006, 0.015);
-        let bot_uv = (sky_uv + drift) * clouds_scale;
+        let bot_uv = (sky_uv + drift) * (clouds_scale * 1.32);
         let bot_warp = vec2<f32>(
             perlin_fbm(bot_uv * 0.75 + vec2<f32>(-13.0,  17.0), 2),
             perlin_fbm(bot_uv * 0.72 + vec2<f32>( 23.0, -11.0), 2)
@@ -594,7 +640,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // ── Extra spread layers ───────────────────────────────
         let low_layer_uv = (sky_uv + rotate2(wind_dir, shear_low) * cloud_clock * 1.25
             + vec2<f32>(-27.0, 14.0)) * (clouds_scale * 0.78);
-        let high_layer_uv = (sky_uv + rotate2(wind_dir, shear_high) * cloud_clock * 0.68 
+        let high_layer_uv = (sky_uv + rotate2(wind_dir, shear_high) * cloud_clock * 0.68
             + vec2<f32>(33.0, -21.0)) * (clouds_scale * 1.34);
         let low_layer_raw  = perlin_fbm(low_layer_uv,  3);
         let high_layer_raw = perlin_fbm(high_layer_uv, 3);
@@ -611,10 +657,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         );
 
         // ── Base cloud density ────────────────────────────────
+        // Bottom layer weight reduced (0.80 vs original 1.15) to match its
+        // tighter UV scale — keeps total density balanced.
         var clouds_base = clamp(
             noise_top_s  * 0.80
             + noise_middle * 1.00
-            + noise_bottom * 1.15
+            + noise_bottom * 0.80
             + low_layer    * 0.48
             + high_layer   * 0.30,
             0.0, 1.0
@@ -643,12 +691,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let curved_mass = smoothstep(0.22, 0.86,
             noise_top_s * 0.72 + noise_middle * 0.28);
 
-        // Sun-facing horizontal axis
         let ray_h_cloud   = normalize(vec2<f32>(ray.x, ray.z) + vec2<f32>(1.0e-5));
         let cloud_sun_dot = clamp(dot(ray_h_cloud, sun_h) * 0.5 + 0.5, 0.0, 1.0);
-        let sun_behind    = sun_cloud_cover * day_t;
+        let sun_behind    = (sun_cloud_cover / 100.0) * day_t;
 
-        // Expand wisps toward the sun when it is occluded
         let wisp_expanded = smoothstep(0.18, 0.72,
             noise_top_s * (1.0 - noise_bottom * 0.6));
         let wisp_sun = mix(wisp_mask, wisp_expanded,
@@ -666,6 +712,39 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             CLOUD_BASE_HEIGHT, CLOUD_BASE_HEIGHT + 0.06, ray.y);
         clouds_amount_real *= horizon_continuity * 1.1;
         clouds_amount_real  = clamp(clouds_amount_real, 0.0, 1.0);
+
+        // ── Night pocket breakup ──────────────────────────────
+        // Two overlapping turbulence fields punch holes and fray edges.
+        // A separate wisp pass thins the cloud silhouette into fibres.
+        // Both are gated by night_pocket_strength so day clouds are pristine.
+        let pocket_warp = sky_uv * (clouds_scale * 0.95)
+            + vec2<f32>(night_pocket_a, night_pocket_b) * 0.55;
+        let pocket_noise = perlin_fbm(
+            pocket_warp + vec2<f32>(cloud_clock * 0.8), 3);
+        let pocket_holes = smoothstep(0.38, 0.72, pocket_noise);
+
+        let wisp_night = perlin_fbm(
+            sky_uv * (clouds_scale * 1.80)
+            + wind_dir * cloud_clock * 1.75
+            + vec2<f32>(-11.0, 47.0), 4
+        );
+        let wisp_fray = smoothstep(0.42, 0.88, wisp_night);
+
+        let night_breakup = mix(
+            clamp(pocket_holes * 0.60 + wisp_fray * 0.40, 0.0, 1.0),
+            0.0,
+            1.0 - night_pocket_strength
+        );
+        clouds_amount_real *= mix(
+            1.0,
+            clamp(1.0 - night_breakup * 0.78, 0.15, 1.0),
+            night_pocket_strength
+        );
+        // Feather edges more aggressively at night → gossamer wisp look.
+        let night_edge_feather = mix(0.0, 0.30, night_pocket_strength)
+            * (1.0 - smoothstep(0.18, 0.55, clouds_amount_real));
+        clouds_amount_real = clamp(
+            clouds_amount_real - night_edge_feather, 0.0, 1.0);
 
         // ── Base cloud colour ─────────────────────────────────
         let clouds_edge_color_real   = vec3<f32>(0.74, 0.78, 0.86);
@@ -692,75 +771,51 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             1.0 - self_shadow * 0.18
         );
 
-        // ── 3D volume shading: top-lit, bottom-shadowed ───────
-        // view_up_dot → 1 when looking straight up (top face),
-        // → 0 at the horizon (side / bottom face).
+        // ── 3D volume shading ─────────────────────────────────
         let view_up_dot = clamp(ray.y / max(ray.y + 0.12, 1.0e-4), 0.0, 1.0);
-
-        // Weighted blend of noise layers → rough height-in-stack proxy.
         let cloud_layer_height = clamp(
             noise_top_s * 0.55 + noise_middle * 0.30 + noise_bottom * 0.15,
             0.0, 1.0
         );
-
-        // Top face: bright rounded crown.
         let top_face_light = clamp(view_up_dot * cloud_layer_height, 0.0, 1.0);
         let top_roundness  = pow(top_face_light, 1.6);
         let top_col_boost  = mix(vec3<f32>(1.0), vec3<f32>(1.22, 1.18, 1.14), top_roundness);
-
-        // Bottom face: dark underside.
         let bottom_shadow_view = clamp(
-            (1.0 - view_up_dot) * (1.0 - cloud_layer_height),
-            0.0, 1.0
-        );
+            (1.0 - view_up_dot) * (1.0 - cloud_layer_height), 0.0, 1.0);
         let bottom_shadow_str = pow(bottom_shadow_view, 1.4)
                               * smoothstep(0.30, 0.85, clouds_amount_real);
         let bottom_col_damp   = mix(
             vec3<f32>(1.0), vec3<f32>(0.52, 0.54, 0.60),
             bottom_shadow_str * 0.70
         );
-
-        // Sun elevation warms the top face at noon.
         let sun_top_bonus = clamp(sun_dir.y * 0.6 + 0.4, 0.0, 1.0) * day_t;
         let top_sun_tint  = mix(
             vec3<f32>(1.0), vec3<f32>(1.10, 1.06, 0.96),
             top_roundness * sun_top_bonus * 0.45
         );
-
         clouds_color_real = clouds_color_real
                           * top_col_boost * bottom_col_damp * top_sun_tint;
 
-
-// ── Backlit shadow + silver lining ────────────────────
-        // When the sun is behind the cloud the body should go dark;
-        // only a thin transmission rim stays bright.
+        // ── Backlit shadow + silver lining ────────────────────
         let sun_angle_to_ray = clamp(dot(ray, sun_dir), 0.0, 1.0);
-        let corona_phase     = pow(sun_angle_to_ray, 6.0);
-
-        // Thin outer rim only – tighten the upper smoothstep so
-        // the glow never bleeds into the solid cloud interior.
+        let corona_phase     = pow(sun_angle_to_ray, 12.0);
         let cloud_edge_rim = smoothstep(0.04, 0.38, clouds_amount_real)
                            * (1.0 - smoothstep(0.38, 0.62, clouds_amount_real));
         let corona_intensity = corona_phase * cloud_edge_rim * sun_behind;
-
-        let corona_col_day = vec3<f32>(2.00, 1.60, 0.95);
-        let corona_col_eve = vec3<f32>(2.20, 1.00, 0.48);
+        let corona_col_day = vec3<f32>(0.85, 0.72, 0.52);
+        let corona_col_eve = vec3<f32>(1.30, 0.72, 0.38);
         let corona_col     = mix(corona_col_day, corona_col_eve, evening_t);
         let corona_flicker  = 0.94 + 0.06 * fbm2(
             top_uv * 1.8 + vec2<f32>(cloud_time_seconds * 0.02, 0.0));
-        clouds_color_real += corona_col * corona_intensity * corona_flicker * 1.65;
+        clouds_color_real += corona_col * corona_intensity * corona_flicker * 0.95;
 
-        // Darken the cloud body when the sun is behind it.
-        // solid_interior goes to 1 deep inside the cloud and 0 at edges.
         let solid_interior = smoothstep(0.42, 0.82, clouds_amount_real);
         let backlit_shadow = sun_behind * corona_phase * solid_interior;
         clouds_color_real *= mix(1.0, 0.38, backlit_shadow * 0.72);
 
-        // Very small translucent core: the dead-centre of a thin cloud
-        // lets a little warm light bleed through (transmission, not glow).
-        let thin_cloud     = 1.0 - smoothstep(0.18, 0.55, clouds_amount_real);
-        let transmission   = corona_phase * sun_behind * thin_cloud;
-        let transmit_col   = mix(
+        let thin_cloud   = 1.0 - smoothstep(0.18, 0.55, clouds_amount_real);
+        let transmission = corona_phase * sun_behind * thin_cloud;
+        let transmit_col = mix(
             vec3<f32>(1.10, 1.02, 0.82),
             vec3<f32>(1.15, 0.72, 0.48),
             evening_t
@@ -768,7 +823,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         clouds_color_real = mix(
             clouds_color_real,
             clouds_color_real * transmit_col,
-           transmission * 0.40
+            transmission * 0.40
         );
 
         // ── Wispy fibre cool tint ─────────────────────────────
@@ -803,7 +858,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
         // ── Sky tint ──────────────────────────────────────────
         let day_src   = gradient3(sky.day_colors,     0.34);
-        let eve_src   = gradient3(sky.evening_colors, 0.40);
+        let eve_src   = gradient3(sky.evening_colors, 0.43);
         let night_src = gradient3(sky.night_colors,   0.36);
 
         let day_tint   = stylize_cloud_tint(
@@ -853,7 +908,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
         // ── Night fade / storm ────────────────────────────────
         clouds_color_real = mix(clouds_color_real, color,
-            clamp(night_t * 0.72, 0.0, 0.92));
+            clamp(night_t * 0.75, 0.0, 0.92));
         clouds_color_real = mix(clouds_color_real, vec3<f32>(0.0),
             clouds_weight * 0.9);
 
@@ -865,7 +920,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             vec3<f32>(1.00, 0.65, 0.58),
             evening_t
         );
-        color += halo_tint * halo * 0.06;
+        color += halo_tint * halo * 0.07;
 
         // ── Composite ─────────────────────────────────────────
         color      = mix(color, clouds_color_real, clouds_amount_real);
@@ -873,15 +928,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
 
     // ── Atmospheric scatter: sky glow in gaps (post-cloud pass) ──
-    // Second pass uses (1 - cloud_mask) so gaps between clouds glow
-    // without adding energy inside solid cloud bodies.
     {
         let scatter_angle = clamp(dot(ray, sun_dir), 0.0, 1.0);
-        let scatter_wide  = exp(-max(1.0 - scatter_angle, 0.0) * 2.8) * 0.30;
-        let scatter_tight = pow(scatter_angle, 14.0) * 0.55;
+        let scatter_wide  = exp(-max(1.0 - scatter_angle, 0.0) * 2.8) * 0.12;
+        let scatter_tight = pow(scatter_angle, 14.0) * 0.22; 
         let scatter_total = (scatter_wide + scatter_tight)
-                          * sun_cloud_cover * day_t * sun_visibility
-                          * (1.0 - cloud_mask);
+                        * sun_cloud_cover * day_t * sun_visibility;
         let scatter_col = mix(
             vec3<f32>(0.95, 0.90, 0.72),
             vec3<f32>(1.00, 0.62, 0.38),
