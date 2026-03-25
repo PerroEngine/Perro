@@ -36,7 +36,9 @@ lifecycle!({
         ipt: &InputContext<'_, IP>,
         self_id: NodeID,
     ) {
-        let dt = delta_time!(ctx);
+        let dt = delta_time!(ctx).max(0.0);
+        // Clamp mutation step so one-frame stalls do not produce huge angular jumps.
+        let rot_dt = delta_time_capped!(ctx, 1.0 / 30.0);
         let (speed, timer) = with_state_mut!(ctx, ExampleState, self_id, |state| {
             if state.timer >= 0.0 {
                 state.timer += dt;
@@ -59,14 +61,16 @@ lifecycle!({
                 state.timer = -1.0;
             });
             with_node_mut!(ctx, MeshInstance3D, self_id, |mesh| {
-                mesh.rotation.rotate_x(5.0 * dt);
+                mesh.rotation.rotate_x(5.0 * rot_dt);
+                mesh.rotation.normalize();
             })
             .unwrap_or_default();
         }
 
         let b = with_node_mut!(ctx, SelfNodeType, self_id, |mesh| {
-            mesh.rotation.rotate_y(dt * speed / 2.0);
-            mesh.rotation.rotate_z(dt * speed / 10.0);
+            mesh.rotation.rotate_y(rot_dt * speed / 2.0);
+            mesh.rotation.rotate_z(rot_dt * speed / 10.0);
+            mesh.rotation.normalize();
             mesh.position;
         })
         .unwrap_or_default();

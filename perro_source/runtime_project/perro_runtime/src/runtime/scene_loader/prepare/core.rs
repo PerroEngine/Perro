@@ -112,14 +112,18 @@ pub(super) fn load_runtime_scene_from_disk(
     Ok((scene, stats))
 }
 
-pub(super) fn prepare_scene(scene: &Scene) -> Result<PreparedScene, String> {
+pub(super) fn prepare_scene_with_loader(
+    scene: &Scene,
+    load_scene: &dyn Fn(&str) -> Result<Scene, String>,
+) -> Result<PreparedScene, String> {
     let mut include_stack = HashSet::new();
-    prepare_scene_with_stack(scene, &mut include_stack)
+    prepare_scene_with_stack(scene, &mut include_stack, load_scene)
 }
 
 fn prepare_scene_with_stack(
     scene: &Scene,
     include_stack: &mut HashSet<String>,
+    load_scene: &dyn Fn(&str) -> Result<Scene, String>,
 ) -> Result<PreparedScene, String> {
     let mut prepared_nodes = Vec::with_capacity(scene.nodes.len());
     let mut scripts = Vec::new();
@@ -132,6 +136,7 @@ fn prepare_scene_with_stack(
             &mut prepared_nodes,
             &mut scripts,
             include_stack,
+            load_scene,
         )?;
     }
 
@@ -149,6 +154,7 @@ fn push_entry_prepared(
     prepared_nodes: &mut Vec<PendingNode>,
     scripts: &mut Vec<PendingScript>,
     include_stack: &mut HashSet<String>,
+    load_scene: &dyn Fn(&str) -> Result<Scene, String>,
 ) -> Result<(), String> {
     let key = key_override
         .map(|v| v.to_string())
@@ -206,6 +212,7 @@ fn push_entry_prepared(
             prepared_nodes,
             scripts,
             include_stack,
+            load_scene,
         )?;
     }
 
@@ -218,6 +225,7 @@ fn expand_root_of_into_host(
     prepared_nodes: &mut Vec<PendingNode>,
     scripts: &mut Vec<PendingScript>,
     include_stack: &mut HashSet<String>,
+    load_scene: &dyn Fn(&str) -> Result<Scene, String>,
 ) -> Result<(), String> {
     if include_stack.contains(path) {
         return Err(format!(
@@ -226,7 +234,7 @@ fn expand_root_of_into_host(
     }
     include_stack.insert(path.to_string());
 
-    let (import_scene, _) = load_runtime_scene_from_disk(path)?;
+    let import_scene = load_scene(path)?;
     let import_root = import_scene
         .root
         .as_ref()
@@ -258,6 +266,7 @@ fn expand_root_of_into_host(
             prepared_nodes,
             scripts,
             include_stack,
+            load_scene,
         )?;
     }
 

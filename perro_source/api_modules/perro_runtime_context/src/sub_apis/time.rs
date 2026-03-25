@@ -37,6 +37,33 @@ macro_rules! delta_time {
     };
 }
 
+/// Returns frame delta time clamped to `max` seconds.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `max`: maximum allowed seconds for returned delta
+#[macro_export]
+macro_rules! delta_time_capped {
+    ($ctx:expr, $max:expr) => {{
+        let dt = $ctx.Time().get_delta();
+        dt.max(0.0).min($max)
+    }};
+}
+
+/// Returns frame delta time clamped to `[min, max]` seconds.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `min`: minimum allowed seconds for returned delta
+/// - `max`: maximum allowed seconds for returned delta
+#[macro_export]
+macro_rules! delta_time_clamped {
+    ($ctx:expr, $min:expr, $max:expr) => {{
+        let dt = $ctx.Time().get_delta();
+        dt.max($min).min($max)
+    }};
+}
+
 /// Returns fixed-step delta time (seconds).
 ///
 /// Arguments:

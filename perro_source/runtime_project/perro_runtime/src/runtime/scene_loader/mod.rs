@@ -11,7 +11,7 @@ mod merge;
 mod prepare;
 
 use merge::merge_prepared_scene;
-use prepare::{load_runtime_scene_from_disk, prepare_scene};
+use prepare::{load_runtime_scene_from_disk, prepare_scene_with_loader};
 
 pub(crate) struct PendingScriptAttach {
     pub(crate) node_id: NodeID,
@@ -118,7 +118,10 @@ impl Runtime {
                     source_load = Some(load_stats.source_load);
                     parse = Some(load_stats.parse);
                 }
-                let prepared = prepare_scene(&runtime_scene)?;
+                let prepared = prepare_scene_with_loader(&runtime_scene, &|path| {
+                    let (scene, _) = load_runtime_scene_from_disk(path)?;
+                    Ok(scene)
+                })?;
                 #[cfg(feature = "profile")]
                 let node_insert_start = Instant::now();
                 script_nodes = merge_prepared_scene(self, prepared)?;
@@ -135,7 +138,16 @@ impl Runtime {
             {
                 Some(scene) => {
                     mode_label = "static";
-                    let prepared = prepare_scene(scene)?;
+                    let prepared = prepare_scene_with_loader(scene, &|path| {
+                        static_lookup
+                            .and_then(|lookup| lookup(path))
+                            .cloned()
+                            .ok_or_else(|| {
+                                format!(
+                                    "failed to load scene `{path}` from static lookup during root_of expansion"
+                                )
+                            })
+                    })?;
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
                     script_nodes = merge_prepared_scene(self, prepared)?;
@@ -151,7 +163,10 @@ impl Runtime {
                         source_load = Some(load_stats.source_load);
                         parse = Some(load_stats.parse);
                     }
-                    let prepared = prepare_scene(&runtime_scene)?;
+                    let prepared = prepare_scene_with_loader(&runtime_scene, &|path| {
+                        let (scene, _) = load_runtime_scene_from_disk(path)?;
+                        Ok(scene)
+                    })?;
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
                     script_nodes = merge_prepared_scene(self, prepared)?;

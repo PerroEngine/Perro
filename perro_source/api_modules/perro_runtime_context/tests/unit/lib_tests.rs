@@ -515,9 +515,13 @@ fn script_macros_typecheck_and_forward() {
     assert_eq!(signal_emit!(&mut ctx, signal!("on_test")), 1);
 
     let dt = delta_time!(&mut ctx);
+    let dt_capped = delta_time_capped!(&mut ctx, 0.010);
+    let dt_clamped = delta_time_clamped!(&mut ctx, 0.020, 0.030);
     let fdt = fixed_delta_time!(&mut ctx);
     let elapsed = elapsed_time!(&mut ctx);
     assert_eq!(dt, 0.016);
+    assert_eq!(dt_capped, 0.010);
+    assert_eq!(dt_clamped, 0.020);
     assert_eq!(fdt, 0.016);
     assert_eq!(elapsed, 1.0);
 }

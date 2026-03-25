@@ -299,7 +299,7 @@ parent = @root
         ]
         sky_angle = 35.0
         style = "realistic"
-        time_of_day = 0.2
+        time_of_day = 0.1
         time_paused = false
         time_scale = 1.0
         cloud_size = 0.65
