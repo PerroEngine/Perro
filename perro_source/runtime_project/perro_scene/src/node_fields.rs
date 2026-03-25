@@ -249,7 +249,9 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "shape" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Shape)),
             "sensor" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Sensor)),
             "friction" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Friction)),
-            "restitution" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Restitution)),
+            "restitution" => Some(NodeField::CollisionShape2D(
+                CollisionShape2DField::Restitution,
+            )),
             "density" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Density)),
             _ => None,
         },
@@ -317,14 +319,26 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::ParticleEmitter3D => match field {
             "active" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Active)),
-            "looping" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Looping)),
-            "prewarm" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Prewarm)),
-            "spawn_rate" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::SpawnRate)),
+            "looping" => Some(NodeField::ParticleEmitter3D(
+                ParticleEmitter3DField::Looping,
+            )),
+            "prewarm" => Some(NodeField::ParticleEmitter3D(
+                ParticleEmitter3DField::Prewarm,
+            )),
+            "spawn_rate" => Some(NodeField::ParticleEmitter3D(
+                ParticleEmitter3DField::SpawnRate,
+            )),
             "seed" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Seed)),
             "params" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Params)),
-            "profile" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Profile)),
-            "sim_mode" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::SimMode)),
-            "render_mode" => Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::RenderMode)),
+            "profile" => Some(NodeField::ParticleEmitter3D(
+                ParticleEmitter3DField::Profile,
+            )),
+            "sim_mode" => Some(NodeField::ParticleEmitter3D(
+                ParticleEmitter3DField::SimMode,
+            )),
+            "render_mode" => Some(NodeField::ParticleEmitter3D(
+                ParticleEmitter3DField::RenderMode,
+            )),
             _ => None,
         },
         NodeType::AnimationPlayer => match field {
@@ -332,9 +346,7 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "bindings" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Bindings)),
             "speed" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Speed)),
             "paused" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Paused)),
-            "playback" => {
-                Some(NodeField::AnimationPlayer(AnimationPlayerField::Playback))
-            }
+            "playback" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Playback)),
             _ => None,
         },
         NodeType::AmbientLight3D => resolve_light3d_common(field).map(NodeField::Light3D),
@@ -361,7 +373,9 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "shape" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Shape)),
             "sensor" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Sensor)),
             "friction" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Friction)),
-            "restitution" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Restitution)),
+            "restitution" => Some(NodeField::CollisionShape3D(
+                CollisionShape3DField::Restitution,
+            )),
             "density" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Density)),
             _ => None,
         },
@@ -410,9 +424,7 @@ fn resolve_sky3d_field(field: &str) -> Option<Sky3DField> {
         "time_scale" | "time_speed" | "time.scale" => Some(Sky3DField::TimeScale),
         "cloud_size" | "clouds_size" | "clouds.size" => Some(Sky3DField::CloudSize),
         "cloud_density" | "clouds_density" | "clouds.density" => Some(Sky3DField::CloudDensity),
-        "cloud_variance" | "clouds_variance" | "clouds.variance" => {
-            Some(Sky3DField::CloudVariance)
-        }
+        "cloud_variance" | "clouds_variance" | "clouds.variance" => Some(Sky3DField::CloudVariance),
         "wind_vector" | "cloud_wind" | "clouds_wind" | "clouds.wind" => {
             Some(Sky3DField::CloudWindVector)
         }

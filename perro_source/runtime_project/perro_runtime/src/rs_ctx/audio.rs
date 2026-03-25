@@ -85,9 +85,7 @@ impl AudioAPI for RuntimeResourceApi {
         let Ok(guard) = self.bark.lock() else {
             return None;
         };
-        let Some(player) = guard.as_ref() else {
-            return None;
-        };
+        let player = guard.as_ref()?;
         player.source_length_seconds(source)
     }
 

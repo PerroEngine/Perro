@@ -12,8 +12,7 @@ use perro_render_bridge::{
     ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
     PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID,
     ResourceCommand, RuntimeMeshData, RuntimeMeshVertex, SkeletonPalette, Sky3DState,
-    SkyTime3DState, SpotLight3DState,
-    StandardMaterial3D,
+    SkyTime3DState, SpotLight3DState, StandardMaterial3D,
 };
 use perro_terrain::{ChunkCoord, TerrainChunk};
 use std::borrow::Cow;

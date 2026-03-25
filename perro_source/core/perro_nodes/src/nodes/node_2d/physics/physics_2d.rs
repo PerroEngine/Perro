@@ -2,15 +2,13 @@ use crate::node_2d::Node2D;
 use perro_structs::Vector2;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum Triangle2DKind {
     #[default]
     Equilateral,
     Right,
     Isosceles,
 }
-
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Shape2D {

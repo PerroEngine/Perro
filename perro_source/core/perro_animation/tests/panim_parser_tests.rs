@@ -209,7 +209,9 @@ fps = 24
     for track in clip.object_tracks.iter() {
         match track.field {
             NodeField::MeshInstance3D(MeshInstance3DField::Mesh) => mesh_track = Some(track),
-            NodeField::MeshInstance3D(MeshInstance3DField::Material) => material_track = Some(track),
+            NodeField::MeshInstance3D(MeshInstance3DField::Material) => {
+                material_track = Some(track)
+            }
             NodeField::Sprite2D(Sprite2DField::Texture) => texture_track = Some(track),
             _ => {}
         }
@@ -380,7 +382,11 @@ default_ease = "{ease_token}"
                 interp_token
             );
             assert_eq!(track.keys[1].interpolation, interp_expected);
-            assert_eq!(track.keys[0].ease, ease_expected, "ease token {}", ease_token);
+            assert_eq!(
+                track.keys[0].ease, ease_expected,
+                "ease token {}",
+                ease_token
+            );
             assert_eq!(track.keys[1].ease, ease_expected);
         }
     }

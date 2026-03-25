@@ -1,6 +1,6 @@
 use crate::{
     backend::{OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup, StaticTextureLookup},
-    postprocess::PostProcessor,
+    postprocess::{PostProcessChainData, PostProcessContext, PostProcessor},
     resources::ResourceStore,
     three_d::{
         gpu::{Gpu3D, Gpu3DConfig, Prepare3D},
@@ -439,41 +439,42 @@ impl Gpu {
                     || needs_3d_particles_path
                     || post_requested
                     || three_d_content_changed)
-                {
-                    three_d.prepare(
-                        &self.device,
-                        &self.queue,
-                        Prepare3D {
-                            resources,
-                            camera: camera_3d.clone(),
-                            lighting: lighting_3d,
-                            draws: draws_3d,
-                            draws_revision: draws_3d_revision,
-                            width: self.config.width,
-                            height: self.config.height,
-                            static_mesh_lookup,
-                            static_shader_lookup,
-                        },
-                    );
-                    self.last_prepare_3d_camera = Some(camera_3d.clone());
-                    self.last_prepare_3d_lighting = Some(lighting_3d.clone());
-                    self.last_prepare_3d_draws_revision = draws_3d_revision;
-                    self.last_prepare_3d_width = self.config.width;
-                    self.last_prepare_3d_height = self.config.height;
-                }
+            {
+                three_d.prepare(
+                    &self.device,
+                    &self.queue,
+                    Prepare3D {
+                        resources,
+                        camera: camera_3d.clone(),
+                        lighting: lighting_3d,
+                        draws: draws_3d,
+                        draws_revision: draws_3d_revision,
+                        width: self.config.width,
+                        height: self.config.height,
+                        static_mesh_lookup,
+                        static_shader_lookup,
+                    },
+                );
+                self.last_prepare_3d_camera = Some(camera_3d.clone());
+                self.last_prepare_3d_lighting = Some(lighting_3d.clone());
+                self.last_prepare_3d_draws_revision = draws_3d_revision;
+                self.last_prepare_3d_width = self.config.width;
+                self.last_prepare_3d_height = self.config.height;
+            }
             if needs_3d_particles_path
-                && let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
-                    point_particles_3d_gpu.prepare(
-                        &self.device,
-                        &self.queue,
-                        PreparePointParticles3D {
-                            camera: camera_3d.clone(),
-                            emitters: point_particles_3d,
-                            width: self.config.width,
-                            height: self.config.height,
-                        },
-                    );
-                }
+                && let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut()
+            {
+                point_particles_3d_gpu.prepare(
+                    &self.device,
+                    &self.queue,
+                    PreparePointParticles3D {
+                        camera: camera_3d.clone(),
+                        emitters: point_particles_3d,
+                        width: self.config.width,
+                        height: self.config.height,
+                    },
+                );
+            }
         }
         if !needs_3d_particles_path {
             self.point_particles_3d = None;
@@ -554,12 +555,7 @@ impl Gpu {
             a: 1.0,
         });
         if let Some(three_d) = self.three_d.as_mut() {
-            three_d.render_pass(
-                &mut encoder,
-                color_view,
-                clear_color,
-                depth_prepass_needed,
-            );
+            three_d.render_pass(&mut encoder, color_view, clear_color, depth_prepass_needed);
             if let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
                 point_particles_3d_gpu.render_pass(&mut encoder, color_view, three_d.depth_view());
             }
@@ -592,66 +588,66 @@ impl Gpu {
         timing.encode_main = encode_start.elapsed();
 
         let post_start = Instant::now();
+
         if camera_post_enabled && global_post_enabled {
             let camera_post_target = self.accessibility.intermediate_view();
-            self.post.apply_chain(
-                &self.device,
-                &self.queue,
-                &mut encoder,
-                &scene_view,
-                self.three_d
-                    .as_ref()
-                    .expect("three_d is initialized when post-processing is active")
-                    .depth_prepass_view(),
-                camera_post_target,
-                camera_post_chain,
-                &camera_3d,
+
+            let post_context = PostProcessContext {
+                device: &self.device,
+                queue: &self.queue,
+                output_view: camera_post_target,
+                camera: &camera_3d,
                 static_shader_lookup,
-            );
-            let global_post_target = if accessibility_enabled {
-                &scene_view
-            } else {
-                &swap_view
             };
-            self.post.apply_chain(
-                &self.device,
-                &self.queue,
-                &mut encoder,
-                camera_post_target,
-                self.three_d
+
+            let post_chain_data = PostProcessChainData {
+                input_view: &scene_view,
+                depth_view: self
+                    .three_d
                     .as_ref()
                     .expect("three_d is initialized when post-processing is active")
                     .depth_prepass_view(),
-                global_post_target,
-                global_post_chain,
-                &camera_3d,
-                static_shader_lookup,
-            );
+                effects: camera_post_chain,
+            };
+
+            self.post
+                .apply_chain(&post_context, &post_chain_data, &mut encoder);
         } else if camera_post_enabled || global_post_enabled {
+            // Determine the chain of effects and the initial input view
             let (post_chain, post_input) = if camera_post_enabled {
                 (camera_post_chain, &scene_view)
             } else {
                 (global_post_chain, &scene_view)
             };
+
+            // Determine the final output target for the post-processing chain
             let post_target = if accessibility_enabled {
                 self.accessibility.intermediate_view()
             } else {
                 &swap_view
             };
-            self.post.apply_chain(
-                &self.device,
-                &self.queue,
-                &mut encoder,
-                post_input,
-                self.three_d
+
+            let post_context = PostProcessContext {
+                device: &self.device,
+                queue: &self.queue,
+
+                output_view: post_target,
+                camera: &camera_3d,
+                static_shader_lookup,
+            };
+
+            let post_chain_data = PostProcessChainData {
+                input_view: post_input,
+                depth_view: self
+                    .three_d
                     .as_ref()
                     .expect("three_d is initialized when post-processing is active")
                     .depth_prepass_view(),
-                post_target,
-                post_chain,
-                &camera_3d,
-                static_shader_lookup,
-            );
+                effects: post_chain,
+            };
+
+            self.post
+                .apply_chain(&post_context, &post_chain_data, &mut encoder);
         }
         timing.post_process = post_start.elapsed();
 

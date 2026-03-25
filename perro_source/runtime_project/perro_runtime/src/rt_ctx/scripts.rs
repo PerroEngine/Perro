@@ -186,7 +186,8 @@ impl ScriptAPI for Runtime {
             return false;
         }
 
-        self.attach_script_instance(node_id, script_path, &[]).is_ok()
+        self.attach_script_instance(node_id, script_path, &[])
+            .is_ok()
     }
 
     fn script_detach(&mut self, node_id: NodeID) -> bool {

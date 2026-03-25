@@ -1,8 +1,7 @@
 use perro_structs::Transform3D;
 use std::borrow::Cow;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SkyStyle {
     #[default]
     Toon,
@@ -17,7 +16,6 @@ impl SkyStyle {
         }
     }
 }
-
 
 #[derive(Clone, Debug)]
 pub struct SkyClouds {
@@ -154,7 +152,11 @@ impl Sky3D {
                 [0.95, 0.42, 0.58],
                 [0.42, 0.20, 0.42],
             ]),
-            night_colors: Cow::Borrowed(&[[0.01, 0.02, 0.06], [0.04, 0.06, 0.15], [0.09, 0.12, 0.25]]),
+            night_colors: Cow::Borrowed(&[
+                [0.01, 0.02, 0.06],
+                [0.04, 0.06, 0.15],
+                [0.09, 0.12, 0.25],
+            ]),
             sky_angle: 0.0,
             time: SkyTime::new(),
             clouds: SkyClouds::new(),

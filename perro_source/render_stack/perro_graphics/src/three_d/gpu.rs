@@ -59,7 +59,7 @@ struct SkyUniform {
     params0: [f32; 4], // cloud_size, cloud_density, cloud_variance, time_of_day
     params1: [f32; 4], // star_size, star_scatter, star_gleam, sky_angle
     params2: [f32; 4], // sun_size, moon_size, day_weight, cloud_time_seconds
-    wind: [f32; 4], // x,y = cloud wind, z = style_blend (0 toon, 1 realistic), w = reserved
+    wind: [f32; 4],    // x,y = cloud wind, z = style_blend (0 toon, 1 realistic), w = reserved
 }
 
 #[repr(C)]
@@ -3937,7 +3937,11 @@ fn build_scene_uniform(
         let night_color = sample_gradient(sky.night_colors.as_ref(), 0.55);
         let t_day = day_weight_from_time(sky.time.time_of_day);
         let t_evening = evening_weight_from_time(sky.time.time_of_day);
-        let ambient_rgb = lerp3(lerp3(night_color, day_color, t_day), evening_color, t_evening);
+        let ambient_rgb = lerp3(
+            lerp3(night_color, day_color, t_day),
+            evening_color,
+            t_evening,
+        );
         let ambient_strength = (0.08 + 0.32 * t_day).max(0.0);
         scene.ambient_color = [
             ambient_rgb[0].max(0.0),
@@ -3990,12 +3994,7 @@ fn build_scene_uniform(
         let intensity = ((day_amt * 1.35) + (dusk_amt * 0.22)) * size_scale;
         scene.ray_light = RayLightGpu {
             direction: [dir.x, dir.y, dir.z, 0.0],
-            color_intensity: [
-                color[0],
-                color[1],
-                color[2],
-                intensity.max(0.0),
-            ],
+            color_intensity: [color[0], color[1], color[2], intensity.max(0.0)],
         };
         scene.ambient_and_counts[3] = 1.0;
     }
@@ -4072,7 +4071,12 @@ fn build_sky_uniform(
     let night_colors = gradient_triplet(sky.night_colors.as_ref());
     Some(SkyUniform {
         inv_view_proj: inv,
-        camera_pos: [camera.position[0], camera.position[1], camera.position[2], 0.0],
+        camera_pos: [
+            camera.position[0],
+            camera.position[1],
+            camera.position[2],
+            0.0,
+        ],
         day_colors,
         evening_colors,
         night_colors,

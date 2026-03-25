@@ -21,12 +21,12 @@ mod state;
 mod transforms;
 mod world_state;
 
+pub(crate) use scene_loader::PendingScriptAttach;
 use state::{
     DirtyState, InternalUpdateState, NodeIndexState, Render2DState, Render3DState, RenderState,
     ScriptRuntimeState, ScriptSchedules, SignalRuntimeState, TransformRuntimeState,
 };
 pub(crate) use state::{TerrainChunkMeshKey, TerrainChunkMeshState, TerrainDebugState};
-pub(crate) use scene_loader::PendingScriptAttach;
 
 type RuntimeScriptCtor = ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>;
 type StaticScriptRegistry = &'static [(&'static str, RuntimeScriptCtor)];

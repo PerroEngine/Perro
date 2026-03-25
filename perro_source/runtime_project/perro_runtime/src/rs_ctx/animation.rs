@@ -173,7 +173,10 @@ fps = 30
         assert_f32_eq(actual[3], expected[3]);
     }
 
-    fn assert_bone_target_eq(actual: &Option<AnimationBoneTarget>, expected: &Option<AnimationBoneTarget>) {
+    fn assert_bone_target_eq(
+        actual: &Option<AnimationBoneTarget>,
+        expected: &Option<AnimationBoneTarget>,
+    ) {
         match (actual, expected) {
             (None, None) => {}
             (Some(a), Some(b)) => match (&a.selector, &b.selector) {
@@ -335,7 +338,11 @@ fps = 30
         }
 
         assert_eq!(actual.object_tracks.len(), expected.object_tracks.len());
-        for (a, b) in actual.object_tracks.iter().zip(expected.object_tracks.iter()) {
+        for (a, b) in actual
+            .object_tracks
+            .iter()
+            .zip(expected.object_tracks.iter())
+        {
             assert_object_track_eq(a, b);
         }
 

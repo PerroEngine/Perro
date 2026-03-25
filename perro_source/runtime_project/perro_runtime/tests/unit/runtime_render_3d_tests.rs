@@ -3,8 +3,7 @@ use perro_ids::{MaterialID, MeshID};
 use perro_nodes::{
     CameraProjection, SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D,
     camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, node_3d::Node3D,
-    ray_light_3d::RayLight3D, terrain_instance_3d::TerrainInstance3D,
-    sky_3d::Sky3D,
+    ray_light_3d::RayLight3D, sky_3d::Sky3D, terrain_instance_3d::TerrainInstance3D,
 };
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,

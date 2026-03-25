@@ -214,21 +214,18 @@ impl Renderer3D {
                         retained.model = draw.model;
                         draws_changed = true;
                     }
-                    if mesh_ready
-                        && retained.kind != draw.kind {
-                            retained.kind = draw.kind;
-                            draws_changed = true;
-                        }
-                    if material_ready
-                        && retained.material != draw.material {
-                            retained.material = draw.material;
-                            draws_changed = true;
-                        }
-                    if draw.skeleton.is_some()
-                        && retained.skeleton != draw.skeleton {
-                            retained.skeleton = draw.skeleton;
-                            draws_changed = true;
-                        }
+                    if mesh_ready && retained.kind != draw.kind {
+                        retained.kind = draw.kind;
+                        draws_changed = true;
+                    }
+                    if material_ready && retained.material != draw.material {
+                        retained.material = draw.material;
+                        draws_changed = true;
+                    }
+                    if draw.skeleton.is_some() && retained.skeleton != draw.skeleton {
+                        retained.skeleton = draw.skeleton;
+                        draws_changed = true;
+                    }
                 }
                 stats.rejected_draws = stats.rejected_draws.saturating_add(1);
             }
@@ -242,14 +239,15 @@ impl Renderer3D {
             lighting.ambient_light = Some(*ambient);
         }
         if let Some((&sky_node, _)) = self.skies.iter().next()
-            && let Some(sky) = self.skies.get_mut(&sky_node) {
-                if !sky.time.paused {
-                    let scaled = dt.max(0.0) * sky.time.scale.max(0.0) / SKY_DAY_SECONDS;
-                    sky.time.time_of_day = (sky.time.time_of_day + scaled).rem_euclid(1.0);
-                }
-                lighting.sky = Some(sky.clone());
-                lighting.sky_cloud_time_seconds = self.cloud_time_seconds;
+            && let Some(sky) = self.skies.get_mut(&sky_node)
+        {
+            if !sky.time.paused {
+                let scaled = dt.max(0.0) * sky.time.scale.max(0.0) / SKY_DAY_SECONDS;
+                sky.time.time_of_day = (sky.time.time_of_day + scaled).rem_euclid(1.0);
             }
+            lighting.sky = Some(sky.clone());
+            lighting.sky_cloud_time_seconds = self.cloud_time_seconds;
+        }
         if let Some((_, ray)) = self.ray_lights.iter().next() {
             lighting.ray_light = Some(*ray);
         }

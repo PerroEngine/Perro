@@ -452,7 +452,10 @@ fn new_script_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
     let target_path = target_dir.join(file_name);
     write_new_file(&target_path, &default_script_empty_rs())?;
-    println!("created script at {}", normalize_powershell_path(&target_path));
+    println!(
+        "created script at {}",
+        normalize_powershell_path(&target_path)
+    );
     maybe_open_file_in_editor(args, &target_path)?;
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
@@ -565,7 +568,10 @@ fn new_scene_command(args: &[String], cwd: &Path) -> Result<(), String> {
         SceneTemplate::ThreeD => default_scene_3d(),
     };
     write_new_file(&target_path, &contents)?;
-    println!("created scene at {}", normalize_powershell_path(&target_path));
+    println!(
+        "created scene at {}",
+        normalize_powershell_path(&target_path)
+    );
     maybe_open_file_in_editor(args, &target_path)?;
     Ok(())
 }
@@ -660,12 +666,13 @@ fn clean_command(args: &[String], _cwd: &Path) -> Result<(), String> {
     }
 
     if let Ok(current_exe) = env::current_exe()
-        && current_exe.starts_with(&target_dir) {
-            return Err(
+        && current_exe.starts_with(&target_dir)
+    {
+        return Err(
                 "cannot clean while running from the project's target/. Use the installed `perro` command or run from another location."
                     .to_string(),
             );
-        }
+    }
 
     log_step("Cleaning Project Target");
     fs::remove_dir_all(&target_dir)

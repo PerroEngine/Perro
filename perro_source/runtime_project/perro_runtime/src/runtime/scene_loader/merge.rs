@@ -87,9 +87,10 @@ pub(super) fn merge_prepared_scene(
             let res = ResourceContext::new(resource_api.as_ref());
             let bones = res.Skeletons().load_bones(&source);
             if let Some(node_data) = runtime.nodes.get_mut(node)
-                && let SceneNodeData::Skeleton3D(skeleton) = &mut node_data.data {
-                    skeleton.bones = bones;
-                }
+                && let SceneNodeData::Skeleton3D(skeleton) = &mut node_data.data
+            {
+                skeleton.bones = bones;
+            }
         }
         if let Some(target) = mesh_skeleton_target {
             mesh_skeleton_links.push((node, target));
@@ -133,9 +134,10 @@ pub(super) fn merge_prepared_scene(
             .get(&target_key)
             .ok_or_else(|| format!("mesh skeleton target `{target_key}` not found"))?;
         if let Some(node_data) = runtime.nodes.get_mut(mesh_node)
-            && let SceneNodeData::MeshInstance3D(mesh) = &mut node_data.data {
-                mesh.skeleton = target;
-            }
+            && let SceneNodeData::MeshInstance3D(mesh) = &mut node_data.data
+        {
+            mesh.skeleton = target;
+        }
     }
 
     for (player_id, scene_bindings) in animation_player_bindings {
@@ -259,7 +261,10 @@ fn scene_value_to_variant(value: &SceneValue, key_to: &HashMap<String, NodeID>) 
         SceneValue::Object(entries) => {
             let mut out = BTreeMap::new();
             for (k, v) in entries.iter() {
-                out.insert(Arc::<str>::from(k.as_ref()), scene_value_to_variant(v, key_to));
+                out.insert(
+                    Arc::<str>::from(k.as_ref()),
+                    scene_value_to_variant(v, key_to),
+                );
             }
             Variant::Object(out)
         }

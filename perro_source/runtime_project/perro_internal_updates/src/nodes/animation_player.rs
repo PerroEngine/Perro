@@ -3,17 +3,17 @@ use perro_animation::{
     AnimationBoneSelector, AnimationEase, AnimationEvent, AnimationEventScope,
     AnimationInterpolation, AnimationObjectTrack, AnimationParam, AnimationTrackValue,
 };
-use perro_scene::{
-    Camera3DField, Light3DField, MeshInstance3DField, Node2DField, Node3DField, NodeField,
-    PointLight3DField, Sprite2DField, SpotLight3DField, resolve_node_field,
-};
 use perro_nodes::animation_player::{AnimationObjectBinding, AnimationPlaybackType};
 use perro_nodes::{
     AmbientLight3D, AnimationPlayer, Camera3D, MeshInstance3D, Node2D, Node3D, PointLight3D,
-    RayLight3D, Skeleton3D, Sprite2D, SpotLight3D,
+    RayLight3D, Skeleton3D, SpotLight3D, Sprite2D,
 };
 use perro_runtime_context::perro_structs::{Quaternion, Vector2, Vector3};
 use perro_runtime_context::perro_variant::Variant;
+use perro_scene::{
+    Camera3DField, Light3DField, MeshInstance3DField, Node2DField, Node3DField, NodeField,
+    PointLight3DField, SpotLight3DField, Sprite2DField, resolve_node_field,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -91,8 +91,11 @@ where
                 player.playback_type,
                 &mut player.internal.boomerang_direction,
             );
-            player.current_frame =
-                playback_frame_to_frame(player.internal.playback_frame, frame_count, player.playback_type);
+            player.current_frame = playback_frame_to_frame(
+                player.internal.playback_frame,
+                frame_count,
+                player.playback_type,
+            );
         } else {
             player.current_frame =
                 clamp_frame(player.current_frame, frame_count, player.playback_type);
@@ -167,7 +170,11 @@ fn apply_frame_events<RT>(
         .map(|o| (o.name.as_ref(), o.node_type.as_ref()))
         .collect();
 
-    for entry in clip.frame_events.iter().filter(|entry| entry.frame == frame) {
+    for entry in clip
+        .frame_events
+        .iter()
+        .filter(|entry| entry.frame == frame)
+    {
         match &entry.event {
             AnimationEvent::EmitSignal { name, params } => {
                 let values = resolve_event_params(ctx, params, &binding_map, &object_type_map);
@@ -192,7 +199,10 @@ fn apply_frame_events<RT>(
     }
 }
 
-fn scope_target_node(scope: &AnimationEventScope, binding_map: &HashMap<&str, NodeID>) -> Option<NodeID> {
+fn scope_target_node(
+    scope: &AnimationEventScope,
+    binding_map: &HashMap<&str, NodeID>,
+) -> Option<NodeID> {
     match scope {
         AnimationEventScope::Global => None,
         AnimationEventScope::Object(object) => binding_map.get(object.as_ref()).copied(),
@@ -297,14 +307,16 @@ where
         NodeField::Sprite2D(Sprite2DField::Texture) => {
             with_base_node!(ctx, Sprite2D, node_id, |node| Variant::from(node.texture))
         }
-        NodeField::Camera3D(Camera3DField::Zoom) => with_base_node!(ctx, Camera3D, node_id, |camera| {
-            match camera.projection {
-                perro_nodes::CameraProjection::Perspective { fov_y_degrees, .. } => {
-                    Variant::from((60.0 / fov_y_degrees.max(0.001)).max(0.001))
+        NodeField::Camera3D(Camera3DField::Zoom) => {
+            with_base_node!(ctx, Camera3D, node_id, |camera| {
+                match camera.projection {
+                    perro_nodes::CameraProjection::Perspective { fov_y_degrees, .. } => {
+                        Variant::from((60.0 / fov_y_degrees.max(0.001)).max(0.001))
+                    }
+                    _ => Variant::from(1.0_f32),
                 }
-                _ => Variant::from(1.0_f32),
-            }
-        }),
+            })
+        }
         NodeField::Camera3D(Camera3DField::PerspectiveFovYDegrees) => {
             with_base_node!(ctx, Camera3D, node_id, |camera| match camera.projection {
                 perro_nodes::CameraProjection::Perspective { fov_y_degrees, .. } => {
@@ -380,46 +392,66 @@ where
             })
         }
         NodeField::Camera3D(Camera3DField::Active) => {
-            with_base_node!(ctx, Camera3D, node_id, |camera| Variant::from(camera.active))
+            with_base_node!(ctx, Camera3D, node_id, |camera| Variant::from(
+                camera.active
+            ))
         }
         NodeField::Light3D(Light3DField::Color) => with_base_node!(ctx, RayLight3D, node_id, |n| {
             Variant::from(Vector3::new(n.color[0], n.color[1], n.color[2]))
         })
-        .or_else(|| with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(Vector3::new(n.color[0], n.color[1], n.color[2]))))
-        .or_else(|| with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(Vector3::new(n.color[0], n.color[1], n.color[2]))))
-        .or_else(|| with_base_node!(ctx, AmbientLight3D, node_id, |n| Variant::from(Vector3::new(n.color[0], n.color[1], n.color[2])))),
+        .or_else(|| {
+            with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(Vector3::new(
+                n.color[0], n.color[1], n.color[2]
+            )))
+        })
+        .or_else(|| {
+            with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(Vector3::new(
+                n.color[0], n.color[1], n.color[2]
+            )))
+        })
+        .or_else(|| {
+            with_base_node!(ctx, AmbientLight3D, node_id, |n| Variant::from(
+                Vector3::new(n.color[0], n.color[1], n.color[2])
+            ))
+        }),
         NodeField::Light3D(Light3DField::Intensity) => {
             with_base_node!(ctx, RayLight3D, node_id, |n| Variant::from(n.intensity))
-                .or_else(|| with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(n.intensity)))
-                .or_else(|| with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(n.intensity)))
+                .or_else(|| {
+                    with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(n.intensity))
+                })
+                .or_else(|| {
+                    with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(n.intensity))
+                })
                 .or_else(|| {
                     with_base_node!(ctx, AmbientLight3D, node_id, |n| Variant::from(n.intensity))
                 })
         }
-        NodeField::Light3D(Light3DField::Active) => with_base_node!(ctx, RayLight3D, node_id, |n| {
-            Variant::from(n.active)
-        })
-        .or_else(|| with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(n.active)))
-        .or_else(|| with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(n.active)))
-        .or_else(|| with_base_node!(ctx, AmbientLight3D, node_id, |n| Variant::from(n.active))),
+        NodeField::Light3D(Light3DField::Active) => {
+            with_base_node!(ctx, RayLight3D, node_id, |n| { Variant::from(n.active) })
+                .or_else(|| {
+                    with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(n.active))
+                })
+                .or_else(|| with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(n.active)))
+                .or_else(|| {
+                    with_base_node!(ctx, AmbientLight3D, node_id, |n| Variant::from(n.active))
+                })
+        }
         NodeField::PointLight3D(PointLight3DField::Range) => {
             with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(n.range))
         }
         NodeField::SpotLight3D(SpotLight3DField::Range) => {
             with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(n.range))
         }
-        NodeField::SpotLight3D(SpotLight3DField::InnerAngleRadians) => with_base_node!(
-            ctx,
-            SpotLight3D,
-            node_id,
-            |n| Variant::from(n.inner_angle_radians)
-        ),
-        NodeField::SpotLight3D(SpotLight3DField::OuterAngleRadians) => with_base_node!(
-            ctx,
-            SpotLight3D,
-            node_id,
-            |n| Variant::from(n.outer_angle_radians)
-        ),
+        NodeField::SpotLight3D(SpotLight3DField::InnerAngleRadians) => {
+            with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(
+                n.inner_angle_radians
+            ))
+        }
+        NodeField::SpotLight3D(SpotLight3DField::OuterAngleRadians) => {
+            with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(
+                n.outer_angle_radians
+            ))
+        }
         _ => None,
     }
 }
@@ -630,40 +662,32 @@ fn apply_track<RT>(
                     if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.color = c).is_none()
                         && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.color = c)
                             .is_none()
-                            && with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.color = c)
-                                .is_none()
-                            {
-                                let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| {
-                                    n.color = c
-                                });
-                            }
+                        && with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.color = c).is_none()
+                    {
+                        let _ =
+                            with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| { n.color = c });
+                    }
                 }
             }
             Light3DField::Intensity => {
                 if let Some(v) = as_f32_track(&value)
                     && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.intensity = v).is_none()
-                        && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.intensity = v)
-                            .is_none()
-                            && with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.intensity = v)
-                                .is_none()
-                            {
-                                let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| {
-                                    n.intensity = v
-                                });
-                            }
+                    && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.intensity = v)
+                        .is_none()
+                    && with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.intensity = v).is_none()
+                {
+                    let _ =
+                        with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| { n.intensity = v });
+                }
             }
             Light3DField::Active => {
                 if let AnimationTrackValue::Bool(v) = value
                     && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.active = v).is_none()
-                        && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.active = v)
-                            .is_none()
-                            && with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.active = v)
-                                .is_none()
-                            {
-                                let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| {
-                                    n.active = v
-                                });
-                            }
+                    && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.active = v).is_none()
+                    && with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.active = v).is_none()
+                {
+                    let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| { n.active = v });
+                }
             }
         },
         NodeField::PointLight3D(PointLight3DField::Range) => {
@@ -701,9 +725,10 @@ fn apply_skeleton_bone_track<RT>(
     let _ = with_base_node_mut!(ctx, Skeleton3D, node_id, |skeleton| {
         let bone = match &bone_target.selector {
             AnimationBoneSelector::Index(index) => skeleton.bones.get_mut(*index as usize),
-            AnimationBoneSelector::Name(name) => {
-                skeleton.bones.iter_mut().find(|bone| bone.name.as_ref() == name.as_ref())
-            }
+            AnimationBoneSelector::Name(name) => skeleton
+                .bones
+                .iter_mut()
+                .find(|bone| bone.name.as_ref() == name.as_ref()),
         };
         if let Some(bone) = bone {
             bone.rest = rest;
@@ -816,7 +841,11 @@ fn ease_sample(ease: AnimationEase, t: f32) -> f32 {
     }
 }
 
-fn interpolate_values(a: &AnimationTrackValue, b: &AnimationTrackValue, t: f32) -> AnimationTrackValue {
+fn interpolate_values(
+    a: &AnimationTrackValue,
+    b: &AnimationTrackValue,
+    t: f32,
+) -> AnimationTrackValue {
     match (a, b) {
         (AnimationTrackValue::F32(a), AnimationTrackValue::F32(b)) => {
             AnimationTrackValue::F32(lerp_f32(*a, *b, t))
@@ -830,17 +859,21 @@ fn interpolate_values(a: &AnimationTrackValue, b: &AnimationTrackValue, t: f32) 
         (AnimationTrackValue::Vec2(a), AnimationTrackValue::Vec2(b)) => {
             AnimationTrackValue::Vec2([lerp_f32(a[0], b[0], t), lerp_f32(a[1], b[1], t)])
         }
-        (AnimationTrackValue::Vec3(a), AnimationTrackValue::Vec3(b)) => AnimationTrackValue::Vec3([
-            lerp_f32(a[0], b[0], t),
-            lerp_f32(a[1], b[1], t),
-            lerp_f32(a[2], b[2], t),
-        ]),
-        (AnimationTrackValue::Vec4(a), AnimationTrackValue::Vec4(b)) => AnimationTrackValue::Vec4([
-            lerp_f32(a[0], b[0], t),
-            lerp_f32(a[1], b[1], t),
-            lerp_f32(a[2], b[2], t),
-            lerp_f32(a[3], b[3], t),
-        ]),
+        (AnimationTrackValue::Vec3(a), AnimationTrackValue::Vec3(b)) => {
+            AnimationTrackValue::Vec3([
+                lerp_f32(a[0], b[0], t),
+                lerp_f32(a[1], b[1], t),
+                lerp_f32(a[2], b[2], t),
+            ])
+        }
+        (AnimationTrackValue::Vec4(a), AnimationTrackValue::Vec4(b)) => {
+            AnimationTrackValue::Vec4([
+                lerp_f32(a[0], b[0], t),
+                lerp_f32(a[1], b[1], t),
+                lerp_f32(a[2], b[2], t),
+                lerp_f32(a[3], b[3], t),
+            ])
+        }
         (AnimationTrackValue::Transform2D(a), AnimationTrackValue::Transform2D(b)) => {
             let mut out = *a;
             out.position.x = lerp_f32(a.position.x, b.position.x, t);
@@ -929,7 +962,11 @@ fn advance_boomerang_frame(
     next
 }
 
-fn playback_frame_to_frame(frame: f32, frame_count: u32, playback_type: AnimationPlaybackType) -> u32 {
+fn playback_frame_to_frame(
+    frame: f32,
+    frame_count: u32,
+    playback_type: AnimationPlaybackType,
+) -> u32 {
     if frame_count <= 1 {
         return 0;
     }
@@ -1023,6 +1060,9 @@ mod tests {
             ));
         }
 
-        assert_eq!(sampled, vec![1, 2, 3, 4, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0]);
+        assert_eq!(
+            sampled,
+            vec![1, 2, 3, 4, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0]
+        );
     }
 }

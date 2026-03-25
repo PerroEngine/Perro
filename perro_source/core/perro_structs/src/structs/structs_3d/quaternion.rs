@@ -159,7 +159,11 @@ impl Quaternion {
 
         let mut right = forward.cross(up_vec).normalize_or_zero();
         if right.length_squared() <= f32::EPSILON {
-            let fallback_up = if forward.y.abs() < 0.999 { Vec3::Y } else { Vec3::Z };
+            let fallback_up = if forward.y.abs() < 0.999 {
+                Vec3::Y
+            } else {
+                Vec3::Z
+            };
             right = forward.cross(fallback_up).normalize_or_zero();
             if right.length_squared() <= f32::EPSILON {
                 return Self::IDENTITY;

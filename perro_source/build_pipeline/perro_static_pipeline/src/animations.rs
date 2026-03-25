@@ -1,5 +1,7 @@
 use crate::{StaticPipelineError, res_dir, static_dir};
-use perro_animation::{AnimationBoneSelector, AnimationEvent, AnimationEventScope, AnimationParam, AnimationTrackValue};
+use perro_animation::{
+    AnimationBoneSelector, AnimationEvent, AnimationEventScope, AnimationParam, AnimationTrackValue,
+};
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::NodeField;
 use rayon::prelude::*;
@@ -225,15 +227,13 @@ fn emit_static_animation_const(
 
 fn emit_node_field(field: NodeField) -> Result<String, StaticPipelineError> {
     let debug = format!("{field:?}");
-    let (variant, inner) = debug
-        .split_once('(')
-        .ok_or_else(|| StaticPipelineError::SceneParse(format!("unsupported node field: {debug}")))?;
+    let (variant, inner) = debug.split_once('(').ok_or_else(|| {
+        StaticPipelineError::SceneParse(format!("unsupported node field: {debug}"))
+    })?;
     let inner = inner.strip_suffix(')').ok_or_else(|| {
         StaticPipelineError::SceneParse(format!("unsupported node field variant: {debug}"))
     })?;
-    Ok(format!(
-        "NodeField::{variant}({variant}Field::{inner})"
-    ))
+    Ok(format!("NodeField::{variant}({variant}Field::{inner})"))
 }
 
 fn emit_track_value(value: &AnimationTrackValue) -> String {

@@ -107,7 +107,8 @@ impl<'a> Lexer<'a> {
             {
                 let mut s = String::new();
                 s.push(c);
-                while matches!(self.peek, Some(p) if p.is_ascii_digit() || p == '.' || p == 'e' || p == 'E' || p == '+' || p == '-') {
+                while matches!(self.peek, Some(p) if p.is_ascii_digit() || p == '.' || p == 'e' || p == 'E' || p == '+' || p == '-')
+                {
                     s.push(self.bump().unwrap());
                 }
                 match s.parse::<f32>() {

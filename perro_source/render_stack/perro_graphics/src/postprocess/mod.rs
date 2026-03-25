@@ -1,3 +1,5 @@
+// File: perro_source\render_stack\perro_graphics\src\postprocess\mod.rs
+
 use crate::backend::StaticShaderLookup;
 use crate::postprocess::shaders::{build_post_shader, create_builtin_shader_module};
 use bytemuck::{Pod, Zeroable};
@@ -5,6 +7,7 @@ use perro_io::load_asset;
 use perro_render_bridge::{Camera3DState, CameraProjectionState};
 use perro_structs::{CustomPostParam, CustomPostParamValue, PostProcessEffect};
 use std::collections::HashMap;
+use wgpu;
 
 mod shaders;
 
@@ -36,6 +39,29 @@ struct PostUniform {
     near: f32,
     far: f32,
     time: [f32; 2],
+}
+
+struct EncodedEffectParams {
+    effect_type: u32,
+    params0: [f32; 4],
+    params1: [f32; 4],
+    params2: [f32; 4],
+    params3: [f32; 4],
+    custom_params: Vec<[f32; 4]>,
+}
+
+pub struct PostProcessContext<'a> {
+    pub(crate) device: &'a wgpu::Device,
+    pub(crate) queue: &'a wgpu::Queue,
+    pub(crate) output_view: &'a wgpu::TextureView,
+    pub(crate) camera: &'a Camera3DState,
+    pub(crate) static_shader_lookup: Option<StaticShaderLookup>,
+}
+
+pub struct PostProcessChainData<'a> {
+    pub(crate) input_view: &'a wgpu::TextureView,
+    pub(crate) depth_view: &'a wgpu::TextureView,
+    pub(crate) effects: &'a [PostProcessEffect],
 }
 
 pub struct PostProcessor {
@@ -211,18 +237,28 @@ impl PostProcessor {
         !effects.is_empty()
     }
 
+    // Refactored apply_chain to reduce argument count and improve clarity
     pub fn apply_chain(
         &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        input_view: &wgpu::TextureView,
-        depth_view: &wgpu::TextureView,
-        output_view: &wgpu::TextureView,
-        effects: &[PostProcessEffect],
-        camera: &Camera3DState,
-        static_shader_lookup: Option<StaticShaderLookup>,
+        ctx: &PostProcessContext,
+        chain_data: &PostProcessChainData,
+        encoder: &mut wgpu::CommandEncoder, // Encoder is passed mutably for the render pass
     ) {
+        // Destructure context and chain data for easier access
+        let PostProcessContext {
+            device,
+            queue,
+            output_view,
+            camera,
+            static_shader_lookup,
+        } = ctx;
+
+        let PostProcessChainData {
+            input_view,
+            depth_view,
+            effects,
+        } = chain_data;
+
         if effects.is_empty() {
             return;
         }
@@ -236,13 +272,13 @@ impl PostProcessor {
         let time = self.frame_counter as f32;
 
         let mut max_params = 0usize;
-        for effect in effects {
+        for effect in *effects {
             if let PostProcessEffect::Custom {
                 shader_path,
                 params,
             } = effect
             {
-                self.ensure_custom_pipeline(device, shader_path.as_ref(), static_shader_lookup);
+                self.ensure_custom_pipeline(device, shader_path.as_ref(), *static_shader_lookup);
                 max_params = max_params.max(params.len());
             }
         }
@@ -256,7 +292,7 @@ impl PostProcessor {
         let params_buffer = self.params_buffer.clone();
         let builtin_pipeline = self.builtin_pipeline.clone();
 
-        let mut current_input = input_view;
+        let mut current_input = *input_view;
         let mut use_ping_a = true;
         for (index, effect) in effects.iter().enumerate() {
             let last = index + 1 == effects.len();
@@ -267,31 +303,35 @@ impl PostProcessor {
                 _ => None,
             };
 
-            let (effect_type, params0, params1, params2, params3, custom_params) =
-                encode_effect_params(effect);
-            let param_count = custom_params.len() as u32;
-            if !custom_params.is_empty() {
-                queue.write_buffer(&params_buffer, 0, bytemuck::cast_slice(&custom_params));
+            // Use the new struct for encoded params
+            let encoded_params = encode_effect_params(effect);
+            let param_count = encoded_params.custom_params.len() as u32;
+            if !encoded_params.custom_params.is_empty() {
+                queue.write_buffer(
+                    &params_buffer,
+                    0,
+                    bytemuck::cast_slice(&encoded_params.custom_params),
+                );
             }
             let uniform = PostUniform {
-                effect_type,
+                effect_type: encoded_params.effect_type,
                 param_count,
                 projection_mode,
                 _pad0: 0,
-                params0,
-                params1,
-                params2,
-                params3,
+                params0: encoded_params.params0,
+                params1: encoded_params.params1,
+                params2: encoded_params.params2,
+                params3: encoded_params.params3,
                 resolution: [width, height],
                 inv_resolution: [inv_width, inv_height],
-                near,
-                far,
+                near: near,
+                far: far,
                 time: [time, time],
             };
             queue.write_buffer(&uniform_buffer, 0, bytemuck::bytes_of(&uniform));
 
             let target_view = if last {
-                output_view
+                *output_view
             } else if use_ping_a {
                 &ping_a_view
             } else {
@@ -314,9 +354,10 @@ impl PostProcessor {
                         binding: 1,
                         resource: wgpu::BindingResource::Sampler(&sampler),
                     },
+                    // Note: Check if depth_view is actually needed/was passed correctly
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::TextureView(depth_view),
+                        resource: wgpu::BindingResource::TextureView(*depth_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
@@ -481,115 +522,114 @@ fn projection_uniform_params(camera: &Camera3DState) -> (u32, f32, f32) {
     }
 }
 
-fn encode_effect_params(
-    effect: &PostProcessEffect,
-) -> (u32, [f32; 4], [f32; 4], [f32; 4], [f32; 4], Vec<[f32; 4]>) {
+// Refactored to return the new struct, simplifying the return type
+fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectParams {
     match effect {
-        PostProcessEffect::Blur { strength } => (
-            EFFECT_BLUR,
-            [*strength, 0.0, 0.0, 0.0],
-            [0.0; 4],
-            [0.0; 4],
-            [0.0; 4],
-            Vec::new(),
-        ),
-        PostProcessEffect::Pixelate { size } => (
-            EFFECT_PIXELATE,
-            [*size, 0.0, 0.0, 0.0],
-            [0.0; 4],
-            [0.0; 4],
-            [0.0; 4],
-            Vec::new(),
-        ),
-        PostProcessEffect::Warp { waves, strength } => (
-            EFFECT_WARP,
-            [*waves, *strength, 0.0, 0.0],
-            [0.0; 4],
-            [0.0; 4],
-            [0.0; 4],
-            Vec::new(),
-        ),
+        PostProcessEffect::Blur { strength } => EncodedEffectParams {
+            effect_type: EFFECT_BLUR,
+            params0: [*strength, 0.0, 0.0, 0.0],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            custom_params: Vec::new(),
+        },
+        PostProcessEffect::Pixelate { size } => EncodedEffectParams {
+            effect_type: EFFECT_PIXELATE,
+            params0: [*size, 0.0, 0.0, 0.0],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            custom_params: Vec::new(),
+        },
+        PostProcessEffect::Warp { waves, strength } => EncodedEffectParams {
+            effect_type: EFFECT_WARP,
+            params0: [*waves, *strength, 0.0, 0.0],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            custom_params: Vec::new(),
+        },
         PostProcessEffect::Vignette {
             strength,
             radius,
             softness,
-        } => (
-            EFFECT_VIGNETTE,
-            [*strength, *radius, *softness, 0.0],
-            [0.0; 4],
-            [0.0; 4],
-            [0.0; 4],
-            Vec::new(),
-        ),
+        } => EncodedEffectParams {
+            effect_type: EFFECT_VIGNETTE,
+            params0: [*strength, *radius, *softness, 0.0],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            custom_params: Vec::new(),
+        },
         PostProcessEffect::Crt {
             scanline_strength,
             curvature,
             chromatic,
             vignette,
-        } => (
-            EFFECT_CRT,
-            [*scanline_strength, *curvature, *chromatic, *vignette],
-            [0.0; 4],
-            [0.0; 4],
-            [0.0; 4],
-            Vec::new(),
-        ),
-        PostProcessEffect::ColorFilter { color, strength } => (
-            EFFECT_COLOR_FILTER,
-            [color[0], color[1], color[2], *strength],
-            [0.0; 4],
-            [0.0; 4],
-            [0.0; 4],
-            Vec::new(),
-        ),
+        } => EncodedEffectParams {
+            effect_type: EFFECT_CRT,
+            params0: [*scanline_strength, *curvature, *chromatic, *vignette],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            custom_params: Vec::new(),
+        },
+        PostProcessEffect::ColorFilter { color, strength } => EncodedEffectParams {
+            effect_type: EFFECT_COLOR_FILTER,
+            params0: [color[0], color[1], color[2], *strength],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            custom_params: Vec::new(),
+        },
         PostProcessEffect::ReverseFilter {
             color,
             strength,
             softness,
-        } => (
-            EFFECT_REVERSE_FILTER,
-            [color[0], color[1], color[2], *strength],
-            [*softness, 0.0, 0.0, 0.0],
-            [0.0; 4],
-            [0.0; 4],
-            Vec::new(),
-        ),
+        } => EncodedEffectParams {
+            effect_type: EFFECT_REVERSE_FILTER,
+            params0: [color[0], color[1], color[2], *strength],
+            params1: [*softness, 0.0, 0.0, 0.0],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            custom_params: Vec::new(),
+        },
         PostProcessEffect::Bloom {
             strength,
             threshold,
             radius,
-        } => (
-            EFFECT_BLOOM,
-            [*strength, *threshold, *radius, 0.0],
-            [0.0; 4],
-            [0.0; 4],
-            [0.0; 4],
-            Vec::new(),
-        ),
-        PostProcessEffect::Saturate { amount } => (
-            EFFECT_SATURATE,
-            [*amount, 0.0, 0.0, 0.0],
-            [0.0; 4],
-            [0.0; 4],
-            [0.0; 4],
-            Vec::new(),
-        ),
-        PostProcessEffect::BlackWhite { amount } => (
-            EFFECT_BLACK_WHITE,
-            [*amount, 0.0, 0.0, 0.0],
-            [0.0; 4],
-            [0.0; 4],
-            [0.0; 4],
-            Vec::new(),
-        ),
-        PostProcessEffect::Custom { params, .. } => (
-            EFFECT_CUSTOM,
-            [0.0; 4],
-            [0.0; 4],
-            [0.0; 4],
-            [0.0; 4],
-            params.iter().map(encode_custom_param_value).collect(),
-        ),
+        } => EncodedEffectParams {
+            effect_type: EFFECT_BLOOM,
+            params0: [*strength, *threshold, *radius, 0.0],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            custom_params: Vec::new(),
+        },
+        PostProcessEffect::Saturate { amount } => EncodedEffectParams {
+            effect_type: EFFECT_SATURATE,
+            params0: [*amount, 0.0, 0.0, 0.0],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            custom_params: Vec::new(),
+        },
+        PostProcessEffect::BlackWhite { amount } => EncodedEffectParams {
+            effect_type: EFFECT_BLACK_WHITE,
+            params0: [*amount, 0.0, 0.0, 0.0],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            custom_params: Vec::new(),
+        },
+        PostProcessEffect::Custom { params, .. } => EncodedEffectParams {
+            effect_type: EFFECT_CUSTOM,
+            params0: [0.0; 4],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            custom_params: params.iter().map(encode_custom_param_value).collect(),
+        },
     }
 }
 
