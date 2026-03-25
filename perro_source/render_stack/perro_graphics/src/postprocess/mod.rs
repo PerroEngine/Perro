@@ -7,7 +7,6 @@ use perro_io::load_asset;
 use perro_render_bridge::{Camera3DState, CameraProjectionState};
 use perro_structs::{CustomPostParam, CustomPostParamValue, PostProcessEffect};
 use std::collections::HashMap;
-use wgpu;
 
 mod shaders;
 
@@ -324,8 +323,8 @@ impl PostProcessor {
                 params3: encoded_params.params3,
                 resolution: [width, height],
                 inv_resolution: [inv_width, inv_height],
-                near: near,
-                far: far,
+                near,
+                far,
                 time: [time, time],
             };
             queue.write_buffer(&uniform_buffer, 0, bytemuck::bytes_of(&uniform));
@@ -357,7 +356,7 @@ impl PostProcessor {
                     // Note: Check if depth_view is actually needed/was passed correctly
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::TextureView(*depth_view),
+                        resource: wgpu::BindingResource::TextureView(depth_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,

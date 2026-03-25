@@ -300,14 +300,13 @@ fn read_inv_bind_mats(
     let count = accessor.count();
     let bytes = buffer.0.as_slice();
     let mut out = Vec::with_capacity(count);
-    
+
     for i in 0..count {
         let start = base + i * stride;
         if start + 64 > bytes.len() {
             return Err("inverse bind buffer out of bounds".to_string());
         }
         let mut mat = [[0.0f32; 4]; 4];
-        
 
         (0..4).enumerate().for_each(|(col_idx, col)| {
             (0..4).enumerate().for_each(|(row_idx, row)| {
@@ -316,7 +315,7 @@ fn read_inv_bind_mats(
                 mat[col_idx][row_idx] = f32::from_le_bytes(raw);
             });
         });
-        
+
         out.push(mat);
     }
     Ok(out)
