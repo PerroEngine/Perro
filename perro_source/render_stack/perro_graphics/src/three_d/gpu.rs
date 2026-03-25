@@ -2040,6 +2040,27 @@ impl Gpu3D {
             sky_pass.draw(0..3, 0..1);
             drop(sky_pass);
         }
+        if self.draw_batches.is_empty() {
+            if !self.sky_enabled {
+                let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("perro_mesh_clear_only_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: color_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(clear_color),
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+            }
+            return;
+        }
         let color_load = if self.sky_enabled {
             wgpu::LoadOp::Load
         } else {
@@ -2068,9 +2089,6 @@ impl Gpu3D {
             occlusion_query_set: query_set,
             multiview_mask: None,
         });
-        if self.draw_batches.is_empty() {
-            return;
-        }
         pass.set_bind_group(0, &self.camera_bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
