@@ -61,6 +61,42 @@ impl Quaternion {
         }
     }
 
+    /// Builds a quaternion from XYZ Euler angles in radians.
+    ///
+    /// Rotation order matches [`Quaternion::rotate_xyz`] semantics.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::{Quaternion, Vector3};
+    ///
+    /// let q = Quaternion::from_euler_xyz(0.0, std::f32::consts::FRAC_PI_2, 0.0);
+    /// let v = q.rotate_vector3(Vector3::new(0.0, 0.0, -1.0));
+    /// assert!((v.x + 1.0).abs() < 1e-5);
+    /// ```
+    #[inline]
+    pub fn from_euler_xyz(x: f32, y: f32, z: f32) -> Self {
+        let mut out = Self::IDENTITY;
+        out.rotate_xyz(x, y, z);
+        out
+    }
+
+    /// Builds a quaternion from a Euler vector interpreted as `(x, y, z)` radians.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::{Quaternion, Vector3};
+    ///
+    /// let q = Quaternion::from_euler(Vector3::new(0.0, std::f32::consts::FRAC_PI_2, 0.0));
+    /// let v = q.rotate_vector3(Vector3::new(0.0, 0.0, -1.0));
+    /// assert!((v.x + 1.0).abs() < 1e-5);
+    /// ```
+    #[inline]
+    pub fn from_euler(euler: Vector3) -> Self {
+        Self::from_euler_xyz(euler.x, euler.y, euler.z)
+    }
+
     /// Returns a normalized copy of this quaternion.
     ///
     /// # Example
@@ -235,6 +271,13 @@ impl Quaternion {
     #[inline]
     pub fn rotate_xyz(&mut self, x: f32, y: f32, z: f32) -> &mut Self {
         self.rotate_x(x).rotate_y(y).rotate_z(z)
+    }
+
+    /// Sets this quaternion from XYZ Euler angles in radians.
+    #[inline]
+    pub fn set_euler_xyz(&mut self, x: f32, y: f32, z: f32) -> &mut Self {
+        *self = Self::from_euler_xyz(x, y, z);
+        self
     }
 
     /// Normalize the quaternion to unit length.

@@ -29,6 +29,54 @@ struct SceneLoadStats {
 }
 
 impl Runtime {
+    pub(crate) fn load_scene_at_runtime(&mut self, path: &str) -> Result<NodeID, String> {
+        let static_lookup = self.project().and_then(|project| project.static_scene_lookup);
+        let merged = match self.provider_mode {
+            ProviderMode::Dynamic => {
+                let (runtime_scene, _load_stats) = load_runtime_scene_from_disk(path)?;
+                let prepared = prepare_scene_with_loader(&runtime_scene, &|import_path| {
+                    let (scene, _) = load_runtime_scene_from_disk(import_path)?;
+                    Ok(scene)
+                })?;
+                merge_prepared_scene(self, prepared)?
+            }
+            ProviderMode::Static => match static_lookup.and_then(|lookup| lookup(path)) {
+                Some(scene) => {
+                    let prepared = prepare_scene_with_loader(scene, &|import_path| {
+                        static_lookup
+                            .and_then(|lookup| lookup(import_path))
+                            .cloned()
+                            .ok_or_else(|| {
+                                format!(
+                                    "failed to load scene `{import_path}` from static lookup during root_of expansion"
+                                )
+                            })
+                    })?;
+                    merge_prepared_scene(self, prepared)?
+                }
+                None => {
+                    let (runtime_scene, _load_stats) = load_runtime_scene_from_disk(path)?;
+                    let prepared = prepare_scene_with_loader(&runtime_scene, &|import_path| {
+                        let (scene, _) = load_runtime_scene_from_disk(import_path)?;
+                        Ok(scene)
+                    })?;
+                    merge_prepared_scene(self, prepared)?
+                }
+            },
+        };
+
+        let script_paths_by_node: HashMap<NodeID, String> = merged
+            .script_nodes
+            .iter()
+            .map(|it| (it.node_id, it.script_path.clone()))
+            .collect();
+        self.rebuild_internal_node_schedules();
+        self.rebuild_node_tag_index();
+        self.attach_scene_scripts(merged.script_nodes)?;
+        debug_print_scene_load_from_root(self, path, merged.scene_root, &script_paths_by_node);
+        Ok(merged.scene_root)
+    }
+
     pub(crate) fn load_boot_scene(&mut self) -> Result<(), String> {
         #[cfg(feature = "profile")]
         let boot_start = Instant::now();
@@ -108,7 +156,7 @@ impl Runtime {
         let mut parse: Option<Duration> = None;
         #[cfg(feature = "profile")]
         let mut node_insert = Duration::ZERO;
-        let script_nodes;
+        let merged;
         match self.provider_mode {
             ProviderMode::Dynamic => {
                 mode_label = "dynamic";
@@ -124,7 +172,7 @@ impl Runtime {
                 })?;
                 #[cfg(feature = "profile")]
                 let node_insert_start = Instant::now();
-                script_nodes = merge_prepared_scene(self, prepared)?;
+                merged = merge_prepared_scene(self, prepared)?;
                 #[cfg(feature = "profile")]
                 {
                     node_insert = node_insert_start.elapsed();
@@ -150,7 +198,7 @@ impl Runtime {
                     })?;
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
-                    script_nodes = merge_prepared_scene(self, prepared)?;
+                    merged = merge_prepared_scene(self, prepared)?;
                     #[cfg(feature = "profile")]
                     let node_insert = node_insert_start.elapsed();
                 }
@@ -169,7 +217,7 @@ impl Runtime {
                     })?;
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
-                    script_nodes = merge_prepared_scene(self, prepared)?;
+                    merged = merge_prepared_scene(self, prepared)?;
                     #[cfg(feature = "profile")]
                     {
                         node_insert = node_insert_start.elapsed();
@@ -181,13 +229,14 @@ impl Runtime {
                 }
             },
         }
-        let script_paths_by_node: HashMap<NodeID, String> = script_nodes
+        let script_paths_by_node: HashMap<NodeID, String> = merged
+            .script_nodes
             .iter()
             .map(|it| (it.node_id, it.script_path.clone()))
             .collect();
         self.rebuild_internal_node_schedules();
         self.rebuild_node_tag_index();
-        self.attach_scene_scripts(script_nodes)?;
+        self.attach_scene_scripts(merged.script_nodes)?;
         #[cfg(not(feature = "profile"))]
         {
             let _ = mode_label;
@@ -225,6 +274,19 @@ fn debug_print_scene_load(
         println!("[scene_load] path={path}");
     }
     print_scene_tree(runtime, NodeID::ROOT, "", script_paths_by_node);
+}
+
+fn debug_print_scene_load_from_root(
+    runtime: &Runtime,
+    path: &str,
+    root: NodeID,
+    script_paths_by_node: &HashMap<NodeID, String>,
+) {
+    #[cfg(not(feature = "profile"))]
+    {
+        println!("[scene_load] path={path}");
+    }
+    print_scene_tree(runtime, root, "", script_paths_by_node);
 }
 
 fn print_scene_tree(

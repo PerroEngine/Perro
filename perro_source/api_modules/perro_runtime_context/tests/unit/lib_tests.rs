@@ -1,4 +1,7 @@
-use crate::{prelude::*, sub_apis::AnimPlayerAPI};
+use crate::{
+    prelude::*,
+    sub_apis::{AnimPlayerAPI, SceneAPI},
+};
 use perro_ids::{AnimationID, IntoTagID, NodeID, TagID};
 use perro_nodes::prelude::Node2D;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
@@ -356,6 +359,12 @@ impl AnimPlayerAPI for DummyRuntime {
     }
 }
 
+impl SceneAPI for DummyRuntime {
+    fn scene_load(&mut self, _path: &str) -> Result<NodeID, String> {
+        Ok(NodeID::new(7))
+    }
+}
+
 #[test]
 fn script_macros_typecheck_and_forward() {
     let mut rt = DummyRuntime {
@@ -513,6 +522,13 @@ fn script_macros_typecheck_and_forward() {
         1
     );
     assert_eq!(signal_emit!(&mut ctx, signal!("on_test")), 1);
+    assert_eq!(scene_load!(&mut ctx, "res://scenes/a.scene"), Ok(NodeID::new(7)));
+    assert_eq!(
+        scene_load!(&mut ctx, String::from("res://scenes/b.scene")),
+        Ok(NodeID::new(7))
+    );
+    let cow_path = std::borrow::Cow::Borrowed("res://scenes/c.scene");
+    assert_eq!(scene_load!(&mut ctx, cow_path), Ok(NodeID::new(7)));
 
     let dt = delta_time!(&mut ctx);
     let dt_capped = delta_time_capped!(&mut ctx, 0.010);

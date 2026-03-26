@@ -10,10 +10,15 @@ use perro_variant::Variant;
 use std::sync::Arc;
 use std::{borrow::Cow, collections::BTreeMap, collections::HashMap};
 
+pub(super) struct MergePreparedSceneResult {
+    pub(super) scene_root: NodeID,
+    pub(super) script_nodes: Vec<PendingScriptAttach>,
+}
+
 pub(super) fn merge_prepared_scene(
     runtime: &mut Runtime,
     prepared: PreparedScene,
-) -> Result<Vec<PendingScriptAttach>, String> {
+) -> Result<MergePreparedSceneResult, String> {
     let PreparedScene {
         root_key,
         nodes,
@@ -234,7 +239,10 @@ pub(super) fn merge_prepared_scene(
         });
     }
 
-    Ok(script_nodes)
+    Ok(MergePreparedSceneResult {
+        scene_root: primary_root,
+        script_nodes,
+    })
 }
 
 fn scene_value_to_variant(value: &SceneValue, key_to: &HashMap<String, NodeID>) -> Variant {
