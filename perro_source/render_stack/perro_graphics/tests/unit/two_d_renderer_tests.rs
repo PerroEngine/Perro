@@ -1,7 +1,8 @@
 use super::{RectInstanceGpu, Renderer2D};
 use crate::resources::ResourceStore;
 use perro_ids::{NodeID, TextureID};
-use perro_render_bridge::{Rect2DCommand, Sprite2DCommand};
+use perro_render_bridge::{DrawShape2DCommand, Rect2DCommand, Sprite2DCommand};
+use perro_structs::DrawShape2D;
 
 #[test]
 fn texture_upsert_requires_existing_resource() {
@@ -79,6 +80,40 @@ fn rect_upload_plan_tracks_incremental_updates() {
             size: [32.0, 32.0],
             color: [0.0, 1.0, 0.0, 1.0],
             z_index: 1,
+            shape_kind: 0,
+            thickness: 1.0,
+            filled: 1,
+            _pad: 0,
         }
     );
+}
+
+#[test]
+fn draw_shape_uses_normalized_screen_position_with_center_at_half() {
+    let mut renderer = Renderer2D::new();
+    let resources = ResourceStore::new();
+    renderer.queue_shape(DrawShape2DCommand {
+        shape: DrawShape2D::circle(12.0, [1.0, 1.0, 1.0, 1.0]),
+        position: [0.5, 0.5],
+    });
+
+    let _ = renderer.prepare_frame(&resources);
+    let frame_shapes = renderer.frame_shapes();
+    assert_eq!(frame_shapes.len(), 1);
+    assert_eq!(frame_shapes[0].center, [0.0, 0.0]);
+}
+
+#[test]
+fn draw_shape_uses_top_right_for_one_one() {
+    let mut renderer = Renderer2D::new();
+    let resources = ResourceStore::new();
+    renderer.queue_shape(DrawShape2DCommand {
+        shape: DrawShape2D::circle(12.0, [1.0, 1.0, 1.0, 1.0]),
+        position: [1.0, 1.0],
+    });
+
+    let _ = renderer.prepare_frame(&resources);
+    let frame_shapes = renderer.frame_shapes();
+    assert_eq!(frame_shapes.len(), 1);
+    assert_eq!(frame_shapes[0].center, [960.0, 540.0]);
 }

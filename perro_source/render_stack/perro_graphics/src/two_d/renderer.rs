@@ -1,7 +1,8 @@
 use crate::resources::ResourceStore;
 use bytemuck::{Pod, Zeroable};
 use perro_ids::NodeID;
-use perro_render_bridge::{Camera2DState, Rect2DCommand, Sprite2DCommand};
+use perro_render_bridge::{Camera2DState, DrawShape2DCommand, Rect2DCommand, Sprite2DCommand};
+use perro_structs::DrawShape2D;
 use std::{collections::HashMap, ops::Range};
 
 #[derive(Debug, Clone, Copy)]
@@ -39,6 +40,10 @@ pub struct RectInstanceGpu {
     pub size: [f32; 2],
     pub color: [f32; 4],
     pub z_index: i32,
+    pub shape_kind: u32,
+    pub thickness: f32,
+    pub filled: u32,
+    pub _pad: u32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -55,6 +60,7 @@ pub const DEFAULT_VIRTUAL_HEIGHT: f32 = 1080.0;
 pub struct Renderer2D {
     queued_sprites: Vec<SpritePacket>,
     queued_rects: Vec<RectPacket>,
+    queued_shapes: Vec<DrawShape2DCommand>,
     camera: Camera2DState,
     viewport: (u32, u32),
     virtual_size: [f32; 2],
@@ -64,6 +70,7 @@ pub struct Renderer2D {
     rect_dirty_ranges: Vec<Range<usize>>,
     rect_structure_dirty: bool,
     retained_sprites: HashMap<NodeID, Sprite2DCommand>,
+    frame_shapes: Vec<RectInstanceGpu>,
 }
 
 impl Renderer2D {
@@ -71,6 +78,7 @@ impl Renderer2D {
         Self {
             queued_sprites: Vec::new(),
             queued_rects: Vec::new(),
+            queued_shapes: Vec::new(),
             camera: Camera2DState::default(),
             viewport: (0, 0),
             virtual_size: [DEFAULT_VIRTUAL_WIDTH, DEFAULT_VIRTUAL_HEIGHT],
@@ -80,6 +88,7 @@ impl Renderer2D {
             rect_dirty_ranges: Vec::new(),
             rect_structure_dirty: false,
             retained_sprites: HashMap::new(),
+            frame_shapes: Vec::new(),
         }
     }
 
@@ -123,6 +132,10 @@ impl Renderer2D {
         self.queued_rects.push(RectPacket { node, rect });
     }
 
+    pub fn queue_shape(&mut self, draw: DrawShape2DCommand) {
+        self.queued_shapes.push(draw);
+    }
+
     pub fn remove_node(&mut self, node: NodeID) {
         self.remove_retained_rect(node);
         self.retained_sprites.remove(&node);
@@ -147,6 +160,10 @@ impl Renderer2D {
                         size: rect.size,
                         color: rect.color,
                         z_index: rect.z_index,
+                        shape_kind: 0,
+                        thickness: 1.0,
+                        filled: 1,
+                        _pad: 0,
                     },
                 );
                 stats.accepted_rects = stats.accepted_rects.saturating_add(1);
@@ -156,6 +173,65 @@ impl Renderer2D {
             }
         }
         stats
+    }
+
+    fn flush_shape_packets(&mut self) {
+        self.frame_shapes.clear();
+        for draw in self.queued_shapes.drain(..) {
+            let center = normalized_screen_to_virtual_centered(draw.position, self.virtual_size);
+            match draw.shape {
+                DrawShape2D::Circle {
+                    radius,
+                    color,
+                    filled,
+                    thickness,
+                } => {
+                    if !radius.is_finite()
+                        || radius <= 0.0
+                        || !color.iter().all(|v| v.is_finite())
+                        || !thickness.is_finite()
+                    {
+                        continue;
+                    }
+                    self.frame_shapes.push(RectInstanceGpu {
+                        center,
+                        size: [radius * 2.0, radius * 2.0],
+                        color,
+                        z_index: 900,
+                        shape_kind: 1,
+                        thickness: thickness.max(0.0),
+                        filled: u32::from(filled),
+                        _pad: 0,
+                    });
+                }
+                DrawShape2D::Rect {
+                    size,
+                    color,
+                    filled,
+                    thickness,
+                } => {
+                    if !size.x.is_finite()
+                        || !size.y.is_finite()
+                        || size.x <= 0.0
+                        || size.y <= 0.0
+                        || !color.iter().all(|v| v.is_finite())
+                        || !thickness.is_finite()
+                    {
+                        continue;
+                    }
+                    self.frame_shapes.push(RectInstanceGpu {
+                        center,
+                        size: [size.x, size.y],
+                        color,
+                        z_index: 900,
+                        shape_kind: if filled { 0 } else { 2 },
+                        thickness: thickness.max(0.0),
+                        filled: u32::from(filled),
+                        _pad: 0,
+                    });
+                }
+            }
+        }
     }
 
     fn flush_sprite_packets(&mut self, resources: &ResourceStore) -> Renderer2DStats {
@@ -183,6 +259,7 @@ impl Renderer2D {
     ) -> (Camera2DUniform, Renderer2DStats, RectUploadPlan) {
         let mut stats = self.flush_sprite_packets(resources);
         let rect_stats = self.apply_queued_rect_updates();
+        self.flush_shape_packets();
         stats.accepted_rects = rect_stats.accepted_rects;
         stats.rejected_rects = rect_stats.rejected_rects;
         let plan = self.build_upload_plan();
@@ -191,6 +268,10 @@ impl Renderer2D {
 
     pub fn retained_rects(&self) -> &[RectInstanceGpu] {
         &self.retained_rects
+    }
+
+    pub fn frame_shapes(&self) -> &[RectInstanceGpu] {
+        &self.frame_shapes
     }
 
     pub fn retained_sprite(&self, node: NodeID) -> Option<Sprite2DCommand> {
@@ -331,6 +412,15 @@ fn coalesce_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     }
     merged.push(current);
     merged
+}
+
+#[inline]
+fn normalized_screen_to_virtual_centered(pos: [f32; 2], virtual_size: [f32; 2]) -> [f32; 2] {
+    let vx = virtual_size[0].max(1.0);
+    let vy = virtual_size[1].max(1.0);
+    // Position is normalized screen-space: (0.5, 0.5) is the center.
+    // X grows right, Y grows upward.
+    [(pos[0] - 0.5) * vx, (pos[1] - 0.5) * vy]
 }
 
 #[cfg(test)]

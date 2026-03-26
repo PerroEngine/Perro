@@ -1,6 +1,7 @@
 mod animation;
 mod audio;
 mod core;
+mod draw_2d;
 mod material;
 mod mesh;
 mod post_processing;

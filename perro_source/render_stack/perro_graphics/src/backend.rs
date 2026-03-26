@@ -7,7 +7,7 @@ use crate::{
     three_d::particles::renderer::Particles3DRenderer,
     three_d::renderer::Renderer3D,
     three_d::{gpu::validate_mesh_source, renderer::Draw3DInstance, renderer::Draw3DKind},
-    two_d::renderer::Renderer2D,
+    two_d::renderer::{RectInstanceGpu, Renderer2D},
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{
@@ -97,6 +97,7 @@ pub struct PerroGraphics {
     retained_draws_cache_revision: u64,
     retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,
     retained_sprites_cache: Vec<Sprite2DCommand>,
+    frame_rects_cache: Vec<RectInstanceGpu>,
     global_post_processing: PostProcessSet,
     accessibility: VisualAccessibilitySettings,
     frame_index: u32,
@@ -127,6 +128,7 @@ impl PerroGraphics {
             retained_draws_cache_revision: u64::MAX,
             retained_point_particles_cache: Vec::new(),
             retained_sprites_cache: Vec::new(),
+            frame_rects_cache: Vec::new(),
             global_post_processing: PostProcessSet::new(),
             accessibility: VisualAccessibilitySettings::default(),
             frame_index: 0,
@@ -294,6 +296,9 @@ impl PerroGraphics {
                     }
                     Command2D::SetCamera { camera } => {
                         self.renderer_2d.set_camera(camera);
+                    }
+                    Command2D::DrawShape { draw } => {
+                        self.renderer_2d.queue_shape(draw);
                     }
                 },
                 RenderCommand::ThreeD(cmd_3d) => match *cmd_3d {
@@ -531,6 +536,11 @@ impl GraphicsBackend for PerroGraphics {
         self.retained_sprites_cache.clear();
         self.retained_sprites_cache
             .extend(self.renderer_2d.retained_sprites());
+        self.frame_rects_cache.clear();
+        self.frame_rects_cache
+            .extend_from_slice(self.renderer_2d.retained_rects());
+        self.frame_rects_cache
+            .extend_from_slice(self.renderer_2d.frame_shapes());
         self.resources.reset_ref_counts();
         for sprite in &self.retained_sprites_cache {
             self.resources.mark_texture_used(sprite.texture);
@@ -563,7 +573,7 @@ impl GraphicsBackend for PerroGraphics {
                 post_processing_2d: camera_2d_state.post_processing.clone(),
                 post_processing_global: self.global_post_processing.as_slice().into(),
                 accessibility: self.accessibility,
-                rects_2d: self.renderer_2d.retained_rects(),
+                rects_2d: &self.frame_rects_cache,
                 upload_2d: &upload,
                 sprites_2d: &self.retained_sprites_cache,
                 frame_dirty_bits,

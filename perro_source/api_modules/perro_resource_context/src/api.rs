@@ -1,7 +1,7 @@
 use crate::sub_apis::{
-    AnimationAPI, AnimationModule, AudioAPI, AudioModule, MaterialAPI, MaterialModule, MeshAPI,
-    MeshModule, PostProcessingAPI, SkeletonAPI, SkeletonModule, TerrainAPI, TerrainModule,
-    TextureAPI, TextureModule, VisualAccessibilityAPI,
+    AnimationAPI, AnimationModule, AudioAPI, AudioModule, Draw2DAPI, Draw2DModule, MaterialAPI,
+    MaterialModule, MeshAPI, MeshModule, PostProcessingAPI, SkeletonAPI, SkeletonModule,
+    TerrainAPI, TerrainModule, TextureAPI, TextureModule, VisualAccessibilityAPI,
 };
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2};
 
@@ -15,6 +15,7 @@ pub trait ResourceAPI:
     + SkeletonAPI
     + TerrainAPI
     + AnimationAPI
+    + Draw2DAPI
     + ViewportAPI
     + Send
     + Sync
@@ -30,6 +31,7 @@ impl<T> ResourceAPI for T where
         + SkeletonAPI
         + TerrainAPI
         + AnimationAPI
+        + Draw2DAPI
         + ViewportAPI
         + Send
         + Sync
@@ -83,6 +85,11 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceContext<'res, R> {
     #[inline]
     pub fn Animations(&self) -> AnimationModule<'_, R> {
         AnimationModule::new(self.api)
+    }
+
+    #[inline]
+    pub fn Draw2D(&self) -> Draw2DModule<'_, R> {
+        Draw2DModule::new(self.api)
     }
 
     #[inline]

@@ -1,6 +1,6 @@
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 pub use perro_particle_math::Op as ParticleExprOp3D;
-use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet};
+use perro_structs::{ColorBlindFilter, DrawShape2D, PostProcessEffect, PostProcessSet};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -482,6 +482,12 @@ pub struct Rect2DCommand {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DrawShape2DCommand {
+    pub shape: DrawShape2D,
+    pub position: [f32; 2],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Sprite2DCommand {
     pub texture: TextureID,
     pub model: [[f32; 3]; 3],
@@ -573,6 +579,9 @@ pub enum Command2D {
     },
     SetCamera {
         camera: Camera2DState,
+    },
+    DrawShape {
+        draw: DrawShape2DCommand,
     },
 }
 

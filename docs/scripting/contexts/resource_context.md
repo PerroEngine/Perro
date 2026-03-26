@@ -17,6 +17,7 @@ Accessors:
 - `res.Materials()`
 - `res.Skeletons()`
 - `res.Terrain()`
+- `res.Draw2D()`
 - Direct global post-processing methods (no accessor)
 - Direct visual accessibility methods (no accessor)
 - Direct viewport query method (no accessor)
@@ -33,6 +34,7 @@ Global macros:
 - [Materials Module](resource_modules/materials.md)
 - [Skeletons Module](resource_modules/skeletons.md)
 - [Terrain Module](resource_modules/terrain.md)
+- [Draw2D Module](resource_modules/draw_2d.md)
 - [Global Post Processing](resource_modules/post_processing.md)
 - [Visual Accessibility](resource_modules/visual_accessibility.md)
 
