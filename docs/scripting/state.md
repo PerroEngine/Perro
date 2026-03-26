@@ -30,3 +30,31 @@ pub struct PlayerState {
 ```
 
 If you need cross-script/runtime member access, put that value in `#[State]`.
+
+## Custom Struct Fields
+
+`script_vars` object injection into custom state field types is supported via `StateField`.
+
+```rust
+use perro::prelude::*;
+
+#[derive(Clone, Copy, StateField)]
+pub struct OrbitGoal {
+    pub axis: Vector3,
+}
+
+#[State]
+pub struct SpinnerState {
+    #[default = OrbitGoal { axis: Vector3::new(0.0, 1.0, 0.0) }]
+    pub orbit_goal: OrbitGoal,
+}
+```
+
+If a custom field type inside `#[State]` does not implement `StateField`, script compilation fails.
+For custom structs, derive it directly: `#[derive(StateField)]`.
+
+Scene side:
+
+```text
+script_vars = { orbit_goal: { axis: (0.0, 0.0, 1.0) } }
+```

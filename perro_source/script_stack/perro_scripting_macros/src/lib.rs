@@ -2,7 +2,8 @@ use proc_macro::TokenStream;
 use quote::ToTokens;
 use quote::quote;
 use syn::{
-    Expr, Field, Fields, ItemStruct, Meta, Result, parse::Parse, parse_macro_input, parse_quote,
+    Data, DeriveInput, Expr, Field, Fields, ItemStruct, Meta, Result, parse::Parse,
+    parse_macro_input, parse_quote,
 };
 
 struct EmptyAttrArgs;
@@ -43,6 +44,69 @@ pub fn State(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     };
+    expanded.into()
+}
+
+#[proc_macro_derive(StateField)]
+pub fn derive_state_field(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let ident = input.ident;
+    let generics = input.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let Data::Struct(data_struct) = input.data else {
+        return syn::Error::new_spanned(
+            ident,
+            "`StateField` derive only supports structs with named fields",
+        )
+        .into_compile_error()
+        .into();
+    };
+
+    let Fields::Named(fields) = data_struct.fields else {
+        return syn::Error::new_spanned(
+            ident,
+            "`StateField` derive only supports structs with named fields",
+        )
+        .into_compile_error()
+        .into();
+    };
+
+    let mut from_fields = Vec::new();
+    let mut to_fields = Vec::new();
+
+    for field in fields.named {
+        let Some(field_ident) = field.ident else {
+            continue;
+        };
+        let field_ty = field.ty;
+        let field_key = field_ident.to_string();
+
+        from_fields.push(quote! {
+            #field_ident: <#field_ty as ::perro::variant::StateField>::from_variant(obj.get(#field_key)?)?
+        });
+        to_fields.push(quote! {
+            out.insert(::std::sync::Arc::<str>::from(#field_key), ::perro::variant::StateField::to_variant(&self.#field_ident));
+        });
+    }
+
+    let expanded = quote! {
+        impl #impl_generics ::perro::variant::StateField for #ident #ty_generics #where_clause {
+            fn from_variant(value: &::perro::variant::Variant) -> ::core::option::Option<Self> {
+                let obj = value.as_object()?;
+                Some(Self {
+                    #(#from_fields,)*
+                })
+            }
+
+            fn to_variant(&self) -> ::perro::variant::Variant {
+                let mut out = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro::variant::Variant>::new();
+                #(#to_fields)*
+                ::perro::variant::Variant::Object(out)
+            }
+        }
+    };
+
     expanded.into()
 }
 

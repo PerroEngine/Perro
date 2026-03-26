@@ -8,7 +8,7 @@ mod skeleton;
 mod state;
 mod terrain;
 mod texture;
-mod visual_accessibility;
 mod viewport;
+mod visual_accessibility;
 
 pub use core::RuntimeResourceApi;

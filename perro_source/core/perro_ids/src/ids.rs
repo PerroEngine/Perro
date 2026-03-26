@@ -3,7 +3,6 @@
 //! IDs are created by their owning arena/manager; slot reuse bumps generation so stale IDs are invalid.
 
 use std::fmt;
-use std::hash::Hash;
 
 pub const fn string_to_u64(s: &str) -> u64 {
     let mut hash: u64 = 0xA0761D6478BD642F;

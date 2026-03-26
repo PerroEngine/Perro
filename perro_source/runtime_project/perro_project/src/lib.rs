@@ -831,11 +831,47 @@ type SelfNodeType = Node2D;
 // State is data-only. Keeping state separate from behavior makes cross-calls memory safe
 // and helps the runtime handle recursion/re-entrancy without borrowing issues.
 
+// Custom structs used in #[State] should derive StateField.
+// Without StateField, scene/runtime variant conversion for that field type will not compile.
+#[derive(Clone, Copy, StateField)]
+pub struct OrbitGoal {
+    pub axis: Vector3,
+}
+
+impl Default for OrbitGoal {
+    fn default() -> Self {
+        Self {
+            axis: Vector3::new(0.0, 1.0, 0.0),
+        }
+    }
+}
+
+#[derive(Clone, Copy, StateField)]
+pub struct MotionSample {
+    pub velocity: Vector3,
+    pub drift: Vector3,
+}
+
+impl Default for MotionSample {
+    fn default() -> Self {
+        Self {
+            velocity: Vector3::ZERO,
+            drift: Vector3::new(0.0, 0.0, 0.25),
+        }
+    }
+}
+
 // Define state struct with #[State] and use #[default = _] for default values on initialization.
 #[State]
 pub struct ExampleState {
     #[default = 5]
     count: i32,
+
+    #[default = OrbitGoal::default()]
+    orbit_goal: OrbitGoal,
+
+    #[default = MotionSample::default()]
+    motion_sample: MotionSample,
 }
 
 const SPEED: f32 = 5.0;

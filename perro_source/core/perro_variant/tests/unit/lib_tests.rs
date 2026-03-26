@@ -1,7 +1,10 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use perro_ids::{NodeID, TextureID};
-use perro_structs::{Vector2, Vector3};
+use perro_structs::{
+    ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2, Vector3,
+    VisualAccessibilitySettings,
+};
 
 use super::*;
 
@@ -132,21 +135,21 @@ fn test_variant_exact_numeric_accessors() {
 #[test]
 fn test_variant_as_node() {
     let node = NodeID::from_u32(123);
-    let v = Variant::NodeID(node);
+    let v = Variant::from(node);
     assert_eq!(v.as_node(), Some(node));
 }
 
 #[test]
 fn test_variant_as_texture() {
     let tex = TextureID::from_u32(456);
-    let v = Variant::TextureID(tex);
+    let v = Variant::from(tex);
     assert_eq!(v.as_texture(), Some(tex));
 }
 
 #[test]
 fn test_variant_as_vec2() {
     let vec = Vector2 { x: 1.0, y: 2.0 };
-    let v = Variant::Vector2(vec);
+    let v = Variant::from(vec);
     assert_eq!(v.as_vec2(), Some(vec));
 }
 
@@ -157,8 +160,24 @@ fn test_variant_as_vec3() {
         y: 2.0,
         z: 3.0,
     };
-    let v = Variant::Vector3(vec);
+    let v = Variant::from(vec);
     assert_eq!(v.as_vec3(), Some(vec));
+}
+
+#[test]
+fn test_variant_as_post_process_set() {
+    let mut set = PostProcessSet::new();
+    set.add_unnamed(PostProcessEffect::Blur { strength: 1.5 });
+    let v = Variant::from(set.clone());
+    assert_eq!(v.as_post_process_set(), Some(&set));
+}
+
+#[test]
+fn test_variant_as_visual_accessibility() {
+    let settings =
+        VisualAccessibilitySettings::new().with_color_blind(ColorBlindFilter::Protan, 0.7);
+    let v = Variant::from(settings);
+    assert_eq!(v.as_visual_accessibility_settings(), Some(settings));
 }
 
 #[test]
