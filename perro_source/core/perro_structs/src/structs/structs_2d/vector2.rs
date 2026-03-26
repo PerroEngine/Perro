@@ -148,10 +148,17 @@ impl Vector2 {
         self.cross(other).atan2(self.dot(other))
     }
 
-    /// Linear interpolation between two vectors
+    /// Returns an interpolated copy between this vector and `to`.
     #[inline]
-    pub fn lerp(a: Self, b: Self, t: f32) -> Self {
-        Self::from_glam(a.to_glam().lerp(b.to_glam(), t))
+    pub fn lerped(self, to: Self, t: f32) -> Self {
+        Self::from_glam(self.to_glam().lerp(to.to_glam(), t))
+    }
+
+    /// Linearly interpolates this vector toward `to` in place.
+    #[inline]
+    pub fn lerp(&mut self, to: Self, t: f32) -> &mut Self {
+        *self = self.lerped(to, t);
+        self
     }
 }
 

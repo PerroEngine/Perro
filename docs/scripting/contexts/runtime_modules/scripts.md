@@ -13,8 +13,10 @@ Attach/detach:
 
 Self-state access (your own script):
 
-- `with_state!(ctx, StateType, self_node_id, |state| -> V { ... }) -> Option<V>`
+- `with_state!(ctx, StateType, self_node_id, |state| -> V { ... }) -> V`
 - `with_state_mut!(ctx, StateType, self_node_id, |state| -> V { ... }) -> Option<V>`
+
+`with_state!` returns `V::default()` if the node/state is missing or type-mismatched.
 
 Use this for your own script because:
 

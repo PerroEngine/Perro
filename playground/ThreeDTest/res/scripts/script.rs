@@ -118,6 +118,6 @@ methods!({
         self_id: NodeID,
     ) -> f32 {
         let _ = (res, ipt);
-        with_state!(ctx, ExampleState, self_id, |state| { state.speed }).unwrap_or_default()
+        with_state!(ctx, ExampleState, self_id, |state| { state.speed })
     }
 });

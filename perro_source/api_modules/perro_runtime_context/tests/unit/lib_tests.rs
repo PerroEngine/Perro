@@ -216,11 +216,11 @@ impl NodeAPI for DummyRuntime {
 }
 
 impl ScriptAPI for DummyRuntime {
-    fn with_state<T: 'static, V, F>(&mut self, _script: NodeID, f: F) -> Option<V>
+    fn with_state<T: 'static, V: Default, F>(&mut self, _script: NodeID, f: F) -> V
     where
         F: FnOnce(&T) -> V,
     {
-        self.state.downcast_ref::<T>().map(f)
+        self.state.downcast_ref::<T>().map(f).unwrap_or_default()
     }
 
     fn with_state_mut<T: 'static, V, F>(&mut self, _script: NodeID, f: F) -> Option<V>
@@ -365,13 +365,13 @@ fn script_macros_typecheck_and_forward() {
     let id = NodeID::new(42);
 
     let initial = with_state!(&mut ctx, i32, id, |state| *state);
-    assert_eq!(initial, Some(5));
+    assert_eq!(initial, 5);
 
     let _ = with_state_mut!(&mut ctx, i32, id, |state| {
         *state += 7;
     });
     let updated = with_state!(&mut ctx, i32, id, |state| *state);
-    assert_eq!(updated, Some(12));
+    assert_eq!(updated, 12);
 
     let _new_node = create_node!(&mut ctx, Node2D);
     with_node_mut!(&mut ctx, Node2D, id, |_node| {});

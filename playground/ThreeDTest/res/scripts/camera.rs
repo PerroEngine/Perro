@@ -36,10 +36,18 @@ lifecycle!({
         //enable_colorblind_filter!(res, ColorBlindFilter::Deuteran, 0.8);
         //enable_colorblind_filter!(res, ColorBlindFilter::Tritan, 0.8);
         //enable_colorblind_filter!(res, ColorBlindFilter::Achroma, 0.8);
-        let (mesh_id, print_name) = with_state!(ctx, CameraState, node, |state| (state.mesh, state.print_name.clone())).unwrap_or_else(|| {
-            println!("Camera node {} has no mesh exposed variable, defaulting to self", node);
-            (node, String::new())
+        let (mesh_id, print_name) = with_state!(ctx, CameraState, node, |state| {
+            (state.mesh, state.print_name.clone())
         });
+        let mesh_id = if mesh_id.is_nil() {
+            println!(
+                "Camera node {} has no mesh exposed variable, defaulting to self",
+                node
+            );
+            node
+        } else {
+            mesh_id
+        };
 
         let name = get_node_name!(ctx, mesh_id);
         println!("Camera node {} has external mesh exposed variable named '{:?}'", node, name);

@@ -100,6 +100,12 @@ impl Quaternion {
         Self::from_quat(self.to_quat() * rhs.to_quat())
     }
 
+    /// Dot product between this quaternion and another.
+    #[inline]
+    pub fn dot(self, rhs: Self) -> f32 {
+        self.to_quat().dot(rhs.to_quat())
+    }
+
     /// Rotates a `Vector3` by this quaternion.
     ///
     /// # Example
@@ -117,7 +123,7 @@ impl Quaternion {
         Vector3::new(out.x, out.y, out.z)
     }
 
-    /// Spherical interpolation between two quaternions.
+    /// Returns an interpolated copy between this quaternion and `to`.
     ///
     /// # Example
     ///
@@ -126,13 +132,20 @@ impl Quaternion {
     ///
     /// let a = Quaternion::IDENTITY;
     /// let b = Quaternion::new(0.0, 1.0, 0.0, 0.0).normalized();
-    /// let mid = a.slerp(b, 0.5);
+    /// let mid = a.slerped(b, 0.5);
     /// let len2 = mid.x * mid.x + mid.y * mid.y + mid.z * mid.z + mid.w * mid.w;
     /// assert!((len2 - 1.0).abs() < 1e-5);
     /// ```
     #[inline]
-    pub fn slerp(self, to: Self, t: f32) -> Self {
+    pub fn slerped(self, to: Self, t: f32) -> Self {
         Self::from_quat(self.to_quat().slerp(to.to_quat(), t))
+    }
+
+    /// Spherically interpolates this quaternion toward `to` in place.
+    #[inline]
+    pub fn slerp(&mut self, to: Self, t: f32) -> &mut Self {
+        *self = self.slerped(to, t);
+        self
     }
 
     /// Builds a quaternion that points local -Z toward `direction` while keeping `up` as close as possible.

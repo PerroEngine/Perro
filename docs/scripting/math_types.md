@@ -20,7 +20,8 @@ Methods:
 - `angle_to(other)`
 - `dot(rhs)`, `cross(rhs)`
 - `length()`, `length_squared()`, `normalized()`
-- `lerp(a, b, t)`
+- `lerped(to, t)`
+- `lerp(to, t)`
 
 ## Vector3
 
@@ -43,7 +44,8 @@ Methods:
 - `project_on(onto)`
 - `dot(rhs)`, `cross(rhs)`
 - `length()`, `length_squared()`, `normalized()`
-- `lerp(a, b, t)`
+- `lerped(to, t)`
+- `lerp(to, t)`
 
 ## Quaternion
 
@@ -57,13 +59,14 @@ let q = Quaternion::looking_at(
 
 let forward = q.rotate_vector3(Vector3::new(0.0, 0.0, -1.0));
 
-let blended = Quaternion::IDENTITY.slerp(q, 0.5);
+let blended = Quaternion::IDENTITY.slerped(q, 0.5);
 ```
 
 Methods:
 - `looking_at(direction, up)`
 - `look_at(direction, up)`
 - `rotate_vector3(v)`
+- `slerped(to, t)`
 - `slerp(to, t)`
 - `inverse()`, `normalized()`, `normalize()`
 - `mul_quat(rhs)`

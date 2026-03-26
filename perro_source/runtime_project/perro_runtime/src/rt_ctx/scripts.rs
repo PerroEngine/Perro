@@ -144,7 +144,7 @@ impl Runtime {
 }
 
 impl ScriptAPI for Runtime {
-    fn with_state<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
+    fn with_state<T: 'static, V: Default, F>(&mut self, script_id: NodeID, f: F) -> V
     where
         F: FnOnce(&T) -> V,
     {
@@ -153,9 +153,10 @@ impl ScriptAPI for Runtime {
         {
             return self
                 .scripts
-                .with_state_scheduled(instance_index, script_id, f);
+                .with_state_scheduled(instance_index, script_id, f)
+                .unwrap_or_default();
         }
-        self.scripts.with_state(script_id, f)
+        self.scripts.with_state(script_id, f).unwrap_or_default()
     }
 
     fn with_state_mut<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>

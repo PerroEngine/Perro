@@ -895,7 +895,7 @@ lifecycle!({
         // with_state_mut! gives mutable state access; it can mutate and optionally return data.
         let count = with_state!(ctx, ExampleState, node, |state| {
             state.count
-        }).unwrap_or_default();
+        });
         log_info!(count);
     }
 

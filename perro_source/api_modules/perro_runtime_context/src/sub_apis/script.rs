@@ -100,7 +100,7 @@ impl IntoScriptMemberID for &String {
 }
 
 pub trait ScriptAPI {
-    fn with_state<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
+    fn with_state<T: 'static, V: Default, F>(&mut self, script_id: NodeID, f: F) -> V
     where
         F: FnOnce(&T) -> V;
     fn with_state_mut<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
@@ -132,7 +132,7 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
         Self { rt }
     }
 
-    pub fn with_state<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
+    pub fn with_state<T: 'static, V: Default, F>(&mut self, script_id: NodeID, f: F) -> V
     where
         F: FnOnce(&T) -> V,
     {
@@ -209,6 +209,7 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
 /// These macros provide typed access to script state through closure-scoped borrows.
 ///
 /// Typed read access to script state through a closure.
+/// Returns `V::default()` if `id` is invalid or state type does not match `state_ty`.
 ///
 /// Internals:
 /// - The runtime resolves `script_id`, downcasts to `state_ty`, then calls your closure.
