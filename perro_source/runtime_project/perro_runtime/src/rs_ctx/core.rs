@@ -18,6 +18,7 @@ pub struct RuntimeResourceApi {
     pub(super) static_animation_lookup: Option<StaticAnimationLookup>,
     pub(crate) terrain_store: Arc<Mutex<TerrainStore>>,
     pub(super) skeleton_bones_cache: Mutex<HashMap<String, Vec<perro_nodes::skeleton_3d::Bone3D>>>,
+    pub(super) viewport_size: Mutex<(u32, u32)>,
 }
 
 impl RuntimeResourceApi {
@@ -36,7 +37,16 @@ impl RuntimeResourceApi {
             static_animation_lookup,
             terrain_store,
             skeleton_bones_cache: Mutex::new(HashMap::new()),
+            viewport_size: Mutex::new((1, 1)),
         })
+    }
+
+    pub(crate) fn set_viewport_size(&self, width: u32, height: u32) {
+        let mut viewport = self
+            .viewport_size
+            .lock()
+            .expect("resource api viewport mutex poisoned");
+        *viewport = (width.max(1), height.max(1));
     }
 
     pub(crate) fn drain_commands(&self, out: &mut Vec<RenderCommand>) {

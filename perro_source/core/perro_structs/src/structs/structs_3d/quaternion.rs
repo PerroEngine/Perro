@@ -1,5 +1,6 @@
 use super::vector3::Vector3;
 use glam::{Mat3, Quat, Vec3};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// A quaternion representing rotation in 3D space.
 ///
@@ -256,5 +257,149 @@ impl From<Quaternion> for Quat {
 impl Default for Quaternion {
     fn default() -> Self {
         Self::IDENTITY
+    }
+}
+
+impl Add for Quaternion {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        Self::new(
+            self.x + rhs.x,
+            self.y + rhs.y,
+            self.z + rhs.z,
+            self.w + rhs.w,
+        )
+    }
+}
+
+impl AddAssign for Quaternion {
+    #[inline]
+    fn add_assign(&mut self, rhs: Self) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+        self.z += rhs.z;
+        self.w += rhs.w;
+    }
+}
+
+impl Sub for Quaternion {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::new(
+            self.x - rhs.x,
+            self.y - rhs.y,
+            self.z - rhs.z,
+            self.w - rhs.w,
+        )
+    }
+}
+
+impl SubAssign for Quaternion {
+    #[inline]
+    fn sub_assign(&mut self, rhs: Self) {
+        self.x -= rhs.x;
+        self.y -= rhs.y;
+        self.z -= rhs.z;
+        self.w -= rhs.w;
+    }
+}
+
+impl Mul for Quaternion {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: Self) -> Self::Output {
+        self.mul_quat(rhs)
+    }
+}
+
+impl MulAssign for Quaternion {
+    #[inline]
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = self.mul_quat(rhs);
+    }
+}
+
+impl Mul<f32> for Quaternion {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: f32) -> Self::Output {
+        Self::new(self.x * rhs, self.y * rhs, self.z * rhs, self.w * rhs)
+    }
+}
+
+impl Mul<Vector3> for Quaternion {
+    type Output = Vector3;
+
+    #[inline]
+    fn mul(self, rhs: Vector3) -> Self::Output {
+        self.rotate_vector3(rhs)
+    }
+}
+
+impl MulAssign<f32> for Quaternion {
+    #[inline]
+    fn mul_assign(&mut self, rhs: f32) {
+        self.x *= rhs;
+        self.y *= rhs;
+        self.z *= rhs;
+        self.w *= rhs;
+    }
+}
+
+impl Div for Quaternion {
+    type Output = Self;
+
+    #[inline]
+    fn div(self, rhs: Self) -> Self::Output {
+        Self::new(
+            self.x / rhs.x,
+            self.y / rhs.y,
+            self.z / rhs.z,
+            self.w / rhs.w,
+        )
+    }
+}
+
+impl DivAssign for Quaternion {
+    #[inline]
+    fn div_assign(&mut self, rhs: Self) {
+        self.x /= rhs.x;
+        self.y /= rhs.y;
+        self.z /= rhs.z;
+        self.w /= rhs.w;
+    }
+}
+
+impl Div<f32> for Quaternion {
+    type Output = Self;
+
+    #[inline]
+    fn div(self, rhs: f32) -> Self::Output {
+        Self::new(self.x / rhs, self.y / rhs, self.z / rhs, self.w / rhs)
+    }
+}
+
+impl DivAssign<f32> for Quaternion {
+    #[inline]
+    fn div_assign(&mut self, rhs: f32) {
+        self.x /= rhs;
+        self.y /= rhs;
+        self.z /= rhs;
+        self.w /= rhs;
+    }
+}
+
+impl Neg for Quaternion {
+    type Output = Self;
+
+    #[inline]
+    fn neg(self) -> Self::Output {
+        Self::new(-self.x, -self.y, -self.z, -self.w)
     }
 }

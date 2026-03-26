@@ -727,7 +727,9 @@ impl MouseState {
 
     #[inline]
     pub fn position(&self) -> Vector2 {
-        Vector2::new(self.position_x, self.position_y)
+        let x = (self.position_x / self.viewport_width).clamp(0.0, 1.0);
+        let y = 1.0 - (self.position_y / self.viewport_height).clamp(0.0, 1.0);
+        Vector2::new(x, y)
     }
 
     #[inline]

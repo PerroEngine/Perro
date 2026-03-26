@@ -362,6 +362,12 @@ impl Gpu {
             || upload_2d.draw_count > 0
             || !sprites_2d.is_empty();
 
+        let three_d_content_changed = self.last_prepare_3d_camera.as_ref() != Some(&camera_3d)
+            || self.last_prepare_3d_lighting.as_ref() != Some(lighting_3d)
+            || self.last_prepare_3d_draws_revision != draws_3d_revision
+            || self.last_prepare_3d_width != self.config.width
+            || self.last_prepare_3d_height != self.config.height;
+
         let needs_3d = !draws_3d.is_empty();
         let needs_particles_3d = !point_particles_3d.is_empty();
 
@@ -370,15 +376,10 @@ impl Gpu {
             || has(DIRTY_LIGHTS_3D)
             || needs_3d
             || needs_particles_3d
-            || post_requested;
+            || post_requested
+            || three_d_content_changed;
 
         let needs_3d_particles_path = has(DIRTY_PARTICLES_3D) || needs_particles_3d;
-
-        let three_d_content_changed = self.last_prepare_3d_camera.as_ref() != Some(&camera_3d)
-            || self.last_prepare_3d_lighting.as_ref() != Some(lighting_3d)
-            || self.last_prepare_3d_draws_revision != draws_3d_revision
-            || self.last_prepare_3d_width != self.config.width
-            || self.last_prepare_3d_height != self.config.height;
 
         let prepare_2d_start = Instant::now();
         if needs_2d {

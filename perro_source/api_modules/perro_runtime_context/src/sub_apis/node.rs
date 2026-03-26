@@ -35,6 +35,52 @@ pub trait IntoNodeTags {
     fn into_tag_ids(self) -> Vec<TagID>;
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChildSelector {
+    Index(usize),
+    Name(Cow<'static, str>),
+}
+
+pub trait IntoChildSelector {
+    fn into_child_selector(self) -> ChildSelector;
+}
+
+impl IntoChildSelector for usize {
+    fn into_child_selector(self) -> ChildSelector {
+        ChildSelector::Index(self)
+    }
+}
+
+impl IntoChildSelector for &str {
+    fn into_child_selector(self) -> ChildSelector {
+        ChildSelector::Name(Cow::Owned(self.to_string()))
+    }
+}
+
+impl IntoChildSelector for String {
+    fn into_child_selector(self) -> ChildSelector {
+        ChildSelector::Name(Cow::Owned(self))
+    }
+}
+
+impl IntoChildSelector for &String {
+    fn into_child_selector(self) -> ChildSelector {
+        ChildSelector::Name(Cow::Owned(self.clone()))
+    }
+}
+
+impl IntoChildSelector for Cow<'static, str> {
+    fn into_child_selector(self) -> ChildSelector {
+        ChildSelector::Name(self)
+    }
+}
+
+impl IntoChildSelector for &Cow<'static, str> {
+    fn into_child_selector(self) -> ChildSelector {
+        ChildSelector::Name(self.clone())
+    }
+}
+
 impl IntoNodeTags for TagID {
     fn into_tag_ids(self) -> Vec<TagID> {
         vec![self]
@@ -258,6 +304,61 @@ pub trait NodeAPI {
     /// Returns children ids if node exists.
     fn get_node_children_ids(&mut self, node_id: NodeID) -> Option<Vec<NodeID>>;
 
+    /// Returns direct children ids. Invalid parent returns empty vec.
+    fn get_children(&mut self, node_id: NodeID) -> Vec<NodeID> {
+        self.get_node_children_ids(node_id).unwrap_or_default()
+    }
+
+    /// Returns direct child by index.
+    fn get_child_at(&mut self, parent_id: NodeID, index: usize) -> Option<NodeID> {
+        self.get_node_children_ids(parent_id)
+            .and_then(|children| children.into_iter().nth(index))
+    }
+
+    /// Returns first direct child matching name.
+    fn get_child_by_name<S>(&mut self, parent_id: NodeID, name: S) -> Option<NodeID>
+    where
+        S: AsRef<str>,
+    {
+        let target = name.as_ref();
+        for child_id in self.get_children(parent_id) {
+            if let Some(child_name) = self.get_node_name(child_id)
+                && child_name.as_ref() == target
+            {
+                return Some(child_id);
+            }
+        }
+        None
+    }
+
+    /// Returns all direct children matching name.
+    fn get_children_by_name<S>(&mut self, parent_id: NodeID, name: S) -> Vec<NodeID>
+    where
+        S: AsRef<str>,
+    {
+        let target = name.as_ref();
+        let mut out = Vec::new();
+        for child_id in self.get_children(parent_id) {
+            if let Some(child_name) = self.get_node_name(child_id)
+                && child_name.as_ref() == target
+            {
+                out.push(child_id);
+            }
+        }
+        out
+    }
+
+    /// Returns direct child selected by index or name.
+    fn get_child<T>(&mut self, parent_id: NodeID, selector: T) -> Option<NodeID>
+    where
+        T: IntoChildSelector,
+    {
+        match selector.into_child_selector() {
+            ChildSelector::Index(index) => self.get_child_at(parent_id, index),
+            ChildSelector::Name(name) => self.get_child_by_name(parent_id, name),
+        }
+    }
+
     /// Returns concrete runtime node type if node exists.
     fn get_node_type(&mut self, node_id: NodeID) -> Option<NodeType>;
 
@@ -416,6 +517,55 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 
     pub fn get_node_children_ids(&mut self, node_id: NodeID) -> Option<Vec<NodeID>> {
         self.rt.get_node_children_ids(node_id)
+    }
+
+    pub fn get_children(&mut self, node_id: NodeID) -> Vec<NodeID> {
+        self.get_node_children_ids(node_id).unwrap_or_default()
+    }
+
+    pub fn get_child_at(&mut self, parent_id: NodeID, index: usize) -> Option<NodeID> {
+        self.get_children(parent_id).into_iter().nth(index)
+    }
+
+    pub fn get_child_by_name<S>(&mut self, parent_id: NodeID, name: S) -> Option<NodeID>
+    where
+        S: AsRef<str>,
+    {
+        let target = name.as_ref();
+        for child_id in self.get_children(parent_id) {
+            if let Some(child_name) = self.get_node_name(child_id)
+                && child_name.as_ref() == target
+            {
+                return Some(child_id);
+            }
+        }
+        None
+    }
+
+    pub fn get_children_by_name<S>(&mut self, parent_id: NodeID, name: S) -> Vec<NodeID>
+    where
+        S: AsRef<str>,
+    {
+        let target = name.as_ref();
+        let mut out = Vec::new();
+        for child_id in self.get_children(parent_id) {
+            if let Some(child_name) = self.get_node_name(child_id)
+                && child_name.as_ref() == target
+            {
+                out.push(child_id);
+            }
+        }
+        out
+    }
+
+    pub fn get_child<T>(&mut self, parent_id: NodeID, selector: T) -> Option<NodeID>
+    where
+        T: IntoChildSelector,
+    {
+        match selector.into_child_selector() {
+            ChildSelector::Index(index) => self.get_child_at(parent_id, index),
+            ChildSelector::Name(name) => self.get_child_by_name(parent_id, name),
+        }
     }
 
     pub fn get_node_type(&mut self, node_id: NodeID) -> Option<NodeType> {
@@ -719,6 +869,30 @@ macro_rules! get_node_parent_id {
 macro_rules! get_node_children_ids {
     ($ctx:expr, $id:expr) => {
         $ctx.Nodes().get_node_children_ids($id)
+    };
+}
+
+/// Gets direct children ids; invalid parent returns empty vec.
+/// Usage: `get_children!(ctx, parent_id) -> Vec<NodeID>`.
+#[macro_export]
+macro_rules! get_children {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_children($id)
+    };
+}
+
+/// Gets one direct child by index or name, or many by name.
+/// Usage:
+/// - `get_child!(ctx, parent_id, 0usize) -> Option<NodeID>`
+/// - `get_child!(ctx, parent_id, "Player") -> Option<NodeID>`
+/// - `get_child!(ctx, parent_id, all["Enemy"]) -> Vec<NodeID>`
+#[macro_export]
+macro_rules! get_child {
+    ($ctx:expr, $id:expr, all[$name:expr] $(,)?) => {
+        $ctx.Nodes().get_children_by_name($id, $name)
+    };
+    ($ctx:expr, $id:expr, $selector:expr $(,)?) => {
+        $ctx.Nodes().get_child($id, $selector)
     };
 }
 

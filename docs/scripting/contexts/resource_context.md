@@ -19,6 +19,10 @@ Accessors:
 - `res.Terrain()`
 - Direct global post-processing methods (no accessor)
 - Direct visual accessibility methods (no accessor)
+- Direct viewport query method (no accessor)
+
+Global macros:
+- `get_viewport_size!(res) -> Vector2`
 
 ## Resource Modules
 
@@ -58,6 +62,7 @@ let music = audio_bus!("music");
 let _ = audio_set_master_volume!(res, 1.0);
 let _ = audio_bus_set_volume!(res, music, 0.7);
 let _ = audio_bus_set_speed!(res, music, 1.0);
+let viewport = get_viewport_size!(res);
 
 let _ = audio_play!(
     res,

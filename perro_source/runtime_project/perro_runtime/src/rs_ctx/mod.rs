@@ -9,5 +9,6 @@ mod state;
 mod terrain;
 mod texture;
 mod visual_accessibility;
+mod viewport;
 
 pub use core::RuntimeResourceApi;

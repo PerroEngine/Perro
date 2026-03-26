@@ -3,7 +3,7 @@ use crate::sub_apis::{
     MeshModule, PostProcessingAPI, SkeletonAPI, SkeletonModule, TerrainAPI, TerrainModule,
     TextureAPI, TextureModule, VisualAccessibilityAPI,
 };
-use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet};
+use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2};
 
 pub trait ResourceAPI:
     PostProcessingAPI
@@ -15,6 +15,7 @@ pub trait ResourceAPI:
     + SkeletonAPI
     + TerrainAPI
     + AnimationAPI
+    + ViewportAPI
     + Send
     + Sync
 {
@@ -29,9 +30,14 @@ impl<T> ResourceAPI for T where
         + SkeletonAPI
         + TerrainAPI
         + AnimationAPI
+        + ViewportAPI
         + Send
         + Sync
 {
+}
+
+pub trait ViewportAPI {
+    fn viewport_size(&self) -> Vector2;
 }
 
 pub struct ResourceContext<'res, R: ResourceAPI + ?Sized> {
@@ -123,4 +129,16 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceContext<'res, R> {
     pub fn clear_global_post_processing(&self) {
         self.api.clear_global_post_processing();
     }
+
+    #[inline]
+    pub fn viewport_size(&self) -> Vector2 {
+        self.api.viewport_size()
+    }
+}
+
+#[macro_export]
+macro_rules! get_viewport_size {
+    ($res:expr) => {
+        $res.viewport_size()
+    };
 }

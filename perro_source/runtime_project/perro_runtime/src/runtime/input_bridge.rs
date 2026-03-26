@@ -36,6 +36,7 @@ impl Runtime {
     #[inline]
     pub fn set_viewport_size(&mut self, width: u32, height: u32) {
         self.input.set_viewport_size(width, height);
+        self.resource_api.set_viewport_size(width, height);
     }
 
     #[inline]
