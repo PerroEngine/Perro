@@ -12,9 +12,25 @@ use winit::{
 
 const DEFAULT_FPS_CAP: f32 = 60.0;
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
+const FALLBACK_FIXED_TIMESTEP_SECONDS: f32 = 1.0 / 60.0;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 8;
 const LOG_INTERVAL_SECONDS: f32 = 2.5;
 const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
+
+#[inline]
+fn normalize_fixed_timestep_seconds(value: Option<f32>) -> Option<f32> {
+    let raw = value?;
+    if !raw.is_finite() || raw <= 0.0 {
+        return None;
+    }
+    // New semantics: values >= 1.0 are treated as Hz.
+    // Backward compatibility: sub-second values remain seconds-per-step.
+    if raw < 1.0 {
+        Some(raw)
+    } else {
+        Some(1.0 / raw)
+    }
+}
 
 #[inline]
 fn target_frame_duration(fps_cap: f32) -> Option<Duration> {
@@ -121,12 +137,22 @@ struct RunnerState<B: GraphicsBackend> {
 impl<B: GraphicsBackend> RunnerState<B> {
     fn new(app: App<B>, title: &str, fps_cap: f32, fixed_timestep: Option<f32>) -> Self {
         let now = Instant::now();
+        let normalized_fixed_timestep = normalize_fixed_timestep_seconds(fixed_timestep);
+        if let Some(raw) = fixed_timestep
+            && raw >= 1.0
+            && let Some(step) = normalized_fixed_timestep
+        {
+            println!(
+                "[runtime] target_fixed_update interpreted as Hz: {raw} -> step {:.6}s",
+                step
+            );
+        }
         Self {
             app,
             title: title.to_owned(),
             window: None,
             fps_cap,
-            fixed_timestep: fixed_timestep.filter(|v| *v > 0.0),
+            fixed_timestep: normalized_fixed_timestep,
             fixed_accumulator: 0.0,
             last_frame_start: now,
             last_frame_end: now,
@@ -193,7 +219,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
         let elapsed_since_start = frame_start.duration_since(self.run_start);
         self.app.set_elapsed_time(elapsed_since_start.as_secs_f32());
-        let mut simulated_delta_seconds = frame_delta.as_secs_f64();
+        let simulated_delta_seconds;
 
         let idle_duration = frame_start.saturating_duration_since(self.last_frame_end);
         let work_start = Instant::now();
@@ -207,21 +233,27 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let input_poll_duration = input_poll_start.elapsed();
         let fixed_start = Instant::now();
 
-        if let Some(step) = self.fixed_timestep {
+        let effective_fixed_step = self
+            .fixed_timestep
+            .unwrap_or(FALLBACK_FIXED_TIMESTEP_SECONDS);
+        {
             self.fixed_accumulator += frame_delta.as_secs_f32();
             let mut steps = 0u32;
-            while self.fixed_accumulator >= step && steps < MAX_FIXED_STEPS_PER_FRAME {
+            while self.fixed_accumulator >= effective_fixed_step && steps < MAX_FIXED_STEPS_PER_FRAME
+            {
                 let update_start = Instant::now();
-                self.app.fixed_update_runtime(step);
+                self.app.fixed_update_runtime(effective_fixed_step);
                 runtime_update_duration += update_start.elapsed();
-                self.fixed_accumulator -= step;
+                self.fixed_accumulator -= effective_fixed_step;
                 steps += 1;
             }
-            if steps == MAX_FIXED_STEPS_PER_FRAME && self.fixed_accumulator >= step {
+            if steps == MAX_FIXED_STEPS_PER_FRAME
+                && self.fixed_accumulator >= effective_fixed_step
+            {
                 // Drop excess accumulated time to avoid spiral-of-death behavior.
                 self.fixed_accumulator = 0.0;
             }
-            simulated_delta_seconds = step as f64 * steps as f64;
+            simulated_delta_seconds = effective_fixed_step as f64 * steps as f64;
         }
 
         let fixed_duration = fixed_start.elapsed();

@@ -15,7 +15,6 @@ Each node with that script gets its own state instance, and those fields are wha
 You can keep normal Rust items outside state:
 
 - `const` values
-- variables not needing to be accessed by the engine or other scripts
 
 ## Example
 

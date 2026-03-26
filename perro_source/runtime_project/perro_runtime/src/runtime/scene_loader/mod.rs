@@ -3,7 +3,6 @@ use perro_ids::NodeID;
 use perro_ids::ScriptMemberID;
 use perro_io::{ProjectRoot, set_project_root};
 use perro_variant::Variant;
-use std::collections::HashMap;
 #[cfg(feature = "profile")]
 use std::time::{Duration, Instant};
 
@@ -65,15 +64,11 @@ impl Runtime {
             },
         };
 
-        let script_paths_by_node: HashMap<NodeID, String> = merged
-            .script_nodes
-            .iter()
-            .map(|it| (it.node_id, it.script_path.clone()))
-            .collect();
         self.rebuild_internal_node_schedules();
         self.rebuild_node_tag_index();
         self.attach_scene_scripts(merged.script_nodes)?;
-        debug_print_scene_load_from_root(self, path, merged.scene_root, &script_paths_by_node);
+        #[cfg(not(feature = "profile"))]
+        let _ = path;
         Ok(merged.scene_root)
     }
 
@@ -229,11 +224,6 @@ impl Runtime {
                 }
             },
         }
-        let script_paths_by_node: HashMap<NodeID, String> = merged
-            .script_nodes
-            .iter()
-            .map(|it| (it.node_id, it.script_path.clone()))
-            .collect();
         self.rebuild_internal_node_schedules();
         self.rebuild_node_tag_index();
         self.attach_scene_scripts(merged.script_nodes)?;
@@ -259,58 +249,9 @@ impl Runtime {
             fmt_duration(stats.parse),
             as_us(stats.node_insert),
         );
-        debug_print_scene_load(self, &main_scene_path, &script_paths_by_node);
+        #[cfg(not(feature = "profile"))]
+        let _ = main_scene_path;
         Ok(())
-    }
-}
-
-fn debug_print_scene_load(
-    runtime: &Runtime,
-    path: &str,
-    script_paths_by_node: &HashMap<NodeID, String>,
-) {
-    #[cfg(not(feature = "profile"))]
-    {
-        println!("[scene_load] path={path}");
-    }
-    print_scene_tree(runtime, NodeID::ROOT, "", script_paths_by_node);
-}
-
-fn debug_print_scene_load_from_root(
-    runtime: &Runtime,
-    path: &str,
-    root: NodeID,
-    script_paths_by_node: &HashMap<NodeID, String>,
-) {
-    #[cfg(not(feature = "profile"))]
-    {
-        println!("[scene_load] path={path}");
-    }
-    print_scene_tree(runtime, root, "", script_paths_by_node);
-}
-
-fn print_scene_tree(
-    runtime: &Runtime,
-    node: NodeID,
-    indent: &str,
-    script_paths_by_node: &HashMap<NodeID, String>,
-) {
-    let Some(node_ref) = runtime.nodes.get(node) else {
-        return;
-    };
-    let script_suffix = script_paths_by_node
-        .get(&node)
-        .map(|script_path| format!(" script={script_path}"))
-        .unwrap_or_default();
-    println!(
-        "{indent}- [{node}] {} ({}){}",
-        node_ref.name.as_ref(),
-        node_ref.node_type(),
-        script_suffix
-    );
-    let child_indent = format!("{indent}  ");
-    for child in node_ref.children_slice() {
-        print_scene_tree(runtime, *child, &child_indent, script_paths_by_node);
     }
 }
 

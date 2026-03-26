@@ -214,6 +214,7 @@ pub enum StaticBody3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RigidBody3DField {
     Enabled,
+    Mass,
     LinearVelocity,
     AngularVelocity,
     GravityScale,
@@ -385,6 +386,7 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::RigidBody3D => match field {
             "enabled" => Some(NodeField::RigidBody3D(RigidBody3DField::Enabled)),
+            "mass" => Some(NodeField::RigidBody3D(RigidBody3DField::Mass)),
             "linear_velocity" | "velocity" => {
                 Some(NodeField::RigidBody3D(RigidBody3DField::LinearVelocity))
             }

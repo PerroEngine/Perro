@@ -55,7 +55,8 @@ impl NodeAPI for Runtime {
     {
         let id = self.nodes.insert(SceneNode::new(T::default().into()));
         if let Some(node) = self.nodes.get(id) {
-            self.register_internal_node_schedules(id, node.node_type());
+            let ty = node.node_type();
+            self.register_internal_node_schedules(id, ty);
         }
         id
     }

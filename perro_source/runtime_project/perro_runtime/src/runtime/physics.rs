@@ -99,29 +99,25 @@ struct AreaOverlap {
 #[derive(Clone, Copy, Debug)]
 struct PendingImpulse2D {
     id: NodeID,
-    direction: Vector2,
-    amount: f32,
+    impulse: Vector2,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct PendingImpulse3D {
     id: NodeID,
-    direction: Vector3,
-    amount: f32,
+    impulse: Vector3,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct PendingForce2D {
     id: NodeID,
-    direction: Vector2,
-    amount: f32,
+    force: Vector2,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct PendingForce3D {
     id: NodeID,
-    direction: Vector3,
-    amount: f32,
+    force: Vector3,
 }
 
 pub(crate) struct PhysicsState {
@@ -274,36 +270,28 @@ impl Runtime {
         self.emit_area_signals_3d();
     }
 
-    pub(crate) fn queue_impulse_2d(&mut self, id: NodeID, direction: Vector2, amount: f32) {
-        self.physics.pending_impulses_2d.push(PendingImpulse2D {
-            id,
-            direction,
-            amount,
-        });
+    pub(crate) fn queue_impulse_2d(&mut self, id: NodeID, impulse: Vector2) {
+        self.physics
+            .pending_impulses_2d
+            .push(PendingImpulse2D { id, impulse });
     }
 
-    pub(crate) fn queue_force_2d(&mut self, id: NodeID, direction: Vector2, amount: f32) {
-        self.physics.pending_forces_2d.push(PendingForce2D {
-            id,
-            direction,
-            amount,
-        });
+    pub(crate) fn queue_force_2d(&mut self, id: NodeID, force: Vector2) {
+        self.physics
+            .pending_forces_2d
+            .push(PendingForce2D { id, force });
     }
 
-    pub(crate) fn queue_impulse_3d(&mut self, id: NodeID, direction: Vector3, amount: f32) {
-        self.physics.pending_impulses_3d.push(PendingImpulse3D {
-            id,
-            direction,
-            amount,
-        });
+    pub(crate) fn queue_impulse_3d(&mut self, id: NodeID, impulse: Vector3) {
+        self.physics
+            .pending_impulses_3d
+            .push(PendingImpulse3D { id, impulse });
     }
 
-    pub(crate) fn queue_force_3d(&mut self, id: NodeID, direction: Vector3, amount: f32) {
-        self.physics.pending_forces_3d.push(PendingForce3D {
-            id,
-            direction,
-            amount,
-        });
+    pub(crate) fn queue_force_3d(&mut self, id: NodeID, force: Vector3) {
+        self.physics
+            .pending_forces_3d
+            .push(PendingForce3D { id, force });
     }
 
     pub(crate) fn clear_physics(&mut self) {
@@ -607,6 +595,7 @@ impl Runtime {
                     rb.set_gravity_scale(rigid.gravity_scale, true);
                     rb.set_linear_damping(rigid.linear_damping);
                     rb.set_angular_damping(rigid.angular_damping);
+                    rb.set_additional_mass(rigid.mass.max(0.0), true);
                 }
             }
 
@@ -714,17 +703,12 @@ impl Runtime {
             let Some(rb) = world.bodies.get_mut(state.handle) else {
                 continue;
             };
-            let len_sq = impulse.direction.x * impulse.direction.x
-                + impulse.direction.y * impulse.direction.y;
+            let len_sq = impulse.impulse.x * impulse.impulse.x + impulse.impulse.y * impulse.impulse.y;
             if len_sq <= 0.000_001 {
                 continue;
             }
-            let inv_len = len_sq.sqrt().recip();
             rb.apply_impulse(
-                na2::Vector2::new(
-                    impulse.direction.x * inv_len * impulse.amount,
-                    impulse.direction.y * inv_len * impulse.amount,
-                ),
+                na2::Vector2::new(impulse.impulse.x, impulse.impulse.y),
                 true,
             );
         }
@@ -747,18 +731,12 @@ impl Runtime {
             let Some(rb) = world.bodies.get_mut(state.handle) else {
                 continue;
             };
-            let len_sq =
-                force.direction.x * force.direction.x + force.direction.y * force.direction.y;
+            let len_sq = force.force.x * force.force.x + force.force.y * force.force.y;
             if len_sq <= 0.000_001 {
                 continue;
             }
-            let inv_len = len_sq.sqrt().recip();
-            let impulse = force.amount * dt;
             rb.apply_impulse(
-                na2::Vector2::new(
-                    force.direction.x * inv_len * impulse,
-                    force.direction.y * inv_len * impulse,
-                ),
+                na2::Vector2::new(force.force.x * dt, force.force.y * dt),
                 true,
             );
         }
@@ -780,18 +758,17 @@ impl Runtime {
             let Some(rb) = world.bodies.get_mut(state.handle) else {
                 continue;
             };
-            let len_sq = impulse.direction.x * impulse.direction.x
-                + impulse.direction.y * impulse.direction.y
-                + impulse.direction.z * impulse.direction.z;
+            let len_sq = impulse.impulse.x * impulse.impulse.x
+                + impulse.impulse.y * impulse.impulse.y
+                + impulse.impulse.z * impulse.impulse.z;
             if len_sq <= 0.000_001 {
                 continue;
             }
-            let inv_len = len_sq.sqrt().recip();
             rb.apply_impulse(
                 na3::Vector3::new(
-                    impulse.direction.x * inv_len * impulse.amount,
-                    impulse.direction.y * inv_len * impulse.amount,
-                    impulse.direction.z * inv_len * impulse.amount,
+                    impulse.impulse.x,
+                    impulse.impulse.y,
+                    impulse.impulse.z,
                 ),
                 true,
             );
@@ -815,19 +792,17 @@ impl Runtime {
             let Some(rb) = world.bodies.get_mut(state.handle) else {
                 continue;
             };
-            let len_sq = force.direction.x * force.direction.x
-                + force.direction.y * force.direction.y
-                + force.direction.z * force.direction.z;
+            let len_sq = force.force.x * force.force.x
+                + force.force.y * force.force.y
+                + force.force.z * force.force.z;
             if len_sq <= 0.000_001 {
                 continue;
             }
-            let inv_len = len_sq.sqrt().recip();
-            let impulse = force.amount * dt;
             rb.apply_impulse(
                 na3::Vector3::new(
-                    force.direction.x * inv_len * impulse,
-                    force.direction.y * inv_len * impulse,
-                    force.direction.z * inv_len * impulse,
+                    force.force.x * dt,
+                    force.force.y * dt,
+                    force.force.z * dt,
                 ),
                 true,
             );
@@ -1236,6 +1211,7 @@ fn build_rigid_body_3d(desc: &BodyDesc3D) -> r3::RigidBody {
             .gravity_scale(rigid.gravity_scale)
             .linear_damping(rigid.linear_damping)
             .angular_damping(rigid.angular_damping)
+            .additional_mass(rigid.mass.max(0.0))
             .can_sleep(rigid.can_sleep)
             .enabled(rigid.enabled);
     }
