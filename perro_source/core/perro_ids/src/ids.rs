@@ -157,6 +157,10 @@ define_generational!(
     TagID,
     "Tag ID - deterministic ID from tag name. Used for scene node tags and queries."
 );
+define_generational!(
+    PreloadedSceneID,
+    "Preloaded scene ID - runtime handle for a retained parsed scene."
+);
 
 impl NodeID {
     pub const ROOT: NodeID = Self::new(1);

@@ -2,9 +2,12 @@ use crate::{Runtime, runtime_project::ProviderMode};
 use perro_ids::NodeID;
 use perro_ids::ScriptMemberID;
 use perro_io::{ProjectRoot, set_project_root};
+use perro_scene::Scene;
+use perro_runtime_context::sub_apis::PreloadedSceneID;
 use perro_variant::Variant;
 #[cfg(feature = "profile")]
 use std::time::{Duration, Instant};
+use std::sync::Arc;
 
 mod merge;
 mod prepare;
@@ -28,36 +31,108 @@ struct SceneLoadStats {
 }
 
 impl Runtime {
+    fn get_or_load_dynamic_scene_cached(&self, path: &str) -> Result<Arc<Scene>, String> {
+        if let Some(scene) = self.scene_cache.borrow().get(path).cloned() {
+            return Ok(scene);
+        }
+        let (scene, _) = load_runtime_scene_from_disk(path)?;
+        let scene = Arc::new(scene);
+        self.scene_cache
+            .borrow_mut()
+            .insert(path.to_string(), scene.clone());
+        Ok(scene)
+    }
+
+    fn resolve_scene_by_path(&self, path: &str) -> Result<Scene, String> {
+        if let Some(id) = self.preloaded_scene_paths.get(path).copied() {
+            if let Some(scene) = self.preloaded_scenes.get(&id) {
+                return Ok((**scene).clone());
+            }
+        }
+        match self.provider_mode {
+            ProviderMode::Dynamic => self.get_or_load_dynamic_scene_cached(path).map(|s| (*s).clone()),
+            ProviderMode::Static => {
+                let static_lookup = self.project().and_then(|project| project.static_scene_lookup);
+                match static_lookup.and_then(|lookup| lookup(path)) {
+                    Some(scene) => Ok(scene.clone()),
+                    None => self.get_or_load_dynamic_scene_cached(path).map(|s| (*s).clone()),
+                }
+            }
+        }
+    }
+
+    pub(crate) fn preload_scene_at_runtime(
+        &mut self,
+        path: &str,
+    ) -> Result<PreloadedSceneID, String> {
+        if let Some(existing) = self.preloaded_scene_paths.get(path).copied() {
+            return Ok(existing);
+        }
+        let scene = Arc::new(self.resolve_scene_by_path(path)?);
+        let mut next = self.next_preloaded_scene_id;
+        if next == 0 {
+            next = 1;
+        }
+        let id = PreloadedSceneID::from_u64(next);
+        self.next_preloaded_scene_id = next.saturating_add(1);
+        self.preloaded_scenes.insert(id, scene);
+        self.preloaded_scene_paths.insert(path.to_string(), id);
+        self.preloaded_scene_reverse_paths
+            .insert(id, path.to_string());
+        Ok(id)
+    }
+
+    pub(crate) fn free_preloaded_scene_at_runtime(&mut self, id: PreloadedSceneID) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        let removed = self.preloaded_scenes.remove(&id).is_some();
+        if let Some(path) = self.preloaded_scene_reverse_paths.remove(&id) {
+            self.preloaded_scene_paths.remove(path.as_str());
+        }
+        removed
+    }
+
+    pub(crate) fn load_preloaded_scene_at_runtime(
+        &mut self,
+        id: PreloadedSceneID,
+    ) -> Result<NodeID, String> {
+        let scene = self
+            .preloaded_scenes
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| format!("preloaded scene id `{}` is not valid", id.as_u64()))?;
+        let prepared = prepare_scene_with_loader(scene.as_ref(), &|import_path| {
+            self.resolve_scene_by_path(import_path)
+        })?;
+        let merged = merge_prepared_scene(self, prepared)?;
+        self.rebuild_internal_node_schedules();
+        self.rebuild_node_tag_index();
+        self.attach_scene_scripts(merged.script_nodes)?;
+        Ok(merged.scene_root)
+    }
+
     pub(crate) fn load_scene_at_runtime(&mut self, path: &str) -> Result<NodeID, String> {
         let static_lookup = self.project().and_then(|project| project.static_scene_lookup);
         let merged = match self.provider_mode {
             ProviderMode::Dynamic => {
-                let (runtime_scene, _load_stats) = load_runtime_scene_from_disk(path)?;
-                let prepared = prepare_scene_with_loader(&runtime_scene, &|import_path| {
-                    let (scene, _) = load_runtime_scene_from_disk(import_path)?;
-                    Ok(scene)
+                let runtime_scene = self.get_or_load_dynamic_scene_cached(path)?;
+                let prepared = prepare_scene_with_loader(runtime_scene.as_ref(), &|import_path| {
+                    self.resolve_scene_by_path(import_path)
                 })?;
                 merge_prepared_scene(self, prepared)?
             }
             ProviderMode::Static => match static_lookup.and_then(|lookup| lookup(path)) {
                 Some(scene) => {
                     let prepared = prepare_scene_with_loader(scene, &|import_path| {
-                        static_lookup
-                            .and_then(|lookup| lookup(import_path))
-                            .cloned()
-                            .ok_or_else(|| {
-                                format!(
-                                    "failed to load scene `{import_path}` from static lookup during root_of expansion"
-                                )
-                            })
+                        self.resolve_scene_by_path(import_path)
                     })?;
                     merge_prepared_scene(self, prepared)?
                 }
                 None => {
-                    let (runtime_scene, _load_stats) = load_runtime_scene_from_disk(path)?;
-                    let prepared = prepare_scene_with_loader(&runtime_scene, &|import_path| {
-                        let (scene, _) = load_runtime_scene_from_disk(import_path)?;
-                        Ok(scene)
+                    let runtime_scene = self.get_or_load_dynamic_scene_cached(path)?;
+                    let prepared = prepare_scene_with_loader(runtime_scene.as_ref(), &|import_path| {
+                        self.resolve_scene_by_path(import_path)
                     })?;
                     merge_prepared_scene(self, prepared)?
                 }

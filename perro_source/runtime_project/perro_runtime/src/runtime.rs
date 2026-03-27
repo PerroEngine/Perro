@@ -3,10 +3,16 @@ use crate::{
     rs_ctx::RuntimeResourceApi,
     runtime_project::{ProviderMode, RuntimeProject},
 };
+use ahash::AHashMap;
 use perro_ids::NodeID;
 use perro_input::InputSnapshot;
+use perro_runtime_context::sub_apis::PreloadedSceneID;
+use perro_scene::Scene;
 use perro_scripting::ScriptConstructor;
-use std::sync::{Arc, Mutex};
+use std::{
+    cell::RefCell,
+    sync::{Arc, Mutex},
+};
 use std::time::Duration;
 
 mod input_bridge;
@@ -35,6 +41,11 @@ pub struct Runtime {
     pub time: Timing,
     provider_mode: ProviderMode,
     project: Option<Arc<RuntimeProject>>,
+    pub(crate) scene_cache: RefCell<AHashMap<String, Arc<Scene>>>,
+    pub(crate) preloaded_scenes: AHashMap<PreloadedSceneID, Arc<Scene>>,
+    pub(crate) preloaded_scene_paths: AHashMap<String, PreloadedSceneID>,
+    pub(crate) preloaded_scene_reverse_paths: AHashMap<PreloadedSceneID, String>,
+    pub(crate) next_preloaded_scene_id: u64,
 
     pub nodes: NodeArena,
     pub(crate) scripts: ScriptCollection<Self>,
@@ -89,6 +100,11 @@ impl Runtime {
                 elapsed: 0.0,
             },
             provider_mode: ProviderMode::Dynamic,
+            scene_cache: RefCell::new(AHashMap::new()),
+            preloaded_scenes: AHashMap::new(),
+            preloaded_scene_paths: AHashMap::new(),
+            preloaded_scene_reverse_paths: AHashMap::new(),
+            next_preloaded_scene_id: 1,
             nodes: NodeArena::new(),
             scripts: ScriptCollection::new(),
             schedules: ScriptSchedules::new(),

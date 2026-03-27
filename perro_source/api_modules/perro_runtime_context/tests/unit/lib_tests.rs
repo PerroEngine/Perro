@@ -363,6 +363,22 @@ impl SceneAPI for DummyRuntime {
     fn scene_load(&mut self, _path: &str) -> Result<NodeID, String> {
         Ok(NodeID::new(7))
     }
+
+    fn scene_preload(&mut self, _path: &str) -> Result<PreloadedSceneID, String> {
+        Ok(PreloadedSceneID::from_u64(11))
+    }
+
+    fn scene_load_preloaded(&mut self, id: PreloadedSceneID) -> Result<NodeID, String> {
+        if id == PreloadedSceneID::from_u64(11) {
+            Ok(NodeID::new(8))
+        } else {
+            Err("bad preloaded scene id".to_string())
+        }
+    }
+
+    fn scene_free_preloaded(&mut self, id: PreloadedSceneID) -> bool {
+        id == PreloadedSceneID::from_u64(11)
+    }
 }
 
 #[test]
@@ -524,6 +540,11 @@ fn script_macros_typecheck_and_forward() {
     );
     let cow_path = std::borrow::Cow::Borrowed("res://scenes/c.scene");
     assert_eq!(scene_load!(&mut ctx, cow_path), Ok(NodeID::new(7)));
+    let preloaded = scene_preload!(&mut ctx, "res://scenes/preloaded.scene")
+        .expect("preload should return deterministic id");
+    assert_eq!(preloaded, PreloadedSceneID::from_u64(11));
+    assert_eq!(scene_load!(&mut ctx, preloaded), Ok(NodeID::new(8)));
+    assert!(scene_free_preloaded!(&mut ctx, preloaded));
 
     let dt = delta_time!(&mut ctx);
     let dt_capped = delta_time_capped!(&mut ctx, 0.010);

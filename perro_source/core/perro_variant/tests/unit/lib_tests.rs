@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use perro_ids::{NodeID, TextureID};
+use perro_ids::{NodeID, PreloadedSceneID, TextureID};
 use perro_structs::{
     ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2, Vector3,
     VisualAccessibilitySettings,
@@ -144,6 +144,13 @@ fn test_variant_as_texture() {
     let tex = TextureID::from_u32(456);
     let v = Variant::from(tex);
     assert_eq!(v.as_texture(), Some(tex));
+}
+
+#[test]
+fn test_variant_as_preloaded_scene() {
+    let id = PreloadedSceneID::from_u64(1234);
+    let v = Variant::from(id);
+    assert_eq!(v.as_preloaded_scene(), Some(id));
 }
 
 #[test]

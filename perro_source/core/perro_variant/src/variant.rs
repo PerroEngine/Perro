@@ -147,6 +147,7 @@ pub enum IDs {
     Signal(SignalID),
     AudioBus(AudioBusID),
     Tag(TagID),
+    PreloadedScene(PreloadedSceneID),
 }
 
 impl IDs {
@@ -164,6 +165,7 @@ impl IDs {
             IDs::Signal(v) => v.as_u64(),
             IDs::AudioBus(v) => v.as_u64(),
             IDs::Tag(v) => v.as_u64(),
+            IDs::PreloadedScene(v) => v.as_u64(),
         }
     }
 }
@@ -489,6 +491,7 @@ impl_statefield_plain_id!(UIElementID);
 impl_statefield_plain_id!(SignalID);
 impl_statefield_plain_id!(AudioBusID);
 impl_statefield_plain_id!(TagID);
+impl_statefield_plain_id!(PreloadedSceneID);
 
 impl StateField for Vector2 {
     #[inline]
@@ -823,6 +826,14 @@ impl Variant {
     }
 
     #[inline]
+    pub fn as_preloaded_scene(&self) -> Option<PreloadedSceneID> {
+        match *self {
+            Variant::ID(IDs::PreloadedScene(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn as_id(&self) -> Option<IDs> {
         match *self {
             Variant::ID(id) => Some(id),
@@ -1117,6 +1128,12 @@ impl From<TagID> for Variant {
     #[inline]
     fn from(v: TagID) -> Self {
         Variant::ID(IDs::Tag(v))
+    }
+}
+impl From<PreloadedSceneID> for Variant {
+    #[inline]
+    fn from(v: PreloadedSceneID) -> Self {
+        Variant::ID(IDs::PreloadedScene(v))
     }
 }
 
