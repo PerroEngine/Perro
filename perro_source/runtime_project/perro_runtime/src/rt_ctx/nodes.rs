@@ -315,7 +315,28 @@ impl NodeAPI for Runtime {
                 let local = match parent_global {
                     Some(parent_global) => {
                         let local_mat = parent_global.to_mat4().inverse() * global.to_mat4();
-                        Transform3D::from_mat4(local_mat)
+                        let local = Transform3D::from_mat4(local_mat);
+                        // Detect affine shear (or other non-TRS artifacts) that cannot be
+                        // represented exactly by Transform3D's TRS fields.
+                        let reconstructed = local.to_mat4();
+                        let a = local_mat.to_cols_array();
+                        let b = reconstructed.to_cols_array();
+                        let mut max_abs_err = 0.0_f32;
+                        for i in 0..16 {
+                            let d = (a[i] - b[i]).abs();
+                            if d > max_abs_err {
+                                max_abs_err = d;
+                            }
+                        }
+                        if max_abs_err > 1.0e-3 {
+                            println!(
+                                "[runtime][warn] reparent({} -> {}): non-TRS local transform detected (shear/affine), max reconstruction error = {:.6}. Visual distortion may occur; use a uniform-scale attachment parent/socket.",
+                                child_id.as_u64(),
+                                parent_id.as_u64(),
+                                max_abs_err
+                            );
+                        }
+                        local
                     }
                     None => global,
                 };
