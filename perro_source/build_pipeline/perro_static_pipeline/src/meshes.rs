@@ -8,13 +8,14 @@ use std::{
 };
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
-const PMESH_VERSION: u32 = 2;
+const PMESH_VERSION: u32 = 3;
 const MESHLET_TRIANGLES: usize = 64;
 
 #[derive(Clone, Copy)]
 struct PackedVertex {
     position: [f32; 3],
     normal: [f32; 3],
+    uv: [f32; 2],
     joints: [u16; 4],
     weights: [f32; 4],
 }
@@ -180,6 +181,10 @@ fn build_gltf_mesh_entries(
             .read_normals()
             .map(|iter| iter.collect())
             .unwrap_or_default();
+        let tex_coords: Vec<[f32; 2]> = reader
+            .read_tex_coords(0)
+            .map(|iter| iter.into_f32().collect())
+            .unwrap_or_default();
         let joints: Vec<[u16; 4]> = reader
             .read_joints(0)
             .map(|iter| iter.into_u16().collect())
@@ -193,6 +198,7 @@ fn build_gltf_mesh_entries(
         }
         for (index, position) in positions.enumerate() {
             let normal = normals.get(index).copied().unwrap_or([0.0, 1.0, 0.0]);
+            let uv = tex_coords.get(index).copied().unwrap_or([0.0, 0.0]);
             let joint = joints.get(index).copied().unwrap_or([0, 0, 0, 0]);
             let mut weight = weights.get(index).copied().unwrap_or([1.0, 0.0, 0.0, 0.0]);
             let sum = weight.iter().copied().sum::<f32>();
@@ -205,6 +211,7 @@ fn build_gltf_mesh_entries(
             vertices.push(PackedVertex {
                 position,
                 normal,
+                uv,
                 joints: joint,
                 weights: weight,
             });
@@ -247,7 +254,7 @@ fn encode_pmesh(
 ) -> io::Result<Vec<u8>> {
     let mut raw = Vec::<u8>::with_capacity(
         vertices.len()
-            * ((6 * std::mem::size_of::<f32>())
+            * ((8 * std::mem::size_of::<f32>())
                 + (4 * std::mem::size_of::<u16>())
                 + (4 * std::mem::size_of::<f32>()))
             + std::mem::size_of_val(indices)
@@ -261,6 +268,8 @@ fn encode_pmesh(
         write_f32(&mut raw, vertex.normal[0]);
         write_f32(&mut raw, vertex.normal[1]);
         write_f32(&mut raw, vertex.normal[2]);
+        write_f32(&mut raw, vertex.uv[0]);
+        write_f32(&mut raw, vertex.uv[1]);
         write_u16(&mut raw, vertex.joints[0]);
         write_u16(&mut raw, vertex.joints[1]);
         write_u16(&mut raw, vertex.joints[2]);

@@ -34,12 +34,17 @@ var<uniform> scene: Scene3D;
 var<storage, read> skeletons: array<mat4x4<f32>>;
 @group(0) @binding(2)
 var<storage, read> custom_params: array<vec4<f32>>;
+@group(1) @binding(0)
+var material_sampler: sampler;
+@group(1) @binding(1)
+var material_base_color_tex: texture_2d<f32>;
 
 struct VertexInput {
     @location(0) pos: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) joints: vec4<u32>,
     @location(3) weights: vec4<f32>,
+    @location(12) uv: vec2<f32>,
 };
 
 struct InstanceInput {
@@ -62,6 +67,7 @@ struct VertexOutput {
     @location(4) emissive_factor: vec3<f32>,
     @location(5) material_params: vec4<f32>,
     @location(6) custom_range: vec2<u32>,
+    @location(7) uv: vec2<f32>,
 };
 
 struct FragmentInput {
@@ -73,6 +79,7 @@ struct FragmentInput {
     @location(4) emissive_factor: vec3<f32>,
     @location(5) material_params: vec4<f32>,
     @location(6) custom_range: vec2<u32>,
+    @location(7) uv: vec2<f32>,
 };
 
 @vertex
@@ -111,6 +118,7 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.emissive_factor = inst.emissive_factor;
     out.material_params = inst.material_params;
     out.custom_range = vec2<u32>(inst.skeleton_params.z, inst.skeleton_params.w);
+    out.uv = v.uv;
     return out;
 }
 

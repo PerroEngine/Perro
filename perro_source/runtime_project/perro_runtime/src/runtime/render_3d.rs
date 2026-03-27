@@ -950,6 +950,7 @@ fn terrain_chunk_to_runtime_mesh(chunk: &TerrainChunk) -> Option<RuntimeMeshData
             RuntimeMeshVertex {
                 position: [v.position.x, v.position.y, v.position.z],
                 normal: [n.x, n.y, n.z],
+                uv: [v.position.x / 64.0, v.position.z / 64.0],
                 joints: [0, 0, 0, 0],
                 weights: [1.0, 0.0, 0.0, 0.0],
             }

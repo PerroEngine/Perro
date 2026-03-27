@@ -498,6 +498,7 @@ pub struct Sprite2DCommand {
 pub struct RuntimeMeshVertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
+    pub uv: [f32; 2],
     pub joints: [u16; 4],
     pub weights: [f32; 4],
 }

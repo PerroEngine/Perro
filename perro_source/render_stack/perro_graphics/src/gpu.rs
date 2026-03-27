@@ -465,6 +465,7 @@ impl Gpu {
                         draws_revision: draws_3d_revision,
                         width: self.config.width,
                         height: self.config.height,
+                        static_texture_lookup,
                         static_mesh_lookup,
                         static_shader_lookup,
                     },

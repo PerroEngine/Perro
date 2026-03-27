@@ -1,5 +1,6 @@
 fn shade_material(in: FragmentInput) -> vec4<f32> {
-    let albedo = in.color.rgb;
+    let base_sample = textureSample(material_base_color_tex, material_sampler, in.uv);
+    let albedo = in.color.rgb * base_sample.rgb;
     let double_sided = in.material_params.z > 0.5;
     var n = normalize(in.normal_ws);
     if double_sided && !in.is_front {
@@ -12,7 +13,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     let alpha_mode = u32(in.material_params.x + 0.5);
     let alpha_cutoff = clamp(in.material_params.y, 0.0, 1.0);
     let meshlet_debug_view = in.material_params.w > 0.5;
-    var alpha = clamp(in.color.a, 0.0, 1.0);
+    var alpha = clamp(in.color.a * base_sample.a, 0.0, 1.0);
     if alpha_mode == 1u && alpha < alpha_cutoff {
         discard;
     }

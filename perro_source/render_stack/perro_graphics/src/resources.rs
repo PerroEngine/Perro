@@ -332,6 +332,13 @@ impl ResourceStore {
     }
 
     #[inline]
+    pub fn texture_source_by_index(&self, index: u32) -> Option<&str> {
+        self.texture_source_by
+            .iter()
+            .find_map(|(id, source)| (id.index() == index).then_some(source.as_str()))
+    }
+
+    #[inline]
     pub fn mesh_source(&self, id: MeshID) -> Option<&str> {
         self.mesh_source_by.get(&id).map(String::as_str)
     }

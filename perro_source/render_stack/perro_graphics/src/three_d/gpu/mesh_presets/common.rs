@@ -21,18 +21,21 @@ pub(super) fn push_triangle(
     vertices.push(MeshVertex {
         pos: a,
         normal: normal.to_array(),
+        uv: [0.0, 0.0],
         joints: [0, 0, 0, 0],
         weights: [1.0, 0.0, 0.0, 0.0],
     });
     vertices.push(MeshVertex {
         pos: bv.to_array(),
         normal: normal.to_array(),
+        uv: [0.0, 0.0],
         joints: [0, 0, 0, 0],
         weights: [1.0, 0.0, 0.0, 0.0],
     });
     vertices.push(MeshVertex {
         pos: cv.to_array(),
         normal: normal.to_array(),
+        uv: [0.0, 0.0],
         joints: [0, 0, 0, 0],
         weights: [1.0, 0.0, 0.0, 0.0],
     });

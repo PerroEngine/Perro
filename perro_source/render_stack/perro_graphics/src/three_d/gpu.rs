@@ -8,7 +8,9 @@ use super::{
         create_unlit_shader_module,
     },
 };
-use crate::backend::{OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup};
+use crate::backend::{
+    OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup, StaticTextureLookup,
+};
 use crate::resources::ResourceStore;
 use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
@@ -35,6 +37,9 @@ const FRUSTUM_CULL_WORKGROUP_SIZE: u32 = 64;
 const HIZ_WORKGROUP_SIZE_X: u32 = 8;
 const HIZ_WORKGROUP_SIZE_Y: u32 = 8;
 const HIZ_OCCLUSION_BIAS: f32 = 0.002;
+const MATERIAL_TEXTURE_NONE: u32 = u32::MAX;
+const MATERIAL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+const PTEX_MAGIC: &[u8; 4] = b"PTEX";
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
@@ -90,6 +95,7 @@ struct SpotLightGpu {
 struct MeshVertex {
     pos: [f32; 3],
     normal: [f32; 3],
+    uv: [f32; 2],
     joints: [u16; 4],
     weights: [f32; 4],
 }
@@ -153,6 +159,7 @@ struct HizCullParamsGpu {
 pub struct Gpu3D {
     color_format: wgpu::TextureFormat,
     camera_bgl: wgpu::BindGroupLayout,
+    material_texture_bgl: wgpu::BindGroupLayout,
     sky_bgl: wgpu::BindGroupLayout,
     material_pipeline_layout: wgpu::PipelineLayout,
     sky_pipeline: wgpu::RenderPipeline,
@@ -175,6 +182,8 @@ pub struct Gpu3D {
     custom_params_buffer: wgpu::Buffer,
     custom_params_capacity: usize,
     staged_custom_params: Vec<[f32; 4]>,
+    material_fallback_texture: Option<CachedMaterialTexture>,
+    material_textures: AHashMap<u32, CachedMaterialTexture>,
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
     staged_instances: Vec<InstanceGpu>,
@@ -266,6 +275,7 @@ pub struct Prepare3D<'a> {
     pub draws_revision: u64,
     pub width: u32,
     pub height: u32,
+    pub static_texture_lookup: Option<StaticTextureLookup>,
     pub static_mesh_lookup: Option<StaticMeshLookup>,
     pub static_shader_lookup: Option<StaticShaderLookup>,
 }
@@ -311,6 +321,7 @@ struct DrawBatch {
     instance_count: u32,
     double_sided: bool,
     material_kind: MaterialPipelineKind,
+    base_color_texture_slot: u32,
     local_center: [f32; 3],
     local_radius: f32,
     occlusion_query: Option<u32>,
@@ -328,6 +339,14 @@ enum MaterialPipelineKind {
 struct CustomPipeline {
     pipeline_culled: wgpu::RenderPipeline,
     pipeline_double_sided: wgpu::RenderPipeline,
+}
+
+struct CachedMaterialTexture {
+    source: String,
+    _texture: wgpu::Texture,
+    _view: wgpu::TextureView,
+    _sampler: wgpu::Sampler,
+    bind_group: wgpu::BindGroup,
 }
 
 #[derive(Clone, Copy)]
@@ -546,6 +565,28 @@ impl Gpu3D {
                 },
             ],
         });
+        let material_texture_bgl =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("perro_material_texture_bgl"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                ],
+            });
         let sky_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_sky3d_bgl"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -617,7 +658,7 @@ impl Gpu3D {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_mesh_pipeline_layout"),
-            bind_group_layouts: &[Some(&camera_bgl)],
+            bind_group_layouts: &[Some(&camera_bgl), Some(&material_texture_bgl)],
             immediate_size: 0,
         });
         let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -998,6 +1039,7 @@ impl Gpu3D {
         let mut gpu = Self {
             color_format,
             camera_bgl,
+            material_texture_bgl,
             sky_bgl,
             material_pipeline_layout: pipeline_layout,
             sky_pipeline,
@@ -1019,6 +1061,8 @@ impl Gpu3D {
             custom_params_buffer,
             custom_params_capacity,
             staged_custom_params: Vec::new(),
+            material_fallback_texture: None,
+            material_textures: AHashMap::new(),
             instance_buffer,
             instance_capacity,
             staged_instances: Vec::new(),
@@ -1171,7 +1215,7 @@ impl Gpu3D {
         let sky_shader = create_sky_shader_module(device);
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_mesh_pipeline_layout"),
-            bind_group_layouts: &[Some(&self.camera_bgl)],
+            bind_group_layouts: &[Some(&self.camera_bgl), Some(&self.material_texture_bgl)],
             immediate_size: 0,
         });
         let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1323,12 +1367,14 @@ impl Gpu3D {
             draws_revision,
             width,
             height,
+            static_texture_lookup,
             static_mesh_lookup,
             static_shader_lookup,
         } = frame;
         self.custom_mesh_ranges
             .retain(|source, _| resources.has_mesh_source(source));
         self.resize(device, width, height);
+        self.ensure_material_fallback_texture(device, queue);
         self.frustum_cull_enabled = self.frustum_cull_supported;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(self.occlusion_mode);
         self.gpu_occlusion_enabled = gpu_occlusion_enabled && self.frustum_cull_enabled;
@@ -1596,6 +1642,15 @@ impl Gpu3D {
                     .and_then(|id| resources.material(id))
                     .unwrap_or_default(),
             };
+            let standard_params = material.standard_params();
+            let base_color_texture_slot = standard_params.base_color_texture;
+            self.ensure_material_texture_slot(
+                device,
+                queue,
+                resources,
+                base_color_texture_slot,
+                static_texture_lookup,
+            );
             let material_kind =
                 self.material_pipeline_kind(device, &material, static_shader_lookup);
             let (custom_params_offset, custom_params_len) = self.stage_custom_params(&material);
@@ -1689,8 +1744,9 @@ impl Gpu3D {
                         &mut self.draw_batches,
                         mesh_asset.full,
                         instance,
-                        material.standard_params().double_sided || self.meshlet_debug_view,
+                        standard_params.double_sided || self.meshlet_debug_view,
                         material_kind.clone(),
+                        base_color_texture_slot,
                         (mesh_asset.bounds_center, mesh_asset.bounds_radius),
                         occlusion_query,
                         is_terrain_mesh,
@@ -1738,8 +1794,9 @@ impl Gpu3D {
                             base_vertex: mesh_asset.full.base_vertex,
                         },
                         instance,
-                        material.standard_params().double_sided || self.meshlet_debug_view,
+                        standard_params.double_sided || self.meshlet_debug_view,
                         material_kind.clone(),
+                        base_color_texture_slot,
                         (occlusion_center, occlusion_radius),
                         occlusion_query,
                         is_terrain_mesh,
@@ -1766,6 +1823,7 @@ impl Gpu3D {
                 instance_count: debug_points_count,
                 double_sided: debug_points_double_sided,
                 material_kind: MaterialPipelineKind::Standard,
+                base_color_texture_slot: MATERIAL_TEXTURE_NONE,
                 local_center: debug_points_local_center,
                 local_radius: debug_points_local_radius.max(0.0),
                 occlusion_query: None,
@@ -1784,6 +1842,7 @@ impl Gpu3D {
                 instance_count: debug_edges_count,
                 double_sided: debug_edges_double_sided,
                 material_kind: MaterialPipelineKind::Standard,
+                base_color_texture_slot: MATERIAL_TEXTURE_NONE,
                 local_center: debug_edges_local_center,
                 local_radius: debug_edges_local_radius.max(0.0),
                 occlusion_query: None,
@@ -1961,6 +2020,7 @@ impl Gpu3D {
                 multiview_mask: None,
             });
             prepass.set_bind_group(0, &self.camera_bind_group, &[]);
+            prepass.set_bind_group(1, self.fallback_material_texture_bind_group(), &[]);
             prepass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             prepass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             prepass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -2072,16 +2132,26 @@ impl Gpu3D {
             return;
         }
         pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        pass.set_bind_group(1, self.fallback_material_texture_bind_group(), &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         let mut current_pipeline_key: Option<(MaterialPipelineKind, bool)> = None;
+        let mut current_texture_slot = MATERIAL_TEXTURE_NONE;
         for (i, batch) in self.draw_batches.iter().enumerate() {
             let key = (batch.material_kind.clone(), batch.double_sided);
             if current_pipeline_key.as_ref() != Some(&key) {
                 let pipeline = self.pipeline_for_batch(batch);
                 pass.set_pipeline(pipeline);
                 current_pipeline_key = Some(key);
+            }
+            if current_texture_slot != batch.base_color_texture_slot {
+                pass.set_bind_group(
+                    1,
+                    self.material_texture_bind_group(batch.base_color_texture_slot),
+                    &[],
+                );
+                current_texture_slot = batch.base_color_texture_slot;
             }
             if let Some(query_index) = batch.occlusion_query {
                 pass.begin_occlusion_query(query_index);
@@ -2132,6 +2202,94 @@ impl Gpu3D {
 
     pub fn depth_prepass_view(&self) -> &wgpu::TextureView {
         &self.depth_prepass_view
+    }
+
+    fn fallback_material_texture_bind_group(&self) -> &wgpu::BindGroup {
+        self.material_fallback_texture
+            .as_ref()
+            .map(|cached| &cached.bind_group)
+            .expect("material fallback texture must be initialized in prepare")
+    }
+
+    fn material_texture_bind_group(&self, slot: u32) -> &wgpu::BindGroup {
+        self.material_textures
+            .get(&slot)
+            .map(|cached| &cached.bind_group)
+            .unwrap_or_else(|| self.fallback_material_texture_bind_group())
+    }
+
+    fn ensure_material_fallback_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        if self.material_fallback_texture.is_some() {
+            return;
+        }
+        let cached = create_cached_material_texture(
+            device,
+            queue,
+            &self.material_texture_bgl,
+            vec![255u8, 255, 255, 255],
+            1,
+            1,
+            "__fallback__".to_string(),
+        );
+        self.material_fallback_texture = Some(cached);
+    }
+
+    fn ensure_material_texture_slot(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        resources: &ResourceStore,
+        slot: u32,
+        static_texture_lookup: Option<StaticTextureLookup>,
+    ) {
+        if slot == MATERIAL_TEXTURE_NONE {
+            return;
+        }
+        self.ensure_material_fallback_texture(device, queue);
+
+        let source = resources
+            .texture_source_by_index(slot)
+            .or_else(|| {
+                slot.checked_add(1)
+                    .and_then(|next| resources.texture_source_by_index(next))
+            });
+        let Some(source) = source else {
+            self.material_textures.remove(&slot);
+            return;
+        };
+        if self
+            .material_textures
+            .get(&slot)
+            .is_some_and(|cached| cached.source == source)
+        {
+            return;
+        }
+
+        let decoded = if source == "__default__" {
+            Some((vec![255u8, 255, 255, 255], 1, 1))
+        } else if let Some(lookup) = static_texture_lookup {
+            if let Some(bytes) = lookup(source) {
+                decode_ptex(bytes)
+            } else {
+                load_texture_rgba(source)
+            }
+        } else {
+            load_texture_rgba(source)
+        };
+        let Some((rgba, width, height)) = decoded else {
+            self.material_textures.remove(&slot);
+            return;
+        };
+        let cached = create_cached_material_texture(
+            device,
+            queue,
+            &self.material_texture_bgl,
+            rgba,
+            width,
+            height,
+            source.to_string(),
+        );
+        self.material_textures.insert(slot, cached);
     }
 
     fn ensure_instance_capacity(&mut self, device: &wgpu::Device, needed: usize) {
@@ -2804,6 +2962,7 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
         .map(|v| MeshVertex {
             pos: v.position,
             normal: v.normal,
+            uv: v.uv,
             joints: v.joints,
             weights: v.weights,
         })
@@ -2818,6 +2977,9 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
         .iter()
         .any(|v| !v.normal.iter().all(|c| c.is_finite()))
     {
+        return None;
+    }
+    if vertices.iter().any(|v| !v.uv.iter().all(|c| c.is_finite())) {
         return None;
     }
     if mesh
@@ -2880,7 +3042,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if version != 1 && version != 2 {
+    if version != 1 && version != 2 && version != 3 {
         return None;
     }
     let vertex_count = u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize;
@@ -2892,7 +3054,12 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         return None;
     }
 
-    let vertex_stride = if version == 1 { 24 } else { 48 };
+    let vertex_stride = match version {
+        1 => 24,
+        2 => 48,
+        3 => 56,
+        _ => return None,
+    };
     let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
     let index_bytes = index_count.checked_mul(4)?;
     let meshlet_bytes = meshlet_count.checked_mul(24)?;
@@ -2916,7 +3083,29 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
             f32::from_le_bytes(raw[off + 16..off + 20].try_into().ok()?),
             f32::from_le_bytes(raw[off + 20..off + 24].try_into().ok()?),
         ];
-        let (joints, weights) = if version == 2 {
+        let uv = if version == 3 {
+            [
+                f32::from_le_bytes(raw[off + 24..off + 28].try_into().ok()?),
+                f32::from_le_bytes(raw[off + 28..off + 32].try_into().ok()?),
+            ]
+        } else {
+            [0.0, 0.0]
+        };
+        let (joints, weights) = if version == 3 {
+            let joints = [
+                u16::from_le_bytes(raw[off + 32..off + 34].try_into().ok()?),
+                u16::from_le_bytes(raw[off + 34..off + 36].try_into().ok()?),
+                u16::from_le_bytes(raw[off + 36..off + 38].try_into().ok()?),
+                u16::from_le_bytes(raw[off + 38..off + 40].try_into().ok()?),
+            ];
+            let weights = [
+                f32::from_le_bytes(raw[off + 40..off + 44].try_into().ok()?),
+                f32::from_le_bytes(raw[off + 44..off + 48].try_into().ok()?),
+                f32::from_le_bytes(raw[off + 48..off + 52].try_into().ok()?),
+                f32::from_le_bytes(raw[off + 52..off + 56].try_into().ok()?),
+            ];
+            (joints, weights)
+        } else if version == 2 {
             let joints = [
                 u16::from_le_bytes(raw[off + 24..off + 26].try_into().ok()?),
                 u16::from_le_bytes(raw[off + 26..off + 28].try_into().ok()?),
@@ -2936,6 +3125,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         vertices.push(MeshVertex {
             pos,
             normal,
+            uv,
             joints,
             weights,
         });
@@ -2989,6 +3179,10 @@ fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> {
             .read_normals()
             .map(|iter| iter.collect())
             .unwrap_or_default();
+        let tex_coords: Vec<[f32; 2]> = reader
+            .read_tex_coords(0)
+            .map(|iter| iter.into_f32().collect())
+            .unwrap_or_default();
         let joints: Vec<[u16; 4]> = reader
             .read_joints(0)
             .map(|iter| iter.into_u16().collect())
@@ -3014,6 +3208,7 @@ fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> {
             vertices.push(MeshVertex {
                 pos: position,
                 normal: normals.get(i).copied().unwrap_or([0.0, 1.0, 0.0]),
+                uv: tex_coords.get(i).copied().unwrap_or([0.0, 0.0]),
                 joints: joint,
                 weights: weight,
             });
@@ -3195,6 +3390,122 @@ fn create_depth_prepass_texture(
     (texture, view)
 }
 
+fn create_cached_material_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layout: &wgpu::BindGroupLayout,
+    rgba: Vec<u8>,
+    width: u32,
+    height: u32,
+    source: String,
+) -> CachedMaterialTexture {
+    let width = width.max(1);
+    let height = height.max(1);
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("perro_material_texture"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: MATERIAL_TEXTURE_FORMAT,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &rgba,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * width),
+            rows_per_image: Some(height),
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    let view = texture.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("perro_material_texture_view"),
+        ..Default::default()
+    });
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("perro_material_texture_sampler"),
+        address_mode_u: wgpu::AddressMode::Repeat,
+        address_mode_v: wgpu::AddressMode::Repeat,
+        address_mode_w: wgpu::AddressMode::Repeat,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("perro_material_texture_bg"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Sampler(&sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&view),
+            },
+        ],
+    });
+    CachedMaterialTexture {
+        source,
+        _texture: texture,
+        _view: view,
+        _sampler: sampler,
+        bind_group,
+    }
+}
+
+fn load_texture_rgba(source: &str) -> Option<(Vec<u8>, u32, u32)> {
+    let bytes = load_asset(source).ok()?;
+    let image = image::load_from_memory(&bytes).ok()?;
+    let rgba = image.to_rgba8();
+    let (w, h) = rgba.dimensions();
+    Some((rgba.into_raw(), w.max(1), h.max(1)))
+}
+
+fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
+    if bytes.len() < 20 || &bytes[0..4] != PTEX_MAGIC {
+        return None;
+    }
+    let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
+    if version != 1 {
+        return None;
+    }
+    let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
+    let height = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
+    let raw_len = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let expected_len = width.checked_mul(height)?.checked_mul(4)?;
+    if raw_len != expected_len {
+        return None;
+    }
+    let rgba = decompress_zlib(&bytes[20..]).ok()?;
+    if rgba.len() != raw_len as usize {
+        return None;
+    }
+    Some((rgba, width, height))
+}
+
 fn create_sky_pipeline(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
@@ -3272,11 +3583,16 @@ fn create_pipeline(
                         },
                         wgpu::VertexAttribute {
                             offset: 24,
+                            shader_location: 12,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 32,
                             shader_location: 2,
                             format: wgpu::VertexFormat::Uint16x4,
                         },
                         wgpu::VertexAttribute {
-                            offset: 32,
+                            offset: 40,
                             shader_location: 3,
                             format: wgpu::VertexFormat::Float32x4,
                         },
@@ -3392,12 +3708,12 @@ fn create_depth_prepass_pipeline(
                             format: wgpu::VertexFormat::Float32x3,
                         },
                         wgpu::VertexAttribute {
-                            offset: 24,
+                            offset: 32,
                             shader_location: 2,
                             format: wgpu::VertexFormat::Uint16x4,
                         },
                         wgpu::VertexAttribute {
-                            offset: 32,
+                            offset: 40,
                             shader_location: 3,
                             format: wgpu::VertexFormat::Float32x4,
                         },
@@ -3467,6 +3783,7 @@ fn push_draw_batch(
     instance: u32,
     double_sided: bool,
     material_kind: MaterialPipelineKind,
+    base_color_texture_slot: u32,
     local_bounds: ([f32; 3], f32),
     occlusion_query: Option<u32>,
     disable_hiz_occlusion: bool,
@@ -3478,6 +3795,7 @@ fn push_draw_batch(
         instance_count: 1,
         double_sided,
         material_kind,
+        base_color_texture_slot,
         local_center,
         local_radius: local_radius.max(0.0),
         occlusion_query,
@@ -3617,6 +3935,7 @@ fn compare_draw_batch_keys(a: &DrawBatch, b: &DrawBatch) -> Ordering {
     a.double_sided
         .cmp(&b.double_sided)
         .then_with(|| compare_material_pipeline_kind(&a.material_kind, &b.material_kind))
+        .then_with(|| a.base_color_texture_slot.cmp(&b.base_color_texture_slot))
         .then_with(|| a.mesh.index_start.cmp(&b.mesh.index_start))
         .then_with(|| a.mesh.base_vertex.cmp(&b.mesh.base_vertex))
         .then_with(|| a.instance_start.cmp(&b.instance_start))
