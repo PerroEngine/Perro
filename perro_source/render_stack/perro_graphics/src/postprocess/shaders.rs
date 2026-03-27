@@ -96,7 +96,8 @@ fn linearize_depth(depth: f32) -> f32 {
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let color = textureSample(input_tex, input_sampler, in.uv);
     let depth = load_depth(in.uv);
-    return post_process(in.uv, color, depth);
+    let out_color = post_process(in.uv, color, depth);
+    return vec4<f32>(out_color.rgb, 1.0);
 }
 
 "#;

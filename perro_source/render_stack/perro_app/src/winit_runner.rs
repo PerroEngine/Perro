@@ -4,10 +4,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize, Position, Size},
-    event::WindowEvent,
+    event::{DeviceEvent, ElementState, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    keyboard::{KeyCode, PhysicalKey},
     monitor::MonitorHandle,
-    window::{Window, WindowAttributes},
+    window::{CursorGrabMode, Window, WindowAttributes},
 };
 
 const DEFAULT_FPS_CAP: f32 = 60.0;
@@ -132,6 +133,9 @@ struct RunnerState<B: GraphicsBackend> {
     kbm_input: crate::input::KbmInput,
     gamepad_input: crate::input::GamepadInput,
     joycon_input: crate::input::JoyConInput,
+    cursor_captured: bool,
+    capture_uses_raw_motion: bool,
+    cursor_inside_window: bool,
 }
 
 impl<B: GraphicsBackend> RunnerState<B> {
@@ -194,6 +198,53 @@ impl<B: GraphicsBackend> RunnerState<B> {
             kbm_input: crate::input::KbmInput::new(),
             gamepad_input: crate::input::GamepadInput::new(),
             joycon_input: crate::input::JoyConInput::new(),
+            cursor_captured: false,
+            capture_uses_raw_motion: false,
+            cursor_inside_window: false,
+        }
+    }
+
+    fn apply_cursor_capture(window: &Window, capture: bool) -> (bool, bool) {
+        if capture {
+            match window.set_cursor_grab(CursorGrabMode::Locked) {
+                Ok(_) => {
+                    window.set_cursor_visible(false);
+                    (true, true)
+                }
+                Err(locked_err) => match window.set_cursor_grab(CursorGrabMode::Confined) {
+                    Ok(_) => {
+                        window.set_cursor_visible(false);
+                        (true, false)
+                    }
+                    Err(confined_err) => {
+                        println!(
+                            "[runtime] failed to capture cursor (locked: {locked_err}; confined: {confined_err})"
+                        );
+                        window.set_cursor_visible(true);
+                        (false, false)
+                    }
+                },
+            }
+        } else {
+            if let Err(err) = window.set_cursor_grab(CursorGrabMode::None) {
+                println!("[runtime] failed to release cursor capture: {err}");
+            }
+            window.set_cursor_visible(true);
+            (false, false)
+        }
+    }
+
+    fn set_cursor_capture(&mut self, capture: bool) {
+        if self.cursor_captured == capture {
+            return;
+        }
+        if let Some(window) = &self.window {
+            let (captured, uses_raw_motion) = Self::apply_cursor_capture(window.as_ref(), capture);
+            self.cursor_captured = captured;
+            self.capture_uses_raw_motion = uses_raw_motion;
+        } else {
+            self.cursor_captured = false;
+            self.capture_uses_raw_motion = false;
         }
     }
 
@@ -461,6 +512,11 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             self.app.present();
             window.set_visible(true);
             self.window = Some(window);
+            self.cursor_captured = false;
+            self.capture_uses_raw_motion = false;
+            if self.cursor_inside_window {
+                self.set_cursor_capture(true);
+            }
             let now = Instant::now();
             self.last_frame_start = now;
             self.last_frame_end = now;
@@ -525,12 +581,56 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 // On Windows title-bar drag can suppress redraw cadence; tick on move events too.
                 self.step_frame(Instant::now());
             }
-            WindowEvent::KeyboardInput { .. }
-            | WindowEvent::MouseInput { .. }
-            | WindowEvent::CursorMoved { .. }
-            | WindowEvent::CursorLeft { .. }
-            | WindowEvent::MouseWheel { .. } => {
+            ref keyboard_event @ WindowEvent::KeyboardInput {
+                event: ref key_event,
+                ..
+            } => {
+                if key_event.state == ElementState::Pressed
+                    && matches!(
+                        &key_event.physical_key,
+                        PhysicalKey::Code(KeyCode::Escape)
+                    )
+                {
+                    self.set_cursor_capture(false);
+                }
+                self.kbm_input
+                    .handle_window_event(&mut self.app, &keyboard_event);
+            }
+            mouse_event @ WindowEvent::MouseInput { state, .. } => {
+                if state == ElementState::Pressed && !self.cursor_captured {
+                    if self.cursor_inside_window {
+                        self.set_cursor_capture(true);
+                    }
+                }
+                self.kbm_input.handle_window_event(&mut self.app, &mouse_event);
+            }
+            WindowEvent::CursorEntered { .. } => {
+                self.cursor_inside_window = true;
+            }
+            cursor_left @ WindowEvent::CursorLeft { .. } => {
+                self.cursor_inside_window = false;
+                self.kbm_input.handle_window_event(&mut self.app, &cursor_left);
+            }
+            cursor_moved @ WindowEvent::CursorMoved { .. } => {
+                self.cursor_inside_window = true;
+                self.kbm_input.handle_window_event(&mut self.app, &cursor_moved);
+            }
+            WindowEvent::MouseWheel { .. } => {
                 self.kbm_input.handle_window_event(&mut self.app, &event);
+            }
+            WindowEvent::Focused(true) => {
+                if self.cursor_captured {
+                    if let Some(window) = &self.window {
+                        let (captured, uses_raw_motion) =
+                            Self::apply_cursor_capture(window.as_ref(), true);
+                        self.cursor_captured = captured;
+                        self.capture_uses_raw_motion = uses_raw_motion;
+                    }
+                }
+            }
+            WindowEvent::Focused(false) => {
+                self.cursor_inside_window = false;
+                self.set_cursor_capture(false);
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 if let Some(window) = &self.window {
@@ -543,6 +643,21 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}
+        }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: DeviceEvent,
+    ) {
+        if self.cursor_captured
+            && self.capture_uses_raw_motion
+            && let DeviceEvent::MouseMotion { delta } = event
+        {
+            self.kbm_input
+                .handle_mouse_motion(&mut self.app, delta.0, delta.1);
         }
     }
 

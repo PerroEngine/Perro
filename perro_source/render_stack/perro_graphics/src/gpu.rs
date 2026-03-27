@@ -41,6 +41,12 @@ struct MsaaColorTarget {
     view: wgpu::TextureView,
 }
 
+struct PresentProcessor {
+    sampler: wgpu::Sampler,
+    bgl: wgpu::BindGroupLayout,
+    pipeline: wgpu::RenderPipeline,
+}
+
 pub struct Gpu {
     window_handle: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -52,6 +58,7 @@ pub struct Gpu {
     msaa_color: Option<MsaaColorTarget>,
     post: PostProcessor,
     accessibility: VisualAccessibilityProcessor,
+    present: PresentProcessor,
     two_d: Option<Gpu2D>,
     three_d: Option<Gpu3D>,
     point_particles_3d: Option<GpuPointParticles3D>,
@@ -199,9 +206,13 @@ impl Gpu {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
-        let render_format = surface_format;
+        let render_format = linear_render_format(surface_format);
         let present_mode = choose_present_mode(&caps.present_modes, vsync_enabled);
-        let alpha_mode = caps.alpha_modes[0];
+        let alpha_mode = if caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
+            wgpu::CompositeAlphaMode::Opaque
+        } else {
+            caps.alpha_modes[0]
+        };
         let size = window.inner_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
@@ -240,6 +251,7 @@ impl Gpu {
         let post = PostProcessor::new(&device, render_format, width, height);
         let accessibility =
             VisualAccessibilityProcessor::new(&device, render_format, width, height);
+        let present = PresentProcessor::new(&device, surface_format);
 
         Some(Self {
             window_handle: window,
@@ -252,6 +264,7 @@ impl Gpu {
             msaa_color,
             post,
             accessibility,
+            present,
             two_d: Some(two_d),
             three_d: Some(three_d),
             point_particles_3d: Some(point_particles_3d),
@@ -515,29 +528,19 @@ impl Gpu {
             };
         let global_post_chain = post_processing_global.as_ref();
         let global_post_enabled = PostProcessor::has_effects(global_post_chain);
-        let post_enabled = camera_post_enabled || global_post_enabled;
         let accessibility_enabled = self.accessibility.has_settings(accessibility);
         let depth_prepass_needed = (camera_post_enabled
             && PostProcessor::uses_depth(camera_post_chain))
             || (global_post_enabled && PostProcessor::uses_depth(global_post_chain));
         let scene_view = self.post.scene_view().clone();
-        let color_view = if post_enabled || accessibility_enabled {
-            self.msaa_color
-                .as_ref()
-                .map(|t| &t.view)
-                .unwrap_or(&scene_view)
-        } else {
-            self.msaa_color
-                .as_ref()
-                .map(|t| &t.view)
-                .unwrap_or(&swap_view)
-        };
+        let intermediate_view = self.accessibility.intermediate_view().clone();
+        let color_view = self
+            .msaa_color
+            .as_ref()
+            .map(|t| &t.view)
+            .unwrap_or(&scene_view);
         let resolve_view = if self.sample_count > 1 {
-            if post_enabled || accessibility_enabled {
-                Some(&scene_view)
-            } else {
-                Some(&swap_view)
-            }
+            Some(&scene_view)
         } else {
             None
         };
@@ -589,88 +592,84 @@ impl Gpu {
         timing.encode_main = encode_start.elapsed();
 
         let post_start = Instant::now();
-
-        if camera_post_enabled && global_post_enabled {
-            let camera_post_target = self.accessibility.intermediate_view();
-
-            let post_context = PostProcessContext {
-                device: &self.device,
-                queue: &self.queue,
-                output_view: camera_post_target,
-                camera: &camera_3d,
-                static_shader_lookup,
-            };
-
-            let post_chain_data = PostProcessChainData {
-                input_view: &scene_view,
-                depth_view: self
-                    .three_d
-                    .as_ref()
-                    .expect("three_d is initialized when post-processing is active")
-                    .depth_prepass_view(),
-                effects: camera_post_chain,
-            };
-
-            self.post
-                .apply_chain(&post_context, &post_chain_data, &mut encoder);
-        } else if camera_post_enabled || global_post_enabled {
-            // Determine the chain of effects and the initial input view
-            let (post_chain, post_input) = if camera_post_enabled {
-                (camera_post_chain, &scene_view)
-            } else {
-                (global_post_chain, &scene_view)
-            };
-
-            // Determine the final output target for the post-processing chain
-            let post_target = if accessibility_enabled {
-                self.accessibility.intermediate_view()
-            } else {
-                &swap_view
-            };
-
-            let post_context = PostProcessContext {
-                device: &self.device,
-                queue: &self.queue,
-
-                output_view: post_target,
-                camera: &camera_3d,
-                static_shader_lookup,
-            };
-
-            let post_chain_data = PostProcessChainData {
-                input_view: post_input,
-                depth_view: self
-                    .three_d
-                    .as_ref()
-                    .expect("three_d is initialized when post-processing is active")
-                    .depth_prepass_view(),
-                effects: post_chain,
-            };
-
-            self.post
-                .apply_chain(&post_context, &post_chain_data, &mut encoder);
+        #[derive(Clone, Copy)]
+        enum FrameTex {
+            Scene,
+            Intermediate,
         }
+        let mut current_tex = FrameTex::Scene;
+
+        let mut apply_post_chain = |effects: &[perro_structs::PostProcessEffect],
+                                    current_tex: &mut FrameTex| {
+            if effects.is_empty() {
+                return;
+            }
+            let (input_view, output_view, next_tex) = match *current_tex {
+                FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
+                FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene),
+            };
+            let post_context = PostProcessContext {
+                device: &self.device,
+                queue: &self.queue,
+                output_view,
+                camera: &camera_3d,
+                static_shader_lookup,
+            };
+            let post_chain_data = PostProcessChainData {
+                input_view,
+                depth_view: self
+                    .three_d
+                    .as_ref()
+                    .expect("three_d is initialized when post-processing is active")
+                    .depth_prepass_view(),
+                effects,
+            };
+            self.post
+                .apply_chain(&post_context, &post_chain_data, &mut encoder);
+            *current_tex = next_tex;
+        };
+        apply_post_chain(
+            if camera_post_enabled {
+                camera_post_chain
+            } else {
+                &[]
+            },
+            &mut current_tex,
+        );
+        apply_post_chain(
+            if global_post_enabled {
+                global_post_chain
+            } else {
+                &[]
+            },
+            &mut current_tex,
+        );
         timing.post_process = post_start.elapsed();
 
         let accessibility_start = Instant::now();
         if accessibility_enabled {
-            let accessibility_input_view = if camera_post_enabled && global_post_enabled {
-                scene_view.clone()
-            } else if post_enabled {
-                self.accessibility.intermediate_view().clone()
-            } else {
-                scene_view.clone()
+            let (accessibility_input_view, accessibility_output_view, next_tex) = match current_tex {
+                FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
+                FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene),
             };
             self.accessibility.apply(
                 &self.device,
                 &self.queue,
                 &mut encoder,
-                &accessibility_input_view,
-                &swap_view,
+                accessibility_input_view,
+                accessibility_output_view,
                 accessibility,
             );
+            current_tex = next_tex;
         }
         timing.accessibility = accessibility_start.elapsed();
+
+        let final_input_view = match current_tex {
+            FrameTex::Scene => &scene_view,
+            FrameTex::Intermediate => &intermediate_view,
+        };
+        self.present
+            .apply(&self.device, &mut encoder, final_input_view, &swap_view);
         let submit_start = Instant::now();
         self.queue.submit(Some(encoder.finish()));
         timing.submit_main = submit_start.elapsed();
@@ -779,6 +778,161 @@ fn create_msaa_color_target(
         _texture: texture,
         view,
     })
+}
+
+impl PresentProcessor {
+    fn new(device: &wgpu::Device, output_format: wgpu::TextureFormat) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("perro_present_shader"),
+            source: wgpu::ShaderSource::Wgsl(
+                r#"
+@group(0) @binding(0) var input_tex: texture_2d<f32>;
+@group(0) @binding(1) var input_sampler: sampler;
+
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -3.0),
+        vec2<f32>(3.0, 1.0),
+        vec2<f32>(-1.0, 1.0),
+    );
+    var out: VsOut;
+    out.pos = vec4<f32>(pos[vid], 0.0, 1.0);
+    out.uv = (out.pos.xy * vec2<f32>(0.5, -0.5)) + vec2<f32>(0.5, 0.5);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    let c = textureSample(input_tex, input_sampler, in.uv);
+    return vec4<f32>(c.rgb, 1.0);
+}
+"#
+                .into(),
+            ),
+        });
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("perro_present_sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_present_bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("perro_present_layout"),
+            bind_group_layouts: &[Some(&bgl)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("perro_present_pipeline"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: output_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+        Self {
+            sampler,
+            bgl,
+            pipeline,
+        }
+    }
+
+    fn apply(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        input_view: &wgpu::TextureView,
+        output_view: &wgpu::TextureView,
+    ) {
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_present_bg"),
+            layout: &self.bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(input_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("perro_present_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: output_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+}
+
+fn linear_render_format(surface_format: wgpu::TextureFormat) -> wgpu::TextureFormat {
+    match surface_format {
+        wgpu::TextureFormat::Rgba8UnormSrgb => wgpu::TextureFormat::Rgba8Unorm,
+        wgpu::TextureFormat::Bgra8UnormSrgb => wgpu::TextureFormat::Bgra8Unorm,
+        _ => surface_format,
+    }
 }
 
 fn choose_present_mode(modes: &[wgpu::PresentMode], vsync_enabled: bool) -> wgpu::PresentMode {

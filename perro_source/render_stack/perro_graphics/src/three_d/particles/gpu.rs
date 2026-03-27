@@ -268,7 +268,9 @@ impl GpuPointParticles3D {
                 targets: &[Some(wgpu::ColorTargetState {
                     format: color_format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
+                    write_mask: wgpu::ColorWrites::RED
+                        | wgpu::ColorWrites::GREEN
+                        | wgpu::ColorWrites::BLUE,
                 })],
                 compilation_options: Default::default(),
             }),
@@ -337,7 +339,9 @@ impl GpuPointParticles3D {
                     targets: &[Some(wgpu::ColorTargetState {
                         format: color_format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
+                        write_mask: wgpu::ColorWrites::RED
+                            | wgpu::ColorWrites::GREEN
+                            | wgpu::ColorWrites::BLUE,
                     })],
                     compilation_options: Default::default(),
                 }),
@@ -447,7 +451,9 @@ impl GpuPointParticles3D {
                 targets: &[Some(wgpu::ColorTargetState {
                     format: color_format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
+                    write_mask: wgpu::ColorWrites::RED
+                        | wgpu::ColorWrites::GREEN
+                        | wgpu::ColorWrites::BLUE,
                 })],
                 compilation_options: Default::default(),
             }),
@@ -491,7 +497,9 @@ impl GpuPointParticles3D {
                     targets: &[Some(wgpu::ColorTargetState {
                         format: color_format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
+                        write_mask: wgpu::ColorWrites::RED
+                            | wgpu::ColorWrites::GREEN
+                            | wgpu::ColorWrites::BLUE,
                     })],
                     compilation_options: Default::default(),
                 }),
@@ -660,7 +668,9 @@ impl GpuPointParticles3D {
                     targets: &[Some(wgpu::ColorTargetState {
                         format: color_format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
+                        write_mask: wgpu::ColorWrites::RED
+                            | wgpu::ColorWrites::GREEN
+                            | wgpu::ColorWrites::BLUE,
                     })],
                     compilation_options: Default::default(),
                 }),
@@ -704,7 +714,9 @@ impl GpuPointParticles3D {
                     targets: &[Some(wgpu::ColorTargetState {
                         format: color_format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
+                        write_mask: wgpu::ColorWrites::RED
+                            | wgpu::ColorWrites::GREEN
+                            | wgpu::ColorWrites::BLUE,
                     })],
                     compilation_options: Default::default(),
                 }),
