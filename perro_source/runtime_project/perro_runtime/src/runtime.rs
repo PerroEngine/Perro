@@ -32,7 +32,9 @@ use state::{
     DirtyState, InternalUpdateState, NodeIndexState, Render2DState, Render3DState, RenderState,
     ScriptRuntimeState, ScriptSchedules, SignalRuntimeState, TransformRuntimeState,
 };
-pub(crate) use state::{TerrainChunkMeshKey, TerrainChunkMeshState, TerrainDebugState};
+pub(crate) use state::{
+    CollisionDebugState, TerrainChunkMeshKey, TerrainChunkMeshState, TerrainDebugState,
+};
 
 type RuntimeScriptCtor = ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>;
 type StaticScriptRegistry = &'static [(&'static str, RuntimeScriptCtor)];

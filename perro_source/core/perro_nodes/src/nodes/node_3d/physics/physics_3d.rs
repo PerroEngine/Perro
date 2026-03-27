@@ -24,10 +24,7 @@ impl Default for Shape3D {
 pub struct CollisionShape3D {
     pub base: Node3D,
     pub shape: Shape3D,
-    pub sensor: bool,
-    pub friction: f32,
-    pub restitution: f32,
-    pub density: f32,
+    pub debug: bool,
 }
 
 impl Default for CollisionShape3D {
@@ -41,10 +38,7 @@ impl CollisionShape3D {
         Self {
             base: Node3D::new(),
             shape: Shape3D::Cube { size: Vector3::ONE },
-            sensor: false,
-            friction: 0.7,
-            restitution: 0.0,
-            density: 1.0,
+            debug: false,
         }
     }
 }
@@ -68,6 +62,9 @@ pub struct StaticBody3D {
     pub base: Node3D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
+    pub friction: f32,
+    pub restitution: f32,
+    pub density: f32,
 }
 
 impl Default for StaticBody3D {
@@ -82,6 +79,9 @@ impl StaticBody3D {
             base: Node3D::new(),
             enabled: true,
             physics_handle: None,
+            friction: 0.7,
+            restitution: 0.0,
+            density: 1.0,
         }
     }
 }
@@ -149,6 +149,9 @@ pub struct RigidBody3D {
     pub linear_damping: f32,
     pub angular_damping: f32,
     pub can_sleep: bool,
+    pub friction: f32,
+    pub restitution: f32,
+    pub density: f32,
 }
 
 impl Default for RigidBody3D {
@@ -170,6 +173,9 @@ impl RigidBody3D {
             linear_damping: 0.0,
             angular_damping: 0.0,
             can_sleep: true,
+            friction: 0.7,
+            restitution: 0.0,
+            density: 1.0,
         }
     }
 }

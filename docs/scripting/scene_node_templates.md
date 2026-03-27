@@ -210,9 +210,7 @@ script = "res://path/to/script.rs"
     [CollisionShape3D]
         shape = { type = cube size = (1, 1, 1) }
         sensor = false
-        friction = 0.7
-        restitution = 0.0
-        density = 1.0
+        debug = false
         [Node3D]
             position = (0, 0, 0)
             rotation = (0, 0, 0, 1)
@@ -241,12 +239,16 @@ parent = PARENTKEY
 script = "res://path/to/script.rs"
     [RigidBody3D]
         enabled = true
+        mass = 1.0
         linear_velocity = (0, 0, 0)
         angular_velocity = (0, 0, 0)
         gravity_scale = 1.0
         linear_damping = 0.0
         angular_damping = 0.0
         can_sleep = true
+        friction = 0.7
+        restitution = 0.0
+        density = 1.0
         [Node3D]
             position = (0, 0, 0)
             rotation = (0, 0, 0, 1)

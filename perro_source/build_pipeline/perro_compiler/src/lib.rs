@@ -1085,18 +1085,6 @@ fn method_const_name(method_name: &str) -> String {
     out
 }
 
-fn method_arity_const_name(method_name: &str) -> String {
-    let mut out = String::from("__PERRO_METHOD_ARITY_");
-    for c in method_name.chars() {
-        if c.is_ascii_alphanumeric() {
-            out.push(c.to_ascii_uppercase());
-        } else {
-            out.push('_');
-        }
-    }
-    out
-}
-
 #[derive(Clone, Debug)]
 struct ScriptMethod {
     name: String,
@@ -1131,13 +1119,6 @@ fn generate_member_consts(fields: &[StateField], methods: &[ScriptMethod]) -> St
             "const {const_name}: ScriptMemberID = func!(\"{}\");\n",
             method.name
         ));
-        if !method.takes_raw_params {
-            let arity_const_name = method_arity_const_name(&method.name);
-            out.push_str(&format!(
-                "const {arity_const_name}: usize = {};\n",
-                method.params.len()
-            ));
-        }
     }
     out
 }
@@ -1152,7 +1133,6 @@ fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
     out.push_str("        match method {\n");
     for method in methods {
         let const_name = method_const_name(&method.name);
-        let arity_const_name = method_arity_const_name(&method.name);
         let call = if method.takes_raw_params {
             format!("self.{}(ctx, res, ipt, self_id, params)", method.name)
         } else if method.params.is_empty() {
@@ -1169,11 +1149,6 @@ fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
 
         let mut prelude = String::new();
         let mut supported = true;
-        if !method.takes_raw_params {
-            prelude.push_str(&format!(
-                "                if params.len() != {arity_const_name} {{ return Variant::Null; }}\n"
-            ));
-        }
         if !method.takes_raw_params && !method.params.is_empty() {
             for (i, param) in method.params.iter().enumerate() {
                 if let Some(binding) = generate_call_param_binding(i, param) {
@@ -1499,6 +1474,10 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
         let mut has_res = false;
         let mut has_ipt = false;
         let mut has_node_id = false;
+        let mut consumed_ctx = false;
+        let mut consumed_res = false;
+        let mut consumed_ipt = false;
+        let mut consumed_node_id = false;
 
         for raw in split_top_level_commas(params_sig) {
             let token = raw.trim();
@@ -1519,19 +1498,23 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
             let param_ty = ty_part.trim();
 
             let normalized = normalize_type(param_ty);
-            if is_runtime_context_type(&normalized) {
+            if is_runtime_context_type(&normalized) && !consumed_ctx {
+                consumed_ctx = true;
                 has_ctx = true;
                 continue;
             }
-            if is_resource_context_type(&normalized) {
+            if is_resource_context_type(&normalized) && !consumed_res {
+                consumed_res = true;
                 has_res = true;
                 continue;
             }
-            if is_input_context_type(&normalized) {
+            if is_input_context_type(&normalized) && !consumed_ipt {
+                consumed_ipt = true;
                 has_ipt = true;
                 continue;
             }
-            if is_node_id_type(&normalized) {
+            if is_node_id_type(&normalized) && !consumed_node_id {
+                consumed_node_id = true;
                 has_node_id = true;
                 continue;
             }
@@ -1751,69 +1734,80 @@ fn generate_call_param_binding(index: usize, param: &ScriptMethodParam) -> Optio
     let name = &param.name;
     let line = match ty.as_str() {
         "bool" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Bool(v)) => *v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Bool(v)) => *v, Some(_) => return Variant::Null, None => false }};"
         ),
         "i8" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::I8(v))) => *v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::I8(v))) => *v, Some(_) => return Variant::Null, None => 0_i8 }};"
         ),
         "i16" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::I16(v))) => *v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::I16(v))) => *v, Some(_) => return Variant::Null, None => 0_i16 }};"
         ),
         "i32" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::I32(v))) => *v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::I32(v))) => *v, Some(_) => return Variant::Null, None => 0_i32 }};"
         ),
         "i64" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::I64(v))) => *v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::I64(v))) => *v, Some(_) => return Variant::Null, None => 0_i64 }};"
         ),
         "i128" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::I128(v))) => *v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::I128(v))) => *v, Some(_) => return Variant::Null, None => 0_i128 }};"
         ),
         "isize" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::I64(v))) => match isize::try_from(*v) {{ Ok(v) => v, Err(_) => return Variant::Null }}, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::I64(v))) => match isize::try_from(*v) {{ Ok(v) => v, Err(_) => return Variant::Null }}, Some(_) => return Variant::Null, None => 0_isize }};"
         ),
         "u8" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::U8(v))) => *v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::U8(v))) => *v, Some(_) => return Variant::Null, None => 0_u8 }};"
         ),
         "u16" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::U16(v))) => *v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::U16(v))) => *v, Some(_) => return Variant::Null, None => 0_u16 }};"
         ),
         "u32" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::U32(v))) => *v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::U32(v))) => *v, Some(_) => return Variant::Null, None => 0_u32 }};"
         ),
         "u64" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::U64(v))) => *v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::U64(v))) => *v, Some(_) => return Variant::Null, None => 0_u64 }};"
         ),
         "u128" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::U128(v))) => *v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::U128(v))) => *v, Some(_) => return Variant::Null, None => 0_u128 }};"
         ),
         "usize" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::U64(v))) => match usize::try_from(*v) {{ Ok(v) => v, Err(_) => return Variant::Null }}, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::U64(v))) => match usize::try_from(*v) {{ Ok(v) => v, Err(_) => return Variant::Null }}, Some(_) => return Variant::Null, None => 0_usize }};"
         ),
         "f32" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::F32(v))) => *v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::F32(v))) => *v, Some(_) => return Variant::Null, None => 0.0_f32 }};"
         ),
         "f64" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::F64(v))) => *v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::Number(perro::variant::Number::F64(v))) => *v, Some(_) => return Variant::Null, None => 0.0_f64 }};"
         ),
         "String" | "std::string::String" | "alloc::string::String" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::String(v)) => v.to_string(), _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::String(v)) => v.to_string(), Some(_) => return Variant::Null, None => String::new() }};"
         ),
         "&str" => format!(
-            "let {name}: &str = match params.get({index}) {{ Some(Variant::String(v)) => v.as_ref(), _ => return Variant::Null }};"
+            "let {name}: &str = match params.get({index}) {{ Some(Variant::String(v)) => v.as_ref(), Some(_) => return Variant::Null, None => \"\" }};"
         ),
         "Arc<str>" | "std::sync::Arc<str>" | "alloc::sync::Arc<str>" => format!(
-            "let {name} = match params.get({index}) {{ Some(Variant::String(v)) => std::sync::Arc::<str>::clone(v), _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(Variant::String(v)) => std::sync::Arc::<str>::clone(v), Some(_) => return Variant::Null, None => std::sync::Arc::<str>::from(\"\") }};"
         ),
         "NodeID" | "perro::ids::NodeID" => format!(
-            "let {name} = match params.get({index}).and_then(|v| v.as_node()) {{ Some(v) => v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(v) => match v.as_node() {{ Some(v) => v, None => return Variant::Null }}, None => perro::ids::NodeID::nil() }};"
         ),
         "TextureID" | "perro::ids::TextureID" => format!(
-            "let {name} = match params.get({index}).and_then(|v| v.as_texture()) {{ Some(v) => v, _ => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(v) => match v.as_texture() {{ Some(v) => v, None => return Variant::Null }}, None => perro::ids::TextureID::nil() }};"
         ),
         "Variant" | "perro::variant::Variant" => format!(
-            "let {name} = match params.get({index}) {{ Some(v) => v.clone(), None => return Variant::Null }};"
+            "let {name} = match params.get({index}) {{ Some(v) => v.clone(), None => Variant::Null }};"
         ),
-        _ => return None,
+        _ => {
+            if ty.starts_with('&') {
+                return None;
+            }
+            format!(
+                "let {name}: {raw_ty} = match params.get({index}) {{ \
+                    Some(v) => match perro::variant::StateField::from_variant(v) {{ Some(v) => v, None => return Variant::Null }}, \
+                    None => Default::default() \
+                }};",
+                raw_ty = param.ty.trim()
+            )
+        }
     };
     Some(line)
 }

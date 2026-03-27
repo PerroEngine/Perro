@@ -1,9 +1,9 @@
 use super::Runtime;
 use crate::material_schema;
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_nodes::{
-    CameraProjection, SceneNodeData,
+    CameraProjection, SceneNodeData, Shape3D,
     particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
 };
 use perro_particle_math::compile_expression;
@@ -423,6 +423,61 @@ impl Runtime {
                 }
                 visible_now.insert(node);
             }
+            let collision_shape_debug_data = self.nodes.get(node).and_then(|scene_node| match &scene_node.data {
+                SceneNodeData::CollisionShape3D(shape) if shape.debug && effective_visible => {
+                    Some((shape.shape, shape.transform, scene_node.parent))
+                }
+                _ => None,
+            });
+            if let Some((shape, local_transform, parent)) = collision_shape_debug_data {
+                let (shape, world_from_shape) = if is_physics_body_3d(self, parent) {
+                    let parent_global = self
+                        .get_global_transform_3d(parent)
+                        .unwrap_or(perro_structs::Transform3D::IDENTITY);
+                    let parent_no_scale = transform_no_scale_mat4(parent_global);
+                    let local_no_scale = transform_no_scale_mat4(local_transform);
+                    let inherited_scale = perro_structs::Vector3::new(
+                        local_transform.scale.x * parent_global.scale.x,
+                        local_transform.scale.y * parent_global.scale.y,
+                        local_transform.scale.z * parent_global.scale.z,
+                    );
+                    (
+                        shape_scaled_by_local_scale(shape, inherited_scale),
+                        parent_no_scale * local_no_scale,
+                    )
+                } else {
+                    let world = self
+                        .get_global_transform_3d(node)
+                        .unwrap_or(local_transform)
+                        .to_mat4();
+                    (shape, world)
+                };
+                let signature = collision_debug_signature(shape, world_from_shape);
+                let prev = self.render_3d.collision_debug_state.get(&node).copied();
+                let needs_rebuild = prev
+                    .map(|state| state.signature != signature)
+                    .unwrap_or(true);
+                if needs_rebuild {
+                    if let Some(prev) = prev {
+                        Self::queue_remove_collision_debug_nodes(self, node, 0, prev.edge_count);
+                    }
+                    let edge_count = Self::queue_collision_shape_debug_draws(
+                        self,
+                        node,
+                        shape,
+                        world_from_shape,
+                    );
+                    self.render_3d
+                        .collision_debug_state
+                        .insert(node, crate::runtime::CollisionDebugState {
+                            signature,
+                            edge_count,
+                        });
+                }
+                visible_now.insert(node);
+            } else if let Some(prev) = self.render_3d.collision_debug_state.remove(&node) {
+                Self::queue_remove_collision_debug_nodes(self, node, 0, prev.edge_count);
+            }
 
             let point_emitter_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::ParticleEmitter3D(emitter) => Some(emitter.clone()),
@@ -504,6 +559,9 @@ impl Runtime {
         while let Some(node) = self.render_3d.removed_nodes.pop() {
             if let Some(prev) = self.render_3d.terrain_debug_state.remove(&node) {
                 Self::queue_remove_terrain_debug_nodes(self, node, prev);
+            }
+            if let Some(prev) = self.render_3d.collision_debug_state.remove(&node) {
+                Self::queue_remove_collision_debug_nodes(self, node, 0, prev.edge_count);
             }
             self.render_3d.retained_ambient_lights.remove(&node);
             self.render_3d.retained_skies.remove(&node);
@@ -748,6 +806,41 @@ impl Runtime {
         for i in 0..state.edge_count {
             self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
                 node: terrain_debug_edge_node(node, i),
+            })));
+        }
+    }
+
+    fn queue_collision_shape_debug_draws(
+        &mut self,
+        node: NodeID,
+        shape: Shape3D,
+        world_from_shape: Mat4,
+    ) -> u32 {
+        let segments = collision_shape_wire_segments(shape);
+        let mut edge_count = 0u32;
+        for (start, end) in segments {
+            let world_start = world_from_shape.transform_point3(start).to_array();
+            let world_end = world_from_shape.transform_point3(end).to_array();
+            self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::DrawDebugLine3D {
+                node: collision_debug_edge_node(node, edge_count),
+                start: world_start,
+                end: world_end,
+                thickness: 0.035,
+            })));
+            edge_count = edge_count.saturating_add(1);
+        }
+        edge_count
+    }
+
+    fn queue_remove_collision_debug_nodes(
+        &mut self,
+        node: NodeID,
+        start_index: u32,
+        end_exclusive: u32,
+    ) {
+        for i in start_index..end_exclusive {
+            self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+                node: collision_debug_edge_node(node, i),
             })));
         }
     }
@@ -1040,6 +1133,435 @@ fn terrain_debug_point_node(node: NodeID, index: u32) -> NodeID {
 fn terrain_debug_edge_node(node: NodeID, index: u32) -> NodeID {
     // Synthetic retained debug ID namespace: top byte 0xD2 for edges.
     NodeID::from_u64((0xD2u64 << 56) ^ (node.as_u64() << 16) ^ index as u64)
+}
+
+fn collision_debug_edge_node(node: NodeID, index: u32) -> NodeID {
+    // Synthetic retained debug ID namespace: top byte 0xD3 for collision edges.
+    NodeID::from_u64((0xD3u64 << 56) ^ (node.as_u64() << 16) ^ index as u64)
+}
+
+fn is_physics_body_3d(runtime: &Runtime, node: NodeID) -> bool {
+    runtime.nodes.get(node).is_some_and(|scene_node| {
+        matches!(
+            scene_node.data,
+            SceneNodeData::StaticBody3D(_) | SceneNodeData::RigidBody3D(_) | SceneNodeData::Area3D(_)
+        )
+    })
+}
+
+fn transform_no_scale_mat4(transform: perro_structs::Transform3D) -> Mat4 {
+    let rotation = Quat::from_xyzw(
+        transform.rotation.x,
+        transform.rotation.y,
+        transform.rotation.z,
+        transform.rotation.w,
+    );
+    Mat4::from_scale_rotation_translation(
+        Vec3::ONE,
+        rotation,
+        Vec3::new(
+            transform.position.x,
+            transform.position.y,
+            transform.position.z,
+        ),
+    )
+}
+
+fn shape_scaled_by_local_scale(shape: Shape3D, scale: perro_structs::Vector3) -> Shape3D {
+    let sx = scale.x.abs().max(0.0001);
+    let sy = scale.y.abs().max(0.0001);
+    let sz = scale.z.abs().max(0.0001);
+    match shape {
+        Shape3D::Cube { size } => Shape3D::Cube {
+            size: perro_structs::Vector3::new(size.x * sx, size.y * sy, size.z * sz),
+        },
+        Shape3D::Sphere { radius } => Shape3D::Sphere {
+            radius: radius * sx.max(sy).max(sz),
+        },
+        Shape3D::Capsule {
+            radius,
+            half_height,
+        } => Shape3D::Capsule {
+            radius: radius * sx.max(sz),
+            half_height: half_height * sy,
+        },
+        Shape3D::Cylinder {
+            radius,
+            half_height,
+        } => Shape3D::Cylinder {
+            radius: radius * sx.max(sz),
+            half_height: half_height * sy,
+        },
+        Shape3D::Cone {
+            radius,
+            half_height,
+        } => Shape3D::Cone {
+            radius: radius * sx.max(sz),
+            half_height: half_height * sy,
+        },
+        Shape3D::TriPrism { size } => Shape3D::TriPrism {
+            size: perro_structs::Vector3::new(size.x * sx, size.y * sy, size.z * sz),
+        },
+        Shape3D::TriangularPyramid { size } => Shape3D::TriangularPyramid {
+            size: perro_structs::Vector3::new(size.x * sx, size.y * sy, size.z * sz),
+        },
+        Shape3D::SquarePyramid { size } => Shape3D::SquarePyramid {
+            size: perro_structs::Vector3::new(size.x * sx, size.y * sy, size.z * sz),
+        },
+    }
+}
+
+fn collision_debug_signature(shape: Shape3D, world_from_shape: Mat4) -> u64 {
+    let mut h = 0xC011_1510_0D3B_9A77u64;
+    hash_shape3d(&mut h, shape);
+    for col in world_from_shape.to_cols_array_2d() {
+        for value in col {
+            h ^= value.to_bits() as u64;
+            h = h.rotate_left(9).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        }
+    }
+    h
+}
+
+fn hash_shape3d(h: &mut u64, shape: Shape3D) {
+    match shape {
+        Shape3D::Cube { size } => {
+            *h ^= 1;
+            mix_hash_f32(h, size.x);
+            mix_hash_f32(h, size.y);
+            mix_hash_f32(h, size.z);
+        }
+        Shape3D::Sphere { radius } => {
+            *h ^= 2;
+            mix_hash_f32(h, radius);
+        }
+        Shape3D::Capsule {
+            radius,
+            half_height,
+        } => {
+            *h ^= 3;
+            mix_hash_f32(h, radius);
+            mix_hash_f32(h, half_height);
+        }
+        Shape3D::Cylinder {
+            radius,
+            half_height,
+        } => {
+            *h ^= 4;
+            mix_hash_f32(h, radius);
+            mix_hash_f32(h, half_height);
+        }
+        Shape3D::Cone {
+            radius,
+            half_height,
+        } => {
+            *h ^= 5;
+            mix_hash_f32(h, radius);
+            mix_hash_f32(h, half_height);
+        }
+        Shape3D::TriPrism { size } => {
+            *h ^= 6;
+            mix_hash_f32(h, size.x);
+            mix_hash_f32(h, size.y);
+            mix_hash_f32(h, size.z);
+        }
+        Shape3D::TriangularPyramid { size } => {
+            *h ^= 7;
+            mix_hash_f32(h, size.x);
+            mix_hash_f32(h, size.y);
+            mix_hash_f32(h, size.z);
+        }
+        Shape3D::SquarePyramid { size } => {
+            *h ^= 8;
+            mix_hash_f32(h, size.x);
+            mix_hash_f32(h, size.y);
+            mix_hash_f32(h, size.z);
+        }
+    }
+}
+
+#[inline]
+fn mix_hash_f32(h: &mut u64, value: f32) {
+    *h ^= value.to_bits() as u64;
+    *h = h.rotate_left(11).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+}
+
+fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)> {
+    let mut out = Vec::new();
+    match shape {
+        Shape3D::Cube { size } => {
+            let hx = size.x.abs().max(0.0001) * 0.5;
+            let hy = size.y.abs().max(0.0001) * 0.5;
+            let hz = size.z.abs().max(0.0001) * 0.5;
+            let points = [
+                Vec3::new(-hx, -hy, -hz),
+                Vec3::new(hx, -hy, -hz),
+                Vec3::new(hx, hy, -hz),
+                Vec3::new(-hx, hy, -hz),
+                Vec3::new(-hx, -hy, hz),
+                Vec3::new(hx, -hy, hz),
+                Vec3::new(hx, hy, hz),
+                Vec3::new(-hx, hy, hz),
+            ];
+            let edges = [
+                (0usize, 1usize),
+                (1, 2),
+                (2, 3),
+                (3, 0),
+                (4, 5),
+                (5, 6),
+                (6, 7),
+                (7, 4),
+                (0, 4),
+                (1, 5),
+                (2, 6),
+                (3, 7),
+            ];
+            push_indexed_edges(&mut out, &points, &edges);
+        }
+        Shape3D::Sphere { radius } => {
+            let r = radius.abs().max(0.0001);
+            append_circle_segments(
+                &mut out,
+                Vec3::ZERO,
+                Vec3::new(r, 0.0, 0.0),
+                Vec3::new(0.0, r, 0.0),
+                20,
+            );
+            append_circle_segments(
+                &mut out,
+                Vec3::ZERO,
+                Vec3::new(r, 0.0, 0.0),
+                Vec3::new(0.0, 0.0, r),
+                20,
+            );
+            append_circle_segments(
+                &mut out,
+                Vec3::ZERO,
+                Vec3::new(0.0, r, 0.0),
+                Vec3::new(0.0, 0.0, r),
+                20,
+            );
+        }
+        Shape3D::Capsule {
+            radius,
+            half_height,
+        } => {
+            let r = radius.abs().max(0.0001);
+            let h = half_height.abs().max(0.0001);
+            let top = Vec3::new(0.0, h, 0.0);
+            let bot = Vec3::new(0.0, -h, 0.0);
+            append_circle_segments(
+                &mut out,
+                top,
+                Vec3::new(r, 0.0, 0.0),
+                Vec3::new(0.0, 0.0, r),
+                20,
+            );
+            append_circle_segments(
+                &mut out,
+                bot,
+                Vec3::new(r, 0.0, 0.0),
+                Vec3::new(0.0, 0.0, r),
+                20,
+            );
+            out.push((Vec3::new(r, -h, 0.0), Vec3::new(r, h, 0.0)));
+            out.push((Vec3::new(-r, -h, 0.0), Vec3::new(-r, h, 0.0)));
+            out.push((Vec3::new(0.0, -h, r), Vec3::new(0.0, h, r)));
+            out.push((Vec3::new(0.0, -h, -r), Vec3::new(0.0, h, -r)));
+            append_arc_segments(
+                &mut out,
+                top,
+                Vec3::new(r, 0.0, 0.0),
+                Vec3::new(0.0, r, 0.0),
+                std::f32::consts::PI,
+                16,
+            );
+            append_arc_segments(
+                &mut out,
+                top,
+                Vec3::new(0.0, 0.0, r),
+                Vec3::new(0.0, r, 0.0),
+                std::f32::consts::PI,
+                16,
+            );
+            append_arc_segments(
+                &mut out,
+                bot,
+                Vec3::new(r, 0.0, 0.0),
+                Vec3::new(0.0, -r, 0.0),
+                std::f32::consts::PI,
+                16,
+            );
+            append_arc_segments(
+                &mut out,
+                bot,
+                Vec3::new(0.0, 0.0, r),
+                Vec3::new(0.0, -r, 0.0),
+                std::f32::consts::PI,
+                16,
+            );
+        }
+        Shape3D::Cylinder {
+            radius,
+            half_height,
+        } => {
+            let r = radius.abs().max(0.0001);
+            let h = half_height.abs().max(0.0001);
+            append_circle_segments(
+                &mut out,
+                Vec3::new(0.0, h, 0.0),
+                Vec3::new(r, 0.0, 0.0),
+                Vec3::new(0.0, 0.0, r),
+                20,
+            );
+            append_circle_segments(
+                &mut out,
+                Vec3::new(0.0, -h, 0.0),
+                Vec3::new(r, 0.0, 0.0),
+                Vec3::new(0.0, 0.0, r),
+                20,
+            );
+            out.push((Vec3::new(r, -h, 0.0), Vec3::new(r, h, 0.0)));
+            out.push((Vec3::new(-r, -h, 0.0), Vec3::new(-r, h, 0.0)));
+            out.push((Vec3::new(0.0, -h, r), Vec3::new(0.0, h, r)));
+            out.push((Vec3::new(0.0, -h, -r), Vec3::new(0.0, h, -r)));
+        }
+        Shape3D::Cone {
+            radius,
+            half_height,
+        } => {
+            let r = radius.abs().max(0.0001);
+            let h = half_height.abs().max(0.0001);
+            append_circle_segments(
+                &mut out,
+                Vec3::new(0.0, -h, 0.0),
+                Vec3::new(r, 0.0, 0.0),
+                Vec3::new(0.0, 0.0, r),
+                20,
+            );
+            let apex = Vec3::new(0.0, h, 0.0);
+            out.push((Vec3::new(r, -h, 0.0), apex));
+            out.push((Vec3::new(-r, -h, 0.0), apex));
+            out.push((Vec3::new(0.0, -h, r), apex));
+            out.push((Vec3::new(0.0, -h, -r), apex));
+        }
+        Shape3D::TriPrism { size } => {
+            let hw = size.x.abs().max(0.0001) * 0.5;
+            let hh = size.y.abs().max(0.0001) * 0.5;
+            let hd = size.z.abs().max(0.0001) * 0.5;
+            let points = [
+                Vec3::new(-hw, -hh, -hd),
+                Vec3::new(hw, -hh, -hd),
+                Vec3::new(0.0, hh, -hd),
+                Vec3::new(-hw, -hh, hd),
+                Vec3::new(hw, -hh, hd),
+                Vec3::new(0.0, hh, hd),
+            ];
+            let edges = [
+                (0usize, 1usize),
+                (1, 2),
+                (2, 0),
+                (3, 4),
+                (4, 5),
+                (5, 3),
+                (0, 3),
+                (1, 4),
+                (2, 5),
+            ];
+            push_indexed_edges(&mut out, &points, &edges);
+        }
+        Shape3D::TriangularPyramid { size } => {
+            let hw = size.x.abs().max(0.0001) * 0.5;
+            let hh = size.y.abs().max(0.0001) * 0.5;
+            let hd = size.z.abs().max(0.0001) * 0.5;
+            let points = [
+                Vec3::new(-hw, -hh, -hd),
+                Vec3::new(hw, -hh, -hd),
+                Vec3::new(0.0, -hh, hd),
+                Vec3::new(0.0, hh, 0.0),
+            ];
+            let edges = [(0usize, 1usize), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)];
+            push_indexed_edges(&mut out, &points, &edges);
+        }
+        Shape3D::SquarePyramid { size } => {
+            let hw = size.x.abs().max(0.0001) * 0.5;
+            let hh = size.y.abs().max(0.0001) * 0.5;
+            let hd = size.z.abs().max(0.0001) * 0.5;
+            let points = [
+                Vec3::new(-hw, -hh, -hd),
+                Vec3::new(hw, -hh, -hd),
+                Vec3::new(hw, -hh, hd),
+                Vec3::new(-hw, -hh, hd),
+                Vec3::new(0.0, hh, 0.0),
+            ];
+            let edges = [
+                (0usize, 1usize),
+                (1, 2),
+                (2, 3),
+                (3, 0),
+                (0, 4),
+                (1, 4),
+                (2, 4),
+                (3, 4),
+            ];
+            push_indexed_edges(&mut out, &points, &edges);
+        }
+    }
+    out
+}
+
+fn push_indexed_edges(
+    out: &mut Vec<(Vec3, Vec3)>,
+    points: &[Vec3],
+    edges: &[(usize, usize)],
+) {
+    for (a, b) in edges.iter().copied() {
+        if let (Some(pa), Some(pb)) = (points.get(a), points.get(b)) {
+            out.push((*pa, *pb));
+        }
+    }
+}
+
+fn append_circle_segments(
+    out: &mut Vec<(Vec3, Vec3)>,
+    center: Vec3,
+    axis_u: Vec3,
+    axis_v: Vec3,
+    segments: usize,
+) {
+    if segments < 3 {
+        return;
+    }
+    let mut prev = center + axis_u;
+    for i in 1..=segments {
+        let t = i as f32 / segments as f32;
+        let a = std::f32::consts::TAU * t;
+        let p = center + axis_u * a.cos() + axis_v * a.sin();
+        out.push((prev, p));
+        prev = p;
+    }
+}
+
+fn append_arc_segments(
+    out: &mut Vec<(Vec3, Vec3)>,
+    center: Vec3,
+    axis_u: Vec3,
+    axis_v: Vec3,
+    arc_radians: f32,
+    segments: usize,
+) {
+    if segments == 0 {
+        return;
+    }
+    let mut prev = center + axis_u;
+    for i in 1..=segments {
+        let t = i as f32 / segments as f32;
+        let a = arc_radians * t;
+        let p = center + axis_u * a.cos() + axis_v * a.sin();
+        out.push((prev, p));
+        prev = p;
+    }
 }
 
 fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {

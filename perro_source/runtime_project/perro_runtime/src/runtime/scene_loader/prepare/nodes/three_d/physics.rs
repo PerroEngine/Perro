@@ -46,24 +46,9 @@ fn apply_collision_shape_3d_fields(node: &mut CollisionShape3D, fields: &[SceneO
                     node.shape = shape;
                 }
             }
-            Some(NodeField::CollisionShape3D(CollisionShape3DField::Sensor)) => {
-                if let Some(sensor) = as_bool(value) {
-                    node.sensor = sensor;
-                }
-            }
-            Some(NodeField::CollisionShape3D(CollisionShape3DField::Friction)) => {
-                if let Some(friction) = as_f32(value) {
-                    node.friction = friction;
-                }
-            }
-            Some(NodeField::CollisionShape3D(CollisionShape3DField::Restitution)) => {
-                if let Some(restitution) = as_f32(value) {
-                    node.restitution = restitution;
-                }
-            }
-            Some(NodeField::CollisionShape3D(CollisionShape3DField::Density)) => {
-                if let Some(density) = as_f32(value) {
-                    node.density = density;
+            Some(NodeField::CollisionShape3D(CollisionShape3DField::Debug)) => {
+                if let Some(debug) = as_bool(value) {
+                    node.debug = debug;
                 }
             }
             _ => {}
@@ -75,9 +60,25 @@ fn apply_static_body_3d_fields(node: &mut StaticBody3D, fields: &[SceneObjectFie
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         if resolve_node_field("StaticBody3D", name)
             == Some(NodeField::StaticBody3D(StaticBody3DField::Enabled))
-            && let Some(enabled) = as_bool(value) {
-                node.enabled = enabled;
-            }
+            && let Some(enabled) = as_bool(value)
+        {
+            node.enabled = enabled;
+        } else if resolve_node_field("StaticBody3D", name)
+            == Some(NodeField::StaticBody3D(StaticBody3DField::Friction))
+            && let Some(v) = as_f32(value)
+        {
+            node.friction = v;
+        } else if resolve_node_field("StaticBody3D", name)
+            == Some(NodeField::StaticBody3D(StaticBody3DField::Restitution))
+            && let Some(v) = as_f32(value)
+        {
+            node.restitution = v;
+        } else if resolve_node_field("StaticBody3D", name)
+            == Some(NodeField::StaticBody3D(StaticBody3DField::Density))
+            && let Some(v) = as_f32(value)
+        {
+            node.density = v;
+        }
     });
 }
 
@@ -122,6 +123,21 @@ fn apply_rigid_body_3d_fields(node: &mut RigidBody3D, fields: &[SceneObjectField
             Some(NodeField::RigidBody3D(RigidBody3DField::CanSleep)) => {
                 if let Some(can_sleep) = as_bool(value) {
                     node.can_sleep = can_sleep;
+                }
+            }
+            Some(NodeField::RigidBody3D(RigidBody3DField::Friction)) => {
+                if let Some(friction) = as_f32(value) {
+                    node.friction = friction;
+                }
+            }
+            Some(NodeField::RigidBody3D(RigidBody3DField::Restitution)) => {
+                if let Some(restitution) = as_f32(value) {
+                    node.restitution = restitution;
+                }
+            }
+            Some(NodeField::RigidBody3D(RigidBody3DField::Density)) => {
+                if let Some(density) = as_f32(value) {
+                    node.density = density;
                 }
             }
             _ => {}

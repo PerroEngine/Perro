@@ -252,6 +252,11 @@ impl PhysicsWorld3D {
 
 impl Runtime {
     pub(crate) fn physics_fixed_step(&mut self) {
+        // Ensure global transform cache reflects queued transform-root dirtiness
+        // before we collect body descriptors for this physics tick.
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+
         let bodies_2d = self.collect_body_descs_2d();
         let bodies_3d = self.collect_body_descs_3d();
         self.sync_world_2d(&bodies_2d);
@@ -264,6 +269,11 @@ impl Runtime {
         self.step_world_3d();
         self.sync_world_to_nodes_2d();
         self.sync_world_to_nodes_3d();
+
+        // Physics writes globals via set_global_transform_* which queues transform roots.
+        // Flush now so same-tick reads (including debugging and overlap users) see up-to-date globals.
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
         self.emit_collision_signals_2d();
         self.emit_collision_signals_3d();
         self.emit_area_signals_2d();
@@ -328,6 +338,11 @@ impl Runtime {
                 ),
                 _ => continue,
             };
+            let material = match &node.data {
+                SceneNodeData::StaticBody2D(body) => (body.friction, body.restitution, body.density),
+                SceneNodeData::RigidBody2D(body) => (body.friction, body.restitution, body.density),
+                _ => (0.7, 0.0, 1.0),
+            };
 
             let Some(global) = self.get_global_transform_2d(id) else {
                 continue;
@@ -338,10 +353,9 @@ impl Runtime {
                     continue;
                 };
                 if let SceneNodeData::CollisionShape2D(shape) = &child.data {
-                    let mut desc = shape_desc_2d(shape);
-                    if kind == BodyKind::Area {
-                        desc.sensor = true;
-                    }
+                    let mut desc = shape_desc_2d(shape, material.0, material.1, material.2);
+                    // Body kind drives trigger/solid behavior; shape-level sensor does not.
+                    desc.sensor = kind == BodyKind::Area;
                     shapes.push(desc);
                 }
             }
@@ -367,24 +381,27 @@ impl Runtime {
                 continue;
             };
 
-            let (kind, enabled, rigid, children) = match &node.data {
+            let (kind, enabled, rigid, children, material) = match &node.data {
                 SceneNodeData::StaticBody3D(body) => (
                     BodyKind::Static,
                     body.enabled,
                     None,
                     node.children_slice().to_vec(),
+                    (body.friction, body.restitution, body.density),
                 ),
                 SceneNodeData::Area3D(body) => (
                     BodyKind::Area,
                     body.enabled,
                     None,
                     node.children_slice().to_vec(),
+                    (0.7, 0.0, 1.0),
                 ),
                 SceneNodeData::RigidBody3D(body) => (
                     BodyKind::Rigid,
                     body.enabled,
                     Some(body.clone()),
                     node.children_slice().to_vec(),
+                    (body.friction, body.restitution, body.density),
                 ),
                 _ => continue,
             };
@@ -398,10 +415,15 @@ impl Runtime {
                     continue;
                 };
                 if let SceneNodeData::CollisionShape3D(shape) = &child.data {
-                    let mut desc = shape_desc_3d(shape);
-                    if kind == BodyKind::Area {
-                        desc.sensor = true;
-                    }
+                    let mut desc = shape_desc_3d(shape, material.0, material.1, material.2);
+                    // Physics colliders inherit parent body global scale.
+                    desc.local.scale = Vector3::new(
+                        desc.local.scale.x * global.scale.x,
+                        desc.local.scale.y * global.scale.y,
+                        desc.local.scale.z * global.scale.z,
+                    );
+                    // Body kind drives trigger/solid behavior; shape-level sensor does not.
+                    desc.sensor = kind == BodyKind::Area;
                     shapes.push(desc);
                 }
             }
@@ -1136,25 +1158,35 @@ impl Runtime {
     }
 }
 
-fn shape_desc_2d(shape: &CollisionShape2D) -> ShapeDesc2D {
+fn shape_desc_2d(
+    shape: &CollisionShape2D,
+    friction: f32,
+    restitution: f32,
+    density: f32,
+) -> ShapeDesc2D {
     ShapeDesc2D {
         local: shape.base.transform,
         shape: shape.shape,
-        sensor: shape.sensor,
-        friction: shape.friction,
-        restitution: shape.restitution,
-        density: shape.density,
+        sensor: false,
+        friction,
+        restitution,
+        density,
     }
 }
 
-fn shape_desc_3d(shape: &CollisionShape3D) -> ShapeDesc3D {
+fn shape_desc_3d(
+    shape: &CollisionShape3D,
+    friction: f32,
+    restitution: f32,
+    density: f32,
+) -> ShapeDesc3D {
     ShapeDesc3D {
         local: shape.base.transform,
         shape: shape.shape,
-        sensor: shape.sensor,
-        friction: shape.friction,
-        restitution: shape.restitution,
-        density: shape.density,
+        sensor: false,
+        friction,
+        restitution,
+        density,
     }
 }
 
@@ -1212,6 +1244,8 @@ fn build_rigid_body_3d(desc: &BodyDesc3D) -> r3::RigidBody {
             .linear_damping(rigid.linear_damping)
             .angular_damping(rigid.angular_damping)
             .additional_mass(rigid.mass.max(0.0))
+            // Projectile-like rigid bodies can otherwise skip thin/sensor overlaps between fixed steps.
+            .ccd_enabled(true)
             .can_sleep(rigid.can_sleep)
             .enabled(rigid.enabled);
     }

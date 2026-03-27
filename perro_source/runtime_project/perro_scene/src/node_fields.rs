@@ -60,15 +60,14 @@ pub enum Sprite2DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollisionShape2DField {
     Shape,
-    Sensor,
-    Friction,
-    Restitution,
-    Density,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StaticBody2DField {
     Enabled,
+    Friction,
+    Restitution,
+    Density,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,6 +80,9 @@ pub enum RigidBody2DField {
     AngularDamping,
     CanSleep,
     LockRotation,
+    Friction,
+    Restitution,
+    Density,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -200,15 +202,15 @@ pub enum SpotLight3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollisionShape3DField {
     Shape,
-    Sensor,
-    Friction,
-    Restitution,
-    Density,
+    Debug,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StaticBody3DField {
     Enabled,
+    Friction,
+    Restitution,
+    Density,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -221,6 +223,9 @@ pub enum RigidBody3DField {
     LinearDamping,
     AngularDamping,
     CanSleep,
+    Friction,
+    Restitution,
+    Density,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -248,16 +253,13 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::CollisionShape2D => match field {
             "shape" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Shape)),
-            "sensor" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Sensor)),
-            "friction" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Friction)),
-            "restitution" => Some(NodeField::CollisionShape2D(
-                CollisionShape2DField::Restitution,
-            )),
-            "density" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Density)),
             _ => None,
         },
         NodeType::StaticBody2D => match field {
             "enabled" => Some(NodeField::StaticBody2D(StaticBody2DField::Enabled)),
+            "friction" => Some(NodeField::StaticBody2D(StaticBody2DField::Friction)),
+            "restitution" => Some(NodeField::StaticBody2D(StaticBody2DField::Restitution)),
+            "density" => Some(NodeField::StaticBody2D(StaticBody2DField::Density)),
             _ => None,
         },
         NodeType::RigidBody2D => match field {
@@ -271,6 +273,9 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "angular_damping" => Some(NodeField::RigidBody2D(RigidBody2DField::AngularDamping)),
             "can_sleep" => Some(NodeField::RigidBody2D(RigidBody2DField::CanSleep)),
             "lock_rotation" => Some(NodeField::RigidBody2D(RigidBody2DField::LockRotation)),
+            "friction" => Some(NodeField::RigidBody2D(RigidBody2DField::Friction)),
+            "restitution" => Some(NodeField::RigidBody2D(RigidBody2DField::Restitution)),
+            "density" => Some(NodeField::RigidBody2D(RigidBody2DField::Density)),
             _ => None,
         },
         NodeType::Area2D => match field {
@@ -372,16 +377,14 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::CollisionShape3D => match field {
             "shape" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Shape)),
-            "sensor" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Sensor)),
-            "friction" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Friction)),
-            "restitution" => Some(NodeField::CollisionShape3D(
-                CollisionShape3DField::Restitution,
-            )),
-            "density" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Density)),
+            "debug" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Debug)),
             _ => None,
         },
         NodeType::StaticBody3D => match field {
             "enabled" => Some(NodeField::StaticBody3D(StaticBody3DField::Enabled)),
+            "friction" => Some(NodeField::StaticBody3D(StaticBody3DField::Friction)),
+            "restitution" => Some(NodeField::StaticBody3D(StaticBody3DField::Restitution)),
+            "density" => Some(NodeField::StaticBody3D(StaticBody3DField::Density)),
             _ => None,
         },
         NodeType::RigidBody3D => match field {
@@ -395,6 +398,9 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "linear_damping" => Some(NodeField::RigidBody3D(RigidBody3DField::LinearDamping)),
             "angular_damping" => Some(NodeField::RigidBody3D(RigidBody3DField::AngularDamping)),
             "can_sleep" => Some(NodeField::RigidBody3D(RigidBody3DField::CanSleep)),
+            "friction" => Some(NodeField::RigidBody3D(RigidBody3DField::Friction)),
+            "restitution" => Some(NodeField::RigidBody3D(RigidBody3DField::Restitution)),
+            "density" => Some(NodeField::RigidBody3D(RigidBody3DField::Density)),
             _ => None,
         },
         NodeType::Area3D => match field {

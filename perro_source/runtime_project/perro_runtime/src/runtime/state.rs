@@ -280,6 +280,7 @@ pub(crate) struct Render3DState {
     pub(crate) terrain_material: MaterialID,
     pub(crate) terrain_chunk_meshes: AHashMap<TerrainChunkMeshKey, TerrainChunkMeshState>,
     pub(crate) terrain_debug_state: AHashMap<NodeID, TerrainDebugState>,
+    pub(crate) collision_debug_state: AHashMap<NodeID, CollisionDebugState>,
     pub(crate) particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile3D>,
     pub(crate) last_camera: Option<Camera3DState>,
     pub(crate) retained_ambient_lights: AHashMap<NodeID, AmbientLight3DState>,
@@ -303,6 +304,7 @@ impl Render3DState {
             terrain_material: MaterialID::nil(),
             terrain_chunk_meshes: AHashMap::default(),
             terrain_debug_state: AHashMap::default(),
+            collision_debug_state: AHashMap::default(),
             particle_path_cache: AHashMap::default(),
             last_camera: None,
             retained_ambient_lights: AHashMap::default(),
@@ -341,6 +343,12 @@ pub(crate) struct TerrainChunkMeshState {
 pub(crate) struct TerrainDebugState {
     pub(crate) signature: u64,
     pub(crate) point_count: u32,
+    pub(crate) edge_count: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CollisionDebugState {
+    pub(crate) signature: u64,
     pub(crate) edge_count: u32,
 }
 

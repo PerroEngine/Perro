@@ -2,9 +2,10 @@ use super::Runtime;
 use perro_ids::{MaterialID, MeshID};
 use perro_nodes::{
     CameraProjection, SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D,
-    camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, node_3d::Node3D,
+    camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, node_3d::Node3D, physics_3d::Shape3D,
     ray_light_3d::RayLight3D, sky_3d::Sky3D, terrain_instance_3d::TerrainInstance3D,
 };
+use perro_structs::Vector3;
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
 };
@@ -423,4 +424,67 @@ fn mesh_under_parent_uses_global_transform() {
                         && model[3][2] == 0.0
             )
     )));
+}
+
+#[test]
+fn collision_shape_debug_rebuilds_when_parent_moves() {
+    let mut runtime = Runtime::new();
+
+    let mut parent_node = Node3D::new();
+    parent_node.transform.position.x = 2.0;
+    let parent = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(parent_node)));
+
+    let mut collision = perro_nodes::CollisionShape3D::new();
+    collision.debug = true;
+    collision.shape = Shape3D::Cube {
+        size: Vector3::new(2.0, 2.0, 2.0),
+    };
+    let child = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::CollisionShape3D(collision)));
+
+    if let Some(parent_node) = runtime.nodes.get_mut(parent) {
+        parent_node.add_child(child);
+    }
+    if let Some(child_node) = runtime.nodes.get_mut(child) {
+        child_node.parent = parent;
+    }
+    runtime.mark_transform_dirty_recursive(parent);
+
+    runtime.extract_render_3d_commands();
+    let first = collect_commands(&mut runtime);
+    let first_x = first
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::ThreeD(command_3d) => match command_3d.as_ref() {
+                Command3D::DrawDebugLine3D { start, .. } => Some(start[0]),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("expected collision debug line draw");
+
+    if let Some(node) = runtime.nodes.get_mut(parent)
+        && let SceneNodeData::Node3D(parent_node) = &mut node.data
+    {
+        parent_node.transform.position.x = 8.0;
+    }
+    runtime.mark_transform_dirty_recursive(parent);
+
+    runtime.extract_render_3d_commands();
+    let second = collect_commands(&mut runtime);
+    let second_x = second
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::ThreeD(command_3d) => match command_3d.as_ref() {
+                Command3D::DrawDebugLine3D { start, .. } => Some(start[0]),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("expected collision debug line draw after move");
+
+    assert_ne!(first_x, second_x);
 }

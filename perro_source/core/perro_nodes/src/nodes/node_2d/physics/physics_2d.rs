@@ -39,10 +39,6 @@ impl Default for Shape2D {
 pub struct CollisionShape2D {
     pub base: Node2D,
     pub shape: Shape2D,
-    pub sensor: bool,
-    pub friction: f32,
-    pub restitution: f32,
-    pub density: f32,
 }
 
 impl Default for CollisionShape2D {
@@ -59,10 +55,6 @@ impl CollisionShape2D {
                 width: 1.0,
                 height: 1.0,
             },
-            sensor: false,
-            friction: 0.7,
-            restitution: 0.0,
-            density: 1.0,
         }
     }
 }
@@ -86,6 +78,9 @@ pub struct StaticBody2D {
     pub base: Node2D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
+    pub friction: f32,
+    pub restitution: f32,
+    pub density: f32,
 }
 
 impl Default for StaticBody2D {
@@ -100,6 +95,9 @@ impl StaticBody2D {
             base: Node2D::new(),
             enabled: true,
             physics_handle: None,
+            friction: 0.7,
+            restitution: 0.0,
+            density: 1.0,
         }
     }
 }
@@ -167,6 +165,9 @@ pub struct RigidBody2D {
     pub angular_damping: f32,
     pub can_sleep: bool,
     pub lock_rotation: bool,
+    pub friction: f32,
+    pub restitution: f32,
+    pub density: f32,
 }
 
 impl Default for RigidBody2D {
@@ -188,6 +189,9 @@ impl RigidBody2D {
             angular_damping: 0.0,
             can_sleep: true,
             lock_rotation: false,
+            friction: 0.7,
+            restitution: 0.0,
+            density: 1.0,
         }
     }
 }

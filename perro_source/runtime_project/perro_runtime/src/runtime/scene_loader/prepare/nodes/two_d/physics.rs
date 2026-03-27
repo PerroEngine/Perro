@@ -46,26 +46,6 @@ fn apply_collision_shape_2d_fields(node: &mut CollisionShape2D, fields: &[SceneO
                     node.shape = shape;
                 }
             }
-            Some(NodeField::CollisionShape2D(CollisionShape2DField::Sensor)) => {
-                if let Some(sensor) = as_bool(value) {
-                    node.sensor = sensor;
-                }
-            }
-            Some(NodeField::CollisionShape2D(CollisionShape2DField::Friction)) => {
-                if let Some(friction) = as_f32(value) {
-                    node.friction = friction;
-                }
-            }
-            Some(NodeField::CollisionShape2D(CollisionShape2DField::Restitution)) => {
-                if let Some(restitution) = as_f32(value) {
-                    node.restitution = restitution;
-                }
-            }
-            Some(NodeField::CollisionShape2D(CollisionShape2DField::Density)) => {
-                if let Some(density) = as_f32(value) {
-                    node.density = density;
-                }
-            }
             _ => {}
         }
     });
@@ -77,6 +57,21 @@ fn apply_static_body_2d_fields(node: &mut StaticBody2D, fields: &[SceneObjectFie
             == Some(NodeField::StaticBody2D(StaticBody2DField::Enabled))
             && let Some(enabled) = as_bool(value) {
                 node.enabled = enabled;
+            } else if resolve_node_field("StaticBody2D", name)
+            == Some(NodeField::StaticBody2D(StaticBody2DField::Friction))
+                && let Some(v) = as_f32(value)
+            {
+                node.friction = v;
+            } else if resolve_node_field("StaticBody2D", name)
+                == Some(NodeField::StaticBody2D(StaticBody2DField::Restitution))
+                && let Some(v) = as_f32(value)
+            {
+                node.restitution = v;
+            } else if resolve_node_field("StaticBody2D", name)
+                == Some(NodeField::StaticBody2D(StaticBody2DField::Density))
+                && let Some(v) = as_f32(value)
+            {
+                node.density = v;
             }
     });
 }
@@ -122,6 +117,21 @@ fn apply_rigid_body_2d_fields(node: &mut RigidBody2D, fields: &[SceneObjectField
             Some(NodeField::RigidBody2D(RigidBody2DField::LockRotation)) => {
                 if let Some(lock_rotation) = as_bool(value) {
                     node.lock_rotation = lock_rotation;
+                }
+            }
+            Some(NodeField::RigidBody2D(RigidBody2DField::Friction)) => {
+                if let Some(v) = as_f32(value) {
+                    node.friction = v;
+                }
+            }
+            Some(NodeField::RigidBody2D(RigidBody2DField::Restitution)) => {
+                if let Some(v) = as_f32(value) {
+                    node.restitution = v;
+                }
+            }
+            Some(NodeField::RigidBody2D(RigidBody2DField::Density)) => {
+                if let Some(v) = as_f32(value) {
+                    node.density = v;
                 }
             }
             _ => {}
