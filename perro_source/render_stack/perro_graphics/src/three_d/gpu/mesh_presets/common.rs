@@ -17,25 +17,28 @@ pub(super) fn push_triangle(
         std::mem::swap(&mut bv, &mut cv);
         normal = (bv - av).cross(cv - av).normalize_or_zero();
     }
+    let auv = project_uv(a, normal.to_array());
+    let buv = project_uv(bv.to_array(), normal.to_array());
+    let cuv = project_uv(cv.to_array(), normal.to_array());
     let base = vertices.len() as u16;
     vertices.push(MeshVertex {
         pos: a,
         normal: normal.to_array(),
-        uv: [0.0, 0.0],
+        uv: auv,
         joints: [0, 0, 0, 0],
         weights: [1.0, 0.0, 0.0, 0.0],
     });
     vertices.push(MeshVertex {
         pos: bv.to_array(),
         normal: normal.to_array(),
-        uv: [0.0, 0.0],
+        uv: buv,
         joints: [0, 0, 0, 0],
         weights: [1.0, 0.0, 0.0, 0.0],
     });
     vertices.push(MeshVertex {
         pos: cv.to_array(),
         normal: normal.to_array(),
-        uv: [0.0, 0.0],
+        uv: cuv,
         joints: [0, 0, 0, 0],
         weights: [1.0, 0.0, 0.0, 0.0],
     });
@@ -70,5 +73,18 @@ pub(super) fn push_index_triangle_outward(
         indices.extend_from_slice(&[i0, i2, i1]);
     } else {
         indices.extend_from_slice(&[i0, i1, i2]);
+    }
+}
+
+fn project_uv(pos: [f32; 3], normal: [f32; 3]) -> [f32; 2] {
+    let ax = normal[0].abs();
+    let ay = normal[1].abs();
+    let az = normal[2].abs();
+    if ay >= ax && ay >= az {
+        [pos[0] + 0.5, pos[2] + 0.5]
+    } else if ax >= az {
+        [pos[2] + 0.5, pos[1] + 0.5]
+    } else {
+        [pos[0] + 0.5, pos[1] + 0.5]
     }
 }

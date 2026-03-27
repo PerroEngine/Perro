@@ -24,6 +24,7 @@ type BuiltinMeshBuffer = (
 struct MeshVertexKey {
     pos: [u32; 3],
     normal: [u32; 3],
+    uv: [u32; 2],
 }
 
 impl From<MeshVertex> for MeshVertexKey {
@@ -31,6 +32,7 @@ impl From<MeshVertex> for MeshVertexKey {
         Self {
             pos: vertex.pos.map(f32::to_bits),
             normal: vertex.normal.map(f32::to_bits),
+            uv: vertex.uv.map(f32::to_bits),
         }
     }
 }
