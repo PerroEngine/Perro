@@ -184,3 +184,35 @@ fn reparent_preserves_child_global_transform_3d() {
         .expect("child local must exist");
     assert!(approx(local.position.x, 17.0));
 }
+
+#[test]
+fn remove_node_removes_entire_subtree() {
+    let mut runtime = Runtime::new();
+
+    let root_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let child_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let grandchild_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    if let Some(root) = runtime.nodes.get_mut(root_id) {
+        root.add_child(child_id);
+    }
+    if let Some(child) = runtime.nodes.get_mut(child_id) {
+        child.parent = root_id;
+        child.add_child(grandchild_id);
+    }
+    if let Some(grandchild) = runtime.nodes.get_mut(grandchild_id) {
+        grandchild.parent = child_id;
+    }
+
+    assert!(runtime.remove_node(root_id));
+    assert!(runtime.nodes.get(root_id).is_none());
+    assert!(runtime.nodes.get(child_id).is_none());
+    assert!(runtime.nodes.get(grandchild_id).is_none());
+    assert!(!runtime.remove_node(root_id));
+}

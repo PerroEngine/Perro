@@ -6,6 +6,7 @@ use perro_nodes::{
 use perro_runtime_context::sub_apis::{NodeAPI, TagQuery};
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
+use std::collections::HashSet;
 
 use crate::Runtime;
 
@@ -349,60 +350,72 @@ impl NodeAPI for Runtime {
             return false;
         }
 
-        // Remove script state first so script-side lookups cannot outlive node removal.
-        let _ = self.remove_script_instance(node_id);
+        // Gather subtree ids iteratively to avoid recursion depth issues.
+        // We delete in post-order so children are removed before their parents.
+        let mut stack = vec![node_id];
+        let mut postorder = Vec::new();
+        let mut visited = HashSet::new();
+        while let Some(current) = stack.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+            let Some(node) = self.nodes.get(current) else {
+                continue;
+            };
+            postorder.push(current);
+            stack.extend(node.get_children_ids().iter().copied());
+        }
 
-        let (parent_id, child_ids, terrain_id) = match self.nodes.get(node_id) {
-            Some(node) => {
-                for &tag in node.tags_slice() {
-                    let mut remove_entry = false;
-                    if let Some(set) = self.node_index.node_tag_index.get_mut(&tag) {
-                        set.remove(&node_id);
-                        remove_entry = set.is_empty();
+        for current in postorder.into_iter().rev() {
+            if self.nodes.get(current).is_none() {
+                continue;
+            }
+
+            // Remove script state first so script-side lookups cannot outlive node removal.
+            let _ = self.remove_script_instance(current);
+
+            let (parent_id, terrain_id) = match self.nodes.get(current) {
+                Some(node) => {
+                    for &tag in node.tags_slice() {
+                        let mut remove_entry = false;
+                        if let Some(set) = self.node_index.node_tag_index.get_mut(&tag) {
+                            set.remove(&current);
+                            remove_entry = set.is_empty();
+                        }
+                        if remove_entry {
+                            self.node_index.node_tag_index.remove(&tag);
+                        }
                     }
-                    if remove_entry {
-                        self.node_index.node_tag_index.remove(&tag);
-                    }
+                    let terrain_id = match &node.data {
+                        SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
+                        _ => None,
+                    };
+                    (node.get_parent(), terrain_id)
                 }
-                let terrain_id = match &node.data {
-                    SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
-                    _ => None,
-                };
-                (
-                    node.get_parent(),
-                    node.get_children_ids().to_vec(),
-                    terrain_id,
-                )
+                None => continue,
+            };
+
+            if !parent_id.is_nil()
+                && let Some(parent) = self.nodes.get_mut(parent_id)
+            {
+                parent.remove_child(current);
             }
-            None => return false,
-        };
 
-        if !parent_id.is_nil()
-            && let Some(parent) = self.nodes.get_mut(parent_id)
-        {
-            parent.remove_child(node_id);
-        }
-
-        // Keep subtree valid: children become root-level nodes.
-        for child_id in child_ids {
-            if let Some(child) = self.nodes.get_mut(child_id) {
-                child.parent = perro_ids::NodeID::nil();
-                self.mark_transform_dirty_recursive(child_id);
+            if let Some(terrain_id) = terrain_id
+                && !terrain_id.is_nil()
+            {
+                let _ = self
+                    .terrain_store
+                    .lock()
+                    .expect("terrain store mutex poisoned")
+                    .remove(terrain_id);
             }
+
+            self.unregister_internal_node_schedules(current);
+            let _ = self.nodes.remove(current);
         }
 
-        if let Some(terrain_id) = terrain_id
-            && !terrain_id.is_nil()
-        {
-            let _ = self
-                .terrain_store
-                .lock()
-                .expect("terrain store mutex poisoned")
-                .remove(terrain_id);
-        }
-
-        self.unregister_internal_node_schedules(node_id);
-        self.nodes.remove(node_id).is_some()
+        true
     }
 
     fn get_node_tags(&mut self, node_id: perro_ids::NodeID) -> Option<Vec<TagID>> {
