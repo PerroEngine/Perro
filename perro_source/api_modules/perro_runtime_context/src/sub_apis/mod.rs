@@ -10,8 +10,8 @@ pub use animation::{AnimPlayerAPI, AnimPlayerModule};
 pub use node::{IntoNodeTags, NodeAPI, NodeModule, QueryExpr, QueryScope, TagQuery};
 pub use physics::{IntoImpulseDirection, PhysicsAPI, PhysicsModule};
 pub use scene::{
-    IntoPreloadedSceneID, IntoSceneLoadSource, IntoScenePath, PreloadedSceneID, SceneAPI,
-    SceneLoadSource, SceneModule,
+    IntoPreloadedSceneID, IntoPreloadedSceneTarget, IntoSceneLoadSource, IntoScenePath,
+    PreloadedSceneID, PreloadedSceneTarget, SceneAPI, SceneLoadSource, SceneModule,
 };
 pub use script::{Attribute, IntoScriptMemberID, Member, ScriptAPI, ScriptModule};
 pub use signal::{SignalAPI, SignalModule};

@@ -104,6 +104,57 @@ impl IntoSceneLoadSource for &PreloadedSceneID {
     }
 }
 
+pub enum PreloadedSceneTarget {
+    Id(PreloadedSceneID),
+    Path(Cow<'static, str>),
+}
+
+pub trait IntoPreloadedSceneTarget {
+    fn into_preloaded_scene_target(self) -> PreloadedSceneTarget;
+}
+
+impl IntoPreloadedSceneTarget for PreloadedSceneID {
+    fn into_preloaded_scene_target(self) -> PreloadedSceneTarget {
+        PreloadedSceneTarget::Id(self)
+    }
+}
+
+impl IntoPreloadedSceneTarget for &PreloadedSceneID {
+    fn into_preloaded_scene_target(self) -> PreloadedSceneTarget {
+        PreloadedSceneTarget::Id(*self)
+    }
+}
+
+impl IntoPreloadedSceneTarget for &'static str {
+    fn into_preloaded_scene_target(self) -> PreloadedSceneTarget {
+        PreloadedSceneTarget::Path(Cow::Borrowed(self))
+    }
+}
+
+impl IntoPreloadedSceneTarget for String {
+    fn into_preloaded_scene_target(self) -> PreloadedSceneTarget {
+        PreloadedSceneTarget::Path(Cow::Owned(self))
+    }
+}
+
+impl IntoPreloadedSceneTarget for &String {
+    fn into_preloaded_scene_target(self) -> PreloadedSceneTarget {
+        PreloadedSceneTarget::Path(Cow::Owned(self.clone()))
+    }
+}
+
+impl IntoPreloadedSceneTarget for Cow<'static, str> {
+    fn into_preloaded_scene_target(self) -> PreloadedSceneTarget {
+        PreloadedSceneTarget::Path(self)
+    }
+}
+
+impl IntoPreloadedSceneTarget for &Cow<'static, str> {
+    fn into_preloaded_scene_target(self) -> PreloadedSceneTarget {
+        PreloadedSceneTarget::Path(self.clone())
+    }
+}
+
 pub trait SceneAPI {
     fn scene_load(&mut self, path: &str) -> Result<NodeID, String>;
     fn scene_preload(&mut self, _path: &str) -> Result<PreloadedSceneID, String> {
@@ -113,6 +164,9 @@ pub trait SceneAPI {
         Err("preloaded scene loading is not supported by this runtime".to_string())
     }
     fn scene_free_preloaded(&mut self, _id: PreloadedSceneID) -> bool {
+        false
+    }
+    fn scene_free_preloaded_by_path(&mut self, _path: &str) -> bool {
         false
     }
 }
@@ -145,6 +199,13 @@ impl<'rt, R: SceneAPI + ?Sized> SceneModule<'rt, R> {
     pub fn free_preloaded<I: IntoPreloadedSceneID>(&mut self, id: I) -> bool {
         self.rt.scene_free_preloaded(id.into_preloaded_scene_id())
     }
+
+    pub fn drop_preloaded<T: IntoPreloadedSceneTarget>(&mut self, target: T) -> bool {
+        match target.into_preloaded_scene_target() {
+            PreloadedSceneTarget::Id(id) => self.rt.scene_free_preloaded(id),
+            PreloadedSceneTarget::Path(path) => self.rt.scene_free_preloaded_by_path(path.as_ref()),
+        }
+    }
 }
 
 /// Scene loading macros.
@@ -173,10 +234,18 @@ macro_rules! scene_preload {
 
 /// Preloaded scene free macro.
 ///
-/// Frees a previously preloaded scene by `PreloadedSceneID`.
+/// Frees/drops a cached scene by `PreloadedSceneID` or source path.
 #[macro_export]
 macro_rules! scene_free_preloaded {
-    ($ctx:expr, $id:expr) => {
-        $ctx.Scene().free_preloaded($id)
+    ($ctx:expr, $target:expr) => {
+        $ctx.Scene().drop_preloaded($target)
+    };
+}
+
+/// Alias for `scene_free_preloaded!`.
+#[macro_export]
+macro_rules! scene_drop_preloaded {
+    ($ctx:expr, $target:expr) => {
+        $ctx.Scene().drop_preloaded($target)
     };
 }

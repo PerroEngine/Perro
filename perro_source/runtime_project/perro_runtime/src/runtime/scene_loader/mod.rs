@@ -89,7 +89,18 @@ impl Runtime {
         let removed = self.preloaded_scenes.remove(&id).is_some();
         if let Some(path) = self.preloaded_scene_reverse_paths.remove(&id) {
             self.preloaded_scene_paths.remove(path.as_str());
+            let _ = self.scene_cache.borrow_mut().remove(path.as_str());
         }
+        removed
+    }
+
+    pub(crate) fn free_preloaded_scene_by_path_at_runtime(&mut self, path: &str) -> bool {
+        let mut removed = false;
+        if let Some(id) = self.preloaded_scene_paths.remove(path) {
+            removed |= self.preloaded_scenes.remove(&id).is_some();
+            self.preloaded_scene_reverse_paths.remove(&id);
+        }
+        removed |= self.scene_cache.borrow_mut().remove(path).is_some();
         removed
     }
 

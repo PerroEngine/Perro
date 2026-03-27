@@ -18,4 +18,8 @@ impl SceneAPI for Runtime {
     fn scene_free_preloaded(&mut self, id: PreloadedSceneID) -> bool {
         self.free_preloaded_scene_at_runtime(id)
     }
+
+    fn scene_free_preloaded_by_path(&mut self, path: &str) -> bool {
+        self.free_preloaded_scene_by_path_at_runtime(path)
+    }
 }
