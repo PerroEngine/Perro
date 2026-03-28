@@ -25,6 +25,7 @@ Physics 2D:
 - `StaticBody2D`
 - `RigidBody2D`
 - `Area2D`
+- `CollisionShape2D` should be authored as a child of `StaticBody2D` or `RigidBody2D`.
 
 ## 3D Nodes
 
@@ -76,6 +77,7 @@ Physics 3D:
 - `StaticBody3D`
 - `RigidBody3D`
 - `Area3D`
+- `CollisionShape3D` should be authored as a child of `StaticBody3D` or `RigidBody3D`.
 
 `Skeleton3D`
 

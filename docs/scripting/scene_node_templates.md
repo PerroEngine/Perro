@@ -77,10 +77,6 @@ parent = PARENTKEY
 script = "res://path/to/script.rs"
     [CollisionShape2D]
         shape = { type = quad width = 1.0 height = 1.0 }
-        sensor = false
-        friction = 0.7
-        restitution = 0.0
-        density = 1.0
         [Node2D]
             position = (0, 0)
             rotation = 0.0
@@ -209,7 +205,6 @@ parent = PARENTKEY
 script = "res://path/to/script.rs"
     [CollisionShape3D]
         shape = { type = cube size = (1, 1, 1) }
-        sensor = false
         debug = false
         [Node3D]
             position = (0, 0, 0)

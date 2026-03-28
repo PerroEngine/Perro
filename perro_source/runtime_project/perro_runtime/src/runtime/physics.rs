@@ -25,7 +25,6 @@ struct ShapeDesc2D {
     sensor: bool,
     friction: f32,
     restitution: f32,
-    density: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -35,7 +34,6 @@ struct ShapeDesc3D {
     sensor: bool,
     friction: f32,
     restitution: f32,
-    density: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -317,33 +315,30 @@ impl Runtime {
                 continue;
             };
 
-            let (kind, enabled, rigid, children) = match &node.data {
+            let (kind, enabled, rigid, children, material) = match &node.data {
                 SceneNodeData::StaticBody2D(body) => (
                     BodyKind::Static,
                     body.enabled,
                     None,
                     node.children_slice().to_vec(),
+                    (body.friction, body.restitution),
                 ),
                 SceneNodeData::Area2D(body) => (
                     BodyKind::Area,
                     body.enabled,
                     None,
                     node.children_slice().to_vec(),
+                    (0.7, 0.0),
                 ),
                 SceneNodeData::RigidBody2D(body) => (
                     BodyKind::Rigid,
                     body.enabled,
                     Some(body.clone()),
                     node.children_slice().to_vec(),
+                    (body.friction, body.restitution),
                 ),
                 _ => continue,
             };
-            let material = match &node.data {
-                SceneNodeData::StaticBody2D(body) => (body.friction, body.restitution, body.density),
-                SceneNodeData::RigidBody2D(body) => (body.friction, body.restitution, body.density),
-                _ => (0.7, 0.0, 1.0),
-            };
-
             let Some(global) = self.get_global_transform_2d(id) else {
                 continue;
             };
@@ -353,8 +348,7 @@ impl Runtime {
                     continue;
                 };
                 if let SceneNodeData::CollisionShape2D(shape) = &child.data {
-                    let mut desc = shape_desc_2d(shape, material.0, material.1, material.2);
-                    // Body kind drives trigger/solid behavior; shape-level sensor does not.
+                    let mut desc = shape_desc_2d(shape, material.0, material.1);
                     desc.sensor = kind == BodyKind::Area;
                     shapes.push(desc);
                 }
@@ -387,21 +381,21 @@ impl Runtime {
                     body.enabled,
                     None,
                     node.children_slice().to_vec(),
-                    (body.friction, body.restitution, body.density),
+                    (body.friction, body.restitution),
                 ),
                 SceneNodeData::Area3D(body) => (
                     BodyKind::Area,
                     body.enabled,
                     None,
                     node.children_slice().to_vec(),
-                    (0.7, 0.0, 1.0),
+                    (0.7, 0.0),
                 ),
                 SceneNodeData::RigidBody3D(body) => (
                     BodyKind::Rigid,
                     body.enabled,
                     Some(body.clone()),
                     node.children_slice().to_vec(),
-                    (body.friction, body.restitution, body.density),
+                    (body.friction, body.restitution),
                 ),
                 _ => continue,
             };
@@ -415,14 +409,13 @@ impl Runtime {
                     continue;
                 };
                 if let SceneNodeData::CollisionShape3D(shape) = &child.data {
-                    let mut desc = shape_desc_3d(shape, material.0, material.1, material.2);
+                    let mut desc = shape_desc_3d(shape, material.0, material.1);
                     // Physics colliders inherit parent body global scale.
                     desc.local.scale = Vector3::new(
                         desc.local.scale.x * global.scale.x,
                         desc.local.scale.y * global.scale.y,
                         desc.local.scale.z * global.scale.z,
                     );
-                    // Body kind drives trigger/solid behavior; shape-level sensor does not.
                     desc.sensor = kind == BodyKind::Area;
                     shapes.push(desc);
                 }
@@ -1158,35 +1151,23 @@ impl Runtime {
     }
 }
 
-fn shape_desc_2d(
-    shape: &CollisionShape2D,
-    friction: f32,
-    restitution: f32,
-    density: f32,
-) -> ShapeDesc2D {
+fn shape_desc_2d(shape: &CollisionShape2D, friction: f32, restitution: f32) -> ShapeDesc2D {
     ShapeDesc2D {
         local: shape.base.transform,
         shape: shape.shape,
         sensor: false,
         friction,
         restitution,
-        density,
     }
 }
 
-fn shape_desc_3d(
-    shape: &CollisionShape3D,
-    friction: f32,
-    restitution: f32,
-    density: f32,
-) -> ShapeDesc3D {
+fn shape_desc_3d(shape: &CollisionShape3D, friction: f32, restitution: f32) -> ShapeDesc3D {
     ShapeDesc3D {
         local: shape.base.transform,
         shape: shape.shape,
         sensor: false,
         friction,
         restitution,
-        density,
     }
 }
 
@@ -1284,7 +1265,6 @@ fn collider_builder_2d(desc: &ShapeDesc2D) -> Option<r2::Collider> {
             .sensor(desc.sensor)
             .friction(desc.friction)
             .restitution(desc.restitution)
-            .density(desc.density)
             .build(),
     )
 }
@@ -1354,7 +1334,6 @@ fn collider_builder_3d(desc: &ShapeDesc3D) -> Option<r3::Collider> {
             .sensor(desc.sensor)
             .friction(desc.friction)
             .restitution(desc.restitution)
-            .density(desc.density)
             .build(),
     )
 }
