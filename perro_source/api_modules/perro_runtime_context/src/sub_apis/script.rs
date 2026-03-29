@@ -1,5 +1,6 @@
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_variant::Variant;
+use std::borrow::Cow;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Attribute(&'static str);
@@ -96,6 +97,18 @@ impl IntoScriptMemberID for String {
 impl IntoScriptMemberID for &String {
     fn into_script_member(self) -> ScriptMemberID {
         ScriptMemberID::from_string(self.as_str())
+    }
+}
+
+impl IntoScriptMemberID for Cow<'_, str> {
+    fn into_script_member(self) -> ScriptMemberID {
+        ScriptMemberID::from_string(self.as_ref())
+    }
+}
+
+impl IntoScriptMemberID for &Cow<'_, str> {
+    fn into_script_member(self) -> ScriptMemberID {
+        ScriptMemberID::from_string(self.as_ref())
     }
 }
 
@@ -281,17 +294,16 @@ macro_rules! script_detach {
 ///
 /// Usage:
 /// - `get_var!(ctx, node_id, var!("health")) -> Variant`
+/// - `get_var!(ctx, node_id, "health") -> Variant`
+/// - `get_var!(ctx, node_id, dynamic_name_string) -> Variant`
+///
+/// Accepted member inputs:
+/// - `var!("...")`, `ScriptMemberID`, `Member`, `&str`, `String`, `Cow<str>`
 #[macro_export]
 macro_rules! get_var {
-    ($ctx:expr, $id:expr, var!($name:literal)) => {
-        $ctx.Scripts().get_var($id, var!($name))
+    ($ctx:expr, $id:expr, $member:expr) => {
+        $ctx.Scripts().get_var($id, $member)
     };
-    ($ctx:expr, $id:expr, $member:expr) => {{
-        let _ = &$ctx;
-        let _ = &$id;
-        let _ = &$member;
-        compile_error!("get_var! expects `var!(\"...\")` as member id");
-    }};
 }
 
 /// Sets a script variable by member identifier.
@@ -301,18 +313,16 @@ macro_rules! get_var {
 ///
 /// Usage:
 /// - `set_var!(ctx, node_id, var!("health"), variant!(100_i32)) -> ()`
+/// - `set_var!(ctx, node_id, "health", variant!(100_i32)) -> ()`
+/// - `set_var!(ctx, node_id, dynamic_name_string, resolved_value) -> ()`
+///
+/// Accepted member inputs:
+/// - `var!("...")`, `ScriptMemberID`, `Member`, `&str`, `String`, `Cow<str>`
 #[macro_export]
 macro_rules! set_var {
-    ($ctx:expr, $id:expr, var!($name:literal), $value:expr) => {
-        $ctx.Scripts().set_var($id, var!($name), $value)
+    ($ctx:expr, $id:expr, $member:expr, $value:expr) => {
+        $ctx.Scripts().set_var($id, $member, $value)
     };
-    ($ctx:expr, $id:expr, $member:expr, $value:expr) => {{
-        let _ = &$ctx;
-        let _ = &$id;
-        let _ = &$member;
-        let _ = &$value;
-        compile_error!("set_var! expects `var!(\"...\")` as member id");
-    }};
 }
 
 /// Calls a script method with params.
@@ -323,21 +333,16 @@ macro_rules! set_var {
 /// Usage:
 /// - `call_method!(ctx, node_id, method!("take_damage"), params![10_i32]) -> Variant`
 /// - `call_method!(ctx, node_id, func!("take_damage"), params![10_i32]) -> Variant`
+/// - `call_method!(ctx, node_id, "take_damage", params![10_i32]) -> Variant`
+/// - `call_method!(ctx, node_id, dynamic_name_string, &values) -> Variant`
+///
+/// Accepted method inputs:
+/// - `method!("...")`, `func!("...")`, `ScriptMemberID`, `Member`, `&str`, `String`, `Cow<str>`
 #[macro_export]
 macro_rules! call_method {
-    ($ctx:expr, $id:expr, method!($name:literal), $params:expr) => {
-        $ctx.Scripts().call_method($id, method!($name), $params)
+    ($ctx:expr, $id:expr, $method:expr, $params:expr) => {
+        $ctx.Scripts().call_method($id, $method, $params)
     };
-    ($ctx:expr, $id:expr, func!($name:literal), $params:expr) => {
-        $ctx.Scripts().call_method($id, func!($name), $params)
-    };
-    ($ctx:expr, $id:expr, $method:expr, $params:expr) => {{
-        let _ = &$ctx;
-        let _ = &$id;
-        let _ = &$method;
-        let _ = &$params;
-        compile_error!("call_method! expects `method!(\"...\")` or `func!(\"...\")` as method id");
-    }};
 }
 
 /// Returns attributes declared on a script member.
