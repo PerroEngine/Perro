@@ -125,6 +125,8 @@ impl Runtime {
             input: InputSnapshot::new(),
             physics: physics::PhysicsState::new(),
         }
+
+        
     }
 
     pub fn from_project(project: RuntimeProject, provider_mode: ProviderMode) -> Self {
