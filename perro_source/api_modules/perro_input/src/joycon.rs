@@ -176,6 +176,11 @@ impl Default for JoyConState {
 }
 
 #[macro_export]
+/// Signature:
+/// - `joycon_list!(&InputContext<_>) -> &[JoyConState]`
+///
+/// Usage:
+/// - `joycon_list!(ipt) -> &[JoyConState]`
 macro_rules! joycon_list {
     ($ipt:expr) => {{
         let jc = $ipt.JoyCons();
@@ -184,6 +189,13 @@ macro_rules! joycon_list {
 }
 
 #[macro_export]
+/// Signature:
+/// - `joycon_get!(&InputContext<_>, JoyConIndex) -> Option<&JoyConState>`
+///
+/// Usage:
+/// - `joycon_get!(ipt, index) -> Option<&JoyConState>`
+///
+/// `JoyConIndex` is the Joy-Con slot/index (usually `usize`, for example `0`).
 macro_rules! joycon_get {
     ($ipt:expr, $index:expr) => {{
         let jc = $ipt.JoyCons();
@@ -192,6 +204,13 @@ macro_rules! joycon_get {
 }
 
 #[macro_export]
+/// Signature:
+/// - `joycon_side!(&InputContext<_>, JoyConIndex) -> Option<JoyConSide>`
+///
+/// Usage:
+/// - `joycon_side!(ipt, index) -> Option<JoyConSide>`
+///
+/// `JoyConSide` tells you whether that entry is left or right Joy-Con.
 macro_rules! joycon_side {
     ($ipt:expr, $index:expr) => {{
         let jc = $ipt.JoyCons();
@@ -200,6 +219,16 @@ macro_rules! joycon_side {
 }
 
 #[macro_export]
+/// Signature:
+/// - `joycon_down!(&InputContext<_>, JoyConIndex, JoyConButton) -> bool`
+///
+/// Usage:
+/// - `joycon_down!(ipt, index, JoyConButton::Top) -> bool`
+///
+/// `JoyConButton` is the Joy-Con button enum (top/bottom/left/right, bumper/trigger, stick, SL/SR, start/meta).
+///
+/// Example:
+/// - `if joycon_pressed!(ipt, 0, JoyConButton::Top) { ... }`
 macro_rules! joycon_down {
     ($ipt:expr, $index:expr, $button:expr) => {{
         let jc = $ipt.JoyCons();
@@ -210,6 +239,11 @@ macro_rules! joycon_down {
 }
 
 #[macro_export]
+/// Signature:
+/// - `joycon_pressed!(&InputContext<_>, JoyConIndex, JoyConButton) -> bool`
+///
+/// Usage:
+/// - `joycon_pressed!(ipt, index, JoyConButton::Top) -> bool`
 macro_rules! joycon_pressed {
     ($ipt:expr, $index:expr, $button:expr) => {{
         let jc = $ipt.JoyCons();
@@ -220,6 +254,11 @@ macro_rules! joycon_pressed {
 }
 
 #[macro_export]
+/// Signature:
+/// - `joycon_released!(&InputContext<_>, JoyConIndex, JoyConButton) -> bool`
+///
+/// Usage:
+/// - `joycon_released!(ipt, index, JoyConButton::Top) -> bool`
 macro_rules! joycon_released {
     ($ipt:expr, $index:expr, $button:expr) => {{
         let jc = $ipt.JoyCons();
@@ -230,6 +269,11 @@ macro_rules! joycon_released {
 }
 
 #[macro_export]
+/// Signature:
+/// - `joycon_stick!(&InputContext<_>, JoyConIndex) -> Vector2`
+///
+/// Usage:
+/// - `joycon_stick!(ipt, index) -> Vector2`
 macro_rules! joycon_stick {
     ($ipt:expr, $index:expr) => {{
         let jc = $ipt.JoyCons();
@@ -240,6 +284,11 @@ macro_rules! joycon_stick {
 }
 
 #[macro_export]
+/// Signature:
+/// - `joycon_gyro!(&InputContext<_>, JoyConIndex) -> Vector3`
+///
+/// Usage:
+/// - `joycon_gyro!(ipt, index) -> Vector3`
 macro_rules! joycon_gyro {
     ($ipt:expr, $index:expr) => {{
         let jc = $ipt.JoyCons();
@@ -250,6 +299,11 @@ macro_rules! joycon_gyro {
 }
 
 #[macro_export]
+/// Signature:
+/// - `joycon_accel!(&InputContext<_>, JoyConIndex) -> Vector3`
+///
+/// Usage:
+/// - `joycon_accel!(ipt, index) -> Vector3`
 macro_rules! joycon_accel {
     ($ipt:expr, $index:expr) => {{
         let jc = $ipt.JoyCons();

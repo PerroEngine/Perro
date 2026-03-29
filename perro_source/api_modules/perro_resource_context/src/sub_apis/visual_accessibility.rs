@@ -6,6 +6,7 @@ pub trait VisualAccessibilityAPI {
 }
 
 #[macro_export]
+/// R is the return type of the underlying API method call this macro expands to.
 macro_rules! enable_colorblind_filter {
     ($res:expr, $mode:expr, $strength:expr) => {
         $res.enable_colorblind_filter($mode, $strength)
@@ -13,6 +14,7 @@ macro_rules! enable_colorblind_filter {
 }
 
 #[macro_export]
+/// R is the return type of the underlying API method call this macro expands to.
 macro_rules! disable_colorblind_filter {
     ($res:expr) => {
         $res.disable_colorblind_filter()

@@ -11,6 +11,7 @@ pub trait PostProcessingAPI {
 }
 
 #[macro_export]
+/// R is the return type of the underlying API method call this macro expands to.
 macro_rules! post_processing_set {
     ($res:expr, $set:expr) => {
         $res.set_global_post_processing($set)
@@ -18,6 +19,7 @@ macro_rules! post_processing_set {
 }
 
 #[macro_export]
+/// R is the return type of the underlying API method call this macro expands to.
 macro_rules! post_processing_add {
     ($res:expr, $effect:expr) => {
         $res.add_global_post_processing($effect)
@@ -28,6 +30,7 @@ macro_rules! post_processing_add {
 }
 
 #[macro_export]
+/// R is the return type of the underlying API method call this macro expands to.
 macro_rules! post_processing_remove {
     ($res:expr, name = $name:expr) => {
         $res.remove_global_post_processing_by_name($name)
@@ -38,6 +41,7 @@ macro_rules! post_processing_remove {
 }
 
 #[macro_export]
+/// R is the return type of the underlying API method call this macro expands to.
 macro_rules! post_processing_clear {
     ($res:expr) => {
         $res.clear_global_post_processing()

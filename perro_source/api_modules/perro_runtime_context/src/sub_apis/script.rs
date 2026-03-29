@@ -276,43 +276,78 @@ macro_rules! script_detach {
 ///
 /// Gets a script variable by member identifier.
 ///
-/// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
-/// - `id`: script `NodeID`
-/// - `member`: `ScriptMemberID`-compatible value (`sid!(...)`, `var!(...)`, `member!(...)`, `&str`)
+/// Signature:
+/// - `get_var!(&mut RuntimeContext<_, _>, NodeID, ScriptMemberID) -> Variant`
+///
+/// Usage:
+/// - `get_var!(ctx, node_id, var!("health")) -> Variant`
+///
+/// Example:
+/// - `let hp = get_var!(ctx, enemy_id, var!("health"));`
 #[macro_export]
 macro_rules! get_var {
-    ($ctx:expr, $id:expr, $member:expr) => {
-        $ctx.Scripts().get_var($id, $member)
+    ($ctx:expr, $id:expr, var!($name:literal)) => {
+        $ctx.Scripts().get_var($id, var!($name))
     };
+    ($ctx:expr, $id:expr, $member:expr) => {{
+        let _ = &$ctx;
+        let _ = &$id;
+        let _ = &$member;
+        compile_error!("get_var! expects `var!(\"...\")` as member id");
+    }};
 }
 
 /// Sets a script variable by member identifier.
 ///
-/// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
-/// - `id`: script `NodeID`
-/// - `member`: `ScriptMemberID`-compatible value
-/// - `value`: `Variant`
+/// Signature:
+/// - `set_var!(&mut RuntimeContext<_, _>, NodeID, ScriptMemberID, Variant) -> ()`
+///
+/// Usage:
+/// - `set_var!(ctx, node_id, var!("health"), variant!(100_i32)) -> ()`
+///
+/// Example:
+/// - `set_var!(ctx, enemy_id, var!("health"), variant!(100_i32));`
 #[macro_export]
 macro_rules! set_var {
-    ($ctx:expr, $id:expr, $member:expr, $value:expr) => {
-        $ctx.Scripts().set_var($id, $member, $value)
+    ($ctx:expr, $id:expr, var!($name:literal), $value:expr) => {
+        $ctx.Scripts().set_var($id, var!($name), $value)
     };
+    ($ctx:expr, $id:expr, $member:expr, $value:expr) => {{
+        let _ = &$ctx;
+        let _ = &$id;
+        let _ = &$member;
+        let _ = &$value;
+        compile_error!("set_var! expects `var!(\"...\")` as member id");
+    }};
 }
 
 /// Calls a script method with params.
 ///
-/// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
-/// - `id`: script `NodeID`
-/// - `method`: `ScriptMemberID`-compatible value (`method!(...)`, `func!(...)`, `&str`)
-/// - `params`: `&[Variant]` (for example `params![...]`)
+/// Signature:
+/// - `call_method!(&mut RuntimeContext<_, _>, NodeID, ScriptMemberID, &[Variant]) -> Variant`
+///
+/// Usage:
+/// - `call_method!(ctx, node_id, method!("take_damage"), params![10_i32]) -> Variant`
+/// - `call_method!(ctx, node_id, func!("take_damage"), params![10_i32]) -> Variant`
+///
+/// Example:
+/// - `let _ = call_method!(ctx, enemy_id, method!("take_damage"), params![10_i32]);`
+/// - `let _ = call_method!(ctx, enemy_id, func!("take_damage"), params![10_i32]);`
 #[macro_export]
 macro_rules! call_method {
-    ($ctx:expr, $id:expr, $method:expr, $params:expr) => {
-        $ctx.Scripts().call_method($id, $method, $params)
+    ($ctx:expr, $id:expr, method!($name:literal), $params:expr) => {
+        $ctx.Scripts().call_method($id, method!($name), $params)
     };
+    ($ctx:expr, $id:expr, func!($name:literal), $params:expr) => {
+        $ctx.Scripts().call_method($id, func!($name), $params)
+    };
+    ($ctx:expr, $id:expr, $method:expr, $params:expr) => {{
+        let _ = &$ctx;
+        let _ = &$id;
+        let _ = &$method;
+        let _ = &$params;
+        compile_error!("call_method! expects `method!(\"...\")` or `func!(\"...\")` as method id");
+    }};
 }
 
 /// Returns attributes declared on a script member.
@@ -357,8 +392,8 @@ macro_rules! has_attribute {
 
 /// Creates a typed `Member` descriptor from a static name.
 ///
-/// Arguments:
-/// - `name`: `&'static str`
+/// Usage:
+/// - `member!("health") -> Member`
 #[macro_export]
 macro_rules! member {
     ($name:expr) => {
@@ -368,8 +403,8 @@ macro_rules! member {
 
 /// Creates a typed `Attribute` descriptor from a static name.
 ///
-/// Arguments:
-/// - `value`: `&'static str`
+/// Usage:
+/// - `attribute!("readonly") -> Attribute`
 #[macro_export]
 macro_rules! attribute {
     ($value:expr) => {

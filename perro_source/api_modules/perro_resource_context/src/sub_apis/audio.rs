@@ -254,6 +254,7 @@ macro_rules! audio_bus_stop {
 }
 
 #[macro_export]
+/// R is the return type of the underlying API method call this macro expands to.
 macro_rules! audio_bus {
     ($name:literal) => {{
         const BUS_ID: $crate::sub_apis::AudioBusID = $crate::sub_apis::bus_id($name);

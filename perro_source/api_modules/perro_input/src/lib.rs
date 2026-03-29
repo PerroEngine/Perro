@@ -790,6 +790,21 @@ impl<'ipt, IP: InputAPI + ?Sized> JoyConModule<'ipt, IP> {
 }
 
 #[macro_export]
+/// Type:
+/// - `key_down!(&InputContext<_>, KeyCode) -> bool`
+///
+/// Usage:
+/// - `key_down!(ipt, KeyCode::Space) -> bool`
+///
+/// `ipt` is usually the input parameter from lifecycle methods:
+/// - `fn on_update(..., ipt: &InputContext<'_, IP>, ...)`
+///
+/// `KeyCode` is the keyboard-key enum (letters, numbers, arrows, function keys, etc.).
+///
+/// Checks whether a key is currently down.
+///
+/// Example:
+/// - `if key_down!(ipt, KeyCode::Space) { ... }`
 macro_rules! key_down {
     ($ipt:expr, $key:expr) => {
         $ipt.Keys().down($key)
@@ -797,6 +812,18 @@ macro_rules! key_down {
 }
 
 #[macro_export]
+/// Type:
+/// - `key_pressed!(&InputContext<_>, KeyCode) -> bool`
+///
+/// Usage:
+/// - `key_pressed!(ipt, KeyCode::Enter) -> bool`
+///
+/// `KeyCode` is the keyboard-key enum.
+///
+/// Checks whether a key was pressed this frame.
+///
+/// Example:
+/// - `if key_pressed!(ipt, KeyCode::Enter) { ... }`
 macro_rules! key_pressed {
     ($ipt:expr, $key:expr) => {
         $ipt.Keys().pressed($key)
@@ -804,6 +831,15 @@ macro_rules! key_pressed {
 }
 
 #[macro_export]
+/// Type:
+/// - `key_released!(&InputContext<_>, KeyCode) -> bool`
+///
+/// Usage:
+/// - `key_released!(ipt, KeyCode::Escape) -> bool`
+///
+/// `KeyCode` is the keyboard-key enum.
+///
+/// Checks whether a key was released this frame.
 macro_rules! key_released {
     ($ipt:expr, $key:expr) => {
         $ipt.Keys().released($key)
@@ -811,6 +847,18 @@ macro_rules! key_released {
 }
 
 #[macro_export]
+/// Type:
+/// - `mouse_down!(&InputContext<_>, MouseButton) -> bool`
+///
+/// Usage:
+/// - `mouse_down!(ipt, MouseButton::Right) -> bool`
+///
+/// `MouseButton` is the mouse-button enum (`Left`, `Right`, `Middle`, and extras).
+///
+/// Checks whether a mouse button is currently down.
+///
+/// Example:
+/// - `if mouse_down!(ipt, MouseButton::Right) { ... }`
 macro_rules! mouse_down {
     ($ipt:expr, $button:expr) => {
         $ipt.Mouse().down($button)
@@ -818,6 +866,15 @@ macro_rules! mouse_down {
 }
 
 #[macro_export]
+/// Type:
+/// - `mouse_pressed!(&InputContext<_>, MouseButton) -> bool`
+///
+/// Usage:
+/// - `mouse_pressed!(ipt, MouseButton::Left) -> bool`
+///
+/// `MouseButton` is the mouse-button enum.
+///
+/// Checks whether a mouse button was pressed this frame.
 macro_rules! mouse_pressed {
     ($ipt:expr, $button:expr) => {
         $ipt.Mouse().pressed($button)
@@ -825,6 +882,15 @@ macro_rules! mouse_pressed {
 }
 
 #[macro_export]
+/// Type:
+/// - `mouse_released!(&InputContext<_>, MouseButton) -> bool`
+///
+/// Usage:
+/// - `mouse_released!(ipt, MouseButton::Left) -> bool`
+///
+/// `MouseButton` is the mouse-button enum.
+///
+/// Checks whether a mouse button was released this frame.
 macro_rules! mouse_released {
     ($ipt:expr, $button:expr) => {
         $ipt.Mouse().released($button)
@@ -832,6 +898,11 @@ macro_rules! mouse_released {
 }
 
 #[macro_export]
+/// Type:
+/// - `mouse_delta!(&InputContext<_>) -> Vector2`
+///
+/// Usage:
+/// - `mouse_delta!(ipt) -> Vector2`
 macro_rules! mouse_delta {
     ($ipt:expr) => {
         $ipt.Mouse().delta()
@@ -839,6 +910,11 @@ macro_rules! mouse_delta {
 }
 
 #[macro_export]
+/// Type:
+/// - `mouse_wheel!(&InputContext<_>) -> Vector2`
+///
+/// Usage:
+/// - `mouse_wheel!(ipt) -> Vector2`
 macro_rules! mouse_wheel {
     ($ipt:expr) => {
         $ipt.Mouse().wheel()
@@ -846,6 +922,11 @@ macro_rules! mouse_wheel {
 }
 
 #[macro_export]
+/// Type:
+/// - `mouse_position!(&InputContext<_>) -> Vector2`
+///
+/// Usage:
+/// - `mouse_position!(ipt) -> Vector2`
 macro_rules! mouse_position {
     ($ipt:expr) => {
         $ipt.Mouse().position()
@@ -853,6 +934,11 @@ macro_rules! mouse_position {
 }
 
 #[macro_export]
+/// Type:
+/// - `viewport_size!(&InputContext<_>) -> Vector2`
+///
+/// Usage:
+/// - `viewport_size!(ipt) -> Vector2`
 macro_rules! viewport_size {
     ($ipt:expr) => {
         $ipt.Mouse().viewport_size()
