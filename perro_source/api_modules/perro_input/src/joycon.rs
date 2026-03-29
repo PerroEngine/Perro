@@ -226,9 +226,6 @@ macro_rules! joycon_side {
 /// - `joycon_down!(ipt, index, JoyConButton::Top) -> bool`
 ///
 /// `JoyConButton` is the Joy-Con button enum (top/bottom/left/right, bumper/trigger, stick, SL/SR, start/meta).
-///
-/// Example:
-/// - `if joycon_pressed!(ipt, 0, JoyConButton::Top) { ... }`
 macro_rules! joycon_down {
     ($ipt:expr, $index:expr, $button:expr) => {{
         let jc = $ipt.JoyCons();

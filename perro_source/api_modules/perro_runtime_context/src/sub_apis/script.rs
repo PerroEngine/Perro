@@ -281,9 +281,6 @@ macro_rules! script_detach {
 ///
 /// Usage:
 /// - `get_var!(ctx, node_id, var!("health")) -> Variant`
-///
-/// Example:
-/// - `let hp = get_var!(ctx, enemy_id, var!("health"));`
 #[macro_export]
 macro_rules! get_var {
     ($ctx:expr, $id:expr, var!($name:literal)) => {
@@ -304,9 +301,6 @@ macro_rules! get_var {
 ///
 /// Usage:
 /// - `set_var!(ctx, node_id, var!("health"), variant!(100_i32)) -> ()`
-///
-/// Example:
-/// - `set_var!(ctx, enemy_id, var!("health"), variant!(100_i32));`
 #[macro_export]
 macro_rules! set_var {
     ($ctx:expr, $id:expr, var!($name:literal), $value:expr) => {
@@ -329,10 +323,6 @@ macro_rules! set_var {
 /// Usage:
 /// - `call_method!(ctx, node_id, method!("take_damage"), params![10_i32]) -> Variant`
 /// - `call_method!(ctx, node_id, func!("take_damage"), params![10_i32]) -> Variant`
-///
-/// Example:
-/// - `let _ = call_method!(ctx, enemy_id, method!("take_damage"), params![10_i32]);`
-/// - `let _ = call_method!(ctx, enemy_id, func!("take_damage"), params![10_i32]);`
 #[macro_export]
 macro_rules! call_method {
     ($ctx:expr, $id:expr, method!($name:literal), $params:expr) => {

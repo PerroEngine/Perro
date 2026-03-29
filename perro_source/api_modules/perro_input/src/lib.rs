@@ -790,7 +790,7 @@ impl<'ipt, IP: InputAPI + ?Sized> JoyConModule<'ipt, IP> {
 }
 
 #[macro_export]
-/// Type:
+/// Signature:
 /// - `key_down!(&InputContext<_>, KeyCode) -> bool`
 ///
 /// Usage:
@@ -802,9 +802,6 @@ impl<'ipt, IP: InputAPI + ?Sized> JoyConModule<'ipt, IP> {
 /// `KeyCode` is the keyboard-key enum (letters, numbers, arrows, function keys, etc.).
 ///
 /// Checks whether a key is currently down.
-///
-/// Example:
-/// - `if key_down!(ipt, KeyCode::Space) { ... }`
 macro_rules! key_down {
     ($ipt:expr, $key:expr) => {
         $ipt.Keys().down($key)
@@ -812,7 +809,7 @@ macro_rules! key_down {
 }
 
 #[macro_export]
-/// Type:
+/// Signature:
 /// - `key_pressed!(&InputContext<_>, KeyCode) -> bool`
 ///
 /// Usage:
@@ -821,9 +818,6 @@ macro_rules! key_down {
 /// `KeyCode` is the keyboard-key enum.
 ///
 /// Checks whether a key was pressed this frame.
-///
-/// Example:
-/// - `if key_pressed!(ipt, KeyCode::Enter) { ... }`
 macro_rules! key_pressed {
     ($ipt:expr, $key:expr) => {
         $ipt.Keys().pressed($key)
@@ -831,7 +825,7 @@ macro_rules! key_pressed {
 }
 
 #[macro_export]
-/// Type:
+/// Signature:
 /// - `key_released!(&InputContext<_>, KeyCode) -> bool`
 ///
 /// Usage:
@@ -847,7 +841,7 @@ macro_rules! key_released {
 }
 
 #[macro_export]
-/// Type:
+/// Signature:
 /// - `mouse_down!(&InputContext<_>, MouseButton) -> bool`
 ///
 /// Usage:
@@ -856,9 +850,6 @@ macro_rules! key_released {
 /// `MouseButton` is the mouse-button enum (`Left`, `Right`, `Middle`, and extras).
 ///
 /// Checks whether a mouse button is currently down.
-///
-/// Example:
-/// - `if mouse_down!(ipt, MouseButton::Right) { ... }`
 macro_rules! mouse_down {
     ($ipt:expr, $button:expr) => {
         $ipt.Mouse().down($button)
@@ -866,7 +857,7 @@ macro_rules! mouse_down {
 }
 
 #[macro_export]
-/// Type:
+/// Signature:
 /// - `mouse_pressed!(&InputContext<_>, MouseButton) -> bool`
 ///
 /// Usage:
@@ -882,7 +873,7 @@ macro_rules! mouse_pressed {
 }
 
 #[macro_export]
-/// Type:
+/// Signature:
 /// - `mouse_released!(&InputContext<_>, MouseButton) -> bool`
 ///
 /// Usage:
@@ -898,7 +889,7 @@ macro_rules! mouse_released {
 }
 
 #[macro_export]
-/// Type:
+/// Signature:
 /// - `mouse_delta!(&InputContext<_>) -> Vector2`
 ///
 /// Usage:
@@ -910,7 +901,7 @@ macro_rules! mouse_delta {
 }
 
 #[macro_export]
-/// Type:
+/// Signature:
 /// - `mouse_wheel!(&InputContext<_>) -> Vector2`
 ///
 /// Usage:
@@ -922,7 +913,7 @@ macro_rules! mouse_wheel {
 }
 
 #[macro_export]
-/// Type:
+/// Signature:
 /// - `mouse_position!(&InputContext<_>) -> Vector2`
 ///
 /// Usage:
@@ -934,7 +925,7 @@ macro_rules! mouse_position {
 }
 
 #[macro_export]
-/// Type:
+/// Signature:
 /// - `viewport_size!(&InputContext<_>) -> Vector2`
 ///
 /// Usage:

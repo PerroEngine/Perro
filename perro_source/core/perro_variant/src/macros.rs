@@ -1,11 +1,11 @@
 #[macro_export]
 /// Builds a borrowed `&[Variant]` from ordinary Rust values.
 ///
+/// Signature:
+/// - `params!(...) -> &[Variant]`
+///
 /// Usage:
 /// - `params![expr1, expr2, ...] -> &[Variant]`
-///
-/// Example:
-/// - `call_method!(ctx, enemy_id, method!("hit"), params![10_i32, "fire", true]);`
 macro_rules! params {
     ($($value:expr),* $(,)?) => {
         &[$($crate::Variant::from($value)),*]
@@ -15,11 +15,11 @@ macro_rules! params {
 #[macro_export]
 /// Converts one value into a `Variant`.
 ///
+/// Signature:
+/// - `variant!(T) -> Variant` where `Variant: From<T>`
+///
 /// Usage:
 /// - `variant!(expr) -> Variant`
-///
-/// Example:
-/// - `set_var!(ctx, enemy_id, var!("health"), variant!(100_i32));`
 macro_rules! variant {
     ($value:expr) => {
         $crate::Variant::from($value)

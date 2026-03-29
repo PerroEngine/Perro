@@ -208,9 +208,6 @@ macro_rules! gamepad_get {
 /// - `gamepad_down!(ipt, index, GamepadButton::Bottom) -> bool`
 ///
 /// `GamepadButton` is the gamepad button enum (face buttons, d-pad, shoulders, triggers, sticks, etc.).
-///
-/// Example:
-/// - `if gamepad_down!(ipt, 0, GamepadButton::Bottom) { ... }`
 macro_rules! gamepad_down {
     ($ipt:expr, $index:expr, $button:expr) => {{
         let gp = $ipt.Gamepads();

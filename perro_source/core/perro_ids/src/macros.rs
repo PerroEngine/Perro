@@ -15,11 +15,11 @@ macro_rules! sid {
 #[macro_export]
 /// Creates a script member id for a variable/property name.
 ///
+/// Signature:
+/// - `var!(&str) -> ScriptMemberID`
+///
 /// Usage:
 /// - `var!("health") -> ScriptMemberID`
-///
-/// Example:
-/// - `let hp = get_var!(ctx, enemy_id, var!("health"));`
 macro_rules! var {
     ($name:expr) => {
         $crate::ScriptMemberID::from_string($name)
@@ -29,11 +29,11 @@ macro_rules! var {
 #[macro_export]
 /// Creates a script member id for a callable function name.
 ///
+/// Signature:
+/// - `func!(&str) -> ScriptMemberID`
+///
 /// Usage:
 /// - `func!("take_damage") -> ScriptMemberID`
-///
-/// Example:
-/// - `let _ = call_method!(ctx, enemy_id, func!("take_damage"), params![10_i32]);`
 macro_rules! func {
     ($name:expr) => {
         $crate::ScriptMemberID::from_string($name)
@@ -43,11 +43,11 @@ macro_rules! func {
 #[macro_export]
 /// Creates a script member id for a callable method name.
 ///
+/// Signature:
+/// - `method!(&str) -> ScriptMemberID`
+///
 /// Usage:
 /// - `method!("take_damage") -> ScriptMemberID`
-///
-/// Example:
-/// - `let _ = call_method!(ctx, enemy_id, method!("take_damage"), params![10_i32]);`
 macro_rules! method {
     ($name:expr) => {
         $crate::ScriptMemberID::from_string($name)
