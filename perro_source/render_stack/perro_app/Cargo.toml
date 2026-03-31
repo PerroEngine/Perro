@@ -14,6 +14,7 @@ btleplug = "0.11.8"
 gilrs = "0.11"
 tokio = { version = "1.48.0", features = ["rt", "time"] }
 futures-util = "0.3.31"
+uuid = "1.18.1"
 
 [features]
 profile = ["perro_runtime/profile"]

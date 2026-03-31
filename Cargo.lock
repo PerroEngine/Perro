@@ -2419,6 +2419,7 @@ dependencies = [
  "perro_runtime",
  "perro_scripting",
  "tokio",
+ "uuid",
  "winit",
 ]
 

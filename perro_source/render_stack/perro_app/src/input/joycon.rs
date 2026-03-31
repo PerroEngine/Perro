@@ -17,6 +17,7 @@ mod backend {
     use perro_input::{JoyConButton, JoyConSide};
     use tokio::runtime::Builder;
     use tokio::time::{self, Duration as TokioDuration};
+    use uuid::Uuid;
 
     const JOYCON_VENDOR_ID: u16 = 0x057E;
     const JOYCON_L_PID: u16 = 0x2006;
@@ -24,16 +25,16 @@ mod backend {
     const NINTENDO_BLE_CID: u16 = 0x0553;
     const JOYCON2_R_SIDE: u8 = 0x66;
     const JOYCON2_L_SIDE: u8 = 0x67;
-    const JOYCON2_INPUT_REPORT_05_UUID: &str = "ab7de9be-89fe-49ad-828f-118f09df7fd2";
-    const JOYCON2_INPUT_REPORT_07_UUID: &str = "cc1bbbb5-7354-4d32-a716-a81cb241a32a";
-    const JOYCON2_INPUT_REPORT_08_UUID: &str = "d5a9e01e-2ffc-4cca-b20c-8b67142bf442";
-    const JOYCON2_WRITE_COMMAND_UUID: &str = "649d4ac9-8eb7-4e6c-af44-1ea54fe5f005";
+    const JOYCON2_INPUT_REPORT_05_UUID: Uuid = uuid::uuid!("ab7de9be-89fe-49ad-828f-118f09df7fd2");
+    const JOYCON2_INPUT_REPORT_07_UUID: Uuid = uuid::uuid!("cc1bbbb5-7354-4d32-a716-a81cb241a32a");
+    const JOYCON2_INPUT_REPORT_08_UUID: Uuid = uuid::uuid!("d5a9e01e-2ffc-4cca-b20c-8b67142bf442");
+    const JOYCON2_WRITE_COMMAND_UUID: Uuid = uuid::uuid!("649d4ac9-8eb7-4e6c-af44-1ea54fe5f005");
     const REPORT_LEN: usize = 64;
     const SCAN_INTERVAL: Duration = Duration::from_secs(2);
     const READ_TIMEOUT: Duration = Duration::from_millis(8);
     const MAX_PERSISTENT_JOYCON_SLOTS: usize = 12;
 
-    type ButtonBits = [bool; JoyConButton::COUNT];
+    type ButtonBits = u16;
 
     enum JoyConEvent {
         Report {
@@ -77,6 +78,20 @@ mod backend {
         ble_started: bool,
         ble_stop: Option<Arc<AtomicBool>>,
     }
+
+    const ALL_BUTTONS: [JoyConButton; JoyConButton::COUNT] = [
+        JoyConButton::Top,
+        JoyConButton::Bottom,
+        JoyConButton::Left,
+        JoyConButton::Right,
+        JoyConButton::Bumper,
+        JoyConButton::Trigger,
+        JoyConButton::Stick,
+        JoyConButton::SL,
+        JoyConButton::SR,
+        JoyConButton::Start,
+        JoyConButton::Meta,
+    ];
 
     impl JoyConBackend {
         pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
@@ -319,12 +334,10 @@ mod backend {
                         let _ = peripheral.discover_services().await;
                         let chars = peripheral.characteristics();
                         let input_char = chars.iter().find(|c| {
-                            c.properties.contains(CharPropFlags::NOTIFY) && {
-                                let id = c.uuid.to_string().to_lowercase();
-                                id == JOYCON2_INPUT_REPORT_05_UUID
-                                    || id == JOYCON2_INPUT_REPORT_07_UUID
-                                    || id == JOYCON2_INPUT_REPORT_08_UUID
-                            }
+                            c.properties.contains(CharPropFlags::NOTIFY)
+                                && (c.uuid == JOYCON2_INPUT_REPORT_05_UUID
+                                    || c.uuid == JOYCON2_INPUT_REPORT_07_UUID
+                                    || c.uuid == JOYCON2_INPUT_REPORT_08_UUID)
                         });
 
                         let Some(input_char) = input_char.cloned() else {
@@ -337,10 +350,9 @@ mod backend {
                             continue;
                         }
 
-                        if let Some(cmd_char) = chars.iter().find(|c| {
-                            let id = c.uuid.to_string().to_lowercase();
-                            id == JOYCON2_WRITE_COMMAND_UUID
-                        }) {
+                        if let Some(cmd_char) =
+                            chars.iter().find(|c| c.uuid == JOYCON2_WRITE_COMMAND_UUID)
+                        {
                             let _ = peripheral
                                 .write(
                                     cmd_char,
@@ -429,6 +441,16 @@ mod backend {
         Some((side, serial))
     }
 
+    #[inline(always)]
+    fn set_button_bit(bits: &mut ButtonBits, button: JoyConButton, is_down: bool) {
+        let bit = 1u16 << (button.as_index() as u16);
+        if is_down {
+            *bits |= bit;
+        } else {
+            *bits &= !bit;
+        }
+    }
+
     fn apply_report<B: GraphicsBackend>(
         app: &mut App<B>,
         index: usize,
@@ -439,7 +461,7 @@ mod backend {
         let key = (index, side);
         let prev = last_buttons.get(&key).copied();
 
-        apply_buttons(app, index, &data.buttons, prev.as_ref());
+        apply_buttons(app, index, data.buttons, prev);
         last_buttons.insert(key, data.buttons);
 
         app.set_joycon_stick(index, data.stick.0, data.stick.1);
@@ -448,19 +470,7 @@ mod backend {
     }
 
     fn clear_joycon_index<B: GraphicsBackend>(app: &mut App<B>, index: usize) {
-        for button in [
-            JoyConButton::Top,
-            JoyConButton::Bottom,
-            JoyConButton::Left,
-            JoyConButton::Right,
-            JoyConButton::Bumper,
-            JoyConButton::Trigger,
-            JoyConButton::Stick,
-            JoyConButton::SL,
-            JoyConButton::SR,
-            JoyConButton::Start,
-            JoyConButton::Meta,
-        ] {
+        for button in ALL_BUTTONS {
             app.set_joycon_button_state(index, button, false);
         }
         app.set_joycon_stick(index, 0.0, 0.0);
@@ -471,26 +481,19 @@ mod backend {
     fn apply_buttons<B: GraphicsBackend>(
         app: &mut App<B>,
         index: usize,
-        buttons: &ButtonBits,
-        prev: Option<&ButtonBits>,
+        buttons: ButtonBits,
+        prev: Option<ButtonBits>,
     ) {
-        for button in [
-            JoyConButton::Top,
-            JoyConButton::Bottom,
-            JoyConButton::Left,
-            JoyConButton::Right,
-            JoyConButton::Bumper,
-            JoyConButton::Trigger,
-            JoyConButton::Stick,
-            JoyConButton::SL,
-            JoyConButton::SR,
-            JoyConButton::Start,
-            JoyConButton::Meta,
-        ] {
-            let is_pressed = buttons[button.as_index()];
-            let was_pressed = prev.is_some_and(|prev_bits| prev_bits[button.as_index()]);
-            if is_pressed != was_pressed {
-                app.set_joycon_button_state(index, button, is_pressed);
+        let prev_bits = prev.unwrap_or(0);
+        let changed = buttons ^ prev_bits;
+        if changed == 0 {
+            return;
+        }
+
+        for button in ALL_BUTTONS {
+            let bit = 1u16 << (button.as_index() as u16);
+            if (changed & bit) != 0 {
+                app.set_joycon_button_state(index, button, (buttons & bit) != 0);
             }
         }
     }
@@ -511,39 +514,35 @@ mod backend {
 
         let (left_idx, shared_idx, right_idx) = if offset == 1 { (2, 3, 4) } else { (3, 4, 5) };
 
-        let (btn_left, btn_shared, btn_right) = (
-            *data.get(left_idx)?,
-            *data.get(shared_idx)?,
-            *data.get(right_idx)?,
-        );
+        let (btn_left, btn_shared, btn_right) = (data[left_idx], data[shared_idx], data[right_idx]);
 
-        let mut buttons = [false; JoyConButton::COUNT];
+        let mut buttons: ButtonBits = 0;
         match side {
             JoyConSide::LJoyCon => {
-                buttons[JoyConButton::Top.as_index()] = (btn_left & 0x02) != 0;
-                buttons[JoyConButton::Bottom.as_index()] = (btn_left & 0x01) != 0;
-                buttons[JoyConButton::Left.as_index()] = (btn_left & 0x08) != 0;
-                buttons[JoyConButton::Right.as_index()] = (btn_left & 0x04) != 0;
-                buttons[JoyConButton::Bumper.as_index()] = (btn_left & 0x40) != 0;
-                buttons[JoyConButton::Trigger.as_index()] = (btn_left & 0x80) != 0;
-                buttons[JoyConButton::SL.as_index()] = (btn_left & 0x20) != 0;
-                buttons[JoyConButton::SR.as_index()] = (btn_left & 0x10) != 0;
-                buttons[JoyConButton::Start.as_index()] = (btn_shared & 0x01) != 0;
-                buttons[JoyConButton::Meta.as_index()] = (btn_shared & 0x20) != 0;
-                buttons[JoyConButton::Stick.as_index()] = (btn_shared & 0x08) != 0;
+                set_button_bit(&mut buttons, JoyConButton::Top, (btn_left & 0x02) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Bottom, (btn_left & 0x01) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Left, (btn_left & 0x08) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Right, (btn_left & 0x04) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Bumper, (btn_left & 0x40) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Trigger, (btn_left & 0x80) != 0);
+                set_button_bit(&mut buttons, JoyConButton::SL, (btn_left & 0x20) != 0);
+                set_button_bit(&mut buttons, JoyConButton::SR, (btn_left & 0x10) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Start, (btn_shared & 0x01) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Meta, (btn_shared & 0x20) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Stick, (btn_shared & 0x08) != 0);
             }
             JoyConSide::RJoyCon => {
-                buttons[JoyConButton::Top.as_index()] = (btn_right & 0x02) != 0;
-                buttons[JoyConButton::Bottom.as_index()] = (btn_right & 0x04) != 0;
-                buttons[JoyConButton::Left.as_index()] = (btn_right & 0x01) != 0;
-                buttons[JoyConButton::Right.as_index()] = (btn_right & 0x08) != 0;
-                buttons[JoyConButton::Bumper.as_index()] = (btn_right & 0x40) != 0;
-                buttons[JoyConButton::Trigger.as_index()] = (btn_right & 0x80) != 0;
-                buttons[JoyConButton::SL.as_index()] = (btn_right & 0x20) != 0;
-                buttons[JoyConButton::SR.as_index()] = (btn_right & 0x10) != 0;
-                buttons[JoyConButton::Start.as_index()] = (btn_shared & 0x02) != 0;
-                buttons[JoyConButton::Meta.as_index()] = (btn_shared & 0x10) != 0;
-                buttons[JoyConButton::Stick.as_index()] = (btn_shared & 0x04) != 0;
+                set_button_bit(&mut buttons, JoyConButton::Top, (btn_right & 0x02) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Bottom, (btn_right & 0x04) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Left, (btn_right & 0x01) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Right, (btn_right & 0x08) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Bumper, (btn_right & 0x40) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Trigger, (btn_right & 0x80) != 0);
+                set_button_bit(&mut buttons, JoyConButton::SL, (btn_right & 0x20) != 0);
+                set_button_bit(&mut buttons, JoyConButton::SR, (btn_right & 0x10) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Start, (btn_shared & 0x02) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Meta, (btn_shared & 0x10) != 0);
+                set_button_bit(&mut buttons, JoyConButton::Stick, (btn_shared & 0x04) != 0);
             }
         }
 
@@ -571,42 +570,40 @@ mod backend {
 
         let is_left = matches!(side, JoyConSide::LJoyCon);
         let btn_offset = if is_left { 4 } else { 3 };
-        let state = ((data.get(btn_offset).copied()? as u32) << 16)
-            | ((data.get(btn_offset + 1).copied()? as u32) << 8)
-            | (data.get(btn_offset + 2).copied()? as u32);
+        let state = ((data[btn_offset] as u32) << 16)
+            | ((data[btn_offset + 1] as u32) << 8)
+            | (data[btn_offset + 2] as u32);
 
-        let mut buttons = [false; JoyConButton::COUNT];
+        let mut buttons: ButtonBits = 0;
         if is_left {
-            buttons[JoyConButton::Top.as_index()] = (state & 0x000002) != 0; // Up
-            buttons[JoyConButton::Bottom.as_index()] = (state & 0x000001) != 0; // Down
-            buttons[JoyConButton::Left.as_index()] = (state & 0x000008) != 0; // Left
-            buttons[JoyConButton::Right.as_index()] = (state & 0x000004) != 0; // Right
-            buttons[JoyConButton::Bumper.as_index()] = (state & 0x000040) != 0; // L
-            buttons[JoyConButton::Trigger.as_index()] = (state & 0x000080) != 0; // ZL
-            buttons[JoyConButton::Stick.as_index()] = (state & 0x000800) != 0;
-            buttons[JoyConButton::SL.as_index()] = data.get(6).is_some_and(|b| (b & 0x20) != 0);
-            buttons[JoyConButton::SR.as_index()] = data.get(6).is_some_and(|b| (b & 0x10) != 0);
-            buttons[JoyConButton::Start.as_index()] = (state & 0x000100) != 0; // Minus
-            buttons[JoyConButton::Meta.as_index()] =
-                data.get(5).is_some_and(|b| (b & 0x20) != 0); // Capture
+            set_button_bit(&mut buttons, JoyConButton::Top, (state & 0x000002) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Bottom, (state & 0x000001) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Left, (state & 0x000008) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Right, (state & 0x000004) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Bumper, (state & 0x000040) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Trigger, (state & 0x000080) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Stick, (state & 0x000800) != 0);
+            set_button_bit(&mut buttons, JoyConButton::SL, (data[6] & 0x20) != 0);
+            set_button_bit(&mut buttons, JoyConButton::SR, (data[6] & 0x10) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Start, (state & 0x000100) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Meta, (data[5] & 0x20) != 0);
         } else {
-            buttons[JoyConButton::Top.as_index()] = (state & 0x000400) != 0; // X
-            buttons[JoyConButton::Bottom.as_index()] = (state & 0x000200) != 0; // B
-            buttons[JoyConButton::Left.as_index()] = (state & 0x000100) != 0; // Y
-            buttons[JoyConButton::Right.as_index()] = (state & 0x000800) != 0; // A
-            buttons[JoyConButton::Bumper.as_index()] = (state & 0x004000) != 0; // R
-            buttons[JoyConButton::Trigger.as_index()] = (state & 0x008000) != 0; // ZR
-            buttons[JoyConButton::Stick.as_index()] = (state & 0x000004) != 0;
-            buttons[JoyConButton::SL.as_index()] = data.get(4).is_some_and(|b| (b & 0x20) != 0);
-            buttons[JoyConButton::SR.as_index()] = data.get(4).is_some_and(|b| (b & 0x10) != 0);
-            buttons[JoyConButton::Start.as_index()] = (state & 0x000002) != 0; // Plus
-            buttons[JoyConButton::Meta.as_index()] =
-                data.get(5).is_some_and(|b| (b & 0x10) != 0); // Home
+            set_button_bit(&mut buttons, JoyConButton::Top, (state & 0x000400) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Bottom, (state & 0x000200) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Left, (state & 0x000100) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Right, (state & 0x000800) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Bumper, (state & 0x004000) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Trigger, (state & 0x008000) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Stick, (state & 0x000004) != 0);
+            set_button_bit(&mut buttons, JoyConButton::SL, (data[4] & 0x20) != 0);
+            set_button_bit(&mut buttons, JoyConButton::SR, (data[4] & 0x10) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Start, (state & 0x000002) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Meta, (data[5] & 0x10) != 0);
         }
 
         let stick_offset = if is_left { 10 } else { 13 };
         let stick = {
-            let raw = data.get(stick_offset..stick_offset + 3)?;
+            let raw = &data[stick_offset..stick_offset + 3];
             let x_raw = ((raw[1] & 0x0F) as u16) << 8 | raw[0] as u16;
             let y_raw = (raw[2] as u16) << 4 | ((raw[1] & 0xF0) >> 4) as u16;
             let x = ((x_raw as f32 / 4095.0).clamp(0.0, 1.0) - 0.5) * 2.0;
