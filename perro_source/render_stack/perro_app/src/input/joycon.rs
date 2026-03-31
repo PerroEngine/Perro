@@ -34,6 +34,10 @@ mod backend {
     const SCAN_INTERVAL: Duration = Duration::from_secs(2);
     const READ_TIMEOUT: Duration = Duration::from_millis(8);
     const MAX_PERSISTENT_JOYCON_SLOTS: usize = 12;
+    const STICK_DEADZONE: f32 = 0.08;
+    const STICK_AXIS_GAIN_POS: f32 = 1.85;
+    const STICK_AXIS_GAIN_NEG: f32 = 1.45;
+    const ACCEL_GRAVITY_SCALE: f32 = 0.2386;
 
     type ButtonBits = u16;
 
@@ -598,10 +602,19 @@ mod backend {
         if data.len() < 49 {
             return None;
         }
+        // HID Joy-Con 1 reads here are expected to be full 0x30 reports with report-id.
+        // When report-id is present, force canonical offset=0 to avoid false IMU parsing.
+        if data.first().copied() == Some(0x30) {
+            return decode_report_joycon1_with_offset(data, side, 0);
+        }
+        decode_report_joycon1_with_offset(data, side, 1)
+    }
 
-        // If report ID byte is present (0x30 at byte 0), use canonical indices.
-        // If absent, shift all indices left by 1.
-        let offset = if data[0] == 0x30 { 0 } else { 1 };
+    fn decode_report_joycon1_with_offset(
+        data: &[u8],
+        side: JoyConSide,
+        offset: usize,
+    ) -> Option<JoyConInputData> {
 
         // Joy-Con 1 layout:
         // byte 3 = right buttons, byte 4 = shared, byte 5 = left buttons
@@ -711,15 +724,15 @@ mod backend {
             let raw = &data[stick_offset..stick_offset + 3];
             let x_raw = ((raw[1] & 0x0F) as u16) << 8 | raw[0] as u16;
             let y_raw = (raw[2] as u16) << 4 | ((raw[1] & 0xF0) >> 4) as u16;
-            let x = ((x_raw as f32 / 4095.0).clamp(0.0, 1.0) - 0.5) * 2.0;
-            let y = ((y_raw as f32 / 4095.0).clamp(0.0, 1.0) - 0.5) * 2.0;
+            let x = normalize_stick_axis(((x_raw as f32 / 4095.0).clamp(0.0, 1.0) - 0.5) * 2.0);
+            let y = normalize_stick_axis(((y_raw as f32 / 4095.0).clamp(0.0, 1.0) - 0.5) * 2.0);
             (x, y)
         };
 
         let accel = (
-            i16::from_le_bytes([data[base + 0x30], data[base + 0x31]]) as f32,
-            i16::from_le_bytes([data[base + 0x32], data[base + 0x33]]) as f32,
-            i16::from_le_bytes([data[base + 0x34], data[base + 0x35]]) as f32,
+            i16::from_le_bytes([data[base + 0x30], data[base + 0x31]]) as f32 * ACCEL_GRAVITY_SCALE,
+            i16::from_le_bytes([data[base + 0x32], data[base + 0x33]]) as f32 * ACCEL_GRAVITY_SCALE,
+            i16::from_le_bytes([data[base + 0x34], data[base + 0x35]]) as f32 * ACCEL_GRAVITY_SCALE,
         );
 
         const JOYCON2_GYRO_SCALE: f32 = 13.875;
@@ -757,10 +770,9 @@ mod backend {
         let x_norm = (raw_x as f32 / 4095.0).clamp(0.0, 1.0);
         let y_norm = (raw_y as f32 / 4095.0).clamp(0.0, 1.0);
 
-        Some((
-            x_norm * 2.0 - 1.0, // Normalize to [-1, 1]
-            y_norm * 2.0 - 1.0,
-        ))
+        let x = normalize_stick_axis(x_norm * 2.0 - 1.0);
+        let y = normalize_stick_axis(y_norm * 2.0 - 1.0);
+        Some((x, y))
     }
 
     fn decode_accel(data: &[u8], offset: usize) -> (f32, f32, f32) {
@@ -770,13 +782,36 @@ mod backend {
         };
 
         if start + 5 < data.len() {
-            let ax = i16::from_le_bytes([data[start], data[start + 1]]) as f32;
-            let ay = i16::from_le_bytes([data[start + 2], data[start + 3]]) as f32;
-            let az = i16::from_le_bytes([data[start + 4], data[start + 5]]) as f32;
+            let ax =
+                i16::from_le_bytes([data[start], data[start + 1]]) as f32 * ACCEL_GRAVITY_SCALE;
+            let ay =
+                i16::from_le_bytes([data[start + 2], data[start + 3]]) as f32 * ACCEL_GRAVITY_SCALE;
+            let az =
+                i16::from_le_bytes([data[start + 4], data[start + 5]]) as f32 * ACCEL_GRAVITY_SCALE;
             (ax, ay, az)
         } else {
             (0.0, 0.0, 0.0)
         }
+    }
+
+    #[inline(always)]
+    fn apply_stick_deadzone(v: f32) -> f32 {
+        let a = v.abs();
+        if a < STICK_DEADZONE {
+            0.0
+        } else {
+            v.signum() * ((a - STICK_DEADZONE) / (1.0 - STICK_DEADZONE))
+        }
+    }
+
+    #[inline(always)]
+    fn normalize_stick_axis(v: f32) -> f32 {
+        let gain = if v >= 0.0 {
+            STICK_AXIS_GAIN_POS
+        } else {
+            STICK_AXIS_GAIN_NEG
+        };
+        apply_stick_deadzone((v * gain).clamp(-1.0, 1.0)).clamp(-1.0, 1.0)
     }
 
     fn decode_gyro(data: &[u8], offset: usize) -> (f32, f32, f32) {
@@ -796,8 +831,9 @@ mod backend {
     }
 
     fn enable_sensors(device: &hidapi::HidDevice) -> Result<(), hidapi::HidError> {
+        // HID output report: [0x01, packet_no, rumble(8), subcmd, arg]
         const CMD_ENABLE_IMU: [u8; 12] = [
-            0x01, 0x00, 0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40, 0x00, 0x01,
+            0x01, 0x00, 0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40, 0x40, 0x01,
         ];
         const CMD_SET_REPORT_30: [u8; 12] = [
             0x01, 0x01, 0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40, 0x03, 0x30,

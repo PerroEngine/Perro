@@ -137,24 +137,28 @@ mod backend {
                 EventType::ButtonPressed(button, _) => {
                     if let Some(mapped) = map_button(button) {
                         self.set_button(app, gilrs, id, mapped, true);
+                        self.set_trigger_axis_from_button(app, gilrs, id, button, 1.0);
                         self.log_raw_like_state(gilrs, id, "button_pressed");
                     }
                 }
                 EventType::ButtonRepeated(button, _) => {
                     if let Some(mapped) = map_button(button) {
                         self.set_button(app, gilrs, id, mapped, true);
+                        self.set_trigger_axis_from_button(app, gilrs, id, button, 1.0);
                         self.log_raw_like_state(gilrs, id, "button_repeated");
                     }
                 }
                 EventType::ButtonReleased(button, _) => {
                     if let Some(mapped) = map_button(button) {
                         self.set_button(app, gilrs, id, mapped, false);
+                        self.set_trigger_axis_from_button(app, gilrs, id, button, 0.0);
                         self.log_raw_like_state(gilrs, id, "button_released");
                     }
                 }
                 EventType::ButtonChanged(button, value, _) => {
                     if let Some(mapped) = map_button(button) {
                         self.set_button(app, gilrs, id, mapped, value > 0.5);
+                        self.set_trigger_axis_from_button(app, gilrs, id, button, value);
                         self.log_raw_like_state(gilrs, id, "button_changed");
                     }
                 }
@@ -223,6 +227,28 @@ mod backend {
                 }
                 _ => {}
             }
+        }
+
+        fn set_trigger_axis_from_button<B: GraphicsBackend>(
+            &mut self,
+            app: &mut App<B>,
+            gilrs: &Gilrs,
+            id: GamepadId,
+            button: Button,
+            value: f32,
+        ) {
+            let axis = match button {
+                Button::LeftTrigger2 => Some(GamepadAxis::LeftTrigger),
+                Button::RightTrigger2 => Some(GamepadAxis::RightTrigger),
+                _ => None,
+            };
+            let Some(axis) = axis else {
+                return;
+            };
+            let Some(index) = self.assign_index_if_unique(gilrs, id) else {
+                return;
+            };
+            app.set_gamepad_axis(index, axis, value.clamp(0.0, 1.0));
         }
 
         fn assign_index_if_unique(&mut self, gilrs: &Gilrs, id: GamepadId) -> Option<usize> {
