@@ -17,7 +17,7 @@ mod backend {
     use perro_input::{JoyConButton, JoyConSide};
     use std::sync::OnceLock;
     use tokio::runtime::Builder;
-    use tokio::time::{self, Duration as TokioDuration};
+    use tokio::time::{self, Duration as TokioDuration, Instant as TokioInstant};
     use uuid::Uuid;
 
     const JOYCON_VENDOR_ID: u16 = 0x057E;
@@ -33,11 +33,16 @@ mod backend {
     const REPORT_LEN: usize = 64;
     const SCAN_INTERVAL: Duration = Duration::from_secs(2);
     const READ_TIMEOUT: Duration = Duration::from_millis(8);
+    const BLE_DISCOVERY_POLL: TokioDuration = TokioDuration::from_millis(20);
+    const BLE_CHAR_DISCOVERY_RETRIES: u32 = 4;
+    const BLE_CHAR_DISCOVERY_DELAY: TokioDuration = TokioDuration::from_millis(10);
     const MAX_PERSISTENT_JOYCON_SLOTS: usize = 12;
     const STICK_DEADZONE: f32 = 0.08;
     const STICK_AXIS_GAIN_POS: f32 = 1.85;
     const STICK_AXIS_GAIN_NEG: f32 = 1.45;
     const ACCEL_GRAVITY_SCALE: f32 = 0.2386;
+    const ACCEL_ONE_G_TARGET: f32 = 1000.0;
+    const GYRO_DEADZONE_DPS: f32 = 10.0;
 
     type ButtonBits = u16;
 
@@ -80,6 +85,7 @@ mod backend {
         rx: Option<Receiver<JoyConEvent>>,
         tx: Option<Sender<JoyConEvent>>,
         last_buttons: HashMap<(usize, JoyConSide), ButtonBits>,
+        gyro_bias: HashMap<(usize, JoyConSide), (f32, f32, f32)>,
         last_scan: Option<Instant>,
         ble_started: bool,
         ble_stop: Option<Arc<AtomicBool>>,
@@ -259,11 +265,19 @@ mod backend {
                         if raw_dump_enabled() {
                             log_raw_joycon_report(index, side, &raw_report, &data, "hid");
                         }
-                        apply_report(app, index, side, data, &mut self.last_buttons);
+                        apply_report(
+                            app,
+                            index,
+                            side,
+                            data,
+                            &mut self.last_buttons,
+                            &mut self.gyro_bias,
+                        );
                     }
                     JoyConEvent::Disconnected { index } => {
                         clear_joycon_index(app, index);
                         self.last_buttons.retain(|(idx, _), _| *idx != index);
+                        self.gyro_bias.retain(|(idx, _), _| *idx != index);
                     }
                 }
             }
@@ -323,15 +337,16 @@ mod backend {
                     return;
                 };
                 eprintln!("[joycon2] BLE worker started");
+                let worker_started_at = TokioInstant::now();
 
                 let mut known: HashSet<String> = HashSet::new();
 
+                let _ = adapter.start_scan(ScanFilter::default()).await;
                 while !stop.load(Ordering::Relaxed) {
                     if let Ok(sl) = slots.lock() {
                         known.retain(|k| sl.assigned.contains_key(k));
                     }
-                    let _ = adapter.start_scan(ScanFilter::default()).await;
-                    time::sleep(TokioDuration::from_secs(2)).await;
+                    time::sleep(BLE_DISCOVERY_POLL).await;
 
                     let Ok(peripherals) = adapter.peripherals().await else {
                         continue;
@@ -350,22 +365,66 @@ mod backend {
                             eprintln!("[joycon2] connect failed id={serial} tag={debug_tag}");
                             continue;
                         }
-                        eprintln!("[joycon2] connected id={serial} side={side:?} tag={debug_tag}");
-                        let _ = peripheral.discover_services().await;
-                        let chars = peripheral.characteristics();
-                        let input_char = chars.iter().find(|c| {
-                            c.properties.contains(CharPropFlags::NOTIFY)
-                                && (c.uuid == JOYCON2_INPUT_REPORT_05_UUID
-                                    || c.uuid == JOYCON2_INPUT_REPORT_07_UUID
-                                    || c.uuid == JOYCON2_INPUT_REPORT_08_UUID)
-                        }).cloned().or_else(|| {
-                            chars.iter()
-                                .find(|c| c.properties.contains(CharPropFlags::NOTIFY))
-                                .cloned()
-                        });
+                        let connect_t0 = TokioInstant::now();
+                        eprintln!(
+                            "[joycon2][trace_v2] connected id={serial} side={side:?} tag={debug_tag} t={}ms",
+                            worker_started_at.elapsed().as_millis()
+                        );
+                        let mut chars = peripheral.characteristics();
+                        for _ in 0..BLE_CHAR_DISCOVERY_RETRIES {
+                            if !chars.is_empty() {
+                                break;
+                            }
+                            let _ = peripheral.discover_services().await;
+                            chars = peripheral.characteristics();
+                            if chars.is_empty() {
+                                time::sleep(BLE_CHAR_DISCOVERY_DELAY).await;
+                            }
+                        }
+                        let preferred_uuids: [Uuid; 3] = match side {
+                            JoyConSide::LJoyCon => [
+                                JOYCON2_INPUT_REPORT_07_UUID,
+                                JOYCON2_INPUT_REPORT_05_UUID,
+                                JOYCON2_INPUT_REPORT_08_UUID,
+                            ],
+                            JoyConSide::RJoyCon => [
+                                JOYCON2_INPUT_REPORT_08_UUID,
+                                JOYCON2_INPUT_REPORT_05_UUID,
+                                JOYCON2_INPUT_REPORT_07_UUID,
+                            ],
+                        };
+                        let input_char = preferred_uuids
+                            .iter()
+                            .find_map(|wanted| {
+                                chars
+                                    .iter()
+                                    .find(|c| {
+                                        c.properties.contains(CharPropFlags::NOTIFY)
+                                            && c.uuid == *wanted
+                                    })
+                                    .cloned()
+                            })
+                            .or_else(|| {
+                                chars.iter()
+                                    .find(|c| {
+                                        c.properties.contains(CharPropFlags::NOTIFY)
+                                            && (c.uuid == JOYCON2_INPUT_REPORT_05_UUID
+                                                || c.uuid == JOYCON2_INPUT_REPORT_07_UUID
+                                                || c.uuid == JOYCON2_INPUT_REPORT_08_UUID)
+                                    })
+                                    .cloned()
+                            })
+                            .or_else(|| {
+                                chars.iter()
+                                    .find(|c| c.properties.contains(CharPropFlags::NOTIFY))
+                                    .cloned()
+                            });
 
                         let Some(input_char) = input_char else {
-                            eprintln!("[joycon2] no notify characteristic id={serial}");
+                            eprintln!(
+                                "[joycon2] no notify characteristic id={serial} chars_seen={}",
+                                chars.len()
+                            );
                             let _ = peripheral.disconnect().await;
                             continue;
                         };
@@ -375,31 +434,20 @@ mod backend {
                             let _ = peripheral.disconnect().await;
                             continue;
                         }
-                        eprintln!("[joycon2] subscribed id={serial} uuid={}", input_char.uuid);
+                        eprintln!(
+                            "[joycon2] subscribed id={serial} uuid={} t={}ms",
+                            input_char.uuid,
+                            connect_t0.elapsed().as_millis()
+                        );
 
-                        if let Some(cmd_char) =
-                            chars.iter().find(|c| c.uuid == JOYCON2_WRITE_COMMAND_UUID)
-                        {
-                            let _ = peripheral
-                                .write(
-                                    cmd_char,
-                                    &[
-                                        0x0c, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00,
-                                        0x00, 0x00,
-                                    ],
-                                    btleplug::api::WriteType::WithoutResponse,
-                                )
-                                .await;
-                            let _ = peripheral
-                                .write(
-                                    cmd_char,
-                                    &[
-                                        0x0c, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00,
-                                        0x00, 0x00,
-                                    ],
-                                    btleplug::api::WriteType::WithoutResponse,
-                                )
-                                .await;
+                        let cmd_char = chars
+                            .iter()
+                            .find(|c| c.uuid == JOYCON2_WRITE_COMMAND_UUID)
+                            .cloned();
+                        if let Some(cmd_char) = cmd_char.as_ref() {
+                            send_joycon2_enable_sequence(&peripheral, cmd_char).await;
+                            // Aggressive startup: fire a second pulse immediately.
+                            send_joycon2_enable_sequence(&peripheral, cmd_char).await;
                         }
 
                         let index = assign_slot(&slots, &key);
@@ -416,6 +464,9 @@ mod backend {
                                 let _ = release_slot(&slots_clone, &key_clone);
                                 return;
                             };
+                            let mut imu_active = false;
+                            let mut last_enable_retry = TokioInstant::now();
+                            let mut first_report_logged = false;
                             while !stop_clone.load(Ordering::Relaxed) {
                                 match time::timeout(
                                     TokioDuration::from_secs(4),
@@ -424,8 +475,48 @@ mod backend {
                                 .await
                                 {
                                     Ok(Some(packet)) => {
+                                        if !first_report_logged {
+                                            eprintln!(
+                                                "[joycon2] first_report id={} t={}ms len={}",
+                                                key_clone,
+                                                connect_t0.elapsed().as_millis(),
+                                                packet.value.len()
+                                            );
+                                            first_report_logged = true;
+                                        }
                                         let rid = packet.value.first().copied().unwrap_or(0xFF);
                                         if let Some(data) = decode_report_ble(&packet.value, side) {
+                                            let imu_zero = data.gyro.0 == 0.0
+                                                && data.gyro.1 == 0.0
+                                                && data.gyro.2 == 0.0
+                                                && data.accel.0 == 0.0
+                                                && data.accel.1 == 0.0
+                                                && data.accel.2 == 0.0;
+                                            if !imu_zero {
+                                                if !imu_active {
+                                                    eprintln!(
+                                                        "[joycon2] imu_active id={} t={}ms",
+                                                        key_clone,
+                                                        connect_t0.elapsed().as_millis()
+                                                    );
+                                                }
+                                                imu_active = true;
+                                            } else if !imu_active
+                                                && last_enable_retry.elapsed()
+                                                    >= TokioDuration::from_millis(80)
+                                            {
+                                                if let Some(cmd_char) = cmd_char.as_ref() {
+                                                    eprintln!(
+                                                        "[joycon2] imu not active yet, retrying enable id={key_clone}"
+                                                    );
+                                                    send_joycon2_enable_sequence(
+                                                        &peripheral,
+                                                        cmd_char,
+                                                    )
+                                                    .await;
+                                                }
+                                                last_enable_retry = TokioInstant::now();
+                                            }
                                             if raw_dump_enabled() {
                                                 log_raw_joycon_report(
                                                     index,
@@ -549,6 +640,7 @@ mod backend {
         side: JoyConSide,
         data: JoyConInputData,
         last_buttons: &mut HashMap<(usize, JoyConSide), ButtonBits>,
+        gyro_bias: &mut HashMap<(usize, JoyConSide), (f32, f32, f32)>,
     ) {
         let key = (index, side);
         let prev = last_buttons.get(&key).copied();
@@ -557,8 +649,35 @@ mod backend {
         last_buttons.insert(key, data.buttons);
 
         app.set_joycon_stick(index, data.stick.0, data.stick.1);
-        app.set_joycon_gyro(index, data.gyro.0, data.gyro.1, data.gyro.2);
+        let gyro = stabilize_gyro(data.gyro, data.accel, key, gyro_bias);
+        app.set_joycon_gyro(index, gyro.0, gyro.1, gyro.2);
         app.set_joycon_accel(index, data.accel.0, data.accel.1, data.accel.2);
+    }
+
+    fn stabilize_gyro(
+        raw_gyro: (f32, f32, f32),
+        accel: (f32, f32, f32),
+        key: (usize, JoyConSide),
+        gyro_bias: &mut HashMap<(usize, JoyConSide), (f32, f32, f32)>,
+    ) -> (f32, f32, f32) {
+        let bias = gyro_bias.entry(key).or_insert((0.0, 0.0, 0.0));
+        let amag = (accel.0 * accel.0 + accel.1 * accel.1 + accel.2 * accel.2).sqrt();
+        let gmag =
+            (raw_gyro.0 * raw_gyro.0 + raw_gyro.1 * raw_gyro.1 + raw_gyro.2 * raw_gyro.2).sqrt();
+
+        // Learn bias only while likely still.
+        let likely_still = (amag - ACCEL_ONE_G_TARGET).abs() < 180.0 && gmag < 260.0;
+        if likely_still {
+            const ALPHA: f32 = 0.03;
+            bias.0 = bias.0 + (raw_gyro.0 - bias.0) * ALPHA;
+            bias.1 = bias.1 + (raw_gyro.1 - bias.1) * ALPHA;
+            bias.2 = bias.2 + (raw_gyro.2 - bias.2) * ALPHA;
+        }
+
+        let x = apply_deadzone(raw_gyro.0 - bias.0, GYRO_DEADZONE_DPS);
+        let y = apply_deadzone(raw_gyro.1 - bias.1, GYRO_DEADZONE_DPS);
+        let z = apply_deadzone(raw_gyro.2 - bias.2, GYRO_DEADZONE_DPS);
+        (x, y, z)
     }
 
     fn clear_joycon_index<B: GraphicsBackend>(app: &mut App<B>, index: usize) {
@@ -667,12 +786,18 @@ mod backend {
     }
 
     fn decode_report_joycon2(data: &[u8], side: JoyConSide) -> Option<JoyConInputData> {
-        // BLE notifications may arrive as either:
-        // - full report with leading report-id byte
-        // - raw report body (no report-id) (common: len=63)
-        // Try body-first decode, then shifted decode.
-        decode_report_joycon2_at_base(data, side, 0)
-            .or_else(|| decode_report_joycon2_at_base(data, side, 1))
+        // BLE packets in this stream are usually raw report bodies (counter first),
+        // not report-id-prefixed frames. Use stable alignment preference:
+        // - if first byte looks like report-id, try shifted first
+        // - otherwise try base-0 first
+        let first = data.first().copied().unwrap_or(0xFF);
+        if matches!(first, 0x05 | 0x07 | 0x08) {
+            decode_report_joycon2_at_base(data, side, 1)
+                .or_else(|| decode_report_joycon2_at_base(data, side, 0))
+        } else {
+            decode_report_joycon2_at_base(data, side, 0)
+                .or_else(|| decode_report_joycon2_at_base(data, side, 1))
+        }
     }
 
     fn decode_report_joycon2_at_base(
@@ -719,31 +844,22 @@ mod backend {
             set_button_bit(&mut buttons, JoyConButton::Meta, (data[base + 5] & 0x10) != 0);
         }
 
-        let stick_offset = base + if is_left { 10 } else { 13 };
-        let stick = {
-            let raw = &data[stick_offset..stick_offset + 3];
-            let x_raw = ((raw[1] & 0x0F) as u16) << 8 | raw[0] as u16;
-            let y_raw = (raw[2] as u16) << 4 | ((raw[1] & 0xF0) >> 4) as u16;
+        let stick_offsets: &[usize] = if is_left {
+            &[base + 10, base + 8]
+        } else {
+            &[base + 5, base + 13, base + 10]
+        };
+        let (x_raw, y_raw) = decode_stick_best_candidate(data, stick_offsets).unwrap_or((0, 0));
+        let stick = if x_raw == 0 && y_raw == 0 {
+            (0.0, 0.0)
+        } else {
             let x = normalize_stick_axis(((x_raw as f32 / 4095.0).clamp(0.0, 1.0) - 0.5) * 2.0);
             let y = normalize_stick_axis(((y_raw as f32 / 4095.0).clamp(0.0, 1.0) - 0.5) * 2.0);
             (x, y)
         };
 
-        let accel = (
-            i16::from_le_bytes([data[base + 0x30], data[base + 0x31]]) as f32 * ACCEL_GRAVITY_SCALE,
-            i16::from_le_bytes([data[base + 0x32], data[base + 0x33]]) as f32 * ACCEL_GRAVITY_SCALE,
-            i16::from_le_bytes([data[base + 0x34], data[base + 0x35]]) as f32 * ACCEL_GRAVITY_SCALE,
-        );
-
-        const JOYCON2_GYRO_SCALE: f32 = 13.875;
-        let gx_raw =
-            i16::from_le_bytes([data[base + 0x36], data[base + 0x37]]) as f32 / JOYCON2_GYRO_SCALE;
-        let gy_raw =
-            i16::from_le_bytes([data[base + 0x38], data[base + 0x39]]) as f32 / JOYCON2_GYRO_SCALE;
-        let gz_raw =
-            i16::from_le_bytes([data[base + 0x3A], data[base + 0x3B]]) as f32 / JOYCON2_GYRO_SCALE;
-        // Match legacy transform used before state-space mapping.
-        let gyro = (gy_raw, gx_raw, -gz_raw);
+        let accel = normalize_accel_to_one_g(decode_joycon2_accel_best_candidate(data, base));
+        let gyro = normalize_gyro_near_rest(decode_joycon2_gyro_best_candidate(data, base));
 
         Some(JoyConInputData {
             buttons,
@@ -896,6 +1012,128 @@ mod backend {
             .map(|b| format!("{b:02X}"))
             .collect::<Vec<_>>()
             .join(" ")
+    }
+
+    fn decode_stick_raw_12(data: &[u8], offset: usize) -> Option<(u16, u16)> {
+        let raw = data.get(offset..offset + 3)?;
+        let x_raw = ((raw[1] & 0x0F) as u16) << 8 | raw[0] as u16;
+        let y_raw = (raw[2] as u16) << 4 | ((raw[1] & 0xF0) >> 4) as u16;
+        Some((x_raw, y_raw))
+    }
+
+    fn decode_stick_best_candidate(data: &[u8], offsets: &[usize]) -> Option<(u16, u16)> {
+        let mut best: Option<(u16, u16)> = None;
+        let mut best_score = f32::NEG_INFINITY;
+        for &off in offsets {
+            let Some((x, y)) = decode_stick_raw_12(data, off) else {
+                continue;
+            };
+            if x == 0 && y == 0 {
+                continue;
+            }
+            let dx = (x as f32 - 2048.0).abs() / 2048.0;
+            let dy = (y as f32 - 2048.0).abs() / 2048.0;
+            // Favor candidates closer to center by default to avoid pegged -1/-1 from bad offsets.
+            let score = -(dx + dy);
+            if score > best_score {
+                best_score = score;
+                best = Some((x, y));
+            }
+        }
+        best
+    }
+
+    fn decode_joycon2_accel_best_candidate(data: &[u8], base: usize) -> (f32, f32, f32) {
+        let motion_offsets = [base + 0x30, base + 0x2A, base + 0x24];
+        let mut best = (0.0, 0.0, 0.0);
+        let mut best_score = f32::INFINITY;
+        for start in motion_offsets {
+            if start + 5 >= data.len() {
+                continue;
+            }
+            let ax = i16::from_le_bytes([data[start], data[start + 1]]) as f32 * ACCEL_GRAVITY_SCALE;
+            let ay = i16::from_le_bytes([data[start + 2], data[start + 3]]) as f32 * ACCEL_GRAVITY_SCALE;
+            let az = i16::from_le_bytes([data[start + 4], data[start + 5]]) as f32 * ACCEL_GRAVITY_SCALE;
+            let amag = (ax * ax + ay * ay + az * az).sqrt();
+            // Prefer realistic gravity magnitude region before normalization.
+            let score = (amag - ACCEL_ONE_G_TARGET).abs();
+            if score < best_score {
+                best_score = score;
+                best = (ax, ay, az);
+            }
+        }
+        best
+    }
+
+    fn decode_joycon2_gyro_best_candidate(data: &[u8], base: usize) -> (f32, f32, f32) {
+        const JOYCON2_GYRO_SCALE: f32 = 13.875;
+        let motion_offsets = [base + 0x30, base + 0x2A, base + 0x24];
+        let mut best = (0.0, 0.0, 0.0);
+        let mut best_score = f32::INFINITY;
+
+        for start in motion_offsets {
+            if start + 11 >= data.len() {
+                continue;
+            }
+            let gx_raw = i16::from_le_bytes([data[start + 6], data[start + 7]]) as f32 / JOYCON2_GYRO_SCALE;
+            let gy_raw = i16::from_le_bytes([data[start + 8], data[start + 9]]) as f32 / JOYCON2_GYRO_SCALE;
+            let gz_raw = i16::from_le_bytes([data[start + 10], data[start + 11]]) as f32 / JOYCON2_GYRO_SCALE;
+            let gyro = (gy_raw, gx_raw, -gz_raw);
+            let gmag = (gyro.0 * gyro.0 + gyro.1 * gyro.1 + gyro.2 * gyro.2).sqrt();
+            // Parse gyro independently; choose the least explosive candidate.
+            let score = gmag;
+            if score < best_score {
+                best_score = score;
+                best = gyro;
+            }
+        }
+        best
+    }
+
+    fn normalize_accel_to_one_g(accel: (f32, f32, f32)) -> (f32, f32, f32) {
+        let amag = (accel.0 * accel.0 + accel.1 * accel.1 + accel.2 * accel.2).sqrt();
+        if amag <= 0.001 {
+            return accel;
+        }
+        let gain = (ACCEL_ONE_G_TARGET / amag).clamp(0.5, 2.0);
+        (accel.0 * gain, accel.1 * gain, accel.2 * gain)
+    }
+
+    fn normalize_gyro_near_rest(gyro: (f32, f32, f32)) -> (f32, f32, f32) {
+        (
+            apply_deadzone(gyro.0, GYRO_DEADZONE_DPS),
+            apply_deadzone(gyro.1, GYRO_DEADZONE_DPS),
+            apply_deadzone(gyro.2, GYRO_DEADZONE_DPS),
+        )
+    }
+
+    #[inline(always)]
+    fn apply_deadzone(v: f32, dz: f32) -> f32 {
+        if v.abs() < dz { 0.0 } else { v }
+    }
+
+    async fn send_joycon2_enable_sequence(
+        peripheral: &btleplug::platform::Peripheral,
+        cmd_char: &btleplug::api::Characteristic,
+    ) {
+        let _ = peripheral
+            .write(
+                cmd_char,
+                &[
+                    0x0c, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00,
+                ],
+                btleplug::api::WriteType::WithoutResponse,
+            )
+            .await;
+        let _ = peripheral
+            .write(
+                cmd_char,
+                &[
+                    0x0c, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00,
+                ],
+                btleplug::api::WriteType::WithoutResponse,
+            )
+            .await;
     }
 }
 
