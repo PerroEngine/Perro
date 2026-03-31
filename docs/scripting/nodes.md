@@ -35,9 +35,17 @@ Physics 2D:
 
 `MeshInstance3D`
 
-- Renders a mesh with a material.
-- Holds `MeshID` and `MaterialID` instead of raw mesh/material data.
+- Renders a mesh with per-surface material bindings.
+- Holds `MeshID` and `surfaces: Vec<MeshSurfaceBinding>` instead of raw mesh/material data.
 - Reason: resource IDs allow caching, reuse, and async GPU upload.
+- `MeshSurfaceBinding` supports:
+  - `material: Option<MaterialID>`
+  - `modulate` (RGBA multiplier)
+  - `overrides` (named material parameter overrides)
+- Scene authoring supports `surfaces = [ ... ]` where each entry can be:
+  - a material source string
+  - an object with `material`, `modulate`, and `overrides`
+- Legacy `material = ...` is still accepted and maps to surface index `0`.
 - Skinning: if the mesh has vertex weights, it can be **deformed by a Skeleton3D**.
 - Runtime link: `skeleton: NodeID` points to the `Skeleton3D` node that supplies bone transforms.
 - Scene authoring: `skeleton = "NodeName"` uses the **scene node name** and is resolved to a `NodeID` at load time.
@@ -125,7 +133,12 @@ From scene:
 [SkinnedMesh]
     [MeshInstance3D]
         mesh = "res://models/rig.gltf:mesh[0]"
-        material = "res://materials/skin.pmat"
+        surfaces = [
+            {
+                material = "res://materials/skin.pmat"
+                modulate = (1, 1, 1, 1)
+            }
+        ]
         skeleton = "Rig"
     [/MeshInstance3D]
 [/SkinnedMesh]

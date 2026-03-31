@@ -160,6 +160,17 @@ script = "res://path/to/script.rs"
     [MeshInstance3D]
         mesh = "res://path/to/model.glb:mesh[0]"
         material = "res://path/to/material.pmat"
+        surfaces = [
+            "res://path/to/material0.pmat",
+            {
+                material = "res://path/to/material1.pmat"
+                modulate = (1, 0.9, 0.9, 1)
+                overrides = [
+                    { name = "roughness", value = 0.25 },
+                    { name = "rim_color", value = (0.2, 0.6, 1.0, 1.0) }
+                ]
+            }
+        ]
         model = "res://path/to/model.glb"
         skeleton = "SkeletonNodeName"
         [Node3D]

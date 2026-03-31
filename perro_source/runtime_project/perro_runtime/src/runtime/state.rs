@@ -9,6 +9,7 @@ use perro_nodes::Spatial;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, Material3D, PointLight3DState, RayLight3DState,
     RenderCommand, RenderEvent, RenderRequestID, SkeletonPalette, Sky3DState, SpotLight3DState,
+    MeshSurfaceBinding3D,
 };
 use perro_structs::{Transform2D, Transform3D};
 use perro_terrain::ChunkCoord;
@@ -275,8 +276,8 @@ pub(crate) struct Render3DState {
     pub(crate) visible_now: AHashSet<NodeID>,
     pub(crate) prev_visible: AHashSet<NodeID>,
     pub(crate) mesh_sources: AHashMap<NodeID, String>,
-    pub(crate) material_sources: AHashMap<NodeID, String>,
-    pub(crate) material_overrides: AHashMap<NodeID, Material3D>,
+    pub(crate) material_surface_sources: AHashMap<NodeID, Vec<Option<String>>>,
+    pub(crate) material_surface_overrides: AHashMap<NodeID, Vec<Option<Material3D>>>,
     pub(crate) terrain_material: MaterialID,
     pub(crate) terrain_chunk_meshes: AHashMap<TerrainChunkMeshKey, TerrainChunkMeshState>,
     pub(crate) terrain_debug_state: AHashMap<NodeID, TerrainDebugState>,
@@ -299,8 +300,8 @@ impl Render3DState {
             visible_now: AHashSet::default(),
             prev_visible: AHashSet::default(),
             mesh_sources: AHashMap::default(),
-            material_sources: AHashMap::default(),
-            material_overrides: AHashMap::default(),
+            material_surface_sources: AHashMap::default(),
+            material_surface_overrides: AHashMap::default(),
             terrain_material: MaterialID::nil(),
             terrain_chunk_meshes: AHashMap::default(),
             terrain_debug_state: AHashMap::default(),
@@ -321,7 +322,7 @@ impl Render3DState {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RetainedMeshDrawState {
     pub(crate) mesh: MeshID,
-    pub(crate) material: MaterialID,
+    pub(crate) surfaces: std::sync::Arc<[MeshSurfaceBinding3D]>,
     pub(crate) model: [[f32; 4]; 4],
     pub(crate) skeleton: Option<SkeletonPalette>,
 }

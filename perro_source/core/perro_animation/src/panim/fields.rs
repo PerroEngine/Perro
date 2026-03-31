@@ -41,6 +41,12 @@ fn parse_object_field_action(
                 value, key, line_no,
             )?))
         }
+        NodeField::MeshInstance3D(MeshInstance3DField::Surfaces) => {
+            return Err(format!(
+                "line {}: `{}` is valid but not animatable in `.panim`",
+                line_no, key
+            ));
+        }
         NodeField::Camera3D(
             field @ (Camera3DField::Zoom
             | Camera3DField::PerspectiveFovYDegrees
@@ -525,6 +531,10 @@ fn resolve_animatable_channel(
             "mesh_instance3d.material".to_string(),
             NodeField::MeshInstance3D(MeshInstance3DField::Material),
             None,
+        )),
+        NodeField::MeshInstance3D(MeshInstance3DField::Surfaces) => Err(format!(
+            "line {}: `{}` is valid but not animatable in `.panim`",
+            line_no, key
         )),
         NodeField::Camera3D(field) => match field {
             Camera3DField::Zoom => Ok((

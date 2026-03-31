@@ -534,7 +534,10 @@ fn apply_track<RT>(
             if let AnimationTrackValue::AssetPath(path) = value {
                 let id = material_load!(res, path.as_ref());
                 let _ = with_base_node_mut!(ctx, MeshInstance3D, node_id, |node| {
-                    node.material = id;
+                    if node.surfaces.is_empty() {
+                        node.surfaces.push(perro_nodes::MeshSurfaceBinding::default());
+                    }
+                    node.surfaces[0].material = Some(id);
                 });
             }
         }

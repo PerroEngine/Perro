@@ -94,6 +94,7 @@ pub enum Area2DField {
 pub enum MeshInstance3DField {
     Mesh,
     Material,
+    Surfaces,
     Model,
     Skeleton,
 }
@@ -285,6 +286,7 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         NodeType::MeshInstance3D => match field {
             "mesh" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Mesh)),
             "material" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Material)),
+            "surfaces" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Surfaces)),
             "model" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Model)),
             "skeleton" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Skeleton)),
             _ => None,

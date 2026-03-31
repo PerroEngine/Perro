@@ -19,7 +19,8 @@ use mesh_presets::build_builtin_mesh_buffer;
 use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::pack_meshlets_from_positions;
 use perro_render_bridge::{
-    Camera3DState, CameraProjectionState, Material3D, RuntimeMeshData, StandardMaterial3D,
+    Camera3DState, CameraProjectionState, Material3D, MaterialParamOverride3D,
+    MaterialParamOverrideValue3D, MeshSurfaceBinding3D, RuntimeMeshData, StandardMaterial3D,
 };
 use std::{
     borrow::Cow,
@@ -309,6 +310,7 @@ struct MeshletRange {
 #[derive(Clone)]
 struct MeshAssetRange {
     full: MeshRange,
+    surface_ranges: Arc<[MeshRange]>,
     meshlets: Arc<[MeshletRange]>,
     bounds_center: [f32; 3],
     bounds_radius: f32,
@@ -364,6 +366,7 @@ const OCCLUSION_PROBE_INTERVAL: u64 = 1;
 struct DecodedMesh {
     vertices: Vec<MeshVertex>,
     indices: Vec<u32>,
+    surface_ranges: Vec<MeshRange>,
     meshlets: Vec<DecodedMeshlet>,
 }
 
@@ -1616,50 +1619,66 @@ impl Gpu3D {
                     false,
                 ),
             };
-            let material = match draw.kind {
-                Draw3DKind::Terrain64 => Material3D::Standard(StandardMaterial3D {
-                    base_color_factor: [0.32, 0.56, 0.29, 1.0],
-                    roughness_factor: 0.92,
-                    metallic_factor: 0.0,
-                    ..StandardMaterial3D::default()
-                }),
-                Draw3DKind::DebugPointCube => Material3D::Standard(StandardMaterial3D {
-                    base_color_factor: [1.0, 0.92, 0.2, 1.0],
-                    roughness_factor: 0.35,
-                    metallic_factor: 0.0,
-                    emissive_factor: [0.35, 0.3, 0.06],
-                    ..StandardMaterial3D::default()
-                }),
-                Draw3DKind::DebugEdgeCylinder => Material3D::Standard(StandardMaterial3D {
-                    base_color_factor: [0.15, 0.95, 0.95, 1.0],
-                    roughness_factor: 0.6,
-                    metallic_factor: 0.0,
-                    emissive_factor: [0.06, 0.3, 0.3],
-                    ..StandardMaterial3D::default()
-                }),
-                Draw3DKind::Mesh(_) => draw
-                    .material
-                    .and_then(|id| resources.material(id))
-                    .unwrap_or_default(),
+            let mut surface_entries: Vec<(MeshRange, Material3D)> = match draw.kind {
+                Draw3DKind::Terrain64 => vec![(
+                    mesh_asset.full,
+                    Material3D::Standard(StandardMaterial3D {
+                        base_color_factor: [0.32, 0.56, 0.29, 1.0],
+                        roughness_factor: 0.92,
+                        metallic_factor: 0.0,
+                        ..StandardMaterial3D::default()
+                    }),
+                )],
+                Draw3DKind::DebugPointCube => vec![(
+                    mesh_asset.full,
+                    Material3D::Standard(StandardMaterial3D {
+                        base_color_factor: [1.0, 0.92, 0.2, 1.0],
+                        roughness_factor: 0.35,
+                        metallic_factor: 0.0,
+                        emissive_factor: [0.35, 0.3, 0.06],
+                        ..StandardMaterial3D::default()
+                    }),
+                )],
+                Draw3DKind::DebugEdgeCylinder => vec![(
+                    mesh_asset.full,
+                    Material3D::Standard(StandardMaterial3D {
+                        base_color_factor: [0.15, 0.95, 0.95, 1.0],
+                        roughness_factor: 0.6,
+                        metallic_factor: 0.0,
+                        emissive_factor: [0.06, 0.3, 0.3],
+                        ..StandardMaterial3D::default()
+                    }),
+                )],
+                Draw3DKind::Mesh(_) => {
+                    let mut out = Vec::new();
+                    for (surface_index, surface) in draw.surfaces.iter().enumerate() {
+                        let Some(range) = mesh_asset.surface_ranges.get(surface_index).copied() else {
+                            continue;
+                        };
+                        let base_material = surface
+                            .material
+                            .and_then(|id| resources.material(id))
+                            .unwrap_or_default();
+                        out.push((range, apply_surface_binding(base_material, surface)));
+                    }
+                    if out.is_empty() {
+                        out.push((mesh_asset.full, Material3D::default()));
+                    }
+                    out
+                }
             };
-            let standard_params = material.standard_params();
-            let base_color_texture_slot = standard_params.base_color_texture;
-            self.ensure_material_texture_slot(
-                device,
-                queue,
-                resources,
-                base_color_texture_slot,
-                static_texture_lookup,
-            );
-            let material_kind =
-                self.material_pipeline_kind(device, &material, static_shader_lookup);
-            let (custom_params_offset, custom_params_len) = self.stage_custom_params(&material);
+            if surface_entries.is_empty() {
+                self.last_draw_instance_ranges
+                    .push(draw_instance_start..(self.staged_instances.len() as u32));
+                continue;
+            }
             // CPU occlusion query mode works at object granularity.
             // Force whole-mesh batching in that mode so each object can be queried.
             let use_meshlets = !is_debug_point
                 && !is_debug_edge
                 && self.meshlets_enabled
                 && !mesh_asset.meshlets.is_empty()
+                && surface_entries.len() == 1
                 && !self.cpu_occlusion_enabled;
             total_meshlets = total_meshlets.saturating_add(if use_meshlets {
                 mesh_asset.meshlets.len()
@@ -1709,17 +1728,28 @@ impl Gpu3D {
                 } else {
                     (0, 0)
                 };
-                let built_instance = build_instance(
-                    draw.model,
-                    &material,
-                    self.meshlet_debug_view,
-                    debug_color(draw.node.as_u64()),
-                    skeleton_start,
-                    skeleton_count,
-                    custom_params_offset,
-                    custom_params_len,
-                );
                 if is_debug_point {
+                    let (_, material) = surface_entries.remove(0);
+                    let (custom_params_offset, custom_params_len) =
+                        self.stage_custom_params(&material);
+                    let built_instance = build_instance(
+                        draw.model,
+                        &material,
+                        self.meshlet_debug_view,
+                        debug_color(draw.node.as_u64()),
+                        skeleton_start,
+                        skeleton_count,
+                        custom_params_offset,
+                        custom_params_len,
+                    );
+                    let standard_params = material.standard_params();
+                    self.ensure_material_texture_slot(
+                        device,
+                        queue,
+                        resources,
+                        standard_params.base_color_texture,
+                        static_texture_lookup,
+                    );
                     if debug_point_instances.is_empty() {
                         debug_points_double_sided =
                             material.standard_params().double_sided || self.meshlet_debug_view;
@@ -1729,6 +1759,27 @@ impl Gpu3D {
                     debug_point_instances.push(built_instance);
                     debug_points_count = debug_points_count.saturating_add(1);
                 } else if is_debug_edge {
+                    let (_, material) = surface_entries.remove(0);
+                    let (custom_params_offset, custom_params_len) =
+                        self.stage_custom_params(&material);
+                    let built_instance = build_instance(
+                        draw.model,
+                        &material,
+                        self.meshlet_debug_view,
+                        debug_color(draw.node.as_u64()),
+                        skeleton_start,
+                        skeleton_count,
+                        custom_params_offset,
+                        custom_params_len,
+                    );
+                    let standard_params = material.standard_params();
+                    self.ensure_material_texture_slot(
+                        device,
+                        queue,
+                        resources,
+                        standard_params.base_color_texture,
+                        static_texture_lookup,
+                    );
                     if debug_edge_instances.is_empty() {
                         debug_edges_double_sided =
                             material.standard_params().double_sided || self.meshlet_debug_view;
@@ -1738,21 +1789,56 @@ impl Gpu3D {
                     debug_edge_instances.push(built_instance);
                     debug_edges_count = debug_edges_count.saturating_add(1);
                 } else {
-                    let instance = self.staged_instances.len() as u32;
-                    self.staged_instances.push(built_instance);
-                    push_draw_batch(
-                        &mut self.draw_batches,
-                        mesh_asset.full,
-                        instance,
-                        standard_params.double_sided || self.meshlet_debug_view,
-                        material_kind.clone(),
-                        base_color_texture_slot,
-                        (mesh_asset.bounds_center, mesh_asset.bounds_radius),
-                        occlusion_query,
-                        is_terrain_mesh,
-                    );
+                    for (range, material) in surface_entries {
+                        let standard_params = material.standard_params();
+                        self.ensure_material_texture_slot(
+                            device,
+                            queue,
+                            resources,
+                            standard_params.base_color_texture,
+                            static_texture_lookup,
+                        );
+                        let material_kind =
+                            self.material_pipeline_kind(device, &material, static_shader_lookup);
+                        let (custom_params_offset, custom_params_len) =
+                            self.stage_custom_params(&material);
+                        let instance = self.staged_instances.len() as u32;
+                        self.staged_instances.push(build_instance(
+                            draw.model,
+                            &material,
+                            self.meshlet_debug_view,
+                            debug_color(draw.node.as_u64()),
+                            skeleton_start,
+                            skeleton_count,
+                            custom_params_offset,
+                            custom_params_len,
+                        ));
+                        push_draw_batch(
+                            &mut self.draw_batches,
+                            range,
+                            instance,
+                            standard_params.double_sided || self.meshlet_debug_view,
+                            material_kind.clone(),
+                            standard_params.base_color_texture,
+                            (mesh_asset.bounds_center, mesh_asset.bounds_radius),
+                            occlusion_query,
+                            is_terrain_mesh,
+                        );
+                    }
                 }
             } else {
+                let (_, material) = &surface_entries[0];
+                let standard_params = material.standard_params();
+                self.ensure_material_texture_slot(
+                    device,
+                    queue,
+                    resources,
+                    standard_params.base_color_texture,
+                    static_texture_lookup,
+                );
+                let material_kind =
+                    self.material_pipeline_kind(device, material, static_shader_lookup);
+                let (custom_params_offset, custom_params_len) = self.stage_custom_params(material);
                 let (skeleton_start, skeleton_count) = if let Some(skeleton) = &draw.skeleton {
                     let start = self.staged_skeletons.len() as u32;
                     let count = skeleton.matrices.len() as u32;
@@ -1774,7 +1860,7 @@ impl Gpu3D {
                     let instance = self.staged_instances.len() as u32;
                     self.staged_instances.push(build_instance(
                         draw.model,
-                        &material,
+                        material,
                         self.meshlet_debug_view,
                         debug_color((draw.node.as_u64() << 32) ^ meshlet.index_start as u64),
                         skeleton_start,
@@ -1796,7 +1882,7 @@ impl Gpu3D {
                         instance,
                         standard_params.double_sided || self.meshlet_debug_view,
                         material_kind.clone(),
-                        base_color_texture_slot,
+                        standard_params.base_color_texture,
                         (occlusion_center, occlusion_radius),
                         occlusion_query,
                         is_terrain_mesh,
@@ -2731,6 +2817,7 @@ impl Gpu3D {
                 .unwrap_or(([0.0, 0.0, 0.0], 1.0));
             return Some(MeshAssetRange {
                 full: range,
+                surface_ranges: Arc::from([range]),
                 meshlets: self
                     .builtin_meshlets
                     .get(source)
@@ -2769,6 +2856,7 @@ impl Gpu3D {
             .unwrap_or(([0.0, 0.0, 0.0], 1.0));
         Some(MeshAssetRange {
             full,
+            surface_ranges: Arc::from([full]),
             meshlets,
             bounds_center,
             bounds_radius,
@@ -2790,6 +2878,24 @@ impl Gpu3D {
         let index_count = decoded.indices.len() as u32;
 
         let (bounds_center, bounds_radius) = mesh_bounds_from_vertices(&decoded.vertices)?;
+        let surface_ranges = if decoded.surface_ranges.is_empty() {
+            vec![MeshRange {
+                index_start,
+                index_count,
+                base_vertex: 0,
+            }]
+        } else {
+            decoded
+                .surface_ranges
+                .iter()
+                .copied()
+                .map(|range| MeshRange {
+                    index_start: index_start + range.index_start,
+                    index_count: range.index_count,
+                    base_vertex: 0,
+                })
+                .collect()
+        };
         let added_vertices = decoded.vertices;
         let mut added_indices = Vec::with_capacity(decoded.indices.len());
         for idx in decoded.indices {
@@ -2843,6 +2949,7 @@ impl Gpu3D {
 
         Some(MeshAssetRange {
             full,
+            surface_ranges: Arc::from(surface_ranges),
             meshlets: Arc::from(meshlets),
             bounds_center,
             bounds_radius,
@@ -2992,6 +3099,7 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
     Some(DecodedMesh {
         vertices,
         indices: mesh.indices.clone(),
+        surface_ranges: Vec::new(),
         meshlets: Vec::new(),
     })
 }
@@ -3156,6 +3264,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     Some(DecodedMesh {
         vertices,
         indices,
+        surface_ranges: Vec::new(),
         meshlets,
     })
 }
@@ -3165,6 +3274,7 @@ fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> {
     let mesh = doc.meshes().nth(mesh_index)?;
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
+    let mut surface_ranges = Vec::new();
 
     for primitive in mesh.primitives() {
         let reader = primitive.reader(|buffer| buffers.get(buffer.index()).map(|b| b.0.as_slice()));
@@ -3213,10 +3323,19 @@ fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> {
                 weights: weight,
             });
         }
+        let surface_start = indices.len() as u32;
         if let Some(idx) = reader.read_indices() {
             indices.extend(idx.into_u32().map(|i| i + base_vertex));
         } else {
             indices.extend((0..positions.len() as u32).map(|i| i + base_vertex));
+        }
+        let surface_count = (indices.len() as u32).saturating_sub(surface_start);
+        if surface_count > 0 {
+            surface_ranges.push(MeshRange {
+                index_start: surface_start,
+                index_count: surface_count,
+                base_vertex: 0,
+            });
         }
     }
     if vertices.is_empty() || indices.is_empty() {
@@ -3225,6 +3344,7 @@ fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> {
     Some(DecodedMesh {
         vertices,
         indices,
+        surface_ranges,
         meshlets: Vec::new(),
     })
 }
@@ -3930,6 +4050,71 @@ fn encode_custom_param_value(value: &perro_render_bridge::CustomMaterialParamVal
     }
 }
 
+fn apply_surface_binding(
+    mut material: Material3D,
+    surface: &MeshSurfaceBinding3D,
+) -> Material3D {
+    apply_modulate(&mut material, surface.modulate);
+    apply_overrides(&mut material, &surface.overrides);
+    material
+}
+
+fn apply_modulate(material: &mut Material3D, modulate: [f32; 4]) {
+    match material {
+        Material3D::Standard(m) => {
+            for (dst, src) in m.base_color_factor.iter_mut().zip(modulate) {
+                *dst *= src;
+            }
+        }
+        Material3D::Unlit(m) => {
+            for (dst, src) in m.base_color_factor.iter_mut().zip(modulate) {
+                *dst *= src;
+            }
+        }
+        Material3D::Toon(m) => {
+            for (dst, src) in m.base_color_factor.iter_mut().zip(modulate) {
+                *dst *= src;
+            }
+        }
+        Material3D::Custom(_) => {}
+    }
+}
+
+fn apply_overrides(material: &mut Material3D, overrides: &[MaterialParamOverride3D]) {
+    if overrides.is_empty() {
+        return;
+    }
+    if let Material3D::Custom(custom) = material {
+        let mut params = custom.params.clone().into_owned();
+        for ovr in overrides {
+            params.push(perro_render_bridge::CustomMaterialParam3D {
+                name: Some(ovr.name.clone()),
+                value: match ovr.value {
+                    MaterialParamOverrideValue3D::F32(v) => {
+                        perro_render_bridge::CustomMaterialParamValue3D::F32(v)
+                    }
+                    MaterialParamOverrideValue3D::I32(v) => {
+                        perro_render_bridge::CustomMaterialParamValue3D::I32(v)
+                    }
+                    MaterialParamOverrideValue3D::Bool(v) => {
+                        perro_render_bridge::CustomMaterialParamValue3D::Bool(v)
+                    }
+                    MaterialParamOverrideValue3D::Vec2(v) => {
+                        perro_render_bridge::CustomMaterialParamValue3D::Vec2(v)
+                    }
+                    MaterialParamOverrideValue3D::Vec3(v) => {
+                        perro_render_bridge::CustomMaterialParamValue3D::Vec3(v)
+                    }
+                    MaterialParamOverrideValue3D::Vec4(v) => {
+                        perro_render_bridge::CustomMaterialParamValue3D::Vec4(v)
+                    }
+                },
+            });
+        }
+        custom.params = Cow::Owned(params);
+    }
+}
+
 #[inline]
 fn compare_draw_batch_keys(a: &DrawBatch, b: &DrawBatch) -> Ordering {
     a.double_sided
@@ -3963,7 +4148,7 @@ fn material_pipeline_kind_rank(kind: &MaterialPipelineKind) -> u8 {
 
 #[inline]
 fn same_draw_except_model(a: &Draw3DInstance, b: &Draw3DInstance) -> bool {
-    a.node == b.node && a.kind == b.kind && a.material == b.material && a.skeleton == b.skeleton
+    a.node == b.node && a.kind == b.kind && a.surfaces == b.surfaces && a.skeleton == b.skeleton
 }
 
 #[inline]

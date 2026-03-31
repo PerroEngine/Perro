@@ -514,6 +514,29 @@ pub struct SkeletonPalette {
     pub matrices: Arc<[[[f32; 4]; 4]]>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaterialParamOverrideValue3D {
+    F32(f32),
+    I32(i32),
+    Bool(bool),
+    Vec2([f32; 2]),
+    Vec3([f32; 3]),
+    Vec4([f32; 4]),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MaterialParamOverride3D {
+    pub name: Cow<'static, str>,
+    pub value: MaterialParamOverrideValue3D,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeshSurfaceBinding3D {
+    pub material: Option<MaterialID>,
+    pub overrides: Arc<[MaterialParamOverride3D]>,
+    pub modulate: [f32; 4],
+}
+
 #[derive(Debug, Clone)]
 pub enum ResourceCommand {
     CreateMesh {
@@ -590,7 +613,7 @@ pub enum Command2D {
 pub enum Command3D {
     Draw {
         mesh: MeshID,
-        material: MaterialID,
+        surfaces: Arc<[MeshSurfaceBinding3D]>,
         node: NodeID,
         model: [[f32; 4]; 4],
         skeleton: Option<SkeletonPalette>,

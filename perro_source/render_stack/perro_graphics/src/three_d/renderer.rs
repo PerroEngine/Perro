@@ -1,10 +1,10 @@
 use crate::resources::ResourceStore;
 use ahash::AHashMap;
 use glam::{Mat4, Quat, Vec3};
-use perro_ids::{MaterialID, MeshID, NodeID};
+use perro_ids::{MeshID, NodeID};
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, PointLight3DState, RayLight3DState,
-    SkeletonPalette, Sky3DState, SpotLight3DState,
+    SkeletonPalette, Sky3DState, SpotLight3DState, MeshSurfaceBinding3D,
 };
 use std::sync::Arc;
 use std::time::Instant;
@@ -23,7 +23,7 @@ pub enum Draw3DKind {
 pub struct Draw3DInstance {
     pub node: NodeID,
     pub kind: Draw3DKind,
-    pub material: Option<MaterialID>,
+    pub surfaces: Arc<[MeshSurfaceBinding3D]>,
     pub model: [[f32; 4]; 4],
     pub skeleton: Option<SkeletonPalette>,
 }
@@ -74,14 +74,14 @@ impl Renderer3D {
         &mut self,
         node: NodeID,
         mesh: MeshID,
-        material: MaterialID,
+        surfaces: Arc<[MeshSurfaceBinding3D]>,
         model: [[f32; 4]; 4],
         skeleton: Option<SkeletonPalette>,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
             kind: Draw3DKind::Mesh(mesh),
-            material: Some(material),
+            surfaces,
             model,
             skeleton,
         });
@@ -91,7 +91,7 @@ impl Renderer3D {
         self.queued_draws.push(Draw3DInstance {
             node,
             kind: Draw3DKind::Terrain64,
-            material: None,
+            surfaces: Arc::from([]),
             model,
             skeleton: None,
         });
@@ -101,7 +101,7 @@ impl Renderer3D {
         let next = Draw3DInstance {
             node,
             kind: Draw3DKind::DebugPointCube,
-            material: None,
+            surfaces: Arc::from([]),
             model: debug_point_model(position, size).to_cols_array_2d(),
             skeleton: None,
         };
@@ -123,7 +123,7 @@ impl Renderer3D {
             let next = Draw3DInstance {
                 node,
                 kind: Draw3DKind::DebugEdgeCylinder,
-                material: None,
+                surfaces: Arc::from([]),
                 model: model.to_cols_array_2d(),
                 skeleton: None,
             };
@@ -184,9 +184,9 @@ impl Renderer3D {
 
         for draw in self.queued_draws.drain(..) {
             let material_ready = draw
-                .material
-                .map(|id| resources.has_material(id))
-                .unwrap_or(true);
+                .surfaces
+                .iter()
+                .all(|surface| surface.material.map(|id| resources.has_material(id)).unwrap_or(true));
             let mesh_ready = match draw.kind {
                 Draw3DKind::Mesh(mesh) => resources.has_mesh(mesh),
                 Draw3DKind::Terrain64
@@ -218,8 +218,8 @@ impl Renderer3D {
                         retained.kind = draw.kind;
                         draws_changed = true;
                     }
-                    if material_ready && retained.material != draw.material {
-                        retained.material = draw.material;
+                    if material_ready && retained.surfaces != draw.surfaces {
+                        retained.surfaces = draw.surfaces;
                         draws_changed = true;
                     }
                     if draw.skeleton.is_some() && retained.skeleton != draw.skeleton {

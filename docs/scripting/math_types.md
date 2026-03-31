@@ -72,11 +72,47 @@ Methods:
 - `mul_quat(rhs)`
 - `rotate_x(radians)`, `rotate_y(radians)`, `rotate_z(radians)`, `rotate_xyz(x,y,z)`
 
+## Color
+
+Use `Color` for RGBA color values and color utilities.
+
+```rust
+use perro_structs::Color;
+
+let white = Color::WHITE;
+let accent = Color::from_hex("#3A86FF").unwrap_or(Color::WHITE);
+let tint = Color::new(1.0, 0.9, 0.9, 1.0);
+
+let rgb_hex = accent.to_hex_rgb();   // "#3A86FF"
+let rgba_hex = tint.to_hex_rgba();   // "#FFE6E6FF"
+```
+
+Methods:
+- `new(r, g, b, a)`
+- `rgb(r, g, b)`
+- `from_hex("#RRGGBB" / "#RRGGBBAA" / short forms)`
+- `to_hex_rgb()`
+- `to_hex_rgba()`
+- `to_rgba()`
+- `to_rgb()`
+
+Presets:
+- `Color::WHITE`
+- `Color::BLACK`
+- `Color::RED`
+- `Color::GREEN`
+- `Color::BLUE`
+- `Color::YELLOW`
+- `Color::CYAN`
+- `Color::MAGENTA`
+- `Color::TRANSPARENT`
+
 ## Structs
 
 Primary math structs in scripting:
 - `Vector2`
 - `Vector3`
 - `Quaternion`
+- `Color`
 - `Transform2D`
 - `Transform3D`

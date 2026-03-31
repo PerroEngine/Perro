@@ -2394,6 +2394,7 @@ name = "perro_app"
 version = "0.1.0"
 dependencies = [
  "btleplug",
+ "futures-util",
  "gilrs",
  "hidapi",
  "perro_graphics",
@@ -2401,6 +2402,8 @@ dependencies = [
  "perro_render_bridge",
  "perro_runtime",
  "perro_scripting",
+ "tokio",
+ "uuid",
  "winit",
 ]
 

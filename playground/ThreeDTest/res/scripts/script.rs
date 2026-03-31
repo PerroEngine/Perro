@@ -52,7 +52,7 @@ lifecycle!({
             if tags.contains(&tag!("mesh_change")) {
                 with_node_mut!(ctx, SelfNodeType, self_id, |mesh| {
                     mesh.mesh = res.Meshes().load("res://models/2Noses.glb:mesh[1]");
-                    mesh.material = res.Materials().load("res://materials/mat.pmat");
+                    mesh.set_material(res.Materials().load("res://materials/mat.pmat"));
                 })
                 .unwrap_or_default();
             }

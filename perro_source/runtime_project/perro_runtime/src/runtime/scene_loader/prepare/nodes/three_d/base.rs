@@ -69,7 +69,16 @@ fn apply_node_3d_fields(node: &mut Node3D, fields: &[SceneObjectField]) {
     });
 }
 
-fn apply_mesh_instance_3d_fields(_node: &mut MeshInstance3D, _fields: &[SceneObjectField]) {}
+fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        if name != "surfaces" {
+            return;
+        }
+        if let SceneValue::Array(items) = value {
+            node.surfaces = parse_surface_bindings(items.as_ref());
+        }
+    });
+}
 
 fn apply_skeleton_3d_fields(_node: &mut Skeleton3D, _fields: &[SceneObjectField]) {}
 
@@ -134,6 +143,141 @@ fn extract_material_inline(data: &SceneDefNodeData) -> Option<Material3D> {
             _ => None,
         }
     })
+}
+
+fn extract_material_surfaces(data: &SceneDefNodeData) -> Vec<PendingSurfaceMaterial> {
+    if data.ty != "MeshInstance3D" {
+        return Vec::new();
+    }
+    for (name, value) in data.fields.iter() {
+        if name != "surfaces" {
+            continue;
+        }
+        let SceneValue::Array(items) = value else {
+            continue;
+        };
+        let mut out = Vec::new();
+        for item in items.iter() {
+            out.push(parse_surface_material(item));
+        }
+        return out;
+    }
+
+    let source = extract_material_source(data);
+    let inline = extract_material_inline(data);
+    if source.is_none() && inline.is_none() {
+        Vec::new()
+    } else {
+        vec![PendingSurfaceMaterial { source, inline }]
+    }
+}
+
+fn parse_surface_bindings(items: &[SceneValue]) -> Vec<MeshSurfaceBinding> {
+    items.iter().map(parse_surface_binding).collect()
+}
+
+fn parse_surface_binding(value: &SceneValue) -> MeshSurfaceBinding {
+    let mut binding = MeshSurfaceBinding::default();
+    if let SceneValue::Object(entries) = value {
+        for (key, value) in entries.iter() {
+            match key.as_ref() {
+                "modulate" => {
+                    if let Some(color) = parse_color(value) {
+                        binding.modulate = color;
+                    }
+                }
+                "overrides" => {
+                    if let Some(overrides) = parse_surface_overrides(value) {
+                        binding.overrides = overrides;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    binding
+}
+
+fn parse_surface_material(value: &SceneValue) -> PendingSurfaceMaterial {
+    match value {
+        SceneValue::Str(_) | SceneValue::Key(_) => PendingSurfaceMaterial {
+            source: as_asset_source(value),
+            inline: None,
+        },
+        SceneValue::Object(entries) => {
+            let mut source = None;
+            let mut inline = None;
+            for (key, value) in entries.iter() {
+                match key.as_ref() {
+                    "material" => {
+                        source = as_asset_source(value);
+                        if source.is_none()
+                            && let SceneValue::Object(obj) = value
+                        {
+                            inline = material_schema::from_object(obj.as_ref());
+                        }
+                    }
+                    "source" => source = as_asset_source(value),
+                    _ => {}
+                }
+            }
+            PendingSurfaceMaterial { source, inline }
+        }
+        _ => PendingSurfaceMaterial {
+            source: None,
+            inline: None,
+        },
+    }
+}
+
+fn parse_surface_overrides(value: &SceneValue) -> Option<Vec<MaterialParamOverride>> {
+    let SceneValue::Array(items) = value else {
+        return None;
+    };
+    let mut out = Vec::new();
+    for item in items.iter() {
+        let SceneValue::Object(entries) = item else {
+            continue;
+        };
+        let mut name = None::<String>;
+        let mut parsed = None::<MaterialParamOverrideValue>;
+        for (key, value) in entries.iter() {
+            match key.as_ref() {
+                "name" => name = as_str(value).map(|v| v.to_string()),
+                "value" => parsed = parse_override_value(value),
+                _ => {}
+            }
+        }
+        if let (Some(name), Some(value)) = (name, parsed) {
+            out.push(MaterialParamOverride {
+                name: std::borrow::Cow::Owned(name),
+                value,
+            });
+        }
+    }
+    Some(out)
+}
+
+fn parse_override_value(value: &SceneValue) -> Option<MaterialParamOverrideValue> {
+    match value {
+        SceneValue::Bool(v) => Some(MaterialParamOverrideValue::Bool(*v)),
+        SceneValue::I32(v) => Some(MaterialParamOverrideValue::I32(*v)),
+        SceneValue::F32(v) => Some(MaterialParamOverrideValue::F32(*v)),
+        SceneValue::Vec2 { x, y } => Some(MaterialParamOverrideValue::Vec2([*x, *y])),
+        SceneValue::Vec3 { x, y, z } => Some(MaterialParamOverrideValue::Vec3([*x, *y, *z])),
+        SceneValue::Vec4 { x, y, z, w } => {
+            Some(MaterialParamOverrideValue::Vec4([*x, *y, *z, *w]))
+        }
+        _ => None,
+    }
+}
+
+fn parse_color(value: &SceneValue) -> Option<[f32; 4]> {
+    match value {
+        SceneValue::Vec4 { x, y, z, w } => Some([*x, *y, *z, *w]),
+        SceneValue::Vec3 { x, y, z } => Some([*x, *y, *z, 1.0]),
+        _ => None,
+    }
 }
 
 fn extract_model_source(data: &SceneDefNodeData) -> Option<String> {

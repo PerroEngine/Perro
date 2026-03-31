@@ -47,8 +47,7 @@ pub(super) fn merge_prepared_scene(
             animation_source,
             texture_source,
             mesh_source,
-            material_source,
-            material_inline,
+            material_surfaces,
             skeleton_source,
             mesh_skeleton_target,
             animation_bindings,
@@ -82,11 +81,21 @@ pub(super) fn merge_prepared_scene(
         if let Some(source) = mesh_source {
             runtime.render_3d.mesh_sources.insert(node, source);
         }
-        if let Some(source) = material_source {
-            runtime.render_3d.material_sources.insert(node, source);
-        }
-        if let Some(material) = material_inline {
-            runtime.render_3d.material_overrides.insert(node, material);
+        if !material_surfaces.is_empty() {
+            runtime.render_3d.material_surface_sources.insert(
+                node,
+                material_surfaces
+                    .iter()
+                    .map(|surface| surface.source.clone())
+                    .collect(),
+            );
+            runtime.render_3d.material_surface_overrides.insert(
+                node,
+                material_surfaces
+                    .into_iter()
+                    .map(|surface| surface.inline)
+                    .collect(),
+            );
         }
         if let Some(source) = skeleton_source {
             let res = ResourceContext::new(resource_api.as_ref());

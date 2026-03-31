@@ -2,8 +2,9 @@ use super::Runtime;
 use perro_ids::{MaterialID, MeshID};
 use perro_nodes::{
     CameraProjection, SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D,
-    camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, node_3d::Node3D, physics_3d::Shape3D,
-    ray_light_3d::RayLight3D, sky_3d::Sky3D, terrain_instance_3d::TerrainInstance3D,
+    camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, mesh_instance_3d::MeshSurfaceBinding,
+    node_3d::Node3D, physics_3d::Shape3D, ray_light_3d::RayLight3D, sky_3d::Sky3D,
+    terrain_instance_3d::TerrainInstance3D,
 };
 use perro_structs::Vector3;
 use perro_render_bridge::{
@@ -16,12 +17,19 @@ fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     out
 }
 
+fn set_primary_material(mesh: &mut MeshInstance3D, material: MaterialID) {
+    if mesh.surfaces.is_empty() {
+        mesh.surfaces.push(MeshSurfaceBinding::default());
+    }
+    mesh.surfaces[0].material = Some(material);
+}
+
 #[test]
 fn mesh_instance_without_mesh_source_requests_nothing() {
     let mut runtime = Runtime::new();
     let mut mesh = MeshInstance3D::new();
     mesh.mesh = MeshID::nil();
-    mesh.material = MaterialID::nil();
+    set_primary_material(&mut mesh, MaterialID::nil());
     runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
@@ -36,7 +44,7 @@ fn mesh_instance_requests_missing_assets_once_until_events_arrive() {
     let mut runtime = Runtime::new();
     let mut mesh = MeshInstance3D::new();
     mesh.mesh = MeshID::nil();
-    mesh.material = MaterialID::nil();
+    set_primary_material(&mut mesh, MaterialID::nil());
     let expected_node = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
@@ -107,9 +115,14 @@ fn mesh_instance_emits_draw_after_mesh_and_material_created() {
                 Command3D::Draw {
                     node,
                     mesh,
-                    material,
+                    surfaces,
                     ..
-                } if *node == expected_node && *mesh == expected_mesh && *material == expected_material
+                } if *node == expected_node
+                    && *mesh == expected_mesh
+                    && surfaces
+                        .first()
+                        .and_then(|surface| surface.material)
+                        .is_some_and(|id| id == expected_material)
             )
     ));
 }
@@ -171,7 +184,7 @@ fn mesh_under_invisible_parent_emits_remove_node() {
         && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data
     {
         mesh_instance.mesh = mesh;
-        mesh_instance.material = material;
+        set_primary_material(mesh_instance, material);
     }
 
     runtime.extract_render_3d_commands();
@@ -210,7 +223,7 @@ fn unchanged_mesh_instance_emits_draw() {
         && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut scene_node.data
     {
         mesh_instance.mesh = mesh;
-        mesh_instance.material = material;
+        set_primary_material(mesh_instance, material);
     }
 
     runtime.extract_render_3d_commands();
@@ -396,7 +409,7 @@ fn mesh_under_parent_uses_global_transform() {
 
     let mut mesh = MeshInstance3D::new();
     mesh.mesh = MeshID::from_parts(41, 0);
-    mesh.material = MaterialID::from_parts(42, 0);
+    set_primary_material(&mut mesh, MaterialID::from_parts(42, 0));
     mesh.transform.position.x = 1.0;
     let child = runtime
         .nodes

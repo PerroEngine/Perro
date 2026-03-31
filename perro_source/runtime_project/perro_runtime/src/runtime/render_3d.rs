@@ -3,6 +3,7 @@ use crate::material_schema;
 use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_nodes::{
+    MaterialParamOverrideValue, MeshSurfaceBinding,
     CameraProjection, SceneNodeData, Shape3D,
     particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
 };
@@ -10,9 +11,10 @@ use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
     ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
-    PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID,
-    ResourceCommand, RuntimeMeshData, RuntimeMeshVertex, SkeletonPalette, Sky3DState,
-    SkyTime3DState, SpotLight3DState, StandardMaterial3D,
+    MaterialParamOverride3D, MaterialParamOverrideValue3D, MeshSurfaceBinding3D, PointLight3DState,
+    PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand,
+    RuntimeMeshData, RuntimeMeshVertex, SkeletonPalette, Sky3DState, SkyTime3DState,
+    SpotLight3DState, StandardMaterial3D,
 };
 use perro_terrain::{ChunkCoord, TerrainChunk};
 use std::borrow::Cow;
@@ -24,8 +26,8 @@ impl Runtime {
         RenderRequestID::new((node.as_u64() << 8) | 0x3E)
     }
 
-    fn material_request(node: NodeID) -> RenderRequestID {
-        RenderRequestID::new((node.as_u64() << 8) | 0x3F)
+    fn material_request(node: NodeID, surface_index: u32) -> RenderRequestID {
+        RenderRequestID::new((node.as_u64() << 16) | ((surface_index as u64) << 8) | 0x3F)
     }
 
     fn terrain_material_request() -> RenderRequestID {
@@ -278,14 +280,14 @@ impl Runtime {
 
             let mesh_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::MeshInstance3D(mesh) => {
-                    Some((mesh.mesh, mesh.material, mesh.skeleton, mesh.transform))
+                    Some((mesh.mesh, mesh.surfaces.clone(), mesh.skeleton, mesh.transform))
                 }
                 _ => None,
             });
-            if let Some((mesh, material, skeleton, local_transform)) = mesh_data
+            if let Some((mesh, surfaces, skeleton, local_transform)) = mesh_data
                 && effective_visible
-                && let Some((mesh, material)) =
-                    self.resolve_render_mesh_assets(node, mesh, material)
+                && let Some((mesh, resolved_surfaces)) =
+                    self.resolve_render_mesh_assets(node, mesh, surfaces)
             {
                 let model = self
                     .get_global_transform_3d(node)
@@ -309,14 +311,14 @@ impl Runtime {
                 };
                 let draw_state = crate::runtime::state::RetainedMeshDrawState {
                     mesh,
-                    material,
+                    surfaces: std::sync::Arc::from(resolved_surfaces.clone()),
                     model,
                     skeleton: skeleton_palette.clone(),
                 };
                 if self.render_3d.retained_mesh_draws.get(&node) != Some(&draw_state) {
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::Draw {
                         mesh,
-                        material,
+                        surfaces: std::sync::Arc::from(resolved_surfaces),
                         node,
                         model,
                         skeleton: skeleton_palette,
@@ -704,7 +706,11 @@ impl Runtime {
                     * Mat4::from_translation(Vec3::new(chunk_center_x, 0.0, chunk_center_z));
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::Draw {
                     mesh: current_mesh,
-                    material,
+                    surfaces: std::sync::Arc::from(vec![MeshSurfaceBinding3D {
+                        material: Some(material),
+                        overrides: std::sync::Arc::from([]),
+                        modulate: [1.0, 1.0, 1.0, 1.0],
+                    }]),
                     node,
                     model: model.to_cols_array_2d(),
                     skeleton: None,
@@ -849,8 +855,8 @@ impl Runtime {
         &mut self,
         node: NodeID,
         mut mesh: MeshID,
-        mut material: MaterialID,
-    ) -> Option<(MeshID, MaterialID)> {
+        mut surfaces: Vec<MeshSurfaceBinding>,
+    ) -> Option<(MeshID, Vec<MeshSurfaceBinding3D>)> {
         if mesh.is_nil() {
             let request = Self::mesh_request(node);
             if let Some(result) = self.take_render_result(request) {
@@ -893,54 +899,104 @@ impl Runtime {
             }
         }
 
-        if material.is_nil() {
-            let request = Self::material_request(node);
+        for surface_index in 0..surfaces.len().max(1) {
+            if surfaces.len() <= surface_index {
+                surfaces.push(MeshSurfaceBinding::default());
+            }
+            let material = surfaces[surface_index]
+                .material
+                .unwrap_or(MaterialID::nil());
+            if !material.is_nil() {
+                continue;
+            }
+
+            let request = Self::material_request(node, surface_index as u32);
             if let Some(result) = self.take_render_result(request) {
                 match result {
                     crate::RuntimeRenderResult::Material(id) => {
-                        material = id;
+                        surfaces[surface_index].material = Some(id);
                         if let Some(node) = self.nodes.get_mut(node)
                             && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data
                         {
-                            mesh_instance.material = id;
+                            mesh_instance.set_surface_material(surface_index, Some(id));
                         }
+                        continue;
                     }
                     crate::RuntimeRenderResult::Failed(_)
                     | crate::RuntimeRenderResult::Texture(_)
                     | crate::RuntimeRenderResult::Mesh(_) => {}
                 }
             }
-            if material.is_nil() {
-                let source = self.render_3d.material_sources.get(&node).cloned();
-                let material = self
-                    .render_3d
-                    .material_overrides
-                    .get(&node)
-                    .cloned()
-                    .or_else(|| {
-                        self.render_3d
-                            .material_sources
-                            .get(&node)
-                            .and_then(|source| load_material_from_source(self, source))
-                    })
-                    .unwrap_or_else(Material3D::default);
-                if !self.render.is_inflight(request) {
-                    self.render.mark_inflight(request);
-                    self.queue_render_command(RenderCommand::Resource(
-                        ResourceCommand::CreateMaterial {
-                            request,
-                            id: MaterialID::nil(),
-                            material,
-                            source,
-                            reserved: false,
-                        },
-                    ));
-                }
-                return None;
+
+            let source = self
+                .render_3d
+                .material_surface_sources
+                .get(&node)
+                .and_then(|sources| sources.get(surface_index))
+                .cloned()
+                .flatten();
+            let material = self
+                .render_3d
+                .material_surface_overrides
+                .get(&node)
+                .and_then(|overrides| overrides.get(surface_index))
+                .cloned()
+                .flatten()
+                .or_else(|| source.as_ref().and_then(|src| load_material_from_source(self, src)))
+                .unwrap_or_else(Material3D::default);
+            if !self.render.is_inflight(request) {
+                self.render.mark_inflight(request);
+                self.queue_render_command(RenderCommand::Resource(
+                    ResourceCommand::CreateMaterial {
+                        request,
+                        id: MaterialID::nil(),
+                        material,
+                        source,
+                        reserved: false,
+                    },
+                ));
             }
+            return None;
         }
 
-        Some((mesh, material))
+        Some((
+            mesh,
+            surfaces
+                .into_iter()
+                .map(|surface| MeshSurfaceBinding3D {
+                    material: surface.material,
+                    overrides: surface
+                        .overrides
+                        .into_iter()
+                        .map(|ovr| MaterialParamOverride3D {
+                            name: ovr.name,
+                            value: match ovr.value {
+                                MaterialParamOverrideValue::F32(v) => {
+                                    MaterialParamOverrideValue3D::F32(v)
+                                }
+                                MaterialParamOverrideValue::I32(v) => {
+                                    MaterialParamOverrideValue3D::I32(v)
+                                }
+                                MaterialParamOverrideValue::Bool(v) => {
+                                    MaterialParamOverrideValue3D::Bool(v)
+                                }
+                                MaterialParamOverrideValue::Vec2(v) => {
+                                    MaterialParamOverrideValue3D::Vec2(v)
+                                }
+                                MaterialParamOverrideValue::Vec3(v) => {
+                                    MaterialParamOverrideValue3D::Vec3(v)
+                                }
+                                MaterialParamOverrideValue::Vec4(v) => {
+                                    MaterialParamOverrideValue3D::Vec4(v)
+                                }
+                            },
+                        })
+                        .collect::<Vec<_>>()
+                        .into(),
+                    modulate: surface.modulate,
+                })
+                .collect(),
+        ))
     }
 }
 

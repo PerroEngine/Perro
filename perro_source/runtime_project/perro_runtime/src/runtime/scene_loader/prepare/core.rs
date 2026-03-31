@@ -6,7 +6,7 @@ use perro_nodes::{
     animation_player::AnimationPlayer,
     camera_2d::Camera2D,
     camera_3d::{Camera3D, CameraProjection},
-    mesh_instance_3d::MeshInstance3D,
+    mesh_instance_3d::{MaterialParamOverride, MaterialParamOverrideValue, MeshInstance3D, MeshSurfaceBinding},
     node_2d::Node2D,
     node_3d::Node3D,
     particle_emitter_3d::ParticleEmitter3D,
@@ -70,11 +70,15 @@ pub(super) struct PendingNode {
     pub(super) animation_source: Option<String>,
     pub(super) texture_source: Option<String>,
     pub(super) mesh_source: Option<String>,
-    pub(super) material_source: Option<String>,
-    pub(super) material_inline: Option<Material3D>,
+    pub(super) material_surfaces: Vec<PendingSurfaceMaterial>,
     pub(super) skeleton_source: Option<String>,
     pub(super) mesh_skeleton_target: Option<String>,
     pub(super) animation_bindings: Vec<(String, String)>,
+}
+
+pub(super) struct PendingSurfaceMaterial {
+    pub(super) source: Option<String>,
+    pub(super) inline: Option<Material3D>,
 }
 
 type SceneNodeExtraction = (
@@ -82,8 +86,7 @@ type SceneNodeExtraction = (
     Option<String>,
     Option<String>,
     Option<String>,
-    Option<String>,
-    Option<Material3D>,
+    Vec<PendingSurfaceMaterial>,
     Option<String>,
     Option<String>,
     Vec<(String, String)>,
@@ -169,8 +172,7 @@ fn push_entry_prepared(
         animation_source,
         texture_source,
         mesh_source,
-        material_source,
-        material_inline,
+        material_surfaces,
         skeleton_source,
         mesh_skeleton_target,
         animation_bindings,
@@ -183,8 +185,7 @@ fn push_entry_prepared(
         animation_source,
         texture_source,
         mesh_source,
-        material_source,
-        material_inline,
+        material_surfaces,
         skeleton_source,
         mesh_skeleton_target: mesh_skeleton_target.map(|v| remap_key(v.as_str(), key_map)),
         animation_bindings: animation_bindings
@@ -336,33 +337,28 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
     let texture_source = extract_texture_source(&entry.data);
     let animation_source = extract_animation_source(&entry.data);
     let mesh_source_explicit = extract_mesh_source(&entry.data);
-    let material_source_explicit = extract_material_source(&entry.data);
-    let material_inline = extract_material_inline(&entry.data);
+    let material_surfaces_explicit = extract_material_surfaces(&entry.data);
     let skeleton_source = extract_skeleton_source(&entry.data);
     let mesh_skeleton_target = extract_mesh_skeleton_target(&entry.data);
     let animation_bindings = extract_animation_scene_bindings(&entry.data);
     let model_source = extract_model_source(&entry.data);
-    let (mesh_source, material_source, material_inline) = if let Some(model) = model_source.as_ref()
-    {
+    let (mesh_source, material_surfaces) = if let Some(model) = model_source.as_ref() {
         (
             Some(format!("{model}:mesh[0]")),
-            Some(format!("{model}:mat[0]")),
-            None,
+            vec![PendingSurfaceMaterial {
+                source: Some(format!("{model}:mat[0]")),
+                inline: None,
+            }],
         )
     } else {
-        (
-            mesh_source_explicit,
-            material_source_explicit,
-            material_inline,
-        )
+        (mesh_source_explicit, material_surfaces_explicit)
     };
     Ok((
         node,
         animation_source,
         texture_source,
         mesh_source,
-        material_source,
-        material_inline,
+        material_surfaces,
         skeleton_source,
         mesh_skeleton_target,
         animation_bindings,

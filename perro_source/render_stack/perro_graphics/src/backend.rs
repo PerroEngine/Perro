@@ -304,13 +304,13 @@ impl PerroGraphics {
                 RenderCommand::ThreeD(cmd_3d) => match *cmd_3d {
                     Command3D::Draw {
                         mesh,
-                        material,
+                        surfaces,
                         node,
                         model,
                         skeleton,
                     } => {
                         self.renderer_3d
-                            .queue_draw(node, mesh, material, model, skeleton);
+                            .queue_draw(node, mesh, surfaces, model, skeleton);
                     }
                     Command3D::DrawTerrain { node, model } => {
                         self.renderer_3d.queue_terrain(node, model);
@@ -549,8 +549,10 @@ impl GraphicsBackend for PerroGraphics {
             if let Draw3DKind::Mesh(mesh) = draw.kind {
                 self.resources.mark_mesh_used(mesh);
             }
-            if let Some(material) = draw.material {
-                self.resources.mark_material_used(material);
+            for surface in draw.surfaces.iter() {
+                if let Some(material) = surface.material {
+                    self.resources.mark_material_used(material);
+                }
             }
         }
         self.frame_index = self.frame_index.wrapping_add(1);

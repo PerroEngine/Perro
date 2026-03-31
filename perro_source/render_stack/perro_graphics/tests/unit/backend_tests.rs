@@ -3,11 +3,20 @@ use crate::backend::GraphicsBackend;
 use crate::three_d::renderer::Draw3DKind;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
-    Camera3DState, CameraProjectionState, Command2D, Command3D, Material3D, PostProcessingCommand,
-    RenderBridge, RenderCommand, ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand,
+    Camera3DState, CameraProjectionState, Command2D, Command3D, Material3D, MeshSurfaceBinding3D,
+    PostProcessingCommand, RenderBridge, RenderCommand, ResourceCommand, Sprite2DCommand,
+    VisualAccessibilityCommand,
 };
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
+
+fn surfaces_for(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
+    Arc::from([MeshSurfaceBinding3D {
+        material: Some(material),
+        overrides: Arc::from([]),
+        modulate: [1.0, 1.0, 1.0, 1.0],
+    }])
+}
 
 #[test]
 fn sprite_texture_upsert_is_accepted_after_texture_creation() {
@@ -118,14 +127,14 @@ fn draw_3d_updates_retained_state_per_node() {
 
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: created_meshes[0],
-        material: created_materials[0],
+        surfaces: surfaces_for(created_materials[0]),
         node: node_a,
         model: model_a,
         skeleton: None,
     })));
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: created_meshes[1],
-        material: created_materials[1],
+        surfaces: surfaces_for(created_materials[1]),
         node: node_b,
         model: model_b,
         skeleton: None,
@@ -138,7 +147,7 @@ fn draw_3d_updates_retained_state_per_node() {
         Some(crate::three_d::renderer::Draw3DInstance {
             node: node_a,
             kind: Draw3DKind::Mesh(created_meshes[0]),
-            material: Some(created_materials[0]),
+            surfaces: surfaces_for(created_materials[0]),
             model: model_a,
             skeleton: None,
         })
@@ -148,7 +157,7 @@ fn draw_3d_updates_retained_state_per_node() {
         Some(crate::three_d::renderer::Draw3DInstance {
             node: node_b,
             kind: Draw3DKind::Mesh(created_meshes[1]),
-            material: Some(created_materials[1]),
+            surfaces: surfaces_for(created_materials[1]),
             model: model_b,
             skeleton: None,
         })
@@ -197,7 +206,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
     ];
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: mesh_id,
-        material: material_id,
+        surfaces: surfaces_for(material_id),
         node,
         model: first_model,
         skeleton: None,
@@ -208,7 +217,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         Some(crate::three_d::renderer::Draw3DInstance {
             node,
             kind: Draw3DKind::Mesh(mesh_id),
-            material: Some(material_id),
+            surfaces: surfaces_for(material_id),
             model: first_model,
             skeleton: None,
         })
@@ -223,7 +232,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
     ];
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: missing_mesh,
-        material: material_id,
+        surfaces: surfaces_for(material_id),
         node,
         model: second_model,
         skeleton: None,
@@ -235,7 +244,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         Some(crate::three_d::renderer::Draw3DInstance {
             node,
             kind: Draw3DKind::Mesh(mesh_id),
-            material: Some(material_id),
+            surfaces: surfaces_for(material_id),
             model: second_model,
             skeleton: None,
         })
@@ -284,7 +293,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
     ];
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: mesh_id,
-        material: material_id,
+        surfaces: surfaces_for(material_id),
         node,
         model: first_model,
         skeleton: None,
@@ -300,7 +309,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
     ];
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: mesh_id,
-        material: missing_material,
+        surfaces: surfaces_for(missing_material),
         node,
         model: second_model,
         skeleton: None,
@@ -312,7 +321,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         Some(crate::three_d::renderer::Draw3DInstance {
             node,
             kind: Draw3DKind::Mesh(mesh_id),
-            material: Some(material_id),
+            surfaces: surfaces_for(material_id),
             model: second_model,
             skeleton: None,
         })
