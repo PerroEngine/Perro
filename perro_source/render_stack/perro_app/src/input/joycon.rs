@@ -218,7 +218,7 @@ mod backend {
                     match device.read_timeout(&mut buffer, READ_TIMEOUT.as_millis() as i32) {
                         Ok(size) if size > 0 => {
                             let data = &buffer[..size];
-                            if let Some(payload) = decode_report(data, side) {
+                            if let Some(payload) = decode_report_hid(data, side) {
                                 let _ = tx.send(JoyConEvent::Report {
                                     index,
                                     side,
@@ -300,11 +300,14 @@ mod backend {
                     return;
                 };
                 let Ok(adapters) = manager.adapters().await else {
+                    eprintln!("[joycon2] BLE adapters unavailable");
                     return;
                 };
                 let Some(adapter) = adapters.into_iter().next() else {
+                    eprintln!("[joycon2] no BLE adapter found");
                     return;
                 };
+                eprintln!("[joycon2] BLE worker started");
 
                 let mut known: HashSet<String> = HashSet::new();
 
@@ -320,7 +323,7 @@ mod backend {
                     };
 
                     for peripheral in peripherals {
-                        let Some((side, serial)) = classify_joycon2_ble(&peripheral).await else {
+                        let Some((side, serial, debug_tag)) = classify_joycon2_ble(&peripheral).await else {
                             continue;
                         };
                         let key = format!("ble:{serial}");
@@ -329,8 +332,10 @@ mod backend {
                         }
 
                         if peripheral.connect().await.is_err() {
+                            eprintln!("[joycon2] connect failed id={serial} tag={debug_tag}");
                             continue;
                         }
+                        eprintln!("[joycon2] connected id={serial} side={side:?} tag={debug_tag}");
                         let _ = peripheral.discover_services().await;
                         let chars = peripheral.characteristics();
                         let input_char = chars.iter().find(|c| {
@@ -338,17 +343,24 @@ mod backend {
                                 && (c.uuid == JOYCON2_INPUT_REPORT_05_UUID
                                     || c.uuid == JOYCON2_INPUT_REPORT_07_UUID
                                     || c.uuid == JOYCON2_INPUT_REPORT_08_UUID)
+                        }).cloned().or_else(|| {
+                            chars.iter()
+                                .find(|c| c.properties.contains(CharPropFlags::NOTIFY))
+                                .cloned()
                         });
 
-                        let Some(input_char) = input_char.cloned() else {
+                        let Some(input_char) = input_char else {
+                            eprintln!("[joycon2] no notify characteristic id={serial}");
                             let _ = peripheral.disconnect().await;
                             continue;
                         };
 
                         if peripheral.subscribe(&input_char).await.is_err() {
+                            eprintln!("[joycon2] subscribe failed id={serial} uuid={}", input_char.uuid);
                             let _ = peripheral.disconnect().await;
                             continue;
                         }
+                        eprintln!("[joycon2] subscribed id={serial} uuid={}", input_char.uuid);
 
                         if let Some(cmd_char) =
                             chars.iter().find(|c| c.uuid == JOYCON2_WRITE_COMMAND_UUID)
@@ -384,6 +396,7 @@ mod backend {
 
                         tokio::spawn(async move {
                             let Ok(mut notifications) = peripheral.notifications().await else {
+                                eprintln!("[joycon2] notifications stream failed id={key_clone}");
                                 let _ = tx_clone.send(JoyConEvent::Disconnected { index });
                                 let _ = release_slot(&slots_clone, &key_clone);
                                 return;
@@ -396,15 +409,41 @@ mod backend {
                                 .await
                                 {
                                     Ok(Some(packet)) => {
-                                        if let Some(data) = decode_report(&packet.value, side) {
+                                        let rid = packet.value.first().copied().unwrap_or(0xFF);
+                                        if let Some(data) = decode_report_ble(&packet.value, side) {
+                                            eprintln!(
+                                                "[joycon2][stream] id={} side={:?} report=0x{:02X} len={} buttons=0x{:04X} stick=({:.3},{:.3}) gyro=({:.1},{:.1},{:.1}) accel=({:.1},{:.1},{:.1})",
+                                                key_clone,
+                                                side,
+                                                rid,
+                                                packet.value.len(),
+                                                data.buttons,
+                                                data.stick.0,
+                                                data.stick.1,
+                                                data.gyro.0,
+                                                data.gyro.1,
+                                                data.gyro.2,
+                                                data.accel.0,
+                                                data.accel.1,
+                                                data.accel.2
+                                            );
                                             let _ = tx_clone.send(JoyConEvent::Report {
                                                 index,
                                                 side,
                                                 data,
                                             });
+                                        } else {
+                                            eprintln!(
+                                                "[joycon2][stream] undecoded id={} side={:?} report=0x{:02X} len={}",
+                                                key_clone,
+                                                side,
+                                                rid,
+                                                packet.value.len()
+                                            );
                                         }
                                     }
                                     Ok(None) | Err(_) => {
+                                        eprintln!("[joycon2] notifications timeout/ended id={key_clone}");
                                         break;
                                     }
                                 }
@@ -421,15 +460,43 @@ mod backend {
 
     async fn classify_joycon2_ble(
         peripheral: &btleplug::platform::Peripheral,
-    ) -> Option<(JoyConSide, String)> {
+    ) -> Option<(JoyConSide, String, String)> {
         let props = peripheral.properties().await.ok().flatten()?;
-        let data = props.manufacturer_data.get(&NINTENDO_BLE_CID)?;
-        let side = if data.contains(&JOYCON2_L_SIDE) {
-            JoyConSide::LJoyCon
-        } else if data.contains(&JOYCON2_R_SIDE) {
-            JoyConSide::RJoyCon
-        } else {
-            return None;
+
+        let mut side = None;
+        let mut tag = String::new();
+
+        if let Some(data) = props.manufacturer_data.get(&NINTENDO_BLE_CID) {
+            if data.contains(&JOYCON2_L_SIDE) {
+                side = Some(JoyConSide::LJoyCon);
+                tag = "cid+side(L)".to_string();
+            } else if data.contains(&JOYCON2_R_SIDE) {
+                side = Some(JoyConSide::RJoyCon);
+                tag = "cid+side(R)".to_string();
+            } else {
+                tag = "cid-no-side".to_string();
+            }
+        }
+
+        if side.is_none()
+            && let Some(name) = props.local_name.as_deref()
+        {
+            let lower = name.to_ascii_lowercase();
+            if lower.contains("joy-con") || lower.contains("joycon") || lower.contains("nintendo")
+            {
+                if lower.contains("(l)") || lower.contains(" left") {
+                    side = Some(JoyConSide::LJoyCon);
+                    tag = format!("name(L):{name}");
+                } else if lower.contains("(r)") || lower.contains(" right") {
+                    side = Some(JoyConSide::RJoyCon);
+                    tag = format!("name(R):{name}");
+                }
+            }
+        }
+
+        let side = match side {
+            Some(s) => s,
+            None => return None,
         };
 
         let serial = format!("{:?}", peripheral.id())
@@ -438,7 +505,7 @@ mod backend {
             .replace(':', "")
             .to_uppercase();
 
-        Some((side, serial))
+        Some((side, serial, tag))
     }
 
     #[inline(always)]
@@ -498,11 +565,12 @@ mod backend {
         }
     }
 
-    fn decode_report(data: &[u8], side: JoyConSide) -> Option<JoyConInputData> {
-        if let Some(decoded) = decode_report_joycon2(data, side) {
-            return Some(decoded);
-        }
+    fn decode_report_hid(data: &[u8], side: JoyConSide) -> Option<JoyConInputData> {
         decode_report_joycon1(data, side)
+    }
+
+    fn decode_report_ble(data: &[u8], side: JoyConSide) -> Option<JoyConInputData> {
+        decode_report_joycon2(data, side)
     }
 
     fn decode_report_joycon1(data: &[u8], side: JoyConSide) -> Option<JoyConInputData> {
@@ -510,9 +578,15 @@ mod backend {
             return None;
         }
 
-        let offset = if data[0] == 0x30 { 1 } else { 0 };
+        // If report ID byte is present (0x30 at byte 0), use canonical indices.
+        // If absent, shift all indices left by 1.
+        let offset = if data[0] == 0x30 { 0 } else { 1 };
 
-        let (left_idx, shared_idx, right_idx) = if offset == 1 { (2, 3, 4) } else { (3, 4, 5) };
+        // Joy-Con 1 layout:
+        // byte 3 = right buttons, byte 4 = shared, byte 5 = left buttons
+        let right_idx = 3usize.checked_sub(offset)?;
+        let shared_idx = 4usize.checked_sub(offset)?;
+        let left_idx = 5usize.checked_sub(offset)?;
 
         let (btn_left, btn_shared, btn_right) = (data[left_idx], data[shared_idx], data[right_idx]);
 
@@ -559,17 +633,25 @@ mod backend {
     }
 
     fn decode_report_joycon2(data: &[u8], side: JoyConSide) -> Option<JoyConInputData> {
-        // Joy-Con 2 BLE reports in legacy code are report 0x05/0x08 with motion at 0x30..0x3B.
-        let report_id = *data.first()?;
-        if report_id != 0x05 && report_id != 0x08 {
-            return None;
-        }
-        if data.len() < 0x3C {
+        // BLE notifications may arrive as either:
+        // - full report with leading report-id byte
+        // - raw report body (no report-id) (common: len=63)
+        // Try body-first decode, then shifted decode.
+        decode_report_joycon2_at_base(data, side, 0)
+            .or_else(|| decode_report_joycon2_at_base(data, side, 1))
+    }
+
+    fn decode_report_joycon2_at_base(
+        data: &[u8],
+        side: JoyConSide,
+        base: usize,
+    ) -> Option<JoyConInputData> {
+        if data.len() < base + 0x3C {
             return None;
         }
 
         let is_left = matches!(side, JoyConSide::LJoyCon);
-        let btn_offset = if is_left { 4 } else { 3 };
+        let btn_offset = base + if is_left { 4 } else { 3 };
         let state = ((data[btn_offset] as u32) << 16)
             | ((data[btn_offset + 1] as u32) << 8)
             | (data[btn_offset + 2] as u32);
@@ -583,25 +665,27 @@ mod backend {
             set_button_bit(&mut buttons, JoyConButton::Bumper, (state & 0x000040) != 0);
             set_button_bit(&mut buttons, JoyConButton::Trigger, (state & 0x000080) != 0);
             set_button_bit(&mut buttons, JoyConButton::Stick, (state & 0x000800) != 0);
-            set_button_bit(&mut buttons, JoyConButton::SL, (data[6] & 0x20) != 0);
-            set_button_bit(&mut buttons, JoyConButton::SR, (data[6] & 0x10) != 0);
+            set_button_bit(&mut buttons, JoyConButton::SL, (data[base + 6] & 0x20) != 0);
+            set_button_bit(&mut buttons, JoyConButton::SR, (data[base + 6] & 0x10) != 0);
             set_button_bit(&mut buttons, JoyConButton::Start, (state & 0x000100) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Meta, (data[5] & 0x20) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Meta, (data[base + 5] & 0x20) != 0);
         } else {
-            set_button_bit(&mut buttons, JoyConButton::Top, (state & 0x000400) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Bottom, (state & 0x000200) != 0);
+            // Joy-Con 2 right face buttons: observed stream indicates Top/Bottom are inverted
+            // vs legacy masks, so map accordingly.
+            set_button_bit(&mut buttons, JoyConButton::Top, (state & 0x000200) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Bottom, (state & 0x000400) != 0);
             set_button_bit(&mut buttons, JoyConButton::Left, (state & 0x000100) != 0);
             set_button_bit(&mut buttons, JoyConButton::Right, (state & 0x000800) != 0);
             set_button_bit(&mut buttons, JoyConButton::Bumper, (state & 0x004000) != 0);
             set_button_bit(&mut buttons, JoyConButton::Trigger, (state & 0x008000) != 0);
             set_button_bit(&mut buttons, JoyConButton::Stick, (state & 0x000004) != 0);
-            set_button_bit(&mut buttons, JoyConButton::SL, (data[4] & 0x20) != 0);
-            set_button_bit(&mut buttons, JoyConButton::SR, (data[4] & 0x10) != 0);
+            set_button_bit(&mut buttons, JoyConButton::SL, (data[base + 4] & 0x20) != 0);
+            set_button_bit(&mut buttons, JoyConButton::SR, (data[base + 4] & 0x10) != 0);
             set_button_bit(&mut buttons, JoyConButton::Start, (state & 0x000002) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Meta, (data[5] & 0x10) != 0);
+            set_button_bit(&mut buttons, JoyConButton::Meta, (data[base + 5] & 0x10) != 0);
         }
 
-        let stick_offset = if is_left { 10 } else { 13 };
+        let stick_offset = base + if is_left { 10 } else { 13 };
         let stick = {
             let raw = &data[stick_offset..stick_offset + 3];
             let x_raw = ((raw[1] & 0x0F) as u16) << 8 | raw[0] as u16;
@@ -612,15 +696,18 @@ mod backend {
         };
 
         let accel = (
-            i16::from_le_bytes([data[0x30], data[0x31]]) as f32,
-            i16::from_le_bytes([data[0x32], data[0x33]]) as f32,
-            i16::from_le_bytes([data[0x34], data[0x35]]) as f32,
+            i16::from_le_bytes([data[base + 0x30], data[base + 0x31]]) as f32,
+            i16::from_le_bytes([data[base + 0x32], data[base + 0x33]]) as f32,
+            i16::from_le_bytes([data[base + 0x34], data[base + 0x35]]) as f32,
         );
 
         const JOYCON2_GYRO_SCALE: f32 = 13.875;
-        let gx_raw = i16::from_le_bytes([data[0x36], data[0x37]]) as f32 / JOYCON2_GYRO_SCALE;
-        let gy_raw = i16::from_le_bytes([data[0x38], data[0x39]]) as f32 / JOYCON2_GYRO_SCALE;
-        let gz_raw = i16::from_le_bytes([data[0x3A], data[0x3B]]) as f32 / JOYCON2_GYRO_SCALE;
+        let gx_raw =
+            i16::from_le_bytes([data[base + 0x36], data[base + 0x37]]) as f32 / JOYCON2_GYRO_SCALE;
+        let gy_raw =
+            i16::from_le_bytes([data[base + 0x38], data[base + 0x39]]) as f32 / JOYCON2_GYRO_SCALE;
+        let gz_raw =
+            i16::from_le_bytes([data[base + 0x3A], data[base + 0x3B]]) as f32 / JOYCON2_GYRO_SCALE;
         // Match legacy transform used before state-space mapping.
         let gyro = (gy_raw, gx_raw, -gz_raw);
 

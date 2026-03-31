@@ -49,8 +49,9 @@ mod backend {
         uuid_to_index: HashMap<[u8; 16], usize>,
         index_to_uuid: Vec<Option<[u8; 16]>>,
         free_indices: Vec<usize>,
+        free_index_set: HashSet<usize>,
         next_index: usize,
-        down: HashSet<(GamepadId, GamepadButton)>,
+        down_masks: HashMap<GamepadId, u32>,
         uuid_in_use: HashSet<[u8; 16]>,
         sync_ids: Vec<GamepadId>,
         state_sync_frame_counter: u32,
@@ -127,7 +128,7 @@ mod backend {
                 }
                 EventType::Disconnected => {
                     self.handle_disconnect(app, id);
-                    self.down.retain(|(gp_id, _)| *gp_id != id);
+                    self.down_masks.remove(&id);
                     if let Some(uuid) = self.id_to_uuid.remove(&id) {
                         self.uuid_in_use.remove(&uuid);
                     }
@@ -176,15 +177,22 @@ mod backend {
             let Some(index) = self.assign_index_if_unique(gilrs, id) else {
                 return;
             };
-            let key = (id, button);
-            let was_down = self.down.contains(&key);
+            let bit = 1u32 << (button as usize);
+            let current = self.down_masks.get(&id).copied().unwrap_or(0);
+            let was_down = (current & bit) != 0;
             if was_down == is_down {
                 return;
             }
+            let mut next = current;
             if is_down {
-                self.down.insert(key);
+                next |= bit;
             } else {
-                self.down.remove(&key);
+                next &= !bit;
+            }
+            if next == 0 {
+                self.down_masks.remove(&id);
+            } else {
+                self.down_masks.insert(id, next);
             }
             app.set_gamepad_button_state(index, button, is_down);
         }
@@ -227,7 +235,11 @@ mod backend {
             } else {
                 self.assign_index(uuid)
             };
-            self.free_indices.retain(|free| *free != index);
+            if self.free_index_set.remove(&index)
+                && let Some(pos) = self.free_indices.iter().position(|&v| v == index)
+            {
+                self.free_indices.swap_remove(pos);
+            }
             self.uuid_in_use.insert(uuid);
             self.id_to_uuid.insert(id, uuid);
             Some(index)
@@ -240,7 +252,7 @@ mod backend {
             let Some(index) = self.uuid_to_index.get(&uuid).copied() else {
                 return;
             };
-            if !self.free_indices.contains(&index) {
+            if self.free_index_set.insert(index) {
                 self.free_indices.push(index);
             }
             clear_gamepad(app, index);
@@ -254,8 +266,8 @@ mod backend {
                 self.next_index = self.next_index.saturating_add(1);
                 idx
             } else if !self.free_indices.is_empty() {
-                self.free_indices.sort_unstable();
-                let idx = self.free_indices.remove(0);
+                let idx = self.free_indices.pop().expect("checked non-empty");
+                self.free_index_set.remove(&idx);
                 if let Some(old_uuid) = self.index_to_uuid.get(idx).and_then(|v| *v) {
                     self.uuid_to_index.remove(&old_uuid);
                 }

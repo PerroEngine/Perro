@@ -1,23 +1,22 @@
 {
   "rust-analyzer.linkedProjects": [
-    "Cargo.toml",
+    "playground/Animation/.perro/scripts/Cargo.toml",
     "playground/Audio/.perro/scripts/Cargo.toml",
+    "playground/Input/.perro/scripts/Cargo.toml",
     "playground/Skeletal/.perro/scripts/Cargo.toml",
     "playground/ThreeDTest/.perro/scripts/Cargo.toml",
     "playground/TwoDTest/.perro/scripts/Cargo.toml",
-    "playground/Input/.perro/scripts/Cargo.toml",
-    "playground/phys_twod/.perro/scripts/Cargo.toml",
     "playground/phys_threed/.perro/scripts/Cargo.toml",
-    "playground/Animation/.perro/scripts/Cargo.toml"
+    "playground/phys_twod/.perro/scripts/Cargo.toml"
   ],
   "rust-analyzer.vfs.extraIncludes": [
+    "${workspaceFolder}/playground/Animation/res/",
     "${workspaceFolder}/playground/Audio/res/",
+    "${workspaceFolder}/playground/Input/res/",
     "${workspaceFolder}/playground/Skeletal/res/",
     "${workspaceFolder}/playground/ThreeDTest/res/",
     "${workspaceFolder}/playground/TwoDTest/res/",
-    "${workspaceFolder}/playground/Input/res/",
-    "${workspaceFolder}/playground/phys_twod/res/",
     "${workspaceFolder}/playground/phys_threed/res/",
-    "${workspaceFolder}/playground/Animation/res/"
+    "${workspaceFolder}/playground/phys_twod/res/"
   ]
 }
