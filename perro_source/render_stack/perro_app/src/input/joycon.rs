@@ -15,6 +15,7 @@ mod backend {
     use futures_util::stream::StreamExt;
     use hidapi::HidApi;
     use perro_input::{JoyConButton, JoyConSide};
+    use std::sync::OnceLock;
     use tokio::runtime::Builder;
     use tokio::time::{self, Duration as TokioDuration};
     use uuid::Uuid;
@@ -41,6 +42,7 @@ mod backend {
             index: usize,
             side: JoyConSide,
             data: JoyConInputData,
+            raw_report: Vec<u8>,
         },
         Disconnected {
             index: usize,
@@ -223,6 +225,7 @@ mod backend {
                                     index,
                                     side,
                                     data: payload,
+                                    raw_report: data.to_vec(),
                                 });
                             }
                         }
@@ -243,7 +246,15 @@ mod backend {
 
             while let Ok(event) = rx.try_recv() {
                 match event {
-                    JoyConEvent::Report { index, side, data } => {
+                    JoyConEvent::Report {
+                        index,
+                        side,
+                        data,
+                        raw_report,
+                    } => {
+                        if raw_dump_enabled() {
+                            log_raw_joycon_report(index, side, &raw_report, &data, "hid");
+                        }
                         apply_report(app, index, side, data, &mut self.last_buttons);
                     }
                     JoyConEvent::Disconnected { index } => {
@@ -411,6 +422,15 @@ mod backend {
                                     Ok(Some(packet)) => {
                                         let rid = packet.value.first().copied().unwrap_or(0xFF);
                                         if let Some(data) = decode_report_ble(&packet.value, side) {
+                                            if raw_dump_enabled() {
+                                                log_raw_joycon_report(
+                                                    index,
+                                                    side,
+                                                    &packet.value,
+                                                    &data,
+                                                    "ble",
+                                                );
+                                            }
                                             eprintln!(
                                                 "[joycon2][stream] id={} side={:?} report=0x{:02X} len={} buttons=0x{:04X} stick=({:.3},{:.3}) gyro=({:.1},{:.1},{:.1}) accel=({:.1},{:.1},{:.1})",
                                                 key_clone,
@@ -431,6 +451,7 @@ mod backend {
                                                 index,
                                                 side,
                                                 data,
+                                                raw_report: packet.value.clone(),
                                             });
                                         } else {
                                             eprintln!(
@@ -792,6 +813,53 @@ mod backend {
             "[joycon] connected index={} side={:?} serial={}",
             index, side, serial
         );
+    }
+
+    fn raw_dump_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            std::env::var("PERRO_INPUT_RAW_DUMP")
+                .map(|v| {
+                    let t = v.trim();
+                    !(t.is_empty() || t == "0" || t.eq_ignore_ascii_case("false"))
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    fn log_raw_joycon_report(
+        index: usize,
+        side: JoyConSide,
+        raw: &[u8],
+        parsed: &JoyConInputData,
+        source: &str,
+    ) {
+        let report_id = raw.first().copied().unwrap_or(0xFF);
+        eprintln!(
+            "[joycon][raw] src={} index={} side={:?} report=0x{:02X} len={} bytes={} buttons=0x{:04X} stick=({:.3},{:.3}) gyro=({:.1},{:.1},{:.1}) accel=({:.1},{:.1},{:.1})",
+            source,
+            index,
+            side,
+            report_id,
+            raw.len(),
+            hex_bytes(raw),
+            parsed.buttons,
+            parsed.stick.0,
+            parsed.stick.1,
+            parsed.gyro.0,
+            parsed.gyro.1,
+            parsed.gyro.2,
+            parsed.accel.0,
+            parsed.accel.1,
+            parsed.accel.2
+        );
+    }
+
+    fn hex_bytes(raw: &[u8]) -> String {
+        raw.iter()
+            .map(|b| format!("{b:02X}"))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 

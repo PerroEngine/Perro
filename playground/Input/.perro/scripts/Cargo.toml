@@ -33,8 +33,8 @@ overflow-checks = false
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rust_analyzer)"] }
 
 [patch.crates-io]
-perro_ids = { path = "../../../../perro_source/core/perro_ids" }
 perro_animation = { path = "../../../../perro_source/core/perro_animation" }
+perro_ids = { path = "../../../../perro_source/core/perro_ids" }
 perro_nodes = { path = "../../../../perro_source/core/perro_nodes" }
 perro_particle_math = { path = "../../../../perro_source/core/perro_particle_math" }
 perro_structs = { path = "../../../../perro_source/core/perro_structs" }

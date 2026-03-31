@@ -6,6 +6,7 @@ mod backend {
     use gilrs::{Axis, Button, EventType, GamepadId, Gilrs};
     use perro_input::{GamepadAxis, GamepadButton, GamepadIndex};
     use std::collections::{HashMap, HashSet};
+    use std::sync::OnceLock;
 
     const ALL_BUTTONS: [GamepadButton; GamepadButton::COUNT] = [
         GamepadButton::Bottom,
@@ -136,30 +137,36 @@ mod backend {
                 EventType::ButtonPressed(button, _) => {
                     if let Some(mapped) = map_button(button) {
                         self.set_button(app, gilrs, id, mapped, true);
+                        self.log_raw_like_state(gilrs, id, "button_pressed");
                     }
                 }
                 EventType::ButtonRepeated(button, _) => {
                     if let Some(mapped) = map_button(button) {
                         self.set_button(app, gilrs, id, mapped, true);
+                        self.log_raw_like_state(gilrs, id, "button_repeated");
                     }
                 }
                 EventType::ButtonReleased(button, _) => {
                     if let Some(mapped) = map_button(button) {
                         self.set_button(app, gilrs, id, mapped, false);
+                        self.log_raw_like_state(gilrs, id, "button_released");
                     }
                 }
                 EventType::ButtonChanged(button, value, _) => {
                     if let Some(mapped) = map_button(button) {
                         self.set_button(app, gilrs, id, mapped, value > 0.5);
+                        self.log_raw_like_state(gilrs, id, "button_changed");
                     }
                 }
                 EventType::AxisChanged(axis, value, _) => {
                     if let Some(mapped) = map_axis(axis) {
                         if let Some(index) = self.assign_index_if_unique(gilrs, id) {
                             app.set_gamepad_axis(index, mapped, value);
+                            self.log_raw_like_state(gilrs, id, "axis_changed");
                         }
                     } else {
                         self.handle_dpad_axis(app, gilrs, id, axis, value);
+                        self.log_raw_like_state(gilrs, id, "dpad_axis_changed");
                     }
                 }
                 _ => {}
@@ -327,7 +334,45 @@ mod backend {
                     let value = gp.value(gilrs_axis);
                     app.set_gamepad_axis(index, axis, value);
                 }
+                self.log_raw_like_state(gilrs, id, "sync_axes");
             }
+        }
+
+        fn log_raw_like_state(&self, gilrs: &Gilrs, id: GamepadId, reason: &str) {
+            if !raw_dump_enabled() {
+                return;
+            }
+            let gp = gilrs.gamepad(id);
+            if !gp.is_connected() || is_joycon(&gp) {
+                return;
+            }
+            let Some(uuid) = self.id_to_uuid.get(&id) else {
+                return;
+            };
+            let Some(index) = self.uuid_to_index.get(uuid).copied() else {
+                return;
+            };
+            let down_mask = self.down_masks.get(&id).copied().unwrap_or(0);
+            let lx = gp.value(Axis::LeftStickX);
+            let ly = gp.value(Axis::LeftStickY);
+            let rx = gp.value(Axis::RightStickX);
+            let ry = gp.value(Axis::RightStickY);
+            let lt = gp.value(Axis::LeftZ);
+            let rt = gp.value(Axis::RightZ);
+            eprintln!(
+                "[gamepad][raw] reason={} index={} id={:?} name=\"{}\" down_mask=0x{:08X} axes={{lx:{:.3},ly:{:.3},rx:{:.3},ry:{:.3},lt:{:.3},rt:{:.3}}} gyro=(0.0,0.0,0.0) accel=(0.0,0.0,0.0) raw_bytes=<unavailable:gilrs>",
+                reason,
+                index,
+                id,
+                gp.name(),
+                down_mask,
+                lx,
+                ly,
+                rx,
+                ry,
+                lt,
+                rt
+            );
         }
     }
 
@@ -438,6 +483,18 @@ mod backend {
             return false;
         }
         product == JOYCON_1_LEFT_PID || product == JOYCON_1_RIGHT_PID
+    }
+
+    fn raw_dump_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            std::env::var("PERRO_INPUT_RAW_DUMP")
+                .map(|v| {
+                    let t = v.trim();
+                    !(t.is_empty() || t == "0" || t.eq_ignore_ascii_case("false"))
+                })
+                .unwrap_or(false)
+        })
     }
 }
 
