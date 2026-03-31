@@ -8,6 +8,11 @@ Core pieces:
 - `methods!` for callable behavior methods
 - script contexts (`RuntimeContext`, `ResourceContext`, `InputContext`)
 
+Script dependencies:
+- Add extra crates to `deps.toml` in your project root under `[dependencies]`.
+- On `perro check`, `perro dev`, and `perro build`, Perro merges those entries into `.perro/scripts/Cargo.toml`.
+- Keep `perro` managed by Perro; do not override it in `deps.toml`.
+
 See:
 - [Script Contexts](contexts/README.md)
 - [Math Types](math_types.md)

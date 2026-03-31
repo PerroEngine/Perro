@@ -310,6 +310,7 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
 
     let crate_name = crate_name_from_project_name(project_name);
     write_if_missing(root.join(".gitignore"), &default_gitignore())?;
+    write_if_missing(root.join("deps.toml"), &default_deps_toml())?;
     write_if_missing(
         root.join("README.md"),
         &default_project_readme_md(project_name),
@@ -779,6 +780,7 @@ Run `perro check` to sync scripts and get rust-analyzer working.
 
 ## Project Layout
 - `project.toml` is the project config (main scene, icon, graphics defaults).
+- `deps.toml` is optional. Add `[dependencies]` here for extra Rust crates used by scripts.
 - `res/` holds your assets, scripts, and scenes. `res://` paths resolve into this folder.
 - `res/main.scn` is the default scene because `project.toml` points to it by default.
 - `.perro/` contains generated Rust crates (project, scripts, dev runner). You generally don’t touch these.
@@ -1082,6 +1084,21 @@ fn default_gitignore() -> String {
 .perro/project/src/static/
 .perro/scripts/src/
 .output/
+"#
+    .to_string()
+}
+
+fn default_deps_toml() -> String {
+    r#"# Optional script crate dependencies.
+# On `perro check`, `perro dev`, and `perro build`, these are merged into:
+#   .perro/scripts/Cargo.toml -> [dependencies]
+#
+# Keep `perro` managed by the engine; it is injected automatically.
+#
+# Example:
+# serde = { version = "1", features = ["derive"] }
+# rand = "0.9"
+[dependencies]
 "#
     .to_string()
 }
@@ -1448,6 +1465,7 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
     ensure_project_manifest_deps(&project_manifest)?;
     ensure_project_manifest_features(&project_manifest)?;
     ensure_scripts_manifest_deps(&scripts_manifest)?;
+    ensure_scripts_manifest_user_deps(project_root, &scripts_manifest)?;
     ensure_dev_runner_manifest_deps(&dev_runner_manifest)?;
     ensure_dev_runner_manifest_features(&dev_runner_manifest)?;
     ensure_dev_runner_manifest_profile_debug(&dev_runner_manifest)?;
@@ -1457,6 +1475,66 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
     ensure_patch_block_in_manifest(&dev_runner_manifest)?;
     ensure_scripts_target_dir_config(&scripts_cargo_config)?;
     Ok(())
+}
+
+fn ensure_scripts_manifest_user_deps(
+    project_root: &Path,
+    scripts_manifest: &Path,
+) -> std::io::Result<()> {
+    let deps_toml = project_root.join("deps.toml");
+    if !deps_toml.exists() || !scripts_manifest.exists() {
+        return Ok(());
+    }
+
+    let deps_src = fs::read_to_string(&deps_toml)?;
+    let deps_value = deps_src.parse::<Value>().map_err(|err| {
+        std::io::Error::other(format!("failed to parse {}: {err}", deps_toml.display()))
+    })?;
+    let Some(extra_deps) = deps_value.get("dependencies").and_then(Value::as_table) else {
+        return Ok(());
+    };
+
+    let scripts_src = fs::read_to_string(scripts_manifest)?;
+    let Ok(mut scripts_value) = scripts_src.parse::<Value>() else {
+        return Ok(());
+    };
+    let Some(scripts_root) = scripts_value.as_table_mut() else {
+        return Ok(());
+    };
+    let scripts_deps = scripts_root
+        .entry("dependencies")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(scripts_deps_table) = scripts_deps.as_table_mut() else {
+        return Ok(());
+    };
+
+    let mut desired = toml::value::Table::new();
+    for (name, spec) in extra_deps {
+        if name != "perro" {
+            desired.insert(name.clone(), spec.clone());
+        }
+    }
+
+    let before_len = scripts_deps_table.len();
+    let mut changed = false;
+    scripts_deps_table.retain(|name, _| name == "perro" || desired.contains_key(name));
+    if scripts_deps_table.len() != before_len {
+        changed = true;
+    }
+    for (name, spec) in &desired {
+        if scripts_deps_table.get(name) != Some(spec) {
+            scripts_deps_table.insert(name.clone(), spec.clone());
+            changed = true;
+        }
+    }
+
+    if !changed {
+        return Ok(());
+    }
+
+    let rendered = toml::to_string(&scripts_value)
+        .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
+    fs::write(scripts_manifest, rendered)
 }
 
 fn ensure_scripts_target_dir_config(path: &Path) -> std::io::Result<()> {

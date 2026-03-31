@@ -72,12 +72,13 @@ perro new [--path <parent_dir>] [--name <project_name>]
 What it does:
 
 1. Creates a new project directory under `<parent_dir>` (defaults to current working directory).
-2. Writes default project files (`project.toml`, `res/main.scn`, scripts scaffold, and `.perro` crates).
+2. Writes default project files (`project.toml`, `deps.toml`, `res/main.scn`, scripts scaffold, and `.perro` crates).
 3. Prompts to open the project in VS Code.
 
 Notes:
 
 - If you run this inside a directory you want to contain projects, you can omit `--path`.
+- Add extra script Rust crates in `deps.toml` under `[dependencies]`; Perro merges them into `.perro/scripts/Cargo.toml` on `check`, `dev`, and `build`.
 
 Examples:
 

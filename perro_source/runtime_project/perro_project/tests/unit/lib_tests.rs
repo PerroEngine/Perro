@@ -1,4 +1,6 @@
 use super::*;
+use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn parse_project_toml_reads_virtual_resolution_string() {
@@ -157,4 +159,88 @@ fn resolve_local_path_supports_local_scheme() {
 fn crate_name_from_project_name_normalizes() {
     assert_eq!(crate_name_from_project_name("My Project!"), "my_project");
     assert_eq!(crate_name_from_project_name("123"), "_123");
+}
+
+fn unique_temp_dir(prefix: &str) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock before unix epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!("{prefix}_{nanos}_{}", std::process::id()))
+}
+
+#[test]
+fn ensure_source_overrides_merges_deps_toml_into_scripts_manifest() {
+    let root = unique_temp_dir("perro_deps_merge");
+    ensure_project_layout(&root).expect("layout");
+    ensure_project_scaffold(&root, "Deps Merge").expect("scaffold");
+
+    fs::write(
+        root.join("deps.toml"),
+        r#"[dependencies]
+serde = { version = "1", features = ["derive"] }
+"#,
+    )
+    .expect("write deps.toml");
+
+    ensure_source_overrides(&root).expect("overrides");
+
+    let scripts_manifest = fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
+        .expect("read scripts manifest");
+    assert!(scripts_manifest.contains("perro = \"0.1.0\""));
+    assert!(scripts_manifest.contains("serde"));
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
+fn ensure_source_overrides_ignores_perro_override_in_deps_toml() {
+    let root = unique_temp_dir("perro_deps_ignore_perro");
+    ensure_project_layout(&root).expect("layout");
+    ensure_project_scaffold(&root, "Deps Ignore").expect("scaffold");
+
+    fs::write(
+        root.join("deps.toml"),
+        r#"[dependencies]
+perro = "9.9.9"
+rand = "0.9"
+"#,
+    )
+    .expect("write deps.toml");
+
+    ensure_source_overrides(&root).expect("overrides");
+
+    let scripts_manifest = fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
+        .expect("read scripts manifest");
+    assert!(scripts_manifest.contains("perro = \"0.1.0\""));
+    assert!(scripts_manifest.contains("rand = \"0.9\""));
+    assert!(!scripts_manifest.contains("perro = \"9.9.9\""));
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
+fn ensure_source_overrides_removes_deps_not_present_in_deps_toml() {
+    let root = unique_temp_dir("perro_deps_remove");
+    ensure_project_layout(&root).expect("layout");
+    ensure_project_scaffold(&root, "Deps Remove").expect("scaffold");
+
+    fs::write(
+        root.join("deps.toml"),
+        r#"[dependencies]
+rand = "0.9"
+"#,
+    )
+    .expect("write deps.toml");
+    ensure_source_overrides(&root).expect("overrides first");
+
+    fs::write(root.join("deps.toml"), "[dependencies]\n").expect("rewrite deps.toml");
+    ensure_source_overrides(&root).expect("overrides second");
+
+    let scripts_manifest = fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
+        .expect("read scripts manifest");
+    assert!(scripts_manifest.contains("perro = \"0.1.0\""));
+    assert!(!scripts_manifest.contains("rand = \"0.9\""));
+
+    fs::remove_dir_all(&root).expect("cleanup");
 }
