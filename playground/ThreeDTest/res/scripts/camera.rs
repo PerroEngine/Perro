@@ -52,6 +52,19 @@ lifecycle!({
         let name = get_node_name!(ctx, mesh_id);
         println!("Camera node {} has external mesh exposed variable named '{:?}'", node, name);
         println!("Camera node {} has external print_name variable named '{}'", node, print_name);
+
+        let en_init = locale!(res, "camera.init");
+        let en_prompt = locale!(res, "camera.prompt");
+        println!("[locale en] {}", en_init);
+        println!("[locale en] {}", en_prompt);
+
+        locale_set!(res, Locale::ES);
+        let es_init = locale!(res, "camera.init");
+        let es_prompt = locale!(res, "camera.prompt");
+        println!("[locale es] {}", es_init);
+        println!("[locale es] {}", es_prompt);
+
+        locale_set!(res, Locale::EN);
     }
 
     fn on_all_init(

@@ -1,5 +1,6 @@
 use rayon::prelude::*;
 use std::{
+    collections::HashSet,
     fs,
     fs::File,
     io::{self, Seek, SeekFrom, Write},
@@ -33,9 +34,10 @@ const SKIP_RESOURCES: &[&str] = &["pmat", "ppart", "pmesh", "panim"];
 const SKIP_SHADERS: &[&str] = &["wgsl"];
 const SKIP_AUDIO: &[&str] = &["mp3", "wav", "ogg", "flac", "aac", "m4a"];
 
-fn should_skip(path: &str) -> bool {
+fn should_skip(path: &str, extra_skip_rel_paths: &HashSet<&str>) -> bool {
     let ext = path.rsplit('.').next().unwrap_or("");
-    SKIP_SCRIPT_EXT.contains(&ext)
+    extra_skip_rel_paths.contains(path)
+        || SKIP_SCRIPT_EXT.contains(&ext)
         || SKIP_SCENE_FUR_EXT.contains(&ext)
         || SKIP_IMAGES.contains(&ext)
         || SKIP_MODELS.contains(&ext)
@@ -62,8 +64,10 @@ pub fn build_perro_assets_archive(
     output: &Path,
     res_dir: &Path,
     _project_root: &Path,
+    extra_skip_rel_paths: &[String],
 ) -> io::Result<()> {
     let mut file = File::create(output)?;
+    let extra_skip_set: HashSet<&str> = extra_skip_rel_paths.iter().map(String::as_str).collect();
 
     // Write placeholder header
     let header = PerroAssetsHeader {
@@ -99,7 +103,7 @@ pub fn build_perro_assets_archive(
     let mut rel_paths = collect_file_paths(res_dir, res_dir)?
         .into_iter()
         .map(|rel| rel.replace('\\', "/"))
-        .filter(|rel| !should_skip(rel))
+        .filter(|rel| !should_skip(rel, &extra_skip_set))
         .collect::<Vec<_>>();
     rel_paths.sort();
 

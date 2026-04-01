@@ -1,9 +1,11 @@
-use super::state::RuntimeResourceState;
+use super::state::{RuntimeLocalizationState, RuntimeResourceState};
 use crate::cns::TerrainStore;
 use crate::runtime_project::{
-    StaticAnimationLookup, StaticAudioLookup, StaticMaterialLookup, StaticSkeletonLookup,
+    StaticAnimationLookup, StaticAudioLookup, StaticLocalizationLookup, StaticMaterialLookup,
+    StaticSkeletonLookup,
 };
 use perro_bark::AudioController;
+use perro_project::LocalizationConfig;
 use perro_render_bridge::{RenderCommand, RenderEvent};
 use std::{
     collections::HashMap,
@@ -12,10 +14,12 @@ use std::{
 
 pub struct RuntimeResourceApi {
     pub(super) state: Mutex<RuntimeResourceState>,
+    pub(super) localization: std::sync::RwLock<RuntimeLocalizationState>,
     pub(super) bark: Mutex<Option<AudioController>>,
     pub(super) static_material_lookup: Option<StaticMaterialLookup>,
     pub(super) static_skeleton_lookup: Option<StaticSkeletonLookup>,
     pub(super) static_animation_lookup: Option<StaticAnimationLookup>,
+    pub(super) static_localization_lookup: Option<StaticLocalizationLookup>,
     pub(crate) terrain_store: Arc<Mutex<TerrainStore>>,
     pub(super) skeleton_bones_cache: Mutex<HashMap<String, Vec<perro_nodes::skeleton_3d::Bone3D>>>,
     pub(super) viewport_size: Mutex<(u32, u32)>,
@@ -27,18 +31,26 @@ impl RuntimeResourceApi {
         static_audio_lookup: Option<StaticAudioLookup>,
         static_skeleton_lookup: Option<StaticSkeletonLookup>,
         static_animation_lookup: Option<StaticAnimationLookup>,
+        static_localization_lookup: Option<StaticLocalizationLookup>,
+        localization_config: Option<LocalizationConfig>,
         terrain_store: Arc<Mutex<TerrainStore>>,
     ) -> Arc<Self> {
-        Arc::new(Self {
+        let api = Arc::new(Self {
             state: Mutex::new(RuntimeResourceState::new()),
+            localization: std::sync::RwLock::new(RuntimeLocalizationState::new(
+                localization_config.as_ref(),
+            )),
             bark: Mutex::new(AudioController::new(static_audio_lookup).ok()),
             static_material_lookup,
             static_skeleton_lookup,
             static_animation_lookup,
+            static_localization_lookup,
             terrain_store,
             skeleton_bones_cache: Mutex::new(HashMap::new()),
             viewport_size: Mutex::new((1, 1)),
-        })
+        });
+        api.initialize_localization();
+        api
     }
 
     pub(crate) fn set_viewport_size(&self, width: u32, height: u32) {

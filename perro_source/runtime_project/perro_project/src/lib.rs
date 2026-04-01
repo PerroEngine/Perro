@@ -40,6 +40,13 @@ impl ParticleSimDefault {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalizationConfig {
+    pub source_csv: String,
+    pub key_column: String,
+    pub default_locale: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StaticProjectConfig {
     pub name: &'static str,
@@ -57,6 +64,9 @@ pub struct StaticProjectConfig {
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
+    pub localization_source_csv: Option<&'static str>,
+    pub localization_key_column: &'static str,
+    pub localization_default_locale: &'static str,
 }
 
 impl StaticProjectConfig {
@@ -83,6 +93,9 @@ impl StaticProjectConfig {
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
+            localization_source_csv: None,
+            localization_key_column: "key",
+            localization_default_locale: "en",
         }
     }
 
@@ -136,6 +149,18 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_localization(
+        mut self,
+        source_csv: &'static str,
+        key_column: &'static str,
+        default_locale: &'static str,
+    ) -> Self {
+        self.localization_source_csv = Some(source_csv);
+        self.localization_key_column = key_column;
+        self.localization_default_locale = default_locale;
+        self
+    }
+
     pub fn to_runtime(self) -> ProjectConfig {
         ProjectConfig {
             name: self.name.to_string(),
@@ -153,6 +178,11 @@ impl StaticProjectConfig {
             meshlet_debug_view: self.meshlet_debug_view,
             occlusion_culling: self.occlusion_culling,
             particle_sim_default: self.particle_sim_default,
+            localization: self.localization_source_csv.map(|source_csv| LocalizationConfig {
+                source_csv: source_csv.to_string(),
+                key_column: self.localization_key_column.to_string(),
+                default_locale: self.localization_default_locale.to_string(),
+            }),
         }
     }
 }
@@ -174,6 +204,7 @@ pub struct ProjectConfig {
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
+    pub localization: Option<LocalizationConfig>,
 }
 
 impl ProjectConfig {
@@ -194,6 +225,7 @@ impl ProjectConfig {
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
+            localization: None,
         }
     }
 }
@@ -419,6 +451,14 @@ particle_sim_default = "gpu"
 [runtime]
 target_fps = "uncapped"
 target_fixed_update = 60
+
+# Optional CSV localization table.
+# Columns example: key,en,es,fr,ja,zh
+#
+# [localization]
+# source = "res://localization.csv"
+# key = "key"
+# default_locale = "en"
 "#
     )
 }
@@ -440,6 +480,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         .and_then(Value::as_table)
         .ok_or(ProjectError::MissingField("graphics"))?;
     let runtime_table = value.get("runtime").and_then(Value::as_table);
+    let localization_table = value.get("localization").and_then(Value::as_table);
 
     let name = project_table
         .get("name")
@@ -516,6 +557,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         "particle_sim_default",
         ParticleSimDefault::Cpu,
     )?;
+    let localization = parse_localization(localization_table)?;
 
     Ok(ProjectConfig {
         name,
@@ -533,6 +575,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         meshlet_debug_view,
         occlusion_culling,
         particle_sim_default,
+        localization,
     })
 }
 
@@ -670,6 +713,54 @@ fn parse_particle_sim_default_with_default(
             "must be one of \"cpu\", \"hybrid\", \"gpu\"".to_string(),
         )),
     }
+}
+
+fn parse_localization(
+    table: Option<&toml::map::Map<String, Value>>,
+) -> Result<Option<LocalizationConfig>, ProjectError> {
+    let Some(table) = table else {
+        return Ok(None);
+    };
+
+    let source_csv = table
+        .get("source")
+        .and_then(Value::as_str)
+        .ok_or(ProjectError::MissingField("localization.source"))?
+        .trim()
+        .to_string();
+    validate_res_path("localization.source", &source_csv)?;
+
+    let key_column = table
+        .get("key")
+        .and_then(Value::as_str)
+        .unwrap_or("key")
+        .trim()
+        .to_string();
+    if key_column.is_empty() {
+        return Err(ProjectError::InvalidField(
+            "localization.key",
+            "must not be empty".to_string(),
+        ));
+    }
+
+    let default_locale = table
+        .get("default_locale")
+        .and_then(Value::as_str)
+        .unwrap_or("en")
+        .trim()
+        .to_ascii_lowercase();
+    if default_locale.is_empty() {
+        return Err(ProjectError::InvalidField(
+            "localization.default_locale",
+            "must not be empty".to_string(),
+        ));
+    }
+
+    Ok(Some(LocalizationConfig {
+        source_csv,
+        key_column,
+        default_locale,
+    }))
 }
 
 fn validate_res_path(field: &'static str, path: &str) -> Result<(), ProjectError> {
@@ -1308,9 +1399,15 @@ fn project_root() -> std::path::PathBuf {
               target_fps: None,
               target_fixed_update: Some(60.0),
           },
+          localization: perro_app::entry::StaticEmbeddedLocalizationConfig {
+              source_csv: None,
+              key_column: "key",
+              default_locale: "en",
+          },
           assets: perro_app::entry::StaticEmbeddedAssetsConfig {
               perro_assets: PERRO_ASSETS,
               scene_lookup: static_assets::scenes::lookup_scene,
+              localization_lookup: static_assets::localizations::lookup_localized_string,
               material_lookup: static_assets::materials::lookup_material,
               particle_lookup: static_assets::particles::lookup_particle,
               animation_lookup: static_assets::animations::lookup_animation,
@@ -1329,7 +1426,7 @@ fn project_root() -> std::path::PathBuf {
 }
 
 fn default_static_mod_rs() -> String {
-    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod animations;\npub mod meshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\n".to_string()
+    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod animations;\npub mod meshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n".to_string()
 }
 
 fn default_static_scenes_rs() -> String {

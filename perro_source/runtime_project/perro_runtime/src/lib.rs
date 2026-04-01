@@ -15,9 +15,9 @@ pub use render_result::RuntimeRenderResult;
 pub use rs_ctx::RuntimeResourceApi;
 pub use runtime::{Runtime, RuntimeUpdateTiming};
 pub use runtime_project::{
-    OcclusionCulling, ParticleSimDefault, ProjectLoadError, ProviderMode, RuntimeProject,
-    RuntimeProjectConfig, StaticAnimationLookup, StaticAudioLookup, StaticMaterialLookup,
-    StaticParticleLookup, StaticProjectConfig, StaticSceneLookup, StaticSkeletonLookup,
-    default_project_toml, ensure_project_layout, ensure_project_toml, load_project_toml,
-    parse_project_toml,
+    LocalizationConfig, OcclusionCulling, ParticleSimDefault, ProjectLoadError, ProviderMode,
+    RuntimeProject, RuntimeProjectConfig, StaticAnimationLookup, StaticAudioLookup,
+    StaticLocalizationLookup, StaticMaterialLookup, StaticParticleLookup, StaticProjectConfig,
+    StaticSceneLookup, StaticSkeletonLookup, default_project_toml, ensure_project_layout,
+    ensure_project_toml, load_project_toml, parse_project_toml,
 };

@@ -121,7 +121,15 @@ impl Runtime {
             terrain_store: terrain_store.clone(),
             signal_runtime: SignalRuntimeState::new(),
             node_index: NodeIndexState::new(),
-            resource_api: RuntimeResourceApi::new(None, None, None, None, terrain_store),
+            resource_api: RuntimeResourceApi::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                terrain_store,
+            ),
             input: InputSnapshot::new(),
             physics: physics::PhysicsState::new(),
         }
@@ -143,6 +151,8 @@ impl Runtime {
         let static_audio_lookup = project.static_audio_lookup;
         let static_skeleton_lookup = project.static_skeleton_lookup;
         let static_animation_lookup = project.static_animation_lookup;
+        let static_localization_lookup = project.static_localization_lookup;
+        let localization_config = project.config.localization.clone();
         runtime.project = Some(Arc::new(project));
         runtime.provider_mode = provider_mode;
         runtime.resource_api = RuntimeResourceApi::new(
@@ -150,6 +160,8 @@ impl Runtime {
             static_audio_lookup,
             static_skeleton_lookup,
             static_animation_lookup,
+            static_localization_lookup,
+            localization_config,
             runtime.terrain_store.clone(),
         );
         if let Some(entries) = script_registry {

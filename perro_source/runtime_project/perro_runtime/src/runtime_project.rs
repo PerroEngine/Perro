@@ -1,12 +1,14 @@
 use perro_animation::AnimationClip;
+use perro_resource_context::sub_apis::Locale;
 use perro_render_bridge::{Material3D, ParticleProfile3D};
 use perro_scene::Scene;
 use std::{collections::BTreeMap, path::PathBuf};
 
 pub use perro_project::{
-    OcclusionCulling, ParticleSimDefault, ProjectConfig as RuntimeProjectConfig,
-    ProjectError as ProjectLoadError, StaticProjectConfig, default_project_toml,
-    ensure_project_layout, ensure_project_toml, load_project_toml, parse_project_toml,
+    LocalizationConfig, OcclusionCulling, ParticleSimDefault,
+    ProjectConfig as RuntimeProjectConfig, ProjectError as ProjectLoadError, StaticProjectConfig,
+    default_project_toml, ensure_project_layout, ensure_project_toml, load_project_toml,
+    parse_project_toml,
 };
 
 /// Script/provider loading mode used when constructing the runtime.
@@ -18,6 +20,7 @@ pub enum ProviderMode {
 }
 
 pub type StaticSceneLookup = fn(&str) -> Option<&'static Scene>;
+pub type StaticLocalizationLookup = fn(Locale, u64) -> Option<&'static str>;
 pub type StaticMaterialLookup = fn(&str) -> Option<&'static Material3D>;
 pub type StaticParticleLookup = fn(&str) -> Option<&'static ParticleProfile3D>;
 pub type StaticAnimationLookup = fn(&str) -> Option<&'static AnimationClip>;
@@ -32,6 +35,7 @@ pub struct RuntimeProject {
     pub config: RuntimeProjectConfig,
     pub runtime_params: BTreeMap<String, String>,
     pub static_scene_lookup: Option<StaticSceneLookup>,
+    pub static_localization_lookup: Option<StaticLocalizationLookup>,
     pub static_material_lookup: Option<StaticMaterialLookup>,
     pub static_particle_lookup: Option<StaticParticleLookup>,
     pub static_animation_lookup: Option<StaticAnimationLookup>,
@@ -49,6 +53,7 @@ impl RuntimeProject {
             config: perro_project::ProjectConfig::default_for_name(name),
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
+            static_localization_lookup: None,
             static_material_lookup: None,
             static_particle_lookup: None,
             static_animation_lookup: None,
@@ -66,6 +71,7 @@ impl RuntimeProject {
             config,
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
+            static_localization_lookup: None,
             static_material_lookup: None,
             static_particle_lookup: None,
             static_animation_lookup: None,
@@ -92,6 +98,7 @@ impl RuntimeProject {
             config,
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
+            static_localization_lookup: None,
             static_material_lookup: None,
             static_particle_lookup: None,
             static_animation_lookup: None,
@@ -108,6 +115,11 @@ impl RuntimeProject {
 
     pub fn with_static_scene_lookup(mut self, lookup: StaticSceneLookup) -> Self {
         self.static_scene_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_static_localization_lookup(mut self, lookup: StaticLocalizationLookup) -> Self {
+        self.static_localization_lookup = Some(lookup);
         self
     }
 

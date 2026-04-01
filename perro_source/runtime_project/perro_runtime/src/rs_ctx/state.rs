@@ -1,5 +1,6 @@
 use perro_animation::AnimationClip;
 use perro_ids::{AnimationID, MaterialID, MeshID, TextureID};
+use perro_project::LocalizationConfig;
 use perro_render_bridge::{RenderCommand, RenderRequestID};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -39,6 +40,42 @@ impl LocalSlotArena {
         self.occupied[slot] = false;
         self.free_slots.push(slot);
         true
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct RuntimeLocalizationState {
+    pub(super) source_csv: Option<String>,
+    pub(super) key_column: String,
+    pub(super) current_locale: &'static str,
+    pub(super) active_by_key: HashMap<&'static str, &'static str>,
+    pub(super) active_by_hash: HashMap<u64, &'static str>,
+}
+
+impl RuntimeLocalizationState {
+    pub(super) fn new(config: Option<&LocalizationConfig>) -> Self {
+        if let Some(config) = config {
+            return Self {
+                source_csv: Some(config.source_csv.clone()),
+                key_column: config.key_column.clone(),
+                current_locale: Box::leak(config.default_locale.clone().into_boxed_str()),
+                active_by_key: HashMap::new(),
+                active_by_hash: HashMap::new(),
+            };
+        }
+        Self::default()
+    }
+}
+
+impl Default for RuntimeLocalizationState {
+    fn default() -> Self {
+        Self {
+            source_csv: None,
+            key_column: "key".to_string(),
+            current_locale: "en",
+            active_by_key: HashMap::new(),
+            active_by_hash: HashMap::new(),
+        }
     }
 }
 

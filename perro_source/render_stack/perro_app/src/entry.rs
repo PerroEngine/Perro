@@ -108,6 +108,7 @@ pub struct StaticEmbeddedProject<'a> {
     pub project: StaticEmbeddedProjectInfo<'a>,
     pub graphics: StaticEmbeddedGraphicsConfig,
     pub runtime: StaticEmbeddedRuntimeConfig,
+    pub localization: StaticEmbeddedLocalizationConfig,
     pub assets: StaticEmbeddedAssetsConfig,
 }
 
@@ -136,9 +137,16 @@ pub struct StaticEmbeddedRuntimeConfig {
     pub target_fixed_update: Option<f32>,
 }
 
+pub struct StaticEmbeddedLocalizationConfig {
+    pub source_csv: Option<&'static str>,
+    pub key_column: &'static str,
+    pub default_locale: &'static str,
+}
+
 pub struct StaticEmbeddedAssetsConfig {
     pub perro_assets: &'static [u8],
     pub scene_lookup: perro_runtime::StaticSceneLookup,
+    pub localization_lookup: perro_runtime::StaticLocalizationLookup,
     pub material_lookup: perro_runtime::StaticMaterialLookup,
     pub particle_lookup: perro_runtime::StaticParticleLookup,
     pub animation_lookup: perro_runtime::StaticAnimationLookup,
@@ -153,7 +161,7 @@ pub struct StaticEmbeddedAssetsConfig {
 pub fn run_static_embedded_project(
     input: StaticEmbeddedProject<'_>,
 ) -> Result<(), ProjectLoadError> {
-    let static_config = perro_runtime::StaticProjectConfig::new(
+    let mut static_config = perro_runtime::StaticProjectConfig::new(
         input.project.project_name,
         input.project.main_scene,
         input.project.icon,
@@ -170,11 +178,19 @@ pub fn run_static_embedded_project(
     .with_meshlet_debug_view(input.graphics.meshlet_debug_view)
     .with_occlusion_culling(input.graphics.occlusion_culling)
     .with_particle_sim_default(input.graphics.particle_sim_default);
+    if let Some(source_csv) = input.localization.source_csv {
+        static_config = static_config.with_localization(
+            source_csv,
+            input.localization.key_column,
+            input.localization.default_locale,
+        );
+    }
     let mut project =
         RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf());
 
     project = project
         .with_static_scene_lookup(input.assets.scene_lookup)
+        .with_static_localization_lookup(input.assets.localization_lookup)
         .with_static_material_lookup(input.assets.material_lookup)
         .with_static_particle_lookup(input.assets.particle_lookup)
         .with_static_animation_lookup(input.assets.animation_lookup)

@@ -192,6 +192,7 @@ impl Runtime {
                 name: project_name,
             });
         }
+        self.resource_api.initialize_localization();
 
         let mut existing_script_ids = Vec::new();
         self.scripts.append_instance_ids(&mut existing_script_ids);

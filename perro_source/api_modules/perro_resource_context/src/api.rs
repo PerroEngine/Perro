@@ -1,7 +1,8 @@
 use crate::sub_apis::{
-    AnimationAPI, AnimationModule, AudioAPI, AudioModule, Draw2DAPI, Draw2DModule, MaterialAPI,
-    MaterialModule, MeshAPI, MeshModule, PostProcessingAPI, SkeletonAPI, SkeletonModule,
-    TerrainAPI, TerrainModule, TextureAPI, TextureModule, VisualAccessibilityAPI,
+    AnimationAPI, AnimationModule, AudioAPI, AudioModule, Draw2DAPI, Draw2DModule, Locale,
+    LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule,
+    PostProcessingAPI, SkeletonAPI, SkeletonModule, TerrainAPI, TerrainModule, TextureAPI,
+    TextureModule, VisualAccessibilityAPI,
 };
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2};
 
@@ -16,6 +17,7 @@ pub trait ResourceAPI:
     + TerrainAPI
     + AnimationAPI
     + Draw2DAPI
+    + LocalizationAPI
     + ViewportAPI
     + Send
     + Sync
@@ -32,6 +34,7 @@ impl<T> ResourceAPI for T where
         + TerrainAPI
         + AnimationAPI
         + Draw2DAPI
+        + LocalizationAPI
         + ViewportAPI
         + Send
         + Sync
@@ -93,6 +96,11 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceContext<'res, R> {
     }
 
     #[inline]
+    pub fn Localization(&self) -> LocalizationModule<'_, R> {
+        LocalizationModule::new(self.api)
+    }
+
+    #[inline]
     pub fn enable_colorblind_filter(&self, mode: ColorBlindFilter, strength: f32) {
         self.api.enable_color_blind_filter(mode, strength);
     }
@@ -140,6 +148,21 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceContext<'res, R> {
     #[inline]
     pub fn viewport_size(&self) -> Vector2 {
         self.api.viewport_size()
+    }
+
+    #[inline]
+    pub fn set_locale(&self, locale: Locale) -> bool {
+        self.api.localization_set_locale(locale)
+    }
+
+    #[inline]
+    pub fn locale_current(&self) -> Locale {
+        self.api.localization_get_locale()
+    }
+
+    #[inline]
+    pub fn locale<S: AsRef<str>>(&self, key: S) -> Option<&'static str> {
+        self.api.localization_get(key.as_ref())
     }
 }
 

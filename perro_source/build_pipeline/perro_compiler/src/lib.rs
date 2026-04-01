@@ -125,20 +125,32 @@ pub fn compile_project_bundle(project_root: &Path, profile: bool) -> Result<(), 
     perro_static_pipeline::generate_static_audios(project_root).map_err(|err| {
         CompilerError::SceneParse(format!("audio static generation failed: {err}"))
     })?;
+    perro_static_pipeline::generate_static_localizations(project_root, &cfg).map_err(|err| {
+        CompilerError::SceneParse(format!("localization static generation failed: {err}"))
+    })?;
     perro_static_pipeline::write_static_mod_rs(project_root)
         .map_err(|err| CompilerError::SceneParse(format!("static mod generation failed: {err}")))?;
     generate_embedded_main(project_root)?;
-    generate_perro_assets(project_root)?;
+    generate_perro_assets(project_root, &cfg)?;
     build_project_crate(project_root, profile)?;
     Ok(())
 }
 
-fn generate_perro_assets(project_root: &Path) -> Result<(), CompilerError> {
+fn generate_perro_assets(
+    project_root: &Path,
+    cfg: &perro_project::ProjectConfig,
+) -> Result<(), CompilerError> {
     let embedded_dir = project_root.join(".perro").join("project").join("embedded");
     fs::create_dir_all(&embedded_dir)?;
     let output = embedded_dir.join("assets.perro");
     let res_dir = project_root.join("res");
-    build_perro_assets_archive(&output, &res_dir, project_root)?;
+    let mut skip_rel_paths = Vec::<String>::new();
+    if let Some(localization) = cfg.localization.as_ref()
+        && let Some(rel) = localization.source_csv.strip_prefix("res://")
+    {
+        skip_rel_paths.push(rel.replace('\\', "/"));
+    }
+    build_perro_assets_archive(&output, &res_dir, project_root, &skip_rel_paths)?;
     Ok(())
 }
 
@@ -398,9 +410,15 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         target_fps: {target_fps},\n\
         target_fixed_update: {target_fixed_update},\n\
   }},\n\
+  localization: perro_app::entry::StaticEmbeddedLocalizationConfig {{\n\
+        source_csv: {localization_source_csv},\n\
+        key_column: {localization_key_column},\n\
+        default_locale: {localization_default_locale},\n\
+  }},\n\
   assets: perro_app::entry::StaticEmbeddedAssetsConfig {{\n\
         perro_assets: PERRO_ASSETS,\n\
         scene_lookup: static_assets::scenes::lookup_scene,\n\
+        localization_lookup: static_assets::localizations::lookup_localized_string,\n\
         material_lookup: static_assets::materials::lookup_material,\n\
         particle_lookup: static_assets::particles::lookup_particle,\n\
         animation_lookup: static_assets::animations::lookup_animation,\n\
@@ -428,6 +446,23 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
         target_fps = emit_optional_f32(cfg.target_fps),
         target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
+        localization_source_csv = emit_optional_static_str(
+            cfg.localization
+                .as_ref()
+                .map(|loc| loc.source_csv.as_str()),
+        ),
+        localization_key_column = emit_static_str(
+            cfg.localization
+                .as_ref()
+                .map(|loc| loc.key_column.as_str())
+                .unwrap_or("key"),
+        ),
+        localization_default_locale = emit_static_str(
+            cfg.localization
+                .as_ref()
+                .map(|loc| loc.default_locale.as_str())
+                .unwrap_or("en"),
+        ),
     );
     let embedded_block = indent_block(&embedded_block, 2);
 
@@ -533,6 +568,17 @@ fn emit_optional_f32(value: Option<f32>) -> String {
     match value {
         Some(v) if v.is_finite() => format!("Some({}f32)", v),
         _ => "None".to_string(),
+    }
+}
+
+fn emit_static_str(value: &str) -> String {
+    format!("\"{}\"", escape_str(value))
+}
+
+fn emit_optional_static_str(value: Option<&str>) -> String {
+    match value {
+        Some(value) => format!("Some(\"{}\")", escape_str(value)),
+        None => "None".to_string(),
     }
 }
 

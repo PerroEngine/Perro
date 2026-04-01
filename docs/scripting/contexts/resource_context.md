@@ -18,12 +18,10 @@ Accessors:
 - `res.Skeletons()`
 - `res.Terrain()`
 - `res.Draw2D()`
+- `res.Localization()`
 - Direct global post-processing methods (no accessor)
 - Direct visual accessibility methods (no accessor)
 - Direct viewport query method (no accessor)
-
-Global macros:
-- `get_viewport_size!(res) -> Vector2`
 
 ## Resource Modules
 
@@ -35,6 +33,7 @@ Global macros:
 - [Skeletons Module](resource_modules/skeletons.md)
 - [Terrain Module](resource_modules/terrain.md)
 - [Draw2D Module](resource_modules/draw_2d.md)
+- [Localization Module](resource_modules/localization.md)
 - [Global Post Processing](resource_modules/post_processing.md)
 - [Visual Accessibility](resource_modules/visual_accessibility.md)
 
@@ -47,8 +46,39 @@ Each module page contains:
 - Exact load/reserve/drop semantics where applicable
 
 Reserve convention:
+
 - `load` implies `reserved: false` (auto-evict when no references remain).
 - `reserve` implies `reserved: true` (keep cached until explicit drop).
+
+## Localization Setup
+
+Localization source is configured in `project.toml`:
+
+```toml
+[localization]
+source = "res://localization.csv"
+key = "key"
+default_locale = "en"
+```
+
+CSV format:
+
+- Header must contain key column plus locale columns.
+- `key` column stores lookup keys.
+- Locale columns are language codes (`en`, `es`, `fr`, `ja`, `zh`, or custom codes).
+
+Example:
+
+```csv
+key,en,es
+menu.start,Start,Iniciar
+menu.quit,Quit,Salir
+```
+
+Behavior:
+
+- Dev mode loads the configured CSV from disk/asset path and keeps only the active locale column in memory.
+- Static mode compiles per-locale hashed lookup tables; the configured localization CSV is excluded from `assets.perro` to avoid duplication.
 
 ## Simple Example
 
@@ -79,5 +109,3 @@ let _ = audio_play!(
     }
 );
 ```
-
-

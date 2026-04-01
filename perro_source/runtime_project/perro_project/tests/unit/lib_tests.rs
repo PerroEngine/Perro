@@ -28,6 +28,7 @@ virtual_resolution = "1280x720"
     assert!(!parsed.meshlet_debug_view);
     assert_eq!(parsed.occlusion_culling, OcclusionCulling::Gpu);
     assert_eq!(parsed.particle_sim_default, ParticleSimDefault::Cpu);
+    assert!(parsed.localization.is_none());
 }
 
 #[test]
@@ -54,6 +55,7 @@ virtual_height = 1080
     assert!(!parsed.meshlet_debug_view);
     assert_eq!(parsed.occlusion_culling, OcclusionCulling::Gpu);
     assert_eq!(parsed.particle_sim_default, ParticleSimDefault::Cpu);
+    assert!(parsed.localization.is_none());
 }
 
 #[test]
@@ -85,6 +87,7 @@ particle_sim_default = "gpu"
     assert!(parsed.meshlet_debug_view);
     assert_eq!(parsed.occlusion_culling, OcclusionCulling::Cpu);
     assert_eq!(parsed.particle_sim_default, ParticleSimDefault::GpuCompute);
+    assert!(parsed.localization.is_none());
 }
 
 #[test]
@@ -159,6 +162,33 @@ fn resolve_local_path_supports_local_scheme() {
 fn crate_name_from_project_name_normalizes() {
     assert_eq!(crate_name_from_project_name("My Project!"), "my_project");
     assert_eq!(crate_name_from_project_name("123"), "_123");
+}
+
+#[test]
+fn parse_project_toml_reads_localization_config() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+
+[localization]
+source = "res://loc/game.csv"
+key = "key"
+default_locale = "JA"
+"#;
+
+    let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
+    let localization = parsed
+        .localization
+        .as_ref()
+        .expect("localization should be present");
+    assert_eq!(localization.source_csv, "res://loc/game.csv");
+    assert_eq!(localization.key_column, "key");
+    assert_eq!(localization.default_locale, "ja");
 }
 
 fn unique_temp_dir(prefix: &str) -> PathBuf {

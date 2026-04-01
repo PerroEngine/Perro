@@ -137,6 +137,8 @@ fps = 30
             None,
             None,
             lookup,
+            None,
+            None,
             Arc::new(Mutex::new(TerrainStore::new())),
         )
     }

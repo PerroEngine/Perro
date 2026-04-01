@@ -46,9 +46,15 @@ fn main() {
   target_fps: Some(360f32),
   target_fixed_update: Some(60f32),
   },
+  localization: perro_app::entry::StaticEmbeddedLocalizationConfig {
+  source_csv: Some("res://localization.csv"),
+  key_column: "key",
+  default_locale: "en",
+  },
   assets: perro_app::entry::StaticEmbeddedAssetsConfig {
   perro_assets: PERRO_ASSETS,
   scene_lookup: static_assets::scenes::lookup_scene,
+  localization_lookup: static_assets::localizations::lookup_localized_string,
   material_lookup: static_assets::materials::lookup_material,
   particle_lookup: static_assets::particles::lookup_particle,
   animation_lookup: static_assets::animations::lookup_animation,

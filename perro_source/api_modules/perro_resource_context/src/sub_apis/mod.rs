@@ -1,6 +1,7 @@
 mod animation;
 mod audio;
 mod draw_2d;
+mod localization;
 mod material;
 mod mesh;
 mod post_processing;
@@ -12,6 +13,7 @@ mod visual_accessibility;
 pub use animation::{AnimationAPI, AnimationModule};
 pub use audio::{Audio, AudioAPI, AudioModule, bus_id};
 pub use draw_2d::{Draw2DAPI, Draw2DModule};
+pub use localization::{Locale, LocalizationAPI, LocalizationModule};
 pub use material::{MaterialAPI, MaterialModule};
 pub use mesh::{MeshAPI, MeshModule};
 pub use perro_ids::AudioBusID;
