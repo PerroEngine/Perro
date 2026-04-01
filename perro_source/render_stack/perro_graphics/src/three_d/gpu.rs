@@ -110,7 +110,7 @@ struct InstanceGpu {
     color: [f32; 4],
     pbr_params: [f32; 4], // roughness, metallic, occlusion_strength, normal_scale
     emissive_factor: [f32; 3], // rgb
-    material_params: [f32; 4], // alpha_mode, alpha_cutoff, double_sided, reserved
+    material_params: [f32; 4], // alpha_mode, alpha_cutoff, double_sided, bitflags(debug/flat)
     skeleton_params: [u32; 4], // start, count, custom_params_offset, custom_params_len
 }
 
@@ -3934,8 +3934,8 @@ fn build_instance(
     custom_params_offset: u32,
     custom_params_len: u32,
 ) -> InstanceGpu {
-    let (color, pbr_params, emissive_factor, debug_flag) = if debug_view {
-        (debug_color, [0.5, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0], 1.0)
+    let (color, pbr_params, emissive_factor, debug_flags) = if debug_view {
+        (debug_color, [0.5, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0], 1u32)
     } else {
         match material {
             Material3D::Standard(params) => (
@@ -3947,13 +3947,13 @@ fn build_instance(
                     params.normal_scale,
                 ],
                 params.emissive_factor,
-                0.0,
+                0u32,
             ),
             Material3D::Unlit(params) => (
                 params.base_color_factor,
                 [0.0, 0.0, 0.0, 0.0],
                 params.emissive_factor,
-                0.0,
+                0u32,
             ),
             Material3D::Toon(params) => (
                 params.base_color_factor,
@@ -3964,7 +3964,7 @@ fn build_instance(
                     0.0,
                 ],
                 params.emissive_factor,
-                0.0,
+                0u32,
             ),
             Material3D::Custom(_) => {
                 let params = material.standard_params();
@@ -3977,12 +3977,13 @@ fn build_instance(
                         params.normal_scale,
                     ],
                     params.emissive_factor,
-                    0.0,
+                    0u32,
                 )
             }
         }
     };
     let params = material.standard_params();
+    let material_flags = debug_flags | if params.flat_shading { 2u32 } else { 0u32 };
 
     InstanceGpu {
         model_row_0: [model[0][0], model[1][0], model[2][0], model[3][0]],
@@ -3995,7 +3996,7 @@ fn build_instance(
             params.alpha_mode as f32,
             params.alpha_cutoff,
             if params.double_sided { 1.0 } else { 0.0 },
-            debug_flag,
+            material_flags as f32,
         ],
         skeleton_params: [
             skeleton_start,
@@ -4084,34 +4085,79 @@ fn apply_overrides(material: &mut Material3D, overrides: &[MaterialParamOverride
     if overrides.is_empty() {
         return;
     }
-    if let Material3D::Custom(custom) = material {
-        let mut params = custom.params.clone().into_owned();
-        for ovr in overrides {
-            params.push(perro_render_bridge::CustomMaterialParam3D {
-                name: Some(ovr.name.clone()),
-                value: match ovr.value {
-                    MaterialParamOverrideValue3D::F32(v) => {
-                        perro_render_bridge::CustomMaterialParamValue3D::F32(v)
-                    }
-                    MaterialParamOverrideValue3D::I32(v) => {
-                        perro_render_bridge::CustomMaterialParamValue3D::I32(v)
-                    }
-                    MaterialParamOverrideValue3D::Bool(v) => {
-                        perro_render_bridge::CustomMaterialParamValue3D::Bool(v)
-                    }
-                    MaterialParamOverrideValue3D::Vec2(v) => {
-                        perro_render_bridge::CustomMaterialParamValue3D::Vec2(v)
-                    }
-                    MaterialParamOverrideValue3D::Vec3(v) => {
-                        perro_render_bridge::CustomMaterialParamValue3D::Vec3(v)
-                    }
-                    MaterialParamOverrideValue3D::Vec4(v) => {
-                        perro_render_bridge::CustomMaterialParamValue3D::Vec4(v)
-                    }
-                },
-            });
+    match material {
+        Material3D::Standard(standard) => {
+            for ovr in overrides {
+                apply_flat_shading_override(&ovr.name, &ovr.value, &mut standard.flat_shading);
+            }
         }
-        custom.params = Cow::Owned(params);
+        Material3D::Unlit(unlit) => {
+            for ovr in overrides {
+                apply_flat_shading_override(&ovr.name, &ovr.value, &mut unlit.flat_shading);
+            }
+        }
+        Material3D::Toon(toon) => {
+            for ovr in overrides {
+                apply_flat_shading_override(&ovr.name, &ovr.value, &mut toon.flat_shading);
+            }
+        }
+        Material3D::Custom(custom) => {
+            let mut params = custom.params.clone().into_owned();
+            for ovr in overrides {
+                params.push(perro_render_bridge::CustomMaterialParam3D {
+                    name: Some(ovr.name.clone()),
+                    value: match ovr.value {
+                        MaterialParamOverrideValue3D::F32(v) => {
+                            perro_render_bridge::CustomMaterialParamValue3D::F32(v)
+                        }
+                        MaterialParamOverrideValue3D::I32(v) => {
+                            perro_render_bridge::CustomMaterialParamValue3D::I32(v)
+                        }
+                        MaterialParamOverrideValue3D::Bool(v) => {
+                            perro_render_bridge::CustomMaterialParamValue3D::Bool(v)
+                        }
+                        MaterialParamOverrideValue3D::Vec2(v) => {
+                            perro_render_bridge::CustomMaterialParamValue3D::Vec2(v)
+                        }
+                        MaterialParamOverrideValue3D::Vec3(v) => {
+                            perro_render_bridge::CustomMaterialParamValue3D::Vec3(v)
+                        }
+                        MaterialParamOverrideValue3D::Vec4(v) => {
+                            perro_render_bridge::CustomMaterialParamValue3D::Vec4(v)
+                        }
+                    },
+                });
+            }
+            custom.params = Cow::Owned(params);
+        }
+    }
+}
+
+fn apply_flat_shading_override(
+    name: &str,
+    value: &MaterialParamOverrideValue3D,
+    flat_shading: &mut bool,
+) {
+    let Some(v) = override_bool(value) else {
+        return;
+    };
+    match name {
+        "flat_shading" | "flatShading" | "shade_flat" | "shadeFlat" => {
+            *flat_shading = v;
+        }
+        "shade_smooth" | "shadeSmooth" => {
+            *flat_shading = !v;
+        }
+        _ => {}
+    }
+}
+
+fn override_bool(value: &MaterialParamOverrideValue3D) -> Option<bool> {
+    match value {
+        MaterialParamOverrideValue3D::Bool(v) => Some(*v),
+        MaterialParamOverrideValue3D::I32(v) => Some(*v != 0),
+        MaterialParamOverrideValue3D::F32(v) => Some(*v > 0.5),
+        _ => None,
     }
 }
 

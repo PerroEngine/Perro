@@ -233,6 +233,7 @@ fn apply_standard(entries: &[SceneObjectField], out: &mut StandardMaterial3D, an
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
             Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
             Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
+            Some("flatShading") => set_bool(value, any, |v| out.flat_shading = v),
             Some("baseColorTexture") => {
                 set_texture_slot(value, any, |v| out.base_color_texture = v)
             }
@@ -260,6 +261,7 @@ fn apply_unlit(entries: &[SceneObjectField], out: &mut UnlitMaterial3D, any: &mu
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
             Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
             Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
+            Some("flatShading") => set_bool(value, any, |v| out.flat_shading = v),
             Some("baseColorTexture") => {
                 set_texture_slot(value, any, |v| out.base_color_texture = v)
             }
@@ -276,6 +278,7 @@ fn apply_toon(entries: &[SceneObjectField], out: &mut ToonMaterial3D, any: &mut 
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
             Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
             Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
+            Some("flatShading") => set_bool(value, any, |v| out.flat_shading = v),
             Some("baseColorTexture") => {
                 set_texture_slot(value, any, |v| out.base_color_texture = v)
             }
@@ -320,6 +323,7 @@ fn canonical_standard_key(name: &str) -> Option<&'static str> {
         "alphaCutoff" | "alpha_cutoff" => Some("alphaCutoff"),
         "alphaMode" | "alpha_mode" => Some("alphaMode"),
         "doubleSided" | "double_sided" => Some("doubleSided"),
+        "flatShading" | "flat_shading" => Some("flatShading"),
         "baseColorTexture" | "base_color_texture" => Some("baseColorTexture"),
         "metallicRoughnessTexture" | "metallic_roughness_texture" => {
             Some("metallicRoughnessTexture")
@@ -340,6 +344,7 @@ fn canonical_unlit_key(name: &str) -> Option<&'static str> {
         "alphaCutoff" | "alpha_cutoff" => Some("alphaCutoff"),
         "alphaMode" | "alpha_mode" => Some("alphaMode"),
         "doubleSided" | "double_sided" => Some("doubleSided"),
+        "flatShading" | "flat_shading" => Some("flatShading"),
         "baseColorTexture" | "base_color_texture" => Some("baseColorTexture"),
         _ => None,
     }
@@ -353,6 +358,7 @@ fn canonical_toon_key(name: &str) -> Option<&'static str> {
         "alphaCutoff" | "alpha_cutoff" => Some("alphaCutoff"),
         "alphaMode" | "alpha_mode" => Some("alphaMode"),
         "doubleSided" | "double_sided" => Some("doubleSided"),
+        "flatShading" | "flat_shading" => Some("flatShading"),
         "baseColorTexture" | "base_color_texture" => Some("baseColorTexture"),
         "rampTexture" | "ramp_texture" => Some("rampTexture"),
         "bandCount" | "band_count" => Some("bandCount"),

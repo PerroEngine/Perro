@@ -239,6 +239,7 @@ pub struct StandardMaterial3D {
     pub alpha_mode: u32, // 0=OPAQUE, 1=MASK, 2=BLEND
     pub alpha_cutoff: f32,
     pub double_sided: bool,
+    pub flat_shading: bool,
     pub normal_scale: f32,
     // Texture slot indices (glTF material-local index or NONE).
     pub base_color_texture: u32,
@@ -259,6 +260,7 @@ impl Default for StandardMaterial3D {
             alpha_mode: 0,
             alpha_cutoff: 0.5,
             double_sided: false,
+            flat_shading: false,
             normal_scale: 1.0,
             base_color_texture: MATERIAL_TEXTURE_NONE,
             metallic_roughness_texture: MATERIAL_TEXTURE_NONE,
@@ -278,6 +280,7 @@ pub struct UnlitMaterial3D {
     pub alpha_mode: u32, // 0=OPAQUE, 1=MASK, 2=BLEND
     pub alpha_cutoff: f32,
     pub double_sided: bool,
+    pub flat_shading: bool,
     // Texture slot indices (material-local index or NONE).
     pub base_color_texture: u32,
 }
@@ -290,6 +293,7 @@ impl Default for UnlitMaterial3D {
             alpha_mode: 0,
             alpha_cutoff: 0.5,
             double_sided: false,
+            flat_shading: false,
             base_color_texture: MATERIAL_TEXTURE_NONE,
         }
     }
@@ -302,6 +306,7 @@ pub struct ToonMaterial3D {
     pub alpha_mode: u32, // 0=OPAQUE, 1=MASK, 2=BLEND
     pub alpha_cutoff: f32,
     pub double_sided: bool,
+    pub flat_shading: bool,
     pub band_count: u32,
     pub rim_strength: f32,
     pub outline_width: f32,
@@ -318,6 +323,7 @@ impl Default for ToonMaterial3D {
             alpha_mode: 0,
             alpha_cutoff: 0.5,
             double_sided: false,
+            flat_shading: false,
             band_count: 4,
             rim_strength: 0.0,
             outline_width: 0.0,
@@ -410,6 +416,7 @@ impl Material3D {
                 alpha_mode: params.alpha_mode,
                 alpha_cutoff: params.alpha_cutoff,
                 double_sided: params.double_sided,
+                flat_shading: params.flat_shading,
                 base_color_texture: params.base_color_texture,
                 metallic_roughness_texture: MATERIAL_TEXTURE_NONE,
                 normal_texture: MATERIAL_TEXTURE_NONE,
@@ -426,6 +433,7 @@ impl Material3D {
                 alpha_mode: params.alpha_mode,
                 alpha_cutoff: params.alpha_cutoff,
                 double_sided: params.double_sided,
+                flat_shading: params.flat_shading,
                 base_color_texture: params.base_color_texture,
                 metallic_roughness_texture: MATERIAL_TEXTURE_NONE,
                 normal_texture: MATERIAL_TEXTURE_NONE,

@@ -60,7 +60,7 @@ You **do not** need to define `vs_main`, bind groups, or scene structs.
 
 Notes for custom shaders:
 
-- `in.material_params` packs: `alpha_mode`, `alpha_cutoff`, `double_sided`, and a debug flag.
+- `in.material_params` packs: `alpha_mode`, `alpha_cutoff`, `double_sided`, and packed flags.
 - If you want alpha clipping or blending behavior, implement it in `shade_material`.
 - Use `custom_param(in, index)` to read custom params (each param is a vec4<f32>).
 
@@ -76,7 +76,9 @@ Notes for custom shaders:
   - Unlit: `(0, 0, 0, 0)`
   - Toon: `(band_count, rim_strength, outline_width, 0)`
 - `emissive_factor`: emissive RGB from the preset.
-- `material_params`: `(alpha_mode, alpha_cutoff, double_sided, debug_flag)`
+- `material_params`: `(alpha_mode, alpha_cutoff, double_sided, flags)`
+  - `flags bit 0`: debug view
+  - `flags bit 1`: flat shading enabled
 - `custom_range`: `(offset, length)` for the custom params block.
 
 Example usage:

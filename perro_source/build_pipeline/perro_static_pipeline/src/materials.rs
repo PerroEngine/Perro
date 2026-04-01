@@ -140,6 +140,7 @@ struct StandardMaterialKey {
     alpha_mode: u32,
     alpha_cutoff: u32,
     double_sided: bool,
+    flat_shading: bool,
     normal_scale: u32,
     base_color_texture: u32,
     metallic_roughness_texture: u32,
@@ -155,6 +156,7 @@ struct UnlitMaterialKey {
     alpha_mode: u32,
     alpha_cutoff: u32,
     double_sided: bool,
+    flat_shading: bool,
     base_color_texture: u32,
 }
 
@@ -165,6 +167,7 @@ struct ToonMaterialKey {
     alpha_mode: u32,
     alpha_cutoff: u32,
     double_sided: bool,
+    flat_shading: bool,
     band_count: u32,
     rim_strength: u32,
     outline_width: u32,
@@ -215,6 +218,7 @@ impl From<&MaterialLiteral> for MaterialKey {
                 alpha_mode: v.alpha_mode,
                 alpha_cutoff: v.alpha_cutoff.to_bits(),
                 double_sided: v.double_sided,
+                flat_shading: v.flat_shading,
                 normal_scale: v.normal_scale.to_bits(),
                 base_color_texture: v.base_color_texture,
                 metallic_roughness_texture: v.metallic_roughness_texture,
@@ -237,6 +241,7 @@ impl From<&MaterialLiteral> for MaterialKey {
                 alpha_mode: v.alpha_mode,
                 alpha_cutoff: v.alpha_cutoff.to_bits(),
                 double_sided: v.double_sided,
+                flat_shading: v.flat_shading,
                 base_color_texture: v.base_color_texture,
             }),
             MaterialLiteral::Toon(v) => MaterialKey::Toon(ToonMaterialKey {
@@ -254,6 +259,7 @@ impl From<&MaterialLiteral> for MaterialKey {
                 alpha_mode: v.alpha_mode,
                 alpha_cutoff: v.alpha_cutoff.to_bits(),
                 double_sided: v.double_sided,
+                flat_shading: v.flat_shading,
                 band_count: v.band_count,
                 rim_strength: v.rim_strength.to_bits(),
                 outline_width: v.outline_width.to_bits(),
@@ -505,6 +511,7 @@ fn apply_standard_runtime_entries(
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
             Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
             Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
+            Some("flatShading") => set_bool(value, any, |v| out.flat_shading = v),
             Some("baseColorTexture") => {
                 set_texture_slot(value, any, |v| out.base_color_texture = v)
             }
@@ -536,6 +543,7 @@ fn apply_unlit_runtime_entries(
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
             Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
             Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
+            Some("flatShading") => set_bool(value, any, |v| out.flat_shading = v),
             Some("baseColorTexture") => {
                 set_texture_slot(value, any, |v| out.base_color_texture = v)
             }
@@ -556,6 +564,7 @@ fn apply_toon_runtime_entries(
             Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
             Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
             Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
+            Some("flatShading") => set_bool(value, any, |v| out.flat_shading = v),
             Some("baseColorTexture") => {
                 set_texture_slot(value, any, |v| out.base_color_texture = v)
             }
@@ -604,6 +613,7 @@ fn canonical_standard_key(name: &str) -> Option<&'static str> {
         "alphaCutoff" | "alpha_cutoff" => Some("alphaCutoff"),
         "alphaMode" | "alpha_mode" => Some("alphaMode"),
         "doubleSided" | "double_sided" => Some("doubleSided"),
+        "flatShading" | "flat_shading" => Some("flatShading"),
         "baseColorTexture" | "base_color_texture" => Some("baseColorTexture"),
         "metallicRoughnessTexture" | "metallic_roughness_texture" => {
             Some("metallicRoughnessTexture")
@@ -624,6 +634,7 @@ fn canonical_unlit_key(name: &str) -> Option<&'static str> {
         "alphaCutoff" | "alpha_cutoff" => Some("alphaCutoff"),
         "alphaMode" | "alpha_mode" => Some("alphaMode"),
         "doubleSided" | "double_sided" => Some("doubleSided"),
+        "flatShading" | "flat_shading" => Some("flatShading"),
         "baseColorTexture" | "base_color_texture" => Some("baseColorTexture"),
         _ => None,
     }
@@ -637,6 +648,7 @@ fn canonical_toon_key(name: &str) -> Option<&'static str> {
         "alphaCutoff" | "alpha_cutoff" => Some("alphaCutoff"),
         "alphaMode" | "alpha_mode" => Some("alphaMode"),
         "doubleSided" | "double_sided" => Some("doubleSided"),
+        "flatShading" | "flat_shading" => Some("flatShading"),
         "baseColorTexture" | "base_color_texture" => Some("baseColorTexture"),
         "rampTexture" | "ramp_texture" => Some("rampTexture"),
         "bandCount" | "band_count" => Some("bandCount"),
@@ -818,7 +830,7 @@ fn as_custom_params(value: &SceneValue) -> Option<Vec<CustomParamLiteral>> {
 fn material_literal_to_code(material: &MaterialLiteral) -> String {
     match material {
         MaterialLiteral::Standard(m) => format!(
-            "Material3D::Standard(StandardMaterial3D {{ base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}], roughness_factor: {:.6}, metallic_factor: {:.6}, occlusion_strength: {:.6}, emissive_factor: [{:.6}, {:.6}, {:.6}], alpha_mode: {}, alpha_cutoff: {:.6}, double_sided: {}, normal_scale: {:.6}, base_color_texture: {}, metallic_roughness_texture: {}, normal_texture: {}, occlusion_texture: {}, emissive_texture: {} }})",
+            "Material3D::Standard(StandardMaterial3D {{ base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}], roughness_factor: {:.6}, metallic_factor: {:.6}, occlusion_strength: {:.6}, emissive_factor: [{:.6}, {:.6}, {:.6}], alpha_mode: {}, alpha_cutoff: {:.6}, double_sided: {}, flat_shading: {}, normal_scale: {:.6}, base_color_texture: {}, metallic_roughness_texture: {}, normal_texture: {}, occlusion_texture: {}, emissive_texture: {} }})",
             m.base_color_factor[0],
             m.base_color_factor[1],
             m.base_color_factor[2],
@@ -832,6 +844,7 @@ fn material_literal_to_code(material: &MaterialLiteral) -> String {
             m.alpha_mode,
             m.alpha_cutoff,
             if m.double_sided { "true" } else { "false" },
+            if m.flat_shading { "true" } else { "false" },
             m.normal_scale,
             m.base_color_texture,
             m.metallic_roughness_texture,
@@ -840,7 +853,7 @@ fn material_literal_to_code(material: &MaterialLiteral) -> String {
             m.emissive_texture
         ),
         MaterialLiteral::Unlit(m) => format!(
-            "Material3D::Unlit(UnlitMaterial3D {{ base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}], emissive_factor: [{:.6}, {:.6}, {:.6}], alpha_mode: {}, alpha_cutoff: {:.6}, double_sided: {}, base_color_texture: {} }})",
+            "Material3D::Unlit(UnlitMaterial3D {{ base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}], emissive_factor: [{:.6}, {:.6}, {:.6}], alpha_mode: {}, alpha_cutoff: {:.6}, double_sided: {}, flat_shading: {}, base_color_texture: {} }})",
             m.base_color_factor[0],
             m.base_color_factor[1],
             m.base_color_factor[2],
@@ -851,10 +864,11 @@ fn material_literal_to_code(material: &MaterialLiteral) -> String {
             m.alpha_mode,
             m.alpha_cutoff,
             if m.double_sided { "true" } else { "false" },
+            if m.flat_shading { "true" } else { "false" },
             m.base_color_texture
         ),
         MaterialLiteral::Toon(m) => format!(
-            "Material3D::Toon(ToonMaterial3D {{ base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}], emissive_factor: [{:.6}, {:.6}, {:.6}], alpha_mode: {}, alpha_cutoff: {:.6}, double_sided: {}, band_count: {}, rim_strength: {:.6}, outline_width: {:.6}, base_color_texture: {}, ramp_texture: {} }})",
+            "Material3D::Toon(ToonMaterial3D {{ base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}], emissive_factor: [{:.6}, {:.6}, {:.6}], alpha_mode: {}, alpha_cutoff: {:.6}, double_sided: {}, flat_shading: {}, band_count: {}, rim_strength: {:.6}, outline_width: {:.6}, base_color_texture: {}, ramp_texture: {} }})",
             m.base_color_factor[0],
             m.base_color_factor[1],
             m.base_color_factor[2],
@@ -865,6 +879,7 @@ fn material_literal_to_code(material: &MaterialLiteral) -> String {
             m.alpha_mode,
             m.alpha_cutoff,
             if m.double_sided { "true" } else { "false" },
+            if m.flat_shading { "true" } else { "false" },
             m.band_count,
             m.rim_strength,
             m.outline_width,
@@ -962,6 +977,7 @@ fn materials_from_gltf_file(
             },
             alpha_cutoff: material.alpha_cutoff().unwrap_or(0.5),
             double_sided: material.double_sided(),
+            flat_shading: false,
             normal_scale: material
                 .normal_texture()
                 .map(|normal| normal.scale())

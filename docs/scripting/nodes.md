@@ -42,6 +42,7 @@ Physics 2D:
   - `material: Option<MaterialID>`
   - `modulate` (RGBA multiplier)
   - `overrides` (named material parameter overrides)
+  - flat/smooth override names: `flat_shading`/`flatShading`, `shade_flat`/`shadeFlat`, `shade_smooth`/`shadeSmooth`
 - Scene authoring supports `surfaces = [ ... ]` where each entry can be:
   - a material source string
   - an object with `material`, `modulate`, and `overrides`

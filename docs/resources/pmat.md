@@ -69,6 +69,7 @@ Comments:
 - `alpha_mode` (alias: `alphaMode`) `OPAQUE | MASK | BLEND`
 - `alpha_cutoff` (alias: `alphaCutoff`) float
 - `double_sided` (alias: `doubleSided`) bool
+- `flat_shading` (alias: `flatShading`) bool (`false` = smooth, `true` = flat)
 - `base_color_texture` (alias: `baseColorTexture`) int
 - `metallic_roughness_texture` (alias: `metallicRoughnessTexture`) int
 - `normal_texture` (alias: `normalTexture`) int
@@ -82,6 +83,7 @@ Comments:
 - `alpha_mode` (alias: `alphaMode`) `OPAQUE | MASK | BLEND`
 - `alpha_cutoff` (alias: `alphaCutoff`) float
 - `double_sided` (alias: `doubleSided`) bool
+- `flat_shading` (alias: `flatShading`) bool
 - `base_color_texture` (alias: `baseColorTexture`) int
 
 ### Toon
@@ -91,6 +93,7 @@ Comments:
 - `alpha_mode` (alias: `alphaMode`) `OPAQUE | MASK | BLEND`
 - `alpha_cutoff` (alias: `alphaCutoff`) float
 - `double_sided` (alias: `doubleSided`) bool
+- `flat_shading` (alias: `flatShading`) bool
 - `base_color_texture` (alias: `baseColorTexture`) int
 - `ramp_texture` (alias: `rampTexture`) int
 - `band_count` (alias: `bandCount`) int

@@ -167,6 +167,7 @@ script = "res://path/to/script.rs"
                 modulate = (1, 0.9, 0.9, 1)
                 overrides = [
                     { name = "roughness", value = 0.25 },
+                    { name = "shade_flat", value = true },
                     { name = "rim_color", value = (0.2, 0.6, 1.0, 1.0) }
                 ]
             }

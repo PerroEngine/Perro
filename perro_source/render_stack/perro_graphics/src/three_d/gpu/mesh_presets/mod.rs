@@ -39,6 +39,7 @@ impl From<MeshVertex> for MeshVertexKey {
 
 pub(super) fn build_builtin_mesh_buffer() -> BuiltinMeshBuffer {
     const ROUND_SEGMENTS: u32 = 36;
+    const CYLINDER_SEGMENTS: u32 = ROUND_SEGMENTS * 3;
     const SPHERE_LATITUDE_BANDS: u32 = 24;
     const CAPSULE_HEMISPHERE_BANDS: u32 = 14;
 
@@ -56,7 +57,7 @@ pub(super) fn build_builtin_mesh_buffer() -> BuiltinMeshBuffer {
         ("__tri_prism__", deduplicate_mesh(tri_prism::geometry())),
         (
             "__cylinder__",
-            deduplicate_mesh(cylinder::geometry(ROUND_SEGMENTS)),
+            deduplicate_mesh(cylinder::geometry(CYLINDER_SEGMENTS)),
         ),
         ("__cone__", deduplicate_mesh(cone::geometry(ROUND_SEGMENTS))),
         (
