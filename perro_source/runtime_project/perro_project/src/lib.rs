@@ -1289,8 +1289,12 @@ fn embed_windows_icon() -> Result<(), String> {
     }
 
     fn convert_icon_to_ico(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
-        let image = image::open(source)
+        let mut image = image::open(source)
             .map_err(|e| format!("failed to decode icon image `{}`: {e}", source.display()))?;
+        let (w, h) = (image.width(), image.height());
+        if w > 256 || h > 256 {
+            image = image.resize(256, 256, image::imageops::FilterType::Lanczos3);
+        }
         let out = out_dir.join("perro_project_icon.ico");
         image
             .save_with_format(&out, image::ImageFormat::Ico)
@@ -1705,6 +1709,35 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
 
 fn ensure_project_build_script(path: &Path) -> std::io::Result<()> {
     if path.exists() {
+        let src = match fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(_) => return Ok(()),
+        };
+        let old = r#"    fn convert_icon_to_ico(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
+        let image = image::open(source)
+            .map_err(|e| format!("failed to decode icon image `{}`: {e}", source.display()))?;
+        let out = out_dir.join("perro_project_icon.ico");
+        image
+            .save_with_format(&out, image::ImageFormat::Ico)
+            .map_err(|e| format!("failed to convert `{}` to ico: {e}", source.display()))?;
+        Ok(out)
+    }"#;
+        let new = r#"    fn convert_icon_to_ico(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
+        let mut image = image::open(source)
+            .map_err(|e| format!("failed to decode icon image `{}`: {e}", source.display()))?;
+        let (w, h) = (image.width(), image.height());
+        if w > 256 || h > 256 {
+            image = image.resize(256, 256, image::imageops::FilterType::Lanczos3);
+        }
+        let out = out_dir.join("perro_project_icon.ico");
+        image
+            .save_with_format(&out, image::ImageFormat::Ico)
+            .map_err(|e| format!("failed to convert `{}` to ico: {e}", source.display()))?;
+        Ok(out)
+    }"#;
+        if src.contains(old) {
+            fs::write(path, src.replace(old, new))?;
+        }
         return Ok(());
     }
     if let Some(parent) = path.parent() {
