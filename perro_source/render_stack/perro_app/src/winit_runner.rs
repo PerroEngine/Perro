@@ -1,6 +1,7 @@
 use crate::App;
 use perro_graphics::GraphicsBackend;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::{fs, sync::Arc};
 use std::time::{Duration, Instant};
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize, Position, Size},
@@ -8,7 +9,7 @@ use winit::{
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     monitor::MonitorHandle,
-    window::{CursorGrabMode, Window, WindowAttributes},
+    window::{CursorGrabMode, Icon, Window, WindowAttributes},
 };
 
 const DEFAULT_FPS_CAP: f32 = 60.0;
@@ -693,6 +694,10 @@ fn window_attributes(
         return attrs;
     };
 
+    if let Some(icon) = load_project_window_icon(project) {
+        attrs = attrs.with_window_icon(Some(icon));
+    }
+
     let desired = PhysicalSize::new(project.config.virtual_width, project.config.virtual_height);
     if desired.width == 0 || desired.height == 0 {
         return attrs;
@@ -711,6 +716,51 @@ fn window_attributes(
 
     attrs = attrs.with_inner_size(Size::Physical(fitted));
     attrs.with_position(Position::Physical(centered))
+}
+
+fn load_project_window_icon(project: &perro_runtime::RuntimeProject) -> Option<Icon> {
+    let bytes = load_project_icon_bytes(project)?;
+    let img = image::load_from_memory(&bytes).ok()?;
+    let rgba = img.into_rgba8();
+    let (width, height) = rgba.dimensions();
+    Icon::from_rgba(rgba.into_raw(), width, height).ok()
+}
+
+fn load_project_icon_bytes(project: &perro_runtime::RuntimeProject) -> Option<Vec<u8>> {
+    if let Some(icon_path) = resolve_project_icon_path(project)
+        && let Ok(bytes) = fs::read(icon_path)
+    {
+        return Some(bytes);
+    }
+
+    let icon = project.config.icon.trim();
+    if icon.starts_with("res://")
+        && let Some(lookup) = project.static_icon_lookup
+        && let Some(bytes) = lookup(icon)
+    {
+        return Some(bytes.to_vec());
+    }
+
+    None
+}
+
+fn resolve_project_icon_path(project: &perro_runtime::RuntimeProject) -> Option<PathBuf> {
+    let icon = project.config.icon.trim();
+    if icon.is_empty() {
+        return None;
+    }
+
+    if let Some(rel) = icon.strip_prefix("res://") {
+        let rel = rel.trim_start_matches('/');
+        return Some(project.root.join("res").join(rel));
+    }
+
+    let path = Path::new(icon);
+    if path.is_absolute() {
+        return Some(path.to_path_buf());
+    }
+
+    Some(project.root.join(path))
 }
 
 fn pick_monitor(event_loop: &ActiveEventLoop) -> Option<MonitorHandle> {

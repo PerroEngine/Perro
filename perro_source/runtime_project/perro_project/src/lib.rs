@@ -324,6 +324,7 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     let project_crate = perro_dir.join("project");
     let scripts_crate = perro_dir.join("scripts");
     let dev_runner_crate = perro_dir.join("dev_runner");
+    let project_cargo_config = project_crate.join(".cargo");
     let scripts_cargo_config = scripts_crate.join(".cargo");
     let project_src = project_crate.join("src");
     let project_static_src = project_src.join("static");
@@ -336,6 +337,7 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     fs::create_dir_all(&project_src)?;
     fs::create_dir_all(&project_static_src)?;
     fs::create_dir_all(&project_embedded)?;
+    fs::create_dir_all(&project_cargo_config)?;
     fs::create_dir_all(&scripts_src)?;
     fs::create_dir_all(&scripts_cargo_config)?;
     fs::create_dir_all(&dev_runner_src)?;
@@ -356,9 +358,14 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         project_crate.join("Cargo.toml"),
         &default_project_crate_toml(&crate_name),
     )?;
+    write_if_missing(project_crate.join("build.rs"), &default_project_build_rs())?;
     write_if_missing(
         scripts_crate.join("Cargo.toml"),
         &default_scripts_crate_toml(),
+    )?;
+    write_if_missing(
+        project_cargo_config.join("config.toml"),
+        &default_project_cargo_config_toml(),
     )?;
     write_if_missing(
         scripts_cargo_config.join("config.toml"),
@@ -1202,6 +1209,7 @@ fn default_project_crate_toml(crate_name: &str) -> String {
 name = "{crate_name}"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [dependencies]
 perro_app = "0.1.0"
@@ -1215,6 +1223,11 @@ scripts = {{ path = "../scripts" }}
 [features]
 profile = ["perro_app/profile"]
 
+[target.'cfg(target_os = "windows")'.build-dependencies]
+winresource = "0.1.20"
+toml = "0.8.23"
+image = {{ version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }}
+
 [profile.release]
 opt-level = 3
 lto = "fat"
@@ -1227,6 +1240,106 @@ debug-assertions = false
 overflow-checks = false
  "#
     )
+}
+
+fn default_project_build_rs() -> String {
+    r#"#[cfg(target_os = "windows")]
+fn main() {
+    if let Err(err) = embed_windows_icon() {
+        println!("cargo:warning=perro icon embedding skipped: {err}");
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn main() {}
+
+#[cfg(target_os = "windows")]
+fn embed_windows_icon() -> Result<(), String> {
+    use std::{
+        env, fs,
+        path::{Path, PathBuf},
+    };
+    use toml::Value;
+
+    fn load_icon_res_path(project_toml: &Path) -> Result<String, String> {
+        let src = fs::read_to_string(project_toml)
+            .map_err(|e| format!("failed to read {}: {e}", project_toml.display()))?;
+        let value: Value = src
+            .parse::<Value>()
+            .map_err(|e| format!("failed to parse {}: {e}", project_toml.display()))?;
+        let icon = value
+            .get("project")
+            .and_then(Value::as_table)
+            .and_then(|project| project.get("icon"))
+            .and_then(Value::as_str)
+            .unwrap_or("res://icon.png")
+            .trim()
+            .to_string();
+        if !icon.starts_with("res://") {
+            return Err(format!("project.icon must start with `res://`, got `{icon}`"));
+        }
+        Ok(icon)
+    }
+
+    fn resolve_res_icon_path(project_root: &Path, icon_res_path: &str) -> PathBuf {
+        let rel = icon_res_path
+            .trim_start_matches("res://")
+            .trim_start_matches('/');
+        project_root.join("res").join(rel)
+    }
+
+    fn convert_icon_to_ico(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
+        let image = image::open(source)
+            .map_err(|e| format!("failed to decode icon image `{}`: {e}", source.display()))?;
+        let out = out_dir.join("perro_project_icon.ico");
+        image
+            .save_with_format(&out, image::ImageFormat::Ico)
+            .map_err(|e| format!("failed to convert `{}` to ico: {e}", source.display()))?;
+        Ok(out)
+    }
+
+    let manifest_dir = PathBuf::from(
+        env::var("CARGO_MANIFEST_DIR").map_err(|e| format!("CARGO_MANIFEST_DIR missing: {e}"))?,
+    );
+    let project_root = manifest_dir
+        .join("..")
+        .join("..")
+        .canonicalize()
+        .map_err(|e| format!("failed to resolve project root from manifest dir: {e}"))?;
+    let project_toml = project_root.join("project.toml");
+    let icon_res = load_icon_res_path(&project_toml)?;
+    let icon_source = resolve_res_icon_path(&project_root, &icon_res);
+
+    println!("cargo:rerun-if-changed={}", project_toml.display());
+    println!("cargo:rerun-if-changed={}", icon_source.display());
+
+    if !icon_source.exists() {
+        return Err(format!("icon file not found: {}", icon_source.display()));
+    }
+
+    let ext = icon_source
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    let icon_for_resource = if ext == "ico" {
+        icon_source
+    } else {
+        let out_dir = PathBuf::from(
+            env::var("OUT_DIR").map_err(|e| format!("OUT_DIR missing: {e}"))?,
+        );
+        convert_icon_to_ico(&icon_source, &out_dir)?
+    };
+
+    let mut res = winresource::WindowsResource::new();
+    res.set_icon(icon_for_resource.to_string_lossy().as_ref());
+    res.compile()
+        .map_err(|e| format!("failed to compile windows resource icon: {e}"))?;
+    Ok(())
+}
+"#
+    .to_string()
 }
 
 fn default_scripts_crate_toml() -> String {
@@ -1268,6 +1381,13 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rust_analyzer)"] }
 }
 
 fn default_scripts_cargo_config_toml() -> String {
+    r#"[build]
+target-dir = "../../target"
+"#
+    .to_string()
+}
+
+fn default_project_cargo_config_toml() -> String {
     r#"[build]
 target-dir = "../../target"
 "#
@@ -1546,6 +1666,12 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
         .join(".perro")
         .join("project")
         .join("Cargo.toml");
+    let project_build_script = project_root.join(".perro").join("project").join("build.rs");
+    let project_cargo_config = project_root
+        .join(".perro")
+        .join("project")
+        .join(".cargo")
+        .join("config.toml");
     let scripts_manifest = project_root
         .join(".perro")
         .join("scripts")
@@ -1559,7 +1685,10 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
         .join("scripts")
         .join(".cargo")
         .join("config.toml");
+    ensure_project_build_script(&project_build_script)?;
+    ensure_project_target_dir_config(&project_cargo_config)?;
     ensure_project_manifest_deps(&project_manifest)?;
+    ensure_project_manifest_icon_build_support(&project_manifest)?;
     ensure_project_manifest_features(&project_manifest)?;
     ensure_scripts_manifest_deps(&scripts_manifest)?;
     ensure_scripts_manifest_user_deps(project_root, &scripts_manifest)?;
@@ -1572,6 +1701,16 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
     ensure_patch_block_in_manifest(&dev_runner_manifest)?;
     ensure_scripts_target_dir_config(&scripts_cargo_config)?;
     Ok(())
+}
+
+fn ensure_project_build_script(path: &Path) -> std::io::Result<()> {
+    if path.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, default_project_build_rs())
 }
 
 fn ensure_scripts_manifest_user_deps(
@@ -1644,6 +1783,16 @@ fn ensure_scripts_target_dir_config(path: &Path) -> std::io::Result<()> {
     fs::write(path, default_scripts_cargo_config_toml())
 }
 
+fn ensure_project_target_dir_config(path: &Path) -> std::io::Result<()> {
+    if path.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, default_project_cargo_config_toml())
+}
+
 fn ensure_project_manifest_deps(path: &Path) -> std::io::Result<()> {
     if !path.exists() {
         return Ok(());
@@ -1707,6 +1856,89 @@ fn ensure_project_manifest_features(path: &Path) -> std::io::Result<()> {
             "profile".to_string(),
             Value::Array(vec![Value::String("perro_app/profile".to_string())]),
         );
+        changed = true;
+    }
+
+    if !changed {
+        return Ok(());
+    }
+
+    let rendered = toml::to_string(&value)
+        .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
+    fs::write(path, rendered)
+}
+
+fn ensure_project_manifest_icon_build_support(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let src = fs::read_to_string(path)?;
+    let Ok(mut value) = src.parse::<Value>() else {
+        return Ok(());
+    };
+    let Some(root) = value.as_table_mut() else {
+        return Ok(());
+    };
+
+    let mut changed = false;
+
+    let package = root
+        .entry("package")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(package_table) = package.as_table_mut() else {
+        return Ok(());
+    };
+    if package_table.get("build").and_then(Value::as_str) != Some("build.rs") {
+        package_table.insert("build".to_string(), Value::String("build.rs".to_string()));
+        changed = true;
+    }
+
+    let target = root
+        .entry("target")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(target_table) = target.as_table_mut() else {
+        return Ok(());
+    };
+    let windows_key = "cfg(target_os = \"windows\")".to_string();
+    let windows_target = target_table
+        .entry(windows_key)
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(windows_target_table) = windows_target.as_table_mut() else {
+        return Ok(());
+    };
+    let build_deps = windows_target_table
+        .entry("build-dependencies")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(build_deps_table) = build_deps.as_table_mut() else {
+        return Ok(());
+    };
+
+    if !build_deps_table.contains_key("winresource") {
+        build_deps_table.insert("winresource".to_string(), Value::String("0.1.20".to_string()));
+        changed = true;
+    }
+    if build_deps_table.get("toml").and_then(Value::as_str) != Some("0.8.23") {
+        build_deps_table.insert("toml".to_string(), Value::String("0.8.23".to_string()));
+        changed = true;
+    }
+    if !build_deps_table.contains_key("image") {
+        let mut image = toml::value::Table::new();
+        image.insert("version".to_string(), Value::String("0.25.9".to_string()));
+        image.insert("default-features".to_string(), Value::Boolean(false));
+        image.insert(
+            "features".to_string(),
+            Value::Array(vec![
+                Value::String("png".to_string()),
+                Value::String("jpeg".to_string()),
+                Value::String("gif".to_string()),
+                Value::String("bmp".to_string()),
+                Value::String("tga".to_string()),
+                Value::String("webp".to_string()),
+                Value::String("ico".to_string()),
+            ]),
+        );
+        build_deps_table.insert("image".to_string(), Value::Table(image));
         changed = true;
     }
 

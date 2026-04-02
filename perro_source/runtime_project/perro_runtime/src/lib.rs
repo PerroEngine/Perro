@@ -17,6 +17,7 @@ pub use runtime::{Runtime, RuntimeUpdateTiming};
 pub use runtime_project::{
     LocalizationConfig, OcclusionCulling, ParticleSimDefault, ProjectLoadError, ProviderMode,
     RuntimeProject, RuntimeProjectConfig, StaticAnimationLookup, StaticAudioLookup,
+    StaticBytesLookup,
     StaticLocalizationLookup, StaticMaterialLookup, StaticParticleLookup, StaticProjectConfig,
     StaticSceneLookup, StaticSkeletonLookup, default_project_toml, ensure_project_layout,
     ensure_project_toml, load_project_toml, parse_project_toml,

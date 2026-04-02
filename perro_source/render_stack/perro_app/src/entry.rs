@@ -196,6 +196,7 @@ pub fn run_static_embedded_project(
         .with_static_animation_lookup(input.assets.animation_lookup)
         .with_static_skeleton_lookup(input.assets.skeleton_lookup)
         .with_static_audio_lookup(input.assets.audio_lookup)
+        .with_static_icon_lookup(input.assets.texture_lookup)
         .with_perro_assets_bytes(input.assets.perro_assets);
 
     let window_title = project.config.name.clone();

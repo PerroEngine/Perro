@@ -26,6 +26,7 @@ pub type StaticParticleLookup = fn(&str) -> Option<&'static ParticleProfile3D>;
 pub type StaticAnimationLookup = fn(&str) -> Option<&'static AnimationClip>;
 pub type StaticSkeletonLookup = fn(&str) -> Option<&'static [u8]>;
 pub type StaticAudioLookup = fn(&str) -> Option<&'static [u8]>;
+pub type StaticBytesLookup = fn(&str) -> Option<&'static [u8]>;
 
 /// Immutable project boot data owned by the runtime.
 #[derive(Debug, Clone)]
@@ -41,6 +42,7 @@ pub struct RuntimeProject {
     pub static_animation_lookup: Option<StaticAnimationLookup>,
     pub static_skeleton_lookup: Option<StaticSkeletonLookup>,
     pub static_audio_lookup: Option<StaticAudioLookup>,
+    pub static_icon_lookup: Option<StaticBytesLookup>,
     pub perro_assets_bytes: Option<&'static [u8]>,
 }
 
@@ -59,6 +61,7 @@ impl RuntimeProject {
             static_animation_lookup: None,
             static_skeleton_lookup: None,
             static_audio_lookup: None,
+            static_icon_lookup: None,
             perro_assets_bytes: None,
         }
     }
@@ -77,6 +80,7 @@ impl RuntimeProject {
             static_animation_lookup: None,
             static_skeleton_lookup: None,
             static_audio_lookup: None,
+            static_icon_lookup: None,
             perro_assets_bytes: None,
         }
     }
@@ -104,6 +108,7 @@ impl RuntimeProject {
             static_animation_lookup: None,
             static_skeleton_lookup: None,
             static_audio_lookup: None,
+            static_icon_lookup: None,
             perro_assets_bytes: None,
         })
     }
@@ -145,6 +150,11 @@ impl RuntimeProject {
 
     pub fn with_static_audio_lookup(mut self, lookup: StaticAudioLookup) -> Self {
         self.static_audio_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_static_icon_lookup(mut self, lookup: StaticBytesLookup) -> Self {
+        self.static_icon_lookup = Some(lookup);
         self
     }
 

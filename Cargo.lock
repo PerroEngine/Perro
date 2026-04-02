@@ -2434,6 +2434,7 @@ dependencies = [
  "futures-util",
  "gilrs",
  "hidapi",
+ "image",
  "perro_graphics",
  "perro_input",
  "perro_render_bridge",
