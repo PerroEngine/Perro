@@ -43,6 +43,7 @@ mod backend {
     const ACCEL_GRAVITY_SCALE: f32 = 0.2386;
     const ACCEL_ONE_G_TARGET: f32 = 1000.0;
     const GYRO_DEADZONE_DPS: f32 = 10.0;
+    const JOYCON1_GYRO_SCALE: f32 = 15.0;
 
     type ButtonBits = u16;
 
@@ -937,9 +938,11 @@ mod backend {
         };
 
         if start + 5 < data.len() {
-            let gx = i16::from_le_bytes([data[start], data[start + 1]]) as f32;
-            let gy = i16::from_le_bytes([data[start + 2], data[start + 3]]) as f32;
-            let gz = i16::from_le_bytes([data[start + 4], data[start + 5]]) as f32;
+            let gx = i16::from_le_bytes([data[start], data[start + 1]]) as f32 / JOYCON1_GYRO_SCALE;
+            let gy =
+                i16::from_le_bytes([data[start + 2], data[start + 3]]) as f32 / JOYCON1_GYRO_SCALE;
+            let gz =
+                i16::from_le_bytes([data[start + 4], data[start + 5]]) as f32 / JOYCON1_GYRO_SCALE;
             (gx, gy, gz)
         } else {
             (0.0, 0.0, 0.0)
