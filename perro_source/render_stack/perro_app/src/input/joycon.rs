@@ -14,7 +14,9 @@ mod backend {
     use btleplug::platform::Manager;
     use futures_util::stream::StreamExt;
     use hidapi::HidApi;
+    use perro_io::{load_asset, save_asset};
     use perro_input::{JoyConButton, JoyConSide};
+    use serde::{Deserialize, Serialize};
     use std::sync::OnceLock;
     use tokio::runtime::Builder;
     use tokio::time::{self, Duration as TokioDuration, Instant as TokioInstant};
@@ -42,12 +44,63 @@ mod backend {
     const STICK_AXIS_GAIN_NEG: f32 = 1.45;
     const ACCEL_GRAVITY_SCALE: f32 = 0.2386;
     const ACCEL_ONE_G_TARGET: f32 = 1000.0;
-    const GYRO_DEADZONE_DPS: f32 = 10.0;
     const JOYCON1_GYRO_SCALE: f32 = 15.0;
+    const CALIBRATION_STABLE_SECONDS: f32 = 3.0;
+    const CALIBRATION_MAX_MAG_DPS: f32 = 12.0;
+    const CALIBRATION_MAX_DELTA_DPS: f32 = 5.0;
+    const CALIBRATION_FOLDER: &str = "user://calibrations";
 
     type ButtonBits = u16;
 
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum CalibrationStatus {
+        Missing,
+        Calibrating,
+        Calibrated,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct CalibrationSession {
+        started_at: Instant,
+        last_sample: Option<(f32, f32, f32)>,
+        sum: (f32, f32, f32),
+        count: u32,
+    }
+
+    impl CalibrationSession {
+        fn new() -> Self {
+            Self {
+                started_at: Instant::now(),
+                last_sample: None,
+                sum: (0.0, 0.0, 0.0),
+                count: 0,
+            }
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct ConnectedJoyCon {
+        index: usize,
+        serial: String,
+        calibration_bias: (f32, f32, f32),
+        status: CalibrationStatus,
+        session: Option<CalibrationSession>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct GyroCalibrationFile {
+        version: u32,
+        bias_x: f32,
+        bias_y: f32,
+        bias_z: f32,
+    }
+
     enum JoyConEvent {
+        Connected {
+            index: usize,
+            side: JoyConSide,
+            serial: String,
+        },
         Report {
             index: usize,
             side: JoyConSide,
@@ -86,7 +139,7 @@ mod backend {
         rx: Option<Receiver<JoyConEvent>>,
         tx: Option<Sender<JoyConEvent>>,
         last_buttons: HashMap<(usize, JoyConSide), ButtonBits>,
-        gyro_bias: HashMap<(usize, JoyConSide), (f32, f32, f32)>,
+        connected: HashMap<(usize, JoyConSide), ConnectedJoyCon>,
         last_scan: Option<Instant>,
         ble_started: bool,
         ble_stop: Option<Arc<AtomicBool>>,
@@ -110,6 +163,7 @@ mod backend {
         pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
             self.ensure_channel();
             self.scan_if_needed(app);
+            self.consume_calibration_requests(app);
             self.drain_events(app);
         }
 
@@ -179,6 +233,14 @@ mod backend {
 
                 let index = assign_slot(&self.slots, &slot_key);
                 log_joycon_connected(index, side, &serial);
+                let _ = self.tx.as_ref().and_then(|tx| {
+                    tx.send(JoyConEvent::Connected {
+                        index,
+                        side,
+                        serial: serial.clone(),
+                    })
+                    .ok()
+                });
                 self.spawn_device_thread(slot_key, serial, pid, side, index);
             }
 
@@ -193,6 +255,7 @@ mod backend {
                         });
                         clear_joycon_index(app, index);
                         self.last_buttons.retain(|(idx, _), _| *idx != index);
+                        self.connected.retain(|(idx, _), _| *idx != index);
                     }
                 }
                 connected
@@ -255,8 +318,20 @@ mod backend {
                 return;
             };
 
+            let mut pending = Vec::new();
             while let Ok(event) = rx.try_recv() {
+                pending.push(event);
+            }
+
+            for event in pending {
                 match event {
+                    JoyConEvent::Connected {
+                        index,
+                        side,
+                        serial,
+                    } => {
+                        self.on_connected(app, index, side, &serial);
+                    }
                     JoyConEvent::Report {
                         index,
                         side,
@@ -272,16 +347,73 @@ mod backend {
                             side,
                             data,
                             &mut self.last_buttons,
-                            &mut self.gyro_bias,
+                            &mut self.connected,
                         );
                     }
                     JoyConEvent::Disconnected { index } => {
                         clear_joycon_index(app, index);
                         self.last_buttons.retain(|(idx, _), _| *idx != index);
-                        self.gyro_bias.retain(|(idx, _), _| *idx != index);
+                        self.connected.retain(|(idx, _), _| *idx != index);
                     }
                 }
             }
+        }
+
+        fn consume_calibration_requests<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+            let requests = app.take_joycon_calibration_requests();
+            for index in requests {
+                self.start_calibration(app, index);
+            }
+        }
+
+        fn start_calibration<B: GraphicsBackend>(&mut self, app: &mut App<B>, index: usize) {
+            if let Some((_, controller)) = self.connected.iter_mut().find(|((idx, _), _)| *idx == index) {
+                controller.status = CalibrationStatus::Calibrating;
+                controller.session = Some(CalibrationSession::new());
+                app.set_joycon_calibration_in_progress(index, true);
+                app.set_joycon_calibrated(index, false);
+                app.set_joycon_calibration_bias(index, 0.0, 0.0, 0.0);
+            }
+        }
+
+        fn on_connected<B: GraphicsBackend>(
+            &mut self,
+            app: &mut App<B>,
+            index: usize,
+            side: JoyConSide,
+            serial: &str,
+        ) {
+            let file = load_calibration_file(serial);
+            let (status, bias) = match file {
+                Some(f) => (
+                    CalibrationStatus::Calibrated,
+                    (f.bias_x, f.bias_y, f.bias_z),
+                ),
+                None => (CalibrationStatus::Missing, (0.0, 0.0, 0.0)),
+            };
+            eprintln!(
+                "[joycon] calibration index={} side={:?} serial={} calibrated={} path={}",
+                index,
+                side,
+                serial,
+                status == CalibrationStatus::Calibrated,
+                calibration_path(serial)
+            );
+            self.connected.insert(
+                (index, side),
+                ConnectedJoyCon {
+                    index,
+                    serial: serial.to_string(),
+                    calibration_bias: bias,
+                    status,
+                    session: None,
+                },
+            );
+            app.set_joycon_side(index, side);
+            app.set_joycon_connected(index, true);
+            app.set_joycon_calibration_in_progress(index, false);
+            app.set_joycon_calibrated(index, status == CalibrationStatus::Calibrated);
+            app.set_joycon_calibration_bias(index, bias.0, bias.1, bias.2);
         }
     }
 
@@ -452,6 +584,11 @@ mod backend {
                         }
 
                         let index = assign_slot(&slots, &key);
+                        let _ = tx.send(JoyConEvent::Connected {
+                            index,
+                            side,
+                            serial: serial.clone(),
+                        });
                         let tx_clone = tx.clone();
                         let slots_clone = Arc::clone(&slots);
                         let key_clone = key.clone();
@@ -641,7 +778,7 @@ mod backend {
         side: JoyConSide,
         data: JoyConInputData,
         last_buttons: &mut HashMap<(usize, JoyConSide), ButtonBits>,
-        gyro_bias: &mut HashMap<(usize, JoyConSide), (f32, f32, f32)>,
+        connected: &mut HashMap<(usize, JoyConSide), ConnectedJoyCon>,
     ) {
         let key = (index, side);
         let prev = last_buttons.get(&key).copied();
@@ -649,35 +786,79 @@ mod backend {
         apply_buttons(app, index, data.buttons, prev);
         last_buttons.insert(key, data.buttons);
 
+        app.set_joycon_side(index, side);
+        app.set_joycon_connected(index, true);
         app.set_joycon_stick(index, data.stick.0, data.stick.1);
-        let gyro = stabilize_gyro(data.gyro, data.accel, key, gyro_bias);
+        let gyro = stabilize_gyro(app, key, data.gyro, connected);
         app.set_joycon_gyro(index, gyro.0, gyro.1, gyro.2);
         app.set_joycon_accel(index, data.accel.0, data.accel.1, data.accel.2);
     }
 
-    fn stabilize_gyro(
-        raw_gyro: (f32, f32, f32),
-        accel: (f32, f32, f32),
+    fn stabilize_gyro<B: GraphicsBackend>(
+        app: &mut App<B>,
         key: (usize, JoyConSide),
-        gyro_bias: &mut HashMap<(usize, JoyConSide), (f32, f32, f32)>,
+        raw_gyro: (f32, f32, f32),
+        connected: &mut HashMap<(usize, JoyConSide), ConnectedJoyCon>,
     ) -> (f32, f32, f32) {
-        let bias = gyro_bias.entry(key).or_insert((0.0, 0.0, 0.0));
-        let amag = (accel.0 * accel.0 + accel.1 * accel.1 + accel.2 * accel.2).sqrt();
-        let gmag =
-            (raw_gyro.0 * raw_gyro.0 + raw_gyro.1 * raw_gyro.1 + raw_gyro.2 * raw_gyro.2).sqrt();
+        let Some(controller) = connected.get_mut(&key) else {
+            return raw_gyro;
+        };
 
-        // Learn bias only while likely still.
-        let likely_still = (amag - ACCEL_ONE_G_TARGET).abs() < 180.0 && gmag < 260.0;
-        if likely_still {
-            const ALPHA: f32 = 0.03;
-            bias.0 = bias.0 + (raw_gyro.0 - bias.0) * ALPHA;
-            bias.1 = bias.1 + (raw_gyro.1 - bias.1) * ALPHA;
-            bias.2 = bias.2 + (raw_gyro.2 - bias.2) * ALPHA;
+        if controller.status == CalibrationStatus::Calibrating
+            && let Some(session) = controller.session.as_mut()
+        {
+            let mag =
+                (raw_gyro.0 * raw_gyro.0 + raw_gyro.1 * raw_gyro.1 + raw_gyro.2 * raw_gyro.2).sqrt();
+            let delta = session
+                .last_sample
+                .map(|prev| {
+                    let dx = raw_gyro.0 - prev.0;
+                    let dy = raw_gyro.1 - prev.1;
+                    let dz = raw_gyro.2 - prev.2;
+                    (dx * dx + dy * dy + dz * dz).sqrt()
+                })
+                .unwrap_or(0.0);
+
+            let sample_is_steady = mag <= CALIBRATION_MAX_MAG_DPS && delta <= CALIBRATION_MAX_DELTA_DPS;
+            if sample_is_steady {
+                session.last_sample = Some(raw_gyro);
+                session.sum.0 += raw_gyro.0;
+                session.sum.1 += raw_gyro.1;
+                session.sum.2 += raw_gyro.2;
+                session.count = session.count.saturating_add(1);
+            } else {
+                *session = CalibrationSession::new();
+            }
+
+            if session.started_at.elapsed().as_secs_f32() >= CALIBRATION_STABLE_SECONDS
+                && session.count > 0
+            {
+                let inv = 1.0 / (session.count as f32);
+                let bias = (session.sum.0 * inv, session.sum.1 * inv, session.sum.2 * inv);
+                controller.calibration_bias = bias;
+                controller.status = CalibrationStatus::Calibrated;
+                controller.session = None;
+                save_calibration_file(
+                    &controller.serial,
+                    GyroCalibrationFile {
+                        version: 1,
+                        bias_x: bias.0,
+                        bias_y: bias.1,
+                        bias_z: bias.2,
+                    },
+                );
+                app.set_joycon_calibration_in_progress(controller.index, false);
+                app.set_joycon_calibrated(controller.index, true);
+                app.set_joycon_calibration_bias(controller.index, bias.0, bias.1, bias.2);
+            } else {
+                app.set_joycon_calibration_in_progress(controller.index, true);
+                app.set_joycon_calibrated(controller.index, false);
+            }
         }
 
-        let x = apply_deadzone(raw_gyro.0 - bias.0, GYRO_DEADZONE_DPS);
-        let y = apply_deadzone(raw_gyro.1 - bias.1, GYRO_DEADZONE_DPS);
-        let z = apply_deadzone(raw_gyro.2 - bias.2, GYRO_DEADZONE_DPS);
+        let x = raw_gyro.0 - controller.calibration_bias.0;
+        let y = raw_gyro.1 - controller.calibration_bias.1;
+        let z = raw_gyro.2 - controller.calibration_bias.2;
         (x, y, z)
     }
 
@@ -685,6 +866,10 @@ mod backend {
         for button in ALL_BUTTONS {
             app.set_joycon_button_state(index, button, false);
         }
+        app.set_joycon_connected(index, false);
+        app.set_joycon_calibration_in_progress(index, false);
+        app.set_joycon_calibrated(index, false);
+        app.set_joycon_calibration_bias(index, 0.0, 0.0, 0.0);
         app.set_joycon_stick(index, 0.0, 0.0);
         app.set_joycon_gyro(index, 0.0, 0.0, 0.0);
         app.set_joycon_accel(index, 0.0, 0.0, 0.0);
@@ -860,7 +1045,7 @@ mod backend {
         };
 
         let accel = normalize_accel_to_one_g(decode_joycon2_accel_best_candidate(data, base));
-        let gyro = normalize_gyro_near_rest(decode_joycon2_gyro_best_candidate(data, base));
+        let gyro = decode_joycon2_gyro_best_candidate(data, base);
 
         Some(JoyConInputData {
             buttons,
@@ -961,6 +1146,23 @@ mod backend {
         device.write(&CMD_ENABLE_IMU)?;
         device.write(&CMD_SET_REPORT_30)?;
         Ok(())
+    }
+
+    fn calibration_path(serial: &str) -> String {
+        format!("{CALIBRATION_FOLDER}/{serial}.cal")
+    }
+
+    fn load_calibration_file(serial: &str) -> Option<GyroCalibrationFile> {
+        let path = calibration_path(serial);
+        let bytes = load_asset(&path).ok()?;
+        serde_json::from_slice::<GyroCalibrationFile>(&bytes).ok()
+    }
+
+    fn save_calibration_file(serial: &str, calibration: GyroCalibrationFile) {
+        let path = calibration_path(serial);
+        if let Ok(data) = serde_json::to_vec_pretty(&calibration) {
+            let _ = save_asset(&path, &data);
+        }
     }
 
     fn log_joycon_connected(index: usize, side: JoyConSide, serial: &str) {
@@ -1100,19 +1302,6 @@ mod backend {
         }
         let gain = (ACCEL_ONE_G_TARGET / amag).clamp(0.5, 2.0);
         (accel.0 * gain, accel.1 * gain, accel.2 * gain)
-    }
-
-    fn normalize_gyro_near_rest(gyro: (f32, f32, f32)) -> (f32, f32, f32) {
-        (
-            apply_deadzone(gyro.0, GYRO_DEADZONE_DPS),
-            apply_deadzone(gyro.1, GYRO_DEADZONE_DPS),
-            apply_deadzone(gyro.2, GYRO_DEADZONE_DPS),
-        )
-    }
-
-    #[inline(always)]
-    fn apply_deadzone(v: f32, dz: f32) -> f32 {
-        if v.abs() < dz { 0.0 } else { v }
     }
 
     async fn send_joycon2_enable_sequence(

@@ -45,8 +45,13 @@ pub struct JoyConState {
     buttons_down: [u64; JoyConState::BUTTON_WORDS],
     buttons_pressed: [u64; JoyConState::BUTTON_WORDS],
     buttons_released: [u64; JoyConState::BUTTON_WORDS],
+    connected: bool,
+    calibrated: bool,
+    calibration_in_progress: bool,
+    calibration_requested: bool,
     stick_x: f32,
     stick_y: f32,
+    calibration_bias: perro_structs::Vector3,
     gyro: perro_structs::Vector3,
     accel: perro_structs::Vector3,
 }
@@ -60,8 +65,13 @@ impl JoyConState {
             buttons_down: [0; JoyConState::BUTTON_WORDS],
             buttons_pressed: [0; JoyConState::BUTTON_WORDS],
             buttons_released: [0; JoyConState::BUTTON_WORDS],
+            connected: false,
+            calibrated: false,
+            calibration_in_progress: false,
+            calibration_requested: false,
             stick_x: 0.0,
             stick_y: 0.0,
+            calibration_bias: perro_structs::Vector3::new(0.0, 0.0, 0.0),
             gyro: perro_structs::Vector3::new(0.0, 0.0, 0.0),
             accel: perro_structs::Vector3::new(0.0, 0.0, 0.0),
         }
@@ -74,6 +84,9 @@ impl JoyConState {
 
     #[inline(always)]
     pub fn set_side(&mut self, side: JoyConSide) {
+        if self.side == side {
+            return;
+        }
         self.side = side;
         self.buttons_down.fill(0);
         self.buttons_pressed.fill(0);
@@ -84,6 +97,31 @@ impl JoyConState {
     pub fn begin_frame(&mut self) {
         self.buttons_pressed.fill(0);
         self.buttons_released.fill(0);
+    }
+
+    #[inline(always)]
+    pub fn set_connected(&mut self, connected: bool) {
+        self.connected = connected;
+    }
+
+    #[inline(always)]
+    pub fn set_calibrated(&mut self, calibrated: bool) {
+        self.calibrated = calibrated;
+    }
+
+    #[inline(always)]
+    pub fn set_calibration_in_progress(&mut self, in_progress: bool) {
+        self.calibration_in_progress = in_progress;
+    }
+
+    #[inline(always)]
+    pub fn set_calibration_requested(&mut self, requested: bool) {
+        self.calibration_requested = requested;
+    }
+
+    #[inline(always)]
+    pub fn set_calibration_bias(&mut self, x: f32, y: f32, z: f32) {
+        self.calibration_bias = perro_structs::Vector3::new(x, y, z);
     }
 
     #[inline(always)]
@@ -143,6 +181,36 @@ impl JoyConState {
     #[inline(always)]
     pub fn accel(&self) -> perro_structs::Vector3 {
         self.accel
+    }
+
+    #[inline(always)]
+    pub fn connected(&self) -> bool {
+        self.connected
+    }
+
+    #[inline(always)]
+    pub fn calibrated(&self) -> bool {
+        self.calibrated
+    }
+
+    #[inline(always)]
+    pub fn calibration_in_progress(&self) -> bool {
+        self.calibration_in_progress
+    }
+
+    #[inline(always)]
+    pub fn calibration_requested(&self) -> bool {
+        self.calibration_requested
+    }
+
+    #[inline(always)]
+    pub fn needs_calibration(&self) -> bool {
+        self.connected && !self.calibrated && !self.calibration_in_progress
+    }
+
+    #[inline(always)]
+    pub fn calibration_bias(&self) -> perro_structs::Vector3 {
+        self.calibration_bias
     }
 
     #[inline(always)]
@@ -306,6 +374,62 @@ macro_rules! joycon_accel {
         let jc = $ipt.JoyCons();
         jc.get($index)
             .map(|jc| jc.accel())
+            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+    }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `joycon_connected!(&InputContext<_>, JoyConIndex) -> bool`
+macro_rules! joycon_connected {
+    ($ipt:expr, $index:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index).map(|jc| jc.connected()).unwrap_or(false)
+    }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `joycon_calibrated!(&InputContext<_>, JoyConIndex) -> bool`
+macro_rules! joycon_calibrated {
+    ($ipt:expr, $index:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index).map(|jc| jc.calibrated()).unwrap_or(false)
+    }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `joycon_calibrating!(&InputContext<_>, JoyConIndex) -> bool`
+macro_rules! joycon_calibrating {
+    ($ipt:expr, $index:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index)
+            .map(|jc| jc.calibration_in_progress())
+            .unwrap_or(false)
+    }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `joycon_needs_calibration!(&InputContext<_>, JoyConIndex) -> bool`
+macro_rules! joycon_needs_calibration {
+    ($ipt:expr, $index:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index)
+            .map(|jc| jc.needs_calibration())
+            .unwrap_or(false)
+    }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `joycon_calibration_bias!(&InputContext<_>, JoyConIndex) -> Vector3`
+macro_rules! joycon_calibration_bias {
+    ($ipt:expr, $index:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index)
+            .map(|jc| jc.calibration_bias())
             .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
     }};
 }

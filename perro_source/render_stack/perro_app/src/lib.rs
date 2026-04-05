@@ -141,6 +141,32 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn set_joycon_side(&mut self, index: usize, side: perro_input::JoyConSide) {
+        self.runtime.set_joycon_side(index, side);
+    }
+
+    #[inline]
+    pub fn set_joycon_connected(&mut self, index: usize, connected: bool) {
+        self.runtime.set_joycon_connected(index, connected);
+    }
+
+    #[inline]
+    pub fn set_joycon_calibrated(&mut self, index: usize, calibrated: bool) {
+        self.runtime.set_joycon_calibrated(index, calibrated);
+    }
+
+    #[inline]
+    pub fn set_joycon_calibration_in_progress(&mut self, index: usize, in_progress: bool) {
+        self.runtime
+            .set_joycon_calibration_in_progress(index, in_progress);
+    }
+
+    #[inline]
+    pub fn set_joycon_calibration_bias(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.runtime.set_joycon_calibration_bias(index, x, y, z);
+    }
+
+    #[inline]
     pub fn set_joycon_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
         self.runtime.set_joycon_gyro(index, x, y, z);
     }
@@ -148,6 +174,11 @@ impl<B: GraphicsBackend> App<B> {
     #[inline]
     pub fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
         self.runtime.set_joycon_accel(index, x, y, z);
+    }
+
+    #[inline]
+    pub fn take_joycon_calibration_requests(&mut self) -> Vec<usize> {
+        self.runtime.take_joycon_calibration_requests()
     }
 
     #[inline]

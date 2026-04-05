@@ -199,6 +199,10 @@ impl InputSnapshot {
                 InputCommand::BindPlayer { index, binding } => {
                     self.bind_player(index, binding);
                 }
+                InputCommand::RequestJoyConCalibration { index } => {
+                    let state = self.joycon_mut(index);
+                    state.set_calibration_requested(true);
+                }
             }
         }
     }
@@ -227,6 +231,36 @@ impl InputSnapshot {
     pub fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
         let state = self.joycon_mut(index);
         state.set_button_state(button, is_down);
+    }
+
+    #[inline]
+    pub fn set_joycon_side(&mut self, index: usize, side: JoyConSide) {
+        let state = self.joycon_mut(index);
+        state.set_side(side);
+    }
+
+    #[inline]
+    pub fn set_joycon_connected(&mut self, index: usize, connected: bool) {
+        let state = self.joycon_mut(index);
+        state.set_connected(connected);
+    }
+
+    #[inline]
+    pub fn set_joycon_calibrated(&mut self, index: usize, calibrated: bool) {
+        let state = self.joycon_mut(index);
+        state.set_calibrated(calibrated);
+    }
+
+    #[inline]
+    pub fn set_joycon_calibration_in_progress(&mut self, index: usize, in_progress: bool) {
+        let state = self.joycon_mut(index);
+        state.set_calibration_in_progress(in_progress);
+    }
+
+    #[inline]
+    pub fn set_joycon_calibration_bias(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        let state = self.joycon_mut(index);
+        state.set_calibration_bias(x, y, z);
     }
 
     #[inline]
@@ -281,6 +315,18 @@ impl InputSnapshot {
     pub fn viewport_size(&self) -> Vector2 {
         self.mouse.viewport_size()
     }
+
+    #[inline]
+    pub fn take_joycon_calibration_requests(&mut self) -> Vec<usize> {
+        let mut out = Vec::new();
+        for (index, joycon) in self.joycons.iter_mut().enumerate() {
+            if joycon.calibration_requested() {
+                out.push(index);
+                joycon.set_calibration_requested(false);
+            }
+        }
+        out
+    }
 }
 
 impl Default for InputSnapshot {
@@ -294,6 +340,9 @@ pub enum InputCommand {
     BindPlayer {
         index: usize,
         binding: PlayerBinding,
+    },
+    RequestJoyConCalibration {
+        index: usize,
     },
 }
 
@@ -393,6 +442,15 @@ impl<'ipt, IP: InputAPI + ?Sized> InputContext<'ipt, IP> {
             buffer
                 .borrow_mut()
                 .push(InputCommand::BindPlayer { index, binding });
+        }
+    }
+
+    #[inline]
+    pub fn request_joycon_calibration(&self, index: usize) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer
+                .borrow_mut()
+                .push(InputCommand::RequestJoyConCalibration { index });
         }
     }
 }
@@ -936,6 +994,15 @@ macro_rules! viewport_size {
     };
 }
 
+#[macro_export]
+/// Signature:
+/// - `joycon_request_calibration!(&InputContext<_>, JoyConIndex) -> ()`
+macro_rules! joycon_request_calibration {
+    ($ipt:expr, $index:expr) => {{
+        $ipt.request_joycon_calibration($index)
+    }};
+}
+
 pub mod prelude {
     pub use crate::{
         GamepadAxis, GamepadButton, GamepadIndex, GamepadModule, GamepadState, InputAPI,
@@ -943,8 +1010,10 @@ pub mod prelude {
         JoyConState, KeyCode, KeyModule, KeyboardModule, KeyboardState, MouseButton, MouseModule,
         MouseState, MouseStateModule, PlayerBinding, PlayerModule, PlayerState, gamepad_accel,
         gamepad_down, gamepad_get, gamepad_gyro, gamepad_left_stick, gamepad_list, gamepad_pressed,
-        gamepad_released, gamepad_right_stick, joycon_accel, joycon_down, joycon_get, joycon_gyro,
-        joycon_list, joycon_pressed, joycon_released, joycon_side, joycon_stick, key_down,
+        gamepad_released, gamepad_right_stick, joycon_accel, joycon_calibrated,
+        joycon_calibrating, joycon_calibration_bias, joycon_connected, joycon_down, joycon_get,
+        joycon_gyro, joycon_list, joycon_needs_calibration, joycon_pressed,
+        joycon_request_calibration, joycon_released, joycon_side, joycon_stick, key_down,
         key_pressed, key_released, mouse_delta, mouse_down, mouse_position, mouse_pressed,
         mouse_released, mouse_wheel, player_bind, player_get, player_list, viewport_size,
     };
