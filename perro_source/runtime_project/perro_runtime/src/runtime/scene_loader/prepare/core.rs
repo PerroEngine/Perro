@@ -36,7 +36,7 @@ use perro_structs::{
     Vector3,
 };
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 #[cfg(feature = "profile")]
 use std::time::Duration;
 #[cfg(feature = "profile")]
@@ -166,6 +166,52 @@ fn push_entry_prepared(
         .parent
         .as_ref()
         .map(|p| remap_key(p.as_ref(), key_map));
+    let mut merged_root_entry = None;
+
+    if let Some(root_of_path) = &entry.root_of {
+        if include_stack.contains(root_of_path.as_ref()) {
+            return Err(format!(
+                "root_of cycle detected while loading `{}` for host `{}`",
+                root_of_path.as_ref(),
+                key
+            ));
+        }
+        include_stack.insert(root_of_path.to_string());
+        let root_merge_result = (|| {
+            let import_scene = load_scene(root_of_path.as_ref())?;
+            let import_root = import_scene
+                .root
+                .as_ref()
+                .map(|v| v.as_ref().to_string())
+                .ok_or_else(|| format!("root_of scene `{}` has no @root", root_of_path.as_ref()))?;
+            let import_root_node = import_scene
+                .nodes
+                .iter()
+                .find(|node| node.key.as_ref() == import_root)
+                .ok_or_else(|| {
+                    format!(
+                        "root_of scene `{}` root key `{import_root}` was not found in node list",
+                        root_of_path.as_ref()
+                    )
+                })?;
+            let merged = merge_root_host_entry(entry, import_root_node);
+            expand_import_children_into_host(
+                key.as_str(),
+                root_of_path.as_ref(),
+                &import_scene,
+                &import_root,
+                prepared_nodes,
+                scripts,
+                include_stack,
+                load_scene,
+            )?;
+            Ok::<SceneDefNodeEntry, String>(merged)
+        })();
+        include_stack.remove(root_of_path.as_ref());
+        merged_root_entry = Some(root_merge_result?);
+    }
+
+    let entry = merged_root_entry.as_ref().unwrap_or(entry);
 
     let (
         node,
@@ -206,44 +252,21 @@ fn push_entry_prepared(
         });
     }
 
-    if let Some(root_of_path) = &entry.root_of {
-        expand_root_of_into_host(
-            key.as_str(),
-            root_of_path.as_ref(),
-            prepared_nodes,
-            scripts,
-            include_stack,
-            load_scene,
-        )?;
-    }
-
     Ok(())
 }
 
-fn expand_root_of_into_host(
+fn expand_import_children_into_host(
     host_key: &str,
     path: &str,
+    import_scene: &Scene,
+    import_root: &str,
     prepared_nodes: &mut Vec<PendingNode>,
     scripts: &mut Vec<PendingScript>,
     include_stack: &mut HashSet<String>,
     load_scene: &dyn Fn(&str) -> Result<Scene, String>,
 ) -> Result<(), String> {
-    if include_stack.contains(path) {
-        return Err(format!(
-            "root_of cycle detected while loading `{path}` for host `{host_key}`"
-        ));
-    }
-    include_stack.insert(path.to_string());
-
-    let import_scene = load_scene(path)?;
-    let import_root = import_scene
-        .root
-        .as_ref()
-        .map(|v| v.as_ref().to_string())
-        .ok_or_else(|| format!("root_of scene `{path}` has no @root"))?;
-
     let mut map = HashMap::<String, String>::new();
-    map.insert(import_root.clone(), host_key.to_string());
+    map.insert(import_root.to_string(), host_key.to_string());
     for node in import_scene.nodes.as_ref() {
         let source_key = node.key.as_ref().to_string();
         if source_key == import_root {
@@ -270,9 +293,97 @@ fn expand_root_of_into_host(
             load_scene,
         )?;
     }
-
-    include_stack.remove(path);
     Ok(())
+}
+
+fn merge_root_host_entry(host: &SceneDefNodeEntry, base_root: &SceneDefNodeEntry) -> SceneDefNodeEntry {
+    let mut merged = host.clone();
+    merged.name = host.name.clone().or_else(|| base_root.name.clone());
+    if host.tags.is_empty() {
+        merged.tags = base_root.tags.clone();
+    }
+    if host.children.is_empty() {
+        merged.children = base_root.children.clone();
+    }
+    merged.parent = host.parent.clone().or_else(|| base_root.parent.clone());
+    merged.script = match (&host.script, host.clear_script) {
+        (Some(local), _) => Some(local.clone()),
+        (None, true) => None,
+        (None, false) => base_root.script.clone(),
+    };
+    merged.clear_script = false;
+    merged.script_vars = merge_scene_object_fields(&base_root.script_vars, &host.script_vars);
+    merged.data = merge_scene_node_data(&base_root.data, &host.data);
+    merged
+}
+
+fn merge_scene_node_data(base: &SceneDefNodeData, local: &SceneDefNodeData) -> SceneDefNodeData {
+    if base.ty != local.ty {
+        return local.clone();
+    }
+
+    let base_fields = flatten_scene_node_fields(base);
+    let local_fields = flatten_scene_node_fields(local);
+    let merged_fields = merge_scene_object_fields(&base_fields, &local_fields);
+    SceneDefNodeData {
+        ty: local.ty.clone(),
+        fields: merged_fields,
+        base: None,
+    }
+}
+
+fn flatten_scene_node_fields(data: &SceneDefNodeData) -> Vec<SceneObjectField> {
+    let mut out = Vec::new();
+    if let Some(base) = data.base_ref() {
+        out.extend(flatten_scene_node_fields(base));
+    }
+    out.extend(data.fields.iter().cloned());
+    out
+}
+
+fn merge_scene_object_fields(
+    base: &[SceneObjectField],
+    local: &[SceneObjectField],
+) -> Cow<'static, [SceneObjectField]> {
+    let mut merged: BTreeMap<String, SceneValue> = BTreeMap::new();
+    for (name, value) in base {
+        merged.insert(name.to_string(), value.clone());
+    }
+    for (name, value) in local {
+        if is_unset_marker(value) {
+            merged.remove(name.as_ref());
+            continue;
+        }
+
+        let key = name.to_string();
+        let next_value = if let Some(prev) = merged.get(&key) {
+            merge_scene_values(prev, value)
+        } else {
+            value.clone()
+        };
+        merged.insert(key, next_value);
+    }
+
+    Cow::Owned(
+        merged
+            .into_iter()
+            .map(|(name, value)| (Cow::Owned(name), value))
+            .collect(),
+    )
+}
+
+fn merge_scene_values(base: &SceneValue, local: &SceneValue) -> SceneValue {
+    match (base, local) {
+        (SceneValue::Object(base_fields), SceneValue::Object(local_fields)) => {
+            SceneValue::Object(merge_scene_object_fields(base_fields, local_fields))
+        }
+        _ => local.clone(),
+    }
+}
+
+fn is_unset_marker(value: &SceneValue) -> bool {
+    matches!(value, SceneValue::Key(key) if key.as_ref() == "__unset__")
+        || matches!(value, SceneValue::Str(text) if text.as_ref() == "__unset__")
 }
 
 fn remap_key(key: &str, key_map: &HashMap<String, String>) -> String {
@@ -400,5 +511,151 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "PointLight3D" => Ok(SceneNodeData::PointLight3D(build_point_light_3d(data))),
         "SpotLight3D" => Ok(SceneNodeData::SpotLight3D(build_spot_light_3d(data))),
         other => Err(format!("unsupported scene node type `{other}`")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use perro_nodes::SceneNodeData;
+    use perro_scene::Parser;
+
+    #[test]
+    fn root_of_merges_root_defaults_overrides_and_children() {
+        let host = Parser::new(
+            r#"
+            @root = host
+            [host]
+            root_of = "res://base.scn"
+            script_vars = {
+                keep: 5,
+                remove_me: __unset__,
+                nested: { b: 20, c: 30 },
+                added: true
+            }
+            [Node2D]
+                rotation = 3.0
+            [/Node2D]
+            [/host]
+
+            [local_child]
+            parent = host
+            [Node]
+            [/Node]
+            [/local_child]
+            "#,
+        )
+        .parse_scene();
+
+        let base = Parser::new(
+            r#"
+            @root = base_root
+            [base_root]
+            script = "res://base_script.rs"
+            script_vars = {
+                keep: 1,
+                remove_me: 2,
+                nested: { a: 10, b: 11 },
+                old_only: 9
+            }
+            [Node2D]
+                position = (1, 2)
+                rotation = 1.0
+            [/Node2D]
+            [/base_root]
+
+            [base_child]
+            parent = base_root
+            [Node]
+            [/Node]
+            [/base_child]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&host, &|path| match path {
+            "res://base.scn" => Ok(base.clone()),
+            _ => Err(format!("unknown scene path `{path}`")),
+        })
+        .expect("prepare scene");
+
+        let host_script = prepared
+            .scripts
+            .iter()
+            .find(|pending| pending.node_key == "host")
+            .expect("host script");
+        assert_eq!(host_script.script_path, "res://base_script.rs");
+
+        let mut vars = BTreeMap::new();
+        for (name, value) in &host_script.scene_injected_vars {
+            vars.insert(name.as_str(), value);
+        }
+        assert!(vars.contains_key("keep"));
+        assert!(vars.contains_key("added"));
+        assert!(vars.contains_key("nested"));
+        assert!(vars.contains_key("old_only"));
+        assert!(!vars.contains_key("remove_me"));
+
+        match vars.get("nested").expect("nested var") {
+            SceneValue::Object(fields) => {
+                assert!(fields.iter().any(|(k, _)| k.as_ref() == "a"));
+                assert!(fields.iter().any(|(k, _)| k.as_ref() == "b"));
+                assert!(fields.iter().any(|(k, _)| k.as_ref() == "c"));
+            }
+            other => panic!("expected nested object, got {other:?}"),
+        }
+
+        let host_node = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key == "host")
+            .expect("host node");
+        match &host_node.node.data {
+            SceneNodeData::Node2D(node_2d) => {
+                assert_eq!(node_2d.position.x, 1.0);
+                assert_eq!(node_2d.position.y, 2.0);
+                assert_eq!(node_2d.rotation, 3.0);
+            }
+            other => panic!("expected Node2D host node, got {other:?}"),
+        }
+
+        assert!(prepared.nodes.iter().any(|pending| pending.key == "host::base_child"));
+        assert!(prepared.nodes.iter().any(|pending| pending.key == "local_child"));
+    }
+
+    #[test]
+    fn root_of_script_clear_prevents_inherited_script() {
+        let host = Parser::new(
+            r#"
+            @root = host
+            [host]
+            root_of = "res://base.scn"
+            script = null
+            [Node]
+            [/Node]
+            [/host]
+            "#,
+        )
+        .parse_scene();
+
+        let base = Parser::new(
+            r#"
+            @root = base_root
+            [base_root]
+            script = "res://base_script.rs"
+            [Node]
+            [/Node]
+            [/base_root]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&host, &|path| match path {
+            "res://base.scn" => Ok(base.clone()),
+            _ => Err(format!("unknown scene path `{path}`")),
+        })
+        .expect("prepare scene");
+
+        assert!(!prepared.scripts.iter().any(|pending| pending.node_key == "host"));
     }
 }

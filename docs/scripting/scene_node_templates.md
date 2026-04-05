@@ -25,6 +25,67 @@ script = "res://path/to/script.rs"
 [/name]
 ```
 
+## Scenes Inside Scenes (`root_of`)
+
+`root_of` lets a node act like an **Imported Scene Instance** layered on top of a **Base Scene Template** root.
+Think of it as:
+
+- `final node = Base Scene Template root + Imported Scene Instance overrides`
+- Base Scene Template children are imported under the host node
+- Imported Scene Instance children still work normally
+
+### Example
+
+```text
+@root = Main
+
+[Main]
+root_of = "res://shared/player_base.scn"
+script_vars = {
+    speed = 9.5
+    debug_only = __unset__
+    tuning = { sprint = 2.2 }
+}
+    [Node2D]
+        position = (16, 48)
+    [/Node2D]
+[/Main]
+
+[ExtraHat]
+parent = Main
+    [Sprite2D]
+        texture = "res://cosmetics/hat.png"
+        [Node2D]
+            position = (0, -6)
+        [/Node2D]
+    [/Sprite2D]
+[/ExtraHat]
+```
+
+### Merge Rules
+
+- `script`:
+  - default: inherit from Base Scene Template root
+  - if Imported Scene Instance sets `script = "..."`: instance replaces template script
+  - if Imported Scene Instance sets `script = null`: inherited template script is removed
+- `script_vars`:
+  - default: map merge
+  - Imported Scene Instance key wins on conflicts
+  - use `__unset__` to remove inherited keys
+  - nested objects are merged by key
+- normal properties (position, rotation, etc.):
+  - if Imported Scene Instance defines field: instance value wins
+  - if Imported Scene Instance omits field: template value is kept
+- arrays/lists:
+  - Imported Scene Instance value replaces Base Scene Template value
+
+### Notes
+
+- Base Scene Template root type and Imported Scene Instance node type should match for field-level merging.
+  - If types differ, Imported Scene Instance node data is used as-is.
+- `root_of` expansion supports nesting (a Base Scene Template can itself use `root_of`).
+- Cycles are rejected (`A` includes `B` includes `A`).
+
 ## 2D Templates
 
 ```text

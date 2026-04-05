@@ -18,6 +18,7 @@ See:
 - [Math Types](math_types.md)
 - [Node Types](nodes.md)
 - [Scene Node Templates](scene_node_templates.md)
+  - Includes `root_of` scene composition (scenes inside scenes), merge rules, and examples.
 - [Script State](state.md)
 - [Script Lifecycle](lifecycle.md)
 - [Script Methods](methods.md)

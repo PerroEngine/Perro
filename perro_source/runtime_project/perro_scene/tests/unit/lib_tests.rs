@@ -143,3 +143,37 @@ fn parse_root_of_header() {
         .expect("main node");
     assert_eq!(main.root_of.as_deref(), Some("res://child.scn"));
 }
+
+#[test]
+fn parse_script_clear_options() {
+    let src = r#"
+    [main]
+    script = null
+    [Node]
+    [/Node]
+    [/main]
+
+    [child]
+    clear_script = true
+    [Node]
+    [/Node]
+    [/child]
+    "#;
+
+    let scene = Parser::new(src).parse_scene();
+    let main = scene
+        .nodes
+        .iter()
+        .find(|n| n.key.as_ref() == "main")
+        .expect("main node");
+    assert!(main.script.is_none());
+    assert!(main.clear_script);
+
+    let child = scene
+        .nodes
+        .iter()
+        .find(|n| n.key.as_ref() == "child")
+        .expect("child node");
+    assert!(child.script.is_none());
+    assert!(child.clear_script);
+}

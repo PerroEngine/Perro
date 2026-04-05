@@ -134,6 +134,7 @@ pub struct SceneNodeEntry {
     pub children: Cow<'static, [SceneKey]>,
     pub parent: Option<SceneKey>,
     pub script: Option<Cow<'static, str>>,
+    pub clear_script: bool,
     pub root_of: Option<Cow<'static, str>>,
     pub script_vars: Cow<'static, [SceneObjectField]>,
 }
