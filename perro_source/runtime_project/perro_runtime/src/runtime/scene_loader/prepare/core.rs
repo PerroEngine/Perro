@@ -313,7 +313,12 @@ fn merge_root_host_entry(host: &SceneDefNodeEntry, base_root: &SceneDefNodeEntry
     };
     merged.clear_script = false;
     merged.script_vars = merge_scene_object_fields(&base_root.script_vars, &host.script_vars);
-    merged.data = merge_scene_node_data(&base_root.data, &host.data);
+    merged.data = if host.has_data_override {
+        merge_scene_node_data(&base_root.data, &host.data)
+    } else {
+        base_root.data.clone()
+    };
+    merged.has_data_override = true;
     merged
 }
 
@@ -657,5 +662,51 @@ mod tests {
         .expect("prepare scene");
 
         assert!(!prepared.scripts.iter().any(|pending| pending.node_key == "host"));
+    }
+
+    #[test]
+    fn root_of_without_host_type_block_inherits_template_root_data() {
+        let host = Parser::new(
+            r#"
+            @root = host
+            [host]
+            root_of = "res://base.scn"
+            [/host]
+            "#,
+        )
+        .parse_scene();
+
+        let base = Parser::new(
+            r#"
+            @root = base_root
+            [base_root]
+            [Node2D]
+                position = (7, 8)
+                rotation = 1.25
+            [/Node2D]
+            [/base_root]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&host, &|path| match path {
+            "res://base.scn" => Ok(base.clone()),
+            _ => Err(format!("unknown scene path `{path}`")),
+        })
+        .expect("prepare scene");
+
+        let host_node = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key == "host")
+            .expect("host node");
+        match &host_node.node.data {
+            SceneNodeData::Node2D(node_2d) => {
+                assert_eq!(node_2d.position.x, 7.0);
+                assert_eq!(node_2d.position.y, 8.0);
+                assert_eq!(node_2d.rotation, 1.25);
+            }
+            other => panic!("expected inherited Node2D host node, got {other:?}"),
+        }
     }
 }

@@ -177,3 +177,22 @@ fn parse_script_clear_options() {
     assert!(child.script.is_none());
     assert!(child.clear_script);
 }
+
+#[test]
+fn parse_root_of_without_type_block() {
+    let src = r#"
+    @root = main
+    [main]
+    root_of = "res://base.scn"
+    [/main]
+    "#;
+
+    let scene = Parser::new(src).parse_scene();
+    let main = scene
+        .nodes
+        .iter()
+        .find(|n| n.key.as_ref() == "main")
+        .expect("main node");
+    assert_eq!(main.root_of.as_deref(), Some("res://base.scn"));
+    assert!(!main.has_data_override);
+}

@@ -163,7 +163,9 @@ fn emit_static_scene_const(
             tags_name
         };
         node_entries.push_str(&format!(
-            "    SceneNodeEntry {{ key: SceneKey(Cow::Borrowed(\"{key}\")), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, clear_script: {clear_script}, root_of: {root_of}, script_vars: Cow::Borrowed({script_vars}), data: {data} }},\n",
+            "    SceneNodeEntry {{ data: {data}, has_data_override: {has_data_override}, key: SceneKey(Cow::Borrowed(\"{key}\")), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, clear_script: {clear_script}, root_of: {root_of}, script_vars: Cow::Borrowed({script_vars}) }},\n",
+            data = data_const,
+            has_data_override = node.has_data_override,
             key = escape_str(node.key.as_ref()),
             name = opt_static_str(&node.name),
             tags = tags_ref,
@@ -201,7 +203,6 @@ fn emit_static_scene_const(
                 out.push_str("];\n");
                 script_vars_name
             },
-            data = data_const,
         ));
     }
 

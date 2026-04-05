@@ -62,6 +62,14 @@ parent = Main
 [/ExtraHat]
 ```
 
+When you only want defaults from the Base Scene Template, you can omit the node type block entirely:
+
+```text
+[Main]
+root_of = "res://shared/player_base.scn"
+[/Main]
+```
+
 ### Merge Rules
 
 - `script`:

@@ -282,11 +282,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_type_block(&mut self) -> SceneNodeData {
-        self.expect(Token::LBracket);
-        self.parse_type_block_after_lbracket()
-    }
-
     fn parse_tags(&mut self) -> Vec<String> {
         self.expect(Token::LBracket);
         let mut tags = Vec::new();
@@ -436,17 +431,49 @@ impl<'a> Parser<'a> {
                         }
                     }
 
-                    let data = self.parse_type_block();
+                    if self.current != Token::LBracket {
+                        panic!(
+                            "Expected node type block or closing tag for node `{key}`, got {:?}",
+                            self.current
+                        );
+                    }
+                    self.advance();
 
-                    self.expect(Token::LBracket);
-                    self.expect(Token::Slash);
-                    let end = self.expect_ident();
-                    self.expect(Token::RBracket);
-                    assert_eq!(end, key);
+                    let (data, has_data_override) = if self.current == Token::Slash {
+                        if root_of.is_none() {
+                            panic!(
+                                "Node `{key}` must define a type block unless it uses root_of"
+                            );
+                        }
+                        (
+                            SceneNodeData {
+                                ty: Cow::Borrowed("Node"),
+                                fields: Cow::Owned(Vec::new()),
+                                base: None,
+                            },
+                            false,
+                        )
+                    } else {
+                        (self.parse_type_block_after_lbracket(), true)
+                    };
+
+                    if has_data_override {
+                        self.expect(Token::LBracket);
+                        self.expect(Token::Slash);
+                        let end = self.expect_ident();
+                        self.expect(Token::RBracket);
+                        assert_eq!(end, key);
+                    } else {
+                        self.expect(Token::Slash);
+                        let end = self.expect_ident();
+                        self.expect(Token::RBracket);
+                        assert_eq!(end, key);
+                    }
 
                     let name = name.or_else(|| Some(key.clone()));
 
                     nodes.push(SceneNodeEntry {
+                        has_data_override,
                         key: SceneKey::from(key),
                         name: name.map(Cow::Owned),
                         tags: Cow::Owned(tags.into_iter().map(Cow::Owned).collect()),

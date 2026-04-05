@@ -128,6 +128,7 @@ pub struct Scene {
 #[derive(Debug, Clone)]
 pub struct SceneNodeEntry {
     pub data: SceneNodeData,
+    pub has_data_override: bool,
     pub key: SceneKey,
     pub name: Option<Cow<'static, str>>,
     pub tags: Cow<'static, [Cow<'static, str>]>,
