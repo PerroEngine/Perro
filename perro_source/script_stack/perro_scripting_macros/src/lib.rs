@@ -186,7 +186,7 @@ fn derive_state_field_enum(
                 }
 
                 to_arms.push(quote! {
-                    Self::#variant_ident( #( ref #bindings ),* ) => {
+                    Self::#variant_ident( #( #bindings ),* ) => {
                         out.insert(
                             ::std::sync::Arc::<str>::from("__variant"),
                             ::perro::variant::Variant::String(::std::sync::Arc::<str>::from(#variant_name)),
@@ -233,7 +233,7 @@ fn derive_state_field_enum(
                 }
 
                 to_arms.push(quote! {
-                    Self::#variant_ident { #( ref #bindings ),* } => {
+                    Self::#variant_ident { #( #bindings ),* } => {
                         out.insert(
                             ::std::sync::Arc::<str>::from("__variant"),
                             ::perro::variant::Variant::String(::std::sync::Arc::<str>::from(#variant_name)),

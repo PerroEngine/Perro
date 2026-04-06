@@ -38,6 +38,8 @@ mod backend {
     const BLE_DISCOVERY_POLL: TokioDuration = TokioDuration::from_millis(20);
     const BLE_CHAR_DISCOVERY_RETRIES: u32 = 4;
     const BLE_CHAR_DISCOVERY_DELAY: TokioDuration = TokioDuration::from_millis(10);
+    const IMU_ZERO_STUCK_THRESHOLD: Duration = Duration::from_millis(600);
+    const IMU_ENABLE_RETRY_COOLDOWN: Duration = Duration::from_millis(250);
     const MAX_PERSISTENT_JOYCON_SLOTS: usize = 12;
     const STICK_DEADZONE: f32 = 0.08;
     const STICK_AXIS_GAIN_POS: f32 = 1.85;
@@ -288,6 +290,8 @@ mod backend {
                 };
 
                 let _ = enable_sensors(&device);
+                let mut zero_started_at: Option<Instant> = None;
+                let mut last_enable_retry = Instant::now() - IMU_ENABLE_RETRY_COOLDOWN;
                 let mut buffer = [0u8; REPORT_LEN];
 
                 while !stop_thread.load(Ordering::Relaxed) {
@@ -295,6 +299,21 @@ mod backend {
                         Ok(size) if size > 0 => {
                             let data = &buffer[..size];
                             if let Some(payload) = decode_report_hid(data, side) {
+                                if imu_is_zero(payload.gyro, payload.accel) {
+                                    let zero_start = zero_started_at.get_or_insert_with(Instant::now);
+                                    if zero_start.elapsed() >= IMU_ZERO_STUCK_THRESHOLD
+                                        && last_enable_retry.elapsed() >= IMU_ENABLE_RETRY_COOLDOWN
+                                    {
+                                        eprintln!(
+                                            "[joycon] imu stuck at zero index={} side={:?}, retrying sensor enable",
+                                            index, side
+                                        );
+                                        let _ = enable_sensors(&device);
+                                        last_enable_retry = Instant::now();
+                                    }
+                                } else {
+                                    zero_started_at = None;
+                                }
                                 let _ = tx.send(JoyConEvent::Report {
                                     index,
                                     side,
@@ -603,7 +622,9 @@ mod backend {
                                 return;
                             };
                             let mut imu_active = false;
-                            let mut last_enable_retry = TokioInstant::now();
+                            let mut zero_started_at: Option<TokioInstant> = None;
+                            let mut last_enable_retry =
+                                TokioInstant::now() - TokioDuration::from_millis(250);
                             let mut first_report_logged = false;
                             while !stop_clone.load(Ordering::Relaxed) {
                                 match time::timeout(
@@ -624,12 +645,7 @@ mod backend {
                                         }
                                         let rid = packet.value.first().copied().unwrap_or(0xFF);
                                         if let Some(data) = decode_report_ble(&packet.value, side) {
-                                            let imu_zero = data.gyro.0 == 0.0
-                                                && data.gyro.1 == 0.0
-                                                && data.gyro.2 == 0.0
-                                                && data.accel.0 == 0.0
-                                                && data.accel.1 == 0.0
-                                                && data.accel.2 == 0.0;
+                                            let imu_zero = imu_is_zero(data.gyro, data.accel);
                                             if !imu_zero {
                                                 if !imu_active {
                                                     eprintln!(
@@ -639,21 +655,27 @@ mod backend {
                                                     );
                                                 }
                                                 imu_active = true;
-                                            } else if !imu_active
-                                                && last_enable_retry.elapsed()
-                                                    >= TokioDuration::from_millis(80)
-                                            {
-                                                if let Some(cmd_char) = cmd_char.as_ref() {
-                                                    eprintln!(
-                                                        "[joycon2] imu not active yet, retrying enable id={key_clone}"
-                                                    );
-                                                    send_joycon2_enable_sequence(
-                                                        &peripheral,
-                                                        cmd_char,
-                                                    )
-                                                    .await;
+                                                zero_started_at = None;
+                                            } else {
+                                                let zero_start =
+                                                    zero_started_at.get_or_insert_with(TokioInstant::now);
+                                                if zero_start.elapsed()
+                                                    >= TokioDuration::from_millis(600)
+                                                    && last_enable_retry.elapsed()
+                                                        >= TokioDuration::from_millis(250)
+                                                {
+                                                    if let Some(cmd_char) = cmd_char.as_ref() {
+                                                        eprintln!(
+                                                            "[joycon2] imu stuck at zero, retrying enable id={key_clone}"
+                                                        );
+                                                        send_joycon2_enable_sequence(
+                                                            &peripheral,
+                                                            cmd_char,
+                                                        )
+                                                        .await;
+                                                    }
+                                                    last_enable_retry = TokioInstant::now();
                                                 }
-                                                last_enable_retry = TokioInstant::now();
                                             }
                                             if raw_dump_enabled() {
                                                 log_raw_joycon_report(
@@ -1302,6 +1324,15 @@ mod backend {
         }
         let gain = (ACCEL_ONE_G_TARGET / amag).clamp(0.5, 2.0);
         (accel.0 * gain, accel.1 * gain, accel.2 * gain)
+    }
+
+    fn imu_is_zero(gyro: (f32, f32, f32), accel: (f32, f32, f32)) -> bool {
+        gyro.0 == 0.0
+            && gyro.1 == 0.0
+            && gyro.2 == 0.0
+            && accel.0 == 0.0
+            && accel.1 == 0.0
+            && accel.2 == 0.0
     }
 
     async fn send_joycon2_enable_sequence(
