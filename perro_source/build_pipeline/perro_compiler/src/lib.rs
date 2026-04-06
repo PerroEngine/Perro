@@ -2074,7 +2074,7 @@ fn generate_call_param_binding(index: usize, param: &ScriptMethodParam) -> Optio
             }
             format!(
                 "let {name}: {raw_ty} = match params.get({index}) {{ \
-                    Some(v) => match perro::variant::StateField::from_variant(v) {{ Some(v) => v, None => return Variant::Null }}, \
+                    Some(v) => match perro::variant::CustomVariant::from_variant(v) {{ Some(v) => v, None => return Variant::Null }}, \
                     None => Default::default() \
                 }};",
                 raw_ty = param.ty.trim()
@@ -2097,7 +2097,7 @@ fn generate_get_var_body(state_ty: &str, fields: &[StateField]) -> String {
     for field in fields {
         let const_name = member_const_name(&field.name);
         out.push_str(&format!(
-            "            {const_name} => perro::variant::StateField::to_variant(&state.{}),\n",
+            "            {const_name} => perro::variant::CustomVariant::to_variant(&state.{}),\n",
             field.name
         ));
     }
@@ -2150,7 +2150,7 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[StateField]) -> String {
         let const_name = member_const_name(&field.name);
         let ty = normalize_type(&field.ty);
         let assign_block = format!(
-            "if let Some(v) = <{ty} as perro::variant::StateField>::from_variant(value) {{\n                    state.{} = v;\n                }}",
+            "if let Some(v) = <{ty} as perro::variant::CustomVariant>::from_variant(value) {{\n                    state.{} = v;\n                }}",
             field.name
         );
         out.push_str(&format!(
@@ -2413,7 +2413,7 @@ methods!({
         let source = r#"
 use perro::prelude::*;
 
-#[derive(StateField, Clone, Copy)]
+#[derive(Variant, Clone, Copy)]
 pub struct AgentRef {
     pub agent_id: NodeID,
 }
@@ -2426,7 +2426,7 @@ impl Default for AgentRef {
     }
 }
 
-#[derive(StateField, Clone, Copy)]
+#[derive(Variant, Clone, Copy)]
 pub struct AimPlan {
     pub has_plan: bool,
 }
@@ -2553,3 +2553,5 @@ methods!({
         assert_methods_emitted(&transpiled, &["alpha", "beta"]);
     }
 }
+
+

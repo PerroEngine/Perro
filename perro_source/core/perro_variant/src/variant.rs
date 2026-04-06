@@ -181,14 +181,18 @@ pub enum EngineStruct {
     VisualAccessibilitySettings(VisualAccessibilitySettings),
 }
 
-/// Typed conversion contract used by script state field injection.
+/// Typed conversion contract used by script state and method parameter conversion.
 ///
-/// Implement this trait for custom structs (typically via `#[derive(StateField)]`)
-/// so a `Variant::Object` can be decoded into your type.
-pub trait StateField: Sized {
+/// Implement this trait for custom structs/enums (typically via `#[derive(Variant)]`).
+pub trait CustomVariant: Sized {
     fn from_variant(value: &Variant) -> Option<Self>;
     fn to_variant(&self) -> Variant;
 }
+
+/// Backward-compatible alias trait. Prefer `CustomVariant`.
+pub trait StateField: CustomVariant {}
+
+impl<T> StateField for T where T: CustomVariant {}
 
 impl fmt::Display for Variant {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -257,7 +261,7 @@ impl Variant {
     }
 }
 
-impl StateField for Variant {
+impl CustomVariant for Variant {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         Some(value.clone())
@@ -269,7 +273,7 @@ impl StateField for Variant {
     }
 }
 
-impl StateField for bool {
+impl CustomVariant for bool {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_bool()
@@ -283,7 +287,7 @@ impl StateField for bool {
 
 macro_rules! impl_statefield_signed {
     ($ty:ty, $pat:pat => $expr:expr) => {
-        impl StateField for $ty {
+        impl CustomVariant for $ty {
             #[inline]
             fn from_variant(value: &Variant) -> Option<Self> {
                 match value.as_number() {
@@ -302,7 +306,7 @@ macro_rules! impl_statefield_signed {
 
 macro_rules! impl_statefield_unsigned {
     ($ty:ty, $pat:pat => $expr:expr) => {
-        impl StateField for $ty {
+        impl CustomVariant for $ty {
             #[inline]
             fn from_variant(value: &Variant) -> Option<Self> {
                 match value.as_number() {
@@ -331,7 +335,7 @@ impl_statefield_unsigned!(u32, Number::U32(v) => v);
 impl_statefield_unsigned!(u64, Number::U64(v) => v);
 impl_statefield_unsigned!(u128, Number::U128(v) => v);
 
-impl StateField for isize {
+impl CustomVariant for isize {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         match value.as_number() {
@@ -348,7 +352,7 @@ impl StateField for isize {
     }
 }
 
-impl StateField for usize {
+impl CustomVariant for usize {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         match value.as_number() {
@@ -365,7 +369,7 @@ impl StateField for usize {
     }
 }
 
-impl StateField for f32 {
+impl CustomVariant for f32 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_f32()
@@ -377,7 +381,7 @@ impl StateField for f32 {
     }
 }
 
-impl StateField for f64 {
+impl CustomVariant for f64 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_f64()
@@ -389,7 +393,7 @@ impl StateField for f64 {
     }
 }
 
-impl StateField for String {
+impl CustomVariant for String {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_str().map(ToString::to_string)
@@ -401,7 +405,7 @@ impl StateField for String {
     }
 }
 
-impl StateField for Arc<str> {
+impl CustomVariant for Arc<str> {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_str().map(Arc::<str>::from)
@@ -413,7 +417,7 @@ impl StateField for Arc<str> {
     }
 }
 
-impl StateField for NodeID {
+impl CustomVariant for NodeID {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value
@@ -434,7 +438,7 @@ impl StateField for NodeID {
     }
 }
 
-impl StateField for TextureID {
+impl CustomVariant for TextureID {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value
@@ -457,7 +461,7 @@ impl StateField for TextureID {
 
 macro_rules! impl_statefield_plain_id {
     ($id_ty:ty) => {
-        impl StateField for $id_ty {
+        impl CustomVariant for $id_ty {
             #[inline]
             fn from_variant(value: &Variant) -> Option<Self> {
                 value
@@ -493,7 +497,7 @@ impl_statefield_plain_id!(AudioBusID);
 impl_statefield_plain_id!(TagID);
 impl_statefield_plain_id!(PreloadedSceneID);
 
-impl StateField for Vector2 {
+impl CustomVariant for Vector2 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         if let Some(v) = value.as_vec2() {
@@ -511,7 +515,7 @@ impl StateField for Vector2 {
     }
 }
 
-impl StateField for Vector3 {
+impl CustomVariant for Vector3 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         if let Some(v) = value.as_vec3() {
@@ -530,7 +534,7 @@ impl StateField for Vector3 {
     }
 }
 
-impl StateField for Quaternion {
+impl CustomVariant for Quaternion {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         if let Some(v) = value.as_quat() {
@@ -550,7 +554,7 @@ impl StateField for Quaternion {
     }
 }
 
-impl StateField for Transform2D {
+impl CustomVariant for Transform2D {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         if let Some(v) = value.as_transform2d() {
@@ -569,7 +573,7 @@ impl StateField for Transform2D {
     }
 }
 
-impl StateField for Transform3D {
+impl CustomVariant for Transform3D {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         if let Some(v) = value.as_transform3d() {
@@ -588,7 +592,7 @@ impl StateField for Transform3D {
     }
 }
 
-impl StateField for PostProcessSet {
+impl CustomVariant for PostProcessSet {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_post_process_set().cloned()
@@ -600,7 +604,7 @@ impl StateField for PostProcessSet {
     }
 }
 
-impl StateField for VisualAccessibilitySettings {
+impl CustomVariant for VisualAccessibilitySettings {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_visual_accessibility_settings()
@@ -612,9 +616,9 @@ impl StateField for VisualAccessibilitySettings {
     }
 }
 
-impl<T> StateField for Option<T>
+impl<T> CustomVariant for Option<T>
 where
-    T: StateField,
+    T: CustomVariant,
 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
@@ -634,9 +638,9 @@ where
     }
 }
 
-impl<T> StateField for Vec<T>
+impl<T> CustomVariant for Vec<T>
 where
-    T: StateField,
+    T: CustomVariant,
 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
@@ -650,13 +654,13 @@ where
 
     #[inline]
     fn to_variant(&self) -> Variant {
-        Variant::Array(self.iter().map(StateField::to_variant).collect())
+        Variant::Array(self.iter().map(CustomVariant::to_variant).collect())
     }
 }
 
-impl<T> StateField for BTreeMap<Arc<str>, T>
+impl<T> CustomVariant for BTreeMap<Arc<str>, T>
 where
-    T: StateField,
+    T: CustomVariant,
 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
@@ -1539,3 +1543,4 @@ fn parse_u64_id_string(s: &str) -> Option<u64> {
         compact.parse::<u64>().ok()
     }
 }
+

@@ -15,6 +15,8 @@ Each node with that script gets its own state instance, and those fields are wha
 You can keep normal Rust items outside state:
 
 - `const` values
+- `structs` that aren't used in runtime state/methods
+- `enums` that aren't used in runtime state/methods
 
 ## Example
 
@@ -30,14 +32,15 @@ pub struct PlayerState {
 
 If you need cross-script/runtime member access, put that value in `#[State]`.
 
-## Custom Struct Fields
+## Custom Types And Variant Conversion
 
-`script_vars` object injection into custom state field types is supported via `StateField`.
+Custom structs/enums used by script APIs must support Variant conversion.
+For new code, derive `Variant` on those types.
 
 ```rust
 use perro::prelude::*;
 
-#[derive(Clone, Copy, StateField)]
+#[derive(Clone, Copy, Variant)]
 pub struct OrbitGoal {
     pub axis: Vector3,
 }
@@ -49,8 +52,11 @@ pub struct SpinnerState {
 }
 ```
 
-If a custom field type inside `#[State]` does not implement `StateField`, script compilation fails.
-For custom structs, derive it directly: `#[derive(StateField)]`.
+This applies to both:
+- custom types stored in `#[State]`
+- custom typed params/returns used in `methods!` (runtime/cross-script dispatch path)
+
+If a custom type used there does not implement `CustomVariant`, script compilation fails.
 
 Scene side:
 

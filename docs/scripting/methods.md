@@ -30,6 +30,9 @@ Required leading args:
 
 After that, add your own params.
 
+For custom typed params/returns in `methods!`, the type must implement `CustomVariant`
+(for new code, derive `Variant`).
+
 ## Calling Methods
 
 Internal call:
