@@ -1,6 +1,6 @@
 mod macros;
 pub mod script_trait;
-pub use perro_scripting_macros::{State, StateField, Variant};
+pub use perro_scripting_macros::{State, Variant};
 pub use script_trait::*;
 
 pub mod prelude {
@@ -9,11 +9,11 @@ pub mod prelude {
     pub use crate::script_trait::{
         ScriptBehavior, ScriptConstructor, ScriptFlags, ScriptLifecycle,
     };
-    pub use crate::{State, StateField, Variant};
+    pub use crate::{State, Variant};
     pub use perro_ids::prelude::{NodeID, ScriptMemberID};
     pub use perro_input::prelude::*;
     pub use perro_resource_context::prelude::*;
     pub use perro_runtime_context::prelude::*;
-    pub use perro_variant::{VariantCodec, StateField as StateFieldTrait, Variant};
+    pub use perro_variant::{Variant, VariantCodec};
 }
 

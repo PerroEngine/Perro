@@ -189,15 +189,6 @@ pub trait VariantCodec: Sized {
     fn to_variant(&self) -> Variant;
 }
 
-/// Backward-compatible alias trait. Prefer `VariantCodec`.
-pub trait CustomVariant: VariantCodec {}
-
-/// Backward-compatible alias trait. Prefer `VariantCodec`.
-pub trait StateField: VariantCodec {}
-
-impl<T> CustomVariant for T where T: VariantCodec {}
-impl<T> StateField for T where T: VariantCodec {}
-
 impl fmt::Display for Variant {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -1547,5 +1538,3 @@ fn parse_u64_id_string(s: &str) -> Option<u64> {
         compact.parse::<u64>().ok()
     }
 }
-
-

@@ -1010,13 +1010,13 @@ fn is_unit_struct(source: &str, struct_name: &str) -> bool {
 }
 
 #[derive(Clone, Debug)]
-struct StateField {
+struct ScriptField {
     name: String,
     ty: String,
     attrs: Vec<String>,
 }
 
-fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<StateField> {
+fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<ScriptField> {
     let lines: Vec<&str> = source.lines().collect();
     let mut struct_line = None;
     for (i, line) in lines.iter().enumerate() {
@@ -1091,7 +1091,7 @@ fn brace_delta(line: &str) -> i32 {
     opens - closes
 }
 
-fn parse_field_line(line: &str) -> Option<StateField> {
+fn parse_field_line(line: &str) -> Option<ScriptField> {
     let trimmed = line.trim().trim_end_matches(',').trim();
     if trimmed.is_empty()
         || trimmed.starts_with("#[")
@@ -1115,14 +1115,14 @@ fn parse_field_line(line: &str) -> Option<StateField> {
         return None;
     }
 
-    Some(StateField {
+    Some(ScriptField {
         name: name.to_string(),
         ty: ty.to_string(),
         attrs: Vec::new(),
     })
 }
 
-fn apply_field_attrs(field: &mut StateField, attrs: &[String]) {
+fn apply_field_attrs(field: &mut ScriptField, attrs: &[String]) {
     field.attrs = dedup_attrs(attrs);
 }
 
@@ -1141,11 +1141,11 @@ fn normalize_type(ty: &str) -> String {
     ty.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
-fn supported_fields(fields: &[StateField]) -> Vec<StateField> {
+fn supported_fields(fields: &[ScriptField]) -> Vec<ScriptField> {
     fields.to_vec()
 }
 
-fn supported_attributed_fields(fields: &[StateField]) -> Vec<StateField> {
+fn supported_attributed_fields(fields: &[ScriptField]) -> Vec<ScriptField> {
     fields
         .iter()
         .filter(|f| !f.attrs.is_empty())
@@ -1192,7 +1192,7 @@ struct ScriptMethodParam {
     ty: String,
 }
 
-fn generate_member_consts(fields: &[StateField], methods: &[ScriptMethod]) -> String {
+fn generate_member_consts(fields: &[ScriptField], methods: &[ScriptMethod]) -> String {
     if fields.is_empty() && methods.is_empty() {
         return String::new();
     }
@@ -2084,7 +2084,7 @@ fn generate_call_param_binding(index: usize, param: &ScriptMethodParam) -> Optio
     Some(line)
 }
 
-fn generate_get_var_body(state_ty: &str, fields: &[StateField]) -> String {
+fn generate_get_var_body(state_ty: &str, fields: &[ScriptField]) -> String {
     if fields.is_empty() {
         return String::from("           Variant::Null");
     }
@@ -2106,7 +2106,7 @@ fn generate_get_var_body(state_ty: &str, fields: &[StateField]) -> String {
     out
 }
 
-fn generate_set_var_body(state_ty: &str, fields: &[StateField]) -> String {
+fn generate_set_var_body(state_ty: &str, fields: &[ScriptField]) -> String {
     if fields.is_empty() {
         return String::from("");
     }
@@ -2119,7 +2119,7 @@ fn generate_set_var_body(state_ty: &str, fields: &[StateField]) -> String {
     out
 }
 
-fn generate_apply_scene_injected_vars_body(state_ty: &str, fields: &[StateField]) -> String {
+fn generate_apply_scene_injected_vars_body(state_ty: &str, fields: &[ScriptField]) -> String {
     if fields.is_empty() {
         return String::from("");
     }
@@ -2134,7 +2134,7 @@ fn generate_apply_scene_injected_vars_body(state_ty: &str, fields: &[StateField]
     out
 }
 
-fn generate_set_var_match_fn(state_ty: &str, fields: &[StateField]) -> String {
+fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
     if fields.is_empty() {
         return String::from(
             "fn __perro_set_var_match(_state: &mut (), _var: ScriptMemberID, _value: &Variant) {}",
@@ -2164,7 +2164,7 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[StateField]) -> String {
 }
 
 fn collect_member_attributes(
-    fields: &[StateField],
+    fields: &[ScriptField],
     methods: &[ScriptMethod],
 ) -> BTreeMap<String, Vec<String>> {
     let mut out = BTreeMap::<String, Vec<String>>::new();
@@ -2181,7 +2181,7 @@ fn collect_member_attributes(
     out
 }
 
-fn generate_attributes_of_body(fields: &[StateField], methods: &[ScriptMethod]) -> String {
+fn generate_attributes_of_body(fields: &[ScriptField], methods: &[ScriptMethod]) -> String {
     let member_attrs = collect_member_attributes(fields, methods);
     if member_attrs.is_empty() {
         return "        &[]".to_string();
@@ -2227,7 +2227,7 @@ fn generate_attributes_of_body(fields: &[StateField], methods: &[ScriptMethod]) 
     out
 }
 
-fn generate_members_with_body(fields: &[StateField], methods: &[ScriptMethod]) -> String {
+fn generate_members_with_body(fields: &[ScriptField], methods: &[ScriptMethod]) -> String {
     let member_attrs = collect_member_attributes(fields, methods);
     if member_attrs.is_empty() {
         return "        &[]".to_string();
@@ -2262,7 +2262,7 @@ fn generate_members_with_body(fields: &[StateField], methods: &[ScriptMethod]) -
     out
 }
 
-fn generate_has_attribute_body(fields: &[StateField], methods: &[ScriptMethod]) -> String {
+fn generate_has_attribute_body(fields: &[ScriptField], methods: &[ScriptMethod]) -> String {
     let member_attrs = collect_member_attributes(fields, methods);
     if member_attrs.is_empty() {
         return "        false".to_string();
@@ -2553,6 +2553,7 @@ methods!({
         assert_methods_emitted(&transpiled, &["alpha", "beta"]);
     }
 }
+
 
 
 

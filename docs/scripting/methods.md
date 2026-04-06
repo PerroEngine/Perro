@@ -30,8 +30,7 @@ Required leading args:
 
 After that, add your own params.
 
-For custom typed params/returns in `methods!`, the type must implement `VariantCodec`
-(for new code, derive `Variant`).
+For custom typed params/returns in `methods!`, derive `Variant` on the custom type.
 
 ## Calling Methods
 

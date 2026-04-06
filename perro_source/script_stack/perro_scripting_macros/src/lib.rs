@@ -47,11 +47,6 @@ pub fn State(attr: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-#[proc_macro_derive(StateField)]
-pub fn derive_state_field(input: TokenStream) -> TokenStream {
-    derive_variant_like(input)
-}
-
 #[proc_macro_derive(Variant)]
 pub fn derive_variant(input: TokenStream) -> TokenStream {
     derive_variant_like(input)
