@@ -7,6 +7,7 @@ use perro_nodes::{
 };
 use perro_runtime_context::sub_apis::{NodeAPI, SignalAPI};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
+use perro_terrain::{ChunkCoord, TerrainChunk};
 use perro_variant::Variant;
 use rapier2d::{na as na2, prelude as r2};
 use rapier3d::{na as na3, prelude as r3};
@@ -30,10 +31,19 @@ struct ShapeDesc2D {
 #[derive(Clone, Debug)]
 struct ShapeDesc3D {
     local: Transform3D,
-    shape: Shape3D,
+    shape: ShapeKind3D,
     sensor: bool,
     friction: f32,
     restitution: f32,
+}
+
+#[derive(Clone, Debug)]
+enum ShapeKind3D {
+    Primitive(Shape3D),
+    TriMesh {
+        vertices: Vec<na3::Point3<f32>>,
+        indices: Vec<[u32; 3]>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -375,13 +385,14 @@ impl Runtime {
                 continue;
             };
 
-            let (kind, enabled, rigid, children, material) = match &node.data {
+            let (kind, enabled, rigid, children, material, terrain_ref) = match &node.data {
                 SceneNodeData::StaticBody3D(body) => (
                     BodyKind::Static,
                     body.enabled,
                     None,
                     node.children_slice().to_vec(),
                     (body.friction, body.restitution),
+                    None,
                 ),
                 SceneNodeData::Area3D(body) => (
                     BodyKind::Area,
@@ -389,6 +400,7 @@ impl Runtime {
                     None,
                     node.children_slice().to_vec(),
                     (0.7, 0.0),
+                    None,
                 ),
                 SceneNodeData::RigidBody3D(body) => (
                     BodyKind::Rigid,
@@ -396,6 +408,15 @@ impl Runtime {
                     Some(body.clone()),
                     node.children_slice().to_vec(),
                     (body.friction, body.restitution),
+                    None,
+                ),
+                SceneNodeData::TerrainInstance3D(terrain) => (
+                    BodyKind::Static,
+                    true,
+                    None,
+                    Vec::new(),
+                    (0.9, 0.0),
+                    Some(terrain.terrain),
                 ),
                 _ => continue,
             };
@@ -419,6 +440,20 @@ impl Runtime {
                     desc.sensor = kind == BodyKind::Area;
                     shapes.push(desc);
                 }
+            }
+            if let Some(terrain_id) = terrain_ref
+                && !terrain_id.is_nil()
+            {
+                let mut chunk_shapes = self.collect_terrain_chunk_shapes(
+                    terrain_id,
+                    global.scale,
+                    material.0,
+                    material.1,
+                );
+                for desc in &mut chunk_shapes {
+                    desc.sensor = kind == BodyKind::Area;
+                }
+                shapes.extend(chunk_shapes);
             }
 
             out.push(BodyDesc3D {
@@ -1164,10 +1199,50 @@ fn shape_desc_2d(shape: &CollisionShape2D, friction: f32, restitution: f32) -> S
 fn shape_desc_3d(shape: &CollisionShape3D, friction: f32, restitution: f32) -> ShapeDesc3D {
     ShapeDesc3D {
         local: shape.base.transform,
-        shape: shape.shape,
+        shape: ShapeKind3D::Primitive(shape.shape),
         sensor: false,
         friction,
         restitution,
+    }
+}
+
+impl Runtime {
+    fn collect_terrain_chunk_shapes(
+        &self,
+        terrain_id: perro_ids::TerrainID,
+        terrain_scale: Vector3,
+        friction: f32,
+        restitution: f32,
+    ) -> Vec<ShapeDesc3D> {
+        let store = self
+            .terrain_store
+            .lock()
+            .expect("terrain store mutex poisoned");
+        let Some(data) = store.get(terrain_id) else {
+            return Vec::new();
+        };
+
+        let sx = terrain_scale.x.abs().max(0.0001);
+        let sy = terrain_scale.y.abs().max(0.0001);
+        let sz = terrain_scale.z.abs().max(0.0001);
+        let chunk_size_meters = data.chunk_size_meters();
+
+        let mut out = Vec::new();
+        for (coord, chunk) in data.chunks() {
+            let Some((vertices, indices)) =
+                terrain_chunk_to_trimesh(chunk, coord, chunk_size_meters, sx, sy, sz)
+            else {
+                continue;
+            };
+            out.push(ShapeDesc3D {
+                local: Transform3D::IDENTITY,
+                shape: ShapeKind3D::TriMesh { vertices, indices },
+                sensor: false,
+                friction,
+                restitution,
+            });
+        }
+        out
     }
 }
 
@@ -1274,57 +1349,65 @@ fn collider_builder_3d(desc: &ShapeDesc3D) -> Option<r3::Collider> {
     let sy = desc.local.scale.y.abs().max(0.0001);
     let sz = desc.local.scale.z.abs().max(0.0001);
 
-    let shape = match desc.shape {
-        Shape3D::Cube { size } => r3::ColliderBuilder::cuboid(
-            size.x.abs().max(0.0001) * sx * 0.5,
-            size.y.abs().max(0.0001) * sy * 0.5,
-            size.z.abs().max(0.0001) * sz * 0.5,
-        ),
-        Shape3D::Sphere { radius } => {
-            let scale = sx.max(sy).max(sz);
-            r3::ColliderBuilder::ball(radius.abs().max(0.0001) * scale)
-        }
-        Shape3D::Capsule {
-            radius,
-            half_height,
-        } => {
-            let scale = sx.max(sz);
-            r3::ColliderBuilder::capsule_y(
-                half_height.abs().max(0.0001) * sy,
-                radius.abs().max(0.0001) * scale,
-            )
-        }
-        Shape3D::Cylinder {
-            radius,
-            half_height,
-        } => {
-            let scale = sx.max(sz);
-            r3::ColliderBuilder::cylinder(
-                half_height.abs().max(0.0001) * sy,
-                radius.abs().max(0.0001) * scale,
-            )
-        }
-        Shape3D::Cone {
-            radius,
-            half_height,
-        } => {
-            let scale = sx.max(sz);
-            r3::ColliderBuilder::cone(
-                half_height.abs().max(0.0001) * sy,
-                radius.abs().max(0.0001) * scale,
-            )
-        }
-        Shape3D::TriPrism { size } => {
-            let points = tri_prism_points(size.x * sx, size.y * sy, size.z * sz);
-            r3::ColliderBuilder::convex_hull(&points)?
-        }
-        Shape3D::TriangularPyramid { size } => {
-            let points = triangular_pyramid_points(size.x * sx, size.y * sy, size.z * sz);
-            r3::ColliderBuilder::convex_hull(&points)?
-        }
-        Shape3D::SquarePyramid { size } => {
-            let points = square_pyramid_points(size.x * sx, size.y * sy, size.z * sz);
-            r3::ColliderBuilder::convex_hull(&points)?
+    let shape = match &desc.shape {
+        ShapeKind3D::Primitive(shape) => match shape {
+            Shape3D::Cube { size } => r3::ColliderBuilder::cuboid(
+                size.x.abs().max(0.0001) * sx * 0.5,
+                size.y.abs().max(0.0001) * sy * 0.5,
+                size.z.abs().max(0.0001) * sz * 0.5,
+            ),
+            Shape3D::Sphere { radius } => {
+                let scale = sx.max(sy).max(sz);
+                r3::ColliderBuilder::ball(radius.abs().max(0.0001) * scale)
+            }
+            Shape3D::Capsule {
+                radius,
+                half_height,
+            } => {
+                let scale = sx.max(sz);
+                r3::ColliderBuilder::capsule_y(
+                    half_height.abs().max(0.0001) * sy,
+                    radius.abs().max(0.0001) * scale,
+                )
+            }
+            Shape3D::Cylinder {
+                radius,
+                half_height,
+            } => {
+                let scale = sx.max(sz);
+                r3::ColliderBuilder::cylinder(
+                    half_height.abs().max(0.0001) * sy,
+                    radius.abs().max(0.0001) * scale,
+                )
+            }
+            Shape3D::Cone {
+                radius,
+                half_height,
+            } => {
+                let scale = sx.max(sz);
+                r3::ColliderBuilder::cone(
+                    half_height.abs().max(0.0001) * sy,
+                    radius.abs().max(0.0001) * scale,
+                )
+            }
+            Shape3D::TriPrism { size } => {
+                let points = tri_prism_points(size.x * sx, size.y * sy, size.z * sz);
+                r3::ColliderBuilder::convex_hull(&points)?
+            }
+            Shape3D::TriangularPyramid { size } => {
+                let points = triangular_pyramid_points(size.x * sx, size.y * sy, size.z * sz);
+                r3::ColliderBuilder::convex_hull(&points)?
+            }
+            Shape3D::SquarePyramid { size } => {
+                let points = square_pyramid_points(size.x * sx, size.y * sy, size.z * sz);
+                r3::ColliderBuilder::convex_hull(&points)?
+            }
+        },
+        ShapeKind3D::TriMesh { vertices, indices } => {
+            if vertices.len() < 3 || indices.is_empty() {
+                return None;
+            }
+            r3::ColliderBuilder::trimesh(vertices.clone(), indices.clone()).ok()?
         }
     };
 
@@ -1429,4 +1512,46 @@ fn transform_to_iso3(transform: Transform3D) -> na3::Isometry3<f32> {
         ),
         rotation,
     )
+}
+
+fn terrain_chunk_local_to_world(
+    local: perro_structs::Vector3,
+    coord: ChunkCoord,
+    chunk_size_meters: f32,
+) -> na3::Point3<f32> {
+    let center_x = coord.x as f32 * chunk_size_meters;
+    let center_z = coord.z as f32 * chunk_size_meters;
+    na3::Point3::new(local.x + center_x, local.y, local.z + center_z)
+}
+
+fn terrain_chunk_to_trimesh(
+    chunk: &TerrainChunk,
+    coord: ChunkCoord,
+    chunk_size_meters: f32,
+    sx: f32,
+    sy: f32,
+    sz: f32,
+) -> Option<(Vec<na3::Point3<f32>>, Vec<[u32; 3]>)> {
+    if chunk.vertices().is_empty() || chunk.triangles().is_empty() {
+        return None;
+    }
+
+    let mut vertices = Vec::with_capacity(chunk.vertices().len());
+    for vertex in chunk.vertices() {
+        let p = terrain_chunk_local_to_world(vertex.position, coord, chunk_size_meters);
+        vertices.push(na3::Point3::new(p.x * sx, p.y * sy, p.z * sz));
+    }
+
+    let mut indices = Vec::with_capacity(chunk.triangles().len());
+    for tri in chunk.triangles() {
+        if tri.a >= vertices.len() || tri.b >= vertices.len() || tri.c >= vertices.len() {
+            continue;
+        }
+        indices.push([tri.a as u32, tri.b as u32, tri.c as u32]);
+    }
+
+    if indices.is_empty() {
+        return None;
+    }
+    Some((vertices, indices))
 }

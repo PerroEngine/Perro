@@ -2,10 +2,10 @@ use perro_structs::Vector3;
 use perro_terrain::{ChunkCoord, ChunkError, TerrainChunk};
 
 #[test]
-fn flat_chunk_starts_with_base_quad() {
+fn flat_chunk_starts_with_fixed_grid() {
     let c = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
-    assert_eq!(c.vertex_count(), 4);
-    assert_eq!(c.triangle_count(), 2);
+    assert_eq!(c.vertex_count(), 65 * 65);
+    assert_eq!(c.triangle_count(), 64 * 64 * 2);
     assert!(c.validate(1.0e-6).is_ok());
 }
 
@@ -25,9 +25,9 @@ fn add_vertex_and_triangle_works() {
     let tri_id = c
         .add_triangle(0, 1, center)
         .expect("triangle should be valid");
-    assert_eq!(tri_id, 2);
-    assert_eq!(c.vertex_count(), 5);
-    assert_eq!(c.triangle_count(), 3);
+    assert_eq!(tri_id, 64 * 64 * 2);
+    assert_eq!(c.vertex_count(), 65 * 65 + 1);
+    assert_eq!(c.triangle_count(), 64 * 64 * 2 + 1);
 }
 
 #[test]

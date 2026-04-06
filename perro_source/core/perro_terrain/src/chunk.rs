@@ -2,6 +2,9 @@ use perro_structs::Vector3;
 
 pub type VertexID = usize;
 pub type TriangleID = usize;
+/// Fixed chunk topology: 64 cells per side => 1 meter per cell at 64m chunk size.
+pub const CHUNK_GRID_CELLS_PER_SIDE: usize = 64;
+pub const CHUNK_GRID_VERTICES_PER_SIDE: usize = CHUNK_GRID_CELLS_PER_SIDE + 1;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vertex {
@@ -66,27 +69,42 @@ pub struct TerrainChunk {
     pub config: ChunkConfig,
     pub(crate) vertices: Vec<Vertex>,
     pub(crate) triangles: Vec<Triangle>,
-    pub(crate) last_hit_triangle: Option<TriangleID>,
 }
 
 impl TerrainChunk {
+    /// Builds a fixed-topology grid chunk. Topology is static; editing mutates vertex heights.
     pub fn new_flat(coord: ChunkCoord, config: ChunkConfig) -> Self {
         let size = config.size_meters;
         let half = size * 0.5;
-        let vertices = vec![
-            Vertex::new(Vector3::new(-half, 0.0, -half)),
-            Vertex::new(Vector3::new(half, 0.0, -half)),
-            Vertex::new(Vector3::new(-half, 0.0, half)),
-            Vertex::new(Vector3::new(half, 0.0, half)),
-        ];
-        let triangles = vec![Triangle::new(0, 1, 2), Triangle::new(2, 1, 3)];
+        let step = size / CHUNK_GRID_CELLS_PER_SIDE as f32;
+
+        let mut vertices = Vec::with_capacity(CHUNK_GRID_VERTICES_PER_SIDE * CHUNK_GRID_VERTICES_PER_SIDE);
+        for z in 0..CHUNK_GRID_VERTICES_PER_SIDE {
+            let z_world = -half + z as f32 * step;
+            for x in 0..CHUNK_GRID_VERTICES_PER_SIDE {
+                let x_world = -half + x as f32 * step;
+                vertices.push(Vertex::new(Vector3::new(x_world, 0.0, z_world)));
+            }
+        }
+
+        let mut triangles = Vec::with_capacity(CHUNK_GRID_CELLS_PER_SIDE * CHUNK_GRID_CELLS_PER_SIDE * 2);
+        for z in 0..CHUNK_GRID_CELLS_PER_SIDE {
+            for x in 0..CHUNK_GRID_CELLS_PER_SIDE {
+                let i00 = z * CHUNK_GRID_VERTICES_PER_SIDE + x;
+                let i10 = i00 + 1;
+                let i01 = i00 + CHUNK_GRID_VERTICES_PER_SIDE;
+                let i11 = i01 + 1;
+
+                triangles.push(Triangle::new(i00, i10, i01));
+                triangles.push(Triangle::new(i01, i10, i11));
+            }
+        }
 
         Self {
             coord,
             config,
             vertices,
             triangles,
-            last_hit_triangle: None,
         }
     }
 
@@ -110,6 +128,40 @@ impl TerrainChunk {
         self.triangles.len()
     }
 
+    /// Grid spacing in local meters between adjacent vertices.
+    pub(crate) fn grid_step_meters(&self) -> f32 {
+        self.config.size_meters / CHUNK_GRID_CELLS_PER_SIDE as f32
+    }
+
+    pub(crate) fn snap_local_xz_to_grid(&self, x: f32, z: f32) -> Option<(usize, usize, f32, f32)> {
+        let half = self.config.size_meters * 0.5;
+        let step = self.grid_step_meters();
+        let gx = ((x + half) / step).round();
+        let gz = ((z + half) / step).round();
+        if !gx.is_finite() || !gz.is_finite() {
+            return None;
+        }
+        let gx_i = gx as i32;
+        let gz_i = gz as i32;
+        if gx_i < 0
+            || gz_i < 0
+            || gx_i > CHUNK_GRID_CELLS_PER_SIDE as i32
+            || gz_i > CHUNK_GRID_CELLS_PER_SIDE as i32
+        {
+            return None;
+        }
+        let gx_u = gx_i as usize;
+        let gz_u = gz_i as usize;
+        let sx = -half + gx_u as f32 * step;
+        let sz = -half + gz_u as f32 * step;
+        Some((gx_u, gz_u, sx, sz))
+    }
+
+    pub(crate) const fn grid_index(grid_x: usize, grid_z: usize) -> usize {
+        grid_z * CHUNK_GRID_VERTICES_PER_SIDE + grid_x
+    }
+
+    /// Legacy API: runtime terrain editing should use snapped grid height edits (`insert_vertex`).
     pub fn add_vertex(&mut self, position: Vector3) -> VertexID {
         let id = self.vertices.len();
         self.vertices.push(Vertex::new(position));
@@ -128,6 +180,7 @@ impl TerrainChunk {
         Ok(())
     }
 
+    /// Legacy API: runtime terrain editing should keep fixed topology and avoid adding triangles.
     pub fn add_triangle(
         &mut self,
         a: VertexID,

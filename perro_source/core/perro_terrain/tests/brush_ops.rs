@@ -78,7 +78,7 @@ fn set_height_negative_is_supported() {
 }
 
 #[test]
-fn add_remove_and_decimate_ops_work() {
+fn add_remove_ops_work_and_decimate_is_noop() {
     let mut chunk = TerrainChunk::new_flat_64m(ChunkCoord::new(0, 0));
     let add_results = chunk
         .apply_brush_op(
@@ -124,6 +124,7 @@ fn add_remove_and_decimate_ops_work() {
         )
         .expect("remove should succeed");
 
+    let before_decimate: Vec<f32> = chunk.vertices().iter().map(|v| v.position.y).collect();
     let _ = chunk
         .apply_brush_op(
             Vector3::new(0.0, 0.0, 0.0),
@@ -133,10 +134,8 @@ fn add_remove_and_decimate_ops_work() {
         )
         .expect("decimate should succeed");
 
-    for v in chunk.vertices() {
-        let q = v.position.y / 0.25;
-        assert!((q - q.round()).abs() <= 1.0e-4);
-    }
+    let after_decimate: Vec<f32> = chunk.vertices().iter().map(|v| v.position.y).collect();
+    assert_eq!(before_decimate, after_decimate);
 }
 
 #[test]

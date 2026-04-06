@@ -1,11 +1,10 @@
 use crate::{
     BrushOp, BrushShape, ChunkConfig, ChunkCoord, ChunkError, InsertVertexResult, TerrainChunk,
+    CHUNK_GRID_CELLS_PER_SIDE,
 };
 use perro_structs::Vector3;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-const BORDER_EPSILON: f32 = 1.0e-4;
-const POSITION_KEY_SCALE: f32 = 10_000.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TerrainRayHit {
@@ -18,6 +17,7 @@ pub struct TerrainRayHit {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TerrainEditSummary {
     pub touched_chunks: Vec<ChunkCoord>,
+    /// Number of touched vertices in fixed-grid mode.
     pub inserted_points: usize,
 }
 
@@ -226,93 +226,49 @@ impl TerrainData {
         b_coord: ChunkCoord,
         border: SharedBorder,
     ) -> Result<(), ChunkError> {
-        let a_points = self.border_points_world(a_coord, border.side_for_a(), BORDER_EPSILON)?;
-        let b_points = self.border_points_world(b_coord, border.side_for_b(), BORDER_EPSILON)?;
+        let a_chunk = self
+            .chunk(a_coord)
+            .ok_or(ChunkError::PointOutsideMesh { x: 0.0, z: 0.0 })?
+            .clone();
+        let b_chunk = self
+            .chunk(b_coord)
+            .ok_or(ChunkError::PointOutsideMesh { x: 0.0, z: 0.0 })?
+            .clone();
 
-        let mut merged: HashMap<(i32, i32), f32> = HashMap::new();
-        for p in a_points.iter().chain(b_points.iter()) {
-            let key = position_key(p.x, p.z);
-            merged
-                .entry(key)
-                .and_modify(|y| *y = (*y + p.y) * 0.5)
-                .or_insert(p.y);
+        let mut updates: Vec<(usize, f32)> = Vec::with_capacity(CHUNK_GRID_CELLS_PER_SIDE + 1);
+        let mut updates_b: Vec<(usize, f32)> = Vec::with_capacity(CHUNK_GRID_CELLS_PER_SIDE + 1);
+
+        for i in 0..=CHUNK_GRID_CELLS_PER_SIDE {
+            let (a_id, b_id) = match border {
+                SharedBorder::Vertical => (
+                    TerrainChunk::grid_index(CHUNK_GRID_CELLS_PER_SIDE, i),
+                    TerrainChunk::grid_index(0, i),
+                ),
+                SharedBorder::Horizontal => (
+                    TerrainChunk::grid_index(i, CHUNK_GRID_CELLS_PER_SIDE),
+                    TerrainChunk::grid_index(i, 0),
+                ),
+            };
+            let ay = a_chunk.vertices()[a_id].position.y;
+            let by = b_chunk.vertices()[b_id].position.y;
+            let merged = (ay + by) * 0.5;
+            updates.push((a_id, merged));
+            updates_b.push((b_id, merged));
         }
-        if merged.is_empty() {
-            return Ok(());
-        }
 
-        let mut targets: Vec<Vector3> = merged
-            .into_iter()
-            .map(|((kx, kz), y)| {
-                Vector3::new(
-                    (kx as f32) / POSITION_KEY_SCALE,
-                    y,
-                    (kz as f32) / POSITION_KEY_SCALE,
-                )
-            })
-            .collect();
-        targets.sort_by(|lhs, rhs| {
-            lhs.x
-                .partial_cmp(&rhs.x)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(
-                    lhs.z
-                        .partial_cmp(&rhs.z)
-                        .unwrap_or(std::cmp::Ordering::Equal),
-                )
-        });
-
-        self.ensure_border_points_and_heights(a_coord, border.side_for_a(), &targets)?;
-        self.ensure_border_points_and_heights(b_coord, border.side_for_b(), &targets)?;
-        Ok(())
-    }
-
-    fn ensure_border_points_and_heights(
-        &mut self,
-        coord: ChunkCoord,
-        side: BorderSide,
-        targets_world: &[Vector3],
-    ) -> Result<(), ChunkError> {
-        for target_world in targets_world {
-            let local = self.world_to_chunk_local(*target_world, coord);
-            if !is_on_border_side(local, self.chunk_size_meters * 0.5, side, BORDER_EPSILON) {
-                continue;
-            }
-
-            let chunk = self.chunk_mut(coord).ok_or(ChunkError::PointOutsideMesh {
-                x: local.x,
-                z: local.z,
-            })?;
-            let ids = find_vertex_ids_near_xz(chunk, local.x, local.z, BORDER_EPSILON);
-            if ids.is_empty() {
-                let _ = chunk.insert_vertex(local)?;
-            }
-            let ids2 = find_vertex_ids_near_xz(chunk, local.x, local.z, BORDER_EPSILON);
-            for id in ids2 {
+        if let Some(chunk) = self.chunk_mut(a_coord) {
+            for (id, y) in updates {
                 let old = chunk.vertices()[id].position;
-                chunk.set_vertex_position(id, Vector3::new(old.x, local.y, old.z))?;
+                chunk.set_vertex_position(id, Vector3::new(old.x, y, old.z))?;
+            }
+        }
+        if let Some(chunk) = self.chunk_mut(b_coord) {
+            for (id, y) in updates_b {
+                let old = chunk.vertices()[id].position;
+                chunk.set_vertex_position(id, Vector3::new(old.x, y, old.z))?;
             }
         }
         Ok(())
-    }
-
-    fn border_points_world(
-        &self,
-        coord: ChunkCoord,
-        side: BorderSide,
-        eps: f32,
-    ) -> Result<Vec<Vector3>, ChunkError> {
-        let chunk = self
-            .chunk(coord)
-            .ok_or(ChunkError::PointOutsideMesh { x: 0.0, z: 0.0 })?;
-        let half = self.chunk_size_meters * 0.5;
-        let mut out = Vec::new();
-        for v in chunk.vertices() {
-            if is_on_border_side(v.position, half, side, eps) {
-                out.push(self.chunk_local_to_world(v.position, coord));
-            }
-        }
-        Ok(out)
     }
 
     fn overlapped_chunks(&self, center_world: Vector3, brush_size_meters: f32) -> Vec<ChunkCoord> {
@@ -428,56 +384,6 @@ impl TerrainData {
 enum SharedBorder {
     Vertical,
     Horizontal,
-}
-
-impl SharedBorder {
-    fn side_for_a(self) -> BorderSide {
-        match self {
-            SharedBorder::Vertical => BorderSide::East,
-            SharedBorder::Horizontal => BorderSide::North,
-        }
-    }
-
-    fn side_for_b(self) -> BorderSide {
-        match self {
-            SharedBorder::Vertical => BorderSide::West,
-            SharedBorder::Horizontal => BorderSide::South,
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-enum BorderSide {
-    East,
-    West,
-    North,
-    South,
-}
-
-fn is_on_border_side(pos: Vector3, half: f32, side: BorderSide, eps: f32) -> bool {
-    match side {
-        BorderSide::East => (pos.x - half).abs() <= eps,
-        BorderSide::West => (pos.x + half).abs() <= eps,
-        BorderSide::North => (pos.z - half).abs() <= eps,
-        BorderSide::South => (pos.z + half).abs() <= eps,
-    }
-}
-
-fn find_vertex_ids_near_xz(chunk: &TerrainChunk, x: f32, z: f32, eps: f32) -> Vec<usize> {
-    let mut ids = Vec::new();
-    for (i, v) in chunk.vertices().iter().enumerate() {
-        if (v.position.x - x).abs() <= eps && (v.position.z - z).abs() <= eps {
-            ids.push(i);
-        }
-    }
-    ids
-}
-
-fn position_key(x: f32, z: f32) -> (i32, i32) {
-    (
-        (x * POSITION_KEY_SCALE).round() as i32,
-        (z * POSITION_KEY_SCALE).round() as i32,
-    )
 }
 
 fn ray_triangle_hit(
