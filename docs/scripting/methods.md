@@ -30,7 +30,7 @@ Required leading args:
 
 After that, add your own params.
 
-For custom typed params/returns in `methods!`, the type must implement `CustomVariant`
+For custom typed params/returns in `methods!`, the type must implement `VariantCodec`
 (for new code, derive `Variant`).
 
 ## Calling Methods
@@ -52,3 +52,4 @@ let out = call_method!(ctx, self_id, method!("my_method"), params![10_i32]);
 - Prefer direct Rust calls (`self.foo(...)`) for local behavior.
 - Use `call_method!` for dynamic/cross-script calls.
 - Keep state mutations explicit with `with_state_mut!`.
+

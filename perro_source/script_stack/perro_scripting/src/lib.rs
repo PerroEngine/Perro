@@ -14,5 +14,6 @@ pub mod prelude {
     pub use perro_input::prelude::*;
     pub use perro_resource_context::prelude::*;
     pub use perro_runtime_context::prelude::*;
-    pub use perro_variant::{CustomVariant, StateField as StateFieldTrait, Variant};
+    pub use perro_variant::{VariantCodec, StateField as StateFieldTrait, Variant};
 }
+

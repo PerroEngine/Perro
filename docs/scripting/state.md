@@ -56,10 +56,11 @@ This applies to both:
 - custom types stored in `#[State]`
 - custom typed params/returns used in `methods!` (runtime/cross-script dispatch path)
 
-If a custom type used there does not implement `CustomVariant`, script compilation fails.
+If a custom type used there does not implement `VariantCodec`, script compilation fails.
 
 Scene side:
 
 ```text
 script_vars = { orbit_goal: { axis: (0.0, 0.0, 1.0) } }
 ```
+
