@@ -1547,7 +1547,20 @@ fn terrain_chunk_to_trimesh(
         if tri.a >= vertices.len() || tri.b >= vertices.len() || tri.c >= vertices.len() {
             continue;
         }
-        indices.push([tri.a as u32, tri.b as u32, tri.c as u32]);
+        let a = vertices[tri.a];
+        let b = vertices[tri.b];
+        let c = vertices[tri.c];
+
+        // Keep terrain collision winding consistent with runtime terrain rendering:
+        // top-facing triangles should have non-negative Y normals.
+        let mut ib = tri.b as u32;
+        let mut ic = tri.c as u32;
+        let n = (b - a).cross(&(c - a));
+        if n.y < 0.0 {
+            std::mem::swap(&mut ib, &mut ic);
+        }
+
+        indices.push([tri.a as u32, ib, ic]);
     }
 
     if indices.is_empty() {
