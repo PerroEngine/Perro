@@ -170,6 +170,8 @@ pub struct Gpu3D {
     pipeline_unlit_double_sided: wgpu::RenderPipeline,
     pipeline_toon_culled: wgpu::RenderPipeline,
     pipeline_toon_double_sided: wgpu::RenderPipeline,
+    pipeline_overlay_culled: wgpu::RenderPipeline,
+    pipeline_overlay_double_sided: wgpu::RenderPipeline,
     pipeline_depth_prepass_culled: wgpu::RenderPipeline,
     pipeline_depth_prepass_double_sided: wgpu::RenderPipeline,
     custom_pipelines: AHashMap<String, CustomPipeline>,
@@ -323,6 +325,7 @@ struct DrawBatch {
     instance_count: u32,
     double_sided: bool,
     material_kind: MaterialPipelineKind,
+    draw_on_top: bool,
     base_color_texture_slot: u32,
     local_center: [f32; 3],
     local_radius: f32,
@@ -454,6 +457,13 @@ impl Gpu3D {
     }
 
     fn pipeline_for_batch(&self, batch: &DrawBatch) -> &wgpu::RenderPipeline {
+        if batch.draw_on_top {
+            return if batch.double_sided {
+                &self.pipeline_overlay_double_sided
+            } else {
+                &self.pipeline_overlay_culled
+            };
+        }
         match &batch.material_kind {
             MaterialPipelineKind::Standard => {
                 if batch.double_sided {
@@ -720,6 +730,22 @@ impl Gpu3D {
             device,
             &pipeline_layout,
             &shader_toon,
+            color_format,
+            sample_count,
+            None,
+        );
+        let pipeline_overlay_culled = create_pipeline_overlay(
+            device,
+            &pipeline_layout,
+            &shader,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_overlay_double_sided = create_pipeline_overlay(
+            device,
+            &pipeline_layout,
+            &shader,
             color_format,
             sample_count,
             None,
@@ -1052,6 +1078,8 @@ impl Gpu3D {
             pipeline_unlit_double_sided,
             pipeline_toon_culled,
             pipeline_toon_double_sided,
+            pipeline_overlay_culled,
+            pipeline_overlay_double_sided,
             pipeline_depth_prepass_culled,
             pipeline_depth_prepass_double_sided,
             camera_buffer,
@@ -1270,6 +1298,22 @@ impl Gpu3D {
             device,
             &pipeline_layout,
             &shader_toon,
+            color_format,
+            sample_count,
+            None,
+        );
+        self.pipeline_overlay_culled = create_pipeline_overlay(
+            device,
+            &pipeline_layout,
+            &shader,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        self.pipeline_overlay_double_sided = create_pipeline_overlay(
+            device,
+            &pipeline_layout,
+            &shader,
             color_format,
             sample_count,
             None,
@@ -1704,7 +1748,11 @@ impl Gpu3D {
 
             if !use_meshlets {
                 let occlusion_key = draw.node.as_u64();
-                if self.cpu_occlusion_enabled && !self.should_probe_or_draw(occlusion_key) {
+                if self.cpu_occlusion_enabled
+                    && !is_debug_point
+                    && !is_debug_edge
+                    && !self.should_probe_or_draw(occlusion_key)
+                {
                     self.last_draw_instance_ranges
                         .push(draw_instance_start..(self.staged_instances.len() as u32));
                     continue;
@@ -1909,11 +1957,12 @@ impl Gpu3D {
                 instance_count: debug_points_count,
                 double_sided: debug_points_double_sided,
                 material_kind: MaterialPipelineKind::Standard,
+                draw_on_top: true,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
                 local_center: debug_points_local_center,
                 local_radius: debug_points_local_radius.max(0.0),
                 occlusion_query: None,
-                disable_hiz_occlusion: false,
+                disable_hiz_occlusion: true,
             });
         }
         if let Some(instance_start) = debug_edges_start
@@ -1928,11 +1977,12 @@ impl Gpu3D {
                 instance_count: debug_edges_count,
                 double_sided: debug_edges_double_sided,
                 material_kind: MaterialPipelineKind::Standard,
+                draw_on_top: true,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
                 local_center: debug_edges_local_center,
                 local_radius: debug_edges_local_radius.max(0.0),
                 occlusion_query: None,
-                disable_hiz_occlusion: false,
+                disable_hiz_occlusion: true,
             });
         }
         self.draw_batches.sort_unstable_by(compare_draw_batch_keys);
@@ -2112,6 +2162,9 @@ impl Gpu3D {
             prepass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             let mut current_double_sided = None;
             for (i, batch) in self.draw_batches.iter().enumerate() {
+                if batch.draw_on_top {
+                    continue;
+                }
                 if current_double_sided != Some(batch.double_sided) {
                     let pipeline = if batch.double_sided {
                         &self.pipeline_depth_prepass_double_sided
@@ -2222,10 +2275,14 @@ impl Gpu3D {
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        let mut current_pipeline_key: Option<(MaterialPipelineKind, bool)> = None;
+        let mut current_pipeline_key: Option<(MaterialPipelineKind, bool, bool)> = None;
         let mut current_texture_slot = MATERIAL_TEXTURE_NONE;
         for (i, batch) in self.draw_batches.iter().enumerate() {
-            let key = (batch.material_kind.clone(), batch.double_sided);
+            let key = (
+                batch.material_kind.clone(),
+                batch.double_sided,
+                batch.draw_on_top,
+            );
             if current_pipeline_key.as_ref() != Some(&key) {
                 let pipeline = self.pipeline_for_batch(batch);
                 pass.set_pipeline(pipeline);
@@ -3805,6 +3862,139 @@ fn create_pipeline(
     })
 }
 
+fn create_pipeline_overlay(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    color_format: wgpu::TextureFormat,
+    sample_count: u32,
+    cull_mode: Option<wgpu::Face>,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("perro_mesh_pipeline_overlay"),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            buffers: &[
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<MeshVertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 12,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 24,
+                            shader_location: 12,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 32,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Uint16x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 40,
+                            shader_location: 3,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                    ],
+                },
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<InstanceGpu>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 4,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 16,
+                            shader_location: 5,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 32,
+                            shader_location: 6,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 48,
+                            shader_location: 7,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 64,
+                            shader_location: 8,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 80,
+                            shader_location: 9,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 92,
+                            shader_location: 10,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 108,
+                            shader_location: 11,
+                            format: wgpu::VertexFormat::Uint32x4,
+                        },
+                    ],
+                },
+            ],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: color_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::RED
+                    | wgpu::ColorWrites::GREEN
+                    | wgpu::ColorWrites::BLUE,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode,
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState {
+            count: sample_count,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 fn create_depth_prepass_pipeline(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
@@ -3915,6 +4105,7 @@ fn push_draw_batch(
         instance_count: 1,
         double_sided,
         material_kind,
+        draw_on_top: false,
         base_color_texture_slot,
         local_center,
         local_radius: local_radius.max(0.0),
@@ -4163,8 +4354,9 @@ fn override_bool(value: &MaterialParamOverrideValue3D) -> Option<bool> {
 
 #[inline]
 fn compare_draw_batch_keys(a: &DrawBatch, b: &DrawBatch) -> Ordering {
-    a.double_sided
-        .cmp(&b.double_sided)
+    a.draw_on_top
+        .cmp(&b.draw_on_top)
+        .then_with(|| a.double_sided.cmp(&b.double_sided))
         .then_with(|| compare_material_pipeline_kind(&a.material_kind, &b.material_kind))
         .then_with(|| a.base_color_texture_slot.cmp(&b.base_color_texture_slot))
         .then_with(|| a.mesh.index_start.cmp(&b.mesh.index_start))
