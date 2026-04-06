@@ -681,6 +681,7 @@ pub extern \"C\" fn perro_script_registry_get(\n\
 }
 
 fn transpile_frontend_script(source: &str, source_include: &str) -> String {
+    let debug_methods = methods_debug_enabled();
     let source = ensure_script_allows(source);
     let source_include = escape_str(&normalize_generated_include_path(source_include));
     if source.contains("impl ScriptBehavior") {
@@ -711,6 +712,26 @@ fn transpile_frontend_script(source: &str, source_include: &str) -> String {
     let has_fixed = has_nonempty_lifecycle_method(&source, "on_fixed_update");
     let has_removal = has_nonempty_lifecycle_method(&source, "on_removal");
     let user_methods = parse_inherent_methods(&source, &script_ty);
+    if debug_methods {
+        let method_names = user_methods
+            .iter()
+            .map(|m| m.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!(
+            "[perro][methods] source={} script_ty={} methods_found={} [{}]",
+            source_include,
+            script_ty,
+            user_methods.len(),
+            method_names
+        );
+        if user_methods.is_empty() && source.contains("methods!(") {
+            eprintln!(
+                "[perro][methods][warn] methods! macro exists but zero methods were parsed for source={}",
+                source_include
+            );
+        }
+    }
     let state_fields = parse_struct_fields(&source, &state_ty);
     let exposed_fields = supported_fields(&state_fields);
     let attributed_fields = supported_attributed_fields(&state_fields);
@@ -1383,18 +1404,7 @@ fn parse_methods_macro_methods(source: &str, struct_name: &str) -> Vec<ScriptMet
 }
 
 fn find_matching_delim(source: &str, open_index: usize, open: char, close: char) -> Option<usize> {
-    let mut depth = 0_i32;
-    for (idx, c) in source.char_indices().skip(open_index) {
-        if c == open {
-            depth += 1;
-        } else if c == close {
-            depth -= 1;
-            if depth == 0 {
-                return Some(idx);
-            }
-        }
-    }
-    None
+    find_matching_delim_lexed(source, open_index, open, close)
 }
 
 fn parse_methods_macro_inner(inner: &str) -> Option<(String, &str)> {
@@ -1432,21 +1442,157 @@ fn extract_brace_block(s: &str) -> Option<&str> {
     if !s.starts_with('{') {
         return None;
     }
+    let end = find_matching_delim_lexed(s, 0, '{', '}')?;
+    Some(&s[1..end])
+}
+
+fn find_matching_delim_lexed(
+    source: &str,
+    open_index: usize,
+    open: char,
+    close: char,
+) -> Option<usize> {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Mode {
+        Code,
+        LineComment,
+        BlockComment,
+        String,
+        RawString(usize),
+    }
+
+    let bytes = source.as_bytes();
+    if open_index >= bytes.len() || bytes[open_index] != open as u8 {
+        return None;
+    }
+
+    let mut mode = Mode::Code;
+    let mut block_comment_depth: usize = 0;
     let mut depth = 0_i32;
-    let mut end = None;
-    for (i, c) in s.char_indices() {
-        if c == '{' {
-            depth += 1;
-        } else if c == '}' {
-            depth -= 1;
-            if depth == 0 {
-                end = Some(i);
-                break;
+    let mut i = open_index;
+    let mut escaped = false;
+
+    while i < bytes.len() {
+        let b = bytes[i];
+        match mode {
+            Mode::Code => {
+                if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+                    mode = Mode::LineComment;
+                    i += 2;
+                    continue;
+                }
+                if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+                    mode = Mode::BlockComment;
+                    block_comment_depth = 1;
+                    i += 2;
+                    continue;
+                }
+                if let Some((prefix_len, hashes)) = raw_string_start_at(bytes, i) {
+                    mode = Mode::RawString(hashes);
+                    i += prefix_len;
+                    continue;
+                }
+                if b == b'"' {
+                    mode = Mode::String;
+                    escaped = false;
+                    i += 1;
+                    continue;
+                }
+                if b == open as u8 {
+                    depth += 1;
+                } else if b == close as u8 {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(i);
+                    }
+                }
+                i += 1;
+            }
+            Mode::LineComment => {
+                if b == b'\n' {
+                    mode = Mode::Code;
+                }
+                i += 1;
+            }
+            Mode::BlockComment => {
+                if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+                    block_comment_depth += 1;
+                    i += 2;
+                    continue;
+                }
+                if b == b'*' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+                    block_comment_depth = block_comment_depth.saturating_sub(1);
+                    i += 2;
+                    if block_comment_depth == 0 {
+                        mode = Mode::Code;
+                    }
+                    continue;
+                }
+                i += 1;
+            }
+            Mode::String => {
+                if escaped {
+                    escaped = false;
+                    i += 1;
+                    continue;
+                }
+                if b == b'\\' {
+                    escaped = true;
+                    i += 1;
+                    continue;
+                }
+                if b == b'"' {
+                    mode = Mode::Code;
+                }
+                i += 1;
+            }
+            Mode::RawString(hashes) => {
+                if b == b'"' {
+                    let mut ok = true;
+                    for j in 0..hashes {
+                        if i + 1 + j >= bytes.len() || bytes[i + 1 + j] != b'#' {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    if ok {
+                        mode = Mode::Code;
+                        i += 1 + hashes;
+                        continue;
+                    }
+                }
+                i += 1;
             }
         }
     }
-    let end = end?;
-    Some(&s[1..end])
+    None
+}
+
+fn raw_string_start_at(bytes: &[u8], i: usize) -> Option<(usize, usize)> {
+    if i >= bytes.len() {
+        return None;
+    }
+
+    let (start, prefix_len) = if bytes[i] == b'r' {
+        (i, 1usize)
+    } else if i + 1 < bytes.len()
+        && ((bytes[i] == b'b' && bytes[i + 1] == b'r') || (bytes[i] == b'r' && bytes[i + 1] == b'b'))
+    {
+        (i + 1, 2usize)
+    } else {
+        return None;
+    };
+
+    let mut j = start + 1;
+    let mut hashes = 0usize;
+    while j < bytes.len() && bytes[j] == b'#' {
+        hashes += 1;
+        j += 1;
+    }
+    if j < bytes.len() && bytes[j] == b'"' {
+        return Some((prefix_len + hashes + 1, hashes));
+    }
+    None
 }
 
 fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
@@ -1455,6 +1601,7 @@ fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
     let mut pending_attrs: Vec<String> = Vec::new();
     let mut sig_buf: Option<String> = None;
     let mut sig_paren_depth: i32 = 0;
+    let debug_methods = methods_debug_enabled();
 
     for line in body.lines() {
         if depth == 0
@@ -1474,10 +1621,21 @@ fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
                 }
                 sig_paren_depth += paren_delta(trimmed);
                 if sig_paren_depth <= 0 {
-                    if let Some(mut method) = parse_script_method_signature(buf.trim()) {
-                        method.attrs = dedup_attrs(&pending_attrs);
-                        pending_attrs.clear();
-                        methods.push(method);
+                    match parse_script_method_signature_detailed(buf.trim()) {
+                        Ok(mut method) => {
+                            method.attrs = dedup_attrs(&pending_attrs);
+                            pending_attrs.clear();
+                            methods.push(method);
+                        }
+                        Err(reason) => {
+                            if debug_methods {
+                                eprintln!(
+                                    "[perro][methods][skip] {} | signature=`{}`",
+                                    reason,
+                                    buf.trim()
+                                );
+                            }
+                        }
                     }
                     sig_buf = None;
                     sig_paren_depth = 0;
@@ -1486,15 +1644,25 @@ fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
                 sig_buf = Some(trimmed.to_string());
                 sig_paren_depth = paren_delta(trimmed);
                 if sig_paren_depth <= 0 {
-                    if let Some(mut method) = parse_script_method_signature(trimmed) {
-                        method.attrs = dedup_attrs(&pending_attrs);
-                        pending_attrs.clear();
-                        methods.push(method);
+                    match parse_script_method_signature_detailed(trimmed) {
+                        Ok(mut method) => {
+                            method.attrs = dedup_attrs(&pending_attrs);
+                            pending_attrs.clear();
+                            methods.push(method);
+                        }
+                        Err(reason) => {
+                            if debug_methods {
+                                eprintln!(
+                                    "[perro][methods][skip] {} | signature=`{}`",
+                                    reason, trimmed
+                                );
+                            }
+                        }
                     }
                     sig_buf = None;
                     sig_paren_depth = 0;
                 }
-            } else if let Some(mut method) = parse_script_method_signature(trimmed) {
+            } else if let Ok(mut method) = parse_script_method_signature_detailed(trimmed) {
                 method.attrs = dedup_attrs(&pending_attrs);
                 pending_attrs.clear();
                 methods.push(method);
@@ -1520,9 +1688,13 @@ fn paren_delta(s: &str) -> i32 {
 }
 
 fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
+    parse_script_method_signature_detailed(line).ok()
+}
+
+fn parse_script_method_signature_detailed(line: &str) -> Result<ScriptMethod, String> {
     let line = line.trim_start_matches("pub ").trim_start();
     if !line.starts_with("fn ") {
-        return None;
+        return Err("not a function signature".to_string());
     }
 
     let rest = line.trim_start_matches("fn ").trim_start();
@@ -1535,9 +1707,10 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
         }
     }
     if name.is_empty() {
-        None
+        Err("missing function name".to_string())
     } else {
-        let params_sig = extract_fn_params_segment(line)?;
+        let params_sig = extract_fn_params_segment(line)
+            .ok_or_else(|| "could not extract function parameters".to_string())?;
         let mut takes_raw_params = false;
         let mut params = Vec::new();
         let mut has_self = false;
@@ -1604,15 +1777,31 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
         }
 
         if takes_raw_params && !params.is_empty() {
-            return None;
+            return Err("`params: &[Variant]` cannot be mixed with typed params".to_string());
         }
         if !(has_self && has_ctx && has_res && has_ipt && has_node_id) {
-            return None;
+            let mut missing = Vec::new();
+            if !has_self {
+                missing.push("&self");
+            }
+            if !has_ctx {
+                missing.push("ctx: &mut RuntimeContext<...>");
+            }
+            if !has_res {
+                missing.push("res: &ResourceContext<...>");
+            }
+            if !has_ipt {
+                missing.push("ipt: &InputContext<...>");
+            }
+            if !has_node_id {
+                missing.push("self_id: NodeID");
+            }
+            return Err(format!("missing required leading parameters: {}", missing.join(", ")));
         }
 
         let returns_variant =
             line.contains("-> Variant") || line.contains("->perro::variant::Variant");
-        Some(ScriptMethod {
+        Ok(ScriptMethod {
             name,
             takes_raw_params,
             params,
@@ -1620,6 +1809,18 @@ fn parse_script_method_signature(line: &str) -> Option<ScriptMethod> {
             attrs: Vec::new(),
         })
     }
+}
+
+fn methods_debug_enabled() -> bool {
+    let Ok(v) = std::env::var("PERRO_DEBUG_METHODS") else {
+        return false;
+    };
+    let normalized = v.trim().to_ascii_lowercase();
+    !normalized.is_empty()
+        && !matches!(
+            normalized.as_str(),
+            "0" | "false" | "off" | "no" | "n" | "disabled"
+        )
 }
 
 fn is_runtime_context_type(ty: &str) -> bool {
@@ -2120,4 +2321,235 @@ fn generated_script_rel(rel: &str) -> String {
 #[allow(dead_code)]
 fn rel_to_path(base: &Path, rel: &str) -> PathBuf {
     base.join(rel.replace('/', "\\"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::transpile_frontend_script;
+
+    fn assert_methods_emitted(transpiled: &str, expected_method_names: &[&str]) {
+        assert!(
+            transpiled.contains("match method {"),
+            "expected generated call_method match"
+        );
+        assert!(
+            !transpiled.contains("let _ = (method, ctx, res, ipt, self_id, params);"),
+            "unexpected empty call_method stub generated"
+        );
+        for method_name in expected_method_names {
+            let const_name = format!("__PERRO_METHOD_{}", method_name.to_ascii_uppercase());
+            assert!(
+                transpiled.contains(&const_name),
+                "missing method const for {method_name}"
+            );
+            let arm = format!("{const_name} =>");
+            assert!(
+                transpiled.contains(&arm),
+                "missing call_method arm for {method_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn transpiles_controller_methods_into_call_method_arms() {
+        let source = r#"
+use perro::prelude::*;
+
+#[State]
+pub struct ArcherControllerState {
+    #[default = false]
+    pub enabled: bool,
+}
+
+lifecycle!({
+    fn on_init(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+    ) {}
+});
+
+methods!({
+    fn bind_agent(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        _agent_id: NodeID,
+    ) {}
+
+    fn set_player_index(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        _player_index: i32,
+    ) {}
+
+    fn set_turn_enabled(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        _enabled: bool,
+    ) {}
+});
+"#;
+
+        let transpiled = transpile_frontend_script(source, "res://tests/controller.rs");
+        assert_methods_emitted(
+            &transpiled,
+            &["bind_agent", "set_player_index", "set_turn_enabled"],
+        );
+    }
+
+    #[test]
+    fn transpiles_ai_methods_into_call_method_arms() {
+        let source = r#"
+use perro::prelude::*;
+
+#[derive(StateField, Clone, Copy)]
+pub struct AgentRef {
+    pub agent_id: NodeID,
+}
+
+impl Default for AgentRef {
+    fn default() -> Self {
+        Self {
+            agent_id: NodeID::nil(),
+        }
+    }
+}
+
+#[derive(StateField, Clone, Copy)]
+pub struct AimPlan {
+    pub has_plan: bool,
+}
+
+impl Default for AimPlan {
+    fn default() -> Self {
+        Self { has_plan: false }
+    }
+}
+
+#[State]
+pub struct ArcherAiBrainState {
+    #[default = false]
+    pub enabled: bool,
+    #[default = AgentRef::default()]
+    pub agent_ref: AgentRef,
+    #[default = AimPlan::default()]
+    pub plan: AimPlan,
+}
+
+lifecycle!({
+    fn on_init(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+    ) {}
+});
+
+methods!({
+    fn bind_agent(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        _agent_id: NodeID,
+    ) {}
+
+    fn set_turn_enabled(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        _enabled: bool,
+    ) {}
+
+    fn set_ai_skill(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        _skill: f32,
+    ) {}
+
+    fn reset_plan(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+    ) {}
+});
+"#;
+
+        let transpiled = transpile_frontend_script(source, "res://tests/ai.rs");
+        assert_methods_emitted(
+            &transpiled,
+            &["bind_agent", "set_turn_enabled", "set_ai_skill", "reset_plan"],
+        );
+    }
+
+    #[test]
+    fn transpiles_methods_even_with_braces_in_strings_comments_and_raw_strings() {
+        let source = r###"
+use perro::prelude::*;
+
+#[State]
+pub struct WeirdState {
+    #[default = false]
+    pub enabled: bool,
+}
+
+lifecycle!({
+    fn on_update(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+    ) {
+        // comment with misleading delimiters: methods!({ fn nope( ) { } });
+        let _a = "format-like braces {x} and parens (y) should not affect parser";
+        let _b = r#"raw string with fake delimiters: methods!({ fn fake() {} })"#;
+        let _c = br##"byte raw with nested hashes and braces { } ) ("##;
+        let _d = "emoji \u{1F3F9} and braces {{{}}}";
+    }
+});
+
+methods!({
+    fn alpha(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+    ) {}
+
+    fn beta(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        _enabled: bool,
+    ) {}
+});
+"###;
+
+        let transpiled = transpile_frontend_script(source, "res://tests/weird.rs");
+        assert_methods_emitted(&transpiled, &["alpha", "beta"]);
+    }
 }
