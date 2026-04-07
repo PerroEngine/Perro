@@ -112,7 +112,7 @@ pub fn generate_static_localizations(
         }
 
         for (locale_entry, (_, idx)) in per_locale.iter_mut().zip(locales.iter()) {
-            let value = row.get(*idx).unwrap_or("").to_string();
+            let value = row.get(*idx).unwrap_or("").trim().to_string();
             let locale_name = &locale_entry.0;
             let locale_rows = &mut locale_entry.1;
             if let Some(existing_index) = locale_rows.row_index_by_hash.get(&hash).copied()
