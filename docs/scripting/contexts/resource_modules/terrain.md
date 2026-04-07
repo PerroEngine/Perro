@@ -10,6 +10,7 @@ Methods:
 Current terrain model (runtime):
 - Terrain is fixed-grid per chunk: `64x64` cells (`65x65` shared vertices), `1 vertex per meter`.
 - Scene-authored terrain can be loaded by setting `TerrainInstance3D.terrain` to a folder path containing `.ptchunk` files.
+- `.ptchunk` filenames must be chunk-space coordinates: `<chunk_x>_<chunk_z>.ptchunk` (for example `0_0.ptchunk`, `0_1.ptchunk`, `-1_2.ptchunk`).
 - `.ptchunk` is key-value style, one sample per line, for example:
   - `[x,z] = y`
   - `[x,z] y`

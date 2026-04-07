@@ -66,8 +66,8 @@ pub fn load_terrain_from_folder_source(source: &str) -> Option<TerrainData> {
 fn load_terrain_from_disk_path(path: &Path) -> Option<TerrainData> {
     if path.is_file() {
         let text = fs::read_to_string(path).ok()?;
-        let hint = coord_from_ptchunk_path(path);
-        let chunks = parse_terrain_kv(&text, hint)?;
+        let hint = coord_from_ptchunk_path(path)?;
+        let chunks = parse_terrain_kv(&text, Some(hint))?;
         return build_terrain_data(64.0, &chunks);
     }
     if !path.is_dir() {
@@ -81,8 +81,8 @@ fn load_terrain_from_disk_path(path: &Path) -> Option<TerrainData> {
     let mut chunks = Vec::new();
     for chunk_path in paths {
         let text = fs::read_to_string(&chunk_path).ok()?;
-        let hint = coord_from_ptchunk_path(&chunk_path);
-        let mut parsed = parse_terrain_kv(&text, hint)?;
+        let hint = coord_from_ptchunk_path(&chunk_path)?;
+        let mut parsed = parse_terrain_kv(&text, Some(hint))?;
         chunks.append(&mut parsed);
     }
     build_terrain_data(64.0, &chunks)
@@ -211,32 +211,34 @@ fn strip_line_comment(line: &str) -> &str {
 
 fn coord_from_ptchunk_path(path: &Path) -> Option<ChunkCoord> {
     let stem = path.file_stem()?.to_string_lossy();
-    let nums = extract_i32_tokens(&stem);
-    if nums.len() < 2 {
-        return None;
-    }
-    Some(ChunkCoord::new(nums[0], nums[1]))
+    let (x, z) = parse_chunk_space_name(&stem)?;
+    Some(ChunkCoord::new(x, z))
 }
 
-fn extract_i32_tokens(text: &str) -> Vec<i32> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    for ch in text.chars() {
-        if ch.is_ascii_digit() || (ch == '-' && cur.is_empty()) {
-            cur.push(ch);
-        } else if !cur.is_empty() {
-            if let Ok(v) = cur.parse::<i32>() {
-                out.push(v);
-            }
-            cur.clear();
-        }
+fn parse_chunk_space_name(stem: &str) -> Option<(i32, i32)> {
+    let (x_text, z_text) = stem.split_once('_')?;
+    if x_text.is_empty() || z_text.is_empty() || z_text.contains('_') {
+        return None;
     }
-    if !cur.is_empty() {
-        if let Ok(v) = cur.parse::<i32>() {
-            out.push(v);
+    let x = parse_strict_i32(x_text)?;
+    let z = parse_strict_i32(z_text)?;
+    Some((x, z))
+}
+
+fn parse_strict_i32(text: &str) -> Option<i32> {
+    let mut chars = text.chars();
+    let first = chars.next()?;
+    if first == '-' {
+        if chars.clone().next().is_none() {
+            return None;
         }
+    } else if !first.is_ascii_digit() {
+        return None;
     }
-    out
+    if !chars.all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    text.parse::<i32>().ok()
 }
 
 fn build_terrain_data(chunk_size_meters: f32, chunks: &[ParsedChunk]) -> Option<TerrainData> {

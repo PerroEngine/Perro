@@ -79,8 +79,14 @@ pub fn generate_static_terrains(project_root: &Path) -> Result<(), StaticPipelin
         .map(|rel| -> io::Result<(String, ParsedChunk)> {
             let full = res_dir.join(&rel);
             let src = fs::read_to_string(&full)?;
-            let hint = coord_from_ptchunk_stem(Path::new(&rel).file_stem().and_then(|s| s.to_str()));
-            let chunk = parse_ptchunk_kv(&src, hint).ok_or_else(|| {
+            let hint =
+                coord_from_ptchunk_stem(Path::new(&rel).file_stem().and_then(|s| s.to_str()))
+                    .ok_or_else(|| {
+                        io::Error::other(format!(
+                            "invalid .ptchunk filename `res://{rel}`; expected `<chunk_x>_<chunk_z>.ptchunk`"
+                        ))
+                    })?;
+            let chunk = parse_ptchunk_kv(&src, Some(hint)).ok_or_else(|| {
                 io::Error::other(format!("failed to parse .ptchunk `res://{rel}`"))
             })?;
             let folder = terrain_source_for_chunk_path(&rel);
@@ -267,32 +273,33 @@ fn strip_line_comment(line: &str) -> &str {
 
 fn coord_from_ptchunk_stem(stem: Option<&str>) -> Option<(i32, i32)> {
     let stem = stem?;
-    let nums = extract_i32_tokens(stem);
-    if nums.len() < 2 {
-        return None;
-    }
-    Some((nums[0], nums[1]))
+    parse_chunk_space_name(stem)
 }
 
-fn extract_i32_tokens(text: &str) -> Vec<i32> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    for ch in text.chars() {
-        if ch.is_ascii_digit() || (ch == '-' && cur.is_empty()) {
-            cur.push(ch);
-        } else if !cur.is_empty() {
-            if let Ok(v) = cur.parse::<i32>() {
-                out.push(v);
-            }
-            cur.clear();
-        }
+fn parse_chunk_space_name(stem: &str) -> Option<(i32, i32)> {
+    let (x_text, z_text) = stem.split_once('_')?;
+    if x_text.is_empty() || z_text.is_empty() || z_text.contains('_') {
+        return None;
     }
-    if !cur.is_empty() {
-        if let Ok(v) = cur.parse::<i32>() {
-            out.push(v);
+    let x = parse_strict_i32(x_text)?;
+    let z = parse_strict_i32(z_text)?;
+    Some((x, z))
+}
+
+fn parse_strict_i32(text: &str) -> Option<i32> {
+    let mut chars = text.chars();
+    let first = chars.next()?;
+    if first == '-' {
+        if chars.clone().next().is_none() {
+            return None;
         }
+    } else if !first.is_ascii_digit() {
+        return None;
     }
-    out
+    if !chars.all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    text.parse::<i32>().ok()
 }
 
 fn escape_str(s: &str) -> String {
