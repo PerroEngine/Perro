@@ -15,6 +15,8 @@ Current terrain model (runtime):
   - `[x,z] = y`
   - `[x,z] y`
   - optional chunk header: `chunk = [cx,cz]` (or `coord = [cx,cz]`)
+- Any missing vertex samples default to `0.0` height.
+- An empty valid chunk file (for example `0_0.ptchunk`) loads as a completely flat chunk.
 - Runtime editing is height-only on existing vertices.
 - Runtime does not create/remove vertices or triangles.
 - Triangles use shared (deduped) grid vertices.

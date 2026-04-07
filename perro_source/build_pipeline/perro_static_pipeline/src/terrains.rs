@@ -46,7 +46,7 @@ impl WorkingChunk {
     }
 
     fn finish(self) -> Option<ParsedChunk> {
-        (self.assigned_count == HEIGHT_COUNT).then_some(ParsedChunk {
+        Some(ParsedChunk {
             x: self.x,
             z: self.z,
             heights: self.heights,
