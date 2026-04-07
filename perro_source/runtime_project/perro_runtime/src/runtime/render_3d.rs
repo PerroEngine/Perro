@@ -565,6 +565,26 @@ impl Runtime {
             if let Some(prev) = self.render_3d.collision_debug_state.remove(&node) {
                 Self::queue_remove_collision_debug_nodes(self, node, 0, prev.edge_count);
             }
+            let stale_chunk_keys: Vec<_> = self
+                .render_3d
+                .terrain_chunk_meshes
+                .keys()
+                .copied()
+                .filter(|key| key.node == node)
+                .collect();
+            for key in stale_chunk_keys {
+                if let Some(mesh_state) = self.render_3d.terrain_chunk_meshes.remove(&key)
+                    && !mesh_state.mesh.is_nil()
+                {
+                    self.queue_render_command(RenderCommand::Resource(ResourceCommand::DropMesh {
+                        id: mesh_state.mesh,
+                    }));
+                }
+                self.render_3d.terrain_chunk_draws.remove(&key);
+                self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+                    node: terrain_chunk_draw_node(node, key.coord),
+                })));
+            }
             self.render_3d.retained_ambient_lights.remove(&node);
             self.render_3d.retained_skies.remove(&node);
             self.render_3d.retained_ray_lights.remove(&node);
@@ -622,12 +642,14 @@ impl Runtime {
         let mut terrain_signature = 0xD6E8_FD91_4A2C_7C3Bu64;
         terrain_signature ^= chunk_size_meters.to_bits() as u64;
         terrain_signature = terrain_signature.rotate_left(13);
+        let mut active_keys = ahash::AHashSet::with_capacity(chunks.len());
 
         for (coord, chunk) in chunks {
             let key = crate::runtime::TerrainChunkMeshKey {
                 node,
                 coord: *coord,
             };
+            active_keys.insert(key);
             let hash = terrain_chunk_hash(chunk);
             terrain_signature ^= (coord.x as u32 as u64).wrapping_mul(0x9E37_79B1);
             terrain_signature = terrain_signature.rotate_left(11);
@@ -704,18 +726,49 @@ impl Runtime {
                 let chunk_center_z = coord.z as f32 * chunk_size_meters;
                 let model = world_from_terrain
                     * Mat4::from_translation(Vec3::new(chunk_center_x, 0.0, chunk_center_z));
-                self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::Draw {
+                let model_cols = model.to_cols_array_2d();
+                let draw_node = terrain_chunk_draw_node(node, *coord);
+                let draw_state = crate::runtime::state::RetainedMeshDrawState {
                     mesh: current_mesh,
-                    surfaces: std::sync::Arc::from(vec![MeshSurfaceBinding3D {
+                    surfaces: std::sync::Arc::from([MeshSurfaceBinding3D {
                         material: Some(material),
                         overrides: std::sync::Arc::from([]),
                         modulate: [1.0, 1.0, 1.0, 1.0],
                     }]),
-                    node,
-                    model: model.to_cols_array_2d(),
+                    model: model_cols,
                     skeleton: None,
-                })));
+                };
+                if self.render_3d.terrain_chunk_draws.get(&key) != Some(&draw_state) {
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::Draw {
+                        mesh: current_mesh,
+                        surfaces: draw_state.surfaces.clone(),
+                        node: draw_node,
+                        model: model_cols,
+                        skeleton: None,
+                    })));
+                    self.render_3d.terrain_chunk_draws.insert(key, draw_state);
+                }
             }
+        }
+        let stale_keys: Vec<_> = self
+            .render_3d
+            .terrain_chunk_meshes
+            .keys()
+            .copied()
+            .filter(|key| key.node == node && !active_keys.contains(key))
+            .collect();
+        for key in stale_keys {
+            if let Some(mesh_state) = self.render_3d.terrain_chunk_meshes.remove(&key)
+                && !mesh_state.mesh.is_nil()
+            {
+                self.queue_render_command(RenderCommand::Resource(ResourceCommand::DropMesh {
+                    id: mesh_state.mesh,
+                }));
+            }
+            self.render_3d.terrain_chunk_draws.remove(&key);
+            self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+                node: terrain_chunk_draw_node(node, key.coord),
+            })));
         }
         terrain_signature
     }
@@ -1184,6 +1237,18 @@ fn debug_vertex_size(avg_edge_len: f32) -> f32 {
 fn terrain_debug_point_node(node: NodeID, index: u32) -> NodeID {
     // Synthetic retained debug ID namespace: top byte 0xD1 for points.
     NodeID::from_u64((0xD1u64 << 56) ^ (node.as_u64() << 16) ^ index as u64)
+}
+
+fn terrain_chunk_draw_node(node: NodeID, coord: ChunkCoord) -> NodeID {
+    // Synthetic retained draw ID namespace: top byte 0xD4 for terrain chunks.
+    let mut h = (0xD4u64 << 56) ^ (node.as_u64() << 16);
+    h ^= (coord.x as u32 as u64).wrapping_mul(0x9E37_79B1);
+    h = h.rotate_left(17);
+    h ^= (coord.z as u32 as u64).wrapping_mul(0x85EB_CA77);
+    if h == 0 {
+        h = 1;
+    }
+    NodeID::from_u64(h)
 }
 
 fn terrain_debug_edge_node(node: NodeID, index: u32) -> NodeID {
