@@ -14,7 +14,6 @@ use winit::{
 
 const DEFAULT_FPS_CAP: f32 = 60.0;
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
-const FALLBACK_FIXED_TIMESTEP_SECONDS: f32 = 1.0 / 60.0;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 8;
 const LOG_INTERVAL_SECONDS: f32 = 2.5;
 const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
@@ -285,27 +284,33 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let input_poll_duration = input_poll_start.elapsed();
         let fixed_start = Instant::now();
 
-        let effective_fixed_step = self
-            .fixed_timestep
-            .unwrap_or(FALLBACK_FIXED_TIMESTEP_SECONDS);
         {
-            self.fixed_accumulator += frame_delta.as_secs_f32();
-            let mut steps = 0u32;
-            while self.fixed_accumulator >= effective_fixed_step && steps < MAX_FIXED_STEPS_PER_FRAME
-            {
+            if let Some(effective_fixed_step) = self.fixed_timestep {
+                self.fixed_accumulator += frame_delta.as_secs_f32();
+                let mut steps = 0u32;
+                while self.fixed_accumulator >= effective_fixed_step
+                    && steps < MAX_FIXED_STEPS_PER_FRAME
+                {
+                    let update_start = Instant::now();
+                    self.app.fixed_update_runtime(effective_fixed_step);
+                    runtime_update_duration += update_start.elapsed();
+                    self.fixed_accumulator -= effective_fixed_step;
+                    steps += 1;
+                }
+                if steps == MAX_FIXED_STEPS_PER_FRAME
+                    && self.fixed_accumulator >= effective_fixed_step
+                {
+                    // Drop excess accumulated time to avoid spiral-of-death behavior.
+                    self.fixed_accumulator = 0.0;
+                }
+                simulated_delta_seconds = effective_fixed_step as f64 * steps as f64;
+            } else {
+                let variable_step = frame_delta.as_secs_f32();
                 let update_start = Instant::now();
-                self.app.fixed_update_runtime(effective_fixed_step);
+                self.app.fixed_update_runtime(variable_step);
                 runtime_update_duration += update_start.elapsed();
-                self.fixed_accumulator -= effective_fixed_step;
-                steps += 1;
+                simulated_delta_seconds = variable_step as f64;
             }
-            if steps == MAX_FIXED_STEPS_PER_FRAME
-                && self.fixed_accumulator >= effective_fixed_step
-            {
-                // Drop excess accumulated time to avoid spiral-of-death behavior.
-                self.fixed_accumulator = 0.0;
-            }
-            simulated_delta_seconds = effective_fixed_step as f64 * steps as f64;
         }
 
         let fixed_duration = fixed_start.elapsed();

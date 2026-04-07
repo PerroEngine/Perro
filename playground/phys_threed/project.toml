@@ -20,4 +20,4 @@ particle_sim_default = "gpu"
 
 [runtime]
 target_fps = "uncapped"
-target_fixed_update = 60
+target_fixed_update = 0
