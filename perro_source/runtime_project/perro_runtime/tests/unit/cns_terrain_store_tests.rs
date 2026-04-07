@@ -24,3 +24,13 @@ fn terrain_store_clear_invalidates_existing_ids() {
     store.clear();
     assert!(store.get(id).is_none());
 }
+
+#[test]
+fn terrain_store_revision_advances_on_mutation_access() {
+    let mut store = TerrainStore::new();
+    let id = store.insert(TerrainData::new(64.0));
+    let before = store.revision(id).expect("revision should exist");
+    let _ = store.get_mut(id).expect("terrain should exist");
+    let after = store.revision(id).expect("revision should exist");
+    assert!(after > before);
+}

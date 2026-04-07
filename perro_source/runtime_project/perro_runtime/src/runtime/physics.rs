@@ -53,6 +53,7 @@ struct BodyDesc2D {
     enabled: bool,
     global: Transform2D,
     rigid: Option<RigidBody2D>,
+    shape_signature: u64,
     shapes: Vec<ShapeDesc2D>,
 }
 
@@ -63,6 +64,7 @@ struct BodyDesc3D {
     enabled: bool,
     global: Transform3D,
     rigid: Option<RigidBody3D>,
+    shape_signature: u64,
     shapes: Vec<ShapeDesc3D>,
 }
 
@@ -71,6 +73,7 @@ struct BodyState2D {
     handle: r2::RigidBodyHandle,
     colliders: Vec<r2::ColliderHandle>,
     kind: BodyKind,
+    shape_signature: u64,
     opaque_handle: u64,
 }
 
@@ -79,6 +82,7 @@ struct BodyState3D {
     handle: r3::RigidBodyHandle,
     colliders: Vec<r3::ColliderHandle>,
     kind: BodyKind,
+    shape_signature: u64,
     opaque_handle: u64,
 }
 
@@ -356,15 +360,35 @@ impl Runtime {
             let Some(global) = self.get_global_transform_2d(id) else {
                 continue;
             };
-            let mut shapes = Vec::new();
-            for child_id in children {
-                let Some(child) = self.nodes.get(child_id) else {
+            let mut shape_signature = body_signature_seed(kind);
+            for child_id in &children {
+                let Some(child) = self.nodes.get(*child_id) else {
                     continue;
                 };
                 if let SceneNodeData::CollisionShape2D(shape) = &child.data {
-                    let mut desc = shape_desc_2d(shape, material.0, material.1);
-                    desc.sensor = kind == BodyKind::Area;
-                    shapes.push(desc);
+                    shape_signature = hash_collision_shape_2d(shape_signature, shape, kind);
+                }
+            }
+
+            let needs_shape_rebuild = self
+                .physics
+                .world_2d
+                .as_ref()
+                .and_then(|world| world.body_map.get(&id))
+                .map(|state| state.shape_signature != shape_signature)
+                .unwrap_or(true);
+
+            let mut shapes = Vec::new();
+            if needs_shape_rebuild {
+                for child_id in children {
+                    let Some(child) = self.nodes.get(child_id) else {
+                        continue;
+                    };
+                    if let SceneNodeData::CollisionShape2D(shape) = &child.data {
+                        let mut desc = shape_desc_2d(shape, material.0, material.1);
+                        desc.sensor = kind == BodyKind::Area;
+                        shapes.push(desc);
+                    }
                 }
             }
 
@@ -374,6 +398,7 @@ impl Runtime {
                 enabled,
                 global,
                 rigid,
+                shape_signature,
                 shapes,
             });
         }
@@ -428,36 +453,73 @@ impl Runtime {
             let Some(global) = self.get_global_transform_3d(id) else {
                 continue;
             };
-            let mut shapes = Vec::new();
-            for child_id in children {
-                let Some(child) = self.nodes.get(child_id) else {
+            let mut shape_signature = body_signature_seed(kind);
+            shape_signature = hash_f32(shape_signature, global.scale.x.to_bits());
+            shape_signature = hash_f32(shape_signature, global.scale.y.to_bits());
+            shape_signature = hash_f32(shape_signature, global.scale.z.to_bits());
+
+            for child_id in &children {
+                let Some(child) = self.nodes.get(*child_id) else {
                     continue;
                 };
                 if let SceneNodeData::CollisionShape3D(shape) = &child.data {
-                    let mut desc = shape_desc_3d(shape, material.0, material.1);
-                    // Physics colliders inherit parent body global scale.
-                    desc.local.scale = Vector3::new(
-                        desc.local.scale.x * global.scale.x,
-                        desc.local.scale.y * global.scale.y,
-                        desc.local.scale.z * global.scale.z,
-                    );
-                    desc.sensor = kind == BodyKind::Area;
-                    shapes.push(desc);
+                    shape_signature = hash_collision_shape_3d(shape_signature, shape, kind, global.scale);
                 }
             }
             if let Some(terrain_id) = terrain_ref
                 && !terrain_id.is_nil()
             {
-                let mut chunk_shapes = self.collect_terrain_chunk_shapes(
-                    terrain_id,
-                    global.scale,
-                    material.0,
-                    material.1,
-                );
-                for desc in &mut chunk_shapes {
-                    desc.sensor = kind == BodyKind::Area;
+                shape_signature = hash_u64(shape_signature, terrain_id.as_u64());
+                if let Some(revision) = self
+                    .terrain_store
+                    .lock()
+                    .expect("terrain store mutex poisoned")
+                    .revision(terrain_id)
+                {
+                    shape_signature = hash_u64(shape_signature, revision);
                 }
-                shapes.extend(chunk_shapes);
+            }
+
+            let needs_shape_rebuild = self
+                .physics
+                .world_3d
+                .as_ref()
+                .and_then(|world| world.body_map.get(&id))
+                .map(|state| state.shape_signature != shape_signature)
+                .unwrap_or(true);
+
+            let mut shapes = Vec::new();
+            if needs_shape_rebuild {
+                for child_id in children {
+                    let Some(child) = self.nodes.get(child_id) else {
+                        continue;
+                    };
+                    if let SceneNodeData::CollisionShape3D(shape) = &child.data {
+                        let mut desc = shape_desc_3d(shape, material.0, material.1);
+                        // Physics colliders inherit parent body global scale.
+                        desc.local.scale = Vector3::new(
+                            desc.local.scale.x * global.scale.x,
+                            desc.local.scale.y * global.scale.y,
+                            desc.local.scale.z * global.scale.z,
+                        );
+                        desc.sensor = kind == BodyKind::Area;
+                        shapes.push(desc);
+                    }
+                }
+                if let Some(terrain_id) = terrain_ref
+                    && !terrain_id.is_nil()
+                {
+                    let mut chunk_shapes = self.collect_terrain_chunk_shapes(
+                        terrain_id,
+                        global.scale,
+                        material.0,
+                        material.1,
+                    );
+                    for desc in &mut chunk_shapes {
+                        desc.sensor = kind == BodyKind::Area;
+                    }
+                    shapes.extend(chunk_shapes);
+                }
             }
 
             out.push(BodyDesc3D {
@@ -466,6 +528,7 @@ impl Runtime {
                 enabled,
                 global,
                 rigid,
+                shape_signature,
                 shapes,
             });
         }
@@ -499,6 +562,7 @@ impl Runtime {
                         handle: rb_handle,
                         colliders: Vec::new(),
                         kind: body.kind,
+                        shape_signature: 0,
                         opaque_handle: opaque,
                     },
                 );
@@ -537,22 +601,25 @@ impl Runtime {
                 }
             }
 
-            for handle in state.colliders.drain(..) {
-                let _ = world
-                    .colliders
-                    .remove(handle, &mut world.islands, &mut world.bodies, true);
-            }
-
-            for shape in &body.shapes {
-                let Some(builder) = collider_builder_2d(shape) else {
-                    continue;
-                };
-                let handle =
-                    world
+            if state.shape_signature != body.shape_signature {
+                for handle in state.colliders.drain(..) {
+                    let _ = world
                         .colliders
-                        .insert_with_parent(builder, state.handle, &mut world.bodies);
-                world.collider_owners.insert(handle, body.id);
-                state.colliders.push(handle);
+                        .remove(handle, &mut world.islands, &mut world.bodies, true);
+                }
+
+                for shape in &body.shapes {
+                    let Some(builder) = collider_builder_2d(shape) else {
+                        continue;
+                    };
+                    let handle =
+                        world
+                            .colliders
+                            .insert_with_parent(builder, state.handle, &mut world.bodies);
+                    world.collider_owners.insert(handle, body.id);
+                    state.colliders.push(handle);
+                }
+                state.shape_signature = body.shape_signature;
             }
         }
 
@@ -609,6 +676,7 @@ impl Runtime {
                         handle: rb_handle,
                         colliders: Vec::new(),
                         kind: body.kind,
+                        shape_signature: 0,
                         opaque_handle: opaque,
                     },
                 );
@@ -659,22 +727,25 @@ impl Runtime {
                 }
             }
 
-            for handle in state.colliders.drain(..) {
-                let _ = world
-                    .colliders
-                    .remove(handle, &mut world.islands, &mut world.bodies, true);
-            }
-
-            for shape in &body.shapes {
-                let Some(builder) = collider_builder_3d(shape) else {
-                    continue;
-                };
-                let handle =
-                    world
+            if state.shape_signature != body.shape_signature {
+                for handle in state.colliders.drain(..) {
+                    let _ = world
                         .colliders
-                        .insert_with_parent(builder, state.handle, &mut world.bodies);
-                world.collider_owners.insert(handle, body.id);
-                state.colliders.push(handle);
+                        .remove(handle, &mut world.islands, &mut world.bodies, true);
+                }
+
+                for shape in &body.shapes {
+                    let Some(builder) = collider_builder_3d(shape) else {
+                        continue;
+                    };
+                    let handle =
+                        world
+                            .colliders
+                            .insert_with_parent(builder, state.handle, &mut world.bodies);
+                    world.collider_owners.insert(handle, body.id);
+                    state.colliders.push(handle);
+                }
+                state.shape_signature = body.shape_signature;
             }
         }
 
@@ -1194,6 +1265,153 @@ impl Runtime {
         let params = [Variant::from(area), Variant::from(other)];
         let _ = SignalAPI::signal_emit(self, signal_id, &params);
     }
+}
+
+fn body_signature_seed(kind: BodyKind) -> u64 {
+    match kind {
+        BodyKind::Static => 0xA91B_D58C_24F1_7E31,
+        BodyKind::Area => 0xCC42_83B7_9E20_11DD,
+        BodyKind::Rigid => 0x6D1E_93A4_F02C_B871,
+    }
+}
+
+fn hash_u64(mut state: u64, value: u64) -> u64 {
+    state ^= value.wrapping_mul(0x9E37_79B1_85EB_CA87);
+    state.rotate_left(17)
+}
+
+fn hash_f32(state: u64, bits: u32) -> u64 {
+    hash_u64(state, bits as u64)
+}
+
+fn hash_transform_2d(mut state: u64, transform: Transform2D) -> u64 {
+    state = hash_f32(state, transform.position.x.to_bits());
+    state = hash_f32(state, transform.position.y.to_bits());
+    state = hash_f32(state, transform.rotation.to_bits());
+    state = hash_f32(state, transform.scale.x.to_bits());
+    hash_f32(state, transform.scale.y.to_bits())
+}
+
+fn hash_transform_3d(mut state: u64, transform: Transform3D) -> u64 {
+    state = hash_f32(state, transform.position.x.to_bits());
+    state = hash_f32(state, transform.position.y.to_bits());
+    state = hash_f32(state, transform.position.z.to_bits());
+    state = hash_f32(state, transform.rotation.x.to_bits());
+    state = hash_f32(state, transform.rotation.y.to_bits());
+    state = hash_f32(state, transform.rotation.z.to_bits());
+    state = hash_f32(state, transform.rotation.w.to_bits());
+    state = hash_f32(state, transform.scale.x.to_bits());
+    state = hash_f32(state, transform.scale.y.to_bits());
+    hash_f32(state, transform.scale.z.to_bits())
+}
+
+fn hash_shape_2d(state: u64, shape: Shape2D) -> u64 {
+    match shape {
+        Shape2D::Quad { width, height } => {
+            let state = hash_u64(state, 1);
+            let state = hash_f32(state, width.to_bits());
+            hash_f32(state, height.to_bits())
+        }
+        Shape2D::Circle { radius } => {
+            let state = hash_u64(state, 2);
+            hash_f32(state, radius.to_bits())
+        }
+        Shape2D::Triangle {
+            kind,
+            width,
+            height,
+        } => {
+            let state = hash_u64(state, 3);
+            let kind_tag = match kind {
+                Triangle2DKind::Equilateral => 1,
+                Triangle2DKind::Right => 2,
+                Triangle2DKind::Isosceles => 3,
+            };
+            let state = hash_u64(state, kind_tag);
+            let state = hash_f32(state, width.to_bits());
+            hash_f32(state, height.to_bits())
+        }
+    }
+}
+
+fn hash_shape_3d(state: u64, shape: Shape3D) -> u64 {
+    match shape {
+        Shape3D::Cube { size } => {
+            let state = hash_u64(state, 1);
+            let state = hash_f32(state, size.x.to_bits());
+            let state = hash_f32(state, size.y.to_bits());
+            hash_f32(state, size.z.to_bits())
+        }
+        Shape3D::Sphere { radius } => {
+            let state = hash_u64(state, 2);
+            hash_f32(state, radius.to_bits())
+        }
+        Shape3D::Capsule {
+            radius,
+            half_height,
+        } => {
+            let state = hash_u64(state, 3);
+            let state = hash_f32(state, radius.to_bits());
+            hash_f32(state, half_height.to_bits())
+        }
+        Shape3D::Cylinder {
+            radius,
+            half_height,
+        } => {
+            let state = hash_u64(state, 4);
+            let state = hash_f32(state, radius.to_bits());
+            hash_f32(state, half_height.to_bits())
+        }
+        Shape3D::Cone {
+            radius,
+            half_height,
+        } => {
+            let state = hash_u64(state, 5);
+            let state = hash_f32(state, radius.to_bits());
+            hash_f32(state, half_height.to_bits())
+        }
+        Shape3D::TriPrism { size } => {
+            let state = hash_u64(state, 6);
+            let state = hash_f32(state, size.x.to_bits());
+            let state = hash_f32(state, size.y.to_bits());
+            hash_f32(state, size.z.to_bits())
+        }
+        Shape3D::TriangularPyramid { size } => {
+            let state = hash_u64(state, 7);
+            let state = hash_f32(state, size.x.to_bits());
+            let state = hash_f32(state, size.y.to_bits());
+            hash_f32(state, size.z.to_bits())
+        }
+        Shape3D::SquarePyramid { size } => {
+            let state = hash_u64(state, 8);
+            let state = hash_f32(state, size.x.to_bits());
+            let state = hash_f32(state, size.y.to_bits());
+            hash_f32(state, size.z.to_bits())
+        }
+    }
+}
+
+fn hash_collision_shape_2d(state: u64, shape: &CollisionShape2D, kind: BodyKind) -> u64 {
+    let mut state = hash_u64(state, (kind == BodyKind::Area) as u64);
+    state = hash_transform_2d(state, shape.base.transform);
+    hash_shape_2d(state, shape.shape)
+}
+
+fn hash_collision_shape_3d(
+    state: u64,
+    shape: &CollisionShape3D,
+    kind: BodyKind,
+    inherited_scale: Vector3,
+) -> u64 {
+    let mut state = hash_u64(state, (kind == BodyKind::Area) as u64);
+    let mut transform = shape.base.transform;
+    transform.scale = Vector3::new(
+        transform.scale.x * inherited_scale.x,
+        transform.scale.y * inherited_scale.y,
+        transform.scale.z * inherited_scale.z,
+    );
+    state = hash_transform_3d(state, transform);
+    hash_shape_3d(state, shape.shape)
 }
 
 fn shape_desc_2d(shape: &CollisionShape2D, friction: f32, restitution: f32) -> ShapeDesc2D {

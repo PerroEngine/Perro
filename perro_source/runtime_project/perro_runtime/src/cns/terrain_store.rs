@@ -4,6 +4,7 @@ use perro_terrain::TerrainData;
 pub(crate) struct TerrainStore {
     slots: Vec<Option<TerrainData>>,
     generations: Vec<u32>,
+    revisions: Vec<u64>,
     free_indices: Vec<usize>,
 }
 
@@ -11,11 +12,14 @@ impl TerrainStore {
     pub(crate) fn new() -> Self {
         let mut slots = Vec::with_capacity(2);
         let mut generations = Vec::with_capacity(2);
+        let mut revisions = Vec::with_capacity(2);
         slots.push(None);
         generations.push(0);
+        revisions.push(0);
         Self {
             slots,
             generations,
+            revisions,
             free_indices: Vec::new(),
         }
     }
@@ -23,6 +27,7 @@ impl TerrainStore {
     pub(crate) fn insert(&mut self, data: TerrainData) -> TerrainID {
         if let Some(index) = self.free_indices.pop() {
             self.slots[index] = Some(data);
+            self.revisions[index] = self.revisions[index].wrapping_add(1);
             let generation = self.generations[index];
             return TerrainID::from_parts(index as u32, generation);
         }
@@ -30,6 +35,7 @@ impl TerrainStore {
         let index = self.slots.len();
         self.slots.push(Some(data));
         self.generations.push(0);
+        self.revisions.push(0);
         TerrainID::from_parts(index as u32, 0)
     }
 
@@ -44,7 +50,16 @@ impl TerrainStore {
         if !self.is_valid(id) {
             return None;
         }
-        self.slots[id.index() as usize].as_mut()
+        let index = id.index() as usize;
+        self.revisions[index] = self.revisions[index].wrapping_add(1);
+        self.slots[index].as_mut()
+    }
+
+    pub(crate) fn revision(&self, id: TerrainID) -> Option<u64> {
+        if !self.is_valid(id) {
+            return None;
+        }
+        Some(self.revisions[id.index() as usize])
     }
 
     pub(crate) fn remove(&mut self, id: TerrainID) -> Option<TerrainData> {
@@ -53,6 +68,7 @@ impl TerrainStore {
         }
         let index = id.index() as usize;
         self.generations[index] = self.generations[index].wrapping_add(1);
+        self.revisions[index] = self.revisions[index].wrapping_add(1);
         let removed = self.slots[index].take();
         if removed.is_some() {
             self.free_indices.push(index);
@@ -63,9 +79,11 @@ impl TerrainStore {
     pub(crate) fn clear(&mut self) {
         self.slots.clear();
         self.generations.clear();
+        self.revisions.clear();
         self.free_indices.clear();
         self.slots.push(None);
         self.generations.push(0);
+        self.revisions.push(0);
     }
 
     fn is_valid(&self, id: TerrainID) -> bool {
