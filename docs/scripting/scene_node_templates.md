@@ -176,6 +176,7 @@ parent = PARENTKEY
 script = "res://path/to/script.rs"
     [RigidBody2D]
         enabled = true
+        continuous_collision_detection = true
         linear_velocity = (0, 0)
         angular_velocity = 0.0
         gravity_scale = 1.0
@@ -315,6 +316,7 @@ parent = PARENTKEY
 script = "res://path/to/script.rs"
     [RigidBody3D]
         enabled = true
+        continuous_collision_detection = true
         mass = 1.0
         linear_velocity = (0, 0, 0)
         angular_velocity = (0, 0, 0)
@@ -366,6 +368,7 @@ script = "res://path/to/script.rs"
 parent = PARENTKEY
 script = "res://path/to/script.rs"
     [TerrainInstance3D]
+        terrain = "res://path/to/terrain_folder"
         show_debug_vertices = true
         show_debug_edges = true
         [Node3D]

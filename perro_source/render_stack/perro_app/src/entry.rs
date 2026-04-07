@@ -148,6 +148,7 @@ pub struct StaticEmbeddedAssetsConfig {
     pub scene_lookup: perro_runtime::StaticSceneLookup,
     pub localization_lookup: perro_runtime::StaticLocalizationLookup,
     pub material_lookup: perro_runtime::StaticMaterialLookup,
+    pub terrain_lookup: perro_runtime::StaticTerrainLookup,
     pub particle_lookup: perro_runtime::StaticParticleLookup,
     pub animation_lookup: perro_runtime::StaticAnimationLookup,
     pub mesh_lookup: perro_graphics::StaticMeshLookup,
@@ -192,6 +193,7 @@ pub fn run_static_embedded_project(
         .with_static_scene_lookup(input.assets.scene_lookup)
         .with_static_localization_lookup(input.assets.localization_lookup)
         .with_static_material_lookup(input.assets.material_lookup)
+        .with_static_terrain_lookup(input.assets.terrain_lookup)
         .with_static_particle_lookup(input.assets.particle_lookup)
         .with_static_animation_lookup(input.assets.animation_lookup)
         .with_static_skeleton_lookup(input.assets.skeleton_lookup)

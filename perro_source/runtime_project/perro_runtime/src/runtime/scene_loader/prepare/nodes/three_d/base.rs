@@ -85,6 +85,9 @@ fn apply_skeleton_3d_fields(_node: &mut Skeleton3D, _fields: &[SceneObjectField]
 fn apply_terrain_instance_3d_fields(node: &mut TerrainInstance3D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         match resolve_node_field("TerrainInstance3D", name) {
+            Some(NodeField::TerrainInstance3D(TerrainInstance3DField::Terrain)) => {
+                node.terrain_source = as_asset_source(value).map(std::borrow::Cow::Owned);
+            }
             Some(NodeField::TerrainInstance3D(
                 TerrainInstance3DField::ShowDebugVertices,
             )) => {

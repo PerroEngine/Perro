@@ -73,6 +73,7 @@ pub enum StaticBody2DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RigidBody2DField {
     Enabled,
+    ContinuousCollisionDetection,
     LinearVelocity,
     AngularVelocity,
     GravityScale,
@@ -106,6 +107,7 @@ pub enum Skeleton3DField {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TerrainInstance3DField {
+    Terrain,
     ShowDebugVertices,
     ShowDebugEdges,
 }
@@ -217,6 +219,7 @@ pub enum StaticBody3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RigidBody3DField {
     Enabled,
+    ContinuousCollisionDetection,
     Mass,
     LinearVelocity,
     AngularVelocity,
@@ -265,6 +268,9 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::RigidBody2D => match field {
             "enabled" => Some(NodeField::RigidBody2D(RigidBody2DField::Enabled)),
+            "continuous_collision_detection" | "ccd" => Some(NodeField::RigidBody2D(
+                RigidBody2DField::ContinuousCollisionDetection,
+            )),
             "linear_velocity" | "velocity" => {
                 Some(NodeField::RigidBody2D(RigidBody2DField::LinearVelocity))
             }
@@ -296,6 +302,7 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             _ => None,
         },
         NodeType::TerrainInstance3D => match field {
+            "terrain" => Some(NodeField::TerrainInstance3D(TerrainInstance3DField::Terrain)),
             "show_debug_vertices" => Some(NodeField::TerrainInstance3D(
                 TerrainInstance3DField::ShowDebugVertices,
             )),
@@ -391,6 +398,9 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::RigidBody3D => match field {
             "enabled" => Some(NodeField::RigidBody3D(RigidBody3DField::Enabled)),
+            "continuous_collision_detection" | "ccd" => Some(NodeField::RigidBody3D(
+                RigidBody3DField::ContinuousCollisionDetection,
+            )),
             "mass" => Some(NodeField::RigidBody3D(RigidBody3DField::Mass)),
             "linear_velocity" | "velocity" => {
                 Some(NodeField::RigidBody3D(RigidBody3DField::LinearVelocity))

@@ -84,6 +84,13 @@ fn apply_rigid_body_2d_fields(node: &mut RigidBody2D, fields: &[SceneObjectField
                     node.enabled = enabled;
                 }
             }
+            Some(NodeField::RigidBody2D(
+                RigidBody2DField::ContinuousCollisionDetection,
+            )) => {
+                if let Some(ccd) = as_bool(value) {
+                    node.continuous_collision_detection = ccd;
+                }
+            }
             Some(NodeField::RigidBody2D(RigidBody2DField::LinearVelocity)) => {
                 if let Some(velocity) = as_vec2(value) {
                     node.linear_velocity = velocity;

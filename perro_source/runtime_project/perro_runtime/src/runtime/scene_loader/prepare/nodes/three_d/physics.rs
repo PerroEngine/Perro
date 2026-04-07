@@ -90,6 +90,13 @@ fn apply_rigid_body_3d_fields(node: &mut RigidBody3D, fields: &[SceneObjectField
                     node.enabled = enabled;
                 }
             }
+            Some(NodeField::RigidBody3D(
+                RigidBody3DField::ContinuousCollisionDetection,
+            )) => {
+                if let Some(ccd) = as_bool(value) {
+                    node.continuous_collision_detection = ccd;
+                }
+            }
             Some(NodeField::RigidBody3D(RigidBody3DField::Mass)) => {
                 if let Some(mass) = as_f32(value) {
                     node.mass = mass.max(0.0);

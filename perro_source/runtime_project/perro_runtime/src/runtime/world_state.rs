@@ -1,4 +1,5 @@
 use super::Runtime;
+use crate::terrain_schema;
 use perro_ids::NodeID;
 use perro_nodes::SceneNodeData;
 use perro_terrain::{ChunkCoord, TerrainData};
@@ -58,16 +59,23 @@ impl Runtime {
 
     pub(crate) fn default_terrain_data() -> TerrainData {
         let mut terrain = TerrainData::new(64.0);
-        let _ = terrain.ensure_chunk(ChunkCoord::new(0, 0));
+        for cz in -1..=1 {
+            for cx in -1..=1 {
+                let _ = terrain.ensure_chunk(ChunkCoord::new(cx, cz));
+            }
+        }
         terrain
     }
 
     pub(crate) fn ensure_terrain_instance_data(&mut self, node: NodeID) -> bool {
-        let Some(current_id) = self
+        let Some((current_id, terrain_source)) = self
             .nodes
             .get(node)
             .and_then(|scene_node| match &scene_node.data {
-                SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
+                SceneNodeData::TerrainInstance3D(terrain) => Some((
+                    terrain.terrain,
+                    terrain.terrain_source.as_ref().map(|v| v.to_string()),
+                )),
                 _ => None,
             })
         else {
@@ -84,11 +92,16 @@ impl Runtime {
             }
         }
 
+        let terrain_data = terrain_source
+            .as_deref()
+            .and_then(|source| self.load_terrain_data_from_source(source))
+            .unwrap_or_else(Self::default_terrain_data);
+
         let id = self
             .terrain_store
             .lock()
             .expect("terrain store mutex poisoned")
-            .insert(Self::default_terrain_data());
+            .insert(terrain_data);
         if let Some(scene_node) = self.nodes.get_mut(node)
             && let SceneNodeData::TerrainInstance3D(terrain) = &mut scene_node.data
         {
@@ -97,5 +110,16 @@ impl Runtime {
         }
 
         false
+    }
+
+    fn load_terrain_data_from_source(&self, source: &str) -> Option<TerrainData> {
+        let static_lookup = self.project().and_then(|project| project.static_terrain_lookup);
+        if let Some(lookup) = static_lookup
+            && let Some(literal) = lookup(source)
+            && let Some(terrain) = terrain_schema::load_terrain_literal(literal)
+        {
+            return Some(terrain);
+        }
+        terrain_schema::load_terrain_from_folder_source(source)
     }
 }

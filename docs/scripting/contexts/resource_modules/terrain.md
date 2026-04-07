@@ -9,6 +9,11 @@ Methods:
 
 Current terrain model (runtime):
 - Terrain is fixed-grid per chunk: `64x64` cells (`65x65` shared vertices), `1 vertex per meter`.
+- Scene-authored terrain can be loaded by setting `TerrainInstance3D.terrain` to a folder path containing `.ptchunk` files.
+- `.ptchunk` is key-value style, one sample per line, for example:
+  - `[x,z] = y`
+  - `[x,z] y`
+  - optional chunk header: `chunk = [cx,cz]` (or `coord = [cx,cz]`)
 - Runtime editing is height-only on existing vertices.
 - Runtime does not create/remove vertices or triangles.
 - Triangles use shared (deduped) grid vertices.

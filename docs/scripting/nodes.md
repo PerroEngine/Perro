@@ -55,6 +55,7 @@ Physics 2D:
 `TerrainInstance3D`
 
 - Runtime terrain renderer instance (terrain data is managed through `ResourceContext::Terrain()`).
+- Optional authored source: `terrain = "res://path/to/folder"` where the folder contains one or more `.ptchunk` files.
 - Terrain is fixed-grid runtime terrain (`1 vertex per meter` on `64x64` cells per chunk).
 - Automatically contributes static terrain collision from chunk mesh geometry.
 

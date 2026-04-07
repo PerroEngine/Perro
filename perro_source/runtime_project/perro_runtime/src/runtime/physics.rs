@@ -220,10 +220,12 @@ impl Default for PhysicsState {
 
 impl PhysicsWorld2D {
     fn new() -> Self {
+        let mut integration_parameters = r2::IntegrationParameters::default();
+        integration_parameters.max_ccd_substeps = 4;
         Self {
             pipeline: r2::PhysicsPipeline::new(),
             gravity: na2::Vector2::new(0.0, -9.81),
-            integration_parameters: r2::IntegrationParameters::default(),
+            integration_parameters,
             islands: r2::IslandManager::new(),
             broad_phase: r2::DefaultBroadPhase::new(),
             narrow_phase: r2::NarrowPhase::new(),
@@ -240,10 +242,12 @@ impl PhysicsWorld2D {
 
 impl PhysicsWorld3D {
     fn new() -> Self {
+        let mut integration_parameters = r3::IntegrationParameters::default();
+        integration_parameters.max_ccd_substeps = 4;
         Self {
             pipeline: r3::PhysicsPipeline::new(),
             gravity: na3::Vector3::new(0.0, -9.81, 0.0),
-            integration_parameters: r3::IntegrationParameters::default(),
+            integration_parameters,
             islands: r3::IslandManager::new(),
             broad_phase: r3::DefaultBroadPhase::new(),
             narrow_phase: r3::NarrowPhase::new(),
@@ -527,6 +531,9 @@ impl Runtime {
                     rb.set_gravity_scale(rigid.gravity_scale, true);
                     rb.set_linear_damping(rigid.linear_damping);
                     rb.set_angular_damping(rigid.angular_damping);
+                    rb.enable_ccd(rigid.continuous_collision_detection);
+                } else {
+                    rb.enable_ccd(false);
                 }
             }
 
@@ -646,6 +653,9 @@ impl Runtime {
                     rb.set_linear_damping(rigid.linear_damping);
                     rb.set_angular_damping(rigid.angular_damping);
                     rb.set_additional_mass(rigid.mass.max(0.0), true);
+                    rb.enable_ccd(rigid.continuous_collision_detection);
+                } else {
+                    rb.enable_ccd(false);
                 }
             }
 
@@ -1265,6 +1275,7 @@ fn build_rigid_body_2d(desc: &BodyDesc2D) -> r2::RigidBody {
             .gravity_scale(rigid.gravity_scale)
             .linear_damping(rigid.linear_damping)
             .angular_damping(rigid.angular_damping)
+            .ccd_enabled(rigid.continuous_collision_detection)
             .can_sleep(rigid.can_sleep)
             .enabled(rigid.enabled);
         if rigid.lock_rotation {
@@ -1300,8 +1311,7 @@ fn build_rigid_body_3d(desc: &BodyDesc3D) -> r3::RigidBody {
             .linear_damping(rigid.linear_damping)
             .angular_damping(rigid.angular_damping)
             .additional_mass(rigid.mass.max(0.0))
-            // Projectile-like rigid bodies can otherwise skip thin/sensor overlaps between fixed steps.
-            .ccd_enabled(true)
+            .ccd_enabled(rigid.continuous_collision_detection)
             .can_sleep(rigid.can_sleep)
             .enabled(rigid.enabled);
     }

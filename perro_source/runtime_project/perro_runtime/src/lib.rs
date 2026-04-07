@@ -2,6 +2,7 @@ mod cns;
 mod material_schema;
 mod render_result;
 mod rs_ctx;
+mod terrain_schema;
 mod runtime;
 mod runtime_project;
 
@@ -19,6 +20,7 @@ pub use runtime_project::{
     RuntimeProject, RuntimeProjectConfig, StaticAnimationLookup, StaticAudioLookup,
     StaticBytesLookup,
     StaticLocalizationLookup, StaticMaterialLookup, StaticParticleLookup, StaticProjectConfig,
+    StaticTerrainLookup,
     StaticSceneLookup, StaticSkeletonLookup, default_project_toml, ensure_project_layout,
     ensure_project_toml, load_project_toml, parse_project_toml,
 };

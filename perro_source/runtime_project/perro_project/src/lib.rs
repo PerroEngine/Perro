@@ -389,6 +389,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         &default_static_materials_rs(),
     )?;
     write_if_missing(
+        project_static_src.join("terrains.rs"),
+        &default_static_terrains_rs(),
+    )?;
+    write_if_missing(
         project_static_src.join("particles.rs"),
         &default_static_particles_rs(),
     )?;
@@ -1533,6 +1537,7 @@ fn project_root() -> std::path::PathBuf {
               scene_lookup: static_assets::scenes::lookup_scene,
               localization_lookup: static_assets::localizations::lookup_localized_string,
               material_lookup: static_assets::materials::lookup_material,
+              terrain_lookup: static_assets::terrains::lookup_terrain,
               particle_lookup: static_assets::particles::lookup_particle,
               animation_lookup: static_assets::animations::lookup_animation,
               mesh_lookup: static_assets::meshes::lookup_mesh,
@@ -1550,7 +1555,7 @@ fn project_root() -> std::path::PathBuf {
 }
 
 fn default_static_mod_rs() -> String {
-    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod animations;\npub mod meshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n".to_string()
+    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod terrains;\npub mod particles;\npub mod animations;\npub mod meshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n".to_string()
 }
 
 fn default_static_scenes_rs() -> String {
@@ -1583,6 +1588,16 @@ fn default_static_particles_rs() -> String {
 use perro_render_bridge::ParticleProfile3D;
 
 pub fn lookup_particle(_path: &str) -> Option<&'static ParticleProfile3D> {
+    None
+}
+"#
+    .to_string()
+}
+
+fn default_static_terrains_rs() -> String {
+    r#"#![allow(unused_imports)]
+
+pub fn lookup_terrain(_path: &str) -> Option<&'static str> {
     None
 }
 "#
