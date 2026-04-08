@@ -251,17 +251,28 @@ impl Renderer3D {
             lighting.sky = Some(sky.clone());
             lighting.sky_cloud_time_seconds = self.cloud_time_seconds;
         }
-        for (slot, (_, light)) in lighting.ray_lights.iter_mut().zip(self.ray_lights.iter()) {
+        let mut ray_lights_sorted: Vec<(NodeID, RayLight3DState)> =
+            self.ray_lights.iter().map(|(n, l)| (*n, *l)).collect();
+        ray_lights_sorted.sort_unstable_by_key(|(node, _)| node.as_u64());
+        for (slot, (_, light)) in lighting.ray_lights.iter_mut().zip(ray_lights_sorted.iter()) {
             *slot = Some(*light);
         }
+
+        let mut point_lights_sorted: Vec<(NodeID, PointLight3DState)> =
+            self.point_lights.iter().map(|(n, l)| (*n, *l)).collect();
+        point_lights_sorted.sort_unstable_by_key(|(node, _)| node.as_u64());
         for (slot, (_, light)) in lighting
             .point_lights
             .iter_mut()
-            .zip(self.point_lights.iter())
+            .zip(point_lights_sorted.iter())
         {
             *slot = Some(*light);
         }
-        for (slot, (_, light)) in lighting.spot_lights.iter_mut().zip(self.spot_lights.iter()) {
+
+        let mut spot_lights_sorted: Vec<(NodeID, SpotLight3DState)> =
+            self.spot_lights.iter().map(|(n, l)| (*n, *l)).collect();
+        spot_lights_sorted.sort_unstable_by_key(|(node, _)| node.as_u64());
+        for (slot, (_, light)) in lighting.spot_lights.iter_mut().zip(spot_lights_sorted.iter()) {
             *slot = Some(*light);
         }
 

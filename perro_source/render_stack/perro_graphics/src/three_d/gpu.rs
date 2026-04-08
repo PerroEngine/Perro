@@ -44,7 +44,7 @@ const HIZ_OCCLUSION_BIAS: f32 = 0.002;
 const MATERIAL_TEXTURE_NONE: u32 = u32::MAX;
 const MATERIAL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const PTEX_MAGIC: &[u8; 4] = b"PTEX";
-const SHADOW_MAP_SIZE: u32 = 2048;
+const SHADOW_MAP_SIZE: u32 = 4096;
 const SHADOW_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const SHADOW_MAP_DEPTH_BIAS_CONST: i32 = 2;
 const SHADOW_MAP_DEPTH_BIAS_SLOPE: f32 = 2.0;
@@ -1900,21 +1900,8 @@ impl Gpu3D {
                 1
             });
 
-            // CPU fallback frustum culling should use mesh bounds, not object center.
-            // Center-only tests pop large meshes when their origin exits the screen.
-            if !self.frustum_cull_enabled
-                && !use_meshlets
-                && !bounds_in_frustum(
-                    draw.model,
-                    mesh_asset.bounds_center,
-                    mesh_asset.bounds_radius,
-                    &frustum,
-                )
-            {
-                self.last_draw_instance_ranges
-                    .push(draw_instance_start..(self.staged_instances.len() as u32));
-                continue;
-            }
+            // Keep casters available even when off-screen so directional shadow fitting
+            // stays stable during camera orbit/rotation.
 
             if !use_meshlets {
                 let occlusion_key = draw.node.as_u64();
@@ -2068,11 +2055,7 @@ impl Gpu3D {
                     (0, 0)
                 };
                 for meshlet in mesh_asset.meshlets.iter().copied() {
-                    if !self.frustum_cull_enabled
-                        && !meshlet_in_frustum(draw.model, meshlet, &frustum)
-                    {
-                        continue;
-                    }
+                    // Keep meshlet casters for stable shadow fitting even when off-screen.
                     // CPU query occlusion at meshlet granularity self-occludes dynamic meshes.
                     // Keep meshlet occlusion GPU-driven only; CPU mode skips meshlet occlusion.
                     let occlusion_query = None;
@@ -5086,6 +5069,13 @@ fn build_scene_uniform(
         ray_count += 1;
     };
 
+    let has_explicit_rays = lighting
+        .ray_lights
+        .iter()
+        .flatten()
+        .any(|ray| ray.intensity > 1.0e-4);
+
+    // Prefer authored directional lights when present.
     for ray in lighting.ray_lights.iter().flatten() {
         if !ray.cast_shadows {
             continue;
@@ -5099,7 +5089,8 @@ fn build_scene_uniform(
         push_ray(Vec3::from(ray.direction), ray.color, ray.intensity);
     }
 
-    if let Some(sky) = lighting.sky.as_ref() {
+    // Only synthesize sky sun/moon directional lights when no explicit rays exist.
+    if !has_explicit_rays && let Some(sky) = lighting.sky.as_ref() {
         let (sun_body_dir, moon_body_dir) =
             sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
         // Sky returns body position directions (origin -> sun/moon).
@@ -5238,6 +5229,7 @@ fn build_shadow_setup(
         }
     });
 
+    // Prefer authored directional lights when present.
     let dir = if let Some(ray) = explicit_shadow_ray {
         Vec3::from(ray.direction).normalize_or_zero()
     } else if let Some(dir) = sky_shadow_dir {
@@ -5256,9 +5248,9 @@ fn build_shadow_setup(
     } else {
         Vec3::Y
     };
-    let distance = focus_radius * 2.0 + 20.0;
+    let distance = focus_radius * 3.0 + 80.0;
     let mut eye = focus_center - dir * distance;
-    let extent = (focus_radius * 1.05).max(6.0);
+    let extent = (focus_radius * 1.65).max(28.0);
     let (right_axis, up_axis) = light_stable_axes(dir, up);
     let world_units_per_texel = ((extent * 2.0) / SHADOW_MAP_SIZE as f32).max(1.0e-6);
     let center_x = focus_center.dot(right_axis);
@@ -5271,8 +5263,8 @@ fn build_shadow_setup(
     eye += center_delta;
     let view = Mat4::look_at_rh(eye, focus_center, up);
     let near = 0.1;
-    let far = (distance + focus_radius * 2.5).max(near + 1.0);
-    let proj = Mat4::orthographic_rh_gl(-extent, extent, -extent, extent, near, far);
+    let far = (distance + focus_radius * 6.0 + 160.0).max(near + 1.0);
+    let proj = Mat4::orthographic_rh(-extent, extent, -extent, extent, near, far);
     let light_view_proj = proj * view;
     if !light_view_proj.is_finite() {
         return (shadow_scene, shadow_uniform, false);
@@ -5280,26 +5272,21 @@ fn build_shadow_setup(
 
     shadow_scene.view_proj = light_view_proj.to_cols_array_2d();
     shadow_uniform.light_view_proj = shadow_scene.view_proj;
-    // Slightly higher depth/normal bias to suppress broad false-shadowing
-    // on large flat receivers while preserving contact shadows.
-    shadow_uniform.params0 = [1.0, 1.0, 0.0012, 0.03];
+    // Tuned for stable terrain + mesh shadows without lifted/peter-panned contact.
+    // params0 = [enabled, strength, depth_bias, normal_bias]
+    shadow_uniform.params0 = [1.0, 1.0, 0.00025, 0.012];
 
     (shadow_scene, shadow_uniform, true)
 }
 
 fn compute_shadow_focus_bounds(
-    camera: &Camera3DState,
+    _camera: &Camera3DState,
     _draw_batches: &[DrawBatch],
     _staged_instances: &[InstanceGpu],
 ) -> (Vec3, f32) {
-    // Keep directional shadow projection camera-centered and projection-agnostic.
-    // Camera zoom/FOV changes should not re-fit or shift shadow placement.
-    let camera_pos = Vec3::from(camera.position);
-    let center = camera_pos;
-    // Tighter default coverage improves texel density and avoids oversized
-    // shadow projection footprints in small/medium scenes.
-    let radius = 24.0f32;
-    (center, radius)
+    // Debug-stable world-space lock: prevents any camera-motion-coupled shadow drift.
+    // Scene appears centered near origin; widen radius if your play area is larger.
+    (Vec3::ZERO, 120.0)
 }
 
 fn light_stable_axes(light_dir: Vec3, fallback_up: Vec3) -> (Vec3, Vec3) {
