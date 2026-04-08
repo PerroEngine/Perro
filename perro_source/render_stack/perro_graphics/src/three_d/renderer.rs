@@ -39,11 +39,12 @@ pub struct Lighting3DState {
     pub ambient_light: Option<AmbientLight3DState>,
     pub sky: Option<Sky3DState>,
     pub sky_cloud_time_seconds: f32,
-    pub ray_light: Option<RayLight3DState>,
+    pub ray_lights: [Option<RayLight3DState>; MAX_RAY_LIGHTS],
     pub point_lights: [Option<PointLight3DState>; MAX_POINT_LIGHTS],
     pub spot_lights: [Option<SpotLight3DState>; MAX_SPOT_LIGHTS],
 }
 
+pub const MAX_RAY_LIGHTS: usize = 3;
 pub const MAX_POINT_LIGHTS: usize = 8;
 pub const MAX_SPOT_LIGHTS: usize = 8;
 
@@ -250,8 +251,8 @@ impl Renderer3D {
             lighting.sky = Some(sky.clone());
             lighting.sky_cloud_time_seconds = self.cloud_time_seconds;
         }
-        if let Some((_, ray)) = self.ray_lights.iter().next() {
-            lighting.ray_light = Some(*ray);
+        for (slot, (_, light)) in lighting.ray_lights.iter_mut().zip(self.ray_lights.iter()) {
+            *slot = Some(*light);
         }
         for (slot, (_, light)) in lighting
             .point_lights

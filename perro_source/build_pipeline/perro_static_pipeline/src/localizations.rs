@@ -4,6 +4,8 @@ use perro_ids::string_to_u64;
 use perro_project::ProjectConfig;
 use std::{collections::HashMap, fmt::Write as _, fs, path::Path};
 
+const ARRAY_ITEMS_PER_LINE: usize = 25;
+
 pub fn generate_static_localizations(
     project_root: &Path,
     config: &ProjectConfig,
@@ -204,33 +206,32 @@ pub fn generate_static_localizations(
     out.push_str(&format!("type StringIndex = {string_index_type};\n\n"));
 
     let _ = writeln!(out, "const STRINGS: [&str; {}] = [", strings.len());
-    for value in &strings {
-        let _ = writeln!(out, "    \"{}\",", escape_str(value));
+    for chunk in strings.chunks(ARRAY_ITEMS_PER_LINE) {
+        out.push_str("    ");
+        for value in chunk {
+            let _ = write!(out, "\"{}\", ", escape_str(value));
+        }
+        out.push('\n');
     }
     out.push_str("];\n\n");
 
     let _ = writeln!(out, "const KEY_HASHES: [u64; {key_count}] = [");
-    for (hash, key_index) in &hash_rows {
-        let key = &key_names_by_index[*key_index];
-        let _ = writeln!(
-            out,
-            "    perro::ids::string_to_u64(\"{}\"), // 0x{hash:016X} {}",
-            escape_str(key),
-            escape_comment(key)
-        );
+    for chunk in hash_rows.chunks(ARRAY_ITEMS_PER_LINE) {
+        out.push_str("    ");
+        for (hash, _key_index) in chunk {
+            let _ = write!(out, "0x{hash:016X}u64, ");
+        }
+        out.push('\n');
     }
     out.push_str("];\n\n");
 
     let _ = writeln!(out, "const KEY_INDICES: [KeyIndex; {key_count}] = [");
-    for (_hash, key_index) in &hash_rows {
-        let key = &key_names_by_index[*key_index];
-        let _ = writeln!(
-            out,
-            "    {}{}, // {}",
-            key_index,
-            key_index_type,
-            escape_comment(key)
-        );
+    for chunk in hash_rows.chunks(ARRAY_ITEMS_PER_LINE) {
+        out.push_str("    ");
+        for (_hash, key_index) in chunk {
+            let _ = write!(out, "{}{}, ", key_index, key_index_type);
+        }
+        out.push('\n');
     }
     out.push_str("];\n\n");
 
@@ -282,17 +283,12 @@ pub fn generate_static_localizations(
     for (locale_idx, (_code, runtime_variant)) in active_locales.iter().enumerate() {
         let table_name = format!("LOCALE_{runtime_variant}");
         let _ = writeln!(out, "const {table_name}: [StringIndex; {key_count}] = [");
-        for (row_idx, str_index) in locale_string_indices[locale_idx].iter().enumerate() {
-            let key = &key_names_by_index[row_idx];
-            let value = &dense_locale_tables[locale_idx][row_idx];
-            let _ = writeln!(
-                out,
-                "    {}{}, // {} => {}",
-                str_index,
-                string_index_type,
-                escape_comment(key),
-                escape_comment(value),
-            );
+        for chunk in locale_string_indices[locale_idx].chunks(ARRAY_ITEMS_PER_LINE) {
+            out.push_str("    ");
+            for str_index in chunk {
+                let _ = write!(out, "{}{}, ", str_index, string_index_type);
+            }
+            out.push('\n');
         }
         out.push_str("];\n\n");
     }
@@ -301,9 +297,13 @@ pub fn generate_static_localizations(
         "const LOCALES: [[StringIndex; {key_count}]; {}] = [\n",
         active_locales.len()
     ));
-    for (_, runtime_variant) in &active_locales {
-        let table_name = format!("LOCALE_{runtime_variant}");
-        let _ = writeln!(out, "    {table_name},");
+    for chunk in active_locales.chunks(ARRAY_ITEMS_PER_LINE) {
+        out.push_str("    ");
+        for (_, runtime_variant) in chunk {
+            let table_name = format!("LOCALE_{runtime_variant}");
+            let _ = write!(out, "{table_name}, ");
+        }
+        out.push('\n');
     }
     out.push_str("];\n\n");
 
@@ -347,19 +347,6 @@ fn escape_str(input: &str) -> String {
         match ch {
             '\\' => out.push_str("\\\\"),
             '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
-fn escape_comment(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    for ch in input.chars() {
-        match ch {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),

@@ -8,7 +8,9 @@
         let wind_dir       = wind / wind_len;
 
         let sky_uv_y_adjusted = max(ray.y - CLOUD_BASE_HEIGHT, 0.003) * 0.85;
-        let sky_uv            = ray.xz / sqrt(sky_uv_y_adjusted);
+        let sky_uv_raw        = ray.xz / sqrt(sky_uv_y_adjusted);
+        let pole_softening    = smoothstep(0.88, 0.995, abs(ray.y));
+        let sky_uv            = mix(sky_uv_raw, sky_uv_raw * 0.72, pole_softening);
 
         let cloud_clock      = cloud_time_seconds * (0.011 + wind_len * 0.06);
         let clouds_scale     = mix(1.55, 0.55, cloud_size);
@@ -181,6 +183,7 @@
         let horizon_continuity = smoothstep(
             CLOUD_BASE_HEIGHT, CLOUD_BASE_HEIGHT + 0.06, ray.y);
         clouds_amount_real *= horizon_continuity * 1.1;
+        clouds_amount_real *= 1.0 - pole_softening * 0.22;
         clouds_amount_real  = clamp(clouds_amount_real, 0.0, 1.0);
 
         // ── Night pocket breakup ──────────────────────────────
@@ -411,6 +414,11 @@
         );
         color += scatter_col * scatter_total;
     }
+
+    // Small per-pixel dither hides gradient banding in twilight/evening.
+    let dither = hash12(in.uv * vec2<f32>(1920.0, 1080.0)
+        + vec2<f32>(sky_time * 13.0, -sky_time * 7.0)) - 0.5;
+    color += vec3<f32>(dither) * (1.2 / 255.0);
 
     return vec4<f32>(max(color, vec3<f32>(0.0)), 1.0);
 }

@@ -140,21 +140,22 @@
     let star_gleam   = clamp(sky.params1.z, 0.0,  2.0);
 
     if (ray.y > -0.01 && day_t < 0.5) {
-        let stars_uv     = dir_to_octa_uv(ray);
         let star_density = mix(0.0045, 0.018, star_scatter);
         let scale_a      = mix(180.0, 360.0, star_scatter);
         let scale_b      = scale_a * 1.73;
         let point_size   = clamp((star_size - 0.2) / 1.8, 0.0, 1.0);
+        let pole_fade    = 1.0 - smoothstep(0.90, 0.995, abs(ray.y));
 
-        let stars_a = star_point_field(
-            stars_uv + vec2<f32>( 13.2, -9.7), scale_a,
+        let stars_a = star_point_field_triplanar(
+            ray + vec3<f32>(0.21, -0.15, 0.08), scale_a,
             star_density, point_size);
-        let stars_b = star_point_field(
-            stars_uv + vec2<f32>(-21.1,  7.4), scale_b,
+        let stars_b = star_point_field_triplanar(
+            ray + vec3<f32>(-0.17, 0.13, -0.27), scale_b,
             star_density * 0.42, point_size * 0.85);
         var stars = clamp(stars_a + stars_b, 0.0, 1.0);
-        stars *= 1.0 - moon_amount;
+        stars *= (1.0 - moon_amount) * pole_fade;
 
+        let stars_uv = dir_to_octa_uv(ray);
         let star_seed   = hash12(floor(stars_uv * scale_a));
         let twinkle     = 0.82 + 0.18
             * sin(cloud_time_seconds * 0.65 * (2.2 + star_seed * 9.0));

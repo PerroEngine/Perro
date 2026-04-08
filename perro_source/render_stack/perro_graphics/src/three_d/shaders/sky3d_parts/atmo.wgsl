@@ -111,9 +111,40 @@ fn dir_to_octa_uv(d: vec3<f32>) -> vec2<f32> {
 fn gradient3(colors: array<vec4<f32>, 3>, t_in: f32) -> vec3<f32> {
     let t = clamp(t_in, 0.0, 1.0);
     if (t < 0.5) {
-        return mix(colors[0].xyz, colors[1].xyz, t * 2.0);
+        let local_t = smoothstep(0.0, 1.0, t * 2.0);
+        return mix(colors[0].xyz, colors[1].xyz, local_t);
     }
-    return mix(colors[1].xyz, colors[2].xyz, (t - 0.5) * 2.0);
+    let local_t = smoothstep(0.0, 1.0, (t - 0.5) * 2.0);
+    return mix(colors[1].xyz, colors[2].xyz, local_t);
+}
+
+fn gradient3_blur(colors: array<vec4<f32>, 3>, t_in: f32, radius: f32) -> vec3<f32> {
+    let r = clamp(radius, 0.0, 0.25);
+    let c0 = gradient3(colors, clamp(t_in - r, 0.0, 1.0));
+    let c1 = gradient3(colors, t_in);
+    let c2 = gradient3(colors, clamp(t_in + r, 0.0, 1.0));
+    return c0 * 0.27901 + c1 * 0.44198 + c2 * 0.27901;
+}
+
+fn star_point_field_triplanar(
+    dir: vec3<f32>,
+    scale: f32,
+    density: f32,
+    size: f32
+) -> f32 {
+    let n = normalize(dir);
+    let an = max(abs(n), vec3<f32>(1.0e-5));
+    var w = pow(an, vec3<f32>(4.0));
+    w /= max(w.x + w.y + w.z, 1.0e-5);
+
+    let uv_x = n.yz * 0.5 + vec2<f32>(0.5, 0.5);
+    let uv_y = n.xz * 0.5 + vec2<f32>(0.5, 0.5);
+    let uv_z = n.xy * 0.5 + vec2<f32>(0.5, 0.5);
+
+    let sx = star_point_field(uv_x + vec2<f32>(0.17, -0.23), scale, density, size);
+    let sy = star_point_field(uv_y + vec2<f32>(-0.31, 0.11), scale, density, size);
+    let sz = star_point_field(uv_z + vec2<f32>(0.43, 0.29), scale, density, size);
+    return sx * w.x + sy * w.y + sz * w.z;
 }
 
 fn sun_dir_from_time(tod: f32, sky_angle: f32) -> vec3<f32> {
@@ -227,14 +258,18 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let ray_h   = normalize(vec2<f32>(ray.x,     ray.z)     + vec2<f32>(1.0e-5, 0.0));
     let sun_side = clamp(dot(ray_h, sun_h) * 0.5 + 0.5, 0.0, 1.0);
 
-    let day_col         = gradient3(sky.day_colors,     eyedir_y);
-    let evening_col_raw = gradient3(sky.evening_colors, horizon_t);
+    let pole_blur = smoothstep(0.80, 0.99, abs(ray.y));
+    let dusk_blur = smoothstep(0.05, 0.85, evening_t_raw);
+    let gradient_blur = 0.008 + dusk_blur * 0.020 + pole_blur * dusk_blur * 0.018;
+
+    let day_col = gradient3_blur(sky.day_colors, eyedir_y, gradient_blur * 0.60);
+    let evening_col_raw = gradient3_blur(sky.evening_colors, horizon_t, gradient_blur * 1.30);
     let evening_col     = mix(
         color_saturate(evening_col_raw, mix(1.0, 0.78, sunrise_twilight)),
         day_col,
         sunrise_twilight * 0.28
     ) * mix(1.0, 0.86, sunrise_twilight);
-    let night_col = gradient3(sky.night_colors, eyedir_y);
+    let night_col = gradient3_blur(sky.night_colors, eyedir_y, gradient_blur * 0.80);
 
     var w_day     = smoothstep(-0.10,  0.34, sun_dir.y);
     var w_night   = smoothstep( 0.12, -0.40, sun_dir.y);

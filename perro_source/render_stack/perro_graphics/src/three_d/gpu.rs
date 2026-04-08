@@ -1,5 +1,8 @@
 use super::{
-    renderer::{Draw3DInstance, Draw3DKind, Lighting3DState, MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS},
+    renderer::{
+        Draw3DInstance, Draw3DKind, Lighting3DState, MAX_POINT_LIGHTS, MAX_RAY_LIGHTS,
+        MAX_SPOT_LIGHTS,
+    },
     shaders::{
         build_material_shader, create_depth_prepass_shader_module,
         create_frustum_cull_shader_module, create_hiz_depth_copy_shader_module,
@@ -41,7 +44,6 @@ const HIZ_OCCLUSION_BIAS: f32 = 0.002;
 const MATERIAL_TEXTURE_NONE: u32 = u32::MAX;
 const MATERIAL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const PTEX_MAGIC: &[u8; 4] = b"PTEX";
-const MAX_RAY_LIGHTS: usize = 3;
 const SHADOW_MAP_SIZE: u32 = 2048;
 const SHADOW_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const SHADOW_MAP_DEPTH_BIAS_CONST: i32 = 2;
@@ -357,6 +359,7 @@ struct DrawBatch {
     local_radius: f32,
     occlusion_query: Option<u32>,
     disable_hiz_occlusion: bool,
+    casts_shadows: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -795,6 +798,11 @@ impl Gpu3D {
             bind_group_layouts: &[Some(&camera_bgl), Some(&material_texture_bgl), Some(&shadow_bgl)],
             immediate_size: 0,
         });
+        let depth_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("perro_depth_pipeline_layout"),
+            bind_group_layouts: &[Some(&camera_bgl)],
+            immediate_size: 0,
+        });
         let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_sky3d_pipeline_layout"),
             bind_group_layouts: &[Some(&sky_bgl)],
@@ -874,20 +882,20 @@ impl Gpu3D {
         let depth_prepass_shader = create_depth_prepass_shader_module(device);
         let pipeline_depth_prepass_culled = create_depth_prepass_pipeline(
             device,
-            &pipeline_layout,
+            &depth_pipeline_layout,
             &depth_prepass_shader,
             Some(wgpu::Face::Back),
         );
         let pipeline_depth_prepass_double_sided =
-            create_depth_prepass_pipeline(device, &pipeline_layout, &depth_prepass_shader, None);
+            create_depth_prepass_pipeline(device, &depth_pipeline_layout, &depth_prepass_shader, None);
         let pipeline_shadow_depth_culled = create_shadow_depth_pipeline(
             device,
-            &pipeline_layout,
+            &depth_pipeline_layout,
             &depth_prepass_shader,
             Some(wgpu::Face::Back),
         );
         let pipeline_shadow_depth_double_sided =
-            create_shadow_depth_pipeline(device, &pipeline_layout, &depth_prepass_shader, None);
+            create_shadow_depth_pipeline(device, &depth_pipeline_layout, &depth_prepass_shader, None);
 
         let (vertices, indices, builtin_mesh_ranges, builtin_meshlets) =
             build_builtin_mesh_buffer();
@@ -1395,6 +1403,11 @@ impl Gpu3D {
             ],
             immediate_size: 0,
         });
+        let depth_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("perro_depth_pipeline_layout"),
+            bind_group_layouts: &[Some(&self.camera_bgl)],
+            immediate_size: 0,
+        });
         let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_sky3d_pipeline_layout"),
             bind_group_layouts: &[Some(&self.sky_bgl)],
@@ -1467,20 +1480,20 @@ impl Gpu3D {
         let depth_prepass_shader = create_depth_prepass_shader_module(device);
         self.pipeline_depth_prepass_culled = create_depth_prepass_pipeline(
             device,
-            &pipeline_layout,
+            &depth_pipeline_layout,
             &depth_prepass_shader,
             Some(wgpu::Face::Back),
         );
         self.pipeline_depth_prepass_double_sided =
-            create_depth_prepass_pipeline(device, &pipeline_layout, &depth_prepass_shader, None);
+            create_depth_prepass_pipeline(device, &depth_pipeline_layout, &depth_prepass_shader, None);
         self.pipeline_shadow_depth_culled = create_shadow_depth_pipeline(
             device,
-            &pipeline_layout,
+            &depth_pipeline_layout,
             &depth_prepass_shader,
             Some(wgpu::Face::Back),
         );
         self.pipeline_shadow_depth_double_sided =
-            create_shadow_depth_pipeline(device, &pipeline_layout, &depth_prepass_shader, None);
+            create_shadow_depth_pipeline(device, &depth_pipeline_layout, &depth_prepass_shader, None);
         self.sky_pipeline = create_sky_pipeline(
             device,
             &sky_pipeline_layout,
@@ -2018,17 +2031,18 @@ impl Gpu3D {
                             custom_params_offset,
                             custom_params_len,
                         ));
-                        push_draw_batch(
-                            &mut self.draw_batches,
-                            range,
+                    push_draw_batch(
+                        &mut self.draw_batches,
+                        range,
                             instance,
                             standard_params.double_sided || self.meshlet_debug_view,
                             material_kind.clone(),
                             standard_params.base_color_texture,
-                            (mesh_asset.bounds_center, mesh_asset.bounds_radius),
-                            occlusion_query,
-                            is_terrain_mesh,
-                        );
+                        (mesh_asset.bounds_center, mesh_asset.bounds_radius),
+                        occlusion_query,
+                        is_terrain_mesh,
+                        !is_terrain_mesh,
+                    );
                     }
                 }
             } else {
@@ -2091,6 +2105,7 @@ impl Gpu3D {
                         (occlusion_center, occlusion_radius),
                         occlusion_query,
                         is_terrain_mesh,
+                        !is_terrain_mesh,
                     );
                 }
             }
@@ -2120,6 +2135,7 @@ impl Gpu3D {
                 local_radius: debug_points_local_radius.max(0.0),
                 occlusion_query: None,
                 disable_hiz_occlusion: true,
+                casts_shadows: false,
             });
         }
         if let Some(instance_start) = debug_edges_start
@@ -2140,6 +2156,7 @@ impl Gpu3D {
                 local_radius: debug_edges_local_radius.max(0.0),
                 occlusion_query: None,
                 disable_hiz_occlusion: true,
+                casts_shadows: false,
             });
         }
         self.draw_batches.sort_unstable_by(compare_draw_batch_keys);
@@ -2323,13 +2340,12 @@ impl Gpu3D {
                 multiview_mask: None,
             });
             shadow_pass.set_bind_group(0, &self.shadow_camera_bind_group, &[]);
-            shadow_pass.set_bind_group(1, self.fallback_material_texture_bind_group(), &[]);
             shadow_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             shadow_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             shadow_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             let mut current_double_sided = None;
             for batch in &self.draw_batches {
-                if batch.draw_on_top {
+                if batch.draw_on_top || !batch.casts_shadows {
                     continue;
                 }
                 if current_double_sided != Some(batch.double_sided) {
@@ -2375,7 +2391,6 @@ impl Gpu3D {
                 multiview_mask: None,
             });
             prepass.set_bind_group(0, &self.camera_bind_group, &[]);
-            prepass.set_bind_group(1, self.fallback_material_texture_bind_group(), &[]);
             prepass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             prepass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             prepass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -4437,6 +4452,7 @@ fn push_draw_batch(
     local_bounds: ([f32; 3], f32),
     occlusion_query: Option<u32>,
     disable_hiz_occlusion: bool,
+    casts_shadows: bool,
 ) {
     let (local_center, local_radius) = local_bounds;
     draw_batches.push(DrawBatch {
@@ -4451,6 +4467,7 @@ fn push_draw_batch(
         local_radius: local_radius.max(0.0),
         occlusion_query,
         disable_hiz_occlusion,
+        casts_shadows,
     });
 }
 
@@ -5050,7 +5067,13 @@ fn build_scene_uniform(
         if ray_count >= MAX_RAY_LIGHTS {
             return;
         }
+        if intensity <= 1.0e-4 {
+            return;
+        }
         let d = dir.normalize_or_zero();
+        if d.length_squared() <= 1.0e-6 || !d.is_finite() {
+            return;
+        }
         scene.ray_lights[ray_count] = RayLightGpu {
             direction: [d.x, d.y, d.z, 0.0],
             color_intensity: [
@@ -5063,12 +5086,26 @@ fn build_scene_uniform(
         ray_count += 1;
     };
 
-    if let Some(ray) = lighting.ray_light {
+    for ray in lighting.ray_lights.iter().flatten() {
+        if !ray.cast_shadows {
+            continue;
+        }
+        push_ray(Vec3::from(ray.direction), ray.color, ray.intensity);
+    }
+    for ray in lighting.ray_lights.iter().flatten() {
+        if ray.cast_shadows {
+            continue;
+        }
         push_ray(Vec3::from(ray.direction), ray.color, ray.intensity);
     }
 
     if let Some(sky) = lighting.sky.as_ref() {
-        let (sun_dir, moon_dir) = sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
+        let (sun_body_dir, moon_body_dir) =
+            sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
+        // Sky returns body position directions (origin -> sun/moon).
+        // Ray-light direction stores light travel direction (light -> world), so invert.
+        let sun_dir = -sun_body_dir;
+        let moon_dir = -moon_body_dir;
         let day_amt = day_weight_from_time(sky.time.time_of_day).powf(1.20);
         let dusk_amt = evening_weight_from_time(sky.time.time_of_day) * (1.0 - day_amt * 0.55);
         let night_amt = (1.0 - day_amt).clamp(0.0, 1.0);
@@ -5082,15 +5119,20 @@ fn build_scene_uniform(
             day_col[1] + (eve_col[1] - day_col[1]) * (dusk_amt * 0.90),
             day_col[2] + (eve_col[2] - day_col[2]) * (dusk_amt * 0.90),
         ];
-        let sun_intensity =
-            (((day_amt * 1.35) + (dusk_amt * 0.22)) * sky.sun_size.max(0.1)).max(0.0);
+        let sun_visibility = horizon_visibility(sun_body_dir.y);
+        let sun_intensity = (((day_amt * 1.35) + (dusk_amt * 0.22))
+            * sky.sun_size.max(0.1)
+            * sun_visibility)
+            .max(0.0);
 
         let moon_color = [
             night_col[0] * 0.80,
             night_col[1] * 0.88,
             (night_col[2] * 1.05).max(0.0),
         ];
-        let moon_intensity = ((night_amt * 0.18) * sky.moon_size.max(0.05)).max(0.0);
+        let moon_visibility = horizon_visibility(moon_body_dir.y);
+        let moon_intensity = ((night_amt * 0.18) * sky.moon_size.max(0.05) * moon_visibility)
+            .max(0.0);
 
         push_ray(sun_dir, sun_color, sun_intensity);
         push_ray(moon_dir, moon_color, moon_intensity);
@@ -5163,18 +5205,51 @@ fn build_shadow_setup(
     let mut shadow_scene = Scene3DUniform::zeroed();
     let mut shadow_uniform = ShadowUniform::zeroed();
 
-    let Some(ray) = lighting
-        .ray_light
-        .filter(|light| light.cast_shadows && light.intensity > 0.0)
-    else {
+    let explicit_shadow_ray = lighting
+        .ray_lights
+        .iter()
+        .flatten()
+        .copied()
+        .find(|light| light.cast_shadows && light.intensity > 1.0e-4);
+
+    let sky_shadow_dir = lighting.sky.as_ref().and_then(|sky| {
+        let (sun_body_dir, moon_body_dir) =
+            sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
+        let sun_dir = -sun_body_dir;
+        let moon_dir = -moon_body_dir;
+        let day_amt = day_weight_from_time(sky.time.time_of_day).powf(1.20);
+        let dusk_amt = evening_weight_from_time(sky.time.time_of_day) * (1.0 - day_amt * 0.55);
+        let night_amt = (1.0 - day_amt).clamp(0.0, 1.0);
+        let sun_intensity = (((day_amt * 1.35) + (dusk_amt * 0.22))
+            * sky.sun_size.max(0.1)
+            * horizon_visibility(sun_body_dir.y))
+            .max(0.0);
+        let moon_intensity =
+            ((night_amt * 0.18)
+                * sky.moon_size.max(0.05)
+                * horizon_visibility(moon_body_dir.y))
+                .max(0.0);
+        if sun_intensity > 1.0e-4 {
+            Some(sun_dir)
+        } else if moon_intensity > 1.0e-4 {
+            Some(moon_dir)
+        } else {
+            None
+        }
+    });
+
+    let dir = if let Some(ray) = explicit_shadow_ray {
+        Vec3::from(ray.direction).normalize_or_zero()
+    } else if let Some(dir) = sky_shadow_dir {
+        dir.normalize_or_zero()
+    } else {
         return (shadow_scene, shadow_uniform, false);
     };
-    let dir = Vec3::from(ray.direction).normalize_or_zero();
     if dir.length_squared() <= 1.0e-6 || !dir.is_finite() {
         return (shadow_scene, shadow_uniform, false);
     }
 
-    let (focus_center, focus_radius) =
+    let (mut focus_center, focus_radius) =
         compute_shadow_focus_bounds(camera, draw_batches, staged_instances);
     let up = if dir.dot(Vec3::Y).abs() > 0.95 {
         Vec3::Z
@@ -5182,12 +5257,22 @@ fn build_shadow_setup(
         Vec3::Y
     };
     let distance = focus_radius * 2.0 + 20.0;
-    let eye = focus_center - dir * distance;
+    let mut eye = focus_center - dir * distance;
+    let extent = (focus_radius * 1.05).max(6.0);
+    let (right_axis, up_axis) = light_stable_axes(dir, up);
+    let world_units_per_texel = ((extent * 2.0) / SHADOW_MAP_SIZE as f32).max(1.0e-6);
+    let center_x = focus_center.dot(right_axis);
+    let center_y = focus_center.dot(up_axis);
+    let snapped_center_x = (center_x / world_units_per_texel).round() * world_units_per_texel;
+    let snapped_center_y = (center_y / world_units_per_texel).round() * world_units_per_texel;
+    let center_delta = right_axis * (snapped_center_x - center_x)
+        + up_axis * (snapped_center_y - center_y);
+    focus_center += center_delta;
+    eye += center_delta;
     let view = Mat4::look_at_rh(eye, focus_center, up);
-    let extent = (focus_radius * 1.35).max(8.0);
     let near = 0.1;
     let far = (distance + focus_radius * 2.5).max(near + 1.0);
-    let proj = Mat4::orthographic_rh(-extent, extent, -extent, extent, near, far);
+    let proj = Mat4::orthographic_rh_gl(-extent, extent, -extent, extent, near, far);
     let light_view_proj = proj * view;
     if !light_view_proj.is_finite() {
         return (shadow_scene, shadow_uniform, false);
@@ -5195,70 +5280,43 @@ fn build_shadow_setup(
 
     shadow_scene.view_proj = light_view_proj.to_cols_array_2d();
     shadow_uniform.light_view_proj = shadow_scene.view_proj;
-    shadow_uniform.params0 = [1.0, 1.0, 0.0015, 0.02];
+    // Slightly higher depth/normal bias to suppress broad false-shadowing
+    // on large flat receivers while preserving contact shadows.
+    shadow_uniform.params0 = [1.0, 1.0, 0.0012, 0.03];
 
     (shadow_scene, shadow_uniform, true)
 }
 
 fn compute_shadow_focus_bounds(
     camera: &Camera3DState,
-    draw_batches: &[DrawBatch],
-    staged_instances: &[InstanceGpu],
+    _draw_batches: &[DrawBatch],
+    _staged_instances: &[InstanceGpu],
 ) -> (Vec3, f32) {
-    let mut min = Vec3::splat(f32::INFINITY);
-    let mut max = Vec3::splat(f32::NEG_INFINITY);
-    let mut found = false;
-
-    for batch in draw_batches {
-        if batch.draw_on_top {
-            continue;
-        }
-        let start = batch.instance_start as usize;
-        let end = (batch.instance_start + batch.instance_count) as usize;
-        if end > staged_instances.len() || start >= end {
-            continue;
-        }
-        for inst in &staged_instances[start..end] {
-            let model = Mat4::from_cols_array_2d(&model_cols_from_affine_rows(inst));
-            if !model.is_finite() {
-                continue;
-            }
-            let center_local = Vec4::new(
-                batch.local_center[0],
-                batch.local_center[1],
-                batch.local_center[2],
-                1.0,
-            );
-            let center_world4 = model * center_local;
-            if !center_world4.is_finite() {
-                continue;
-            }
-            let sx = Vec3::new(model.x_axis.x, model.x_axis.y, model.x_axis.z).length();
-            let sy = Vec3::new(model.y_axis.x, model.y_axis.y, model.y_axis.z).length();
-            let sz = Vec3::new(model.z_axis.x, model.z_axis.y, model.z_axis.z).length();
-            let scale = sx.max(sy).max(sz).max(1.0e-6);
-            let radius = batch.local_radius.max(0.0) * scale;
-            let center = center_world4.truncate();
-            min = min.min(center - Vec3::splat(radius));
-            max = max.max(center + Vec3::splat(radius));
-            found = true;
-        }
-    }
-
+    // Keep directional shadow projection camera-centered and projection-agnostic.
+    // Camera zoom/FOV changes should not re-fit or shift shadow placement.
     let camera_pos = Vec3::from(camera.position);
-    if !found {
-        return (camera_pos, 24.0);
-    }
-    min = min.min(camera_pos - Vec3::splat(2.0));
-    max = max.max(camera_pos + Vec3::splat(2.0));
-    let center = (min + max) * 0.5;
-    let radius = ((max - min) * 0.5).length().max(6.0);
-    if !center.is_finite() || !radius.is_finite() {
-        (camera_pos, 24.0)
-    } else {
-        (center, radius)
-    }
+    let center = camera_pos;
+    // Tighter default coverage improves texel density and avoids oversized
+    // shadow projection footprints in small/medium scenes.
+    let radius = 24.0f32;
+    (center, radius)
 }
+
+fn light_stable_axes(light_dir: Vec3, fallback_up: Vec3) -> (Vec3, Vec3) {
+    let f = light_dir.normalize_or_zero();
+    let mut right = f.cross(fallback_up).normalize_or_zero();
+    if right.length_squared() <= 1.0e-6 {
+        let alt_up = if f.dot(Vec3::Y).abs() > 0.95 {
+            Vec3::X
+        } else {
+            Vec3::Y
+        };
+        right = f.cross(alt_up).normalize_or_zero();
+    }
+    let up = right.cross(f).normalize_or_zero();
+    (right, up)
+}
+
 
 fn build_sky_uniform(
     camera: &Camera3DState,
@@ -5347,6 +5405,11 @@ fn evening_weight_from_time(time_of_day: f32) -> f32 {
     let t = time_of_day.rem_euclid(1.0);
     let dist = ((t - 0.75 + 0.5).rem_euclid(1.0) - 0.5).abs();
     (1.0 - (dist / 0.23)).clamp(0.0, 1.0)
+}
+
+fn horizon_visibility(y: f32) -> f32 {
+    let t = ((y + 0.08) / 0.16).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 fn sun_moon_dirs_from_time(time_of_day: f32, sky_angle: f32) -> (Vec3, Vec3) {
