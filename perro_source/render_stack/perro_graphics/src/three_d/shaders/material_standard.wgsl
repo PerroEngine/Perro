@@ -31,10 +31,12 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
 
     var light_rgb = vec3<f32>(0.0);
 
-    if scene.ambient_and_counts.w > 0.5 {
-        let dir = normalize(scene.ray_light.direction.xyz);
+    let ray_count = u32(scene.ambient_and_counts.x);
+    for (var i = 0u; i < ray_count; i = i + 1u) {
+        let ray = scene.ray_lights[i];
+        let dir = normalize(ray.direction.xyz);
         let l = -dir;
-        let radiance = scene.ray_light.color_intensity.xyz * scene.ray_light.color_intensity.w;
+        let radiance = ray.color_intensity.xyz * ray.color_intensity.w;
         light_rgb += brdf_pbr(albedo, n, v, l, roughness, metallic, radiance);
     }
 

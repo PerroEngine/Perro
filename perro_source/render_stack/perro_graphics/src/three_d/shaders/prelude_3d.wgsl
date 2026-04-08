@@ -1,3 +1,4 @@
+const MAX_RAY_LIGHTS: u32 = 3u;
 const MAX_POINT_LIGHTS: u32 = 8u;
 const MAX_SPOT_LIGHTS: u32 = 8u;
 
@@ -23,7 +24,9 @@ struct Scene3D {
     ambient_and_counts: vec4<f32>,
     camera_pos: vec4<f32>,
     ambient_color: vec4<f32>,
+    // Kept for compatibility with custom shaders that still read scene.ray_light.
     ray_light: RayLightGpu,
+    ray_lights: array<RayLightGpu, MAX_RAY_LIGHTS>,
     point_lights: array<PointLightGpu, MAX_POINT_LIGHTS>,
     spot_lights: array<SpotLightGpu, MAX_SPOT_LIGHTS>,
 }

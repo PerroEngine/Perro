@@ -41,6 +41,7 @@ const HIZ_OCCLUSION_BIAS: f32 = 0.002;
 const MATERIAL_TEXTURE_NONE: u32 = u32::MAX;
 const MATERIAL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const PTEX_MAGIC: &[u8; 4] = b"PTEX";
+const MAX_RAY_LIGHTS: usize = 3;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
@@ -50,6 +51,7 @@ struct Scene3DUniform {
     camera_pos: [f32; 4],
     ambient_color: [f32; 4],
     ray_light: RayLightGpu,
+    ray_lights: [RayLightGpu; MAX_RAY_LIGHTS],
     point_lights: [PointLightGpu; MAX_POINT_LIGHTS],
     spot_lights: [SpotLightGpu; MAX_SPOT_LIGHTS],
 }
@@ -4663,6 +4665,10 @@ fn build_scene_uniform(
             direction: [0.0, 0.0, -1.0, 0.0],
             color_intensity: [1.0, 1.0, 1.0, 0.0],
         },
+        ray_lights: [RayLightGpu {
+            direction: [0.0, 0.0, -1.0, 0.0],
+            color_intensity: [1.0, 1.0, 1.0, 0.0],
+        }; MAX_RAY_LIGHTS],
         point_lights: [PointLightGpu {
             position_range: [0.0, 0.0, 0.0, 1.0],
             color_intensity: [0.0, 0.0, 0.0, 0.0],
@@ -4704,43 +4710,62 @@ fn build_scene_uniform(
         ];
     }
 
-    if let Some(ray) = lighting.ray_light {
-        let dir = Vec3::from(ray.direction).normalize_or_zero();
-        scene.ray_light = RayLightGpu {
-            direction: [dir.x, dir.y, dir.z, 0.0],
+    let mut ray_count = 0usize;
+    let mut push_ray = |dir: Vec3, color: [f32; 3], intensity: f32| {
+        if ray_count >= MAX_RAY_LIGHTS {
+            return;
+        }
+        let d = dir.normalize_or_zero();
+        scene.ray_lights[ray_count] = RayLightGpu {
+            direction: [d.x, d.y, d.z, 0.0],
             color_intensity: [
-                ray.color[0].max(0.0),
-                ray.color[1].max(0.0),
-                ray.color[2].max(0.0),
-                ray.intensity.max(0.0),
+                color[0].max(0.0),
+                color[1].max(0.0),
+                color[2].max(0.0),
+                intensity.max(0.0),
             ],
         };
-        scene.ambient_and_counts[3] = 1.0;
-    } else if let Some(sky) = lighting.sky.as_ref() {
-        let (sun_dir, _) = sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
+        ray_count += 1;
+    };
+
+    if let Some(ray) = lighting.ray_light {
+        push_ray(Vec3::from(ray.direction), ray.color, ray.intensity);
+    }
+
+    if let Some(sky) = lighting.sky.as_ref() {
+        let (sun_dir, moon_dir) = sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
         let day_amt = day_weight_from_time(sky.time.time_of_day).powf(1.20);
         let dusk_amt = evening_weight_from_time(sky.time.time_of_day) * (1.0 - day_amt * 0.55);
-        let noon_amt = day_amt * day_amt;
-        let dir = sun_dir;
-        let warm = [1.0, 0.62, 0.42];
-        let noon = [1.0, 0.97, 0.90];
-        let mut color = [
-            warm[0] + (noon[0] - warm[0]) * noon_amt,
-            warm[1] + (noon[1] - warm[1]) * noon_amt,
-            warm[2] + (noon[2] - warm[2]) * noon_amt,
+        let night_amt = (1.0 - day_amt).clamp(0.0, 1.0);
+
+        let day_col = sample_gradient(sky.day_colors.as_ref(), 0.58);
+        let eve_col = sample_gradient(sky.evening_colors.as_ref(), 0.52);
+        let night_col = sample_gradient(sky.night_colors.as_ref(), 0.62);
+
+        let sun_color = [
+            day_col[0] + (eve_col[0] - day_col[0]) * (dusk_amt * 0.90),
+            day_col[1] + (eve_col[1] - day_col[1]) * (dusk_amt * 0.90),
+            day_col[2] + (eve_col[2] - day_col[2]) * (dusk_amt * 0.90),
         ];
-        color = [
-            color[0] + (1.0 - color[0]) * dusk_amt * 0.12,
-            color[1] + (0.78 - color[1]) * dusk_amt * 0.22,
-            color[2] + (0.58 - color[2]) * dusk_amt * 0.32,
+        let sun_intensity =
+            (((day_amt * 1.35) + (dusk_amt * 0.22)) * sky.sun_size.max(0.1)).max(0.0);
+
+        let moon_color = [
+            night_col[0] * 0.80,
+            night_col[1] * 0.88,
+            (night_col[2] * 1.05).max(0.0),
         ];
-        let size_scale = sky.sun_size.max(0.1);
-        let intensity = ((day_amt * 1.35) + (dusk_amt * 0.22)) * size_scale;
-        scene.ray_light = RayLightGpu {
-            direction: [dir.x, dir.y, dir.z, 0.0],
-            color_intensity: [color[0], color[1], color[2], intensity.max(0.0)],
-        };
-        scene.ambient_and_counts[3] = 1.0;
+        let moon_intensity =
+            ((night_amt * 0.18) * sky.moon_size.max(0.05)).max(0.0);
+
+        push_ray(sun_dir, sun_color, sun_intensity);
+        push_ray(moon_dir, moon_color, moon_intensity);
+    }
+
+    scene.ambient_and_counts[0] = ray_count as f32;
+    scene.ambient_and_counts[3] = if ray_count > 0 { 1.0 } else { 0.0 };
+    if ray_count > 0 {
+        scene.ray_light = scene.ray_lights[0];
     }
 
     let mut point_count = 0.0f32;

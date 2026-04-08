@@ -4,7 +4,10 @@ mod regular {
     pub const MATERIAL_UNLIT_WGSL: &str = include_str!("shaders/material_unlit.wgsl");
     pub const MATERIAL_TOON_WGSL: &str = include_str!("shaders/material_toon.wgsl");
     pub const DEPTH_PREPASS_WGSL: &str = include_str!("shaders/depth_prepass.wgsl");
-    pub const SKY3D_WGSL: &str = include_str!("shaders/sky3d.wgsl");
+    pub const SKY3D_ATMO_WGSL: &str = include_str!("shaders/sky3d_parts/atmo.wgsl");
+    pub const SKY3D_MOON_WGSL: &str = include_str!("shaders/sky3d_parts/moon.wgsl");
+    pub const SKY3D_SUN_WGSL: &str = include_str!("shaders/sky3d_parts/sun.wgsl");
+    pub const SKY3D_CLOUDS_WGSL: &str = include_str!("shaders/sky3d_parts/clouds.wgsl");
 }
 
 mod culling {
@@ -64,8 +67,21 @@ pub fn create_depth_prepass_shader_module(device: &wgpu::Device) -> wgpu::Shader
 pub fn create_sky_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_sky3d"),
-        source: wgpu::ShaderSource::Wgsl(regular::SKY3D_WGSL.into()),
+        source: wgpu::ShaderSource::Wgsl(build_sky_shader().into()),
     })
+}
+
+#[inline]
+fn build_sky_shader() -> String {
+    let mut out = String::new();
+    out.push_str(regular::SKY3D_ATMO_WGSL);
+    out.push('\n');
+    out.push_str(regular::SKY3D_MOON_WGSL);
+    out.push('\n');
+    out.push_str(regular::SKY3D_SUN_WGSL);
+    out.push('\n');
+    out.push_str(regular::SKY3D_CLOUDS_WGSL);
+    out
 }
 
 #[inline]
