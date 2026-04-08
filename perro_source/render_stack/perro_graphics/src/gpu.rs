@@ -649,7 +649,8 @@ impl Gpu {
 
         let accessibility_start = Instant::now();
         if accessibility_enabled {
-            let (accessibility_input_view, accessibility_output_view, next_tex) = match current_tex {
+            let (accessibility_input_view, accessibility_output_view, next_tex) = match current_tex
+            {
                 FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
                 FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene),
             };

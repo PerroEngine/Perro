@@ -23,6 +23,7 @@ pub struct SpotLight3D {
     pub range: f32,
     pub inner_angle_radians: f32,
     pub outer_angle_radians: f32,
+    pub cast_shadows: bool,
     pub active: bool,
 }
 
@@ -35,6 +36,7 @@ impl SpotLight3D {
             range: 12.0,
             inner_angle_radians: 20.0_f32.to_radians(),
             outer_angle_radians: 30.0_f32.to_radians(),
+            cast_shadows: true,
             active: true,
         }
     }

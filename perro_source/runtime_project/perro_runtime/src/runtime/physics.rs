@@ -463,7 +463,8 @@ impl Runtime {
                     continue;
                 };
                 if let SceneNodeData::CollisionShape3D(shape) = &child.data {
-                    shape_signature = hash_collision_shape_3d(shape_signature, shape, kind, global.scale);
+                    shape_signature =
+                        hash_collision_shape_3d(shape_signature, shape, kind, global.scale);
                 }
             }
             if let Some(terrain_id) = terrain_ref
@@ -603,19 +604,21 @@ impl Runtime {
 
             if state.shape_signature != body.shape_signature {
                 for handle in state.colliders.drain(..) {
-                    let _ = world
-                        .colliders
-                        .remove(handle, &mut world.islands, &mut world.bodies, true);
+                    let _ =
+                        world
+                            .colliders
+                            .remove(handle, &mut world.islands, &mut world.bodies, true);
                 }
 
                 for shape in &body.shapes {
                     let Some(builder) = collider_builder_2d(shape) else {
                         continue;
                     };
-                    let handle =
-                        world
-                            .colliders
-                            .insert_with_parent(builder, state.handle, &mut world.bodies);
+                    let handle = world.colliders.insert_with_parent(
+                        builder,
+                        state.handle,
+                        &mut world.bodies,
+                    );
                     world.collider_owners.insert(handle, body.id);
                     state.colliders.push(handle);
                 }
@@ -729,19 +732,21 @@ impl Runtime {
 
             if state.shape_signature != body.shape_signature {
                 for handle in state.colliders.drain(..) {
-                    let _ = world
-                        .colliders
-                        .remove(handle, &mut world.islands, &mut world.bodies, true);
+                    let _ =
+                        world
+                            .colliders
+                            .remove(handle, &mut world.islands, &mut world.bodies, true);
                 }
 
                 for shape in &body.shapes {
                     let Some(builder) = collider_builder_3d(shape) else {
                         continue;
                     };
-                    let handle =
-                        world
-                            .colliders
-                            .insert_with_parent(builder, state.handle, &mut world.bodies);
+                    let handle = world.colliders.insert_with_parent(
+                        builder,
+                        state.handle,
+                        &mut world.bodies,
+                    );
                     world.collider_owners.insert(handle, body.id);
                     state.colliders.push(handle);
                 }
@@ -834,7 +839,8 @@ impl Runtime {
             let Some(rb) = world.bodies.get_mut(state.handle) else {
                 continue;
             };
-            let len_sq = impulse.impulse.x * impulse.impulse.x + impulse.impulse.y * impulse.impulse.y;
+            let len_sq =
+                impulse.impulse.x * impulse.impulse.x + impulse.impulse.y * impulse.impulse.y;
             if len_sq <= 0.000_001 {
                 continue;
             }
@@ -896,11 +902,7 @@ impl Runtime {
                 continue;
             }
             rb.apply_impulse(
-                na3::Vector3::new(
-                    impulse.impulse.x,
-                    impulse.impulse.y,
-                    impulse.impulse.z,
-                ),
+                na3::Vector3::new(impulse.impulse.x, impulse.impulse.y, impulse.impulse.z),
                 true,
             );
         }
@@ -930,11 +932,7 @@ impl Runtime {
                 continue;
             }
             rb.apply_impulse(
-                na3::Vector3::new(
-                    force.force.x * dt,
-                    force.force.y * dt,
-                    force.force.z * dt,
-                ),
+                na3::Vector3::new(force.force.x * dt, force.force.y * dt, force.force.z * dt),
                 true,
             );
         }

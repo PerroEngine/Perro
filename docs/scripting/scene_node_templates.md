@@ -412,6 +412,7 @@ script = "res://path/to/script.rs"
     [AmbientLight3D]
         color = (1, 1, 1)
         intensity = 0.0
+        cast_shadows = true
         active = true
     [/AmbientLight3D]
 [/ambient_light_3d]
@@ -460,6 +461,7 @@ script = "res://path/to/script.rs"
     [RayLight3D]
         color = (1, 1, 1)
         intensity = 1.0
+        cast_shadows = true
         active = true
         visible = true
         [Node3D]
@@ -478,6 +480,7 @@ script = "res://path/to/script.rs"
         color = (1, 1, 1)
         intensity = 1.0
         range = 10.0
+        cast_shadows = true
         active = true
         [Node3D]
             position = (0, 0, 0)
@@ -497,6 +500,7 @@ script = "res://path/to/script.rs"
         range = 12.0
         inner_angle_radians = 0.34906584
         outer_angle_radians = 0.5235988
+        cast_shadows = true
         active = true
         [Node3D]
             position = (0, 0, 0)

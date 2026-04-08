@@ -36,7 +36,9 @@ impl TerrainChunk {
         _normal_epsilon: f32,
         distance_epsilon: f32,
     ) -> Result<InsertVertexResult, ChunkError> {
-        let Some((gx, gz, snapped_x, snapped_z)) = self.snap_local_xz_to_grid(position.x, position.z) else {
+        let Some((gx, gz, snapped_x, snapped_z)) =
+            self.snap_local_xz_to_grid(position.x, position.z)
+        else {
             return Err(ChunkError::PointOutsideMesh {
                 x: position.x,
                 z: position.z,
@@ -78,5 +80,4 @@ impl TerrainChunk {
         }
         Ok(summary)
     }
-
 }

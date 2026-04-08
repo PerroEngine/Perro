@@ -9,11 +9,11 @@ use perro_input::InputSnapshot;
 use perro_runtime_context::sub_apis::PreloadedSceneID;
 use perro_scene::Scene;
 use perro_scripting::ScriptConstructor;
+use std::time::Duration;
 use std::{
     cell::RefCell,
     sync::{Arc, Mutex},
 };
-use std::time::Duration;
 
 mod input_bridge;
 mod internal_updates;
@@ -28,12 +28,12 @@ mod transforms;
 mod world_state;
 
 pub(crate) use scene_loader::PendingScriptAttach;
+pub(crate) use state::{
+    CollisionDebugState, TerrainChunkMeshKey, TerrainChunkMeshState, TerrainDebugState,
+};
 use state::{
     DirtyState, InternalUpdateState, NodeIndexState, Render2DState, Render3DState, RenderState,
     ScriptRuntimeState, ScriptSchedules, SignalRuntimeState, TransformRuntimeState,
-};
-pub(crate) use state::{
-    CollisionDebugState, TerrainChunkMeshKey, TerrainChunkMeshState, TerrainDebugState,
 };
 
 type RuntimeScriptCtor = ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>;
@@ -133,8 +133,6 @@ impl Runtime {
             input: InputSnapshot::new(),
             physics: physics::PhysicsState::new(),
         }
-
-        
     }
 
     pub fn from_project(project: RuntimeProject, provider_mode: ProviderMode) -> Self {

@@ -222,6 +222,9 @@ fn parse_light_3d_action(
     Ok(match field {
         Light3DField::Color => Light3DAction::Color(expect_color3(value, key, line_no)?),
         Light3DField::Intensity => Light3DAction::Intensity(expect_f32(value, key, line_no)?),
+        Light3DField::CastShadows => {
+            Light3DAction::CastShadows(expect_bool(value, key, line_no)?)
+        }
         Light3DField::Active => Light3DAction::Active(expect_bool(value, key, line_no)?),
     })
 }
@@ -631,6 +634,11 @@ fn resolve_animatable_channel(
                 None,
             ))
         }
+        NodeField::Light3D(Light3DField::CastShadows) => Ok((
+            "light3d.cast_shadows".to_string(),
+            NodeField::Light3D(Light3DField::CastShadows),
+            None,
+        )),
         NodeField::PointLight3D(PointLight3DField::Range) => Ok((
             "point_light3d.range".to_string(),
             NodeField::PointLight3D(PointLight3DField::Range),
@@ -726,6 +734,7 @@ enum Camera3DAction {
 enum Light3DAction {
     Color([f32; 3]),
     Intensity(f32),
+    CastShadows(bool),
     Active(bool),
 }
 

@@ -781,6 +781,18 @@ fn apply_light_3d_action(
             default_interpolation,
             default_ease,
         ),
+        Light3DAction::CastShadows(v) => insert_track_key(
+            tracks_map,
+            object,
+            "light3d.cast_shadows",
+            NodeField::Light3D(Light3DField::CastShadows),
+            frame,
+            AnimationTrackValue::Bool(v),
+            0,
+            0,
+            default_interpolation,
+            default_ease,
+        ),
         Light3DAction::Active(v) => insert_track_key(
             tracks_map,
             object,

@@ -2,12 +2,7 @@ use crate::{StaticPipelineError, res_dir, static_dir};
 use csv::StringRecord;
 use perro_ids::string_to_u64;
 use perro_project::ProjectConfig;
-use std::{
-    collections::HashMap,
-    fmt::Write as _,
-    fs,
-    path::Path,
-};
+use std::{collections::HashMap, fmt::Write as _, fs, path::Path};
 
 pub fn generate_static_localizations(
     project_root: &Path,
@@ -266,7 +261,10 @@ pub fn generate_static_localizations(
     out.push_str("const fn runtime_locale_index(locale: RuntimeLocale) -> usize {\n");
     out.push_str("    match locale {\n");
     for (code, runtime_variant) in &supported_locales {
-        let active_idx = active_index_by_code.get(code).copied().unwrap_or(en_locale_index);
+        let active_idx = active_index_by_code
+            .get(code)
+            .copied()
+            .unwrap_or(en_locale_index);
         {
             let _ = writeln!(
                 out,

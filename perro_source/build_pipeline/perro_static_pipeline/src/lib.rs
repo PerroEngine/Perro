@@ -1,27 +1,27 @@
 mod animations;
 mod audios;
 mod error;
+mod localizations;
 mod materials;
 mod meshes;
-mod localizations;
 mod particles;
-mod terrains;
 mod scenes;
 mod shaders;
 mod skeletons;
+mod terrains;
 mod textures;
 
 pub use animations::generate_static_animations;
 pub use audios::generate_static_audios;
 pub use error::StaticPipelineError;
+pub use localizations::generate_static_localizations;
 pub use materials::generate_static_materials;
 pub use meshes::generate_static_meshes;
-pub use localizations::generate_static_localizations;
 pub use particles::generate_static_particles;
-pub use terrains::generate_static_terrains;
 pub use scenes::generate_static_scenes;
 pub use shaders::generate_static_shaders;
 pub use skeletons::generate_static_skeletons;
+pub use terrains::generate_static_terrains;
 pub use textures::generate_static_textures;
 
 use std::{

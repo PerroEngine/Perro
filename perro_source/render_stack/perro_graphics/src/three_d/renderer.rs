@@ -3,8 +3,8 @@ use ahash::AHashMap;
 use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MeshID, NodeID};
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, CameraProjectionState, PointLight3DState, RayLight3DState,
-    SkeletonPalette, Sky3DState, SpotLight3DState, MeshSurfaceBinding3D,
+    AmbientLight3DState, Camera3DState, CameraProjectionState, MeshSurfaceBinding3D,
+    PointLight3DState, RayLight3DState, SkeletonPalette, Sky3DState, SpotLight3DState,
 };
 use std::sync::Arc;
 use std::time::Instant;
@@ -183,10 +183,12 @@ impl Renderer3D {
         self.cloud_time_seconds = (self.cloud_time_seconds + dt.max(0.0)).rem_euclid(1.0e9);
 
         for draw in self.queued_draws.drain(..) {
-            let material_ready = draw
-                .surfaces
-                .iter()
-                .all(|surface| surface.material.map(|id| resources.has_material(id)).unwrap_or(true));
+            let material_ready = draw.surfaces.iter().all(|surface| {
+                surface
+                    .material
+                    .map(|id| resources.has_material(id))
+                    .unwrap_or(true)
+            });
             let mesh_ready = match draw.kind {
                 Draw3DKind::Mesh(mesh) => resources.has_mesh(mesh),
                 Draw3DKind::Terrain64

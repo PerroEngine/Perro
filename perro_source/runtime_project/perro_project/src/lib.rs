@@ -178,11 +178,13 @@ impl StaticProjectConfig {
             meshlet_debug_view: self.meshlet_debug_view,
             occlusion_culling: self.occlusion_culling,
             particle_sim_default: self.particle_sim_default,
-            localization: self.localization_source_csv.map(|source_csv| LocalizationConfig {
-                source_csv: source_csv.to_string(),
-                key_column: self.localization_key_column.to_string(),
-                default_locale: self.localization_default_locale.to_string(),
-            }),
+            localization: self
+                .localization_source_csv
+                .map(|source_csv| LocalizationConfig {
+                    source_csv: source_csv.to_string(),
+                    key_column: self.localization_key_column.to_string(),
+                    default_locale: self.localization_default_locale.to_string(),
+                }),
         }
     }
 }
@@ -1963,7 +1965,10 @@ fn ensure_project_manifest_icon_build_support(path: &Path) -> std::io::Result<()
     };
 
     if !build_deps_table.contains_key("winresource") {
-        build_deps_table.insert("winresource".to_string(), Value::String("0.1.20".to_string()));
+        build_deps_table.insert(
+            "winresource".to_string(),
+            Value::String("0.1.20".to_string()),
+        );
         changed = true;
     }
     if build_deps_table.get("toml").and_then(Value::as_str) != Some("0.8.23") {

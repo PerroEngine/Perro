@@ -537,7 +537,10 @@ fn script_macros_typecheck_and_forward() {
         1
     );
     assert_eq!(signal_emit!(&mut ctx, signal!("on_test")), 1);
-    assert_eq!(scene_load!(&mut ctx, "res://scenes/a.scene"), Ok(NodeID::new(7)));
+    assert_eq!(
+        scene_load!(&mut ctx, "res://scenes/a.scene"),
+        Ok(NodeID::new(7))
+    );
     assert_eq!(
         scene_load!(&mut ctx, String::from("res://scenes/b.scene")),
         Ok(NodeID::new(7))

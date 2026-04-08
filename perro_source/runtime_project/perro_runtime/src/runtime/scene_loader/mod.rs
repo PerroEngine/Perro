@@ -2,12 +2,12 @@ use crate::{Runtime, runtime_project::ProviderMode};
 use perro_ids::NodeID;
 use perro_ids::ScriptMemberID;
 use perro_io::{ProjectRoot, set_project_root};
-use perro_scene::Scene;
 use perro_runtime_context::sub_apis::PreloadedSceneID;
+use perro_scene::Scene;
 use perro_variant::Variant;
+use std::sync::Arc;
 #[cfg(feature = "profile")]
 use std::time::{Duration, Instant};
-use std::sync::Arc;
 
 mod merge;
 mod prepare;
@@ -50,12 +50,18 @@ impl Runtime {
             }
         }
         match self.provider_mode {
-            ProviderMode::Dynamic => self.get_or_load_dynamic_scene_cached(path).map(|s| (*s).clone()),
+            ProviderMode::Dynamic => self
+                .get_or_load_dynamic_scene_cached(path)
+                .map(|s| (*s).clone()),
             ProviderMode::Static => {
-                let static_lookup = self.project().and_then(|project| project.static_scene_lookup);
+                let static_lookup = self
+                    .project()
+                    .and_then(|project| project.static_scene_lookup);
                 match static_lookup.and_then(|lookup| lookup(path)) {
                     Some(scene) => Ok(scene.clone()),
-                    None => self.get_or_load_dynamic_scene_cached(path).map(|s| (*s).clone()),
+                    None => self
+                        .get_or_load_dynamic_scene_cached(path)
+                        .map(|s| (*s).clone()),
                 }
             }
         }
@@ -124,7 +130,9 @@ impl Runtime {
     }
 
     pub(crate) fn load_scene_at_runtime(&mut self, path: &str) -> Result<NodeID, String> {
-        let static_lookup = self.project().and_then(|project| project.static_scene_lookup);
+        let static_lookup = self
+            .project()
+            .and_then(|project| project.static_scene_lookup);
         let merged = match self.provider_mode {
             ProviderMode::Dynamic => {
                 let runtime_scene = self.get_or_load_dynamic_scene_cached(path)?;
@@ -142,9 +150,10 @@ impl Runtime {
                 }
                 None => {
                     let runtime_scene = self.get_or_load_dynamic_scene_cached(path)?;
-                    let prepared = prepare_scene_with_loader(runtime_scene.as_ref(), &|import_path| {
-                        self.resolve_scene_by_path(import_path)
-                    })?;
+                    let prepared =
+                        prepare_scene_with_loader(runtime_scene.as_ref(), &|import_path| {
+                            self.resolve_scene_by_path(import_path)
+                        })?;
                     merge_prepared_scene(self, prepared)?
                 }
             },

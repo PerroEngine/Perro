@@ -3,15 +3,14 @@ use crate::material_schema;
 use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_nodes::{
-    MaterialParamOverrideValue, MeshSurfaceBinding,
-    CameraProjection, SceneNodeData, Shape3D,
+    CameraProjection, MaterialParamOverrideValue, MeshSurfaceBinding, SceneNodeData, Shape3D,
     particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
 };
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
-    ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
-    MaterialParamOverride3D, MaterialParamOverrideValue3D, MeshSurfaceBinding3D, PointLight3DState,
+    MaterialParamOverride3D, MaterialParamOverrideValue3D, MeshSurfaceBinding3D, ParticlePath3D,
+    ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
     PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand,
     RuntimeMeshData, RuntimeMeshVertex, SkeletonPalette, Sky3DState, SkyTime3DState,
     SpotLight3DState, StandardMaterial3D,
@@ -128,6 +127,7 @@ impl Runtime {
                     Some(AmbientLight3DState {
                         color: light.color,
                         intensity: light.intensity.max(0.0),
+                        cast_shadows: light.cast_shadows,
                     })
                 }
                 _ => None,
@@ -184,11 +184,16 @@ impl Runtime {
                 SceneNodeData::RayLight3D(light)
                     if light.active && light.visible && effective_visible =>
                 {
-                    Some((light.transform, light.color, light.intensity))
+                    Some((
+                        light.transform,
+                        light.color,
+                        light.intensity,
+                        light.cast_shadows,
+                    ))
                 }
                 _ => None,
             });
-            if let Some((local_transform, color, intensity)) = ray_light_data {
+            if let Some((local_transform, color, intensity, cast_shadows)) = ray_light_data {
                 let global = self
                     .get_global_transform_3d(node)
                     .unwrap_or(local_transform);
@@ -196,6 +201,7 @@ impl Runtime {
                     direction: quaternion_forward(global.rotation),
                     color,
                     intensity: intensity.max(0.0),
+                    cast_shadows,
                 };
                 if self.render_3d.retained_ray_lights.get(&node).copied() != Some(light) {
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(
@@ -210,11 +216,18 @@ impl Runtime {
                 SceneNodeData::PointLight3D(light)
                     if light.active && light.visible && effective_visible =>
                 {
-                    Some((light.transform, light.color, light.intensity, light.range))
+                    Some((
+                        light.transform,
+                        light.color,
+                        light.intensity,
+                        light.range,
+                        light.cast_shadows,
+                    ))
                 }
                 _ => None,
             });
-            if let Some((local_transform, color, intensity, range)) = point_light_data {
+            if let Some((local_transform, color, intensity, range, cast_shadows)) = point_light_data
+            {
                 let global = self
                     .get_global_transform_3d(node)
                     .unwrap_or(local_transform);
@@ -223,6 +236,7 @@ impl Runtime {
                     color,
                     intensity: intensity.max(0.0),
                     range: range.max(0.001),
+                    cast_shadows,
                 };
                 if self.render_3d.retained_point_lights.get(&node).copied() != Some(light) {
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(
@@ -244,6 +258,7 @@ impl Runtime {
                         light.range,
                         light.inner_angle_radians,
                         light.outer_angle_radians,
+                        light.cast_shadows,
                     ))
                 }
                 _ => None,
@@ -255,6 +270,7 @@ impl Runtime {
                 range,
                 inner_angle_radians,
                 outer_angle_radians,
+                cast_shadows,
             )) = spot_light_data
             {
                 let global = self
@@ -268,6 +284,7 @@ impl Runtime {
                     range: range.max(0.001),
                     inner_angle_radians: inner_angle_radians.max(0.0),
                     outer_angle_radians: outer_angle_radians.max(inner_angle_radians),
+                    cast_shadows,
                 };
                 if self.render_3d.retained_spot_lights.get(&node).copied() != Some(light) {
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(
@@ -279,9 +296,12 @@ impl Runtime {
             }
 
             let mesh_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::MeshInstance3D(mesh) => {
-                    Some((mesh.mesh, mesh.surfaces.clone(), mesh.skeleton, mesh.transform))
-                }
+                SceneNodeData::MeshInstance3D(mesh) => Some((
+                    mesh.mesh,
+                    mesh.surfaces.clone(),
+                    mesh.skeleton,
+                    mesh.transform,
+                )),
                 _ => None,
             });
             if let Some((mesh, surfaces, skeleton, local_transform)) = mesh_data
@@ -410,12 +430,17 @@ impl Runtime {
                 }
                 visible_now.insert(node);
             }
-            let collision_shape_debug_data = self.nodes.get(node).and_then(|scene_node| match &scene_node.data {
-                SceneNodeData::CollisionShape3D(shape) if shape.debug && effective_visible => {
-                    Some((shape.shape, shape.transform, scene_node.parent))
-                }
-                _ => None,
-            });
+            let collision_shape_debug_data =
+                self.nodes
+                    .get(node)
+                    .and_then(|scene_node| match &scene_node.data {
+                        SceneNodeData::CollisionShape3D(shape)
+                            if shape.debug && effective_visible =>
+                        {
+                            Some((shape.shape, shape.transform, scene_node.parent))
+                        }
+                        _ => None,
+                    });
             if let Some((shape, local_transform, parent)) = collision_shape_debug_data {
                 let (shape, world_from_shape) = if is_physics_body_3d(self, parent) {
                     let parent_global = self
@@ -454,12 +479,13 @@ impl Runtime {
                         shape,
                         world_from_shape,
                     );
-                    self.render_3d
-                        .collision_debug_state
-                        .insert(node, crate::runtime::CollisionDebugState {
+                    self.render_3d.collision_debug_state.insert(
+                        node,
+                        crate::runtime::CollisionDebugState {
                             signature,
                             edge_count,
-                        });
+                        },
+                    );
                 }
                 visible_now.insert(node);
             } else if let Some(prev) = self.render_3d.collision_debug_state.remove(&node) {
@@ -673,10 +699,7 @@ impl Runtime {
         for cached in chunks {
             let coord = cached.coord;
             let chunk = &cached.chunk;
-            let key = crate::runtime::TerrainChunkMeshKey {
-                node,
-                coord,
-            };
+            let key = crate::runtime::TerrainChunkMeshKey { node, coord };
             active_keys.insert(key);
             let hash = cached.hash;
             terrain_signature ^= (coord.x as u32 as u64).wrapping_mul(0x9E37_79B1);
@@ -909,12 +932,14 @@ impl Runtime {
         for (start, end) in segments {
             let world_start = world_from_shape.transform_point3(start).to_array();
             let world_end = world_from_shape.transform_point3(end).to_array();
-            self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::DrawDebugLine3D {
-                node: collision_debug_edge_node(node, edge_count),
-                start: world_start,
-                end: world_end,
-                thickness: 0.035,
-            })));
+            self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                Command3D::DrawDebugLine3D {
+                    node: collision_debug_edge_node(node, edge_count),
+                    start: world_start,
+                    end: world_end,
+                    thickness: 0.035,
+                },
+            )));
             edge_count = edge_count.saturating_add(1);
         }
         edge_count
@@ -1024,7 +1049,11 @@ impl Runtime {
                 .and_then(|overrides| overrides.get(surface_index))
                 .cloned()
                 .flatten()
-                .or_else(|| source.as_ref().and_then(|src| load_material_from_source(self, src)))
+                .or_else(|| {
+                    source
+                        .as_ref()
+                        .and_then(|src| load_material_from_source(self, src))
+                })
                 .unwrap_or_else(Material3D::default);
             if !self.render.is_inflight(request) {
                 self.render.mark_inflight(request);
@@ -1294,7 +1323,9 @@ fn is_physics_body_3d(runtime: &Runtime, node: NodeID) -> bool {
     runtime.nodes.get(node).is_some_and(|scene_node| {
         matches!(
             scene_node.data,
-            SceneNodeData::StaticBody3D(_) | SceneNodeData::RigidBody3D(_) | SceneNodeData::Area3D(_)
+            SceneNodeData::StaticBody3D(_)
+                | SceneNodeData::RigidBody3D(_)
+                | SceneNodeData::Area3D(_)
         )
     })
 }
@@ -1661,11 +1692,7 @@ fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)> {
     out
 }
 
-fn push_indexed_edges(
-    out: &mut Vec<(Vec3, Vec3)>,
-    points: &[Vec3],
-    edges: &[(usize, usize)],
-) {
+fn push_indexed_edges(out: &mut Vec<(Vec3, Vec3)>, points: &[Vec3], edges: &[(usize, usize)]) {
     for (a, b) in edges.iter().copied() {
         if let (Some(pa), Some(pb)) = (points.get(a), points.get(b)) {
             out.push((*pa, *pb));

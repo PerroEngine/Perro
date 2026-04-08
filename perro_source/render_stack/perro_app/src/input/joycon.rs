@@ -2,8 +2,8 @@ use crate::App;
 use perro_graphics::GraphicsBackend;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -14,8 +14,8 @@ mod backend {
     use btleplug::platform::Manager;
     use futures_util::stream::StreamExt;
     use hidapi::HidApi;
-    use perro_io::{load_asset, save_asset};
     use perro_input::{JoyConButton, JoyConSide};
+    use perro_io::{load_asset, save_asset};
     use serde::{Deserialize, Serialize};
     use std::sync::OnceLock;
     use tokio::runtime::Builder;
@@ -252,9 +252,10 @@ mod backend {
                 if !connected {
                     handle.stop.store(true, Ordering::Relaxed);
                     if let Some(index) = release_slot(&self.slots, slot_key) {
-                        let _ = self.tx.as_ref().and_then(|tx| {
-                            tx.send(JoyConEvent::Disconnected { index }).ok()
-                        });
+                        let _ = self
+                            .tx
+                            .as_ref()
+                            .and_then(|tx| tx.send(JoyConEvent::Disconnected { index }).ok());
                         clear_joycon_index(app, index);
                         self.last_buttons.retain(|(idx, _), _| *idx != index);
                         self.connected.retain(|(idx, _), _| *idx != index);
@@ -300,7 +301,8 @@ mod backend {
                             let data = &buffer[..size];
                             if let Some(payload) = decode_report_hid(data, side) {
                                 if imu_is_zero(payload.gyro, payload.accel) {
-                                    let zero_start = zero_started_at.get_or_insert_with(Instant::now);
+                                    let zero_start =
+                                        zero_started_at.get_or_insert_with(Instant::now);
                                     if zero_start.elapsed() >= IMU_ZERO_STUCK_THRESHOLD
                                         && last_enable_retry.elapsed() >= IMU_ENABLE_RETRY_COOLDOWN
                                     {
@@ -386,7 +388,11 @@ mod backend {
         }
 
         fn start_calibration<B: GraphicsBackend>(&mut self, app: &mut App<B>, index: usize) {
-            if let Some((_, controller)) = self.connected.iter_mut().find(|((idx, _), _)| *idx == index) {
+            if let Some((_, controller)) = self
+                .connected
+                .iter_mut()
+                .find(|((idx, _), _)| *idx == index)
+            {
                 controller.status = CalibrationStatus::Calibrating;
                 controller.session = Some(CalibrationSession::new());
                 app.set_joycon_calibration_in_progress(index, true);
@@ -758,8 +764,7 @@ mod backend {
             && let Some(name) = props.local_name.as_deref()
         {
             let lower = name.to_ascii_lowercase();
-            if lower.contains("joy-con") || lower.contains("joycon") || lower.contains("nintendo")
-            {
+            if lower.contains("joy-con") || lower.contains("joycon") || lower.contains("nintendo") {
                 if lower.contains("(l)") || lower.contains(" left") {
                     side = Some(JoyConSide::LJoyCon);
                     tag = format!("name(L):{name}");
@@ -829,8 +834,8 @@ mod backend {
         if controller.status == CalibrationStatus::Calibrating
             && let Some(session) = controller.session.as_mut()
         {
-            let mag =
-                (raw_gyro.0 * raw_gyro.0 + raw_gyro.1 * raw_gyro.1 + raw_gyro.2 * raw_gyro.2).sqrt();
+            let mag = (raw_gyro.0 * raw_gyro.0 + raw_gyro.1 * raw_gyro.1 + raw_gyro.2 * raw_gyro.2)
+                .sqrt();
             let delta = session
                 .last_sample
                 .map(|prev| {
@@ -841,7 +846,8 @@ mod backend {
                 })
                 .unwrap_or(0.0);
 
-            let sample_is_steady = mag <= CALIBRATION_MAX_MAG_DPS && delta <= CALIBRATION_MAX_DELTA_DPS;
+            let sample_is_steady =
+                mag <= CALIBRATION_MAX_MAG_DPS && delta <= CALIBRATION_MAX_DELTA_DPS;
             if sample_is_steady {
                 session.last_sample = Some(raw_gyro);
                 session.sum.0 += raw_gyro.0;
@@ -856,7 +862,11 @@ mod backend {
                 && session.count > 0
             {
                 let inv = 1.0 / (session.count as f32);
-                let bias = (session.sum.0 * inv, session.sum.1 * inv, session.sum.2 * inv);
+                let bias = (
+                    session.sum.0 * inv,
+                    session.sum.1 * inv,
+                    session.sum.2 * inv,
+                );
                 controller.calibration_bias = bias;
                 controller.status = CalibrationStatus::Calibrated;
                 controller.session = None;
@@ -942,7 +952,6 @@ mod backend {
         side: JoyConSide,
         offset: usize,
     ) -> Option<JoyConInputData> {
-
         // Joy-Con 1 layout:
         // byte 3 = right buttons, byte 4 = shared, byte 5 = left buttons
         let right_idx = 3usize.checked_sub(offset)?;
@@ -1035,7 +1044,11 @@ mod backend {
             set_button_bit(&mut buttons, JoyConButton::SL, (data[base + 6] & 0x20) != 0);
             set_button_bit(&mut buttons, JoyConButton::SR, (data[base + 6] & 0x10) != 0);
             set_button_bit(&mut buttons, JoyConButton::Start, (state & 0x000100) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Meta, (data[base + 5] & 0x20) != 0);
+            set_button_bit(
+                &mut buttons,
+                JoyConButton::Meta,
+                (data[base + 5] & 0x20) != 0,
+            );
         } else {
             // Joy-Con 2 right face buttons: observed stream indicates Top/Bottom are inverted
             // vs legacy masks, so map accordingly.
@@ -1049,7 +1062,11 @@ mod backend {
             set_button_bit(&mut buttons, JoyConButton::SL, (data[base + 4] & 0x20) != 0);
             set_button_bit(&mut buttons, JoyConButton::SR, (data[base + 4] & 0x10) != 0);
             set_button_bit(&mut buttons, JoyConButton::Start, (state & 0x000002) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Meta, (data[base + 5] & 0x10) != 0);
+            set_button_bit(
+                &mut buttons,
+                JoyConButton::Meta,
+                (data[base + 5] & 0x10) != 0,
+            );
         }
 
         let stick_offsets: &[usize] = if is_left {
@@ -1278,9 +1295,12 @@ mod backend {
             if start + 5 >= data.len() {
                 continue;
             }
-            let ax = i16::from_le_bytes([data[start], data[start + 1]]) as f32 * ACCEL_GRAVITY_SCALE;
-            let ay = i16::from_le_bytes([data[start + 2], data[start + 3]]) as f32 * ACCEL_GRAVITY_SCALE;
-            let az = i16::from_le_bytes([data[start + 4], data[start + 5]]) as f32 * ACCEL_GRAVITY_SCALE;
+            let ax =
+                i16::from_le_bytes([data[start], data[start + 1]]) as f32 * ACCEL_GRAVITY_SCALE;
+            let ay =
+                i16::from_le_bytes([data[start + 2], data[start + 3]]) as f32 * ACCEL_GRAVITY_SCALE;
+            let az =
+                i16::from_le_bytes([data[start + 4], data[start + 5]]) as f32 * ACCEL_GRAVITY_SCALE;
             let amag = (ax * ax + ay * ay + az * az).sqrt();
             // Prefer realistic gravity magnitude region before normalization.
             let score = (amag - ACCEL_ONE_G_TARGET).abs();
@@ -1302,9 +1322,12 @@ mod backend {
             if start + 11 >= data.len() {
                 continue;
             }
-            let gx_raw = i16::from_le_bytes([data[start + 6], data[start + 7]]) as f32 / JOYCON2_GYRO_SCALE;
-            let gy_raw = i16::from_le_bytes([data[start + 8], data[start + 9]]) as f32 / JOYCON2_GYRO_SCALE;
-            let gz_raw = i16::from_le_bytes([data[start + 10], data[start + 11]]) as f32 / JOYCON2_GYRO_SCALE;
+            let gx_raw =
+                i16::from_le_bytes([data[start + 6], data[start + 7]]) as f32 / JOYCON2_GYRO_SCALE;
+            let gy_raw =
+                i16::from_le_bytes([data[start + 8], data[start + 9]]) as f32 / JOYCON2_GYRO_SCALE;
+            let gz_raw = i16::from_le_bytes([data[start + 10], data[start + 11]]) as f32
+                / JOYCON2_GYRO_SCALE;
             let gyro = (gy_raw, gx_raw, -gz_raw);
             let gmag = (gyro.0 * gyro.0 + gyro.1 * gyro.1 + gyro.2 * gyro.2).sqrt();
             // Parse gyro independently; choose the least explosive candidate.

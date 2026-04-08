@@ -1698,7 +1698,8 @@ impl Gpu3D {
                 Draw3DKind::Mesh(_) => {
                     let mut out = Vec::new();
                     for (surface_index, surface) in draw.surfaces.iter().enumerate() {
-                        let Some(range) = mesh_asset.surface_ranges.get(surface_index).copied() else {
+                        let Some(range) = mesh_asset.surface_ranges.get(surface_index).copied()
+                        else {
                             continue;
                         };
                         let base_material = surface
@@ -2392,12 +2393,10 @@ impl Gpu3D {
         }
         self.ensure_material_fallback_texture(device, queue);
 
-        let source = resources
-            .texture_source_by_index(slot)
-            .or_else(|| {
-                slot.checked_add(1)
-                    .and_then(|next| resources.texture_source_by_index(next))
-            });
+        let source = resources.texture_source_by_index(slot).or_else(|| {
+            slot.checked_add(1)
+                .and_then(|next| resources.texture_source_by_index(next))
+        });
         let Some(source) = source else {
             self.material_textures.remove(&slot);
             return;
@@ -4244,10 +4243,7 @@ fn encode_custom_param_value(value: &perro_render_bridge::CustomMaterialParamVal
     }
 }
 
-fn apply_surface_binding(
-    mut material: Material3D,
-    surface: &MeshSurfaceBinding3D,
-) -> Material3D {
+fn apply_surface_binding(mut material: Material3D, surface: &MeshSurfaceBinding3D) -> Material3D {
     apply_modulate(&mut material, surface.modulate);
     apply_overrides(&mut material, &surface.overrides);
     material
@@ -4755,8 +4751,7 @@ fn build_scene_uniform(
             night_col[1] * 0.88,
             (night_col[2] * 1.05).max(0.0),
         ];
-        let moon_intensity =
-            ((night_amt * 0.18) * sky.moon_size.max(0.05)).max(0.0);
+        let moon_intensity = ((night_amt * 0.18) * sky.moon_size.max(0.05)).max(0.0);
 
         push_ray(sun_dir, sun_color, sun_intensity);
         push_ray(moon_dir, moon_color, moon_intensity);

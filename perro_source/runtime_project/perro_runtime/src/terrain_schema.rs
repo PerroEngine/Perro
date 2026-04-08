@@ -250,7 +250,8 @@ fn build_terrain_data(chunk_size_meters: f32, chunks: &[ParsedChunk]) -> Option<
         let dst = terrain.ensure_chunk(chunk.coord);
         for (i, y) in chunk.heights.iter().copied().enumerate() {
             let old = dst.vertices()[i].position;
-            dst.set_vertex_position(i, Vector3::new(old.x, y, old.z)).ok()?;
+            dst.set_vertex_position(i, Vector3::new(old.x, y, old.z))
+                .ok()?;
         }
     }
     Some(terrain)

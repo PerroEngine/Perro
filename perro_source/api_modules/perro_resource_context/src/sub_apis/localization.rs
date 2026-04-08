@@ -81,8 +81,11 @@ pub trait LocalizationAPI {
     fn localization_get(&self, key: &str) -> Option<&'static str>;
     fn localization_get_by_hash(&self, key_hash: u64) -> Option<&'static str>;
     fn localization_get_for_locale(&self, locale: Locale, key: &str) -> Option<&'static str>;
-    fn localization_get_for_locale_by_hash(&self, locale: Locale, key_hash: u64)
-        -> Option<&'static str>;
+    fn localization_get_for_locale_by_hash(
+        &self,
+        locale: Locale,
+        key_hash: u64,
+    ) -> Option<&'static str>;
 }
 
 pub struct LocalizationModule<'res, R: LocalizationAPI + ?Sized> {
@@ -121,7 +124,8 @@ impl<'res, R: LocalizationAPI + ?Sized> LocalizationModule<'res, R> {
 
     #[inline]
     pub fn get_for_locale_by_hash(&self, locale: Locale, key_hash: u64) -> Option<&'static str> {
-        self.api.localization_get_for_locale_by_hash(locale, key_hash)
+        self.api
+            .localization_get_for_locale_by_hash(locale, key_hash)
     }
 }
 
@@ -143,9 +147,7 @@ macro_rules! locale_get_current {
 macro_rules! locale {
     ($res:expr, $key:literal) => {{
         const __KEY_HASH: u64 = $crate::__perro_string_to_u64($key);
-        $res.Localization()
-            .get_by_hash(__KEY_HASH)
-            .unwrap_or($key)
+        $res.Localization().get_by_hash(__KEY_HASH).unwrap_or($key)
     }};
     ($res:expr, $key:expr) => {{
         let __key = $key;

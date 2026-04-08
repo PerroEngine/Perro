@@ -91,7 +91,8 @@ impl Runtime {
 
     #[inline]
     pub fn set_joycon_calibration_in_progress(&mut self, index: usize, in_progress: bool) {
-        self.input.set_joycon_calibration_in_progress(index, in_progress);
+        self.input
+            .set_joycon_calibration_in_progress(index, in_progress);
     }
 
     #[inline]

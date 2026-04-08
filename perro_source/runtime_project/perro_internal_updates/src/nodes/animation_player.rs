@@ -436,6 +436,24 @@ where
                     with_base_node!(ctx, AmbientLight3D, node_id, |n| Variant::from(n.active))
                 })
         }
+        NodeField::Light3D(Light3DField::CastShadows) => {
+            with_base_node!(ctx, RayLight3D, node_id, |n| {
+                Variant::from(n.cast_shadows)
+            })
+            .or_else(|| {
+                with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(
+                    n.cast_shadows
+                ))
+            })
+            .or_else(|| {
+                with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(n.cast_shadows))
+            })
+            .or_else(|| {
+                with_base_node!(ctx, AmbientLight3D, node_id, |n| Variant::from(
+                    n.cast_shadows
+                ))
+            })
+        }
         NodeField::PointLight3D(PointLight3DField::Range) => {
             with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(n.range))
         }
@@ -535,7 +553,8 @@ fn apply_track<RT>(
                 let id = material_load!(res, path.as_ref());
                 let _ = with_base_node_mut!(ctx, MeshInstance3D, node_id, |node| {
                     if node.surfaces.is_empty() {
-                        node.surfaces.push(perro_nodes::MeshSurfaceBinding::default());
+                        node.surfaces
+                            .push(perro_nodes::MeshSurfaceBinding::default());
                     }
                     node.surfaces[0].material = Some(id);
                 });
@@ -690,6 +709,20 @@ fn apply_track<RT>(
                     && with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.active = v).is_none()
                 {
                     let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| { n.active = v });
+                }
+            }
+            Light3DField::CastShadows => {
+                if let AnimationTrackValue::Bool(v) = value
+                    && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.cast_shadows = v)
+                        .is_none()
+                    && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.cast_shadows = v)
+                        .is_none()
+                    && with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.cast_shadows = v)
+                        .is_none()
+                {
+                    let _ = with_base_node_mut!(ctx, AmbientLight3D, node_id, |n| {
+                        n.cast_shadows = v
+                    });
                 }
             }
         },

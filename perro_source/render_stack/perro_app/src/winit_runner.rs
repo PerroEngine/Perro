@@ -1,8 +1,8 @@
 use crate::App;
 use perro_graphics::GraphicsBackend;
 use std::path::{Path, PathBuf};
-use std::{fs, sync::Arc};
 use std::time::{Duration, Instant};
+use std::{fs, sync::Arc};
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize, Position, Size},
     event::{DeviceEvent, ElementState, WindowEvent},
@@ -592,10 +592,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 ..
             } => {
                 if key_event.state == ElementState::Pressed
-                    && matches!(
-                        &key_event.physical_key,
-                        PhysicalKey::Code(KeyCode::Escape)
-                    )
+                    && matches!(&key_event.physical_key, PhysicalKey::Code(KeyCode::Escape))
                 {
                     self.set_cursor_capture(false);
                 }
@@ -608,18 +605,21 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                         self.set_cursor_capture(true);
                     }
                 }
-                self.kbm_input.handle_window_event(&mut self.app, &mouse_event);
+                self.kbm_input
+                    .handle_window_event(&mut self.app, &mouse_event);
             }
             WindowEvent::CursorEntered { .. } => {
                 self.cursor_inside_window = true;
             }
             cursor_left @ WindowEvent::CursorLeft { .. } => {
                 self.cursor_inside_window = false;
-                self.kbm_input.handle_window_event(&mut self.app, &cursor_left);
+                self.kbm_input
+                    .handle_window_event(&mut self.app, &cursor_left);
             }
             cursor_moved @ WindowEvent::CursorMoved { .. } => {
                 self.cursor_inside_window = true;
-                self.kbm_input.handle_window_event(&mut self.app, &cursor_moved);
+                self.kbm_input
+                    .handle_window_event(&mut self.app, &cursor_moved);
             }
             WindowEvent::MouseWheel { .. } => {
                 self.kbm_input.handle_window_event(&mut self.app, &event);

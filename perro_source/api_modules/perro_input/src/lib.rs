@@ -998,9 +998,7 @@ macro_rules! viewport_size {
 /// Signature:
 /// - `joycon_request_calibration!(&InputContext<_>, JoyConIndex) -> ()`
 macro_rules! joycon_request_calibration {
-    ($ipt:expr, $index:expr) => {{
-        $ipt.request_joycon_calibration($index)
-    }};
+    ($ipt:expr, $index:expr) => {{ $ipt.request_joycon_calibration($index) }};
 }
 
 pub mod prelude {
@@ -1010,12 +1008,12 @@ pub mod prelude {
         JoyConState, KeyCode, KeyModule, KeyboardModule, KeyboardState, MouseButton, MouseModule,
         MouseState, MouseStateModule, PlayerBinding, PlayerModule, PlayerState, gamepad_accel,
         gamepad_down, gamepad_get, gamepad_gyro, gamepad_left_stick, gamepad_list, gamepad_pressed,
-        gamepad_released, gamepad_right_stick, joycon_accel, joycon_calibrated,
-        joycon_calibrating, joycon_calibration_bias, joycon_connected, joycon_down, joycon_get,
-        joycon_gyro, joycon_list, joycon_needs_calibration, joycon_pressed,
-        joycon_request_calibration, joycon_released, joycon_side, joycon_stick, key_down,
-        key_pressed, key_released, mouse_delta, mouse_down, mouse_position, mouse_pressed,
-        mouse_released, mouse_wheel, player_bind, player_get, player_list, viewport_size,
+        gamepad_released, gamepad_right_stick, joycon_accel, joycon_calibrated, joycon_calibrating,
+        joycon_calibration_bias, joycon_connected, joycon_down, joycon_get, joycon_gyro,
+        joycon_list, joycon_needs_calibration, joycon_pressed, joycon_released,
+        joycon_request_calibration, joycon_side, joycon_stick, key_down, key_pressed, key_released,
+        mouse_delta, mouse_down, mouse_position, mouse_pressed, mouse_released, mouse_wheel,
+        player_bind, player_get, player_list, viewport_size,
     };
     pub use perro_structs::Vector2;
 }

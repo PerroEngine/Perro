@@ -6,6 +6,7 @@ pub struct AmbientLight3D {
     pub visible: bool,
     pub color: [f32; 3],
     pub intensity: f32,
+    pub cast_shadows: bool,
     pub active: bool,
 }
 
@@ -16,6 +17,7 @@ impl AmbientLight3D {
             visible: true,
             color: [1.0, 1.0, 1.0],
             intensity: 0.0,
+            cast_shadows: true,
             active: true,
         }
     }

@@ -1,10 +1,9 @@
 use crate::{
-    BrushOp, BrushShape, ChunkConfig, ChunkCoord, ChunkError, InsertVertexResult, TerrainChunk,
-    CHUNK_GRID_CELLS_PER_SIDE,
+    BrushOp, BrushShape, CHUNK_GRID_CELLS_PER_SIDE, ChunkConfig, ChunkCoord, ChunkError,
+    InsertVertexResult, TerrainChunk,
 };
 use perro_structs::Vector3;
 use std::collections::HashSet;
-
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TerrainRayHit {

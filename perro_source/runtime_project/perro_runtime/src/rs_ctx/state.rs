@@ -1,8 +1,8 @@
 use perro_animation::AnimationClip;
 use perro_ids::{AnimationID, MaterialID, MeshID, TextureID};
 use perro_project::LocalizationConfig;
-use perro_resource_context::sub_apis::Locale;
 use perro_render_bridge::{RenderCommand, RenderRequestID};
+use perro_resource_context::sub_apis::Locale;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 

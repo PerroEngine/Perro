@@ -393,19 +393,17 @@ impl<'a> Parser<'a> {
                                     _ => panic!("parent must be a key"),
                                 })
                             }
-                            "script" => {
-                                match v {
-                                    SceneValue::Str(s) => {
-                                        script = Some(s.to_string());
-                                        clear_script = false;
-                                    }
-                                    SceneValue::Key(k) if k.as_ref() == "null" => {
-                                        script = None;
-                                        clear_script = true;
-                                    }
-                                    _ => panic!("script must be a string or null"),
+                            "script" => match v {
+                                SceneValue::Str(s) => {
+                                    script = Some(s.to_string());
+                                    clear_script = false;
                                 }
-                            }
+                                SceneValue::Key(k) if k.as_ref() == "null" => {
+                                    script = None;
+                                    clear_script = true;
+                                }
+                                _ => panic!("script must be a string or null"),
+                            },
                             "clear_script" => {
                                 clear_script = match v {
                                     SceneValue::Bool(v) => v,
@@ -441,9 +439,7 @@ impl<'a> Parser<'a> {
 
                     let (data, has_data_override) = if self.current == Token::Slash {
                         if root_of.is_none() {
-                            panic!(
-                                "Node `{key}` must define a type block unless it uses root_of"
-                            );
+                            panic!("Node `{key}` must define a type block unless it uses root_of");
                         }
                         (
                             SceneNodeData {

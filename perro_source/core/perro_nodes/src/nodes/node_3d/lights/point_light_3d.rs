@@ -21,6 +21,7 @@ pub struct PointLight3D {
     pub color: [f32; 3],
     pub intensity: f32,
     pub range: f32,
+    pub cast_shadows: bool,
     pub active: bool,
 }
 
@@ -31,6 +32,7 @@ impl PointLight3D {
             color: [1.0, 1.0, 1.0],
             intensity: 1.0,
             range: 10.0,
+            cast_shadows: true,
             active: true,
         }
     }

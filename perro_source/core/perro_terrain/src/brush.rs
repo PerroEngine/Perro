@@ -18,24 +18,13 @@ pub enum BrushOp {
         feature_offset: f32,
     },
     /// Raises touched vertex heights with radial falloff from brush center.
-    Add {
-        delta: f32,
-        basis: f32,
-    },
+    Add { delta: f32, basis: f32 },
     /// Lowers touched vertex heights with radial falloff from brush center.
-    Remove {
-        delta: f32,
-        basis: f32,
-    },
+    Remove { delta: f32, basis: f32 },
     /// Moves touched vertex heights toward local brush average with radial falloff.
-    Smooth {
-        strength: f32,
-        basis: f32,
-    },
+    Smooth { strength: f32, basis: f32 },
     /// Reserved for future topology LOD workflows. No-op in fixed-grid mode.
-    Decimate {
-        basis: f32,
-    },
+    Decimate { basis: f32 },
 }
 
 impl TerrainChunk {
@@ -145,13 +134,7 @@ fn point_in_brush_xz(x: f32, z: f32, center: Vector3, size: f32, shape: BrushSha
     }
 }
 
-fn brush_falloff_weight(
-    x: f32,
-    z: f32,
-    center: Vector3,
-    size: f32,
-    shape: BrushShape,
-) -> f32 {
+fn brush_falloff_weight(x: f32, z: f32, center: Vector3, size: f32, shape: BrushShape) -> f32 {
     let half = size * 0.5;
     if half <= 1.0e-6 {
         return 1.0;
@@ -159,7 +142,9 @@ fn brush_falloff_weight(
     let dx = (x - center.x).abs();
     let dz = (z - center.z).abs();
     let t = match shape {
-        BrushShape::Circle | BrushShape::Triangle => ((dx * dx + dz * dz).sqrt() / half).clamp(0.0, 1.0),
+        BrushShape::Circle | BrushShape::Triangle => {
+            ((dx * dx + dz * dz).sqrt() / half).clamp(0.0, 1.0)
+        }
         BrushShape::Square => (dx.max(dz) / half).clamp(0.0, 1.0),
     };
     1.0 - t

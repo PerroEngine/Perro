@@ -19,9 +19,9 @@ pub mod prelude {
         audio_length_millis, audio_length_seconds, audio_load, audio_play, audio_reserve,
         audio_set_master_volume, audio_stop, audio_stop_all, audio_stop_source,
         disable_colorblind_filter, draw, enable_colorblind_filter, get_viewport_size, locale,
-        locale_get_current, locale_in, locale_set, material_create,
-        material_drop, material_load, material_reserve, mesh_drop, mesh_load, mesh_reserve,
-        post_processing_add, post_processing_clear, post_processing_remove, post_processing_set,
-        skeleton_load_bones, texture_drop, texture_load, texture_reserve,
+        locale_get_current, locale_in, locale_set, material_create, material_drop, material_load,
+        material_reserve, mesh_drop, mesh_load, mesh_reserve, post_processing_add,
+        post_processing_clear, post_processing_remove, post_processing_set, skeleton_load_bones,
+        texture_drop, texture_load, texture_reserve,
     };
 }

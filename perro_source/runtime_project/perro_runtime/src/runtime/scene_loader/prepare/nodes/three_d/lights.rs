@@ -53,6 +53,11 @@ fn apply_ray_light_3d_fields(node: &mut RayLight3D, fields: &[SceneObjectField])
                     node.intensity = v;
                 }
             }
+            Some(NodeField::Light3D(Light3DField::CastShadows)) => {
+                if let Some(v) = as_bool(value) {
+                    node.cast_shadows = v;
+                }
+            }
             Some(NodeField::Light3D(Light3DField::Active)) => {
                 if let Some(v) = as_bool(value) {
                     node.active = v;
@@ -81,6 +86,11 @@ fn apply_ambient_light_3d_fields(node: &mut AmbientLight3D, fields: &[SceneObjec
                     node.intensity = v;
                 }
             }
+            Some(NodeField::Light3D(Light3DField::CastShadows)) => {
+                if let Some(v) = as_bool(value) {
+                    node.cast_shadows = v;
+                }
+            }
             Some(NodeField::Light3D(Light3DField::Active)) => {
                 if let Some(v) = as_bool(value) {
                     node.active = v;
@@ -107,6 +117,11 @@ fn apply_point_light_3d_fields(node: &mut PointLight3D, fields: &[SceneObjectFie
             Some(NodeField::PointLight3D(PointLight3DField::Range)) => {
                 if let Some(v) = as_f32(value) {
                     node.range = v;
+                }
+            }
+            Some(NodeField::Light3D(Light3DField::CastShadows)) => {
+                if let Some(v) = as_bool(value) {
+                    node.cast_shadows = v;
                 }
             }
             Some(NodeField::Light3D(Light3DField::Active)) => {
@@ -278,6 +293,11 @@ fn apply_spot_light_3d_fields(node: &mut SpotLight3D, fields: &[SceneObjectField
             Some(NodeField::SpotLight3D(SpotLight3DField::OuterAngleRadians)) => {
                 if let Some(v) = as_f32(value) {
                     node.outer_angle_radians = v;
+                }
+            }
+            Some(NodeField::Light3D(Light3DField::CastShadows)) => {
+                if let Some(v) = as_bool(value) {
+                    node.cast_shadows = v;
                 }
             }
             Some(NodeField::Light3D(Light3DField::Active)) => {

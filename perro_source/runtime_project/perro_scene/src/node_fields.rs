@@ -158,6 +158,7 @@ pub enum AnimationPlayerField {
 pub enum Light3DField {
     Color,
     Intensity,
+    CastShadows,
     Active,
 }
 
@@ -302,7 +303,9 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             _ => None,
         },
         NodeType::TerrainInstance3D => match field {
-            "terrain" => Some(NodeField::TerrainInstance3D(TerrainInstance3DField::Terrain)),
+            "terrain" => Some(NodeField::TerrainInstance3D(
+                TerrainInstance3DField::Terrain,
+            )),
             "show_debug_vertices" => Some(NodeField::TerrainInstance3D(
                 TerrainInstance3DField::ShowDebugVertices,
             )),
@@ -427,6 +430,7 @@ fn resolve_light3d_common(field: &str) -> Option<Light3DField> {
     match field {
         "color" => Some(Light3DField::Color),
         "intensity" => Some(Light3DField::Intensity),
+        "cast_shadows" | "casts_shadows" => Some(Light3DField::CastShadows),
         "active" => Some(Light3DField::Active),
         _ => None,
     }

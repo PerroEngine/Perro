@@ -78,7 +78,8 @@ impl TerrainChunk {
         let half = size * 0.5;
         let step = size / CHUNK_GRID_CELLS_PER_SIDE as f32;
 
-        let mut vertices = Vec::with_capacity(CHUNK_GRID_VERTICES_PER_SIDE * CHUNK_GRID_VERTICES_PER_SIDE);
+        let mut vertices =
+            Vec::with_capacity(CHUNK_GRID_VERTICES_PER_SIDE * CHUNK_GRID_VERTICES_PER_SIDE);
         for z in 0..CHUNK_GRID_VERTICES_PER_SIDE {
             let z_world = -half + z as f32 * step;
             for x in 0..CHUNK_GRID_VERTICES_PER_SIDE {
@@ -87,7 +88,8 @@ impl TerrainChunk {
             }
         }
 
-        let mut triangles = Vec::with_capacity(CHUNK_GRID_CELLS_PER_SIDE * CHUNK_GRID_CELLS_PER_SIDE * 2);
+        let mut triangles =
+            Vec::with_capacity(CHUNK_GRID_CELLS_PER_SIDE * CHUNK_GRID_CELLS_PER_SIDE * 2);
         for z in 0..CHUNK_GRID_CELLS_PER_SIDE {
             for x in 0..CHUNK_GRID_CELLS_PER_SIDE {
                 let i00 = z * CHUNK_GRID_VERTICES_PER_SIDE + x;

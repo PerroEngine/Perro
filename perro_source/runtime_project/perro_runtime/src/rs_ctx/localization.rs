@@ -52,10 +52,7 @@ impl LocalizationAPI for RuntimeResourceApi {
             .localization
             .read()
             .expect("resource api localization rwlock poisoned");
-        localization
-            .active_by_key
-            .get(key)
-            .copied()
+        localization.active_by_key.get(key).copied()
     }
 
     fn localization_get_by_hash(&self, key_hash: u64) -> Option<&'static str> {
@@ -71,10 +68,7 @@ impl LocalizationAPI for RuntimeResourceApi {
             .localization
             .read()
             .expect("resource api localization rwlock poisoned");
-        localization
-            .active_by_hash
-            .get(&key_hash)
-            .copied()
+        localization.active_by_hash.get(&key_hash).copied()
     }
 
     fn localization_get_for_locale(&self, locale: Locale, key: &str) -> Option<&'static str> {
@@ -143,7 +137,8 @@ impl RuntimeResourceApi {
         let Some(source) = localization.source_csv.as_deref() else {
             return false;
         };
-        let Ok((by_key, by_hash)) = read_localization_csv(source, &localization.key_column, locale_code)
+        let Ok((by_key, by_hash)) =
+            read_localization_csv(source, &localization.key_column, locale_code)
         else {
             return false;
         };
@@ -159,7 +154,13 @@ fn read_localization_csv(
     source: &str,
     key_column: &str,
     locale_code: &str,
-) -> Result<(HashMap<&'static str, &'static str>, HashMap<u64, &'static str>), String> {
+) -> Result<
+    (
+        HashMap<&'static str, &'static str>,
+        HashMap<u64, &'static str>,
+    ),
+    String,
+> {
     let bytes = perro_io::load_asset(source)
         .map_err(|err| format!("failed to read localization csv `{source}`: {err}"))?;
     let mut reader = csv::ReaderBuilder::new()
@@ -371,8 +372,14 @@ mod tests {
             std::sync::Arc::new(Mutex::new(TerrainStore::new())),
         );
 
-        assert_eq!(api.localization_get("camera.init"), Some("Camera initialized"));
+        assert_eq!(
+            api.localization_get("camera.init"),
+            Some("Camera initialized")
+        );
         assert!(api.localization_set_locale(Locale::ES));
-        assert_eq!(api.localization_get("camera.init"), Some("Camara inicializada"));
+        assert_eq!(
+            api.localization_get("camera.init"),
+            Some("Camara inicializada")
+        );
     }
 }

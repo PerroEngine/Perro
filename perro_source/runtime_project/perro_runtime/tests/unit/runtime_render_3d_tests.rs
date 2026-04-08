@@ -6,10 +6,10 @@ use perro_nodes::{
     node_3d::Node3D, physics_3d::Shape3D, ray_light_3d::RayLight3D, sky_3d::Sky3D,
     terrain_instance_3d::TerrainInstance3D,
 };
-use perro_structs::Vector3;
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
 };
+use perro_structs::Vector3;
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();

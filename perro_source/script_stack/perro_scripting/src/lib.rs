@@ -16,4 +16,3 @@ pub mod prelude {
     pub use perro_runtime_context::prelude::*;
     pub use perro_variant::{Variant, VariantCodec};
 }
-

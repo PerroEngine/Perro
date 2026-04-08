@@ -7,9 +7,9 @@ use ahash::{AHashMap, AHashSet};
 use perro_ids::{MaterialID, MeshID, NodeID, TagID, TerrainID, TextureID};
 use perro_nodes::Spatial;
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, Material3D, PointLight3DState, RayLight3DState,
-    RenderCommand, RenderEvent, RenderRequestID, SkeletonPalette, Sky3DState, SpotLight3DState,
-    MeshSurfaceBinding3D,
+    AmbientLight3DState, Camera3DState, Material3D, MeshSurfaceBinding3D, PointLight3DState,
+    RayLight3DState, RenderCommand, RenderEvent, RenderRequestID, SkeletonPalette, Sky3DState,
+    SpotLight3DState,
 };
 use perro_structs::{Transform2D, Transform3D};
 use perro_terrain::{ChunkCoord, TerrainChunk};

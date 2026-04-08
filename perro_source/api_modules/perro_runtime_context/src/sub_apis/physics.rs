@@ -9,8 +9,11 @@ pub trait PhysicsAPI {
 }
 
 pub trait IntoImpulseDirection {
-    fn apply_force<R: PhysicsAPI + ?Sized>(self, physics: &mut PhysicsModule<'_, R>, body_id: NodeID)
-        -> bool;
+    fn apply_force<R: PhysicsAPI + ?Sized>(
+        self,
+        physics: &mut PhysicsModule<'_, R>,
+        body_id: NodeID,
+    ) -> bool;
 
     fn apply_impulse<R: PhysicsAPI + ?Sized>(
         self,

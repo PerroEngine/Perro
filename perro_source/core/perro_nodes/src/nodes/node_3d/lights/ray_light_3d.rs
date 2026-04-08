@@ -20,6 +20,7 @@ pub struct RayLight3D {
     pub base: Node3D,
     pub color: [f32; 3],
     pub intensity: f32,
+    pub cast_shadows: bool,
     pub active: bool,
 }
 
@@ -29,6 +30,7 @@ impl RayLight3D {
             base: Node3D::new(),
             color: [1.0, 1.0, 1.0],
             intensity: 1.0,
+            cast_shadows: true,
             active: true,
         }
     }

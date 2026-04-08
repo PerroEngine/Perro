@@ -68,16 +68,16 @@ impl Runtime {
     }
 
     pub(crate) fn ensure_terrain_instance_data(&mut self, node: NodeID) -> bool {
-        let Some((current_id, terrain_source)) = self
-            .nodes
-            .get(node)
-            .and_then(|scene_node| match &scene_node.data {
-                SceneNodeData::TerrainInstance3D(terrain) => Some((
-                    terrain.terrain,
-                    terrain.terrain_source.as_ref().map(|v| v.to_string()),
-                )),
-                _ => None,
-            })
+        let Some((current_id, terrain_source)) =
+            self.nodes
+                .get(node)
+                .and_then(|scene_node| match &scene_node.data {
+                    SceneNodeData::TerrainInstance3D(terrain) => Some((
+                        terrain.terrain,
+                        terrain.terrain_source.as_ref().map(|v| v.to_string()),
+                    )),
+                    _ => None,
+                })
         else {
             return false;
         };
@@ -113,7 +113,9 @@ impl Runtime {
     }
 
     fn load_terrain_data_from_source(&self, source: &str) -> Option<TerrainData> {
-        let static_lookup = self.project().and_then(|project| project.static_terrain_lookup);
+        let static_lookup = self
+            .project()
+            .and_then(|project| project.static_terrain_lookup);
         if let Some(lookup) = static_lookup
             && let Some(literal) = lookup(source)
             && let Some(terrain) = terrain_schema::load_terrain_literal(literal)

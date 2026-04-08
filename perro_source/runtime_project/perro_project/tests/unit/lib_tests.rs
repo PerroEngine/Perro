@@ -215,8 +215,9 @@ serde = { version = "1", features = ["derive"] }
 
     ensure_source_overrides(&root).expect("overrides");
 
-    let scripts_manifest = fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
-        .expect("read scripts manifest");
+    let scripts_manifest =
+        fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
+            .expect("read scripts manifest");
     assert!(scripts_manifest.contains("perro = \"0.1.0\""));
     assert!(scripts_manifest.contains("serde"));
 
@@ -240,8 +241,9 @@ rand = "0.9"
 
     ensure_source_overrides(&root).expect("overrides");
 
-    let scripts_manifest = fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
-        .expect("read scripts manifest");
+    let scripts_manifest =
+        fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
+            .expect("read scripts manifest");
     assert!(scripts_manifest.contains("perro = \"0.1.0\""));
     assert!(scripts_manifest.contains("rand = \"0.9\""));
     assert!(!scripts_manifest.contains("perro = \"9.9.9\""));
@@ -267,8 +269,9 @@ rand = "0.9"
     fs::write(root.join("deps.toml"), "[dependencies]\n").expect("rewrite deps.toml");
     ensure_source_overrides(&root).expect("overrides second");
 
-    let scripts_manifest = fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
-        .expect("read scripts manifest");
+    let scripts_manifest =
+        fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
+            .expect("read scripts manifest");
     assert!(scripts_manifest.contains("perro = \"0.1.0\""));
     assert!(!scripts_manifest.contains("rand = \"0.9\""));
 
