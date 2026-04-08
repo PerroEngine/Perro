@@ -31,6 +31,11 @@ struct Scene3D {
     spot_lights: array<SpotLightGpu, MAX_SPOT_LIGHTS>,
 }
 
+struct Shadow3D {
+    light_view_proj: mat4x4<f32>,
+    params0: vec4<f32>, // enabled, strength, depth_bias, normal_bias
+}
+
 @group(0) @binding(0)
 var<uniform> scene: Scene3D;
 @group(0) @binding(1)
@@ -41,6 +46,12 @@ var<storage, read> custom_params: array<vec4<f32>>;
 var material_sampler: sampler;
 @group(1) @binding(1)
 var material_base_color_tex: texture_2d<f32>;
+@group(2) @binding(0)
+var<uniform> shadow: Shadow3D;
+@group(2) @binding(1)
+var shadow_map_tex: texture_depth_2d;
+@group(2) @binding(2)
+var shadow_map_sampler: sampler_comparison;
 
 struct VertexInput {
     @location(0) pos: vec3<f32>,
@@ -130,6 +141,45 @@ fn custom_param(in: FragmentInput, index: u32) -> vec4<f32> {
         return vec4<f32>(0.0);
     }
     return custom_params[in.custom_range.x + index];
+}
+
+fn shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light: vec3<f32>) -> f32 {
+    if shadow.params0.x < 0.5 {
+        return 1.0;
+    }
+    let light_clip = shadow.light_view_proj * vec4<f32>(world_pos, 1.0);
+    if abs(light_clip.w) <= 1.0e-6 {
+        return 1.0;
+    }
+    let ndc = light_clip.xyz / light_clip.w;
+    let uv = ndc.xy * 0.5 + vec2<f32>(0.5);
+    let depth = ndc.z * 0.5 + 0.5;
+    if depth <= 0.0 || depth >= 1.0 || any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) {
+        return 1.0;
+    }
+
+    let n = normalize(normal_ws);
+    let l = normalize(light_dir_to_light);
+    let slope = 1.0 - max(dot(n, l), 0.0);
+    let bias = shadow.params0.z + slope * shadow.params0.w;
+    let dims = max(vec2<f32>(textureDimensions(shadow_map_tex)), vec2<f32>(1.0));
+    let texel = 1.0 / dims;
+
+    var sum = 0.0;
+    for (var y = -1; y <= 1; y = y + 1) {
+        for (var x = -1; x <= 1; x = x + 1) {
+            let offset = vec2<f32>(f32(x), f32(y)) * texel;
+            sum += textureSampleCompare(
+                shadow_map_tex,
+                shadow_map_sampler,
+                uv + offset,
+                depth - bias
+            );
+        }
+    }
+    let visibility = sum / 9.0;
+    let strength = clamp(shadow.params0.y, 0.0, 1.0);
+    return mix(1.0, visibility, strength);
 }
 
 fn distribution_ggx(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {

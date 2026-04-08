@@ -38,7 +38,10 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
         let ray = scene.ray_lights[i];
         let dir = normalize(ray.direction.xyz);
         let l = -dir;
-        let radiance = ray.color_intensity.xyz * ray.color_intensity.w;
+        var radiance = ray.color_intensity.xyz * ray.color_intensity.w;
+        if i == 0u {
+            radiance *= shadow_factor(in.world_pos, n, l);
+        }
         light_rgb += radiance * lambert(n, l);
     }
 
