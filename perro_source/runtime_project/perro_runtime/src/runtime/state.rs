@@ -4,7 +4,7 @@ use crate::{
     runtime::RuntimeScriptCtor,
 };
 use ahash::{AHashMap, AHashSet};
-use perro_ids::{MaterialID, MeshID, NodeID, TagID, TextureID};
+use perro_ids::{MaterialID, MeshID, NodeID, TagID, TerrainID, TextureID};
 use perro_nodes::Spatial;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, Material3D, PointLight3DState, RayLight3DState,
@@ -12,7 +12,7 @@ use perro_render_bridge::{
     MeshSurfaceBinding3D,
 };
 use perro_structs::{Transform2D, Transform3D};
-use perro_terrain::ChunkCoord;
+use perro_terrain::{ChunkCoord, TerrainChunk};
 
 pub(crate) struct ScriptRuntimeState {
     pub(crate) active_script_stack: Vec<(usize, NodeID)>,
@@ -279,6 +279,7 @@ pub(crate) struct Render3DState {
     pub(crate) material_surface_sources: AHashMap<NodeID, Vec<Option<String>>>,
     pub(crate) material_surface_overrides: AHashMap<NodeID, Vec<Option<Material3D>>>,
     pub(crate) terrain_material: MaterialID,
+    pub(crate) terrain_instance_cache: AHashMap<NodeID, TerrainInstanceCacheState>,
     pub(crate) terrain_chunk_meshes: AHashMap<TerrainChunkMeshKey, TerrainChunkMeshState>,
     pub(crate) terrain_chunk_draws: AHashMap<TerrainChunkMeshKey, RetainedMeshDrawState>,
     pub(crate) terrain_debug_state: AHashMap<NodeID, TerrainDebugState>,
@@ -304,6 +305,7 @@ impl Render3DState {
             material_surface_sources: AHashMap::default(),
             material_surface_overrides: AHashMap::default(),
             terrain_material: MaterialID::nil(),
+            terrain_instance_cache: AHashMap::default(),
             terrain_chunk_meshes: AHashMap::default(),
             terrain_chunk_draws: AHashMap::default(),
             terrain_debug_state: AHashMap::default(),
@@ -340,6 +342,21 @@ pub(crate) struct TerrainChunkMeshState {
     pub(crate) source: String,
     pub(crate) hash: u64,
     pub(crate) mesh: MeshID,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TerrainCachedChunk {
+    pub(crate) coord: ChunkCoord,
+    pub(crate) hash: u64,
+    pub(crate) chunk: TerrainChunk,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TerrainInstanceCacheState {
+    pub(crate) terrain_id: TerrainID,
+    pub(crate) revision: u64,
+    pub(crate) chunk_size_meters: f32,
+    pub(crate) chunks: Vec<TerrainCachedChunk>,
 }
 
 #[derive(Clone, Copy, Debug)]

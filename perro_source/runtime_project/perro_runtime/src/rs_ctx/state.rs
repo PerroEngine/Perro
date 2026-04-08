@@ -1,6 +1,7 @@
 use perro_animation::AnimationClip;
 use perro_ids::{AnimationID, MaterialID, MeshID, TextureID};
 use perro_project::LocalizationConfig;
+use perro_resource_context::sub_apis::Locale;
 use perro_render_bridge::{RenderCommand, RenderRequestID};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -47,7 +48,8 @@ impl LocalSlotArena {
 pub(super) struct RuntimeLocalizationState {
     pub(super) source_csv: Option<String>,
     pub(super) key_column: String,
-    pub(super) current_locale: &'static str,
+    pub(super) current_locale: Locale,
+    pub(super) current_locale_code: &'static str,
     pub(super) active_by_key: HashMap<&'static str, &'static str>,
     pub(super) active_by_hash: HashMap<u64, &'static str>,
 }
@@ -55,10 +57,18 @@ pub(super) struct RuntimeLocalizationState {
 impl RuntimeLocalizationState {
     pub(super) fn new(config: Option<&LocalizationConfig>) -> Self {
         if let Some(config) = config {
+            let locale_code = Box::leak(
+                config
+                    .default_locale
+                    .trim()
+                    .to_ascii_lowercase()
+                    .into_boxed_str(),
+            );
             return Self {
                 source_csv: Some(config.source_csv.clone()),
                 key_column: config.key_column.clone(),
-                current_locale: Box::leak(config.default_locale.clone().into_boxed_str()),
+                current_locale: locale_from_code(locale_code),
+                current_locale_code: locale_code,
                 active_by_key: HashMap::new(),
                 active_by_hash: HashMap::new(),
             };
@@ -72,10 +82,38 @@ impl Default for RuntimeLocalizationState {
         Self {
             source_csv: None,
             key_column: "key".to_string(),
-            current_locale: "en",
+            current_locale: Locale::EN,
+            current_locale_code: "en",
             active_by_key: HashMap::new(),
             active_by_hash: HashMap::new(),
         }
+    }
+}
+
+fn locale_from_code(code: &'static str) -> Locale {
+    match code {
+        "zh" => Locale::ZH,
+        "en" => Locale::EN,
+        "ru" => Locale::RU,
+        "es" => Locale::ES,
+        "pt" => Locale::PT,
+        "de" => Locale::DE,
+        "ja" => Locale::JA,
+        "fr" => Locale::FR,
+        "ko" => Locale::KO,
+        "pl" => Locale::PL,
+        "tr" => Locale::TR,
+        "it" => Locale::IT,
+        "nl" => Locale::NL,
+        "vi" => Locale::VI,
+        "id" => Locale::ID,
+        "ar" => Locale::AR,
+        "hi" => Locale::HI,
+        "bn" => Locale::BN,
+        "ur" => Locale::UR,
+        "fa" => Locale::FA,
+        "sw" => Locale::SW,
+        _ => Locale::Custom(code),
     }
 }
 

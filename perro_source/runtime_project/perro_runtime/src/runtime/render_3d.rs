@@ -357,31 +357,13 @@ impl Runtime {
                 } else {
                     Some(terrain_id)
                 };
-                let (chunk_size, chunk_snapshots) = {
-                    let terrain_store = self
-                        .terrain_store
-                        .lock()
-                        .expect("terrain store mutex poisoned");
-                    if let Some(id) = active_terrain_id
-                        && let Some(data) = terrain_store.get(id)
-                    {
-                        let chunk_size = data.chunk_size_meters();
-                        let chunk_snapshots: Vec<(ChunkCoord, TerrainChunk)> = data
-                            .chunks()
-                            .map(|(coord, chunk)| (coord, chunk.clone()))
-                            .collect();
-                        let mut chunk_snapshots = chunk_snapshots;
-                        chunk_snapshots.sort_unstable_by_key(|(coord, _)| (coord.x, coord.z));
-                        (Some(chunk_size), chunk_snapshots)
-                    } else {
-                        (None, Vec::new())
-                    }
-                };
-                if let Some(chunk_size) = chunk_size {
+                let terrain_chunks = self.take_cached_terrain_chunks(node, active_terrain_id);
+                if let Some(chunks) = terrain_chunks {
+                    let chunk_size = chunks.chunk_size_meters;
                     let terrain_signature = self.queue_terrain_chunk_draws(
                         node,
                         chunk_size,
-                        &chunk_snapshots,
+                        &chunks.chunks,
                         world_from_terrain,
                     );
                     if show_debug_vertices || show_debug_edges {
@@ -405,7 +387,7 @@ impl Runtime {
                                 self,
                                 node,
                                 chunk_size,
-                                &chunk_snapshots,
+                                &chunks.chunks,
                                 world_from_terrain,
                                 show_debug_vertices,
                                 show_debug_edges,
@@ -422,6 +404,9 @@ impl Runtime {
                     } else if let Some(prev) = self.render_3d.terrain_debug_state.remove(&node) {
                         Self::queue_remove_terrain_debug_nodes(self, node, prev);
                     }
+                    self.render_3d.terrain_instance_cache.insert(node, chunks);
+                } else if let Some(prev) = self.render_3d.terrain_debug_state.remove(&node) {
+                    Self::queue_remove_terrain_debug_nodes(self, node, prev);
                 }
                 visible_now.insert(node);
             }
@@ -565,6 +550,7 @@ impl Runtime {
             if let Some(prev) = self.render_3d.collision_debug_state.remove(&node) {
                 Self::queue_remove_collision_debug_nodes(self, node, 0, prev.edge_count);
             }
+            self.render_3d.terrain_instance_cache.remove(&node);
             let stale_chunk_keys: Vec<_> = self
                 .render_3d
                 .terrain_chunk_meshes
@@ -631,11 +617,51 @@ impl Runtime {
         None
     }
 
+    fn take_cached_terrain_chunks(
+        &mut self,
+        node: NodeID,
+        terrain_id: Option<perro_ids::TerrainID>,
+    ) -> Option<crate::runtime::state::TerrainInstanceCacheState> {
+        let terrain_id = terrain_id?;
+        let mut cached = self.render_3d.terrain_instance_cache.remove(&node);
+        let (revision, chunk_size, chunks) = {
+            let terrain_store = self
+                .terrain_store
+                .lock()
+                .expect("terrain store mutex poisoned");
+            let revision = terrain_store.revision(terrain_id)?;
+            if let Some(existing) = cached.take()
+                && existing.terrain_id == terrain_id
+                && existing.revision == revision
+            {
+                return Some(existing);
+            }
+            let data = terrain_store.get(terrain_id)?;
+            let chunk_size = data.chunk_size_meters();
+            let mut chunks: Vec<_> = data
+                .chunks()
+                .map(|(coord, chunk)| crate::runtime::state::TerrainCachedChunk {
+                    coord,
+                    hash: terrain_chunk_hash(chunk),
+                    chunk: chunk.clone(),
+                })
+                .collect();
+            chunks.sort_unstable_by_key(|chunk| (chunk.coord.x, chunk.coord.z));
+            (revision, chunk_size, chunks)
+        };
+        Some(crate::runtime::state::TerrainInstanceCacheState {
+            terrain_id,
+            revision,
+            chunk_size_meters: chunk_size,
+            chunks,
+        })
+    }
+
     fn queue_terrain_chunk_draws(
         &mut self,
         node: NodeID,
         chunk_size_meters: f32,
-        chunks: &[(ChunkCoord, TerrainChunk)],
+        chunks: &[crate::runtime::state::TerrainCachedChunk],
         world_from_terrain: Mat4,
     ) -> u64 {
         let material = self.resolve_terrain_material();
@@ -644,13 +670,15 @@ impl Runtime {
         terrain_signature = terrain_signature.rotate_left(13);
         let mut active_keys = ahash::AHashSet::with_capacity(chunks.len());
 
-        for (coord, chunk) in chunks {
+        for cached in chunks {
+            let coord = cached.coord;
+            let chunk = &cached.chunk;
             let key = crate::runtime::TerrainChunkMeshKey {
                 node,
-                coord: *coord,
+                coord,
             };
             active_keys.insert(key);
-            let hash = terrain_chunk_hash(chunk);
+            let hash = cached.hash;
             terrain_signature ^= (coord.x as u32 as u64).wrapping_mul(0x9E37_79B1);
             terrain_signature = terrain_signature.rotate_left(11);
             terrain_signature ^= (coord.z as u32 as u64).wrapping_mul(0x85EB_CA77);
@@ -664,7 +692,7 @@ impl Runtime {
                 coord.z,
                 hash
             );
-            let request = Self::terrain_chunk_request(node, *coord);
+            let request = Self::terrain_chunk_request(node, coord);
 
             let mut prev_mesh_to_drop = MeshID::nil();
             let mut current_mesh = {
@@ -727,7 +755,7 @@ impl Runtime {
                 let model = world_from_terrain
                     * Mat4::from_translation(Vec3::new(chunk_center_x, 0.0, chunk_center_z));
                 let model_cols = model.to_cols_array_2d();
-                let draw_node = terrain_chunk_draw_node(node, *coord);
+                let draw_node = terrain_chunk_draw_node(node, coord);
                 let draw_state = crate::runtime::state::RetainedMeshDrawState {
                     mesh: current_mesh,
                     surfaces: std::sync::Arc::from([MeshSurfaceBinding3D {
@@ -777,21 +805,22 @@ impl Runtime {
         &mut self,
         node: NodeID,
         chunk_size_meters: f32,
-        chunks: &[(ChunkCoord, TerrainChunk)],
+        chunks: &[crate::runtime::state::TerrainCachedChunk],
         world_from_terrain: Mat4,
         show_vertices: bool,
         show_edges: bool,
     ) -> (u32, u32) {
         let mut point_count = 0u32;
         let mut edge_count = 0u32;
-        for (coord, chunk) in chunks.iter() {
+        for cached in chunks.iter() {
+            let chunk = &cached.chunk;
             let vertices = chunk.vertices();
             let world_vertices: Vec<Vec3> = vertices
                 .iter()
                 .map(|vertex| {
                     world_from_terrain.transform_point3(terrain_chunk_local_to_world(
                         vertex.position,
-                        *coord,
+                        cached.coord,
                         chunk_size_meters,
                     ))
                 })

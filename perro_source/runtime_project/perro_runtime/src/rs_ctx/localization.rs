@@ -10,6 +10,16 @@ use std::{
 
 impl LocalizationAPI for RuntimeResourceApi {
     fn localization_set_locale(&self, locale: Locale) -> bool {
+        if self.static_localization_lookup.is_some() {
+            let mut localization = self
+                .localization
+                .write()
+                .expect("resource api localization rwlock poisoned");
+            localization.current_locale = locale;
+            localization.current_locale_code = intern_localization_str(locale.code());
+            return true;
+        }
+
         let locale_code = locale.code().trim().to_ascii_lowercase();
         if locale_code.is_empty() {
             return false;
@@ -18,10 +28,6 @@ impl LocalizationAPI for RuntimeResourceApi {
             .localization
             .write()
             .expect("resource api localization rwlock poisoned");
-        if self.static_localization_lookup.is_some() {
-            localization.current_locale = intern_localization_str(&locale_code);
-            return true;
-        }
         self.load_locale_into_state(&mut localization, &locale_code)
     }
 
@@ -30,7 +36,7 @@ impl LocalizationAPI for RuntimeResourceApi {
             .localization
             .read()
             .expect("resource api localization rwlock poisoned");
-        locale_from_code(localization.current_locale)
+        localization.current_locale
     }
 
     fn localization_get(&self, key: &str) -> Option<&'static str> {
@@ -39,7 +45,7 @@ impl LocalizationAPI for RuntimeResourceApi {
                 .localization
                 .read()
                 .expect("resource api localization rwlock poisoned");
-            let value = lookup(locale_from_code(localization.current_locale), string_to_u64(key))?;
+            let value = lookup(localization.current_locale, string_to_u64(key))?;
             return Some(value);
         }
         let localization = self
@@ -58,7 +64,7 @@ impl LocalizationAPI for RuntimeResourceApi {
                 .localization
                 .read()
                 .expect("resource api localization rwlock poisoned");
-            let value = lookup(locale_from_code(localization.current_locale), key_hash)?;
+            let value = lookup(localization.current_locale, key_hash)?;
             return Some(value);
         }
         let localization = self
@@ -72,13 +78,14 @@ impl LocalizationAPI for RuntimeResourceApi {
     }
 
     fn localization_get_for_locale(&self, locale: Locale, key: &str) -> Option<&'static str> {
-        let locale_code = locale.code().trim().to_ascii_lowercase();
-        if locale_code.is_empty() {
-            return None;
-        }
         if let Some(lookup) = self.static_localization_lookup {
             let value = lookup(locale, string_to_u64(key))?;
             return Some(value);
+        }
+
+        let locale_code = locale.code().trim().to_ascii_lowercase();
+        if locale_code.is_empty() {
+            return None;
         }
         let localization = self
             .localization
@@ -95,13 +102,14 @@ impl LocalizationAPI for RuntimeResourceApi {
         locale: Locale,
         key_hash: u64,
     ) -> Option<&'static str> {
-        let locale_code = locale.code().trim().to_ascii_lowercase();
-        if locale_code.is_empty() {
-            return None;
-        }
         if let Some(lookup) = self.static_localization_lookup {
             let value = lookup(locale, key_hash)?;
             return Some(value);
+        }
+
+        let locale_code = locale.code().trim().to_ascii_lowercase();
+        if locale_code.is_empty() {
+            return None;
         }
         let localization = self
             .localization
@@ -123,7 +131,7 @@ impl RuntimeResourceApi {
             .localization
             .write()
             .expect("resource api localization rwlock poisoned");
-        let current = localization.current_locale;
+        let current = localization.current_locale_code;
         let _ = self.load_locale_into_state(&mut localization, current);
     }
 
@@ -139,7 +147,8 @@ impl RuntimeResourceApi {
         else {
             return false;
         };
-        localization.current_locale = intern_localization_str(locale_code);
+        localization.current_locale_code = intern_localization_str(locale_code);
+        localization.current_locale = locale_from_code(localization.current_locale_code);
         localization.active_by_key = by_key;
         localization.active_by_hash = by_hash;
         true
