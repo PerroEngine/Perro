@@ -19,6 +19,13 @@ Current terrain model (runtime):
 - Scene-authored terrain can be loaded by setting `TerrainInstance3D.terrain` to a terrain folder.
 - Terrain folders can contain chunk files (`.ptchunk`) and/or an authoring mesh (`terrain.glb` or `terrain.gltf`).
 - Terrain folders may also include layer/map assets used by terrain tooling workflows.
+- If a terrain folder contains `terrain_map.png`, runtime terrain rendering will bind it as the default terrain base-color map.
+- Terrain folders may include an optional `settings.pterr` file for mapping defaults:
+  - `pixels_per_meter = <float>` (alias: `ppm`)
+  - `map_resolution_px = <float>` (square map resolution used with `pixels_per_meter`)
+- `TerrainInstance3D` scene fields can override folder defaults:
+  - `pixels_per_meter`
+  - `map_resolution_px`
 - `.ptchunk` filenames must be chunk-space coordinates: `<chunk_x>_<chunk_z>.ptchunk` (for example `0_0.ptchunk`, `0_1.ptchunk`, `-1_2.ptchunk`).
 - `.ptchunk` is key-value style, one sample per line, for example:
   - `[x,z] = y`

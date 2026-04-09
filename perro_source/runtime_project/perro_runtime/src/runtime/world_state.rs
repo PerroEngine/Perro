@@ -1,5 +1,5 @@
 use super::Runtime;
-use crate::terrain_schema;
+use crate::terrain_schema::{self, LoadedTerrainSource};
 use perro_ids::NodeID;
 use perro_nodes::SceneNodeData;
 use perro_terrain::{ChunkCoord, DEFAULT_CHUNK_SIZE_METERS, TerrainData};
@@ -92,27 +92,36 @@ impl Runtime {
             }
         }
 
-        let terrain_data = terrain_source
+        let loaded = terrain_source
             .as_deref()
             .and_then(|source| self.load_terrain_data_from_source(source))
-            .unwrap_or_else(Self::default_terrain_data);
+            .unwrap_or_else(|| LoadedTerrainSource {
+                terrain: Self::default_terrain_data(),
+                settings: terrain_schema::TerrainSourceSettings::default(),
+            });
 
         let id = self
             .terrain_store
             .lock()
             .expect("terrain store mutex poisoned")
-            .insert(terrain_data);
+            .insert(loaded.terrain);
         if let Some(scene_node) = self.nodes.get_mut(node)
             && let SceneNodeData::TerrainInstance3D(terrain) = &mut scene_node.data
         {
             terrain.terrain = id;
+            if terrain.terrain_pixels_per_meter.is_none() {
+                terrain.terrain_pixels_per_meter = loaded.settings.pixels_per_meter;
+            }
+            if terrain.terrain_map_resolution_px.is_none() {
+                terrain.terrain_map_resolution_px = loaded.settings.map_resolution_px;
+            }
             return true;
         }
 
         false
     }
 
-    fn load_terrain_data_from_source(&self, source: &str) -> Option<TerrainData> {
+    fn load_terrain_data_from_source(&self, source: &str) -> Option<LoadedTerrainSource> {
         let static_lookup = self
             .project()
             .and_then(|project| project.static_terrain_lookup);
@@ -120,7 +129,10 @@ impl Runtime {
             && let Some(literal) = lookup(source)
             && let Some(terrain) = terrain_schema::load_terrain_literal(literal)
         {
-            return Some(terrain);
+            return Some(LoadedTerrainSource {
+                terrain,
+                settings: terrain_schema::TerrainSourceSettings::default(),
+            });
         }
         terrain_schema::load_terrain_from_folder_source(source)
     }

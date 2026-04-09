@@ -108,6 +108,8 @@ pub enum Skeleton3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TerrainInstance3DField {
     Terrain,
+    PixelsPerMeter,
+    MapResolutionPx,
     ShowDebugVertices,
     ShowDebugEdges,
 }
@@ -306,6 +308,12 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "terrain" => Some(NodeField::TerrainInstance3D(
                 TerrainInstance3DField::Terrain,
             )),
+            "pixels_per_meter" | "terrain_pixels_per_meter" => Some(
+                NodeField::TerrainInstance3D(TerrainInstance3DField::PixelsPerMeter),
+            ),
+            "map_resolution_px" | "terrain_map_resolution_px" => Some(
+                NodeField::TerrainInstance3D(TerrainInstance3DField::MapResolutionPx),
+            ),
             "show_debug_vertices" => Some(NodeField::TerrainInstance3D(
                 TerrainInstance3DField::ShowDebugVertices,
             )),

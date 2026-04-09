@@ -89,6 +89,20 @@ fn apply_terrain_instance_3d_fields(node: &mut TerrainInstance3D, fields: &[Scen
                 node.terrain_source = as_asset_source(value).map(std::borrow::Cow::Owned);
             }
             Some(NodeField::TerrainInstance3D(
+                TerrainInstance3DField::PixelsPerMeter,
+            )) => {
+                if let Some(v) = as_f32(value) && v.is_finite() && v > 0.0 {
+                    node.terrain_pixels_per_meter = Some(v);
+                }
+            }
+            Some(NodeField::TerrainInstance3D(
+                TerrainInstance3DField::MapResolutionPx,
+            )) => {
+                if let Some(v) = as_f32(value) && v.is_finite() && v > 0.0 {
+                    node.terrain_map_resolution_px = Some(v);
+                }
+            }
+            Some(NodeField::TerrainInstance3D(
                 TerrainInstance3DField::ShowDebugVertices,
             )) => {
                 if let Some(v) = as_bool(value) {

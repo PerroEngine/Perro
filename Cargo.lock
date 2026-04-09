@@ -2607,6 +2607,7 @@ dependencies = [
  "csv",
  "glam",
  "gltf",
+ "image",
  "libloading",
  "perro_animation",
  "perro_bark",

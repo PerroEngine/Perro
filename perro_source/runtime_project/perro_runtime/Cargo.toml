@@ -11,6 +11,7 @@ libloading = "0.8"
 rapier2d = "0.23"
 rapier3d = "0.23"
 csv = "1.4"
+image = { version = "0.25", default-features = true, features = ["png"] }
 
 perro_ids = "0.1.0"
 perro_animation = "0.1.0"

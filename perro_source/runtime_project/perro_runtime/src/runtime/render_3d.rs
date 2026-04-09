@@ -1,7 +1,8 @@
 use super::Runtime;
 use crate::material_schema;
 use glam::{Mat4, Quat, Vec3};
-use perro_ids::{MaterialID, MeshID, NodeID};
+use image::{DynamicImage, GenericImageView, ImageFormat};
+use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_nodes::{
     CameraProjection, MaterialParamOverrideValue, MeshSurfaceBinding, SceneNodeData, Shape3D,
     particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
@@ -13,11 +14,13 @@ use perro_render_bridge::{
     ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
     PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand,
     RuntimeMeshData, RuntimeMeshVertex, SkeletonPalette, Sky3DState, SkyTime3DState,
-    SpotLight3DState, StandardMaterial3D,
+    SpotLight3DState, StandardMaterial3D, MATERIAL_TEXTURE_NONE,
 };
 use perro_terrain::{ChunkCoord, TerrainChunk};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::DefaultHasher};
+use std::hash::{Hash, Hasher};
+use std::io::Cursor;
 use std::sync::Arc;
 
 impl Runtime {
@@ -29,8 +32,22 @@ impl Runtime {
         RenderRequestID::new((node.as_u64() << 16) | ((surface_index as u64) << 8) | 0x3F)
     }
 
-    fn terrain_material_request() -> RenderRequestID {
-        RenderRequestID::new(0x5445_5252_4D41_544Cu64)
+    fn terrain_material_request(key: &str) -> RenderRequestID {
+        let mut h = 0x5445_5252_4D41_544Cu64;
+        for byte in key.as_bytes() {
+            h ^= *byte as u64;
+            h = h.rotate_left(9).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        }
+        RenderRequestID::new(h)
+    }
+
+    fn terrain_texture_request(source: &str) -> RenderRequestID {
+        let mut h = 0x5445_582D_5445_5252u64;
+        for byte in source.as_bytes() {
+            h ^= *byte as u64;
+            h = h.rotate_left(9).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        }
+        RenderRequestID::new(h)
     }
 
     fn terrain_chunk_request(node: NodeID, coord: ChunkCoord) -> RenderRequestID {
@@ -353,11 +370,21 @@ impl Runtime {
                     terrain.show_debug_vertices,
                     terrain.show_debug_edges,
                     terrain.terrain,
+                    terrain.terrain_source.as_ref().map(|v| v.to_string()),
+                    terrain.terrain_pixels_per_meter,
+                    terrain.terrain_map_resolution_px,
                 )),
                 _ => None,
             });
-            if let Some((local_transform, show_debug_vertices, show_debug_edges, terrain_id)) =
-                terrain_data
+            if let Some((
+                local_transform,
+                show_debug_vertices,
+                show_debug_edges,
+                terrain_id,
+                terrain_source,
+                pixels_per_meter,
+                map_resolution_px,
+            )) = terrain_data
                 && effective_visible
             {
                 let world_from_terrain = self
@@ -379,11 +406,19 @@ impl Runtime {
                 };
                 let terrain_chunks = self.take_cached_terrain_chunks(node, active_terrain_id);
                 if let Some(chunks) = terrain_chunks {
+                    let terrain_map_texture = self.resolve_terrain_map_texture_source(
+                        terrain_source.as_deref(),
+                    );
                     let chunk_size = chunks.chunk_size_meters;
                     let active_camera = self.render_3d.last_camera.clone();
                     let terrain_signature = self.queue_terrain_chunk_draws(
                         node,
                         chunk_size,
+                        terrain_source.as_deref(),
+                        terrain_map_texture.as_deref(),
+                        chunks.uv_projection,
+                        pixels_per_meter,
+                        map_resolution_px,
                         &chunks.chunks,
                         world_from_terrain,
                         active_camera.as_ref(),
@@ -611,15 +646,87 @@ impl Runtime {
         }
     }
 
-    fn resolve_terrain_material(&mut self) -> Option<MaterialID> {
-        if !self.render_3d.terrain_material.is_nil() {
-            return Some(self.render_3d.terrain_material);
+    fn resolve_terrain_map_texture_source(&mut self, terrain_source: Option<&str>) -> Option<String> {
+        let source = terrain_source?.trim();
+        if source.is_empty() || source.starts_with("inline://") {
+            return None;
         }
-        let request = Self::terrain_material_request();
+        if let Some(cached) = self.render_3d.terrain_map_source_cache.get(source) {
+            return cached.clone();
+        }
+
+        let resolved = terrain_map_candidate_source(source);
+        self.render_3d
+            .terrain_map_source_cache
+            .insert(source.to_string(), resolved.clone());
+        resolved
+    }
+
+    fn resolve_terrain_material(&mut self, terrain_map_texture: Option<&str>) -> Option<MaterialID> {
+        let (material_key, texture_slot, textured) = if let Some(source) = terrain_map_texture {
+            let source = source.trim();
+            if source.is_empty() || self.render_3d.terrain_missing_textures.contains(source) {
+                ("__terrain_runtime_material__".to_string(), MATERIAL_TEXTURE_NONE, false)
+            } else {
+                let request = Self::terrain_texture_request(source);
+                if let Some(result) = self.take_render_result(request) {
+                    match result {
+                        crate::RuntimeRenderResult::Texture(id) => {
+                            self.render_3d.terrain_textures.insert(source.to_string(), id);
+                        }
+                        crate::RuntimeRenderResult::Failed(_) => {
+                            self.render_3d
+                                .terrain_missing_textures
+                                .insert(source.to_string());
+                            return self.resolve_terrain_material(None);
+                        }
+                        crate::RuntimeRenderResult::Material(_)
+                        | crate::RuntimeRenderResult::Mesh(_) => {}
+                    }
+                }
+
+                let texture = self
+                    .render_3d
+                    .terrain_textures
+                    .get(source)
+                    .copied()
+                    .unwrap_or(TextureID::nil());
+                if texture.is_nil() {
+                    if !self.render.is_inflight(request) {
+                        self.render.mark_inflight(request);
+                        self.queue_render_command(RenderCommand::Resource(
+                            ResourceCommand::CreateTexture {
+                                request,
+                                id: TextureID::nil(),
+                                source: source.to_string(),
+                                reserved: false,
+                            },
+                        ));
+                    }
+                    return None;
+                }
+                (
+                    format!("__terrain_runtime_material__::{source}"),
+                    texture.index(),
+                    true,
+                )
+            }
+        } else {
+            ("__terrain_runtime_material__".to_string(), MATERIAL_TEXTURE_NONE, false)
+        };
+
+        if let Some(id) = self.render_3d.terrain_materials.get(&material_key).copied()
+            && !id.is_nil()
+        {
+            return Some(id);
+        }
+        let request = Self::terrain_material_request(&material_key);
         if let Some(result) = self.take_render_result(request) {
             match result {
                 crate::RuntimeRenderResult::Material(id) => {
-                    self.render_3d.terrain_material = id;
+                    self.render_3d
+                        .terrain_materials
+                        .insert(material_key.clone(), id);
                     return Some(id);
                 }
                 crate::RuntimeRenderResult::Failed(_)
@@ -629,20 +736,89 @@ impl Runtime {
         }
         if !self.render.is_inflight(request) {
             self.render.mark_inflight(request);
-            self.queue_render_command(RenderCommand::Resource(ResourceCommand::CreateMaterial {
-                request,
-                id: MaterialID::nil(),
-                material: Material3D::Standard(StandardMaterial3D {
+            let material = if textured {
+                Material3D::Standard(StandardMaterial3D {
+                    base_color_factor: [1.0, 1.0, 1.0, 1.0],
+                    roughness_factor: 0.92,
+                    metallic_factor: 0.0,
+                    base_color_texture: texture_slot,
+                    ..StandardMaterial3D::default()
+                })
+            } else {
+                Material3D::Standard(StandardMaterial3D {
                     base_color_factor: [0.32, 0.56, 0.29, 1.0],
                     roughness_factor: 0.92,
                     metallic_factor: 0.0,
                     ..StandardMaterial3D::default()
-                }),
-                source: Some("__terrain_runtime_material__".to_string()),
+                })
+            };
+            self.queue_render_command(RenderCommand::Resource(ResourceCommand::CreateMaterial {
+                request,
+                id: MaterialID::nil(),
+                material,
+                source: Some(material_key),
                 reserved: false,
             }));
         }
         None
+    }
+
+    fn resolve_or_build_terrain_chunk_tile_sources(
+        &mut self,
+        terrain_source: Option<&str>,
+        terrain_map_texture: Option<&str>,
+        chunk_size_meters: f32,
+        chunks: &[crate::runtime::state::TerrainCachedChunk],
+    ) -> Option<crate::runtime::state::TerrainChunkTileSet> {
+        let terrain_source = terrain_source?.trim();
+        let map_source = terrain_map_texture?.trim();
+        if terrain_source.is_empty() || map_source.is_empty() || chunks.is_empty() {
+            return None;
+        }
+        if self.render_3d.terrain_chunk_tile_failures.contains(terrain_source) {
+            return None;
+        }
+
+        let terrain_bounds = terrain_world_bounds(chunks, chunk_size_meters)?;
+        let mut atlas_hasher = DefaultHasher::new();
+        terrain_source.hash(&mut atlas_hasher);
+        map_source.hash(&mut atlas_hasher);
+        chunk_size_meters.to_bits().hash(&mut atlas_hasher);
+        terrain_bounds.0.to_bits().hash(&mut atlas_hasher);
+        terrain_bounds.1.to_bits().hash(&mut atlas_hasher);
+        terrain_bounds.2.to_bits().hash(&mut atlas_hasher);
+        terrain_bounds.3.to_bits().hash(&mut atlas_hasher);
+        for cached in chunks {
+            cached.coord.x.hash(&mut atlas_hasher);
+            cached.coord.z.hash(&mut atlas_hasher);
+            cached.hash.hash(&mut atlas_hasher);
+        }
+        let atlas_key = format!("{:016x}", atlas_hasher.finish());
+        if let Some(existing) = self.render_3d.terrain_chunk_tile_sets.get(&atlas_key) {
+            return Some(existing.clone());
+        }
+
+        let generated = build_terrain_chunk_tile_set(
+            terrain_source,
+            map_source,
+            chunk_size_meters,
+            terrain_bounds,
+            chunks,
+        );
+        match generated {
+            Some(set) => {
+                self.render_3d
+                    .terrain_chunk_tile_sets
+                    .insert(atlas_key, set.clone());
+                Some(set)
+            }
+            None => {
+                self.render_3d
+                    .terrain_chunk_tile_failures
+                    .insert(terrain_source.to_string());
+                None
+            }
+        }
     }
 
     fn take_cached_terrain_chunks(
@@ -681,6 +857,7 @@ impl Runtime {
             terrain_id,
             revision,
             chunk_size_meters: chunk_size,
+            uv_projection: terrain_uv_projection_from_chunks(&chunks, chunk_size),
             chunks,
         })
     }
@@ -689,13 +866,28 @@ impl Runtime {
         &mut self,
         node: NodeID,
         chunk_size_meters: f32,
+        terrain_source: Option<&str>,
+        terrain_map_texture: Option<&str>,
+        fit_uv_projection: crate::runtime::state::TerrainUvProjection,
+        pixels_per_meter: Option<f32>,
+        map_resolution_px: Option<f32>,
         chunks: &[crate::runtime::state::TerrainCachedChunk],
         world_from_terrain: Mat4,
         camera: Option<&Camera3DState>,
     ) -> u64 {
-        let material = self.resolve_terrain_material();
+        let uv_projection =
+            terrain_uv_projection_with_density(fit_uv_projection, pixels_per_meter, map_resolution_px);
+        let chunk_tile_sources =
+            self.resolve_or_build_terrain_chunk_tile_sources(
+                terrain_source,
+                terrain_map_texture,
+                chunk_size_meters,
+                chunks,
+            );
         let mut terrain_signature = 0xD6E8_FD91_4A2C_7C3Bu64;
         terrain_signature ^= chunk_size_meters.to_bits() as u64;
+        terrain_signature = terrain_signature.rotate_left(13);
+        terrain_signature ^= terrain_uv_projection_hash(uv_projection);
         terrain_signature = terrain_signature.rotate_left(13);
         let mut active_keys = ahash::AHashSet::with_capacity(chunks.len());
         let max_stream_distance_sq = terrain_chunk_stream_distance_sq(camera, chunk_size_meters);
@@ -705,7 +897,24 @@ impl Runtime {
             let coord = cached.coord;
             let chunk = &cached.chunk;
             let key = crate::runtime::TerrainChunkMeshKey { node, coord };
-            let hash = cached.hash;
+            let tile = chunk_tile_sources
+                .as_ref()
+                .and_then(|set| set.tiles_by_coord.get(&coord));
+            let mesh_uv_projection = if let Some(tile) = tile {
+                terrain_chunk_uv_projection_windowed(
+                    cached,
+                    chunk_size_meters,
+                    tile.uv_min[0],
+                    tile.uv_max[0],
+                    tile.uv_min[1],
+                    tile.uv_max[1],
+                )
+            } else if chunk_tile_sources.is_some() {
+                terrain_chunk_uv_projection(cached, chunk_size_meters)
+            } else {
+                uv_projection
+            };
+            let hash = cached.hash ^ terrain_uv_projection_hash(mesh_uv_projection).rotate_left(5);
             terrain_signature ^= (coord.x as u32 as u64).wrapping_mul(0x9E37_79B1);
             terrain_signature = terrain_signature.rotate_left(11);
             terrain_signature ^= (coord.z as u32 as u64).wrapping_mul(0x85EB_CA77);
@@ -720,7 +929,7 @@ impl Runtime {
                 chunk_center_z,
             ));
             if let (Some(max_dist_sq), Some(camera_pos)) = (max_stream_distance_sq, camera_position)
-                && chunk_center_world.distance_squared(camera_pos) > max_dist_sq
+                && terrain_horizontal_distance_sq(chunk_center_world, camera_pos) > max_dist_sq
             {
                 continue;
             }
@@ -769,7 +978,14 @@ impl Runtime {
                 }
                 if current_mesh.is_nil() && !self.render.is_inflight(request) {
                     self.render.mark_inflight(request);
-                    if let Some(mesh) = terrain_chunk_to_runtime_mesh(chunk) {
+                    if let Some(mesh) =
+                        terrain_chunk_to_runtime_mesh(
+                            chunk,
+                            coord,
+                            chunk_size_meters,
+                            mesh_uv_projection,
+                        )
+                    {
                         self.queue_render_command(RenderCommand::Resource(
                             ResourceCommand::CreateRuntimeMesh {
                                 request,
@@ -789,6 +1005,8 @@ impl Runtime {
                 }
             }
 
+            let chunk_texture_source = tile.map(|t| t.source.as_str()).or(terrain_map_texture);
+            let material = self.resolve_terrain_material(chunk_texture_source);
             if let Some(material) = material {
                 let model = world_from_terrain
                     * Mat4::from_translation(Vec3::new(chunk_center_x, 0.0, chunk_center_z));
@@ -1161,8 +1379,16 @@ fn terrain_chunk_stream_distance_sq(
     if !far_extent.is_finite() || far_extent <= 0.0 {
         far_extent = chunk_size_meters.max(1.0) * 6.0;
     }
-    let max_distance = (far_extent * 1.25 + chunk_size_meters * 2.0).max(chunk_size_meters * 4.0);
+    // Keep a generous terrain cache radius to avoid visible chunk pop-in.
+    // We use horizontal distance checks, so include extra chunk rings.
+    let max_distance = (far_extent * 2.0 + chunk_size_meters * 6.0).max(chunk_size_meters * 10.0);
     Some(max_distance * max_distance)
+}
+
+fn terrain_horizontal_distance_sq(a: Vec3, b: Vec3) -> f32 {
+    let dx = a.x - b.x;
+    let dz = a.z - b.z;
+    dx * dx + dz * dz
 }
 
 fn terrain_debug_signature(
@@ -1192,7 +1418,12 @@ fn terrain_debug_signature(
     h
 }
 
-fn terrain_chunk_to_runtime_mesh(chunk: &TerrainChunk) -> Option<RuntimeMeshData> {
+fn terrain_chunk_to_runtime_mesh(
+    chunk: &TerrainChunk,
+    coord: ChunkCoord,
+    chunk_size_meters: f32,
+    uv_projection: crate::runtime::state::TerrainUvProjection,
+) -> Option<RuntimeMeshData> {
     let vertices = chunk.vertices();
     let triangles = chunk.triangles();
     if vertices.is_empty() || triangles.is_empty() {
@@ -1220,15 +1451,9 @@ fn terrain_chunk_to_runtime_mesh(chunk: &TerrainChunk) -> Option<RuntimeMeshData
             vertices[tri.c].position.y,
             vertices[tri.c].position.z,
         );
-        let mut ib = tri.b as u32;
-        let mut ic = tri.c as u32;
-        let mut n = (b - a).cross(c - a);
-
-        // Terrain is top-visible; enforce non-negative Y-facing winding.
-        if n.y < 0.0 {
-            std::mem::swap(&mut ib, &mut ic);
-            n = -n;
-        }
+        let ib = tri.b as u32;
+        let ic = tri.c as u32;
+        let n = (b - a).cross(c - a);
 
         if n.length_squared() > 1.0e-10 && n.is_finite() {
             normals[tri.a] += n;
@@ -1245,14 +1470,19 @@ fn terrain_chunk_to_runtime_mesh(chunk: &TerrainChunk) -> Option<RuntimeMeshData
         .enumerate()
         .map(|(i, v)| {
             let n = if normals[i].length_squared() > 1.0e-10 {
-                normals[i].normalize()
+                exaggerate_terrain_normal(normals[i].normalize())
             } else {
                 Vec3::Y
             };
+            let world_x = coord.x as f32 * chunk_size_meters + v.position.x;
+            let world_z = coord.z as f32 * chunk_size_meters + v.position.z;
             RuntimeMeshVertex {
                 position: [v.position.x, v.position.y, v.position.z],
                 normal: [n.x, n.y, n.z],
-                uv: [v.position.x / 64.0, v.position.z / 64.0],
+                uv: [
+                    (world_x - uv_projection.origin_x) * uv_projection.inv_span_x,
+                    (world_z - uv_projection.origin_z) * uv_projection.inv_span_z,
+                ],
                 joints: [0, 0, 0, 0],
                 weights: [1.0, 0.0, 0.0, 0.0],
             }
@@ -1263,6 +1493,17 @@ fn terrain_chunk_to_runtime_mesh(chunk: &TerrainChunk) -> Option<RuntimeMeshData
         vertices: out_vertices,
         indices,
     })
+}
+
+fn exaggerate_terrain_normal(n: Vec3) -> Vec3 {
+    // Boost lateral normal influence so terrain slope reads more clearly under Standard shading.
+    let boosted = Vec3::new(n.x * 2.0, n.y, n.z * 2.0);
+    let normalized = boosted.normalize_or_zero();
+    if normalized.length_squared() > 1.0e-10 {
+        normalized
+    } else {
+        Vec3::Y
+    }
 }
 
 fn terrain_chunk_hash(chunk: &TerrainChunk) -> u64 {
@@ -1288,6 +1529,270 @@ fn terrain_chunk_hash(chunk: &TerrainChunk) -> u64 {
         h = h.rotate_left(11).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     }
     h
+}
+
+fn terrain_uv_projection_from_chunks(
+    chunks: &[crate::runtime::state::TerrainCachedChunk],
+    chunk_size_meters: f32,
+) -> crate::runtime::state::TerrainUvProjection {
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut min_z = f32::INFINITY;
+    let mut max_z = f32::NEG_INFINITY;
+    for cached in chunks {
+        let base_x = cached.coord.x as f32 * chunk_size_meters;
+        let base_z = cached.coord.z as f32 * chunk_size_meters;
+        for vertex in cached.chunk.vertices() {
+            let x = base_x + vertex.position.x;
+            let z = base_z + vertex.position.z;
+            min_x = min_x.min(x);
+            max_x = max_x.max(x);
+            min_z = min_z.min(z);
+            max_z = max_z.max(z);
+        }
+    }
+
+    if !min_x.is_finite() || !max_x.is_finite() || !min_z.is_finite() || !max_z.is_finite() {
+        return crate::runtime::state::TerrainUvProjection {
+            origin_x: 0.0,
+            origin_z: 0.0,
+            inv_span_x: 1.0,
+            inv_span_z: 1.0,
+        };
+    }
+
+    let span_x = (max_x - min_x).max(1.0e-3);
+    let span_z = (max_z - min_z).max(1.0e-3);
+    crate::runtime::state::TerrainUvProjection {
+        origin_x: min_x,
+        origin_z: min_z,
+        inv_span_x: span_x.recip(),
+        inv_span_z: span_z.recip(),
+    }
+}
+
+fn terrain_uv_projection_hash(projection: crate::runtime::state::TerrainUvProjection) -> u64 {
+    let mut h = 0xC2B2_AE3D_27D4_EB4Fu64;
+    h ^= projection.origin_x.to_bits() as u64;
+    h = h.rotate_left(13).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    h ^= projection.origin_z.to_bits() as u64;
+    h = h.rotate_left(13).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    h ^= projection.inv_span_x.to_bits() as u64;
+    h = h.rotate_left(13).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    h ^= projection.inv_span_z.to_bits() as u64;
+    h = h.rotate_left(13).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    h
+}
+
+fn terrain_uv_projection_with_density(
+    fit_projection: crate::runtime::state::TerrainUvProjection,
+    pixels_per_meter: Option<f32>,
+    map_resolution_px: Option<f32>,
+) -> crate::runtime::state::TerrainUvProjection {
+    let Some(ppm) = pixels_per_meter.filter(|v| v.is_finite() && *v > 0.0) else {
+        return fit_projection;
+    };
+    let Some(map_px) = map_resolution_px.filter(|v| v.is_finite() && *v > 0.0) else {
+        return fit_projection;
+    };
+    let span_meters = (map_px / ppm).max(1.0e-3);
+    crate::runtime::state::TerrainUvProjection {
+        origin_x: fit_projection.origin_x,
+        origin_z: fit_projection.origin_z,
+        inv_span_x: span_meters.recip(),
+        inv_span_z: span_meters.recip(),
+    }
+}
+
+fn terrain_world_bounds(
+    chunks: &[crate::runtime::state::TerrainCachedChunk],
+    chunk_size_meters: f32,
+) -> Option<(f32, f32, f32, f32)> {
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut min_z = f32::INFINITY;
+    let mut max_z = f32::NEG_INFINITY;
+    for cached in chunks {
+        let (cx0, cx1, cz0, cz1) = terrain_chunk_world_bounds(cached, chunk_size_meters)?;
+        min_x = min_x.min(cx0);
+        max_x = max_x.max(cx1);
+        min_z = min_z.min(cz0);
+        max_z = max_z.max(cz1);
+    }
+    if !min_x.is_finite() || !max_x.is_finite() || !min_z.is_finite() || !max_z.is_finite() {
+        return None;
+    }
+    Some((min_x, max_x, min_z, max_z))
+}
+
+fn terrain_chunk_world_bounds(
+    cached: &crate::runtime::state::TerrainCachedChunk,
+    chunk_size_meters: f32,
+) -> Option<(f32, f32, f32, f32)> {
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut min_z = f32::INFINITY;
+    let mut max_z = f32::NEG_INFINITY;
+    let base_x = cached.coord.x as f32 * chunk_size_meters;
+    let base_z = cached.coord.z as f32 * chunk_size_meters;
+    for v in cached.chunk.vertices() {
+        let x = base_x + v.position.x;
+        let z = base_z + v.position.z;
+        min_x = min_x.min(x);
+        max_x = max_x.max(x);
+        min_z = min_z.min(z);
+        max_z = max_z.max(z);
+    }
+    if !min_x.is_finite() || !max_x.is_finite() || !min_z.is_finite() || !max_z.is_finite() {
+        return None;
+    }
+    Some((min_x, max_x, min_z, max_z))
+}
+
+fn terrain_chunk_uv_projection(
+    cached: &crate::runtime::state::TerrainCachedChunk,
+    chunk_size_meters: f32,
+) -> crate::runtime::state::TerrainUvProjection {
+    let Some((min_x, max_x, min_z, max_z)) = terrain_chunk_world_bounds(cached, chunk_size_meters)
+    else {
+        return crate::runtime::state::TerrainUvProjection {
+            origin_x: 0.0,
+            origin_z: 0.0,
+            inv_span_x: 1.0,
+            inv_span_z: 1.0,
+        };
+    };
+    let span_x = (max_x - min_x).max(1.0e-3);
+    let span_z = (max_z - min_z).max(1.0e-3);
+    crate::runtime::state::TerrainUvProjection {
+        origin_x: min_x,
+        origin_z: min_z,
+        inv_span_x: span_x.recip(),
+        inv_span_z: span_z.recip(),
+    }
+}
+
+fn terrain_chunk_uv_projection_windowed(
+    cached: &crate::runtime::state::TerrainCachedChunk,
+    chunk_size_meters: f32,
+    u_min: f32,
+    u_max: f32,
+    v_min: f32,
+    v_max: f32,
+) -> crate::runtime::state::TerrainUvProjection {
+    let Some((min_x, max_x, min_z, max_z)) = terrain_chunk_world_bounds(cached, chunk_size_meters)
+    else {
+        return terrain_chunk_uv_projection(cached, chunk_size_meters);
+    };
+    let span_x = (max_x - min_x).max(1.0e-3);
+    let span_z = (max_z - min_z).max(1.0e-3);
+    let du = (u_max - u_min).max(1.0e-6);
+    let dv = (v_max - v_min).max(1.0e-6);
+    let inv_span_x = du / span_x;
+    let inv_span_z = dv / span_z;
+    let origin_x = min_x - (u_min / inv_span_x);
+    let origin_z = min_z - (v_min / inv_span_z);
+    crate::runtime::state::TerrainUvProjection {
+        origin_x,
+        origin_z,
+        inv_span_x,
+        inv_span_z,
+    }
+}
+
+fn build_terrain_chunk_tile_set(
+    terrain_source: &str,
+    map_source: &str,
+    chunk_size_meters: f32,
+    terrain_bounds: (f32, f32, f32, f32),
+    chunks: &[crate::runtime::state::TerrainCachedChunk],
+) -> Option<crate::runtime::state::TerrainChunkTileSet> {
+    let bytes = perro_io::load_asset(map_source).ok()?;
+    let image = image::load_from_memory(&bytes).ok()?;
+    let (width, height) = image.dimensions();
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let (terrain_min_x, terrain_max_x, terrain_min_z, terrain_max_z) = terrain_bounds;
+    let span_x = (terrain_max_x - terrain_min_x).max(1.0e-3);
+    let span_z = (terrain_max_z - terrain_min_z).max(1.0e-3);
+
+    let mut terrain_hash = DefaultHasher::new();
+    terrain_source.hash(&mut terrain_hash);
+    map_source.hash(&mut terrain_hash);
+    chunk_size_meters.to_bits().hash(&mut terrain_hash);
+    terrain_min_x.to_bits().hash(&mut terrain_hash);
+    terrain_max_x.to_bits().hash(&mut terrain_hash);
+    terrain_min_z.to_bits().hash(&mut terrain_hash);
+    terrain_max_z.to_bits().hash(&mut terrain_hash);
+    let base_hash = format!("{:016x}", terrain_hash.finish());
+    let base_dir = format!("user://terrain_tiles/{base_hash}");
+
+    let mut tiles_by_coord = ahash::AHashMap::default();
+    const BORDER: u32 = 1;
+    for cached in chunks {
+        let (chunk_min_x, chunk_max_x, chunk_min_z, chunk_max_z) =
+            terrain_chunk_world_bounds(cached, chunk_size_meters)?;
+        let u0 = ((chunk_min_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
+        let u1 = ((chunk_max_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
+        let v0 = ((chunk_min_z - terrain_min_z) / span_z).clamp(0.0, 1.0);
+        let v1 = ((chunk_max_z - terrain_min_z) / span_z).clamp(0.0, 1.0);
+
+        let mut x0 = (u0 * width as f32).floor() as u32;
+        let mut x1 = (u1 * width as f32).ceil() as u32;
+        let mut y0 = (v0 * height as f32).floor() as u32;
+        let mut y1 = (v1 * height as f32).ceil() as u32;
+        if x1 <= x0 {
+            x1 = (x0 + 1).min(width);
+        }
+        if y1 <= y0 {
+            y1 = (y0 + 1).min(height);
+        }
+        x0 = x0.min(width.saturating_sub(1));
+        y0 = y0.min(height.saturating_sub(1));
+        x1 = x1.max(x0 + 1).min(width);
+        y1 = y1.max(y0 + 1).min(height);
+
+        let px0 = x0.saturating_sub(BORDER);
+        let py0 = y0.saturating_sub(BORDER);
+        let px1 = (x1 + BORDER).min(width);
+        let py1 = (y1 + BORDER).min(height);
+        let w = px1.saturating_sub(px0).max(1);
+        let h = py1.saturating_sub(py0).max(1);
+
+        let sub = image.crop_imm(px0, py0, w, h);
+        let tile = DynamicImage::ImageRgba8(sub.to_rgba8());
+        let mut png = Vec::new();
+        if tile
+            .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
+            .is_err()
+        {
+            return None;
+        }
+
+        let tile_source = format!("{base_dir}/{}_{}.png", cached.coord.x, cached.coord.z);
+        if perro_io::save_asset(&tile_source, &png).is_err() {
+            return None;
+        }
+        let uv_min = [
+            (x0.saturating_sub(px0) as f32 + 0.5) / w as f32,
+            (y0.saturating_sub(py0) as f32 + 0.5) / h as f32,
+        ];
+        let uv_max = [
+            (x1.saturating_sub(px0) as f32 - 0.5).max(uv_min[0] + 1.0e-4) / w as f32,
+            (y1.saturating_sub(py0) as f32 - 0.5).max(uv_min[1] + 1.0e-4) / h as f32,
+        ];
+        tiles_by_coord.insert(
+            cached.coord,
+            crate::runtime::state::TerrainChunkTile {
+                source: tile_source,
+                uv_min,
+                uv_max,
+            },
+        );
+    }
+
+    Some(crate::runtime::state::TerrainChunkTileSet { tiles_by_coord })
 }
 
 fn build_skeleton_palette(
@@ -1912,6 +2417,36 @@ fn parse_fragment_index(fragment: Option<&str>, keys: &[&str]) -> Option<u32> {
         }
     }
     None
+}
+
+fn terrain_map_candidate_source(terrain_source: &str) -> Option<String> {
+    let source = terrain_source.trim();
+    if source.is_empty() {
+        return None;
+    }
+
+    let mut base = source
+        .trim_end_matches('/')
+        .trim_end_matches('\\')
+        .to_string();
+    let lower = base.to_ascii_lowercase();
+    if lower.ends_with(".glb") || lower.ends_with(".gltf") || lower.ends_with(".ptchunk") {
+        if let Some((head, _)) = base.rsplit_once(['/', '\\']) {
+            base = head.to_string();
+        } else {
+            base.clear();
+        }
+    }
+
+    if base.is_empty() {
+        return Some("terrain_map.png".to_string());
+    }
+    let sep = if base.contains('\\') && !base.contains('/') {
+        '\\'
+    } else {
+        '/'
+    };
+    Some(format!("{base}{sep}terrain_map.png"))
 }
 
 fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<ParticleProfile3D> {

@@ -21,6 +21,8 @@ pub struct TerrainInstance3D {
     pub base: Node3D,
     pub terrain: TerrainID,
     pub terrain_source: Option<Cow<'static, str>>,
+    pub terrain_pixels_per_meter: Option<f32>,
+    pub terrain_map_resolution_px: Option<f32>,
     pub show_debug_vertices: bool,
     pub show_debug_edges: bool,
 }
@@ -31,6 +33,8 @@ impl TerrainInstance3D {
             base: Node3D::new(),
             terrain: TerrainID::nil(),
             terrain_source: None,
+            terrain_pixels_per_meter: None,
+            terrain_map_resolution_px: None,
             show_debug_vertices: false,
             show_debug_edges: false,
         }

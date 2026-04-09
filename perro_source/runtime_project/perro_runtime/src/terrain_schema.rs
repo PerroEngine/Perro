@@ -16,6 +16,18 @@ struct ParsedChunk {
     chunk: TerrainChunk,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TerrainSourceSettings {
+    pub pixels_per_meter: Option<f32>,
+    pub map_resolution_px: Option<f32>,
+}
+
+#[derive(Clone, Debug)]
+pub struct LoadedTerrainSource {
+    pub terrain: TerrainData,
+    pub settings: TerrainSourceSettings,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WorkingChunkMode {
     Unknown,
@@ -123,7 +135,7 @@ pub fn load_terrain_literal(source: &str) -> Option<TerrainData> {
     build_terrain_data(DEFAULT_CHUNK_SIZE_METERS, &chunks)
 }
 
-pub fn load_terrain_from_folder_source(source: &str) -> Option<TerrainData> {
+pub fn load_terrain_from_folder_source(source: &str) -> Option<LoadedTerrainSource> {
     let source = source.trim();
     if source.is_empty() {
         return None;
@@ -135,17 +147,27 @@ pub fn load_terrain_from_folder_source(source: &str) -> Option<TerrainData> {
     load_terrain_from_disk_path(&path)
 }
 
-fn load_terrain_from_disk_path(path: &Path) -> Option<TerrainData> {
+fn load_terrain_from_disk_path(path: &Path) -> Option<LoadedTerrainSource> {
     if path.is_file() {
         let ext = path.extension().and_then(|s| s.to_str())?;
         if ext.eq_ignore_ascii_case("glb") || ext.eq_ignore_ascii_case("gltf") {
-            return load_terrain_from_gltf_file(path, DEFAULT_CHUNK_SIZE_METERS);
+            return load_terrain_from_gltf_file(path, DEFAULT_CHUNK_SIZE_METERS).map(|terrain| {
+                LoadedTerrainSource {
+                    terrain,
+                    settings: TerrainSourceSettings::default(),
+                }
+            });
         }
         if ext.eq_ignore_ascii_case("ptchunk") {
             let text = fs::read_to_string(path).ok()?;
             let hint = coord_from_ptchunk_path(path)?;
             let chunks = parse_terrain_kv(&text, Some(hint), DEFAULT_CHUNK_SIZE_METERS)?;
-            return build_terrain_data(DEFAULT_CHUNK_SIZE_METERS, &chunks);
+            return build_terrain_data(DEFAULT_CHUNK_SIZE_METERS, &chunks).map(|terrain| {
+                LoadedTerrainSource {
+                    terrain,
+                    settings: TerrainSourceSettings::default(),
+                }
+            });
         }
         return None;
     }
@@ -153,10 +175,14 @@ fn load_terrain_from_disk_path(path: &Path) -> Option<TerrainData> {
         return None;
     }
 
+    let settings = load_terrain_folder_settings(path);
+
     for candidate in ["terrain.glb", "terrain.gltf"] {
         let gltf_path = path.join(candidate);
         if gltf_path.is_file() {
-            return load_terrain_from_gltf_file(&gltf_path, DEFAULT_CHUNK_SIZE_METERS);
+            return load_terrain_from_gltf_file(&gltf_path, DEFAULT_CHUNK_SIZE_METERS).map(
+                |terrain| LoadedTerrainSource { terrain, settings },
+            );
         }
     }
 
@@ -171,7 +197,52 @@ fn load_terrain_from_disk_path(path: &Path) -> Option<TerrainData> {
         let mut parsed = parse_terrain_kv(&text, Some(hint), DEFAULT_CHUNK_SIZE_METERS)?;
         chunks.append(&mut parsed);
     }
-    build_terrain_data(DEFAULT_CHUNK_SIZE_METERS, &chunks)
+    build_terrain_data(DEFAULT_CHUNK_SIZE_METERS, &chunks).map(|terrain| LoadedTerrainSource {
+        terrain,
+        settings,
+    })
+}
+
+fn load_terrain_folder_settings(dir: &Path) -> TerrainSourceSettings {
+    let settings_path = dir.join("settings.pterr");
+    if !settings_path.is_file() {
+        return TerrainSourceSettings::default();
+    }
+    let Ok(text) = fs::read_to_string(&settings_path) else {
+        return TerrainSourceSettings::default();
+    };
+    parse_terrain_settings(&text)
+}
+
+fn parse_terrain_settings(source: &str) -> TerrainSourceSettings {
+    let mut out = TerrainSourceSettings::default();
+    for raw in source.lines() {
+        let line = strip_line_comment(raw).trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim().to_ascii_lowercase();
+        let value = value.trim();
+        let Ok(parsed) = value.parse::<f32>() else {
+            continue;
+        };
+        if !parsed.is_finite() || parsed <= 0.0 {
+            continue;
+        }
+        match key.as_str() {
+            "pixels_per_meter" | "terrain_pixels_per_meter" | "ppm" => {
+                out.pixels_per_meter = Some(parsed);
+            }
+            "map_resolution_px" | "terrain_map_resolution_px" | "texture_resolution_px" => {
+                out.map_resolution_px = Some(parsed);
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 fn collect_ptchunk_paths(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
