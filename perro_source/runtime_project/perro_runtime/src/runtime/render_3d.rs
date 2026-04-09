@@ -380,11 +380,13 @@ impl Runtime {
                 let terrain_chunks = self.take_cached_terrain_chunks(node, active_terrain_id);
                 if let Some(chunks) = terrain_chunks {
                     let chunk_size = chunks.chunk_size_meters;
+                    let active_camera = self.render_3d.last_camera.clone();
                     let terrain_signature = self.queue_terrain_chunk_draws(
                         node,
                         chunk_size,
                         &chunks.chunks,
                         world_from_terrain,
+                        active_camera.as_ref(),
                     );
                     if show_debug_vertices || show_debug_edges {
                         let debug_signature = terrain_debug_signature(
@@ -689,18 +691,20 @@ impl Runtime {
         chunk_size_meters: f32,
         chunks: &[crate::runtime::state::TerrainCachedChunk],
         world_from_terrain: Mat4,
+        camera: Option<&Camera3DState>,
     ) -> u64 {
         let material = self.resolve_terrain_material();
         let mut terrain_signature = 0xD6E8_FD91_4A2C_7C3Bu64;
         terrain_signature ^= chunk_size_meters.to_bits() as u64;
         terrain_signature = terrain_signature.rotate_left(13);
         let mut active_keys = ahash::AHashSet::with_capacity(chunks.len());
+        let max_stream_distance_sq = terrain_chunk_stream_distance_sq(camera, chunk_size_meters);
+        let camera_position = camera.map(|cam| Vec3::from_array(cam.position));
 
         for cached in chunks {
             let coord = cached.coord;
             let chunk = &cached.chunk;
             let key = crate::runtime::TerrainChunkMeshKey { node, coord };
-            active_keys.insert(key);
             let hash = cached.hash;
             terrain_signature ^= (coord.x as u32 as u64).wrapping_mul(0x9E37_79B1);
             terrain_signature = terrain_signature.rotate_left(11);
@@ -708,6 +712,19 @@ impl Runtime {
             terrain_signature = terrain_signature.rotate_left(11);
             terrain_signature ^= hash;
             terrain_signature = terrain_signature.rotate_left(11);
+            let chunk_center_x = coord.x as f32 * chunk_size_meters;
+            let chunk_center_z = coord.z as f32 * chunk_size_meters;
+            let chunk_center_world = world_from_terrain.transform_point3(Vec3::new(
+                chunk_center_x,
+                0.0,
+                chunk_center_z,
+            ));
+            if let (Some(max_dist_sq), Some(camera_pos)) = (max_stream_distance_sq, camera_position)
+                && chunk_center_world.distance_squared(camera_pos) > max_dist_sq
+            {
+                continue;
+            }
+            active_keys.insert(key);
             let source = format!(
                 "__terrain_runtime__/n{}_x{}_z{}_h{:016x}",
                 node.as_u64(),
@@ -773,8 +790,6 @@ impl Runtime {
             }
 
             if let Some(material) = material {
-                let chunk_center_x = coord.x as f32 * chunk_size_meters;
-                let chunk_center_z = coord.z as f32 * chunk_size_meters;
                 let model = world_from_terrain
                     * Mat4::from_translation(Vec3::new(chunk_center_x, 0.0, chunk_center_z));
                 let model_cols = model.to_cols_array_2d();
@@ -1121,6 +1136,33 @@ fn terrain_chunk_local_to_world(
     let center_x = coord.x as f32 * size;
     let center_z = coord.z as f32 * size;
     Vec3::new(local.x + center_x, local.y, local.z + center_z)
+}
+
+fn terrain_chunk_stream_distance_sq(
+    camera: Option<&Camera3DState>,
+    chunk_size_meters: f32,
+) -> Option<f32> {
+    let camera = camera?;
+    let mut far_extent = match camera.projection {
+        CameraProjectionState::Perspective { far, .. } => far,
+        CameraProjectionState::Orthographic { size, far, .. } => far + size.abs() * 2.0,
+        CameraProjectionState::Frustum {
+            left,
+            right,
+            bottom,
+            top,
+            far,
+            ..
+        } => {
+            let max_span = left.abs().max(right.abs()).max(bottom.abs()).max(top.abs());
+            far + max_span
+        }
+    };
+    if !far_extent.is_finite() || far_extent <= 0.0 {
+        far_extent = chunk_size_meters.max(1.0) * 6.0;
+    }
+    let max_distance = (far_extent * 1.25 + chunk_size_meters * 2.0).max(chunk_size_meters * 4.0);
+    Some(max_distance * max_distance)
 }
 
 fn terrain_debug_signature(
