@@ -1,4 +1,5 @@
 use super::Runtime;
+use crate::terrain_schema::{TerrainLayerColor, TerrainLayerRule};
 use perro_ids::{MaterialID, MeshID};
 use perro_nodes::{
     CameraProjection, SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D,
@@ -500,4 +501,45 @@ fn collision_shape_debug_rebuilds_when_parent_moves() {
         .expect("expected collision debug line draw after move");
 
     assert_ne!(first_x, second_x);
+}
+
+#[test]
+fn terrain_layer_bake_upscale_defaults_to_4x_when_ppm_not_set() {
+    let rules = vec![TerrainLayerRule {
+        index: 0,
+        name: Some("grass".to_string()),
+        color: TerrainLayerColor::new(0, 255, 0),
+        color_tolerance: 0,
+        texture_source: None,
+        texture_tile_meters: 6.0,
+        texture_rotation_degrees: 0.0,
+        texture_hard_cut: false,
+        blend_with: Vec::new(),
+        friction: None,
+        restitution: None,
+    }];
+
+    let upscale = super::terrain_layer_bake_upscale(&rules, None, 512, 512, 512.0, 512.0);
+    assert_eq!(upscale, 4);
+}
+
+#[test]
+fn terrain_layer_bake_upscale_matches_requested_pixels_per_meter() {
+    let rules = vec![TerrainLayerRule {
+        index: 0,
+        name: Some("grass".to_string()),
+        color: TerrainLayerColor::new(0, 255, 0),
+        color_tolerance: 0,
+        texture_source: None,
+        texture_tile_meters: 6.0,
+        texture_rotation_degrees: 0.0,
+        texture_hard_cut: false,
+        blend_with: Vec::new(),
+        friction: None,
+        restitution: None,
+    }];
+
+    // Base density here is 1 px/m (512 px over 512 m), so requesting 8 px/m should upscale 8x.
+    let upscale = super::terrain_layer_bake_upscale(&rules, Some(8.0), 512, 512, 512.0, 512.0);
+    assert_eq!(upscale, 8);
 }

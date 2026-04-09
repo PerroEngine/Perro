@@ -20,7 +20,8 @@ pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipeline
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .is_some_and(|ext| SHADER_EXTENSIONS.contains(&ext))
+                    .map(|ext| ext.to_ascii_lowercase())
+                    .is_some_and(|ext| SHADER_EXTENSIONS.contains(&ext.as_str()))
             })
             .collect();
     }

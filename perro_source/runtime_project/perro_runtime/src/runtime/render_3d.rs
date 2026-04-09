@@ -792,6 +792,7 @@ impl Runtime {
         terrain_source: Option<&str>,
         terrain_map_texture: Option<&str>,
         terrain_settings: Option<&TerrainSourceSettings>,
+        terrain_pixels_per_meter: Option<f32>,
         chunk_size_meters: f32,
         chunks: &[crate::runtime::state::TerrainCachedChunk],
     ) -> Option<crate::runtime::state::TerrainChunkTileSet> {
@@ -821,6 +822,10 @@ impl Runtime {
         terrain_bounds.1.to_bits().hash(&mut atlas_hasher);
         terrain_bounds.2.to_bits().hash(&mut atlas_hasher);
         terrain_bounds.3.to_bits().hash(&mut atlas_hasher);
+        terrain_pixels_per_meter
+            .unwrap_or(0.0)
+            .to_bits()
+            .hash(&mut atlas_hasher);
         for cached in chunks {
             cached.coord.x.hash(&mut atlas_hasher);
             cached.coord.z.hash(&mut atlas_hasher);
@@ -834,7 +839,9 @@ impl Runtime {
         let generated = build_terrain_chunk_tile_set(
             terrain_source,
             map_source,
+            self.project().and_then(|project| project.static_icon_lookup),
             terrain_settings.map(|s| s.layers.as_slice()).unwrap_or(&[]),
+            terrain_pixels_per_meter,
             chunk_size_meters,
             terrain_bounds,
             chunks,
@@ -919,6 +926,7 @@ impl Runtime {
             terrain_source,
             terrain_map_texture,
             terrain_settings,
+            pixels_per_meter,
             chunk_size_meters,
             chunks,
         );
@@ -1794,15 +1802,15 @@ fn terrain_chunk_uv_projection_windowed(
 fn build_terrain_chunk_tile_set(
     terrain_source: &str,
     map_source: &str,
+    static_texture_lookup: Option<crate::runtime_project::StaticBytesLookup>,
     layer_rules: &[TerrainLayerRule],
+    terrain_pixels_per_meter: Option<f32>,
     chunk_size_meters: f32,
     terrain_bounds: (f32, f32, f32, f32),
     chunks: &[crate::runtime::state::TerrainCachedChunk],
 ) -> Option<crate::runtime::state::TerrainChunkTileSet> {
-    const TERRAIN_LAYER_BAKE_UPSCALE: u32 = 4;
-    let bytes = perro_io::load_asset(map_source).ok()?;
-    let image = image::load_from_memory(&bytes).ok()?.to_rgba8();
-    let layer_textures = load_terrain_layer_textures(layer_rules);
+    let image = load_terrain_texture_image(map_source, static_texture_lookup)?;
+    let layer_textures = load_terrain_layer_textures(layer_rules, static_texture_lookup);
     let (width, height) = image.dimensions();
     if width == 0 || height == 0 {
         return None;
@@ -1854,11 +1862,14 @@ fn build_terrain_chunk_tile_set(
         let w = px1.saturating_sub(px0).max(1);
         let h = py1.saturating_sub(py0).max(1);
 
-        let upscale = if layer_rules.is_empty() {
-            1
-        } else {
-            TERRAIN_LAYER_BAKE_UPSCALE
-        };
+        let upscale = terrain_layer_bake_upscale(
+            layer_rules,
+            terrain_pixels_per_meter,
+            width,
+            height,
+            span_x,
+            span_z,
+        );
         let out_w = w.saturating_mul(upscale).max(1);
         let out_h = h.saturating_mul(upscale).max(1);
 
@@ -1912,6 +1923,30 @@ fn build_terrain_chunk_tile_set(
     Some(crate::runtime::state::TerrainChunkTileSet { tiles_by_coord })
 }
 
+fn terrain_layer_bake_upscale(
+    layer_rules: &[TerrainLayerRule],
+    terrain_pixels_per_meter: Option<f32>,
+    map_width: u32,
+    map_height: u32,
+    terrain_span_x: f32,
+    terrain_span_z: f32,
+) -> u32 {
+    const TERRAIN_LAYER_BAKE_UPSCALE_DEFAULT: f32 = 4.0;
+    const TERRAIN_LAYER_BAKE_UPSCALE_MAX: f32 = 16.0;
+
+    if layer_rules.is_empty() {
+        return 1;
+    }
+
+    let base_ppm_x = map_width.max(1) as f32 / terrain_span_x.max(1.0e-3);
+    let base_ppm_z = map_height.max(1) as f32 / terrain_span_z.max(1.0e-3);
+    let base_ppm = base_ppm_x.min(base_ppm_z).max(1.0e-5);
+    let target_ppm = terrain_pixels_per_meter
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .unwrap_or(base_ppm * TERRAIN_LAYER_BAKE_UPSCALE_DEFAULT);
+    (target_ppm / base_ppm).ceil().clamp(1.0, TERRAIN_LAYER_BAKE_UPSCALE_MAX) as u32
+}
+
 fn hash_terrain_layer_rules(hasher: &mut DefaultHasher, rules: Option<&[TerrainLayerRule]>) {
     let Some(rules) = rules else {
         return;
@@ -1936,16 +1971,82 @@ fn hash_terrain_layer_rules(hasher: &mut DefaultHasher, rules: Option<&[TerrainL
     }
 }
 
-fn load_terrain_layer_textures(rules: &[TerrainLayerRule]) -> Vec<Option<image::RgbaImage>> {
+const PTEX_MAGIC: &[u8; 4] = b"PTEX";
+
+fn load_terrain_texture_image(
+    source: &str,
+    static_texture_lookup: Option<crate::runtime_project::StaticBytesLookup>,
+) -> Option<image::RgbaImage> {
+    let source = source.trim();
+    if source.is_empty() {
+        return None;
+    }
+
+    let bytes = if let Some(lookup) = static_texture_lookup {
+        lookup(source).or_else(|| {
+            if source.starts_with("res://") {
+                None
+            } else {
+                let candidate = format!("res://{source}");
+                lookup(&candidate)
+            }
+        })
+    } else {
+        None
+    };
+
+    if let Some(bytes) = bytes {
+        if let Some((rgba, width, height)) = decode_ptex_rgba(bytes) {
+            return image::RgbaImage::from_raw(width, height, rgba);
+        }
+        let image = image::load_from_memory(bytes).ok()?.to_rgba8();
+        if image.width() == 0 || image.height() == 0 {
+            return None;
+        }
+        return Some(image);
+    }
+
+    let bytes = perro_io::load_asset(source).ok()?;
+    let image = image::load_from_memory(&bytes).ok()?.to_rgba8();
+    if image.width() == 0 || image.height() == 0 {
+        return None;
+    }
+    Some(image)
+}
+
+fn decode_ptex_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
+    if bytes.len() < 20 || &bytes[0..4] != PTEX_MAGIC {
+        return None;
+    }
+    let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
+    if version != 1 {
+        return None;
+    }
+    let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
+    let height = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
+    let raw_len = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let expected_len = width.checked_mul(height)?.checked_mul(4)?;
+    if raw_len != expected_len {
+        return None;
+    }
+    let rgba = perro_io::decompress_zlib(&bytes[20..]).ok()?;
+    if rgba.len() != raw_len as usize {
+        return None;
+    }
+    Some((rgba, width, height))
+}
+
+fn load_terrain_layer_textures(
+    rules: &[TerrainLayerRule],
+    static_texture_lookup: Option<crate::runtime_project::StaticBytesLookup>,
+) -> Vec<Option<image::RgbaImage>> {
     let mut out = Vec::with_capacity(rules.len());
     for rule in rules {
         let tex = rule.texture_source.as_ref().and_then(|source| {
-            let bytes = perro_io::load_asset(source).ok()?;
-            let image = image::load_from_memory(&bytes).ok()?.to_rgba8();
-            if image.width() == 0 || image.height() == 0 {
-                return None;
-            }
-            Some(image)
+            load_terrain_texture_image(source, static_texture_lookup)
         });
         out.push(tex);
     }

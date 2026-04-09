@@ -1336,13 +1336,13 @@ fn load_terrain_layer_map(
     chunk_size_meters: f32,
     chunks: &[(ChunkCoord, &TerrainChunk)],
     layer_rules: &[TerrainLayerRule],
+    static_texture_lookup: Option<crate::runtime_project::StaticBytesLookup>,
 ) -> Option<TerrainLayerMap> {
     if chunks.is_empty() || layer_rules.is_empty() {
         return None;
     }
     let map_source = terrain_source.and_then(terrain_map_candidate_source)?;
-    let bytes = perro_io::load_asset(&map_source).ok()?;
-    let pixels = image::load_from_memory(&bytes).ok()?.to_rgba8();
+    let pixels = load_terrain_map_pixels(&map_source, static_texture_lookup)?;
     let width = pixels.width();
     let height = pixels.height();
     if width == 0 || height == 0 {
@@ -1361,6 +1361,74 @@ fn load_terrain_layer_map(
         inv_span_x: span_x.recip(),
         inv_span_z: span_z.recip(),
     })
+}
+
+const PTEX_MAGIC: &[u8; 4] = b"PTEX";
+
+fn load_terrain_map_pixels(
+    source: &str,
+    static_texture_lookup: Option<crate::runtime_project::StaticBytesLookup>,
+) -> Option<image::RgbaImage> {
+    let source = source.trim();
+    if source.is_empty() {
+        return None;
+    }
+
+    let bytes = if let Some(lookup) = static_texture_lookup {
+        lookup(source).or_else(|| {
+            if source.starts_with("res://") {
+                None
+            } else {
+                let candidate = format!("res://{source}");
+                lookup(&candidate)
+            }
+        })
+    } else {
+        None
+    };
+
+    if let Some(bytes) = bytes {
+        if let Some((rgba, width, height)) = decode_ptex_rgba(bytes) {
+            return image::RgbaImage::from_raw(width, height, rgba);
+        }
+        let image = image::load_from_memory(bytes).ok()?.to_rgba8();
+        if image.width() == 0 || image.height() == 0 {
+            return None;
+        }
+        return Some(image);
+    }
+
+    let bytes = perro_io::load_asset(source).ok()?;
+    let image = image::load_from_memory(&bytes).ok()?.to_rgba8();
+    if image.width() == 0 || image.height() == 0 {
+        return None;
+    }
+    Some(image)
+}
+
+fn decode_ptex_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
+    if bytes.len() < 20 || &bytes[0..4] != PTEX_MAGIC {
+        return None;
+    }
+    let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
+    if version != 1 {
+        return None;
+    }
+    let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
+    let height = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
+    let raw_len = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let expected_len = width.checked_mul(height)?.checked_mul(4)?;
+    if raw_len != expected_len {
+        return None;
+    }
+    let rgba = perro_io::decompress_zlib(&bytes[20..]).ok()?;
+    if rgba.len() != raw_len as usize {
+        return None;
+    }
+    Some((rgba, width, height))
 }
 
 fn terrain_bounds_from_chunks(
@@ -1640,6 +1708,7 @@ impl Runtime {
             chunk_size_meters,
             chunk_refs.as_slice(),
             layer_rules,
+            self.project().and_then(|project| project.static_icon_lookup),
         );
 
         let mut out = Vec::new();

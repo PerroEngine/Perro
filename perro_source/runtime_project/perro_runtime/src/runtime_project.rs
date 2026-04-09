@@ -22,7 +22,7 @@ pub enum ProviderMode {
 pub type StaticSceneLookup = fn(&str) -> Option<&'static Scene>;
 pub type StaticLocalizationLookup = fn(Locale, u64) -> Option<&'static str>;
 pub type StaticMaterialLookup = fn(&str) -> Option<&'static Material3D>;
-pub type StaticTerrainLookup = fn(&str) -> Option<&'static str>;
+pub type StaticTerrainLookup = fn(&str) -> Option<&'static [u8]>;
 pub type StaticParticleLookup = fn(&str) -> Option<&'static ParticleProfile3D>;
 pub type StaticAnimationLookup = fn(&str) -> Option<&'static AnimationClip>;
 pub type StaticSkeletonLookup = fn(&str) -> Option<&'static [u8]>;

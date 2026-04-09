@@ -21,7 +21,8 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .is_some_and(|ext| matches!(ext, "pmat" | "glb" | "gltf"))
+                    .map(|ext| ext.to_ascii_lowercase())
+                    .is_some_and(|ext| matches!(ext.as_str(), "pmat" | "glb" | "gltf"))
             })
             .collect();
     }
@@ -32,8 +33,13 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
         .map(|rel| -> io::Result<Vec<(String, MaterialLiteral)>> {
             let res_path = format!("res://{rel}");
             let full_path = res_dir.join(&rel);
-            match Path::new(&rel).extension().and_then(|e| e.to_str()) {
-                Some("pmat") => {
+            let ext = Path::new(&rel)
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|ext| ext.to_ascii_lowercase())
+                .unwrap_or_default();
+            match ext.as_str() {
+                "pmat" => {
                     let src = fs::read_to_string(&full_path)?;
                     let material = load_pmat_literal(&src).ok_or_else(|| {
                         io::Error::other(format!(
@@ -42,7 +48,7 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
                     })?;
                     Ok(vec![(res_path, material)])
                 }
-                Some("glb") | Some("gltf") => materials_from_gltf_file(&full_path, &res_path),
+                "glb" | "gltf" => materials_from_gltf_file(&full_path, &res_path),
                 _ => Ok(Vec::new()),
             }
         })

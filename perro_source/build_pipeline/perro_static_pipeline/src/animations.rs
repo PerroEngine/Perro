@@ -23,7 +23,12 @@ pub fn generate_static_animations(project_root: &Path) -> Result<(), StaticPipel
         anim_paths = collect_file_paths(&res_dir, &res_dir)?
             .into_iter()
             .map(|rel| rel.replace('\\', "/"))
-            .filter(|rel| Path::new(rel).extension().and_then(|e| e.to_str()) == Some("panim"))
+            .filter(|rel| {
+                Path::new(rel)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("panim"))
+            })
             .collect();
     }
     anim_paths.sort();

@@ -29,21 +29,30 @@ const SKIP_IMAGES: &[&str] = &[
 const SKIP_MODELS: &[&str] = &["glb", "gltf"];
 
 // Resources compiled into static runtime tables
-const SKIP_RESOURCES: &[&str] = &["pmat", "ppart", "pmesh", "panim", "ptchunk"];
+const SKIP_RESOURCES: &[&str] = &["pmat", "ppart", "pmesh", "panim", "ptchunk", "pterr"];
 // Shaders are compiled into static shader tables
 const SKIP_SHADERS: &[&str] = &["wgsl"];
 const SKIP_AUDIO: &[&str] = &["mp3", "wav", "ogg", "flac", "aac", "m4a"];
 
 fn should_skip(path: &str, extra_skip_rel_paths: &HashSet<&str>) -> bool {
-    let ext = path.rsplit('.').next().unwrap_or("");
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
     extra_skip_rel_paths.contains(path)
-        || SKIP_SCRIPT_EXT.contains(&ext)
-        || SKIP_SCENE_FUR_EXT.contains(&ext)
-        || SKIP_IMAGES.contains(&ext)
-        || SKIP_MODELS.contains(&ext)
-        || SKIP_RESOURCES.contains(&ext)
-        || SKIP_SHADERS.contains(&ext)
-        || SKIP_AUDIO.contains(&ext)
+        || ext
+            .as_deref()
+            .is_some_and(|ext| SKIP_SCRIPT_EXT.contains(&ext))
+        || ext
+            .as_deref()
+            .is_some_and(|ext| SKIP_SCENE_FUR_EXT.contains(&ext))
+        || ext.as_deref().is_some_and(|ext| SKIP_IMAGES.contains(&ext))
+        || ext.as_deref().is_some_and(|ext| SKIP_MODELS.contains(&ext))
+        || ext
+            .as_deref()
+            .is_some_and(|ext| SKIP_RESOURCES.contains(&ext))
+        || ext.as_deref().is_some_and(|ext| SKIP_SHADERS.contains(&ext))
+        || ext.as_deref().is_some_and(|ext| SKIP_AUDIO.contains(&ext))
 }
 
 #[derive(Debug, Clone)]

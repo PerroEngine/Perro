@@ -27,7 +27,8 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext))
+                    .map(|ext| ext.to_ascii_lowercase())
+                    .is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.as_str()))
             })
             .collect();
     }

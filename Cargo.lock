@@ -2684,8 +2684,10 @@ dependencies = [
  "perro_particle_math",
  "perro_project",
  "perro_render_bridge",
+ "perro_runtime",
  "perro_scene",
  "perro_structs",
+ "perro_terrain",
  "rayon",
 ]
 

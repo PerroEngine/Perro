@@ -381,6 +381,8 @@ fn generate_embedded_main(project_root: &Path) -> Result<(), CompilerError> {
         "perro_render_bridge",
         "perro_render_bridge = \"0.1.0\"",
     )?;
+    ensure_project_dependency_line(project_root, "perro_runtime", "perro_runtime = \"0.1.0\"")?;
+    ensure_project_dependency_line(project_root, "perro_terrain", "perro_terrain = \"0.1.0\"")?;
     ensure_project_dependency_line(
         project_root,
         "perro_animation",

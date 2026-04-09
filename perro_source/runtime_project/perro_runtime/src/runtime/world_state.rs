@@ -129,13 +129,12 @@ impl Runtime {
             .project()
             .and_then(|project| project.static_terrain_lookup);
         if let Some(lookup) = static_lookup
-            && let Some(literal) = lookup(source)
-            && let Some(terrain) = terrain_schema::load_terrain_literal(literal)
+            && let Some(blob) = lookup(source)
         {
-            return Some(LoadedTerrainSource {
-                terrain,
-                settings: terrain_schema::TerrainSourceSettings::default(),
-            });
+            return terrain_schema::decode_loaded_terrain_blob(blob);
+        }
+        if self.provider_mode() == crate::runtime_project::ProviderMode::Static {
+            return None;
         }
         terrain_schema::load_terrain_from_folder_source(source)
     }

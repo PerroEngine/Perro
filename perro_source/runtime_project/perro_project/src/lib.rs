@@ -1599,7 +1599,7 @@ pub fn lookup_particle(_path: &str) -> Option<&'static ParticleProfile3D> {
 fn default_static_terrains_rs() -> String {
     r#"#![allow(unused_imports)]
 
-pub fn lookup_terrain(_path: &str) -> Option<&'static str> {
+pub fn lookup_terrain(_path: &str) -> Option<&'static [u8]> {
     None
 }
 "#

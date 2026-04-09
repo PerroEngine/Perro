@@ -1,5 +1,5 @@
 use glam::{Mat4, Vec3};
-use perro_io::{ResolvedPath, resolve_path};
+use perro_io::{ResolvedPath, decompress_zlib, resolve_path};
 use perro_structs::Vector3;
 use perro_terrain::{
     ChunkConfig, ChunkCoord, DEFAULT_CHUNK_SIZE_METERS, TerrainChunk, TerrainData, Triangle, Vertex,
@@ -9,6 +9,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const HEIGHTFIELD_EPSILON: f32 = 1.0e-4;
+const PTERRB_MAGIC: &[u8; 8] = b"PTERRB1\0";
+const PTERRB_FLAG_ZLIB: u32 = 1;
 
 #[derive(Clone)]
 struct ParsedChunk {
@@ -186,6 +188,177 @@ pub fn load_terrain_from_folder_source(source: &str) -> Option<LoadedTerrainSour
         return None;
     };
     load_terrain_from_disk_path(&path)
+}
+
+pub fn decode_loaded_terrain_blob(blob: &[u8]) -> Option<LoadedTerrainSource> {
+    if blob.len() < 16 || &blob[..8] != PTERRB_MAGIC {
+        return None;
+    }
+    let flags = u32::from_le_bytes(blob.get(8..12)?.try_into().ok()?);
+    let raw_len = u32::from_le_bytes(blob.get(12..16)?.try_into().ok()?) as usize;
+    let payload = blob.get(16..)?;
+    let raw = if (flags & PTERRB_FLAG_ZLIB) != 0 {
+        let decoded = decompress_zlib(payload).ok()?;
+        if decoded.len() != raw_len {
+            return None;
+        }
+        decoded
+    } else {
+        if payload.len() != raw_len {
+            return None;
+        }
+        payload.to_vec()
+    };
+
+    let mut rd = TerrainBlobReader {
+        bytes: &raw,
+        cursor: 0,
+    };
+
+    let chunk_size_meters = rd.read_f32()?;
+    if !chunk_size_meters.is_finite() || chunk_size_meters <= 0.0 {
+        return None;
+    }
+    let chunk_count = rd.read_u32()? as usize;
+    let mut terrain = TerrainData::new(chunk_size_meters);
+    for _ in 0..chunk_count {
+        let coord = ChunkCoord::new(rd.read_i32()?, rd.read_i32()?);
+        let vertex_count = rd.read_u32()? as usize;
+        let tri_count = rd.read_u32()? as usize;
+
+        let mut vertices = Vec::with_capacity(vertex_count);
+        for _ in 0..vertex_count {
+            vertices.push(Vertex::new(Vector3::new(
+                rd.read_f32()?,
+                rd.read_f32()?,
+                rd.read_f32()?,
+            )));
+        }
+
+        let mut triangles = Vec::with_capacity(tri_count);
+        for _ in 0..tri_count {
+            triangles.push(Triangle::new(
+                rd.read_u32()? as usize,
+                rd.read_u32()? as usize,
+                rd.read_u32()? as usize,
+            ));
+        }
+
+        let chunk = TerrainChunk::from_mesh(
+            coord,
+            ChunkConfig::new(chunk_size_meters),
+            vertices,
+            triangles,
+        )
+        .ok()?;
+        terrain.set_chunk(coord, chunk);
+    }
+
+    let pixels_per_meter = rd.read_opt_f32()?;
+    let map_resolution_px = rd.read_opt_f32()?;
+
+    let layer_count = rd.read_u32()? as usize;
+    let mut layers = Vec::with_capacity(layer_count);
+    for _ in 0..layer_count {
+        let index = rd.read_u32()? as usize;
+        let name = rd.read_opt_string()?;
+        let color = TerrainLayerColor::new(rd.read_u8()?, rd.read_u8()?, rd.read_u8()?);
+        let color_tolerance = rd.read_u8()?;
+        let texture_source = rd.read_opt_string()?;
+        let texture_tile_meters = rd.read_f32()?;
+        let texture_rotation_degrees = rd.read_f32()?;
+        let texture_hard_cut = rd.read_u8()? != 0;
+        let blend_count = rd.read_u32()? as usize;
+        let mut blend_with = Vec::with_capacity(blend_count);
+        for _ in 0..blend_count {
+            blend_with.push(rd.read_u32()? as usize);
+        }
+        let friction = rd.read_opt_f32()?;
+        let restitution = rd.read_opt_f32()?;
+        layers.push(TerrainLayerRule {
+            index,
+            name,
+            color,
+            color_tolerance,
+            texture_source,
+            texture_tile_meters,
+            texture_rotation_degrees,
+            texture_hard_cut,
+            blend_with,
+            friction,
+            restitution,
+        });
+    }
+
+    let pair_count = rd.read_u32()? as usize;
+    let mut layer_blendings = Vec::with_capacity(pair_count);
+    for _ in 0..pair_count {
+        layer_blendings.push((rd.read_u32()? as usize, rd.read_u32()? as usize));
+    }
+
+    if rd.cursor != rd.bytes.len() {
+        return None;
+    }
+
+    Some(LoadedTerrainSource {
+        terrain,
+        settings: TerrainSourceSettings {
+            pixels_per_meter,
+            map_resolution_px,
+            layers,
+            layer_blendings,
+        },
+    })
+}
+
+struct TerrainBlobReader<'a> {
+    bytes: &'a [u8],
+    cursor: usize,
+}
+
+impl<'a> TerrainBlobReader<'a> {
+    fn read_exact(&mut self, len: usize) -> Option<&'a [u8]> {
+        let end = self.cursor.checked_add(len)?;
+        let slice = self.bytes.get(self.cursor..end)?;
+        self.cursor = end;
+        Some(slice)
+    }
+
+    fn read_u8(&mut self) -> Option<u8> {
+        Some(*self.read_exact(1)?.first()?)
+    }
+
+    fn read_u32(&mut self) -> Option<u32> {
+        Some(u32::from_le_bytes(self.read_exact(4)?.try_into().ok()?))
+    }
+
+    fn read_i32(&mut self) -> Option<i32> {
+        Some(i32::from_le_bytes(self.read_exact(4)?.try_into().ok()?))
+    }
+
+    fn read_f32(&mut self) -> Option<f32> {
+        Some(f32::from_le_bytes(self.read_exact(4)?.try_into().ok()?))
+    }
+
+    fn read_opt_f32(&mut self) -> Option<Option<f32>> {
+        match self.read_u8()? {
+            0 => Some(None),
+            1 => Some(Some(self.read_f32()?)),
+            _ => None,
+        }
+    }
+
+    fn read_opt_string(&mut self) -> Option<Option<String>> {
+        match self.read_u8()? {
+            0 => Some(None),
+            1 => {
+                let len = self.read_u32()? as usize;
+                let bytes = self.read_exact(len)?;
+                Some(Some(String::from_utf8(bytes.to_vec()).ok()?))
+            }
+            _ => None,
+        }
+    }
 }
 
 fn load_terrain_from_disk_path(path: &Path) -> Option<LoadedTerrainSource> {
