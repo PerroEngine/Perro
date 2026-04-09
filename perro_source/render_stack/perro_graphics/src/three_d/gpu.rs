@@ -239,6 +239,8 @@ pub struct Gpu3D {
     last_shadow_scene: Option<Scene3DUniform>,
     last_shadow: Option<ShadowUniform>,
     shadow_pass_enabled: bool,
+    shadow_focus_center: Vec3,
+    shadow_focus_radius: f32,
     last_sky: Option<SkyUniform>,
     sky_enabled: bool,
     mesh_vertices: Vec<MeshVertex>,
@@ -1268,6 +1270,8 @@ impl Gpu3D {
             last_shadow_scene: None,
             last_shadow: None,
             shadow_pass_enabled: false,
+            shadow_focus_center: Vec3::ZERO,
+            shadow_focus_radius: 64.0,
             last_sky: None,
             sky_enabled: false,
             mesh_vertices: vertices,
@@ -2275,8 +2279,17 @@ impl Gpu3D {
         camera: &Camera3DState,
         lighting: &Lighting3DState,
     ) {
-        let (shadow_scene, shadow_uniform, enabled) =
-            build_shadow_setup(camera, lighting, &self.draw_batches, &self.staged_instances);
+        let (shadow_scene, shadow_uniform, enabled, focus_center, focus_radius) =
+            build_shadow_setup(
+                camera,
+                lighting,
+                &self.draw_batches,
+                &self.staged_instances,
+                self.shadow_focus_center,
+                self.shadow_focus_radius,
+            );
+        self.shadow_focus_center = focus_center;
+        self.shadow_focus_radius = focus_radius;
         if self.last_shadow_scene != Some(shadow_scene) {
             queue.write_buffer(&self.shadow_camera_buffer, 0, bytemuck::bytes_of(&shadow_scene));
             self.last_shadow_scene = Some(shadow_scene);
@@ -5208,7 +5221,9 @@ fn build_shadow_setup(
     lighting: &Lighting3DState,
     draw_batches: &[DrawBatch],
     staged_instances: &[InstanceGpu],
-) -> (Scene3DUniform, ShadowUniform, bool) {
+    fallback_focus_center: Vec3,
+    fallback_focus_radius: f32,
+) -> (Scene3DUniform, ShadowUniform, bool, Vec3, f32) {
     let mut shadow_scene = Scene3DUniform::zeroed();
     let mut shadow_uniform = ShadowUniform::zeroed();
 
@@ -5258,14 +5273,30 @@ fn build_shadow_setup(
     } else if let Some(dir) = sky_shadow_dir {
         dir.normalize_or_zero()
     } else {
-        return (shadow_scene, shadow_uniform, false);
+        return (
+            shadow_scene,
+            shadow_uniform,
+            false,
+            fallback_focus_center,
+            fallback_focus_radius,
+        );
     };
     if dir.length_squared() <= 1.0e-6 || !dir.is_finite() {
-        return (shadow_scene, shadow_uniform, false);
+        return (
+            shadow_scene,
+            shadow_uniform,
+            false,
+            fallback_focus_center,
+            fallback_focus_radius,
+        );
     }
 
-    let (mut focus_center, focus_radius) =
+    let (mut focus_center, mut focus_radius, has_casters) =
         compute_shadow_focus_bounds(camera, draw_batches, staged_instances);
+    if !has_casters {
+        focus_center = fallback_focus_center;
+        focus_radius = fallback_focus_radius.max(10.0);
+    }
     let up = if dir.dot(Vec3::Y).abs() > 0.95 {
         Vec3::Z
     } else {
@@ -5290,7 +5321,13 @@ fn build_shadow_setup(
     let proj = Mat4::orthographic_rh(-extent, extent, -extent, extent, near, far);
     let light_view_proj = proj * view;
     if !light_view_proj.is_finite() {
-        return (shadow_scene, shadow_uniform, false);
+        return (
+            shadow_scene,
+            shadow_uniform,
+            false,
+            focus_center,
+            focus_radius,
+        );
     }
 
     shadow_scene.view_proj = light_view_proj.to_cols_array_2d();
@@ -5299,14 +5336,14 @@ fn build_shadow_setup(
     // params0 = [enabled, strength, depth_bias, normal_bias]
     shadow_uniform.params0 = [1.0, 1.0, 0.00002, 0.0];
 
-    (shadow_scene, shadow_uniform, true)
+    (shadow_scene, shadow_uniform, true, focus_center, focus_radius)
 }
 
 fn compute_shadow_focus_bounds(
     camera: &Camera3DState,
     draw_batches: &[DrawBatch],
     staged_instances: &[InstanceGpu],
-) -> (Vec3, f32) {
+) -> (Vec3, f32, bool) {
     let mut any = false;
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
@@ -5346,12 +5383,12 @@ fn compute_shadow_focus_bounds(
     }
 
     if !any {
-        return (Vec3::from(camera.position), 64.0);
+        return (Vec3::from(camera.position), 64.0, false);
     }
 
     let center = (min + max) * 0.5;
     let radius = ((max - min) * 0.5).length().clamp(10.0, 600.0);
-    (center, radius)
+    (center, radius, true)
 }
 
 fn light_stable_axes(light_dir: Vec3, fallback_up: Vec3) -> (Vec3, Vec3) {
