@@ -2284,9 +2284,10 @@ impl Gpu3D {
                 camera,
                 lighting,
                 &self.draw_batches,
-                &self.staged_instances,
                 self.shadow_focus_center,
                 self.shadow_focus_radius,
+                self.depth_size.0,
+                self.depth_size.1,
             );
         self.shadow_focus_center = focus_center;
         self.shadow_focus_radius = focus_radius;
@@ -5220,9 +5221,10 @@ fn build_shadow_setup(
     camera: &Camera3DState,
     lighting: &Lighting3DState,
     draw_batches: &[DrawBatch],
-    staged_instances: &[InstanceGpu],
     fallback_focus_center: Vec3,
     fallback_focus_radius: f32,
+    viewport_width: u32,
+    viewport_height: u32,
 ) -> (Scene3DUniform, ShadowUniform, bool, Vec3, f32) {
     let mut shadow_scene = Scene3DUniform::zeroed();
     let mut shadow_uniform = ShadowUniform::zeroed();
@@ -5291,41 +5293,126 @@ fn build_shadow_setup(
         );
     }
 
-    let (mut focus_center, mut focus_radius, has_casters) =
-        compute_shadow_focus_bounds(camera, draw_batches, staged_instances);
+    let has_casters = draw_batches
+        .iter()
+        .any(|batch| !batch.draw_on_top && batch.casts_shadows);
     if !has_casters {
-        focus_center = fallback_focus_center;
-        focus_radius = fallback_focus_radius.max(10.0);
-    } else if fallback_focus_center.is_finite() && fallback_focus_radius.is_finite() {
-        // Temporal stabilization: reduce projection drift from fast-moving/rotating casters.
-        let t = 0.18;
+        return (
+            shadow_scene,
+            shadow_uniform,
+            false,
+            fallback_focus_center,
+            fallback_focus_radius,
+        );
+    }
+
+    let Some(mut frustum_corners) =
+        camera_frustum_corners_world(camera, viewport_width, viewport_height)
+    else {
+        return (
+            shadow_scene,
+            shadow_uniform,
+            false,
+            fallback_focus_center,
+            fallback_focus_radius,
+        );
+    };
+
+    // Clamp shadow coverage depth for stability/quality.
+    let camera_pos = Vec3::from(camera.position);
+    let max_shadow_distance = 220.0f32;
+    for corner in &mut frustum_corners {
+        let to = *corner - camera_pos;
+        let d = to.length();
+        if d.is_finite() && d > max_shadow_distance && d > 1.0e-4 {
+            *corner = camera_pos + to * (max_shadow_distance / d);
+        }
+    }
+
+    let mut focus_center = frustum_corners
+        .iter()
+        .copied()
+        .fold(Vec3::ZERO, |acc, p| acc + p)
+        / (frustum_corners.len() as f32);
+    let mut focus_radius = frustum_corners
+        .iter()
+        .copied()
+        .map(|p| (p - focus_center).length())
+        .fold(0.0f32, f32::max)
+        .clamp(10.0, 600.0);
+
+    if fallback_focus_center.is_finite() && fallback_focus_radius.is_finite() {
+        let t = 0.20;
         focus_center = fallback_focus_center.lerp(focus_center, t);
         let current = fallback_focus_radius.max(10.0);
         let target = focus_radius.max(10.0);
         focus_radius = (current + (target - current) * t).clamp(10.0, 600.0);
     }
+
     let up = if dir.dot(Vec3::Y).abs() > 0.95 {
         Vec3::Z
     } else {
         Vec3::Y
     };
-    let distance = focus_radius * 2.0 + 40.0;
+    let distance = (focus_radius * 3.0).max(80.0);
     let mut eye = focus_center - dir * distance;
-    let extent = (focus_radius * 1.3).max(10.0);
     let (right_axis, up_axis) = light_stable_axes(dir, up);
-    let world_units_per_texel = ((extent * 2.0) / SHADOW_MAP_SIZE as f32).max(1.0e-6);
-    let center_x = focus_center.dot(right_axis);
-    let center_y = focus_center.dot(up_axis);
-    let snapped_center_x = (center_x / world_units_per_texel).round() * world_units_per_texel;
-    let snapped_center_y = (center_y / world_units_per_texel).round() * world_units_per_texel;
-    let center_delta = right_axis * (snapped_center_x - center_x)
-        + up_axis * (snapped_center_y - center_y);
+
+    let mut view = Mat4::look_at_rh(eye, focus_center, up);
+    let Some((mut ls_min, mut ls_max)) = light_space_bounds(&frustum_corners, view) else {
+        return (
+            shadow_scene,
+            shadow_uniform,
+            false,
+            focus_center,
+            focus_radius,
+        );
+    };
+
+    let mut span_x = (ls_max.x - ls_min.x).max(2.0);
+    let mut span_y = (ls_max.y - ls_min.y).max(2.0);
+    let xy_pad = (span_x.max(span_y) * 0.08).max(2.0);
+    ls_min.x -= xy_pad;
+    ls_max.x += xy_pad;
+    ls_min.y -= xy_pad;
+    ls_max.y += xy_pad;
+    span_x = (ls_max.x - ls_min.x).max(2.0);
+    span_y = (ls_max.y - ls_min.y).max(2.0);
+
+    // Snap projection center in light-space texels for temporal stability.
+    let wupt_x = (span_x / SHADOW_MAP_SIZE as f32).max(1.0e-6);
+    let wupt_y = (span_y / SHADOW_MAP_SIZE as f32).max(1.0e-6);
+    let center_ls_x = (ls_min.x + ls_max.x) * 0.5;
+    let center_ls_y = (ls_min.y + ls_max.y) * 0.5;
+    let snapped_ls_x = (center_ls_x / wupt_x).round() * wupt_x;
+    let snapped_ls_y = (center_ls_y / wupt_y).round() * wupt_y;
+    let center_delta =
+        right_axis * (snapped_ls_x - center_ls_x) + up_axis * (snapped_ls_y - center_ls_y);
     focus_center += center_delta;
     eye += center_delta;
-    let view = Mat4::look_at_rh(eye, focus_center, up);
-    let near = 1.0;
-    let far = (distance + focus_radius * 2.0 + 40.0).max(near + 1.0);
-    let proj = Mat4::orthographic_rh(-extent, extent, -extent, extent, near, far);
+    view = Mat4::look_at_rh(eye, focus_center, up);
+
+    let Some((mut ls_min, mut ls_max)) = light_space_bounds(&frustum_corners, view) else {
+        return (
+            shadow_scene,
+            shadow_uniform,
+            false,
+            focus_center,
+            focus_radius,
+        );
+    };
+    let span_x = (ls_max.x - ls_min.x).max(2.0);
+    let span_y = (ls_max.y - ls_min.y).max(2.0);
+    let xy_pad = (span_x.max(span_y) * 0.08).max(2.0);
+    ls_min.x -= xy_pad;
+    ls_max.x += xy_pad;
+    ls_min.y -= xy_pad;
+    ls_max.y += xy_pad;
+
+    let z_pad = (focus_radius * 0.45).max(12.0);
+    let near = (-ls_max.z - z_pad).max(0.1);
+    let far = (-ls_min.z + z_pad).max(near + 1.0);
+    let proj = Mat4::orthographic_rh(ls_min.x, ls_max.x, ls_min.y, ls_max.y, near, far);
     let light_view_proj = proj * view;
     if !light_view_proj.is_finite() {
         return (
@@ -5344,6 +5431,59 @@ fn build_shadow_setup(
     shadow_uniform.params0 = [1.0, 1.0, 0.00002, 0.0];
 
     (shadow_scene, shadow_uniform, true, focus_center, focus_radius)
+}
+
+fn camera_frustum_corners_world(
+    camera: &Camera3DState,
+    width: u32,
+    height: u32,
+) -> Option<Vec<Vec3>> {
+    let view_proj = compute_view_proj_mat(camera, width, height);
+    if !view_proj.is_finite() {
+        return None;
+    }
+    let inv = view_proj.inverse();
+    if !inv.is_finite() {
+        return None;
+    }
+    let mut corners = Vec::with_capacity(8);
+    for z in [-1.0f32, 1.0f32] {
+        for y in [-1.0f32, 1.0f32] {
+            for x in [-1.0f32, 1.0f32] {
+                let clip = Vec4::new(x, y, z, 1.0);
+                let world_h = inv * clip;
+                if !world_h.is_finite() || world_h.w.abs() <= 1.0e-6 {
+                    return None;
+                }
+                corners.push(world_h.truncate() / world_h.w);
+            }
+        }
+    }
+    Some(corners)
+}
+
+fn light_space_bounds(points_world: &[Vec3], light_view: Mat4) -> Option<(Vec3, Vec3)> {
+    let mut it = points_world.iter().copied();
+    let first = it.next()?;
+    let first_ls = (light_view * first.extend(1.0)).truncate();
+    if !first_ls.is_finite() {
+        return None;
+    }
+    let mut min = first_ls;
+    let mut max = first_ls;
+    for p in it {
+        let ls = (light_view * p.extend(1.0)).truncate();
+        if !ls.is_finite() {
+            continue;
+        }
+        min = min.min(ls);
+        max = max.max(ls);
+    }
+    if !min.is_finite() || !max.is_finite() {
+        None
+    } else {
+        Some((min, max))
+    }
 }
 
 fn compute_shadow_focus_bounds(
