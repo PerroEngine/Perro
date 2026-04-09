@@ -1465,15 +1465,13 @@ fn terrain_chunk_to_runtime_mesh(
         indices.push(ic);
     }
 
+    let smoothed_normals = smooth_terrain_vertex_normals(&normals, triangles);
+
     let out_vertices: Vec<RuntimeMeshVertex> = vertices
         .iter()
         .enumerate()
         .map(|(i, v)| {
-            let n = if normals[i].length_squared() > 1.0e-10 {
-                exaggerate_terrain_normal(normals[i].normalize())
-            } else {
-                Vec3::Y
-            };
+            let n = exaggerate_terrain_normal(smoothed_normals[i]);
             let world_x = coord.x as f32 * chunk_size_meters + v.position.x;
             let world_z = coord.z as f32 * chunk_size_meters + v.position.z;
             RuntimeMeshVertex {
@@ -1496,14 +1494,71 @@ fn terrain_chunk_to_runtime_mesh(
 }
 
 fn exaggerate_terrain_normal(n: Vec3) -> Vec3 {
-    // Boost lateral normal influence so terrain slope reads more clearly under Standard shading.
-    let boosted = Vec3::new(n.x * 2.0, n.y, n.z * 2.0);
+    // Keep slight lateral boost for readability, but avoid over-emphasizing triangulation artifacts.
+    let boosted = Vec3::new(n.x * 1.2, n.y, n.z * 1.2);
     let normalized = boosted.normalize_or_zero();
     if normalized.length_squared() > 1.0e-10 {
         normalized
     } else {
         Vec3::Y
     }
+}
+
+fn smooth_terrain_vertex_normals(raw_normals: &[Vec3], triangles: &[perro_terrain::Triangle]) -> Vec<Vec3> {
+    let mut smoothed = raw_normals
+        .iter()
+        .map(|n| {
+            if n.length_squared() > 1.0e-10 && n.is_finite() {
+                n.normalize()
+            } else {
+                Vec3::Y
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // A small adjacency blur removes most visible triangle faceting without flattening terrain form.
+    const PASSES: usize = 2;
+    const KEEP_SELF: f32 = 0.7;
+    const KEEP_NEIGHBOR: f32 = 1.0 - KEEP_SELF;
+
+    for _ in 0..PASSES {
+        let mut neighbor_sum = vec![Vec3::ZERO; smoothed.len()];
+        let mut neighbor_count = vec![0u32; smoothed.len()];
+
+        for tri in triangles {
+            let ids = [tri.a, tri.b, tri.c];
+            for edge in 0..3 {
+                let a = ids[edge];
+                let b = ids[(edge + 1) % 3];
+                if a >= smoothed.len() || b >= smoothed.len() {
+                    continue;
+                }
+                neighbor_sum[a] += smoothed[b];
+                neighbor_count[a] += 1;
+                neighbor_sum[b] += smoothed[a];
+                neighbor_count[b] += 1;
+            }
+        }
+
+        let mut next = smoothed.clone();
+        for i in 0..smoothed.len() {
+            let base = smoothed[i];
+            let n = if neighbor_count[i] > 0 {
+                let avg = neighbor_sum[i] / neighbor_count[i] as f32;
+                (base * KEEP_SELF + avg * KEEP_NEIGHBOR).normalize_or_zero()
+            } else {
+                base
+            };
+            next[i] = if n.length_squared() > 1.0e-10 && n.is_finite() {
+                n
+            } else {
+                Vec3::Y
+            };
+        }
+        smoothed = next;
+    }
+
+    smoothed
 }
 
 fn terrain_chunk_hash(chunk: &TerrainChunk) -> u64 {
