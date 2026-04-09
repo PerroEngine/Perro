@@ -10,6 +10,7 @@ use std::{
 const IMAGE_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba",
 ];
+const TERRAIN_BAKED_TILE_DIR: &str = "__perro_terrain_baked";
 
 pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
@@ -18,9 +19,9 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
     fs::create_dir_all(&static_dir)?;
     fs::create_dir_all(&embedded_textures_dir)?;
 
-    let mut texture_paths = Vec::<String>::new();
+    let mut texture_inputs = Vec::<(String, PathBuf)>::new();
     if res_dir.exists() {
-        texture_paths = collect_file_paths(&res_dir, &res_dir)?
+        texture_inputs = collect_file_paths(&res_dir, &res_dir)?
             .into_iter()
             .map(|rel| rel.replace('\\', "/"))
             .filter(|rel| {
@@ -30,15 +31,12 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
                     .map(|ext| ext.to_ascii_lowercase())
                     .is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.as_str()))
             })
+            .map(|rel| (format!("res://{rel}"), res_dir.join(rel)))
             .collect();
     }
-    texture_paths.sort();
-
-    let mut encoded = texture_paths
+    let mut encoded = texture_inputs
         .into_par_iter()
-        .map(|rel| -> io::Result<(String, String, Vec<u8>)> {
-            let res_path = format!("res://{rel}");
-            let full_path = res_dir.join(&rel);
+        .map(|(res_path, full_path)| -> io::Result<(String, Vec<u8>)> {
             let file_bytes = fs::read(&full_path)?;
             let image = image::load_from_memory(&file_bytes).map_err(|err| {
                 io::Error::other(format!("failed to decode image `{res_path}`: {err}"))
@@ -55,17 +53,16 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
             ptex.extend_from_slice(&height.to_le_bytes());
             ptex.extend_from_slice(&(raw.len() as u32).to_le_bytes());
             ptex.extend_from_slice(&compressed);
-
-            let mut rel_ptex = PathBuf::from(&rel);
-            rel_ptex.set_extension("ptex");
-            let rel_ptex = rel_ptex.to_string_lossy().replace('\\', "/");
-            Ok((res_path, rel_ptex, ptex))
+            Ok((res_path, ptex))
         })
         .collect::<io::Result<Vec<_>>>()?;
+    encoded.extend(read_generated_baked_ptex(&embedded_textures_dir)?);
     encoded.sort_by(|a, b| a.0.cmp(&b.0));
+    encoded.dedup_by(|a, b| a.0 == b.0);
 
     let mut textures = Vec::<(String, String)>::with_capacity(encoded.len());
-    for (res_path, rel_ptex, ptex) in encoded {
+    for (index, (res_path, ptex)) in encoded.into_iter().enumerate() {
+        let rel_ptex = format!("texture_{index}.ptex");
         let output_path = embedded_textures_dir.join(&rel_ptex);
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)?;
@@ -104,6 +101,29 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
 
     fs::write(static_dir.join("textures.rs"), out)?;
     Ok(())
+}
+
+fn read_generated_baked_ptex(embedded_textures_dir: &Path) -> io::Result<Vec<(String, Vec<u8>)>> {
+    let root = embedded_textures_dir.join(TERRAIN_BAKED_TILE_DIR);
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+    let rels = collect_file_paths(&root, &root)?;
+    let mut out = Vec::new();
+    for rel in rels {
+        let rel = rel.replace('\\', "/");
+        if !rel.ends_with(".ptex") {
+            continue;
+        }
+        let full = root.join(&rel);
+        let bytes = fs::read(&full)?;
+        let Some(stripped) = rel.strip_suffix(".ptex") else {
+            continue;
+        };
+        let source = format!("res://{}/{stripped}.png", TERRAIN_BAKED_TILE_DIR);
+        out.push((source, bytes));
+    }
+    Ok(out)
 }
 
 fn escape_str(input: &str) -> String {

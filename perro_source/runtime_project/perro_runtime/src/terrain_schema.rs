@@ -47,11 +47,29 @@ pub struct TerrainLayerRule {
 }
 
 #[derive(Clone, Debug)]
+pub struct TerrainBakedChunkTile {
+    pub chunk_x: i32,
+    pub chunk_z: i32,
+    pub texture_source: String,
+    pub uv_min: [f32; 2],
+    pub uv_max: [f32; 2],
+}
+
+#[derive(Clone, Debug)]
+pub struct TerrainBakedChunkPhysics {
+    pub chunk_x: i32,
+    pub chunk_z: i32,
+    pub triangle_layers: Vec<i32>,
+}
+
+#[derive(Clone, Debug)]
 pub struct TerrainSourceSettings {
     pub pixels_per_meter: Option<f32>,
     pub map_resolution_px: Option<f32>,
     pub layers: Vec<TerrainLayerRule>,
     pub layer_blendings: Vec<(usize, usize)>,
+    pub baked_chunk_tiles: Vec<TerrainBakedChunkTile>,
+    pub baked_chunk_physics: Vec<TerrainBakedChunkPhysics>,
 }
 
 impl Default for TerrainSourceSettings {
@@ -61,6 +79,8 @@ impl Default for TerrainSourceSettings {
             map_resolution_px: None,
             layers: Vec::new(),
             layer_blendings: Vec::new(),
+            baked_chunk_tiles: Vec::new(),
+            baked_chunk_physics: Vec::new(),
         }
     }
 }
@@ -296,6 +316,40 @@ pub fn decode_loaded_terrain_blob(blob: &[u8]) -> Option<LoadedTerrainSource> {
         layer_blendings.push((rd.read_u32()? as usize, rd.read_u32()? as usize));
     }
 
+    let mut baked_chunk_tiles = Vec::new();
+    if rd.cursor < rd.bytes.len() {
+        let tile_count = rd.read_u32()? as usize;
+        baked_chunk_tiles = Vec::with_capacity(tile_count);
+        for _ in 0..tile_count {
+            baked_chunk_tiles.push(TerrainBakedChunkTile {
+                chunk_x: rd.read_i32()?,
+                chunk_z: rd.read_i32()?,
+                texture_source: rd.read_opt_string()??,
+                uv_min: [rd.read_f32()?, rd.read_f32()?],
+                uv_max: [rd.read_f32()?, rd.read_f32()?],
+            });
+        }
+    }
+    let mut baked_chunk_physics = Vec::new();
+    if rd.cursor < rd.bytes.len() {
+        let chunk_count = rd.read_u32()? as usize;
+        baked_chunk_physics = Vec::with_capacity(chunk_count);
+        for _ in 0..chunk_count {
+            let chunk_x = rd.read_i32()?;
+            let chunk_z = rd.read_i32()?;
+            let tri_count = rd.read_u32()? as usize;
+            let mut triangle_layers = Vec::with_capacity(tri_count);
+            for _ in 0..tri_count {
+                triangle_layers.push(rd.read_i32()?);
+            }
+            baked_chunk_physics.push(TerrainBakedChunkPhysics {
+                chunk_x,
+                chunk_z,
+                triangle_layers,
+            });
+        }
+    }
+
     if rd.cursor != rd.bytes.len() {
         return None;
     }
@@ -307,6 +361,8 @@ pub fn decode_loaded_terrain_blob(blob: &[u8]) -> Option<LoadedTerrainSource> {
             map_resolution_px,
             layers,
             layer_blendings,
+            baked_chunk_tiles,
+            baked_chunk_physics,
         },
     })
 }

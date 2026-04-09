@@ -24,6 +24,7 @@ pub use runtime_project::{
     parse_project_toml,
 };
 pub use terrain_schema::{
-    LoadedTerrainSource, TerrainLayerColor, TerrainLayerRule, TerrainSourceSettings,
+    LoadedTerrainSource, TerrainBakedChunkPhysics, TerrainBakedChunkTile, TerrainLayerColor,
+    TerrainLayerRule, TerrainSourceSettings,
     decode_loaded_terrain_blob, load_terrain_from_folder_source, load_terrain_literal,
 };

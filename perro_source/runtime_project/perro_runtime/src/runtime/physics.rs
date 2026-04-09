@@ -1703,13 +1703,20 @@ impl Runtime {
         let chunk_size_meters = data.chunk_size_meters();
         let layer_rules = terrain_settings.map(|s| s.layers.as_slice()).unwrap_or(&[]);
         let chunk_refs = data.chunks().collect::<Vec<_>>();
-        let terrain_layer_map = load_terrain_layer_map(
-            terrain_source,
-            chunk_size_meters,
-            chunk_refs.as_slice(),
-            layer_rules,
-            self.project().and_then(|project| project.static_icon_lookup),
-        );
+        let baked_physics = terrain_settings
+            .map(|s| s.baked_chunk_physics.as_slice())
+            .unwrap_or(&[]);
+        let terrain_layer_map = if baked_physics.is_empty() {
+            load_terrain_layer_map(
+                terrain_source,
+                chunk_size_meters,
+                chunk_refs.as_slice(),
+                layer_rules,
+                self.project().and_then(|project| project.static_icon_lookup),
+            )
+        } else {
+            None
+        };
 
         let mut out = Vec::new();
         for (coord, chunk) in data.chunks() {
@@ -1719,7 +1726,7 @@ impl Runtime {
                 continue;
             };
 
-            if layer_rules.is_empty() || terrain_layer_map.is_none() {
+            if layer_rules.is_empty() || (terrain_layer_map.is_none() && baked_physics.is_empty()) {
                 out.push(ShapeDesc3D {
                     local: Transform3D::IDENTITY,
                     shape: ShapeKind3D::TriMesh { vertices, indices },
@@ -1730,14 +1737,26 @@ impl Runtime {
                 continue;
             }
 
-            let layer_map = terrain_layer_map.as_ref().expect("checked above");
             let mut grouped = AHashMap::<usize, Vec<[u32; 3]>>::new();
             let mut fallback = Vec::<[u32; 3]>::new();
+            let baked_for_chunk = baked_physics
+                .iter()
+                .find(|entry| entry.chunk_x == coord.x && entry.chunk_z == coord.z);
             for (tri_ix, tri) in indices.iter().copied().enumerate() {
-                let layer = layer_indices
-                    .get(tri_ix)
-                    .and_then(|world| classify_terrain_layer_for_world_xz(layer_map, *world))
-                    .and_then(|idx| layer_rules.get(idx).map(|_| idx));
+                let baked_layer = baked_for_chunk
+                    .and_then(|entry| entry.triangle_layers.get(tri_ix))
+                    .copied()
+                    .and_then(|idx| usize::try_from(idx).ok());
+                let layer = if let Some(baked_idx) = baked_layer {
+                    layer_rules.get(baked_idx).map(|_| baked_idx)
+                } else {
+                    terrain_layer_map.as_ref().and_then(|layer_map| {
+                        layer_indices
+                            .get(tri_ix)
+                            .and_then(|world| classify_terrain_layer_for_world_xz(layer_map, *world))
+                            .and_then(|idx| layer_rules.get(idx).map(|_| idx))
+                    })
+                };
                 if let Some(layer) = layer {
                     grouped.entry(layer).or_default().push(tri);
                 } else {

@@ -801,12 +801,40 @@ impl Runtime {
         if terrain_source.is_empty() || map_source.is_empty() || chunks.is_empty() {
             return None;
         }
+        if terrain_settings
+            .map(|settings| settings.layers.is_empty())
+            .unwrap_or(true)
+        {
+            // No layer replacement configured: sample terrain_map directly via chunk/world UV projection.
+            return None;
+        }
         if self
             .render_3d
             .terrain_chunk_tile_failures
             .contains(terrain_source)
         {
             return None;
+        }
+        if let Some(settings) = terrain_settings
+            && !settings.baked_chunk_tiles.is_empty()
+        {
+            let mut tiles_by_coord = ahash::AHashMap::default();
+            for tile in &settings.baked_chunk_tiles {
+                let coord = ChunkCoord::new(tile.chunk_x, tile.chunk_z);
+                if chunks.iter().any(|chunk| chunk.coord == coord) {
+                    tiles_by_coord.insert(
+                        coord,
+                        crate::runtime::state::TerrainChunkTile {
+                            source: tile.texture_source.clone(),
+                            uv_min: tile.uv_min,
+                            uv_max: tile.uv_max,
+                        },
+                    );
+                }
+            }
+            if !tiles_by_coord.is_empty() {
+                return Some(crate::runtime::state::TerrainChunkTileSet { tiles_by_coord });
+            }
         }
 
         let terrain_bounds = terrain_world_bounds(chunks, chunk_size_meters)?;
