@@ -5296,6 +5296,13 @@ fn build_shadow_setup(
     if !has_casters {
         focus_center = fallback_focus_center;
         focus_radius = fallback_focus_radius.max(10.0);
+    } else if fallback_focus_center.is_finite() && fallback_focus_radius.is_finite() {
+        // Temporal stabilization: reduce projection drift from fast-moving/rotating casters.
+        let t = 0.18;
+        focus_center = fallback_focus_center.lerp(focus_center, t);
+        let current = fallback_focus_radius.max(10.0);
+        let target = focus_radius.max(10.0);
+        focus_radius = (current + (target - current) * t).clamp(10.0, 600.0);
     }
     let up = if dir.dot(Vec3::Y).abs() > 0.95 {
         Vec3::Z
@@ -5405,6 +5412,7 @@ fn light_stable_axes(light_dir: Vec3, fallback_up: Vec3) -> (Vec3, Vec3) {
     let up = right.cross(f).normalize_or_zero();
     (right, up)
 }
+
 
 
 fn build_sky_uniform(

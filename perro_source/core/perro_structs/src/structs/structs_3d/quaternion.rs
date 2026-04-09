@@ -246,7 +246,7 @@ impl Quaternion {
     /// Rotate around local X axis by `radians`.
     #[inline]
     pub fn rotate_x(&mut self, radians: f32) -> &mut Self {
-        let rotated = Quat::from_rotation_x(radians) * self.to_quat();
+        let rotated = (Quat::from_rotation_x(radians) * self.to_quat()).normalize();
         *self = rotated.into();
         self
     }
@@ -254,7 +254,7 @@ impl Quaternion {
     /// Rotate around local Y axis by `radians`.
     #[inline]
     pub fn rotate_y(&mut self, radians: f32) -> &mut Self {
-        let rotated = Quat::from_rotation_y(radians) * self.to_quat();
+        let rotated = (Quat::from_rotation_y(radians) * self.to_quat()).normalize();
         *self = rotated.into();
         self
     }
@@ -262,7 +262,7 @@ impl Quaternion {
     /// Rotate around local Z axis by `radians`.
     #[inline]
     pub fn rotate_z(&mut self, radians: f32) -> &mut Self {
-        let rotated = Quat::from_rotation_z(radians) * self.to_quat();
+        let rotated = (Quat::from_rotation_z(radians) * self.to_quat()).normalize();
         *self = rotated.into();
         self
     }

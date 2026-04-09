@@ -1,5 +1,5 @@
 use crate::{Quaternion, Vector3};
-use glam::{Mat3, Mat4, Vec3};
+use glam::{Mat3, Mat4, Quat, Vec3};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform3D {
@@ -27,9 +27,17 @@ impl Transform3D {
     /// Convert to a Mat4 for transformations (TRS order)
     #[inline]
     pub fn to_mat4(&self) -> Mat4 {
+        let rotation = {
+            let q: Quat = self.rotation.into();
+            if q.is_finite() && q.length_squared() > 1.0e-8 {
+                q.normalize()
+            } else {
+                Quat::IDENTITY
+            }
+        };
         Mat4::from_scale_rotation_translation(
             self.scale.into(),
-            self.rotation.into(),
+            rotation,
             self.position.into(),
         )
     }

@@ -1,4 +1,4 @@
-    // ── Moon ──────────────────────────────────────────────────
+// ── Moon ──────────────────────────────────────────────────
     var moon_amount    = 0.0;
     let moon_size_ctrl = clamp(sky.params2.y, 0.0, 5.0);
     let moon_size      = mix(0.004, 0.040, clamp(moon_size_ctrl / 5.0, 0.0, 1.0)) * 2.8;
@@ -57,20 +57,54 @@
             let moon_local = vec2<f32>(dot(ray, moon_tan), dot(ray, moon_bit))
                            / max(moon_size, 1.0e-4);
 
-            let moon_fbm_base   = fbm2(moon_local * 2.8 + vec2<f32>(7.0, -11.0));
-            let moon_fbm_detail = fbm2(moon_local * 5.4 + vec2<f32>(-3.0, 13.0));
-            let crater_seed  = moon_fbm_detail * 0.58 + moon_fbm_base * 0.42;
-            let crater_basin = smoothstep(0.44, 0.80, crater_seed);
-            let maria        = smoothstep(0.38, 0.70, moon_fbm_base);
-            let crater_mask  = clamp(crater_basin * 0.98 + maria * 0.40, 0.0, 1.0);
+            // ── Sphere surface normal calculation ──
+            let moon_radius_sq = dot(moon_local, moon_local);
+            
+            // Only continue if we're within the sphere
+            if (moon_radius_sq < 1.0) {
+                // Calculate the Z component to get 3D position on sphere surface
+                let moon_z = sqrt(max(1.0 - moon_radius_sq, 0.0));
+                let moon_surface_pos = vec3<f32>(moon_local.x, moon_local.y, moon_z);
+                let moon_normal = normalize(moon_surface_pos);
+                
+                // Sun direction for lighting (opposite of moon - assumes sun lights the moon)
+                // You may want to use an actual sun_dir variable if available
+                let sun_to_moon = normalize(vec3<f32>(-0.3, 0.5, 1.0)); // Adjust as needed
+                
+                // Lambertian diffuse lighting on sphere
+                let moon_ndotl = max(dot(moon_normal, sun_to_moon), 0.0);
+                let sphere_lighting = pow(moon_ndotl, 0.8); // Slight gamma for softer falloff
 
-            let moon_col = vec3<f32>(0.90, 0.91, 0.94)
-                         - vec3<f32>(0.42, 0.40, 0.44) * crater_mask;
-            color = mix(color, moon_col, moon_amount);
+                let moon_fbm_base   = fbm2(moon_local * 2.8 + vec2<f32>(7.0, -11.0));
+                let moon_fbm_detail = fbm2(moon_local * 5.4 + vec2<f32>(-3.0, 13.0));
+                let crater_seed  = moon_fbm_detail * 0.58 + moon_fbm_base * 0.42;
+                let crater_basin = smoothstep(0.44, 0.80, crater_seed);
+                let maria        = smoothstep(0.38, 0.70, moon_fbm_base);
+                let crater_mask  = clamp(crater_basin * 0.98 + maria * 0.40, 0.0, 1.0);
 
-            let moon_rim     = 1.0 - smoothstep(0.76, 1.32, moon_dist);
-            let moon_rim_col = vec3<f32>(0.80, 0.84, 1.0);
-            color += moon_rim_col * moon_rim * moon_amount * 0.08;
+                // Base moon color with crater details
+                let moon_base_col = vec3<f32>(0.90, 0.91, 0.94)
+                             - vec3<f32>(0.42, 0.40, 0.44) * crater_mask;
+                
+                // Apply spherical lighting to moon surface
+                // Add ambient term so dark side isn't completely black
+                let ambient = 0.08;
+                let lit_moon_col = moon_base_col * (ambient + (1.0 - ambient) * sphere_lighting);
+                
+                // Add subtle depth to craters based on lighting
+                let crater_depth = crater_mask * (1.0 - sphere_lighting * 0.3);
+                let final_moon_col = lit_moon_col - vec3<f32>(0.12, 0.10, 0.08) * crater_depth;
+                
+                color = mix(color, final_moon_col, moon_amount);
+
+                // Enhanced rim lighting that respects sphere curvature
+                let moon_rim = 1.0 - smoothstep(0.76, 1.32, moon_dist);
+                let rim_strength = moon_rim * moon_amount * 0.12;
+                
+                // Rim should be brighter on lit side
+                let oriented_rim = rim_strength * (0.4 + 0.6 * sphere_lighting);
+                let moon_rim_col = vec3<f32>(0.80, 0.84, 1.0);
+                color += moon_rim_col * oriented_rim;
+            }
         }
     }
-
