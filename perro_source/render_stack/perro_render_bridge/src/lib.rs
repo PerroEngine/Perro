@@ -469,7 +469,7 @@ impl Default for CameraProjectionState {
         Self::Perspective {
             fov_y_degrees: 60.0,
             near: 0.1,
-            far: 1000.0,
+            far: 1_000_000.0,
         }
     }
 }

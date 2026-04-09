@@ -117,14 +117,14 @@ fn set_projection_mode(node: &mut Camera3D, mode: &str) {
             node.projection = CameraProjection::Perspective {
                 fov_y_degrees: 60.0,
                 near: 0.1,
-                far: 1000.0,
+                far: 1_000_000.0,
             };
         }
         "orthographic" => {
             node.projection = CameraProjection::Orthographic {
                 size: 10.0,
                 near: 0.1,
-                far: 1000.0,
+                far: 1_000_000.0,
             };
         }
         "frustum" => {
@@ -134,7 +134,7 @@ fn set_projection_mode(node: &mut Camera3D, mode: &str) {
                 bottom: -1.0,
                 top: 1.0,
                 near: 0.1,
-                far: 1000.0,
+                far: 1_000_000.0,
             };
         }
         _ => {}

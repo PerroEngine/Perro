@@ -51,7 +51,7 @@ impl Default for CameraProjection {
         Self::Perspective {
             fov_y_degrees: 60.0,
             near: 0.1,
-            far: 1000.0,
+            far: 1_000_000.0,
         }
     }
 }
@@ -98,7 +98,7 @@ impl Camera3D {
             projection: CameraProjection::Perspective {
                 fov_y_degrees: 60.0,
                 near: 0.1,
-                far: 1000.0,
+                far: 1_000_000.0,
             },
             post_processing: PostProcessSet::new(),
         }
@@ -143,7 +143,7 @@ fn sanitize_near_far(near: f32, far: f32) -> (f32, f32) {
     let far = if far.is_finite() {
         far.max(near + 0.001)
     } else {
-        (near + 1000.0).max(near + 0.001)
+        (near + 1_000_000.0).max(near + 0.001)
     };
     (near, far)
 }
