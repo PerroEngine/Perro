@@ -2673,6 +2673,7 @@ name = "perro_static_pipeline"
 version = "0.1.0"
 dependencies = [
  "csv",
+ "glam",
  "gltf",
  "image",
  "perro_animation",

@@ -1,10 +1,12 @@
 use perro_structs::Vector3;
+use std::collections::HashMap;
 
 pub type VertexID = usize;
 pub type TriangleID = usize;
-/// Fixed chunk topology: 64 cells per side => 1 meter per cell at 64m chunk size.
+/// Legacy fixed-grid topology constant kept for compatibility with existing tools.
 pub const CHUNK_GRID_CELLS_PER_SIDE: usize = 64;
 pub const CHUNK_GRID_VERTICES_PER_SIDE: usize = CHUNK_GRID_CELLS_PER_SIDE + 1;
+pub const DEFAULT_CHUNK_SIZE_METERS: f32 = 512.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vertex {
@@ -59,42 +61,60 @@ impl ChunkConfig {
 
 impl Default for ChunkConfig {
     fn default() -> Self {
-        Self { size_meters: 64.0 }
+        Self {
+            size_meters: DEFAULT_CHUNK_SIZE_METERS,
+        }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChunkTopology {
+    Grid { cells_per_side: usize },
+    ArbitraryMesh,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TerrainChunk {
     pub coord: ChunkCoord,
     pub config: ChunkConfig,
+    pub(crate) topology: ChunkTopology,
     pub(crate) vertices: Vec<Vertex>,
     pub(crate) triangles: Vec<Triangle>,
 }
 
 impl TerrainChunk {
-    /// Builds a fixed-topology grid chunk. Topology is static; editing mutates vertex heights.
+    /// Builds a square grid chunk. The default density is 1 vertex per meter.
     pub fn new_flat(coord: ChunkCoord, config: ChunkConfig) -> Self {
+        let cells_per_side = config.size_meters.round().max(1.0) as usize;
+        Self::new_flat_with_cells(coord, config, cells_per_side)
+    }
+
+    pub fn new_flat_with_cells(
+        coord: ChunkCoord,
+        config: ChunkConfig,
+        cells_per_side: usize,
+    ) -> Self {
+        let cells_per_side = cells_per_side.max(1);
         let size = config.size_meters;
         let half = size * 0.5;
-        let step = size / CHUNK_GRID_CELLS_PER_SIDE as f32;
+        let verts_per_side = cells_per_side + 1;
+        let step = size / cells_per_side as f32;
 
-        let mut vertices =
-            Vec::with_capacity(CHUNK_GRID_VERTICES_PER_SIDE * CHUNK_GRID_VERTICES_PER_SIDE);
-        for z in 0..CHUNK_GRID_VERTICES_PER_SIDE {
+        let mut vertices = Vec::with_capacity(verts_per_side * verts_per_side);
+        for z in 0..verts_per_side {
             let z_world = -half + z as f32 * step;
-            for x in 0..CHUNK_GRID_VERTICES_PER_SIDE {
+            for x in 0..verts_per_side {
                 let x_world = -half + x as f32 * step;
                 vertices.push(Vertex::new(Vector3::new(x_world, 0.0, z_world)));
             }
         }
 
-        let mut triangles =
-            Vec::with_capacity(CHUNK_GRID_CELLS_PER_SIDE * CHUNK_GRID_CELLS_PER_SIDE * 2);
-        for z in 0..CHUNK_GRID_CELLS_PER_SIDE {
-            for x in 0..CHUNK_GRID_CELLS_PER_SIDE {
-                let i00 = z * CHUNK_GRID_VERTICES_PER_SIDE + x;
+        let mut triangles = Vec::with_capacity(cells_per_side * cells_per_side * 2);
+        for z in 0..cells_per_side {
+            for x in 0..cells_per_side {
+                let i00 = z * verts_per_side + x;
                 let i10 = i00 + 1;
-                let i01 = i00 + CHUNK_GRID_VERTICES_PER_SIDE;
+                let i01 = i00 + verts_per_side;
                 let i11 = i01 + 1;
 
                 triangles.push(Triangle::new(i00, i10, i01));
@@ -105,13 +125,42 @@ impl TerrainChunk {
         Self {
             coord,
             config,
+            topology: ChunkTopology::Grid { cells_per_side },
             vertices,
             triangles,
         }
     }
 
     pub fn new_flat_64m(coord: ChunkCoord) -> Self {
-        Self::new_flat(coord, ChunkConfig::default())
+        Self::new_flat(coord, ChunkConfig::new(64.0))
+    }
+
+    pub fn from_mesh(
+        coord: ChunkCoord,
+        config: ChunkConfig,
+        vertices: Vec<Vertex>,
+        triangles: Vec<Triangle>,
+    ) -> Result<Self, ChunkError> {
+        let chunk = Self {
+            coord,
+            config,
+            topology: ChunkTopology::ArbitraryMesh,
+            vertices,
+            triangles,
+        };
+        chunk.validate(1.0e-6)?;
+        Ok(chunk)
+    }
+
+    pub const fn topology(&self) -> ChunkTopology {
+        self.topology
+    }
+
+    pub fn grid_cells_per_side(&self) -> Option<usize> {
+        match self.topology {
+            ChunkTopology::Grid { cells_per_side } => Some(cells_per_side),
+            ChunkTopology::ArbitraryMesh => None,
+        }
     }
 
     pub fn vertices(&self) -> &[Vertex] {
@@ -130,14 +179,51 @@ impl TerrainChunk {
         self.triangles.len()
     }
 
+    pub fn nearest_vertex_id_by_xz(&self, x: f32, z: f32) -> Option<VertexID> {
+        let mut best: Option<(usize, f32)> = None;
+        for (id, vertex) in self.vertices.iter().enumerate() {
+            let dx = vertex.position.x - x;
+            let dz = vertex.position.z - z;
+            let d2 = dx * dx + dz * dz;
+            match best {
+                Some((_, best_d2)) if best_d2 <= d2 => {}
+                _ => best = Some((id, d2)),
+            }
+        }
+        best.map(|(id, _)| id)
+    }
+
+    pub fn has_single_height_per_xz(&self, epsilon: f32) -> bool {
+        if !epsilon.is_finite() || epsilon < 0.0 {
+            return false;
+        }
+        let mut by_xz: HashMap<(i64, i64), f32> = HashMap::new();
+        let inv = 1.0 / epsilon.max(1.0e-4);
+        for v in &self.vertices {
+            let kx = (v.position.x * inv).round() as i64;
+            let kz = (v.position.z * inv).round() as i64;
+            let key = (kx, kz);
+            if let Some(existing_y) = by_xz.get(&key) {
+                if (*existing_y - v.position.y).abs() > epsilon {
+                    return false;
+                }
+            } else {
+                by_xz.insert(key, v.position.y);
+            }
+        }
+        true
+    }
+
     /// Grid spacing in local meters between adjacent vertices.
-    pub(crate) fn grid_step_meters(&self) -> f32 {
-        self.config.size_meters / CHUNK_GRID_CELLS_PER_SIDE as f32
+    pub(crate) fn grid_step_meters(&self) -> Option<f32> {
+        let cells = self.grid_cells_per_side()?;
+        Some(self.config.size_meters / cells as f32)
     }
 
     pub(crate) fn snap_local_xz_to_grid(&self, x: f32, z: f32) -> Option<(usize, usize, f32, f32)> {
+        let cells_per_side = self.grid_cells_per_side()?;
         let half = self.config.size_meters * 0.5;
-        let step = self.grid_step_meters();
+        let step = self.grid_step_meters()?;
         let gx = ((x + half) / step).round();
         let gz = ((z + half) / step).round();
         if !gx.is_finite() || !gz.is_finite() {
@@ -145,11 +231,7 @@ impl TerrainChunk {
         }
         let gx_i = gx as i32;
         let gz_i = gz as i32;
-        if gx_i < 0
-            || gz_i < 0
-            || gx_i > CHUNK_GRID_CELLS_PER_SIDE as i32
-            || gz_i > CHUNK_GRID_CELLS_PER_SIDE as i32
-        {
+        if gx_i < 0 || gz_i < 0 || gx_i > cells_per_side as i32 || gz_i > cells_per_side as i32 {
             return None;
         }
         let gx_u = gx_i as usize;
@@ -159,8 +241,13 @@ impl TerrainChunk {
         Some((gx_u, gz_u, sx, sz))
     }
 
-    pub(crate) const fn grid_index(grid_x: usize, grid_z: usize) -> usize {
-        grid_z * CHUNK_GRID_VERTICES_PER_SIDE + grid_x
+    pub fn grid_index(&self, grid_x: usize, grid_z: usize) -> Option<usize> {
+        let cells = self.grid_cells_per_side()?;
+        let verts = cells + 1;
+        if grid_x > cells || grid_z > cells {
+            return None;
+        }
+        Some(grid_z * verts + grid_x)
     }
 
     /// Legacy API: runtime terrain editing should use snapped grid height edits (`insert_vertex`).

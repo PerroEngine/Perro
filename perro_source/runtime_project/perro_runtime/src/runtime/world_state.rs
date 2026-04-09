@@ -2,7 +2,7 @@ use super::Runtime;
 use crate::terrain_schema;
 use perro_ids::NodeID;
 use perro_nodes::SceneNodeData;
-use perro_terrain::{ChunkCoord, TerrainData};
+use perro_terrain::{ChunkCoord, DEFAULT_CHUNK_SIZE_METERS, TerrainData};
 
 impl Runtime {
     pub(crate) fn node_local_visible(data: &SceneNodeData) -> bool {
@@ -58,7 +58,7 @@ impl Runtime {
     }
 
     pub(crate) fn default_terrain_data() -> TerrainData {
-        let mut terrain = TerrainData::new(64.0);
+        let mut terrain = TerrainData::new(DEFAULT_CHUNK_SIZE_METERS);
         for cz in -1..=1 {
             for cx in -1..=1 {
                 let _ = terrain.ensure_chunk(ChunkCoord::new(cx, cz));

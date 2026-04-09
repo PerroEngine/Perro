@@ -1,6 +1,6 @@
 use crate::{
-    BrushOp, BrushShape, CHUNK_GRID_CELLS_PER_SIDE, ChunkConfig, ChunkCoord, ChunkError,
-    InsertVertexResult, TerrainChunk,
+    BrushOp, BrushShape, ChunkConfig, ChunkCoord, ChunkError, InsertVertexResult, TerrainChunk,
+    DEFAULT_CHUNK_SIZE_METERS,
 };
 use perro_structs::Vector3;
 use std::collections::HashSet;
@@ -32,7 +32,7 @@ pub struct TerrainData {
 
 impl Default for TerrainData {
     fn default() -> Self {
-        Self::new(64.0)
+        Self::new(DEFAULT_CHUNK_SIZE_METERS)
     }
 }
 
@@ -86,6 +86,16 @@ impl TerrainData {
         self.cells[idx]
             .as_mut()
             .expect("chunk slot was just initialized")
+    }
+
+    pub fn set_chunk(&mut self, coord: ChunkCoord, mut chunk: TerrainChunk) {
+        self.ensure_bounds_contains(coord);
+        let idx = self
+            .index_of(coord)
+            .expect("index should exist after ensure_bounds_contains");
+        chunk.coord = coord;
+        chunk.config = ChunkConfig::new(self.chunk_size_meters);
+        self.cells[idx] = Some(chunk);
     }
 
     pub fn insert_brush_world(
@@ -234,19 +244,26 @@ impl TerrainData {
             .ok_or(ChunkError::PointOutsideMesh { x: 0.0, z: 0.0 })?
             .clone();
 
-        let mut updates: Vec<(usize, f32)> = Vec::with_capacity(CHUNK_GRID_CELLS_PER_SIDE + 1);
-        let mut updates_b: Vec<(usize, f32)> = Vec::with_capacity(CHUNK_GRID_CELLS_PER_SIDE + 1);
+        let (a_cells, b_cells) =
+            match (a_chunk.grid_cells_per_side(), b_chunk.grid_cells_per_side()) {
+                (Some(a_cells), Some(b_cells)) if a_cells == b_cells => (a_cells, b_cells),
+                _ => return Ok(()),
+            };
 
-        for i in 0..=CHUNK_GRID_CELLS_PER_SIDE {
+        let mut updates: Vec<(usize, f32)> = Vec::with_capacity(a_cells + 1);
+        let mut updates_b: Vec<(usize, f32)> = Vec::with_capacity(b_cells + 1);
+
+        for i in 0..=a_cells {
             let (a_id, b_id) = match border {
-                SharedBorder::Vertical => (
-                    TerrainChunk::grid_index(CHUNK_GRID_CELLS_PER_SIDE, i),
-                    TerrainChunk::grid_index(0, i),
-                ),
-                SharedBorder::Horizontal => (
-                    TerrainChunk::grid_index(i, CHUNK_GRID_CELLS_PER_SIDE),
-                    TerrainChunk::grid_index(i, 0),
-                ),
+                SharedBorder::Vertical => {
+                    (a_chunk.grid_index(a_cells, i), b_chunk.grid_index(0, i))
+                }
+                SharedBorder::Horizontal => {
+                    (a_chunk.grid_index(i, a_cells), b_chunk.grid_index(i, 0))
+                }
+            };
+            let (Some(a_id), Some(b_id)) = (a_id, b_id) else {
+                continue;
             };
             let ay = a_chunk.vertices()[a_id].position.y;
             let by = b_chunk.vertices()[b_id].position.y;

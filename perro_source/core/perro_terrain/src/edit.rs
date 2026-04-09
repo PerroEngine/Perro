@@ -36,19 +36,30 @@ impl TerrainChunk {
         _normal_epsilon: f32,
         distance_epsilon: f32,
     ) -> Result<InsertVertexResult, ChunkError> {
-        let Some((gx, gz, snapped_x, snapped_z)) =
+        let (id, target_x, target_z) = if let Some((gx, gz, snapped_x, snapped_z)) =
             self.snap_local_xz_to_grid(position.x, position.z)
-        else {
-            return Err(ChunkError::PointOutsideMesh {
-                x: position.x,
-                z: position.z,
-            });
+        {
+            let id = self
+                .grid_index(gx, gz)
+                .ok_or(ChunkError::PointOutsideMesh {
+                    x: position.x,
+                    z: position.z,
+                })?;
+            (id, snapped_x, snapped_z)
+        } else {
+            let id = self.nearest_vertex_id_by_xz(position.x, position.z).ok_or(
+                ChunkError::PointOutsideMesh {
+                    x: position.x,
+                    z: position.z,
+                },
+            )?;
+            let old = self.vertices[id].position;
+            (id, old.x, old.z)
         };
 
-        let id = TerrainChunk::grid_index(gx, gz);
         let current = self.vertices[id].position;
         let same_height = (current.y - position.y).abs() <= distance_epsilon;
-        self.vertices[id].position = Vector3::new(snapped_x, position.y, snapped_z);
+        self.vertices[id].position = Vector3::new(target_x, position.y, target_z);
 
         Ok(InsertVertexResult {
             inserted_vertex_id: id,
