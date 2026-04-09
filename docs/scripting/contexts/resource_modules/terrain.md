@@ -23,6 +23,27 @@ Current terrain model (runtime):
 - Terrain folders may include an optional `settings.pterr` file for mapping defaults:
   - `pixels_per_meter = <float>` (alias: `ppm`)
   - `map_resolution_px = <float>` (square map resolution used with `pixels_per_meter`)
+  - Layer rules (indexed by order):
+    - `layer.0.match_color = #80C840` (aliases: `color`, also accepts `r,g,b` like `128,200,64`)
+    - `layer.0.match_tolerance = 6` (aliases: `color_tolerance`, `tolerance`)
+    - `layer.0.name = fairway`
+    - `layer.0.texture = res://terrain/grass_fairway.png`
+    - `layer.0.tile_meters = 5.0`
+    - `layer.0.rotation_degrees = 15.0`
+    - `layer.0.hard_cut = true` (or `layer.0.filter = nearest`) to disable bilinear blend at tile seams
+    - `layer.0.blending = [1,2]` allows this layer to blend only with listed layer indices
+    - `layer.0.friction = 0.92`
+    - `layer.0.restitution = 0.03`
+  - Additional layers use higher indices (`layer.1.*`, `layer.2.*`, ...).
+  - Optional global blend pairs:
+    - `layer_blendings = [(0,1), (1,2)]`
+    - each tuple/pair is exactly two layer indices that are allowed to blend
+  - Default behavior is hard layer cuts. Blending only happens for explicitly allowed pairs.
+  - Runtime behavior:
+    - `terrain_map.png` is treated as a layer-mask/source map.
+    - First matching layer by index is selected (matching uses `color_tolerance`).
+    - Visual: matching map color can be replaced with layer texture sampling.
+    - Physics: matching layer can override terrain collider friction/restitution.
 - `TerrainInstance3D` scene fields can override folder defaults:
   - `pixels_per_meter`
   - `map_resolution_px`

@@ -159,9 +159,7 @@ pub fn generate_static_terrains(project_root: &Path) -> Result<(), StaticPipelin
     for rel in rel_paths.iter().filter(|rel| is_terrain_gltf_path(rel)) {
         let full = res_dir.join(rel);
         let mut chunks = import_gltf_terrain_chunks(&full).map_err(|err| {
-            io::Error::other(format!(
-                "failed to parse terrain gltf `res://{rel}`: {err}"
-            ))
+            io::Error::other(format!("failed to parse terrain gltf `res://{rel}`: {err}"))
         })?;
         chunks.sort_by_key(|c| (c.x, c.z));
 
@@ -287,9 +285,7 @@ fn build_terrain_literal(chunks: &[ParsedChunk]) -> String {
         match &chunk.payload {
             ChunkPayload::Grid { samples } => {
                 let mut sorted = samples.clone();
-                sorted.sort_by(|a, b| {
-                    a.1.total_cmp(&b.1).then_with(|| a.0.total_cmp(&b.0))
-                });
+                sorted.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.total_cmp(&b.0)));
                 for (x, z, y) in sorted {
                     let _ = writeln!(out, "[{x:.6},{z:.6}] = {y:.6}");
                 }
@@ -311,7 +307,10 @@ fn build_terrain_literal(chunks: &[ParsedChunk]) -> String {
     out
 }
 
-fn parse_ptchunk_source(source: &str, default_coord: Option<(i32, i32)>) -> Option<Vec<ParsedChunk>> {
+fn parse_ptchunk_source(
+    source: &str,
+    default_coord: Option<(i32, i32)>,
+) -> Option<Vec<ParsedChunk>> {
     let mut current = default_coord;
     let mut chunks = Vec::<WorkingChunk>::new();
     if let Some((x, z)) = current {
@@ -559,7 +558,8 @@ fn collect_node_meshes(
 
     if let Some(mesh) = node.mesh() {
         for primitive in mesh.primitives() {
-            let reader = primitive.reader(|buffer| buffers.get(buffer.index()).map(|d| d.0.as_slice()));
+            let reader =
+                primitive.reader(|buffer| buffers.get(buffer.index()).map(|d| d.0.as_slice()));
             let Some(pos_iter) = reader.read_positions() else {
                 continue;
             };

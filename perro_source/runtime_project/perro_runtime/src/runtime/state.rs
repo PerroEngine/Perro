@@ -284,6 +284,8 @@ pub(crate) struct Render3DState {
     pub(crate) terrain_missing_textures: AHashSet<String>,
     pub(crate) terrain_chunk_tile_sets: AHashMap<String, TerrainChunkTileSet>,
     pub(crate) terrain_chunk_tile_failures: AHashSet<String>,
+    pub(crate) terrain_instance_settings:
+        AHashMap<NodeID, crate::terrain_schema::TerrainSourceSettings>,
     pub(crate) terrain_instance_cache: AHashMap<NodeID, TerrainInstanceCacheState>,
     pub(crate) terrain_chunk_meshes: AHashMap<TerrainChunkMeshKey, TerrainChunkMeshState>,
     pub(crate) terrain_chunk_draws: AHashMap<TerrainChunkMeshKey, RetainedMeshDrawState>,
@@ -315,6 +317,7 @@ impl Render3DState {
             terrain_missing_textures: AHashSet::default(),
             terrain_chunk_tile_sets: AHashMap::default(),
             terrain_chunk_tile_failures: AHashSet::default(),
+            terrain_instance_settings: AHashMap::default(),
             terrain_instance_cache: AHashMap::default(),
             terrain_chunk_meshes: AHashMap::default(),
             terrain_chunk_draws: AHashMap::default(),

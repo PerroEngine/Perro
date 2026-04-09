@@ -233,6 +233,7 @@ impl Runtime {
         self.render_3d.terrain_missing_textures.clear();
         self.render_3d.terrain_chunk_tile_sets.clear();
         self.render_3d.terrain_chunk_tile_failures.clear();
+        self.render_3d.terrain_instance_settings.clear();
         self.render_3d.terrain_instance_cache.clear();
         self.render_3d.terrain_chunk_meshes.clear();
         self.render_3d.terrain_chunk_draws.clear();

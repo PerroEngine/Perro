@@ -272,7 +272,11 @@ impl Renderer3D {
         let mut spot_lights_sorted: Vec<(NodeID, SpotLight3DState)> =
             self.spot_lights.iter().map(|(n, l)| (*n, *l)).collect();
         spot_lights_sorted.sort_unstable_by_key(|(node, _)| node.as_u64());
-        for (slot, (_, light)) in lighting.spot_lights.iter_mut().zip(spot_lights_sorted.iter()) {
+        for (slot, (_, light)) in lighting
+            .spot_lights
+            .iter_mut()
+            .zip(spot_lights_sorted.iter())
+        {
             *slot = Some(*light);
         }
 

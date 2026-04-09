@@ -16,10 +16,51 @@ struct ParsedChunk {
     chunk: TerrainChunk,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TerrainLayerColor {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+impl TerrainLayerColor {
+    pub const fn new(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TerrainLayerRule {
+    pub index: usize,
+    pub name: Option<String>,
+    pub color: TerrainLayerColor,
+    pub color_tolerance: u8,
+    pub texture_source: Option<String>,
+    pub texture_tile_meters: f32,
+    pub texture_rotation_degrees: f32,
+    pub texture_hard_cut: bool,
+    pub blend_with: Vec<usize>,
+    pub friction: Option<f32>,
+    pub restitution: Option<f32>,
+}
+
+#[derive(Clone, Debug)]
 pub struct TerrainSourceSettings {
     pub pixels_per_meter: Option<f32>,
     pub map_resolution_px: Option<f32>,
+    pub layers: Vec<TerrainLayerRule>,
+    pub layer_blendings: Vec<(usize, usize)>,
+}
+
+impl Default for TerrainSourceSettings {
+    fn default() -> Self {
+        Self {
+            pixels_per_meter: None,
+            map_resolution_px: None,
+            layers: Vec::new(),
+            layer_blendings: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -180,9 +221,8 @@ fn load_terrain_from_disk_path(path: &Path) -> Option<LoadedTerrainSource> {
     for candidate in ["terrain.glb", "terrain.gltf"] {
         let gltf_path = path.join(candidate);
         if gltf_path.is_file() {
-            return load_terrain_from_gltf_file(&gltf_path, DEFAULT_CHUNK_SIZE_METERS).map(
-                |terrain| LoadedTerrainSource { terrain, settings },
-            );
+            return load_terrain_from_gltf_file(&gltf_path, DEFAULT_CHUNK_SIZE_METERS)
+                .map(|terrain| LoadedTerrainSource { terrain, settings });
         }
     }
 
@@ -197,10 +237,8 @@ fn load_terrain_from_disk_path(path: &Path) -> Option<LoadedTerrainSource> {
         let mut parsed = parse_terrain_kv(&text, Some(hint), DEFAULT_CHUNK_SIZE_METERS)?;
         chunks.append(&mut parsed);
     }
-    build_terrain_data(DEFAULT_CHUNK_SIZE_METERS, &chunks).map(|terrain| LoadedTerrainSource {
-        terrain,
-        settings,
-    })
+    build_terrain_data(DEFAULT_CHUNK_SIZE_METERS, &chunks)
+        .map(|terrain| LoadedTerrainSource { terrain, settings })
 }
 
 fn load_terrain_folder_settings(dir: &Path) -> TerrainSourceSettings {
@@ -216,9 +254,11 @@ fn load_terrain_folder_settings(dir: &Path) -> TerrainSourceSettings {
 
 fn parse_terrain_settings(source: &str) -> TerrainSourceSettings {
     let mut out = TerrainSourceSettings::default();
+    let mut layers = HashMap::<usize, TerrainLayerRuleBuilder>::new();
+    let mut global_blendings = Vec::<(usize, usize)>::new();
     for raw in source.lines() {
-        let line = strip_line_comment(raw).trim();
-        if line.is_empty() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
             continue;
         }
         let Some((key, value)) = line.split_once('=') else {
@@ -226,20 +266,290 @@ fn parse_terrain_settings(source: &str) -> TerrainSourceSettings {
         };
         let key = key.trim().to_ascii_lowercase();
         let value = value.trim();
-        let Ok(parsed) = value.parse::<f32>() else {
-            continue;
-        };
-        if !parsed.is_finite() || parsed <= 0.0 {
+
+        if key == "layer_blendings" || key == "layer_blending" {
+            global_blendings.extend(parse_layer_blending_pairs(value));
             continue;
         }
-        match key.as_str() {
-            "pixels_per_meter" | "terrain_pixels_per_meter" | "ppm" => {
-                out.pixels_per_meter = Some(parsed);
+
+        if let Some((layer_index, field)) = parse_layer_key(&key) {
+            let entry = layers.entry(layer_index).or_default();
+            match field {
+                "name" => {
+                    if !value.is_empty() {
+                        entry.name = Some(value.to_string());
+                    }
+                }
+                "color" | "rgb" | "hex" | "match_color" | "source_color" => {
+                    if let Some(color) = parse_layer_color(value) {
+                        entry.color = Some(color);
+                    }
+                }
+                "color_tolerance" | "tolerance" | "match_tolerance" | "source_tolerance" => {
+                    if let Ok(parsed) = value.parse::<f32>()
+                        && parsed.is_finite()
+                        && parsed >= 0.0
+                    {
+                        entry.color_tolerance = Some(parsed.round().clamp(0.0, 255.0) as u8);
+                    }
+                }
+                "texture" | "texture_source" => {
+                    if !value.is_empty() {
+                        entry.texture_source = Some(value.to_string());
+                    }
+                }
+                "texture_tile_meters" | "tile_meters" | "tile_size" | "tile" => {
+                    if let Ok(parsed) = value.parse::<f32>()
+                        && parsed.is_finite()
+                        && parsed > 0.0
+                    {
+                        entry.texture_tile_meters = Some(parsed);
+                    }
+                }
+                "texture_rotation_degrees" | "rotation_degrees" | "rotation" => {
+                    if let Ok(parsed) = value.parse::<f32>()
+                        && parsed.is_finite()
+                    {
+                        entry.texture_rotation_degrees = Some(parsed);
+                    }
+                }
+                "hard_cut" | "sample_nearest" | "texture_hard_cut" => {
+                    if let Some(parsed_bool) = parse_bool_token(value) {
+                        entry.texture_hard_cut = Some(parsed_bool);
+                    }
+                }
+                "blending" | "blend_with" | "layer_blendings" => {
+                    entry.blend_with.extend(parse_layer_blend_list(value));
+                }
+                "filter" | "sample_filter" => {
+                    let token = value.trim().to_ascii_lowercase();
+                    match token.as_str() {
+                        "nearest" | "point" | "hard" => entry.texture_hard_cut = Some(true),
+                        "linear" | "smooth" => entry.texture_hard_cut = Some(false),
+                        _ => {}
+                    }
+                }
+                "friction" => {
+                    if let Ok(parsed) = value.parse::<f32>()
+                        && parsed.is_finite()
+                        && parsed >= 0.0
+                    {
+                        entry.friction = Some(parsed);
+                    }
+                }
+                "restitution" | "bounce" => {
+                    if let Ok(parsed) = value.parse::<f32>()
+                        && parsed.is_finite()
+                        && parsed >= 0.0
+                    {
+                        entry.restitution = Some(parsed);
+                    }
+                }
+                _ => {}
             }
-            "map_resolution_px" | "terrain_map_resolution_px" | "texture_resolution_px" => {
-                out.map_resolution_px = Some(parsed);
+            continue;
+        }
+
+        if let Ok(parsed) = value.parse::<f32>()
+            && parsed.is_finite()
+            && parsed > 0.0
+        {
+            match key.as_str() {
+                "pixels_per_meter" | "terrain_pixels_per_meter" | "ppm" => {
+                    out.pixels_per_meter = Some(parsed);
+                }
+                "map_resolution_px" | "terrain_map_resolution_px" | "texture_resolution_px" => {
+                    out.map_resolution_px = Some(parsed);
+                }
+                _ => {}
             }
-            _ => {}
+        }
+    }
+    let mut sorted_layers = layers.into_iter().collect::<Vec<_>>();
+    sorted_layers.sort_unstable_by_key(|(index, _)| *index);
+    out.layers = sorted_layers
+        .into_iter()
+        .filter_map(|(index, layer)| layer.finish(index))
+        .collect();
+    out.layer_blendings = global_blendings;
+    for (a, b) in &out.layer_blendings {
+        if let Some(layer_a) = out.layers.iter_mut().find(|layer| layer.index == *a)
+            && !layer_a.blend_with.contains(b)
+        {
+            layer_a.blend_with.push(*b);
+        }
+        if let Some(layer_b) = out.layers.iter_mut().find(|layer| layer.index == *b)
+            && !layer_b.blend_with.contains(a)
+        {
+            layer_b.blend_with.push(*a);
+        }
+    }
+    for layer in &mut out.layers {
+        layer.blend_with.sort_unstable();
+        layer.blend_with.dedup();
+    }
+    out
+}
+
+#[derive(Default)]
+struct TerrainLayerRuleBuilder {
+    name: Option<String>,
+    color: Option<TerrainLayerColor>,
+    color_tolerance: Option<u8>,
+    texture_source: Option<String>,
+    texture_tile_meters: Option<f32>,
+    texture_rotation_degrees: Option<f32>,
+    texture_hard_cut: Option<bool>,
+    blend_with: Vec<usize>,
+    friction: Option<f32>,
+    restitution: Option<f32>,
+}
+
+impl TerrainLayerRuleBuilder {
+    fn finish(self, index: usize) -> Option<TerrainLayerRule> {
+        let color = self.color?;
+        Some(TerrainLayerRule {
+            index,
+            name: self.name,
+            color,
+            color_tolerance: self.color_tolerance.unwrap_or(0),
+            texture_source: self.texture_source,
+            texture_tile_meters: self.texture_tile_meters.unwrap_or(6.0),
+            texture_rotation_degrees: self.texture_rotation_degrees.unwrap_or(0.0),
+            texture_hard_cut: self.texture_hard_cut.unwrap_or(false),
+            blend_with: self.blend_with,
+            friction: self.friction,
+            restitution: self.restitution,
+        })
+    }
+}
+
+fn parse_layer_key(key: &str) -> Option<(usize, &str)> {
+    let trimmed = key.trim();
+    let rest = trimmed
+        .strip_prefix("layer.")
+        .or_else(|| trimmed.strip_prefix("layers."))
+        .or_else(|| trimmed.strip_prefix("layer"))
+        .or_else(|| trimmed.strip_prefix("layers"))?;
+    let (index_text, field) = rest.split_once('.')?;
+    let index = index_text.trim().parse::<usize>().ok()?;
+    Some((index, field.trim()))
+}
+
+fn parse_layer_color(value: &str) -> Option<TerrainLayerColor> {
+    let value = value.trim();
+    if let Some(hex) = value.strip_prefix('#') {
+        return parse_hex_rgb(hex);
+    }
+    if let Some(hex) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        return parse_hex_rgb(hex);
+    }
+
+    let cleaned = value.trim_start_matches('[').trim_end_matches(']');
+    let comps = cleaned
+        .split(',')
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+        .collect::<Vec<_>>();
+    if comps.len() != 3 {
+        return None;
+    }
+    let mut out = [0u8; 3];
+    for (i, comp) in comps.iter().enumerate() {
+        if let Ok(parsed_int) = comp.parse::<i32>() {
+            out[i] = parsed_int.clamp(0, 255) as u8;
+            continue;
+        }
+        let parsed = comp.parse::<f32>().ok()?;
+        if !parsed.is_finite() {
+            return None;
+        }
+        if parsed <= 1.0 {
+            out[i] = (parsed.clamp(0.0, 1.0) * 255.0).round() as u8;
+        } else {
+            out[i] = parsed.round().clamp(0.0, 255.0) as u8;
+        }
+    }
+    Some(TerrainLayerColor::new(out[0], out[1], out[2]))
+}
+
+fn parse_hex_rgb(value: &str) -> Option<TerrainLayerColor> {
+    let hex = value.trim();
+    if hex.len() != 6 {
+        return None;
+    }
+    let parsed = u32::from_str_radix(hex, 16).ok()?;
+    Some(TerrainLayerColor::new(
+        ((parsed >> 16) & 0xFF) as u8,
+        ((parsed >> 8) & 0xFF) as u8,
+        (parsed & 0xFF) as u8,
+    ))
+}
+
+fn parse_bool_token(value: &str) -> Option<bool> {
+    let token = value.trim().to_ascii_lowercase();
+    match token.as_str() {
+        "true" | "1" | "yes" | "on" => Some(true),
+        "false" | "0" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
+
+fn parse_layer_blend_list(value: &str) -> Vec<usize> {
+    value
+        .replace(['[', ']', ';'], ",")
+        .split(',')
+        .filter_map(|token| token.trim().parse::<usize>().ok())
+        .collect()
+}
+
+fn parse_layer_blending_pairs(value: &str) -> Vec<(usize, usize)> {
+    // Preferred format: array of pairs/tuples, e.g.:
+    // layer_blendings = [(0,1), (1,2)]   or   [[0,1], [1,2]]
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0i32;
+    for ch in value.chars() {
+        match ch {
+            '(' | '[' => {
+                depth += 1;
+                if depth == 2 {
+                    current.clear();
+                } else if depth > 2 {
+                    current.push(ch);
+                }
+            }
+            ')' | ']' => {
+                if depth == 2 {
+                    let nums = parse_layer_blend_list(&current);
+                    if nums.len() == 2 && nums[0] != nums[1] {
+                        out.push((nums[0], nums[1]));
+                    }
+                    current.clear();
+                } else if depth > 2 {
+                    current.push(ch);
+                }
+                depth = (depth - 1).max(0);
+            }
+            _ => {
+                if depth >= 2 {
+                    current.push(ch);
+                }
+            }
+        }
+    }
+    if !out.is_empty() {
+        return out;
+    }
+
+    // Backward-compatible fallback: flat numeric stream grouped by 2.
+    let nums = parse_layer_blend_list(value);
+    for pair in nums.chunks(2) {
+        if pair.len() == 2 && pair[0] != pair[1] {
+            out.push((pair[0], pair[1]));
         }
     }
     out
@@ -757,8 +1067,12 @@ fn delaunay_triangulate_2d(points: &[(f64, f64)]) -> Option<Vec<[usize; 3]>> {
         let p = all_points[p_idx];
         let mut bad = Vec::<usize>::new();
         for (t_idx, tri) in tris.iter().enumerate() {
-            if circumcircle_contains(all_points[tri[0]], all_points[tri[1]], all_points[tri[2]], p)
-            {
+            if circumcircle_contains(
+                all_points[tri[0]],
+                all_points[tri[1]],
+                all_points[tri[2]],
+                p,
+            ) {
                 bad.push(t_idx);
             }
         }
@@ -812,8 +1126,7 @@ fn circumcircle_contains(a: (f64, f64), b: (f64, f64), c: (f64, f64), p: (f64, f
     let cx = c.0 - p.0;
     let cy = c.1 - p.1;
 
-    let det = (ax * ax + ay * ay) * (bx * cy - by * cx)
-        - (bx * bx + by * by) * (ax * cy - ay * cx)
+    let det = (ax * ax + ay * ay) * (bx * cy - by * cx) - (bx * bx + by * by) * (ax * cy - ay * cx)
         + (cx * cx + cy * cy) * (ax * by - ay * bx);
     if orient2d(a, b, c) > 0.0 {
         det > 1.0e-12
@@ -827,4 +1140,78 @@ fn world_to_chunk_coord(world_x: f32, world_z: f32, chunk_size_meters: f32) -> C
     let cx = (world_x * inv + 0.5).floor() as i32;
     let cz = (world_z * inv + 0.5).floor() as i32;
     ChunkCoord::new(cx, cz)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_terrain_settings_reads_layer_rules_sorted_by_index() {
+        let src = r#"
+            pixels_per_meter = 2.0
+            map_resolution_px = 4096
+
+            layer.2.color = #224466
+            layer.2.texture = res://terrain/rock.png
+            layer.2.friction = 1.2
+
+            layer.0.match_color = 128, 200, 64
+            layer.0.match_tolerance = 2
+            layer.0.name = fairway
+            layer.0.tile_meters = 5.0
+            layer.0.rotation_degrees = 15
+            layer.0.restitution = 0.03
+        "#;
+
+        let parsed = parse_terrain_settings(src);
+        assert_eq!(parsed.pixels_per_meter, Some(2.0));
+        assert_eq!(parsed.map_resolution_px, Some(4096.0));
+        assert_eq!(parsed.layers.len(), 2);
+
+        let l0 = &parsed.layers[0];
+        assert_eq!(l0.index, 0);
+        assert_eq!(l0.name.as_deref(), Some("fairway"));
+        assert_eq!(l0.color, TerrainLayerColor::new(128, 200, 64));
+        assert_eq!(l0.color_tolerance, 2);
+        assert_eq!(l0.texture_tile_meters, 5.0);
+        assert_eq!(l0.texture_rotation_degrees, 15.0);
+        assert_eq!(l0.restitution, Some(0.03));
+
+        let l1 = &parsed.layers[1];
+        assert_eq!(l1.index, 2);
+        assert_eq!(l1.color, TerrainLayerColor::new(0x22, 0x44, 0x66));
+        assert_eq!(l1.texture_source.as_deref(), Some("res://terrain/rock.png"));
+        assert_eq!(l1.friction, Some(1.2));
+    }
+
+    #[test]
+    fn parse_terrain_settings_accepts_rgb_float_01() {
+        let src = r#"
+            layer.0.color = 0.5, 0.25, 1.0
+        "#;
+        let parsed = parse_terrain_settings(src);
+        assert_eq!(parsed.layers.len(), 1);
+        let c = parsed.layers[0].color;
+        assert_eq!(c, TerrainLayerColor::new(128, 64, 255));
+    }
+
+    #[test]
+    fn parse_terrain_settings_accepts_layer_blendings_tuples() {
+        let src = r#"
+            layer.0.color = #369528
+            layer.1.color = #21411c
+            layer.2.color = #c8b27a
+            layer_blendings = [(0,1), (1,2)]
+        "#;
+        let parsed = parse_terrain_settings(src);
+        assert_eq!(parsed.layer_blendings, vec![(0, 1), (1, 2)]);
+        let l0 = parsed.layers.iter().find(|l| l.index == 0).unwrap();
+        let l1 = parsed.layers.iter().find(|l| l.index == 1).unwrap();
+        let l2 = parsed.layers.iter().find(|l| l.index == 2).unwrap();
+        assert!(l0.blend_with.contains(&1));
+        assert!(l1.blend_with.contains(&0));
+        assert!(l1.blend_with.contains(&2));
+        assert!(l2.blend_with.contains(&1));
+    }
 }

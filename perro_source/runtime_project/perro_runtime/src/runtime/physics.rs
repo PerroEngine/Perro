@@ -1,4 +1,5 @@
 use crate::Runtime;
+use crate::terrain_schema::{TerrainLayerRule, TerrainSourceSettings};
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{NodeID, SignalID};
 use perro_nodes::{
@@ -414,13 +415,24 @@ impl Runtime {
                 continue;
             };
 
-            let (kind, enabled, rigid, children, material, terrain_ref) = match &node.data {
+            let (
+                kind,
+                enabled,
+                rigid,
+                children,
+                material,
+                terrain_ref,
+                terrain_source,
+                terrain_settings,
+            ) = match &node.data {
                 SceneNodeData::StaticBody3D(body) => (
                     BodyKind::Static,
                     body.enabled,
                     None,
                     node.children_slice().to_vec(),
                     (body.friction, body.restitution),
+                    None,
+                    None,
                     None,
                 ),
                 SceneNodeData::Area3D(body) => (
@@ -430,6 +442,8 @@ impl Runtime {
                     node.children_slice().to_vec(),
                     (0.7, 0.0),
                     None,
+                    None,
+                    None,
                 ),
                 SceneNodeData::RigidBody3D(body) => (
                     BodyKind::Rigid,
@@ -437,6 +451,8 @@ impl Runtime {
                     Some(body.clone()),
                     node.children_slice().to_vec(),
                     (body.friction, body.restitution),
+                    None,
+                    None,
                     None,
                 ),
                 SceneNodeData::TerrainInstance3D(terrain) => (
@@ -446,6 +462,8 @@ impl Runtime {
                     Vec::new(),
                     (0.9, 0.0),
                     Some(terrain.terrain),
+                    terrain.terrain_source.as_deref().map(|v| v.to_string()),
+                    self.render_3d.terrain_instance_settings.get(&id).cloned(),
                 ),
                 _ => continue,
             };
@@ -471,6 +489,14 @@ impl Runtime {
                 && !terrain_id.is_nil()
             {
                 shape_signature = hash_u64(shape_signature, terrain_id.as_u64());
+                if let Some(source) = terrain_source.as_deref() {
+                    for b in source.as_bytes() {
+                        shape_signature = hash_u64(shape_signature, *b as u64);
+                    }
+                }
+                if let Some(settings) = terrain_settings.as_ref() {
+                    shape_signature = hash_terrain_settings(shape_signature, settings);
+                }
                 if let Some(revision) = self
                     .terrain_store
                     .lock()
@@ -515,6 +541,8 @@ impl Runtime {
                         global.scale,
                         material.0,
                         material.1,
+                        terrain_source.as_deref(),
+                        terrain_settings.as_ref(),
                     );
                     for desc in &mut chunk_shapes {
                         desc.sensor = kind == BodyKind::Area;
@@ -1265,6 +1293,157 @@ impl Runtime {
     }
 }
 
+fn hash_terrain_settings(mut state: u64, settings: &TerrainSourceSettings) -> u64 {
+    state = hash_u64(state, settings.layers.len() as u64);
+    for layer in &settings.layers {
+        state = hash_u64(state, layer.index as u64);
+        state = hash_u64(state, layer.color.r as u64);
+        state = hash_u64(state, layer.color.g as u64);
+        state = hash_u64(state, layer.color.b as u64);
+        state = hash_u64(state, layer.color_tolerance as u64);
+        if let Some(name) = layer.name.as_deref() {
+            for b in name.as_bytes() {
+                state = hash_u64(state, *b as u64);
+            }
+        }
+        if let Some(source) = layer.texture_source.as_deref() {
+            for b in source.as_bytes() {
+                state = hash_u64(state, *b as u64);
+            }
+        }
+        state = hash_u64(state, layer.texture_tile_meters.to_bits() as u64);
+        state = hash_u64(state, layer.texture_rotation_degrees.to_bits() as u64);
+        state = hash_u64(state, layer.texture_hard_cut as u64);
+        state = hash_u64(state, layer.friction.unwrap_or(-1.0).to_bits() as u64);
+        state = hash_u64(state, layer.restitution.unwrap_or(-1.0).to_bits() as u64);
+    }
+    state
+}
+
+struct TerrainLayerMap {
+    pixels: image::RgbaImage,
+    layer_rules: Vec<TerrainLayerRule>,
+    width: u32,
+    height: u32,
+    min_x: f32,
+    min_z: f32,
+    inv_span_x: f32,
+    inv_span_z: f32,
+}
+
+fn load_terrain_layer_map(
+    terrain_source: Option<&str>,
+    chunk_size_meters: f32,
+    chunks: &[(ChunkCoord, &TerrainChunk)],
+    layer_rules: &[TerrainLayerRule],
+) -> Option<TerrainLayerMap> {
+    if chunks.is_empty() || layer_rules.is_empty() {
+        return None;
+    }
+    let map_source = terrain_source.and_then(terrain_map_candidate_source)?;
+    let bytes = perro_io::load_asset(&map_source).ok()?;
+    let pixels = image::load_from_memory(&bytes).ok()?.to_rgba8();
+    let width = pixels.width();
+    let height = pixels.height();
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let (min_x, max_x, min_z, max_z) = terrain_bounds_from_chunks(chunk_size_meters, chunks)?;
+    let span_x = (max_x - min_x).max(1.0e-3);
+    let span_z = (max_z - min_z).max(1.0e-3);
+    Some(TerrainLayerMap {
+        pixels,
+        layer_rules: layer_rules.to_vec(),
+        width,
+        height,
+        min_x,
+        min_z,
+        inv_span_x: span_x.recip(),
+        inv_span_z: span_z.recip(),
+    })
+}
+
+fn terrain_bounds_from_chunks(
+    chunk_size_meters: f32,
+    chunks: &[(ChunkCoord, &TerrainChunk)],
+) -> Option<(f32, f32, f32, f32)> {
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut min_z = f32::INFINITY;
+    let mut max_z = f32::NEG_INFINITY;
+    for (coord, chunk) in chunks {
+        let base_x = coord.x as f32 * chunk_size_meters;
+        let base_z = coord.z as f32 * chunk_size_meters;
+        for vertex in chunk.vertices() {
+            min_x = min_x.min(base_x + vertex.position.x);
+            max_x = max_x.max(base_x + vertex.position.x);
+            min_z = min_z.min(base_z + vertex.position.z);
+            max_z = max_z.max(base_z + vertex.position.z);
+        }
+    }
+    if !min_x.is_finite() || !max_x.is_finite() || !min_z.is_finite() || !max_z.is_finite() {
+        return None;
+    }
+    Some((min_x, max_x, min_z, max_z))
+}
+
+fn classify_terrain_layer_for_world_xz(map: &TerrainLayerMap, world_xz: [f32; 2]) -> Option<usize> {
+    let u = ((world_xz[0] - map.min_x) * map.inv_span_x).clamp(0.0, 1.0);
+    let v = ((world_xz[1] - map.min_z) * map.inv_span_z).clamp(0.0, 1.0);
+    let x = (u * (map.width.saturating_sub(1)) as f32).round() as u32;
+    let y = (v * (map.height.saturating_sub(1)) as f32).round() as u32;
+    let pixel = *map.pixels.get_pixel(x, y);
+    terrain_layer_match_index(pixel, &map.layer_rules)
+}
+
+fn terrain_layer_match_index(
+    pixel: image::Rgba<u8>,
+    layer_rules: &[TerrainLayerRule],
+) -> Option<usize> {
+    for (index, layer) in layer_rules.iter().enumerate() {
+        if terrain_layer_color_matches(pixel, layer) {
+            return Some(index);
+        }
+    }
+    None
+}
+
+fn terrain_layer_color_matches(pixel: image::Rgba<u8>, layer: &TerrainLayerRule) -> bool {
+    let dr = (pixel[0] as i16 - layer.color.r as i16).unsigned_abs() as u8;
+    let dg = (pixel[1] as i16 - layer.color.g as i16).unsigned_abs() as u8;
+    let db = (pixel[2] as i16 - layer.color.b as i16).unsigned_abs() as u8;
+    let tol = layer.color_tolerance;
+    dr <= tol && dg <= tol && db <= tol
+}
+
+fn terrain_map_candidate_source(terrain_source: &str) -> Option<String> {
+    let source = terrain_source.trim();
+    if source.is_empty() {
+        return None;
+    }
+    let mut base = source
+        .trim_end_matches('/')
+        .trim_end_matches('\\')
+        .to_string();
+    let lower = base.to_ascii_lowercase();
+    if lower.ends_with(".glb") || lower.ends_with(".gltf") || lower.ends_with(".ptchunk") {
+        if let Some((head, _)) = base.rsplit_once(['/', '\\']) {
+            base = head.to_string();
+        } else {
+            base.clear();
+        }
+    }
+    if base.is_empty() {
+        return Some("terrain_map.png".to_string());
+    }
+    let sep = if base.contains('\\') && !base.contains('/') {
+        '\\'
+    } else {
+        '/'
+    };
+    Some(format!("{base}{sep}terrain_map.png"))
+}
+
 fn body_signature_seed(kind: BodyKind) -> u64 {
     match kind {
         BodyKind::Static => 0xA91B_D58C_24F1_7E31,
@@ -1439,6 +1618,8 @@ impl Runtime {
         terrain_scale: Vector3,
         friction: f32,
         restitution: f32,
+        terrain_source: Option<&str>,
+        terrain_settings: Option<&TerrainSourceSettings>,
     ) -> Vec<ShapeDesc3D> {
         let store = self
             .terrain_store
@@ -1452,21 +1633,77 @@ impl Runtime {
         let sy = terrain_scale.y.abs().max(0.0001);
         let sz = terrain_scale.z.abs().max(0.0001);
         let chunk_size_meters = data.chunk_size_meters();
+        let layer_rules = terrain_settings.map(|s| s.layers.as_slice()).unwrap_or(&[]);
+        let chunk_refs = data.chunks().collect::<Vec<_>>();
+        let terrain_layer_map = load_terrain_layer_map(
+            terrain_source,
+            chunk_size_meters,
+            chunk_refs.as_slice(),
+            layer_rules,
+        );
 
         let mut out = Vec::new();
         for (coord, chunk) in data.chunks() {
-            let Some((vertices, indices)) =
+            let Some((vertices, indices, layer_indices)) =
                 terrain_chunk_to_trimesh(chunk, coord, chunk_size_meters, sx, sy, sz)
             else {
                 continue;
             };
-            out.push(ShapeDesc3D {
-                local: Transform3D::IDENTITY,
-                shape: ShapeKind3D::TriMesh { vertices, indices },
-                sensor: false,
-                friction,
-                restitution,
-            });
+
+            if layer_rules.is_empty() || terrain_layer_map.is_none() {
+                out.push(ShapeDesc3D {
+                    local: Transform3D::IDENTITY,
+                    shape: ShapeKind3D::TriMesh { vertices, indices },
+                    sensor: false,
+                    friction,
+                    restitution,
+                });
+                continue;
+            }
+
+            let layer_map = terrain_layer_map.as_ref().expect("checked above");
+            let mut grouped = AHashMap::<usize, Vec<[u32; 3]>>::new();
+            let mut fallback = Vec::<[u32; 3]>::new();
+            for (tri_ix, tri) in indices.iter().copied().enumerate() {
+                let layer = layer_indices
+                    .get(tri_ix)
+                    .and_then(|world| classify_terrain_layer_for_world_xz(layer_map, *world))
+                    .and_then(|idx| layer_rules.get(idx).map(|_| idx));
+                if let Some(layer) = layer {
+                    grouped.entry(layer).or_default().push(tri);
+                } else {
+                    fallback.push(tri);
+                }
+            }
+
+            for (layer_idx, layer_tris) in grouped {
+                if layer_tris.is_empty() {
+                    continue;
+                }
+                let layer = &layer_rules[layer_idx];
+                out.push(ShapeDesc3D {
+                    local: Transform3D::IDENTITY,
+                    shape: ShapeKind3D::TriMesh {
+                        vertices: vertices.clone(),
+                        indices: layer_tris,
+                    },
+                    sensor: false,
+                    friction: layer.friction.unwrap_or(friction),
+                    restitution: layer.restitution.unwrap_or(restitution),
+                });
+            }
+            if !fallback.is_empty() {
+                out.push(ShapeDesc3D {
+                    local: Transform3D::IDENTITY,
+                    shape: ShapeKind3D::TriMesh {
+                        vertices,
+                        indices: fallback,
+                    },
+                    sensor: false,
+                    friction,
+                    restitution,
+                });
+            }
         }
         out
     }
@@ -1757,7 +1994,7 @@ fn terrain_chunk_to_trimesh(
     sx: f32,
     sy: f32,
     sz: f32,
-) -> Option<(Vec<na3::Point3<f32>>, Vec<[u32; 3]>)> {
+) -> Option<(Vec<na3::Point3<f32>>, Vec<[u32; 3]>, Vec<[f32; 2]>)> {
     if chunk.vertices().is_empty() || chunk.triangles().is_empty() {
         return None;
     }
@@ -1769,6 +2006,7 @@ fn terrain_chunk_to_trimesh(
     }
 
     let mut indices = Vec::with_capacity(chunk.triangles().len());
+    let mut layer_sample_points = Vec::with_capacity(chunk.triangles().len());
     for tri in chunk.triangles() {
         if tri.a >= vertices.len() || tri.b >= vertices.len() || tri.c >= vertices.len() {
             continue;
@@ -1787,10 +2025,16 @@ fn terrain_chunk_to_trimesh(
         }
 
         indices.push([tri.a as u32, ib, ic]);
+        let va = chunk.vertices()[tri.a].position;
+        let vb = chunk.vertices()[tri.b].position;
+        let vc = chunk.vertices()[tri.c].position;
+        let center_x = coord.x as f32 * chunk_size_meters + (va.x + vb.x + vc.x) / 3.0;
+        let center_z = coord.z as f32 * chunk_size_meters + (va.z + vb.z + vc.z) / 3.0;
+        layer_sample_points.push([center_x, center_z]);
     }
 
     if indices.is_empty() {
         return None;
     }
-    Some((vertices, indices))
+    Some((vertices, indices, layer_sample_points))
 }

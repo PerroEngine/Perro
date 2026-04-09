@@ -115,6 +115,9 @@ impl Runtime {
             if terrain.terrain_map_resolution_px.is_none() {
                 terrain.terrain_map_resolution_px = loaded.settings.map_resolution_px;
             }
+            self.render_3d
+                .terrain_instance_settings
+                .insert(node, loaded.settings.clone());
             return true;
         }
 

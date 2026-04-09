@@ -35,11 +35,7 @@ impl Transform3D {
                 Quat::IDENTITY
             }
         };
-        Mat4::from_scale_rotation_translation(
-            self.scale.into(),
-            rotation,
-            self.position.into(),
-        )
+        Mat4::from_scale_rotation_translation(self.scale.into(), rotation, self.position.into())
     }
 
     /// Create from a Mat4 (extracts TRS components)

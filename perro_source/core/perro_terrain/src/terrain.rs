@@ -1,6 +1,6 @@
 use crate::{
-    BrushOp, BrushShape, ChunkConfig, ChunkCoord, ChunkError, InsertVertexResult, TerrainChunk,
-    DEFAULT_CHUNK_SIZE_METERS,
+    BrushOp, BrushShape, ChunkConfig, ChunkCoord, ChunkError, DEFAULT_CHUNK_SIZE_METERS,
+    InsertVertexResult, TerrainChunk,
 };
 use perro_structs::Vector3;
 use std::collections::HashSet;

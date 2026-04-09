@@ -801,14 +801,19 @@ impl Gpu3D {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_mesh_pipeline_layout"),
-            bind_group_layouts: &[Some(&camera_bgl), Some(&material_texture_bgl), Some(&shadow_bgl)],
+            bind_group_layouts: &[
+                Some(&camera_bgl),
+                Some(&material_texture_bgl),
+                Some(&shadow_bgl),
+            ],
             immediate_size: 0,
         });
-        let depth_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_depth_pipeline_layout"),
-            bind_group_layouts: &[Some(&camera_bgl)],
-            immediate_size: 0,
-        });
+        let depth_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_depth_pipeline_layout"),
+                bind_group_layouts: &[Some(&camera_bgl)],
+                immediate_size: 0,
+            });
         let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_sky3d_pipeline_layout"),
             bind_group_layouts: &[Some(&sky_bgl)],
@@ -892,16 +897,24 @@ impl Gpu3D {
             &depth_prepass_shader,
             Some(wgpu::Face::Back),
         );
-        let pipeline_depth_prepass_double_sided =
-            create_depth_prepass_pipeline(device, &depth_pipeline_layout, &depth_prepass_shader, None);
+        let pipeline_depth_prepass_double_sided = create_depth_prepass_pipeline(
+            device,
+            &depth_pipeline_layout,
+            &depth_prepass_shader,
+            None,
+        );
         let pipeline_shadow_depth_culled = create_shadow_depth_pipeline(
             device,
             &depth_pipeline_layout,
             &depth_prepass_shader,
             Some(wgpu::Face::Back),
         );
-        let pipeline_shadow_depth_double_sided =
-            create_shadow_depth_pipeline(device, &depth_pipeline_layout, &depth_prepass_shader, None);
+        let pipeline_shadow_depth_double_sided = create_shadow_depth_pipeline(
+            device,
+            &depth_pipeline_layout,
+            &depth_prepass_shader,
+            None,
+        );
 
         let (vertices, indices, builtin_mesh_ranges, builtin_meshlets) =
             build_builtin_mesh_buffer();
@@ -1411,11 +1424,12 @@ impl Gpu3D {
             ],
             immediate_size: 0,
         });
-        let depth_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_depth_pipeline_layout"),
-            bind_group_layouts: &[Some(&self.camera_bgl)],
-            immediate_size: 0,
-        });
+        let depth_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_depth_pipeline_layout"),
+                bind_group_layouts: &[Some(&self.camera_bgl)],
+                immediate_size: 0,
+            });
         let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_sky3d_pipeline_layout"),
             bind_group_layouts: &[Some(&self.sky_bgl)],
@@ -1492,16 +1506,24 @@ impl Gpu3D {
             &depth_prepass_shader,
             Some(wgpu::Face::Back),
         );
-        self.pipeline_depth_prepass_double_sided =
-            create_depth_prepass_pipeline(device, &depth_pipeline_layout, &depth_prepass_shader, None);
+        self.pipeline_depth_prepass_double_sided = create_depth_prepass_pipeline(
+            device,
+            &depth_pipeline_layout,
+            &depth_prepass_shader,
+            None,
+        );
         self.pipeline_shadow_depth_culled = create_shadow_depth_pipeline(
             device,
             &depth_pipeline_layout,
             &depth_prepass_shader,
             Some(wgpu::Face::Back),
         );
-        self.pipeline_shadow_depth_double_sided =
-            create_shadow_depth_pipeline(device, &depth_pipeline_layout, &depth_prepass_shader, None);
+        self.pipeline_shadow_depth_double_sided = create_shadow_depth_pipeline(
+            device,
+            &depth_pipeline_layout,
+            &depth_prepass_shader,
+            None,
+        );
         self.sky_pipeline = create_sky_pipeline(
             device,
             &sky_pipeline_layout,
@@ -2026,18 +2048,18 @@ impl Gpu3D {
                             custom_params_offset,
                             custom_params_len,
                         ));
-                    push_draw_batch(
-                        &mut self.draw_batches,
-                        range,
+                        push_draw_batch(
+                            &mut self.draw_batches,
+                            range,
                             instance,
                             standard_params.double_sided || self.meshlet_debug_view,
                             material_kind.clone(),
                             standard_params.base_color_texture,
-                        (mesh_asset.bounds_center, mesh_asset.bounds_radius),
-                        occlusion_query,
-                        is_terrain_mesh,
-                        !is_terrain_mesh,
-                    );
+                            (mesh_asset.bounds_center, mesh_asset.bounds_radius),
+                            occlusion_query,
+                            is_terrain_mesh,
+                            !is_terrain_mesh,
+                        );
                     }
                 }
             } else {
@@ -2292,7 +2314,11 @@ impl Gpu3D {
         self.shadow_focus_center = focus_center;
         self.shadow_focus_radius = focus_radius;
         if self.last_shadow_scene != Some(shadow_scene) {
-            queue.write_buffer(&self.shadow_camera_buffer, 0, bytemuck::bytes_of(&shadow_scene));
+            queue.write_buffer(
+                &self.shadow_camera_buffer,
+                0,
+                bytemuck::bytes_of(&shadow_scene),
+            );
             self.last_shadow_scene = Some(shadow_scene);
         }
         if self.last_shadow != Some(shadow_uniform) {
@@ -3885,7 +3911,8 @@ fn create_cached_material_texture(
         address_mode_w: wgpu::AddressMode::Repeat,
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+        mipmap_filter: wgpu::MipmapFilterMode::Linear,
+        anisotropy_clamp: 16,
         ..Default::default()
     });
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -5120,7 +5147,10 @@ fn build_scene_uniform(
     }
 
     // Only synthesize sky sun/moon directional lights when no explicit rays exist.
-    if !DEBUG_FORCE_WORLD_SUN_DIR && !has_explicit_rays && let Some(sky) = lighting.sky.as_ref() {
+    if !DEBUG_FORCE_WORLD_SUN_DIR
+        && !has_explicit_rays
+        && let Some(sky) = lighting.sky.as_ref()
+    {
         let (sun_body_dir, moon_body_dir) =
             sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
         // Sky returns body position directions (origin -> sun/moon).
@@ -5141,10 +5171,9 @@ fn build_scene_uniform(
             day_col[2] + (eve_col[2] - day_col[2]) * (dusk_amt * 0.90),
         ];
         let sun_visibility = horizon_visibility(sun_body_dir.y);
-        let sun_intensity = (((day_amt * 1.35) + (dusk_amt * 0.22))
-            * sky.sun_size.max(0.1)
-            * sun_visibility)
-            .max(0.0);
+        let sun_intensity =
+            (((day_amt * 1.35) + (dusk_amt * 0.22)) * sky.sun_size.max(0.1) * sun_visibility)
+                .max(0.0);
 
         let moon_color = [
             night_col[0] * 0.80,
@@ -5152,8 +5181,8 @@ fn build_scene_uniform(
             (night_col[2] * 1.05).max(0.0),
         ];
         let moon_visibility = horizon_visibility(moon_body_dir.y);
-        let moon_intensity = ((night_amt * 0.18) * sky.moon_size.max(0.05) * moon_visibility)
-            .max(0.0);
+        let moon_intensity =
+            ((night_amt * 0.18) * sky.moon_size.max(0.05) * moon_visibility).max(0.0);
 
         push_ray(sun_dir, sun_color, sun_intensity);
         push_ray(moon_dir, moon_color, moon_intensity);
@@ -5247,11 +5276,9 @@ fn build_shadow_setup(
         let sun_intensity = (((day_amt * 1.35) + (dusk_amt * 0.22))
             * sky.sun_size.max(0.1)
             * horizon_visibility(sun_body_dir.y))
-            .max(0.0);
+        .max(0.0);
         let moon_intensity =
-            ((night_amt * 0.18)
-                * sky.moon_size.max(0.05)
-                * horizon_visibility(moon_body_dir.y))
+            ((night_amt * 0.18) * sky.moon_size.max(0.05) * horizon_visibility(moon_body_dir.y))
                 .max(0.0);
         if sun_intensity > 1.0e-4 {
             Some(sun_dir)
@@ -5430,7 +5457,13 @@ fn build_shadow_setup(
     // params0 = [enabled, strength, depth_bias, normal_bias]
     shadow_uniform.params0 = [1.0, 1.0, 0.00002, 0.0];
 
-    (shadow_scene, shadow_uniform, true, focus_center, focus_radius)
+    (
+        shadow_scene,
+        shadow_uniform,
+        true,
+        focus_center,
+        focus_radius,
+    )
 }
 
 fn camera_frustum_corners_world(
@@ -5501,11 +5534,7 @@ fn compute_shadow_focus_bounds(
         }
         let start = batch.instance_start as usize;
         let end = (batch.instance_start + batch.instance_count) as usize;
-        for inst in staged_instances
-            .get(start..end)
-            .unwrap_or(&[])
-            .iter()
-        {
+        for inst in staged_instances.get(start..end).unwrap_or(&[]).iter() {
             let model_cols = model_cols_from_affine_rows(inst);
             let model = Mat4::from_cols_array_2d(&model_cols);
             if !model.is_finite() {
@@ -5552,8 +5581,6 @@ fn light_stable_axes(light_dir: Vec3, fallback_up: Vec3) -> (Vec3, Vec3) {
     let up = right.cross(f).normalize_or_zero();
     (right, up)
 }
-
-
 
 fn build_sky_uniform(
     camera: &Camera3DState,
