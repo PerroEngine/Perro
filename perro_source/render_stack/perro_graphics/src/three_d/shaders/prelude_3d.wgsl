@@ -149,11 +149,7 @@ fn shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light:
     }
     let n = normalize(normal_ws);
     let l = normalize(light_dir_to_light);
-    // Receiver-plane normal offset to suppress self-shadow acne on broad,
-    // near-flat surfaces (terrain chunks at equal height).
-    let flat_surface = smoothstep(0.90, 0.995, abs(n.y));
-    let receiver_offset = shadow.params0.w * mix(0.08, 0.45, flat_surface);
-    let receiver_pos = world_pos + n * receiver_offset;
+    let receiver_pos = world_pos;
     let light_clip = shadow.light_view_proj * vec4<f32>(receiver_pos, 1.0);
     if abs(light_clip.w) <= 1.0e-6 {
         return 1.0;
@@ -161,30 +157,21 @@ fn shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light:
     let ndc = light_clip.xyz / light_clip.w;
     let uv = ndc.xy * 0.5 + vec2<f32>(0.5);
     let depth = ndc.z;
-    let slope = 1.0 - max(dot(n, l), 0.0);
-    let bias = shadow.params0.z
-        + slope * (shadow.params0.w * 0.18)
-        + flat_surface * shadow.params0.w * 0.12;
+    let bias = shadow.params0.z;
     let dims = max(vec2<f32>(textureDimensions(shadow_map_tex)), vec2<f32>(1.0));
     let texel = 1.0 / dims;
-    if depth <= 0.0 || depth >= 1.0 {
+    if depth <= 0.0 || depth >= 1.0
+        || any(uv < texel)
+        || any(uv > (vec2<f32>(1.0) - texel)) {
         return 1.0;
     }
-    let uv_safe = clamp(uv, texel, vec2<f32>(1.0) - texel);
-    var sum = 0.0;
-    for (var y = -1; y <= 1; y = y + 1) {
-        for (var x = -1; x <= 1; x = x + 1) {
-            let offset = vec2<f32>(f32(x), f32(y)) * texel;
-            let uv_tap = clamp(uv_safe + offset, texel, vec2<f32>(1.0) - texel);
-            sum += textureSampleCompare(
-                shadow_map_tex,
-                shadow_map_sampler,
-                uv_tap,
-                depth - bias
-            );
-        }
-    }
-    let visibility = sum / 9.0;
+    let uv_safe = uv;
+    let visibility = textureSampleCompare(
+        shadow_map_tex,
+        shadow_map_sampler,
+        uv_safe,
+        depth - bias
+    );
     let strength = clamp(shadow.params0.y, 0.0, 1.0);
     return mix(1.0, visibility, strength);
 }

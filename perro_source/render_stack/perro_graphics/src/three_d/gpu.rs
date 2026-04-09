@@ -48,6 +48,10 @@ const SHADOW_MAP_SIZE: u32 = 4096;
 const SHADOW_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const SHADOW_MAP_DEPTH_BIAS_CONST: i32 = 2;
 const SHADOW_MAP_DEPTH_BIAS_SLOPE: f32 = 2.0;
+// Debug lock: force a fixed world-space directional light vector.
+// Set to false after validating shadow stability.
+const DEBUG_FORCE_WORLD_SUN_DIR: bool = false;
+const DEBUG_WORLD_SUN_DIR: [f32; 3] = [-0.45, -0.85, -0.28];
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
@@ -5069,6 +5073,16 @@ fn build_scene_uniform(
         ray_count += 1;
     };
 
+    if DEBUG_FORCE_WORLD_SUN_DIR {
+        let d = Vec3::new(
+            DEBUG_WORLD_SUN_DIR[0],
+            DEBUG_WORLD_SUN_DIR[1],
+            DEBUG_WORLD_SUN_DIR[2],
+        )
+        .normalize_or_zero();
+        push_ray(d, [1.0, 0.98, 0.92], 1.0);
+    }
+
     let has_explicit_rays = lighting
         .ray_lights
         .iter()
@@ -5076,21 +5090,23 @@ fn build_scene_uniform(
         .any(|ray| ray.intensity > 1.0e-4);
 
     // Prefer authored directional lights when present.
-    for ray in lighting.ray_lights.iter().flatten() {
-        if !ray.cast_shadows {
-            continue;
+    if !DEBUG_FORCE_WORLD_SUN_DIR {
+        for ray in lighting.ray_lights.iter().flatten() {
+            if !ray.cast_shadows {
+                continue;
+            }
+            push_ray(Vec3::from(ray.direction), ray.color, ray.intensity);
         }
-        push_ray(Vec3::from(ray.direction), ray.color, ray.intensity);
-    }
-    for ray in lighting.ray_lights.iter().flatten() {
-        if ray.cast_shadows {
-            continue;
+        for ray in lighting.ray_lights.iter().flatten() {
+            if ray.cast_shadows {
+                continue;
+            }
+            push_ray(Vec3::from(ray.direction), ray.color, ray.intensity);
         }
-        push_ray(Vec3::from(ray.direction), ray.color, ray.intensity);
     }
 
     // Only synthesize sky sun/moon directional lights when no explicit rays exist.
-    if !has_explicit_rays && let Some(sky) = lighting.sky.as_ref() {
+    if !DEBUG_FORCE_WORLD_SUN_DIR && !has_explicit_rays && let Some(sky) = lighting.sky.as_ref() {
         let (sun_body_dir, moon_body_dir) =
             sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
         // Sky returns body position directions (origin -> sun/moon).
@@ -5230,7 +5246,14 @@ fn build_shadow_setup(
     });
 
     // Prefer authored directional lights when present.
-    let dir = if let Some(ray) = explicit_shadow_ray {
+    let dir = if DEBUG_FORCE_WORLD_SUN_DIR {
+        Vec3::new(
+            DEBUG_WORLD_SUN_DIR[0],
+            DEBUG_WORLD_SUN_DIR[1],
+            DEBUG_WORLD_SUN_DIR[2],
+        )
+        .normalize_or_zero()
+    } else if let Some(ray) = explicit_shadow_ray {
         Vec3::from(ray.direction).normalize_or_zero()
     } else if let Some(dir) = sky_shadow_dir {
         dir.normalize_or_zero()
@@ -5248,9 +5271,9 @@ fn build_shadow_setup(
     } else {
         Vec3::Y
     };
-    let distance = focus_radius * 3.0 + 80.0;
+    let distance = focus_radius * 2.0 + 40.0;
     let mut eye = focus_center - dir * distance;
-    let extent = (focus_radius * 1.65).max(28.0);
+    let extent = (focus_radius * 1.3).max(10.0);
     let (right_axis, up_axis) = light_stable_axes(dir, up);
     let world_units_per_texel = ((extent * 2.0) / SHADOW_MAP_SIZE as f32).max(1.0e-6);
     let center_x = focus_center.dot(right_axis);
@@ -5262,8 +5285,8 @@ fn build_shadow_setup(
     focus_center += center_delta;
     eye += center_delta;
     let view = Mat4::look_at_rh(eye, focus_center, up);
-    let near = 0.1;
-    let far = (distance + focus_radius * 6.0 + 160.0).max(near + 1.0);
+    let near = 1.0;
+    let far = (distance + focus_radius * 2.0 + 40.0).max(near + 1.0);
     let proj = Mat4::orthographic_rh(-extent, extent, -extent, extent, near, far);
     let light_view_proj = proj * view;
     if !light_view_proj.is_finite() {
@@ -5272,21 +5295,63 @@ fn build_shadow_setup(
 
     shadow_scene.view_proj = light_view_proj.to_cols_array_2d();
     shadow_uniform.light_view_proj = shadow_scene.view_proj;
-    // Tuned for stable terrain + mesh shadows without lifted/peter-panned contact.
+    // No falloff debug mode: very small constant bias for contact shadows.
     // params0 = [enabled, strength, depth_bias, normal_bias]
-    shadow_uniform.params0 = [1.0, 1.0, 0.00025, 0.012];
+    shadow_uniform.params0 = [1.0, 1.0, 0.00002, 0.0];
 
     (shadow_scene, shadow_uniform, true)
 }
 
 fn compute_shadow_focus_bounds(
-    _camera: &Camera3DState,
-    _draw_batches: &[DrawBatch],
-    _staged_instances: &[InstanceGpu],
+    camera: &Camera3DState,
+    draw_batches: &[DrawBatch],
+    staged_instances: &[InstanceGpu],
 ) -> (Vec3, f32) {
-    // Debug-stable world-space lock: prevents any camera-motion-coupled shadow drift.
-    // Scene appears centered near origin; widen radius if your play area is larger.
-    (Vec3::ZERO, 120.0)
+    let mut any = false;
+    let mut min = Vec3::splat(f32::INFINITY);
+    let mut max = Vec3::splat(f32::NEG_INFINITY);
+
+    for batch in draw_batches {
+        if batch.draw_on_top || !batch.casts_shadows {
+            continue;
+        }
+        let start = batch.instance_start as usize;
+        let end = (batch.instance_start + batch.instance_count) as usize;
+        for inst in staged_instances
+            .get(start..end)
+            .unwrap_or(&[])
+            .iter()
+        {
+            let model_cols = model_cols_from_affine_rows(inst);
+            let model = Mat4::from_cols_array_2d(&model_cols);
+            if !model.is_finite() {
+                continue;
+            }
+            let local_center = Vec3::new(
+                batch.local_center[0],
+                batch.local_center[1],
+                batch.local_center[2],
+            );
+            let center_world = (model * local_center.extend(1.0)).truncate();
+            let sx = Vec3::new(model.x_axis.x, model.x_axis.y, model.x_axis.z).length();
+            let sy = Vec3::new(model.y_axis.x, model.y_axis.y, model.y_axis.z).length();
+            let sz = Vec3::new(model.z_axis.x, model.z_axis.y, model.z_axis.z).length();
+            let scale = sx.max(sy).max(sz).max(1.0e-6);
+            let radius_world = (batch.local_radius.max(0.0) * scale).max(0.25);
+            let r = Vec3::splat(radius_world);
+            min = min.min(center_world - r);
+            max = max.max(center_world + r);
+            any = true;
+        }
+    }
+
+    if !any {
+        return (Vec3::from(camera.position), 64.0);
+    }
+
+    let center = (min + max) * 0.5;
+    let radius = ((max - min) * 0.5).length().clamp(10.0, 600.0);
+    (center, radius)
 }
 
 fn light_stable_axes(light_dir: Vec3, fallback_up: Vec3) -> (Vec3, Vec3) {
