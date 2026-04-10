@@ -2628,6 +2628,7 @@ dependencies = [
  "perro_variant",
  "rapier2d",
  "rapier3d",
+ "rayon",
 ]
 
 [[package]]

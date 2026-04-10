@@ -4,6 +4,7 @@ mod render_result;
 mod rs_ctx;
 mod runtime;
 mod runtime_project;
+pub mod terrain_bake;
 mod terrain_schema;
 
 pub mod rt_ctx;

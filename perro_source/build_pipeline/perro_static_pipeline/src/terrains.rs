@@ -6,6 +6,7 @@ use perro_runtime::{
     load_terrain_from_folder_source,
 };
 use perro_terrain::{ChunkConfig, TerrainChunk, TerrainData, Triangle, Vertex};
+use rayon::prelude::*;
 use perro_structs::Vector3;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -326,7 +327,7 @@ fn bake_static_terrain_chunk_tiles(
     let (terrain_min_x, terrain_max_x, terrain_min_z, terrain_max_z) = terrain_bounds;
     let span_x = (terrain_max_x - terrain_min_x).max(1.0e-3);
     let span_z = (terrain_max_z - terrain_min_z).max(1.0e-3);
-    let mut upscale = terrain_layer_bake_upscale(
+    let mut upscale = perro_runtime::terrain_bake::terrain_layer_bake_upscale(
         rules,
         loaded.settings.pixels_per_meter,
         map_w,
@@ -354,7 +355,7 @@ fn bake_static_terrain_chunk_tiles(
 
     let out_w = map_w.saturating_mul(upscale).max(1);
     let out_h = map_h.saturating_mul(upscale).max(1);
-    let baked_map = build_layered_terrain_chunk_tile(
+    let baked_map = perro_runtime::terrain_bake::build_layered_terrain_chunk_tile(
         &map_image,
         &layer_textures,
         rules,
@@ -370,64 +371,68 @@ fn bake_static_terrain_chunk_tiles(
     let baked_texture_source = format!("res://{}/{}/terrain_map.png", TERRAIN_BAKED_TILE_DIR, base_hash);
     let baked_rel_path = format!("{}/terrain_map.ptex", base_hash);
 
-    let mut tiles = Vec::new();
-    let mut physics = Vec::new();
-    for (coord, chunk) in chunks {
-        let Some((chunk_min_x, chunk_max_x, chunk_min_z, chunk_max_z)) =
-            terrain_chunk_world_bounds(chunk_size, coord, chunk)
-        else {
-            continue;
-        };
-        let u0 = ((chunk_min_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
-        let u1 = ((chunk_max_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
-        let v0 = ((chunk_min_z - terrain_min_z) / span_z).clamp(0.0, 1.0);
-        let v1 = ((chunk_max_z - terrain_min_z) / span_z).clamp(0.0, 1.0);
+    let per_chunk = chunks
+        .par_iter()
+        .filter_map(|(coord, chunk)| {
+            let (chunk_min_x, chunk_max_x, chunk_min_z, chunk_max_z) =
+                terrain_chunk_world_bounds(chunk_size, *coord, chunk)?;
+            let u0 = ((chunk_min_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
+            let u1 = ((chunk_max_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
+            let v0 = ((chunk_min_z - terrain_min_z) / span_z).clamp(0.0, 1.0);
+            let v1 = ((chunk_max_z - terrain_min_z) / span_z).clamp(0.0, 1.0);
 
-        let mut x0 = (u0 * map_w as f32).floor() as u32;
-        let mut x1 = (u1 * map_w as f32).ceil() as u32;
-        let mut y0 = (v0 * map_h as f32).floor() as u32;
-        let mut y1 = (v1 * map_h as f32).ceil() as u32;
-        if x1 <= x0 {
-            x1 = (x0 + 1).min(map_w);
-        }
-        if y1 <= y0 {
-            y1 = (y0 + 1).min(map_h);
-        }
-        x0 = x0.min(map_w.saturating_sub(1));
-        y0 = y0.min(map_h.saturating_sub(1));
-        x1 = x1.max(x0 + 1).min(map_w);
-        y1 = y1.max(y0 + 1).min(map_h);
+            let mut x0 = (u0 * map_w as f32).floor() as u32;
+            let mut x1 = (u1 * map_w as f32).ceil() as u32;
+            let mut y0 = (v0 * map_h as f32).floor() as u32;
+            let mut y1 = (v1 * map_h as f32).ceil() as u32;
+            if x1 <= x0 {
+                x1 = (x0 + 1).min(map_w);
+            }
+            if y1 <= y0 {
+                y1 = (y0 + 1).min(map_h);
+            }
+            x0 = x0.min(map_w.saturating_sub(1));
+            y0 = y0.min(map_h.saturating_sub(1));
+            x1 = x1.max(x0 + 1).min(map_w);
+            y1 = y1.max(y0 + 1).min(map_h);
 
-        let x0_scaled = x0 as f32 * upscale as f32;
-        let y0_scaled = y0 as f32 * upscale as f32;
-        let x1_scaled = x1 as f32 * upscale as f32;
-        let y1_scaled = y1 as f32 * upscale as f32;
-        let uv_min = [(x0_scaled + 0.5) / out_w as f32, (y0_scaled + 0.5) / out_h as f32];
-        let uv_max = [
-            (x1_scaled - 0.5).max(uv_min[0] * out_w as f32 + 1.0e-4) / out_w as f32,
-            (y1_scaled - 0.5).max(uv_min[1] * out_h as f32 + 1.0e-4) / out_h as f32,
-        ];
-        tiles.push(TerrainBakedChunkTile {
-            chunk_x: coord.x,
-            chunk_z: coord.z,
-            texture_source: baked_texture_source.clone(),
-            uv_min,
-            uv_max,
-        });
-
-        let tri_layers = bake_chunk_triangle_layers(
-            &map_image,
-            rules,
-            terrain_bounds,
-            chunk_size,
-            coord,
-            chunk,
-        );
-        physics.push(TerrainBakedChunkPhysics {
-            chunk_x: coord.x,
-            chunk_z: coord.z,
-            triangle_layers: tri_layers,
-        });
+            let x0_scaled = x0 as f32 * upscale as f32;
+            let y0_scaled = y0 as f32 * upscale as f32;
+            let x1_scaled = x1 as f32 * upscale as f32;
+            let y1_scaled = y1 as f32 * upscale as f32;
+            let uv_min = [(x0_scaled + 0.5) / out_w as f32, (y0_scaled + 0.5) / out_h as f32];
+            let uv_max = [
+                (x1_scaled - 0.5).max(uv_min[0] * out_w as f32 + 1.0e-4) / out_w as f32,
+                (y1_scaled - 0.5).max(uv_min[1] * out_h as f32 + 1.0e-4) / out_h as f32,
+            ];
+            let tile = TerrainBakedChunkTile {
+                chunk_x: coord.x,
+                chunk_z: coord.z,
+                texture_source: baked_texture_source.clone(),
+                uv_min,
+                uv_max,
+            };
+            let tri_layers = bake_chunk_triangle_layers(
+                &map_image,
+                rules,
+                terrain_bounds,
+                chunk_size,
+                *coord,
+                chunk,
+            );
+            let physics = TerrainBakedChunkPhysics {
+                chunk_x: coord.x,
+                chunk_z: coord.z,
+                triangle_layers: tri_layers,
+            };
+            Some((tile, physics))
+        })
+        .collect::<Vec<_>>();
+    let mut tiles = Vec::with_capacity(per_chunk.len());
+    let mut physics = Vec::with_capacity(per_chunk.len());
+    for (tile, phys) in per_chunk {
+        tiles.push(tile);
+        physics.push(phys);
     }
 
     Ok(BakedTerrainTilesResult {
@@ -671,30 +676,6 @@ fn classify_layer_from_world_xz(
         .find_map(|(i, rule)| terrain_layer_color_matches(pixel, rule).then_some(i))
 }
 
-fn terrain_layer_bake_upscale(
-    layer_rules: &[TerrainLayerRule],
-    terrain_pixels_per_meter: Option<f32>,
-    map_width: u32,
-    map_height: u32,
-    terrain_span_x: f32,
-    terrain_span_z: f32,
-) -> u32 {
-    const TERRAIN_LAYER_BAKE_UPSCALE_DEFAULT: f32 = 4.0;
-    const TERRAIN_LAYER_BAKE_UPSCALE_MAX: f32 = 16.0;
-
-    if layer_rules.is_empty() {
-        return 1;
-    }
-
-    let base_ppm_x = map_width.max(1) as f32 / terrain_span_x.max(1.0e-3);
-    let base_ppm_z = map_height.max(1) as f32 / terrain_span_z.max(1.0e-3);
-    let base_ppm = base_ppm_x.min(base_ppm_z).max(1.0e-5);
-    let target_ppm = terrain_pixels_per_meter
-        .filter(|v| v.is_finite() && *v > 0.0)
-        .unwrap_or(base_ppm * TERRAIN_LAYER_BAKE_UPSCALE_DEFAULT);
-    (target_ppm / base_ppm).ceil().clamp(1.0, TERRAIN_LAYER_BAKE_UPSCALE_MAX) as u32
-}
-
 fn hash_layer_rules(hasher: &mut DefaultHasher, rules: &[TerrainLayerRule]) {
     rules.len().hash(hasher);
     for rule in rules {
@@ -714,263 +695,6 @@ fn hash_layer_rules(hasher: &mut DefaultHasher, rules: &[TerrainLayerRule]) {
         rule.friction.unwrap_or(-1.0).to_bits().hash(hasher);
         rule.restitution.unwrap_or(-1.0).to_bits().hash(hasher);
     }
-}
-
-fn build_layered_terrain_chunk_tile(
-    terrain_map: &image::RgbaImage,
-    layer_textures: &[Option<image::RgbaImage>],
-    layer_rules: &[TerrainLayerRule],
-    terrain_bounds: (f32, f32, f32, f32),
-    px0: u32,
-    py0: u32,
-    out_width: u32,
-    out_height: u32,
-    upscale: u32,
-) -> image::RgbaImage {
-    let (terrain_min_x, terrain_max_x, terrain_min_z, terrain_max_z) = terrain_bounds;
-    let span_x = (terrain_max_x - terrain_min_x).max(1.0e-3);
-    let span_z = (terrain_max_z - terrain_min_z).max(1.0e-3);
-    let map_w = terrain_map.width().max(1);
-    let map_h = terrain_map.height().max(1);
-    let mut out = image::RgbaImage::new(out_width.max(1), out_height.max(1));
-    let inv_scale = (upscale.max(1) as f32).recip();
-
-    for y in 0..out_height {
-        for x in 0..out_width {
-            let sx_f = px0 as f32 + (x as f32 + 0.5) * inv_scale - 0.5;
-            let sy_f = py0 as f32 + (y as f32 + 0.5) * inv_scale - 0.5;
-            let src = sample_map_color_bilinear(terrain_map, sx_f, sy_f);
-
-            let u = (sx_f + 0.5).clamp(0.0, map_w as f32 - 1.0) / map_w as f32;
-            let v = (sy_f + 0.5).clamp(0.0, map_h as f32 - 1.0) / map_h as f32;
-            let world_x = terrain_min_x + u * span_x;
-            let world_z = terrain_min_z + v * span_z;
-            let pixel =
-                sample_terrain_layer_pixel(src, world_x, world_z, layer_rules, layer_textures);
-            out.put_pixel(x, y, pixel);
-        }
-    }
-
-    out
-}
-
-fn sample_terrain_layer_pixel(
-    source_map_pixel: image::Rgba<u8>,
-    world_x: f32,
-    world_z: f32,
-    layer_rules: &[TerrainLayerRule],
-    layer_textures: &[Option<image::RgbaImage>],
-) -> image::Rgba<u8> {
-    if layer_rules.is_empty() {
-        return source_map_pixel;
-    }
-
-    if let Some(primary_idx) = layer_rules
-        .iter()
-        .enumerate()
-        .find_map(|(i, rule)| terrain_layer_color_matches(source_map_pixel, rule).then_some(i))
-    {
-        return sample_layer_value(
-            primary_idx,
-            source_map_pixel,
-            world_x,
-            world_z,
-            layer_rules,
-            layer_textures,
-        );
-    }
-
-    if let Some((a_idx, b_idx, blend_t)) = classify_blend_pair_by_color(source_map_pixel, layer_rules)
-    {
-        let a = sample_layer_value(
-            a_idx,
-            source_map_pixel,
-            world_x,
-            world_z,
-            layer_rules,
-            layer_textures,
-        );
-        let b = sample_layer_value(
-            b_idx,
-            source_map_pixel,
-            world_x,
-            world_z,
-            layer_rules,
-            layer_textures,
-        );
-        return mix_rgba(a, b, blend_t);
-    }
-
-    let nearest = nearest_layer_by_color(source_map_pixel, layer_rules).unwrap_or(0);
-    sample_layer_value(
-        nearest,
-        source_map_pixel,
-        world_x,
-        world_z,
-        layer_rules,
-        layer_textures,
-    )
-}
-
-fn sample_layer_value(
-    idx: usize,
-    source_map_pixel: image::Rgba<u8>,
-    world_x: f32,
-    world_z: f32,
-    layer_rules: &[TerrainLayerRule],
-    layer_textures: &[Option<image::RgbaImage>],
-) -> image::Rgba<u8> {
-    let Some(rule) = layer_rules.get(idx) else {
-        return image::Rgba([0, 0, 0, 255]);
-    };
-    if let Some(texture) = layer_textures.get(idx).and_then(|v| v.as_ref())
-        && texture.width() > 0
-        && texture.height() > 0
-    {
-        let tile = rule.texture_tile_meters.max(0.001);
-        let angle = rule.texture_rotation_degrees.to_radians();
-        let (sin_a, cos_a) = angle.sin_cos();
-        let tx = world_x / tile;
-        let tz = world_z / tile;
-        let rx = tx * cos_a - tz * sin_a;
-        let rz = tx * sin_a + tz * cos_a;
-        let fx = rx.rem_euclid(1.0);
-        let fz = rz.rem_euclid(1.0);
-        if rule.texture_hard_cut {
-            return sample_texture_wrapped_nearest(texture, fx, fz);
-        }
-        return sample_texture_wrapped_bilinear(texture, fx, fz);
-    }
-    source_map_pixel
-}
-
-fn classify_blend_pair_by_color(
-    pixel: image::Rgba<u8>,
-    layer_rules: &[TerrainLayerRule],
-) -> Option<(usize, usize, f32)> {
-    if layer_rules.len() < 2 {
-        return None;
-    }
-    let mut ranked = layer_rules
-        .iter()
-        .enumerate()
-        .map(|(i, rule)| (i, color_distance_sq(pixel, rule.color.r, rule.color.g, rule.color.b)))
-        .collect::<Vec<_>>();
-    ranked.sort_unstable_by_key(|(_, d)| *d);
-    let (a_idx, a_d) = *ranked.first()?;
-    let (b_idx, b_d) = *ranked.get(1)?;
-    if !layers_can_blend(a_idx, b_idx, layer_rules) {
-        return None;
-    }
-    let a = (a_d as f32).sqrt();
-    let b = (b_d as f32).sqrt();
-    const BLEND_MARGIN: f32 = 24.0;
-    if b > BLEND_MARGIN {
-        return None;
-    }
-    if (b - a) > BLEND_MARGIN * 0.6 {
-        return None;
-    }
-    let denom = (a + b).max(1.0e-5);
-    let t = (a / denom).clamp(0.0, 1.0);
-    Some((a_idx, b_idx, t))
-}
-
-fn nearest_layer_by_color(pixel: image::Rgba<u8>, layer_rules: &[TerrainLayerRule]) -> Option<usize> {
-    layer_rules
-        .iter()
-        .enumerate()
-        .min_by_key(|(_, rule)| color_distance_sq(pixel, rule.color.r, rule.color.g, rule.color.b))
-        .map(|(i, _)| i)
-}
-
-fn layers_can_blend(a_idx: usize, b_idx: usize, layer_rules: &[TerrainLayerRule]) -> bool {
-    let Some(a) = layer_rules.get(a_idx) else {
-        return false;
-    };
-    let Some(b) = layer_rules.get(b_idx) else {
-        return false;
-    };
-    a.blend_with.contains(&b.index) || b.blend_with.contains(&a.index)
-}
-
-fn color_distance_sq(pixel: image::Rgba<u8>, r: u8, g: u8, b: u8) -> u32 {
-    let dr = pixel[0] as i32 - r as i32;
-    let dg = pixel[1] as i32 - g as i32;
-    let db = pixel[2] as i32 - b as i32;
-    (dr * dr + dg * dg + db * db) as u32
-}
-
-fn mix_rgba(a: image::Rgba<u8>, b: image::Rgba<u8>, t: f32) -> image::Rgba<u8> {
-    let t = t.clamp(0.0, 1.0);
-    let lerp = |x: u8, y: u8| -> u8 { (x as f32 + (y as f32 - x as f32) * t).round() as u8 };
-    image::Rgba([
-        lerp(a[0], b[0]),
-        lerp(a[1], b[1]),
-        lerp(a[2], b[2]),
-        lerp(a[3], b[3]),
-    ])
-}
-
-fn sample_map_color_bilinear(terrain_map: &image::RgbaImage, sx: f32, sy: f32) -> image::Rgba<u8> {
-    let w = terrain_map.width().max(1);
-    let h = terrain_map.height().max(1);
-    let x = sx.clamp(0.0, w.saturating_sub(1) as f32);
-    let y = sy.clamp(0.0, h.saturating_sub(1) as f32);
-    let x0 = x.floor() as u32;
-    let y0 = y.floor() as u32;
-    let x1 = (x0 + 1).min(w.saturating_sub(1));
-    let y1 = (y0 + 1).min(h.saturating_sub(1));
-    let tx = x - x0 as f32;
-    let ty = y - y0 as f32;
-
-    let c00 = terrain_map.get_pixel(x0, y0).0;
-    let c10 = terrain_map.get_pixel(x1, y0).0;
-    let c01 = terrain_map.get_pixel(x0, y1).0;
-    let c11 = terrain_map.get_pixel(x1, y1).0;
-    let mut out = [0u8; 4];
-    for i in 0..4 {
-        let top = c00[i] as f32 + (c10[i] as f32 - c00[i] as f32) * tx;
-        let bot = c01[i] as f32 + (c11[i] as f32 - c01[i] as f32) * tx;
-        out[i] = (top + (bot - top) * ty).round().clamp(0.0, 255.0) as u8;
-    }
-    image::Rgba(out)
-}
-
-fn sample_texture_wrapped_nearest(texture: &image::RgbaImage, fx: f32, fz: f32) -> image::Rgba<u8> {
-    let w = texture.width().max(1);
-    let h = texture.height().max(1);
-    let x = ((fx.rem_euclid(1.0) * w as f32).floor() as u32).min(w.saturating_sub(1));
-    let y = ((fz.rem_euclid(1.0) * h as f32).floor() as u32).min(h.saturating_sub(1));
-    *texture.get_pixel(x, y)
-}
-
-fn sample_texture_wrapped_bilinear(texture: &image::RgbaImage, fx: f32, fz: f32) -> image::Rgba<u8> {
-    let w = texture.width().max(1);
-    let h = texture.height().max(1);
-    let x = fx.rem_euclid(1.0) * w as f32 - 0.5;
-    let y = fz.rem_euclid(1.0) * h as f32 - 0.5;
-    let wrap = |i: i32, size: u32| -> u32 { i.rem_euclid(size as i32) as u32 };
-    let x0 = x.floor() as i32;
-    let y0 = y.floor() as i32;
-    let tx = x - x.floor();
-    let ty = y - y.floor();
-
-    let sx0 = wrap(x0, w);
-    let sx1 = wrap(x0 + 1, w);
-    let sy0 = wrap(y0, h);
-    let sy1 = wrap(y0 + 1, h);
-    let c00 = texture.get_pixel(sx0, sy0).0;
-    let c10 = texture.get_pixel(sx1, sy0).0;
-    let c01 = texture.get_pixel(sx0, sy1).0;
-    let c11 = texture.get_pixel(sx1, sy1).0;
-    let mut out = [0u8; 4];
-    for i in 0..4 {
-        let top = c00[i] as f32 + (c10[i] as f32 - c00[i] as f32) * tx;
-        let bot = c01[i] as f32 + (c11[i] as f32 - c01[i] as f32) * tx;
-        out[i] = (top + (bot - top) * ty).round().clamp(0.0, 255.0) as u8;
-    }
-    image::Rgba(out)
 }
 
 fn terrain_layer_color_matches(pixel: image::Rgba<u8>, rule: &TerrainLayerRule) -> bool {
