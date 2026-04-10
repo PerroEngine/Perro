@@ -120,7 +120,7 @@ fn read_generated_baked_ptex(embedded_textures_dir: &Path) -> io::Result<Vec<(St
         let Some(stripped) = rel.strip_suffix(".ptex") else {
             continue;
         };
-        let source = format!("res://{}/{stripped}.png", TERRAIN_BAKED_TILE_DIR);
+        let source = format!("bin://{}/{stripped}.png", TERRAIN_BAKED_TILE_DIR);
         out.push((source, bytes));
     }
     Ok(out)

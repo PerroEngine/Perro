@@ -328,53 +328,42 @@ fn bake_static_terrain_chunk_tiles(
     let (terrain_min_x, terrain_max_x, terrain_min_z, terrain_max_z) = terrain_bounds;
     let span_x = (terrain_max_x - terrain_min_x).max(1.0e-3);
     let span_z = (terrain_max_z - terrain_min_z).max(1.0e-3);
-    let mut upscale = perro_runtime::terrain_bake::terrain_layer_bake_upscale(
+    let upscale = perro_runtime::terrain_bake::terrain_layer_bake_upscale(
         rules,
         loaded.settings.sample_rate,
     );
-    const MAX_BAKED_MAP_PIXELS: u64 = 4096 * 4096;
-    while upscale > 1
-        && (map_w as u64)
-            .saturating_mul(map_h as u64)
-            .saturating_mul(upscale as u64)
-            .saturating_mul(upscale as u64)
-            > MAX_BAKED_MAP_PIXELS
-    {
-        upscale = (upscale / 2).max(1);
-    }
+    let smoothed_map = perro_runtime::terrain_bake::build_smoothed_terrain_map(&map_image, upscale);
 
     let mut base_hash = DefaultHasher::new();
     terrain_source.hash(&mut base_hash);
     map_source.hash(&mut base_hash);
-    chunk_size.to_bits().hash(&mut base_hash);
     hash_layer_rules(&mut base_hash, rules);
+    loaded
+        .settings
+        .sample_rate
+        .unwrap_or(0.0)
+        .to_bits()
+        .hash(&mut base_hash);
+    upscale.hash(&mut base_hash);
+    map_w.hash(&mut base_hash);
+    map_h.hash(&mut base_hash);
+    chunk_size.to_bits().hash(&mut base_hash);
+    terrain_min_x.to_bits().hash(&mut base_hash);
+    terrain_max_x.to_bits().hash(&mut base_hash);
+    terrain_min_z.to_bits().hash(&mut base_hash);
+    terrain_max_z.to_bits().hash(&mut base_hash);
     let base_hash = format!("{:016x}", base_hash.finish());
 
-    let out_w = map_w.saturating_mul(upscale).max(1);
-    let out_h = map_h.saturating_mul(upscale).max(1);
-    let smoothed_map = perro_runtime::terrain_bake::build_smoothed_terrain_map(&map_image, upscale);
-    let baked_map = perro_runtime::terrain_bake::build_layered_terrain_chunk_tile(
-        &map_image,
-        smoothed_map.as_ref(),
-        &layer_textures,
-        rules,
-        terrain_bounds,
-        0,
-        0,
-        out_w,
-        out_h,
-        upscale,
-    );
-    let baked_ptex = encode_ptex_from_rgba(&baked_map)?;
-
-    let baked_texture_source = format!("res://{}/{}/terrain_map.png", TERRAIN_BAKED_TILE_DIR, base_hash);
-    let baked_rel_path = format!("{}/terrain_map.ptex", base_hash);
+    const BORDER: u32 = 1;
 
     let per_chunk = chunks
         .par_iter()
-        .filter_map(|(coord, chunk)| {
-            let (chunk_min_x, chunk_max_x, chunk_min_z, chunk_max_z) =
-                terrain_chunk_world_bounds(chunk_size, *coord, chunk)?;
+        .map(|(coord, chunk)| -> io::Result<Option<(TerrainBakedChunkTile, TerrainBakedChunkPhysics, GeneratedTerrainTile)>> {
+            let Some((chunk_min_x, chunk_max_x, chunk_min_z, chunk_max_z)) =
+                terrain_chunk_world_bounds(chunk_size, *coord, chunk)
+            else {
+                return Ok(None);
+            };
             let u0 = ((chunk_min_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
             let u1 = ((chunk_max_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
             let v0 = ((chunk_min_z - terrain_min_z) / span_z).clamp(0.0, 1.0);
@@ -395,19 +384,45 @@ fn bake_static_terrain_chunk_tiles(
             x1 = x1.max(x0 + 1).min(map_w);
             y1 = y1.max(y0 + 1).min(map_h);
 
-            let x0_scaled = x0 as f32 * upscale as f32;
-            let y0_scaled = y0 as f32 * upscale as f32;
-            let x1_scaled = x1 as f32 * upscale as f32;
-            let y1_scaled = y1 as f32 * upscale as f32;
-            let uv_min = [(x0_scaled + 0.5) / out_w as f32, (y0_scaled + 0.5) / out_h as f32];
+            let px0 = x0.saturating_sub(BORDER);
+            let py0 = y0.saturating_sub(BORDER);
+            let px1 = (x1 + BORDER).min(map_w);
+            let py1 = (y1 + BORDER).min(map_h);
+            let w = px1.saturating_sub(px0).max(1);
+            let h = py1.saturating_sub(py0).max(1);
+            let out_w = w.saturating_mul(upscale).max(1);
+            let out_h = h.saturating_mul(upscale).max(1);
+
+            let baked_tile = perro_runtime::terrain_bake::build_layered_terrain_chunk_tile(
+                &map_image,
+                smoothed_map.as_ref(),
+                &layer_textures,
+                rules,
+                terrain_bounds,
+                px0,
+                py0,
+                out_w,
+                out_h,
+                upscale,
+            );
+            let baked_ptex = encode_ptex_from_rgba(&baked_tile)?;
+
+            let x0_local = x0.saturating_sub(px0) as f32 * upscale as f32;
+            let y0_local = y0.saturating_sub(py0) as f32 * upscale as f32;
+            let x1_local = x1.saturating_sub(px0) as f32 * upscale as f32;
+            let y1_local = y1.saturating_sub(py0) as f32 * upscale as f32;
+            let uv_min = [(x0_local + 0.5) / out_w as f32, (y0_local + 0.5) / out_h as f32];
             let uv_max = [
-                (x1_scaled - 0.5).max(uv_min[0] * out_w as f32 + 1.0e-4) / out_w as f32,
-                (y1_scaled - 0.5).max(uv_min[1] * out_h as f32 + 1.0e-4) / out_h as f32,
+                (x1_local - 0.5).max(uv_min[0] * out_w as f32 + 1.0e-4) / out_w as f32,
+                (y1_local - 0.5).max(uv_min[1] * out_h as f32 + 1.0e-4) / out_h as f32,
             ];
             let tile = TerrainBakedChunkTile {
                 chunk_x: coord.x,
                 chunk_z: coord.z,
-                texture_source: baked_texture_source.clone(),
+                texture_source: format!(
+                    "bin://{}/{}/{}_{}.png",
+                    TERRAIN_BAKED_TILE_DIR, base_hash, coord.x, coord.z
+                ),
                 uv_min,
                 uv_max,
             };
@@ -424,23 +439,32 @@ fn bake_static_terrain_chunk_tiles(
                 chunk_z: coord.z,
                 triangle_layers: tri_layers,
             };
-            Some((tile, physics))
+            Ok(Some((
+                tile,
+                physics,
+                GeneratedTerrainTile {
+                    rel_path: format!("{}/{}_{}.ptex", base_hash, coord.x, coord.z),
+                    ptex_bytes: baked_ptex,
+                },
+            )))
         })
-        .collect::<Vec<_>>();
+        .collect::<io::Result<Vec<_>>>()?;
     let mut tiles = Vec::with_capacity(per_chunk.len());
     let mut physics = Vec::with_capacity(per_chunk.len());
-    for (tile, phys) in per_chunk {
+    let mut generated_textures = Vec::with_capacity(per_chunk.len());
+    for per_chunk in per_chunk {
+        let Some((tile, phys, generated_tile)) = per_chunk else {
+            continue;
+        };
         tiles.push(tile);
         physics.push(phys);
+        generated_textures.push(generated_tile);
     }
 
     Ok(BakedTerrainTilesResult {
         tiles,
         physics,
-        generated_textures: vec![GeneratedTerrainTile {
-            rel_path: baked_rel_path,
-            ptex_bytes: baked_ptex,
-        }],
+        generated_textures,
     })
 }
 
