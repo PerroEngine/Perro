@@ -23,16 +23,17 @@ const MAX_FIXED_STEPS_PER_FRAME: u32 = 8;
 const LOG_INTERVAL_SECONDS: f32 = 2.5;
 const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
 const STARTUP_SPLASH_FADE_DURATION: Duration = Duration::from_millis(320);
-const STARTUP_SPLASH_MIN_VISIBLE: Duration = Duration::from_millis(1000);
-const STARTUP_SPLASH_READY_STREAK: u32 = 4;
+const STARTUP_SPLASH_HOLD_DURATION: Duration = Duration::from_millis(2000);
 const STARTUP_SPLASH_HARD_TIMEOUT: Duration = Duration::from_millis(8000);
-const STARTUP_SPLASH_BG_COLOR: [f32; 4] = [0.12, 0.12, 0.12, 1.0];
+const STARTUP_SPLASH_BG_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 const STARTUP_SPLASH_MAX_WIDTH_FRAC: f32 = 0.44;
 const STARTUP_SPLASH_MAX_HEIGHT_FRAC: f32 = 0.34;
 const STARTUP_SPLASH_TEXTURE_REQUEST: RenderRequestID = RenderRequestID::new(0x5350_4C41_5348_5F54);
 const STARTUP_SPLASH_BG_NODE: NodeID = NodeID::from_u64(string_to_u64("__startup_splash_bg__"));
 const STARTUP_SPLASH_IMAGE_NODE: NodeID =
     NodeID::from_u64(string_to_u64("__startup_splash_image__"));
+const STARTUP_SPLASH_BG_Z: i32 = 950;
+const STARTUP_SPLASH_IMAGE_Z: i32 = 951;
 
 struct StartupSplashState {
     active: bool,
@@ -374,7 +375,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                         STARTUP_SPLASH_BG_COLOR[2],
                         STARTUP_SPLASH_BG_COLOR[3] * alpha,
                     ],
-                    z_index: 50_000,
+                    z_index: STARTUP_SPLASH_BG_Z,
                 },
             }));
 
@@ -407,7 +408,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     texture: texture_id,
                     model: [[sx, 0.0, 0.0], [0.0, sy, 0.0], [0.0, 0.0, 1.0]],
                     tint: [1.0, 1.0, 1.0, alpha],
-                    z_index: 50_100,
+                    z_index: STARTUP_SPLASH_IMAGE_Z,
                 },
             }));
         commands
@@ -542,19 +543,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
         } else {
             usize::MAX
         };
-        let first_frame_done =
-            self.startup_splash.first_frame_captured && pending_first_frame == 0;
         let shown_for = frame_start.saturating_duration_since(self.startup_splash.shown_at);
         let hard_timeout_hit = shown_for >= STARTUP_SPLASH_HARD_TIMEOUT;
         if self.startup_splash.fade_started_at.is_none() {
-            if shown_for >= STARTUP_SPLASH_MIN_VISIBLE && (first_frame_done || hard_timeout_hit) {
-                self.startup_splash.ready_streak =
-                    self.startup_splash.ready_streak.saturating_add(1);
-                if self.startup_splash.ready_streak >= STARTUP_SPLASH_READY_STREAK {
-                    self.startup_splash.fade_started_at = Some(frame_start);
-                }
-            } else {
-                self.startup_splash.ready_streak = 0;
+            if shown_for >= STARTUP_SPLASH_HOLD_DURATION || hard_timeout_hit {
+                self.startup_splash.fade_started_at = Some(frame_start);
             }
         }
         self.startup_splash.debug_frame_counter =

@@ -45,58 +45,88 @@ Useful crates:
 - Test all: `cargo test`
 - Run CLI help: `cargo run -p perro_cli -- --help`
 
-## Caveman Speak (Required)
+## Caveman Rule (Ultra Short)
 
-For non-code output from Codex:
+- use tiny words
+- 1 line = 1 idea
+- cut all filler
+- no “now”, “then”, etc
+- no full sentences
+- verb first (`chg`, `rm`, `add`)
+- use arrows `->` 4 flow
+- use short forms always
+- skip repeats
+- max info, min chars
 
-- Use very simple words.
-- Skip pleasantries.
-- Drop extra grammar when possible.
-- Drop articles when possible (`a`, `an`, `the`, `is`, `was`, `could be`, `be`).
-- Drop filler (`likely`)
-- Keep lines short.
-- Do not go deep into details unless user asks.
-- Focus on code change and result.
-- Prefer action words: `changed`, `fixed`, `added`, `ran`.
-- Avoid fancy words when simple words work.
+---
 
-Bad word -> better word:
+## Core Words
 
-- `because` -> `cuz`
-- `for` -> `4`
-- `allocates` -> `alloc`
-- `utilize` -> `use`
-- `implement` -> `make` or `add`
-- `facilitate` -> `help`
-- `comprehensive` -> `full`
-- `additional` -> `more`
-- `numerous` -> `many`
-- `approximately` -> `about`
-- `assistance` -> `help`
-- `commence` -> `start`
-- `terminate` -> `end` or `stop`
-- `subsequent` -> `next`
-- `prior` -> `before`
-- `modify` -> `change`
-- `resolve` -> `fix`
-- `encountered` -> `hit` or `found`
-- `investigate` -> `check`
-- `demonstrate` -> `show`
-- `regarding` -> `about`
-- `therefore` -> `so`
-- `however` -> `but`
+- change → `chg`
+- remove → `rm`
+- add → `add`
+- fix → `fx`
+- use → `use`
+- keep → `kp`
 
-Style example:
+---
 
-- Good: `Improved phys sim, dropped allocs, check/test passed.`
-- Bad: `I implemented a comprehensive update that introduces additional safeguards around the turn state flow, and here is a detailed explanation...`
+## Common Short
+
+- before → `b4`
+- after → `aft`
+- with → `w/`
+- without → `w/o`
+- function → `fn`
+- variable → `var`
+- config → `cfg`
+- update → `upd`
+- render → `rndr`
+- initialize → `init`
+- frame → `frm`
+- logic → `log`
+- background → `bg`
+- image → `img`
+- trigger → `trig`
+- optional → `opt`
+- performance → `perf`
+- memory → `mem`
+- allocate → `alloc`
+- system → `sys`
+
+---
+
+## Symbols
+
+- flow → `->`
+- replace → `=>`
+- and → `+`
+- same → `same`
+- equals → `=`
+
+---
+
+## Pattern
+
+verb target (file)
+action -> result
+rm/add/fix notes
+keep/change state
+
+---
+
+## Example
+
+chg splash (file.rs)
+hold 2000ms -> fade
+rm old trig
+same vis
 
 ## Default Response Shape
 
 When reporting work:
 
 1. What changed.
-2. What command ran.
-3. Result.
+2. Result
 
 Keep it short.
