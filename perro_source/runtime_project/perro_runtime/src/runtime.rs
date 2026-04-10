@@ -32,8 +32,9 @@ pub(crate) use state::{
     CollisionDebugState, TerrainChunkMeshKey, TerrainChunkMeshState, TerrainDebugState,
 };
 use state::{
-    DirtyState, InternalUpdateState, NodeIndexState, Render2DState, Render3DState, RenderState,
-    ScriptRuntimeState, ScriptSchedules, SignalRuntimeState, TransformRuntimeState,
+    DirtyState, InternalUpdateState, NodeApiScratchState, NodeIndexState, Render2DState,
+    Render3DState, RenderState, ScriptRuntimeState, ScriptSchedules, SignalRuntimeState,
+    TransformRuntimeState,
 };
 
 type RuntimeScriptCtor = ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>;
@@ -63,6 +64,7 @@ pub struct Runtime {
     pub(crate) terrain_store: Arc<Mutex<TerrainStore>>,
     pub(crate) signal_runtime: SignalRuntimeState,
     pub(crate) node_index: NodeIndexState,
+    pub(crate) node_api_scratch: NodeApiScratchState,
     pub(crate) resource_api: Arc<RuntimeResourceApi>,
     pub(crate) input: InputSnapshot,
     physics: physics::PhysicsState,
@@ -121,6 +123,7 @@ impl Runtime {
             terrain_store: terrain_store.clone(),
             signal_runtime: SignalRuntimeState::new(),
             node_index: NodeIndexState::new(),
+            node_api_scratch: NodeApiScratchState::new(),
             resource_api: RuntimeResourceApi::new(
                 None,
                 None,

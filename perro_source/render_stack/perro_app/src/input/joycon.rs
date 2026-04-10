@@ -107,7 +107,7 @@ mod backend {
             index: usize,
             side: JoyConSide,
             data: JoyConInputData,
-            raw_report: Vec<u8>,
+            raw_report: Option<Vec<u8>>,
         },
         Disconnected {
             index: usize,
@@ -320,7 +320,7 @@ mod backend {
                                     index,
                                     side,
                                     data: payload,
-                                    raw_report: data.to_vec(),
+                                    raw_report: raw_dump_enabled().then(|| data.to_vec()),
                                 });
                             }
                         }
@@ -359,8 +359,8 @@ mod backend {
                         data,
                         raw_report,
                     } => {
-                        if raw_dump_enabled() {
-                            log_raw_joycon_report(index, side, &raw_report, &data, "hid");
+                        if let Some(raw_report) = raw_report.as_deref() {
+                            log_raw_joycon_report(index, side, raw_report, &data, "hid");
                         }
                         apply_report(
                             app,
@@ -712,7 +712,8 @@ mod backend {
                                                 index,
                                                 side,
                                                 data,
-                                                raw_report: packet.value.clone(),
+                                                raw_report: raw_dump_enabled()
+                                                    .then(|| packet.value.clone()),
                                             });
                                         } else {
                                             eprintln!(

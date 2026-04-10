@@ -64,8 +64,7 @@ pub struct TerrainBakedChunkPhysics {
 
 #[derive(Clone, Debug)]
 pub struct TerrainSourceSettings {
-    pub pixels_per_meter: Option<f32>,
-    pub map_resolution_px: Option<f32>,
+    pub sample_rate: Option<f32>,
     pub layers: Vec<TerrainLayerRule>,
     pub layer_blendings: Vec<(usize, usize)>,
     pub baked_chunk_tiles: Vec<TerrainBakedChunkTile>,
@@ -75,8 +74,7 @@ pub struct TerrainSourceSettings {
 impl Default for TerrainSourceSettings {
     fn default() -> Self {
         Self {
-            pixels_per_meter: None,
-            map_resolution_px: None,
+            sample_rate: None,
             layers: Vec::new(),
             layer_blendings: Vec::new(),
             baked_chunk_tiles: Vec::new(),
@@ -274,8 +272,8 @@ pub fn decode_loaded_terrain_blob(blob: &[u8]) -> Option<LoadedTerrainSource> {
         terrain.set_chunk(coord, chunk);
     }
 
-    let pixels_per_meter = rd.read_opt_f32()?;
-    let map_resolution_px = rd.read_opt_f32()?;
+    let sample_rate = rd.read_opt_f32()?;
+    let _reserved_legacy = rd.read_opt_f32()?;
 
     let layer_count = rd.read_u32()? as usize;
     let mut layers = Vec::with_capacity(layer_count);
@@ -357,8 +355,7 @@ pub fn decode_loaded_terrain_blob(blob: &[u8]) -> Option<LoadedTerrainSource> {
     Some(LoadedTerrainSource {
         terrain,
         settings: TerrainSourceSettings {
-            pixels_per_meter,
-            map_resolution_px,
+            sample_rate,
             layers,
             layer_blendings,
             baked_chunk_tiles,
@@ -584,11 +581,12 @@ fn parse_terrain_settings(source: &str) -> TerrainSourceSettings {
             && parsed > 0.0
         {
             match key.as_str() {
-                "pixels_per_meter" | "terrain_pixels_per_meter" | "ppm" => {
-                    out.pixels_per_meter = Some(parsed);
-                }
-                "map_resolution_px" | "terrain_map_resolution_px" | "texture_resolution_px" => {
-                    out.map_resolution_px = Some(parsed);
+                "sample_rate"
+                | "terrain_sample_rate"
+                | "pixels_per_meter"
+                | "terrain_pixels_per_meter"
+                | "ppm" => {
+                    out.sample_rate = Some(parsed.clamp(1.0, 12.0));
                 }
                 _ => {}
             }
@@ -1378,8 +1376,7 @@ mod tests {
     #[test]
     fn parse_terrain_settings_reads_layer_rules_sorted_by_index() {
         let src = r#"
-            pixels_per_meter = 2.0
-            map_resolution_px = 4096
+            sample_rate = 2.0
 
             layer.2.color = #224466
             layer.2.texture = res://terrain/rock.png
@@ -1394,8 +1391,7 @@ mod tests {
         "#;
 
         let parsed = parse_terrain_settings(src);
-        assert_eq!(parsed.pixels_per_meter, Some(2.0));
-        assert_eq!(parsed.map_resolution_px, Some(4096.0));
+        assert_eq!(parsed.sample_rate, Some(2.0));
         assert_eq!(parsed.layers.len(), 2);
 
         let l0 = &parsed.layers[0];
@@ -1442,5 +1438,23 @@ mod tests {
         assert!(l1.blend_with.contains(&0));
         assert!(l1.blend_with.contains(&2));
         assert!(l2.blend_with.contains(&1));
+    }
+
+    #[test]
+    fn parse_terrain_settings_clamps_sample_rate() {
+        let src = r#"
+            sample_rate = 32
+        "#;
+        let parsed = parse_terrain_settings(src);
+        assert_eq!(parsed.sample_rate, Some(12.0));
+    }
+
+    #[test]
+    fn parse_terrain_settings_legacy_ppm_alias_maps_to_sample_rate() {
+        let src = r#"
+            ppm = 3
+        "#;
+        let parsed = parse_terrain_settings(src);
+        assert_eq!(parsed.sample_rate, Some(3.0));
     }
 }

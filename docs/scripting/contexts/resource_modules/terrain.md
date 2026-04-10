@@ -21,8 +21,7 @@ Current terrain model (runtime):
 - Terrain folders may also include layer/map assets used by terrain tooling workflows.
 - If a terrain folder contains `terrain_map.png`, runtime terrain rendering will bind it as the default terrain base-color map.
 - Terrain folders may include an optional `settings.pterr` file for mapping defaults:
-  - `pixels_per_meter = <float>` (alias: `ppm`)
-  - `map_resolution_px = <float>` (square map resolution used with `pixels_per_meter`)
+  - `sample_rate = <float>` (`1`..`12`, where `1` is 1:1 map sampling at `1 pixel per meter`)
   - Layer rules (indexed by order):
     - `layer.0.match_color = #80C840` (aliases: `color`, also accepts `r,g,b` like `128,200,64`)
     - `layer.0.match_tolerance = 6` (aliases: `color_tolerance`, `tolerance`)
@@ -45,8 +44,7 @@ Current terrain model (runtime):
     - Visual: matching map color can be replaced with layer texture sampling.
     - Physics: matching layer can override terrain collider friction/restitution.
 - `TerrainInstance3D` scene fields can override folder defaults:
-  - `pixels_per_meter`
-  - `map_resolution_px`
+  - `pixels_per_meter` (legacy alias for `sample_rate`)
 - `.ptchunk` filenames must be chunk-space coordinates: `<chunk_x>_<chunk_z>.ptchunk` (for example `0_0.ptchunk`, `0_1.ptchunk`, `-1_2.ptchunk`).
 - `.ptchunk` is key-value style, one sample per line, for example:
   - `[x,z] = y`

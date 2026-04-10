@@ -210,8 +210,9 @@ fn encode_loaded_terrain_source(loaded: &LoadedTerrainSource) -> io::Result<Vec<
     }
 
     let settings = &loaded.settings;
-    write_opt_f32(&mut out, settings.pixels_per_meter);
-    write_opt_f32(&mut out, settings.map_resolution_px);
+    write_opt_f32(&mut out, settings.sample_rate);
+    // Legacy reserved slot kept for blob layout compatibility.
+    write_opt_f32(&mut out, None);
 
     write_u32(&mut out, settings.layers.len() as u32);
     for layer in &settings.layers {
@@ -329,11 +330,7 @@ fn bake_static_terrain_chunk_tiles(
     let span_z = (terrain_max_z - terrain_min_z).max(1.0e-3);
     let mut upscale = perro_runtime::terrain_bake::terrain_layer_bake_upscale(
         rules,
-        loaded.settings.pixels_per_meter,
-        map_w,
-        map_h,
-        span_x,
-        span_z,
+        loaded.settings.sample_rate,
     );
     const MAX_BAKED_MAP_PIXELS: u64 = 4096 * 4096;
     while upscale > 1
@@ -355,8 +352,10 @@ fn bake_static_terrain_chunk_tiles(
 
     let out_w = map_w.saturating_mul(upscale).max(1);
     let out_h = map_h.saturating_mul(upscale).max(1);
+    let smoothed_map = perro_runtime::terrain_bake::build_smoothed_terrain_map(&map_image, upscale);
     let baked_map = perro_runtime::terrain_bake::build_layered_terrain_chunk_tile(
         &map_image,
+        smoothed_map.as_ref(),
         &layer_textures,
         rules,
         terrain_bounds,

@@ -6,7 +6,6 @@ use perro_nodes::{
 use perro_runtime_context::sub_apis::{NodeAPI, TagQuery};
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
-use std::collections::HashSet;
 
 use crate::Runtime;
 
@@ -380,9 +379,13 @@ impl NodeAPI for Runtime {
 
         // Gather subtree ids iteratively to avoid recursion depth issues.
         // We delete in post-order so children are removed before their parents.
-        let mut stack = vec![node_id];
-        let mut postorder = Vec::new();
-        let mut visited = HashSet::new();
+        let mut stack = std::mem::take(&mut self.node_api_scratch.remove_stack);
+        let mut postorder = std::mem::take(&mut self.node_api_scratch.remove_postorder);
+        let mut visited = std::mem::take(&mut self.node_api_scratch.remove_visited);
+        stack.clear();
+        postorder.clear();
+        visited.clear();
+        stack.push(node_id);
         while let Some(current) = stack.pop() {
             if !visited.insert(current) {
                 continue;
@@ -394,7 +397,7 @@ impl NodeAPI for Runtime {
             stack.extend(node.get_children_ids().iter().copied());
         }
 
-        for current in postorder.into_iter().rev() {
+        for current in postorder.iter().rev().copied() {
             if self.nodes.get(current).is_none() {
                 continue;
             }
@@ -442,6 +445,13 @@ impl NodeAPI for Runtime {
             self.unregister_internal_node_schedules(current);
             let _ = self.nodes.remove(current);
         }
+
+        stack.clear();
+        postorder.clear();
+        visited.clear();
+        self.node_api_scratch.remove_stack = stack;
+        self.node_api_scratch.remove_postorder = postorder;
+        self.node_api_scratch.remove_visited = visited;
 
         true
     }

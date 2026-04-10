@@ -110,10 +110,7 @@ impl Runtime {
         {
             terrain.terrain = id;
             if terrain.terrain_pixels_per_meter.is_none() {
-                terrain.terrain_pixels_per_meter = loaded.settings.pixels_per_meter;
-            }
-            if terrain.terrain_map_resolution_px.is_none() {
-                terrain.terrain_map_resolution_px = loaded.settings.map_resolution_px;
+                terrain.terrain_pixels_per_meter = loaded.settings.sample_rate;
             }
             self.render_3d
                 .terrain_instance_settings

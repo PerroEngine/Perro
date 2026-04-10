@@ -93,7 +93,13 @@ impl Runtime {
     }
 
     #[inline(always)]
-    pub(crate) fn call_update_script_scheduled(&mut self, instance_index: usize, id: NodeID) {
+    pub(crate) fn call_update_script_scheduled_with_context(
+        &mut self,
+        instance_index: usize,
+        id: NodeID,
+        res: &ResourceContext<'_, crate::RuntimeResourceApi>,
+        ipt: &InputContext<'_, perro_input::InputSnapshot>,
+    ) {
         let behavior = match self
             .scripts
             .get_instance_scheduled_indexed(instance_index, id)
@@ -101,24 +107,22 @@ impl Runtime {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return,
         };
-        let resource_api = self.resource_api.clone();
-        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
-            ResourceContext::new(resource_api.as_ref());
-        let input_ptr = std::ptr::addr_of!(self.input);
-        // SAFETY: During callback dispatch, input is treated as immutable runtime state.
-        // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt: InputContext<'_, perro_input::InputSnapshot> =
-            unsafe { InputContext::new(&*input_ptr) };
         self.script_runtime
             .active_script_stack
             .push((instance_index, id));
         let mut ctx = RuntimeContext::new(self);
-        behavior.on_update(&mut ctx, &res, &ipt, id);
+        behavior.on_update(&mut ctx, res, ipt, id);
         let _ = self.script_runtime.active_script_stack.pop();
     }
 
     #[inline(always)]
-    pub(crate) fn call_fixed_update_script_scheduled(&mut self, instance_index: usize, id: NodeID) {
+    pub(crate) fn call_fixed_update_script_scheduled_with_context(
+        &mut self,
+        instance_index: usize,
+        id: NodeID,
+        res: &ResourceContext<'_, crate::RuntimeResourceApi>,
+        ipt: &InputContext<'_, perro_input::InputSnapshot>,
+    ) {
         let behavior = match self
             .scripts
             .get_instance_scheduled_indexed(instance_index, id)
@@ -126,19 +130,11 @@ impl Runtime {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return,
         };
-        let resource_api = self.resource_api.clone();
-        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
-            ResourceContext::new(resource_api.as_ref());
-        let input_ptr = std::ptr::addr_of!(self.input);
-        // SAFETY: During callback dispatch, input is treated as immutable runtime state.
-        // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt: InputContext<'_, perro_input::InputSnapshot> =
-            unsafe { InputContext::new(&*input_ptr) };
         self.script_runtime
             .active_script_stack
             .push((instance_index, id));
         let mut ctx = RuntimeContext::new(self);
-        behavior.on_fixed_update(&mut ctx, &res, &ipt, id);
+        behavior.on_fixed_update(&mut ctx, res, ipt, id);
         let _ = self.script_runtime.active_script_stack.pop();
     }
 }

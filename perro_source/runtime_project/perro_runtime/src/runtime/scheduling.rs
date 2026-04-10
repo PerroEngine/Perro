@@ -3,19 +3,31 @@ use std::time::Instant;
 
 impl Runtime {
     pub(crate) fn run_update_schedule(&mut self) {
+        let resource_api = self.resource_api.clone();
+        let res = perro_resource_context::ResourceContext::new(resource_api.as_ref());
+        let input_ptr = std::ptr::addr_of!(self.input);
+        // SAFETY: During callback dispatch, input is treated as immutable runtime state.
+        // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
+        let ipt = unsafe { perro_input::InputContext::new(&*input_ptr) };
         let mut i = 0;
         while i < self.schedules.update_slots.len() {
             let (instance_index, id) = self.schedules.update_slots[i];
-            self.call_update_script_scheduled(instance_index, id);
+            self.call_update_script_scheduled_with_context(instance_index, id, &res, &ipt);
             i += 1;
         }
     }
 
     pub(crate) fn run_fixed_schedule(&mut self) {
+        let resource_api = self.resource_api.clone();
+        let res = perro_resource_context::ResourceContext::new(resource_api.as_ref());
+        let input_ptr = std::ptr::addr_of!(self.input);
+        // SAFETY: During callback dispatch, input is treated as immutable runtime state.
+        // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
+        let ipt = unsafe { perro_input::InputContext::new(&*input_ptr) };
         let mut i = 0;
         while i < self.schedules.fixed_slots.len() {
             let (instance_index, id) = self.schedules.fixed_slots[i];
-            self.call_fixed_update_script_scheduled(instance_index, id);
+            self.call_fixed_update_script_scheduled_with_context(instance_index, id, &res, &ipt);
             i += 1;
         }
     }
@@ -46,12 +58,18 @@ impl Runtime {
         let mut script_count = 0u32;
         let mut slowest_script = std::time::Duration::ZERO;
         let mut slowest_script_id = None;
+        let resource_api = self.resource_api.clone();
+        let res = perro_resource_context::ResourceContext::new(resource_api.as_ref());
+        let input_ptr = std::ptr::addr_of!(self.input);
+        // SAFETY: During callback dispatch, input is treated as immutable runtime state.
+        // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
+        let ipt = unsafe { perro_input::InputContext::new(&*input_ptr) };
 
         let mut i = 0;
         while i < self.schedules.update_slots.len() {
             let (instance_index, id) = self.schedules.update_slots[i];
             let script_start = Instant::now();
-            self.call_update_script_scheduled(instance_index, id);
+            self.call_update_script_scheduled_with_context(instance_index, id, &res, &ipt);
             let script_duration = script_start.elapsed();
             scripts_total += script_duration;
             script_count = script_count.saturating_add(1);

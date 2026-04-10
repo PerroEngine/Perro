@@ -2,30 +2,67 @@ use crate::TerrainLayerRule;
 
 pub fn terrain_layer_bake_upscale(
     layer_rules: &[TerrainLayerRule],
-    terrain_pixels_per_meter: Option<f32>,
-    map_width: u32,
-    map_height: u32,
-    terrain_span_x: f32,
-    terrain_span_z: f32,
+    sample_rate: Option<f32>,
 ) -> u32 {
-    const TERRAIN_LAYER_BAKE_UPSCALE_DEFAULT: f32 = 4.0;
-    const TERRAIN_LAYER_BAKE_UPSCALE_MAX: f32 = 16.0;
-
     if layer_rules.is_empty() {
         return 1;
     }
-
-    let base_ppm_x = map_width.max(1) as f32 / terrain_span_x.max(1.0e-3);
-    let base_ppm_z = map_height.max(1) as f32 / terrain_span_z.max(1.0e-3);
-    let base_ppm = base_ppm_x.min(base_ppm_z).max(1.0e-5);
-    let target_ppm = terrain_pixels_per_meter
+    sample_rate
         .filter(|v| v.is_finite() && *v > 0.0)
-        .unwrap_or(base_ppm * TERRAIN_LAYER_BAKE_UPSCALE_DEFAULT);
-    (target_ppm / base_ppm).ceil().clamp(1.0, TERRAIN_LAYER_BAKE_UPSCALE_MAX) as u32
+        .unwrap_or(1.0)
+        .round()
+        .clamp(1.0, 12.0) as u32
+}
+
+pub fn build_smoothed_terrain_map(terrain_map: &image::RgbaImage, upscale: u32) -> Option<image::RgbaImage> {
+    if upscale <= 1 {
+        return None;
+    }
+    let w = terrain_map.width();
+    let h = terrain_map.height();
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let mut out = image::RgbaImage::new(w, h);
+    for y in 0..h {
+        for x in 0..w {
+            let mut sum = [0u32; 4];
+            let mut weight_sum = 0u32;
+            for oy in -1i32..=1 {
+                for ox in -1i32..=1 {
+                    let sx = (x as i32 + ox).clamp(0, w as i32 - 1) as u32;
+                    let sy = (y as i32 + oy).clamp(0, h as i32 - 1) as u32;
+                    let wxy = match (ox.abs(), oy.abs()) {
+                        (0, 0) => 4,
+                        (1, 1) => 1,
+                        _ => 2,
+                    };
+                    let px = terrain_map.get_pixel(sx, sy).0;
+                    sum[0] += px[0] as u32 * wxy;
+                    sum[1] += px[1] as u32 * wxy;
+                    sum[2] += px[2] as u32 * wxy;
+                    sum[3] += px[3] as u32 * wxy;
+                    weight_sum += wxy;
+                }
+            }
+            out.put_pixel(
+                x,
+                y,
+                image::Rgba([
+                    (sum[0] / weight_sum) as u8,
+                    (sum[1] / weight_sum) as u8,
+                    (sum[2] / weight_sum) as u8,
+                    (sum[3] / weight_sum) as u8,
+                ]),
+            );
+        }
+    }
+    Some(out)
 }
 
 pub fn build_layered_terrain_chunk_tile(
     terrain_map: &image::RgbaImage,
+    smoothed_map: Option<&image::RgbaImage>,
     layer_textures: &[Option<image::RgbaImage>],
     layer_rules: &[TerrainLayerRule],
     terrain_bounds: (f32, f32, f32, f32),
@@ -43,30 +80,128 @@ pub fn build_layered_terrain_chunk_tile(
     let map_h = terrain_map.height().max(1);
     let mut out = image::RgbaImage::new(out_width.max(1), out_height.max(1));
     let inv_scale = (upscale.max(1) as f32).recip();
+    let smooth_mix = ((upscale.saturating_sub(1)) as f32 / 11.0).clamp(0.0, 1.0) * 0.65;
+    let aa_samples = aa_samples_for_upscale(upscale);
 
     for y in 0..out_height {
         for x in 0..out_width {
             let sx_f = px0 as f32 + (x as f32 + 0.5) * inv_scale - 0.5;
             let sy_f = py0 as f32 + (y as f32 + 0.5) * inv_scale - 0.5;
-            let src = sample_map_color_bilinear(terrain_map, sx_f, sy_f);
-
-            let u = (sx_f + 0.5).clamp(0.0, map_w as f32 - 1.0) / map_w as f32;
-            let v = (sy_f + 0.5).clamp(0.0, map_h as f32 - 1.0) / map_h as f32;
-            let world_x = terrain_min_x + u * span_x;
-            let world_z = terrain_min_z + v * span_z;
-            let pixel = sample_terrain_layer_pixel(
-                src,
-                world_x,
-                world_z,
-                layer_rules,
-                layer_textures,
-                allow_blending,
+            let mut acc = [0.0f32; 4];
+            let mut weight_sum = 0.0f32;
+            for (ox, oy, weight) in aa_samples {
+                let sx = sx_f + ox * inv_scale;
+                let sy = sy_f + oy * inv_scale;
+                let src = sample_blended_map_color(terrain_map, smoothed_map, smooth_mix, sx, sy);
+                let u = (sx + 0.5).clamp(0.0, map_w as f32 - 1.0) / map_w as f32;
+                let v = (sy + 0.5).clamp(0.0, map_h as f32 - 1.0) / map_h as f32;
+                let world_x = terrain_min_x + u * span_x;
+                let world_z = terrain_min_z + v * span_z;
+                let pixel = sample_terrain_layer_pixel(
+                    src,
+                    world_x,
+                    world_z,
+                    layer_rules,
+                    layer_textures,
+                    allow_blending,
+                );
+                acc[0] += pixel[0] as f32 * weight;
+                acc[1] += pixel[1] as f32 * weight;
+                acc[2] += pixel[2] as f32 * weight;
+                acc[3] += pixel[3] as f32 * weight;
+                weight_sum += weight;
+            }
+            let inv_w = weight_sum.max(1.0e-6).recip();
+            out.put_pixel(
+                x,
+                y,
+                image::Rgba([
+                    (acc[0] * inv_w).round().clamp(0.0, 255.0) as u8,
+                    (acc[1] * inv_w).round().clamp(0.0, 255.0) as u8,
+                    (acc[2] * inv_w).round().clamp(0.0, 255.0) as u8,
+                    (acc[3] * inv_w).round().clamp(0.0, 255.0) as u8,
+                ]),
             );
-            out.put_pixel(x, y, pixel);
         }
     }
 
+    apply_adaptive_sharpen(&mut out, upscale);
     out
+}
+
+fn apply_adaptive_sharpen(image: &mut image::RgbaImage, upscale: u32) {
+    let strength = match upscale {
+        0 | 1 => 0.0,
+        2..=3 => 0.10,
+        4..=6 => 0.14,
+        _ => 0.18,
+    };
+    if strength <= 0.0 || image.width() < 2 || image.height() < 2 {
+        return;
+    }
+    let src = image.clone();
+    let w = src.width();
+    let h = src.height();
+    for y in 0..h {
+        for x in 0..w {
+            let cx = src.get_pixel(x, y).0;
+            let n = src.get_pixel(x, y.saturating_sub(1)).0;
+            let s = src.get_pixel(x, (y + 1).min(h - 1)).0;
+            let wv = src.get_pixel(x.saturating_sub(1), y).0;
+            let e = src.get_pixel((x + 1).min(w - 1), y).0;
+            let sharpen_chan = |i: usize| -> u8 {
+                let center = cx[i] as f32;
+                let around = (n[i] as f32 + s[i] as f32 + wv[i] as f32 + e[i] as f32) * 0.25;
+                let v = center + (center - around) * strength;
+                v.round().clamp(0.0, 255.0) as u8
+            };
+            image.put_pixel(
+                x,
+                y,
+                image::Rgba([
+                    sharpen_chan(0),
+                    sharpen_chan(1),
+                    sharpen_chan(2),
+                    cx[3],
+                ]),
+            );
+        }
+    }
+}
+
+fn sample_blended_map_color(
+    terrain_map: &image::RgbaImage,
+    smoothed_map: Option<&image::RgbaImage>,
+    smooth_mix: f32,
+    sx: f32,
+    sy: f32,
+) -> image::Rgba<u8> {
+    let src = sample_map_color_bilinear(terrain_map, sx, sy);
+    if let Some(smoothed) = smoothed_map
+        && smooth_mix > 0.001
+    {
+        let smooth_src = sample_map_color_bilinear(smoothed, sx, sy);
+        return mix_rgba(src, smooth_src, smooth_mix);
+    }
+    src
+}
+
+fn aa_samples_for_upscale(upscale: u32) -> &'static [(f32, f32, f32)] {
+    const ONE: &[(f32, f32, f32)] = &[(0.0, 0.0, 1.0)];
+    const TWO: &[(f32, f32, f32)] = &[(-0.2, -0.2, 0.5), (0.2, 0.2, 0.5)];
+    const FOUR: &[(f32, f32, f32)] = &[
+        (-0.25, -0.25, 0.25),
+        (0.25, -0.25, 0.25),
+        (-0.25, 0.25, 0.25),
+        (0.25, 0.25, 0.25),
+    ];
+    if upscale >= 7 {
+        FOUR
+    } else if upscale >= 3 {
+        TWO
+    } else {
+        ONE
+    }
 }
 
 fn sample_terrain_layer_pixel(
@@ -79,21 +214,6 @@ fn sample_terrain_layer_pixel(
 ) -> image::Rgba<u8> {
     if layer_rules.is_empty() {
         return source_map_pixel;
-    }
-
-    if let Some(primary_idx) = layer_rules
-        .iter()
-        .enumerate()
-        .find_map(|(i, rule)| terrain_layer_color_matches(source_map_pixel, rule).then_some(i))
-    {
-        return sample_layer_value(
-            primary_idx,
-            source_map_pixel,
-            world_x,
-            world_z,
-            layer_rules,
-            layer_textures,
-        );
     }
 
     if allow_blending
@@ -117,6 +237,21 @@ fn sample_terrain_layer_pixel(
             layer_textures,
         );
         return mix_rgba(a, b, blend_t);
+    }
+
+    if let Some(primary_idx) = layer_rules
+        .iter()
+        .enumerate()
+        .find_map(|(i, rule)| terrain_layer_color_matches(source_map_pixel, rule).then_some(i))
+    {
+        return sample_layer_value(
+            primary_idx,
+            source_map_pixel,
+            world_x,
+            world_z,
+            layer_rules,
+            layer_textures,
+        );
     }
 
     let nearest = nearest_layer_by_color(source_map_pixel, layer_rules).unwrap_or(0);
@@ -193,7 +328,7 @@ fn classify_blend_pair_by_color(
     }
     let a = (a_d as f32).sqrt();
     let b = (b_d as f32).sqrt();
-    const BLEND_MARGIN: f32 = 24.0;
+    const BLEND_MARGIN: f32 = 32.0;
     if b > BLEND_MARGIN {
         return None;
     }
@@ -202,6 +337,7 @@ fn classify_blend_pair_by_color(
     }
     let denom = (a + b).max(1.0e-5);
     let t = (a / denom).clamp(0.0, 1.0);
+    let t = t * t * (3.0 - 2.0 * t);
     Some((a_idx, b_idx, t))
 }
 

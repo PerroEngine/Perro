@@ -504,7 +504,7 @@ fn collision_shape_debug_rebuilds_when_parent_moves() {
 }
 
 #[test]
-fn terrain_layer_bake_upscale_defaults_to_4x_when_ppm_not_set() {
+fn terrain_layer_bake_upscale_defaults_to_1x_when_sample_rate_not_set() {
     let rules = vec![TerrainLayerRule {
         index: 0,
         name: Some("grass".to_string()),
@@ -519,12 +519,12 @@ fn terrain_layer_bake_upscale_defaults_to_4x_when_ppm_not_set() {
         restitution: None,
     }];
 
-    let upscale = super::terrain_layer_bake_upscale(&rules, None, 512, 512, 512.0, 512.0);
-    assert_eq!(upscale, 4);
+    let upscale = super::terrain_layer_bake_upscale(&rules, None);
+    assert_eq!(upscale, 1);
 }
 
 #[test]
-fn terrain_layer_bake_upscale_matches_requested_pixels_per_meter() {
+fn terrain_layer_bake_upscale_matches_requested_sample_rate() {
     let rules = vec![TerrainLayerRule {
         index: 0,
         name: Some("grass".to_string()),
@@ -539,9 +539,8 @@ fn terrain_layer_bake_upscale_matches_requested_pixels_per_meter() {
         restitution: None,
     }];
 
-    // Base density here is 1 px/m (512 px over 512 m), so requesting 8 px/m should upscale 8x.
-    let upscale = super::terrain_layer_bake_upscale(&rules, Some(8.0), 512, 512, 512.0, 512.0);
-    assert_eq!(upscale, 8);
+    let upscale = super::terrain_layer_bake_upscale(&rules, Some(12.0));
+    assert_eq!(upscale, 12);
 }
 
 #[test]

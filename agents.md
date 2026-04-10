@@ -7,6 +7,7 @@ It is workspace with many crates.
 Main goal: simple game making, strong speed.
 
 Main docs:
+
 - `README.md`
 - `docs/index.md`
 - `docs/perro_cli.md`
@@ -14,12 +15,14 @@ Main docs:
 ## Where Things Are
 
 Root:
+
 - `Cargo.toml`: workspace crate list.
 - `perro_source/`: engine source.
 - `docs/`: markdown docs.
 - `playground/`: sample projects.
 
 In `perro_source/`:
+
 - `core/`: ids, nodes, structs, animation, terrain, variant.
 - `runtime_project/`: runtime loop, scene load, project runtime glue.
 - `api_modules/`: public runtime/resource/input api crates.
@@ -31,6 +34,7 @@ In `perro_source/`:
 - `devtools/`: CLI and dev runner.
 
 Useful crates:
+
 - `perro_source/devtools/perro_cli`: main CLI.
 - `perro_source/runtime_project/perro_runtime`: runtime core.
 - `perro_source/render_stack/perro_graphics`: renderer.
@@ -48,7 +52,8 @@ For non-code output from Codex:
 - Use very simple words.
 - Skip pleasantries.
 - Drop extra grammar when possible.
-- Drop articles when possible (`a`, `an`, `the`).
+- Drop articles when possible (`a`, `an`, `the`, `is`, `was`, `could be`, `be`).
+- Drop filler (`likely`)
 - Keep lines short.
 - Do not go deep into details unless user asks.
 - Focus on code change and result.
@@ -57,6 +62,9 @@ For non-code output from Codex:
 
 Bad word -> better word:
 
+- `because` -> `cuz`
+- `for` -> `4`
+- `allocates` -> `alloc`
 - `utilize` -> `use`
 - `implement` -> `make` or `add`
 - `facilitate` -> `help`
@@ -80,7 +88,7 @@ Bad word -> better word:
 
 Style example:
 
-- Good: `Improved physics sim, dropped allocations, cargo check/cargo test passed.`
+- Good: `Improved phys sim, dropped allocs, check/test passed.`
 - Bad: `I implemented a comprehensive update that introduces additional safeguards around the turn state flow, and here is a detailed explanation...`
 
 ## Default Response Shape

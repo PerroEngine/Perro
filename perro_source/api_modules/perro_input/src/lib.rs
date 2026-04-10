@@ -192,7 +192,7 @@ impl InputSnapshot {
             if commands.is_empty() {
                 return;
             }
-            commands.drain(..).collect::<Vec<_>>()
+            std::mem::take(&mut *commands)
         };
         for command in pending.drain(..) {
             match command {

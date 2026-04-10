@@ -122,6 +122,22 @@ impl NodeIndexState {
     }
 }
 
+pub(crate) struct NodeApiScratchState {
+    pub(crate) remove_stack: Vec<NodeID>,
+    pub(crate) remove_postorder: Vec<NodeID>,
+    pub(crate) remove_visited: AHashSet<NodeID>,
+}
+
+impl NodeApiScratchState {
+    pub(crate) fn new() -> Self {
+        Self {
+            remove_stack: Vec::new(),
+            remove_postorder: Vec::new(),
+            remove_visited: AHashSet::default(),
+        }
+    }
+}
+
 /// Scratch buffers used to snapshot script update/fixed schedules without allocating each frame.
 pub(crate) struct ScriptSchedules {
     pub(crate) update_slots: Vec<(usize, NodeID)>,

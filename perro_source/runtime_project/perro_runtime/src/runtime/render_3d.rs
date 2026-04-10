@@ -378,7 +378,6 @@ impl Runtime {
                         terrain.terrain,
                         terrain.terrain_source.as_ref().map(|v| v.to_string()),
                         terrain.terrain_pixels_per_meter,
-                        terrain.terrain_map_resolution_px,
                         terrain_settings,
                     )),
                     _ => None,
@@ -389,8 +388,7 @@ impl Runtime {
                 show_debug_edges,
                 terrain_id,
                 terrain_source,
-                pixels_per_meter,
-                map_resolution_px,
+                sample_rate_override,
                 terrain_settings,
             )) = terrain_data
                 && effective_visible
@@ -425,8 +423,7 @@ impl Runtime {
                         terrain_map_texture.as_deref(),
                         terrain_settings.as_ref(),
                         chunks.uv_projection,
-                        pixels_per_meter,
-                        map_resolution_px,
+                        sample_rate_override,
                         &chunks.chunks,
                         world_from_terrain,
                         active_camera.as_ref(),
@@ -793,7 +790,7 @@ impl Runtime {
         terrain_source: Option<&str>,
         terrain_map_texture: Option<&str>,
         terrain_settings: Option<&TerrainSourceSettings>,
-        terrain_pixels_per_meter: Option<f32>,
+        sample_rate_override: Option<f32>,
         chunk_size_meters: f32,
         chunks: &[crate::runtime::state::TerrainCachedChunk],
     ) -> Option<crate::runtime::state::TerrainChunkTileSet> {
@@ -851,7 +848,12 @@ impl Runtime {
         terrain_bounds.1.to_bits().hash(&mut atlas_hasher);
         terrain_bounds.2.to_bits().hash(&mut atlas_hasher);
         terrain_bounds.3.to_bits().hash(&mut atlas_hasher);
-        terrain_pixels_per_meter
+        sample_rate_override
+            .unwrap_or(0.0)
+            .to_bits()
+            .hash(&mut atlas_hasher);
+        terrain_settings
+            .and_then(|settings| settings.sample_rate)
             .unwrap_or(0.0)
             .to_bits()
             .hash(&mut atlas_hasher);
@@ -870,7 +872,8 @@ impl Runtime {
             map_source,
             self.project().and_then(|project| project.static_icon_lookup),
             terrain_settings.map(|s| s.layers.as_slice()).unwrap_or(&[]),
-            terrain_pixels_per_meter,
+            sample_rate_override
+                .or_else(|| terrain_settings.and_then(|settings| settings.sample_rate)),
             chunk_size_meters,
             terrain_bounds,
             chunks,
@@ -940,22 +943,17 @@ impl Runtime {
         terrain_map_texture: Option<&str>,
         terrain_settings: Option<&TerrainSourceSettings>,
         fit_uv_projection: crate::runtime::state::TerrainUvProjection,
-        pixels_per_meter: Option<f32>,
-        map_resolution_px: Option<f32>,
+        sample_rate_override: Option<f32>,
         chunks: &[crate::runtime::state::TerrainCachedChunk],
         world_from_terrain: Mat4,
         camera: Option<&Camera3DState>,
     ) -> u64 {
-        let uv_projection = terrain_uv_projection_with_density(
-            fit_uv_projection,
-            pixels_per_meter,
-            map_resolution_px,
-        );
+        let uv_projection = fit_uv_projection;
         let chunk_tile_sources = self.resolve_or_build_terrain_chunk_tile_sources(
             terrain_source,
             terrain_map_texture,
             terrain_settings,
-            pixels_per_meter,
+            sample_rate_override,
             chunk_size_meters,
             chunks,
         );
@@ -1712,26 +1710,6 @@ fn terrain_uv_projection_hash(projection: crate::runtime::state::TerrainUvProjec
     h
 }
 
-fn terrain_uv_projection_with_density(
-    fit_projection: crate::runtime::state::TerrainUvProjection,
-    pixels_per_meter: Option<f32>,
-    map_resolution_px: Option<f32>,
-) -> crate::runtime::state::TerrainUvProjection {
-    let Some(ppm) = pixels_per_meter.filter(|v| v.is_finite() && *v > 0.0) else {
-        return fit_projection;
-    };
-    let Some(map_px) = map_resolution_px.filter(|v| v.is_finite() && *v > 0.0) else {
-        return fit_projection;
-    };
-    let span_meters = (map_px / ppm).max(1.0e-3);
-    crate::runtime::state::TerrainUvProjection {
-        origin_x: fit_projection.origin_x,
-        origin_z: fit_projection.origin_z,
-        inv_span_x: span_meters.recip(),
-        inv_span_z: span_meters.recip(),
-    }
-}
-
 fn terrain_world_bounds(
     chunks: &[crate::runtime::state::TerrainCachedChunk],
     chunk_size_meters: f32,
@@ -1833,7 +1811,7 @@ fn build_terrain_chunk_tile_set(
     map_source: &str,
     static_texture_lookup: Option<crate::runtime_project::StaticBytesLookup>,
     layer_rules: &[TerrainLayerRule],
-    terrain_pixels_per_meter: Option<f32>,
+    sample_rate: Option<f32>,
     chunk_size_meters: f32,
     terrain_bounds: (f32, f32, f32, f32),
     chunks: &[crate::runtime::state::TerrainCachedChunk],
@@ -1857,18 +1835,15 @@ fn build_terrain_chunk_tile_set(
     let span_z = (terrain_max_z - terrain_min_z).max(1.0e-3);
     let upscale = crate::terrain_bake::terrain_layer_bake_upscale(
         layer_rules,
-        terrain_pixels_per_meter,
-        width,
-        height,
-        span_x,
-        span_z,
+        sample_rate,
     );
+    let smoothed_map = crate::terrain_bake::build_smoothed_terrain_map(&image, upscale);
 
     let mut terrain_hash = DefaultHasher::new();
     terrain_source.hash(&mut terrain_hash);
     map_source.hash(&mut terrain_hash);
     hash_terrain_layer_rules(&mut terrain_hash, Some(layer_rules));
-    terrain_pixels_per_meter
+    sample_rate
         .unwrap_or(0.0)
         .to_bits()
         .hash(&mut terrain_hash);
@@ -1931,6 +1906,7 @@ fn build_terrain_chunk_tile_set(
             } else {
                 DynamicImage::ImageRgba8(crate::terrain_bake::build_layered_terrain_chunk_tile(
                     &image,
+                    smoothed_map.as_ref(),
                     &layer_textures,
                     layer_rules,
                     terrain_bounds,
@@ -1995,20 +1971,9 @@ fn build_terrain_chunk_tile_set(
 #[cfg(test)]
 fn terrain_layer_bake_upscale(
     layer_rules: &[TerrainLayerRule],
-    terrain_pixels_per_meter: Option<f32>,
-    map_width: u32,
-    map_height: u32,
-    terrain_span_x: f32,
-    terrain_span_z: f32,
+    sample_rate: Option<f32>,
 ) -> u32 {
-    crate::terrain_bake::terrain_layer_bake_upscale(
-        layer_rules,
-        terrain_pixels_per_meter,
-        map_width,
-        map_height,
-        terrain_span_x,
-        terrain_span_z,
-    )
+    crate::terrain_bake::terrain_layer_bake_upscale(layer_rules, sample_rate)
 }
 
 fn hash_terrain_layer_rules(hasher: &mut DefaultHasher, rules: Option<&[TerrainLayerRule]>) {
