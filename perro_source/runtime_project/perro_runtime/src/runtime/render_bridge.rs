@@ -9,12 +9,15 @@ impl Runtime {
     }
 
     pub fn drain_render_commands(&mut self, out: &mut Vec<RenderCommand>) {
-        let mut queued_resource_commands = Vec::new();
+        let mut queued_resource_commands = self.render.take_resource_queue_scratch();
+        queued_resource_commands.clear();
         self.resource_api
             .drain_commands(&mut queued_resource_commands);
-        for command in queued_resource_commands {
-            self.render.queue_command(command);
+        if !queued_resource_commands.is_empty() {
+            self.render.queue_commands(&mut queued_resource_commands);
         }
+        self.render
+            .restore_resource_queue_scratch(queued_resource_commands);
         self.render.drain_commands(out);
     }
 

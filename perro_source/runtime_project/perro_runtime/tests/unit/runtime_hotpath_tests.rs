@@ -1,5 +1,7 @@
 use super::*;
+use perro_ids::NodeID;
 use perro_nodes::{Node3D, SceneNode, SceneNodeData};
+use perro_render_bridge::{Command2D, RenderCommand};
 use std::hint::black_box;
 
 #[test]
@@ -164,5 +166,92 @@ fn bench_physics_scan_ids_clone_vs_scratch() {
     println!(
         "bench_physics_scan_ids_clone_vs_scratch: count={} rounds={} clone_us={} scratch_us={} speedup={:.3}x acc_clone={} acc_scratch={}",
         count, rounds, clone_us, scratch_us, speedup, acc_clone, acc_scratch
+    );
+}
+
+#[test]
+#[ignore]
+fn bench_transform_dirty_propagate_and_refresh() {
+    let mut runtime = Runtime::new();
+    let count = 40_000usize;
+    let rounds = 120usize;
+
+    let mut ids = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = runtime
+            .nodes
+            .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+        ids.push(id);
+        if ids.len() > 1 {
+            let parent = ids[ids.len() - 2];
+            if let Some(parent_node) = runtime.nodes.get_mut(parent) {
+                parent_node.add_child(id);
+            }
+            if let Some(child_node) = runtime.nodes.get_mut(id) {
+                child_node.parent = parent;
+            }
+        }
+    }
+    let root = ids[0];
+    let leaf = ids[count - 1];
+
+    for _ in 0..4 {
+        runtime.mark_transform_dirty_recursive(root);
+        runtime.propagate_pending_transform_dirty();
+        runtime.refresh_dirty_global_transforms();
+        let _ = runtime.get_global_transform_3d(leaf);
+    }
+
+    let start = std::time::Instant::now();
+    let mut acc = 0.0f32;
+    for _ in 0..rounds {
+        runtime.mark_transform_dirty_recursive(root);
+        runtime.propagate_pending_transform_dirty();
+        runtime.refresh_dirty_global_transforms();
+        if let Some(global) = runtime.get_global_transform_3d(leaf) {
+            acc += black_box(global.position.x + global.position.y + global.position.z);
+        }
+    }
+    let elapsed_us = start.elapsed().as_micros();
+    let per_round_us = elapsed_us as f64 / rounds as f64;
+    println!(
+        "bench_transform_dirty_propagate_and_refresh: nodes={} rounds={} total_us={} per_round_us={:.3} acc={}",
+        count, rounds, elapsed_us, per_round_us, acc
+    );
+}
+
+#[test]
+#[ignore]
+fn bench_render_command_drain_hotloop() {
+    let mut runtime = Runtime::new();
+    let rounds = 80_000usize;
+    let commands_per_round = 4usize;
+    let mut out = Vec::with_capacity(commands_per_round);
+
+    for _ in 0..512 {
+        for i in 0..commands_per_round {
+            let node = NodeID::from_parts((i + 1) as u32, 0);
+            runtime.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+        }
+        runtime.drain_render_commands(&mut out);
+        out.clear();
+    }
+
+    let start = std::time::Instant::now();
+    let mut acc = 0usize;
+    for round in 0..rounds {
+        for i in 0..commands_per_round {
+            let node = NodeID::from_parts((i + round + 1) as u32, 0);
+            runtime.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+        }
+        runtime.drain_render_commands(&mut out);
+        acc = acc.wrapping_add(black_box(out.len()));
+        out.clear();
+    }
+    let elapsed_us = start.elapsed().as_micros();
+    let per_round_us = elapsed_us as f64 / rounds as f64;
+    println!(
+        "bench_render_command_drain_hotloop: rounds={} commands_per_round={} total_us={} per_round_us={:.3} acc={}",
+        rounds, commands_per_round, elapsed_us, per_round_us, acc
     );
 }

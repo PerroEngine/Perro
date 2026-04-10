@@ -184,6 +184,7 @@ impl ScriptSchedules {
 /// queued outgoing commands and resolved incoming request results.
 pub(crate) struct RenderState {
     pending_commands: Vec<RenderCommand>,
+    queued_resource_commands_scratch: Vec<RenderCommand>,
     resolved_requests: AHashMap<RenderRequestID, RuntimeRenderResult>,
     inflight_requests: AHashSet<RenderRequestID>,
 }
@@ -192,6 +193,7 @@ impl RenderState {
     pub(crate) fn new() -> Self {
         Self {
             pending_commands: Vec::new(),
+            queued_resource_commands_scratch: Vec::new(),
             resolved_requests: AHashMap::default(),
             inflight_requests: AHashSet::default(),
         }
@@ -201,8 +203,21 @@ impl RenderState {
         self.pending_commands.push(command);
     }
 
+    pub(crate) fn queue_commands(&mut self, commands: &mut Vec<RenderCommand>) {
+        self.pending_commands.append(commands);
+    }
+
     pub(crate) fn drain_commands(&mut self, out: &mut Vec<RenderCommand>) {
         out.append(&mut self.pending_commands);
+    }
+
+    pub(crate) fn take_resource_queue_scratch(&mut self) -> Vec<RenderCommand> {
+        std::mem::take(&mut self.queued_resource_commands_scratch)
+    }
+
+    pub(crate) fn restore_resource_queue_scratch(&mut self, mut scratch: Vec<RenderCommand>) {
+        scratch.clear();
+        self.queued_resource_commands_scratch = scratch;
     }
 
     pub(crate) fn apply_event(&mut self, event: RenderEvent) {

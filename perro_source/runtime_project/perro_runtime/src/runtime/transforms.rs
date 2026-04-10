@@ -20,6 +20,11 @@ impl Runtime {
         if self.transforms.transform_visit_flags.len() < slot_count {
             self.transforms.transform_visit_flags.resize(slot_count, 0);
         }
+        if self.transforms.transform_visit_indices.capacity() < slot_count {
+            self.transforms
+                .transform_visit_indices
+                .reserve(slot_count - self.transforms.transform_visit_indices.capacity());
+        }
 
         for root in roots.iter().copied() {
             if self.nodes.get(root).is_none() {
@@ -38,7 +43,7 @@ impl Runtime {
                     continue;
                 };
                 self.dirty.mark_transform(id, node.spatial());
-                stack.extend(node.children_slice().iter().copied());
+                stack.extend_from_slice(node.children_slice());
             }
         }
 
@@ -177,9 +182,11 @@ impl Runtime {
         let mut hops = 0usize;
 
         while hops < max_hops {
-            let Some((parent, _local)) = self.nodes.get(cursor).and_then(|node| {
-                node.with_base_ref::<Node2D, _>(|base| (node.parent, base.transform))
-            }) else {
+            let Some(parent) = self
+                .nodes
+                .get(cursor)
+                .and_then(|node| node.with_base_ref::<Node2D, _>(|_| node.parent))
+            else {
                 break;
             };
             let index = cursor.index() as usize;
@@ -221,7 +228,6 @@ impl Runtime {
                 (local, local.to_mat3())
             };
             let index = chain_id.index() as usize;
-            self.ensure_global_2d_capacity(index);
             self.transforms.global_transform_2d[index] = global;
             self.transforms.global_transform_2d_valid[index] = 1;
             self.transforms.global_transform_2d_generation[index] = chain_id.generation();
@@ -262,9 +268,11 @@ impl Runtime {
         let mut hops = 0usize;
 
         while hops < max_hops {
-            let Some((parent, _local)) = self.nodes.get(cursor).and_then(|node| {
-                node.with_base_ref::<Node3D, _>(|base| (node.parent, base.transform))
-            }) else {
+            let Some(parent) = self
+                .nodes
+                .get(cursor)
+                .and_then(|node| node.with_base_ref::<Node3D, _>(|_| node.parent))
+            else {
                 break;
             };
             let index = cursor.index() as usize;
@@ -306,7 +314,6 @@ impl Runtime {
                 (local, local.to_mat4())
             };
             let index = chain_id.index() as usize;
-            self.ensure_global_3d_capacity(index);
             self.transforms.global_transform_3d[index] = global;
             self.transforms.global_transform_3d_valid[index] = 1;
             self.transforms.global_transform_3d_generation[index] = chain_id.generation();
