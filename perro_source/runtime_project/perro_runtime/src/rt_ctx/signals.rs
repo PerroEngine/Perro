@@ -38,11 +38,9 @@ impl SignalAPI for Runtime {
             .registry
             .single_signal_connection(signal)
         {
-            let behavior = self
-                .scripts
-                .get_instance(connection.script_id)
-                .map(|instance| Arc::clone(&instance.behavior));
-            if let Some(behavior) = behavior {
+            let instance_index = self.scripts.instance_index_for_id(connection.script_id);
+            let behavior = self.scripts.get_instance(connection.script_id).map(|instance| Arc::clone(&instance.behavior));
+            if let (Some(instance_index), Some(behavior)) = (instance_index, behavior) {
                 let resource_api = self.resource_api.clone();
                 let res: ResourceContext<'_, crate::RuntimeResourceApi> =
                     ResourceContext::new(resource_api.as_ref());
@@ -51,6 +49,9 @@ impl SignalAPI for Runtime {
                 // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
                 let ipt: InputContext<'_, perro_input::InputSnapshot> =
                     unsafe { InputContext::new(&*input_ptr) };
+                self.script_runtime
+                    .active_script_stack
+                    .push((instance_index, connection.script_id));
                 let mut ctx = RuntimeContext::new(self);
                 let _ = behavior.call_method(
                     connection.method,
@@ -60,6 +61,7 @@ impl SignalAPI for Runtime {
                     connection.script_id,
                     params,
                 );
+                let _ = self.script_runtime.active_script_stack.pop();
                 calls = 1;
             }
             return calls;
@@ -72,6 +74,10 @@ impl SignalAPI for Runtime {
             .copy_signal_connections(signal, &mut pending);
 
         for connection in pending.iter().copied() {
+            let instance_index = match self.scripts.instance_index_for_id(connection.script_id) {
+                Some(i) => i,
+                None => continue,
+            };
             let behavior = match self.scripts.get_instance(connection.script_id) {
                 Some(instance) => Arc::clone(&instance.behavior),
                 None => continue,
@@ -85,6 +91,9 @@ impl SignalAPI for Runtime {
             // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
             let ipt: InputContext<'_, perro_input::InputSnapshot> =
                 unsafe { InputContext::new(&*input_ptr) };
+            self.script_runtime
+                .active_script_stack
+                .push((instance_index, connection.script_id));
             let mut ctx = RuntimeContext::new(self);
             let _ = behavior.call_method(
                 connection.method,
@@ -94,6 +103,7 @@ impl SignalAPI for Runtime {
                 connection.script_id,
                 params,
             );
+            let _ = self.script_runtime.active_script_stack.pop();
             calls += 1;
         }
 

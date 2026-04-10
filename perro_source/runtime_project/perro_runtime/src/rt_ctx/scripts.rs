@@ -221,8 +221,14 @@ impl ScriptAPI for Runtime {
         method: ScriptMemberID,
         params: &[Variant],
     ) -> Variant {
-        let behavior = match self.scripts.get_instance(script_id) {
-            Some(instance) => Arc::clone(&instance.behavior),
+        let (instance_index, behavior) = match self.scripts.instance_index_for_id(script_id) {
+            Some(i) => {
+                let behavior = match self.scripts.get_instance_scheduled_indexed(i, script_id) {
+                    Some(instance) => Arc::clone(&instance.behavior),
+                    None => return Variant::Null,
+                };
+                (i, behavior)
+            }
             None => return Variant::Null,
         };
         let resource_api = self.resource_api.clone();
@@ -233,8 +239,13 @@ impl ScriptAPI for Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputContext<'_, perro_input::InputSnapshot> =
             unsafe { InputContext::new(&*input_ptr) };
+        self.script_runtime
+            .active_script_stack
+            .push((instance_index, script_id));
         let mut ctx = RuntimeContext::new(self);
-        behavior.call_method(method, &mut ctx, &res, &ipt, script_id, params)
+        let out = behavior.call_method(method, &mut ctx, &res, &ipt, script_id, params);
+        let _ = self.script_runtime.active_script_stack.pop();
+        out
     }
 
     fn attributes_of(&mut self, script_id: NodeID, member: &str) -> &'static [Attribute] {

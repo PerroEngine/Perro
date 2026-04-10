@@ -46,6 +46,11 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     }
 
     #[inline]
+    pub(crate) fn instance_index_for_id(&self, id: NodeID) -> Option<usize> {
+        self.instance_index_for(id)
+    }
+
+    #[inline]
     pub(crate) fn get_instance_scheduled_indexed(
         &self,
         instance_index: usize,

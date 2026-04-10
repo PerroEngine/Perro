@@ -100,3 +100,35 @@ fn bench_internal_schedule_unregister() {
             .is_empty()
     );
 }
+
+#[test]
+#[ignore]
+fn bench_dirty_indices_snapshot_compare() {
+    let count = 200_000usize;
+    let rounds = 2_000usize;
+    let dirty_indices: Vec<u32> = (0..count as u32).collect();
+
+    let start_legacy = std::time::Instant::now();
+    let mut acc_legacy = 0usize;
+    for _ in 0..rounds {
+        let copied = dirty_indices.to_vec();
+        acc_legacy = acc_legacy.wrapping_add(copied.len());
+    }
+    let legacy_us = start_legacy.elapsed().as_micros();
+
+    let mut scratch = Vec::<u32>::new();
+    let start_scratch = std::time::Instant::now();
+    let mut acc_scratch = 0usize;
+    for _ in 0..rounds {
+        scratch.clear();
+        scratch.extend_from_slice(&dirty_indices);
+        acc_scratch = acc_scratch.wrapping_add(scratch.len());
+    }
+    let scratch_us = start_scratch.elapsed().as_micros();
+    let speedup = legacy_us as f64 / scratch_us.max(1) as f64;
+
+    println!(
+        "bench_dirty_indices_snapshot_compare: count={} rounds={} legacy_us={} scratch_us={} speedup={:.3}x acc_legacy={} acc_scratch={}",
+        count, rounds, legacy_us, scratch_us, speedup, acc_legacy, acc_scratch
+    );
+}

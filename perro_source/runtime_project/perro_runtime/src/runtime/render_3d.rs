@@ -2642,6 +2642,19 @@ fn resolve_particle_render_mode(mode: ParticleType) -> ParticleRenderMode3D {
 }
 
 fn quaternion_forward(rotation: perro_structs::Quaternion) -> [f32; 3] {
+    // Use glam's SIMD quaternion-vector rotate path.
+    let q = Quat::from_xyzw(rotation.x, rotation.y, rotation.z, rotation.w);
+    let q = if q.is_finite() && q.length_squared() > 1.0e-6 {
+        q.normalize()
+    } else {
+        Quat::IDENTITY
+    };
+    let forward = q * Vec3::NEG_Z;
+    [forward.x, forward.y, forward.z]
+}
+
+#[cfg(test)]
+fn quaternion_forward_scalar_legacy(rotation: perro_structs::Quaternion) -> [f32; 3] {
     let len_sq = rotation.x * rotation.x
         + rotation.y * rotation.y
         + rotation.z * rotation.z

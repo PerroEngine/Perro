@@ -48,6 +48,7 @@ pub(crate) struct TransformRuntimeState {
     pub(crate) global_transform_3d_valid: Vec<u8>,
     pub(crate) global_transform_3d_generation: Vec<u32>,
     pub(crate) global_chain_scratch: Vec<NodeID>,
+    pub(crate) dirty_indices_scratch: Vec<u32>,
 }
 
 impl TransformRuntimeState {
@@ -64,6 +65,7 @@ impl TransformRuntimeState {
             global_transform_3d_valid: Vec::new(),
             global_transform_3d_generation: Vec::new(),
             global_chain_scratch: Vec::new(),
+            dirty_indices_scratch: Vec::new(),
         }
     }
 }

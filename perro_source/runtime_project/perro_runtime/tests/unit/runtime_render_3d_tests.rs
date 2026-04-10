@@ -10,7 +10,7 @@ use perro_nodes::{
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
 };
-use perro_structs::Vector3;
+use perro_structs::{Quaternion, Vector3};
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
@@ -542,4 +542,48 @@ fn terrain_layer_bake_upscale_matches_requested_pixels_per_meter() {
     // Base density here is 1 px/m (512 px over 512 m), so requesting 8 px/m should upscale 8x.
     let upscale = super::terrain_layer_bake_upscale(&rules, Some(8.0), 512, 512, 512.0, 512.0);
     assert_eq!(upscale, 8);
+}
+
+#[test]
+#[ignore]
+fn bench_quaternion_forward_hotloop_compare_scalar_vs_simd() {
+    let samples = 1_000_000usize;
+    let mut seed = 0x1234_5678_9ABC_DEF0u64;
+    let mut data = Vec::with_capacity(samples);
+    for _ in 0..samples {
+        seed ^= seed >> 12;
+        seed ^= seed << 25;
+        seed ^= seed >> 27;
+        let x = ((seed & 0xFFFF) as f32 / 65535.0) * 2.0 - 1.0;
+        let y = (((seed >> 16) & 0xFFFF) as f32 / 65535.0) * 2.0 - 1.0;
+        let z = (((seed >> 32) & 0xFFFF) as f32 / 65535.0) * 2.0 - 1.0;
+        let w = (((seed >> 48) & 0xFFFF) as f32 / 65535.0) * 2.0 - 1.0;
+        data.push(Quaternion::new(x, y, z, w));
+    }
+
+    let start_scalar = std::time::Instant::now();
+    let mut acc_scalar = 0.0f32;
+    for q in &data {
+        let f = super::quaternion_forward_scalar_legacy(*q);
+        acc_scalar += f[0] + f[1] + f[2];
+    }
+    let elapsed_scalar = start_scalar.elapsed();
+
+    let start_simd = std::time::Instant::now();
+    let mut acc_simd = 0.0f32;
+    for q in &data {
+        let f = super::quaternion_forward(*q);
+        acc_simd += f[0] + f[1] + f[2];
+    }
+    let elapsed_simd = start_simd.elapsed();
+    let speedup = elapsed_scalar.as_secs_f64() / elapsed_simd.as_secs_f64();
+    println!(
+        "bench_quaternion_forward_hotloop_compare_scalar_vs_simd: samples={} scalar_us={} simd_us={} speedup={:.3}x acc_scalar={} acc_simd={}",
+        samples,
+        elapsed_scalar.as_micros(),
+        elapsed_simd.as_micros(),
+        speedup,
+        acc_scalar,
+        acc_simd
+    );
 }

@@ -16,6 +16,10 @@ impl Runtime {
 
         let mut stack = std::mem::take(&mut self.transforms.traversal_stack);
         stack.clear();
+        let slot_count = self.nodes.slot_count();
+        if self.transforms.transform_visit_flags.len() < slot_count {
+            self.transforms.transform_visit_flags.resize(slot_count, 0);
+        }
 
         for root in roots.iter().copied() {
             if self.nodes.get(root).is_none() {
@@ -24,9 +28,6 @@ impl Runtime {
             stack.push(root);
             while let Some(id) = stack.pop() {
                 let index = id.index() as usize;
-                if self.transforms.transform_visit_flags.len() <= index {
-                    self.transforms.transform_visit_flags.resize(index + 1, 0);
-                }
                 if self.transforms.transform_visit_flags[index] != 0 {
                     continue;
                 }
@@ -93,7 +94,7 @@ impl Runtime {
         }
     }
 
-    fn is_global_2d_cached_clean(&self, id: NodeID) -> bool {
+    fn is_global_2d_cache_valid_for_id(&self, id: NodeID) -> bool {
         let index = id.index() as usize;
         if self
             .transforms
@@ -115,10 +116,15 @@ impl Runtime {
         {
             return false;
         }
-        !self.dirty.has_transform_dirty(id, Spatial::TwoD)
+        true
     }
 
-    fn is_global_3d_cached_clean(&self, id: NodeID) -> bool {
+    #[inline]
+    fn is_global_2d_cached_clean(&self, id: NodeID) -> bool {
+        self.is_global_2d_cache_valid_for_id(id) && !self.dirty.has_transform_dirty(id, Spatial::TwoD)
+    }
+
+    fn is_global_3d_cache_valid_for_id(&self, id: NodeID) -> bool {
         let index = id.index() as usize;
         if self
             .transforms
@@ -140,7 +146,12 @@ impl Runtime {
         {
             return false;
         }
-        !self.dirty.has_transform_dirty(id, Spatial::ThreeD)
+        true
+    }
+
+    #[inline]
+    fn is_global_3d_cached_clean(&self, id: NodeID) -> bool {
+        self.is_global_3d_cache_valid_for_id(id) && !self.dirty.has_transform_dirty(id, Spatial::ThreeD)
     }
 
     pub(crate) fn get_global_transform_2d(&mut self, id: NodeID) -> Option<Transform2D> {
@@ -174,8 +185,8 @@ impl Runtime {
             let index = cursor.index() as usize;
             self.ensure_global_2d_capacity(index);
             let dirty = self.dirty.has_transform_dirty(cursor, Spatial::TwoD);
-            let cached_clean = self.is_global_2d_cached_clean(cursor);
-            if cached_clean && !dirty {
+            let cached_valid = self.is_global_2d_cache_valid_for_id(cursor);
+            if cached_valid && !dirty {
                 parent_world = self.transforms.global_transform_2d[index].to_mat3();
                 break;
             }
@@ -259,8 +270,8 @@ impl Runtime {
             let index = cursor.index() as usize;
             self.ensure_global_3d_capacity(index);
             let dirty = self.dirty.has_transform_dirty(cursor, Spatial::ThreeD);
-            let cached_clean = self.is_global_3d_cached_clean(cursor);
-            if cached_clean && !dirty {
+            let cached_valid = self.is_global_3d_cache_valid_for_id(cursor);
+            if cached_valid && !dirty {
                 parent_world = self.transforms.global_transform_3d[index].to_mat4();
                 break;
             }
@@ -314,8 +325,10 @@ impl Runtime {
     }
 
     pub(crate) fn refresh_dirty_global_transforms(&mut self) {
-        let dirty_indices = self.dirty.dirty_indices().to_vec();
-        for raw_index in dirty_indices {
+        let mut dirty_indices = std::mem::take(&mut self.transforms.dirty_indices_scratch);
+        dirty_indices.clear();
+        dirty_indices.extend_from_slice(self.dirty.dirty_indices());
+        for raw_index in dirty_indices.iter().copied() {
             let index = raw_index as usize;
             let flags = self.dirty.transform_flags_at(index);
             if flags == 0 {
@@ -336,5 +349,7 @@ impl Runtime {
                 let _ = self.get_global_transform_3d(id);
             }
         }
+        dirty_indices.clear();
+        self.transforms.dirty_indices_scratch = dirty_indices;
     }
 }

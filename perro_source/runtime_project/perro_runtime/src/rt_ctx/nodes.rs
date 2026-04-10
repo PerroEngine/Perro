@@ -166,18 +166,25 @@ impl NodeAPI for Runtime {
             return None;
         }
 
-        let value = {
+        let (value, transform_changed) = {
             let node = if let Some((index, generation)) = slot {
                 self.nodes.slot_get_mut_checked(index, generation)?
             } else {
                 self.nodes.get_mut(id)?
             };
-            node.with_base_mut::<T, _>(f)?
+            let before_2d = node.with_base_ref::<Node2D, _>(|base| base.transform);
+            let before_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
+            let value = node.with_base_mut::<T, _>(f)?;
+            let after_2d = node.with_base_ref::<Node2D, _>(|base| base.transform);
+            let after_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
+            let changed = before_2d != after_2d || before_3d != after_3d;
+            (value, changed)
         };
 
-        // Conservatively mark both render and transform as dirty for base mutation.
         self.mark_needs_rerender(id);
-        self.mark_transform_dirty_recursive(id);
+        if transform_changed {
+            self.mark_transform_dirty_recursive(id);
+        }
         Some(value)
     }
 
