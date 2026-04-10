@@ -1846,10 +1846,27 @@ fn build_terrain_chunk_tile_set(
     let (terrain_min_x, terrain_max_x, terrain_min_z, terrain_max_z) = terrain_bounds;
     let span_x = (terrain_max_x - terrain_min_x).max(1.0e-3);
     let span_z = (terrain_max_z - terrain_min_z).max(1.0e-3);
+    let upscale = terrain_layer_bake_upscale(
+        layer_rules,
+        terrain_pixels_per_meter,
+        width,
+        height,
+        span_x,
+        span_z,
+    );
+    let allow_blending = layer_rules.iter().any(|rule| !rule.blend_with.is_empty());
 
     let mut terrain_hash = DefaultHasher::new();
     terrain_source.hash(&mut terrain_hash);
     map_source.hash(&mut terrain_hash);
+    hash_terrain_layer_rules(&mut terrain_hash, Some(layer_rules));
+    terrain_pixels_per_meter
+        .unwrap_or(0.0)
+        .to_bits()
+        .hash(&mut terrain_hash);
+    upscale.hash(&mut terrain_hash);
+    width.hash(&mut terrain_hash);
+    height.hash(&mut terrain_hash);
     chunk_size_meters.to_bits().hash(&mut terrain_hash);
     terrain_min_x.to_bits().hash(&mut terrain_hash);
     terrain_max_x.to_bits().hash(&mut terrain_hash);
@@ -1890,44 +1907,42 @@ fn build_terrain_chunk_tile_set(
         let w = px1.saturating_sub(px0).max(1);
         let h = py1.saturating_sub(py0).max(1);
 
-        let upscale = terrain_layer_bake_upscale(
-            layer_rules,
-            terrain_pixels_per_meter,
-            width,
-            height,
-            span_x,
-            span_z,
-        );
         let out_w = w.saturating_mul(upscale).max(1);
         let out_h = h.saturating_mul(upscale).max(1);
-
-        let tile = if layer_rules.is_empty() {
-            let sub = image.view(px0, py0, w, h).to_image();
-            DynamicImage::ImageRgba8(sub)
-        } else {
-            DynamicImage::ImageRgba8(build_layered_terrain_chunk_tile(
-                &image,
-                &layer_textures,
-                layer_rules,
-                terrain_bounds,
-                px0,
-                py0,
-                out_w,
-                out_h,
-                upscale,
-            ))
-        };
-        let mut png = Vec::new();
-        if tile
-            .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
-            .is_err()
-        {
-            return None;
-        }
-
         let tile_source = format!("{base_dir}/{}_{}.png", cached.coord.x, cached.coord.z);
-        if perro_io::save_asset(&tile_source, &png).is_err() {
-            return None;
+        let tile_exists = match perro_io::resolve_path(&tile_source) {
+            perro_io::ResolvedPath::Disk(path) => path.exists(),
+            perro_io::ResolvedPath::PerroAssets(_) => perro_io::load_asset(&tile_source).is_ok(),
+        };
+
+        if !tile_exists {
+            let tile = if layer_rules.is_empty() {
+                let sub = image.view(px0, py0, w, h).to_image();
+                DynamicImage::ImageRgba8(sub)
+            } else {
+                DynamicImage::ImageRgba8(build_layered_terrain_chunk_tile(
+                    &image,
+                    &layer_textures,
+                    layer_rules,
+                    terrain_bounds,
+                    px0,
+                    py0,
+                    out_w,
+                    out_h,
+                    upscale,
+                    allow_blending,
+                ))
+            };
+            let mut png = Vec::new();
+            if tile
+                .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
+                .is_err()
+            {
+                return None;
+            }
+            if perro_io::save_asset(&tile_source, &png).is_err() {
+                return None;
+            }
         }
         let x0_local = x0.saturating_sub(px0) as f32 * upscale as f32;
         let y0_local = y0.saturating_sub(py0) as f32 * upscale as f32;
@@ -2091,6 +2106,7 @@ fn build_layered_terrain_chunk_tile(
     out_width: u32,
     out_height: u32,
     upscale: u32,
+    allow_blending: bool,
 ) -> image::RgbaImage {
     let (terrain_min_x, terrain_max_x, terrain_min_z, terrain_max_z) = terrain_bounds;
     let span_x = (terrain_max_x - terrain_min_x).max(1.0e-3);
@@ -2111,8 +2127,14 @@ fn build_layered_terrain_chunk_tile(
             let v = (sy_f + 0.5).clamp(0.0, map_h as f32 - 1.0) / map_h as f32;
             let world_x = terrain_min_x + u * span_x;
             let world_z = terrain_min_z + v * span_z;
-            let pixel =
-                sample_terrain_layer_pixel(src, world_x, world_z, layer_rules, layer_textures);
+            let pixel = sample_terrain_layer_pixel(
+                src,
+                world_x,
+                world_z,
+                layer_rules,
+                layer_textures,
+                allow_blending,
+            );
             out.put_pixel(x, y, pixel);
         }
     }
@@ -2126,6 +2148,7 @@ fn sample_terrain_layer_pixel(
     world_z: f32,
     layer_rules: &[TerrainLayerRule],
     layer_textures: &[Option<image::RgbaImage>],
+    allow_blending: bool,
 ) -> image::Rgba<u8> {
     if layer_rules.is_empty() {
         return source_map_pixel;
@@ -2146,7 +2169,10 @@ fn sample_terrain_layer_pixel(
         );
     }
 
-    if let Some((a_idx, b_idx, blend_t)) = classify_blend_pair_by_color(source_map_pixel, layer_rules) {
+    if allow_blending
+        && let Some((a_idx, b_idx, blend_t)) =
+            classify_blend_pair_by_color(source_map_pixel, layer_rules)
+    {
         let a = sample_layer_value(a_idx, source_map_pixel, world_x, world_z, layer_rules, layer_textures);
         let b = sample_layer_value(b_idx, source_map_pixel, world_x, world_z, layer_rules, layer_textures);
         return mix_rgba(a, b, blend_t);
@@ -2197,14 +2223,25 @@ fn classify_blend_pair_by_color(
     if layer_rules.len() < 2 {
         return None;
     }
-    let mut ranked = layer_rules
-        .iter()
-        .enumerate()
-        .map(|(i, rule)| (i, color_distance_sq(pixel, rule.color.r, rule.color.g, rule.color.b)))
-        .collect::<Vec<_>>();
-    ranked.sort_unstable_by_key(|(_, d)| *d);
-    let (a_idx, a_d) = *ranked.first()?;
-    let (b_idx, b_d) = *ranked.get(1)?;
+    let mut a_idx = usize::MAX;
+    let mut b_idx = usize::MAX;
+    let mut a_d = u32::MAX;
+    let mut b_d = u32::MAX;
+    for (idx, rule) in layer_rules.iter().enumerate() {
+        let d = color_distance_sq(pixel, rule.color.r, rule.color.g, rule.color.b);
+        if d < a_d {
+            b_idx = a_idx;
+            b_d = a_d;
+            a_idx = idx;
+            a_d = d;
+        } else if d < b_d {
+            b_idx = idx;
+            b_d = d;
+        }
+    }
+    if a_idx == usize::MAX || b_idx == usize::MAX {
+        return None;
+    }
     if !layers_can_blend(a_idx, b_idx, layer_rules) {
         return None;
     }
