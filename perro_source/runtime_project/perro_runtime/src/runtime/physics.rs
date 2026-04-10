@@ -144,6 +144,8 @@ pub(crate) struct PhysicsState {
     pending_forces_3d: Vec<PendingForce3D>,
     pending_impulses_2d: Vec<PendingImpulse2D>,
     pending_impulses_3d: Vec<PendingImpulse3D>,
+    scan_ids_2d: Vec<NodeID>,
+    scan_ids_3d: Vec<NodeID>,
     next_opaque_handle: u64,
 }
 
@@ -192,6 +194,8 @@ impl PhysicsState {
             pending_forces_3d: Vec::new(),
             pending_impulses_2d: Vec::new(),
             pending_impulses_3d: Vec::new(),
+            scan_ids_2d: Vec::new(),
+            scan_ids_3d: Vec::new(),
             next_opaque_handle: 1,
         }
     }
@@ -207,6 +211,8 @@ impl PhysicsState {
         self.pending_forces_3d.clear();
         self.pending_impulses_2d.clear();
         self.pending_impulses_3d.clear();
+        self.scan_ids_2d.clear();
+        self.scan_ids_3d.clear();
         self.next_opaque_handle = 1;
     }
 
@@ -326,10 +332,12 @@ impl Runtime {
     }
 
     fn collect_body_descs_2d(&mut self) -> Vec<BodyDesc2D> {
-        let ids = self.internal_updates.physics_body_nodes_2d.clone();
+        let mut ids = std::mem::take(&mut self.physics.scan_ids_2d);
+        ids.clear();
+        ids.extend_from_slice(&self.internal_updates.physics_body_nodes_2d);
 
-        let mut out = Vec::new();
-        for id in ids {
+        let mut out = Vec::with_capacity(ids.len());
+        for &id in &ids {
             let Some(node) = self.nodes.get(id) else {
                 continue;
             };
@@ -379,7 +387,7 @@ impl Runtime {
                 .map(|state| state.shape_signature != shape_signature)
                 .unwrap_or(true);
 
-            let mut shapes = Vec::new();
+            let mut shapes = Vec::with_capacity(children.len());
             if needs_shape_rebuild {
                 for child_id in children {
                     let Some(child) = self.nodes.get(child_id) else {
@@ -403,14 +411,18 @@ impl Runtime {
                 shapes,
             });
         }
+        ids.clear();
+        self.physics.scan_ids_2d = ids;
         out
     }
 
     fn collect_body_descs_3d(&mut self) -> Vec<BodyDesc3D> {
-        let ids = self.internal_updates.physics_body_nodes_3d.clone();
+        let mut ids = std::mem::take(&mut self.physics.scan_ids_3d);
+        ids.clear();
+        ids.extend_from_slice(&self.internal_updates.physics_body_nodes_3d);
 
-        let mut out = Vec::new();
-        for id in ids {
+        let mut out = Vec::with_capacity(ids.len());
+        for &id in &ids {
             let Some(node) = self.nodes.get(id) else {
                 continue;
             };
@@ -515,7 +527,7 @@ impl Runtime {
                 .map(|state| state.shape_signature != shape_signature)
                 .unwrap_or(true);
 
-            let mut shapes = Vec::new();
+            let mut shapes = Vec::with_capacity(children.len());
             if needs_shape_rebuild {
                 for child_id in children {
                     let Some(child) = self.nodes.get(child_id) else {
@@ -561,6 +573,8 @@ impl Runtime {
                 shapes,
             });
         }
+        ids.clear();
+        self.physics.scan_ids_3d = ids;
         out
     }
 

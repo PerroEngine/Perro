@@ -132,3 +132,37 @@ fn bench_dirty_indices_snapshot_compare() {
         count, rounds, legacy_us, scratch_us, speedup, acc_legacy, acc_scratch
     );
 }
+
+#[test]
+#[ignore]
+fn bench_physics_scan_ids_clone_vs_scratch() {
+    let count = 200_000usize;
+    let rounds = 2_000usize;
+    let ids: Vec<perro_ids::NodeID> = (1..=count as u32)
+        .map(|i| perro_ids::NodeID::from_parts(i, 0))
+        .collect();
+
+    let start_clone = std::time::Instant::now();
+    let mut acc_clone = 0usize;
+    for _ in 0..rounds {
+        let copied = ids.clone();
+        acc_clone = acc_clone.wrapping_add(copied.len());
+    }
+    let clone_us = start_clone.elapsed().as_micros();
+
+    let mut scratch = Vec::<perro_ids::NodeID>::new();
+    let start_scratch = std::time::Instant::now();
+    let mut acc_scratch = 0usize;
+    for _ in 0..rounds {
+        scratch.clear();
+        scratch.extend_from_slice(&ids);
+        acc_scratch = acc_scratch.wrapping_add(scratch.len());
+    }
+    let scratch_us = start_scratch.elapsed().as_micros();
+    let speedup = clone_us as f64 / scratch_us.max(1) as f64;
+
+    println!(
+        "bench_physics_scan_ids_clone_vs_scratch: count={} rounds={} clone_us={} scratch_us={} speedup={:.3}x acc_clone={} acc_scratch={}",
+        count, rounds, clone_us, scratch_us, speedup, acc_clone, acc_scratch
+    );
+}

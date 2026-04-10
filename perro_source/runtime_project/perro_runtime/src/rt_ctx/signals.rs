@@ -72,6 +72,14 @@ impl SignalAPI for Runtime {
         self.signal_runtime
             .registry
             .copy_signal_connections(signal, &mut pending);
+        let resource_api = self.resource_api.clone();
+        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
+            ResourceContext::new(resource_api.as_ref());
+        let input_ptr = std::ptr::addr_of!(self.input);
+        // SAFETY: During callback dispatch, input is treated as immutable runtime state.
+        // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
+        let ipt: InputContext<'_, perro_input::InputSnapshot> =
+            unsafe { InputContext::new(&*input_ptr) };
 
         for connection in pending.iter().copied() {
             let instance_index = match self.scripts.instance_index_for_id(connection.script_id) {
@@ -82,15 +90,6 @@ impl SignalAPI for Runtime {
                 Some(instance) => Arc::clone(&instance.behavior),
                 None => continue,
             };
-
-            let resource_api = self.resource_api.clone();
-            let res: ResourceContext<'_, crate::RuntimeResourceApi> =
-                ResourceContext::new(resource_api.as_ref());
-            let input_ptr = std::ptr::addr_of!(self.input);
-            // SAFETY: During callback dispatch, input is treated as immutable runtime state.
-            // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-            let ipt: InputContext<'_, perro_input::InputSnapshot> =
-                unsafe { InputContext::new(&*input_ptr) };
             self.script_runtime
                 .active_script_stack
                 .push((instance_index, connection.script_id));
