@@ -2436,6 +2436,7 @@ dependencies = [
  "hidapi",
  "image",
  "perro_graphics",
+ "perro_ids",
  "perro_input",
  "perro_io",
  "perro_render_bridge",

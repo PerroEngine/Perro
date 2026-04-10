@@ -26,6 +26,6 @@ pub use runtime_project::{
 };
 pub use terrain_schema::{
     LoadedTerrainSource, TerrainBakedChunkPhysics, TerrainBakedChunkTile, TerrainLayerColor,
-    TerrainLayerRule, TerrainSourceSettings,
-    decode_loaded_terrain_blob, load_terrain_from_folder_source, load_terrain_literal,
+    TerrainLayerRule, TerrainSourceSettings, decode_loaded_terrain_blob,
+    load_terrain_from_folder_source, load_terrain_literal,
 };

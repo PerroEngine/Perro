@@ -126,7 +126,8 @@ impl Runtime {
 
     #[inline]
     fn is_global_2d_cached_clean(&self, id: NodeID) -> bool {
-        self.is_global_2d_cache_valid_for_id(id) && !self.dirty.has_transform_dirty(id, Spatial::TwoD)
+        self.is_global_2d_cache_valid_for_id(id)
+            && !self.dirty.has_transform_dirty(id, Spatial::TwoD)
     }
 
     fn is_global_3d_cache_valid_for_id(&self, id: NodeID) -> bool {
@@ -156,7 +157,8 @@ impl Runtime {
 
     #[inline]
     fn is_global_3d_cached_clean(&self, id: NodeID) -> bool {
-        self.is_global_3d_cache_valid_for_id(id) && !self.dirty.has_transform_dirty(id, Spatial::ThreeD)
+        self.is_global_3d_cache_valid_for_id(id)
+            && !self.dirty.has_transform_dirty(id, Spatial::ThreeD)
     }
 
     pub(crate) fn get_global_transform_2d(&mut self, id: NodeID) -> Option<Transform2D> {

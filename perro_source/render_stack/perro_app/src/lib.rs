@@ -193,6 +193,13 @@ impl<B: GraphicsBackend> App<B> {
 
     #[inline]
     pub fn present_timed(&mut self) -> PresentTiming {
+        self.present_with_overlay_timed(std::iter::empty::<perro_render_bridge::RenderCommand>())
+    }
+
+    pub fn present_with_overlay_timed<I>(&mut self, overlay_commands: I) -> PresentTiming
+    where
+        I: IntoIterator<Item = perro_render_bridge::RenderCommand>,
+    {
         let total_start = std::time::Instant::now();
 
         let extract_2d_start = std::time::Instant::now();
@@ -209,6 +216,7 @@ impl<B: GraphicsBackend> App<B> {
 
         let submit_start = std::time::Instant::now();
         self.graphics.submit_many(self.command_buffer.drain(..));
+        self.graphics.submit_many(overlay_commands);
         let submit_commands = submit_start.elapsed();
 
         let draw_frame_start = std::time::Instant::now();

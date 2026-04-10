@@ -117,6 +117,7 @@ pub struct StaticEmbeddedProjectInfo<'a> {
     pub project_name: &'static str,
     pub main_scene: &'static str,
     pub icon: &'static str,
+    pub startup_splash: &'static str,
     pub virtual_width: u32,
     pub virtual_height: u32,
 }
@@ -166,6 +167,7 @@ pub fn run_static_embedded_project(
         input.project.project_name,
         input.project.main_scene,
         input.project.icon,
+        input.project.startup_splash,
         input.project.virtual_width,
         input.project.virtual_height,
     )

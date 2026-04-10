@@ -52,6 +52,7 @@ pub struct StaticProjectConfig {
     pub name: &'static str,
     pub main_scene: &'static str,
     pub icon: &'static str,
+    pub startup_splash: &'static str,
     pub virtual_width: u32,
     pub virtual_height: u32,
     pub vsync: bool,
@@ -74,6 +75,7 @@ impl StaticProjectConfig {
         name: &'static str,
         main_scene: &'static str,
         icon: &'static str,
+        startup_splash: &'static str,
         virtual_width: u32,
         virtual_height: u32,
     ) -> Self {
@@ -81,6 +83,7 @@ impl StaticProjectConfig {
             name,
             main_scene,
             icon,
+            startup_splash,
             virtual_width,
             virtual_height,
             vsync: false,
@@ -149,6 +152,11 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_startup_splash(mut self, startup_splash: &'static str) -> Self {
+        self.startup_splash = startup_splash;
+        self
+    }
+
     pub const fn with_localization(
         mut self,
         source_csv: &'static str,
@@ -166,6 +174,7 @@ impl StaticProjectConfig {
             name: self.name.to_string(),
             main_scene: self.main_scene.to_string(),
             icon: self.icon.to_string(),
+            startup_splash: self.startup_splash.to_string(),
             virtual_width: self.virtual_width,
             virtual_height: self.virtual_height,
             vsync: self.vsync,
@@ -194,6 +203,7 @@ pub struct ProjectConfig {
     pub name: String,
     pub main_scene: String,
     pub icon: String,
+    pub startup_splash: String,
     pub virtual_width: u32,
     pub virtual_height: u32,
     pub vsync: bool,
@@ -215,6 +225,7 @@ impl ProjectConfig {
             name: name.into(),
             main_scene: "res://main.scn".to_string(),
             icon: "res://icon.png".to_string(),
+            startup_splash: "res://icon.png".to_string(),
             virtual_width: 1920,
             virtual_height: 1080,
             vsync: false,
@@ -445,6 +456,7 @@ pub fn default_project_toml(name: &str) -> String {
 name = "{name}"
 main_scene = "res://main.scn"
 icon = "res://icon.png"
+startup_splash = "res://icon.png"
 
 [graphics]
 virtual_resolution = "1920x1080"
@@ -515,6 +527,13 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         .to_string();
     validate_res_path("project.icon", &icon)?;
 
+    let startup_splash = project_table
+        .get("startup_splash")
+        .and_then(Value::as_str)
+        .unwrap_or("res://icon.png")
+        .to_string();
+    validate_res_path("project.startup_splash", &startup_splash)?;
+
     let (virtual_width, virtual_height) = if let Some(raw) = graphics_table
         .get("virtual_resolution")
         .and_then(Value::as_str)
@@ -576,6 +595,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         name,
         main_scene,
         icon,
+        startup_splash,
         virtual_width,
         virtual_height,
         vsync,
@@ -1512,6 +1532,7 @@ fn project_root() -> std::path::PathBuf {
               project_name: "__PROJECT_NAME__",
               main_scene: "res://main.scn",
               icon: "res://icon.png",
+              startup_splash: "res://icon.png",
               virtual_width: 1920,
               virtual_height: 1080,
           },

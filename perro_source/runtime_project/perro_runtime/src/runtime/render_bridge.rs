@@ -39,6 +39,18 @@ impl Runtime {
         self.render.take_result(request)
     }
 
+    pub fn has_inflight_render_requests(&self) -> bool {
+        self.render.has_inflight_requests()
+    }
+
+    pub fn is_render_request_inflight(&self, request: RenderRequestID) -> bool {
+        self.render.is_request_inflight(request)
+    }
+
+    pub fn copy_inflight_render_requests(&self, out: &mut Vec<RenderRequestID>) {
+        self.render.copy_inflight_requests(out);
+    }
+
     pub fn mark_needs_rerender(&mut self, id: NodeID) {
         self.dirty.mark_rerender(id);
     }

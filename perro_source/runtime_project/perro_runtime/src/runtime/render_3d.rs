@@ -620,25 +620,24 @@ impl Runtime {
             }
             self.render_3d.terrain_instance_cache.remove(&node);
             self.render_3d.terrain_instance_settings.remove(&node);
-            let stale_chunk_keys: Vec<_> = self
-                .render_3d
-                .terrain_chunk_meshes
-                .keys()
-                .copied()
-                .filter(|key| key.node == node)
-                .collect();
-            for key in stale_chunk_keys {
-                if let Some(mesh_state) = self.render_3d.terrain_chunk_meshes.remove(&key)
-                    && !mesh_state.mesh.is_nil()
-                {
-                    self.queue_render_command(RenderCommand::Resource(ResourceCommand::DropMesh {
-                        id: mesh_state.mesh,
-                    }));
+            if let Some(keys) = self.render_3d.terrain_chunk_keys_by_node.remove(&node) {
+                for key in keys {
+                    if let Some(mesh_state) = self.render_3d.terrain_chunk_meshes.remove(&key)
+                        && !mesh_state.mesh.is_nil()
+                    {
+                        self.queue_render_command(RenderCommand::Resource(
+                            ResourceCommand::DropMesh {
+                                id: mesh_state.mesh,
+                            },
+                        ));
+                    }
+                    self.render_3d.terrain_chunk_draws.remove(&key);
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                        Command3D::RemoveNode {
+                            node: terrain_chunk_draw_node(node, key.coord),
+                        },
+                    )));
                 }
-                self.render_3d.terrain_chunk_draws.remove(&key);
-                self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
-                    node: terrain_chunk_draw_node(node, key.coord),
-                })));
             }
             self.render_3d.retained_ambient_lights.remove(&node);
             self.render_3d.retained_skies.remove(&node);
@@ -650,6 +649,37 @@ impl Runtime {
                 node,
             })));
         }
+    }
+
+    #[inline]
+    fn track_terrain_chunk_key(&mut self, key: crate::runtime::TerrainChunkMeshKey) {
+        self.render_3d
+            .terrain_chunk_keys_by_node
+            .entry(key.node)
+            .or_default()
+            .insert(key);
+    }
+
+    fn remove_terrain_chunk_mesh_entry(&mut self, key: crate::runtime::TerrainChunkMeshKey) {
+        let mut remove_node_bucket = false;
+        if let Some(keys) = self.render_3d.terrain_chunk_keys_by_node.get_mut(&key.node) {
+            keys.remove(&key);
+            remove_node_bucket = keys.is_empty();
+        }
+        if remove_node_bucket {
+            self.render_3d.terrain_chunk_keys_by_node.remove(&key.node);
+        }
+        if let Some(mesh_state) = self.render_3d.terrain_chunk_meshes.remove(&key)
+            && !mesh_state.mesh.is_nil()
+        {
+            self.queue_render_command(RenderCommand::Resource(ResourceCommand::DropMesh {
+                id: mesh_state.mesh,
+            }));
+        }
+        self.render_3d.terrain_chunk_draws.remove(&key);
+        self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+            node: terrain_chunk_draw_node(key.node, key.coord),
+        })));
     }
 
     fn resolve_terrain_map_texture_source(
@@ -870,7 +900,8 @@ impl Runtime {
         let generated = build_terrain_chunk_tile_set(
             terrain_source,
             map_source,
-            self.project().and_then(|project| project.static_icon_lookup),
+            self.project()
+                .and_then(|project| project.static_icon_lookup),
             terrain_settings.map(|s| s.layers.as_slice()).unwrap_or(&[]),
             sample_rate_override
                 .or_else(|| terrain_settings.and_then(|settings| settings.sample_rate)),
@@ -1004,6 +1035,7 @@ impl Runtime {
                 continue;
             }
             active_keys.insert(key);
+            self.track_terrain_chunk_key(key);
             let source = format!(
                 "__terrain_runtime__/n{}_x{}_z{}_h{:016x}",
                 node.as_u64(),
@@ -1102,25 +1134,17 @@ impl Runtime {
                 }
             }
         }
-        let stale_keys: Vec<_> = self
-            .render_3d
-            .terrain_chunk_meshes
-            .keys()
-            .copied()
-            .filter(|key| key.node == node && !active_keys.contains(key))
-            .collect();
-        for key in stale_keys {
-            if let Some(mesh_state) = self.render_3d.terrain_chunk_meshes.remove(&key)
-                && !mesh_state.mesh.is_nil()
-            {
-                self.queue_render_command(RenderCommand::Resource(ResourceCommand::DropMesh {
-                    id: mesh_state.mesh,
-                }));
+        let mut stale_keys = Vec::new();
+        if let Some(keys) = self.render_3d.terrain_chunk_keys_by_node.get(&node) {
+            stale_keys.reserve(keys.len());
+            for &key in keys {
+                if !active_keys.contains(&key) {
+                    stale_keys.push(key);
+                }
             }
-            self.render_3d.terrain_chunk_draws.remove(&key);
-            self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
-                node: terrain_chunk_draw_node(node, key.coord),
-            })));
+        }
+        for key in stale_keys {
+            self.remove_terrain_chunk_mesh_entry(key);
         }
         terrain_signature
     }
@@ -1833,20 +1857,14 @@ fn build_terrain_chunk_tile_set(
     let (terrain_min_x, terrain_max_x, terrain_min_z, terrain_max_z) = terrain_bounds;
     let span_x = (terrain_max_x - terrain_min_x).max(1.0e-3);
     let span_z = (terrain_max_z - terrain_min_z).max(1.0e-3);
-    let upscale = crate::terrain_bake::terrain_layer_bake_upscale(
-        layer_rules,
-        sample_rate,
-    );
+    let upscale = crate::terrain_bake::terrain_layer_bake_upscale(layer_rules, sample_rate);
     let smoothed_map = crate::terrain_bake::build_smoothed_terrain_map(&image, upscale);
 
     let mut terrain_hash = DefaultHasher::new();
     terrain_source.hash(&mut terrain_hash);
     map_source.hash(&mut terrain_hash);
     hash_terrain_layer_rules(&mut terrain_hash, Some(layer_rules));
-    sample_rate
-        .unwrap_or(0.0)
-        .to_bits()
-        .hash(&mut terrain_hash);
+    sample_rate.unwrap_or(0.0).to_bits().hash(&mut terrain_hash);
     upscale.hash(&mut terrain_hash);
     width.hash(&mut terrain_hash);
     height.hash(&mut terrain_hash);
@@ -1862,90 +1880,95 @@ fn build_terrain_chunk_tile_set(
     let baked_outputs = chunks
         .par_iter()
         .map(|cached| -> Option<BakedChunkTileOutput> {
-        let (chunk_min_x, chunk_max_x, chunk_min_z, chunk_max_z) =
-            terrain_chunk_world_bounds(cached, chunk_size_meters)?;
-        let u0 = ((chunk_min_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
-        let u1 = ((chunk_max_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
-        let v0 = ((chunk_min_z - terrain_min_z) / span_z).clamp(0.0, 1.0);
-        let v1 = ((chunk_max_z - terrain_min_z) / span_z).clamp(0.0, 1.0);
+            let (chunk_min_x, chunk_max_x, chunk_min_z, chunk_max_z) =
+                terrain_chunk_world_bounds(cached, chunk_size_meters)?;
+            let u0 = ((chunk_min_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
+            let u1 = ((chunk_max_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
+            let v0 = ((chunk_min_z - terrain_min_z) / span_z).clamp(0.0, 1.0);
+            let v1 = ((chunk_max_z - terrain_min_z) / span_z).clamp(0.0, 1.0);
 
-        let mut x0 = (u0 * width as f32).floor() as u32;
-        let mut x1 = (u1 * width as f32).ceil() as u32;
-        let mut y0 = (v0 * height as f32).floor() as u32;
-        let mut y1 = (v1 * height as f32).ceil() as u32;
-        if x1 <= x0 {
-            x1 = (x0 + 1).min(width);
-        }
-        if y1 <= y0 {
-            y1 = (y0 + 1).min(height);
-        }
-        x0 = x0.min(width.saturating_sub(1));
-        y0 = y0.min(height.saturating_sub(1));
-        x1 = x1.max(x0 + 1).min(width);
-        y1 = y1.max(y0 + 1).min(height);
-
-        let px0 = x0.saturating_sub(BORDER);
-        let py0 = y0.saturating_sub(BORDER);
-        let px1 = (x1 + BORDER).min(width);
-        let py1 = (y1 + BORDER).min(height);
-        let w = px1.saturating_sub(px0).max(1);
-        let h = py1.saturating_sub(py0).max(1);
-
-        let out_w = w.saturating_mul(upscale).max(1);
-        let out_h = h.saturating_mul(upscale).max(1);
-        let tile_source = format!("{base_dir}/{}_{}.png", cached.coord.x, cached.coord.z);
-        let tile_exists = match perro_io::resolve_path(&tile_source) {
-            perro_io::ResolvedPath::Disk(path) => path.exists(),
-            perro_io::ResolvedPath::PerroAssets(_) => perro_io::load_asset(&tile_source).is_ok(),
-        };
-
-        let png = if !tile_exists {
-            let tile = if layer_rules.is_empty() {
-                let sub = image.view(px0, py0, w, h).to_image();
-                DynamicImage::ImageRgba8(sub)
-            } else {
-                DynamicImage::ImageRgba8(crate::terrain_bake::build_layered_terrain_chunk_tile(
-                    &image,
-                    smoothed_map.as_ref(),
-                    &layer_textures,
-                    layer_rules,
-                    terrain_bounds,
-                    px0,
-                    py0,
-                    out_w,
-                    out_h,
-                    upscale,
-                ))
-            };
-            let mut png = Vec::new();
-            if tile
-                .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
-                .is_err()
-            {
-                return None;
+            let mut x0 = (u0 * width as f32).floor() as u32;
+            let mut x1 = (u1 * width as f32).ceil() as u32;
+            let mut y0 = (v0 * height as f32).floor() as u32;
+            let mut y1 = (v1 * height as f32).ceil() as u32;
+            if x1 <= x0 {
+                x1 = (x0 + 1).min(width);
             }
-            Some(png)
-        } else {
-            None
-        };
-        let x0_local = x0.saturating_sub(px0) as f32 * upscale as f32;
-        let y0_local = y0.saturating_sub(py0) as f32 * upscale as f32;
-        let x1_local = x1.saturating_sub(px0) as f32 * upscale as f32;
-        let y1_local = y1.saturating_sub(py0) as f32 * upscale as f32;
-        let uv_min = [(x0_local + 0.5) / out_w as f32, (y0_local + 0.5) / out_h as f32];
-        let uv_max = [
-            (x1_local - 0.5).max(uv_min[0] * out_w as f32 + 1.0e-4) / out_w as f32,
-            (y1_local - 0.5).max(uv_min[1] * out_h as f32 + 1.0e-4) / out_h as f32,
-        ];
-        Some(BakedChunkTileOutput {
-            coord: cached.coord,
-            tile_source,
-            uv_min,
-            uv_max,
-            png,
+            if y1 <= y0 {
+                y1 = (y0 + 1).min(height);
+            }
+            x0 = x0.min(width.saturating_sub(1));
+            y0 = y0.min(height.saturating_sub(1));
+            x1 = x1.max(x0 + 1).min(width);
+            y1 = y1.max(y0 + 1).min(height);
+
+            let px0 = x0.saturating_sub(BORDER);
+            let py0 = y0.saturating_sub(BORDER);
+            let px1 = (x1 + BORDER).min(width);
+            let py1 = (y1 + BORDER).min(height);
+            let w = px1.saturating_sub(px0).max(1);
+            let h = py1.saturating_sub(py0).max(1);
+
+            let out_w = w.saturating_mul(upscale).max(1);
+            let out_h = h.saturating_mul(upscale).max(1);
+            let tile_source = format!("{base_dir}/{}_{}.png", cached.coord.x, cached.coord.z);
+            let tile_exists = match perro_io::resolve_path(&tile_source) {
+                perro_io::ResolvedPath::Disk(path) => path.exists(),
+                perro_io::ResolvedPath::PerroAssets(_) => {
+                    perro_io::load_asset(&tile_source).is_ok()
+                }
+            };
+
+            let png = if !tile_exists {
+                let tile = if layer_rules.is_empty() {
+                    let sub = image.view(px0, py0, w, h).to_image();
+                    DynamicImage::ImageRgba8(sub)
+                } else {
+                    DynamicImage::ImageRgba8(crate::terrain_bake::build_layered_terrain_chunk_tile(
+                        &image,
+                        smoothed_map.as_ref(),
+                        &layer_textures,
+                        layer_rules,
+                        terrain_bounds,
+                        px0,
+                        py0,
+                        out_w,
+                        out_h,
+                        upscale,
+                    ))
+                };
+                let mut png = Vec::new();
+                if tile
+                    .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
+                    .is_err()
+                {
+                    return None;
+                }
+                Some(png)
+            } else {
+                None
+            };
+            let x0_local = x0.saturating_sub(px0) as f32 * upscale as f32;
+            let y0_local = y0.saturating_sub(py0) as f32 * upscale as f32;
+            let x1_local = x1.saturating_sub(px0) as f32 * upscale as f32;
+            let y1_local = y1.saturating_sub(py0) as f32 * upscale as f32;
+            let uv_min = [
+                (x0_local + 0.5) / out_w as f32,
+                (y0_local + 0.5) / out_h as f32,
+            ];
+            let uv_max = [
+                (x1_local - 0.5).max(uv_min[0] * out_w as f32 + 1.0e-4) / out_w as f32,
+                (y1_local - 0.5).max(uv_min[1] * out_h as f32 + 1.0e-4) / out_h as f32,
+            ];
+            Some(BakedChunkTileOutput {
+                coord: cached.coord,
+                tile_source,
+                uv_min,
+                uv_max,
+                png,
+            })
         })
-    })
-    .collect::<Vec<_>>();
+        .collect::<Vec<_>>();
 
     let mut tiles_by_coord = ahash::AHashMap::default();
     for baked in baked_outputs {
@@ -1969,10 +1992,7 @@ fn build_terrain_chunk_tile_set(
 }
 
 #[cfg(test)]
-fn terrain_layer_bake_upscale(
-    layer_rules: &[TerrainLayerRule],
-    sample_rate: Option<f32>,
-) -> u32 {
+fn terrain_layer_bake_upscale(layer_rules: &[TerrainLayerRule], sample_rate: Option<f32>) -> u32 {
     crate::terrain_bake::terrain_layer_bake_upscale(layer_rules, sample_rate)
 }
 
@@ -2074,9 +2094,10 @@ fn load_terrain_layer_textures(
 ) -> Vec<Option<image::RgbaImage>> {
     let mut out = Vec::with_capacity(rules.len());
     for rule in rules {
-        let tex = rule.texture_source.as_ref().and_then(|source| {
-            load_terrain_texture_image(source, static_texture_lookup)
-        });
+        let tex = rule
+            .texture_source
+            .as_ref()
+            .and_then(|source| load_terrain_texture_image(source, static_texture_lookup));
         out.push(tex);
     }
     out

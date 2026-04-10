@@ -47,6 +47,7 @@ fn sprite_texture_upsert_is_accepted_after_texture_creation() {
         sprite: Sprite2DCommand {
             texture: created,
             model: [[1.0, 0.0, 10.0], [0.0, 1.0, 5.0], [0.0, 0.0, 1.0]],
+            tint: [1.0, 1.0, 1.0, 1.0],
             z_index: 2,
         },
     }));
@@ -57,6 +58,7 @@ fn sprite_texture_upsert_is_accepted_after_texture_creation() {
         Some(Sprite2DCommand {
             texture: created,
             model: [[1.0, 0.0, 10.0], [0.0, 1.0, 5.0], [0.0, 0.0, 1.0]],
+            tint: [1.0, 1.0, 1.0, 1.0],
             z_index: 2,
         })
     );
@@ -371,6 +373,7 @@ fn rejected_sprite_texture_does_not_update_retained_binding() {
         sprite: Sprite2DCommand {
             texture: missing,
             model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            tint: [1.0, 1.0, 1.0, 1.0],
             z_index: 0,
         },
     }));
@@ -409,6 +412,7 @@ fn rejected_sprite_texture_swap_keeps_previous_texture_binding() {
         sprite: Sprite2DCommand {
             texture,
             model: first_model,
+            tint: [1.0, 1.0, 1.0, 1.0],
             z_index: 1,
         },
     }));
@@ -421,6 +425,7 @@ fn rejected_sprite_texture_swap_keeps_previous_texture_binding() {
         sprite: Sprite2DCommand {
             texture: missing_texture,
             model: second_model,
+            tint: [1.0, 1.0, 1.0, 1.0],
             z_index: 7,
         },
     }));
@@ -431,6 +436,7 @@ fn rejected_sprite_texture_swap_keeps_previous_texture_binding() {
         Some(Sprite2DCommand {
             texture,
             model: second_model,
+            tint: [1.0, 1.0, 1.0, 1.0],
             z_index: 7,
         })
     );

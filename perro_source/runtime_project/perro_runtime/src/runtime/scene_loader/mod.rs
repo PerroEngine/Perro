@@ -236,6 +236,7 @@ impl Runtime {
         self.render_3d.terrain_instance_settings.clear();
         self.render_3d.terrain_instance_cache.clear();
         self.render_3d.terrain_chunk_meshes.clear();
+        self.render_3d.terrain_chunk_keys_by_node.clear();
         self.render_3d.terrain_chunk_draws.clear();
         self.render_3d.particle_path_cache.clear();
         self.render_3d.removed_nodes.clear();

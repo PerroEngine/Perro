@@ -14,7 +14,10 @@ pub fn terrain_layer_bake_upscale(
         .clamp(1.0, 12.0) as u32
 }
 
-pub fn build_smoothed_terrain_map(terrain_map: &image::RgbaImage, upscale: u32) -> Option<image::RgbaImage> {
+pub fn build_smoothed_terrain_map(
+    terrain_map: &image::RgbaImage,
+    upscale: u32,
+) -> Option<image::RgbaImage> {
     if upscale <= 1 {
         return None;
     }
@@ -158,12 +161,7 @@ fn apply_adaptive_sharpen(image: &mut image::RgbaImage, upscale: u32) {
             image.put_pixel(
                 x,
                 y,
-                image::Rgba([
-                    sharpen_chan(0),
-                    sharpen_chan(1),
-                    sharpen_chan(2),
-                    cx[3],
-                ]),
+                image::Rgba([sharpen_chan(0), sharpen_chan(1), sharpen_chan(2), cx[3]]),
             );
         }
     }
@@ -341,7 +339,10 @@ fn classify_blend_pair_by_color(
     Some((a_idx, b_idx, t))
 }
 
-fn nearest_layer_by_color(pixel: image::Rgba<u8>, layer_rules: &[TerrainLayerRule]) -> Option<usize> {
+fn nearest_layer_by_color(
+    pixel: image::Rgba<u8>,
+    layer_rules: &[TerrainLayerRule],
+) -> Option<usize> {
     layer_rules
         .iter()
         .enumerate()

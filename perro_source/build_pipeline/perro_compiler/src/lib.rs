@@ -398,6 +398,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         project_name: \"{name}\",\n\
         main_scene: \"{main_scene}\",\n\
         icon: \"{icon}\",\n\
+        startup_splash: \"{startup_splash}\",\n\
         virtual_width: {w},\n\
         virtual_height: {h},\n\
   }},\n\
@@ -440,6 +441,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         name = escape_str(&cfg.name),
         main_scene = escape_str(&cfg.main_scene),
         icon = escape_str(&cfg.icon),
+        startup_splash = escape_str(&cfg.startup_splash),
         w = cfg.virtual_width,
         h = cfg.virtual_height,
         vsync = cfg.vsync,

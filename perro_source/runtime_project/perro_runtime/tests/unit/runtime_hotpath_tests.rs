@@ -1,4 +1,5 @@
 use super::*;
+use ahash::AHashMap;
 use perro_ids::NodeID;
 use perro_nodes::{Node3D, SceneNode, SceneNodeData};
 use perro_render_bridge::{Command2D, RenderCommand};
@@ -253,5 +254,126 @@ fn bench_render_command_drain_hotloop() {
     println!(
         "bench_render_command_drain_hotloop: rounds={} commands_per_round={} total_us={} per_round_us={:.3} acc={}",
         rounds, commands_per_round, elapsed_us, per_round_us, acc
+    );
+}
+
+#[test]
+#[ignore]
+fn bench_render_terrain_chunk_key_lookup_legacy_vs_indexed() {
+    let node_count = 30_000u32;
+    let chunks_per_node = 6u32;
+    let remove_stride = 3u32;
+
+    let mut all_keys = Vec::with_capacity((node_count * chunks_per_node) as usize);
+    let mut meshes: AHashMap<TerrainChunkMeshKey, u64> = AHashMap::default();
+    let mut indexed: AHashMap<NodeID, Vec<TerrainChunkMeshKey>> = AHashMap::default();
+
+    for n in 1..=node_count {
+        let node = NodeID::from_parts(n, 0);
+        let entry = indexed.entry(node).or_default();
+        for c in 0..chunks_per_node {
+            let key = TerrainChunkMeshKey {
+                node,
+                coord: perro_terrain::ChunkCoord {
+                    x: c as i32,
+                    z: (c * 2) as i32,
+                },
+            };
+            all_keys.push(key);
+            meshes.insert(key, key.coord.x as u64);
+            entry.push(key);
+        }
+    }
+
+    let removed_nodes: Vec<NodeID> = (1..=node_count)
+        .filter(|n| n % remove_stride == 0)
+        .map(|n| NodeID::from_parts(n, 0))
+        .collect();
+
+    let t0 = std::time::Instant::now();
+    let mut legacy_count = 0usize;
+    for node in &removed_nodes {
+        let stale: Vec<_> = meshes.keys().copied().filter(|k| k.node == *node).collect();
+        legacy_count = legacy_count.wrapping_add(stale.len());
+        black_box(&stale);
+    }
+    let legacy_us = t0.elapsed().as_micros();
+
+    let t1 = std::time::Instant::now();
+    let mut indexed_count = 0usize;
+    for node in &removed_nodes {
+        if let Some(keys) = indexed.get(node) {
+            indexed_count = indexed_count.wrapping_add(keys.len());
+            black_box(keys);
+        }
+    }
+    let indexed_us = t1.elapsed().as_micros();
+
+    println!(
+        "bench_render_terrain_chunk_key_lookup_legacy_vs_indexed: nodes={} chunks_per_node={} removed={} legacy_us={} indexed_us={} speedup={:.3}x counts={}/{}",
+        node_count,
+        chunks_per_node,
+        removed_nodes.len(),
+        legacy_us,
+        indexed_us,
+        legacy_us as f64 / indexed_us.max(1) as f64,
+        legacy_count,
+        indexed_count
+    );
+    black_box(all_keys);
+}
+
+#[test]
+#[ignore]
+fn bench_physics_children_clone_vs_slice_scan() {
+    let body_count = 250_000usize;
+    let children_per_body = 4usize;
+    let rounds = 120usize;
+
+    let mut children = Vec::with_capacity(body_count);
+    for body in 0..body_count {
+        let mut ids = Vec::with_capacity(children_per_body);
+        for i in 0..children_per_body {
+            ids.push(NodeID::from_parts(
+                (body * children_per_body + i + 1) as u32,
+                0,
+            ));
+        }
+        children.push(ids);
+    }
+
+    let t0 = std::time::Instant::now();
+    let mut legacy_acc = 0u64;
+    for _ in 0..rounds {
+        for ids in &children {
+            let copied = ids.to_vec();
+            for id in &copied {
+                legacy_acc = legacy_acc.wrapping_add(id.as_u64());
+            }
+        }
+    }
+    let legacy_us = t0.elapsed().as_micros();
+
+    let t1 = std::time::Instant::now();
+    let mut now_acc = 0u64;
+    for _ in 0..rounds {
+        for ids in &children {
+            for &id in ids {
+                now_acc = now_acc.wrapping_add(id.as_u64());
+            }
+        }
+    }
+    let now_us = t1.elapsed().as_micros();
+
+    println!(
+        "bench_physics_children_clone_vs_slice_scan: bodies={} children_per_body={} rounds={} legacy_us={} now_us={} speedup={:.3}x acc={}/{}",
+        body_count,
+        children_per_body,
+        rounds,
+        legacy_us,
+        now_us,
+        legacy_us as f64 / now_us.max(1) as f64,
+        legacy_acc,
+        now_acc
     );
 }

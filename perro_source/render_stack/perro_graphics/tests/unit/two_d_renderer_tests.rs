@@ -15,6 +15,7 @@ fn texture_upsert_requires_existing_resource() {
         Sprite2DCommand {
             texture: missing,
             model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            tint: [1.0, 1.0, 1.0, 1.0],
             z_index: 0,
         },
     );
@@ -29,6 +30,7 @@ fn texture_upsert_requires_existing_resource() {
         Sprite2DCommand {
             texture: loaded,
             model: [[1.0, 0.0, 2.0], [0.0, 1.0, 3.0], [0.0, 0.0, 1.0]],
+            tint: [1.0, 1.0, 1.0, 1.0],
             z_index: 1,
         },
     );
@@ -40,6 +42,7 @@ fn texture_upsert_requires_existing_resource() {
         Some(Sprite2DCommand {
             texture: loaded,
             model: [[1.0, 0.0, 2.0], [0.0, 1.0, 3.0], [0.0, 0.0, 1.0]],
+            tint: [1.0, 1.0, 1.0, 1.0],
             z_index: 1,
         })
     );

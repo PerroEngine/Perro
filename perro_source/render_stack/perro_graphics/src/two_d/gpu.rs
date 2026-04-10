@@ -34,6 +34,7 @@ struct SpriteInstanceGpu {
     transform_1: [f32; 3],
     transform_2: [f32; 3],
     z_index: i32,
+    tint: [f32; 4],
 }
 
 #[derive(Clone, Copy)]
@@ -331,6 +332,7 @@ impl Gpu2D {
                 transform_1: sprite.model[1],
                 transform_2: sprite.model[2],
                 z_index: sprite.z_index,
+                tint: sprite.tint,
             });
             if let Some(batch) = self.sprite_batches.last_mut()
                 && batch.texture == sprite.texture
@@ -780,6 +782,11 @@ fn create_sprite_pipeline(
                             offset: 36,
                             shader_location: 5,
                             format: wgpu::VertexFormat::Sint32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 40,
+                            shader_location: 6,
+                            format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
                 },

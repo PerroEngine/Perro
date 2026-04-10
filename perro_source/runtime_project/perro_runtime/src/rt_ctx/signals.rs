@@ -39,7 +39,10 @@ impl SignalAPI for Runtime {
             .single_signal_connection(signal)
         {
             let instance_index = self.scripts.instance_index_for_id(connection.script_id);
-            let behavior = self.scripts.get_instance(connection.script_id).map(|instance| Arc::clone(&instance.behavior));
+            let behavior = self
+                .scripts
+                .get_instance(connection.script_id)
+                .map(|instance| Arc::clone(&instance.behavior));
             if let (Some(instance_index), Some(behavior)) = (instance_index, behavior) {
                 let resource_api = self.resource_api.clone();
                 let res: ResourceContext<'_, crate::RuntimeResourceApi> =

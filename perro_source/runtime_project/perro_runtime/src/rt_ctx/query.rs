@@ -4,6 +4,7 @@ use perro_ids::NodeID;
 use perro_ids::TagID;
 use perro_nodes::{NodeType, SceneNode};
 use perro_runtime_context::sub_apis::{QueryExpr, QueryScope, TagQuery};
+use rayon::prelude::*;
 #[cfg(feature = "profile")]
 use std::time::Instant;
 
@@ -65,22 +66,21 @@ fn query_node_ids_with_worker_override(
                     scan_range(arena, 1, slot_count, &plan)
                 } else {
                     let chunk_size = slot_count.div_ceil(worker_count);
-                    std::thread::scope(|scope| {
-                        let mut handles = Vec::with_capacity(worker_count);
-                        for start in (1..slot_count).step_by(chunk_size) {
-                            let end = (start + chunk_size).min(slot_count);
-                            let plan_ref = &plan;
-                            handles
-                                .push(scope.spawn(move || scan_range(arena, start, end, plan_ref)));
-                        }
-                        let mut out = Vec::new();
-                        for handle in handles {
-                            if let Ok(mut local) = handle.join() {
-                                out.append(&mut local);
-                            }
-                        }
-                        out
-                    })
+                    let mut ranges = Vec::with_capacity(worker_count);
+                    for start in (1..slot_count).step_by(chunk_size) {
+                        let end = (start + chunk_size).min(slot_count);
+                        ranges.push((start, end));
+                    }
+                    let mut partials = ranges
+                        .into_par_iter()
+                        .map(|(start, end)| scan_range(arena, start, end, &plan))
+                        .collect::<Vec<_>>();
+                    let total: usize = partials.iter().map(Vec::len).sum();
+                    let mut out = Vec::with_capacity(total);
+                    for mut local in partials.drain(..) {
+                        out.append(&mut local);
+                    }
+                    out
                 }
             }
         }

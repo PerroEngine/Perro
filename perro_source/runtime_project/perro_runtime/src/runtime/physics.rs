@@ -3,8 +3,7 @@ use crate::terrain_schema::{TerrainLayerRule, TerrainSourceSettings};
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{NodeID, SignalID};
 use perro_nodes::{
-    CollisionShape2D, CollisionShape3D, RigidBody2D, RigidBody3D, SceneNodeData, Shape2D, Shape3D,
-    Triangle2DKind,
+    CollisionShape2D, CollisionShape3D, SceneNodeData, Shape2D, Shape3D, Triangle2DKind,
 };
 use perro_runtime_context::sub_apis::{NodeAPI, SignalAPI};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
@@ -53,7 +52,7 @@ struct BodyDesc2D {
     kind: BodyKind,
     enabled: bool,
     global: Transform2D,
-    rigid: Option<RigidBody2D>,
+    rigid: Option<RigidProps2D>,
     shape_signature: u64,
     shapes: Vec<ShapeDesc2D>,
 }
@@ -64,9 +63,35 @@ struct BodyDesc3D {
     kind: BodyKind,
     enabled: bool,
     global: Transform3D,
-    rigid: Option<RigidBody3D>,
+    rigid: Option<RigidProps3D>,
     shape_signature: u64,
     shapes: Vec<ShapeDesc3D>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct RigidProps2D {
+    enabled: bool,
+    can_sleep: bool,
+    lock_rotation: bool,
+    continuous_collision_detection: bool,
+    linear_velocity: Vector2,
+    angular_velocity: f32,
+    gravity_scale: f32,
+    linear_damping: f32,
+    angular_damping: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct RigidProps3D {
+    enabled: bool,
+    can_sleep: bool,
+    mass: f32,
+    continuous_collision_detection: bool,
+    linear_velocity: Vector3,
+    angular_velocity: Vector3,
+    gravity_scale: f32,
+    linear_damping: f32,
+    angular_damping: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -146,6 +171,8 @@ pub(crate) struct PhysicsState {
     pending_impulses_3d: Vec<PendingImpulse3D>,
     scan_ids_2d: Vec<NodeID>,
     scan_ids_3d: Vec<NodeID>,
+    world_sync_ids_2d: Vec<NodeID>,
+    world_sync_ids_3d: Vec<NodeID>,
     next_opaque_handle: u64,
 }
 
@@ -196,6 +223,8 @@ impl PhysicsState {
             pending_impulses_3d: Vec::new(),
             scan_ids_2d: Vec::new(),
             scan_ids_3d: Vec::new(),
+            world_sync_ids_2d: Vec::new(),
+            world_sync_ids_3d: Vec::new(),
             next_opaque_handle: 1,
         }
     }
@@ -213,6 +242,8 @@ impl PhysicsState {
         self.pending_impulses_3d.clear();
         self.scan_ids_2d.clear();
         self.scan_ids_3d.clear();
+        self.world_sync_ids_2d.clear();
+        self.world_sync_ids_3d.clear();
         self.next_opaque_handle = 1;
     }
 
@@ -338,44 +369,49 @@ impl Runtime {
 
         let mut out = Vec::with_capacity(ids.len());
         for &id in &ids {
-            let Some(node) = self.nodes.get(id) else {
-                continue;
-            };
-
-            let (kind, enabled, rigid, children, material) = match &node.data {
-                SceneNodeData::StaticBody2D(body) => (
-                    BodyKind::Static,
-                    body.enabled,
-                    None,
-                    node.children_slice().to_vec(),
-                    (body.friction, body.restitution),
-                ),
-                SceneNodeData::Area2D(body) => (
-                    BodyKind::Area,
-                    body.enabled,
-                    None,
-                    node.children_slice().to_vec(),
-                    (0.7, 0.0),
-                ),
-                SceneNodeData::RigidBody2D(body) => (
-                    BodyKind::Rigid,
-                    body.enabled,
-                    Some(body.clone()),
-                    node.children_slice().to_vec(),
-                    (body.friction, body.restitution),
-                ),
-                _ => continue,
+            let (kind, enabled, rigid, material) = {
+                let Some(node) = self.nodes.get(id) else {
+                    continue;
+                };
+                match &node.data {
+                    SceneNodeData::StaticBody2D(body) => (
+                        BodyKind::Static,
+                        body.enabled,
+                        None,
+                        (body.friction, body.restitution),
+                    ),
+                    SceneNodeData::Area2D(body) => (BodyKind::Area, body.enabled, None, (0.7, 0.0)),
+                    SceneNodeData::RigidBody2D(body) => (
+                        BodyKind::Rigid,
+                        body.enabled,
+                        Some(RigidProps2D {
+                            enabled: body.enabled,
+                            can_sleep: body.can_sleep,
+                            lock_rotation: body.lock_rotation,
+                            continuous_collision_detection: body.continuous_collision_detection,
+                            linear_velocity: body.linear_velocity,
+                            angular_velocity: body.angular_velocity,
+                            gravity_scale: body.gravity_scale,
+                            linear_damping: body.linear_damping,
+                            angular_damping: body.angular_damping,
+                        }),
+                        (body.friction, body.restitution),
+                    ),
+                    _ => continue,
+                }
             };
             let Some(global) = self.get_global_transform_2d(id) else {
                 continue;
             };
             let mut shape_signature = body_signature_seed(kind);
-            for child_id in &children {
-                let Some(child) = self.nodes.get(*child_id) else {
-                    continue;
-                };
-                if let SceneNodeData::CollisionShape2D(shape) = &child.data {
-                    shape_signature = hash_collision_shape_2d(shape_signature, shape, kind);
+            if let Some(node) = self.nodes.get(id) {
+                for &child_id in node.children_slice() {
+                    let Some(child) = self.nodes.get(child_id) else {
+                        continue;
+                    };
+                    if let SceneNodeData::CollisionShape2D(shape) = &child.data {
+                        shape_signature = hash_collision_shape_2d(shape_signature, shape, kind);
+                    }
                 }
             }
 
@@ -387,16 +423,23 @@ impl Runtime {
                 .map(|state| state.shape_signature != shape_signature)
                 .unwrap_or(true);
 
-            let mut shapes = Vec::with_capacity(children.len());
+            let child_count = self
+                .nodes
+                .get(id)
+                .map(|node| node.children_slice().len())
+                .unwrap_or(0);
+            let mut shapes = Vec::with_capacity(child_count);
             if needs_shape_rebuild {
-                for child_id in children {
-                    let Some(child) = self.nodes.get(child_id) else {
-                        continue;
-                    };
-                    if let SceneNodeData::CollisionShape2D(shape) = &child.data {
-                        let mut desc = shape_desc_2d(shape, material.0, material.1);
-                        desc.sensor = kind == BodyKind::Area;
-                        shapes.push(desc);
+                if let Some(node) = self.nodes.get(id) {
+                    for &child_id in node.children_slice() {
+                        let Some(child) = self.nodes.get(child_id) else {
+                            continue;
+                        };
+                        if let SceneNodeData::CollisionShape2D(shape) = &child.data {
+                            let mut desc = shape_desc_2d(shape, material.0, material.1);
+                            desc.sensor = kind == BodyKind::Area;
+                            shapes.push(desc);
+                        }
                     }
                 }
             }
@@ -423,61 +466,59 @@ impl Runtime {
 
         let mut out = Vec::with_capacity(ids.len());
         for &id in &ids {
-            let Some(node) = self.nodes.get(id) else {
-                continue;
-            };
-
-            let (
-                kind,
-                enabled,
-                rigid,
-                children,
-                material,
-                terrain_ref,
-                terrain_source,
-                terrain_settings,
-            ) = match &node.data {
-                SceneNodeData::StaticBody3D(body) => (
-                    BodyKind::Static,
-                    body.enabled,
-                    None,
-                    node.children_slice().to_vec(),
-                    (body.friction, body.restitution),
-                    None,
-                    None,
-                    None,
-                ),
-                SceneNodeData::Area3D(body) => (
-                    BodyKind::Area,
-                    body.enabled,
-                    None,
-                    node.children_slice().to_vec(),
-                    (0.7, 0.0),
-                    None,
-                    None,
-                    None,
-                ),
-                SceneNodeData::RigidBody3D(body) => (
-                    BodyKind::Rigid,
-                    body.enabled,
-                    Some(body.clone()),
-                    node.children_slice().to_vec(),
-                    (body.friction, body.restitution),
-                    None,
-                    None,
-                    None,
-                ),
-                SceneNodeData::TerrainInstance3D(terrain) => (
-                    BodyKind::Static,
-                    true,
-                    None,
-                    Vec::new(),
-                    (0.9, 0.0),
-                    Some(terrain.terrain),
-                    terrain.terrain_source.as_deref().map(|v| v.to_string()),
-                    self.render_3d.terrain_instance_settings.get(&id).cloned(),
-                ),
-                _ => continue,
+            let (kind, enabled, rigid, material, terrain_ref, terrain_source, terrain_settings) = {
+                let Some(node) = self.nodes.get(id) else {
+                    continue;
+                };
+                match &node.data {
+                    SceneNodeData::StaticBody3D(body) => (
+                        BodyKind::Static,
+                        body.enabled,
+                        None,
+                        (body.friction, body.restitution),
+                        None,
+                        None,
+                        None,
+                    ),
+                    SceneNodeData::Area3D(body) => (
+                        BodyKind::Area,
+                        body.enabled,
+                        None,
+                        (0.7, 0.0),
+                        None,
+                        None,
+                        None,
+                    ),
+                    SceneNodeData::RigidBody3D(body) => (
+                        BodyKind::Rigid,
+                        body.enabled,
+                        Some(RigidProps3D {
+                            enabled: body.enabled,
+                            can_sleep: body.can_sleep,
+                            mass: body.mass,
+                            continuous_collision_detection: body.continuous_collision_detection,
+                            linear_velocity: body.linear_velocity,
+                            angular_velocity: body.angular_velocity,
+                            gravity_scale: body.gravity_scale,
+                            linear_damping: body.linear_damping,
+                            angular_damping: body.angular_damping,
+                        }),
+                        (body.friction, body.restitution),
+                        None,
+                        None,
+                        None,
+                    ),
+                    SceneNodeData::TerrainInstance3D(terrain) => (
+                        BodyKind::Static,
+                        true,
+                        None,
+                        (0.9, 0.0),
+                        Some(terrain.terrain),
+                        terrain.terrain_source.as_deref().map(|v| v.to_string()),
+                        self.render_3d.terrain_instance_settings.get(&id).cloned(),
+                    ),
+                    _ => continue,
+                }
             };
 
             let Some(global) = self.get_global_transform_3d(id) else {
@@ -488,13 +529,15 @@ impl Runtime {
             shape_signature = hash_f32(shape_signature, global.scale.y.to_bits());
             shape_signature = hash_f32(shape_signature, global.scale.z.to_bits());
 
-            for child_id in &children {
-                let Some(child) = self.nodes.get(*child_id) else {
-                    continue;
-                };
-                if let SceneNodeData::CollisionShape3D(shape) = &child.data {
-                    shape_signature =
-                        hash_collision_shape_3d(shape_signature, shape, kind, global.scale);
+            if let Some(node) = self.nodes.get(id) {
+                for &child_id in node.children_slice() {
+                    let Some(child) = self.nodes.get(child_id) else {
+                        continue;
+                    };
+                    if let SceneNodeData::CollisionShape3D(shape) = &child.data {
+                        shape_signature =
+                            hash_collision_shape_3d(shape_signature, shape, kind, global.scale);
+                    }
                 }
             }
             if let Some(terrain_id) = terrain_ref
@@ -527,22 +570,29 @@ impl Runtime {
                 .map(|state| state.shape_signature != shape_signature)
                 .unwrap_or(true);
 
-            let mut shapes = Vec::with_capacity(children.len());
+            let child_count = self
+                .nodes
+                .get(id)
+                .map(|node| node.children_slice().len())
+                .unwrap_or(0);
+            let mut shapes = Vec::with_capacity(child_count);
             if needs_shape_rebuild {
-                for child_id in children {
-                    let Some(child) = self.nodes.get(child_id) else {
-                        continue;
-                    };
-                    if let SceneNodeData::CollisionShape3D(shape) = &child.data {
-                        let mut desc = shape_desc_3d(shape, material.0, material.1);
-                        // Physics colliders inherit parent body global scale.
-                        desc.local.scale = Vector3::new(
-                            desc.local.scale.x * global.scale.x,
-                            desc.local.scale.y * global.scale.y,
-                            desc.local.scale.z * global.scale.z,
-                        );
-                        desc.sensor = kind == BodyKind::Area;
-                        shapes.push(desc);
+                if let Some(node) = self.nodes.get(id) {
+                    for &child_id in node.children_slice() {
+                        let Some(child) = self.nodes.get(child_id) else {
+                            continue;
+                        };
+                        if let SceneNodeData::CollisionShape3D(shape) = &child.data {
+                            let mut desc = shape_desc_3d(shape, material.0, material.1);
+                            // Physics colliders inherit parent body global scale.
+                            desc.local.scale = Vector3::new(
+                                desc.local.scale.x * global.scale.x,
+                                desc.local.scale.y * global.scale.y,
+                                desc.local.scale.z * global.scale.z,
+                            );
+                            desc.sensor = kind == BodyKind::Area;
+                            shapes.push(desc);
+                        }
                     }
                 }
                 if let Some(terrain_id) = terrain_ref
@@ -629,7 +679,7 @@ impl Runtime {
                 );
                 rb.set_position(transform_to_iso2(body.global), true);
 
-                if let Some(rigid) = body.rigid.as_ref() {
+                if let Some(rigid) = body.rigid {
                     rb.set_linvel(
                         na2::Vector2::new(rigid.linear_velocity.x, rigid.linear_velocity.y),
                         true,
@@ -745,7 +795,7 @@ impl Runtime {
                 );
                 rb.set_position(transform_to_iso3(body.global), true);
 
-                if let Some(rigid) = body.rigid.as_ref() {
+                if let Some(rigid) = body.rigid {
                     rb.set_linvel(
                         na3::Vector3::new(
                             rigid.linear_velocity.x,
@@ -982,29 +1032,35 @@ impl Runtime {
     }
 
     fn sync_world_to_nodes_2d(&mut self) {
-        let Some(world) = self.physics.world_2d.as_ref() else {
+        if self.physics.world_2d.is_none() {
             return;
-        };
-        let ids: Vec<NodeID> = world.body_map.keys().copied().collect();
-        for id in ids {
-            let Some(state) = self
+        }
+
+        let mut ids = std::mem::take(&mut self.physics.world_sync_ids_2d);
+        ids.clear();
+        if let Some(world) = self.physics.world_2d.as_ref() {
+            ids.extend(world.body_map.keys().copied());
+        }
+
+        for id in ids.iter().copied() {
+            let Some((kind, handle, opaque_handle)) = self
                 .physics
                 .world_2d
                 .as_ref()
                 .and_then(|w| w.body_map.get(&id))
-                .cloned()
+                .map(|state| (state.kind, state.handle, state.opaque_handle))
             else {
                 continue;
             };
-            self.set_body_handle_2d(id, Some(state.opaque_handle));
-            if state.kind != BodyKind::Rigid {
+            self.set_body_handle_2d(id, Some(opaque_handle));
+            if kind != BodyKind::Rigid {
                 continue;
             }
             let Some(body) = self
                 .physics
                 .world_2d
                 .as_ref()
-                .and_then(|w| w.bodies.get(state.handle))
+                .and_then(|w| w.bodies.get(handle))
             else {
                 continue;
             };
@@ -1027,32 +1083,41 @@ impl Runtime {
                 node.angular_velocity = ang;
             }
         }
+
+        ids.clear();
+        self.physics.world_sync_ids_2d = ids;
     }
 
     fn sync_world_to_nodes_3d(&mut self) {
-        let Some(world) = self.physics.world_3d.as_ref() else {
+        if self.physics.world_3d.is_none() {
             return;
-        };
-        let ids: Vec<NodeID> = world.body_map.keys().copied().collect();
-        for id in ids {
-            let Some(state) = self
+        }
+
+        let mut ids = std::mem::take(&mut self.physics.world_sync_ids_3d);
+        ids.clear();
+        if let Some(world) = self.physics.world_3d.as_ref() {
+            ids.extend(world.body_map.keys().copied());
+        }
+
+        for id in ids.iter().copied() {
+            let Some((kind, handle, opaque_handle)) = self
                 .physics
                 .world_3d
                 .as_ref()
                 .and_then(|w| w.body_map.get(&id))
-                .cloned()
+                .map(|state| (state.kind, state.handle, state.opaque_handle))
             else {
                 continue;
             };
-            self.set_body_handle_3d(id, Some(state.opaque_handle));
-            if state.kind != BodyKind::Rigid {
+            self.set_body_handle_3d(id, Some(opaque_handle));
+            if kind != BodyKind::Rigid {
                 continue;
             }
             let Some(body) = self
                 .physics
                 .world_3d
                 .as_ref()
-                .and_then(|w| w.bodies.get(state.handle))
+                .and_then(|w| w.bodies.get(handle))
             else {
                 continue;
             };
@@ -1080,6 +1145,9 @@ impl Runtime {
                 node.angular_velocity = ang;
             }
         }
+
+        ids.clear();
+        self.physics.world_sync_ids_3d = ids;
     }
 
     fn set_body_handle_2d(&mut self, id: NodeID, handle: Option<u64>) {
@@ -1726,7 +1794,8 @@ impl Runtime {
                 chunk_size_meters,
                 chunk_refs.as_slice(),
                 layer_rules,
-                self.project().and_then(|project| project.static_icon_lookup),
+                self.project()
+                    .and_then(|project| project.static_icon_lookup),
             )
         } else {
             None
@@ -1767,7 +1836,9 @@ impl Runtime {
                     terrain_layer_map.as_ref().and_then(|layer_map| {
                         layer_indices
                             .get(tri_ix)
-                            .and_then(|world| classify_terrain_layer_for_world_xz(layer_map, *world))
+                            .and_then(|world| {
+                                classify_terrain_layer_for_world_xz(layer_map, *world)
+                            })
                             .and_then(|idx| layer_rules.get(idx).map(|_| idx))
                     })
                 };

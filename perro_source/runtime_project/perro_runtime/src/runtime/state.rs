@@ -272,6 +272,19 @@ impl RenderState {
     pub(crate) fn mark_inflight(&mut self, request: RenderRequestID) {
         self.inflight_requests.insert(request);
     }
+
+    pub(crate) fn has_inflight_requests(&self) -> bool {
+        !self.inflight_requests.is_empty()
+    }
+
+    pub(crate) fn is_request_inflight(&self, request: RenderRequestID) -> bool {
+        self.inflight_requests.contains(&request)
+    }
+
+    pub(crate) fn copy_inflight_requests(&self, out: &mut Vec<RenderRequestID>) {
+        out.clear();
+        out.extend(self.inflight_requests.iter().copied());
+    }
 }
 
 /// Runtime-side dirty tracking for downstream systems (rendering, transform propagation).
@@ -321,6 +334,7 @@ pub(crate) struct Render3DState {
         AHashMap<NodeID, crate::terrain_schema::TerrainSourceSettings>,
     pub(crate) terrain_instance_cache: AHashMap<NodeID, TerrainInstanceCacheState>,
     pub(crate) terrain_chunk_meshes: AHashMap<TerrainChunkMeshKey, TerrainChunkMeshState>,
+    pub(crate) terrain_chunk_keys_by_node: AHashMap<NodeID, AHashSet<TerrainChunkMeshKey>>,
     pub(crate) terrain_chunk_draws: AHashMap<TerrainChunkMeshKey, RetainedMeshDrawState>,
     pub(crate) terrain_debug_state: AHashMap<NodeID, TerrainDebugState>,
     pub(crate) collision_debug_state: AHashMap<NodeID, CollisionDebugState>,
@@ -353,6 +367,7 @@ impl Render3DState {
             terrain_instance_settings: AHashMap::default(),
             terrain_instance_cache: AHashMap::default(),
             terrain_chunk_meshes: AHashMap::default(),
+            terrain_chunk_keys_by_node: AHashMap::default(),
             terrain_chunk_draws: AHashMap::default(),
             terrain_debug_state: AHashMap::default(),
             collision_debug_state: AHashMap::default(),

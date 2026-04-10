@@ -1,5 +1,10 @@
 use crate::App;
 use perro_graphics::GraphicsBackend;
+use perro_ids::{NodeID, TextureID, string_to_u64};
+use perro_render_bridge::{
+    Camera2DState, Command2D, Rect2DCommand, RenderCommand, RenderRequestID, ResourceCommand,
+    Sprite2DCommand,
+};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use std::{fs, sync::Arc};
@@ -17,6 +22,82 @@ const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 8;
 const LOG_INTERVAL_SECONDS: f32 = 2.5;
 const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
+const STARTUP_SPLASH_FADE_DURATION: Duration = Duration::from_millis(320);
+const STARTUP_SPLASH_MIN_VISIBLE: Duration = Duration::from_millis(1000);
+const STARTUP_SPLASH_READY_STREAK: u32 = 4;
+const STARTUP_SPLASH_HARD_TIMEOUT: Duration = Duration::from_millis(8000);
+const STARTUP_SPLASH_BG_COLOR: [f32; 4] = [0.12, 0.12, 0.12, 1.0];
+const STARTUP_SPLASH_MAX_WIDTH_FRAC: f32 = 0.44;
+const STARTUP_SPLASH_MAX_HEIGHT_FRAC: f32 = 0.34;
+const STARTUP_SPLASH_TEXTURE_REQUEST: RenderRequestID = RenderRequestID::new(0x5350_4C41_5348_5F54);
+const STARTUP_SPLASH_BG_NODE: NodeID = NodeID::from_u64(string_to_u64("__startup_splash_bg__"));
+const STARTUP_SPLASH_IMAGE_NODE: NodeID =
+    NodeID::from_u64(string_to_u64("__startup_splash_image__"));
+
+struct StartupSplashState {
+    active: bool,
+    source: Option<String>,
+    image_size: Option<(u32, u32)>,
+    texture_requested: bool,
+    texture_id: Option<TextureID>,
+    ready_streak: u32,
+    shown_at: Instant,
+    fade_started_at: Option<Instant>,
+    first_frame_inflight: Vec<RenderRequestID>,
+    first_frame_captured: bool,
+    debug_frame_counter: u32,
+}
+
+impl StartupSplashState {
+    fn from_project(project: Option<&perro_runtime::RuntimeProject>, now: Instant) -> Self {
+        let mut source = project
+            .map(|p| p.config.startup_splash.trim().to_string())
+            .filter(|s| !s.is_empty());
+        if source.is_none() {
+            source = project
+                .map(|p| p.config.icon.trim().to_string())
+                .filter(|s| !s.is_empty());
+        }
+        let image_size =
+            project.and_then(|p| source.as_deref().and_then(|s| load_image_size(p, s)));
+        Self {
+            active: true,
+            source,
+            image_size,
+            texture_requested: false,
+            texture_id: None,
+            ready_streak: 0,
+            shown_at: now,
+            fade_started_at: None,
+            first_frame_inflight: Vec::new(),
+            first_frame_captured: false,
+            debug_frame_counter: 0,
+        }
+    }
+
+    #[inline]
+    fn blocks_input(&self) -> bool {
+        self.active
+    }
+
+    fn alpha(&self, now: Instant) -> f32 {
+        let Some(started) = self.fade_started_at else {
+            return 1.0;
+        };
+        let elapsed = now.saturating_duration_since(started);
+        if elapsed >= STARTUP_SPLASH_FADE_DURATION {
+            0.0
+        } else {
+            1.0 - (elapsed.as_secs_f32() / STARTUP_SPLASH_FADE_DURATION.as_secs_f32())
+        }
+    }
+
+    fn should_finish(&self, now: Instant) -> bool {
+        self.fade_started_at.is_some_and(|started| {
+            now.saturating_duration_since(started) >= STARTUP_SPLASH_FADE_DURATION
+        })
+    }
+}
 
 #[inline]
 fn normalize_fixed_timestep_seconds(value: Option<f32>) -> Option<f32> {
@@ -136,11 +217,13 @@ struct RunnerState<B: GraphicsBackend> {
     cursor_captured: bool,
     capture_uses_raw_motion: bool,
     cursor_inside_window: bool,
+    startup_splash: StartupSplashState,
 }
 
 impl<B: GraphicsBackend> RunnerState<B> {
     fn new(app: App<B>, title: &str, fps_cap: f32, fixed_timestep: Option<f32>) -> Self {
         let now = Instant::now();
+        let startup_splash = StartupSplashState::from_project(app.runtime.project(), now);
         let normalized_fixed_timestep = normalize_fixed_timestep_seconds(fixed_timestep);
         if let Some(raw) = fixed_timestep
             && raw >= 1.0
@@ -201,6 +284,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             cursor_captured: false,
             capture_uses_raw_motion: false,
             cursor_inside_window: false,
+            startup_splash,
         }
     }
 
@@ -248,6 +332,261 @@ impl<B: GraphicsBackend> RunnerState<B> {
         }
     }
 
+    fn startup_splash_overlay_commands(&mut self, alpha: f32) -> Vec<RenderCommand> {
+        let alpha = alpha.clamp(0.0, 1.0);
+        if let Some(result) = self.app.runtime.take_render_result(STARTUP_SPLASH_TEXTURE_REQUEST) {
+            match result {
+                perro_runtime::RuntimeRenderResult::Texture(id) => {
+                    self.startup_splash.texture_id = Some(id);
+                }
+                perro_runtime::RuntimeRenderResult::Failed(_) => {
+                    self.startup_splash.texture_requested = false;
+                }
+                perro_runtime::RuntimeRenderResult::Mesh(_)
+                | perro_runtime::RuntimeRenderResult::Material(_) => {}
+            }
+        }
+        let virtual_width = self
+            .app
+            .runtime
+            .project()
+            .map(|project| project.config.virtual_width.max(1))
+            .unwrap_or(1920) as f32;
+        let virtual_height = self
+            .app
+            .runtime
+            .project()
+            .map(|project| project.config.virtual_height.max(1))
+            .unwrap_or(1080) as f32;
+
+        let mut commands = Vec::with_capacity(3);
+        commands.push(RenderCommand::TwoD(Command2D::SetCamera {
+                camera: Camera2DState::default(),
+            }));
+        commands.push(RenderCommand::TwoD(Command2D::UpsertRect {
+                node: STARTUP_SPLASH_BG_NODE,
+                rect: Rect2DCommand {
+                    center: [0.0, 0.0],
+                    size: [virtual_width, virtual_height],
+                    color: [
+                        STARTUP_SPLASH_BG_COLOR[0],
+                        STARTUP_SPLASH_BG_COLOR[1],
+                        STARTUP_SPLASH_BG_COLOR[2],
+                        STARTUP_SPLASH_BG_COLOR[3] * alpha,
+                    ],
+                    z_index: 50_000,
+                },
+            }));
+
+        if !self.startup_splash.texture_requested
+            && let Some(source) = self.startup_splash.source.clone()
+        {
+            self.startup_splash.texture_requested = true;
+            commands.push(RenderCommand::Resource(ResourceCommand::CreateTexture {
+                    request: STARTUP_SPLASH_TEXTURE_REQUEST,
+                    id: TextureID::nil(),
+                    source,
+                    reserved: true,
+                }));
+        }
+
+        let Some(texture_id) = self.startup_splash.texture_id else {
+            return commands;
+        };
+        let (image_w, image_h) = self.startup_splash.image_size.unwrap_or((512, 512));
+        let max_w = virtual_width * STARTUP_SPLASH_MAX_WIDTH_FRAC;
+        let max_h = virtual_height * STARTUP_SPLASH_MAX_HEIGHT_FRAC;
+        let scale = (max_w / image_w as f32)
+            .min(max_h / image_h as f32)
+            .max(0.001);
+        let sx = scale;
+        let sy = scale;
+        commands.push(RenderCommand::TwoD(Command2D::UpsertSprite {
+                node: STARTUP_SPLASH_IMAGE_NODE,
+                sprite: Sprite2DCommand {
+                    texture: texture_id,
+                    model: [[sx, 0.0, 0.0], [0.0, sy, 0.0], [0.0, 0.0, 1.0]],
+                    tint: [1.0, 1.0, 1.0, alpha],
+                    z_index: 50_100,
+                },
+            }));
+        commands
+    }
+
+    fn end_startup_splash(&mut self) {
+        self.app
+            .graphics
+            .submit(RenderCommand::TwoD(Command2D::RemoveNode {
+                node: STARTUP_SPLASH_BG_NODE,
+            }));
+        self.app
+            .graphics
+            .submit(RenderCommand::TwoD(Command2D::RemoveNode {
+                node: STARTUP_SPLASH_IMAGE_NODE,
+            }));
+        self.startup_splash.active = false;
+    }
+
+    fn step_startup_frame(
+        &mut self,
+        frame_start: Instant,
+        frame_delta: Duration,
+        idle_duration: Duration,
+    ) {
+        let work_start = Instant::now();
+        let mut runtime_update_duration = Duration::ZERO;
+
+        let simulation_start = Instant::now();
+        let input_poll_start = Instant::now();
+        self.gamepad_input.begin_frame(&mut self.app);
+        self.joycon_input.begin_frame(&mut self.app);
+        let input_poll_duration = input_poll_start.elapsed();
+        let fixed_start = Instant::now();
+
+        let simulated_delta_seconds = {
+            if let Some(effective_fixed_step) = self.fixed_timestep {
+                self.fixed_accumulator += frame_delta.as_secs_f32();
+                let mut steps = 0u32;
+                while self.fixed_accumulator >= effective_fixed_step
+                    && steps < MAX_FIXED_STEPS_PER_FRAME
+                {
+                    let update_start = Instant::now();
+                    self.app.fixed_update_runtime(effective_fixed_step);
+                    runtime_update_duration += update_start.elapsed();
+                    self.fixed_accumulator -= effective_fixed_step;
+                    steps += 1;
+                }
+                if steps == MAX_FIXED_STEPS_PER_FRAME
+                    && self.fixed_accumulator >= effective_fixed_step
+                {
+                    self.fixed_accumulator = 0.0;
+                }
+                effective_fixed_step as f64 * steps as f64
+            } else {
+                let variable_step = frame_delta.as_secs_f32();
+                let update_start = Instant::now();
+                self.app.fixed_update_runtime(variable_step);
+                runtime_update_duration += update_start.elapsed();
+                variable_step as f64
+            }
+        };
+
+        let fixed_duration = fixed_start.elapsed();
+        let runtime_timing = self.app.update_runtime(frame_delta.as_secs_f32());
+        runtime_update_duration += runtime_timing.total;
+        let simulation_duration = simulation_start.elapsed();
+
+        let alpha = self.startup_splash.alpha(frame_start);
+        let splash_overlay = self.startup_splash_overlay_commands(alpha);
+        let present_timing = self.app.present_with_overlay_timed(splash_overlay);
+        let mut inflight_now = Vec::<RenderRequestID>::new();
+        self.app
+            .runtime
+            .copy_inflight_render_requests(&mut inflight_now);
+        if !self.startup_splash.first_frame_captured {
+            self.startup_splash
+                .first_frame_inflight
+                .extend(inflight_now.iter().copied());
+            self.startup_splash.first_frame_captured = true;
+            println!(
+                "[splash] captured first-frame inflight requests: {}",
+                self.startup_splash.first_frame_inflight.len()
+            );
+        }
+        let work_duration = work_start.elapsed();
+        let frame_end = Instant::now();
+        self.last_frame_end = frame_end;
+
+        self.batch_frames = self.batch_frames.saturating_add(1);
+        self.batch_work += work_duration;
+        self.batch_simulation += simulation_duration;
+        self.batch_runtime_update += runtime_update_duration;
+        self.batch_input_poll += input_poll_duration;
+        self.batch_fixed_update += fixed_duration;
+        self.batch_runtime_start_schedule += runtime_timing.start_schedule;
+        self.batch_runtime_snapshot_update += runtime_timing.snapshot_update;
+        self.batch_runtime_script_update += runtime_timing.update_schedule.scripts_total;
+        self.batch_runtime_internal_update += runtime_timing.internal_update;
+        self.batch_runtime_script_count += runtime_timing.update_schedule.script_count as u64;
+        if runtime_timing.update_schedule.slowest_script > self.batch_runtime_slowest_script {
+            self.batch_runtime_slowest_script = runtime_timing.update_schedule.slowest_script;
+        }
+        self.batch_present += present_timing.total;
+        self.batch_present_extract_2d += present_timing.extract_2d;
+        self.batch_present_extract_3d += present_timing.extract_3d;
+        self.batch_present_drain_commands += present_timing.drain_commands;
+        self.batch_present_submit_commands += present_timing.submit_commands;
+        self.batch_present_draw_frame += present_timing.draw_frame;
+        self.batch_draw_process_commands += present_timing.draw_process_commands;
+        self.batch_draw_prepare_cpu += present_timing.draw_prepare_cpu;
+        self.batch_draw_gpu_prepare_2d += present_timing.draw_gpu_prepare_2d;
+        self.batch_draw_gpu_prepare_3d += present_timing.draw_gpu_prepare_3d;
+        self.batch_draw_gpu_acquire += present_timing.draw_gpu_acquire;
+        self.batch_draw_gpu_encode_main += present_timing.draw_gpu_encode_main;
+        self.batch_draw_gpu_submit_main += present_timing.draw_gpu_submit_main;
+        self.batch_draw_gpu_post_process += present_timing.draw_gpu_post_process;
+        self.batch_draw_gpu_accessibility += present_timing.draw_gpu_accessibility;
+        self.batch_draw_gpu_present += present_timing.draw_gpu_present;
+        self.batch_present_drain_events += present_timing.drain_events;
+        self.batch_present_apply_events += present_timing.apply_events;
+        self.batch_idle += idle_duration;
+        self.batch_sim_delta_seconds += simulated_delta_seconds;
+
+        let pending_first_frame = if self.startup_splash.first_frame_captured {
+            self.startup_splash
+                .first_frame_inflight
+                .iter()
+                .copied()
+                .filter(|request| self.app.runtime.is_render_request_inflight(*request))
+                .count()
+        } else {
+            usize::MAX
+        };
+        let first_frame_done =
+            self.startup_splash.first_frame_captured && pending_first_frame == 0;
+        let shown_for = frame_start.saturating_duration_since(self.startup_splash.shown_at);
+        let hard_timeout_hit = shown_for >= STARTUP_SPLASH_HARD_TIMEOUT;
+        if self.startup_splash.fade_started_at.is_none() {
+            if shown_for >= STARTUP_SPLASH_MIN_VISIBLE && (first_frame_done || hard_timeout_hit) {
+                self.startup_splash.ready_streak =
+                    self.startup_splash.ready_streak.saturating_add(1);
+                if self.startup_splash.ready_streak >= STARTUP_SPLASH_READY_STREAK {
+                    self.startup_splash.fade_started_at = Some(frame_start);
+                }
+            } else {
+                self.startup_splash.ready_streak = 0;
+            }
+        }
+        self.startup_splash.debug_frame_counter =
+            self.startup_splash.debug_frame_counter.wrapping_add(1);
+        if self.startup_splash.debug_frame_counter % 10 == 1 {
+            println!(
+                "[splash] active={} captured={} inflight_now={} tracked={} pending={} alpha={:.2} fade={} timeout={}",
+                self.startup_splash.active,
+                self.startup_splash.first_frame_captured,
+                inflight_now.len(),
+                self.startup_splash.first_frame_inflight.len(),
+                if pending_first_frame == usize::MAX {
+                    -1
+                } else {
+                    pending_first_frame as i32
+                },
+                alpha,
+                self.startup_splash.fade_started_at.is_some(),
+                hard_timeout_hit
+            );
+        }
+        if self.startup_splash.should_finish(frame_start) {
+            self.end_startup_splash();
+            println!("[splash] finished");
+        }
+
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+        self.app.begin_input_frame();
+    }
+
     fn step_frame(&mut self, now: Instant) {
         if let Some(target) = target_frame_duration(self.fps_cap) {
             if self.next_frame_deadline <= self.last_frame_start {
@@ -273,6 +612,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let simulated_delta_seconds;
 
         let idle_duration = frame_start.saturating_duration_since(self.last_frame_end);
+
+        if self.startup_splash.active {
+            self.step_startup_frame(frame_start, frame_delta, idle_duration);
+            return;
+        }
+
         let work_start = Instant::now();
         let mut runtime_update_duration = Duration::ZERO;
 
@@ -515,7 +860,12 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             self.app
                 .resize_surface(initial_size.width, initial_size.height);
             // Draw once before showing the window to avoid a white first-frame flash.
-            self.app.present();
+            if self.startup_splash.active {
+                let splash_overlay = self.startup_splash_overlay_commands(1.0);
+                let _ = self.app.present_with_overlay_timed(splash_overlay);
+            } else {
+                self.app.present();
+            }
             window.set_visible(true);
             self.window = Some(window);
             self.cursor_captured = false;
@@ -528,6 +878,14 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             self.last_frame_end = now;
             self.next_frame_deadline = now;
             self.run_start = now;
+            if self.startup_splash.active {
+                self.startup_splash.shown_at = now;
+                self.startup_splash.ready_streak = 0;
+                self.startup_splash.fade_started_at = None;
+                self.startup_splash.first_frame_inflight.clear();
+                self.startup_splash.first_frame_captured = false;
+                self.startup_splash.debug_frame_counter = 0;
+            }
             self.fixed_accumulator = 0.0;
             self.batch_start = now;
             self.batch_frames = 0;
@@ -591,6 +949,9 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 event: ref key_event,
                 ..
             } => {
+                if self.startup_splash.blocks_input() {
+                    return;
+                }
                 if key_event.state == ElementState::Pressed
                     && matches!(&key_event.physical_key, PhysicalKey::Code(KeyCode::Escape))
                 {
@@ -600,6 +961,9 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                     .handle_window_event(&mut self.app, &keyboard_event);
             }
             mouse_event @ WindowEvent::MouseInput { state, .. } => {
+                if self.startup_splash.blocks_input() {
+                    return;
+                }
                 if state == ElementState::Pressed && !self.cursor_captured {
                     if self.cursor_inside_window {
                         self.set_cursor_capture(true);
@@ -609,22 +973,37 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                     .handle_window_event(&mut self.app, &mouse_event);
             }
             WindowEvent::CursorEntered { .. } => {
+                if self.startup_splash.blocks_input() {
+                    return;
+                }
                 self.cursor_inside_window = true;
             }
             cursor_left @ WindowEvent::CursorLeft { .. } => {
+                if self.startup_splash.blocks_input() {
+                    return;
+                }
                 self.cursor_inside_window = false;
                 self.kbm_input
                     .handle_window_event(&mut self.app, &cursor_left);
             }
             cursor_moved @ WindowEvent::CursorMoved { .. } => {
+                if self.startup_splash.blocks_input() {
+                    return;
+                }
                 self.cursor_inside_window = true;
                 self.kbm_input
                     .handle_window_event(&mut self.app, &cursor_moved);
             }
             WindowEvent::MouseWheel { .. } => {
+                if self.startup_splash.blocks_input() {
+                    return;
+                }
                 self.kbm_input.handle_window_event(&mut self.app, &event);
             }
             WindowEvent::Focused(true) => {
+                if self.startup_splash.blocks_input() {
+                    return;
+                }
                 if self.cursor_captured {
                     if let Some(window) = &self.window {
                         let (captured, uses_raw_motion) =
@@ -635,6 +1014,9 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 }
             }
             WindowEvent::Focused(false) => {
+                if self.startup_splash.blocks_input() {
+                    return;
+                }
                 self.cursor_inside_window = false;
                 self.set_cursor_capture(false);
             }
@@ -658,6 +1040,9 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
         _device_id: winit::event::DeviceId,
         event: DeviceEvent,
     ) {
+        if self.startup_splash.blocks_input() {
+            return;
+        }
         if self.cursor_captured
             && self.capture_uses_raw_motion
             && let DeviceEvent::MouseMotion { delta } = event
@@ -732,35 +1117,48 @@ fn load_project_window_icon(project: &perro_runtime::RuntimeProject) -> Option<I
 }
 
 fn load_project_icon_bytes(project: &perro_runtime::RuntimeProject) -> Option<Vec<u8>> {
-    if let Some(icon_path) = resolve_project_icon_path(project)
-        && let Ok(bytes) = fs::read(icon_path)
+    load_project_image_bytes(project, project.config.icon.trim())
+}
+
+fn load_project_image_bytes(
+    project: &perro_runtime::RuntimeProject,
+    source: &str,
+) -> Option<Vec<u8>> {
+    if let Some(path) = resolve_project_asset_path(project, source)
+        && let Ok(bytes) = fs::read(path)
     {
         return Some(bytes);
     }
-
-    let icon = project.config.icon.trim();
-    if icon.starts_with("res://")
+    if source.starts_with("res://")
         && let Some(lookup) = project.static_icon_lookup
-        && let Some(bytes) = lookup(icon)
+        && let Some(bytes) = lookup(source)
     {
         return Some(bytes.to_vec());
     }
-
     None
 }
 
-fn resolve_project_icon_path(project: &perro_runtime::RuntimeProject) -> Option<PathBuf> {
-    let icon = project.config.icon.trim();
-    if icon.is_empty() {
+fn load_image_size(project: &perro_runtime::RuntimeProject, source: &str) -> Option<(u32, u32)> {
+    let bytes = load_project_image_bytes(project, source)?;
+    let decoded = image::load_from_memory(&bytes).ok()?;
+    Some((decoded.width().max(1), decoded.height().max(1)))
+}
+
+fn resolve_project_asset_path(
+    project: &perro_runtime::RuntimeProject,
+    source: &str,
+) -> Option<PathBuf> {
+    let source = source.trim();
+    if source.is_empty() {
         return None;
     }
 
-    if let Some(rel) = icon.strip_prefix("res://") {
+    if let Some(rel) = source.strip_prefix("res://") {
         let rel = rel.trim_start_matches('/');
         return Some(project.root.join("res").join(rel));
     }
 
-    let path = Path::new(icon);
+    let path = Path::new(source);
     if path.is_absolute() {
         return Some(path.to_path_buf());
     }

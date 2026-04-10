@@ -336,3 +336,107 @@ fn bench_tag_indexed_candidates() {
         indexed_matches,
     );
 }
+
+#[test]
+#[ignore]
+fn bench_query_old_thread_spawn_vs_current() {
+    fn old_thread_spawn_scan(
+        arena: &NodeArena,
+        query: TagQuery,
+        workers: usize,
+    ) -> Vec<perro_ids::NodeID> {
+        let slot_count = arena.slot_count();
+        if slot_count <= 1 {
+            return Vec::new();
+        }
+        let plan = QueryPlan::from_query(&query.expr);
+        if workers <= 1 {
+            return scan_range(arena, 1, slot_count, &plan);
+        }
+        let chunk_size = slot_count.div_ceil(workers);
+        std::thread::scope(|scope| {
+            let mut handles = Vec::with_capacity(workers);
+            for start in (1..slot_count).step_by(chunk_size) {
+                let end = (start + chunk_size).min(slot_count);
+                let plan_ref = &plan;
+                handles.push(scope.spawn(move || scan_range(arena, start, end, plan_ref)));
+            }
+            let mut out = Vec::new();
+            for handle in handles {
+                if let Ok(mut local) = handle.join() {
+                    out.append(&mut local);
+                }
+            }
+            out
+        })
+    }
+
+    let arena_size = 180_000usize;
+    let mut arena = NodeArena::with_capacity(arena_size + 1);
+    for i in 0..arena_size {
+        let mut node = if i % 5 == 0 {
+            SceneNode::new(SceneNodeData::MeshInstance3D(MeshInstance3D::new()))
+        } else {
+            SceneNode::new(SceneNodeData::Node3D(Node3D::new()))
+        };
+        if i % 2 == 0 {
+            node.add_tag(TagID::from_string("enemy"));
+        }
+        if i % 7 == 0 {
+            node.add_tag(TagID::from_string("alive"));
+        }
+        if i % 13 == 0 {
+            node.set_name("mob".to_string());
+        } else {
+            node.set_name("npc".to_string());
+        }
+        let _ = arena.insert(node);
+    }
+
+    let query = TagQuery {
+        expr: Some(QueryExpr::All(vec![
+            QueryExpr::IsType(vec![NodeType::MeshInstance3D]),
+            QueryExpr::Tags(vec![
+                TagID::from_string("enemy"),
+                TagID::from_string("alive"),
+            ]),
+            QueryExpr::Name(vec!["mob".to_string()]),
+        ])),
+        scope: QueryScope::Root,
+    };
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .max(2);
+    let rounds = 8usize;
+
+    let mut old_us = 0u128;
+    let mut now_us = 0u128;
+    let mut old_count = 0usize;
+    let mut now_count = 0usize;
+    for _ in 0..rounds {
+        let t0 = std::time::Instant::now();
+        let old = old_thread_spawn_scan(&arena, query.clone(), workers);
+        old_us += t0.elapsed().as_micros();
+        old_count = old.len();
+        black_box(&old);
+
+        let t1 = std::time::Instant::now();
+        let now = query_node_ids_with_worker_override(&arena, query.clone(), Some(workers), None);
+        now_us += t1.elapsed().as_micros();
+        now_count = now.len();
+        black_box(&now);
+    }
+
+    println!(
+        "bench_query_old_thread_spawn_vs_current: nodes={} workers={} rounds={} old_us={} now_us={} speedup={:.3}x matches={}/{}",
+        arena_size,
+        workers,
+        rounds,
+        old_us / rounds as u128,
+        now_us / rounds as u128,
+        old_us as f64 / now_us.max(1) as f64,
+        old_count,
+        now_count
+    );
+}

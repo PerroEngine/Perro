@@ -51,7 +51,9 @@ fn should_skip(path: &str, extra_skip_rel_paths: &HashSet<&str>) -> bool {
         || ext
             .as_deref()
             .is_some_and(|ext| SKIP_RESOURCES.contains(&ext))
-        || ext.as_deref().is_some_and(|ext| SKIP_SHADERS.contains(&ext))
+        || ext
+            .as_deref()
+            .is_some_and(|ext| SKIP_SHADERS.contains(&ext))
         || ext.as_deref().is_some_and(|ext| SKIP_AUDIO.contains(&ext))
 }
 

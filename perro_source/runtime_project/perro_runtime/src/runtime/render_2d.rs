@@ -105,6 +105,7 @@ impl Runtime {
                 sprite: Sprite2DCommand {
                     texture: resolved_texture,
                     model,
+                    tint: [1.0, 1.0, 1.0, 1.0],
                     z_index,
                 },
             }));
@@ -117,6 +118,7 @@ impl Runtime {
                 sprite: Sprite2DCommand {
                     texture: resolved_texture,
                     model,
+                    tint: [1.0, 1.0, 1.0, 1.0],
                     z_index,
                 },
             }));

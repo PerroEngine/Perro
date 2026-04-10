@@ -503,6 +503,7 @@ pub struct DrawShape2DCommand {
 pub struct Sprite2DCommand {
     pub texture: TextureID,
     pub model: [[f32; 3]; 3],
+    pub tint: [f32; 4],
     pub z_index: i32,
 }
 

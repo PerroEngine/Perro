@@ -22,11 +22,13 @@ struct InstanceInput {
     @location(3) transform_1: vec3<f32>,
     @location(4) transform_2: vec3<f32>,
     @location(5) z_index: i32,
+    @location(6) tint: vec4<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
+    @location(1) tint: vec4<f32>,
 };
 
 fn mat3_to_mat4(t0: vec3<f32>, t1: vec3<f32>, t2: vec3<f32>) -> mat4x4<f32> {
@@ -50,10 +52,11 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     var out: VertexOutput;
     out.clip_pos = vec4<f32>(ndc_xy, depth, 1.0);
     out.uv = v.uv;
+    out.tint = inst.tint;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(tex_color, tex_sampler, in.uv);
+    return textureSample(tex_color, tex_sampler, in.uv) * in.tint;
 }
