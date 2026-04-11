@@ -1826,6 +1826,31 @@ fn terrain_chunk_uv_projection_windowed(
     }
 }
 
+fn terrain_tile_uv_window(
+    x0: u32,
+    y0: u32,
+    x1: u32,
+    y1: u32,
+    px0: u32,
+    py0: u32,
+    out_w: u32,
+    out_h: u32,
+    upscale: u32,
+) -> ([f32; 2], [f32; 2]) {
+    let x0_local = x0.saturating_sub(px0) as f32 * upscale as f32;
+    let y0_local = y0.saturating_sub(py0) as f32 * upscale as f32;
+    let x1_local = x1.saturating_sub(px0) as f32 * upscale as f32;
+    let y1_local = y1.saturating_sub(py0) as f32 * upscale as f32;
+    let out_wf = out_w as f32;
+    let out_hf = out_h as f32;
+    let uv_min = [x0_local / out_wf, y0_local / out_hf];
+    let uv_max = [
+        x1_local.max(x0_local + 1.0e-4) / out_wf,
+        y1_local.max(y0_local + 1.0e-4) / out_hf,
+    ];
+    (uv_min, uv_max)
+}
+
 fn build_terrain_chunk_tile_set(
     terrain_source: &str,
     map_source: &str,
@@ -1944,18 +1969,8 @@ fn build_terrain_chunk_tile_set(
             } else {
                 None
             };
-            let x0_local = x0.saturating_sub(px0) as f32 * upscale as f32;
-            let y0_local = y0.saturating_sub(py0) as f32 * upscale as f32;
-            let x1_local = x1.saturating_sub(px0) as f32 * upscale as f32;
-            let y1_local = y1.saturating_sub(py0) as f32 * upscale as f32;
-            let uv_min = [
-                (x0_local + 0.5) / out_w as f32,
-                (y0_local + 0.5) / out_h as f32,
-            ];
-            let uv_max = [
-                (x1_local - 0.5).max(uv_min[0] * out_w as f32 + 1.0e-4) / out_w as f32,
-                (y1_local - 0.5).max(uv_min[1] * out_h as f32 + 1.0e-4) / out_h as f32,
-            ];
+            let (uv_min, uv_max) =
+                terrain_tile_uv_window(x0, y0, x1, y1, px0, py0, out_w, out_h, upscale);
             Some(BakedChunkTileOutput {
                 coord: cached.coord,
                 tile_source,

@@ -544,6 +544,34 @@ fn terrain_layer_bake_upscale_matches_requested_sample_rate() {
 }
 
 #[test]
+fn terrain_tile_uv_window_aligns_shared_chunk_border() {
+    fn source_x_from_uv(u: f32, px0: u32, out_w: u32, upscale: u32) -> f32 {
+        px0 as f32 + (u * out_w as f32) / upscale as f32
+    }
+
+    let upscale = 4u32;
+    let w = 34u32;
+    let h = 22u32;
+    let out_w = w * upscale;
+    let out_h = h * upscale;
+
+    let left_px0 = 31u32;
+    let right_px0 = 47u32;
+    let shared_x = 48u32;
+
+    let (_left_min, left_max) =
+        super::terrain_tile_uv_window(32, 64, shared_x, 80, left_px0, 63, out_w, out_h, upscale);
+    let (right_min, _right_max) = super::terrain_tile_uv_window(
+        shared_x, 64, 64, 80, right_px0, 63, out_w, out_h, upscale,
+    );
+
+    let left_border_src = source_x_from_uv(left_max[0], left_px0, out_w, upscale);
+    let right_border_src = source_x_from_uv(right_min[0], right_px0, out_w, upscale);
+    assert!((left_border_src - right_border_src).abs() < 1.0e-4);
+    assert!((left_border_src - shared_x as f32).abs() < 1.0e-4);
+}
+
+#[test]
 #[ignore]
 fn bench_quaternion_forward_hotloop_compare_scalar_vs_simd() {
     let samples = 1_000_000usize;
