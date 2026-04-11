@@ -1,18 +1,14 @@
 use crate::{StaticPipelineError, embedded_dir, res_dir, static_dir};
-use image::RgbaImage;
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use perro_runtime::{
-    LoadedTerrainSource, TerrainBakedChunkPhysics, TerrainBakedChunkTile, TerrainLayerRule,
+    LoadedTerrainSource, TerrainBakedChunkPhysics, TerrainBakedChunkTile,
     load_terrain_from_folder_source,
 };
 use perro_structs::Vector3;
 use perro_terrain::{ChunkConfig, TerrainChunk, TerrainData, Triangle, Vertex};
-use rayon::prelude::*;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::fs;
-use std::hash::{Hash, Hasher};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -84,7 +80,9 @@ pub fn generate_static_terrains(project_root: &Path) -> Result<(), StaticPipelin
                 disk_path.display()
             ))));
         };
-        loaded.terrain = optimize_terrain_meshes(&loaded.terrain)?;
+        if loaded.settings.baked_chunk_physics.is_empty() {
+            loaded.terrain = optimize_terrain_meshes(&loaded.terrain)?;
+        }
         let baked = bake_static_terrain_chunk_tiles(&res_dir, &folder, &loaded)?;
         if !baked.tiles.is_empty() {
             loaded.settings.baked_chunk_tiles = baked.tiles;
@@ -222,7 +220,7 @@ fn encode_loaded_terrain_source(loaded: &LoadedTerrainSource) -> io::Result<Vec<
         out.push(layer.color.g);
         out.push(layer.color.b);
         out.push(layer.color_tolerance);
-        write_opt_string(&mut out, layer.texture_source.as_deref())?;
+        write_opt_string(&mut out, layer.material_source.as_deref())?;
         write_f32(&mut out, layer.texture_tile_meters);
         write_f32(&mut out, layer.texture_rotation_degrees);
         out.push(layer.texture_hard_cut as u8);
@@ -270,210 +268,14 @@ struct BakedTerrainTilesResult {
 }
 
 fn bake_static_terrain_chunk_tiles(
-    res_dir: &Path,
-    terrain_source: &str,
+    _res_dir: &Path,
+    _terrain_source: &str,
     loaded: &LoadedTerrainSource,
 ) -> io::Result<BakedTerrainTilesResult> {
-    let rules = loaded.settings.layers.as_slice();
-    if rules.is_empty() {
-        return Ok(BakedTerrainTilesResult {
-            tiles: Vec::new(),
-            physics: Vec::new(),
-            generated_textures: Vec::new(),
-        });
-    }
-
-    let Some(map_source) = terrain_map_candidate_source(terrain_source) else {
-        return Ok(BakedTerrainTilesResult {
-            tiles: Vec::new(),
-            physics: Vec::new(),
-            generated_textures: Vec::new(),
-        });
-    };
-    let Some(map_image) = load_image_from_source(res_dir, &map_source) else {
-        return Ok(BakedTerrainTilesResult {
-            tiles: Vec::new(),
-            physics: Vec::new(),
-            generated_textures: Vec::new(),
-        });
-    };
-
-    let mut chunks = loaded.terrain.chunks().collect::<Vec<_>>();
-    chunks.sort_unstable_by_key(|(coord, _)| (coord.x, coord.z));
-    if chunks.is_empty() {
-        return Ok(BakedTerrainTilesResult {
-            tiles: Vec::new(),
-            physics: Vec::new(),
-            generated_textures: Vec::new(),
-        });
-    }
-    let chunk_size = loaded.terrain.chunk_size_meters();
-    let Some(terrain_bounds) = terrain_world_bounds_from_chunks(chunk_size, &chunks) else {
-        return Ok(BakedTerrainTilesResult {
-            tiles: Vec::new(),
-            physics: Vec::new(),
-            generated_textures: Vec::new(),
-        });
-    };
-
-    let layer_textures = load_layer_textures_from_rules(res_dir, rules);
-    let (map_w, map_h) = map_image.dimensions();
-    if map_w == 0 || map_h == 0 {
-        return Ok(BakedTerrainTilesResult {
-            tiles: Vec::new(),
-            physics: Vec::new(),
-            generated_textures: Vec::new(),
-        });
-    }
-    let (terrain_min_x, terrain_max_x, terrain_min_z, terrain_max_z) = terrain_bounds;
-    let span_x = (terrain_max_x - terrain_min_x).max(1.0e-3);
-    let span_z = (terrain_max_z - terrain_min_z).max(1.0e-3);
-    let upscale =
-        perro_runtime::terrain_bake::terrain_layer_bake_upscale(rules, loaded.settings.sample_rate);
-    let smoothed_map = perro_runtime::terrain_bake::build_smoothed_terrain_map(&map_image, upscale);
-
-    let mut base_hash = DefaultHasher::new();
-    terrain_source.hash(&mut base_hash);
-    map_source.hash(&mut base_hash);
-    hash_layer_rules(&mut base_hash, rules);
-    loaded
-        .settings
-        .sample_rate
-        .unwrap_or(0.0)
-        .to_bits()
-        .hash(&mut base_hash);
-    upscale.hash(&mut base_hash);
-    map_w.hash(&mut base_hash);
-    map_h.hash(&mut base_hash);
-    chunk_size.to_bits().hash(&mut base_hash);
-    terrain_min_x.to_bits().hash(&mut base_hash);
-    terrain_max_x.to_bits().hash(&mut base_hash);
-    terrain_min_z.to_bits().hash(&mut base_hash);
-    terrain_max_z.to_bits().hash(&mut base_hash);
-    let base_hash = format!("{:016x}", base_hash.finish());
-
-    const BORDER: u32 = 1;
-
-    let per_chunk = chunks
-        .par_iter()
-        .map(
-            |(coord, chunk)| -> io::Result<
-                Option<(
-                    TerrainBakedChunkTile,
-                    TerrainBakedChunkPhysics,
-                    GeneratedTerrainTile,
-                )>,
-            > {
-                let Some((chunk_min_x, chunk_max_x, chunk_min_z, chunk_max_z)) =
-                    terrain_chunk_world_bounds(chunk_size, *coord, chunk)
-                else {
-                    return Ok(None);
-                };
-                let u0 = ((chunk_min_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
-                let u1 = ((chunk_max_x - terrain_min_x) / span_x).clamp(0.0, 1.0);
-                let v0 = ((chunk_min_z - terrain_min_z) / span_z).clamp(0.0, 1.0);
-                let v1 = ((chunk_max_z - terrain_min_z) / span_z).clamp(0.0, 1.0);
-
-                let mut x0 = (u0 * map_w as f32).floor() as u32;
-                let mut x1 = (u1 * map_w as f32).ceil() as u32;
-                let mut y0 = (v0 * map_h as f32).floor() as u32;
-                let mut y1 = (v1 * map_h as f32).ceil() as u32;
-                if x1 <= x0 {
-                    x1 = (x0 + 1).min(map_w);
-                }
-                if y1 <= y0 {
-                    y1 = (y0 + 1).min(map_h);
-                }
-                x0 = x0.min(map_w.saturating_sub(1));
-                y0 = y0.min(map_h.saturating_sub(1));
-                x1 = x1.max(x0 + 1).min(map_w);
-                y1 = y1.max(y0 + 1).min(map_h);
-
-                let px0 = x0.saturating_sub(BORDER);
-                let py0 = y0.saturating_sub(BORDER);
-                let px1 = (x1 + BORDER).min(map_w);
-                let py1 = (y1 + BORDER).min(map_h);
-                let w = px1.saturating_sub(px0).max(1);
-                let h = py1.saturating_sub(py0).max(1);
-                let out_w = w.saturating_mul(upscale).max(1);
-                let out_h = h.saturating_mul(upscale).max(1);
-
-                let baked_tile = perro_runtime::terrain_bake::build_layered_terrain_chunk_tile(
-                    &map_image,
-                    smoothed_map.as_ref(),
-                    &layer_textures,
-                    rules,
-                    terrain_bounds,
-                    px0,
-                    py0,
-                    out_w,
-                    out_h,
-                    upscale,
-                );
-                let baked_ptex = encode_ptex_from_rgba(&baked_tile)?;
-
-                let x0_local = x0.saturating_sub(px0) as f32 * upscale as f32;
-                let y0_local = y0.saturating_sub(py0) as f32 * upscale as f32;
-                let x1_local = x1.saturating_sub(px0) as f32 * upscale as f32;
-                let y1_local = y1.saturating_sub(py0) as f32 * upscale as f32;
-                let uv_min = [
-                    (x0_local + 0.5) / out_w as f32,
-                    (y0_local + 0.5) / out_h as f32,
-                ];
-                let uv_max = [
-                    (x1_local - 0.5).max(uv_min[0] * out_w as f32 + 1.0e-4) / out_w as f32,
-                    (y1_local - 0.5).max(uv_min[1] * out_h as f32 + 1.0e-4) / out_h as f32,
-                ];
-                let tile = TerrainBakedChunkTile {
-                    chunk_x: coord.x,
-                    chunk_z: coord.z,
-                    texture_source: format!(
-                        "bin://{}/{}/{}_{}.png",
-                        TERRAIN_BAKED_TILE_DIR, base_hash, coord.x, coord.z
-                    ),
-                    uv_min,
-                    uv_max,
-                };
-                let tri_layers = bake_chunk_triangle_layers(
-                    &map_image,
-                    rules,
-                    terrain_bounds,
-                    chunk_size,
-                    *coord,
-                    chunk,
-                );
-                let physics = TerrainBakedChunkPhysics {
-                    chunk_x: coord.x,
-                    chunk_z: coord.z,
-                    triangle_layers: tri_layers,
-                };
-                Ok(Some((
-                    tile,
-                    physics,
-                    GeneratedTerrainTile {
-                        rel_path: format!("{}/{}_{}.ptex", base_hash, coord.x, coord.z),
-                        ptex_bytes: baked_ptex,
-                    },
-                )))
-            },
-        )
-        .collect::<io::Result<Vec<_>>>()?;
-    let mut tiles = Vec::with_capacity(per_chunk.len());
-    let mut physics = Vec::with_capacity(per_chunk.len());
-    let mut generated_textures = Vec::with_capacity(per_chunk.len());
-    for per_chunk in per_chunk {
-        let Some((tile, phys, generated_tile)) = per_chunk else {
-            continue;
-        };
-        tiles.push(tile);
-        physics.push(phys);
-        generated_textures.push(generated_tile);
-    }
-
     Ok(BakedTerrainTilesResult {
-        tiles,
-        physics,
-        generated_textures,
+        tiles: Vec::new(),
+        physics: loaded.settings.baked_chunk_physics.clone(),
+        generated_textures: Vec::new(),
     })
 }
 
@@ -555,209 +357,6 @@ fn is_terrain_gltf_path(rel: &str) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("glb") || ext.eq_ignore_ascii_case("gltf"))
-}
-
-fn terrain_map_candidate_source(terrain_source: &str) -> Option<String> {
-    let source = terrain_source.trim();
-    if source.is_empty() {
-        return None;
-    }
-    let mut base = source
-        .trim_end_matches('/')
-        .trim_end_matches('\\')
-        .to_string();
-    let lower = base.to_ascii_lowercase();
-    if lower.ends_with(".glb") || lower.ends_with(".gltf") || lower.ends_with(".ptchunk") {
-        if let Some((head, _)) = base.rsplit_once(['/', '\\']) {
-            base = head.to_string();
-        } else {
-            base.clear();
-        }
-    }
-    if base.is_empty() {
-        return Some("terrain_map.png".to_string());
-    }
-    let sep = if base.contains('\\') && !base.contains('/') {
-        '\\'
-    } else {
-        '/'
-    };
-    Some(format!("{base}{sep}terrain_map.png"))
-}
-
-fn load_image_from_source(res_dir: &Path, source: &str) -> Option<image::RgbaImage> {
-    let rel = source
-        .trim()
-        .trim_start_matches("res://")
-        .trim_start_matches('/');
-    let path = res_dir.join(rel);
-    let bytes = fs::read(path).ok()?;
-    let image = image::load_from_memory(&bytes).ok()?.to_rgba8();
-    if image.width() == 0 || image.height() == 0 {
-        return None;
-    }
-    Some(image)
-}
-
-fn load_layer_textures_from_rules(
-    res_dir: &Path,
-    rules: &[TerrainLayerRule],
-) -> Vec<Option<image::RgbaImage>> {
-    rules
-        .iter()
-        .map(|rule| {
-            rule.texture_source
-                .as_deref()
-                .and_then(|source| load_image_from_source(res_dir, source))
-        })
-        .collect()
-}
-
-fn terrain_world_bounds_from_chunks(
-    chunk_size: f32,
-    chunks: &[(perro_terrain::ChunkCoord, &TerrainChunk)],
-) -> Option<(f32, f32, f32, f32)> {
-    let mut min_x = f32::INFINITY;
-    let mut max_x = f32::NEG_INFINITY;
-    let mut min_z = f32::INFINITY;
-    let mut max_z = f32::NEG_INFINITY;
-    for (coord, chunk) in chunks {
-        let base_x = coord.x as f32 * chunk_size;
-        let base_z = coord.z as f32 * chunk_size;
-        for vertex in chunk.vertices() {
-            min_x = min_x.min(base_x + vertex.position.x);
-            max_x = max_x.max(base_x + vertex.position.x);
-            min_z = min_z.min(base_z + vertex.position.z);
-            max_z = max_z.max(base_z + vertex.position.z);
-        }
-    }
-    if !min_x.is_finite() || !max_x.is_finite() || !min_z.is_finite() || !max_z.is_finite() {
-        return None;
-    }
-    Some((min_x, max_x, min_z, max_z))
-}
-
-fn terrain_chunk_world_bounds(
-    chunk_size: f32,
-    coord: perro_terrain::ChunkCoord,
-    chunk: &TerrainChunk,
-) -> Option<(f32, f32, f32, f32)> {
-    let base_x = coord.x as f32 * chunk_size;
-    let base_z = coord.z as f32 * chunk_size;
-    let mut min_x = f32::INFINITY;
-    let mut max_x = f32::NEG_INFINITY;
-    let mut min_z = f32::INFINITY;
-    let mut max_z = f32::NEG_INFINITY;
-    for vertex in chunk.vertices() {
-        min_x = min_x.min(base_x + vertex.position.x);
-        max_x = max_x.max(base_x + vertex.position.x);
-        min_z = min_z.min(base_z + vertex.position.z);
-        max_z = max_z.max(base_z + vertex.position.z);
-    }
-    if !min_x.is_finite() || !max_x.is_finite() || !min_z.is_finite() || !max_z.is_finite() {
-        return None;
-    }
-    Some((min_x, max_x, min_z, max_z))
-}
-
-fn bake_chunk_triangle_layers(
-    terrain_map: &image::RgbaImage,
-    layer_rules: &[TerrainLayerRule],
-    terrain_bounds: (f32, f32, f32, f32),
-    chunk_size: f32,
-    coord: perro_terrain::ChunkCoord,
-    chunk: &TerrainChunk,
-) -> Vec<i32> {
-    let mut out = Vec::with_capacity(chunk.triangles().len());
-    for tri in chunk.triangles() {
-        if tri.a >= chunk.vertices().len()
-            || tri.b >= chunk.vertices().len()
-            || tri.c >= chunk.vertices().len()
-        {
-            out.push(-1);
-            continue;
-        }
-        let va = chunk.vertices()[tri.a].position;
-        let vb = chunk.vertices()[tri.b].position;
-        let vc = chunk.vertices()[tri.c].position;
-        let world_x = coord.x as f32 * chunk_size + (va.x + vb.x + vc.x) / 3.0;
-        let world_z = coord.z as f32 * chunk_size + (va.z + vb.z + vc.z) / 3.0;
-        let layer = classify_layer_from_world_xz(
-            terrain_map,
-            layer_rules,
-            terrain_bounds,
-            world_x,
-            world_z,
-        )
-        .map(|idx| idx as i32)
-        .unwrap_or(-1);
-        out.push(layer);
-    }
-    out
-}
-
-fn classify_layer_from_world_xz(
-    terrain_map: &image::RgbaImage,
-    layer_rules: &[TerrainLayerRule],
-    terrain_bounds: (f32, f32, f32, f32),
-    world_x: f32,
-    world_z: f32,
-) -> Option<usize> {
-    let (min_x, max_x, min_z, max_z) = terrain_bounds;
-    let span_x = (max_x - min_x).max(1.0e-3);
-    let span_z = (max_z - min_z).max(1.0e-3);
-    let u = ((world_x - min_x) / span_x).clamp(0.0, 1.0);
-    let v = ((world_z - min_z) / span_z).clamp(0.0, 1.0);
-    let x = (u * terrain_map.width().saturating_sub(1) as f32).round() as u32;
-    let y = (v * terrain_map.height().saturating_sub(1) as f32).round() as u32;
-    let pixel = *terrain_map.get_pixel(x, y);
-    layer_rules
-        .iter()
-        .enumerate()
-        .find_map(|(i, rule)| terrain_layer_color_matches(pixel, rule).then_some(i))
-}
-
-fn hash_layer_rules(hasher: &mut DefaultHasher, rules: &[TerrainLayerRule]) {
-    rules.len().hash(hasher);
-    for rule in rules {
-        rule.index.hash(hasher);
-        rule.color.r.hash(hasher);
-        rule.color.g.hash(hasher);
-        rule.color.b.hash(hasher);
-        rule.color_tolerance.hash(hasher);
-        rule.name.as_deref().unwrap_or("").hash(hasher);
-        rule.texture_source.as_deref().unwrap_or("").hash(hasher);
-        rule.texture_tile_meters.to_bits().hash(hasher);
-        rule.texture_rotation_degrees.to_bits().hash(hasher);
-        rule.texture_hard_cut.hash(hasher);
-        for b in &rule.blend_with {
-            b.hash(hasher);
-        }
-        rule.friction.unwrap_or(-1.0).to_bits().hash(hasher);
-        rule.restitution.unwrap_or(-1.0).to_bits().hash(hasher);
-    }
-}
-
-fn terrain_layer_color_matches(pixel: image::Rgba<u8>, rule: &TerrainLayerRule) -> bool {
-    let dr = (pixel[0] as i16 - rule.color.r as i16).unsigned_abs() as u8;
-    let dg = (pixel[1] as i16 - rule.color.g as i16).unsigned_abs() as u8;
-    let db = (pixel[2] as i16 - rule.color.b as i16).unsigned_abs() as u8;
-    let tol = rule.color_tolerance;
-    dr <= tol && dg <= tol && db <= tol
-}
-
-fn encode_ptex_from_rgba(image: &RgbaImage) -> io::Result<Vec<u8>> {
-    let (width, height) = image.dimensions();
-    let raw = image.as_raw();
-    let compressed = compress_zlib_best(raw)?;
-    let mut out = Vec::with_capacity(20 + compressed.len());
-    out.extend_from_slice(b"PTEX");
-    out.extend_from_slice(&1u32.to_le_bytes());
-    out.extend_from_slice(&width.to_le_bytes());
-    out.extend_from_slice(&height.to_le_bytes());
-    out.extend_from_slice(&(raw.len() as u32).to_le_bytes());
-    out.extend_from_slice(&compressed);
-    Ok(out)
 }
 
 fn optimize_terrain_meshes(input: &TerrainData) -> Result<TerrainData, StaticPipelineError> {

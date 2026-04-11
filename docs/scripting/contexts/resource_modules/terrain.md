@@ -18,18 +18,20 @@ Current terrain model (runtime):
 - Terrain mesh chunks must remain heightfield-like (`1 height per x,z`) for terrain workflows.
 - Scene-authored terrain can be loaded by setting `TerrainInstance3D.terrain` to a terrain folder.
 - Terrain folders can contain chunk files (`.ptchunk`) and/or an authoring mesh (`terrain.glb` or `terrain.gltf`).
-- Terrain folders may also include layer/map assets used by terrain tooling workflows.
-- If a terrain folder contains `terrain_map.png`, runtime terrain rendering will bind it as the default terrain base-color map.
+- For the GLB workflow, `terrain.glb` is the authoring source for:
+  - topology
+  - UVs
+  - painted terrain layer regions (via UV-authored layer map texture in the glb import data)
+- `terrain_map.png` is no longer required by runtime terrain import/query/render/physics.
 - Terrain folders may include an optional `settings.pterr` file for mapping defaults:
-  - `sample_rate = <float>` (`1`..`12`, where `1` is 1:1 map sampling at `1 pixel per meter`)
+  - `sample_rate = <float>` (`1`..`12`) (kept as optional terrain sampling metadata)
   - Layer rules (indexed by order):
     - `layer.0.match_color = #80C840` (aliases: `color`, also accepts `r,g,b` like `128,200,64`)
     - `layer.0.match_tolerance = 6` (aliases: `color_tolerance`, `tolerance`)
     - `layer.0.name = fairway`
-    - `layer.0.texture = res://terrain/grass_fairway.png`
-    - `layer.0.tile_meters = 5.0`
-    - `layer.0.rotation_degrees = 15.0`
-    - `layer.0.hard_cut = true` (or `layer.0.filter = nearest`) to disable bilinear blend at tile seams
+    - `layer.0.material = res://terrain/fairway.pmat` (aliases: `material_source`, `pmat`)
+    - Legacy key `layer.N.texture` is accepted as parse compatibility input, but visuals are material-driven.
+    - `layer.0.tile_meters`, `rotation_degrees`, `hard_cut`, `filter` are legacy-compatible parse fields.
     - `layer.0.blending = [1,2]` allows this layer to blend only with listed layer indices
     - `layer.0.friction = 0.92`
     - `layer.0.restitution = 0.03`
@@ -39,10 +41,10 @@ Current terrain model (runtime):
     - each tuple/pair is exactly two layer indices that are allowed to blend
   - Default behavior is hard layer cuts. Blending only happens for explicitly allowed pairs.
   - Runtime behavior:
-    - `terrain_map.png` is treated as a layer-mask/source map.
+    - Layer query source is imported from `terrain.glb` UV-authored layer data.
     - First matching layer by index is selected (matching uses `color_tolerance`).
-    - Visual: matching map color can be replaced with layer texture sampling.
-    - Physics: matching layer can override terrain collider friction/restitution.
+    - Visual: each layer resolves to its configured `.pmat`.
+    - Physics: imported baked triangle-layer mapping drives per-layer friction/restitution overrides.
 - `TerrainInstance3D` scene fields can override folder defaults:
   - `pixels_per_meter` (legacy alias for `sample_rate`)
 - `.ptchunk` filenames must be chunk-space coordinates: `<chunk_x>_<chunk_z>.ptchunk` (for example `0_0.ptchunk`, `0_1.ptchunk`, `-1_2.ptchunk`).

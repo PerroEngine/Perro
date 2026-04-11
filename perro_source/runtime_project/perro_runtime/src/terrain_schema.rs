@@ -37,7 +37,7 @@ pub struct TerrainLayerRule {
     pub name: Option<String>,
     pub color: TerrainLayerColor,
     pub color_tolerance: u8,
-    pub texture_source: Option<String>,
+    pub material_source: Option<String>,
     pub texture_tile_meters: f32,
     pub texture_rotation_degrees: f32,
     pub texture_hard_cut: bool,
@@ -298,7 +298,7 @@ pub fn decode_loaded_terrain_blob(blob: &[u8]) -> Option<LoadedTerrainSource> {
             name,
             color,
             color_tolerance,
-            texture_source,
+            material_source: normalize_layer_material_source(texture_source),
             texture_tile_meters,
             texture_rotation_degrees,
             texture_hard_cut,
@@ -414,16 +414,25 @@ impl<'a> TerrainBlobReader<'a> {
     }
 }
 
+#[derive(Clone)]
+struct ImportedGltfTerrain {
+    terrain: TerrainData,
+    baked_chunk_physics: Vec<TerrainBakedChunkPhysics>,
+}
+
 fn load_terrain_from_disk_path(path: &Path) -> Option<LoadedTerrainSource> {
     if path.is_file() {
         let ext = path.extension().and_then(|s| s.to_str())?;
         if ext.eq_ignore_ascii_case("glb") || ext.eq_ignore_ascii_case("gltf") {
-            return load_terrain_from_gltf_file(path, DEFAULT_CHUNK_SIZE_METERS).map(|terrain| {
-                LoadedTerrainSource {
-                    terrain,
-                    settings: TerrainSourceSettings::default(),
-                }
-            });
+            let mut settings = TerrainSourceSettings::default();
+            return load_terrain_from_gltf_file(path, DEFAULT_CHUNK_SIZE_METERS, &settings.layers)
+                .map(|imported| {
+                    settings.baked_chunk_physics = imported.baked_chunk_physics;
+                    LoadedTerrainSource {
+                        terrain: imported.terrain,
+                        settings,
+                    }
+                });
         }
         if ext.eq_ignore_ascii_case("ptchunk") {
             let text = fs::read_to_string(path).ok()?;
@@ -447,8 +456,21 @@ fn load_terrain_from_disk_path(path: &Path) -> Option<LoadedTerrainSource> {
     for candidate in ["terrain.glb", "terrain.gltf"] {
         let gltf_path = path.join(candidate);
         if gltf_path.is_file() {
-            return load_terrain_from_gltf_file(&gltf_path, DEFAULT_CHUNK_SIZE_METERS)
-                .map(|terrain| LoadedTerrainSource { terrain, settings });
+            let mut merged = settings.clone();
+            return load_terrain_from_gltf_file(
+                &gltf_path,
+                DEFAULT_CHUNK_SIZE_METERS,
+                &merged.layers,
+            )
+            .map(|imported| {
+                if !imported.baked_chunk_physics.is_empty() {
+                    merged.baked_chunk_physics = imported.baked_chunk_physics;
+                }
+                LoadedTerrainSource {
+                    terrain: imported.terrain,
+                    settings: merged,
+                }
+            });
         }
     }
 
@@ -519,9 +541,9 @@ fn parse_terrain_settings(source: &str) -> TerrainSourceSettings {
                         entry.color_tolerance = Some(parsed.round().clamp(0.0, 255.0) as u8);
                     }
                 }
-                "texture" | "texture_source" => {
+                "material" | "material_source" | "pmat" | "texture" | "texture_source" => {
                     if !value.is_empty() {
-                        entry.texture_source = Some(value.to_string());
+                        entry.material_source = Some(value.to_string());
                     }
                 }
                 "texture_tile_meters" | "tile_meters" | "tile_size" | "tile" => {
@@ -623,7 +645,7 @@ struct TerrainLayerRuleBuilder {
     name: Option<String>,
     color: Option<TerrainLayerColor>,
     color_tolerance: Option<u8>,
-    texture_source: Option<String>,
+    material_source: Option<String>,
     texture_tile_meters: Option<f32>,
     texture_rotation_degrees: Option<f32>,
     texture_hard_cut: Option<bool>,
@@ -640,7 +662,7 @@ impl TerrainLayerRuleBuilder {
             name: self.name,
             color,
             color_tolerance: self.color_tolerance.unwrap_or(0),
-            texture_source: self.texture_source,
+            material_source: normalize_layer_material_source(self.material_source),
             texture_tile_meters: self.texture_tile_meters.unwrap_or(6.0),
             texture_rotation_degrees: self.texture_rotation_degrees.unwrap_or(0.0),
             texture_hard_cut: self.texture_hard_cut.unwrap_or(false),
@@ -723,6 +745,27 @@ fn parse_bool_token(value: &str) -> Option<bool> {
         "false" | "0" | "no" | "off" => Some(false),
         _ => None,
     }
+}
+
+fn normalize_layer_material_source(source: Option<String>) -> Option<String> {
+    let source = source?;
+    let trimmed = source.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.ends_with(".png")
+        || lower.ends_with(".jpg")
+        || lower.ends_with(".jpeg")
+        || lower.ends_with(".webp")
+        || lower.ends_with(".tga")
+        || lower.ends_with(".bmp")
+        || lower.ends_with(".gif")
+        || lower.ends_with(".ptex")
+    {
+        return None;
+    }
+    Some(trimmed.to_string())
 }
 
 fn parse_layer_blend_list(value: &str) -> Vec<usize> {
@@ -1023,41 +1066,66 @@ fn build_terrain_data(chunk_size_meters: f32, chunks: &[ParsedChunk]) -> Option<
     Some(terrain)
 }
 
-fn load_terrain_from_gltf_file(path: &Path, chunk_size_meters: f32) -> Option<TerrainData> {
-    let (doc, buffers, _images) = gltf::import(path).ok()?;
+fn load_terrain_from_gltf_file(
+    path: &Path,
+    chunk_size_meters: f32,
+    layer_rules: &[TerrainLayerRule],
+) -> Option<ImportedGltfTerrain> {
+    let (doc, buffers, images) = gltf::import(path).ok()?;
     let scene = doc.default_scene().or_else(|| doc.scenes().next())?;
 
     let mut positions = Vec::<Vec3>::new();
     let mut triangles = Vec::<[u32; 3]>::new();
+    let mut triangle_uvs = Vec::<[[f32; 2]; 3]>::new();
+    let mut layer_map = None;
 
     for node in scene.nodes() {
         collect_gltf_scene_node_meshes(
             &node,
             Mat4::IDENTITY,
             &buffers,
+            &images,
             &mut positions,
             &mut triangles,
+            &mut triangle_uvs,
+            &mut layer_map,
         );
     }
 
     if positions.is_empty() || triangles.is_empty() {
         return None;
     }
+    if triangle_uvs.len() != triangles.len() {
+        triangle_uvs.resize(triangles.len(), [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]);
+    }
 
-    let chunks = chunk_mesh_positions(&positions, &triangles, chunk_size_meters)?;
+    let (chunks, baked_chunk_physics) = chunk_mesh_positions(
+        &positions,
+        &triangles,
+        &triangle_uvs,
+        layer_map.as_ref(),
+        layer_rules,
+        chunk_size_meters,
+    )?;
     let mut terrain = TerrainData::new(chunk_size_meters);
     for (coord, chunk) in chunks {
         terrain.set_chunk(coord, chunk);
     }
-    Some(terrain)
+    Some(ImportedGltfTerrain {
+        terrain,
+        baked_chunk_physics,
+    })
 }
 
 fn collect_gltf_scene_node_meshes(
     node: &gltf::Node,
     parent: Mat4,
     buffers: &[gltf::buffer::Data],
+    images: &[gltf::image::Data],
     positions: &mut Vec<Vec3>,
     triangles: &mut Vec<[u32; 3]>,
+    triangle_uvs: &mut Vec<[[f32; 2]; 3]>,
+    layer_map: &mut Option<image::RgbaImage>,
 ) {
     let local = Mat4::from_cols_array_2d(&node.transform().matrix());
     let world = parent * local;
@@ -1072,6 +1140,16 @@ fn collect_gltf_scene_node_meshes(
             let local_positions: Vec<Vec3> = pos_iter.map(Vec3::from_array).collect();
             if local_positions.len() < 3 {
                 continue;
+            }
+            let local_uvs = reader
+                .read_tex_coords(0)
+                .map(|uv| uv.into_f32().collect::<Vec<_>>());
+
+            if layer_map.is_none()
+                && let Some(tex) = primitive.material().pbr_metallic_roughness().base_color_texture()
+            {
+                let idx = tex.texture().source().index();
+                *layer_map = images.get(idx).and_then(rgba_image_from_gltf_image);
             }
 
             let base = positions.len() as u32;
@@ -1089,19 +1167,86 @@ fn collect_gltf_scene_node_meshes(
                     let c = base + tri[2];
                     if a != b && b != c && a != c {
                         triangles.push([a, b, c]);
+                        triangle_uvs.push(read_gltf_triangle_uvs(
+                            &local_uvs,
+                            tri[0] as usize,
+                            tri[1] as usize,
+                            tri[2] as usize,
+                        ));
                     }
                 }
             } else {
                 for i in (0..local_positions.len() / 3 * 3).step_by(3) {
                     triangles.push([base + i as u32, base + i as u32 + 1, base + i as u32 + 2]);
+                    triangle_uvs.push(read_gltf_triangle_uvs(
+                        &local_uvs,
+                        i,
+                        i + 1,
+                        i + 2,
+                    ));
                 }
             }
         }
     }
 
     for child in node.children() {
-        collect_gltf_scene_node_meshes(&child, world, buffers, positions, triangles);
+        collect_gltf_scene_node_meshes(
+            &child,
+            world,
+            buffers,
+            images,
+            positions,
+            triangles,
+            triangle_uvs,
+            layer_map,
+        );
     }
+}
+
+fn read_gltf_triangle_uvs(
+    local_uvs: &Option<Vec<[f32; 2]>>,
+    a: usize,
+    b: usize,
+    c: usize,
+) -> [[f32; 2]; 3] {
+    let Some(uvs) = local_uvs else {
+        return [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]];
+    };
+    [
+        *uvs.get(a).unwrap_or(&[0.0, 0.0]),
+        *uvs.get(b).unwrap_or(&[0.0, 0.0]),
+        *uvs.get(c).unwrap_or(&[0.0, 0.0]),
+    ]
+}
+
+fn rgba_image_from_gltf_image(data: &gltf::image::Data) -> Option<image::RgbaImage> {
+    let w = data.width;
+    let h = data.height;
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let raw = &data.pixels;
+    let mut out = Vec::with_capacity((w as usize).checked_mul(h as usize)?.checked_mul(4)?);
+    match data.format {
+        gltf::image::Format::R8 => {
+            for px in raw {
+                out.extend_from_slice(&[*px, *px, *px, 255]);
+            }
+        }
+        gltf::image::Format::R8G8 => {
+            for px in raw.chunks_exact(2) {
+                out.extend_from_slice(&[px[0], px[0], px[0], px[1]]);
+            }
+        }
+        gltf::image::Format::R8G8B8 => {
+            for px in raw.chunks_exact(3) {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+        }
+        gltf::image::Format::R8G8B8A8 => out.extend_from_slice(raw),
+        _ => return None,
+    }
+    image::RgbaImage::from_raw(w, h, out)
 }
 
 struct ChunkMeshBuilder {
@@ -1110,17 +1255,21 @@ struct ChunkMeshBuilder {
     xz_to_height: HashMap<(i64, i64), f32>,
     vertices: Vec<Vertex>,
     triangles: Vec<Triangle>,
+    triangle_layers: Vec<i32>,
 }
 
 fn chunk_mesh_positions(
     positions: &[Vec3],
     triangles: &[[u32; 3]],
+    triangle_uvs: &[[[f32; 2]; 3]],
+    layer_map: Option<&image::RgbaImage>,
+    layer_rules: &[TerrainLayerRule],
     chunk_size_meters: f32,
-) -> Option<Vec<(ChunkCoord, TerrainChunk)>> {
+) -> Option<(Vec<(ChunkCoord, TerrainChunk)>, Vec<TerrainBakedChunkPhysics>)> {
     let mut builders = HashMap::<ChunkCoord, ChunkMeshBuilder>::new();
     let xz_quant = 1.0 / HEIGHTFIELD_EPSILON.max(1.0e-4);
 
-    for tri in triangles {
+    for (tri_ix, tri) in triangles.iter().enumerate() {
         let ia = usize::try_from(tri[0]).ok()?;
         let ib = usize::try_from(tri[1]).ok()?;
         let ic = usize::try_from(tri[2]).ok()?;
@@ -1139,6 +1288,7 @@ fn chunk_mesh_positions(
             xz_to_height: HashMap::new(),
             vertices: Vec::new(),
             triangles: Vec::new(),
+            triangle_layers: Vec::new(),
         });
 
         let mut local_ids = [0usize; 3];
@@ -1171,13 +1321,22 @@ fn chunk_mesh_positions(
             && local_ids[1] != local_ids[2]
             && local_ids[0] != local_ids[2]
         {
+            let layer = triangle_uvs
+                .get(tri_ix)
+                .and_then(|uvs| {
+                    classify_terrain_layer_from_triangle_uvs(layer_map, layer_rules, *uvs)
+                })
+                .and_then(|idx| i32::try_from(idx).ok())
+                .unwrap_or(-1);
             builder
                 .triangles
                 .push(Triangle::new(local_ids[0], local_ids[1], local_ids[2]));
+            builder.triangle_layers.push(layer);
         }
     }
 
     let mut out = Vec::new();
+    let mut baked_chunk_physics = Vec::new();
     for (_coord, build) in builders {
         if build.vertices.len() < 3 || build.triangles.is_empty() {
             continue;
@@ -1192,12 +1351,77 @@ fn chunk_mesh_positions(
         if !chunk.has_single_height_per_xz(HEIGHTFIELD_EPSILON) {
             return None;
         }
+        if !layer_rules.is_empty() {
+            let mut layers = build.triangle_layers;
+            if layers.len() != chunk.triangles().len() {
+                layers.resize(chunk.triangles().len(), -1);
+            }
+            baked_chunk_physics.push(TerrainBakedChunkPhysics {
+                chunk_x: build.coord.x,
+                chunk_z: build.coord.z,
+                triangle_layers: layers,
+            });
+        }
         out.push((build.coord, chunk));
     }
     if out.is_empty() {
         return None;
     }
-    Some(out)
+    baked_chunk_physics.sort_unstable_by_key(|v| (v.chunk_x, v.chunk_z));
+    Some((out, baked_chunk_physics))
+}
+
+fn classify_terrain_layer_from_triangle_uvs(
+    layer_map: Option<&image::RgbaImage>,
+    layer_rules: &[TerrainLayerRule],
+    tri_uvs: [[f32; 2]; 3],
+) -> Option<usize> {
+    let map = layer_map?;
+    if layer_rules.is_empty() {
+        return None;
+    }
+    let uv = [
+        (tri_uvs[0][0] + tri_uvs[1][0] + tri_uvs[2][0]) / 3.0,
+        (tri_uvs[0][1] + tri_uvs[1][1] + tri_uvs[2][1]) / 3.0,
+    ];
+    classify_terrain_layer_from_uv(map, layer_rules, uv)
+}
+
+fn classify_terrain_layer_from_uv(
+    map: &image::RgbaImage,
+    layer_rules: &[TerrainLayerRule],
+    uv: [f32; 2],
+) -> Option<usize> {
+    let w = map.width().max(1);
+    let h = map.height().max(1);
+    let u = uv[0].rem_euclid(1.0);
+    let v = uv[1].rem_euclid(1.0);
+    let sample = |vv: f32| {
+        let x = (u * w.saturating_sub(1) as f32).round() as u32;
+        let y = (vv * h.saturating_sub(1) as f32).round() as u32;
+        let pixel = *map.get_pixel(x, y);
+        layer_rules
+            .iter()
+            .enumerate()
+            .find_map(|(i, rule)| terrain_layer_color_matches(pixel, rule).then_some(i))
+    };
+    let normal = sample(v);
+    let flipped = sample(1.0 - v);
+    match (normal, flipped) {
+        (Some(a), Some(b)) if a == b => Some(a),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (Some(a), Some(_)) => Some(a),
+        (None, None) => None,
+    }
+}
+
+fn terrain_layer_color_matches(pixel: image::Rgba<u8>, layer: &TerrainLayerRule) -> bool {
+    let dr = (pixel[0] as i16 - layer.color.r as i16).unsigned_abs() as u8;
+    let dg = (pixel[1] as i16 - layer.color.g as i16).unsigned_abs() as u8;
+    let db = (pixel[2] as i16 - layer.color.b as i16).unsigned_abs() as u8;
+    let tol = layer.color_tolerance;
+    dr <= tol && dg <= tol && db <= tol
 }
 
 fn build_mesh_from_height_samples(
@@ -1379,7 +1603,7 @@ mod tests {
             sample_rate = 2.0
 
             layer.2.color = #224466
-            layer.2.texture = res://terrain/rock.png
+            layer.2.material = res://terrain/rock.pmat
             layer.2.friction = 1.2
 
             layer.0.match_color = 128, 200, 64
@@ -1406,7 +1630,7 @@ mod tests {
         let l1 = &parsed.layers[1];
         assert_eq!(l1.index, 2);
         assert_eq!(l1.color, TerrainLayerColor::new(0x22, 0x44, 0x66));
-        assert_eq!(l1.texture_source.as_deref(), Some("res://terrain/rock.png"));
+        assert_eq!(l1.material_source.as_deref(), Some("res://terrain/rock.pmat"));
         assert_eq!(l1.friction, Some(1.2));
     }
 

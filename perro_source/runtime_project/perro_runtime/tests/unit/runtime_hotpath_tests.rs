@@ -279,6 +279,7 @@ fn bench_render_terrain_chunk_key_lookup_legacy_vs_indexed() {
                     x: c as i32,
                     z: (c * 2) as i32,
                 },
+                layer: -1,
             };
             all_keys.push(key);
             meshes.insert(key, key.coord.x as u64);

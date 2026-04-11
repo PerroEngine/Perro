@@ -228,11 +228,6 @@ impl Runtime {
         self.render_3d.material_surface_sources.clear();
         self.render_3d.material_surface_overrides.clear();
         self.render_3d.terrain_materials.clear();
-        self.render_3d.terrain_map_source_cache.clear();
-        self.render_3d.terrain_textures.clear();
-        self.render_3d.terrain_missing_textures.clear();
-        self.render_3d.terrain_chunk_tile_sets.clear();
-        self.render_3d.terrain_chunk_tile_failures.clear();
         self.render_3d.terrain_instance_settings.clear();
         self.render_3d.terrain_instance_cache.clear();
         self.render_3d.terrain_chunk_meshes.clear();

@@ -325,11 +325,6 @@ pub(crate) struct Render3DState {
     pub(crate) material_surface_sources: AHashMap<NodeID, Vec<Option<String>>>,
     pub(crate) material_surface_overrides: AHashMap<NodeID, Vec<Option<Material3D>>>,
     pub(crate) terrain_materials: AHashMap<String, MaterialID>,
-    pub(crate) terrain_map_source_cache: AHashMap<String, Option<String>>,
-    pub(crate) terrain_textures: AHashMap<String, TextureID>,
-    pub(crate) terrain_missing_textures: AHashSet<String>,
-    pub(crate) terrain_chunk_tile_sets: AHashMap<String, TerrainChunkTileSet>,
-    pub(crate) terrain_chunk_tile_failures: AHashSet<String>,
     pub(crate) terrain_instance_settings:
         AHashMap<NodeID, crate::terrain_schema::TerrainSourceSettings>,
     pub(crate) terrain_instance_cache: AHashMap<NodeID, TerrainInstanceCacheState>,
@@ -361,11 +356,6 @@ impl Render3DState {
             material_surface_sources: AHashMap::default(),
             material_surface_overrides: AHashMap::default(),
             terrain_materials: AHashMap::default(),
-            terrain_map_source_cache: AHashMap::default(),
-            terrain_textures: AHashMap::default(),
-            terrain_missing_textures: AHashSet::default(),
-            terrain_chunk_tile_sets: AHashMap::default(),
-            terrain_chunk_tile_failures: AHashSet::default(),
             terrain_instance_settings: AHashMap::default(),
             terrain_instance_cache: AHashMap::default(),
             terrain_chunk_meshes: AHashMap::default(),
@@ -388,18 +378,6 @@ impl Render3DState {
     }
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct TerrainChunkTileSet {
-    pub(crate) tiles_by_coord: AHashMap<ChunkCoord, TerrainChunkTile>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct TerrainChunkTile {
-    pub(crate) source: String,
-    pub(crate) uv_min: [f32; 2],
-    pub(crate) uv_max: [f32; 2],
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RetainedMeshDrawState {
     pub(crate) mesh: MeshID,
@@ -412,6 +390,7 @@ pub(crate) struct RetainedMeshDrawState {
 pub(crate) struct TerrainChunkMeshKey {
     pub(crate) node: NodeID,
     pub(crate) coord: ChunkCoord,
+    pub(crate) layer: i32,
 }
 
 #[derive(Clone, Debug)]
