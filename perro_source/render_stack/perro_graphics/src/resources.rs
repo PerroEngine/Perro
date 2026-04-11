@@ -93,9 +93,11 @@ pub struct ResourceStore {
     materials: SlotArena,
     mesh_by_source: HashMap<String, MeshID>,
     mesh_source_by: HashMap<MeshID, String>,
+    mesh_source_by_slot: Vec<Option<String>>,
     runtime_mesh_by_source: HashMap<String, RuntimeMeshData>,
     texture_by_source: HashMap<String, TextureID>,
     texture_source_by: HashMap<TextureID, String>,
+    texture_source_by_slot: Vec<Option<String>>,
     material_by: HashMap<MaterialID, Material3D>,
     material_by_source: HashMap<String, MaterialID>,
     material_source_by: HashMap<MaterialID, String>,
@@ -112,6 +114,52 @@ impl ResourceStore {
     }
 
     #[inline]
+    fn set_mesh_source_slot(&mut self, index: u32, source: &str) {
+        if index == 0 {
+            return;
+        }
+        let slot = index as usize - 1;
+        if self.mesh_source_by_slot.len() <= slot {
+            self.mesh_source_by_slot.resize(slot + 1, None);
+        }
+        self.mesh_source_by_slot[slot] = Some(source.to_string());
+    }
+
+    #[inline]
+    fn clear_mesh_source_slot(&mut self, index: u32) {
+        if index == 0 {
+            return;
+        }
+        let slot = index as usize - 1;
+        if let Some(entry) = self.mesh_source_by_slot.get_mut(slot) {
+            *entry = None;
+        }
+    }
+
+    #[inline]
+    fn set_texture_source_slot(&mut self, index: u32, source: &str) {
+        if index == 0 {
+            return;
+        }
+        let slot = index as usize - 1;
+        if self.texture_source_by_slot.len() <= slot {
+            self.texture_source_by_slot.resize(slot + 1, None);
+        }
+        self.texture_source_by_slot[slot] = Some(source.to_string());
+    }
+
+    #[inline]
+    fn clear_texture_source_slot(&mut self, index: u32) {
+        if index == 0 {
+            return;
+        }
+        let slot = index as usize - 1;
+        if let Some(entry) = self.texture_source_by_slot.get_mut(slot) {
+            *entry = None;
+        }
+    }
+
+    #[inline]
     pub fn create_mesh(&mut self, source: &str, reserved: bool) -> MeshID {
         if let Some(id) = self.mesh_by_source.get(source).copied() {
             if reserved {
@@ -124,6 +172,7 @@ impl ResourceStore {
         let id = MeshID::from_parts(index, generation);
         self.mesh_by_source.insert(source.to_string(), id);
         self.mesh_source_by.insert(id, source.to_string());
+        self.set_mesh_source_slot(index, source);
         self.mesh_meta_by.insert(
             id,
             ResourceMeta {
@@ -155,6 +204,7 @@ impl ResourceStore {
         }
         self.mesh_by_source.insert(source.to_string(), id);
         self.mesh_source_by.insert(id, source.to_string());
+        self.set_mesh_source_slot(id.index(), source);
         self.mesh_meta_by.insert(
             id,
             ResourceMeta {
@@ -179,6 +229,7 @@ impl ResourceStore {
         let id = TextureID::from_parts(index, generation);
         self.texture_by_source.insert(source.to_string(), id);
         self.texture_source_by.insert(id, source.to_string());
+        self.set_texture_source_slot(index, source);
         self.texture_meta_by.insert(
             id,
             ResourceMeta {
@@ -215,6 +266,7 @@ impl ResourceStore {
         }
         self.texture_by_source.insert(source.to_string(), id);
         self.texture_source_by.insert(id, source.to_string());
+        self.set_texture_source_slot(id.index(), source);
         self.texture_meta_by.insert(
             id,
             ResourceMeta {
@@ -333,14 +385,22 @@ impl ResourceStore {
 
     #[inline]
     pub fn texture_source_by_index(&self, index: u32) -> Option<&str> {
-        self.texture_source_by
-            .iter()
-            .find_map(|(id, source)| (id.index() == index).then_some(source.as_str()))
+        if index == 0 {
+            return None;
+        }
+        self.texture_source_by_slot
+            .get(index as usize - 1)
+            .and_then(|s| s.as_deref())
     }
 
     #[inline]
     pub fn mesh_source(&self, id: MeshID) -> Option<&str> {
-        self.mesh_source_by.get(&id).map(String::as_str)
+        if id.index() == 0 {
+            return None;
+        }
+        self.mesh_source_by_slot
+            .get(id.index() as usize - 1)
+            .and_then(|s| s.as_deref())
     }
 
     #[inline]
@@ -561,6 +621,7 @@ impl ResourceStore {
             }
             self.texture_by_source.remove(&source);
         }
+        self.clear_texture_source_slot(id.index());
         self.texture_meta_by.remove(&id);
         true
     }
@@ -580,6 +641,7 @@ impl ResourceStore {
             self.mesh_by_source.remove(&source);
             self.runtime_mesh_by_source.remove(&source);
         }
+        self.clear_mesh_source_slot(id.index());
         self.mesh_meta_by.remove(&id);
         true
     }

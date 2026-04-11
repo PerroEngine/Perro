@@ -82,20 +82,17 @@ pub(super) fn merge_prepared_scene(
             runtime.render_3d.mesh_sources.insert(node, source);
         }
         if !material_surfaces.is_empty() {
-            runtime.render_3d.material_surface_sources.insert(
-                node,
-                material_surfaces
-                    .iter()
-                    .map(|surface| surface.source.clone())
-                    .collect(),
-            );
-            runtime.render_3d.material_surface_overrides.insert(
-                node,
-                material_surfaces
-                    .into_iter()
-                    .map(|surface| surface.inline)
-                    .collect(),
-            );
+            let mut sources = Vec::with_capacity(material_surfaces.len());
+            let mut overrides = Vec::with_capacity(material_surfaces.len());
+            for surface in material_surfaces {
+                sources.push(surface.source);
+                overrides.push(surface.inline);
+            }
+            runtime.render_3d.material_surface_sources.insert(node, sources);
+            runtime
+                .render_3d
+                .material_surface_overrides
+                .insert(node, overrides);
         }
         if let Some(source) = skeleton_source {
             let res = ResourceContext::new(resource_api.as_ref());
@@ -109,11 +106,12 @@ pub(super) fn merge_prepared_scene(
         if let Some(target) = mesh_skeleton_target {
             mesh_skeleton_links.push((node, target));
         }
+        let key_for_map = key.clone();
         if let Some(parent_key) = parent_key {
             parent_pairs.push((key.clone(), parent_key));
         }
-        key_order.push(key.clone());
-        key_to.insert(key, node);
+        key_order.push(key);
+        key_to.insert(key_for_map, node);
     }
 
     if let Some(root_key) = root_key.as_deref()

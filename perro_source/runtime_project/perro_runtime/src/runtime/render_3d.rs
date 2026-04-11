@@ -993,7 +993,12 @@ impl Runtime {
         terrain_signature = terrain_signature.rotate_left(13);
         terrain_signature ^= terrain_uv_projection_hash(uv_projection);
         terrain_signature = terrain_signature.rotate_left(13);
-        let mut active_keys = ahash::AHashSet::with_capacity(chunks.len());
+        let mut active_keys = std::mem::take(&mut self.render_3d.terrain_active_keys_scratch);
+        active_keys.clear();
+        let active_cap = active_keys.capacity();
+        if active_cap < chunks.len() {
+            active_keys.reserve(chunks.len() - active_cap);
+        }
         let max_stream_distance_sq = terrain_chunk_stream_distance_sq(camera, chunk_size_meters);
         let camera_position = camera.map(|cam| Vec3::from_array(cam.position));
 
@@ -1134,7 +1139,8 @@ impl Runtime {
                 }
             }
         }
-        let mut stale_keys = Vec::new();
+        let mut stale_keys = std::mem::take(&mut self.render_3d.terrain_stale_keys_scratch);
+        stale_keys.clear();
         if let Some(keys) = self.render_3d.terrain_chunk_keys_by_node.get(&node) {
             stale_keys.reserve(keys.len());
             for &key in keys {
@@ -1143,9 +1149,13 @@ impl Runtime {
                 }
             }
         }
-        for key in stale_keys {
+        for key in stale_keys.iter().copied() {
             self.remove_terrain_chunk_mesh_entry(key);
         }
+        stale_keys.clear();
+        self.render_3d.terrain_stale_keys_scratch = stale_keys;
+        active_keys.clear();
+        self.render_3d.terrain_active_keys_scratch = active_keys;
         terrain_signature
     }
 

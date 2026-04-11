@@ -56,7 +56,8 @@ fn query_node_ids_with_worker_override(
     }
     let out = match query.scope {
         QueryScope::Root => {
-            if let Some(candidates) = candidate_ids_from_tag_index(&query.expr, tag_index) {
+            if let Some(candidates) = candidate_ids_from_tag_index(&query.expr, tag_index, slot_count)
+            {
                 scan_candidates(arena, candidates, &plan)
             } else {
                 let worker_count = worker_override.unwrap_or_else(|| {
@@ -108,47 +109,106 @@ fn query_node_ids_with_worker_override(
 fn candidate_ids_from_tag_index<'a>(
     expr: &'a Option<QueryExpr>,
     tag_index: Option<&'a AHashMap<TagID, AHashSet<NodeID>>>,
+    slot_count: usize,
 ) -> Option<Vec<NodeID>> {
     let query_expr = expr.as_ref()?;
     let index = tag_index?;
-    let required = required_all_tags_root(query_expr)?;
-    if required.is_empty() {
-        return None;
-    }
+    let mode = candidate_tag_mode(query_expr)?;
+    match mode {
+        CandidateTagMode::All(required) => {
+            if required.is_empty() {
+                return None;
+            }
+            let mut sets: Vec<&AHashSet<NodeID>> = Vec::with_capacity(required.len());
+            for tag in required {
+                let set = index.get(&tag)?;
+                sets.push(set);
+            }
+            sets.sort_by_key(|set| set.len());
 
-    let mut sets: Vec<&AHashSet<NodeID>> = Vec::with_capacity(required.len());
-    for tag in required {
-        let set = index.get(&tag)?;
-        sets.push(set);
-    }
-    sets.sort_by_key(|set| set.len());
-
-    let mut out = Vec::new();
-    if let Some(seed) = sets.first().copied() {
-        'outer: for &id in seed {
-            for set in sets.iter().skip(1) {
-                if !set.contains(&id) {
-                    continue 'outer;
+            let mut out = Vec::new();
+            if let Some(seed) = sets.first().copied() {
+                'outer: for &id in seed {
+                    for set in sets.iter().skip(1) {
+                        if !set.contains(&id) {
+                            continue 'outer;
+                        }
+                    }
+                    out.push(id);
                 }
             }
-            out.push(id);
+            Some(out)
+        }
+        CandidateTagMode::Any(tags) => {
+            if tags.is_empty() {
+                return None;
+            }
+            let mut out = Vec::new();
+            let bit_words = slot_count.max(1).div_ceil(64);
+            let mut marks = vec![0u64; bit_words];
+            for tag in tags {
+                let Some(set) = index.get(&tag) else {
+                    continue;
+                };
+                for &id in set {
+                    let slot = id.index() as usize;
+                    let word = slot / 64;
+                    if word >= marks.len() {
+                        continue;
+                    }
+                    let bit = 1u64 << (slot & 63);
+                    if (marks[word] & bit) != 0 {
+                        continue;
+                    }
+                    marks[word] |= bit;
+                    out.push(id);
+                }
+            }
+            if out.is_empty() {
+                None
+            } else {
+                Some(out)
+            }
         }
     }
-    Some(out)
 }
 
-fn required_all_tags_root(expr: &QueryExpr) -> Option<Vec<TagID>> {
+enum CandidateTagMode {
+    All(Vec<TagID>),
+    Any(Vec<TagID>),
+}
+
+fn candidate_tag_mode(expr: &QueryExpr) -> Option<CandidateTagMode> {
     match expr {
         QueryExpr::All(children) => {
+            let mut merged = Vec::new();
             for child in children {
-                if let QueryExpr::Tags(tags) = child
-                    && !tags.is_empty()
-                {
-                    return Some(tags.clone());
+                if let QueryExpr::Tags(tags) = child {
+                    merged.extend(tags.iter().copied());
                 }
             }
-            None
+            if merged.is_empty() {
+                None
+            } else {
+                Some(CandidateTagMode::All(merged))
+            }
         }
+        QueryExpr::Any(children) => {
+            let mut merged = Vec::new();
+            for child in children {
+                if let QueryExpr::Tags(tags) = child {
+                    merged.extend(tags.iter().copied());
+                } else {
+                    return None;
+                }
+            }
+            if merged.is_empty() {
+                None
+            } else {
+                Some(CandidateTagMode::Any(merged))
+            }
+        }
+        QueryExpr::Tags(tags) if !tags.is_empty() => Some(CandidateTagMode::Any(tags.clone())),
         _ => None,
     }
 }

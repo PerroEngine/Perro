@@ -2100,10 +2100,9 @@ impl Gpu3D {
                         custom_params_offset,
                         custom_params_len,
                     ));
-                    // Conservative retained-mode behavior: keep meshlet batches gated by
-                    // whole-object bounds so visible objects do not lose arbitrary meshlets.
-                    let occlusion_center = mesh_asset.bounds_center;
-                    let occlusion_radius = mesh_asset.bounds_radius;
+                    // Use per-meshlet local bounds for tighter frustum/occlusion rejection.
+                    let occlusion_center = meshlet.center;
+                    let occlusion_radius = meshlet.radius.max(0.001);
                     push_draw_batch(
                         &mut self.draw_batches,
                         MeshRange {
@@ -2306,6 +2305,7 @@ impl Gpu3D {
                 camera,
                 lighting,
                 &self.draw_batches,
+                &self.staged_instances,
                 self.shadow_focus_center,
                 self.shadow_focus_radius,
                 self.depth_size.0,
@@ -4990,10 +4990,6 @@ fn normalize_plane(plane: Vec4) -> Vec4 {
     }
 }
 
-fn meshlet_in_frustum(model: [[f32; 4]; 4], meshlet: MeshletRange, planes: &[Vec4; 6]) -> bool {
-    bounds_in_frustum(model, meshlet.center, meshlet.radius, planes)
-}
-
 fn bounds_in_frustum(
     model: [[f32; 4]; 4],
     local_center: [f32; 3],
@@ -5250,6 +5246,7 @@ fn build_shadow_setup(
     camera: &Camera3DState,
     lighting: &Lighting3DState,
     draw_batches: &[DrawBatch],
+    staged_instances: &[InstanceGpu],
     fallback_focus_center: Vec3,
     fallback_focus_radius: f32,
     viewport_width: u32,
@@ -5333,6 +5330,9 @@ fn build_shadow_setup(
         );
     }
 
+    let (batch_focus_center, batch_focus_radius, has_batch_bounds) =
+        compute_shadow_focus_bounds(camera, draw_batches, staged_instances);
+
     let Some(mut frustum_corners) =
         camera_frustum_corners_world(camera, viewport_width, viewport_height)
     else {
@@ -5367,6 +5367,10 @@ fn build_shadow_setup(
         .map(|p| (p - focus_center).length())
         .fold(0.0f32, f32::max)
         .clamp(10.0, 600.0);
+    if has_batch_bounds {
+        focus_center = focus_center.lerp(batch_focus_center, 0.35);
+        focus_radius = focus_radius.max(batch_focus_radius * 0.85).clamp(10.0, 600.0);
+    }
 
     if fallback_focus_center.is_finite() && fallback_focus_radius.is_finite() {
         let t = 0.20;
