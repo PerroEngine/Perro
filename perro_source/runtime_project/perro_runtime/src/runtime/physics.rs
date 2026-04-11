@@ -171,8 +171,6 @@ pub(crate) struct PhysicsState {
     pending_impulses_3d: Vec<PendingImpulse3D>,
     scan_ids_2d: Vec<NodeID>,
     scan_ids_3d: Vec<NodeID>,
-    world_sync_ids_2d: Vec<NodeID>,
-    world_sync_ids_3d: Vec<NodeID>,
     next_opaque_handle: u64,
 }
 
@@ -223,8 +221,6 @@ impl PhysicsState {
             pending_impulses_3d: Vec::new(),
             scan_ids_2d: Vec::new(),
             scan_ids_3d: Vec::new(),
-            world_sync_ids_2d: Vec::new(),
-            world_sync_ids_3d: Vec::new(),
             next_opaque_handle: 1,
         }
     }
@@ -242,8 +238,6 @@ impl PhysicsState {
         self.pending_impulses_3d.clear();
         self.scan_ids_2d.clear();
         self.scan_ids_3d.clear();
-        self.world_sync_ids_2d.clear();
-        self.world_sync_ids_3d.clear();
         self.next_opaque_handle = 1;
     }
 
@@ -631,8 +625,7 @@ impl Runtime {
     fn sync_world_2d(&mut self, bodies: &[BodyDesc2D]) {
         if bodies.is_empty() {
             if let Some(world) = self.physics.world_2d.take() {
-                let ids: Vec<NodeID> = world.body_map.keys().copied().collect();
-                for id in ids {
+                for id in world.body_map.keys().copied() {
                     self.set_body_handle_2d(id, None);
                 }
             }
@@ -747,8 +740,7 @@ impl Runtime {
     fn sync_world_3d(&mut self, bodies: &[BodyDesc3D]) {
         if bodies.is_empty() {
             if let Some(world) = self.physics.world_3d.take() {
-                let ids: Vec<NodeID> = world.body_map.keys().copied().collect();
-                for id in ids {
+                for id in world.body_map.keys().copied() {
                     self.set_body_handle_3d(id, None);
                 }
             }
@@ -1032,36 +1024,16 @@ impl Runtime {
     }
 
     fn sync_world_to_nodes_2d(&mut self) {
-        if self.physics.world_2d.is_none() {
+        let Some(world) = self.physics.world_2d.take() else {
             return;
-        }
+        };
 
-        let mut ids = std::mem::take(&mut self.physics.world_sync_ids_2d);
-        ids.clear();
-        if let Some(world) = self.physics.world_2d.as_ref() {
-            ids.extend(world.body_map.keys().copied());
-        }
-
-        for id in ids.iter().copied() {
-            let Some((kind, handle, opaque_handle)) = self
-                .physics
-                .world_2d
-                .as_ref()
-                .and_then(|w| w.body_map.get(&id))
-                .map(|state| (state.kind, state.handle, state.opaque_handle))
-            else {
-                continue;
-            };
-            self.set_body_handle_2d(id, Some(opaque_handle));
-            if kind != BodyKind::Rigid {
+        for (&id, state) in &world.body_map {
+            self.set_body_handle_2d(id, Some(state.opaque_handle));
+            if state.kind != BodyKind::Rigid {
                 continue;
             }
-            let Some(body) = self
-                .physics
-                .world_2d
-                .as_ref()
-                .and_then(|w| w.bodies.get(handle))
-            else {
+            let Some(body) = world.bodies.get(state.handle) else {
                 continue;
             };
             let position = Vector2::new(body.translation().x, body.translation().y);
@@ -1084,41 +1056,20 @@ impl Runtime {
             }
         }
 
-        ids.clear();
-        self.physics.world_sync_ids_2d = ids;
+        self.physics.world_2d = Some(world);
     }
 
     fn sync_world_to_nodes_3d(&mut self) {
-        if self.physics.world_3d.is_none() {
+        let Some(world) = self.physics.world_3d.take() else {
             return;
-        }
+        };
 
-        let mut ids = std::mem::take(&mut self.physics.world_sync_ids_3d);
-        ids.clear();
-        if let Some(world) = self.physics.world_3d.as_ref() {
-            ids.extend(world.body_map.keys().copied());
-        }
-
-        for id in ids.iter().copied() {
-            let Some((kind, handle, opaque_handle)) = self
-                .physics
-                .world_3d
-                .as_ref()
-                .and_then(|w| w.body_map.get(&id))
-                .map(|state| (state.kind, state.handle, state.opaque_handle))
-            else {
-                continue;
-            };
-            self.set_body_handle_3d(id, Some(opaque_handle));
-            if kind != BodyKind::Rigid {
+        for (&id, state) in &world.body_map {
+            self.set_body_handle_3d(id, Some(state.opaque_handle));
+            if state.kind != BodyKind::Rigid {
                 continue;
             }
-            let Some(body) = self
-                .physics
-                .world_3d
-                .as_ref()
-                .and_then(|w| w.bodies.get(handle))
-            else {
+            let Some(body) = world.bodies.get(state.handle) else {
                 continue;
             };
             let position = Vector3::new(
@@ -1146,8 +1097,7 @@ impl Runtime {
             }
         }
 
-        ids.clear();
-        self.physics.world_sync_ids_3d = ids;
+        self.physics.world_3d = Some(world);
     }
 
     fn set_body_handle_2d(&mut self, id: NodeID, handle: Option<u64>) {

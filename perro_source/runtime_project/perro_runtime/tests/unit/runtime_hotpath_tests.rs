@@ -377,3 +377,47 @@ fn bench_physics_children_clone_vs_slice_scan() {
         now_acc
     );
 }
+
+#[test]
+#[ignore]
+fn bench_physics_sync_world_map_scan_legacy_vs_direct_iter() {
+    let body_count = 250_000u32;
+    let rounds = 180usize;
+
+    let mut body_map = AHashMap::<NodeID, (u64, u8)>::default();
+    for i in 1..=body_count {
+        body_map.insert(NodeID::from_parts(i, 0), (i as u64, (i % 2) as u8));
+    }
+
+    let t0 = std::time::Instant::now();
+    let mut legacy_acc = 0u64;
+    for _ in 0..rounds {
+        let ids: Vec<NodeID> = body_map.keys().copied().collect();
+        for id in ids {
+            if let Some((opaque, kind)) = body_map.get(&id) {
+                legacy_acc = legacy_acc.wrapping_add(*opaque + *kind as u64);
+            }
+        }
+    }
+    let legacy_us = t0.elapsed().as_micros();
+
+    let t1 = std::time::Instant::now();
+    let mut now_acc = 0u64;
+    for _ in 0..rounds {
+        for (_id, (opaque, kind)) in &body_map {
+            now_acc = now_acc.wrapping_add(*opaque + *kind as u64);
+        }
+    }
+    let now_us = t1.elapsed().as_micros();
+
+    println!(
+        "bench_physics_sync_world_map_scan_legacy_vs_direct_iter: bodies={} rounds={} legacy_us={} now_us={} speedup={:.3}x acc={}/{}",
+        body_count,
+        rounds,
+        legacy_us,
+        now_us,
+        legacy_us as f64 / now_us.max(1) as f64,
+        legacy_acc,
+        now_acc
+    );
+}
