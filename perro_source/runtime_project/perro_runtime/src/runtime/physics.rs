@@ -11,6 +11,7 @@ use perro_terrain::{ChunkCoord, TerrainChunk};
 use perro_variant::Variant;
 use rapier2d::{na as na2, prelude as r2};
 use rapier3d::{na as na3, prelude as r3};
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BodyKind {
@@ -41,8 +42,8 @@ struct ShapeDesc3D {
 enum ShapeKind3D {
     Primitive(Shape3D),
     TriMesh {
-        vertices: Vec<na3::Point3<f32>>,
-        indices: Vec<[u32; 3]>,
+        vertices: Arc<[na3::Point3<f32>]>,
+        indices: Arc<[[u32; 3]]>,
     },
 }
 
@@ -169,8 +170,8 @@ pub(crate) struct PhysicsState {
     pending_forces_3d: Vec<PendingForce3D>,
     pending_impulses_2d: Vec<PendingImpulse2D>,
     pending_impulses_3d: Vec<PendingImpulse3D>,
-    scan_ids_2d: Vec<NodeID>,
-    scan_ids_3d: Vec<NodeID>,
+    stale_ids_2d: Vec<NodeID>,
+    stale_ids_3d: Vec<NodeID>,
     next_opaque_handle: u64,
 }
 
@@ -219,8 +220,8 @@ impl PhysicsState {
             pending_forces_3d: Vec::new(),
             pending_impulses_2d: Vec::new(),
             pending_impulses_3d: Vec::new(),
-            scan_ids_2d: Vec::new(),
-            scan_ids_3d: Vec::new(),
+            stale_ids_2d: Vec::new(),
+            stale_ids_3d: Vec::new(),
             next_opaque_handle: 1,
         }
     }
@@ -236,8 +237,8 @@ impl PhysicsState {
         self.pending_forces_3d.clear();
         self.pending_impulses_2d.clear();
         self.pending_impulses_3d.clear();
-        self.scan_ids_2d.clear();
-        self.scan_ids_3d.clear();
+        self.stale_ids_2d.clear();
+        self.stale_ids_3d.clear();
         self.next_opaque_handle = 1;
     }
 
@@ -357,12 +358,10 @@ impl Runtime {
     }
 
     fn collect_body_descs_2d(&mut self) -> Vec<BodyDesc2D> {
-        let mut ids = std::mem::take(&mut self.physics.scan_ids_2d);
-        ids.clear();
-        ids.extend_from_slice(&self.internal_updates.physics_body_nodes_2d);
-
-        let mut out = Vec::with_capacity(ids.len());
-        for &id in &ids {
+        let node_count = self.internal_updates.physics_body_nodes_2d.len();
+        let mut out = Vec::with_capacity(node_count);
+        for i in 0..node_count {
+            let id = self.internal_updates.physics_body_nodes_2d[i];
             let (kind, enabled, rigid, material) = {
                 let Some(node) = self.nodes.get(id) else {
                     continue;
@@ -448,18 +447,14 @@ impl Runtime {
                 shapes,
             });
         }
-        ids.clear();
-        self.physics.scan_ids_2d = ids;
         out
     }
 
     fn collect_body_descs_3d(&mut self) -> Vec<BodyDesc3D> {
-        let mut ids = std::mem::take(&mut self.physics.scan_ids_3d);
-        ids.clear();
-        ids.extend_from_slice(&self.internal_updates.physics_body_nodes_3d);
-
-        let mut out = Vec::with_capacity(ids.len());
-        for &id in &ids {
+        let node_count = self.internal_updates.physics_body_nodes_3d.len();
+        let mut out = Vec::with_capacity(node_count);
+        for i in 0..node_count {
+            let id = self.internal_updates.physics_body_nodes_3d[i];
             let (kind, enabled, rigid, material, terrain_ref, terrain_source, terrain_settings) = {
                 let Some(node) = self.nodes.get(id) else {
                     continue;
@@ -617,8 +612,6 @@ impl Runtime {
                 shapes,
             });
         }
-        ids.clear();
-        self.physics.scan_ids_3d = ids;
         out
     }
 
@@ -711,14 +704,11 @@ impl Runtime {
             }
         }
 
-        let stale: Vec<NodeID> = world
-            .body_map
-            .keys()
-            .copied()
-            .filter(|id| !alive.contains(id))
-            .collect();
+        let mut stale = std::mem::take(&mut self.physics.stale_ids_2d);
+        stale.clear();
+        stale.extend(world.body_map.keys().copied().filter(|id| !alive.contains(id)));
 
-        for id in stale {
+        for id in stale.iter().copied() {
             if let Some(state) = world.body_map.remove(&id) {
                 for handle in &state.colliders {
                     world.collider_owners.remove(handle);
@@ -734,6 +724,8 @@ impl Runtime {
             }
             self.set_body_handle_2d(id, None);
         }
+        stale.clear();
+        self.physics.stale_ids_2d = stale;
         self.physics.world_2d = Some(world);
     }
 
@@ -838,14 +830,11 @@ impl Runtime {
             }
         }
 
-        let stale: Vec<NodeID> = world
-            .body_map
-            .keys()
-            .copied()
-            .filter(|id| !alive.contains(id))
-            .collect();
+        let mut stale = std::mem::take(&mut self.physics.stale_ids_3d);
+        stale.clear();
+        stale.extend(world.body_map.keys().copied().filter(|id| !alive.contains(id)));
 
-        for id in stale {
+        for id in stale.iter().copied() {
             if let Some(state) = world.body_map.remove(&id) {
                 for handle in &state.colliders {
                     world.collider_owners.remove(handle);
@@ -861,6 +850,8 @@ impl Runtime {
             }
             self.set_body_handle_3d(id, None);
         }
+        stale.clear();
+        self.physics.stale_ids_3d = stale;
         self.physics.world_3d = Some(world);
     }
 
@@ -1352,9 +1343,9 @@ fn hash_terrain_settings(mut state: u64, settings: &TerrainSourceSettings) -> u6
     state
 }
 
-struct TerrainLayerMap {
+struct TerrainLayerMap<'a> {
     pixels: image::RgbaImage,
-    layer_rules: Vec<TerrainLayerRule>,
+    layer_rules: &'a [TerrainLayerRule],
     width: u32,
     height: u32,
     min_x: f32,
@@ -1363,13 +1354,13 @@ struct TerrainLayerMap {
     inv_span_z: f32,
 }
 
-fn load_terrain_layer_map(
+fn load_terrain_layer_map<'a>(
     terrain_source: Option<&str>,
     chunk_size_meters: f32,
     chunks: &[(ChunkCoord, &TerrainChunk)],
-    layer_rules: &[TerrainLayerRule],
+    layer_rules: &'a [TerrainLayerRule],
     static_texture_lookup: Option<crate::runtime_project::StaticBytesLookup>,
-) -> Option<TerrainLayerMap> {
+) -> Option<TerrainLayerMap<'a>> {
     if chunks.is_empty() || layer_rules.is_empty() {
         return None;
     }
@@ -1385,7 +1376,7 @@ fn load_terrain_layer_map(
     let span_z = (max_z - min_z).max(1.0e-3);
     Some(TerrainLayerMap {
         pixels,
-        layer_rules: layer_rules.to_vec(),
+        layer_rules,
         width,
         height,
         min_x,
@@ -1487,7 +1478,10 @@ fn terrain_bounds_from_chunks(
     Some((min_x, max_x, min_z, max_z))
 }
 
-fn classify_terrain_layer_for_world_xz(map: &TerrainLayerMap, world_xz: [f32; 2]) -> Option<usize> {
+fn classify_terrain_layer_for_world_xz(
+    map: &TerrainLayerMap<'_>,
+    world_xz: [f32; 2],
+) -> Option<usize> {
     let u = ((world_xz[0] - map.min_x) * map.inv_span_x).clamp(0.0, 1.0);
     let v = ((world_xz[1] - map.min_z) * map.inv_span_z).clamp(0.0, 1.0);
     let x = (u * (map.width.saturating_sub(1)) as f32).round() as u32;
@@ -1758,11 +1752,15 @@ impl Runtime {
             else {
                 continue;
             };
+            let shared_vertices: Arc<[na3::Point3<f32>]> = Arc::from(vertices);
 
             if layer_rules.is_empty() || (terrain_layer_map.is_none() && baked_physics.is_empty()) {
                 out.push(ShapeDesc3D {
                     local: Transform3D::IDENTITY,
-                    shape: ShapeKind3D::TriMesh { vertices, indices },
+                    shape: ShapeKind3D::TriMesh {
+                        vertices: shared_vertices,
+                        indices: Arc::from(indices),
+                    },
                     sensor: false,
                     friction,
                     restitution,
@@ -1807,8 +1805,8 @@ impl Runtime {
                 out.push(ShapeDesc3D {
                     local: Transform3D::IDENTITY,
                     shape: ShapeKind3D::TriMesh {
-                        vertices: vertices.clone(),
-                        indices: layer_tris,
+                        vertices: shared_vertices.clone(),
+                        indices: Arc::from(layer_tris),
                     },
                     sensor: false,
                     friction: layer.friction.unwrap_or(friction),
@@ -1819,8 +1817,8 @@ impl Runtime {
                 out.push(ShapeDesc3D {
                     local: Transform3D::IDENTITY,
                     shape: ShapeKind3D::TriMesh {
-                        vertices,
-                        indices: fallback,
+                        vertices: shared_vertices,
+                        indices: Arc::from(fallback),
                     },
                     sensor: false,
                     friction,
@@ -1993,7 +1991,7 @@ fn collider_builder_3d(desc: &ShapeDesc3D) -> Option<r3::Collider> {
             if vertices.len() < 3 || indices.is_empty() {
                 return None;
             }
-            r3::ColliderBuilder::trimesh(vertices.clone(), indices.clone()).ok()?
+            r3::ColliderBuilder::trimesh(vertices.to_vec(), indices.to_vec()).ok()?
         }
     };
 

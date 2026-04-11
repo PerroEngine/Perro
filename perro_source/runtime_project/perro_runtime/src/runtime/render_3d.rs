@@ -350,14 +350,14 @@ impl Runtime {
                 };
                 let draw_state = crate::runtime::state::RetainedMeshDrawState {
                     mesh,
-                    surfaces: std::sync::Arc::from(resolved_surfaces.clone()),
+                    surfaces: resolved_surfaces.clone(),
                     model,
                     skeleton: skeleton_palette.clone(),
                 };
                 if self.render_3d.retained_mesh_draws.get(&node) != Some(&draw_state) {
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::Draw {
                         mesh,
-                        surfaces: std::sync::Arc::from(resolved_surfaces),
+                        surfaces: resolved_surfaces,
                         node,
                         model,
                         skeleton: skeleton_palette,
@@ -1288,7 +1288,7 @@ impl Runtime {
         node: NodeID,
         mut mesh: MeshID,
         mut surfaces: Vec<MeshSurfaceBinding>,
-    ) -> Option<(MeshID, Vec<MeshSurfaceBinding3D>)> {
+    ) -> Option<(MeshID, std::sync::Arc<[MeshSurfaceBinding3D]>)> {
         if mesh.is_nil() {
             let request = Self::mesh_request(node);
             if let Some(result) = self.take_render_result(request) {
@@ -1395,44 +1395,30 @@ impl Runtime {
             return None;
         }
 
-        Some((
-            mesh,
-            surfaces
-                .into_iter()
-                .map(|surface| MeshSurfaceBinding3D {
-                    material: surface.material,
-                    overrides: surface
-                        .overrides
-                        .into_iter()
-                        .map(|ovr| MaterialParamOverride3D {
-                            name: ovr.name,
-                            value: match ovr.value {
-                                MaterialParamOverrideValue::F32(v) => {
-                                    MaterialParamOverrideValue3D::F32(v)
-                                }
-                                MaterialParamOverrideValue::I32(v) => {
-                                    MaterialParamOverrideValue3D::I32(v)
-                                }
-                                MaterialParamOverrideValue::Bool(v) => {
-                                    MaterialParamOverrideValue3D::Bool(v)
-                                }
-                                MaterialParamOverrideValue::Vec2(v) => {
-                                    MaterialParamOverrideValue3D::Vec2(v)
-                                }
-                                MaterialParamOverrideValue::Vec3(v) => {
-                                    MaterialParamOverrideValue3D::Vec3(v)
-                                }
-                                MaterialParamOverrideValue::Vec4(v) => {
-                                    MaterialParamOverrideValue3D::Vec4(v)
-                                }
-                            },
-                        })
-                        .collect::<Vec<_>>()
-                        .into(),
-                    modulate: surface.modulate,
-                })
-                .collect(),
-        ))
+        let converted: Vec<MeshSurfaceBinding3D> = surfaces
+            .into_iter()
+            .map(|surface| MeshSurfaceBinding3D {
+                material: surface.material,
+                overrides: surface
+                    .overrides
+                    .into_iter()
+                    .map(|ovr| MaterialParamOverride3D {
+                        name: ovr.name,
+                        value: match ovr.value {
+                            MaterialParamOverrideValue::F32(v) => MaterialParamOverrideValue3D::F32(v),
+                            MaterialParamOverrideValue::I32(v) => MaterialParamOverrideValue3D::I32(v),
+                            MaterialParamOverrideValue::Bool(v) => MaterialParamOverrideValue3D::Bool(v),
+                            MaterialParamOverrideValue::Vec2(v) => MaterialParamOverrideValue3D::Vec2(v),
+                            MaterialParamOverrideValue::Vec3(v) => MaterialParamOverrideValue3D::Vec3(v),
+                            MaterialParamOverrideValue::Vec4(v) => MaterialParamOverrideValue3D::Vec4(v),
+                        },
+                    })
+                    .collect::<Vec<_>>()
+                    .into(),
+                modulate: surface.modulate,
+            })
+            .collect();
+        Some((mesh, std::sync::Arc::from(converted)))
     }
 }
 

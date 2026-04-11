@@ -232,14 +232,14 @@ impl Runtime {
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt = unsafe { InputContext::new(&*input_ptr) };
-        let schedule = std::mem::take(&mut self.internal_updates.internal_update_nodes);
-        for id in schedule.iter().copied() {
+        let count = self.internal_updates.internal_update_nodes.len();
+        for i in 0..count {
+            let id = self.internal_updates.internal_update_nodes[i];
             if self.nodes.get(id).is_none() {
                 continue;
             }
             self.call_internal_update_node_with_context(id, &res, &ipt);
         }
-        self.internal_updates.internal_update_nodes = schedule;
     }
 
     pub(crate) fn run_internal_fixed_update_schedule(&mut self) {
@@ -249,14 +249,14 @@ impl Runtime {
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt = unsafe { InputContext::new(&*input_ptr) };
-        let schedule = std::mem::take(&mut self.internal_updates.internal_fixed_update_nodes);
-        for id in schedule.iter().copied() {
+        let count = self.internal_updates.internal_fixed_update_nodes.len();
+        for i in 0..count {
+            let id = self.internal_updates.internal_fixed_update_nodes[i];
             if self.nodes.get(id).is_none() {
                 continue;
             }
             self.call_internal_fixed_update_node_with_context(id, &res, &ipt);
         }
-        self.internal_updates.internal_fixed_update_nodes = schedule;
     }
 
     fn call_internal_update_node_with_context(

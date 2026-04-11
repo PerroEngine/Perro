@@ -4,6 +4,7 @@ use perro_ids::NodeID;
 use perro_nodes::{Node3D, SceneNode, SceneNodeData};
 use perro_render_bridge::{Command2D, RenderCommand};
 use std::hint::black_box;
+use std::sync::Arc;
 
 #[test]
 fn node_arena_len_tracks_active_nodes() {
@@ -413,6 +414,138 @@ fn bench_physics_sync_world_map_scan_legacy_vs_direct_iter() {
     println!(
         "bench_physics_sync_world_map_scan_legacy_vs_direct_iter: bodies={} rounds={} legacy_us={} now_us={} speedup={:.3}x acc={}/{}",
         body_count,
+        rounds,
+        legacy_us,
+        now_us,
+        legacy_us as f64 / now_us.max(1) as f64,
+        legacy_acc,
+        now_acc
+    );
+}
+
+#[test]
+#[ignore]
+fn bench_internal_schedule_take_vs_index_scan() {
+    let count = 200_000usize;
+    let rounds = 400usize;
+    let ids: Vec<NodeID> = (1..=count as u32)
+        .map(|i| NodeID::from_parts(i, 0))
+        .collect();
+
+    let mut legacy_schedule = ids.clone();
+    let t0 = std::time::Instant::now();
+    let mut legacy_acc = 0u64;
+    for _ in 0..rounds {
+        let schedule = std::mem::take(&mut legacy_schedule);
+        for id in schedule.iter().copied() {
+            legacy_acc = legacy_acc.wrapping_add(id.as_u64());
+        }
+        legacy_schedule = schedule;
+    }
+    let legacy_us = t0.elapsed().as_micros();
+
+    let index_schedule = ids;
+    let t1 = std::time::Instant::now();
+    let mut now_acc = 0u64;
+    for _ in 0..rounds {
+        for i in 0..index_schedule.len() {
+            now_acc = now_acc.wrapping_add(index_schedule[i].as_u64());
+        }
+    }
+    let now_us = t1.elapsed().as_micros();
+
+    println!(
+        "bench_internal_schedule_take_vs_index_scan: count={} rounds={} legacy_us={} now_us={} speedup={:.3}x acc={}/{}",
+        count,
+        rounds,
+        legacy_us,
+        now_us,
+        legacy_us as f64 / now_us.max(1) as f64,
+        legacy_acc,
+        now_acc
+    );
+}
+
+#[test]
+#[ignore]
+fn bench_physics_scan_ids_copy_vs_direct_iter() {
+    let count = 250_000usize;
+    let rounds = 220usize;
+    let ids: Vec<NodeID> = (1..=count as u32)
+        .map(|i| NodeID::from_parts(i, 0))
+        .collect();
+
+    let mut scratch = Vec::new();
+    let t0 = std::time::Instant::now();
+    let mut legacy_acc = 0u64;
+    for _ in 0..rounds {
+        scratch.clear();
+        scratch.extend_from_slice(&ids);
+        for id in scratch.iter().copied() {
+            legacy_acc = legacy_acc.wrapping_add(id.as_u64());
+        }
+    }
+    let legacy_us = t0.elapsed().as_micros();
+
+    let t1 = std::time::Instant::now();
+    let mut now_acc = 0u64;
+    for _ in 0..rounds {
+        for i in 0..ids.len() {
+            now_acc = now_acc.wrapping_add(ids[i].as_u64());
+        }
+    }
+    let now_us = t1.elapsed().as_micros();
+
+    println!(
+        "bench_physics_scan_ids_copy_vs_direct_iter: count={} rounds={} legacy_us={} now_us={} speedup={:.3}x acc={}/{}",
+        count,
+        rounds,
+        legacy_us,
+        now_us,
+        legacy_us as f64 / now_us.max(1) as f64,
+        legacy_acc,
+        now_acc
+    );
+}
+
+#[test]
+#[ignore]
+fn bench_trimesh_vertices_clone_vs_arc_share() {
+    let vertices_len = 10_000usize;
+    let layers = 6usize;
+    let rounds = 2_000usize;
+
+    let vertices: Vec<[f32; 3]> = (0..vertices_len)
+        .map(|i| [i as f32 * 0.01, (i % 13) as f32, (i % 7) as f32])
+        .collect();
+
+    let t0 = std::time::Instant::now();
+    let mut legacy_acc = 0usize;
+    for _ in 0..rounds {
+        let mut copies = Vec::with_capacity(layers);
+        for _ in 0..layers {
+            copies.push(vertices.clone());
+        }
+        legacy_acc = legacy_acc.wrapping_add(copies.len() * copies[0].len());
+    }
+    let legacy_us = t0.elapsed().as_micros();
+
+    let shared: Arc<[[f32; 3]]> = Arc::from(vertices);
+    let t1 = std::time::Instant::now();
+    let mut now_acc = 0usize;
+    for _ in 0..rounds {
+        let mut refs = Vec::with_capacity(layers);
+        for _ in 0..layers {
+            refs.push(shared.clone());
+        }
+        now_acc = now_acc.wrapping_add(refs.len() * refs[0].len());
+    }
+    let now_us = t1.elapsed().as_micros();
+
+    println!(
+        "bench_trimesh_vertices_clone_vs_arc_share: verts={} layers={} rounds={} legacy_us={} now_us={} speedup={:.3}x acc={}/{}",
+        vertices_len,
+        layers,
         rounds,
         legacy_us,
         now_us,
