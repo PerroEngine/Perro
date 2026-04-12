@@ -291,6 +291,13 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "skeleton" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Skeleton)),
             _ => None,
         },
+        NodeType::MultiMeshInstance3D => match field {
+            "mesh" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Mesh)),
+            "material" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Material)),
+            "surfaces" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Surfaces)),
+            "model" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Model)),
+            _ => None,
+        },
         NodeType::Skeleton3D => match field {
             "skeleton" => Some(NodeField::Skeleton3D(Skeleton3DField::Skeleton)),
             _ => None,

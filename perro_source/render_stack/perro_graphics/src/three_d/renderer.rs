@@ -23,7 +23,7 @@ pub struct Draw3DInstance {
     pub node: NodeID,
     pub kind: Draw3DKind,
     pub surfaces: Arc<[MeshSurfaceBinding3D]>,
-    pub model: [[f32; 4]; 4],
+    pub instance_mats: Arc<[[[f32; 4]; 4]]>,
     pub skeleton: Option<SkeletonPalette>,
 }
 
@@ -82,7 +82,24 @@ impl Renderer3D {
             node,
             kind: Draw3DKind::Mesh(mesh),
             surfaces,
-            model,
+            instance_mats: Arc::from([model]),
+            skeleton,
+        });
+    }
+
+    pub fn queue_draw_multi(
+        &mut self,
+        node: NodeID,
+        mesh: MeshID,
+        surfaces: Arc<[MeshSurfaceBinding3D]>,
+        instance_mats: Arc<[[[f32; 4]; 4]]>,
+        skeleton: Option<SkeletonPalette>,
+    ) {
+        self.queued_draws.push(Draw3DInstance {
+            node,
+            kind: Draw3DKind::Mesh(mesh),
+            surfaces,
+            instance_mats,
             skeleton,
         });
     }
@@ -92,7 +109,7 @@ impl Renderer3D {
             node,
             kind: Draw3DKind::DebugPointCube,
             surfaces: Arc::from([]),
-            model: debug_point_model(position, size).to_cols_array_2d(),
+            instance_mats: Arc::from([debug_point_model(position, size).to_cols_array_2d()]),
             skeleton: None,
         };
         let changed = self.retained_draws.get(&node) != Some(&next);
@@ -114,7 +131,7 @@ impl Renderer3D {
                 node,
                 kind: Draw3DKind::DebugEdgeCylinder,
                 surfaces: Arc::from([]),
-                model: model.to_cols_array_2d(),
+                instance_mats: Arc::from([model.to_cols_array_2d()]),
                 skeleton: None,
             };
             let changed = self.retained_draws.get(&node) != Some(&next);
@@ -198,8 +215,8 @@ impl Renderer3D {
                 if let Some(retained) = self.retained_draws.get_mut(&draw.node) {
                     // Keep previous mesh/material bindings until replacements exist,
                     // but continue applying latest transform updates.
-                    if retained.model != draw.model {
-                        retained.model = draw.model;
+                    if retained.instance_mats != draw.instance_mats {
+                        retained.instance_mats = draw.instance_mats;
                         draws_changed = true;
                     }
                     if mesh_ready && retained.kind != draw.kind {

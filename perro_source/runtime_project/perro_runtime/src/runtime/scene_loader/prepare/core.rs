@@ -7,6 +7,7 @@ use perro_nodes::{
     camera_2d::Camera2D,
     camera_3d::{Camera3D, CameraProjection},
     mesh_instance_3d::{MaterialParamOverride, MaterialParamOverrideValue, MeshInstance3D, MeshSurfaceBinding},
+    multi_mesh_instance_3d::MultiMeshInstance3D,
     node_2d::Node2D,
     node_3d::Node3D,
     particle_emitter_3d::ParticleEmitter3D,
@@ -494,6 +495,9 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "RigidBody2D" => Ok(SceneNodeData::RigidBody2D(build_rigid_body_2d(data))),
         "Node3D" => Ok(SceneNodeData::Node3D(build_node_3d(data))),
         "MeshInstance3D" => Ok(SceneNodeData::MeshInstance3D(build_mesh_instance_3d(data))),
+        "MultiMeshInstance3D" => Ok(SceneNodeData::MultiMeshInstance3D(
+            build_multi_mesh_instance_3d(data),
+        )),
         "CollisionShape3D" => Ok(SceneNodeData::CollisionShape3D(build_collision_shape_3d(
             data,
         ))),

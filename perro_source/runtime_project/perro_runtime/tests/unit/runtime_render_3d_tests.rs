@@ -3,7 +3,8 @@ use perro_ids::{MaterialID, MeshID};
 use perro_nodes::{
     CameraProjection, SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D,
     camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, mesh_instance_3d::MeshSurfaceBinding,
-    node_3d::Node3D, physics_3d::Shape3D, ray_light_3d::RayLight3D, sky_3d::Sky3D,
+    multi_mesh_instance_3d::MultiMeshInstance3D, node_3d::Node3D, physics_3d::Shape3D,
+    ray_light_3d::RayLight3D, sky_3d::Sky3D,
 };
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
@@ -17,6 +18,13 @@ fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
 }
 
 fn set_primary_material(mesh: &mut MeshInstance3D, material: MaterialID) {
+    if mesh.surfaces.is_empty() {
+        mesh.surfaces.push(MeshSurfaceBinding::default());
+    }
+    mesh.surfaces[0].material = Some(material);
+}
+
+fn set_primary_material_multi(mesh: &mut MultiMeshInstance3D, material: MaterialID) {
     if mesh.surfaces.is_empty() {
         mesh.surfaces.push(MeshSurfaceBinding::default());
     }
@@ -237,6 +245,44 @@ fn unchanged_mesh_instance_emits_draw() {
                 } if *draw_node == node
             )
     )));
+}
+
+#[test]
+fn multi_mesh_instance_emits_draw_multi_with_instance_mats() {
+    let mut runtime = Runtime::new();
+    let mut multi = MultiMeshInstance3D::new();
+    multi.mesh = MeshID::from_parts(330, 0);
+    set_primary_material_multi(&mut multi, MaterialID::from_parts(331, 0));
+
+    let mut t0 = perro_structs::Transform3D::IDENTITY;
+    t0.position = Vector3::new(1.0, 0.0, 0.0);
+    let mut t1 = perro_structs::Transform3D::IDENTITY;
+    t1.position = Vector3::new(3.0, 0.0, 0.0);
+    multi.transforms = vec![t0, t1];
+
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MultiMeshInstance3D(multi)));
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(commands.iter().any(|command| {
+        matches!(
+            command,
+            RenderCommand::ThreeD(command_3d)
+                if matches!(
+                    command_3d.as_ref(),
+                    Command3D::DrawMulti {
+                        node: draw_node,
+                        instance_mats,
+                        ..
+                    } if *draw_node == node
+                        && instance_mats.len() == 2
+                        && instance_mats[0][3][0] == 1.0
+                        && instance_mats[1][3][0] == 3.0
+                )
+        )
+    }));
 }
 
 #[test]

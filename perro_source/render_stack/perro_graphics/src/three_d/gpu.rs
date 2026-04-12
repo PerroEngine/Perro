@@ -1641,7 +1641,11 @@ impl Gpu3D {
                 .last_draws
                 .iter()
                 .zip(draws.iter())
-                .all(|(prev, next)| same_draw_except_model(prev, next));
+                .all(|(prev, next)| {
+                    prev.instance_mats.len() == 1
+                        && next.instance_mats.len() == 1
+                        && same_draw_except_model(prev, next)
+                });
         let stable_instance_ranges = self.last_draw_instance_ranges.len() == draws.len()
             && self.last_draw_instance_ranges.iter().all(|range| {
                 range.start <= range.end && (range.end as usize) <= self.staged_instances.len()
@@ -1700,25 +1704,28 @@ impl Gpu3D {
         }
         if transform_only_changed {
             for (draw, range) in draws.iter().zip(self.last_draw_instance_ranges.iter()) {
+                let Some(model) = draw.instance_mats.first() else {
+                    continue;
+                };
                 for instance in &mut self.staged_instances[range.start as usize..range.end as usize]
                 {
                     instance.model_row_0 = [
-                        draw.model[0][0],
-                        draw.model[1][0],
-                        draw.model[2][0],
-                        draw.model[3][0],
+                        model[0][0],
+                        model[1][0],
+                        model[2][0],
+                        model[3][0],
                     ];
                     instance.model_row_1 = [
-                        draw.model[0][1],
-                        draw.model[1][1],
-                        draw.model[2][1],
-                        draw.model[3][1],
+                        model[0][1],
+                        model[1][1],
+                        model[2][1],
+                        model[3][1],
                     ];
                     instance.model_row_2 = [
-                        draw.model[0][2],
-                        draw.model[1][2],
-                        draw.model[2][2],
-                        draw.model[3][2],
+                        model[0][2],
+                        model[1][2],
+                        model[2][2],
+                        model[3][2],
                     ];
                 }
             }
@@ -1946,20 +1953,11 @@ impl Gpu3D {
                 } else {
                     (0, 0)
                 };
+                let instance_mats = draw.instance_mats.as_ref();
                 if is_debug_point {
                     let (_, material) = surface_entries.remove(0);
                     let (custom_params_offset, custom_params_len) =
                         self.stage_custom_params(&material);
-                    let built_instance = build_instance(
-                        draw.model,
-                        &material,
-                        self.meshlet_debug_view,
-                        debug_color(draw.node.as_u64()),
-                        skeleton_start,
-                        skeleton_count,
-                        custom_params_offset,
-                        custom_params_len,
-                    );
                     let standard_params = material.standard_params();
                     self.ensure_material_texture_slot(
                         device,
@@ -1975,22 +1973,23 @@ impl Gpu3D {
                         debug_points_local_center = mesh_asset.bounds_center;
                         debug_points_local_radius = mesh_asset.bounds_radius;
                     }
-                    debug_point_instances.push(built_instance);
-                    debug_points_count = debug_points_count.saturating_add(1);
+                    for model in instance_mats.iter().copied() {
+                        debug_point_instances.push(build_instance(
+                            model,
+                            &material,
+                            self.meshlet_debug_view,
+                            debug_color(draw.node.as_u64()),
+                            skeleton_start,
+                            skeleton_count,
+                            custom_params_offset,
+                            custom_params_len,
+                        ));
+                        debug_points_count = debug_points_count.saturating_add(1);
+                    }
                 } else if is_debug_edge {
                     let (_, material) = surface_entries.remove(0);
                     let (custom_params_offset, custom_params_len) =
                         self.stage_custom_params(&material);
-                    let built_instance = build_instance(
-                        draw.model,
-                        &material,
-                        self.meshlet_debug_view,
-                        debug_color(draw.node.as_u64()),
-                        skeleton_start,
-                        skeleton_count,
-                        custom_params_offset,
-                        custom_params_len,
-                    );
                     let standard_params = material.standard_params();
                     self.ensure_material_texture_slot(
                         device,
@@ -2006,8 +2005,19 @@ impl Gpu3D {
                         debug_edges_local_center = mesh_asset.bounds_center;
                         debug_edges_local_radius = mesh_asset.bounds_radius;
                     }
-                    debug_edge_instances.push(built_instance);
-                    debug_edges_count = debug_edges_count.saturating_add(1);
+                    for model in instance_mats.iter().copied() {
+                        debug_edge_instances.push(build_instance(
+                            model,
+                            &material,
+                            self.meshlet_debug_view,
+                            debug_color(draw.node.as_u64()),
+                            skeleton_start,
+                            skeleton_count,
+                            custom_params_offset,
+                            custom_params_len,
+                        ));
+                        debug_edges_count = debug_edges_count.saturating_add(1);
+                    }
                 } else {
                     for (range, material) in surface_entries {
                         let standard_params = material.standard_params();
@@ -2023,29 +2033,42 @@ impl Gpu3D {
                             self.material_pipeline_kind(device, &material, static_shader_lookup);
                         let (custom_params_offset, custom_params_len) =
                             self.stage_custom_params(&material);
-                        let instance = self.staged_instances.len() as u32;
-                        self.staged_instances.push(build_instance(
-                            draw.model,
-                            &material,
-                            self.meshlet_debug_view,
-                            debug_color(draw.node.as_u64()),
-                            skeleton_start,
-                            skeleton_count,
-                            custom_params_offset,
-                            custom_params_len,
-                        ));
-                        push_draw_batch(
-                            &mut self.draw_batches,
-                            range,
-                            instance,
-                            standard_params.double_sided || self.meshlet_debug_view,
-                            material_kind.clone(),
-                            standard_params.base_color_texture,
-                            (mesh_asset.bounds_center, mesh_asset.bounds_radius),
-                            occlusion_query,
-                            false,
-                            true,
-                        );
+                        let instance_start = self.staged_instances.len() as u32;
+                        for model in instance_mats.iter().copied() {
+                            self.staged_instances.push(build_instance(
+                                model,
+                                &material,
+                                self.meshlet_debug_view,
+                                debug_color(draw.node.as_u64()),
+                                skeleton_start,
+                                skeleton_count,
+                                custom_params_offset,
+                                custom_params_len,
+                            ));
+                        }
+                        let instance_count =
+                            (self.staged_instances.len() as u32).saturating_sub(instance_start);
+                        if instance_count > 0 {
+                            let multi_instance = instance_count > 1;
+                            let occlusion_bounds = if multi_instance {
+                                ([0.0, 0.0, 0.0], 1.0e9)
+                            } else {
+                                (mesh_asset.bounds_center, mesh_asset.bounds_radius)
+                            };
+                            push_draw_batch(
+                                &mut self.draw_batches,
+                                range,
+                                instance_start,
+                                instance_count,
+                                standard_params.double_sided || self.meshlet_debug_view,
+                                material_kind.clone(),
+                                standard_params.base_color_texture,
+                                occlusion_bounds,
+                                occlusion_query,
+                                multi_instance,
+                                true,
+                            );
+                        }
                     }
                 }
             } else {
@@ -2071,25 +2094,37 @@ impl Gpu3D {
                 } else {
                     (0, 0)
                 };
+                let instance_mats = draw.instance_mats.as_ref();
                 for meshlet in mesh_asset.meshlets.iter().copied() {
                     // Keep meshlet casters for stable shadow fitting even when off-screen.
                     // CPU query occlusion at meshlet granularity self-occludes dynamic meshes.
                     // Keep meshlet occlusion GPU-driven only; CPU mode skips meshlet occlusion.
                     let occlusion_query = None;
-                    let instance = self.staged_instances.len() as u32;
-                    self.staged_instances.push(build_instance(
-                        draw.model,
-                        material,
-                        self.meshlet_debug_view,
-                        debug_color((draw.node.as_u64() << 32) ^ meshlet.index_start as u64),
-                        skeleton_start,
-                        skeleton_count,
-                        custom_params_offset,
-                        custom_params_len,
-                    ));
+                    let instance_start = self.staged_instances.len() as u32;
+                    for model in instance_mats.iter().copied() {
+                        self.staged_instances.push(build_instance(
+                            model,
+                            material,
+                            self.meshlet_debug_view,
+                            debug_color((draw.node.as_u64() << 32) ^ meshlet.index_start as u64),
+                            skeleton_start,
+                            skeleton_count,
+                            custom_params_offset,
+                            custom_params_len,
+                        ));
+                    }
+                    let instance_count =
+                        (self.staged_instances.len() as u32).saturating_sub(instance_start);
+                    if instance_count == 0 {
+                        continue;
+                    }
+                    let multi_instance = instance_count > 1;
                     // Use per-meshlet local bounds for tighter frustum/occlusion rejection.
-                    let occlusion_center = meshlet.center;
-                    let occlusion_radius = meshlet.radius.max(0.001);
+                    let (occlusion_center, occlusion_radius) = if multi_instance {
+                        ([0.0, 0.0, 0.0], 1.0e9)
+                    } else {
+                        (meshlet.center, meshlet.radius.max(0.001))
+                    };
                     push_draw_batch(
                         &mut self.draw_batches,
                         MeshRange {
@@ -2097,13 +2132,14 @@ impl Gpu3D {
                             index_count: meshlet.index_count,
                             base_vertex: mesh_asset.full.base_vertex,
                         },
-                        instance,
+                        instance_start,
+                        instance_count,
                         standard_params.double_sided || self.meshlet_debug_view,
                         material_kind.clone(),
                         standard_params.base_color_texture,
                         (occlusion_center, occlusion_radius),
                         occlusion_query,
-                        false,
+                        multi_instance,
                         true,
                     );
                 }
@@ -4523,7 +4559,8 @@ fn create_shadow_depth_pipeline(
 fn push_draw_batch(
     draw_batches: &mut Vec<DrawBatch>,
     mesh: MeshRange,
-    instance: u32,
+    instance_start: u32,
+    instance_count: u32,
     double_sided: bool,
     material_kind: MaterialPipelineKind,
     base_color_texture_slot: u32,
@@ -4532,11 +4569,14 @@ fn push_draw_batch(
     disable_hiz_occlusion: bool,
     casts_shadows: bool,
 ) {
+    if instance_count == 0 {
+        return;
+    }
     let (local_center, local_radius) = local_bounds;
     draw_batches.push(DrawBatch {
         mesh,
-        instance_start: instance,
-        instance_count: 1,
+        instance_start,
+        instance_count,
         double_sided,
         material_kind,
         draw_on_top: false,

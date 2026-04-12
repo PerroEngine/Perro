@@ -631,6 +631,13 @@ pub enum Command3D {
         model: [[f32; 4]; 4],
         skeleton: Option<SkeletonPalette>,
     },
+    DrawMulti {
+        mesh: MeshID,
+        surfaces: Arc<[MeshSurfaceBinding3D]>,
+        node: NodeID,
+        instance_mats: Arc<[[[f32; 4]; 4]]>,
+        skeleton: Option<SkeletonPalette>,
+    },
     DrawDebugPoint3D {
         node: NodeID,
         position: [f32; 3],

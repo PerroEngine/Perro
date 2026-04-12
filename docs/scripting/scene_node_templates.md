@@ -253,6 +253,45 @@ script = "res://path/to/script.rs"
     [/MeshInstance3D]
 [/mesh_instance_3d]
 
+[multi_mesh_instance_3d]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [MultiMeshInstance3D]
+        mesh = "res://path/to/model.glb:mesh[0]"
+        material = "res://path/to/material.pmat"
+        surfaces = [
+            "res://path/to/material0.pmat",
+            {
+                material = "res://path/to/material1.pmat"
+                modulate = (1, 0.9, 0.9, 1)
+                overrides = [
+                    { name = "roughness", value = 0.25 },
+                    { name = "shade_flat", value = true }
+                ]
+            }
+        ]
+        # instance count = transforms.len()
+        transforms = [
+            {
+                position = (6, 0, 0)
+                rotation = (0, 0, 0, 1)
+                scale = (1, 1, 1)
+            },
+            {
+                position = (6, 0, 0)
+                rotation = (0, 0, 0, 1)
+                scale = (1, 1, 1)
+            },
+        ]
+        [Node3D]
+            position = (0, 0, 0)
+            rotation = (0, 0, 0, 1)
+            scale = (1, 1, 1)
+            visible = true
+        [/Node3D]
+    [/MultiMeshInstance3D]
+[/multi_mesh_instance_3d]
+
 [camera3d]
 parent = PARENTKEY
 script = "res://path/to/script.rs"

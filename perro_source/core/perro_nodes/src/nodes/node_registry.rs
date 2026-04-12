@@ -3,6 +3,7 @@ use crate::animation_player::AnimationPlayer;
 use crate::camera_2d::Camera2D;
 use crate::camera_3d::Camera3D;
 use crate::mesh_instance_3d::MeshInstance3D;
+use crate::multi_mesh_instance_3d::MultiMeshInstance3D;
 use crate::node_2d::Node2D;
 use crate::node_3d::Node3D;
 use crate::particle_emitter_3d::ParticleEmitter3D;
@@ -682,6 +683,7 @@ define_scene_nodes! {
         Node3D => (None, Node3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         Camera3D => (Node3D, Camera3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         MeshInstance3D => (Node3D, MeshInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        MultiMeshInstance3D => (Node3D, MultiMeshInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         CollisionShape3D => (Node3D, CollisionShape3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         StaticBody3D => (Node3D, StaticBody3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         Area3D => (Node3D, Area3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),

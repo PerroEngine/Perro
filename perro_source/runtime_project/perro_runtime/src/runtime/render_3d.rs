@@ -280,26 +280,55 @@ impl Runtime {
                 visible_now.insert(node);
             }
 
-            let mesh_data = self.nodes.get(node).and_then(|node| match &node.data {
+            let mesh_data: Option<(
+                MeshID,
+                Vec<MeshSurfaceBinding>,
+                Option<NodeID>,
+                Arc<[[[f32; 4]; 4]]>,
+            )> = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::MeshInstance3D(mesh) => Some((
                     mesh.mesh,
                     mesh.surfaces.clone(),
-                    mesh.skeleton,
-                    mesh.transform,
+                    Some(mesh.skeleton),
+                    Arc::from([Mat4::IDENTITY.to_cols_array_2d()]),
+                )),
+                SceneNodeData::MultiMeshInstance3D(mesh) => Some((
+                    mesh.mesh,
+                    mesh.surfaces.clone(),
+                    None,
+                    Arc::from(
+                        mesh.transforms
+                            .iter()
+                            .map(|transform| transform.to_mat4().to_cols_array_2d())
+                            .collect::<Vec<_>>()
+                            .into_boxed_slice(),
+                    ),
                 )),
                 _ => None,
             });
-            if let Some((mesh, surfaces, skeleton, local_transform)) = mesh_data
+            if let Some((mesh, surfaces, skeleton, local_instance_mats)) = mesh_data
                 && effective_visible
                 && let Some((mesh, resolved_surfaces)) =
                     self.resolve_render_mesh_assets(node, mesh, surfaces)
             {
-                let model = self
+                let node_global = self
                     .get_global_transform_3d(node)
-                    .unwrap_or(local_transform)
-                    .to_mat4()
-                    .to_cols_array_2d();
-                let skeleton_palette = if !skeleton.is_nil() {
+                    .unwrap_or(perro_structs::Transform3D::IDENTITY)
+                    .to_mat4();
+                let instance_mats: Arc<[[[f32; 4]; 4]]> = Arc::from(
+                    local_instance_mats
+                        .iter()
+                        .map(|local| (node_global * Mat4::from_cols_array_2d(local)).to_cols_array_2d())
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice(),
+                );
+                if instance_mats.is_empty() {
+                    self.render_3d.retained_mesh_draws.remove(&node);
+                    continue;
+                }
+                let skeleton_palette = if let Some(skeleton) = skeleton
+                    && !skeleton.is_nil()
+                {
                     if let Some(cached) = skeleton_cache.get(&skeleton) {
                         Some(cached.clone())
                     } else if let Some(palette) = build_skeleton_palette(&self.nodes, skeleton) {
@@ -317,17 +346,31 @@ impl Runtime {
                 let draw_state = crate::runtime::state::RetainedMeshDrawState {
                     mesh,
                     surfaces: resolved_surfaces.clone(),
-                    model,
+                    instance_mats: instance_mats.clone(),
                     skeleton: skeleton_palette.clone(),
                 };
                 if self.render_3d.retained_mesh_draws.get(&node) != Some(&draw_state) {
-                    self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::Draw {
-                        mesh,
-                        surfaces: resolved_surfaces,
-                        node,
-                        model,
-                        skeleton: skeleton_palette,
-                    })));
+                    let draw_command = if instance_mats.len() <= 1 {
+                        Command3D::Draw {
+                            mesh,
+                            surfaces: resolved_surfaces,
+                            node,
+                            model: instance_mats
+                                .first()
+                                .copied()
+                                .unwrap_or(Mat4::IDENTITY.to_cols_array_2d()),
+                            skeleton: skeleton_palette,
+                        }
+                    } else {
+                        Command3D::DrawMulti {
+                            mesh,
+                            surfaces: resolved_surfaces,
+                            node,
+                            instance_mats,
+                            skeleton: skeleton_palette,
+                        }
+                    };
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(draw_command)));
                     self.render_3d.retained_mesh_draws.insert(node, draw_state);
                 }
                 visible_now.insert(node);
@@ -536,10 +579,16 @@ impl Runtime {
                 match result {
                     crate::RuntimeRenderResult::Mesh(id) => {
                         mesh = id;
-                        if let Some(node) = self.nodes.get_mut(node)
-                            && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data
-                        {
-                            mesh_instance.mesh = id;
+                        if let Some(node) = self.nodes.get_mut(node) {
+                            match &mut node.data {
+                                SceneNodeData::MeshInstance3D(mesh_instance) => {
+                                    mesh_instance.mesh = id;
+                                }
+                                SceneNodeData::MultiMeshInstance3D(mesh_instance) => {
+                                    mesh_instance.mesh = id;
+                                }
+                                _ => {}
+                            }
                         }
                     }
                     crate::RuntimeRenderResult::Failed(_)
@@ -588,10 +637,17 @@ impl Runtime {
                 match result {
                     crate::RuntimeRenderResult::Material(id) => {
                         surfaces[surface_index].material = Some(id);
-                        if let Some(node) = self.nodes.get_mut(node)
-                            && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data
-                        {
-                            mesh_instance.set_surface_material(surface_index, Some(id));
+                        if let Some(node) = self.nodes.get_mut(node) {
+                            match &mut node.data {
+                                SceneNodeData::MeshInstance3D(mesh_instance) => {
+                                    mesh_instance.set_surface_material(surface_index, Some(id));
+                                }
+                                SceneNodeData::MultiMeshInstance3D(mesh_instance) => {
+                                    mesh_instance.ensure_surface_mut(surface_index).material =
+                                        Some(id);
+                                }
+                                _ => {}
+                            }
                         }
                         continue;
                     }

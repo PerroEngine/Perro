@@ -14,6 +14,16 @@ fn build_mesh_instance_3d(data: &SceneDefNodeData) -> MeshInstance3D {
     node
 }
 
+fn build_multi_mesh_instance_3d(data: &SceneDefNodeData) -> MultiMeshInstance3D {
+    let mut node = MultiMeshInstance3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_multi_mesh_instance_3d_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_skeleton_3d(data: &SceneDefNodeData) -> Skeleton3D {
     let mut node = Skeleton3D::new();
     if let Some(base) = data.base_ref() {
@@ -70,10 +80,31 @@ fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[SceneObjec
     });
 }
 
+fn apply_multi_mesh_instance_3d_fields(
+    node: &mut MultiMeshInstance3D,
+    fields: &[SceneObjectField],
+) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match name {
+            "surfaces" => {
+                if let SceneValue::Array(items) = value {
+                    node.surfaces = parse_surface_bindings(items.as_ref());
+                }
+            }
+            "transforms" => {
+                if let SceneValue::Array(items) = value {
+                    node.transforms = parse_instance_transforms(items.as_ref());
+                }
+            }
+            _ => {}
+        }
+    });
+}
+
 fn apply_skeleton_3d_fields(_node: &mut Skeleton3D, _fields: &[SceneObjectField]) {}
 
 fn extract_mesh_source(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "MeshInstance3D" {
+    if data.ty != "MeshInstance3D" && data.ty != "MultiMeshInstance3D" {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -85,7 +116,7 @@ fn extract_mesh_source(data: &SceneDefNodeData) -> Option<String> {
 }
 
 fn extract_material_source(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "MeshInstance3D" {
+    if data.ty != "MeshInstance3D" && data.ty != "MultiMeshInstance3D" {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -97,7 +128,7 @@ fn extract_material_source(data: &SceneDefNodeData) -> Option<String> {
 }
 
 fn extract_material_inline(data: &SceneDefNodeData) -> Option<Material3D> {
-    if data.ty != "MeshInstance3D" {
+    if data.ty != "MeshInstance3D" && data.ty != "MultiMeshInstance3D" {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -114,7 +145,7 @@ fn extract_material_inline(data: &SceneDefNodeData) -> Option<Material3D> {
 }
 
 fn extract_material_surfaces(data: &SceneDefNodeData) -> Vec<PendingSurfaceMaterial> {
-    if data.ty != "MeshInstance3D" {
+    if data.ty != "MeshInstance3D" && data.ty != "MultiMeshInstance3D" {
         return Vec::new();
     }
     for (name, value) in data.fields.iter() {
@@ -248,8 +279,47 @@ fn parse_color(value: &SceneValue) -> Option<[f32; 4]> {
     }
 }
 
+fn parse_instance_transforms(items: &[SceneValue]) -> Vec<perro_structs::Transform3D> {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        match item {
+            SceneValue::Vec3 { x, y, z } => {
+                let mut t = perro_structs::Transform3D::IDENTITY;
+                t.position = perro_structs::Vector3::new(*x, *y, *z);
+                out.push(t);
+            }
+            SceneValue::Object(entries) => {
+                let mut t = perro_structs::Transform3D::IDENTITY;
+                for (key, value) in entries.iter() {
+                    match key.as_ref() {
+                        "position" => {
+                            if let Some(v) = as_vec3(value) {
+                                t.position = v;
+                            }
+                        }
+                        "rotation" => {
+                            if let Some(v) = as_quat(value) {
+                                t.rotation = v;
+                            }
+                        }
+                        "scale" => {
+                            if let Some(v) = as_vec3(value) {
+                                t.scale = v;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                out.push(t);
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 fn extract_model_source(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "MeshInstance3D" {
+    if data.ty != "MeshInstance3D" && data.ty != "MultiMeshInstance3D" {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {

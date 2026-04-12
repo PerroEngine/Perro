@@ -362,7 +362,7 @@ impl Render3DState {
 pub(crate) struct RetainedMeshDrawState {
     pub(crate) mesh: MeshID,
     pub(crate) surfaces: std::sync::Arc<[MeshSurfaceBinding3D]>,
-    pub(crate) model: [[f32; 4]; 4],
+    pub(crate) instance_mats: std::sync::Arc<[[[f32; 4]; 4]]>,
     pub(crate) skeleton: Option<SkeletonPalette>,
 }
 

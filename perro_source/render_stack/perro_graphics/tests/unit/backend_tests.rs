@@ -150,7 +150,7 @@ fn draw_3d_updates_retained_state_per_node() {
             node: node_a,
             kind: Draw3DKind::Mesh(created_meshes[0]),
             surfaces: surfaces_for(created_materials[0]),
-            model: model_a,
+            instance_mats: Arc::from([model_a]),
             skeleton: None,
         })
     );
@@ -160,7 +160,85 @@ fn draw_3d_updates_retained_state_per_node() {
             node: node_b,
             kind: Draw3DKind::Mesh(created_meshes[1]),
             surfaces: surfaces_for(created_materials[1]),
-            model: model_b,
+            instance_mats: Arc::from([model_b]),
+            skeleton: None,
+        })
+    );
+}
+
+#[test]
+fn draw_multi_3d_retains_all_instance_mats() {
+    let mut graphics = PerroGraphics::new();
+    let node = NodeID::from_parts(12, 0);
+
+    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
+        request: perro_render_bridge::RenderRequestID::new(1201),
+        id: MeshID::nil(),
+        source: "__cube__".to_string(),
+        reserved: false,
+    }));
+    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
+        request: perro_render_bridge::RenderRequestID::new(1202),
+        id: MaterialID::nil(),
+        material: Material3D::default(),
+        source: None,
+        reserved: false,
+    }));
+    graphics.draw_frame();
+
+    let mut events = Vec::new();
+    graphics.drain_events(&mut events);
+    let mut mesh_id = MeshID::nil();
+    let mut material_id = MaterialID::nil();
+    for event in events {
+        match event {
+            perro_render_bridge::RenderEvent::MeshCreated { id, .. } => mesh_id = id,
+            perro_render_bridge::RenderEvent::MaterialCreated { id, .. } => material_id = id,
+            _ => {}
+        }
+    }
+    assert!(!mesh_id.is_nil());
+    assert!(!material_id.is_nil());
+
+    let instance_mats: Arc<[[[f32; 4]; 4]]> = Arc::from(
+        vec![
+            [
+                [1.0, 0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            [
+                [1.0, 0.0, 0.0, 2.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            [
+                [1.0, 0.0, 0.0, 3.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        ]
+        .into_boxed_slice(),
+    );
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::DrawMulti {
+        mesh: mesh_id,
+        surfaces: surfaces_for(material_id),
+        node,
+        instance_mats: instance_mats.clone(),
+        skeleton: None,
+    })));
+    graphics.draw_frame();
+
+    assert_eq!(
+        graphics.renderer_3d.retained_draw(node),
+        Some(crate::three_d::renderer::Draw3DInstance {
+            node,
+            kind: Draw3DKind::Mesh(mesh_id),
+            surfaces: surfaces_for(material_id),
+            instance_mats,
             skeleton: None,
         })
     );
@@ -220,7 +298,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             node,
             kind: Draw3DKind::Mesh(mesh_id),
             surfaces: surfaces_for(material_id),
-            model: first_model,
+            instance_mats: Arc::from([first_model]),
             skeleton: None,
         })
     );
@@ -247,7 +325,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             node,
             kind: Draw3DKind::Mesh(mesh_id),
             surfaces: surfaces_for(material_id),
-            model: second_model,
+            instance_mats: Arc::from([second_model]),
             skeleton: None,
         })
     );
@@ -324,7 +402,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
             node,
             kind: Draw3DKind::Mesh(mesh_id),
             surfaces: surfaces_for(material_id),
-            model: second_model,
+            instance_mats: Arc::from([second_model]),
             skeleton: None,
         })
     );

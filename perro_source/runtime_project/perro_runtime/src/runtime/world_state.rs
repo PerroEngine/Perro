@@ -15,6 +15,7 @@ impl Runtime {
             SceneNodeData::RigidBody2D(node) => node.visible,
             SceneNodeData::Node3D(node) => node.visible,
             SceneNodeData::MeshInstance3D(node) => node.visible,
+            SceneNodeData::MultiMeshInstance3D(node) => node.visible,
             SceneNodeData::CollisionShape3D(node) => node.visible,
             SceneNodeData::StaticBody3D(node) => node.visible,
             SceneNodeData::Area3D(node) => node.visible,

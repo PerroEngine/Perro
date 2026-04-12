@@ -312,6 +312,16 @@ impl PerroGraphics {
                         self.renderer_3d
                             .queue_draw(node, mesh, surfaces, model, skeleton);
                     }
+                    Command3D::DrawMulti {
+                        mesh,
+                        surfaces,
+                        node,
+                        instance_mats,
+                        skeleton,
+                    } => {
+                        self.renderer_3d
+                            .queue_draw_multi(node, mesh, surfaces, instance_mats, skeleton);
+                    }
                     Command3D::DrawDebugPoint3D {
                         node,
                         position,
