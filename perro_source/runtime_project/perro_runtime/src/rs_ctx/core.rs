@@ -66,6 +66,7 @@ impl RuntimeResourceApi {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         match event {
             RenderEvent::TextureCreated { request, id } => {
+                let _ = state.occupy_texture_id(*id);
                 if let Some(source) = state.texture_pending_source_by_request.remove(request) {
                     state.texture_pending_by_source.remove(&source);
                     let pending_id = state.texture_pending_id_by_request.remove(request);
@@ -91,6 +92,7 @@ impl RuntimeResourceApi {
                 }
             }
             RenderEvent::MeshCreated { request, id } => {
+                let _ = state.occupy_mesh_id(*id);
                 if let Some(source) = state.mesh_pending_source_by_request.remove(request) {
                     state.mesh_pending_by_source.remove(&source);
                     let pending_id = state.mesh_pending_id_by_request.remove(request);
@@ -116,6 +118,7 @@ impl RuntimeResourceApi {
                 }
             }
             RenderEvent::MaterialCreated { request, id } => {
+                let _ = state.occupy_material_id(*id);
                 if let Some(source) = state.material_pending_source_by_request.remove(request) {
                     state.material_pending_by_source.remove(&source);
                     let pending_id = state.material_pending_id_by_request.remove(request);

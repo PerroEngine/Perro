@@ -42,6 +42,33 @@ impl LocalSlotArena {
         self.free_slots.push(slot);
         true
     }
+
+    fn occupy_parts(&mut self, index: u32, generation: u32) -> bool {
+        if index == 0 {
+            return false;
+        }
+        let slot = index as usize - 1;
+        if self.generations.len() <= slot {
+            let start = self.generations.len();
+            self.generations.resize(slot + 1, 0);
+            self.occupied.resize(slot + 1, false);
+            for s in start..slot {
+                self.free_slots.push(s);
+            }
+        }
+        if self.occupied[slot] {
+            return self.generations[slot] == generation;
+        }
+        if self.generations[slot] > generation {
+            return false;
+        }
+        self.generations[slot] = generation;
+        self.occupied[slot] = true;
+        if let Some(pos) = self.free_slots.iter().position(|s| *s == slot) {
+            self.free_slots.swap_remove(pos);
+        }
+        true
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -182,12 +209,24 @@ impl RuntimeResourceState {
         self.texture_slots.free_parts(id.index(), id.generation())
     }
 
+    pub(super) fn occupy_texture_id(&mut self, id: TextureID) -> bool {
+        self.texture_slots.occupy_parts(id.index(), id.generation())
+    }
+
     pub(super) fn free_mesh_id(&mut self, id: MeshID) -> bool {
         self.mesh_slots.free_parts(id.index(), id.generation())
     }
 
+    pub(super) fn occupy_mesh_id(&mut self, id: MeshID) -> bool {
+        self.mesh_slots.occupy_parts(id.index(), id.generation())
+    }
+
     pub(super) fn free_material_id(&mut self, id: MaterialID) -> bool {
         self.material_slots.free_parts(id.index(), id.generation())
+    }
+
+    pub(super) fn occupy_material_id(&mut self, id: MaterialID) -> bool {
+        self.material_slots.occupy_parts(id.index(), id.generation())
     }
 
     pub(super) fn allocate_animation_id(&mut self) -> AnimationID {
