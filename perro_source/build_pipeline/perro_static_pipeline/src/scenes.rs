@@ -306,7 +306,6 @@ fn emit_static_node_type(ty: &str) -> Result<&'static str, StaticPipelineError> 
         "Area3D" => Ok("Area3D"),
         "RigidBody3D" => Ok("RigidBody3D"),
         "Skeleton3D" => Ok("Skeleton3D"),
-        "TerrainInstance3D" => Ok("TerrainInstance3D"),
         "Camera3D" => Ok("Camera3D"),
         "AmbientLight3D" => Ok("AmbientLight3D"),
         "Sky3D" => Ok("Sky3D"),

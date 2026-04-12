@@ -312,9 +312,6 @@ impl PerroGraphics {
                         self.renderer_3d
                             .queue_draw(node, mesh, surfaces, model, skeleton);
                     }
-                    Command3D::DrawTerrain { node, model } => {
-                        self.renderer_3d.queue_terrain(node, model);
-                    }
                     Command3D::DrawDebugPoint3D {
                         node,
                         position,

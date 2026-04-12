@@ -1837,41 +1837,23 @@ impl Gpu3D {
             let draw_instance_start = self.staged_instances.len() as u32;
             let is_debug_point = matches!(draw.kind, Draw3DKind::DebugPointCube);
             let is_debug_edge = matches!(draw.kind, Draw3DKind::DebugEdgeCylinder);
-            let (mesh_asset, is_terrain_mesh) = match draw.kind {
+            let mesh_asset = match draw.kind {
                 Draw3DKind::Mesh(mesh) => {
                     let source = resources.mesh_source(mesh).unwrap_or("__cube__");
-                    let is_terrain = source.starts_with("__terrain");
-                    let asset = self
+                    self
                         .resolve_mesh_range(device, queue, resources, source, static_mesh_lookup)
-                        .unwrap_or_else(|| default_mesh.clone());
-                    (asset, is_terrain)
+                        .unwrap_or_else(|| default_mesh.clone())
                 }
-                Draw3DKind::Terrain64 => (
-                    self.resolve_builtin_mesh_asset("__terrain64__")
-                        .unwrap_or_else(|| default_mesh.clone()),
-                    true,
-                ),
-                Draw3DKind::DebugPointCube => (
+                Draw3DKind::DebugPointCube => {
                     self.resolve_builtin_mesh_asset("__cube__")
-                        .unwrap_or_else(|| default_mesh.clone()),
-                    false,
-                ),
-                Draw3DKind::DebugEdgeCylinder => (
+                        .unwrap_or_else(|| default_mesh.clone())
+                }
+                Draw3DKind::DebugEdgeCylinder => {
                     self.resolve_builtin_mesh_asset("__cylinder__")
-                        .unwrap_or_else(|| default_mesh.clone()),
-                    false,
-                ),
+                        .unwrap_or_else(|| default_mesh.clone())
+                }
             };
             let mut surface_entries: Vec<(MeshRange, Material3D)> = match draw.kind {
-                Draw3DKind::Terrain64 => vec![(
-                    mesh_asset.full,
-                    Material3D::Standard(StandardMaterial3D {
-                        base_color_factor: [0.32, 0.56, 0.29, 1.0],
-                        roughness_factor: 0.92,
-                        metallic_factor: 0.0,
-                        ..StandardMaterial3D::default()
-                    }),
-                )],
                 Draw3DKind::DebugPointCube => vec![(
                     mesh_asset.full,
                     Material3D::Standard(StandardMaterial3D {
@@ -2057,8 +2039,8 @@ impl Gpu3D {
                             standard_params.base_color_texture,
                             (mesh_asset.bounds_center, mesh_asset.bounds_radius),
                             occlusion_query,
-                            is_terrain_mesh,
-                            !is_terrain_mesh,
+                            false,
+                            true,
                         );
                     }
                 }
@@ -2116,8 +2098,8 @@ impl Gpu3D {
                         standard_params.base_color_texture,
                         (occlusion_center, occlusion_radius),
                         occlusion_query,
-                        is_terrain_mesh,
-                        !is_terrain_mesh,
+                        false,
+                        true,
                     );
                 }
             }

@@ -16,7 +16,6 @@ Accessors:
 - `res.Meshes()`
 - `res.Materials()`
 - `res.Skeletons()`
-- `res.Terrain()`
 - `res.Draw2D()`
 - `res.Localization()`
 - Direct global post-processing methods (no accessor)
@@ -31,7 +30,6 @@ Accessors:
 - [Meshes Module](resource_modules/meshes.md)
 - [Materials Module](resource_modules/materials.md)
 - [Skeletons Module](resource_modules/skeletons.md)
-- [Terrain Module](resource_modules/terrain.md)
 - [Draw2D Module](resource_modules/draw_2d.md)
 - [Localization Module](resource_modules/localization.md)
 - [Global Post Processing](resource_modules/post_processing.md)

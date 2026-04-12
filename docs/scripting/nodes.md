@@ -52,18 +52,6 @@ Physics 2D:
 - Scene authoring: `skeleton = "NodeName"` uses the **scene node name** and is resolved to a `NodeID` at load time.
 - Skinning only works if the mesh has proper vertex weights (`JOINTS_0/WEIGHTS_0`).
 
-`TerrainInstance3D`
-
-- Runtime terrain renderer instance (terrain data is managed through `ResourceContext::Terrain()`).
-- Optional authored source: `terrain = "res://path/to/folder"`.
-- Authoring folder convention:
-  - `terrain/terrain.glb` (topology + UVs + UV-authored layer paint source)
-  - `terrain/settings.pterr` (layer meaning + physics + `.pmat` mapping)
-- `.ptchunk` remains supported for chunk-authored terrain files.
-- `.ptchunk` files are resolved by chunk-space filename: `<chunk_x>_<chunk_z>.ptchunk`.
-- Terrain is fixed-grid runtime terrain (`1 vertex per meter` on `64x64` cells per chunk).
-- Automatically contributes static terrain collision from chunk mesh geometry.
-
 `Camera3D`
 
 - Active 3D camera with projection settings.

@@ -10,7 +10,6 @@ use std::{
 const IMAGE_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba",
 ];
-const TERRAIN_BAKED_TILE_DIR: &str = "__perro_terrain_baked";
 
 pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
@@ -56,7 +55,6 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
             Ok((res_path, ptex))
         })
         .collect::<io::Result<Vec<_>>>()?;
-    encoded.extend(read_generated_baked_ptex(&embedded_textures_dir)?);
     encoded.sort_by(|a, b| a.0.cmp(&b.0));
     encoded.dedup_by(|a, b| a.0 == b.0);
 
@@ -101,29 +99,6 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
 
     fs::write(static_dir.join("textures.rs"), out)?;
     Ok(())
-}
-
-fn read_generated_baked_ptex(embedded_textures_dir: &Path) -> io::Result<Vec<(String, Vec<u8>)>> {
-    let root = embedded_textures_dir.join(TERRAIN_BAKED_TILE_DIR);
-    if !root.exists() {
-        return Ok(Vec::new());
-    }
-    let rels = collect_file_paths(&root, &root)?;
-    let mut out = Vec::new();
-    for rel in rels {
-        let rel = rel.replace('\\', "/");
-        if !rel.ends_with(".ptex") {
-            continue;
-        }
-        let full = root.join(&rel);
-        let bytes = fs::read(&full)?;
-        let Some(stripped) = rel.strip_suffix(".ptex") else {
-            continue;
-        };
-        let source = format!("bin://{}/{stripped}.png", TERRAIN_BAKED_TILE_DIR);
-        out.push((source, bytes));
-    }
-    Ok(out)
 }
 
 fn escape_str(input: &str) -> String {

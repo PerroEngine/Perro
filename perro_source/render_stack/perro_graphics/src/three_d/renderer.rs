@@ -14,7 +14,6 @@ const SKY_DAY_SECONDS: f32 = 1580.0;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Draw3DKind {
     Mesh(MeshID),
-    Terrain64,
     DebugPointCube,
     DebugEdgeCylinder,
 }
@@ -85,16 +84,6 @@ impl Renderer3D {
             surfaces,
             model,
             skeleton,
-        });
-    }
-
-    pub fn queue_terrain(&mut self, node: NodeID, model: [[f32; 4]; 4]) {
-        self.queued_draws.push(Draw3DInstance {
-            node,
-            kind: Draw3DKind::Terrain64,
-            surfaces: Arc::from([]),
-            model,
-            skeleton: None,
         });
     }
 
@@ -192,15 +181,11 @@ impl Renderer3D {
             });
             let mesh_ready = match draw.kind {
                 Draw3DKind::Mesh(mesh) => resources.has_mesh(mesh),
-                Draw3DKind::Terrain64
-                | Draw3DKind::DebugPointCube
-                | Draw3DKind::DebugEdgeCylinder => true,
+                Draw3DKind::DebugPointCube | Draw3DKind::DebugEdgeCylinder => true,
             };
             let draw_ready = match draw.kind {
                 Draw3DKind::Mesh(_) => mesh_ready && material_ready,
-                Draw3DKind::Terrain64
-                | Draw3DKind::DebugPointCube
-                | Draw3DKind::DebugEdgeCylinder => material_ready,
+                Draw3DKind::DebugPointCube | Draw3DKind::DebugEdgeCylinder => material_ready,
             };
             if draw_ready {
                 let changed = self.retained_draws.get(&draw.node) != Some(&draw);

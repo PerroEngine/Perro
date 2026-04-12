@@ -23,7 +23,7 @@ Root:
 
 In `perro_source/`:
 
-- `core/`: ids, nodes, structs, animation, terrain, variant.
+- `core/`: ids, nodes, structs, animation, variant.
 - `runtime_project/`: runtime loop, scene load, project runtime glue.
 - `api_modules/`: public runtime/resource/input api crates.
 - `render_stack/`: app loop, graphics, render bridge, meshlets.

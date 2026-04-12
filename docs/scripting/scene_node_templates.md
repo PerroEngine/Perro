@@ -366,22 +366,6 @@ script = "res://path/to/script.rs"
     [/Skeleton3D]
 [/skeleton3d]
 
-[terrain_instance_3d]
-parent = PARENTKEY
-script = "res://path/to/script.rs"
-    [TerrainInstance3D]
-        terrain = "res://path/to/terrain_folder"
-        show_debug_vertices = true
-        show_debug_edges = true
-        [Node3D]
-            position = (0, 0, 0)
-            rotation = (0, 0, 0, 1)
-            scale = (1, 1, 1)
-            visible = true
-        [/Node3D]
-    [/TerrainInstance3D]
-[/terrain_instance_3d]
-
 [particle_emitter_3d]
 parent = PARENTKEY
 script = "res://path/to/script.rs"

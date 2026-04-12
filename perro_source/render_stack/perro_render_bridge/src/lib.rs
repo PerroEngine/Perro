@@ -631,10 +631,6 @@ pub enum Command3D {
         model: [[f32; 4]; 4],
         skeleton: Option<SkeletonPalette>,
     },
-    DrawTerrain {
-        node: NodeID,
-        model: [[f32; 4]; 4],
-    },
     DrawDebugPoint3D {
         node: NodeID,
         position: [f32; 3],
