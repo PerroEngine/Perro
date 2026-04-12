@@ -8,11 +8,11 @@ use perro_nodes::{
 };
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D,
-    Material3D, MaterialParamOverride3D, MaterialParamOverrideValue3D, MeshSurfaceBinding3D,
-    ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
-    PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID,
-    ResourceCommand, SkeletonPalette, Sky3DState, SkyTime3DState, SpotLight3DState,
+    AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
+    MaterialParamOverride3D, MaterialParamOverrideValue3D, MeshSurfaceBinding3D, ParticlePath3D,
+    ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
+    PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand,
+    SkeletonPalette, Sky3DState, SkyTime3DState, SpotLight3DState,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -646,12 +646,24 @@ impl Runtime {
                     .map(|ovr| MaterialParamOverride3D {
                         name: ovr.name,
                         value: match ovr.value {
-                            MaterialParamOverrideValue::F32(v) => MaterialParamOverrideValue3D::F32(v),
-                            MaterialParamOverrideValue::I32(v) => MaterialParamOverrideValue3D::I32(v),
-                            MaterialParamOverrideValue::Bool(v) => MaterialParamOverrideValue3D::Bool(v),
-                            MaterialParamOverrideValue::Vec2(v) => MaterialParamOverrideValue3D::Vec2(v),
-                            MaterialParamOverrideValue::Vec3(v) => MaterialParamOverrideValue3D::Vec3(v),
-                            MaterialParamOverrideValue::Vec4(v) => MaterialParamOverrideValue3D::Vec4(v),
+                            MaterialParamOverrideValue::F32(v) => {
+                                MaterialParamOverrideValue3D::F32(v)
+                            }
+                            MaterialParamOverrideValue::I32(v) => {
+                                MaterialParamOverrideValue3D::I32(v)
+                            }
+                            MaterialParamOverrideValue::Bool(v) => {
+                                MaterialParamOverrideValue3D::Bool(v)
+                            }
+                            MaterialParamOverrideValue::Vec2(v) => {
+                                MaterialParamOverrideValue3D::Vec2(v)
+                            }
+                            MaterialParamOverrideValue::Vec3(v) => {
+                                MaterialParamOverrideValue3D::Vec3(v)
+                            }
+                            MaterialParamOverrideValue::Vec4(v) => {
+                                MaterialParamOverrideValue3D::Vec4(v)
+                            }
                         },
                     })
                     .collect::<Vec<_>>()
@@ -1213,10 +1225,7 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
         return None;
     }
 
-    let (path, fragment) = split_source_fragment(source);
-    if path.ends_with(".pmat") {
-        eprintln!("[perro_runtime] load_material_from_source: {}", path);
-    }
+    let (path, _fragment) = split_source_fragment(source);
     if let Some(lookup) = runtime
         .project()
         .and_then(|project| project.static_material_lookup)
@@ -1229,20 +1238,9 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
         }
     }
 
-    if path.ends_with(".pmat") {
-        let mat = material_schema::load_from_source(path);
-        if let Some(Material3D::Custom(custom)) = mat.as_ref() {
-            eprintln!(
-                "[perro_runtime] custom material shader_path='{}'",
-                custom.shader_path
-            );
-        }
-        return mat;
-    }
-
-    if path.ends_with(".glb") || path.ends_with(".gltf") {
-        let _index = parse_fragment_index(fragment, &["mat", "material"]).unwrap_or(0);
-        return Some(Material3D::default());
+    if path.ends_with(".pmat") || path.ends_with(".glb") || path.ends_with(".gltf") {
+        return material_schema::load_from_source(source)
+            .or_else(|| material_schema::load_from_source(path));
     }
 
     None
@@ -1262,20 +1260,6 @@ fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
         return (path, Some(selector));
     }
     (source, None)
-}
-
-fn parse_fragment_index(fragment: Option<&str>, keys: &[&str]) -> Option<u32> {
-    let fragment = fragment?;
-    if let Some((name, rest)) = fragment.split_once('[') {
-        let name = name.trim();
-        if keys.contains(&name) {
-            let value = rest.strip_suffix(']')?.trim();
-            if let Ok(parsed) = value.parse::<u32>() {
-                return Some(parsed);
-            }
-        }
-    }
-    None
 }
 
 fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<ParticleProfile3D> {

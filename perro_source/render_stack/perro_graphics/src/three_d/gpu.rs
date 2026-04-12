@@ -1837,21 +1837,21 @@ impl Gpu3D {
             let draw_instance_start = self.staged_instances.len() as u32;
             let is_debug_point = matches!(draw.kind, Draw3DKind::DebugPointCube);
             let is_debug_edge = matches!(draw.kind, Draw3DKind::DebugEdgeCylinder);
+            let mesh_source = match draw.kind {
+                Draw3DKind::Mesh(mesh) => resources.mesh_source(mesh).unwrap_or("__cube__"),
+                Draw3DKind::DebugPointCube => "__cube__",
+                Draw3DKind::DebugEdgeCylinder => "__cylinder__",
+            };
             let mesh_asset = match draw.kind {
-                Draw3DKind::Mesh(mesh) => {
-                    let source = resources.mesh_source(mesh).unwrap_or("__cube__");
-                    self
-                        .resolve_mesh_range(device, queue, resources, source, static_mesh_lookup)
-                        .unwrap_or_else(|| default_mesh.clone())
-                }
-                Draw3DKind::DebugPointCube => {
-                    self.resolve_builtin_mesh_asset("__cube__")
-                        .unwrap_or_else(|| default_mesh.clone())
-                }
-                Draw3DKind::DebugEdgeCylinder => {
-                    self.resolve_builtin_mesh_asset("__cylinder__")
-                        .unwrap_or_else(|| default_mesh.clone())
-                }
+                Draw3DKind::Mesh(_) => self
+                    .resolve_mesh_range(device, queue, resources, mesh_source, static_mesh_lookup)
+                    .unwrap_or_else(|| default_mesh.clone()),
+                Draw3DKind::DebugPointCube => self
+                    .resolve_builtin_mesh_asset("__cube__")
+                    .unwrap_or_else(|| default_mesh.clone()),
+                Draw3DKind::DebugEdgeCylinder => self
+                    .resolve_builtin_mesh_asset("__cylinder__")
+                    .unwrap_or_else(|| default_mesh.clone()),
             };
             let mut surface_entries: Vec<(MeshRange, Material3D)> = match draw.kind {
                 Draw3DKind::DebugPointCube => vec![(
@@ -1965,6 +1965,7 @@ impl Gpu3D {
                         queue,
                         resources,
                         standard_params.base_color_texture,
+                        mesh_source,
                         static_texture_lookup,
                     );
                     if debug_point_instances.is_empty() {
@@ -1995,6 +1996,7 @@ impl Gpu3D {
                         queue,
                         resources,
                         standard_params.base_color_texture,
+                        mesh_source,
                         static_texture_lookup,
                     );
                     if debug_edge_instances.is_empty() {
@@ -2013,6 +2015,7 @@ impl Gpu3D {
                             queue,
                             resources,
                             standard_params.base_color_texture,
+                            mesh_source,
                             static_texture_lookup,
                         );
                         let material_kind =
@@ -2052,6 +2055,7 @@ impl Gpu3D {
                     queue,
                     resources,
                     standard_params.base_color_texture,
+                    mesh_source,
                     static_texture_lookup,
                 );
                 let material_kind =
@@ -2627,6 +2631,7 @@ impl Gpu3D {
         queue: &wgpu::Queue,
         resources: &ResourceStore,
         slot: u32,
+        mesh_source: &str,
         static_texture_lookup: Option<StaticTextureLookup>,
     ) {
         if slot == MATERIAL_TEXTURE_NONE {
@@ -2634,10 +2639,20 @@ impl Gpu3D {
         }
         self.ensure_material_fallback_texture(device, queue);
 
-        let source = resources.texture_source_by_index(slot).or_else(|| {
+        // glTF material texture indices are model-local, not global texture IDs.
+        // Prefer glTF-local texture source when mesh source is glTF/glb.
+        let gltf_source = gltf_texture_source_from_mesh_source(mesh_source, slot);
+        let global_source = resources.texture_source_by_index(slot).or_else(|| {
             slot.checked_add(1)
                 .and_then(|next| resources.texture_source_by_index(next))
         });
+        let source = if gltf_source.is_some() {
+            gltf_source.or_else(|| global_source.map(ToString::to_string))
+        } else {
+            global_source
+                .map(ToString::to_string)
+                .or_else(|| gltf_source)
+        };
         let Some(source) = source else {
             self.material_textures.remove(&slot);
             return;
@@ -2653,13 +2668,13 @@ impl Gpu3D {
         let decoded = if source == "__default__" {
             Some((vec![255u8, 255, 255, 255], 1, 1))
         } else if let Some(lookup) = static_texture_lookup {
-            if let Some(bytes) = lookup(source) {
+            if let Some(bytes) = lookup(source.as_str()) {
                 decode_ptex(bytes)
             } else {
-                load_texture_rgba(source)
+                load_texture_rgba(source.as_str())
             }
         } else {
-            load_texture_rgba(source)
+            load_texture_rgba(source.as_str())
         };
         let Some((rgba, width, height)) = decoded else {
             self.material_textures.remove(&slot);
@@ -2672,7 +2687,7 @@ impl Gpu3D {
             rgba,
             width,
             height,
-            source.to_string(),
+            source,
         );
         self.material_textures.insert(slot, cached);
     }
@@ -3921,11 +3936,63 @@ fn create_cached_material_texture(
 }
 
 fn load_texture_rgba(source: &str) -> Option<(Vec<u8>, u32, u32)> {
+    let (path, fragment) = split_source_fragment(source);
+    if (path.ends_with(".glb") || path.ends_with(".gltf"))
+        && let Some(texture_index) = parse_fragment_index(fragment, "tex")
+            .or_else(|| parse_fragment_index(fragment, "texture"))
+            .or_else(|| parse_fragment_index(fragment, "img"))
+    {
+        return decode_gltf_texture(path, texture_index as usize);
+    }
+
     let bytes = load_asset(source).ok()?;
     let image = image::load_from_memory(&bytes).ok()?;
     let rgba = image.to_rgba8();
     let (w, h) = rgba.dimensions();
     Some((rgba.into_raw(), w.max(1), h.max(1)))
+}
+
+fn gltf_texture_source_from_mesh_source(mesh_source: &str, slot: u32) -> Option<String> {
+    let (path, _) = split_source_fragment(mesh_source);
+    if !(path.ends_with(".glb") || path.ends_with(".gltf")) {
+        return None;
+    }
+    Some(format!("{path}:tex[{slot}]"))
+}
+
+fn decode_gltf_texture(source_path: &str, texture_index: usize) -> Option<(Vec<u8>, u32, u32)> {
+    let bytes = load_asset(source_path).ok()?;
+    let (doc, _buffers, images) = gltf::import_slice(&bytes).ok()?;
+    let texture = doc.textures().nth(texture_index)?;
+    let image_index = texture.source().index();
+    let image = images.get(image_index)?;
+    let (width, height) = (image.width.max(1), image.height.max(1));
+    let rgba = match image.format {
+        gltf::image::Format::R8G8B8A8 => image.pixels.clone(),
+        gltf::image::Format::R8G8B8 => {
+            let mut out = Vec::with_capacity((width * height * 4) as usize);
+            for px in image.pixels.chunks_exact(3) {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            out
+        }
+        gltf::image::Format::R8G8 => {
+            let mut out = Vec::with_capacity((width * height * 4) as usize);
+            for px in image.pixels.chunks_exact(2) {
+                out.extend_from_slice(&[px[0], px[1], 0, 255]);
+            }
+            out
+        }
+        gltf::image::Format::R8 => {
+            let mut out = Vec::with_capacity((width * height * 4) as usize);
+            for &v in &image.pixels {
+                out.extend_from_slice(&[v, v, v, 255]);
+            }
+            out
+        }
+        _ => return None,
+    };
+    Some((rgba, width, height))
 }
 
 fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
@@ -5351,7 +5418,9 @@ fn build_shadow_setup(
         .clamp(10.0, 600.0);
     if has_batch_bounds {
         focus_center = focus_center.lerp(batch_focus_center, 0.35);
-        focus_radius = focus_radius.max(batch_focus_radius * 0.85).clamp(10.0, 600.0);
+        focus_radius = focus_radius
+            .max(batch_focus_radius * 0.85)
+            .clamp(10.0, 600.0);
     }
 
     if fallback_focus_center.is_finite() && fallback_focus_radius.is_finite() {

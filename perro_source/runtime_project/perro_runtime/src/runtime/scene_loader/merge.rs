@@ -87,7 +87,10 @@ pub(super) fn merge_prepared_scene(
                 sources.push(surface.source);
                 overrides.push(surface.inline);
             }
-            runtime.render_3d.material_surface_sources.insert(node, sources);
+            runtime
+                .render_3d
+                .material_surface_sources
+                .insert(node, sources);
             runtime
                 .render_3d
                 .material_surface_overrides

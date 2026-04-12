@@ -461,12 +461,7 @@ impl Runtime {
                         None,
                         (body.friction, body.restitution),
                     ),
-                    SceneNodeData::Area3D(body) => (
-                        BodyKind::Area,
-                        body.enabled,
-                        None,
-                        (0.7, 0.0),
-                    ),
+                    SceneNodeData::Area3D(body) => (BodyKind::Area, body.enabled, None, (0.7, 0.0)),
                     SceneNodeData::RigidBody3D(body) => (
                         BodyKind::Rigid,
                         body.enabled,
@@ -646,7 +641,13 @@ impl Runtime {
 
         let mut stale = std::mem::take(&mut self.physics.stale_ids_2d);
         stale.clear();
-        stale.extend(world.body_map.keys().copied().filter(|id| !alive.contains(id)));
+        stale.extend(
+            world
+                .body_map
+                .keys()
+                .copied()
+                .filter(|id| !alive.contains(id)),
+        );
 
         for id in stale.iter().copied() {
             if let Some(state) = world.body_map.remove(&id) {
@@ -772,7 +773,13 @@ impl Runtime {
 
         let mut stale = std::mem::take(&mut self.physics.stale_ids_3d);
         stale.clear();
-        stale.extend(world.body_map.keys().copied().filter(|id| !alive.contains(id)));
+        stale.extend(
+            world
+                .body_map
+                .keys()
+                .copied()
+                .filter(|id| !alive.contains(id)),
+        );
 
         for id in stale.iter().copied() {
             if let Some(state) = world.body_map.remove(&id) {

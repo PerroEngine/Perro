@@ -335,7 +335,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
     fn startup_splash_overlay_commands(&mut self, alpha: f32) -> Vec<RenderCommand> {
         let alpha = alpha.clamp(0.0, 1.0);
-        if let Some(result) = self.app.runtime.take_render_result(STARTUP_SPLASH_TEXTURE_REQUEST) {
+        if let Some(result) = self
+            .app
+            .runtime
+            .take_render_result(STARTUP_SPLASH_TEXTURE_REQUEST)
+        {
             match result {
                 perro_runtime::RuntimeRenderResult::Texture(id) => {
                     self.startup_splash.texture_id = Some(id);
@@ -362,33 +366,33 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
         let mut commands = Vec::with_capacity(3);
         commands.push(RenderCommand::TwoD(Command2D::SetCamera {
-                camera: Camera2DState::default(),
-            }));
+            camera: Camera2DState::default(),
+        }));
         commands.push(RenderCommand::TwoD(Command2D::UpsertRect {
-                node: STARTUP_SPLASH_BG_NODE,
-                rect: Rect2DCommand {
-                    center: [0.0, 0.0],
-                    size: [virtual_width, virtual_height],
-                    color: [
-                        STARTUP_SPLASH_BG_COLOR[0],
-                        STARTUP_SPLASH_BG_COLOR[1],
-                        STARTUP_SPLASH_BG_COLOR[2],
-                        STARTUP_SPLASH_BG_COLOR[3] * alpha,
-                    ],
-                    z_index: STARTUP_SPLASH_BG_Z,
-                },
-            }));
+            node: STARTUP_SPLASH_BG_NODE,
+            rect: Rect2DCommand {
+                center: [0.0, 0.0],
+                size: [virtual_width, virtual_height],
+                color: [
+                    STARTUP_SPLASH_BG_COLOR[0],
+                    STARTUP_SPLASH_BG_COLOR[1],
+                    STARTUP_SPLASH_BG_COLOR[2],
+                    STARTUP_SPLASH_BG_COLOR[3] * alpha,
+                ],
+                z_index: STARTUP_SPLASH_BG_Z,
+            },
+        }));
 
         if !self.startup_splash.texture_requested
             && let Some(source) = self.startup_splash.source.clone()
         {
             self.startup_splash.texture_requested = true;
             commands.push(RenderCommand::Resource(ResourceCommand::CreateTexture {
-                    request: STARTUP_SPLASH_TEXTURE_REQUEST,
-                    id: TextureID::nil(),
-                    source,
-                    reserved: true,
-                }));
+                request: STARTUP_SPLASH_TEXTURE_REQUEST,
+                id: TextureID::nil(),
+                source,
+                reserved: true,
+            }));
         }
 
         let Some(texture_id) = self.startup_splash.texture_id else {
@@ -403,14 +407,14 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let sx = scale;
         let sy = scale;
         commands.push(RenderCommand::TwoD(Command2D::UpsertSprite {
-                node: STARTUP_SPLASH_IMAGE_NODE,
-                sprite: Sprite2DCommand {
-                    texture: texture_id,
-                    model: [[sx, 0.0, 0.0], [0.0, sy, 0.0], [0.0, 0.0, 1.0]],
-                    tint: [1.0, 1.0, 1.0, alpha],
-                    z_index: STARTUP_SPLASH_IMAGE_Z,
-                },
-            }));
+            node: STARTUP_SPLASH_IMAGE_NODE,
+            sprite: Sprite2DCommand {
+                texture: texture_id,
+                model: [[sx, 0.0, 0.0], [0.0, sy, 0.0], [0.0, 0.0, 1.0]],
+                tint: [1.0, 1.0, 1.0, alpha],
+                z_index: STARTUP_SPLASH_IMAGE_Z,
+            },
+        }));
         commands
     }
 

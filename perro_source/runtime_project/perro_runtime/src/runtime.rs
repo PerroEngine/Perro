@@ -10,10 +10,7 @@ use perro_runtime_context::sub_apis::PreloadedSceneID;
 use perro_scene::Scene;
 use perro_scripting::ScriptConstructor;
 use std::time::Duration;
-use std::{
-    cell::RefCell,
-    sync::Arc,
-};
+use std::{cell::RefCell, sync::Arc};
 
 mod input_bridge;
 mod internal_updates;

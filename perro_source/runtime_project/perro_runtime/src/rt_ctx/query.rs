@@ -56,7 +56,8 @@ fn query_node_ids_with_worker_override(
     }
     let out = match query.scope {
         QueryScope::Root => {
-            if let Some(candidates) = candidate_ids_from_tag_index(&query.expr, tag_index, slot_count)
+            if let Some(candidates) =
+                candidate_ids_from_tag_index(&query.expr, tag_index, slot_count)
             {
                 scan_candidates(arena, candidates, &plan)
             } else {
@@ -164,11 +165,7 @@ fn candidate_ids_from_tag_index<'a>(
                     out.push(id);
                 }
             }
-            if out.is_empty() {
-                None
-            } else {
-                Some(out)
-            }
+            if out.is_empty() { None } else { Some(out) }
         }
     }
 }

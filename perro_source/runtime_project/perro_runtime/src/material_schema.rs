@@ -10,8 +10,12 @@ pub fn load_from_source(source: &str) -> Option<Material3D> {
     if source.is_empty() {
         return None;
     }
-    if source.ends_with(".pmat") {
-        return load_pmat(source);
+    let (path, fragment) = split_source_fragment(source);
+    if path.ends_with(".pmat") {
+        return load_pmat(path);
+    }
+    if path.ends_with(".glb") || path.ends_with(".gltf") {
+        return load_gltf_material(path, fragment);
     }
     None
 }
@@ -38,6 +42,93 @@ fn load_pmat(source: &str) -> Option<Material3D> {
 
     let entries = parse_pmat_key_values(text)?;
     from_object(entries.as_ref())
+}
+
+fn load_gltf_material(path: &str, fragment: Option<&str>) -> Option<Material3D> {
+    let bytes = load_asset(path).ok()?;
+    let (doc, _buffers, _images) = gltf::import_slice(&bytes).ok()?;
+    let index = parse_fragment_index(fragment, &["mat", "material"]).unwrap_or(0) as usize;
+
+    let material = doc.materials().nth(index);
+    let Some(material) = material else {
+        return Some(Material3D::Standard(StandardMaterial3D::default()));
+    };
+
+    let pbr = material.pbr_metallic_roughness();
+    let base_color = pbr.base_color_factor();
+    let emissive_factor = material.emissive_factor();
+    Some(Material3D::Standard(StandardMaterial3D {
+        base_color_factor: base_color,
+        roughness_factor: pbr.roughness_factor(),
+        metallic_factor: pbr.metallic_factor(),
+        occlusion_strength: material
+            .occlusion_texture()
+            .map(|occ| occ.strength())
+            .unwrap_or(1.0),
+        emissive_factor,
+        alpha_mode: match material.alpha_mode() {
+            gltf::material::AlphaMode::Opaque => 0,
+            gltf::material::AlphaMode::Mask => 1,
+            gltf::material::AlphaMode::Blend => 2,
+        },
+        alpha_cutoff: material.alpha_cutoff().unwrap_or(0.5),
+        double_sided: material.double_sided(),
+        flat_shading: false,
+        normal_scale: material
+            .normal_texture()
+            .map(|normal| normal.scale())
+            .unwrap_or(1.0),
+        base_color_texture: pbr
+            .base_color_texture()
+            .map(|tex| tex.texture().index() as u32)
+            .unwrap_or(u32::MAX),
+        metallic_roughness_texture: pbr
+            .metallic_roughness_texture()
+            .map(|tex| tex.texture().index() as u32)
+            .unwrap_or(u32::MAX),
+        normal_texture: material
+            .normal_texture()
+            .map(|tex| tex.texture().index() as u32)
+            .unwrap_or(u32::MAX),
+        occlusion_texture: material
+            .occlusion_texture()
+            .map(|tex| tex.texture().index() as u32)
+            .unwrap_or(u32::MAX),
+        emissive_texture: material
+            .emissive_texture()
+            .map(|tex| tex.texture().index() as u32)
+            .unwrap_or(u32::MAX),
+    }))
+}
+
+fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
+    let Some((path, selector)) = source.rsplit_once(':') else {
+        return (source, None);
+    };
+    if path.is_empty() {
+        return (source, None);
+    }
+    if selector.contains('/') || selector.contains('\\') {
+        return (source, None);
+    }
+    if selector.contains('[') && selector.ends_with(']') {
+        return (path, Some(selector));
+    }
+    (source, None)
+}
+
+fn parse_fragment_index(fragment: Option<&str>, keys: &[&str]) -> Option<u32> {
+    let fragment = fragment?;
+    if let Some((name, rest)) = fragment.split_once('[') {
+        let name = name.trim();
+        if keys.contains(&name) {
+            let value = rest.strip_suffix(']')?.trim();
+            if let Ok(parsed) = value.parse::<u32>() {
+                return Some(parsed);
+            }
+        }
+    }
+    None
 }
 
 fn pmat_looks_like_object(text: &str) -> bool {
