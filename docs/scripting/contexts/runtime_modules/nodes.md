@@ -75,6 +75,28 @@ Tag/query macros:
 - `query_first!(ctx, expr) -> Option<NodeID>`
 - `query_first!(ctx, expr, in_subtree(parent_id)) -> Option<NodeID>`
 
+Mesh surface/material query macros:
+
+- `mesh_surface_at_world_point_3d!(ctx, node_id, world_point) -> Option<MeshSurfaceHit3D>`
+- `mesh_material_regions_3d!(ctx, node_id, material_id) -> Vec<MeshMaterialRegion3D>`
+
+`MeshSurfaceHit3D` fields:
+
+- `instance_index`: instance id for `MultiMeshInstance3D` (0 for regular mesh)
+- `surface_index`: matched mesh surface
+- `material`: material bound on that surface (`Option<MaterialID>`)
+- `world_point`: nearest point on mesh in world space
+- `local_point`: nearest point in mesh local space
+- `distance`: distance from query point to nearest point
+
+`MeshMaterialRegion3D` fields:
+
+- `instance_index`, `surface_index`, `material`
+- `triangle_count`
+- `center_world`, `center_local`
+- `aabb_min_world`, `aabb_max_world`
+- `aabb_min_local`, `aabb_max_local`
+
 What queries are:
 
 - Query is a runtime filter that returns `NodeID` of nodes that match the values.
@@ -153,5 +175,25 @@ if let Some(world) = get_global_transform_3d!(ctx, self_id) {
 let muzzle_local = Vector3::new(0.0, 0.0, -1.0);
 if let Some(muzzle_world) = to_global_point_3d!(ctx, self_id, muzzle_local) {
     // Use world-space point for spawning/projectiles/etc.
+}
+```
+
+Mesh query examples:
+
+```rust
+let p = Vector3::new(2.0, 1.0, -5.0);
+if let Some(hit) = mesh_surface_at_world_point_3d!(ctx, mesh_node_id, p) {
+    // hit.surface_index
+    // hit.material
+    // hit.world_point
+}
+```
+
+```rust
+let regions = mesh_material_regions_3d!(ctx, mesh_node_id, material_id);
+for r in regions {
+    // r.surface_index
+    // r.center_world
+    // r.aabb_min_world / r.aabb_max_world
 }
 ```

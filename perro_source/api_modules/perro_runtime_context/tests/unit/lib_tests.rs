@@ -216,6 +216,22 @@ impl NodeAPI for DummyRuntime {
     ) -> Option<perro_structs::Transform3D> {
         None
     }
+
+    fn mesh_surface_at_world_point(
+        &mut self,
+        _node_id: NodeID,
+        _world_point: perro_structs::Vector3,
+    ) -> Option<MeshSurfaceHit3D> {
+        None
+    }
+
+    fn mesh_material_regions(
+        &mut self,
+        _node_id: NodeID,
+        _material: perro_ids::MaterialID,
+    ) -> Vec<MeshMaterialRegion3D> {
+        Vec::new()
+    }
 }
 
 impl ScriptAPI for DummyRuntime {
@@ -495,6 +511,11 @@ fn script_macros_typecheck_and_forward() {
         ),
         None
     );
+    assert_eq!(
+        mesh_surface_at_world_point_3d!(&mut ctx, id, Vector3::new(0.0, 0.0, 0.0)),
+        None
+    );
+    assert!(mesh_material_regions_3d!(&mut ctx, id, perro_ids::MaterialID::new(1)).is_empty());
     assert!(apply_force!(&mut ctx, id, Vector2::new(8.0, 0.0)));
     assert!(apply_force!(&mut ctx, id, Vector3::new(0.0, 3.5, 0.0)));
     assert!(apply_impulse!(&mut ctx, id, Vector2::new(0.0, 1.25)));

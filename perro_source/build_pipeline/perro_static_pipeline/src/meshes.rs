@@ -8,7 +8,7 @@ use std::{
 };
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
-const PMESH_VERSION: u32 = 3;
+const PMESH_VERSION: u32 = 4;
 const MESHLET_TRIANGLES: usize = 64;
 
 #[derive(Clone, Copy)]
@@ -26,6 +26,12 @@ struct PackedMeshlet {
     index_count: u32,
     center: [f32; 3],
     radius: f32,
+}
+
+#[derive(Clone, Copy)]
+struct PackedSurfaceRange {
+    index_start: u32,
+    index_count: u32,
 }
 
 #[derive(Clone)]
@@ -167,71 +173,88 @@ fn build_gltf_mesh_entries(
     let rel_base = rel_base.to_string_lossy().replace('\\', "/");
 
     for (mesh_index, mesh) in doc.meshes().enumerate() {
-        let Some(primitive) = mesh.primitives().next() else {
-            continue;
-        };
-        let reader =
-            primitive.reader(|buffer| buffers.get(buffer.index()).map(|data| data.0.as_slice()));
-
-        let Some(positions) = reader.read_positions() else {
-            continue;
-        };
         let mut vertices = Vec::<PackedVertex>::new();
-        let normals: Vec<[f32; 3]> = reader
-            .read_normals()
-            .map(|iter| iter.collect())
-            .unwrap_or_default();
-        let tex_coords: Vec<[f32; 2]> = reader
-            .read_tex_coords(0)
-            .map(|iter| iter.into_f32().collect())
-            .unwrap_or_default();
-        let joints: Vec<[u16; 4]> = reader
-            .read_joints(0)
-            .map(|iter| iter.into_u16().collect())
-            .unwrap_or_default();
-        let mut weights: Vec<[f32; 4]> = reader
-            .read_weights(0)
-            .map(|iter| iter.into_f32().collect())
-            .unwrap_or_default();
-        if weights.is_empty() && !joints.is_empty() {
-            weights = vec![[1.0, 0.0, 0.0, 0.0]; joints.len()];
-        }
-        for (index, position) in positions.enumerate() {
-            let normal = normals.get(index).copied().unwrap_or([0.0, 1.0, 0.0]);
-            let uv = tex_coords.get(index).copied().unwrap_or([0.0, 0.0]);
-            let joint = joints.get(index).copied().unwrap_or([0, 0, 0, 0]);
-            let mut weight = weights.get(index).copied().unwrap_or([1.0, 0.0, 0.0, 0.0]);
-            let sum = weight.iter().copied().sum::<f32>();
-            if sum > 0.0 {
-                let inv = sum.recip();
-                weight.iter_mut().for_each(|w| *w *= inv);
-            } else {
-                weight = [1.0, 0.0, 0.0, 0.0];
+        let mut indices = Vec::<u32>::new();
+        let mut surface_ranges = Vec::<PackedSurfaceRange>::new();
+
+        for primitive in mesh.primitives() {
+            let reader =
+                primitive.reader(|buffer| buffers.get(buffer.index()).map(|data| data.0.as_slice()));
+            let Some(positions_iter) = reader.read_positions() else {
+                continue;
+            };
+            let positions: Vec<[f32; 3]> = positions_iter.collect();
+            if positions.is_empty() {
+                continue;
             }
-            vertices.push(PackedVertex {
-                position,
-                normal,
-                uv,
-                joints: joint,
-                weights: weight,
-            });
+
+            let normals: Vec<[f32; 3]> = reader
+                .read_normals()
+                .map(|iter| iter.collect())
+                .unwrap_or_default();
+            let tex_coords: Vec<[f32; 2]> = reader
+                .read_tex_coords(0)
+                .map(|iter| iter.into_f32().collect())
+                .unwrap_or_default();
+            let joints: Vec<[u16; 4]> = reader
+                .read_joints(0)
+                .map(|iter| iter.into_u16().collect())
+                .unwrap_or_default();
+            let mut weights: Vec<[f32; 4]> = reader
+                .read_weights(0)
+                .map(|iter| iter.into_f32().collect())
+                .unwrap_or_default();
+            if weights.is_empty() && !joints.is_empty() {
+                weights = vec![[1.0, 0.0, 0.0, 0.0]; joints.len()];
+            }
+
+            let base_vertex = vertices.len() as u32;
+            for (index, position) in positions.iter().copied().enumerate() {
+                let normal = normals.get(index).copied().unwrap_or([0.0, 1.0, 0.0]);
+                let uv = tex_coords.get(index).copied().unwrap_or([0.0, 0.0]);
+                let joint = joints.get(index).copied().unwrap_or([0, 0, 0, 0]);
+                let mut weight = weights.get(index).copied().unwrap_or([1.0, 0.0, 0.0, 0.0]);
+                let sum = weight.iter().copied().sum::<f32>();
+                if sum > 0.0 {
+                    let inv = sum.recip();
+                    weight.iter_mut().for_each(|w| *w *= inv);
+                } else {
+                    weight = [1.0, 0.0, 0.0, 0.0];
+                }
+                vertices.push(PackedVertex {
+                    position,
+                    normal,
+                    uv,
+                    joints: joint,
+                    weights: weight,
+                });
+            }
+
+            let surface_start = indices.len() as u32;
+            if let Some(read_indices) = reader.read_indices() {
+                indices.extend(read_indices.into_u32().map(|i| i + base_vertex));
+            } else {
+                indices.extend((0..positions.len() as u32).map(|i| i + base_vertex));
+            }
+            let surface_count = (indices.len() as u32).saturating_sub(surface_start);
+            if surface_count > 0 {
+                surface_ranges.push(PackedSurfaceRange {
+                    index_start: surface_start,
+                    index_count: surface_count,
+                });
+            }
         }
-        if vertices.is_empty() {
+
+        if vertices.is_empty() || indices.is_empty() {
             continue;
         }
 
-        let indices: Vec<u32> = if let Some(read_indices) = reader.read_indices() {
-            read_indices.into_u32().collect()
+        let (indices, surface_ranges, meshlets) = if bake_meshlets {
+            pack_meshlets_with_surfaces(&vertices, &indices, &surface_ranges)
         } else {
-            (0..vertices.len() as u32).collect()
+            (indices, surface_ranges, Vec::new())
         };
-
-        let (indices, meshlets) = if bake_meshlets {
-            pack_meshlets(&vertices, &indices)
-        } else {
-            (indices, Vec::new())
-        };
-        let pmesh = encode_pmesh(&vertices, &indices, &meshlets)?;
+        let pmesh = encode_pmesh(&vertices, &indices, &surface_ranges, &meshlets)?;
 
         let embedded_rel_path = format!("{rel_base}_mesh{mesh_index}.pmesh");
         let key_bracket = format!("{res_path}:mesh[{mesh_index}]");
@@ -250,6 +273,7 @@ fn build_gltf_mesh_entries(
 fn encode_pmesh(
     vertices: &[PackedVertex],
     indices: &[u32],
+    surface_ranges: &[PackedSurfaceRange],
     meshlets: &[PackedMeshlet],
 ) -> io::Result<Vec<u8>> {
     let mut raw = Vec::<u8>::with_capacity(
@@ -258,6 +282,7 @@ fn encode_pmesh(
                 + (4 * std::mem::size_of::<u16>())
                 + (4 * std::mem::size_of::<f32>()))
             + std::mem::size_of_val(indices)
+            + surface_ranges.len() * (2 * std::mem::size_of::<u32>())
             + meshlets.len() * (2 * std::mem::size_of::<u32>() + 4 * std::mem::size_of::<f32>()),
     );
 
@@ -282,6 +307,10 @@ fn encode_pmesh(
     for &index in indices {
         raw.extend_from_slice(&index.to_le_bytes());
     }
+    for range in surface_ranges {
+        raw.extend_from_slice(&range.index_start.to_le_bytes());
+        raw.extend_from_slice(&range.index_count.to_le_bytes());
+    }
     for meshlet in meshlets {
         raw.extend_from_slice(&meshlet.index_start.to_le_bytes());
         raw.extend_from_slice(&meshlet.index_count.to_le_bytes());
@@ -292,15 +321,75 @@ fn encode_pmesh(
     }
 
     let compressed = compress_zlib_best(&raw)?;
-    let mut out = Vec::with_capacity(5 + 5 * std::mem::size_of::<u32>() + compressed.len());
+    let mut out = Vec::with_capacity(5 + 6 * std::mem::size_of::<u32>() + compressed.len());
     out.extend_from_slice(PMESH_MAGIC);
     out.extend_from_slice(&PMESH_VERSION.to_le_bytes());
     out.extend_from_slice(&(vertices.len() as u32).to_le_bytes());
     out.extend_from_slice(&(indices.len() as u32).to_le_bytes());
+    out.extend_from_slice(&(surface_ranges.len() as u32).to_le_bytes());
     out.extend_from_slice(&(meshlets.len() as u32).to_le_bytes());
     out.extend_from_slice(&(raw.len() as u32).to_le_bytes());
     out.extend_from_slice(&compressed);
     Ok(out)
+}
+
+fn pack_meshlets_with_surfaces(
+    vertices: &[PackedVertex],
+    indices: &[u32],
+    surface_ranges: &[PackedSurfaceRange],
+) -> (Vec<u32>, Vec<PackedSurfaceRange>, Vec<PackedMeshlet>) {
+    if surface_ranges.is_empty() {
+        let (packed_indices, meshlets) = pack_meshlets(vertices, indices);
+        return (
+            packed_indices,
+            vec![PackedSurfaceRange {
+                index_start: 0,
+                index_count: indices.len() as u32,
+            }],
+            meshlets,
+        );
+    }
+
+    let mut packed_indices = Vec::with_capacity(indices.len());
+    let mut packed_ranges = Vec::with_capacity(surface_ranges.len());
+    let mut meshlets = Vec::new();
+
+    for range in surface_ranges {
+        let start = range.index_start as usize;
+        let end = start.saturating_add(range.index_count as usize).min(indices.len());
+        if start >= end {
+            continue;
+        }
+        let (surface_indices, mut surface_meshlets) = pack_meshlets(vertices, &indices[start..end]);
+        if surface_indices.is_empty() {
+            continue;
+        }
+        let packed_start = packed_indices.len() as u32;
+        let packed_count = surface_indices.len() as u32;
+        packed_indices.extend(surface_indices);
+        for meshlet in &mut surface_meshlets {
+            meshlet.index_start += packed_start;
+        }
+        meshlets.extend(surface_meshlets);
+        packed_ranges.push(PackedSurfaceRange {
+            index_start: packed_start,
+            index_count: packed_count,
+        });
+    }
+
+    if packed_indices.is_empty() {
+        let (fallback_indices, fallback_meshlets) = pack_meshlets(vertices, indices);
+        return (
+            fallback_indices,
+            vec![PackedSurfaceRange {
+                index_start: 0,
+                index_count: indices.len() as u32,
+            }],
+            fallback_meshlets,
+        );
+    }
+
+    (packed_indices, packed_ranges, meshlets)
 }
 
 fn pack_meshlets(vertices: &[PackedVertex], indices: &[u32]) -> (Vec<u32>, Vec<PackedMeshlet>) {

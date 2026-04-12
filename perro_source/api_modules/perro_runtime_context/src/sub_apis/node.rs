@@ -1,4 +1,4 @@
-use perro_ids::{IntoTagID, NodeID, TagID};
+use perro_ids::{IntoTagID, MaterialID, NodeID, TagID};
 use perro_nodes::{NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData};
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
@@ -39,6 +39,30 @@ pub trait IntoNodeTags {
 pub enum ChildSelector {
     Index(usize),
     Name(Cow<'static, str>),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MeshSurfaceHit3D {
+    pub instance_index: u32,
+    pub surface_index: u32,
+    pub material: Option<MaterialID>,
+    pub world_point: Vector3,
+    pub local_point: Vector3,
+    pub distance: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MeshMaterialRegion3D {
+    pub instance_index: u32,
+    pub surface_index: u32,
+    pub material: Option<MaterialID>,
+    pub triangle_count: u32,
+    pub center_world: Vector3,
+    pub center_local: Vector3,
+    pub aabb_min_world: Vector3,
+    pub aabb_max_world: Vector3,
+    pub aabb_min_local: Vector3,
+    pub aabb_max_local: Vector3,
 }
 
 pub trait IntoChildSelector {
@@ -447,6 +471,27 @@ pub trait NodeAPI {
         node_id: NodeID,
         global: Transform3D,
     ) -> Option<Transform3D>;
+
+    /// Finds the mesh surface nearest to a world-space point for a 3D mesh node.
+    ///
+    /// Returns `None` when:
+    /// - node does not exist
+    /// - node is not a mesh-bearing 3D node
+    /// - mesh source cannot be resolved/decoded
+    fn mesh_surface_at_world_point(
+        &mut self,
+        node_id: NodeID,
+        world_point: Vector3,
+    ) -> Option<MeshSurfaceHit3D>;
+
+    /// Returns regions (one per matching surface) where `material` exists on a mesh node.
+    ///
+    /// Region bounds/centers are coarse geometric summaries for gameplay queries.
+    fn mesh_material_regions(
+        &mut self,
+        node_id: NodeID,
+        material: MaterialID,
+    ) -> Vec<MeshMaterialRegion3D>;
 }
 
 pub struct NodeModule<'rt, R: NodeAPI + ?Sized> {
@@ -695,6 +740,22 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         global: Transform3D,
     ) -> Option<Transform3D> {
         self.rt.to_local_transform_3d(node_id, global)
+    }
+
+    pub fn mesh_surface_at_world_point(
+        &mut self,
+        node_id: NodeID,
+        world_point: Vector3,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.rt.mesh_surface_at_world_point(node_id, world_point)
+    }
+
+    pub fn mesh_material_regions(
+        &mut self,
+        node_id: NodeID,
+        material: MaterialID,
+    ) -> Vec<MeshMaterialRegion3D> {
+        self.rt.mesh_material_regions(node_id, material)
     }
 }
 
@@ -1048,6 +1109,24 @@ macro_rules! to_global_transform_3d {
 macro_rules! to_local_transform_3d {
     ($ctx:expr, $id:expr, $transform:expr) => {
         $ctx.Nodes().to_local_transform_3d($id, $transform)
+    };
+}
+
+/// Finds nearest mesh surface at a world-space point for a mesh node.
+/// Usage: `mesh_surface_at_world_point_3d!(ctx, node_id, world_point) -> Option<MeshSurfaceHit3D>`.
+#[macro_export]
+macro_rules! mesh_surface_at_world_point_3d {
+    ($ctx:expr, $id:expr, $point:expr) => {
+        $ctx.Nodes().mesh_surface_at_world_point($id, $point)
+    };
+}
+
+/// Returns mesh regions that use the target material.
+/// Usage: `mesh_material_regions_3d!(ctx, node_id, material_id) -> Vec<MeshMaterialRegion3D>`.
+#[macro_export]
+macro_rules! mesh_material_regions_3d {
+    ($ctx:expr, $id:expr, $material:expr) => {
+        $ctx.Nodes().mesh_material_regions($id, $material)
     };
 }
 

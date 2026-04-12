@@ -1,9 +1,9 @@
-use perro_ids::{IntoTagID, TagID};
+use perro_ids::{IntoTagID, MaterialID, TagID};
 use perro_nodes::{
     Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, Renderable, SceneNode,
     SceneNodeData,
 };
-use perro_runtime_context::sub_apis::{NodeAPI, TagQuery};
+use perro_runtime_context::sub_apis::{MeshMaterialRegion3D, MeshSurfaceHit3D, NodeAPI, TagQuery};
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
 
@@ -682,6 +682,22 @@ impl NodeAPI for Runtime {
             .inverse();
         let local = inv_basis * global.to_mat4();
         Some(Transform3D::from_mat4(local))
+    }
+
+    fn mesh_surface_at_world_point(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        world_point: Vector3,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.query_mesh_surface_at_world_point(node_id, world_point)
+    }
+
+    fn mesh_material_regions(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        material: MaterialID,
+    ) -> Vec<MeshMaterialRegion3D> {
+        self.query_mesh_material_regions(node_id, material)
     }
 }
 

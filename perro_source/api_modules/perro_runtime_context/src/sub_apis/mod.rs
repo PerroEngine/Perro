@@ -7,7 +7,10 @@ mod signal;
 mod time;
 
 pub use animation::{AnimPlayerAPI, AnimPlayerModule};
-pub use node::{IntoNodeTags, NodeAPI, NodeModule, QueryExpr, QueryScope, TagQuery};
+pub use node::{
+    IntoNodeTags, MeshMaterialRegion3D, MeshSurfaceHit3D, NodeAPI, NodeModule, QueryExpr,
+    QueryScope, TagQuery,
+};
 pub use physics::{IntoImpulseDirection, PhysicsAPI, PhysicsModule};
 pub use scene::{
     IntoPreloadedSceneID, IntoPreloadedSceneTarget, IntoSceneLoadSource, IntoScenePath,

@@ -3506,14 +3506,33 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if version != 1 && version != 2 && version != 3 {
+    if version != 1 && version != 2 && version != 3 && version != 4 {
         return None;
     }
-    let vertex_count = u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize;
-    let index_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
-    let meshlet_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
-    let raw_len = u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize;
-    let raw = decompress_zlib(&bytes[25..]).ok()?;
+    let (vertex_count, index_count, surface_count, meshlet_count, raw_len, payload_start) =
+        if version == 4 {
+            if bytes.len() < 29 {
+                return None;
+            }
+            (
+                u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize,
+                29usize,
+            )
+        } else {
+            (
+                u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
+                0usize,
+                u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize,
+                25usize,
+            )
+        };
+    let raw = decompress_zlib(&bytes[payload_start..]).ok()?;
     if raw.len() != raw_len {
         return None;
     }
@@ -3526,9 +3545,11 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     };
     let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
     let index_bytes = index_count.checked_mul(4)?;
+    let surface_bytes = surface_count.checked_mul(8)?;
     let meshlet_bytes = meshlet_count.checked_mul(24)?;
     let required = vertex_bytes
         .checked_add(index_bytes)?
+        .checked_add(surface_bytes)?
         .checked_add(meshlet_bytes)?;
     if raw.len() < required {
         return None;
@@ -3601,8 +3622,18 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         let off = index_start + i * 4;
         indices.push(u32::from_le_bytes(raw[off..off + 4].try_into().ok()?));
     }
+    let mut surface_ranges = Vec::with_capacity(surface_count);
+    let surface_start = vertex_bytes + index_bytes;
+    for i in 0..surface_count {
+        let off = surface_start + i * 8;
+        surface_ranges.push(MeshRange {
+            index_start: u32::from_le_bytes(raw[off..off + 4].try_into().ok()?),
+            index_count: u32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?),
+            base_vertex: 0,
+        });
+    }
     let mut meshlets = Vec::with_capacity(meshlet_count);
-    let meshlet_start = vertex_bytes + index_bytes;
+    let meshlet_start = vertex_bytes + index_bytes + surface_bytes;
     for i in 0..meshlet_count {
         let off = meshlet_start + i * 24;
         meshlets.push(DecodedMeshlet {
@@ -3620,7 +3651,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     Some(DecodedMesh {
         vertices,
         indices,
-        surface_ranges: Vec::new(),
+        surface_ranges,
         meshlets,
     })
 }

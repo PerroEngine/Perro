@@ -14,6 +14,7 @@ use std::{cell::RefCell, sync::Arc};
 
 mod input_bridge;
 mod internal_updates;
+mod mesh_query;
 mod physics;
 mod render_2d;
 mod render_3d;

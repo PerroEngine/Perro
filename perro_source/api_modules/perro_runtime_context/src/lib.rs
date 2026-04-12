@@ -13,10 +13,10 @@ pub mod prelude {
     pub use crate::sub_apis::{
         AnimPlayerAPI, AnimPlayerModule, Attribute, IntoImpulseDirection, IntoNodeTags,
         IntoPreloadedSceneID, IntoPreloadedSceneTarget, IntoSceneLoadSource, IntoScenePath,
-        IntoScriptMemberID, Member, NodeAPI, NodeModule, PhysicsAPI, PhysicsModule,
-        PreloadedSceneID, PreloadedSceneTarget, QueryExpr, QueryScope, SceneAPI, SceneLoadSource,
-        SceneModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule, TagQuery, TimeAPI,
-        TimeModule,
+        IntoScriptMemberID, Member, MeshMaterialRegion3D, MeshSurfaceHit3D, NodeAPI, NodeModule,
+        PhysicsAPI, PhysicsModule, PreloadedSceneID, PreloadedSceneTarget, QueryExpr, QueryScope,
+        SceneAPI, SceneLoadSource, SceneModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule,
+        TagQuery, TimeAPI, TimeModule,
     };
     pub use crate::{
         anim_player_bind, anim_player_clear_bindings, anim_player_pause, anim_player_play,
@@ -25,13 +25,14 @@ pub mod prelude {
         delta_time_capped, delta_time_clamped, elapsed_time, fixed_delta_time, get_child,
         get_children, get_global_transform_2d, get_global_transform_3d, get_node_children_ids,
         get_node_name, get_node_parent_id, get_node_tags, get_node_type, get_var, has_attribute,
-        member, members_with, query, query_first, remove_node, reparent, reparent_multi,
-        scene_drop_preloaded, scene_free_preloaded, scene_load, scene_preload, script_attach,
-        script_detach, set_global_transform_2d, set_global_transform_3d, set_node_name, set_var,
-        signal_connect, signal_disconnect, signal_emit, tag_add, tag_remove, tag_set,
-        to_global_point_2d, to_global_point_3d, to_global_transform_2d, to_global_transform_3d,
-        to_local_point_2d, to_local_point_3d, to_local_transform_2d, to_local_transform_3d,
-        with_base_node, with_base_node_mut, with_node, with_node_mut, with_state, with_state_mut,
+        member, members_with, mesh_material_regions_3d, mesh_surface_at_world_point_3d, query,
+        query_first, remove_node, reparent, reparent_multi, scene_drop_preloaded,
+        scene_free_preloaded, scene_load, scene_preload, script_attach, script_detach,
+        set_global_transform_2d, set_global_transform_3d, set_node_name, set_var, signal_connect,
+        signal_disconnect, signal_emit, tag_add, tag_remove, tag_set, to_global_point_2d,
+        to_global_point_3d, to_global_transform_2d, to_global_transform_3d, to_local_point_2d,
+        to_local_point_3d, to_local_transform_2d, to_local_transform_3d, with_base_node,
+        with_base_node_mut, with_node, with_node_mut, with_state, with_state_mut,
     };
     pub use perro_ids::{func, method, sid, signal, smid, tag, tags, var};
     pub use perro_variant::{params, variant};
