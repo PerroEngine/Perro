@@ -65,7 +65,6 @@ pub(super) fn merge_prepared_scene(
         if !animation_bindings.is_empty() {
             animation_player_bindings.push((node, animation_bindings));
         }
-        let _ = runtime.ensure_terrain_instance_data(node);
         if let Some(source) = animation_source {
             let res = ResourceContext::new(resource_api.as_ref());
             let animation = res.Animations().load(&source);

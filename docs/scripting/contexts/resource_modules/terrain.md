@@ -43,7 +43,10 @@ Current terrain model (runtime):
   - Runtime behavior:
     - Layer query source is imported from `terrain.glb` UV-authored layer data.
     - First matching layer by index is selected (matching uses `color_tolerance`).
-    - Visual: each layer resolves to its configured `.pmat`.
+    - Visual:
+      - Runtime uses imported GLB layer-map texture pixels directly for terrain UV draw.
+      - Imported terrain vertex UVs are used per vertex on runtime chunk meshes (not triangle-color split draw).
+      - Layer `.pmat` mapping is kept for layer meaning/behavior flow, but UV texture draw fidelity is primary in this path.
     - Physics: imported baked triangle-layer mapping drives per-layer friction/restitution overrides.
 - `TerrainInstance3D` scene fields can override folder defaults:
   - `pixels_per_meter` (legacy alias for `sample_rate`)

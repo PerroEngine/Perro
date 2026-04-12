@@ -7,7 +7,6 @@ pub use perro_runtime as runtime;
 pub use perro_runtime_context as runtime_context;
 pub use perro_scripting as scripting;
 pub use perro_structs as structs;
-pub use perro_terrain as terrain;
 pub use perro_variant as variant;
 
 #[allow(unused_imports)]
@@ -18,5 +17,4 @@ pub mod prelude {
     pub use perro_nodes::prelude::*;
     pub use perro_scripting::prelude::*;
     pub use perro_structs::prelude::*;
-    pub use perro_terrain::prelude::*;
 }

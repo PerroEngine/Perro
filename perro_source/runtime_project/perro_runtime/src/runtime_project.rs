@@ -22,7 +22,6 @@ pub enum ProviderMode {
 pub type StaticSceneLookup = fn(&str) -> Option<&'static Scene>;
 pub type StaticLocalizationLookup = fn(Locale, u64) -> Option<&'static str>;
 pub type StaticMaterialLookup = fn(&str) -> Option<&'static Material3D>;
-pub type StaticTerrainLookup = fn(&str) -> Option<&'static [u8]>;
 pub type StaticParticleLookup = fn(&str) -> Option<&'static ParticleProfile3D>;
 pub type StaticAnimationLookup = fn(&str) -> Option<&'static AnimationClip>;
 pub type StaticSkeletonLookup = fn(&str) -> Option<&'static [u8]>;
@@ -39,7 +38,6 @@ pub struct RuntimeProject {
     pub static_scene_lookup: Option<StaticSceneLookup>,
     pub static_localization_lookup: Option<StaticLocalizationLookup>,
     pub static_material_lookup: Option<StaticMaterialLookup>,
-    pub static_terrain_lookup: Option<StaticTerrainLookup>,
     pub static_particle_lookup: Option<StaticParticleLookup>,
     pub static_animation_lookup: Option<StaticAnimationLookup>,
     pub static_skeleton_lookup: Option<StaticSkeletonLookup>,
@@ -59,7 +57,6 @@ impl RuntimeProject {
             static_scene_lookup: None,
             static_localization_lookup: None,
             static_material_lookup: None,
-            static_terrain_lookup: None,
             static_particle_lookup: None,
             static_animation_lookup: None,
             static_skeleton_lookup: None,
@@ -79,7 +76,6 @@ impl RuntimeProject {
             static_scene_lookup: None,
             static_localization_lookup: None,
             static_material_lookup: None,
-            static_terrain_lookup: None,
             static_particle_lookup: None,
             static_animation_lookup: None,
             static_skeleton_lookup: None,
@@ -108,7 +104,6 @@ impl RuntimeProject {
             static_scene_lookup: None,
             static_localization_lookup: None,
             static_material_lookup: None,
-            static_terrain_lookup: None,
             static_particle_lookup: None,
             static_animation_lookup: None,
             static_skeleton_lookup: None,
@@ -135,11 +130,6 @@ impl RuntimeProject {
 
     pub fn with_static_material_lookup(mut self, lookup: StaticMaterialLookup) -> Self {
         self.static_material_lookup = Some(lookup);
-        self
-    }
-
-    pub fn with_static_terrain_lookup(mut self, lookup: StaticTerrainLookup) -> Self {
-        self.static_terrain_lookup = Some(lookup);
         self
     }
 

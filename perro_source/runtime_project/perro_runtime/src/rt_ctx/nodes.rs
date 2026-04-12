@@ -405,7 +405,7 @@ impl NodeAPI for Runtime {
             // Remove script state first so script-side lookups cannot outlive node removal.
             let _ = self.remove_script_instance(current);
 
-            let (parent_id, terrain_id) = match self.nodes.get(current) {
+            let parent_id = match self.nodes.get(current) {
                 Some(node) => {
                     for &tag in node.tags_slice() {
                         let mut remove_entry = false;
@@ -417,11 +417,7 @@ impl NodeAPI for Runtime {
                             self.node_index.node_tag_index.remove(&tag);
                         }
                     }
-                    let terrain_id = match &node.data {
-                        SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
-                        _ => None,
-                    };
-                    (node.get_parent(), terrain_id)
+                    node.get_parent()
                 }
                 None => continue,
             };
@@ -430,16 +426,6 @@ impl NodeAPI for Runtime {
                 && let Some(parent) = self.nodes.get_mut(parent_id)
             {
                 parent.remove_child(current);
-            }
-
-            if let Some(terrain_id) = terrain_id
-                && !terrain_id.is_nil()
-            {
-                let _ = self
-                    .terrain_store
-                    .lock()
-                    .expect("terrain store mutex poisoned")
-                    .remove(terrain_id);
             }
 
             self.unregister_internal_node_schedules(current);

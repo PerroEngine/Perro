@@ -227,18 +227,8 @@ impl Runtime {
         self.render_3d.mesh_sources.clear();
         self.render_3d.material_surface_sources.clear();
         self.render_3d.material_surface_overrides.clear();
-        self.render_3d.terrain_materials.clear();
-        self.render_3d.terrain_instance_settings.clear();
-        self.render_3d.terrain_instance_cache.clear();
-        self.render_3d.terrain_chunk_meshes.clear();
-        self.render_3d.terrain_chunk_keys_by_node.clear();
-        self.render_3d.terrain_chunk_draws.clear();
         self.render_3d.particle_path_cache.clear();
         self.render_3d.removed_nodes.clear();
-        self.terrain_store
-            .lock()
-            .expect("terrain store mutex poisoned")
-            .clear();
         if self.provider_mode == ProviderMode::Dynamic {
             self.script_runtime.dynamic_script_registry.clear();
         }

@@ -258,11 +258,9 @@ fn locale_from_code(code: &'static str) -> Locale {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cns::TerrainStore;
     use perro_io::{ProjectRoot, set_project_root};
     use perro_project::LocalizationConfig;
     use std::path::PathBuf;
-    use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_temp_dir(label: &str) -> PathBuf {
@@ -303,7 +301,6 @@ mod tests {
                 key_column: "key".to_string(),
                 default_locale: "en".to_string(),
             }),
-            std::sync::Arc::new(Mutex::new(TerrainStore::new())),
         );
 
         assert_eq!(
@@ -369,7 +366,6 @@ mod tests {
                 key_column: "key".to_string(),
                 default_locale: "en".to_string(),
             }),
-            std::sync::Arc::new(Mutex::new(TerrainStore::new())),
         );
 
         assert_eq!(

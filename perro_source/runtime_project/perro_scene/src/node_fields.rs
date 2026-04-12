@@ -13,7 +13,6 @@ pub enum NodeField {
     Area2D(Area2DField),
     MeshInstance3D(MeshInstance3DField),
     Skeleton3D(Skeleton3DField),
-    TerrainInstance3D(TerrainInstance3DField),
     Camera3D(Camera3DField),
     ParticleEmitter3D(ParticleEmitter3DField),
     AnimationPlayer(AnimationPlayerField),
@@ -103,15 +102,6 @@ pub enum MeshInstance3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Skeleton3DField {
     Skeleton,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TerrainInstance3DField {
-    Terrain,
-    PixelsPerMeter,
-    MapResolutionPx,
-    ShowDebugVertices,
-    ShowDebugEdges,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -302,24 +292,6 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::Skeleton3D => match field {
             "skeleton" => Some(NodeField::Skeleton3D(Skeleton3DField::Skeleton)),
-            _ => None,
-        },
-        NodeType::TerrainInstance3D => match field {
-            "terrain" => Some(NodeField::TerrainInstance3D(
-                TerrainInstance3DField::Terrain,
-            )),
-            "pixels_per_meter" | "terrain_pixels_per_meter" => Some(NodeField::TerrainInstance3D(
-                TerrainInstance3DField::PixelsPerMeter,
-            )),
-            "map_resolution_px" | "terrain_map_resolution_px" => Some(
-                NodeField::TerrainInstance3D(TerrainInstance3DField::MapResolutionPx),
-            ),
-            "show_debug_vertices" => Some(NodeField::TerrainInstance3D(
-                TerrainInstance3DField::ShowDebugVertices,
-            )),
-            "show_debug_edges" => Some(NodeField::TerrainInstance3D(
-                TerrainInstance3DField::ShowDebugEdges,
-            )),
             _ => None,
         },
         NodeType::Camera3D => match field {

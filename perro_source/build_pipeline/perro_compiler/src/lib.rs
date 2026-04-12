@@ -102,9 +102,6 @@ pub fn compile_project_bundle(project_root: &Path, profile: bool) -> Result<(), 
     perro_static_pipeline::generate_static_materials(project_root).map_err(|err| {
         CompilerError::SceneParse(format!("material static generation failed: {err}"))
     })?;
-    perro_static_pipeline::generate_static_terrains(project_root).map_err(|err| {
-        CompilerError::SceneParse(format!("terrain static generation failed: {err}"))
-    })?;
     perro_static_pipeline::generate_static_particles(project_root).map_err(|err| {
         CompilerError::SceneParse(format!("particle static generation failed: {err}"))
     })?;
@@ -382,7 +379,6 @@ fn generate_embedded_main(project_root: &Path) -> Result<(), CompilerError> {
         "perro_render_bridge = \"0.1.0\"",
     )?;
     ensure_project_dependency_line(project_root, "perro_runtime", "perro_runtime = \"0.1.0\"")?;
-    ensure_project_dependency_line(project_root, "perro_terrain", "perro_terrain = \"0.1.0\"")?;
     ensure_project_dependency_line(
         project_root,
         "perro_animation",
@@ -426,7 +422,6 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         scene_lookup: static_assets::scenes::lookup_scene,\n\
         localization_lookup: static_assets::localizations::lookup_localized_string,\n\
         material_lookup: static_assets::materials::lookup_material,\n\
-        terrain_lookup: static_assets::terrains::lookup_terrain,\n\
         particle_lookup: static_assets::particles::lookup_particle,\n\
         animation_lookup: static_assets::animations::lookup_animation,\n\
         mesh_lookup: static_assets::meshes::lookup_mesh,\n\

@@ -8,7 +8,6 @@ mod particles;
 mod scenes;
 mod shaders;
 mod skeletons;
-mod terrains;
 mod textures;
 
 pub use animations::generate_static_animations;
@@ -21,7 +20,6 @@ pub use particles::generate_static_particles;
 pub use scenes::generate_static_scenes;
 pub use shaders::generate_static_shaders;
 pub use skeletons::generate_static_skeletons;
-pub use terrains::generate_static_terrains;
 pub use textures::generate_static_textures;
 
 use std::{
@@ -60,7 +58,7 @@ pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineErro
     fs::create_dir_all(&static_dir)?;
     fs::write(
         static_dir.join("mod.rs"),
-        "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod terrains;\npub mod particles;\npub mod animations;\npub mod meshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n",
+        "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod animations;\npub mod meshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n",
     )?;
     Ok(())
 }

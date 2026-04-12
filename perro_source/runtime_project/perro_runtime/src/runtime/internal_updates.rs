@@ -138,10 +138,7 @@ impl Runtime {
                     self.internal_updates.physics_body_pos_2d[slot] = Some(pos);
                 }
             }
-            NodeType::StaticBody3D
-            | NodeType::Area3D
-            | NodeType::RigidBody3D
-            | NodeType::TerrainInstance3D => {
+            NodeType::StaticBody3D | NodeType::Area3D | NodeType::RigidBody3D => {
                 let slot = id.index() as usize;
                 if self.internal_updates.physics_body_pos_3d.len() <= slot {
                     self.internal_updates

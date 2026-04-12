@@ -96,6 +96,18 @@ Useful crates:
 
 ---
 
+## Tense Rule
+
+- use base verb only
+- no past tense
+- no future tense
+- no continuous tense
+- no helper verbs (`will`, `would`, `can`, `could`, `am`, `is`, `are`, `was`, `were`)
+- convert all action to present/base form
+- prefer `I do`, `I fix`, `I add`, `this use`, `this reduce`
+
+---
+
 ## Symbols
 
 - flow → `->`

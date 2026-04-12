@@ -63,12 +63,30 @@ pub struct TerrainBakedChunkPhysics {
 }
 
 #[derive(Clone, Debug)]
+pub struct TerrainChunkVertexUvs {
+    pub chunk_x: i32,
+    pub chunk_z: i32,
+    pub vertex_uvs: Vec<[f32; 2]>,
+    pub uv_hash: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct TerrainImportedLayerMap {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+    pub content_hash: u64,
+}
+
+#[derive(Clone, Debug)]
 pub struct TerrainSourceSettings {
     pub sample_rate: Option<f32>,
     pub layers: Vec<TerrainLayerRule>,
     pub layer_blendings: Vec<(usize, usize)>,
     pub baked_chunk_tiles: Vec<TerrainBakedChunkTile>,
     pub baked_chunk_physics: Vec<TerrainBakedChunkPhysics>,
+    pub chunk_vertex_uvs: Vec<TerrainChunkVertexUvs>,
+    pub imported_layer_map: Option<TerrainImportedLayerMap>,
 }
 
 impl Default for TerrainSourceSettings {
@@ -79,6 +97,8 @@ impl Default for TerrainSourceSettings {
             layer_blendings: Vec::new(),
             baked_chunk_tiles: Vec::new(),
             baked_chunk_physics: Vec::new(),
+            chunk_vertex_uvs: Vec::new(),
+            imported_layer_map: None,
         }
     }
 }
@@ -347,20 +367,66 @@ pub fn decode_loaded_terrain_blob(blob: &[u8]) -> Option<LoadedTerrainSource> {
             });
         }
     }
+    let mut chunk_vertex_uvs = Vec::new();
+    if rd.cursor < rd.bytes.len() {
+        let chunk_count = rd.read_u32()? as usize;
+        chunk_vertex_uvs = Vec::with_capacity(chunk_count);
+        for _ in 0..chunk_count {
+            let chunk_x = rd.read_i32()?;
+            let chunk_z = rd.read_i32()?;
+            let uv_count = rd.read_u32()? as usize;
+            let mut vertex_uvs = Vec::with_capacity(uv_count);
+            for _ in 0..uv_count {
+                vertex_uvs.push([rd.read_f32()?, rd.read_f32()?]);
+            }
+            let uv_hash = hash_uv_slice(&vertex_uvs);
+            chunk_vertex_uvs.push(TerrainChunkVertexUvs {
+                chunk_x,
+                chunk_z,
+                vertex_uvs,
+                uv_hash,
+            });
+        }
+    }
+    let mut imported_layer_map = None;
+    if rd.cursor < rd.bytes.len() {
+        let has_map = rd.read_u8()?;
+        if has_map != 0 {
+            let width = rd.read_u32()?;
+            let height = rd.read_u32()?;
+            let rgba_len = rd.read_u32()? as usize;
+            let rgba = rd.read_exact(rgba_len)?.to_vec();
+            if width > 0 && height > 0 && rgba.len() == width as usize * height as usize * 4 {
+                let content_hash = hash_layer_map_rgba(width, height, &rgba);
+                imported_layer_map = Some(TerrainImportedLayerMap {
+                    width,
+                    height,
+                    rgba,
+                    content_hash,
+                });
+            } else {
+                return None;
+            }
+        }
+    }
 
     if rd.cursor != rd.bytes.len() {
         return None;
     }
 
+    let mut settings = TerrainSourceSettings {
+        sample_rate,
+        layers,
+        layer_blendings,
+        baked_chunk_tiles,
+        baked_chunk_physics,
+        chunk_vertex_uvs,
+        imported_layer_map,
+    };
+    sort_chunk_vertex_uvs(&mut settings);
     Some(LoadedTerrainSource {
         terrain,
-        settings: TerrainSourceSettings {
-            sample_rate,
-            layers,
-            layer_blendings,
-            baked_chunk_tiles,
-            baked_chunk_physics,
-        },
+        settings,
     })
 }
 
@@ -418,6 +484,8 @@ impl<'a> TerrainBlobReader<'a> {
 struct ImportedGltfTerrain {
     terrain: TerrainData,
     baked_chunk_physics: Vec<TerrainBakedChunkPhysics>,
+    chunk_vertex_uvs: Vec<TerrainChunkVertexUvs>,
+    imported_layer_map: Option<TerrainImportedLayerMap>,
 }
 
 fn load_terrain_from_disk_path(path: &Path) -> Option<LoadedTerrainSource> {
@@ -428,6 +496,9 @@ fn load_terrain_from_disk_path(path: &Path) -> Option<LoadedTerrainSource> {
             return load_terrain_from_gltf_file(path, DEFAULT_CHUNK_SIZE_METERS, &settings.layers)
                 .map(|imported| {
                     settings.baked_chunk_physics = imported.baked_chunk_physics;
+                    settings.chunk_vertex_uvs = imported.chunk_vertex_uvs;
+                    settings.imported_layer_map = imported.imported_layer_map;
+                    sort_chunk_vertex_uvs(&mut settings);
                     LoadedTerrainSource {
                         terrain: imported.terrain,
                         settings,
@@ -466,6 +537,13 @@ fn load_terrain_from_disk_path(path: &Path) -> Option<LoadedTerrainSource> {
                 if !imported.baked_chunk_physics.is_empty() {
                     merged.baked_chunk_physics = imported.baked_chunk_physics;
                 }
+                if !imported.chunk_vertex_uvs.is_empty() {
+                    merged.chunk_vertex_uvs = imported.chunk_vertex_uvs;
+                }
+                if imported.imported_layer_map.is_some() {
+                    merged.imported_layer_map = imported.imported_layer_map;
+                }
+                sort_chunk_vertex_uvs(&mut merged);
                 LoadedTerrainSource {
                     terrain: imported.terrain,
                     settings: merged,
@@ -1075,9 +1153,11 @@ fn load_terrain_from_gltf_file(
     let scene = doc.default_scene().or_else(|| doc.scenes().next())?;
 
     let mut positions = Vec::<Vec3>::new();
+    let mut vertex_uvs = Vec::<[f32; 2]>::new();
     let mut triangles = Vec::<[u32; 3]>::new();
     let mut triangle_uvs = Vec::<[[f32; 2]; 3]>::new();
     let mut layer_map = None;
+    let mut layer_map_uv_set: Option<u32> = None;
 
     for node in scene.nodes() {
         collect_gltf_scene_node_meshes(
@@ -1086,9 +1166,11 @@ fn load_terrain_from_gltf_file(
             &buffers,
             &images,
             &mut positions,
+            &mut vertex_uvs,
             &mut triangles,
             &mut triangle_uvs,
             &mut layer_map,
+            &mut layer_map_uv_set,
         );
     }
 
@@ -1099,8 +1181,9 @@ fn load_terrain_from_gltf_file(
         triangle_uvs.resize(triangles.len(), [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]);
     }
 
-    let (chunks, baked_chunk_physics) = chunk_mesh_positions(
+    let (chunks, baked_chunk_physics, chunk_vertex_uvs) = chunk_mesh_positions(
         &positions,
+        &vertex_uvs,
         &triangles,
         &triangle_uvs,
         layer_map.as_ref(),
@@ -1111,9 +1194,17 @@ fn load_terrain_from_gltf_file(
     for (coord, chunk) in chunks {
         terrain.set_chunk(coord, chunk);
     }
+    let imported_layer_map = layer_map.as_ref().map(|img| TerrainImportedLayerMap {
+        width: img.width(),
+        height: img.height(),
+        rgba: img.as_raw().clone(),
+        content_hash: hash_layer_map_rgba(img.width(), img.height(), img.as_raw()),
+    });
     Some(ImportedGltfTerrain {
         terrain,
         baked_chunk_physics,
+        chunk_vertex_uvs,
+        imported_layer_map,
     })
 }
 
@@ -1123,9 +1214,11 @@ fn collect_gltf_scene_node_meshes(
     buffers: &[gltf::buffer::Data],
     images: &[gltf::image::Data],
     positions: &mut Vec<Vec3>,
+    vertex_uvs: &mut Vec<[f32; 2]>,
     triangles: &mut Vec<[u32; 3]>,
     triangle_uvs: &mut Vec<[[f32; 2]; 3]>,
     layer_map: &mut Option<image::RgbaImage>,
+    layer_map_uv_set: &mut Option<u32>,
 ) {
     let local = Mat4::from_cols_array_2d(&node.transform().matrix());
     let world = parent * local;
@@ -1141,20 +1234,34 @@ fn collect_gltf_scene_node_meshes(
             if local_positions.len() < 3 {
                 continue;
             }
+            let base_color_tex = primitive
+                .material()
+                .pbr_metallic_roughness()
+                .base_color_texture();
+            let base_color_uv_set = base_color_tex.as_ref().map(|tex| tex.tex_coord());
+            if layer_map.is_none() && let Some(tex) = base_color_tex.as_ref() {
+                let idx = tex.texture().source().index();
+                if let Some(img) = images.get(idx).and_then(rgba_image_from_gltf_image) {
+                    *layer_map = Some(img);
+                    *layer_map_uv_set = Some(tex.tex_coord());
+                }
+            }
+            let uv_set = (*layer_map_uv_set)
+                .or(base_color_uv_set)
+                .unwrap_or(0);
             let local_uvs = reader
-                .read_tex_coords(0)
+                .read_tex_coords(uv_set)
+                .or_else(|| reader.read_tex_coords(0))
                 .map(|uv| uv.into_f32().collect::<Vec<_>>());
 
-            if layer_map.is_none()
-                && let Some(tex) = primitive.material().pbr_metallic_roughness().base_color_texture()
-            {
-                let idx = tex.texture().source().index();
-                *layer_map = images.get(idx).and_then(rgba_image_from_gltf_image);
-            }
-
             let base = positions.len() as u32;
-            for p in &local_positions {
+            for (i, p) in local_positions.iter().enumerate() {
                 positions.push(world.transform_point3(*p));
+                let uv = local_uvs
+                    .as_ref()
+                    .and_then(|uvs| uvs.get(i).copied())
+                    .unwrap_or([0.0, 0.0]);
+                vertex_uvs.push(uv);
             }
 
             if let Some(indices_reader) = reader.read_indices() {
@@ -1196,9 +1303,11 @@ fn collect_gltf_scene_node_meshes(
             buffers,
             images,
             positions,
+            vertex_uvs,
             triangles,
             triangle_uvs,
             layer_map,
+            layer_map_uv_set,
         );
     }
 }
@@ -1254,18 +1363,24 @@ struct ChunkMeshBuilder {
     map_global_to_local: HashMap<u32, usize>,
     xz_to_height: HashMap<(i64, i64), f32>,
     vertices: Vec<Vertex>,
+    vertex_uvs: Vec<[f32; 2]>,
     triangles: Vec<Triangle>,
     triangle_layers: Vec<i32>,
 }
 
 fn chunk_mesh_positions(
     positions: &[Vec3],
+    vertex_uvs: &[[f32; 2]],
     triangles: &[[u32; 3]],
     triangle_uvs: &[[[f32; 2]; 3]],
     layer_map: Option<&image::RgbaImage>,
     layer_rules: &[TerrainLayerRule],
     chunk_size_meters: f32,
-) -> Option<(Vec<(ChunkCoord, TerrainChunk)>, Vec<TerrainBakedChunkPhysics>)> {
+) -> Option<(
+    Vec<(ChunkCoord, TerrainChunk)>,
+    Vec<TerrainBakedChunkPhysics>,
+    Vec<TerrainChunkVertexUvs>,
+)> {
     let mut builders = HashMap::<ChunkCoord, ChunkMeshBuilder>::new();
     let xz_quant = 1.0 / HEIGHTFIELD_EPSILON.max(1.0e-4);
 
@@ -1287,6 +1402,7 @@ fn chunk_mesh_positions(
             map_global_to_local: HashMap::new(),
             xz_to_height: HashMap::new(),
             vertices: Vec::new(),
+            vertex_uvs: Vec::new(),
             triangles: Vec::new(),
             triangle_layers: Vec::new(),
         });
@@ -1313,6 +1429,10 @@ fn chunk_mesh_positions(
 
             let local_id = builder.vertices.len();
             builder.vertices.push(Vertex::new(local));
+            let uv = *vertex_uvs
+                .get(usize::try_from(*global_idx).ok()?)
+                .unwrap_or(&[0.0, 0.0]);
+            builder.vertex_uvs.push(uv);
             builder.map_global_to_local.insert(*global_idx, local_id);
             local_ids[corner] = local_id;
         }
@@ -1337,6 +1457,7 @@ fn chunk_mesh_positions(
 
     let mut out = Vec::new();
     let mut baked_chunk_physics = Vec::new();
+    let mut baked_chunk_uvs = Vec::new();
     for (_coord, build) in builders {
         if build.vertices.len() < 3 || build.triangles.is_empty() {
             continue;
@@ -1350,6 +1471,16 @@ fn chunk_mesh_positions(
         .ok()?;
         if !chunk.has_single_height_per_xz(HEIGHTFIELD_EPSILON) {
             return None;
+        }
+        if build.vertex_uvs.len() == chunk.vertices().len() {
+            let vertex_uvs = build.vertex_uvs;
+            let uv_hash = hash_uv_slice(&vertex_uvs);
+            baked_chunk_uvs.push(TerrainChunkVertexUvs {
+                chunk_x: build.coord.x,
+                chunk_z: build.coord.z,
+                vertex_uvs,
+                uv_hash,
+            });
         }
         if !layer_rules.is_empty() {
             let mut layers = build.triangle_layers;
@@ -1368,7 +1499,8 @@ fn chunk_mesh_positions(
         return None;
     }
     baked_chunk_physics.sort_unstable_by_key(|v| (v.chunk_x, v.chunk_z));
-    Some((out, baked_chunk_physics))
+    baked_chunk_uvs.sort_unstable_by_key(|v| (v.chunk_x, v.chunk_z));
+    Some((out, baked_chunk_physics, baked_chunk_uvs))
 }
 
 fn classify_terrain_layer_from_triangle_uvs(
@@ -1394,8 +1526,8 @@ fn classify_terrain_layer_from_uv(
 ) -> Option<usize> {
     let w = map.width().max(1);
     let h = map.height().max(1);
-    let u = uv[0].rem_euclid(1.0);
-    let v = uv[1].rem_euclid(1.0);
+    let u = uv[0].clamp(0.0, 1.0);
+    let v = uv[1].clamp(0.0, 1.0);
     let sample = |vv: f32| {
         let x = (u * w.saturating_sub(1) as f32).round() as u32;
         let y = (vv * h.saturating_sub(1) as f32).round() as u32;
@@ -1422,6 +1554,42 @@ fn terrain_layer_color_matches(pixel: image::Rgba<u8>, layer: &TerrainLayerRule)
     let db = (pixel[2] as i16 - layer.color.b as i16).unsigned_abs() as u8;
     let tol = layer.color_tolerance;
     dr <= tol && dg <= tol && db <= tol
+}
+
+fn sort_chunk_vertex_uvs(settings: &mut TerrainSourceSettings) {
+    settings
+        .chunk_vertex_uvs
+        .sort_unstable_by_key(|entry| (entry.chunk_x, entry.chunk_z));
+}
+
+fn hash_uv_slice(uvs: &[[f32; 2]]) -> u64 {
+    let mut h = 0xD134_2543_DE82_E11Du64 ^ uvs.len() as u64;
+    for uv in uvs {
+        h ^= uv[0].to_bits() as u64;
+        h = h.rotate_left(7).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        h ^= uv[1].to_bits() as u64;
+        h = h.rotate_left(7).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    }
+    h
+}
+
+fn hash_layer_map_rgba(width: u32, height: u32, rgba: &[u8]) -> u64 {
+    let mut h = 0x9E37_79B9_7F4A_7C15u64;
+    h ^= width as u64;
+    h = h.rotate_left(11).wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
+    h ^= height as u64;
+    h = h.rotate_left(11).wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
+    for chunk in rgba.chunks_exact(8) {
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(chunk);
+        h ^= u64::from_le_bytes(bytes);
+        h = h.rotate_left(9).wrapping_mul(0x94D0_49BB_1331_11EB);
+    }
+    for b in rgba.chunks_exact(8).remainder() {
+        h ^= *b as u64;
+        h = h.rotate_left(5).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    }
+    h
 }
 
 fn build_mesh_from_height_samples(

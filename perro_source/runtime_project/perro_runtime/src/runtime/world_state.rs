@@ -1,8 +1,6 @@
 use super::Runtime;
-use crate::terrain_schema::{self, LoadedTerrainSource};
 use perro_ids::NodeID;
 use perro_nodes::SceneNodeData;
-use perro_terrain::{ChunkCoord, DEFAULT_CHUNK_SIZE_METERS, TerrainData};
 
 impl Runtime {
     pub(crate) fn node_local_visible(data: &SceneNodeData) -> bool {
@@ -21,7 +19,6 @@ impl Runtime {
             SceneNodeData::StaticBody3D(node) => node.visible,
             SceneNodeData::Area3D(node) => node.visible,
             SceneNodeData::RigidBody3D(node) => node.visible,
-            SceneNodeData::TerrainInstance3D(node) => node.visible,
             SceneNodeData::Camera3D(node) => node.visible,
             SceneNodeData::AmbientLight3D(node) => node.visible,
             SceneNodeData::Sky3D(node) => node.visible,
@@ -55,84 +52,5 @@ impl Runtime {
             hops += 1;
         }
         false
-    }
-
-    pub(crate) fn default_terrain_data() -> TerrainData {
-        let mut terrain = TerrainData::new(DEFAULT_CHUNK_SIZE_METERS);
-        for cz in -1..=1 {
-            for cx in -1..=1 {
-                let _ = terrain.ensure_chunk(ChunkCoord::new(cx, cz));
-            }
-        }
-        terrain
-    }
-
-    pub(crate) fn ensure_terrain_instance_data(&mut self, node: NodeID) -> bool {
-        let Some((current_id, terrain_source)) =
-            self.nodes
-                .get(node)
-                .and_then(|scene_node| match &scene_node.data {
-                    SceneNodeData::TerrainInstance3D(terrain) => Some((
-                        terrain.terrain,
-                        terrain.terrain_source.as_ref().map(|v| v.to_string()),
-                    )),
-                    _ => None,
-                })
-        else {
-            return false;
-        };
-
-        if !current_id.is_nil() {
-            let store = self
-                .terrain_store
-                .lock()
-                .expect("terrain store mutex poisoned");
-            if store.get(current_id).is_some() {
-                return true;
-            }
-        }
-
-        let loaded = terrain_source
-            .as_deref()
-            .and_then(|source| self.load_terrain_data_from_source(source))
-            .unwrap_or_else(|| LoadedTerrainSource {
-                terrain: Self::default_terrain_data(),
-                settings: terrain_schema::TerrainSourceSettings::default(),
-            });
-
-        let id = self
-            .terrain_store
-            .lock()
-            .expect("terrain store mutex poisoned")
-            .insert(loaded.terrain);
-        if let Some(scene_node) = self.nodes.get_mut(node)
-            && let SceneNodeData::TerrainInstance3D(terrain) = &mut scene_node.data
-        {
-            terrain.terrain = id;
-            if terrain.terrain_pixels_per_meter.is_none() {
-                terrain.terrain_pixels_per_meter = loaded.settings.sample_rate;
-            }
-            self.render_3d
-                .terrain_instance_settings
-                .insert(node, loaded.settings.clone());
-            return true;
-        }
-
-        false
-    }
-
-    fn load_terrain_data_from_source(&self, source: &str) -> Option<LoadedTerrainSource> {
-        let static_lookup = self
-            .project()
-            .and_then(|project| project.static_terrain_lookup);
-        if let Some(lookup) = static_lookup
-            && let Some(blob) = lookup(source)
-        {
-            return terrain_schema::decode_loaded_terrain_blob(blob);
-        }
-        if self.provider_mode() == crate::runtime_project::ProviderMode::Static {
-            return None;
-        }
-        terrain_schema::load_terrain_from_folder_source(source)
     }
 }

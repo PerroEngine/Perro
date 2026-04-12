@@ -4,7 +4,7 @@ use crate::{
     runtime::RuntimeScriptCtor,
 };
 use ahash::{AHashMap, AHashSet};
-use perro_ids::{MaterialID, MeshID, NodeID, TagID, TerrainID, TextureID};
+use perro_ids::{MeshID, NodeID, TagID, TextureID};
 use perro_nodes::Spatial;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, Material3D, MeshSurfaceBinding3D, PointLight3DState,
@@ -12,7 +12,6 @@ use perro_render_bridge::{
     SpotLight3DState,
 };
 use perro_structs::{Transform2D, Transform3D};
-use perro_terrain::{ChunkCoord, TerrainChunk};
 
 pub(crate) struct ScriptRuntimeState {
     pub(crate) active_script_stack: Vec<(usize, NodeID)>,
@@ -324,16 +323,6 @@ pub(crate) struct Render3DState {
     pub(crate) mesh_sources: AHashMap<NodeID, String>,
     pub(crate) material_surface_sources: AHashMap<NodeID, Vec<Option<String>>>,
     pub(crate) material_surface_overrides: AHashMap<NodeID, Vec<Option<Material3D>>>,
-    pub(crate) terrain_materials: AHashMap<String, MaterialID>,
-    pub(crate) terrain_instance_settings:
-        AHashMap<NodeID, crate::terrain_schema::TerrainSourceSettings>,
-    pub(crate) terrain_instance_cache: AHashMap<NodeID, TerrainInstanceCacheState>,
-    pub(crate) terrain_chunk_meshes: AHashMap<TerrainChunkMeshKey, TerrainChunkMeshState>,
-    pub(crate) terrain_chunk_keys_by_node: AHashMap<NodeID, AHashSet<TerrainChunkMeshKey>>,
-    pub(crate) terrain_chunk_draws: AHashMap<TerrainChunkMeshKey, RetainedMeshDrawState>,
-    pub(crate) terrain_active_keys_scratch: AHashSet<TerrainChunkMeshKey>,
-    pub(crate) terrain_stale_keys_scratch: Vec<TerrainChunkMeshKey>,
-    pub(crate) terrain_debug_state: AHashMap<NodeID, TerrainDebugState>,
     pub(crate) collision_debug_state: AHashMap<NodeID, CollisionDebugState>,
     pub(crate) particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile3D>,
     pub(crate) last_camera: Option<Camera3DState>,
@@ -355,15 +344,6 @@ impl Render3DState {
             mesh_sources: AHashMap::default(),
             material_surface_sources: AHashMap::default(),
             material_surface_overrides: AHashMap::default(),
-            terrain_materials: AHashMap::default(),
-            terrain_instance_settings: AHashMap::default(),
-            terrain_instance_cache: AHashMap::default(),
-            terrain_chunk_meshes: AHashMap::default(),
-            terrain_chunk_keys_by_node: AHashMap::default(),
-            terrain_chunk_draws: AHashMap::default(),
-            terrain_active_keys_scratch: AHashSet::default(),
-            terrain_stale_keys_scratch: Vec::new(),
-            terrain_debug_state: AHashMap::default(),
             collision_debug_state: AHashMap::default(),
             particle_path_cache: AHashMap::default(),
             last_camera: None,
@@ -384,51 +364,6 @@ pub(crate) struct RetainedMeshDrawState {
     pub(crate) surfaces: std::sync::Arc<[MeshSurfaceBinding3D]>,
     pub(crate) model: [[f32; 4]; 4],
     pub(crate) skeleton: Option<SkeletonPalette>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct TerrainChunkMeshKey {
-    pub(crate) node: NodeID,
-    pub(crate) coord: ChunkCoord,
-    pub(crate) layer: i32,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct TerrainChunkMeshState {
-    pub(crate) source: String,
-    pub(crate) hash: u64,
-    pub(crate) mesh: MeshID,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct TerrainCachedChunk {
-    pub(crate) coord: ChunkCoord,
-    pub(crate) hash: u64,
-    pub(crate) chunk: TerrainChunk,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct TerrainInstanceCacheState {
-    pub(crate) terrain_id: TerrainID,
-    pub(crate) revision: u64,
-    pub(crate) chunk_size_meters: f32,
-    pub(crate) uv_projection: TerrainUvProjection,
-    pub(crate) chunks: Vec<TerrainCachedChunk>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct TerrainUvProjection {
-    pub(crate) origin_x: f32,
-    pub(crate) origin_z: f32,
-    pub(crate) inv_span_x: f32,
-    pub(crate) inv_span_z: f32,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct TerrainDebugState {
-    pub(crate) signature: u64,
-    pub(crate) point_count: u32,
-    pub(crate) edge_count: u32,
 }
 
 #[derive(Clone, Copy, Debug)]

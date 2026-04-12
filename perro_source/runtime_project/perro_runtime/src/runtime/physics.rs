@@ -1,5 +1,4 @@
 use crate::Runtime;
-use crate::terrain_schema::TerrainSourceSettings;
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{NodeID, SignalID};
 use perro_nodes::{
@@ -7,11 +6,9 @@ use perro_nodes::{
 };
 use perro_runtime_context::sub_apis::{NodeAPI, SignalAPI};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
-use perro_terrain::{ChunkCoord, TerrainChunk};
 use perro_variant::Variant;
 use rapier2d::{na as na2, prelude as r2};
 use rapier3d::{na as na3, prelude as r3};
-use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BodyKind {
@@ -41,10 +38,6 @@ struct ShapeDesc3D {
 #[derive(Clone, Debug)]
 enum ShapeKind3D {
     Primitive(Shape3D),
-    TriMesh {
-        vertices: Arc<[na3::Point3<f32>]>,
-        indices: Arc<[[u32; 3]]>,
-    },
 }
 
 #[derive(Clone, Debug)]
@@ -455,7 +448,7 @@ impl Runtime {
         let mut out = Vec::with_capacity(node_count);
         for i in 0..node_count {
             let id = self.internal_updates.physics_body_nodes_3d[i];
-            let (kind, enabled, rigid, material, terrain_ref, terrain_settings) = {
+            let (kind, enabled, rigid, material) = {
                 let Some(node) = self.nodes.get(id) else {
                     continue;
                 };
@@ -465,16 +458,12 @@ impl Runtime {
                         body.enabled,
                         None,
                         (body.friction, body.restitution),
-                        None,
-                        None,
                     ),
                     SceneNodeData::Area3D(body) => (
                         BodyKind::Area,
                         body.enabled,
                         None,
                         (0.7, 0.0),
-                        None,
-                        None,
                     ),
                     SceneNodeData::RigidBody3D(body) => (
                         BodyKind::Rigid,
@@ -491,16 +480,6 @@ impl Runtime {
                             angular_damping: body.angular_damping,
                         }),
                         (body.friction, body.restitution),
-                        None,
-                        None,
-                    ),
-                    SceneNodeData::TerrainInstance3D(terrain) => (
-                        BodyKind::Static,
-                        true,
-                        None,
-                        (0.9, 0.0),
-                        Some(terrain.terrain),
-                        self.render_3d.terrain_instance_settings.get(&id).cloned(),
                     ),
                     _ => continue,
                 }
@@ -523,22 +502,6 @@ impl Runtime {
                         shape_signature =
                             hash_collision_shape_3d(shape_signature, shape, kind, global.scale);
                     }
-                }
-            }
-            if let Some(terrain_id) = terrain_ref
-                && !terrain_id.is_nil()
-            {
-                shape_signature = hash_u64(shape_signature, terrain_id.as_u64());
-                if let Some(settings) = terrain_settings.as_ref() {
-                    shape_signature = hash_terrain_settings(shape_signature, settings);
-                }
-                if let Some(revision) = self
-                    .terrain_store
-                    .lock()
-                    .expect("terrain store mutex poisoned")
-                    .revision(terrain_id)
-                {
-                    shape_signature = hash_u64(shape_signature, revision);
                 }
             }
 
@@ -574,21 +537,6 @@ impl Runtime {
                             shapes.push(desc);
                         }
                     }
-                }
-                if let Some(terrain_id) = terrain_ref
-                    && !terrain_id.is_nil()
-                {
-                    let mut chunk_shapes = self.collect_terrain_chunk_shapes(
-                        terrain_id,
-                        global.scale,
-                        material.0,
-                        material.1,
-                        terrain_settings.as_ref(),
-                    );
-                    for desc in &mut chunk_shapes {
-                        desc.sensor = kind == BodyKind::Area;
-                    }
-                    shapes.extend(chunk_shapes);
                 }
             }
 
@@ -1305,34 +1253,6 @@ impl Runtime {
         let _ = SignalAPI::signal_emit(self, signal_id, &params);
     }
 }
-
-fn hash_terrain_settings(mut state: u64, settings: &TerrainSourceSettings) -> u64 {
-    state = hash_u64(state, settings.layers.len() as u64);
-    for layer in &settings.layers {
-        state = hash_u64(state, layer.index as u64);
-        state = hash_u64(state, layer.color.r as u64);
-        state = hash_u64(state, layer.color.g as u64);
-        state = hash_u64(state, layer.color.b as u64);
-        state = hash_u64(state, layer.color_tolerance as u64);
-        if let Some(name) = layer.name.as_deref() {
-            for b in name.as_bytes() {
-                state = hash_u64(state, *b as u64);
-            }
-        }
-        if let Some(source) = layer.material_source.as_deref() {
-            for b in source.as_bytes() {
-                state = hash_u64(state, *b as u64);
-            }
-        }
-        state = hash_u64(state, layer.texture_tile_meters.to_bits() as u64);
-        state = hash_u64(state, layer.texture_rotation_degrees.to_bits() as u64);
-        state = hash_u64(state, layer.texture_hard_cut as u64);
-        state = hash_u64(state, layer.friction.unwrap_or(-1.0).to_bits() as u64);
-        state = hash_u64(state, layer.restitution.unwrap_or(-1.0).to_bits() as u64);
-    }
-    state
-}
-
 fn body_signature_seed(kind: BodyKind) -> u64 {
     match kind {
         BodyKind::Static => 0xA91B_D58C_24F1_7E31,
@@ -1499,108 +1419,6 @@ fn shape_desc_3d(shape: &CollisionShape3D, friction: f32, restitution: f32) -> S
         restitution,
     }
 }
-
-impl Runtime {
-    fn collect_terrain_chunk_shapes(
-        &self,
-        terrain_id: perro_ids::TerrainID,
-        terrain_scale: Vector3,
-        friction: f32,
-        restitution: f32,
-        terrain_settings: Option<&TerrainSourceSettings>,
-    ) -> Vec<ShapeDesc3D> {
-        let store = self
-            .terrain_store
-            .lock()
-            .expect("terrain store mutex poisoned");
-        let Some(data) = store.get(terrain_id) else {
-            return Vec::new();
-        };
-
-        let sx = terrain_scale.x.abs().max(0.0001);
-        let sy = terrain_scale.y.abs().max(0.0001);
-        let sz = terrain_scale.z.abs().max(0.0001);
-        let chunk_size_meters = data.chunk_size_meters();
-        let layer_rules = terrain_settings.map(|s| s.layers.as_slice()).unwrap_or(&[]);
-        let chunk_refs = data.chunks().collect::<Vec<_>>();
-        let baked_physics = terrain_settings
-            .map(|s| s.baked_chunk_physics.as_slice())
-            .unwrap_or(&[]);
-
-        let mut out = Vec::new();
-        for (coord, chunk) in chunk_refs {
-            let Some((vertices, indices)) =
-                terrain_chunk_to_trimesh(chunk, coord, chunk_size_meters, sx, sy, sz)
-            else {
-                continue;
-            };
-            let shared_vertices: Arc<[na3::Point3<f32>]> = Arc::from(vertices);
-
-            if layer_rules.is_empty() || baked_physics.is_empty() {
-                out.push(ShapeDesc3D {
-                    local: Transform3D::IDENTITY,
-                    shape: ShapeKind3D::TriMesh {
-                        vertices: shared_vertices,
-                        indices: Arc::from(indices),
-                    },
-                    sensor: false,
-                    friction,
-                    restitution,
-                });
-                continue;
-            }
-
-            let mut grouped = AHashMap::<usize, Vec<[u32; 3]>>::new();
-            let mut fallback = Vec::<[u32; 3]>::new();
-            let baked_for_chunk = baked_physics
-                .iter()
-                .find(|entry| entry.chunk_x == coord.x && entry.chunk_z == coord.z);
-            for (tri_ix, tri) in indices.iter().copied().enumerate() {
-                let baked_layer = baked_for_chunk
-                    .and_then(|entry| entry.triangle_layers.get(tri_ix))
-                    .copied()
-                    .and_then(|idx| usize::try_from(idx).ok());
-                let layer = baked_layer.and_then(|baked_idx| layer_rules.get(baked_idx).map(|_| baked_idx));
-                if let Some(layer) = layer {
-                    grouped.entry(layer).or_default().push(tri);
-                } else {
-                    fallback.push(tri);
-                }
-            }
-
-            for (layer_idx, layer_tris) in grouped {
-                if layer_tris.is_empty() {
-                    continue;
-                }
-                let layer = &layer_rules[layer_idx];
-                out.push(ShapeDesc3D {
-                    local: Transform3D::IDENTITY,
-                    shape: ShapeKind3D::TriMesh {
-                        vertices: shared_vertices.clone(),
-                        indices: Arc::from(layer_tris),
-                    },
-                    sensor: false,
-                    friction: layer.friction.unwrap_or(friction),
-                    restitution: layer.restitution.unwrap_or(restitution),
-                });
-            }
-            if !fallback.is_empty() {
-                out.push(ShapeDesc3D {
-                    local: Transform3D::IDENTITY,
-                    shape: ShapeKind3D::TriMesh {
-                        vertices: shared_vertices,
-                        indices: Arc::from(fallback),
-                    },
-                    sensor: false,
-                    friction,
-                    restitution,
-                });
-            }
-        }
-        out
-    }
-}
-
 fn build_rigid_body_2d(desc: &BodyDesc2D) -> r2::RigidBody {
     let mut builder = match desc.kind {
         BodyKind::Static => r2::RigidBodyBuilder::fixed(),
@@ -1758,12 +1576,6 @@ fn collider_builder_3d(desc: &ShapeDesc3D) -> Option<r3::Collider> {
                 r3::ColliderBuilder::convex_hull(&points)?
             }
         },
-        ShapeKind3D::TriMesh { vertices, indices } => {
-            if vertices.len() < 3 || indices.is_empty() {
-                return None;
-            }
-            r3::ColliderBuilder::trimesh(vertices.to_vec(), indices.to_vec()).ok()?
-        }
     };
 
     Some(
@@ -1867,59 +1679,4 @@ fn transform_to_iso3(transform: Transform3D) -> na3::Isometry3<f32> {
         ),
         rotation,
     )
-}
-
-fn terrain_chunk_local_to_world(
-    local: perro_structs::Vector3,
-    coord: ChunkCoord,
-    chunk_size_meters: f32,
-) -> na3::Point3<f32> {
-    let center_x = coord.x as f32 * chunk_size_meters;
-    let center_z = coord.z as f32 * chunk_size_meters;
-    na3::Point3::new(local.x + center_x, local.y, local.z + center_z)
-}
-
-fn terrain_chunk_to_trimesh(
-    chunk: &TerrainChunk,
-    coord: ChunkCoord,
-    chunk_size_meters: f32,
-    sx: f32,
-    sy: f32,
-    sz: f32,
-) -> Option<(Vec<na3::Point3<f32>>, Vec<[u32; 3]>)> {
-    if chunk.vertices().is_empty() || chunk.triangles().is_empty() {
-        return None;
-    }
-
-    let mut vertices = Vec::with_capacity(chunk.vertices().len());
-    for vertex in chunk.vertices() {
-        let p = terrain_chunk_local_to_world(vertex.position, coord, chunk_size_meters);
-        vertices.push(na3::Point3::new(p.x * sx, p.y * sy, p.z * sz));
-    }
-
-    let mut indices = Vec::with_capacity(chunk.triangles().len());
-    for tri in chunk.triangles() {
-        if tri.a >= vertices.len() || tri.b >= vertices.len() || tri.c >= vertices.len() {
-            continue;
-        }
-        let a = vertices[tri.a];
-        let b = vertices[tri.b];
-        let c = vertices[tri.c];
-
-        // Keep terrain collision winding consistent with runtime terrain rendering:
-        // top-facing triangles should have non-negative Y normals.
-        let mut ib = tri.b as u32;
-        let mut ic = tri.c as u32;
-        let n = (b - a).cross(&(c - a));
-        if n.y < 0.0 {
-            std::mem::swap(&mut ib, &mut ic);
-        }
-
-        indices.push([tri.a as u32, ib, ic]);
-    }
-
-    if indices.is_empty() {
-        return None;
-    }
-    Some((vertices, indices))
 }

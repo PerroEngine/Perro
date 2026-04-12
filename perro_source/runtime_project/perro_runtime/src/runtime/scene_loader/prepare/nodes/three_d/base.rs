@@ -24,16 +24,6 @@ fn build_skeleton_3d(data: &SceneDefNodeData) -> Skeleton3D {
     node
 }
 
-fn build_terrain_instance_3d(data: &SceneDefNodeData) -> TerrainInstance3D {
-    let mut node = TerrainInstance3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_terrain_instance_3d_fields(&mut node, &data.fields);
-    node
-}
-
 fn apply_node_3d_data(target: &mut Node3D, data: &SceneDefNodeData) {
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(target, base);
@@ -81,45 +71,6 @@ fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[SceneObjec
 }
 
 fn apply_skeleton_3d_fields(_node: &mut Skeleton3D, _fields: &[SceneObjectField]) {}
-
-fn apply_terrain_instance_3d_fields(node: &mut TerrainInstance3D, fields: &[SceneObjectField]) {
-    SceneFieldIterRef::new(fields).for_each(|name, value| {
-        match resolve_node_field("TerrainInstance3D", name) {
-            Some(NodeField::TerrainInstance3D(TerrainInstance3DField::Terrain)) => {
-                node.terrain_source = as_asset_source(value).map(std::borrow::Cow::Owned);
-            }
-            Some(NodeField::TerrainInstance3D(
-                TerrainInstance3DField::PixelsPerMeter,
-            )) => {
-                if let Some(v) = as_f32(value) && v.is_finite() && v > 0.0 {
-                    node.terrain_pixels_per_meter = Some(v);
-                }
-            }
-            Some(NodeField::TerrainInstance3D(
-                TerrainInstance3DField::MapResolutionPx,
-            )) => {
-                if let Some(v) = as_f32(value) && v.is_finite() && v > 0.0 {
-                    node.terrain_map_resolution_px = Some(v);
-                }
-            }
-            Some(NodeField::TerrainInstance3D(
-                TerrainInstance3DField::ShowDebugVertices,
-            )) => {
-                if let Some(v) = as_bool(value) {
-                    node.show_debug_vertices = v;
-                }
-            }
-            Some(NodeField::TerrainInstance3D(
-                TerrainInstance3DField::ShowDebugEdges,
-            )) => {
-                if let Some(v) = as_bool(value) {
-                    node.show_debug_edges = v;
-                }
-            }
-            _ => {}
-        }
-    });
-}
 
 fn extract_mesh_source(data: &SceneDefNodeData) -> Option<String> {
     if data.ty != "MeshInstance3D" {

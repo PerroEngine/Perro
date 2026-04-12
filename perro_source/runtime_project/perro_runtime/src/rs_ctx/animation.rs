@@ -85,7 +85,6 @@ impl RuntimeResourceApi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cns::TerrainStore;
     use crate::runtime_project::StaticAnimationLookup;
     use perro_animation::{
         AnimationBoneSelector, AnimationBoneTarget, AnimationClip, AnimationEvent,
@@ -93,7 +92,7 @@ mod tests {
         AnimationParam, AnimationTrackValue,
     };
     use std::path::PathBuf;
-    use std::sync::{Arc, Mutex, OnceLock};
+    use std::sync::{Arc, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     const TEST_PANIM_SRC: &str = r#"
@@ -132,15 +131,7 @@ fps = 30
     }
 
     fn new_api_with_lookup(lookup: Option<StaticAnimationLookup>) -> Arc<RuntimeResourceApi> {
-        RuntimeResourceApi::new(
-            None,
-            None,
-            None,
-            lookup,
-            None,
-            None,
-            Arc::new(Mutex::new(TerrainStore::new())),
-        )
+        RuntimeResourceApi::new(None, None, None, lookup, None, None)
     }
 
     fn static_clip_lookup(path: &str) -> Option<&'static AnimationClip> {

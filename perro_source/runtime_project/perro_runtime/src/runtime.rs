@@ -1,5 +1,5 @@
 use crate::{
-    cns::{NodeArena, ScriptCollection, TerrainStore},
+    cns::{NodeArena, ScriptCollection},
     rs_ctx::RuntimeResourceApi,
     runtime_project::{ProviderMode, RuntimeProject},
 };
@@ -12,7 +12,7 @@ use perro_scripting::ScriptConstructor;
 use std::time::Duration;
 use std::{
     cell::RefCell,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 mod input_bridge;
@@ -28,9 +28,7 @@ mod transforms;
 mod world_state;
 
 pub(crate) use scene_loader::PendingScriptAttach;
-pub(crate) use state::{
-    CollisionDebugState, TerrainChunkMeshKey, TerrainChunkMeshState, TerrainDebugState,
-};
+pub(crate) use state::CollisionDebugState;
 use state::{
     DirtyState, InternalUpdateState, NodeApiScratchState, NodeIndexState, Render2DState,
     Render3DState, RenderState, ScriptRuntimeState, ScriptSchedules, SignalRuntimeState,
@@ -61,7 +59,6 @@ pub struct Runtime {
 
     render_2d: Render2DState,
     render_3d: Render3DState,
-    pub(crate) terrain_store: Arc<Mutex<TerrainStore>>,
     pub(crate) signal_runtime: SignalRuntimeState,
     pub(crate) node_index: NodeIndexState,
     pub(crate) node_api_scratch: NodeApiScratchState,
@@ -96,7 +93,6 @@ pub struct RuntimeUpdateTiming {
 
 impl Runtime {
     pub fn new() -> Self {
-        let terrain_store = Arc::new(Mutex::new(TerrainStore::new()));
         Self {
             time: Timing {
                 fixed_delta: 0.0,
@@ -120,19 +116,10 @@ impl Runtime {
             internal_updates: InternalUpdateState::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
-            terrain_store: terrain_store.clone(),
             signal_runtime: SignalRuntimeState::new(),
             node_index: NodeIndexState::new(),
             node_api_scratch: NodeApiScratchState::new(),
-            resource_api: RuntimeResourceApi::new(
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                terrain_store,
-            ),
+            resource_api: RuntimeResourceApi::new(None, None, None, None, None, None),
             input: InputSnapshot::new(),
             physics: physics::PhysicsState::new(),
         }
@@ -163,7 +150,6 @@ impl Runtime {
             static_animation_lookup,
             static_localization_lookup,
             localization_config,
-            runtime.terrain_store.clone(),
         );
         if let Some(entries) = script_registry {
             for (path, ctor) in entries {

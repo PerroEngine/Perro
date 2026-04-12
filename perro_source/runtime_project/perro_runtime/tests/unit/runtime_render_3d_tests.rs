@@ -1,11 +1,9 @@
 use super::Runtime;
-use crate::terrain_schema::{TerrainLayerColor, TerrainLayerRule};
 use perro_ids::{MaterialID, MeshID};
 use perro_nodes::{
     CameraProjection, SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D,
     camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, mesh_instance_3d::MeshSurfaceBinding,
     node_3d::Node3D, physics_3d::Shape3D, ray_light_3d::RayLight3D, sky_3d::Sky3D,
-    terrain_instance_3d::TerrainInstance3D,
 };
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
@@ -242,42 +240,6 @@ fn unchanged_mesh_instance_emits_draw() {
 }
 
 #[test]
-fn terrain_instance_emits_runtime_chunk_mesh_commands() {
-    let mut runtime = Runtime::new();
-    let node = runtime
-        .nodes
-        .insert(SceneNode::new(SceneNodeData::TerrainInstance3D(
-            TerrainInstance3D::new(),
-        )));
-
-    runtime.extract_render_3d_commands();
-    let assigned_id = runtime
-        .nodes
-        .get(node)
-        .and_then(|node| match &node.data {
-            SceneNodeData::TerrainInstance3D(terrain) => Some(terrain.terrain),
-            _ => None,
-        })
-        .expect("expected terrain node");
-    assert!(!assigned_id.is_nil());
-    assert!(
-        runtime
-            .terrain_store
-            .lock()
-            .expect("terrain store mutex poisoned")
-            .get(assigned_id)
-            .is_some()
-    );
-
-    let first = collect_commands(&mut runtime);
-    assert!(first.iter().any(|command| matches!(
-        command,
-        RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh { source, .. })
-            if source.starts_with("__terrain_runtime__/")
-    )));
-}
-
-#[test]
 fn active_camera_3d_emits_set_camera_command() {
     let mut runtime = Runtime::new();
     let mut camera = Camera3D::new();
@@ -501,74 +463,6 @@ fn collision_shape_debug_rebuilds_when_parent_moves() {
         .expect("expected collision debug line draw after move");
 
     assert_ne!(first_x, second_x);
-}
-
-#[test]
-fn terrain_layer_bake_upscale_defaults_to_1x_when_sample_rate_not_set() {
-    let rules = vec![TerrainLayerRule {
-        index: 0,
-        name: Some("grass".to_string()),
-        color: TerrainLayerColor::new(0, 255, 0),
-        color_tolerance: 0,
-        material_source: None,
-        texture_tile_meters: 6.0,
-        texture_rotation_degrees: 0.0,
-        texture_hard_cut: false,
-        blend_with: Vec::new(),
-        friction: None,
-        restitution: None,
-    }];
-
-    let upscale = super::terrain_layer_bake_upscale(&rules, None);
-    assert_eq!(upscale, 1);
-}
-
-#[test]
-fn terrain_layer_bake_upscale_matches_requested_sample_rate() {
-    let rules = vec![TerrainLayerRule {
-        index: 0,
-        name: Some("grass".to_string()),
-        color: TerrainLayerColor::new(0, 255, 0),
-        color_tolerance: 0,
-        material_source: None,
-        texture_tile_meters: 6.0,
-        texture_rotation_degrees: 0.0,
-        texture_hard_cut: false,
-        blend_with: Vec::new(),
-        friction: None,
-        restitution: None,
-    }];
-
-    let upscale = super::terrain_layer_bake_upscale(&rules, Some(12.0));
-    assert_eq!(upscale, 12);
-}
-
-#[test]
-fn terrain_tile_uv_window_aligns_shared_chunk_border() {
-    fn source_x_from_uv(u: f32, px0: u32, out_w: u32, upscale: u32) -> f32 {
-        px0 as f32 + (u * out_w as f32) / upscale as f32
-    }
-
-    let upscale = 4u32;
-    let w = 34u32;
-    let h = 22u32;
-    let out_w = w * upscale;
-    let out_h = h * upscale;
-
-    let left_px0 = 31u32;
-    let right_px0 = 47u32;
-    let shared_x = 48u32;
-
-    let (_left_min, left_max) =
-        super::terrain_tile_uv_window(32, 64, shared_x, 80, left_px0, 63, out_w, out_h, upscale);
-    let (right_min, _right_max) = super::terrain_tile_uv_window(
-        shared_x, 64, 64, 80, right_px0, 63, out_w, out_h, upscale,
-    );
-
-    let left_border_src = source_x_from_uv(left_max[0], left_px0, out_w, upscale);
-    let right_border_src = source_x_from_uv(right_min[0], right_px0, out_w, upscale);
-    assert!((left_border_src - right_border_src).abs() < 1.0e-4);
-    assert!((left_border_src - shared_x as f32).abs() < 1.0e-4);
 }
 
 #[test]

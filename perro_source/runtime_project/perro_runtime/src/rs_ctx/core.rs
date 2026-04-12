@@ -1,5 +1,4 @@
 use super::state::{RuntimeLocalizationState, RuntimeResourceState};
-use crate::cns::TerrainStore;
 use crate::runtime_project::{
     StaticAnimationLookup, StaticAudioLookup, StaticLocalizationLookup, StaticMaterialLookup,
     StaticSkeletonLookup,
@@ -20,7 +19,6 @@ pub struct RuntimeResourceApi {
     pub(super) static_skeleton_lookup: Option<StaticSkeletonLookup>,
     pub(super) static_animation_lookup: Option<StaticAnimationLookup>,
     pub(super) static_localization_lookup: Option<StaticLocalizationLookup>,
-    pub(crate) terrain_store: Arc<Mutex<TerrainStore>>,
     pub(super) skeleton_bones_cache: Mutex<HashMap<String, Vec<perro_nodes::skeleton_3d::Bone3D>>>,
     pub(super) viewport_size: Mutex<(u32, u32)>,
 }
@@ -33,7 +31,6 @@ impl RuntimeResourceApi {
         static_animation_lookup: Option<StaticAnimationLookup>,
         static_localization_lookup: Option<StaticLocalizationLookup>,
         localization_config: Option<LocalizationConfig>,
-        terrain_store: Arc<Mutex<TerrainStore>>,
     ) -> Arc<Self> {
         let api = Arc::new(Self {
             state: Mutex::new(RuntimeResourceState::new()),
@@ -45,7 +42,6 @@ impl RuntimeResourceApi {
             static_skeleton_lookup,
             static_animation_lookup,
             static_localization_lookup,
-            terrain_store,
             skeleton_bones_cache: Mutex::new(HashMap::new()),
             viewport_size: Mutex::new((1, 1)),
         });

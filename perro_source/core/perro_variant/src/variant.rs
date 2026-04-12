@@ -141,7 +141,6 @@ pub enum IDs {
     Material(MaterialID),
     Mesh(MeshID),
     Animation(AnimationID),
-    Terrain(TerrainID),
     Light(LightID),
     UIElement(UIElementID),
     Signal(SignalID),
@@ -159,7 +158,6 @@ impl IDs {
             IDs::Material(v) => v.as_u64(),
             IDs::Mesh(v) => v.as_u64(),
             IDs::Animation(v) => v.as_u64(),
-            IDs::Terrain(v) => v.as_u64(),
             IDs::Light(v) => v.as_u64(),
             IDs::UIElement(v) => v.as_u64(),
             IDs::Signal(v) => v.as_u64(),
@@ -484,7 +482,6 @@ macro_rules! impl_statefield_plain_id {
 impl_statefield_plain_id!(MaterialID);
 impl_statefield_plain_id!(MeshID);
 impl_statefield_plain_id!(AnimationID);
-impl_statefield_plain_id!(TerrainID);
 impl_statefield_plain_id!(LightID);
 impl_statefield_plain_id!(UIElementID);
 impl_statefield_plain_id!(SignalID);
@@ -1091,12 +1088,6 @@ impl From<AnimationID> for Variant {
     #[inline]
     fn from(v: AnimationID) -> Self {
         Variant::ID(IDs::Animation(v))
-    }
-}
-impl From<TerrainID> for Variant {
-    #[inline]
-    fn from(v: TerrainID) -> Self {
-        Variant::ID(IDs::Terrain(v))
     }
 }
 impl From<LightID> for Variant {

@@ -1315,7 +1315,6 @@ dependencies = [
  "perro_runtime_context",
  "perro_scripting",
  "perro_structs",
- "perro_terrain",
  "perro_variant",
 ]
 
@@ -1423,7 +1422,6 @@ dependencies = [
  "perro_nodes",
  "perro_render_bridge",
  "perro_structs",
- "perro_terrain",
 ]
 
 [[package]]
@@ -1451,7 +1449,6 @@ dependencies = [
  "perro_scene",
  "perro_scripting",
  "perro_structs",
- "perro_terrain",
  "perro_variant",
  "rapier2d",
  "rapier3d",
@@ -1502,13 +1499,6 @@ name = "perro_structs"
 version = "0.1.0"
 dependencies = [
  "glam",
-]
-
-[[package]]
-name = "perro_terrain"
-version = "0.1.0"
-dependencies = [
- "perro_structs",
 ]
 
 [[package]]
@@ -2595,3 +2585,7 @@ checksum = "ec5f41c76397b7da451efd19915684f727d7e1d516384ca6bd0ec43ec94de23c"
 dependencies = [
  "zune-core",
 ]
+
+[[patch.unused]]
+name = "perro_terrain"
+version = "0.1.0"

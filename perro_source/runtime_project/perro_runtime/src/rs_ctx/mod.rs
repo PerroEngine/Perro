@@ -8,7 +8,6 @@ mod mesh;
 mod post_processing;
 mod skeleton;
 mod state;
-mod terrain;
 mod texture;
 mod viewport;
 mod visual_accessibility;

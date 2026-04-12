@@ -10,8 +10,8 @@ pub mod prelude {
     pub use crate::sub_apis::{
         AnimationAPI, AnimationModule, Audio, AudioAPI, AudioBusID, AudioModule, Draw2DAPI,
         Draw2DModule, Locale, LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule,
-        MeshAPI, MeshModule, PostProcessingAPI, SkeletonAPI, SkeletonModule, TerrainAPI,
-        TerrainModule, TextureAPI, TextureModule, VisualAccessibilityAPI,
+        MeshAPI, MeshModule, PostProcessingAPI, SkeletonAPI, SkeletonModule, TextureAPI,
+        TextureModule, VisualAccessibilityAPI,
     };
     pub use crate::{
         animation_drop, animation_load, animation_reserve, audio_bus, audio_bus_pause,

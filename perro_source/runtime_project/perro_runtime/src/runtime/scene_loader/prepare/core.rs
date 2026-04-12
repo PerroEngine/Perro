@@ -17,7 +17,6 @@ use perro_nodes::{
     sky_3d::{Sky3D, SkyStyle},
     spot_light_3d::SpotLight3D,
     sprite_2d::Sprite2D,
-    terrain_instance_3d::TerrainInstance3D,
     Area2D, Area3D, CollisionShape2D, CollisionShape3D, RigidBody2D, RigidBody3D, SceneNode,
     SceneNodeData, Shape2D, Shape3D, StaticBody2D, StaticBody3D, Triangle2DKind,
 };
@@ -29,7 +28,7 @@ use perro_scene::{
     RayLight3DField, RigidBody2DField, RigidBody3DField, Scene, SceneFieldIterRef,
     SceneNodeData as SceneDefNodeData, SceneNodeEntry as SceneDefNodeEntry, SceneObjectField,
     SceneValue, Skeleton3DField, Sky3DField, SpotLight3DField, Sprite2DField, StaticBody2DField,
-    StaticBody3DField, TerrainInstance3DField, resolve_node_field,
+    StaticBody3DField, resolve_node_field,
 };
 use perro_structs::{
     CustomPostParam, CustomPostParamValue, PostProcessEffect, PostProcessSet, Quaternion, Vector2,
@@ -502,9 +501,6 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "Area3D" => Ok(SceneNodeData::Area3D(build_area_3d(data))),
         "RigidBody3D" => Ok(SceneNodeData::RigidBody3D(build_rigid_body_3d(data))),
         "Skeleton3D" => Ok(SceneNodeData::Skeleton3D(build_skeleton_3d(data))),
-        "TerrainInstance3D" => Ok(SceneNodeData::TerrainInstance3D(build_terrain_instance_3d(
-            data,
-        ))),
         "Camera3D" => Ok(SceneNodeData::Camera3D(build_camera_3d(data))),
         "ParticleEmitter3D" => Ok(SceneNodeData::ParticleEmitter3D(build_particle_emitter_3d(
             data,

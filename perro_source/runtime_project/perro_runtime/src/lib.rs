@@ -4,8 +4,6 @@ mod render_result;
 mod rs_ctx;
 mod runtime;
 mod runtime_project;
-pub mod terrain_bake;
-mod terrain_schema;
 
 pub mod rt_ctx;
 pub use rt_ctx as api;
@@ -20,12 +18,7 @@ pub use runtime_project::{
     LocalizationConfig, OcclusionCulling, ParticleSimDefault, ProjectLoadError, ProviderMode,
     RuntimeProject, RuntimeProjectConfig, StaticAnimationLookup, StaticAudioLookup,
     StaticBytesLookup, StaticLocalizationLookup, StaticMaterialLookup, StaticParticleLookup,
-    StaticProjectConfig, StaticSceneLookup, StaticSkeletonLookup, StaticTerrainLookup,
+    StaticProjectConfig, StaticSceneLookup, StaticSkeletonLookup,
     default_project_toml, ensure_project_layout, ensure_project_toml, load_project_toml,
     parse_project_toml,
-};
-pub use terrain_schema::{
-    LoadedTerrainSource, TerrainBakedChunkPhysics, TerrainBakedChunkTile, TerrainLayerColor,
-    TerrainLayerRule, TerrainSourceSettings, decode_loaded_terrain_blob,
-    load_terrain_from_folder_source, load_terrain_literal,
 };
