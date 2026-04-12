@@ -48,6 +48,7 @@ const SHADOW_MAP_SIZE: u32 = 4096;
 const SHADOW_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const SHADOW_MAP_DEPTH_BIAS_CONST: i32 = 2;
 const SHADOW_MAP_DEPTH_BIAS_SLOPE: f32 = 2.0;
+const TEMP_DISABLE_SHADOWS: bool = true;
 // Debug lock: force a fixed world-space directional light vector.
 // Set to false after validating shadow stability.
 const DEBUG_FORCE_WORLD_SUN_DIR: bool = false;
@@ -5303,6 +5304,15 @@ fn build_shadow_setup(
 ) -> (Scene3DUniform, ShadowUniform, bool, Vec3, f32) {
     let mut shadow_scene = Scene3DUniform::zeroed();
     let mut shadow_uniform = ShadowUniform::zeroed();
+    if TEMP_DISABLE_SHADOWS {
+        return (
+            shadow_scene,
+            shadow_uniform,
+            false,
+            fallback_focus_center,
+            fallback_focus_radius,
+        );
+    }
 
     let explicit_shadow_ray = lighting
         .ray_lights
