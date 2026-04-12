@@ -87,6 +87,8 @@ Mesh surface/material query macros:
 - `material`: material bound on that surface (`Option<MaterialID>`)
 - `world_point`: nearest point on mesh in world space
 - `local_point`: nearest point in mesh local space
+- `world_normal`: surface normal in world space at nearest point
+- `local_normal`: surface normal in mesh local space at nearest point
 - `distance`: distance from query point to nearest point
 
 `MeshMaterialRegion3D` fields:
@@ -186,6 +188,7 @@ if let Some(hit) = mesh_surface_at_world_point_3d!(ctx, mesh_node_id, p) {
     // hit.surface_index
     // hit.material
     // hit.world_point
+    // hit.world_normal
 }
 ```
 

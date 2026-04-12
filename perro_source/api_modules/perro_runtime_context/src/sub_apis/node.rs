@@ -43,11 +43,21 @@ pub enum ChildSelector {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MeshSurfaceHit3D {
+    /// Instance index for `MultiMeshInstance3D` (always `0` for `MeshInstance3D`).
     pub instance_index: u32,
+    /// Surface index on the resolved mesh.
     pub surface_index: u32,
+    /// Material bound on the resolved surface.
     pub material: Option<MaterialID>,
+    /// Nearest point on the surface in world space.
     pub world_point: Vector3,
+    /// Nearest point on the surface in mesh-local space.
     pub local_point: Vector3,
+    /// Surface normal at the hit in world space.
+    pub world_normal: Vector3,
+    /// Surface normal at the hit in mesh-local space.
+    pub local_normal: Vector3,
+    /// Distance from query point to nearest surface point.
     pub distance: f32,
 }
 

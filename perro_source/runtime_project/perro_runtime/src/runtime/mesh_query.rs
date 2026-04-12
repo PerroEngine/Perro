@@ -1,5 +1,5 @@
 use super::Runtime;
-use glam::{Mat4, Vec3};
+use glam::{Mat3, Mat4, Vec3};
 use perro_ids::{MaterialID, NodeID};
 use perro_nodes::{MeshSurfaceBinding, SceneNodeData};
 use perro_runtime_context::sub_apis::{MeshMaterialRegion3D, MeshSurfaceHit3D};
@@ -37,17 +37,20 @@ impl Runtime {
         }
 
         let node_world = self.get_global_transform_3d(node_id)?.to_mat4();
-        let mut best: Option<(u32, u32, Vec3, Vec3, f32)> = None;
+        let mut best: Option<(u32, u32, Vec3, Vec3, Vec3, Vec3, f32)> = None;
         let p_world: Vec3 = world_point.into();
 
         for (instance_index, local) in node.instance_local.iter().enumerate() {
             let world_from_mesh = node_world * *local;
             let mesh_from_world = world_from_mesh.inverse();
+            let world_normal_basis = Mat3::from_mat4(world_from_mesh).inverse().transpose();
 
             for tri in mesh.triangles.iter().copied() {
                 let a = *mesh.vertices.get(tri.a as usize)?;
                 let b = *mesh.vertices.get(tri.b as usize)?;
                 let c = *mesh.vertices.get(tri.c as usize)?;
+                let local_normal = (b - a).cross(c - a).normalize_or_zero();
+                let world_normal = (world_normal_basis * local_normal).normalize_or_zero();
 
                 let aw = world_from_mesh.transform_point3(a);
                 let bw = world_from_mesh.transform_point3(b);
@@ -56,7 +59,7 @@ impl Runtime {
                 let d2 = nearest_world.distance_squared(p_world);
 
                 match best {
-                    Some((_, _, _, _, best_d2)) if d2 >= best_d2 => {}
+                    Some((_, _, _, _, _, _, best_d2)) if d2 >= best_d2 => {}
                     _ => {
                         let nearest_local = mesh_from_world.transform_point3(nearest_world);
                         best = Some((
@@ -64,6 +67,8 @@ impl Runtime {
                             tri.surface_index,
                             nearest_world,
                             nearest_local,
+                            world_normal,
+                            local_normal,
                             d2,
                         ));
                     }
@@ -71,7 +76,15 @@ impl Runtime {
             }
         }
 
-        let (instance_index, surface_index, nearest_world, nearest_local, d2) = best?;
+        let (
+            instance_index,
+            surface_index,
+            nearest_world,
+            nearest_local,
+            world_normal,
+            local_normal,
+            d2,
+        ) = best?;
         let material = node
             .surfaces
             .get(surface_index as usize)
@@ -82,6 +95,8 @@ impl Runtime {
             material,
             world_point: nearest_world.into(),
             local_point: nearest_local.into(),
+            world_normal: world_normal.into(),
+            local_normal: local_normal.into(),
             distance: d2.sqrt(),
         })
     }
