@@ -287,6 +287,8 @@ parent = PARENTKEY
 script = "res://path/to/script.rs"
     [CollisionShape3D]
         shape = { type = cube size = (1, 1, 1) }
+        # alt: trimesh = "res://path/to/model.glb:mesh[0]"
+        # alt: shape = { type = trimesh source = "res://path/to/model.glb:mesh[0]" }
         debug = false
         [Node3D]
             position = (0, 0, 0)

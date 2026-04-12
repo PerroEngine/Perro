@@ -46,6 +46,11 @@ fn apply_collision_shape_3d_fields(node: &mut CollisionShape3D, fields: &[SceneO
                     node.shape = shape;
                 }
             }
+            Some(NodeField::CollisionShape3D(CollisionShape3DField::Trimesh)) => {
+                if let Some(source) = as_asset_source(value) {
+                    node.shape = Shape3D::TriMesh { source };
+                }
+            }
             Some(NodeField::CollisionShape3D(CollisionShape3DField::Debug)) => {
                 if let Some(debug) = as_bool(value) {
                     node.debug = debug;
@@ -162,6 +167,10 @@ fn apply_area_3d_fields(node: &mut Area3D, fields: &[SceneObjectField]) {
 }
 
 fn as_shape_3d(value: &SceneValue) -> Option<Shape3D> {
+    if let Some(source) = as_asset_source(value) {
+        return Some(Shape3D::TriMesh { source });
+    }
+
     let SceneValue::Object(entries) = value else {
         return None;
     };
@@ -187,6 +196,10 @@ fn as_shape_3d(value: &SceneValue) -> Option<Shape3D> {
                 .find_map(|(k, v)| (k == "height").then(|| as_f32(v).map(|h| h * 0.5)).flatten())
         })
         .unwrap_or(0.5);
+    let source = entries.iter().find_map(|(k, v)| match k.as_ref() {
+        "source" | "mesh" | "trimesh" => as_asset_source(v),
+        _ => None,
+    });
 
     match ty.as_ref() {
         "cube" => Some(Shape3D::Cube { size }),
@@ -206,6 +219,7 @@ fn as_shape_3d(value: &SceneValue) -> Option<Shape3D> {
         "tri_prism" | "triprism" => Some(Shape3D::TriPrism { size }),
         "triangular_pyramid" | "tri_pyr" => Some(Shape3D::TriangularPyramid { size }),
         "square_pyramid" | "sq_pyr" => Some(Shape3D::SquarePyramid { size }),
+        "trimesh" | "tri_mesh" => source.map(|source| Shape3D::TriMesh { source }),
         _ => None,
     }
 }

@@ -2,7 +2,7 @@ use crate::node_3d::Node3D;
 use perro_structs::Vector3;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Shape3D {
     Cube { size: Vector3 },
     Sphere { radius: f32 },
@@ -12,6 +12,7 @@ pub enum Shape3D {
     TriPrism { size: Vector3 },
     TriangularPyramid { size: Vector3 },
     SquarePyramid { size: Vector3 },
+    TriMesh { source: String },
 }
 
 impl Default for Shape3D {

@@ -198,6 +198,7 @@ pub enum SpotLight3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollisionShape3DField {
     Shape,
+    Trimesh,
     Debug,
 }
 
@@ -369,6 +370,9 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::CollisionShape3D => match field {
             "shape" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Shape)),
+            "trimesh" | "tri_mesh" => {
+                Some(NodeField::CollisionShape3D(CollisionShape3DField::Trimesh))
+            }
             "debug" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Debug)),
             _ => None,
         },

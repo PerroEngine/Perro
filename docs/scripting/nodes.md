@@ -95,6 +95,8 @@ Physics 3D:
 - `RigidBody3D`
 - `Area3D`
 - `CollisionShape3D` should be authored as a child of `StaticBody3D` or `RigidBody3D`.
+- `CollisionShape3D` supports primitive `shape` and mesh-backed `trimesh` source.
+- Trimesh source format: `res://path/to/model.glb:mesh[0]` (mesh index optional, default `0`).
 
 `Skeleton3D`
 

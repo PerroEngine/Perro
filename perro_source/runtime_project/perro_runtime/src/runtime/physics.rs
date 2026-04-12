@@ -1,6 +1,7 @@
 use crate::Runtime;
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{NodeID, SignalID};
+use perro_io::load_asset;
 use perro_nodes::{
     CollisionShape2D, CollisionShape3D, SceneNodeData, Shape2D, Shape3D, Triangle2DKind,
 };
@@ -38,6 +39,7 @@ struct ShapeDesc3D {
 #[derive(Clone, Debug)]
 enum ShapeKind3D {
     Primitive(Shape3D),
+    TriMesh { source: String },
 }
 
 #[derive(Clone, Debug)]
@@ -1320,7 +1322,7 @@ fn hash_shape_2d(state: u64, shape: Shape2D) -> u64 {
     }
 }
 
-fn hash_shape_3d(state: u64, shape: Shape3D) -> u64 {
+fn hash_shape_3d(state: u64, shape: &Shape3D) -> u64 {
     match shape {
         Shape3D::Cube { size } => {
             let state = hash_u64(state, 1);
@@ -1374,6 +1376,13 @@ fn hash_shape_3d(state: u64, shape: Shape3D) -> u64 {
             let state = hash_f32(state, size.y.to_bits());
             hash_f32(state, size.z.to_bits())
         }
+        Shape3D::TriMesh { source } => {
+            let mut state = hash_u64(state, 9);
+            for b in source.as_bytes() {
+                state = hash_u64(state, *b as u64);
+            }
+            state
+        }
     }
 }
 
@@ -1397,7 +1406,7 @@ fn hash_collision_shape_3d(
         transform.scale.z * inherited_scale.z,
     );
     state = hash_transform_3d(state, transform);
-    hash_shape_3d(state, shape.shape)
+    hash_shape_3d(state, &shape.shape)
 }
 
 fn shape_desc_2d(shape: &CollisionShape2D, friction: f32, restitution: f32) -> ShapeDesc2D {
@@ -1413,7 +1422,12 @@ fn shape_desc_2d(shape: &CollisionShape2D, friction: f32, restitution: f32) -> S
 fn shape_desc_3d(shape: &CollisionShape3D, friction: f32, restitution: f32) -> ShapeDesc3D {
     ShapeDesc3D {
         local: shape.base.transform,
-        shape: ShapeKind3D::Primitive(shape.shape),
+        shape: match &shape.shape {
+            Shape3D::TriMesh { source } => ShapeKind3D::TriMesh {
+                source: source.clone(),
+            },
+            _ => ShapeKind3D::Primitive(shape.shape.clone()),
+        },
         sensor: false,
         friction,
         restitution,
@@ -1575,7 +1589,15 @@ fn collider_builder_3d(desc: &ShapeDesc3D) -> Option<r3::Collider> {
                 let points = square_pyramid_points(size.x * sx, size.y * sy, size.z * sz);
                 r3::ColliderBuilder::convex_hull(&points)?
             }
+            Shape3D::TriMesh { source } => {
+                let (vertices, triangles) = load_trimesh_from_source(source, sx, sy, sz)?;
+                r3::ColliderBuilder::trimesh(vertices, triangles).ok()?
+            }
         },
+        ShapeKind3D::TriMesh { source } => {
+            let (vertices, triangles) = load_trimesh_from_source(source, sx, sy, sz)?;
+            r3::ColliderBuilder::trimesh(vertices, triangles).ok()?
+        }
     };
 
     Some(
@@ -1586,6 +1608,125 @@ fn collider_builder_3d(desc: &ShapeDesc3D) -> Option<r3::Collider> {
             .restitution(desc.restitution)
             .build(),
     )
+}
+
+fn load_trimesh_from_source(
+    source: &str,
+    sx: f32,
+    sy: f32,
+    sz: f32,
+) -> Option<(Vec<na3::Point3<f32>>, Vec<[u32; 3]>)> {
+    let source = source.trim();
+    if source.is_empty() {
+        return None;
+    }
+
+    let (path, fragment) = split_source_fragment(source);
+    let mesh_index = if fragment.is_some() {
+        parse_fragment_index(fragment, "mesh")?
+    } else {
+        0
+    };
+
+    let bytes = load_asset(path).ok()?;
+    if path.ends_with(".glb") || path.ends_with(".gltf") {
+        return load_trimesh_from_gltf_bytes(&bytes, mesh_index, sx, sy, sz);
+    }
+    None
+}
+
+fn load_trimesh_from_gltf_bytes(
+    bytes: &[u8],
+    mesh_index: usize,
+    sx: f32,
+    sy: f32,
+    sz: f32,
+) -> Option<(Vec<na3::Point3<f32>>, Vec<[u32; 3]>)> {
+    let (doc, buffers, _images) = gltf::import_slice(bytes).ok()?;
+    let mesh = doc.meshes().nth(mesh_index)?;
+
+    let mut vertices = Vec::<na3::Point3<f32>>::new();
+    let mut triangles = Vec::<[u32; 3]>::new();
+
+    for primitive in mesh.primitives() {
+        let reader = primitive.reader(|buffer| buffers.get(buffer.index()).map(|d| d.0.as_slice()));
+        let Some(pos_iter) = reader.read_positions() else {
+            continue;
+        };
+
+        let local_positions: Vec<[f32; 3]> = pos_iter.collect();
+        if local_positions.len() < 3 {
+            continue;
+        }
+
+        let Ok(base) = u32::try_from(vertices.len()) else {
+            return None;
+        };
+        for p in &local_positions {
+            vertices.push(na3::Point3::new(p[0] * sx, p[1] * sy, p[2] * sz));
+        }
+
+        if let Some(indices_reader) = reader.read_indices() {
+            let mut flat: Vec<u32> = indices_reader.into_u32().collect();
+            let tri_len = flat.len() / 3 * 3;
+            flat.truncate(tri_len);
+            for tri in flat.chunks_exact(3) {
+                let ia = tri[0] as usize;
+                let ib = tri[1] as usize;
+                let ic = tri[2] as usize;
+                if ia >= local_positions.len()
+                    || ib >= local_positions.len()
+                    || ic >= local_positions.len()
+                {
+                    continue;
+                }
+                let a = base + tri[0];
+                let b = base + tri[1];
+                let c = base + tri[2];
+                if a != b && b != c && a != c {
+                    triangles.push([a, b, c]);
+                }
+            }
+        } else {
+            for i in (0..local_positions.len() / 3 * 3).step_by(3) {
+                let a = base + i as u32;
+                let b = base + i as u32 + 1;
+                let c = base + i as u32 + 2;
+                triangles.push([a, b, c]);
+            }
+        }
+    }
+
+    if vertices.len() < 3 || triangles.is_empty() {
+        return None;
+    }
+    Some((vertices, triangles))
+}
+
+fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
+    let Some((path, selector)) = source.rsplit_once(':') else {
+        return (source, None);
+    };
+    if path.is_empty() {
+        return (source, None);
+    }
+    if selector.contains('/') || selector.contains('\\') {
+        return (source, None);
+    }
+    if selector.contains('[') && selector.ends_with(']') {
+        return (path, Some(selector));
+    }
+    (source, None)
+}
+
+fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<usize> {
+    let fragment = fragment?;
+    let (name, rest) = fragment.split_once('[')?;
+    if name.trim() != key {
+        return None;
+    }
+    let value = rest.strip_suffix(']')?.trim();
+    value.parse::<usize>().ok()
 }
 
 fn triangle_points_2d(

@@ -339,7 +339,7 @@ impl Runtime {
                         SceneNodeData::CollisionShape3D(shape)
                             if shape.debug && effective_visible =>
                         {
-                            Some((shape.shape, shape.transform, scene_node.parent))
+                            Some((shape.shape.clone(), shape.transform, scene_node.parent))
                         }
                         _ => None,
                     });
@@ -366,7 +366,7 @@ impl Runtime {
                         .to_mat4();
                     (shape, world)
                 };
-                let signature = collision_debug_signature(shape, world_from_shape);
+                let signature = collision_debug_signature(&shape, world_from_shape);
                 let prev = self.render_3d.collision_debug_state.get(&node).copied();
                 let needs_rebuild = prev
                     .map(|state| state.signature != signature)
@@ -773,10 +773,11 @@ fn shape_scaled_by_local_scale(shape: Shape3D, scale: perro_structs::Vector3) ->
         Shape3D::SquarePyramid { size } => Shape3D::SquarePyramid {
             size: perro_structs::Vector3::new(size.x * sx, size.y * sy, size.z * sz),
         },
+        Shape3D::TriMesh { source } => Shape3D::TriMesh { source },
     }
 }
 
-fn collision_debug_signature(shape: Shape3D, world_from_shape: Mat4) -> u64 {
+fn collision_debug_signature(shape: &Shape3D, world_from_shape: Mat4) -> u64 {
     let mut h = 0xC011_1510_0D3B_9A77u64;
     hash_shape3d(&mut h, shape);
     for col in world_from_shape.to_cols_array_2d() {
@@ -788,7 +789,7 @@ fn collision_debug_signature(shape: Shape3D, world_from_shape: Mat4) -> u64 {
     h
 }
 
-fn hash_shape3d(h: &mut u64, shape: Shape3D) {
+fn hash_shape3d(h: &mut u64, shape: &Shape3D) {
     match shape {
         Shape3D::Cube { size } => {
             *h ^= 1;
@@ -798,31 +799,31 @@ fn hash_shape3d(h: &mut u64, shape: Shape3D) {
         }
         Shape3D::Sphere { radius } => {
             *h ^= 2;
-            mix_hash_f32(h, radius);
+            mix_hash_f32(h, *radius);
         }
         Shape3D::Capsule {
             radius,
             half_height,
         } => {
             *h ^= 3;
-            mix_hash_f32(h, radius);
-            mix_hash_f32(h, half_height);
+            mix_hash_f32(h, *radius);
+            mix_hash_f32(h, *half_height);
         }
         Shape3D::Cylinder {
             radius,
             half_height,
         } => {
             *h ^= 4;
-            mix_hash_f32(h, radius);
-            mix_hash_f32(h, half_height);
+            mix_hash_f32(h, *radius);
+            mix_hash_f32(h, *half_height);
         }
         Shape3D::Cone {
             radius,
             half_height,
         } => {
             *h ^= 5;
-            mix_hash_f32(h, radius);
-            mix_hash_f32(h, half_height);
+            mix_hash_f32(h, *radius);
+            mix_hash_f32(h, *half_height);
         }
         Shape3D::TriPrism { size } => {
             *h ^= 6;
@@ -841,6 +842,13 @@ fn hash_shape3d(h: &mut u64, shape: Shape3D) {
             mix_hash_f32(h, size.x);
             mix_hash_f32(h, size.y);
             mix_hash_f32(h, size.z);
+        }
+        Shape3D::TriMesh { source } => {
+            *h ^= 9;
+            for b in source.as_bytes() {
+                *h ^= *b as u64;
+                *h = h.rotate_left(11).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            }
         }
     }
 }
@@ -1072,6 +1080,7 @@ fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)> {
             ];
             push_indexed_edges(&mut out, &points, &edges);
         }
+        Shape3D::TriMesh { .. } => {}
     }
     out
 }
@@ -1463,5 +1472,3 @@ fn parse_vec4_literal(raw: &str) -> Option<[f32; 4]> {
 #[cfg(test)]
 #[path = "../../tests/unit/runtime_render_3d_tests.rs"]
 mod tests;
-
-
