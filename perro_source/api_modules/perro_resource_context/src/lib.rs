@@ -24,4 +24,8 @@ pub mod prelude {
         post_processing_clear, post_processing_remove, post_processing_set, skeleton_load_bones,
         texture_drop, texture_load, texture_reserve,
     };
+    pub use perro_ids::prelude::{
+        AnimationID, LightID, MaterialID, MeshID, NodeID, ScriptMemberID, SignalID, TagID,
+        TextureID, UIElementID,
+    };
 }

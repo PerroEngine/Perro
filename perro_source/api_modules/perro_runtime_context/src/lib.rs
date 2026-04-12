@@ -14,9 +14,9 @@ pub mod prelude {
         AnimPlayerAPI, AnimPlayerModule, Attribute, IntoImpulseDirection, IntoNodeTags,
         IntoPreloadedSceneID, IntoPreloadedSceneTarget, IntoSceneLoadSource, IntoScenePath,
         IntoScriptMemberID, Member, MeshMaterialRegion3D, MeshSurfaceHit3D, NodeAPI, NodeModule,
-        PhysicsAPI, PhysicsModule, PreloadedSceneID, PreloadedSceneTarget, QueryExpr, QueryScope,
-        SceneAPI, SceneLoadSource, SceneModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule,
-        TagQuery, TimeAPI, TimeModule,
+        PhysicsAPI, PhysicsModule, PreloadedSceneTarget, QueryExpr, QueryScope, SceneAPI,
+        SceneLoadSource, SceneModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule, TagQuery,
+        TimeAPI, TimeModule,
     };
     pub use crate::{
         anim_player_bind, anim_player_clear_bindings, anim_player_pause, anim_player_play,
@@ -33,6 +33,10 @@ pub mod prelude {
         to_global_point_3d, to_global_transform_2d, to_global_transform_3d, to_local_point_2d,
         to_local_point_3d, to_local_transform_2d, to_local_transform_3d, with_base_node,
         with_base_node_mut, with_node, with_node_mut, with_state, with_state_mut,
+    };
+    pub use perro_ids::prelude::{
+        AnimationID, AudioBusID, LightID, MaterialID, MeshID, NodeID, PreloadedSceneID,
+        ScriptMemberID, SignalID, TagID, TextureID, UIElementID,
     };
     pub use perro_ids::{func, method, sid, signal, smid, tag, tags, var};
     pub use perro_variant::{params, variant};

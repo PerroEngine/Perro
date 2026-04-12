@@ -11,6 +11,7 @@ pub use perro_variant as variant;
 
 #[allow(unused_imports)]
 pub mod prelude {
+    pub use perro_ids::prelude::*;
     pub use perro_input::prelude::*;
     pub use perro_modules::log::*;
     pub use perro_modules::prelude::*;
