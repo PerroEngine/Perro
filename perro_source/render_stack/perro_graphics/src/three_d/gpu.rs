@@ -2632,6 +2632,11 @@ impl Gpu3D {
         &self.depth_prepass_view
     }
 
+    #[inline]
+    pub fn draw_call_count(&self) -> u32 {
+        self.draw_batches.len() as u32
+    }
+
     fn fallback_material_texture_bind_group(&self) -> &wgpu::BindGroup {
         self.material_fallback_texture
             .as_ref()

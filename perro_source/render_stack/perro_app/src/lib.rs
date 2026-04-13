@@ -30,6 +30,9 @@ pub struct PresentTiming {
     pub draw_gpu_post_process: Duration,
     pub draw_gpu_accessibility: Duration,
     pub draw_gpu_present: Duration,
+    pub draw_calls_2d: u32,
+    pub draw_calls_3d: u32,
+    pub draw_calls_total: u32,
     pub drain_events: Duration,
     pub apply_events: Duration,
     pub total: Duration,
@@ -280,6 +283,12 @@ impl<B: GraphicsBackend> App<B> {
                 .as_ref()
                 .map(|t| t.gpu_present)
                 .unwrap_or(Duration::ZERO),
+            draw_calls_2d: draw_timing.as_ref().map(|t| t.draw_calls_2d).unwrap_or(0),
+            draw_calls_3d: draw_timing.as_ref().map(|t| t.draw_calls_3d).unwrap_or(0),
+            draw_calls_total: draw_timing
+                .as_ref()
+                .map(|t| t.draw_calls_2d.saturating_add(t.draw_calls_3d))
+                .unwrap_or(0),
             drain_events,
             apply_events,
             total: total_start.elapsed(),

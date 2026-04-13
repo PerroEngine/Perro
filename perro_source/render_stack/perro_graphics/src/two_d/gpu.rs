@@ -406,6 +406,11 @@ impl Gpu2D {
         }
     }
 
+    #[inline]
+    pub fn draw_call_count(&self, rect_draw_count: u32) -> u32 {
+        u32::from(rect_draw_count > 0) + self.sprite_batches.len() as u32
+    }
+
     fn ensure_sprite_texture(
         &mut self,
         device: &wgpu::Device,

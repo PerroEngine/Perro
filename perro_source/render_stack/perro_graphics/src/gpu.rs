@@ -104,6 +104,8 @@ pub struct RenderGpuTiming {
     pub post_process: Duration,
     pub accessibility: Duration,
     pub present: Duration,
+    pub draw_calls_2d: u32,
+    pub draw_calls_3d: u32,
     pub total: Duration,
 }
 
@@ -360,6 +362,7 @@ impl Gpu {
             static_mesh_lookup,
             static_shader_lookup,
         } = frame;
+        let rect_draw_count = upload_2d.draw_count as u32;
         // Keep window alive for the full surface lifetime.
         self.window_handle.id();
 
@@ -587,7 +590,7 @@ impl Gpu {
                 &mut encoder,
                 color_view,
                 resolve_view,
-                upload_2d.draw_count as u32,
+                rect_draw_count,
             );
         }
         timing.encode_main = encode_start.elapsed();
@@ -675,6 +678,16 @@ impl Gpu {
         let submit_start = Instant::now();
         self.queue.submit(Some(encoder.finish()));
         timing.submit_main = submit_start.elapsed();
+        timing.draw_calls_2d = self
+            .two_d
+            .as_ref()
+            .map(|two_d| two_d.draw_call_count(rect_draw_count))
+            .unwrap_or(0);
+        timing.draw_calls_3d = self
+            .three_d
+            .as_ref()
+            .map(|three_d| three_d.draw_call_count())
+            .unwrap_or(0);
         let present_start = Instant::now();
         frame.present();
         timing.present = present_start.elapsed();
