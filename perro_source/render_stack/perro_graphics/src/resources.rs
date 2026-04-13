@@ -200,7 +200,9 @@ impl ResourceStore {
             return existing;
         }
         if !self.meshes.occupy_parts(id.index(), id.generation()) {
-            return MeshID::nil();
+            // Requested slot already occupied; allocate a fresh slot instead of
+            // returning nil, so source->mesh mapping stays valid.
+            return self.create_mesh(source, reserved);
         }
         self.mesh_by_source.insert(source.to_string(), id);
         self.mesh_source_by.insert(id, source.to_string());
@@ -262,7 +264,7 @@ impl ResourceStore {
             return existing;
         }
         if !self.textures.occupy_parts(id.index(), id.generation()) {
-            return TextureID::nil();
+            return self.create_texture(source, reserved);
         }
         self.texture_by_source.insert(source.to_string(), id);
         self.texture_source_by.insert(id, source.to_string());
@@ -343,7 +345,7 @@ impl ResourceStore {
             return existing;
         }
         if !self.materials.occupy_parts(id.index(), id.generation()) {
-            return MaterialID::nil();
+            return self.create_material(material, source, reserved);
         }
         self.material_by.insert(id, material);
         if let Some(source) = source {

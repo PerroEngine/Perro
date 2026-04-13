@@ -85,3 +85,44 @@ impl MeshAPI for RuntimeResourceApi {
         false
     }
 }
+
+impl RuntimeResourceApi {
+    pub(crate) fn register_loaded_mesh_source(&self, source: &str, id: MeshID) {
+        if source.trim().is_empty() || id.is_nil() {
+            return;
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        let _ = state.occupy_mesh_id(id);
+        state.mesh_by_source.insert(source.to_string(), id);
+    }
+
+    pub(crate) fn is_mesh_id_pending(&self, id: MeshID) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state
+            .mesh_pending_id_by_request
+            .values()
+            .any(|pending| *pending == id)
+    }
+
+    pub(crate) fn canonical_mesh_id(&self, id: MeshID) -> MeshID {
+        if id.is_nil() {
+            return id;
+        }
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        let mut out = id;
+        // Follow remap chain pending->final, bounded to avoid accidental loops.
+        for _ in 0..8 {
+            let Some(next) = state.mesh_id_alias.get(&out).copied() else {
+                break;
+            };
+            if next == out {
+                break;
+            }
+            out = next;
+        }
+        out
+    }
+}

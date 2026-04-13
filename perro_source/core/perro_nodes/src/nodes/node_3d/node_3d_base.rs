@@ -1,7 +1,7 @@
 use perro_structs::Transform3D;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Node3D {
     pub transform: Transform3D,
     pub visible: bool,
@@ -27,5 +27,11 @@ impl Deref for Node3D {
 impl DerefMut for Node3D {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.transform
+    }
+}
+
+impl Default for Node3D {
+    fn default() -> Self {
+        Self::new()
     }
 }

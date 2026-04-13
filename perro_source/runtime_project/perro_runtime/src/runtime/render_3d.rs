@@ -573,6 +573,28 @@ impl Runtime {
         mut mesh: MeshID,
         mut surfaces: Vec<MeshSurfaceBinding>,
     ) -> Option<(MeshID, std::sync::Arc<[MeshSurfaceBinding3D]>)> {
+        let canonical = self.resource_api.canonical_mesh_id(mesh);
+        if canonical != mesh {
+            mesh = canonical;
+            if let Some(node) = self.nodes.get_mut(node) {
+                match &mut node.data {
+                    SceneNodeData::MeshInstance3D(mesh_instance) => {
+                        mesh_instance.mesh = mesh;
+                    }
+                    SceneNodeData::MultiMeshInstance3D(mesh_instance) => {
+                        mesh_instance.mesh = mesh;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if !mesh.is_nil() && self.resource_api.is_mesh_id_pending(mesh) {
+            // Runtime script/resource paths can assign a non-nil MeshID before the
+            // render backend finishes CreateMesh; defer draw until ready.
+            return None;
+        }
+
         if mesh.is_nil() {
             let request = Self::mesh_request(node);
             if let Some(result) = self.take_render_result(request) {

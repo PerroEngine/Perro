@@ -58,6 +58,10 @@ impl NodeAPI for Runtime {
             let ty = node.node_type();
             self.register_internal_node_schedules(id, ty);
         }
+        // Ensure freshly created nodes participate in render/transform extraction
+        // even before caller-side mutation paths run.
+        self.mark_needs_rerender(id);
+        self.mark_transform_dirty_recursive(id);
         id
     }
 

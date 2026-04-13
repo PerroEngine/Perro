@@ -1,7 +1,7 @@
 use perro_structs::Transform2D;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Node2D {
     pub transform: Transform2D,
     pub z_index: i32,
@@ -29,5 +29,11 @@ impl Deref for Node2D {
 impl DerefMut for Node2D {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.transform
+    }
+}
+
+impl Default for Node2D {
+    fn default() -> Self {
+        Self::new()
     }
 }

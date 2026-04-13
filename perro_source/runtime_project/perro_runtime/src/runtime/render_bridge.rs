@@ -22,6 +22,12 @@ impl Runtime {
     }
 
     pub fn apply_render_event(&mut self, event: RenderEvent) {
+        if let RenderEvent::MeshCreated { request, id } = &event
+            && let Some(node) = decode_3d_mesh_request_node(*request)
+            && let Some(source) = self.render_3d.mesh_sources.get(&node).cloned()
+        {
+            self.resource_api.register_loaded_mesh_source(&source, *id);
+        }
         self.resource_api.apply_render_event(&event);
         self.render.apply_event(event);
     }
@@ -62,4 +68,12 @@ impl Runtime {
     pub fn clear_dirty_flags(&mut self) {
         self.dirty.clear();
     }
+}
+
+#[inline]
+fn decode_3d_mesh_request_node(request: RenderRequestID) -> Option<NodeID> {
+    if (request.0 & 0xFF) != 0x3E {
+        return None;
+    }
+    Some(NodeID::from_u64(request.0 >> 8))
 }

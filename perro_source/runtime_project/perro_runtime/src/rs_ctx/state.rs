@@ -159,6 +159,7 @@ pub(super) struct RuntimeResourceState {
     pub(super) texture_reserve_pending: HashSet<String>,
     pub(super) texture_drop_pending: HashSet<String>,
     pub(super) mesh_by_source: HashMap<String, MeshID>,
+    pub(super) mesh_id_alias: HashMap<MeshID, MeshID>,
     pub(super) mesh_pending_by_source: HashMap<String, RenderRequestID>,
     pub(super) mesh_pending_source_by_request: HashMap<RenderRequestID, String>,
     pub(super) mesh_pending_id_by_request: HashMap<RenderRequestID, MeshID>,
@@ -176,6 +177,9 @@ pub(super) struct RuntimeResourceState {
 
 impl RuntimeResourceState {
     const REQUEST_BASE: u64 = 0x1000_0000_0000_0000;
+    // Keep runtime resource-api mesh ids away from low scene-loader ids to avoid
+    // cross-system slot collisions/remaps (scene ids usually occupy low indices).
+    const MESH_ID_INDEX_BASE: u32 = 50_000;
 
     pub(super) fn new() -> Self {
         Self {
@@ -197,7 +201,7 @@ impl RuntimeResourceState {
 
     pub(super) fn allocate_mesh_id(&mut self) -> MeshID {
         let (index, generation) = self.mesh_slots.allocate_parts();
-        MeshID::from_parts(index, generation)
+        MeshID::from_parts(index.saturating_add(Self::MESH_ID_INDEX_BASE), generation)
     }
 
     pub(super) fn allocate_material_id(&mut self) -> MaterialID {
