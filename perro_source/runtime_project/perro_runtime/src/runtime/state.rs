@@ -9,7 +9,7 @@ use perro_nodes::Spatial;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, Material3D, MeshSurfaceBinding3D, PointLight3DState,
     RayLight3DState, RenderCommand, RenderEvent, RenderRequestID, SkeletonPalette, Sky3DState,
-    SpotLight3DState,
+    SpotLight3DState, DenseInstancePose3D,
 };
 use perro_structs::{Transform2D, Transform3D};
 
@@ -362,8 +362,18 @@ impl Render3DState {
 pub(crate) struct RetainedMeshDrawState {
     pub(crate) mesh: MeshID,
     pub(crate) surfaces: std::sync::Arc<[MeshSurfaceBinding3D]>,
-    pub(crate) instance_mats: std::sync::Arc<[[[f32; 4]; 4]]>,
+    pub(crate) instances: RetainedMeshInstanceState,
     pub(crate) skeleton: Option<SkeletonPalette>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum RetainedMeshInstanceState {
+    Matrices(std::sync::Arc<[[[f32; 4]; 4]]>),
+    Dense {
+        node_model: [[f32; 4]; 4],
+        instance_scale: f32,
+        poses: std::sync::Arc<[DenseInstancePose3D]>,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]

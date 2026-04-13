@@ -3,7 +3,8 @@ use ahash::AHashMap;
 use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MeshID, NodeID};
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, CameraProjectionState, MeshSurfaceBinding3D,
+    AmbientLight3DState, Camera3DState, CameraProjectionState, DenseInstancePose3D,
+    MeshSurfaceBinding3D,
     PointLight3DState, RayLight3DState, SkeletonPalette, Sky3DState, SpotLight3DState,
 };
 use std::sync::Arc;
@@ -11,7 +12,7 @@ use std::time::Instant;
 
 const SKY_DAY_SECONDS: f32 = 1580.0;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Draw3DKind {
     Mesh(MeshID),
     DebugPointCube,
@@ -104,44 +105,32 @@ impl Renderer3D {
         });
     }
 
-    pub fn queue_debug_point(&mut self, node: NodeID, position: [f32; 3], size: f32) {
-        let next = Draw3DInstance {
-            node,
-            kind: Draw3DKind::DebugPointCube,
-            surfaces: Arc::from([]),
-            instance_mats: Arc::from([debug_point_model(position, size).to_cols_array_2d()]),
-            skeleton: None,
-        };
-        let changed = self.retained_draws.get(&node) != Some(&next);
-        if changed {
-            self.retained_draws.insert(node, next);
-            self.draw_revision = self.draw_revision.wrapping_add(1);
-        }
-    }
-
-    pub fn queue_debug_line(
+    pub fn queue_draw_multi_dense(
         &mut self,
         node: NodeID,
-        start: [f32; 3],
-        end: [f32; 3],
-        thickness: f32,
+        mesh: MeshID,
+        surfaces: Arc<[MeshSurfaceBinding3D]>,
+        node_model: [[f32; 4]; 4],
+        instance_scale: f32,
+        instances: Arc<[DenseInstancePose3D]>,
     ) {
-        if let Some(model) = debug_line_model(start, end, thickness) {
-            let next = Draw3DInstance {
-                node,
-                kind: Draw3DKind::DebugEdgeCylinder,
-                surfaces: Arc::from([]),
-                instance_mats: Arc::from([model.to_cols_array_2d()]),
-                skeleton: None,
-            };
-            let changed = self.retained_draws.get(&node) != Some(&next);
-            if changed {
-                self.retained_draws.insert(node, next);
-                self.draw_revision = self.draw_revision.wrapping_add(1);
-            }
-        } else if self.retained_draws.remove(&node).is_some() {
-            self.draw_revision = self.draw_revision.wrapping_add(1);
+        let node_model_mat = Mat4::from_cols_array_2d(&node_model);
+        let scale = Vec3::splat(instance_scale.max(0.0001));
+        let mut instance_mats = Vec::with_capacity(instances.len());
+        for pose in instances.iter().copied() {
+            let local = Mat4::from_scale_rotation_translation(
+                scale,
+                Quat::from_xyzw(
+                    pose.rotation[0],
+                    pose.rotation[1],
+                    pose.rotation[2],
+                    pose.rotation[3],
+                ),
+                Vec3::new(pose.position[0], pose.position[1], pose.position[2]),
+            );
+            instance_mats.push((node_model_mat * local).to_cols_array_2d());
         }
+        self.queue_draw_multi(node, mesh, surfaces, Arc::from(instance_mats.into_boxed_slice()), None);
     }
 
     pub fn remove_node(&mut self, node: NodeID) {
@@ -346,24 +335,3 @@ impl Default for Renderer3D {
     }
 }
 
-fn debug_point_model(position: [f32; 3], size: f32) -> Mat4 {
-    let scale = Vec3::splat(size.max(0.001));
-    Mat4::from_scale_rotation_translation(scale, Quat::IDENTITY, Vec3::from_array(position))
-}
-
-fn debug_line_model(start: [f32; 3], end: [f32; 3], thickness: f32) -> Option<Mat4> {
-    let a = Vec3::from_array(start);
-    let b = Vec3::from_array(end);
-    let delta = b - a;
-    let len = delta.length();
-    if !len.is_finite() || len <= 1.0e-5 {
-        return None;
-    }
-    let dir = delta / len;
-    let up = Vec3::Y;
-    let rot = Quat::from_rotation_arc(up, dir);
-    let center = (a + b) * 0.5;
-    let radius = thickness.max(0.001);
-    let scale = Vec3::new(radius, len, radius);
-    Some(Mat4::from_scale_rotation_translation(scale, rot, center))
-}

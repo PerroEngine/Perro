@@ -638,6 +638,14 @@ pub enum Command3D {
         instance_mats: Arc<[[[f32; 4]; 4]]>,
         skeleton: Option<SkeletonPalette>,
     },
+    DrawMultiDense {
+        mesh: MeshID,
+        surfaces: Arc<[MeshSurfaceBinding3D]>,
+        node: NodeID,
+        node_model: [[f32; 4]; 4],
+        instance_scale: f32,
+        instances: Arc<[DenseInstancePose3D]>,
+    },
     DrawDebugPoint3D {
         node: NodeID,
         position: [f32; 3],
@@ -679,6 +687,12 @@ pub enum Command3D {
     RemoveNode {
         node: NodeID,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DenseInstancePose3D {
+    pub position: [f32; 3],
+    pub rotation: [f32; 4],
 }
 
 #[derive(Debug, Clone)]
