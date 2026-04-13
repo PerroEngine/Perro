@@ -926,12 +926,16 @@ impl Gpu3D {
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("perro_builtin_mesh_vertices"),
             contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("perro_builtin_mesh_indices"),
             contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::INDEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         });
 
         let instance_capacity = 256usize;
@@ -1703,10 +1707,14 @@ impl Gpu3D {
             return;
         }
         if transform_only_changed {
+            let mut dirty_instance_spans: Vec<Range<u32>> = Vec::new();
             for (draw, range) in draws.iter().zip(self.last_draw_instance_ranges.iter()) {
                 let Some(model) = draw.instance_mats.first() else {
                     continue;
                 };
+                if range.start >= range.end {
+                    continue;
+                }
                 for instance in &mut self.staged_instances[range.start as usize..range.end as usize]
                 {
                     instance.model_row_0 = [
@@ -1728,12 +1736,25 @@ impl Gpu3D {
                         model[3][2],
                     ];
                 }
+                dirty_instance_spans.push(range.clone());
             }
-            if !self.staged_instances.is_empty() {
+            dirty_instance_spans.sort_unstable_by_key(|span| span.start);
+            let mut merged_spans: Vec<Range<u32>> = Vec::new();
+            for span in dirty_instance_spans {
+                if let Some(last) = merged_spans.last_mut() && span.start <= last.end {
+                    last.end = last.end.max(span.end);
+                } else {
+                    merged_spans.push(span);
+                }
+            }
+            for span in merged_spans {
+                let byte_start = span.start as u64 * std::mem::size_of::<InstanceGpu>() as u64;
                 queue.write_buffer(
                     &self.instance_buffer,
-                    0,
-                    bytemuck::cast_slice(&self.staged_instances),
+                    byte_start,
+                    bytemuck::cast_slice(
+                        &self.staged_instances[span.start as usize..span.end as usize],
+                    ),
                 );
             }
             if self.frustum_cull_enabled && !self.draw_batches.is_empty() {
@@ -3265,7 +3286,7 @@ impl Gpu3D {
 
         let new_vertex_len = self.mesh_vertices.len() + added_vertices.len();
         let new_index_len = self.mesh_indices.len() + added_indices.len();
-        let grew = self.ensure_mesh_buffer_capacity(device, new_vertex_len, new_index_len);
+        self.ensure_mesh_buffer_capacity(device, queue, new_vertex_len, new_index_len);
 
         let vertex_offset =
             self.mesh_vertices.len() as u64 * std::mem::size_of::<MeshVertex>() as u64;
@@ -3274,7 +3295,6 @@ impl Gpu3D {
         self.mesh_vertices.extend_from_slice(&added_vertices);
         self.mesh_indices.extend_from_slice(&added_indices);
 
-        let _ = grew;
         queue.write_buffer(
             &self.vertex_buffer,
             vertex_offset,
@@ -3320,9 +3340,10 @@ impl Gpu3D {
     fn ensure_mesh_buffer_capacity(
         &mut self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         needed_vertices: usize,
         needed_indices: usize,
-    ) -> bool {
+    ) {
         let mut grew = false;
 
         if needed_vertices > self.vertex_capacity {
@@ -3344,27 +3365,52 @@ impl Gpu3D {
         }
 
         if grew {
-            let mut vertex_bytes =
-                vec![0u8; self.vertex_capacity * std::mem::size_of::<MeshVertex>()];
-            let used_vertex_bytes = bytemuck::cast_slice(&self.mesh_vertices);
-            vertex_bytes[..used_vertex_bytes.len()].copy_from_slice(used_vertex_bytes);
-            self.vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            let old_vertex_buffer = self.vertex_buffer.clone();
+            let old_index_buffer = self.index_buffer.clone();
+            let old_vertex_size =
+                self.mesh_vertices.len() as u64 * std::mem::size_of::<MeshVertex>() as u64;
+            let old_index_size = self.mesh_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
+            self.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("perro_mesh_vertices"),
-                contents: &vertex_bytes,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                size: (self.vertex_capacity * std::mem::size_of::<MeshVertex>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
             });
-
-            let mut index_bytes = vec![0u8; self.index_capacity * std::mem::size_of::<u32>()];
-            let used_index_bytes = bytemuck::cast_slice(&self.mesh_indices);
-            index_bytes[..used_index_bytes.len()].copy_from_slice(used_index_bytes);
-            self.index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            self.index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("perro_mesh_indices"),
-                contents: &index_bytes,
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                size: (self.index_capacity * std::mem::size_of::<u32>()) as u64,
+                usage: wgpu::BufferUsages::INDEX
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
             });
+            if old_vertex_size > 0 || old_index_size > 0 {
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("perro_mesh_buffer_growth_copy"),
+                });
+                if old_vertex_size > 0 {
+                    encoder.copy_buffer_to_buffer(
+                        &old_vertex_buffer,
+                        0,
+                        &self.vertex_buffer,
+                        0,
+                        old_vertex_size,
+                    );
+                }
+                if old_index_size > 0 {
+                    encoder.copy_buffer_to_buffer(
+                        &old_index_buffer,
+                        0,
+                        &self.index_buffer,
+                        0,
+                        old_index_size,
+                    );
+                }
+                queue.submit([encoder.finish()]);
+            }
         }
-
-        grew
     }
 }
 

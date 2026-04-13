@@ -1,7 +1,7 @@
 use crate::mesh_instance_3d::MeshSurfaceBinding;
 use crate::node_3d::Node3D;
 use perro_ids::MeshID;
-use perro_structs::Transform3D;
+use perro_structs::{Quaternion, Vector3};
 use std::ops::{Deref, DerefMut};
 
 impl Deref for MultiMeshInstance3D {
@@ -17,12 +17,13 @@ impl DerefMut for MultiMeshInstance3D {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct MultiMeshInstance3D {
     pub base: Node3D,
     pub mesh: MeshID,
     pub surfaces: Vec<MeshSurfaceBinding>,
-    pub transforms: Vec<Transform3D>,
+    pub instances: Vec<(Vector3, Quaternion)>,
+    pub instance_scale: f32,
 }
 
 impl MultiMeshInstance3D {
@@ -31,7 +32,8 @@ impl MultiMeshInstance3D {
             base: Node3D::new(),
             mesh: MeshID::nil(),
             surfaces: Vec::new(),
-            transforms: Vec::new(),
+            instances: Vec::new(),
+            instance_scale: 1.0,
         }
     }
 
@@ -41,5 +43,11 @@ impl MultiMeshInstance3D {
                 .resize_with(surface_index + 1, MeshSurfaceBinding::default);
         }
         &mut self.surfaces[surface_index]
+    }
+}
+
+impl Default for MultiMeshInstance3D {
+    fn default() -> Self {
+        Self::new()
     }
 }

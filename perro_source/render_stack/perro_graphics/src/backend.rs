@@ -325,20 +325,19 @@ impl PerroGraphics {
                             .queue_draw_multi(node, mesh, surfaces, instance_mats, skeleton);
                     }
                     Command3D::DrawDebugPoint3D {
-                        node,
-                        position,
-                        size,
+                        node: _,
+                        position: _,
+                        size: _,
                     } => {
-                        self.renderer_3d.queue_debug_point(node, position, size);
+                        // Debug draw path removed from renderer hot path.
                     }
                     Command3D::DrawDebugLine3D {
-                        node,
-                        start,
-                        end,
-                        thickness,
+                        node: _,
+                        start: _,
+                        end: _,
+                        thickness: _,
                     } => {
-                        self.renderer_3d
-                            .queue_debug_line(node, start, end, thickness);
+                        // Debug draw path removed from renderer hot path.
                     }
                     Command3D::SetCamera { camera } => {
                         self.renderer_3d.set_camera(camera);

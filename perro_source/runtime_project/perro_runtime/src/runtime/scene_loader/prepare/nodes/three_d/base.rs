@@ -91,9 +91,14 @@ fn apply_multi_mesh_instance_3d_fields(
                     node.surfaces = parse_surface_bindings(items.as_ref());
                 }
             }
-            "transforms" => {
+            "instances" => {
                 if let SceneValue::Array(items) = value {
-                    node.transforms = parse_instance_transforms(items.as_ref());
+                    node.instances = parse_instance_posrot(items.as_ref());
+                }
+            }
+            "instance_scale" => {
+                if let Some(v) = as_f32(value) {
+                    node.instance_scale = v.max(0.0001);
                 }
             }
             _ => {}
@@ -279,43 +284,55 @@ fn parse_color(value: &SceneValue) -> Option<[f32; 4]> {
     }
 }
 
-fn parse_instance_transforms(items: &[SceneValue]) -> Vec<perro_structs::Transform3D> {
+fn parse_instance_posrot(items: &[SceneValue]) -> Vec<(perro_structs::Vector3, perro_structs::Quaternion)> {
     let mut out = Vec::with_capacity(items.len());
     for item in items {
         match item {
             SceneValue::Vec3 { x, y, z } => {
-                let mut t = perro_structs::Transform3D::IDENTITY;
-                t.position = perro_structs::Vector3::new(*x, *y, *z);
-                out.push(t);
+                out.push((
+                    perro_structs::Vector3::new(*x, *y, *z),
+                    perro_structs::Quaternion::IDENTITY,
+                ));
             }
             SceneValue::Object(entries) => {
-                let mut t = perro_structs::Transform3D::IDENTITY;
+                let mut pos = perro_structs::Vector3::ZERO;
+                let mut rot = perro_structs::Quaternion::IDENTITY;
+                let mut rot_deg: Option<perro_structs::Vector3> = None;
                 for (key, value) in entries.iter() {
                     match key.as_ref() {
                         "position" => {
                             if let Some(v) = as_vec3(value) {
-                                t.position = v;
+                                pos = v;
                             }
                         }
                         "rotation" => {
                             if let Some(v) = as_quat(value) {
-                                t.rotation = v;
+                                rot = v;
                             }
                         }
-                        "scale" => {
+                        "rotation_deg" => {
                             if let Some(v) = as_vec3(value) {
-                                t.scale = v;
+                                rot_deg = Some(v);
                             }
                         }
                         _ => {}
                     }
                 }
-                out.push(t);
+                if let Some(deg) = rot_deg {
+                    rot = quat_from_deg_xyz(deg);
+                }
+                out.push((pos, rot));
             }
             _ => {}
         }
     }
     out
+}
+
+#[inline]
+fn quat_from_deg_xyz(deg: perro_structs::Vector3) -> perro_structs::Quaternion {
+    let to_rad = std::f32::consts::PI / 180.0;
+    perro_structs::Quaternion::from_euler_xyz(deg.x * to_rad, deg.y * to_rad, deg.z * to_rad)
 }
 
 fn extract_model_source(data: &SceneDefNodeData) -> Option<String> {

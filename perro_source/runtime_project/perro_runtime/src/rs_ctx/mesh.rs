@@ -37,12 +37,9 @@ impl MeshAPI for RuntimeResourceApi {
                 state.mesh_reserve_pending.insert(source.to_string());
                 return id;
             }
-            state
-                .queued_commands
-                .push(RenderCommand::Resource(ResourceCommand::SetMeshReserved {
-                    id,
-                    reserved: true,
-                }));
+            state.queued_commands.push(RenderCommand::Resource(
+                ResourceCommand::SetMeshReserved { id, reserved: true },
+            ));
             return id;
         }
         state.mesh_drop_pending.remove(source);
@@ -87,42 +84,32 @@ impl MeshAPI for RuntimeResourceApi {
 }
 
 impl RuntimeResourceApi {
-    pub(crate) fn register_loaded_mesh_source(&self, source: &str, id: MeshID) {
-        if source.trim().is_empty() || id.is_nil() {
-            return;
-        }
-        let mut state = self.state.lock().expect("resource api mutex poisoned");
-        let _ = state.occupy_mesh_id(id);
-        state.mesh_by_source.insert(source.to_string(), id);
+    pub(crate) fn canonical_mesh_id(&self, mesh: MeshID) -> MeshID {
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state.mesh_id_alias.get(&mesh).copied().unwrap_or(mesh)
     }
 
-    pub(crate) fn is_mesh_id_pending(&self, id: MeshID) -> bool {
-        if id.is_nil() {
-            return false;
-        }
+    pub(crate) fn is_mesh_id_pending(&self, mesh: MeshID) -> bool {
+        let canonical = self.canonical_mesh_id(mesh);
         let state = self.state.lock().expect("resource api mutex poisoned");
         state
             .mesh_pending_id_by_request
             .values()
-            .any(|pending| *pending == id)
+            .copied()
+            .any(|pending| state.mesh_id_alias.get(&pending).copied().unwrap_or(pending) == canonical)
     }
 
-    pub(crate) fn canonical_mesh_id(&self, id: MeshID) -> MeshID {
-        if id.is_nil() {
-            return id;
+    pub(crate) fn register_loaded_mesh_source(&self, source: &str, id: MeshID) {
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        if source.trim().is_empty() || id.is_nil() {
+            return;
         }
-        let state = self.state.lock().expect("resource api mutex poisoned");
-        let mut out = id;
-        // Follow remap chain pending->final, bounded to avoid accidental loops.
-        for _ in 0..8 {
-            let Some(next) = state.mesh_id_alias.get(&out).copied() else {
-                break;
-            };
-            if next == out {
-                break;
-            }
-            out = next;
+        state.mesh_by_source.insert(source.to_string(), id);
+        if let Some(request) = state.mesh_pending_by_source.remove(source) {
+            state.mesh_pending_source_by_request.remove(&request);
+            state.mesh_pending_id_by_request.remove(&request);
         }
-        out
+        state.mesh_reserve_pending.remove(source);
+        state.mesh_drop_pending.remove(source);
     }
 }

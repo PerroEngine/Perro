@@ -297,9 +297,25 @@ impl Runtime {
                     mesh.surfaces.clone(),
                     None,
                     Arc::from(
-                        mesh.transforms
+                        mesh.instances
                             .iter()
-                            .map(|transform| transform.to_mat4().to_cols_array_2d())
+                            .map(|instance| {
+                                Mat4::from_scale_rotation_translation(
+                                    Vec3::splat(mesh.instance_scale.max(0.0001)),
+                                    Quat::from_xyzw(
+                                        instance.1.x,
+                                        instance.1.y,
+                                        instance.1.z,
+                                        instance.1.w,
+                                    ),
+                                    Vec3::new(
+                                        instance.0.x,
+                                        instance.0.y,
+                                        instance.0.z,
+                                    ),
+                                )
+                                .to_cols_array_2d()
+                            })
                             .collect::<Vec<_>>()
                             .into_boxed_slice(),
                     ),

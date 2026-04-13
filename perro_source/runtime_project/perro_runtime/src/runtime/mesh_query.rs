@@ -198,12 +198,27 @@ impl Runtime {
                 instance_local: vec![Mat4::IDENTITY],
             }),
             SceneNodeData::MultiMeshInstance3D(mesh) => {
-                let instance_local = if mesh.transforms.is_empty() {
+                let instance_local = if mesh.instances.is_empty() {
                     vec![Mat4::IDENTITY]
                 } else {
-                    mesh.transforms
+                    mesh.instances
                         .iter()
-                        .map(|transform| transform.to_mat4())
+                        .map(|instance| {
+                            Mat4::from_scale_rotation_translation(
+                                Vec3::splat(mesh.instance_scale.max(0.0001)),
+                                glam::Quat::from_xyzw(
+                                    instance.1.x,
+                                    instance.1.y,
+                                    instance.1.z,
+                                    instance.1.w,
+                                ),
+                                Vec3::new(
+                                    instance.0.x,
+                                    instance.0.y,
+                                    instance.0.z,
+                                ),
+                            )
+                        })
                         .collect()
                 };
                 Some(QueryNodeData {

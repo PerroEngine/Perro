@@ -270,17 +270,16 @@ script = "res://path/to/script.rs"
                 ]
             }
         ]
-        # instance count = transforms.len()
-        transforms = [
+        # instance count = instances.len()
+        instance_scale = 1.0
+        instances = [
             {
                 position = (6, 0, 0)
                 rotation = (0, 0, 0, 1)
-                scale = (1, 1, 1)
             },
             {
                 position = (6, 0, 0)
-                rotation = (0, 0, 0, 1)
-                scale = (1, 1, 1)
+                rotation_deg = (0, 45, 0)
             },
         ]
         [Node3D]

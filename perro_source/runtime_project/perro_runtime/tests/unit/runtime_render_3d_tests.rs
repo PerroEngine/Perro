@@ -254,11 +254,11 @@ fn multi_mesh_instance_emits_draw_multi_with_instance_mats() {
     multi.mesh = MeshID::from_parts(330, 0);
     set_primary_material_multi(&mut multi, MaterialID::from_parts(331, 0));
 
-    let mut t0 = perro_structs::Transform3D::IDENTITY;
-    t0.position = Vector3::new(1.0, 0.0, 0.0);
-    let mut t1 = perro_structs::Transform3D::IDENTITY;
-    t1.position = Vector3::new(3.0, 0.0, 0.0);
-    multi.transforms = vec![t0, t1];
+    multi.instance_scale = 1.0;
+    multi.instances = vec![
+        (Vector3::new(1.0, 0.0, 0.0), Quaternion::IDENTITY),
+        (Vector3::new(3.0, 0.0, 0.0), Quaternion::IDENTITY),
+    ];
 
     let node = runtime
         .nodes
@@ -283,6 +283,12 @@ fn multi_mesh_instance_emits_draw_multi_with_instance_mats() {
                 )
         )
     }));
+}
+
+#[test]
+fn multi_mesh_instance_default_scale_is_one() {
+    let multi = MultiMeshInstance3D::default();
+    assert_eq!(multi.instance_scale, 1.0);
 }
 
 #[test]
