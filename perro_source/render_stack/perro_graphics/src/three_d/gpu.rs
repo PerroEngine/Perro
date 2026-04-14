@@ -4,11 +4,13 @@ use super::{
         MAX_SPOT_LIGHTS,
     },
     shaders::{
-        build_material_shader, create_depth_prepass_shader_module,
-        create_frustum_cull_shader_module, create_hiz_depth_copy_shader_module,
-        create_hiz_downsample_shader_module, create_hiz_occlusion_cull_shader_module,
-        create_mesh_shader_module, create_sky_shader_module, create_toon_shader_module,
-        create_unlit_shader_module,
+        build_material_shader_with_prelude, create_depth_prepass_shader_module_rigid,
+        create_depth_prepass_shader_module_skinned, create_frustum_cull_shader_module,
+        create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
+        create_hiz_occlusion_cull_shader_module, create_mesh_shader_module_rigid,
+        create_mesh_shader_module_skinned, create_multimesh_shader_module, create_sky_shader_module,
+        create_toon_shader_module_rigid, create_toon_shader_module_skinned,
+        create_unlit_shader_module_rigid, create_unlit_shader_module_skinned,
     },
 };
 use crate::backend::{
@@ -34,6 +36,22 @@ use std::{
 use wgpu::util::DeviceExt;
 
 mod mesh_presets;
+#[path = "gpu/paths/skinned.rs"]
+mod skinned_path;
+#[path = "gpu/paths/rigid.rs"]
+mod rigid_path;
+#[path = "gpu/paths/multimesh.rs"]
+mod multimesh_path;
+
+use multimesh_path::{create_multimesh_pipeline, pack_unorm4x8};
+use rigid_path::{
+    create_depth_prepass_pipeline_rigid, create_pipeline_overlay_rigid, create_pipeline_rigid,
+    create_shadow_depth_pipeline_rigid,
+};
+use skinned_path::{
+    create_depth_prepass_pipeline_skinned, create_pipeline_overlay_skinned,
+    create_pipeline_skinned, create_shadow_depth_pipeline_skinned,
+};
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
 const DEPTH_PREPASS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -208,11 +226,22 @@ struct ShadowUniform {
 pub struct Gpu3D {
     color_format: wgpu::TextureFormat,
     camera_bgl: wgpu::BindGroupLayout,
+    rigid_camera_bgl: wgpu::BindGroupLayout,
+    multimesh_bgl: wgpu::BindGroupLayout,
     material_texture_bgl: wgpu::BindGroupLayout,
     shadow_bgl: wgpu::BindGroupLayout,
     sky_bgl: wgpu::BindGroupLayout,
     material_pipeline_layout: wgpu::PipelineLayout,
+    rigid_material_pipeline_layout: wgpu::PipelineLayout,
     sky_pipeline: wgpu::RenderPipeline,
+    pipeline_rigid_culled: wgpu::RenderPipeline,
+    pipeline_rigid_double_sided: wgpu::RenderPipeline,
+    pipeline_rigid_unlit_culled: wgpu::RenderPipeline,
+    pipeline_rigid_unlit_double_sided: wgpu::RenderPipeline,
+    pipeline_rigid_toon_culled: wgpu::RenderPipeline,
+    pipeline_rigid_toon_double_sided: wgpu::RenderPipeline,
+    pipeline_rigid_overlay_culled: wgpu::RenderPipeline,
+    pipeline_rigid_overlay_double_sided: wgpu::RenderPipeline,
     pipeline_culled: wgpu::RenderPipeline,
     pipeline_double_sided: wgpu::RenderPipeline,
     pipeline_unlit_culled: wgpu::RenderPipeline,
@@ -223,13 +252,22 @@ pub struct Gpu3D {
     pipeline_overlay_double_sided: wgpu::RenderPipeline,
     pipeline_depth_prepass_culled: wgpu::RenderPipeline,
     pipeline_depth_prepass_double_sided: wgpu::RenderPipeline,
+    pipeline_depth_prepass_rigid_culled: wgpu::RenderPipeline,
+    pipeline_depth_prepass_rigid_double_sided: wgpu::RenderPipeline,
     pipeline_shadow_depth_culled: wgpu::RenderPipeline,
     pipeline_shadow_depth_double_sided: wgpu::RenderPipeline,
+    pipeline_shadow_depth_rigid_culled: wgpu::RenderPipeline,
+    pipeline_shadow_depth_rigid_double_sided: wgpu::RenderPipeline,
+    pipeline_multimesh_culled: wgpu::RenderPipeline,
+    pipeline_multimesh_double_sided: wgpu::RenderPipeline,
     custom_pipelines: AHashMap<String, CustomPipeline>,
+    custom_pipelines_rigid: AHashMap<String, CustomPipeline>,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    rigid_camera_bind_group: wgpu::BindGroup,
     shadow_camera_buffer: wgpu::Buffer,
     shadow_camera_bind_group: wgpu::BindGroup,
+    rigid_shadow_camera_bind_group: wgpu::BindGroup,
     shadow_buffer: wgpu::Buffer,
     shadow_bind_group: wgpu::BindGroup,
     _shadow_map_texture: wgpu::Texture,
@@ -248,6 +286,14 @@ pub struct Gpu3D {
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
     staged_instances: Vec<InstanceGpu>,
+    multimesh_bind_group: wgpu::BindGroup,
+    multimesh_draw_params_buffer: wgpu::Buffer,
+    multimesh_draw_params_capacity: usize,
+    staged_multimesh_draw_params: Vec<MultiMeshDrawParamGpu>,
+    multimesh_instance_buffer: wgpu::Buffer,
+    multimesh_instance_capacity: usize,
+    staged_multimesh_instances: Vec<MultiMeshInstanceGpu>,
+    multimesh_batches: Vec<MultiMeshBatch>,
     frustum_cull_enabled: bool,
     frustum_cull_supported: bool,
     frustum_cull_pipeline: wgpu::ComputePipeline,
@@ -273,10 +319,13 @@ pub struct Gpu3D {
     last_sky: Option<SkyUniform>,
     sky_enabled: bool,
     mesh_vertices: Vec<MeshVertex>,
+    rigid_mesh_vertices: Vec<RigidMeshVertex>,
     mesh_indices: Vec<u32>,
     vertex_buffer: wgpu::Buffer,
+    rigid_vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     vertex_capacity: usize,
+    rigid_vertex_capacity: usize,
     index_capacity: usize,
     builtin_mesh_ranges: AHashMap<&'static str, MeshRange>,
     builtin_mesh_bounds: AHashMap<&'static str, ([f32; 3], f32)>,
@@ -386,6 +435,7 @@ struct DrawBatch {
     mesh: MeshRange,
     instance_start: u32,
     instance_count: u32,
+    path: RenderPath3D,
     double_sided: bool,
     material_kind: MaterialPipelineKind,
     draw_on_top: bool,
@@ -395,6 +445,21 @@ struct DrawBatch {
     occlusion_query: Option<u32>,
     disable_hiz_occlusion: bool,
     casts_shadows: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+enum RenderPath3D {
+    Rigid,
+    Skinned,
+}
+
+#[derive(Clone)]
+struct MultiMeshBatch {
+    mesh: MeshRange,
+    instance_start: u32,
+    instance_count: u32,
+    draw_param_index: u32,
+    double_sided: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -449,10 +514,14 @@ impl Gpu3D {
     fn ensure_custom_pipeline(
         &mut self,
         device: &wgpu::Device,
+        path: RenderPath3D,
         shader_path: &str,
         static_shader_lookup: Option<StaticShaderLookup>,
     ) -> Option<&CustomPipeline> {
-        if self.custom_pipelines.contains_key(shader_path) {
+        if path == RenderPath3D::Rigid && self.custom_pipelines_rigid.contains_key(shader_path) {
+            return self.custom_pipelines_rigid.get(shader_path);
+        }
+        if path == RenderPath3D::Skinned && self.custom_pipelines.contains_key(shader_path) {
             return self.custom_pipelines.get(shader_path);
         }
         let src = if let Some(lookup) = static_shader_lookup {
@@ -465,40 +534,78 @@ impl Gpu3D {
             let src = std::str::from_utf8(&bytes).ok()?;
             Some(Cow::Owned(src.to_string()))
         })?;
-        let wgsl = build_material_shader(src.as_ref());
+        let wgsl = if path == RenderPath3D::Rigid {
+            build_material_shader_with_prelude(
+                include_str!("shaders/prelude_rigid_3d.wgsl"),
+                src.as_ref(),
+            )
+        } else {
+            build_material_shader_with_prelude(
+                include_str!("shaders/prelude_skinned_3d.wgsl"),
+                src.as_ref(),
+            )
+        };
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("perro_mesh_custom"),
             source: wgpu::ShaderSource::Wgsl(wgsl.into()),
         });
-        let pipeline_culled = create_pipeline(
-            device,
-            &self.material_pipeline_layout,
-            &shader,
-            self.color_format,
-            self.sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_double_sided = create_pipeline(
-            device,
-            &self.material_pipeline_layout,
-            &shader,
-            self.color_format,
-            self.sample_count,
-            None,
-        );
-        self.custom_pipelines.insert(
+        let pipeline_culled = if path == RenderPath3D::Rigid {
+            create_pipeline_rigid(
+                device,
+                &self.rigid_material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                Some(wgpu::Face::Back),
+            )
+        } else {
+            create_pipeline_skinned(
+                device,
+                &self.material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                Some(wgpu::Face::Back),
+            )
+        };
+        let pipeline_double_sided = if path == RenderPath3D::Rigid {
+            create_pipeline_rigid(
+                device,
+                &self.rigid_material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                None,
+            )
+        } else {
+            create_pipeline_skinned(
+                device,
+                &self.material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                None,
+            )
+        };
+        let map = if path == RenderPath3D::Rigid {
+            &mut self.custom_pipelines_rigid
+        } else {
+            &mut self.custom_pipelines
+        };
+        map.insert(
             shader_path.to_string(),
             CustomPipeline {
                 pipeline_culled,
                 pipeline_double_sided,
             },
         );
-        self.custom_pipelines.get(shader_path)
+        map.get(shader_path)
     }
 
     fn material_pipeline_kind(
         &mut self,
         device: &wgpu::Device,
+        render_path: RenderPath3D,
         material: &Material3D,
         static_shader_lookup: Option<StaticShaderLookup>,
     ) -> MaterialPipelineKind {
@@ -507,12 +614,12 @@ impl Gpu3D {
             Material3D::Unlit(_) => MaterialPipelineKind::Unlit,
             Material3D::Toon(_) => MaterialPipelineKind::Toon,
             Material3D::Custom(custom) => {
-                let path = custom.shader_path.as_ref();
+                let shader_path = custom.shader_path.as_ref();
                 if self
-                    .ensure_custom_pipeline(device, path, static_shader_lookup)
+                    .ensure_custom_pipeline(device, render_path, shader_path, static_shader_lookup)
                     .is_some()
                 {
-                    MaterialPipelineKind::Custom(path.to_string())
+                    MaterialPipelineKind::Custom(shader_path.to_string())
                 } else {
                     MaterialPipelineKind::Standard
                 }
@@ -521,8 +628,13 @@ impl Gpu3D {
     }
 
     fn pipeline_for_batch(&self, batch: &DrawBatch) -> &wgpu::RenderPipeline {
+        let is_rigid = batch.path == RenderPath3D::Rigid;
         if batch.draw_on_top {
-            return if batch.double_sided {
+            return if batch.double_sided && is_rigid {
+                &self.pipeline_rigid_overlay_double_sided
+            } else if is_rigid {
+                &self.pipeline_rigid_overlay_culled
+            } else if batch.double_sided {
                 &self.pipeline_overlay_double_sided
             } else {
                 &self.pipeline_overlay_culled
@@ -530,28 +642,45 @@ impl Gpu3D {
         }
         match &batch.material_kind {
             MaterialPipelineKind::Standard => {
-                if batch.double_sided {
+                if batch.double_sided && is_rigid {
+                    &self.pipeline_rigid_double_sided
+                } else if is_rigid {
+                    &self.pipeline_rigid_culled
+                } else if batch.double_sided {
                     &self.pipeline_double_sided
                 } else {
                     &self.pipeline_culled
                 }
             }
             MaterialPipelineKind::Unlit => {
-                if batch.double_sided {
+                if batch.double_sided && is_rigid {
+                    &self.pipeline_rigid_unlit_double_sided
+                } else if is_rigid {
+                    &self.pipeline_rigid_unlit_culled
+                } else if batch.double_sided {
                     &self.pipeline_unlit_double_sided
                 } else {
                     &self.pipeline_unlit_culled
                 }
             }
             MaterialPipelineKind::Toon => {
-                if batch.double_sided {
+                if batch.double_sided && is_rigid {
+                    &self.pipeline_rigid_toon_double_sided
+                } else if is_rigid {
+                    &self.pipeline_rigid_toon_culled
+                } else if batch.double_sided {
                     &self.pipeline_toon_double_sided
                 } else {
                     &self.pipeline_toon_culled
                 }
             }
-            MaterialPipelineKind::Custom(path) => self
-                .custom_pipelines
+            MaterialPipelineKind::Custom(path) => {
+                let map = if is_rigid {
+                    &self.custom_pipelines_rigid
+                } else {
+                    &self.custom_pipelines
+                };
+                map
                 .get(path)
                 .map(|pipeline| {
                     if batch.double_sided {
@@ -561,12 +690,17 @@ impl Gpu3D {
                     }
                 })
                 .unwrap_or_else(|| {
-                    if batch.double_sided {
+                    if batch.double_sided && is_rigid {
+                        &self.pipeline_rigid_double_sided
+                    } else if is_rigid {
+                        &self.pipeline_rigid_culled
+                    } else if batch.double_sided {
                         &self.pipeline_double_sided
                     } else {
                         &self.pipeline_culled
                     }
-                }),
+                })
+            }
         }
     }
 
@@ -600,9 +734,13 @@ impl Gpu3D {
             indirect_first_instance_enabled,
         } = config;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(occlusion_culling);
-        let shader = create_mesh_shader_module(device);
-        let shader_unlit = create_unlit_shader_module(device);
-        let shader_toon = create_toon_shader_module(device);
+        let shader = create_mesh_shader_module_skinned(device);
+        let shader_unlit = create_unlit_shader_module_skinned(device);
+        let shader_toon = create_toon_shader_module_skinned(device);
+        let shader_rigid = create_mesh_shader_module_rigid(device);
+        let shader_rigid_unlit = create_unlit_shader_module_rigid(device);
+        let shader_rigid_toon = create_toon_shader_module_rigid(device);
+        let shader_multimesh = create_multimesh_shader_module(device);
         let sky_shader = create_sky_shader_module(device);
         let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_camera3d_bgl"),
@@ -633,6 +771,62 @@ impl Gpu3D {
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let rigid_camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_camera3d_rigid_bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(
+                            std::num::NonZeroU64::new(std::mem::size_of::<Scene3DUniform>() as u64)
+                                .expect("camera uniform size must be non-zero"),
+                        ),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let multimesh_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_multimesh_bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(
+                            std::num::NonZeroU64::new(std::mem::size_of::<Scene3DUniform>() as u64)
+                                .expect("scene size"),
+                        ),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
@@ -765,6 +959,14 @@ impl Gpu3D {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let multimesh_draw_params_capacity = 256usize;
+        let multimesh_draw_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_draw_params"),
+            size: (multimesh_draw_params_capacity * std::mem::size_of::<MultiMeshDrawParamGpu>())
+                as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_camera3d_bg"),
             layout: &camera_bgl,
@@ -779,6 +981,20 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
+                    resource: custom_params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let rigid_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_camera3d_rigid_bg"),
+            layout: &rigid_camera_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
                     resource: custom_params_buffer.as_entire_binding(),
                 },
             ],
@@ -798,6 +1014,34 @@ impl Gpu3D {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: custom_params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let rigid_shadow_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_shadow_camera3d_rigid_bg"),
+            layout: &rigid_camera_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: shadow_camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: custom_params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let multimesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_multimesh_bg"),
+            layout: &multimesh_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: multimesh_draw_params_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -837,10 +1081,30 @@ impl Gpu3D {
             ],
             immediate_size: 0,
         });
+        let rigid_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("perro_mesh_pipeline_layout_rigid"),
+            bind_group_layouts: &[
+                Some(&rigid_camera_bgl),
+                Some(&material_texture_bgl),
+                Some(&shadow_bgl),
+            ],
+            immediate_size: 0,
+        });
+        let multimesh_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("perro_multimesh_pipeline_layout"),
+            bind_group_layouts: &[Some(&multimesh_bgl)],
+            immediate_size: 0,
+        });
         let depth_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_depth_pipeline_layout"),
                 bind_group_layouts: &[Some(&camera_bgl)],
+                immediate_size: 0,
+            });
+        let rigid_depth_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_depth_pipeline_layout_rigid"),
+                bind_group_layouts: &[Some(&rigid_camera_bgl)],
                 immediate_size: 0,
             });
         let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -855,7 +1119,7 @@ impl Gpu3D {
             color_format,
             sample_count,
         );
-        let pipeline_culled = create_pipeline(
+        let pipeline_culled = create_pipeline_skinned(
             device,
             &pipeline_layout,
             &shader,
@@ -863,7 +1127,7 @@ impl Gpu3D {
             sample_count,
             Some(wgpu::Face::Back),
         );
-        let pipeline_double_sided = create_pipeline(
+        let pipeline_double_sided = create_pipeline_skinned(
             device,
             &pipeline_layout,
             &shader,
@@ -871,7 +1135,7 @@ impl Gpu3D {
             sample_count,
             None,
         );
-        let pipeline_unlit_culled = create_pipeline(
+        let pipeline_unlit_culled = create_pipeline_skinned(
             device,
             &pipeline_layout,
             &shader_unlit,
@@ -879,7 +1143,7 @@ impl Gpu3D {
             sample_count,
             Some(wgpu::Face::Back),
         );
-        let pipeline_unlit_double_sided = create_pipeline(
+        let pipeline_unlit_double_sided = create_pipeline_skinned(
             device,
             &pipeline_layout,
             &shader_unlit,
@@ -887,7 +1151,7 @@ impl Gpu3D {
             sample_count,
             None,
         );
-        let pipeline_toon_culled = create_pipeline(
+        let pipeline_toon_culled = create_pipeline_skinned(
             device,
             &pipeline_layout,
             &shader_toon,
@@ -895,7 +1159,7 @@ impl Gpu3D {
             sample_count,
             Some(wgpu::Face::Back),
         );
-        let pipeline_toon_double_sided = create_pipeline(
+        let pipeline_toon_double_sided = create_pipeline_skinned(
             device,
             &pipeline_layout,
             &shader_toon,
@@ -903,7 +1167,7 @@ impl Gpu3D {
             sample_count,
             None,
         );
-        let pipeline_overlay_culled = create_pipeline_overlay(
+        let pipeline_overlay_culled = create_pipeline_overlay_skinned(
             device,
             &pipeline_layout,
             &shader,
@@ -911,7 +1175,7 @@ impl Gpu3D {
             sample_count,
             Some(wgpu::Face::Back),
         );
-        let pipeline_overlay_double_sided = create_pipeline_overlay(
+        let pipeline_overlay_double_sided = create_pipeline_overlay_skinned(
             device,
             &pipeline_layout,
             &shader,
@@ -919,29 +1183,134 @@ impl Gpu3D {
             sample_count,
             None,
         );
-        let depth_prepass_shader = create_depth_prepass_shader_module(device);
-        let pipeline_depth_prepass_culled = create_depth_prepass_pipeline(
+        let pipeline_rigid_culled = create_pipeline_rigid(
             device,
-            &depth_pipeline_layout,
-            &depth_prepass_shader,
+            &rigid_pipeline_layout,
+            &shader_rigid,
+            color_format,
+            sample_count,
             Some(wgpu::Face::Back),
         );
-        let pipeline_depth_prepass_double_sided = create_depth_prepass_pipeline(
+        let pipeline_rigid_double_sided = create_pipeline_rigid(
             device,
-            &depth_pipeline_layout,
-            &depth_prepass_shader,
+            &rigid_pipeline_layout,
+            &shader_rigid,
+            color_format,
+            sample_count,
             None,
         );
-        let pipeline_shadow_depth_culled = create_shadow_depth_pipeline(
+        let pipeline_rigid_unlit_culled = create_pipeline_rigid(
             device,
-            &depth_pipeline_layout,
-            &depth_prepass_shader,
+            &rigid_pipeline_layout,
+            &shader_rigid_unlit,
+            color_format,
+            sample_count,
             Some(wgpu::Face::Back),
         );
-        let pipeline_shadow_depth_double_sided = create_shadow_depth_pipeline(
+        let pipeline_rigid_unlit_double_sided = create_pipeline_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_unlit,
+            color_format,
+            sample_count,
+            None,
+        );
+        let pipeline_rigid_toon_culled = create_pipeline_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_toon,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_rigid_toon_double_sided = create_pipeline_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_toon,
+            color_format,
+            sample_count,
+            None,
+        );
+        let pipeline_rigid_overlay_culled = create_pipeline_overlay_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_rigid_overlay_double_sided = create_pipeline_overlay_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid,
+            color_format,
+            sample_count,
+            None,
+        );
+        let pipeline_multimesh_culled = create_multimesh_pipeline(
+            device,
+            &multimesh_pipeline_layout,
+            &shader_multimesh,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_multimesh_double_sided = create_multimesh_pipeline(
+            device,
+            &multimesh_pipeline_layout,
+            &shader_multimesh,
+            color_format,
+            sample_count,
+            None,
+        );
+        let depth_prepass_shader_rigid = create_depth_prepass_shader_module_rigid(device);
+        let depth_prepass_shader_skinned = create_depth_prepass_shader_module_skinned(device);
+        let pipeline_depth_prepass_culled = create_depth_prepass_pipeline_skinned(
             device,
             &depth_pipeline_layout,
-            &depth_prepass_shader,
+            &depth_prepass_shader_skinned,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_depth_prepass_double_sided = create_depth_prepass_pipeline_skinned(
+            device,
+            &depth_pipeline_layout,
+            &depth_prepass_shader_skinned,
+            None,
+        );
+        let pipeline_depth_prepass_rigid_culled = create_depth_prepass_pipeline_rigid(
+            device,
+            &rigid_depth_pipeline_layout,
+            &depth_prepass_shader_rigid,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_depth_prepass_rigid_double_sided = create_depth_prepass_pipeline_rigid(
+            device,
+            &rigid_depth_pipeline_layout,
+            &depth_prepass_shader_rigid,
+            None,
+        );
+        let pipeline_shadow_depth_culled = create_shadow_depth_pipeline_skinned(
+            device,
+            &depth_pipeline_layout,
+            &depth_prepass_shader_skinned,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_shadow_depth_double_sided = create_shadow_depth_pipeline_skinned(
+            device,
+            &depth_pipeline_layout,
+            &depth_prepass_shader_skinned,
+            None,
+        );
+        let pipeline_shadow_depth_rigid_culled = create_shadow_depth_pipeline_rigid(
+            device,
+            &rigid_depth_pipeline_layout,
+            &depth_prepass_shader_rigid,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_shadow_depth_rigid_double_sided = create_shadow_depth_pipeline_rigid(
+            device,
+            &rigid_depth_pipeline_layout,
+            &depth_prepass_shader_rigid,
             None,
         );
 
@@ -949,7 +1318,16 @@ impl Gpu3D {
             build_builtin_mesh_buffer();
         let builtin_mesh_bounds =
             compute_builtin_mesh_bounds(&vertices, &indices, &builtin_mesh_ranges);
+        let rigid_vertices: Vec<RigidMeshVertex> = vertices
+            .iter()
+            .map(|v| RigidMeshVertex {
+                pos: v.pos,
+                normal: v.normal,
+                uv: v.uv,
+            })
+            .collect();
         let vertex_capacity = vertices.len().max(1);
+        let rigid_vertex_capacity = rigid_vertices.len().max(1);
         let index_capacity = indices.len().max(1);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("perro_builtin_mesh_vertices"),
@@ -965,11 +1343,26 @@ impl Gpu3D {
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
         });
+        let rigid_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("perro_builtin_mesh_vertices_rigid"),
+            contents: bytemuck::cast_slice(&rigid_vertices),
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
 
         let instance_capacity = 256usize;
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_mesh_instances"),
             size: (instance_capacity * std::mem::size_of::<InstanceGpu>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let multimesh_instance_capacity = 256usize;
+        let multimesh_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_instances"),
+            size: (multimesh_instance_capacity * std::mem::size_of::<MultiMeshInstanceGpu>())
+                as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1257,11 +1650,22 @@ impl Gpu3D {
         let mut gpu = Self {
             color_format,
             camera_bgl,
+            rigid_camera_bgl,
+            multimesh_bgl,
             material_texture_bgl,
             shadow_bgl,
             sky_bgl,
             material_pipeline_layout: pipeline_layout,
+            rigid_material_pipeline_layout: rigid_pipeline_layout,
             sky_pipeline,
+            pipeline_rigid_culled,
+            pipeline_rigid_double_sided,
+            pipeline_rigid_unlit_culled,
+            pipeline_rigid_unlit_double_sided,
+            pipeline_rigid_toon_culled,
+            pipeline_rigid_toon_double_sided,
+            pipeline_rigid_overlay_culled,
+            pipeline_rigid_overlay_double_sided,
             pipeline_culled,
             pipeline_double_sided,
             pipeline_unlit_culled,
@@ -1272,12 +1676,20 @@ impl Gpu3D {
             pipeline_overlay_double_sided,
             pipeline_depth_prepass_culled,
             pipeline_depth_prepass_double_sided,
+            pipeline_depth_prepass_rigid_culled,
+            pipeline_depth_prepass_rigid_double_sided,
             pipeline_shadow_depth_culled,
             pipeline_shadow_depth_double_sided,
+            pipeline_shadow_depth_rigid_culled,
+            pipeline_shadow_depth_rigid_double_sided,
+            pipeline_multimesh_culled,
+            pipeline_multimesh_double_sided,
             camera_buffer,
             camera_bind_group,
+            rigid_camera_bind_group,
             shadow_camera_buffer,
             shadow_camera_bind_group,
+            rigid_shadow_camera_bind_group,
             shadow_buffer,
             shadow_bind_group,
             _shadow_map_texture: shadow_map_texture,
@@ -1296,6 +1708,14 @@ impl Gpu3D {
             instance_buffer,
             instance_capacity,
             staged_instances: Vec::new(),
+            multimesh_bind_group,
+            multimesh_draw_params_buffer,
+            multimesh_draw_params_capacity,
+            staged_multimesh_draw_params: Vec::new(),
+            multimesh_instance_buffer,
+            multimesh_instance_capacity,
+            staged_multimesh_instances: Vec::new(),
+            multimesh_batches: Vec::new(),
             frustum_cull_enabled,
             frustum_cull_supported: frustum_cull_enabled,
             frustum_cull_pipeline,
@@ -1321,10 +1741,13 @@ impl Gpu3D {
             last_sky: None,
             sky_enabled: false,
             mesh_vertices: vertices,
+            rigid_mesh_vertices: rigid_vertices,
             mesh_indices: indices,
             vertex_buffer,
+            rigid_vertex_buffer,
             index_buffer,
             vertex_capacity,
+            rigid_vertex_capacity,
             index_capacity,
             builtin_mesh_ranges,
             builtin_mesh_bounds,
@@ -1380,6 +1803,7 @@ impl Gpu3D {
             last_occlusion_visible: 0,
             last_occlusion_culled: 0,
             custom_pipelines: AHashMap::new(),
+            custom_pipelines_rigid: AHashMap::new(),
         };
         gpu.rebuild_hiz_bind_groups(device);
         gpu
@@ -1444,9 +1868,13 @@ impl Gpu3D {
         if self.sample_count == sample_count && self.color_format == color_format {
             return;
         }
-        let shader = create_mesh_shader_module(device);
-        let shader_unlit = create_unlit_shader_module(device);
-        let shader_toon = create_toon_shader_module(device);
+        let shader = create_mesh_shader_module_skinned(device);
+        let shader_unlit = create_unlit_shader_module_skinned(device);
+        let shader_toon = create_toon_shader_module_skinned(device);
+        let shader_rigid = create_mesh_shader_module_rigid(device);
+        let shader_rigid_unlit = create_unlit_shader_module_rigid(device);
+        let shader_rigid_toon = create_toon_shader_module_rigid(device);
+        let shader_multimesh = create_multimesh_shader_module(device);
         let sky_shader = create_sky_shader_module(device);
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_mesh_pipeline_layout"),
@@ -1463,12 +1891,33 @@ impl Gpu3D {
                 bind_group_layouts: &[Some(&self.camera_bgl)],
                 immediate_size: 0,
             });
+        let rigid_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("perro_mesh_pipeline_layout_rigid"),
+            bind_group_layouts: &[
+                Some(&self.rigid_camera_bgl),
+                Some(&self.material_texture_bgl),
+                Some(&self.shadow_bgl),
+            ],
+            immediate_size: 0,
+        });
+        let rigid_depth_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_depth_pipeline_layout_rigid"),
+                bind_group_layouts: &[Some(&self.rigid_camera_bgl)],
+                immediate_size: 0,
+            });
+        let multimesh_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_multimesh_pipeline_layout"),
+                bind_group_layouts: &[Some(&self.multimesh_bgl)],
+                immediate_size: 0,
+            });
         let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_sky3d_pipeline_layout"),
             bind_group_layouts: &[Some(&self.sky_bgl)],
             immediate_size: 0,
         });
-        self.pipeline_culled = create_pipeline(
+        self.pipeline_culled = create_pipeline_skinned(
             device,
             &pipeline_layout,
             &shader,
@@ -1476,7 +1925,7 @@ impl Gpu3D {
             sample_count,
             Some(wgpu::Face::Back),
         );
-        self.pipeline_double_sided = create_pipeline(
+        self.pipeline_double_sided = create_pipeline_skinned(
             device,
             &pipeline_layout,
             &shader,
@@ -1484,7 +1933,7 @@ impl Gpu3D {
             sample_count,
             None,
         );
-        self.pipeline_unlit_culled = create_pipeline(
+        self.pipeline_unlit_culled = create_pipeline_skinned(
             device,
             &pipeline_layout,
             &shader_unlit,
@@ -1492,7 +1941,7 @@ impl Gpu3D {
             sample_count,
             Some(wgpu::Face::Back),
         );
-        self.pipeline_unlit_double_sided = create_pipeline(
+        self.pipeline_unlit_double_sided = create_pipeline_skinned(
             device,
             &pipeline_layout,
             &shader_unlit,
@@ -1500,7 +1949,7 @@ impl Gpu3D {
             sample_count,
             None,
         );
-        self.pipeline_toon_culled = create_pipeline(
+        self.pipeline_toon_culled = create_pipeline_skinned(
             device,
             &pipeline_layout,
             &shader_toon,
@@ -1508,7 +1957,7 @@ impl Gpu3D {
             sample_count,
             Some(wgpu::Face::Back),
         );
-        self.pipeline_toon_double_sided = create_pipeline(
+        self.pipeline_toon_double_sided = create_pipeline_skinned(
             device,
             &pipeline_layout,
             &shader_toon,
@@ -1516,7 +1965,7 @@ impl Gpu3D {
             sample_count,
             None,
         );
-        self.pipeline_overlay_culled = create_pipeline_overlay(
+        self.pipeline_overlay_culled = create_pipeline_overlay_skinned(
             device,
             &pipeline_layout,
             &shader,
@@ -1524,7 +1973,7 @@ impl Gpu3D {
             sample_count,
             Some(wgpu::Face::Back),
         );
-        self.pipeline_overlay_double_sided = create_pipeline_overlay(
+        self.pipeline_overlay_double_sided = create_pipeline_overlay_skinned(
             device,
             &pipeline_layout,
             &shader,
@@ -1532,29 +1981,134 @@ impl Gpu3D {
             sample_count,
             None,
         );
-        let depth_prepass_shader = create_depth_prepass_shader_module(device);
-        self.pipeline_depth_prepass_culled = create_depth_prepass_pipeline(
+        self.pipeline_rigid_culled = create_pipeline_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        self.pipeline_rigid_double_sided = create_pipeline_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid,
+            color_format,
+            sample_count,
+            None,
+        );
+        self.pipeline_rigid_unlit_culled = create_pipeline_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_unlit,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        self.pipeline_rigid_unlit_double_sided = create_pipeline_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_unlit,
+            color_format,
+            sample_count,
+            None,
+        );
+        self.pipeline_rigid_toon_culled = create_pipeline_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_toon,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        self.pipeline_rigid_toon_double_sided = create_pipeline_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_toon,
+            color_format,
+            sample_count,
+            None,
+        );
+        self.pipeline_rigid_overlay_culled = create_pipeline_overlay_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        self.pipeline_rigid_overlay_double_sided = create_pipeline_overlay_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid,
+            color_format,
+            sample_count,
+            None,
+        );
+        self.pipeline_multimesh_culled = create_multimesh_pipeline(
+            device,
+            &multimesh_pipeline_layout,
+            &shader_multimesh,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        self.pipeline_multimesh_double_sided = create_multimesh_pipeline(
+            device,
+            &multimesh_pipeline_layout,
+            &shader_multimesh,
+            color_format,
+            sample_count,
+            None,
+        );
+        let depth_prepass_shader = create_depth_prepass_shader_module_skinned(device);
+        let depth_prepass_shader_rigid = create_depth_prepass_shader_module_rigid(device);
+        self.pipeline_depth_prepass_culled = create_depth_prepass_pipeline_skinned(
             device,
             &depth_pipeline_layout,
             &depth_prepass_shader,
             Some(wgpu::Face::Back),
         );
-        self.pipeline_depth_prepass_double_sided = create_depth_prepass_pipeline(
+        self.pipeline_depth_prepass_double_sided = create_depth_prepass_pipeline_skinned(
             device,
             &depth_pipeline_layout,
             &depth_prepass_shader,
             None,
         );
-        self.pipeline_shadow_depth_culled = create_shadow_depth_pipeline(
+        self.pipeline_depth_prepass_rigid_culled = create_depth_prepass_pipeline_rigid(
+            device,
+            &rigid_depth_pipeline_layout,
+            &depth_prepass_shader_rigid,
+            Some(wgpu::Face::Back),
+        );
+        self.pipeline_depth_prepass_rigid_double_sided = create_depth_prepass_pipeline_rigid(
+            device,
+            &rigid_depth_pipeline_layout,
+            &depth_prepass_shader_rigid,
+            None,
+        );
+        self.pipeline_shadow_depth_culled = create_shadow_depth_pipeline_skinned(
             device,
             &depth_pipeline_layout,
             &depth_prepass_shader,
             Some(wgpu::Face::Back),
         );
-        self.pipeline_shadow_depth_double_sided = create_shadow_depth_pipeline(
+        self.pipeline_shadow_depth_double_sided = create_shadow_depth_pipeline_skinned(
             device,
             &depth_pipeline_layout,
             &depth_prepass_shader,
+            None,
+        );
+        self.pipeline_shadow_depth_rigid_culled = create_shadow_depth_pipeline_rigid(
+            device,
+            &rigid_depth_pipeline_layout,
+            &depth_prepass_shader_rigid,
+            Some(wgpu::Face::Back),
+        );
+        self.pipeline_shadow_depth_rigid_double_sided = create_shadow_depth_pipeline_rigid(
+            device,
+            &rigid_depth_pipeline_layout,
+            &depth_prepass_shader_rigid,
             None,
         );
         self.sky_pipeline = create_sky_pipeline(
@@ -1565,6 +2119,7 @@ impl Gpu3D {
             sample_count,
         );
         self.material_pipeline_layout = pipeline_layout;
+        self.rigid_material_pipeline_layout = rigid_pipeline_layout;
         self.color_format = color_format;
         let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
         self.depth_texture = depth_texture;
@@ -1584,6 +2139,7 @@ impl Gpu3D {
         self.rebuild_hiz_bind_groups(device);
         self.sample_count = sample_count;
         self.custom_pipelines.clear();
+        self.custom_pipelines_rigid.clear();
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(self.occlusion_mode);
         self.gpu_occlusion_enabled = gpu_occlusion_enabled;
         self.cpu_occlusion_enabled = cpu_occlusion_enabled;
@@ -1667,7 +2223,9 @@ impl Gpu3D {
             self.last_sky = sky_uniform;
         }
         let draws_unchanged = self.last_draws_revision == draws_revision;
+        let has_dense_multimesh = draws.iter().any(|d| d.dense_multimesh.is_some());
         let transform_only_semantic = !draws_unchanged
+            && !has_dense_multimesh
             && draws.len() == self.last_draws.len()
             && self
                 .last_draws
@@ -1731,7 +2289,7 @@ impl Gpu3D {
                 }
             }
             self.update_shadow_state(queue, &camera, lighting);
-            self.last_total_drawn = self.staged_instances.len();
+            self.last_total_drawn = self.staged_instances.len() + self.staged_multimesh_instances.len();
             return;
         }
         if transform_only_changed {
@@ -1854,7 +2412,7 @@ impl Gpu3D {
             self.last_draws.clear();
             self.last_draws.extend_from_slice(draws);
             self.last_draws_revision = draws_revision;
-            self.last_total_drawn = self.staged_instances.len();
+            self.last_total_drawn = self.staged_instances.len() + self.staged_multimesh_instances.len();
             return;
         }
 
@@ -1867,6 +2425,9 @@ impl Gpu3D {
         self.staged_skeletons.clear();
         self.staged_custom_params.clear();
         self.draw_batches.clear();
+        self.multimesh_batches.clear();
+        self.staged_multimesh_instances.clear();
+        self.staged_multimesh_draw_params.clear();
         self.draw_batches.reserve(draws.len());
         self.last_draw_instance_ranges.clear();
         self.last_draw_instance_ranges.reserve(draws.len());
@@ -1951,6 +2512,51 @@ impl Gpu3D {
                 }
             };
             if surface_entries.is_empty() {
+                self.last_draw_instance_ranges
+                    .push(draw_instance_start..(self.staged_instances.len() as u32));
+                continue;
+            }
+            if let Some(dense) = &draw.dense_multimesh {
+                let draw_model = Mat4::from_cols_array_2d(&dense.node_model);
+                for (range, material) in surface_entries {
+                    let params = material.standard_params();
+                    let packed_color = pack_unorm4x8(params.base_color_factor);
+                    let packed_emissive = pack_unorm4x8([
+                        params.emissive_factor[0],
+                        params.emissive_factor[1],
+                        params.emissive_factor[2],
+                        1.0,
+                    ]);
+                    let draw_param_index = self.staged_multimesh_draw_params.len() as u32;
+                    self.staged_multimesh_draw_params.push(MultiMeshDrawParamGpu {
+                        model_row_0: [draw_model.x_axis.x, draw_model.y_axis.x, draw_model.z_axis.x, draw_model.w_axis.x],
+                        model_row_1: [draw_model.x_axis.y, draw_model.y_axis.y, draw_model.z_axis.y, draw_model.w_axis.y],
+                        model_row_2: [draw_model.x_axis.z, draw_model.y_axis.z, draw_model.z_axis.z, draw_model.w_axis.z],
+                        packed_color,
+                        packed_emissive,
+                        scale_bits: dense.instance_scale.max(0.0001).to_bits(),
+                        _pad: 0,
+                    });
+                    let instance_start = self.staged_multimesh_instances.len() as u32;
+                    for pose in dense.instances.iter().copied() {
+                        self.staged_multimesh_instances.push(MultiMeshInstanceGpu {
+                            position: pose.position,
+                            rotation: pose.rotation,
+                            draw_id: draw_param_index,
+                        });
+                    }
+                    let instance_count =
+                        (self.staged_multimesh_instances.len() as u32).saturating_sub(instance_start);
+                    if instance_count > 0 {
+                        self.multimesh_batches.push(MultiMeshBatch {
+                            mesh: range,
+                            instance_start,
+                            instance_count,
+                            draw_param_index,
+                            double_sided: params.double_sided,
+                        });
+                    }
+                }
                 self.last_draw_instance_ranges
                     .push(draw_instance_start..(self.staged_instances.len() as u32));
                 continue;
@@ -2078,8 +2684,16 @@ impl Gpu3D {
                             mesh_source,
                             static_texture_lookup,
                         );
-                        let material_kind =
-                            self.material_pipeline_kind(device, &material, static_shader_lookup);
+                        let material_kind = self.material_pipeline_kind(
+                            device,
+                            if skeleton_count > 0 {
+                                RenderPath3D::Skinned
+                            } else {
+                                RenderPath3D::Rigid
+                            },
+                            &material,
+                            static_shader_lookup,
+                        );
                         let (custom_params_offset, custom_params_len) =
                             self.stage_custom_params(&material);
                         let instance_start = self.staged_instances.len() as u32;
@@ -2106,6 +2720,11 @@ impl Gpu3D {
                             };
                             push_draw_batch(
                                 &mut self.draw_batches,
+                                if skeleton_count > 0 {
+                                    RenderPath3D::Skinned
+                                } else {
+                                    RenderPath3D::Rigid
+                                },
                                 range,
                                 instance_start,
                                 instance_count,
@@ -2131,8 +2750,16 @@ impl Gpu3D {
                     mesh_source,
                     static_texture_lookup,
                 );
-                let material_kind =
-                    self.material_pipeline_kind(device, material, static_shader_lookup);
+                let material_kind = self.material_pipeline_kind(
+                    device,
+                    if draw.skeleton.is_some() {
+                        RenderPath3D::Skinned
+                    } else {
+                        RenderPath3D::Rigid
+                    },
+                    material,
+                    static_shader_lookup,
+                );
                 let (custom_params_offset, custom_params_len) = self.stage_custom_params(material);
                 let (skeleton_start, skeleton_count) = if let Some(skeleton) = &draw.skeleton {
                     let start = self.staged_skeletons.len() as u32;
@@ -2176,6 +2803,11 @@ impl Gpu3D {
                     };
                     push_draw_batch(
                         &mut self.draw_batches,
+                        if skeleton_count > 0 {
+                            RenderPath3D::Skinned
+                        } else {
+                            RenderPath3D::Rigid
+                        },
                         MeshRange {
                             index_start: meshlet.index_start,
                             index_count: meshlet.index_count,
@@ -2211,6 +2843,7 @@ impl Gpu3D {
                 mesh: default_mesh.full,
                 instance_start,
                 instance_count: debug_points_count,
+                path: RenderPath3D::Rigid,
                 double_sided: debug_points_double_sided,
                 material_kind: MaterialPipelineKind::Standard,
                 draw_on_top: true,
@@ -2232,6 +2865,7 @@ impl Gpu3D {
                 mesh: debug_edge_mesh.full,
                 instance_start,
                 instance_count: debug_edges_count,
+                path: RenderPath3D::Rigid,
                 double_sided: debug_edges_double_sided,
                 material_kind: MaterialPipelineKind::Standard,
                 draw_on_top: true,
@@ -2244,6 +2878,8 @@ impl Gpu3D {
             });
         }
         self.draw_batches.sort_unstable_by(compare_draw_batch_keys);
+        self.multimesh_batches
+            .sort_unstable_by_key(|b| (b.double_sided, b.mesh.index_start, b.draw_param_index));
         self.debug_frustum_visible_est = 0;
         for batch in &self.draw_batches {
             let model =
@@ -2280,6 +2916,22 @@ impl Gpu3D {
                 &self.custom_params_buffer,
                 0,
                 bytemuck::cast_slice(&self.staged_custom_params),
+            );
+        }
+        self.ensure_multimesh_draw_params_capacity(device, self.staged_multimesh_draw_params.len().max(1));
+        if !self.staged_multimesh_draw_params.is_empty() {
+            queue.write_buffer(
+                &self.multimesh_draw_params_buffer,
+                0,
+                bytemuck::cast_slice(&self.staged_multimesh_draw_params),
+            );
+        }
+        self.ensure_multimesh_instance_capacity(device, self.staged_multimesh_instances.len().max(1));
+        if !self.staged_multimesh_instances.is_empty() {
+            queue.write_buffer(
+                &self.multimesh_instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.staged_multimesh_instances),
             );
         }
         self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
@@ -2363,7 +3015,7 @@ impl Gpu3D {
         }
         self.update_shadow_state(queue, &camera, lighting);
         self.last_total_meshlets = total_meshlets;
-        self.last_total_drawn = self.staged_instances.len();
+        self.last_total_drawn = self.staged_instances.len() + self.staged_multimesh_instances.len();
     }
 
     fn update_shadow_state(
@@ -2438,23 +3090,38 @@ impl Gpu3D {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            shadow_pass.set_bind_group(0, &self.shadow_camera_bind_group, &[]);
-            shadow_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            shadow_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             shadow_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            let mut current_double_sided = None;
+            let mut current_state: Option<(RenderPath3D, bool)> = None;
             for batch in &self.draw_batches {
                 if batch.draw_on_top || !batch.casts_shadows {
                     continue;
                 }
-                if current_double_sided != Some(batch.double_sided) {
-                    let pipeline = if batch.double_sided {
-                        &self.pipeline_shadow_depth_double_sided
+                let state = (batch.path, batch.double_sided);
+                if current_state != Some(state) {
+                    let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
+                        let p = if batch.double_sided {
+                            &self.pipeline_shadow_depth_rigid_double_sided
+                        } else {
+                            &self.pipeline_shadow_depth_rigid_culled
+                        };
+                        (
+                            &self.rigid_shadow_camera_bind_group,
+                            &self.rigid_vertex_buffer,
+                            p,
+                        )
                     } else {
-                        &self.pipeline_shadow_depth_culled
+                        let p = if batch.double_sided {
+                            &self.pipeline_shadow_depth_double_sided
+                        } else {
+                            &self.pipeline_shadow_depth_culled
+                        };
+                        (&self.shadow_camera_bind_group, &self.vertex_buffer, p)
                     };
+                    shadow_pass.set_bind_group(0, camera_bg, &[]);
+                    shadow_pass.set_vertex_buffer(0, vertex_buf.slice(..));
+                    shadow_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
                     shadow_pass.set_pipeline(pipeline);
-                    current_double_sided = Some(batch.double_sided);
+                    current_state = Some(state);
                 }
                 let start = batch.mesh.index_start;
                 let end = start + batch.mesh.index_count;
@@ -2489,23 +3156,34 @@ impl Gpu3D {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            prepass.set_bind_group(0, &self.camera_bind_group, &[]);
-            prepass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            prepass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             prepass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            let mut current_double_sided = None;
+            let mut current_state: Option<(RenderPath3D, bool)> = None;
             for (i, batch) in self.draw_batches.iter().enumerate() {
                 if batch.draw_on_top {
                     continue;
                 }
-                if current_double_sided != Some(batch.double_sided) {
-                    let pipeline = if batch.double_sided {
-                        &self.pipeline_depth_prepass_double_sided
+                let state = (batch.path, batch.double_sided);
+                if current_state != Some(state) {
+                    let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
+                        let p = if batch.double_sided {
+                            &self.pipeline_depth_prepass_rigid_double_sided
+                        } else {
+                            &self.pipeline_depth_prepass_rigid_culled
+                        };
+                        (&self.rigid_camera_bind_group, &self.rigid_vertex_buffer, p)
                     } else {
-                        &self.pipeline_depth_prepass_culled
+                        let p = if batch.double_sided {
+                            &self.pipeline_depth_prepass_double_sided
+                        } else {
+                            &self.pipeline_depth_prepass_culled
+                        };
+                        (&self.camera_bind_group, &self.vertex_buffer, p)
                     };
+                    prepass.set_bind_group(0, camera_bg, &[]);
+                    prepass.set_vertex_buffer(0, vertex_buf.slice(..));
+                    prepass.set_vertex_buffer(1, self.instance_buffer.slice(..));
                     prepass.set_pipeline(pipeline);
-                    current_double_sided = Some(batch.double_sided);
+                    current_state = Some(state);
                 }
                 if self.frustum_cull_enabled {
                     let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
@@ -2601,59 +3279,112 @@ impl Gpu3D {
             multiview_mask: None,
         });
         if self.draw_batches.is_empty() {
-            return;
-        }
-        pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        pass.set_bind_group(1, self.fallback_material_texture_bind_group(), &[]);
-        pass.set_bind_group(2, &self.shadow_bind_group, &[]);
-        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-        pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        let mut current_pipeline_key: Option<(MaterialPipelineKind, bool, bool)> = None;
-        let mut current_texture_slot = MATERIAL_TEXTURE_NONE;
-        for (i, batch) in self.draw_batches.iter().enumerate() {
-            let key = (
-                batch.material_kind.clone(),
-                batch.double_sided,
-                batch.draw_on_top,
-            );
-            if current_pipeline_key.as_ref() != Some(&key) {
-                let pipeline = self.pipeline_for_batch(batch);
-                pass.set_pipeline(pipeline);
-                current_pipeline_key = Some(key);
-            }
-            if current_texture_slot != batch.base_color_texture_slot {
-                pass.set_bind_group(
-                    1,
-                    self.material_texture_bind_group(batch.base_color_texture_slot),
-                    &[],
+            drop(pass);
+        } else {
+            pass.set_bind_group(1, self.fallback_material_texture_bind_group(), &[]);
+            pass.set_bind_group(2, &self.shadow_bind_group, &[]);
+            pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            let mut current_pipeline_key: Option<(RenderPath3D, MaterialPipelineKind, bool, bool)> =
+                None;
+            let mut current_texture_slot = MATERIAL_TEXTURE_NONE;
+            for (i, batch) in self.draw_batches.iter().enumerate() {
+                let key = (
+                    batch.path,
+                    batch.material_kind.clone(),
+                    batch.double_sided,
+                    batch.draw_on_top,
                 );
-                current_texture_slot = batch.base_color_texture_slot;
-            }
-            if let Some(query_index) = batch.occlusion_query {
-                pass.begin_occlusion_query(query_index);
-                if self.frustum_cull_enabled {
+                if current_pipeline_key.as_ref() != Some(&key) {
+                    let pipeline = self.pipeline_for_batch(batch);
+                    pass.set_pipeline(pipeline);
+                    if batch.path == RenderPath3D::Rigid {
+                        pass.set_bind_group(0, &self.rigid_camera_bind_group, &[]);
+                        pass.set_vertex_buffer(0, self.rigid_vertex_buffer.slice(..));
+                    } else {
+                        pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                    }
+                    pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                    current_pipeline_key = Some(key);
+                }
+                if current_texture_slot != batch.base_color_texture_slot {
+                    pass.set_bind_group(
+                        1,
+                        self.material_texture_bind_group(batch.base_color_texture_slot),
+                        &[],
+                    );
+                    current_texture_slot = batch.base_color_texture_slot;
+                }
+                if let Some(query_index) = batch.occlusion_query {
+                    pass.begin_occlusion_query(query_index);
+                    if self.frustum_cull_enabled {
+                        let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
+                        pass.draw_indexed_indirect(&self.indirect_buffer, offset);
+                    } else {
+                        let start = batch.mesh.index_start;
+                        let end = start + batch.mesh.index_count;
+                        let instances =
+                            batch.instance_start..batch.instance_start + batch.instance_count;
+                        pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+                    }
+                    pass.end_occlusion_query();
+                } else if self.frustum_cull_enabled {
                     let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
                     pass.draw_indexed_indirect(&self.indirect_buffer, offset);
                 } else {
                     let start = batch.mesh.index_start;
                     let end = start + batch.mesh.index_count;
-                    let instances =
-                        batch.instance_start..batch.instance_start + batch.instance_count;
+                    let instances = batch.instance_start..batch.instance_start + batch.instance_count;
                     pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
                 }
-                pass.end_occlusion_query();
-            } else if self.frustum_cull_enabled {
-                let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
-                pass.draw_indexed_indirect(&self.indirect_buffer, offset);
-            } else {
+            }
+            drop(pass);
+        }
+
+        if !self.multimesh_batches.is_empty() {
+            let mut mm_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("perro_multimesh_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            mm_pass.set_bind_group(0, &self.multimesh_bind_group, &[]);
+            mm_pass.set_vertex_buffer(0, self.rigid_vertex_buffer.slice(..));
+            mm_pass.set_vertex_buffer(1, self.multimesh_instance_buffer.slice(..));
+            mm_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            let mut current_double_sided: Option<bool> = None;
+            for batch in &self.multimesh_batches {
+                if current_double_sided != Some(batch.double_sided) {
+                    mm_pass.set_pipeline(if batch.double_sided {
+                        &self.pipeline_multimesh_double_sided
+                    } else {
+                        &self.pipeline_multimesh_culled
+                    });
+                    current_double_sided = Some(batch.double_sided);
+                }
                 let start = batch.mesh.index_start;
                 let end = start + batch.mesh.index_count;
                 let instances = batch.instance_start..batch.instance_start + batch.instance_count;
-                pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+                mm_pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
             }
         }
-        drop(pass);
 
         if query_count > 0
             && let (Some(query_set), Some(resolve), Some(readback)) = (
@@ -2800,6 +3531,41 @@ impl Gpu3D {
         self.instance_capacity = new_capacity;
     }
 
+    fn ensure_multimesh_instance_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        if needed <= self.multimesh_instance_capacity {
+            return;
+        }
+        let mut new_capacity = self.multimesh_instance_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.multimesh_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_instances"),
+            size: (new_capacity * std::mem::size_of::<MultiMeshInstanceGpu>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.multimesh_instance_capacity = new_capacity;
+    }
+
+    fn ensure_multimesh_draw_params_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        if needed <= self.multimesh_draw_params_capacity {
+            return;
+        }
+        let mut new_capacity = self.multimesh_draw_params_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.multimesh_draw_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_draw_params"),
+            size: (new_capacity * std::mem::size_of::<MultiMeshDrawParamGpu>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.multimesh_draw_params_capacity = new_capacity;
+        self.rebuild_camera_bind_groups(device);
+    }
+
     fn rebuild_camera_bind_groups(&mut self, device: &wgpu::Device) {
         self.camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_camera3d_bg"),
@@ -2834,6 +3600,48 @@ impl Gpu3D {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: self.custom_params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        self.rigid_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_camera3d_rigid_bg"),
+            layout: &self.rigid_camera_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.custom_params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        self.rigid_shadow_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_shadow_camera3d_rigid_bg"),
+            layout: &self.rigid_camera_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.shadow_camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.custom_params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        self.multimesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_multimesh_bg"),
+            layout: &self.multimesh_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.multimesh_draw_params_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -3307,6 +4115,14 @@ impl Gpu3D {
                 .collect()
         };
         let added_vertices = decoded.vertices;
+        let added_rigid_vertices: Vec<RigidMeshVertex> = added_vertices
+            .iter()
+            .map(|v| RigidMeshVertex {
+                pos: v.pos,
+                normal: v.normal,
+                uv: v.uv,
+            })
+            .collect();
         let mut added_indices = Vec::with_capacity(decoded.indices.len());
         for idx in decoded.indices {
             added_indices.push(idx + base_vertex);
@@ -3318,15 +4134,24 @@ impl Gpu3D {
 
         let vertex_offset =
             self.mesh_vertices.len() as u64 * std::mem::size_of::<MeshVertex>() as u64;
+        let rigid_vertex_offset =
+            self.rigid_mesh_vertices.len() as u64 * std::mem::size_of::<RigidMeshVertex>() as u64;
         let index_offset = self.mesh_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
 
         self.mesh_vertices.extend_from_slice(&added_vertices);
+        self.rigid_mesh_vertices
+            .extend_from_slice(&added_rigid_vertices);
         self.mesh_indices.extend_from_slice(&added_indices);
 
         queue.write_buffer(
             &self.vertex_buffer,
             vertex_offset,
             bytemuck::cast_slice(&added_vertices),
+        );
+        queue.write_buffer(
+            &self.rigid_vertex_buffer,
+            rigid_vertex_offset,
+            bytemuck::cast_slice(&added_rigid_vertices),
         );
         queue.write_buffer(
             &self.index_buffer,
@@ -3380,6 +4205,7 @@ impl Gpu3D {
                 cap *= 2;
             }
             self.vertex_capacity = cap;
+            self.rigid_vertex_capacity = cap;
             grew = true;
         }
 
@@ -3394,13 +4220,24 @@ impl Gpu3D {
 
         if grew {
             let old_vertex_buffer = self.vertex_buffer.clone();
+            let old_rigid_vertex_buffer = self.rigid_vertex_buffer.clone();
             let old_index_buffer = self.index_buffer.clone();
             let old_vertex_size =
                 self.mesh_vertices.len() as u64 * std::mem::size_of::<MeshVertex>() as u64;
+            let old_rigid_vertex_size =
+                self.rigid_mesh_vertices.len() as u64 * std::mem::size_of::<RigidMeshVertex>() as u64;
             let old_index_size = self.mesh_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
             self.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("perro_mesh_vertices"),
                 size: (self.vertex_capacity * std::mem::size_of::<MeshVertex>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            self.rigid_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_mesh_vertices_rigid"),
+                size: (self.rigid_vertex_capacity * std::mem::size_of::<RigidMeshVertex>()) as u64,
                 usage: wgpu::BufferUsages::VERTEX
                     | wgpu::BufferUsages::COPY_DST
                     | wgpu::BufferUsages::COPY_SRC,
@@ -3414,7 +4251,7 @@ impl Gpu3D {
                     | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             });
-            if old_vertex_size > 0 || old_index_size > 0 {
+            if old_vertex_size > 0 || old_rigid_vertex_size > 0 || old_index_size > 0 {
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("perro_mesh_buffer_growth_copy"),
                 });
@@ -3425,6 +4262,15 @@ impl Gpu3D {
                         &self.vertex_buffer,
                         0,
                         old_vertex_size,
+                    );
+                }
+                if old_rigid_vertex_size > 0 {
+                    encoder.copy_buffer_to_buffer(
+                        &old_rigid_vertex_buffer,
+                        0,
+                        &self.rigid_vertex_buffer,
+                        0,
+                        old_rigid_vertex_size,
                     );
                 }
                 if old_index_size > 0 {
@@ -4213,461 +5059,9 @@ fn create_sky_pipeline(
     })
 }
 
-fn create_pipeline(
-    device: &wgpu::Device,
-    pipeline_layout: &wgpu::PipelineLayout,
-    shader: &wgpu::ShaderModule,
-    color_format: wgpu::TextureFormat,
-    sample_count: u32,
-    cull_mode: Option<wgpu::Face>,
-) -> wgpu::RenderPipeline {
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("perro_mesh_pipeline"),
-        layout: Some(pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: shader,
-            entry_point: Some("vs_main"),
-            buffers: &[
-                wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<MeshVertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 12,
-                            shader_location: 1,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 24,
-                            shader_location: 12,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Uint16x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 40,
-                            shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                    ],
-                },
-                wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<InstanceGpu>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 4,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 16,
-                            shader_location: 5,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
-                            shader_location: 6,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 48,
-                            shader_location: 7,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 64,
-                            shader_location: 8,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 80,
-                            shader_location: 9,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 92,
-                            shader_location: 10,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 108,
-                            shader_location: 11,
-                            format: wgpu::VertexFormat::Uint32x4,
-                        },
-                    ],
-                },
-            ],
-            compilation_options: Default::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: shader,
-            entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: color_format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::RED
-                    | wgpu::ColorWrites::GREEN
-                    | wgpu::ColorWrites::BLUE,
-            })],
-            compilation_options: Default::default(),
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode,
-            unclipped_depth: false,
-            polygon_mode: wgpu::PolygonMode::Fill,
-            conservative: false,
-        },
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::LessEqual),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        }),
-        multisample: wgpu::MultisampleState {
-            count: sample_count,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
-        multiview_mask: None,
-        cache: None,
-    })
-}
-
-fn create_pipeline_overlay(
-    device: &wgpu::Device,
-    pipeline_layout: &wgpu::PipelineLayout,
-    shader: &wgpu::ShaderModule,
-    color_format: wgpu::TextureFormat,
-    sample_count: u32,
-    cull_mode: Option<wgpu::Face>,
-) -> wgpu::RenderPipeline {
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("perro_mesh_pipeline_overlay"),
-        layout: Some(pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: shader,
-            entry_point: Some("vs_main"),
-            buffers: &[
-                wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<MeshVertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 12,
-                            shader_location: 1,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 24,
-                            shader_location: 12,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Uint16x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 40,
-                            shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                    ],
-                },
-                wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<InstanceGpu>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 4,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 16,
-                            shader_location: 5,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
-                            shader_location: 6,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 48,
-                            shader_location: 7,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 64,
-                            shader_location: 8,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 80,
-                            shader_location: 9,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 92,
-                            shader_location: 10,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 108,
-                            shader_location: 11,
-                            format: wgpu::VertexFormat::Uint32x4,
-                        },
-                    ],
-                },
-            ],
-            compilation_options: Default::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: shader,
-            entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: color_format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::RED
-                    | wgpu::ColorWrites::GREEN
-                    | wgpu::ColorWrites::BLUE,
-            })],
-            compilation_options: Default::default(),
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode,
-            unclipped_depth: false,
-            polygon_mode: wgpu::PolygonMode::Fill,
-            conservative: false,
-        },
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: Some(false),
-            depth_compare: Some(wgpu::CompareFunction::Always),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        }),
-        multisample: wgpu::MultisampleState {
-            count: sample_count,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
-        multiview_mask: None,
-        cache: None,
-    })
-}
-
-fn create_depth_prepass_pipeline(
-    device: &wgpu::Device,
-    pipeline_layout: &wgpu::PipelineLayout,
-    shader: &wgpu::ShaderModule,
-    cull_mode: Option<wgpu::Face>,
-) -> wgpu::RenderPipeline {
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("perro_depth_prepass_pipeline"),
-        layout: Some(pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: shader,
-            entry_point: Some("vs_main"),
-            buffers: &[
-                wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<MeshVertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Uint16x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 40,
-                            shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                    ],
-                },
-                wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<InstanceGpu>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 4,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 16,
-                            shader_location: 5,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
-                            shader_location: 6,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 48,
-                            shader_location: 7,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 108,
-                            shader_location: 11,
-                            format: wgpu::VertexFormat::Uint32x4,
-                        },
-                    ],
-                },
-            ],
-            compilation_options: Default::default(),
-        },
-        fragment: None,
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode,
-            unclipped_depth: false,
-            polygon_mode: wgpu::PolygonMode::Fill,
-            conservative: false,
-        },
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: DEPTH_PREPASS_FORMAT,
-            depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::LessEqual),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        }),
-        multisample: wgpu::MultisampleState::default(),
-        multiview_mask: None,
-        cache: None,
-    })
-}
-
-fn create_shadow_depth_pipeline(
-    device: &wgpu::Device,
-    pipeline_layout: &wgpu::PipelineLayout,
-    shader: &wgpu::ShaderModule,
-    cull_mode: Option<wgpu::Face>,
-) -> wgpu::RenderPipeline {
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("perro_shadow_depth_pipeline"),
-        layout: Some(pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: shader,
-            entry_point: Some("vs_main"),
-            buffers: &[
-                wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<MeshVertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Uint16x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 40,
-                            shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                    ],
-                },
-                wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<InstanceGpu>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 4,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 16,
-                            shader_location: 5,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
-                            shader_location: 6,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 48,
-                            shader_location: 7,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 108,
-                            shader_location: 11,
-                            format: wgpu::VertexFormat::Uint32x4,
-                        },
-                    ],
-                },
-            ],
-            compilation_options: Default::default(),
-        },
-        fragment: None,
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode,
-            unclipped_depth: false,
-            polygon_mode: wgpu::PolygonMode::Fill,
-            conservative: false,
-        },
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: SHADOW_DEPTH_FORMAT,
-            depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::LessEqual),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState {
-                constant: SHADOW_MAP_DEPTH_BIAS_CONST,
-                slope_scale: SHADOW_MAP_DEPTH_BIAS_SLOPE,
-                clamp: 0.0,
-            },
-        }),
-        multisample: wgpu::MultisampleState::default(),
-        multiview_mask: None,
-        cache: None,
-    })
-}
-
-#[inline]
 fn push_draw_batch(
     draw_batches: &mut Vec<DrawBatch>,
+    render_path: RenderPath3D,
     mesh: MeshRange,
     instance_start: u32,
     instance_count: u32,
@@ -4687,6 +5081,7 @@ fn push_draw_batch(
         mesh,
         instance_start,
         instance_count,
+        path: render_path,
         double_sided,
         material_kind,
         draw_on_top: false,
@@ -4936,14 +5331,16 @@ fn override_bool(value: &MaterialParamOverrideValue3D) -> Option<bool> {
 
 #[inline]
 fn compare_draw_batch_keys(a: &DrawBatch, b: &DrawBatch) -> Ordering {
-    a.draw_on_top
+    a.path
+        .cmp(&b.path)
+        .then_with(|| a.draw_on_top
         .cmp(&b.draw_on_top)
         .then_with(|| a.double_sided.cmp(&b.double_sided))
         .then_with(|| compare_material_pipeline_kind(&a.material_kind, &b.material_kind))
         .then_with(|| a.base_color_texture_slot.cmp(&b.base_color_texture_slot))
         .then_with(|| a.mesh.index_start.cmp(&b.mesh.index_start))
         .then_with(|| a.mesh.base_vertex.cmp(&b.mesh.base_vertex))
-        .then_with(|| a.instance_start.cmp(&b.instance_start))
+        .then_with(|| a.instance_start.cmp(&b.instance_start)))
 }
 
 #[inline]

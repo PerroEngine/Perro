@@ -281,6 +281,17 @@ fn multi_mesh_instance_emits_draw_multi_with_instance_mats() {
                         && instance_mats[0][3][0] == 1.0
                         && instance_mats[1][3][0] == 3.0
                 )
+                || matches!(
+                    command_3d.as_ref(),
+                    Command3D::DrawMultiDense {
+                        node: draw_node,
+                        instances,
+                        ..
+                    } if *draw_node == node
+                        && instances.len() == 2
+                        && instances[0].position[0] == 1.0
+                        && instances[1].position[0] == 3.0
+                )
         )
     }));
 }
