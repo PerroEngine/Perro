@@ -8,9 +8,10 @@ use super::{
         create_depth_prepass_shader_module_skinned, create_frustum_cull_shader_module,
         create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
         create_hiz_occlusion_cull_shader_module, create_mesh_shader_module_rigid,
-        create_mesh_shader_module_skinned, create_multimesh_shader_module, create_sky_shader_module,
-        create_toon_shader_module_rigid, create_toon_shader_module_skinned,
-        create_unlit_shader_module_rigid, create_unlit_shader_module_skinned,
+        create_mesh_shader_module_skinned, create_multimesh_shader_module,
+        create_sky_shader_module, create_toon_shader_module_rigid,
+        create_toon_shader_module_skinned, create_unlit_shader_module_rigid,
+        create_unlit_shader_module_skinned,
     },
 };
 use crate::backend::{
@@ -36,12 +37,12 @@ use std::{
 use wgpu::util::DeviceExt;
 
 mod mesh_presets;
-#[path = "gpu/paths/skinned.rs"]
-mod skinned_path;
-#[path = "gpu/paths/rigid.rs"]
-mod rigid_path;
 #[path = "gpu/paths/multimesh.rs"]
 mod multimesh_path;
+#[path = "gpu/paths/rigid.rs"]
+mod rigid_path;
+#[path = "gpu/paths/skinned.rs"]
+mod skinned_path;
 
 use multimesh_path::{create_multimesh_pipeline, pack_unorm4x8};
 use rigid_path::{
@@ -336,6 +337,8 @@ pub struct Gpu3D {
     indirect_capacity: usize,
     indirect_staging: Vec<DrawIndexedIndirectGpu>,
     draw_batches: Vec<DrawBatch>,
+    has_shadow_casters: bool,
+    surface_entries_scratch: Vec<(MeshRange, Material3D)>,
     last_draws: Vec<Draw3DInstance>,
     last_draws_revision: u64,
     last_draw_instance_ranges: Vec<Range<u32>>,
@@ -530,6 +533,7 @@ const HIZ_OCCLUSION_MIN_BATCHES: usize = 80;
 const HIZ_OCCLUSION_MIN_INSTANCES: usize = 1024;
 const DEPTH_PREPASS_MIN_BATCHES: usize = 96;
 const DEPTH_PREPASS_MIN_INSTANCES: usize = 1400;
+const HIZ_DEBUG_READBACK_ENABLED: bool = false;
 // Re-test occluded batches every frame so visibility recovers immediately when camera/object moves.
 const OCCLUSION_PROBE_INTERVAL: u64 = 1;
 
@@ -719,26 +723,25 @@ impl Gpu3D {
                 } else {
                     &self.custom_pipelines
                 };
-                map
-                .get(path)
-                .map(|pipeline| {
-                    if batch.double_sided {
-                        &pipeline.pipeline_double_sided
-                    } else {
-                        &pipeline.pipeline_culled
-                    }
-                })
-                .unwrap_or_else(|| {
-                    if batch.double_sided && is_rigid {
-                        &self.pipeline_rigid_double_sided
-                    } else if is_rigid {
-                        &self.pipeline_rigid_culled
-                    } else if batch.double_sided {
-                        &self.pipeline_double_sided
-                    } else {
-                        &self.pipeline_culled
-                    }
-                })
+                map.get(path)
+                    .map(|pipeline| {
+                        if batch.double_sided {
+                            &pipeline.pipeline_double_sided
+                        } else {
+                            &pipeline.pipeline_culled
+                        }
+                    })
+                    .unwrap_or_else(|| {
+                        if batch.double_sided && is_rigid {
+                            &self.pipeline_rigid_double_sided
+                        } else if is_rigid {
+                            &self.pipeline_rigid_culled
+                        } else if batch.double_sided {
+                            &self.pipeline_double_sided
+                        } else {
+                            &self.pipeline_culled
+                        }
+                    })
             }
         }
     }
@@ -1120,20 +1123,22 @@ impl Gpu3D {
             ],
             immediate_size: 0,
         });
-        let rigid_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_mesh_pipeline_layout_rigid"),
-            bind_group_layouts: &[
-                Some(&rigid_camera_bgl),
-                Some(&material_texture_bgl),
-                Some(&shadow_bgl),
-            ],
-            immediate_size: 0,
-        });
-        let multimesh_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_multimesh_pipeline_layout"),
-            bind_group_layouts: &[Some(&multimesh_bgl)],
-            immediate_size: 0,
-        });
+        let rigid_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_mesh_pipeline_layout_rigid"),
+                bind_group_layouts: &[
+                    Some(&rigid_camera_bgl),
+                    Some(&material_texture_bgl),
+                    Some(&shadow_bgl),
+                ],
+                immediate_size: 0,
+            });
+        let multimesh_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_multimesh_pipeline_layout"),
+                bind_group_layouts: &[Some(&multimesh_bgl)],
+                immediate_size: 0,
+            });
         let depth_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_depth_pipeline_layout"),
@@ -1801,6 +1806,8 @@ impl Gpu3D {
             indirect_capacity,
             indirect_staging: Vec::new(),
             draw_batches: Vec::new(),
+            has_shadow_casters: false,
+            surface_entries_scratch: Vec::new(),
             last_draws: Vec::new(),
             last_draws_revision: u64::MAX,
             last_draw_instance_ranges: Vec::new(),
@@ -1967,15 +1974,16 @@ impl Gpu3D {
                 bind_group_layouts: &[Some(&self.camera_bgl)],
                 immediate_size: 0,
             });
-        let rigid_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_mesh_pipeline_layout_rigid"),
-            bind_group_layouts: &[
-                Some(&self.rigid_camera_bgl),
-                Some(&self.material_texture_bgl),
-                Some(&self.shadow_bgl),
-            ],
-            immediate_size: 0,
-        });
+        let rigid_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_mesh_pipeline_layout_rigid"),
+                bind_group_layouts: &[
+                    Some(&self.rigid_camera_bgl),
+                    Some(&self.material_texture_bgl),
+                    Some(&self.shadow_bgl),
+                ],
+                immediate_size: 0,
+            });
         let rigid_depth_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_depth_pipeline_layout_rigid"),
@@ -2244,7 +2252,7 @@ impl Gpu3D {
     }
 
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: Prepare3D<'_>) {
-        if self.gpu_occlusion_enabled {
+        if self.gpu_occlusion_enabled && HIZ_DEBUG_READBACK_ENABLED {
             if self.pending_hiz_debug_map_rx.is_some() {
                 let _ = device.poll(wgpu::PollType::Poll);
             }
@@ -2380,27 +2388,12 @@ impl Gpu3D {
                 if range.start >= range.end {
                     continue;
                 }
-                for instance in &mut self.staged_instance_transforms
-                    [range.start as usize..range.end as usize]
+                for instance in
+                    &mut self.staged_instance_transforms[range.start as usize..range.end as usize]
                 {
-                    instance.model_row_0 = [
-                        model[0][0],
-                        model[1][0],
-                        model[2][0],
-                        model[3][0],
-                    ];
-                    instance.model_row_1 = [
-                        model[0][1],
-                        model[1][1],
-                        model[2][1],
-                        model[3][1],
-                    ];
-                    instance.model_row_2 = [
-                        model[0][2],
-                        model[1][2],
-                        model[2][2],
-                        model[3][2],
-                    ];
+                    instance.model_row_0 = [model[0][0], model[1][0], model[2][0], model[3][0]];
+                    instance.model_row_1 = [model[0][1], model[1][1], model[2][1], model[3][1]];
+                    instance.model_row_2 = [model[0][2], model[1][2], model[2][2], model[3][2]];
                 }
                 self.dirty_instance_spans_scratch.push(range.clone());
             }
@@ -2497,7 +2490,8 @@ impl Gpu3D {
             self.last_draws.clear();
             self.last_draws.extend_from_slice(draws);
             self.last_draws_revision = draws_revision;
-            self.last_total_drawn = self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
+            self.last_total_drawn =
+                self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
             return;
         }
 
@@ -2543,6 +2537,8 @@ impl Gpu3D {
         let mut debug_edges_local_radius = 0.0f32;
         let mut debug_edge_instances = std::mem::take(&mut self.debug_edge_instances_scratch);
         debug_edge_instances.clear();
+        let mut surface_entries = std::mem::take(&mut self.surface_entries_scratch);
+        surface_entries.clear();
 
         for draw in draws {
             let draw_instance_start = self.staged_instance_transforms.len() as u32;
@@ -2564,8 +2560,9 @@ impl Gpu3D {
                     .resolve_builtin_mesh_asset("__cylinder__")
                     .unwrap_or_else(|| default_mesh.clone()),
             };
-            let mut surface_entries: Vec<(MeshRange, Material3D)> = match draw.kind {
-                Draw3DKind::DebugPointCube => vec![(
+            surface_entries.clear();
+            match draw.kind {
+                Draw3DKind::DebugPointCube => surface_entries.push((
                     mesh_asset.full,
                     Material3D::Standard(StandardMaterial3D {
                         base_color_factor: [1.0, 0.92, 0.2, 1.0],
@@ -2574,8 +2571,8 @@ impl Gpu3D {
                         emissive_factor: [0.35, 0.3, 0.06],
                         ..StandardMaterial3D::default()
                     }),
-                )],
-                Draw3DKind::DebugEdgeCylinder => vec![(
+                )),
+                Draw3DKind::DebugEdgeCylinder => surface_entries.push((
                     mesh_asset.full,
                     Material3D::Standard(StandardMaterial3D {
                         base_color_factor: [0.15, 0.95, 0.95, 1.0],
@@ -2584,9 +2581,8 @@ impl Gpu3D {
                         emissive_factor: [0.06, 0.3, 0.3],
                         ..StandardMaterial3D::default()
                     }),
-                )],
+                )),
                 Draw3DKind::Mesh(_) => {
-                    let mut out = Vec::new();
                     for (surface_index, surface) in draw.surfaces.iter().enumerate() {
                         let Some(range) = mesh_asset.surface_ranges.get(surface_index).copied()
                         else {
@@ -2596,14 +2592,14 @@ impl Gpu3D {
                             .material
                             .and_then(|id| resources.material(id))
                             .unwrap_or_default();
-                        out.push((range, apply_surface_binding(base_material, surface)));
+                        surface_entries
+                            .push((range, apply_surface_binding(base_material, surface)));
                     }
-                    if out.is_empty() {
-                        out.push((mesh_asset.full, Material3D::default()));
+                    if surface_entries.is_empty() {
+                        surface_entries.push((mesh_asset.full, Material3D::default()));
                     }
-                    out
                 }
-            };
+            }
             if surface_entries.is_empty() {
                 self.last_draw_instance_ranges
                     .push(draw_instance_start..(self.staged_instance_transforms.len() as u32));
@@ -2611,7 +2607,7 @@ impl Gpu3D {
             }
             if let Some(dense) = &draw.dense_multimesh {
                 let draw_model = Mat4::from_cols_array_2d(&dense.node_model);
-                for (range, material) in surface_entries {
+                for (range, material) in surface_entries.iter() {
                     let params = material.standard_params();
                     let packed_color = pack_unorm4x8(params.base_color_factor);
                     let packed_emissive = pack_unorm4x8([
@@ -2621,15 +2617,31 @@ impl Gpu3D {
                         1.0,
                     ]);
                     let draw_param_index = self.staged_multimesh_draw_params.len() as u32;
-                    self.staged_multimesh_draw_params.push(MultiMeshDrawParamGpu {
-                        model_row_0: [draw_model.x_axis.x, draw_model.y_axis.x, draw_model.z_axis.x, draw_model.w_axis.x],
-                        model_row_1: [draw_model.x_axis.y, draw_model.y_axis.y, draw_model.z_axis.y, draw_model.w_axis.y],
-                        model_row_2: [draw_model.x_axis.z, draw_model.y_axis.z, draw_model.z_axis.z, draw_model.w_axis.z],
-                        packed_color,
-                        packed_emissive,
-                        scale_bits: dense.instance_scale.max(0.0001).to_bits(),
-                        _pad: 0,
-                    });
+                    self.staged_multimesh_draw_params
+                        .push(MultiMeshDrawParamGpu {
+                            model_row_0: [
+                                draw_model.x_axis.x,
+                                draw_model.y_axis.x,
+                                draw_model.z_axis.x,
+                                draw_model.w_axis.x,
+                            ],
+                            model_row_1: [
+                                draw_model.x_axis.y,
+                                draw_model.y_axis.y,
+                                draw_model.z_axis.y,
+                                draw_model.w_axis.y,
+                            ],
+                            model_row_2: [
+                                draw_model.x_axis.z,
+                                draw_model.y_axis.z,
+                                draw_model.z_axis.z,
+                                draw_model.w_axis.z,
+                            ],
+                            packed_color,
+                            packed_emissive,
+                            scale_bits: dense.instance_scale.max(0.0001).to_bits(),
+                            _pad: 0,
+                        });
                     let instance_start = self.staged_multimesh_instances.len() as u32;
                     for pose in dense.instances.iter().copied() {
                         self.staged_multimesh_instances.push(MultiMeshInstanceGpu {
@@ -2638,11 +2650,11 @@ impl Gpu3D {
                             draw_id: draw_param_index,
                         });
                     }
-                    let instance_count =
-                        (self.staged_multimesh_instances.len() as u32).saturating_sub(instance_start);
+                    let instance_count = (self.staged_multimesh_instances.len() as u32)
+                        .saturating_sub(instance_start);
                     if instance_count > 0 {
                         self.multimesh_batches.push(MultiMeshBatch {
-                            mesh: range,
+                            mesh: *range,
                             instance_start,
                             instance_count,
                             draw_param_index,
@@ -2703,9 +2715,9 @@ impl Gpu3D {
                 };
                 let instance_mats = draw.instance_mats.as_ref();
                 if is_debug_point {
-                    let (_, material) = surface_entries.remove(0);
+                    let material = &surface_entries[0].1;
                     let (custom_params_offset, custom_params_len) =
-                        self.stage_custom_params(&material);
+                        self.stage_custom_params(material);
                     let standard_params = material.standard_params();
                     self.ensure_material_texture_slot(
                         device,
@@ -2724,7 +2736,7 @@ impl Gpu3D {
                     for model in instance_mats.iter().copied() {
                         debug_point_instances.push(build_instance(
                             model,
-                            &material,
+                            material,
                             self.meshlet_debug_view,
                             debug_color(draw.node.as_u64()),
                             skeleton_start,
@@ -2735,9 +2747,9 @@ impl Gpu3D {
                         debug_points_count = debug_points_count.saturating_add(1);
                     }
                 } else if is_debug_edge {
-                    let (_, material) = surface_entries.remove(0);
+                    let material = &surface_entries[0].1;
                     let (custom_params_offset, custom_params_len) =
-                        self.stage_custom_params(&material);
+                        self.stage_custom_params(material);
                     let standard_params = material.standard_params();
                     self.ensure_material_texture_slot(
                         device,
@@ -2756,7 +2768,7 @@ impl Gpu3D {
                     for model in instance_mats.iter().copied() {
                         debug_edge_instances.push(build_instance(
                             model,
-                            &material,
+                            material,
                             self.meshlet_debug_view,
                             debug_color(draw.node.as_u64()),
                             skeleton_start,
@@ -2767,7 +2779,7 @@ impl Gpu3D {
                         debug_edges_count = debug_edges_count.saturating_add(1);
                     }
                 } else {
-                    for (range, material) in surface_entries {
+                    for (range, material) in surface_entries.iter() {
                         let standard_params = material.standard_params();
                         self.ensure_material_texture_slot(
                             device,
@@ -2804,10 +2816,11 @@ impl Gpu3D {
                             self.staged_instance_transforms.push(instance.transform);
                             self.staged_instance_materials.push(instance.material);
                             self.staged_rigid_instance_meta.push(instance.rigid_meta);
-                            self.staged_skinned_instance_meta.push(instance.skinned_meta);
+                            self.staged_skinned_instance_meta
+                                .push(instance.skinned_meta);
                         }
-                        let instance_count =
-                            (self.staged_instance_transforms.len() as u32).saturating_sub(instance_start);
+                        let instance_count = (self.staged_instance_transforms.len() as u32)
+                            .saturating_sub(instance_start);
                         if instance_count > 0 {
                             let multi_instance = instance_count > 1;
                             let occlusion_bounds = if multi_instance {
@@ -2822,11 +2835,11 @@ impl Gpu3D {
                                 } else {
                                     RenderPath3D::Rigid
                                 },
-                                range,
+                                *range,
                                 instance_start,
                                 instance_count,
                                 standard_params.double_sided || self.meshlet_debug_view,
-                                material_kind.clone(),
+                                material_kind,
                                 standard_params.base_color_texture,
                                 occlusion_bounds,
                                 occlusion_query,
@@ -2888,10 +2901,11 @@ impl Gpu3D {
                         self.staged_instance_transforms.push(instance.transform);
                         self.staged_instance_materials.push(instance.material);
                         self.staged_rigid_instance_meta.push(instance.rigid_meta);
-                        self.staged_skinned_instance_meta.push(instance.skinned_meta);
+                        self.staged_skinned_instance_meta
+                            .push(instance.skinned_meta);
                     }
-                    let instance_count =
-                        (self.staged_instance_transforms.len() as u32).saturating_sub(instance_start);
+                    let instance_count = (self.staged_instance_transforms.len() as u32)
+                        .saturating_sub(instance_start);
                     if instance_count == 0 {
                         continue;
                     }
@@ -2929,13 +2943,15 @@ impl Gpu3D {
             self.last_draw_instance_ranges
                 .push(draw_instance_start..(self.staged_instance_transforms.len() as u32));
         }
+        self.surface_entries_scratch = surface_entries;
         if !debug_point_instances.is_empty() {
             debug_points_start = Some(self.staged_instance_transforms.len() as u32);
             for instance in debug_point_instances.drain(..) {
                 self.staged_instance_transforms.push(instance.transform);
                 self.staged_instance_materials.push(instance.material);
                 self.staged_rigid_instance_meta.push(instance.rigid_meta);
-                self.staged_skinned_instance_meta.push(instance.skinned_meta);
+                self.staged_skinned_instance_meta
+                    .push(instance.skinned_meta);
             }
         }
         if !debug_edge_instances.is_empty() {
@@ -2944,7 +2960,8 @@ impl Gpu3D {
                 self.staged_instance_transforms.push(instance.transform);
                 self.staged_instance_materials.push(instance.material);
                 self.staged_rigid_instance_meta.push(instance.rigid_meta);
-                self.staged_skinned_instance_meta.push(instance.skinned_meta);
+                self.staged_skinned_instance_meta
+                    .push(instance.skinned_meta);
             }
         }
         if let Some(instance_start) = debug_points_start
@@ -2991,14 +3008,22 @@ impl Gpu3D {
         self.draw_batches.sort_unstable_by(compare_draw_batch_keys);
         self.multimesh_batches
             .sort_unstable_by_key(|b| (b.double_sided, b.mesh.index_start, b.draw_param_index));
-        self.debug_frustum_visible_est = 0;
-        for batch in &self.draw_batches {
-            let model =
-                model_cols_from_affine_rows(&self.staged_instance_transforms[batch.instance_start as usize]);
-            if bounds_in_frustum(model, batch.local_center, batch.local_radius, &frustum) {
-                self.debug_frustum_visible_est = self.debug_frustum_visible_est.saturating_add(1);
+        if HIZ_DEBUG_READBACK_ENABLED {
+            self.debug_frustum_visible_est = 0;
+            for batch in &self.draw_batches {
+                let model = model_cols_from_affine_rows(
+                    &self.staged_instance_transforms[batch.instance_start as usize],
+                );
+                if bounds_in_frustum(model, batch.local_center, batch.local_radius, &frustum) {
+                    self.debug_frustum_visible_est =
+                        self.debug_frustum_visible_est.saturating_add(1);
+                }
             }
         }
+        self.has_shadow_casters = self
+            .draw_batches
+            .iter()
+            .any(|batch| !batch.draw_on_top && batch.casts_shadows);
         if occlusion_capture_this_frame {
             self.ensure_occlusion_query_capacity(
                 device,
@@ -3053,7 +3078,10 @@ impl Gpu3D {
                 bytemuck::cast_slice(&self.staged_custom_params),
             );
         }
-        self.ensure_multimesh_draw_params_capacity(device, self.staged_multimesh_draw_params.len().max(1));
+        self.ensure_multimesh_draw_params_capacity(
+            device,
+            self.staged_multimesh_draw_params.len().max(1),
+        );
         if !self.staged_multimesh_draw_params.is_empty() {
             queue.write_buffer(
                 &self.multimesh_draw_params_buffer,
@@ -3061,7 +3089,10 @@ impl Gpu3D {
                 bytemuck::cast_slice(&self.staged_multimesh_draw_params),
             );
         }
-        self.ensure_multimesh_instance_capacity(device, self.staged_multimesh_instances.len().max(1));
+        self.ensure_multimesh_instance_capacity(
+            device,
+            self.staged_multimesh_instances.len().max(1),
+        );
         if !self.staged_multimesh_instances.is_empty() {
             queue.write_buffer(
                 &self.multimesh_instance_buffer,
@@ -3151,7 +3182,8 @@ impl Gpu3D {
         }
         self.update_shadow_state(queue, &camera, lighting);
         self.last_total_meshlets = total_meshlets;
-        self.last_total_drawn = self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
+        self.last_total_drawn =
+            self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
         self.debug_point_instances_scratch = debug_point_instances;
         self.debug_edge_instances_scratch = debug_edge_instances;
     }
@@ -3213,7 +3245,7 @@ impl Gpu3D {
         } else {
             None
         };
-        if self.shadow_pass_enabled && !self.draw_batches.is_empty() {
+        if self.shadow_pass_enabled && self.has_shadow_casters {
             let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_shadow3d_pass"),
                 color_attachments: &[],
@@ -3260,7 +3292,8 @@ impl Gpu3D {
                     shadow_pass.set_vertex_buffer(0, vertex_buf.slice(..));
                     shadow_pass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
                     if batch.path == RenderPath3D::Skinned {
-                        shadow_pass.set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
+                        shadow_pass
+                            .set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
                     }
                     shadow_pass.set_pipeline(pipeline);
                     current_state = Some(state);
@@ -3356,7 +3389,10 @@ impl Gpu3D {
             cull_pass.dispatch_workgroups(groups, 1, 1);
             drop(cull_pass);
 
-            if self.pending_hiz_debug_count == 0 && self.pending_hiz_debug_map_rx.is_none() {
+            if HIZ_DEBUG_READBACK_ENABLED
+                && self.pending_hiz_debug_count == 0
+                && self.pending_hiz_debug_map_rx.is_none()
+            {
                 let count = self.draw_batches.len() as u32;
                 if count > 0 {
                     let byte_len =
@@ -3429,17 +3465,17 @@ impl Gpu3D {
             pass.set_bind_group(1, self.fallback_material_texture_bind_group(), &[]);
             pass.set_bind_group(2, &self.shadow_bind_group, &[]);
             pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            let mut current_pipeline_key: Option<(RenderPath3D, MaterialPipelineKind, bool, bool)> =
-                None;
+            let mut current_path = None;
+            let mut current_material_kind: Option<&MaterialPipelineKind> = None;
+            let mut current_double_sided = None;
+            let mut current_draw_on_top = None;
             let mut current_texture_slot = MATERIAL_TEXTURE_NONE;
             for (i, batch) in self.draw_batches.iter().enumerate() {
-                let key = (
-                    batch.path,
-                    batch.material_kind.clone(),
-                    batch.double_sided,
-                    batch.draw_on_top,
-                );
-                if current_pipeline_key.as_ref() != Some(&key) {
+                if current_path != Some(batch.path)
+                    || current_material_kind != Some(&batch.material_kind)
+                    || current_double_sided != Some(batch.double_sided)
+                    || current_draw_on_top != Some(batch.draw_on_top)
+                {
                     let pipeline = self.pipeline_for_batch(batch);
                     pass.set_pipeline(pipeline);
                     if batch.path == RenderPath3D::Rigid {
@@ -3453,7 +3489,10 @@ impl Gpu3D {
                     }
                     pass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
                     pass.set_vertex_buffer(2, self.instance_material_buffer.slice(..));
-                    current_pipeline_key = Some(key);
+                    current_path = Some(batch.path);
+                    current_material_kind = Some(&batch.material_kind);
+                    current_double_sided = Some(batch.double_sided);
+                    current_draw_on_top = Some(batch.draw_on_top);
                 }
                 if current_texture_slot != batch.base_color_texture_slot {
                     pass.set_bind_group(
@@ -3482,7 +3521,8 @@ impl Gpu3D {
                 } else {
                     let start = batch.mesh.index_start;
                     let end = start + batch.mesh.index_count;
-                    let instances = batch.instance_start..batch.instance_start + batch.instance_count;
+                    let instances =
+                        batch.instance_start..batch.instance_start + batch.instance_count;
                     pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
                 }
             }
@@ -3577,11 +3617,7 @@ impl Gpu3D {
     }
 
     #[inline]
-    fn should_run_depth_prepass(
-        &self,
-        depth_prepass_needed: bool,
-        hiz_active: bool,
-    ) -> bool {
+    fn should_run_depth_prepass(&self, depth_prepass_needed: bool, hiz_active: bool) -> bool {
         depth_prepass_needed
             || hiz_active
             || (self.draw_batches.len() >= DEPTH_PREPASS_MIN_BATCHES
@@ -3844,20 +3880,21 @@ impl Gpu3D {
                 },
             ],
         });
-        self.rigid_shadow_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_shadow_camera3d_rigid_bg"),
-            layout: &self.rigid_camera_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.shadow_camera_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.custom_params_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        self.rigid_shadow_camera_bind_group =
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_shadow_camera3d_rigid_bg"),
+                layout: &self.rigid_camera_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.shadow_camera_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.custom_params_buffer.as_entire_binding(),
+                    },
+                ],
+            });
         self.multimesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_multimesh_bg"),
             layout: &self.multimesh_bgl,
@@ -4451,8 +4488,8 @@ impl Gpu3D {
             let old_index_buffer = self.index_buffer.clone();
             let old_vertex_size =
                 self.mesh_vertices.len() as u64 * std::mem::size_of::<MeshVertex>() as u64;
-            let old_rigid_vertex_size =
-                self.rigid_mesh_vertices.len() as u64 * std::mem::size_of::<RigidMeshVertex>() as u64;
+            let old_rigid_vertex_size = self.rigid_mesh_vertices.len() as u64
+                * std::mem::size_of::<RigidMeshVertex>() as u64;
             let old_index_size = self.mesh_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
             self.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("perro_mesh_vertices"),
@@ -5416,13 +5453,9 @@ fn build_instance(
                     params.emissive_factor,
                     0u32,
                 ),
-                Material3D::Unlit(params) => (
-                    params.base_color_factor,
-                    0,
-                    0,
-                    params.emissive_factor,
-                    0u32,
-                ),
+                Material3D::Unlit(params) => {
+                    (params.base_color_factor, 0, 0, params.emissive_factor, 0u32)
+                }
                 Material3D::Toon(params) => (
                     params.base_color_factor,
                     pack_toon_pbr_params(
@@ -5644,16 +5677,16 @@ fn override_bool(value: &MaterialParamOverrideValue3D) -> Option<bool> {
 
 #[inline]
 fn compare_draw_batch_keys(a: &DrawBatch, b: &DrawBatch) -> Ordering {
-    a.path
-        .cmp(&b.path)
-        .then_with(|| a.draw_on_top
-        .cmp(&b.draw_on_top)
-        .then_with(|| a.double_sided.cmp(&b.double_sided))
-        .then_with(|| compare_material_pipeline_kind(&a.material_kind, &b.material_kind))
-        .then_with(|| a.base_color_texture_slot.cmp(&b.base_color_texture_slot))
-        .then_with(|| a.mesh.index_start.cmp(&b.mesh.index_start))
-        .then_with(|| a.mesh.base_vertex.cmp(&b.mesh.base_vertex))
-        .then_with(|| a.instance_start.cmp(&b.instance_start)))
+    a.path.cmp(&b.path).then_with(|| {
+        a.draw_on_top
+            .cmp(&b.draw_on_top)
+            .then_with(|| a.double_sided.cmp(&b.double_sided))
+            .then_with(|| compare_material_pipeline_kind(&a.material_kind, &b.material_kind))
+            .then_with(|| a.base_color_texture_slot.cmp(&b.base_color_texture_slot))
+            .then_with(|| a.mesh.index_start.cmp(&b.mesh.index_start))
+            .then_with(|| a.mesh.base_vertex.cmp(&b.mesh.base_vertex))
+            .then_with(|| a.instance_start.cmp(&b.instance_start))
+    })
 }
 
 #[inline]
@@ -6631,4 +6664,3 @@ fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
         a[2] + (b[2] - a[2]) * t,
     ]
 }
-

@@ -59,6 +59,8 @@ pub struct Gpu {
     post: PostProcessor,
     accessibility: VisualAccessibilityProcessor,
     present: PresentProcessor,
+    present_scene_bind_group: wgpu::BindGroup,
+    present_intermediate_bind_group: wgpu::BindGroup,
     two_d: Option<Gpu2D>,
     three_d: Option<Gpu3D>,
     point_particles_3d: Option<GpuPointParticles3D>,
@@ -254,6 +256,9 @@ impl Gpu {
         let accessibility =
             VisualAccessibilityProcessor::new(&device, render_format, width, height);
         let present = PresentProcessor::new(&device, surface_format);
+        let present_scene_bind_group = present.create_bind_group(&device, post.scene_view());
+        let present_intermediate_bind_group =
+            present.create_bind_group(&device, accessibility.intermediate_view());
 
         Some(Self {
             window_handle: window,
@@ -267,6 +272,8 @@ impl Gpu {
             post,
             accessibility,
             present,
+            present_scene_bind_group,
+            present_intermediate_bind_group,
             two_d: Some(two_d),
             three_d: Some(three_d),
             point_particles_3d: Some(point_particles_3d),
@@ -298,6 +305,12 @@ impl Gpu {
         }
         self.post.resize(&self.device, width, height);
         self.accessibility.resize(&self.device, width, height);
+        self.present_scene_bind_group = self
+            .present
+            .create_bind_group(&self.device, self.post.scene_view());
+        self.present_intermediate_bind_group = self
+            .present
+            .create_bind_group(&self.device, self.accessibility.intermediate_view());
         self.msaa_color = create_msaa_color_target(
             &self.device,
             self.render_format,
@@ -592,12 +605,7 @@ impl Gpu {
             });
         }
         if let Some(two_d) = self.two_d.as_ref() {
-            two_d.render_pass(
-                &mut encoder,
-                color_view,
-                resolve_view,
-                rect_draw_count,
-            );
+            two_d.render_pass(&mut encoder, color_view, resolve_view, rect_draw_count);
         }
         timing.encode_main = encode_start.elapsed();
 
@@ -609,35 +617,39 @@ impl Gpu {
         }
         let mut current_tex = FrameTex::Scene;
         if !direct_present {
-            let mut apply_post_chain = |effects: &[perro_structs::PostProcessEffect],
-                                        current_tex: &mut FrameTex| {
-                if effects.is_empty() {
-                    return;
-                }
-                let (input_view, output_view, next_tex) = match *current_tex {
-                    FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
-                    FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene),
+            let mut apply_post_chain =
+                |effects: &[perro_structs::PostProcessEffect], current_tex: &mut FrameTex| {
+                    if effects.is_empty() {
+                        return;
+                    }
+                    let (input_view, output_view, next_tex) = match *current_tex {
+                        FrameTex::Scene => {
+                            (&scene_view, &intermediate_view, FrameTex::Intermediate)
+                        }
+                        FrameTex::Intermediate => {
+                            (&intermediate_view, &scene_view, FrameTex::Scene)
+                        }
+                    };
+                    let post_context = PostProcessContext {
+                        device: &self.device,
+                        queue: &self.queue,
+                        output_view,
+                        camera: &camera_3d,
+                        static_shader_lookup,
+                    };
+                    let post_chain_data = PostProcessChainData {
+                        input_view,
+                        depth_view: self
+                            .three_d
+                            .as_ref()
+                            .expect("three_d is initialized when post-processing is active")
+                            .depth_prepass_view(),
+                        effects,
+                    };
+                    self.post
+                        .apply_chain(&post_context, &post_chain_data, &mut encoder);
+                    *current_tex = next_tex;
                 };
-                let post_context = PostProcessContext {
-                    device: &self.device,
-                    queue: &self.queue,
-                    output_view,
-                    camera: &camera_3d,
-                    static_shader_lookup,
-                };
-                let post_chain_data = PostProcessChainData {
-                    input_view,
-                    depth_view: self
-                        .three_d
-                        .as_ref()
-                        .expect("three_d is initialized when post-processing is active")
-                        .depth_prepass_view(),
-                    effects,
-                };
-                self.post
-                    .apply_chain(&post_context, &post_chain_data, &mut encoder);
-                *current_tex = next_tex;
-            };
             apply_post_chain(
                 if camera_post_enabled {
                     camera_post_chain
@@ -677,12 +689,12 @@ impl Gpu {
         timing.accessibility = accessibility_start.elapsed();
 
         if !direct_present {
-            let final_input_view = match current_tex {
-                FrameTex::Scene => &scene_view,
-                FrameTex::Intermediate => &intermediate_view,
+            let final_bind_group = match current_tex {
+                FrameTex::Scene => &self.present_scene_bind_group,
+                FrameTex::Intermediate => &self.present_intermediate_bind_group,
             };
             self.present
-                .apply(&self.device, &mut encoder, final_input_view, &swap_view);
+                .apply(&mut encoder, final_bind_group, &swap_view);
         }
         let submit_start = Instant::now();
         self.queue.submit(Some(encoder.finish()));
@@ -908,14 +920,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         }
     }
 
-    fn apply(
+    fn create_bind_group(
         &self,
         device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
         input_view: &wgpu::TextureView,
-        output_view: &wgpu::TextureView,
-    ) {
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_present_bg"),
             layout: &self.bgl,
             entries: &[
@@ -928,7 +938,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                     resource: wgpu::BindingResource::Sampler(&self.sampler),
                 },
             ],
-        });
+        })
+    }
+
+    fn apply(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        bind_group: &wgpu::BindGroup,
+        output_view: &wgpu::TextureView,
+    ) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_present_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -946,7 +964,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             multiview_mask: None,
         });
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_bind_group(0, bind_group, &[]);
         pass.draw(0..3, 0..1);
     }
 }

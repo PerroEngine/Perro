@@ -3,8 +3,8 @@ use ahash::AHashMap;
 use perro_ids::{MeshID, NodeID};
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, DenseInstancePose3D,
-    MeshSurfaceBinding3D,
-    PointLight3DState, RayLight3DState, SkeletonPalette, Sky3DState, SpotLight3DState,
+    MeshSurfaceBinding3D, PointLight3DState, RayLight3DState, SkeletonPalette, Sky3DState,
+    SpotLight3DState,
 };
 use std::sync::Arc;
 use std::time::Instant;
@@ -63,6 +63,12 @@ pub struct Renderer3D {
     ray_lights: AHashMap<NodeID, RayLight3DState>,
     point_lights: AHashMap<NodeID, PointLight3DState>,
     spot_lights: AHashMap<NodeID, SpotLight3DState>,
+    ray_lights_sorted_cache: Vec<(NodeID, RayLight3DState)>,
+    point_lights_sorted_cache: Vec<(NodeID, PointLight3DState)>,
+    spot_lights_sorted_cache: Vec<(NodeID, SpotLight3DState)>,
+    ray_lights_dirty: bool,
+    point_lights_dirty: bool,
+    spot_lights_dirty: bool,
     camera: Camera3DState,
     draw_revision: u64,
     last_frame_time: Option<Instant>,
@@ -145,9 +151,15 @@ impl Renderer3D {
         }
         self.ambient_lights.remove(&node);
         self.skies.remove(&node);
-        self.ray_lights.remove(&node);
-        self.point_lights.remove(&node);
-        self.spot_lights.remove(&node);
+        if self.ray_lights.remove(&node).is_some() {
+            self.ray_lights_dirty = true;
+        }
+        if self.point_lights.remove(&node).is_some() {
+            self.point_lights_dirty = true;
+        }
+        if self.spot_lights.remove(&node).is_some() {
+            self.spot_lights_dirty = true;
+        }
     }
 
     pub fn set_ambient_light(&mut self, node: NodeID, light: AmbientLight3DState) {
@@ -159,15 +171,21 @@ impl Renderer3D {
     }
 
     pub fn set_ray_light(&mut self, node: NodeID, light: RayLight3DState) {
-        self.ray_lights.insert(node, light);
+        if self.ray_lights.insert(node, light) != Some(light) {
+            self.ray_lights_dirty = true;
+        }
     }
 
     pub fn set_point_light(&mut self, node: NodeID, light: PointLight3DState) {
-        self.point_lights.insert(node, light);
+        if self.point_lights.insert(node, light) != Some(light) {
+            self.point_lights_dirty = true;
+        }
     }
 
     pub fn set_spot_light(&mut self, node: NodeID, light: SpotLight3DState) {
-        self.spot_lights.insert(node, light);
+        if self.spot_lights.insert(node, light) != Some(light) {
+            self.spot_lights_dirty = true;
+        }
     }
 
     pub fn prepare_frame(
@@ -254,31 +272,27 @@ impl Renderer3D {
             lighting.sky = Some(sky.clone());
             lighting.sky_cloud_time_seconds = self.cloud_time_seconds;
         }
-        let mut ray_lights_sorted: Vec<(NodeID, RayLight3DState)> =
-            self.ray_lights.iter().map(|(n, l)| (*n, *l)).collect();
-        ray_lights_sorted.sort_unstable_by_key(|(node, _)| node.as_u64());
-        for (slot, (_, light)) in lighting.ray_lights.iter_mut().zip(ray_lights_sorted.iter()) {
-            *slot = Some(*light);
-        }
-
-        let mut point_lights_sorted: Vec<(NodeID, PointLight3DState)> =
-            self.point_lights.iter().map(|(n, l)| (*n, *l)).collect();
-        point_lights_sorted.sort_unstable_by_key(|(node, _)| node.as_u64());
+        self.rebuild_sorted_lights_if_dirty();
         for (slot, (_, light)) in lighting
-            .point_lights
+            .ray_lights
             .iter_mut()
-            .zip(point_lights_sorted.iter())
+            .zip(self.ray_lights_sorted_cache.iter())
         {
             *slot = Some(*light);
         }
 
-        let mut spot_lights_sorted: Vec<(NodeID, SpotLight3DState)> =
-            self.spot_lights.iter().map(|(n, l)| (*n, *l)).collect();
-        spot_lights_sorted.sort_unstable_by_key(|(node, _)| node.as_u64());
+        for (slot, (_, light)) in lighting
+            .point_lights
+            .iter_mut()
+            .zip(self.point_lights_sorted_cache.iter())
+        {
+            *slot = Some(*light);
+        }
+
         for (slot, (_, light)) in lighting
             .spot_lights
             .iter_mut()
-            .zip(spot_lights_sorted.iter())
+            .zip(self.spot_lights_sorted_cache.iter())
         {
             *slot = Some(*light);
         }
@@ -317,6 +331,33 @@ impl Renderer3D {
     pub fn camera(&self) -> Camera3DState {
         self.camera.clone()
     }
+
+    fn rebuild_sorted_lights_if_dirty(&mut self) {
+        if self.ray_lights_dirty {
+            self.ray_lights_sorted_cache.clear();
+            self.ray_lights_sorted_cache
+                .extend(self.ray_lights.iter().map(|(n, l)| (*n, *l)));
+            self.ray_lights_sorted_cache
+                .sort_unstable_by_key(|(node, _)| node.as_u64());
+            self.ray_lights_dirty = false;
+        }
+        if self.point_lights_dirty {
+            self.point_lights_sorted_cache.clear();
+            self.point_lights_sorted_cache
+                .extend(self.point_lights.iter().map(|(n, l)| (*n, *l)));
+            self.point_lights_sorted_cache
+                .sort_unstable_by_key(|(node, _)| node.as_u64());
+            self.point_lights_dirty = false;
+        }
+        if self.spot_lights_dirty {
+            self.spot_lights_sorted_cache.clear();
+            self.spot_lights_sorted_cache
+                .extend(self.spot_lights.iter().map(|(n, l)| (*n, *l)));
+            self.spot_lights_sorted_cache
+                .sort_unstable_by_key(|(node, _)| node.as_u64());
+            self.spot_lights_dirty = false;
+        }
+    }
 }
 
 impl Default for Renderer3D {
@@ -329,6 +370,12 @@ impl Default for Renderer3D {
             ray_lights: AHashMap::new(),
             point_lights: AHashMap::new(),
             spot_lights: AHashMap::new(),
+            ray_lights_sorted_cache: Vec::new(),
+            point_lights_sorted_cache: Vec::new(),
+            spot_lights_sorted_cache: Vec::new(),
+            ray_lights_dirty: false,
+            point_lights_dirty: false,
+            spot_lights_dirty: false,
             // Keep a usable fallback view if no Camera3D node is active.
             camera: Camera3DState {
                 position: [0.0, 0.0, 6.0],
@@ -346,4 +393,3 @@ impl Default for Renderer3D {
         }
     }
 }
-

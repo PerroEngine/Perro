@@ -99,6 +99,7 @@ pub struct PerroGraphics {
     retained_draws_cache: Vec<Draw3DInstance>,
     retained_draws_cache_revision: u64,
     retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,
+    retained_point_particles_cache_revision: u64,
     retained_sprites_cache: Vec<Sprite2DCommand>,
     frame_rects_cache: Vec<RectInstanceGpu>,
     global_post_processing: PostProcessSet,
@@ -130,6 +131,7 @@ impl PerroGraphics {
             retained_draws_cache: Vec::new(),
             retained_draws_cache_revision: u64::MAX,
             retained_point_particles_cache: Vec::new(),
+            retained_point_particles_cache_revision: u64::MAX,
             retained_sprites_cache: Vec::new(),
             frame_rects_cache: Vec::new(),
             global_post_processing: PostProcessSet::new(),
@@ -322,8 +324,13 @@ impl PerroGraphics {
                         instance_mats,
                         skeleton,
                     } => {
-                        self.renderer_3d
-                            .queue_draw_multi(node, mesh, surfaces, instance_mats, skeleton);
+                        self.renderer_3d.queue_draw_multi(
+                            node,
+                            mesh,
+                            surfaces,
+                            instance_mats,
+                            skeleton,
+                        );
                     }
                     Command3D::DrawMultiDense {
                         mesh,
@@ -554,11 +561,15 @@ impl GraphicsBackend for PerroGraphics {
                 .sort_unstable_by_key(|draw| draw.node.as_u64());
             self.retained_draws_cache_revision = draws_revision;
         }
-        self.retained_point_particles_cache.clear();
-        self.retained_point_particles_cache
-            .extend(self.particles_3d.retained_point_particles());
-        self.retained_point_particles_cache
-            .sort_unstable_by_key(|(node, _)| node.as_u64());
+        let point_particles_revision = self.particles_3d.retained_point_particles_revision();
+        if point_particles_revision != self.retained_point_particles_cache_revision {
+            self.retained_point_particles_cache.clear();
+            self.retained_point_particles_cache
+                .extend(self.particles_3d.retained_point_particles());
+            self.retained_point_particles_cache
+                .sort_unstable_by_key(|(node, _)| node.as_u64());
+            self.retained_point_particles_cache_revision = point_particles_revision;
+        }
         self.retained_sprites_cache.clear();
         self.retained_sprites_cache
             .extend(self.renderer_2d.retained_sprites());

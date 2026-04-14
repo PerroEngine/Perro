@@ -7,8 +7,7 @@ mod regular {
     pub const MATERIAL_TOON_WGSL: &str = include_str!("shaders/material_toon.wgsl");
     pub const DEPTH_PREPASS_WGSL: &str = include_str!("shaders/depth_prepass.wgsl");
     pub const DEPTH_PREPASS_RIGID_WGSL: &str = include_str!("shaders/depth_prepass_rigid.wgsl");
-    pub const DEPTH_PREPASS_SKINNED_WGSL: &str =
-        include_str!("shaders/depth_prepass_skinned.wgsl");
+    pub const DEPTH_PREPASS_SKINNED_WGSL: &str = include_str!("shaders/depth_prepass_skinned.wgsl");
     pub const MULTIMESH_WGSL: &str = include_str!("shaders/multimesh.wgsl");
     pub const SKY3D_ATMO_WGSL: &str = include_str!("shaders/sky3d_parts/atmo.wgsl");
     pub const SKY3D_MOON_WGSL: &str = include_str!("shaders/sky3d_parts/moon.wgsl");

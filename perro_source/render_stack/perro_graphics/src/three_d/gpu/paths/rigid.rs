@@ -91,13 +91,11 @@ pub(super) fn create_pipeline_rigid(
                 wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RigidInstanceMetaGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 13,
-                            format: wgpu::VertexFormat::Uint32x2,
-                        },
-                    ],
+                    attributes: &[wgpu::VertexAttribute {
+                        offset: 0,
+                        shader_location: 13,
+                        format: wgpu::VertexFormat::Uint32x2,
+                    }],
                 },
             ],
             compilation_options: Default::default(),
@@ -231,13 +229,11 @@ pub(super) fn create_pipeline_overlay_rigid(
                 wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RigidInstanceMetaGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 13,
-                            format: wgpu::VertexFormat::Uint32x2,
-                        },
-                    ],
+                    attributes: &[wgpu::VertexAttribute {
+                        offset: 0,
+                        shader_location: 13,
+                        format: wgpu::VertexFormat::Uint32x2,
+                    }],
                 },
             ],
             compilation_options: Default::default(),
