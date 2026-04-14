@@ -79,17 +79,22 @@ pub(super) fn create_pipeline_skinned(
                         wgpu::VertexAttribute {
                             offset: 4,
                             shader_location: 8,
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Uint32,
                         },
                         wgpu::VertexAttribute {
-                            offset: 20,
+                            offset: 8,
                             shader_location: 9,
                             format: wgpu::VertexFormat::Uint32,
                         },
                         wgpu::VertexAttribute {
-                            offset: 24,
+                            offset: 12,
                             shader_location: 10,
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Uint32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 16,
+                            shader_location: 11,
+                            format: wgpu::VertexFormat::Uint32,
                         },
                     ],
                 },
@@ -99,7 +104,7 @@ pub(super) fn create_pipeline_skinned(
                     attributes: &[
                         wgpu::VertexAttribute {
                             offset: 0,
-                            shader_location: 11,
+                            shader_location: 13,
                             format: wgpu::VertexFormat::Uint32x4,
                         },
                     ],
@@ -224,17 +229,22 @@ pub(super) fn create_pipeline_overlay_skinned(
                         wgpu::VertexAttribute {
                             offset: 4,
                             shader_location: 8,
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Uint32,
                         },
                         wgpu::VertexAttribute {
-                            offset: 20,
+                            offset: 8,
                             shader_location: 9,
                             format: wgpu::VertexFormat::Uint32,
                         },
                         wgpu::VertexAttribute {
-                            offset: 24,
+                            offset: 12,
                             shader_location: 10,
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Uint32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 16,
+                            shader_location: 11,
+                            format: wgpu::VertexFormat::Uint32,
                         },
                     ],
                 },
@@ -244,7 +254,7 @@ pub(super) fn create_pipeline_overlay_skinned(
                     attributes: &[
                         wgpu::VertexAttribute {
                             offset: 0,
-                            shader_location: 11,
+                            shader_location: 13,
                             format: wgpu::VertexFormat::Uint32x4,
                         },
                     ],

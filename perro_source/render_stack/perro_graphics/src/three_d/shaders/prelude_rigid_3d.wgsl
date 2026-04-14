@@ -1,6 +1,7 @@
 const MAX_RAY_LIGHTS: u32 = 3u;
 const MAX_POINT_LIGHTS: u32 = 8u;
 const MAX_SPOT_LIGHTS: u32 = 8u;
+const INV_255: f32 = 1.0 / 255.0;
 
 struct RayLightGpu {
     direction: vec4<f32>,
@@ -36,6 +37,15 @@ struct Shadow3D {
     params0: vec4<f32>, // enabled, strength, depth_bias, normal_bias
 }
 
+struct DecodedMaterialParams {
+    alpha_mode: u32,
+    alpha_cutoff: f32,
+    double_sided: bool,
+    material_flags: u32,
+    meshlet_debug_view: bool,
+    flat_shading: bool,
+}
+
 @group(0) @binding(0)
 var<uniform> scene: Scene3D;
 @group(0) @binding(1)
@@ -62,42 +72,85 @@ struct InstanceInput {
     @location(5) model_row_1: vec4<f32>,
     @location(6) model_row_2: vec4<f32>,
     @location(7) packed_color: u32,
-    @location(8) pbr_params: vec4<f32>,
-    @location(9) packed_emissive: u32,
-    @location(10) material_params: vec4<f32>,
-    @location(11) custom_params: vec2<u32>,
+    @location(8) packed_pbr_params_0: u32,
+    @location(9) packed_pbr_params_1: u32,
+    @location(10) packed_emissive: u32,
+    @location(11) packed_material_params: u32,
+    @location(13) custom_params: vec2<u32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_pos: vec4<f32>,
     @location(0) world_pos: vec3<f32>,
     @location(1) normal_ws: vec3<f32>,
-    @location(2) color: vec4<f32>,
-    @location(3) pbr_params: vec4<f32>,
-    @location(4) emissive_factor: vec3<f32>,
-    @location(5) material_params: vec4<f32>,
-    @location(6) custom_range: vec2<u32>,
-    @location(7) uv: vec2<f32>,
+    @location(2) @interpolate(flat) packed_color: u32,
+    @location(3) @interpolate(flat) packed_pbr_params_0: u32,
+    @location(4) @interpolate(flat) packed_pbr_params_1: u32,
+    @location(5) @interpolate(flat) packed_emissive: u32,
+    @location(6) @interpolate(flat) packed_material_params: u32,
+    @location(7) @interpolate(flat) custom_range: vec2<u32>,
+    @location(8) uv: vec2<f32>,
 };
 
 struct FragmentInput {
     @builtin(front_facing) is_front: bool,
     @location(0) world_pos: vec3<f32>,
     @location(1) normal_ws: vec3<f32>,
-    @location(2) color: vec4<f32>,
-    @location(3) pbr_params: vec4<f32>,
-    @location(4) emissive_factor: vec3<f32>,
-    @location(5) material_params: vec4<f32>,
-    @location(6) custom_range: vec2<u32>,
-    @location(7) uv: vec2<f32>,
+    @location(2) @interpolate(flat) packed_color: u32,
+    @location(3) @interpolate(flat) packed_pbr_params_0: u32,
+    @location(4) @interpolate(flat) packed_pbr_params_1: u32,
+    @location(5) @interpolate(flat) packed_emissive: u32,
+    @location(6) @interpolate(flat) packed_material_params: u32,
+    @location(7) @interpolate(flat) custom_range: vec2<u32>,
+    @location(8) uv: vec2<f32>,
 };
 
+fn unpack_byte(packed: u32, shift: u32) -> u32 {
+    return (packed >> shift) & 0xffu;
+}
+
+fn unpack_unorm8(packed: u32, shift: u32) -> f32 {
+    return f32(unpack_byte(packed, shift)) * INV_255;
+}
+
 fn unpack_rgba8(packed: u32) -> vec4<f32> {
-    let x = f32((packed >> 0u) & 0xffu) * (1.0 / 255.0);
-    let y = f32((packed >> 8u) & 0xffu) * (1.0 / 255.0);
-    let z = f32((packed >> 16u) & 0xffu) * (1.0 / 255.0);
-    let w = f32((packed >> 24u) & 0xffu) * (1.0 / 255.0);
-    return vec4<f32>(x, y, z, w);
+    return vec4<f32>(
+        unpack_unorm8(packed, 0u),
+        unpack_unorm8(packed, 8u),
+        unpack_unorm8(packed, 16u),
+        unpack_unorm8(packed, 24u),
+    );
+}
+
+fn decode_material_params(packed: u32) -> DecodedMaterialParams {
+    let flags = (packed >> 3u) & 0x1fffu;
+    return DecodedMaterialParams(
+        packed & 0x3u,
+        unpack_unorm8(packed, 16u),
+        ((packed >> 2u) & 0x1u) != 0u,
+        flags,
+        (flags & 0x1u) != 0u,
+        (flags & 0x2u) != 0u,
+    );
+}
+
+fn decode_standard_pbr_params(packed_0: u32, packed_1: u32) -> vec4<f32> {
+    let _future = packed_1;
+    return vec4<f32>(
+        unpack_unorm8(packed_0, 0u),
+        unpack_unorm8(packed_0, 8u),
+        unpack_unorm8(packed_0, 16u),
+        unpack_unorm8(packed_0, 24u) * 4.0,
+    );
+}
+
+fn decode_toon_params(packed_0: u32, packed_1: u32) -> vec3<f32> {
+    let _future = packed_1;
+    return vec3<f32>(
+        max(1.0, f32(unpack_byte(packed_0, 0u))),
+        unpack_unorm8(packed_0, 8u) * 4.0,
+        unpack_unorm8(packed_0, 16u) * 4.0,
+    );
 }
 
 @vertex
@@ -119,12 +172,11 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.clip_pos = scene.view_proj * world;
     out.world_pos = world.xyz;
     out.normal_ws = normal_ws;
-    let color = unpack_rgba8(inst.packed_color);
-    let emissive = unpack_rgba8(inst.packed_emissive);
-    out.color = color;
-    out.pbr_params = inst.pbr_params;
-    out.emissive_factor = emissive.xyz;
-    out.material_params = inst.material_params;
+    out.packed_color = inst.packed_color;
+    out.packed_pbr_params_0 = inst.packed_pbr_params_0;
+    out.packed_pbr_params_1 = inst.packed_pbr_params_1;
+    out.packed_emissive = inst.packed_emissive;
+    out.packed_material_params = inst.packed_material_params;
     out.custom_range = inst.custom_params;
     out.uv = v.uv;
     return out;

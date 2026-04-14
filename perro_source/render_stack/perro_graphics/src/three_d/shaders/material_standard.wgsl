@@ -1,32 +1,30 @@
 fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let color = unpack_rgba8(in.packed_color);
+    let emissive = unpack_rgba8(in.packed_emissive).xyz;
+    let pbr = decode_standard_pbr_params(in.packed_pbr_params_0, in.packed_pbr_params_1);
+    let material = decode_material_params(in.packed_material_params);
     let base_sample = textureSample(material_base_color_tex, material_sampler, in.uv);
-    let albedo = in.color.rgb * base_sample.rgb;
-    let double_sided = in.material_params.z > 0.5;
-    let material_flags = u32(in.material_params.w + 0.5);
-    let meshlet_debug_view = (material_flags & 1u) != 0u;
-    let flat_shading = (material_flags & 2u) != 0u;
+    let albedo = color.rgb * base_sample.rgb;
     var n = normalize(in.normal_ws);
-    if flat_shading {
+    if material.flat_shading {
         n = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
     }
-    if double_sided && !in.is_front {
+    if material.double_sided && !in.is_front {
         n = -n;
     }
     let v = normalize(scene.camera_pos.xyz - in.world_pos);
-    let roughness = clamp(in.pbr_params.x, 0.04, 1.0);
-    let metallic = clamp(in.pbr_params.y, 0.0, 1.0);
-    let ao = clamp(in.pbr_params.z, 0.0, 1.0);
-    let alpha_mode = u32(in.material_params.x + 0.5);
-    let alpha_cutoff = clamp(in.material_params.y, 0.0, 1.0);
-    var alpha = clamp(in.color.a * base_sample.a, 0.0, 1.0);
-    if alpha_mode == 1u && alpha < alpha_cutoff {
+    let roughness = clamp(pbr.x, 0.04, 1.0);
+    let metallic = clamp(pbr.y, 0.0, 1.0);
+    let ao = clamp(pbr.z, 0.0, 1.0);
+    var alpha = clamp(color.a * base_sample.a, 0.0, 1.0);
+    if material.alpha_mode == 1u && alpha < material.alpha_cutoff {
         discard;
     }
-    if alpha_mode == 0u {
+    if material.alpha_mode == 0u {
         alpha = 1.0;
     }
-    if meshlet_debug_view {
-        return vec4<f32>(in.color.rgb, 1.0);
+    if material.meshlet_debug_view {
+        return vec4<f32>(color.rgb, 1.0);
     }
 
     var light_rgb = vec3<f32>(0.0);
@@ -80,6 +78,6 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     let ambient_diffuse = k_d_ambient * albedo * ambient_radiance;
     let ambient_specular = k_s_ambient * ambient_radiance * (0.25 + 0.75 * (1.0 - roughness));
 
-    let color = ambient_diffuse + ambient_specular + light_rgb + in.emissive_factor;
-    return vec4<f32>(color, alpha);
+    let shaded = ambient_diffuse + ambient_specular + light_rgb + emissive;
+    return vec4<f32>(shaded, alpha);
 }

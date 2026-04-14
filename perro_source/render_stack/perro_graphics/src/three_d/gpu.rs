@@ -61,6 +61,9 @@ const HIZ_WORKGROUP_SIZE_Y: u32 = 8;
 const HIZ_OCCLUSION_BIAS: f32 = 0.002;
 const MATERIAL_TEXTURE_NONE: u32 = u32::MAX;
 const MATERIAL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+const PACKED_STANDARD_NORMAL_SCALE_MAX: f32 = 4.0;
+const PACKED_TOON_RIM_STRENGTH_MAX: f32 = 4.0;
+const PACKED_TOON_OUTLINE_WIDTH_MAX: f32 = 4.0;
 const PTEX_MAGIC: &[u8; 4] = b"PTEX";
 const SHADOW_MAP_SIZE: u32 = 4096;
 const SHADOW_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -152,9 +155,10 @@ struct TransformInstanceGpu {
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct MaterialInstanceGpu {
     packed_color: u32,
-    pbr_params: [f32; 4], // roughness, metallic, occlusion_strength, normal_scale
+    packed_pbr_params_0: u32, // lane payload (standard/toon path-specific)
+    packed_pbr_params_1: u32, // reserved extension word
     packed_emissive: u32,
-    material_params: [f32; 4], // alpha_mode, alpha_cutoff, double_sided, bitflags(debug/flat)
+    packed_material_params: u32, // alpha_mode/alpha_cutoff/double_sided/flags
 }
 
 #[repr(C)]
@@ -5288,6 +5292,59 @@ struct BuiltInstanceParts {
 }
 
 #[inline]
+fn quantize_unorm8(v: f32) -> u32 {
+    ((v.clamp(0.0, 1.0) * 255.0) + 0.5).floor() as u32
+}
+
+#[inline]
+fn quantize_unorm8_range(v: f32, max: f32) -> u32 {
+    if max <= 0.0 {
+        return 0;
+    }
+    quantize_unorm8(v / max)
+}
+
+#[inline]
+fn pack_u8_lanes(x: u32, y: u32, z: u32, w: u32) -> u32 {
+    (x & 0xff) | ((y & 0xff) << 8) | ((z & 0xff) << 16) | ((w & 0xff) << 24)
+}
+
+#[inline]
+fn pack_standard_pbr_params(
+    roughness: f32,
+    metallic: f32,
+    occlusion_strength: f32,
+    normal_scale: f32,
+) -> u32 {
+    pack_u8_lanes(
+        quantize_unorm8(roughness),
+        quantize_unorm8(metallic),
+        quantize_unorm8(occlusion_strength),
+        quantize_unorm8_range(normal_scale, PACKED_STANDARD_NORMAL_SCALE_MAX),
+    )
+}
+
+#[inline]
+fn pack_toon_pbr_params(band_count: u32, rim_strength: f32, outline_width: f32) -> u32 {
+    pack_u8_lanes(
+        band_count.clamp(1, 255),
+        quantize_unorm8_range(rim_strength, PACKED_TOON_RIM_STRENGTH_MAX),
+        quantize_unorm8_range(outline_width, PACKED_TOON_OUTLINE_WIDTH_MAX),
+        0,
+    )
+}
+
+#[inline]
+fn pack_material_params(alpha_mode: u32, alpha_cutoff: f32, double_sided: bool, flags: u32) -> u32 {
+    let mode_bits = alpha_mode & 0x3;
+    let double_sided_bit = if double_sided { 1u32 } else { 0u32 };
+    // bits: [0..1]=alpha_mode, [2]=double_sided, [3..15]=flags, [16..23]=alpha_cutoff u8
+    let packed_flags = (flags & 0x1fff) << 3;
+    let alpha_cutoff_bits = quantize_unorm8(alpha_cutoff) << 16;
+    mode_bits | (double_sided_bit << 2) | packed_flags | alpha_cutoff_bits
+}
+
+#[inline]
 fn build_instance(
     model: [[f32; 4]; 4],
     material: &perro_render_bridge::Material3D,
@@ -5298,54 +5355,64 @@ fn build_instance(
     custom_params_offset: u32,
     custom_params_len: u32,
 ) -> BuiltInstanceParts {
-    let (color, pbr_params, emissive_factor, debug_flags) = if debug_view {
-        (debug_color, [0.5, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0], 1u32)
-    } else {
-        match material {
-            Material3D::Standard(params) => (
-                params.base_color_factor,
-                [
-                    params.roughness_factor,
-                    params.metallic_factor,
-                    params.occlusion_strength,
-                    params.normal_scale,
-                ],
-                params.emissive_factor,
-                0u32,
-            ),
-            Material3D::Unlit(params) => (
-                params.base_color_factor,
-                [0.0, 0.0, 0.0, 0.0],
-                params.emissive_factor,
-                0u32,
-            ),
-            Material3D::Toon(params) => (
-                params.base_color_factor,
-                [
-                    params.band_count as f32,
-                    params.rim_strength,
-                    params.outline_width,
-                    0.0,
-                ],
-                params.emissive_factor,
-                0u32,
-            ),
-            Material3D::Custom(_) => {
-                let params = material.standard_params();
-                (
+    let (color, packed_pbr_params_0, packed_pbr_params_1, emissive_factor, debug_flags) =
+        if debug_view {
+            (
+                debug_color,
+                pack_standard_pbr_params(0.5, 0.0, 1.0, 1.0),
+                0,
+                [0.0, 0.0, 0.0],
+                1u32,
+            )
+        } else {
+            match material {
+                Material3D::Standard(params) => (
                     params.base_color_factor,
-                    [
+                    pack_standard_pbr_params(
                         params.roughness_factor,
                         params.metallic_factor,
                         params.occlusion_strength,
                         params.normal_scale,
-                    ],
+                    ),
+                    0,
                     params.emissive_factor,
                     0u32,
-                )
+                ),
+                Material3D::Unlit(params) => (
+                    params.base_color_factor,
+                    0,
+                    0,
+                    params.emissive_factor,
+                    0u32,
+                ),
+                Material3D::Toon(params) => (
+                    params.base_color_factor,
+                    pack_toon_pbr_params(
+                        params.band_count,
+                        params.rim_strength,
+                        params.outline_width,
+                    ),
+                    0,
+                    params.emissive_factor,
+                    0u32,
+                ),
+                Material3D::Custom(_) => {
+                    let params = material.standard_params();
+                    (
+                        params.base_color_factor,
+                        pack_standard_pbr_params(
+                            params.roughness_factor,
+                            params.metallic_factor,
+                            params.occlusion_strength,
+                            params.normal_scale,
+                        ),
+                        0,
+                        params.emissive_factor,
+                        0u32,
+                    )
+                }
             }
-        }
-    };
+        };
     let params = material.standard_params();
     let material_flags = debug_flags | if params.flat_shading { 2u32 } else { 0u32 };
 
@@ -5357,19 +5424,20 @@ fn build_instance(
         },
         material: MaterialInstanceGpu {
             packed_color: pack_unorm4x8(color),
-            pbr_params,
+            packed_pbr_params_0,
+            packed_pbr_params_1,
             packed_emissive: pack_unorm4x8([
                 emissive_factor[0],
                 emissive_factor[1],
                 emissive_factor[2],
                 1.0,
             ]),
-            material_params: [
-                params.alpha_mode as f32,
+            packed_material_params: pack_material_params(
+                params.alpha_mode,
                 params.alpha_cutoff,
-                if params.double_sided { 1.0 } else { 0.0 },
-                material_flags as f32,
-            ],
+                params.double_sided,
+                material_flags,
+            ),
         },
         rigid_meta: RigidInstanceMetaGpu {
             custom_params: [custom_params_offset, custom_params_len],

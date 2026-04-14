@@ -115,10 +115,10 @@ Useful crates:
 - array => `arr`
 - system => `sys`
 - memory => `mem`
-- performance => `perf`
+- performance => `prf`
 - background => `bg`
 - image => `img`
-- trigger => `trig`
+- trigger => `trg`
 - optional => `opt`
 - parameter => `param`
 - argument => `arg`
@@ -130,9 +130,14 @@ Useful crates:
 - through => `thru`
 - between => `btw`
 - package => `pkg`
-- project => `proj`
-- file => `file`
+- project => `prj`
+- file => `fle`
 - folder => `dir`
+- decode => `dcod`
+- pack/packing => `pck`
+- patch => `ptch`
+- move => `mv`
+- less => `ls`
 
 ---
 
