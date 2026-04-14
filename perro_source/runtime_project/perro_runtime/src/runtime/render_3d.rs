@@ -8,12 +8,11 @@ use perro_nodes::{
 };
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, Material3D,
-    DenseInstancePose3D, MaterialParamOverride3D, MaterialParamOverrideValue3D,
-    MeshSurfaceBinding3D, ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D,
-    ParticleSimulationMode3D, PointLight3DState, PointParticles3DState, RayLight3DState,
-    RenderCommand, RenderRequestID, ResourceCommand, SkeletonPalette, Sky3DState, SkyTime3DState,
-    SpotLight3DState,
+    AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, DenseInstancePose3D,
+    Material3D, MaterialParamOverride3D, MaterialParamOverrideValue3D, MeshSurfaceBinding3D,
+    ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
+    PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID,
+    ResourceCommand, SkeletonPalette, Sky3DState, SkyTime3DState, SpotLight3DState,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -288,34 +287,43 @@ impl Runtime {
                     poses: Arc<[DenseInstancePose3D]>,
                 },
             }
-            let mesh_data: Option<(MeshID, Vec<MeshSurfaceBinding>, Option<NodeID>, LocalMeshInstanceData)> =
-                self.nodes.get(node).and_then(|node| match &node.data {
-                    SceneNodeData::MeshInstance3D(mesh) => Some((
-                        mesh.mesh,
-                        mesh.surfaces.clone(),
-                        Some(mesh.skeleton),
-                        LocalMeshInstanceData::Single(Arc::from([Mat4::IDENTITY.to_cols_array_2d()])),
-                    )),
-                    SceneNodeData::MultiMeshInstance3D(mesh) => Some((
-                        mesh.mesh,
-                        mesh.surfaces.clone(),
-                        None,
-                        LocalMeshInstanceData::Dense {
-                            instance_scale: mesh.instance_scale.max(0.0001),
-                            poses: Arc::from(
-                                mesh.instances
-                                    .iter()
-                                    .map(|instance| DenseInstancePose3D {
-                                        position: [instance.0.x, instance.0.y, instance.0.z],
-                                        rotation: [instance.1.x, instance.1.y, instance.1.z, instance.1.w],
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .into_boxed_slice(),
-                            ),
-                        },
-                    )),
-                    _ => None,
-                });
+            let mesh_data: Option<(
+                MeshID,
+                Vec<MeshSurfaceBinding>,
+                Option<NodeID>,
+                LocalMeshInstanceData,
+            )> = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::MeshInstance3D(mesh) => Some((
+                    mesh.mesh,
+                    mesh.surfaces.clone(),
+                    Some(mesh.skeleton),
+                    LocalMeshInstanceData::Single(Arc::from([Mat4::IDENTITY.to_cols_array_2d()])),
+                )),
+                SceneNodeData::MultiMeshInstance3D(mesh) => Some((
+                    mesh.mesh,
+                    mesh.surfaces.clone(),
+                    None,
+                    LocalMeshInstanceData::Dense {
+                        instance_scale: mesh.instance_scale.max(0.0001),
+                        poses: Arc::from(
+                            mesh.instances
+                                .iter()
+                                .map(|instance| DenseInstancePose3D {
+                                    position: [instance.0.x, instance.0.y, instance.0.z],
+                                    rotation: [
+                                        instance.1.x,
+                                        instance.1.y,
+                                        instance.1.z,
+                                        instance.1.w,
+                                    ],
+                                })
+                                .collect::<Vec<_>>()
+                                .into_boxed_slice(),
+                        ),
+                    },
+                )),
+                _ => None,
+            });
             if let Some((mesh, surfaces, skeleton, local_instances)) = mesh_data
                 && effective_visible
                 && let Some((mesh, resolved_surfaces)) =
@@ -396,29 +404,27 @@ impl Runtime {
                             instance_scale,
                             instances: poses,
                         },
-                        crate::runtime::state::RetainedMeshInstanceState::Matrices(instance_mats)
-                            if instance_mats.len() <= 1 =>
-                        {
-                            Command3D::Draw {
-                                mesh,
-                                surfaces: resolved_surfaces,
-                                node,
-                                model: instance_mats
-                                    .first()
-                                    .copied()
-                                    .unwrap_or(Mat4::IDENTITY.to_cols_array_2d()),
-                                skeleton: skeleton_palette,
-                            }
-                        }
-                        crate::runtime::state::RetainedMeshInstanceState::Matrices(instance_mats) => {
-                            Command3D::DrawMulti {
+                        crate::runtime::state::RetainedMeshInstanceState::Matrices(
+                            instance_mats,
+                        ) if instance_mats.len() <= 1 => Command3D::Draw {
+                            mesh,
+                            surfaces: resolved_surfaces,
+                            node,
+                            model: instance_mats
+                                .first()
+                                .copied()
+                                .unwrap_or(Mat4::IDENTITY.to_cols_array_2d()),
+                            skeleton: skeleton_palette,
+                        },
+                        crate::runtime::state::RetainedMeshInstanceState::Matrices(
+                            instance_mats,
+                        ) => Command3D::DrawMulti {
                             mesh,
                             surfaces: resolved_surfaces,
                             node,
                             instance_mats,
                             skeleton: skeleton_palette,
-                        }
-                        }
+                        },
                     };
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(draw_command)));
                     self.render_3d.retained_mesh_draws.insert(node, draw_state);

@@ -24,15 +24,31 @@ pub struct PresentTiming {
     pub draw_prepare_cpu: Duration,
     pub draw_gpu_prepare_2d: Duration,
     pub draw_gpu_prepare_3d: Duration,
+    pub draw_gpu_prepare_particles_3d: Duration,
+    pub draw_gpu_prepare_3d_frustum: Duration,
+    pub draw_gpu_prepare_3d_hiz: Duration,
+    pub draw_gpu_prepare_3d_indirect: Duration,
+    pub draw_gpu_prepare_3d_cull_inputs: Duration,
     pub draw_gpu_acquire: Duration,
+    pub draw_gpu_acquire_surface: Duration,
+    pub draw_gpu_acquire_view: Duration,
     pub draw_gpu_encode_main: Duration,
     pub draw_gpu_submit_main: Duration,
+    pub draw_gpu_submit_finish_main: Duration,
+    pub draw_gpu_submit_queue_main: Duration,
     pub draw_gpu_post_process: Duration,
     pub draw_gpu_accessibility: Duration,
     pub draw_gpu_present: Duration,
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
     pub draw_calls_total: u32,
+    pub skip_prepare_2d: u32,
+    pub skip_prepare_3d: u32,
+    pub skip_prepare_particles_3d: u32,
+    pub skip_prepare_3d_frustum: u32,
+    pub skip_prepare_3d_hiz: u32,
+    pub skip_prepare_3d_indirect: u32,
+    pub skip_prepare_3d_cull_inputs: u32,
     pub drain_events: Duration,
     pub apply_events: Duration,
     pub total: Duration,
@@ -259,9 +275,37 @@ impl<B: GraphicsBackend> App<B> {
                 .as_ref()
                 .map(|t| t.gpu_prepare_3d)
                 .unwrap_or(Duration::ZERO),
+            draw_gpu_prepare_particles_3d: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_prepare_particles_3d)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_prepare_3d_frustum: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_prepare_3d_frustum)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_prepare_3d_hiz: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_prepare_3d_hiz)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_prepare_3d_indirect: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_prepare_3d_indirect)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_prepare_3d_cull_inputs: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_prepare_3d_cull_inputs)
+                .unwrap_or(Duration::ZERO),
             draw_gpu_acquire: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_acquire)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_acquire_surface: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_acquire_surface)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_acquire_view: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_acquire_view)
                 .unwrap_or(Duration::ZERO),
             draw_gpu_encode_main: draw_timing
                 .as_ref()
@@ -270,6 +314,14 @@ impl<B: GraphicsBackend> App<B> {
             draw_gpu_submit_main: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_submit_main)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_submit_finish_main: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_submit_finish_main)
+                .unwrap_or(Duration::ZERO),
+            draw_gpu_submit_queue_main: draw_timing
+                .as_ref()
+                .map(|t| t.gpu_submit_queue_main)
                 .unwrap_or(Duration::ZERO),
             draw_gpu_post_process: draw_timing
                 .as_ref()
@@ -288,6 +340,28 @@ impl<B: GraphicsBackend> App<B> {
             draw_calls_total: draw_timing
                 .as_ref()
                 .map(|t| t.draw_calls_2d.saturating_add(t.draw_calls_3d))
+                .unwrap_or(0),
+            skip_prepare_2d: draw_timing.as_ref().map(|t| t.skip_prepare_2d).unwrap_or(0),
+            skip_prepare_3d: draw_timing.as_ref().map(|t| t.skip_prepare_3d).unwrap_or(0),
+            skip_prepare_particles_3d: draw_timing
+                .as_ref()
+                .map(|t| t.skip_prepare_particles_3d)
+                .unwrap_or(0),
+            skip_prepare_3d_frustum: draw_timing
+                .as_ref()
+                .map(|t| t.skip_prepare_3d_frustum)
+                .unwrap_or(0),
+            skip_prepare_3d_hiz: draw_timing
+                .as_ref()
+                .map(|t| t.skip_prepare_3d_hiz)
+                .unwrap_or(0),
+            skip_prepare_3d_indirect: draw_timing
+                .as_ref()
+                .map(|t| t.skip_prepare_3d_indirect)
+                .unwrap_or(0),
+            skip_prepare_3d_cull_inputs: draw_timing
+                .as_ref()
+                .map(|t| t.skip_prepare_3d_cull_inputs)
                 .unwrap_or(0),
             drain_events,
             apply_events,

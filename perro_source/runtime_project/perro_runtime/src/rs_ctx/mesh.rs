@@ -37,9 +37,12 @@ impl MeshAPI for RuntimeResourceApi {
                 state.mesh_reserve_pending.insert(source.to_string());
                 return id;
             }
-            state.queued_commands.push(RenderCommand::Resource(
-                ResourceCommand::SetMeshReserved { id, reserved: true },
-            ));
+            state
+                .queued_commands
+                .push(RenderCommand::Resource(ResourceCommand::SetMeshReserved {
+                    id,
+                    reserved: true,
+                }));
             return id;
         }
         state.mesh_drop_pending.remove(source);
@@ -96,7 +99,14 @@ impl RuntimeResourceApi {
             .mesh_pending_id_by_request
             .values()
             .copied()
-            .any(|pending| state.mesh_id_alias.get(&pending).copied().unwrap_or(pending) == canonical)
+            .any(|pending| {
+                state
+                    .mesh_id_alias
+                    .get(&pending)
+                    .copied()
+                    .unwrap_or(pending)
+                    == canonical
+            })
     }
 
     pub(crate) fn register_loaded_mesh_source(&self, source: &str, id: MeshID) {

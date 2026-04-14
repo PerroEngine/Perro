@@ -178,8 +178,8 @@ fn build_gltf_mesh_entries(
         let mut surface_ranges = Vec::<PackedSurfaceRange>::new();
 
         for primitive in mesh.primitives() {
-            let reader =
-                primitive.reader(|buffer| buffers.get(buffer.index()).map(|data| data.0.as_slice()));
+            let reader = primitive
+                .reader(|buffer| buffers.get(buffer.index()).map(|data| data.0.as_slice()));
             let Some(positions_iter) = reader.read_positions() else {
                 continue;
             };
@@ -356,7 +356,9 @@ fn pack_meshlets_with_surfaces(
 
     for range in surface_ranges {
         let start = range.index_start as usize;
-        let end = start.saturating_add(range.index_count as usize).min(indices.len());
+        let end = start
+            .saturating_add(range.index_count as usize)
+            .min(indices.len());
         if start >= end {
             continue;
         }

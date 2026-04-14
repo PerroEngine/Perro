@@ -52,14 +52,30 @@ pub struct DrawFrameTiming {
     pub prepare_cpu: Duration,
     pub gpu_prepare_2d: Duration,
     pub gpu_prepare_3d: Duration,
+    pub gpu_prepare_particles_3d: Duration,
+    pub gpu_prepare_3d_frustum: Duration,
+    pub gpu_prepare_3d_hiz: Duration,
+    pub gpu_prepare_3d_indirect: Duration,
+    pub gpu_prepare_3d_cull_inputs: Duration,
     pub gpu_acquire: Duration,
+    pub gpu_acquire_surface: Duration,
+    pub gpu_acquire_view: Duration,
     pub gpu_encode_main: Duration,
     pub gpu_submit_main: Duration,
+    pub gpu_submit_finish_main: Duration,
+    pub gpu_submit_queue_main: Duration,
     pub gpu_post_process: Duration,
     pub gpu_accessibility: Duration,
     pub gpu_present: Duration,
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
+    pub skip_prepare_2d: u32,
+    pub skip_prepare_3d: u32,
+    pub skip_prepare_particles_3d: u32,
+    pub skip_prepare_3d_frustum: u32,
+    pub skip_prepare_3d_hiz: u32,
+    pub skip_prepare_3d_indirect: u32,
+    pub skip_prepare_3d_cull_inputs: u32,
     pub gpu_total: Duration,
     pub total: Duration,
     pub idle_clear: bool,
@@ -616,8 +632,11 @@ impl GraphicsBackend for PerroGraphics {
         let sprites_refs_changed = self.used_ref_sprites_revision != sprites_revision;
         if sprites_refs_changed {
             self.used_texture_refs_cache.clear();
-            self.used_texture_refs_cache
-                .extend(self.retained_sprites_cache.iter().map(|sprite| sprite.texture));
+            self.used_texture_refs_cache.extend(
+                self.retained_sprites_cache
+                    .iter()
+                    .map(|sprite| sprite.texture),
+            );
             self.used_ref_sprites_revision = sprites_revision;
         }
         let draws_refs_changed = self.used_ref_draws_revision != draws_revision;
@@ -683,14 +702,30 @@ impl GraphicsBackend for PerroGraphics {
             prepare_cpu,
             gpu_prepare_2d: gpu_timing.prepare_2d,
             gpu_prepare_3d: gpu_timing.prepare_3d,
+            gpu_prepare_particles_3d: gpu_timing.prepare_particles_3d,
+            gpu_prepare_3d_frustum: gpu_timing.prepare_3d_frustum,
+            gpu_prepare_3d_hiz: gpu_timing.prepare_3d_hiz,
+            gpu_prepare_3d_indirect: gpu_timing.prepare_3d_indirect,
+            gpu_prepare_3d_cull_inputs: gpu_timing.prepare_3d_cull_inputs,
             gpu_acquire: gpu_timing.acquire,
+            gpu_acquire_surface: gpu_timing.acquire_surface,
+            gpu_acquire_view: gpu_timing.acquire_view,
             gpu_encode_main: gpu_timing.encode_main,
             gpu_submit_main: gpu_timing.submit_main,
+            gpu_submit_finish_main: gpu_timing.submit_finish_main,
+            gpu_submit_queue_main: gpu_timing.submit_queue_main,
             gpu_post_process: gpu_timing.post_process,
             gpu_accessibility: gpu_timing.accessibility,
             gpu_present: gpu_timing.present,
             draw_calls_2d: gpu_timing.draw_calls_2d,
             draw_calls_3d: gpu_timing.draw_calls_3d,
+            skip_prepare_2d: gpu_timing.skip_prepare_2d,
+            skip_prepare_3d: gpu_timing.skip_prepare_3d,
+            skip_prepare_particles_3d: gpu_timing.skip_prepare_particles_3d,
+            skip_prepare_3d_frustum: gpu_timing.skip_prepare_3d_frustum,
+            skip_prepare_3d_hiz: gpu_timing.skip_prepare_3d_hiz,
+            skip_prepare_3d_indirect: gpu_timing.skip_prepare_3d_indirect,
+            skip_prepare_3d_cull_inputs: gpu_timing.skip_prepare_3d_cull_inputs,
             gpu_total: gpu_timing.total,
             total: total_start.elapsed(),
             idle_clear: false,

@@ -212,11 +212,7 @@ impl Runtime {
                                     instance.1.z,
                                     instance.1.w,
                                 ),
-                                Vec3::new(
-                                    instance.0.x,
-                                    instance.0.y,
-                                    instance.0.z,
-                                ),
+                                Vec3::new(instance.0.x, instance.0.y, instance.0.z),
                             )
                         })
                         .collect()

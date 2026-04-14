@@ -198,15 +198,31 @@ struct RunnerState<B: GraphicsBackend> {
     batch_draw_prepare_cpu: Duration,
     batch_draw_gpu_prepare_2d: Duration,
     batch_draw_gpu_prepare_3d: Duration,
+    batch_draw_gpu_prepare_particles_3d: Duration,
+    batch_draw_gpu_prepare_3d_frustum: Duration,
+    batch_draw_gpu_prepare_3d_hiz: Duration,
+    batch_draw_gpu_prepare_3d_indirect: Duration,
+    batch_draw_gpu_prepare_3d_cull_inputs: Duration,
     batch_draw_gpu_acquire: Duration,
+    batch_draw_gpu_acquire_surface: Duration,
+    batch_draw_gpu_acquire_view: Duration,
     batch_draw_gpu_encode_main: Duration,
     batch_draw_gpu_submit_main: Duration,
+    batch_draw_gpu_submit_finish_main: Duration,
+    batch_draw_gpu_submit_queue_main: Duration,
     batch_draw_gpu_post_process: Duration,
     batch_draw_gpu_accessibility: Duration,
     batch_draw_gpu_present: Duration,
     batch_draw_calls_2d: u64,
     batch_draw_calls_3d: u64,
     batch_draw_calls_total: u64,
+    batch_skip_prepare_2d: u64,
+    batch_skip_prepare_3d: u64,
+    batch_skip_prepare_particles_3d: u64,
+    batch_skip_prepare_3d_frustum: u64,
+    batch_skip_prepare_3d_hiz: u64,
+    batch_skip_prepare_3d_indirect: u64,
+    batch_skip_prepare_3d_cull_inputs: u64,
     batch_present_drain_events: Duration,
     batch_present_apply_events: Duration,
     batch_idle: Duration,
@@ -272,15 +288,31 @@ impl<B: GraphicsBackend> RunnerState<B> {
             batch_draw_prepare_cpu: Duration::ZERO,
             batch_draw_gpu_prepare_2d: Duration::ZERO,
             batch_draw_gpu_prepare_3d: Duration::ZERO,
+            batch_draw_gpu_prepare_particles_3d: Duration::ZERO,
+            batch_draw_gpu_prepare_3d_frustum: Duration::ZERO,
+            batch_draw_gpu_prepare_3d_hiz: Duration::ZERO,
+            batch_draw_gpu_prepare_3d_indirect: Duration::ZERO,
+            batch_draw_gpu_prepare_3d_cull_inputs: Duration::ZERO,
             batch_draw_gpu_acquire: Duration::ZERO,
+            batch_draw_gpu_acquire_surface: Duration::ZERO,
+            batch_draw_gpu_acquire_view: Duration::ZERO,
             batch_draw_gpu_encode_main: Duration::ZERO,
             batch_draw_gpu_submit_main: Duration::ZERO,
+            batch_draw_gpu_submit_finish_main: Duration::ZERO,
+            batch_draw_gpu_submit_queue_main: Duration::ZERO,
             batch_draw_gpu_post_process: Duration::ZERO,
             batch_draw_gpu_accessibility: Duration::ZERO,
             batch_draw_gpu_present: Duration::ZERO,
             batch_draw_calls_2d: 0,
             batch_draw_calls_3d: 0,
             batch_draw_calls_total: 0,
+            batch_skip_prepare_2d: 0,
+            batch_skip_prepare_3d: 0,
+            batch_skip_prepare_particles_3d: 0,
+            batch_skip_prepare_3d_frustum: 0,
+            batch_skip_prepare_3d_hiz: 0,
+            batch_skip_prepare_3d_indirect: 0,
+            batch_skip_prepare_3d_cull_inputs: 0,
             batch_present_drain_events: Duration::ZERO,
             batch_present_apply_events: Duration::ZERO,
             batch_idle: Duration::ZERO,
@@ -532,15 +564,32 @@ impl<B: GraphicsBackend> RunnerState<B> {
         self.batch_draw_prepare_cpu += present_timing.draw_prepare_cpu;
         self.batch_draw_gpu_prepare_2d += present_timing.draw_gpu_prepare_2d;
         self.batch_draw_gpu_prepare_3d += present_timing.draw_gpu_prepare_3d;
+        self.batch_draw_gpu_prepare_particles_3d += present_timing.draw_gpu_prepare_particles_3d;
+        self.batch_draw_gpu_prepare_3d_frustum += present_timing.draw_gpu_prepare_3d_frustum;
+        self.batch_draw_gpu_prepare_3d_hiz += present_timing.draw_gpu_prepare_3d_hiz;
+        self.batch_draw_gpu_prepare_3d_indirect += present_timing.draw_gpu_prepare_3d_indirect;
+        self.batch_draw_gpu_prepare_3d_cull_inputs +=
+            present_timing.draw_gpu_prepare_3d_cull_inputs;
         self.batch_draw_gpu_acquire += present_timing.draw_gpu_acquire;
+        self.batch_draw_gpu_acquire_surface += present_timing.draw_gpu_acquire_surface;
+        self.batch_draw_gpu_acquire_view += present_timing.draw_gpu_acquire_view;
         self.batch_draw_gpu_encode_main += present_timing.draw_gpu_encode_main;
         self.batch_draw_gpu_submit_main += present_timing.draw_gpu_submit_main;
+        self.batch_draw_gpu_submit_finish_main += present_timing.draw_gpu_submit_finish_main;
+        self.batch_draw_gpu_submit_queue_main += present_timing.draw_gpu_submit_queue_main;
         self.batch_draw_gpu_post_process += present_timing.draw_gpu_post_process;
         self.batch_draw_gpu_accessibility += present_timing.draw_gpu_accessibility;
         self.batch_draw_gpu_present += present_timing.draw_gpu_present;
         self.batch_draw_calls_2d += present_timing.draw_calls_2d as u64;
         self.batch_draw_calls_3d += present_timing.draw_calls_3d as u64;
         self.batch_draw_calls_total += present_timing.draw_calls_total as u64;
+        self.batch_skip_prepare_2d += present_timing.skip_prepare_2d as u64;
+        self.batch_skip_prepare_3d += present_timing.skip_prepare_3d as u64;
+        self.batch_skip_prepare_particles_3d += present_timing.skip_prepare_particles_3d as u64;
+        self.batch_skip_prepare_3d_frustum += present_timing.skip_prepare_3d_frustum as u64;
+        self.batch_skip_prepare_3d_hiz += present_timing.skip_prepare_3d_hiz as u64;
+        self.batch_skip_prepare_3d_indirect += present_timing.skip_prepare_3d_indirect as u64;
+        self.batch_skip_prepare_3d_cull_inputs += present_timing.skip_prepare_3d_cull_inputs as u64;
         self.batch_present_drain_events += present_timing.drain_events;
         self.batch_present_apply_events += present_timing.apply_events;
         self.batch_idle += idle_duration;
@@ -700,15 +749,32 @@ impl<B: GraphicsBackend> RunnerState<B> {
         self.batch_draw_prepare_cpu += present_timing.draw_prepare_cpu;
         self.batch_draw_gpu_prepare_2d += present_timing.draw_gpu_prepare_2d;
         self.batch_draw_gpu_prepare_3d += present_timing.draw_gpu_prepare_3d;
+        self.batch_draw_gpu_prepare_particles_3d += present_timing.draw_gpu_prepare_particles_3d;
+        self.batch_draw_gpu_prepare_3d_frustum += present_timing.draw_gpu_prepare_3d_frustum;
+        self.batch_draw_gpu_prepare_3d_hiz += present_timing.draw_gpu_prepare_3d_hiz;
+        self.batch_draw_gpu_prepare_3d_indirect += present_timing.draw_gpu_prepare_3d_indirect;
+        self.batch_draw_gpu_prepare_3d_cull_inputs +=
+            present_timing.draw_gpu_prepare_3d_cull_inputs;
         self.batch_draw_gpu_acquire += present_timing.draw_gpu_acquire;
+        self.batch_draw_gpu_acquire_surface += present_timing.draw_gpu_acquire_surface;
+        self.batch_draw_gpu_acquire_view += present_timing.draw_gpu_acquire_view;
         self.batch_draw_gpu_encode_main += present_timing.draw_gpu_encode_main;
         self.batch_draw_gpu_submit_main += present_timing.draw_gpu_submit_main;
+        self.batch_draw_gpu_submit_finish_main += present_timing.draw_gpu_submit_finish_main;
+        self.batch_draw_gpu_submit_queue_main += present_timing.draw_gpu_submit_queue_main;
         self.batch_draw_gpu_post_process += present_timing.draw_gpu_post_process;
         self.batch_draw_gpu_accessibility += present_timing.draw_gpu_accessibility;
         self.batch_draw_gpu_present += present_timing.draw_gpu_present;
         self.batch_draw_calls_2d += present_timing.draw_calls_2d as u64;
         self.batch_draw_calls_3d += present_timing.draw_calls_3d as u64;
         self.batch_draw_calls_total += present_timing.draw_calls_total as u64;
+        self.batch_skip_prepare_2d += present_timing.skip_prepare_2d as u64;
+        self.batch_skip_prepare_3d += present_timing.skip_prepare_3d as u64;
+        self.batch_skip_prepare_particles_3d += present_timing.skip_prepare_particles_3d as u64;
+        self.batch_skip_prepare_3d_frustum += present_timing.skip_prepare_3d_frustum as u64;
+        self.batch_skip_prepare_3d_hiz += present_timing.skip_prepare_3d_hiz as u64;
+        self.batch_skip_prepare_3d_indirect += present_timing.skip_prepare_3d_indirect as u64;
+        self.batch_skip_prepare_3d_cull_inputs += present_timing.skip_prepare_3d_cull_inputs as u64;
         self.batch_present_drain_events += present_timing.drain_events;
         self.batch_present_apply_events += present_timing.apply_events;
         self.batch_idle += idle_duration;
@@ -753,12 +819,35 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 self.batch_draw_gpu_prepare_2d.as_micros() as f64 / self.batch_frames as f64;
             let avg_draw_gpu_prepare_3d_us =
                 self.batch_draw_gpu_prepare_3d.as_micros() as f64 / self.batch_frames as f64;
+            let avg_draw_gpu_prepare_particles_3d_us =
+                self.batch_draw_gpu_prepare_particles_3d.as_micros() as f64
+                    / self.batch_frames as f64;
+            let avg_draw_gpu_prepare_3d_frustum_us =
+                self.batch_draw_gpu_prepare_3d_frustum.as_micros() as f64
+                    / self.batch_frames as f64;
+            let avg_draw_gpu_prepare_3d_hiz_us =
+                self.batch_draw_gpu_prepare_3d_hiz.as_micros() as f64 / self.batch_frames as f64;
+            let avg_draw_gpu_prepare_3d_indirect_us =
+                self.batch_draw_gpu_prepare_3d_indirect.as_micros() as f64
+                    / self.batch_frames as f64;
+            let avg_draw_gpu_prepare_3d_cull_inputs_us =
+                self.batch_draw_gpu_prepare_3d_cull_inputs.as_micros() as f64
+                    / self.batch_frames as f64;
             let avg_draw_gpu_acquire_us =
                 self.batch_draw_gpu_acquire.as_micros() as f64 / self.batch_frames as f64;
+            let avg_draw_gpu_acquire_surface_us =
+                self.batch_draw_gpu_acquire_surface.as_micros() as f64 / self.batch_frames as f64;
+            let avg_draw_gpu_acquire_view_us =
+                self.batch_draw_gpu_acquire_view.as_micros() as f64 / self.batch_frames as f64;
             let avg_draw_gpu_encode_main_us =
                 self.batch_draw_gpu_encode_main.as_micros() as f64 / self.batch_frames as f64;
             let avg_draw_gpu_submit_main_us =
                 self.batch_draw_gpu_submit_main.as_micros() as f64 / self.batch_frames as f64;
+            let avg_draw_gpu_submit_finish_main_us =
+                self.batch_draw_gpu_submit_finish_main.as_micros() as f64
+                    / self.batch_frames as f64;
+            let avg_draw_gpu_submit_queue_main_us =
+                self.batch_draw_gpu_submit_queue_main.as_micros() as f64 / self.batch_frames as f64;
             let avg_draw_gpu_post_process_us =
                 self.batch_draw_gpu_post_process.as_micros() as f64 / self.batch_frames as f64;
             let avg_draw_gpu_accessibility_us =
@@ -773,6 +862,20 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 self.batch_present_drain_events.as_micros() as f64 / self.batch_frames as f64;
             let avg_present_apply_events_us =
                 self.batch_present_apply_events.as_micros() as f64 / self.batch_frames as f64;
+            let pct_skip_prepare_2d =
+                (self.batch_skip_prepare_2d as f64 * 100.0) / self.batch_frames as f64;
+            let pct_skip_prepare_3d =
+                (self.batch_skip_prepare_3d as f64 * 100.0) / self.batch_frames as f64;
+            let pct_skip_prepare_particles_3d =
+                (self.batch_skip_prepare_particles_3d as f64 * 100.0) / self.batch_frames as f64;
+            let pct_skip_prepare_3d_frustum =
+                (self.batch_skip_prepare_3d_frustum as f64 * 100.0) / self.batch_frames as f64;
+            let pct_skip_prepare_3d_hiz =
+                (self.batch_skip_prepare_3d_hiz as f64 * 100.0) / self.batch_frames as f64;
+            let pct_skip_prepare_3d_indirect =
+                (self.batch_skip_prepare_3d_indirect as f64 * 100.0) / self.batch_frames as f64;
+            let pct_skip_prepare_3d_cull_inputs =
+                (self.batch_skip_prepare_3d_cull_inputs as f64 * 100.0) / self.batch_frames as f64;
             println!(
                 "update: ({:.3}us avg) | frame present: ({:.3}us avg) | total: ({:.3}us avg) | idle: ({:.3}us avg)",
                 avg_simulation_us, avg_present_us, avg_work_us, avg_idle_us
@@ -813,6 +916,28 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 avg_draw_calls_3d,
                 avg_draw_calls_total
             );
+            println!(
+                "draw substeps: prep_particles3d=({:.3}us) prep_frustum=({:.3}us) prep_hiz=({:.3}us) prep_indirect=({:.3}us) prep_cull_inputs=({:.3}us) acquire_surface=({:.3}us) acquire_view=({:.3}us) submit_finish=({:.3}us) submit_queue=({:.3}us)",
+                avg_draw_gpu_prepare_particles_3d_us,
+                avg_draw_gpu_prepare_3d_frustum_us,
+                avg_draw_gpu_prepare_3d_hiz_us,
+                avg_draw_gpu_prepare_3d_indirect_us,
+                avg_draw_gpu_prepare_3d_cull_inputs_us,
+                avg_draw_gpu_acquire_surface_us,
+                avg_draw_gpu_acquire_view_us,
+                avg_draw_gpu_submit_finish_main_us,
+                avg_draw_gpu_submit_queue_main_us
+            );
+            println!(
+                "draw skips: prep2d=({:.1}%) prep3d=({:.1}%) prep_particles3d=({:.1}%) frustum=({:.1}%) hiz=({:.1}%) indirect=({:.1}%) cull_inputs=({:.1}%)",
+                pct_skip_prepare_2d,
+                pct_skip_prepare_3d,
+                pct_skip_prepare_particles_3d,
+                pct_skip_prepare_3d_frustum,
+                pct_skip_prepare_3d_hiz,
+                pct_skip_prepare_3d_indirect,
+                pct_skip_prepare_3d_cull_inputs
+            );
             println!("---");
 
             self.batch_frames = 0;
@@ -837,15 +962,31 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_draw_prepare_cpu = Duration::ZERO;
             self.batch_draw_gpu_prepare_2d = Duration::ZERO;
             self.batch_draw_gpu_prepare_3d = Duration::ZERO;
+            self.batch_draw_gpu_prepare_particles_3d = Duration::ZERO;
+            self.batch_draw_gpu_prepare_3d_frustum = Duration::ZERO;
+            self.batch_draw_gpu_prepare_3d_hiz = Duration::ZERO;
+            self.batch_draw_gpu_prepare_3d_indirect = Duration::ZERO;
+            self.batch_draw_gpu_prepare_3d_cull_inputs = Duration::ZERO;
             self.batch_draw_gpu_acquire = Duration::ZERO;
+            self.batch_draw_gpu_acquire_surface = Duration::ZERO;
+            self.batch_draw_gpu_acquire_view = Duration::ZERO;
             self.batch_draw_gpu_encode_main = Duration::ZERO;
             self.batch_draw_gpu_submit_main = Duration::ZERO;
+            self.batch_draw_gpu_submit_finish_main = Duration::ZERO;
+            self.batch_draw_gpu_submit_queue_main = Duration::ZERO;
             self.batch_draw_gpu_post_process = Duration::ZERO;
             self.batch_draw_gpu_accessibility = Duration::ZERO;
             self.batch_draw_gpu_present = Duration::ZERO;
             self.batch_draw_calls_2d = 0;
             self.batch_draw_calls_3d = 0;
             self.batch_draw_calls_total = 0;
+            self.batch_skip_prepare_2d = 0;
+            self.batch_skip_prepare_3d = 0;
+            self.batch_skip_prepare_particles_3d = 0;
+            self.batch_skip_prepare_3d_frustum = 0;
+            self.batch_skip_prepare_3d_hiz = 0;
+            self.batch_skip_prepare_3d_indirect = 0;
+            self.batch_skip_prepare_3d_cull_inputs = 0;
             self.batch_present_drain_events = Duration::ZERO;
             self.batch_present_apply_events = Duration::ZERO;
             self.batch_idle = Duration::ZERO;
@@ -929,15 +1070,31 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             self.batch_draw_prepare_cpu = Duration::ZERO;
             self.batch_draw_gpu_prepare_2d = Duration::ZERO;
             self.batch_draw_gpu_prepare_3d = Duration::ZERO;
+            self.batch_draw_gpu_prepare_particles_3d = Duration::ZERO;
+            self.batch_draw_gpu_prepare_3d_frustum = Duration::ZERO;
+            self.batch_draw_gpu_prepare_3d_hiz = Duration::ZERO;
+            self.batch_draw_gpu_prepare_3d_indirect = Duration::ZERO;
+            self.batch_draw_gpu_prepare_3d_cull_inputs = Duration::ZERO;
             self.batch_draw_gpu_acquire = Duration::ZERO;
+            self.batch_draw_gpu_acquire_surface = Duration::ZERO;
+            self.batch_draw_gpu_acquire_view = Duration::ZERO;
             self.batch_draw_gpu_encode_main = Duration::ZERO;
             self.batch_draw_gpu_submit_main = Duration::ZERO;
+            self.batch_draw_gpu_submit_finish_main = Duration::ZERO;
+            self.batch_draw_gpu_submit_queue_main = Duration::ZERO;
             self.batch_draw_gpu_post_process = Duration::ZERO;
             self.batch_draw_gpu_accessibility = Duration::ZERO;
             self.batch_draw_gpu_present = Duration::ZERO;
             self.batch_draw_calls_2d = 0;
             self.batch_draw_calls_3d = 0;
             self.batch_draw_calls_total = 0;
+            self.batch_skip_prepare_2d = 0;
+            self.batch_skip_prepare_3d = 0;
+            self.batch_skip_prepare_particles_3d = 0;
+            self.batch_skip_prepare_3d_frustum = 0;
+            self.batch_skip_prepare_3d_hiz = 0;
+            self.batch_skip_prepare_3d_indirect = 0;
+            self.batch_skip_prepare_3d_cull_inputs = 0;
             self.batch_present_drain_events = Duration::ZERO;
             self.batch_present_apply_events = Duration::ZERO;
             self.batch_idle = Duration::ZERO;

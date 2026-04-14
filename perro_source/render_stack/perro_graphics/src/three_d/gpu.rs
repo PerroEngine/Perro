@@ -33,6 +33,7 @@ use std::{
     cmp::Ordering,
     ops::Range,
     sync::{Arc, mpsc, mpsc::TryRecvError},
+    time::Duration,
 };
 use wgpu::util::DeviceExt;
 
@@ -195,7 +196,7 @@ struct MultiMeshDrawParamGpu {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 struct FrustumCullParamsGpu {
     planes: [[f32; 4]; 6],
     draw_count: u32,
@@ -224,7 +225,7 @@ struct DrawIndexedIndirectGpu {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 struct HizCullParamsGpu {
     view_proj: [[f32; 4]; 4],
     draw_count: u32,
@@ -336,6 +337,10 @@ pub struct Gpu3D {
     indirect_buffer: wgpu::Buffer,
     indirect_capacity: usize,
     indirect_staging: Vec<DrawIndexedIndirectGpu>,
+    frustum_gpu_inputs_valid: bool,
+    last_frustum_params: Option<FrustumCullParamsGpu>,
+    last_hiz_params: Option<HizCullParamsGpu>,
+    last_prepare_step_timing: Prepare3DStepTiming,
     draw_batches: Vec<DrawBatch>,
     has_shadow_casters: bool,
     surface_entries_scratch: Vec<(MeshRange, Material3D)>,
@@ -414,6 +419,7 @@ pub struct Gpu3D {
     last_occlusion_culled: u32,
     dirty_instance_spans_scratch: Vec<Range<u32>>,
     merged_instance_spans_scratch: Vec<Range<u32>>,
+    dirty_cull_batch_spans_scratch: Vec<Range<usize>>,
     debug_point_instances_scratch: Vec<BuiltInstanceParts>,
     debug_edge_instances_scratch: Vec<BuiltInstanceParts>,
 }
@@ -429,6 +435,18 @@ pub struct Prepare3D<'a> {
     pub static_texture_lookup: Option<StaticTextureLookup>,
     pub static_mesh_lookup: Option<StaticMeshLookup>,
     pub static_shader_lookup: Option<StaticShaderLookup>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Prepare3DStepTiming {
+    pub frustum_prep: Duration,
+    pub hiz_prep: Duration,
+    pub indirect_prep: Duration,
+    pub cull_input_prep: Duration,
+    pub frustum_skipped: u32,
+    pub hiz_skipped: u32,
+    pub indirect_skipped: u32,
+    pub cull_input_skipped: u32,
 }
 
 pub struct Gpu3DConfig {
@@ -1809,6 +1827,10 @@ impl Gpu3D {
             indirect_buffer,
             indirect_capacity,
             indirect_staging: Vec::new(),
+            frustum_gpu_inputs_valid: false,
+            last_frustum_params: None,
+            last_hiz_params: None,
+            last_prepare_step_timing: Prepare3DStepTiming::default(),
             draw_batches: Vec::new(),
             has_shadow_casters: false,
             surface_entries_scratch: Vec::new(),
@@ -1887,6 +1909,7 @@ impl Gpu3D {
             last_occlusion_culled: 0,
             dirty_instance_spans_scratch: Vec::new(),
             merged_instance_spans_scratch: Vec::new(),
+            dirty_cull_batch_spans_scratch: Vec::new(),
             debug_point_instances_scratch: Vec::new(),
             debug_edge_instances_scratch: Vec::new(),
             custom_pipelines: AHashMap::new(),
@@ -2256,6 +2279,7 @@ impl Gpu3D {
     }
 
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: Prepare3D<'_>) {
+        let mut step_timing = Prepare3DStepTiming::default();
         if self.gpu_occlusion_enabled && HIZ_DEBUG_READBACK_ENABLED {
             if self.pending_hiz_debug_map_rx.is_some() {
                 let _ = device.poll(wgpu::PollType::Poll);
@@ -2347,40 +2371,104 @@ impl Gpu3D {
 
         if draws_unchanged {
             let frustum_cull_active = self.should_run_frustum_cull();
+            let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
             if frustum_cull_active {
+                let frustum_inputs_invalid = !self.frustum_gpu_inputs_valid
+                    || self.indirect_staging.len() != self.draw_batches.len()
+                    || self.frustum_cull_staging.len() != self.draw_batches.len();
+                if frustum_inputs_invalid {
+                    let indirect_start = std::time::Instant::now();
+                    self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
+                    self.indirect_staging.clear();
+                    self.indirect_staging.reserve(self.draw_batches.len());
+                    for batch in &self.draw_batches {
+                        self.indirect_staging.push(DrawIndexedIndirectGpu {
+                            index_count: batch.mesh.index_count,
+                            instance_count: batch.instance_count,
+                            first_index: batch.mesh.index_start,
+                            base_vertex: batch.mesh.base_vertex,
+                            first_instance: batch.instance_start,
+                        });
+                    }
+                    queue.write_buffer(
+                        &self.indirect_buffer,
+                        0,
+                        bytemuck::cast_slice(&self.indirect_staging),
+                    );
+                    step_timing.indirect_prep += indirect_start.elapsed();
+
+                    let cull_start = std::time::Instant::now();
+                    self.frustum_cull_staging.clear();
+                    self.frustum_cull_staging.reserve(self.draw_batches.len());
+                    for batch in &self.draw_batches {
+                        let instance =
+                            &self.staged_instance_transforms[batch.instance_start as usize];
+                        let model_cols = model_cols_from_affine_rows(instance);
+                        self.frustum_cull_staging.push(FrustumCullItemGpu {
+                            model_0: model_cols[0],
+                            model_1: model_cols[1],
+                            model_2: model_cols[2],
+                            model_3: model_cols[3],
+                            local_center_radius: [
+                                batch.local_center[0],
+                                batch.local_center[1],
+                                batch.local_center[2],
+                                batch.local_radius.max(0.0),
+                            ],
+                            cull_flags: [
+                                if batch.disable_hiz_occlusion {
+                                    CULL_FLAG_DISABLE_HIZ_OCCLUSION
+                                } else {
+                                    0
+                                },
+                                0,
+                                0,
+                                0,
+                            ],
+                        });
+                    }
+                    queue.write_buffer(
+                        &self.frustum_cull_items_buffer,
+                        0,
+                        bytemuck::cast_slice(&self.frustum_cull_staging),
+                    );
+                    step_timing.cull_input_prep += cull_start.elapsed();
+                    self.frustum_gpu_inputs_valid = true;
+                } else {
+                    step_timing.indirect_skipped = step_timing.indirect_skipped.saturating_add(1);
+                    step_timing.cull_input_skipped =
+                        step_timing.cull_input_skipped.saturating_add(1);
+                }
+
+                let frustum_start = std::time::Instant::now();
                 let frustum = extract_frustum_planes(view_proj);
-                let mut planes = [[0.0f32; 4]; 6];
-                for (dst, plane) in planes.iter_mut().zip(frustum.iter()) {
-                    *dst = [plane.x, plane.y, plane.z, plane.w];
+                let frustum_written = self.write_frustum_params_if_needed(queue, &frustum);
+                step_timing.frustum_prep += frustum_start.elapsed();
+                if !frustum_written {
+                    step_timing.frustum_skipped = step_timing.frustum_skipped.saturating_add(1);
                 }
-                let cull_params = FrustumCullParamsGpu {
-                    planes,
-                    draw_count: self.draw_batches.len() as u32,
-                    _pad: [0; 3],
-                };
-                queue.write_buffer(
-                    &self.frustum_cull_params_buffer,
-                    0,
-                    bytemuck::bytes_of(&cull_params),
-                );
-                if self.should_run_hiz_occlusion(frustum_cull_active) {
-                    let hiz_params = HizCullParamsGpu {
-                        view_proj: uniform.view_proj,
-                        draw_count: self.draw_batches.len() as u32,
-                        hiz_mip_count: self.hiz_mip_count,
-                        hiz_width: self.hiz_size.0,
-                        hiz_height: self.hiz_size.1,
-                        aspect: self.last_aspect,
-                        proj_y_scale: self.last_proj_y_scale,
-                        depth_bias: HIZ_OCCLUSION_BIAS,
-                        _pad: 0,
-                    };
-                    queue.write_buffer(&self.hiz_cull_params, 0, bytemuck::bytes_of(&hiz_params));
+
+                if hiz_active {
+                    let hiz_start = std::time::Instant::now();
+                    let hiz_written =
+                        self.write_hiz_params_if_needed(queue, &uniform, self.draw_batches.len());
+                    step_timing.hiz_prep += hiz_start.elapsed();
+                    if !hiz_written {
+                        step_timing.hiz_skipped = step_timing.hiz_skipped.saturating_add(1);
+                    }
+                } else {
+                    step_timing.hiz_skipped = step_timing.hiz_skipped.saturating_add(1);
                 }
+            } else {
+                step_timing.frustum_skipped = step_timing.frustum_skipped.saturating_add(1);
+                step_timing.hiz_skipped = step_timing.hiz_skipped.saturating_add(1);
+                step_timing.indirect_skipped = step_timing.indirect_skipped.saturating_add(1);
+                step_timing.cull_input_skipped = step_timing.cull_input_skipped.saturating_add(1);
             }
             self.update_shadow_state(queue, &camera, lighting);
             self.last_total_drawn =
                 self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
+            self.last_prepare_step_timing = step_timing;
             return;
         }
         if transform_only_changed {
@@ -2425,70 +2513,170 @@ impl Gpu3D {
                 );
             }
             let frustum_cull_active = self.should_run_frustum_cull();
+            let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
             if frustum_cull_active {
-                let frustum = extract_frustum_planes(view_proj);
-                let mut planes = [[0.0f32; 4]; 6];
-                for (dst, plane) in planes.iter_mut().zip(frustum.iter()) {
-                    *dst = [plane.x, plane.y, plane.z, plane.w];
-                }
-                let cull_params = FrustumCullParamsGpu {
-                    planes,
-                    draw_count: self.draw_batches.len() as u32,
-                    _pad: [0; 3],
-                };
-                queue.write_buffer(
-                    &self.frustum_cull_params_buffer,
-                    0,
-                    bytemuck::bytes_of(&cull_params),
-                );
+                let frustum_inputs_invalid = !self.frustum_gpu_inputs_valid
+                    || self.indirect_staging.len() != self.draw_batches.len()
+                    || self.frustum_cull_staging.len() != self.draw_batches.len();
+                if frustum_inputs_invalid {
+                    let indirect_start = std::time::Instant::now();
+                    self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
+                    self.indirect_staging.clear();
+                    self.indirect_staging.reserve(self.draw_batches.len());
+                    for batch in &self.draw_batches {
+                        self.indirect_staging.push(DrawIndexedIndirectGpu {
+                            index_count: batch.mesh.index_count,
+                            instance_count: batch.instance_count,
+                            first_index: batch.mesh.index_start,
+                            base_vertex: batch.mesh.base_vertex,
+                            first_instance: batch.instance_start,
+                        });
+                    }
+                    queue.write_buffer(
+                        &self.indirect_buffer,
+                        0,
+                        bytemuck::cast_slice(&self.indirect_staging),
+                    );
+                    step_timing.indirect_prep += indirect_start.elapsed();
 
-                self.frustum_cull_staging.clear();
-                self.frustum_cull_staging.reserve(self.draw_batches.len());
-                for batch in &self.draw_batches {
-                    let instance = &self.staged_instance_transforms[batch.instance_start as usize];
-                    let model_cols = model_cols_from_affine_rows(instance);
-                    self.frustum_cull_staging.push(FrustumCullItemGpu {
-                        model_0: model_cols[0],
-                        model_1: model_cols[1],
-                        model_2: model_cols[2],
-                        model_3: model_cols[3],
-                        local_center_radius: [
-                            batch.local_center[0],
-                            batch.local_center[1],
-                            batch.local_center[2],
-                            batch.local_radius.max(0.0),
-                        ],
-                        cull_flags: [
-                            if batch.disable_hiz_occlusion {
-                                CULL_FLAG_DISABLE_HIZ_OCCLUSION
+                    let cull_start = std::time::Instant::now();
+                    self.frustum_cull_staging.clear();
+                    self.frustum_cull_staging.reserve(self.draw_batches.len());
+                    for batch in &self.draw_batches {
+                        let instance =
+                            &self.staged_instance_transforms[batch.instance_start as usize];
+                        let model_cols = model_cols_from_affine_rows(instance);
+                        self.frustum_cull_staging.push(FrustumCullItemGpu {
+                            model_0: model_cols[0],
+                            model_1: model_cols[1],
+                            model_2: model_cols[2],
+                            model_3: model_cols[3],
+                            local_center_radius: [
+                                batch.local_center[0],
+                                batch.local_center[1],
+                                batch.local_center[2],
+                                batch.local_radius.max(0.0),
+                            ],
+                            cull_flags: [
+                                if batch.disable_hiz_occlusion {
+                                    CULL_FLAG_DISABLE_HIZ_OCCLUSION
+                                } else {
+                                    0
+                                },
+                                0,
+                                0,
+                                0,
+                            ],
+                        });
+                    }
+                    queue.write_buffer(
+                        &self.frustum_cull_items_buffer,
+                        0,
+                        bytemuck::cast_slice(&self.frustum_cull_staging),
+                    );
+                    step_timing.cull_input_prep += cull_start.elapsed();
+                    self.frustum_gpu_inputs_valid = true;
+                } else {
+                    step_timing.indirect_skipped = step_timing.indirect_skipped.saturating_add(1);
+
+                    let cull_start = std::time::Instant::now();
+                    self.dirty_cull_batch_spans_scratch.clear();
+                    let mut dirty_span_idx = 0usize;
+                    for (batch_idx, batch) in self.draw_batches.iter().enumerate() {
+                        while dirty_span_idx < self.merged_instance_spans_scratch.len()
+                            && self.merged_instance_spans_scratch[dirty_span_idx].end
+                                <= batch.instance_start
+                        {
+                            dirty_span_idx += 1;
+                        }
+                        let Some(span) = self.merged_instance_spans_scratch.get(dirty_span_idx)
+                        else {
+                            break;
+                        };
+                        if batch.instance_start >= span.start && batch.instance_start < span.end {
+                            if let Some(last) = self.dirty_cull_batch_spans_scratch.last_mut()
+                                && last.end == batch_idx
+                            {
+                                last.end = batch_idx + 1;
                             } else {
-                                0
-                            },
-                            0,
-                            0,
-                            0,
-                        ],
-                    });
+                                self.dirty_cull_batch_spans_scratch
+                                    .push(batch_idx..(batch_idx + 1));
+                            }
+                        }
+                    }
+                    if self.dirty_cull_batch_spans_scratch.is_empty() {
+                        step_timing.cull_input_skipped =
+                            step_timing.cull_input_skipped.saturating_add(1);
+                    } else {
+                        for batch_span in self.dirty_cull_batch_spans_scratch.iter() {
+                            for batch_idx in batch_span.clone() {
+                                let batch = &self.draw_batches[batch_idx];
+                                let instance =
+                                    &self.staged_instance_transforms[batch.instance_start as usize];
+                                let model_cols = model_cols_from_affine_rows(instance);
+                                self.frustum_cull_staging[batch_idx] = FrustumCullItemGpu {
+                                    model_0: model_cols[0],
+                                    model_1: model_cols[1],
+                                    model_2: model_cols[2],
+                                    model_3: model_cols[3],
+                                    local_center_radius: [
+                                        batch.local_center[0],
+                                        batch.local_center[1],
+                                        batch.local_center[2],
+                                        batch.local_radius.max(0.0),
+                                    ],
+                                    cull_flags: [
+                                        if batch.disable_hiz_occlusion {
+                                            CULL_FLAG_DISABLE_HIZ_OCCLUSION
+                                        } else {
+                                            0
+                                        },
+                                        0,
+                                        0,
+                                        0,
+                                    ],
+                                };
+                            }
+                            let byte_start = (batch_span.start
+                                * std::mem::size_of::<FrustumCullItemGpu>())
+                                as u64;
+                            queue.write_buffer(
+                                &self.frustum_cull_items_buffer,
+                                byte_start,
+                                bytemuck::cast_slice(
+                                    &self.frustum_cull_staging[batch_span.start..batch_span.end],
+                                ),
+                            );
+                        }
+                        step_timing.cull_input_prep += cull_start.elapsed();
+                    }
                 }
-                queue.write_buffer(
-                    &self.frustum_cull_items_buffer,
-                    0,
-                    bytemuck::cast_slice(&self.frustum_cull_staging),
-                );
-                if self.should_run_hiz_occlusion(frustum_cull_active) {
-                    let hiz_params = HizCullParamsGpu {
-                        view_proj: uniform.view_proj,
-                        draw_count: self.draw_batches.len() as u32,
-                        hiz_mip_count: self.hiz_mip_count,
-                        hiz_width: self.hiz_size.0,
-                        hiz_height: self.hiz_size.1,
-                        aspect: self.last_aspect,
-                        proj_y_scale: self.last_proj_y_scale,
-                        depth_bias: HIZ_OCCLUSION_BIAS,
-                        _pad: 0,
-                    };
-                    queue.write_buffer(&self.hiz_cull_params, 0, bytemuck::bytes_of(&hiz_params));
+
+                let frustum_start = std::time::Instant::now();
+                let frustum = extract_frustum_planes(view_proj);
+                let frustum_written = self.write_frustum_params_if_needed(queue, &frustum);
+                step_timing.frustum_prep += frustum_start.elapsed();
+                if !frustum_written {
+                    step_timing.frustum_skipped = step_timing.frustum_skipped.saturating_add(1);
                 }
+
+                if hiz_active {
+                    let hiz_start = std::time::Instant::now();
+                    let hiz_written =
+                        self.write_hiz_params_if_needed(queue, &uniform, self.draw_batches.len());
+                    step_timing.hiz_prep += hiz_start.elapsed();
+                    if !hiz_written {
+                        step_timing.hiz_skipped = step_timing.hiz_skipped.saturating_add(1);
+                    }
+                } else {
+                    step_timing.hiz_skipped = step_timing.hiz_skipped.saturating_add(1);
+                }
+            } else {
+                step_timing.frustum_skipped = step_timing.frustum_skipped.saturating_add(1);
+                step_timing.hiz_skipped = step_timing.hiz_skipped.saturating_add(1);
+                step_timing.indirect_skipped = step_timing.indirect_skipped.saturating_add(1);
+                step_timing.cull_input_skipped = step_timing.cull_input_skipped.saturating_add(1);
+                self.frustum_gpu_inputs_valid = false;
             }
             self.update_shadow_state(queue, &camera, lighting);
             self.last_draws.clear();
@@ -2496,9 +2684,11 @@ impl Gpu3D {
             self.last_draws_revision = draws_revision;
             self.last_total_drawn =
                 self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
+            self.last_prepare_step_timing = step_timing;
             return;
         }
 
+        self.frustum_gpu_inputs_valid = false;
         self.last_draws.clear();
         self.last_draws.extend_from_slice(draws);
         self.last_draws_revision = draws_revision;
@@ -3105,12 +3295,14 @@ impl Gpu3D {
             );
         }
         let frustum_cull_active = self.should_run_frustum_cull();
+        let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
         if frustum_cull_active {
+            let indirect_start = std::time::Instant::now();
             self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
-            self.indirect_staging
-                .reserve(self.draw_batches.len() - self.indirect_staging.len());
-            self.frustum_cull_staging
-                .reserve(self.draw_batches.len() - self.frustum_cull_staging.len());
+            self.indirect_staging.clear();
+            self.indirect_staging.reserve(self.draw_batches.len());
+            self.frustum_cull_staging.clear();
+            self.frustum_cull_staging.reserve(self.draw_batches.len());
             for batch in &self.draw_batches {
                 let model_cols = model_cols_from_affine_rows(
                     &self.staged_instance_transforms[batch.instance_start as usize],
@@ -3145,44 +3337,44 @@ impl Gpu3D {
                     ],
                 });
             }
-            let mut planes = [[0.0f32; 4]; 6];
-            for (dst, plane) in planes.iter_mut().zip(frustum.iter()) {
-                *dst = [plane.x, plane.y, plane.z, plane.w];
-            }
-            let cull_params = FrustumCullParamsGpu {
-                planes,
-                draw_count: self.draw_batches.len() as u32,
-                _pad: [0; 3],
-            };
-            queue.write_buffer(
-                &self.frustum_cull_params_buffer,
-                0,
-                bytemuck::bytes_of(&cull_params),
-            );
-            queue.write_buffer(
-                &self.frustum_cull_items_buffer,
-                0,
-                bytemuck::cast_slice(&self.frustum_cull_staging),
-            );
             queue.write_buffer(
                 &self.indirect_buffer,
                 0,
                 bytemuck::cast_slice(&self.indirect_staging),
             );
-            if self.should_run_hiz_occlusion(frustum_cull_active) {
-                let hiz_params = HizCullParamsGpu {
-                    view_proj: uniform.view_proj,
-                    draw_count: self.draw_batches.len() as u32,
-                    hiz_mip_count: self.hiz_mip_count,
-                    hiz_width: self.hiz_size.0,
-                    hiz_height: self.hiz_size.1,
-                    aspect: self.last_aspect,
-                    proj_y_scale: self.last_proj_y_scale,
-                    depth_bias: HIZ_OCCLUSION_BIAS,
-                    _pad: 0,
-                };
-                queue.write_buffer(&self.hiz_cull_params, 0, bytemuck::bytes_of(&hiz_params));
+            step_timing.indirect_prep += indirect_start.elapsed();
+
+            let cull_start = std::time::Instant::now();
+            queue.write_buffer(
+                &self.frustum_cull_items_buffer,
+                0,
+                bytemuck::cast_slice(&self.frustum_cull_staging),
+            );
+            step_timing.cull_input_prep += cull_start.elapsed();
+
+            let frustum_start = std::time::Instant::now();
+            let frustum_written = self.write_frustum_params_if_needed(queue, &frustum);
+            step_timing.frustum_prep += frustum_start.elapsed();
+            if !frustum_written {
+                step_timing.frustum_skipped = step_timing.frustum_skipped.saturating_add(1);
             }
+            if hiz_active {
+                let hiz_start = std::time::Instant::now();
+                let hiz_written =
+                    self.write_hiz_params_if_needed(queue, &uniform, self.draw_batches.len());
+                step_timing.hiz_prep += hiz_start.elapsed();
+                if !hiz_written {
+                    step_timing.hiz_skipped = step_timing.hiz_skipped.saturating_add(1);
+                }
+            } else {
+                step_timing.hiz_skipped = step_timing.hiz_skipped.saturating_add(1);
+            }
+            self.frustum_gpu_inputs_valid = true;
+        } else {
+            step_timing.frustum_skipped = step_timing.frustum_skipped.saturating_add(1);
+            step_timing.hiz_skipped = step_timing.hiz_skipped.saturating_add(1);
+            step_timing.indirect_skipped = step_timing.indirect_skipped.saturating_add(1);
+            step_timing.cull_input_skipped = step_timing.cull_input_skipped.saturating_add(1);
         }
         self.update_shadow_state(queue, &camera, lighting);
         self.last_total_meshlets = total_meshlets;
@@ -3190,6 +3382,7 @@ impl Gpu3D {
             self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
         self.debug_point_instances_scratch = debug_point_instances;
         self.debug_edge_instances_scratch = debug_edge_instances;
+        self.last_prepare_step_timing = step_timing;
     }
 
     fn update_shadow_state(
@@ -3249,6 +3442,31 @@ impl Gpu3D {
         } else {
             None
         };
+        if self.draw_batches.is_empty()
+            && self.multimesh_batches.is_empty()
+            && !self.sky_enabled
+            && !depth_prepass_active
+            && !hiz_active
+            && !(self.shadow_pass_enabled && self.has_shadow_casters)
+        {
+            let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("perro_mesh_clear_only_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(clear_color),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            return;
+        }
         if self.shadow_pass_enabled && self.has_shadow_casters {
             let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_shadow3d_pass"),
@@ -3611,7 +3829,8 @@ impl Gpu3D {
         if self.cpu_occlusion_enabled
             && self.last_occlusion_queried >= FRUSTUM_CULL_HIGH_VISIBLE_MIN_SAMPLES
         {
-            let visible_ratio = self.last_occlusion_visible as f32 / self.last_occlusion_queried as f32;
+            let visible_ratio =
+                self.last_occlusion_visible as f32 / self.last_occlusion_queried as f32;
             if visible_ratio >= FRUSTUM_CULL_HIGH_VISIBLE_RATIO {
                 min_batches = FRUSTUM_CULL_HIGH_VISIBLE_MIN_BATCHES;
                 min_instances = FRUSTUM_CULL_HIGH_VISIBLE_MIN_INSTANCES;
@@ -3640,8 +3859,62 @@ impl Gpu3D {
     }
 
     #[inline]
+    fn write_frustum_params_if_needed(&mut self, queue: &wgpu::Queue, frustum: &[Vec4; 6]) -> bool {
+        let mut planes = [[0.0f32; 4]; 6];
+        for (dst, plane) in planes.iter_mut().zip(frustum.iter()) {
+            *dst = [plane.x, plane.y, plane.z, plane.w];
+        }
+        let params = FrustumCullParamsGpu {
+            planes,
+            draw_count: self.draw_batches.len() as u32,
+            _pad: [0; 3],
+        };
+        if self.last_frustum_params == Some(params) {
+            return false;
+        }
+        queue.write_buffer(
+            &self.frustum_cull_params_buffer,
+            0,
+            bytemuck::bytes_of(&params),
+        );
+        self.last_frustum_params = Some(params);
+        true
+    }
+
+    #[inline]
+    fn write_hiz_params_if_needed(
+        &mut self,
+        queue: &wgpu::Queue,
+        uniform: &Scene3DUniform,
+        draw_count: usize,
+    ) -> bool {
+        let params = HizCullParamsGpu {
+            view_proj: uniform.view_proj,
+            draw_count: draw_count as u32,
+            hiz_mip_count: self.hiz_mip_count,
+            hiz_width: self.hiz_size.0,
+            hiz_height: self.hiz_size.1,
+            aspect: self.last_aspect,
+            proj_y_scale: self.last_proj_y_scale,
+            depth_bias: HIZ_OCCLUSION_BIAS,
+            _pad: 0,
+        };
+        if self.last_hiz_params == Some(params) {
+            return false;
+        }
+        queue.write_buffer(&self.hiz_cull_params, 0, bytemuck::bytes_of(&params));
+        self.last_hiz_params = Some(params);
+        true
+    }
+
+    #[inline]
     pub fn draw_call_count(&self) -> u32 {
         (self.draw_batches.len() + self.multimesh_batches.len()) as u32
+    }
+
+    #[inline]
+    pub fn prepare_step_timing(&self) -> Prepare3DStepTiming {
+        self.last_prepare_step_timing
     }
 
     fn fallback_material_texture_bind_group(&self) -> &wgpu::BindGroup {
@@ -4035,6 +4308,7 @@ impl Gpu3D {
         });
         self.frustum_cull_items_capacity = new_capacity;
         self.indirect_capacity = new_capacity;
+        self.frustum_gpu_inputs_valid = false;
     }
 
     fn build_hiz_from_depth(&self, encoder: &mut wgpu::CommandEncoder) {

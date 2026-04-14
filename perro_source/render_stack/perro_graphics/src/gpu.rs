@@ -3,7 +3,7 @@ use crate::{
     postprocess::{PostProcessChainData, PostProcessContext, PostProcessor},
     resources::ResourceStore,
     three_d::{
-        gpu::{Gpu3D, Gpu3DConfig, Prepare3D},
+        gpu::{Gpu3D, Gpu3DConfig, Prepare3D, Prepare3DStepTiming},
         particles::gpu::{GpuPointParticles3D, PreparePointParticles3D},
         renderer::{Draw3DInstance, Lighting3DState},
     },
@@ -103,14 +103,30 @@ pub struct RenderFrame<'a> {
 pub struct RenderGpuTiming {
     pub prepare_2d: Duration,
     pub prepare_3d: Duration,
+    pub prepare_particles_3d: Duration,
+    pub prepare_3d_frustum: Duration,
+    pub prepare_3d_hiz: Duration,
+    pub prepare_3d_indirect: Duration,
+    pub prepare_3d_cull_inputs: Duration,
     pub acquire: Duration,
+    pub acquire_surface: Duration,
+    pub acquire_view: Duration,
     pub encode_main: Duration,
     pub submit_main: Duration,
+    pub submit_finish_main: Duration,
+    pub submit_queue_main: Duration,
     pub post_process: Duration,
     pub accessibility: Duration,
     pub present: Duration,
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
+    pub skip_prepare_2d: u32,
+    pub skip_prepare_3d: u32,
+    pub skip_prepare_particles_3d: u32,
+    pub skip_prepare_3d_frustum: u32,
+    pub skip_prepare_3d_hiz: u32,
+    pub skip_prepare_3d_indirect: u32,
+    pub skip_prepare_3d_cull_inputs: u32,
     pub total: Duration,
     pub presented: bool,
 }
@@ -432,6 +448,7 @@ impl Gpu {
                 || three_d_content_changed);
 
         let prepare_2d_start = Instant::now();
+        let mut did_prepare_2d = false;
         if needs_2d_prepare {
             if self.two_d.is_none() {
                 self.two_d = Some(Gpu2D::new(
@@ -453,11 +470,17 @@ impl Gpu {
                         static_texture_lookup,
                     },
                 );
+                did_prepare_2d = true;
             }
+        }
+        if !did_prepare_2d {
+            timing.skip_prepare_2d = 1;
         }
         timing.prepare_2d = prepare_2d_start.elapsed();
 
         let prepare_3d_start = Instant::now();
+        let mut did_prepare_3d = false;
+        let mut prepare_3d_steps = Prepare3DStepTiming::default();
         if needs_3d_pipeline {
             if self.three_d.is_none() {
                 self.three_d = Some(Gpu3D::new(
@@ -501,12 +524,16 @@ impl Gpu {
                         static_shader_lookup,
                     },
                 );
+                did_prepare_3d = true;
+                prepare_3d_steps = three_d.prepare_step_timing();
                 self.last_prepare_3d_camera = Some(camera_3d.clone());
                 self.last_prepare_3d_lighting = Some(lighting_3d.clone());
                 self.last_prepare_3d_draws_revision = draws_3d_revision;
                 self.last_prepare_3d_width = self.config.width;
                 self.last_prepare_3d_height = self.config.height;
             }
+            let prepare_particles_start = Instant::now();
+            let mut did_prepare_particles_3d = false;
             if needs_3d_particles_prepare
                 && let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut()
             {
@@ -521,7 +548,30 @@ impl Gpu {
                     },
                 );
                 self.last_prepare_particles_revision = point_particles_3d_revision;
+                did_prepare_particles_3d = true;
             }
+            timing.prepare_particles_3d = prepare_particles_start.elapsed();
+            if !did_prepare_particles_3d {
+                timing.skip_prepare_particles_3d = 1;
+            }
+        } else {
+            timing.skip_prepare_particles_3d = 1;
+        }
+        if !did_prepare_3d {
+            timing.skip_prepare_3d = 1;
+            timing.skip_prepare_3d_frustum = 1;
+            timing.skip_prepare_3d_hiz = 1;
+            timing.skip_prepare_3d_indirect = 1;
+            timing.skip_prepare_3d_cull_inputs = 1;
+        } else {
+            timing.prepare_3d_frustum = prepare_3d_steps.frustum_prep;
+            timing.prepare_3d_hiz = prepare_3d_steps.hiz_prep;
+            timing.prepare_3d_indirect = prepare_3d_steps.indirect_prep;
+            timing.prepare_3d_cull_inputs = prepare_3d_steps.cull_input_prep;
+            timing.skip_prepare_3d_frustum = prepare_3d_steps.frustum_skipped;
+            timing.skip_prepare_3d_hiz = prepare_3d_steps.hiz_skipped;
+            timing.skip_prepare_3d_indirect = prepare_3d_steps.indirect_skipped;
+            timing.skip_prepare_3d_cull_inputs = prepare_3d_steps.cull_input_skipped;
         }
         if !needs_3d_particles_path {
             self.point_particles_3d = None;
@@ -530,10 +580,12 @@ impl Gpu {
         timing.prepare_3d = prepare_3d_start.elapsed();
 
         let acquire_start = Instant::now();
+        let acquire_surface_start = Instant::now();
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                timing.acquire_surface = acquire_surface_start.elapsed();
                 self.surface.configure(&self.device, &self.config);
                 timing.acquire = acquire_start.elapsed();
                 timing.total = total_start.elapsed();
@@ -542,16 +594,20 @@ impl Gpu {
             wgpu::CurrentSurfaceTexture::Timeout
             | wgpu::CurrentSurfaceTexture::Occluded
             | wgpu::CurrentSurfaceTexture::Validation => {
+                timing.acquire_surface = acquire_surface_start.elapsed();
                 timing.acquire = acquire_start.elapsed();
                 timing.total = total_start.elapsed();
                 return timing;
             }
         };
-        timing.acquire = acquire_start.elapsed();
+        timing.acquire_surface = acquire_surface_start.elapsed();
 
+        let acquire_view_start = Instant::now();
         let swap_view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+        timing.acquire_view = acquire_view_start.elapsed();
+        timing.acquire = acquire_start.elapsed();
         let (camera_post_chain, camera_post_enabled) =
             if PostProcessor::has_effects(camera_3d.post_processing.as_ref()) {
                 (camera_3d.post_processing.as_ref(), true)
@@ -714,7 +770,12 @@ impl Gpu {
                 .apply(&mut encoder, final_bind_group, &swap_view);
         }
         let submit_start = Instant::now();
-        self.queue.submit(Some(encoder.finish()));
+        let submit_finish_start = Instant::now();
+        let command_buffer = encoder.finish();
+        timing.submit_finish_main = submit_finish_start.elapsed();
+        let submit_queue_start = Instant::now();
+        self.queue.submit(Some(command_buffer));
+        timing.submit_queue_main = submit_queue_start.elapsed();
         timing.submit_main = submit_start.elapsed();
         timing.draw_calls_2d = self
             .two_d

@@ -230,7 +230,8 @@ impl RuntimeResourceState {
     }
 
     pub(super) fn occupy_material_id(&mut self, id: MaterialID) -> bool {
-        self.material_slots.occupy_parts(id.index(), id.generation())
+        self.material_slots
+            .occupy_parts(id.index(), id.generation())
     }
 
     pub(super) fn allocate_animation_id(&mut self) -> AnimationID {
