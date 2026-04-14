@@ -45,100 +45,250 @@ Useful crates:
 - Test all: `cargo test`
 - Run CLI help: `cargo run -p perro_cli -- --help`
 
-## Caveman Rule (Ultra Short)
+## Caveman Rule (Nano)
 
-- use tiny words
+- tiny words
 - 1 line = 1 idea
-- cut all filler
-- no “now”, “then”, etc
-- no full sentences
-- verb first (`chg`, `rm`, `add`)
-- use arrows `->` 4 flow
-- use short forms always
-- skip repeats
-- max info, min chars
+- cut filler
+- no full sent
+- no extra gram
+- no art (`a`, `an`, `the`)
+- no help verb
+- no tense
+- verb 1st
+- short form always
+- use sym
+- skip repeat
+- max info
+- min chars
 
 ---
 
-## Core Words
+## Core Map
 
-- change → `chg`
-- remove → `rm`
-- add → `add`
-- fix → `fx`
-- use → `use`
-- keep → `kp`
-
----
-
-## Common Short
-
-- before → `b4`
-- after → `aft`
-- with → `w/`
-- without → `w/o`
-- function → `fn`
-- variable → `var`
-- config → `cfg`
-- update → `upd`
-- render → `rndr`
-- initialize → `init`
-- frame → `frm`
-- logic → `log`
-- background → `bg`
-- image → `img`
-- trigger → `trig`
-- optional → `opt`
-- performance → `perf`
-- memory → `mem`
-- allocate → `alloc`
-- system → `sys`
+- change => `chg`
+- remove => `rm`
+- add => `add`
+- fix => `fx`
+- keep => `kp`
+- use => `use`
+- make => `mk`
+- move => `mv`
+- read => `rd`
+- write => `wr`
+- check => `chk`
+- find => `fnd`
+- call => `cal`
+- return => `ret`
+- update => `upd`
+- render => `rndr`
+- init => `init`
+- alloc => `alloc`
+- reduce => `cut`
+- increase => `inc`
+- decrease => `dec`
 
 ---
 
-## Tense Rule
+## Short Map
 
-- use base verb only
-- no past tense
-- no future tense
-- no continuous tense
-- no helper verbs (`will`, `would`, `can`, `could`, `am`, `is`, `are`, `was`, `were`)
-- convert all action to present/base form
-- prefer `I do`, `I fix`, `I add`, `this use`, `this reduce`
+- before => `b4`
+- after => `aft`
+- with => `w/`
+- without => `w/o`
+- into => `->`
+- to => `2`
+- for => `4`
+- from => `frm`
+- function => `fn`
+- variable => `var`
+- config => `cfg`
+- value => `val`
+- result => `res`
+- issue => `iss`
+- error => `err`
+- warning => `warn`
+- object => `obj`
+- string => `str`
+- number => `num`
+- boolean => `bool`
+- array => `arr`
+- system => `sys`
+- memory => `mem`
+- performance => `perf`
+- background => `bg`
+- image => `img`
+- trigger => `trig`
+- optional => `opt`
+- parameter => `param`
+- argument => `arg`
+- temporary => `tmp`
+- message => `msg`
+- response => `resp`
+- request => `req`
+- because => `cuz`
+- through => `thru`
+- between => `btw`
+- package => `pkg`
+- project => `proj`
+- file => `file`
+- folder => `dir`
 
 ---
 
-## Symbols
+## Hard Tense Rule
 
-- flow → `->`
-- replace → `=>`
-- and → `+`
-- same → `same`
-- equals → `=`
+- base verb only
+- no past
+- no future
+- no `-ing`
+- no `will`
+- no `would`
+- no `can`
+- no `could`
+- no `should`
+- no `am`
+- no `is`
+- no `are`
+- no `was`
+- no `were`
+- no `have`
+- no `has`
+- no `had`
+
+use:
+
+- `I fix`
+- `I add`
+- `this use`
+- `this cut mem`
+- `code fail cuz null`
+
+not:
+
+- `I fixed`
+- `I will add`
+- `this is using`
+- `this can reduce memory`
 
 ---
 
-## Pattern
+## Sym Map
 
-verb target (file)
-action -> result
-rm/add/fix notes
-keep/change state
+- flow => `->`
+- replace => `=>`
+- and => `+`
+- not => `!`
+- equals => `=`
+- not equal => `!=`
+- bigger => `>`
+- less => `<`
+- bigger eq => `>=`
+- less eq => `<=`
+- maybe => `?`
+- per => `/`
+- around => `~`
+
+---
+
+## Line Shape
+
+use:
+
+- `verb target`
+- `act -> res`
+- `iss -> fx`
+- `chg -> why`
+- `rm X`
+- `add Y`
+- `kp Z`
+
+avoid:
+
+- long explain
+- soft intro
+- recap fluff
+- same point 2x
+
+---
+
+## Output Shape
+
+4 work report:
+
+1. chg
+2. res
+
+form:
+
+- `chg X`
+- `res Y`
+
+or:
+
+- `fx X -> Y`
+- `rm X`
+- `add Y`
+
+---
+
+## Tone Rule
+
+- direct
+- dry
+- dense
+- no hype
+- no cheer
+- no polish
+- no outro
+- no filler open
+- no filler close
+
+ban:
+
+- `sure`
+- `got it`
+- `here's`
+- `let me`
+- `I think`
+- `probably`
+- `basically`
+- `just`
+- `really`
 
 ---
 
 ## Example
 
-chg splash (file.rs)
-hold 2000ms -> fade
-rm old trig
-same vis
+chg grass draw path
+use dist cull + fade
+rm far inst draw
+res less gpu load
 
-## Default Response Shape
+fx null state read
+add guard b4 fn cal
+res no crash
 
-When reporting work:
+chg alloc path
+use scratch buf
+cut re-alloc + mem thrash
+res stab perf
 
-1. What changed.
-2. Result
+## Compression Rule
 
-Keep it short.
+- always pick shortest clear word
+- drop subject when safe
+- drop pronoun when safe
+- drop helper word always
+- drop duplicate context
+- prefer noun chunks over full grammar
+
+good:
+
+- `fx crash @ init`
+- `+ cache -> less alloc`
+- `rm old path`
+
+bad:
+
+- `I fix the crash in the init function`
