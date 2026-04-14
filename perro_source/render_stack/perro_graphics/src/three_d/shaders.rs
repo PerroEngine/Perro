@@ -1,9 +1,15 @@
 mod regular {
     pub const PRELUDE_WGSL: &str = include_str!("shaders/prelude_3d.wgsl");
+    pub const PRELUDE_RIGID_WGSL: &str = include_str!("shaders/prelude_rigid_3d.wgsl");
+    pub const PRELUDE_SKINNED_WGSL: &str = include_str!("shaders/prelude_skinned_3d.wgsl");
     pub const MATERIAL_STANDARD_WGSL: &str = include_str!("shaders/material_standard.wgsl");
     pub const MATERIAL_UNLIT_WGSL: &str = include_str!("shaders/material_unlit.wgsl");
     pub const MATERIAL_TOON_WGSL: &str = include_str!("shaders/material_toon.wgsl");
     pub const DEPTH_PREPASS_WGSL: &str = include_str!("shaders/depth_prepass.wgsl");
+    pub const DEPTH_PREPASS_RIGID_WGSL: &str = include_str!("shaders/depth_prepass_rigid.wgsl");
+    pub const DEPTH_PREPASS_SKINNED_WGSL: &str =
+        include_str!("shaders/depth_prepass_skinned.wgsl");
+    pub const MULTIMESH_WGSL: &str = include_str!("shaders/multimesh.wgsl");
     pub const SKY3D_ATMO_WGSL: &str = include_str!("shaders/sky3d_parts/atmo.wgsl");
     pub const SKY3D_MOON_WGSL: &str = include_str!("shaders/sky3d_parts/moon.wgsl");
     pub const SKY3D_SUN_WGSL: &str = include_str!("shaders/sky3d_parts/sun.wgsl");
@@ -28,6 +34,90 @@ pub fn create_mesh_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
 }
 
 #[inline]
+pub fn create_mesh_shader_module_rigid(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_mesh_instanced_rigid"),
+        source: wgpu::ShaderSource::Wgsl(
+            build_material_shader_with_prelude(
+                regular::PRELUDE_RIGID_WGSL,
+                regular::MATERIAL_STANDARD_WGSL,
+            )
+            .into(),
+        ),
+    })
+}
+
+#[inline]
+pub fn create_unlit_shader_module_rigid(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_mesh_unlit_rigid"),
+        source: wgpu::ShaderSource::Wgsl(
+            build_material_shader_with_prelude(
+                regular::PRELUDE_RIGID_WGSL,
+                regular::MATERIAL_UNLIT_WGSL,
+            )
+            .into(),
+        ),
+    })
+}
+
+#[inline]
+pub fn create_toon_shader_module_rigid(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_mesh_toon_rigid"),
+        source: wgpu::ShaderSource::Wgsl(
+            build_material_shader_with_prelude(
+                regular::PRELUDE_RIGID_WGSL,
+                regular::MATERIAL_TOON_WGSL,
+            )
+            .into(),
+        ),
+    })
+}
+
+#[inline]
+pub fn create_mesh_shader_module_skinned(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_mesh_instanced_skinned"),
+        source: wgpu::ShaderSource::Wgsl(
+            build_material_shader_with_prelude(
+                regular::PRELUDE_SKINNED_WGSL,
+                regular::MATERIAL_STANDARD_WGSL,
+            )
+            .into(),
+        ),
+    })
+}
+
+#[inline]
+pub fn create_unlit_shader_module_skinned(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_mesh_unlit_skinned"),
+        source: wgpu::ShaderSource::Wgsl(
+            build_material_shader_with_prelude(
+                regular::PRELUDE_SKINNED_WGSL,
+                regular::MATERIAL_UNLIT_WGSL,
+            )
+            .into(),
+        ),
+    })
+}
+
+#[inline]
+pub fn create_toon_shader_module_skinned(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_mesh_toon_skinned"),
+        source: wgpu::ShaderSource::Wgsl(
+            build_material_shader_with_prelude(
+                regular::PRELUDE_SKINNED_WGSL,
+                regular::MATERIAL_TOON_WGSL,
+            )
+            .into(),
+        ),
+    })
+}
+
+#[inline]
 pub fn create_unlit_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_mesh_unlit"),
@@ -47,8 +137,13 @@ pub fn create_toon_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
 
 #[inline]
 pub fn build_material_shader(material_wgsl: &str) -> String {
+    build_material_shader_with_prelude(regular::PRELUDE_WGSL, material_wgsl)
+}
+
+#[inline]
+pub fn build_material_shader_with_prelude(prelude_wgsl: &str, material_wgsl: &str) -> String {
     let mut out = String::new();
-    out.push_str(regular::PRELUDE_WGSL);
+    out.push_str(prelude_wgsl);
     out.push('\n');
     out.push_str(material_wgsl);
     out.push_str("\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    return shade_material(in);\n}\n");
@@ -60,6 +155,30 @@ pub fn create_depth_prepass_shader_module(device: &wgpu::Device) -> wgpu::Shader
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_depth_prepass"),
         source: wgpu::ShaderSource::Wgsl(regular::DEPTH_PREPASS_WGSL.into()),
+    })
+}
+
+#[inline]
+pub fn create_depth_prepass_shader_module_rigid(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_depth_prepass_rigid"),
+        source: wgpu::ShaderSource::Wgsl(regular::DEPTH_PREPASS_RIGID_WGSL.into()),
+    })
+}
+
+#[inline]
+pub fn create_depth_prepass_shader_module_skinned(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_depth_prepass_skinned"),
+        source: wgpu::ShaderSource::Wgsl(regular::DEPTH_PREPASS_SKINNED_WGSL.into()),
+    })
+}
+
+#[inline]
+pub fn create_multimesh_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_multimesh"),
+        source: wgpu::ShaderSource::Wgsl(regular::MULTIMESH_WGSL.into()),
     })
 }
 

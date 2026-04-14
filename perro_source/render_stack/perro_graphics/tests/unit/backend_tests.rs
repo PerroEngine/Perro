@@ -152,6 +152,7 @@ fn draw_3d_updates_retained_state_per_node() {
             surfaces: surfaces_for(created_materials[0]),
             instance_mats: Arc::from([model_a]),
             skeleton: None,
+            dense_multimesh: None,
         })
     );
     assert_eq!(
@@ -162,6 +163,7 @@ fn draw_3d_updates_retained_state_per_node() {
             surfaces: surfaces_for(created_materials[1]),
             instance_mats: Arc::from([model_b]),
             skeleton: None,
+            dense_multimesh: None,
         })
     );
 }
@@ -240,6 +242,7 @@ fn draw_multi_3d_retains_all_instance_mats() {
             surfaces: surfaces_for(material_id),
             instance_mats,
             skeleton: None,
+            dense_multimesh: None,
         })
     );
 }
@@ -300,6 +303,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             surfaces: surfaces_for(material_id),
             instance_mats: Arc::from([first_model]),
             skeleton: None,
+            dense_multimesh: None,
         })
     );
 
@@ -327,6 +331,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             surfaces: surfaces_for(material_id),
             instance_mats: Arc::from([second_model]),
             skeleton: None,
+            dense_multimesh: None,
         })
     );
 }
@@ -404,6 +409,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
             surfaces: surfaces_for(material_id),
             instance_mats: Arc::from([second_model]),
             skeleton: None,
+            dense_multimesh: None,
         })
     );
 }

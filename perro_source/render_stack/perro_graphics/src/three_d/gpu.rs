@@ -116,6 +116,14 @@ struct MeshVertex {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
+struct RigidMeshVertex {
+    pos: [f32; 3],
+    normal: [f32; 3],
+    uv: [f32; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct InstanceGpu {
     model_row_0: [f32; 4],
     model_row_1: [f32; 4],
@@ -125,6 +133,26 @@ struct InstanceGpu {
     emissive_factor: [f32; 3], // rgb
     material_params: [f32; 4], // alpha_mode, alpha_cutoff, double_sided, bitflags(debug/flat)
     skeleton_params: [u32; 4], // start, count, custom_params_offset, custom_params_len
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct MultiMeshInstanceGpu {
+    position: [f32; 3],
+    rotation: [f32; 4],
+    draw_id: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct MultiMeshDrawParamGpu {
+    model_row_0: [f32; 4],
+    model_row_1: [f32; 4],
+    model_row_2: [f32; 4],
+    packed_color: u32,
+    packed_emissive: u32,
+    scale_bits: u32,
+    _pad: u32,
 }
 
 #[repr(C)]

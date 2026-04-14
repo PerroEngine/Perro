@@ -20,12 +20,20 @@ pub enum Draw3DKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct DenseMultiMeshDraw3D {
+    pub node_model: [[f32; 4]; 4],
+    pub instance_scale: f32,
+    pub instances: Arc<[DenseInstancePose3D]>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Draw3DInstance {
     pub node: NodeID,
     pub kind: Draw3DKind,
     pub surfaces: Arc<[MeshSurfaceBinding3D]>,
     pub instance_mats: Arc<[[[f32; 4]; 4]]>,
     pub skeleton: Option<SkeletonPalette>,
+    pub dense_multimesh: Option<DenseMultiMeshDraw3D>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -85,6 +93,7 @@ impl Renderer3D {
             surfaces,
             instance_mats: Arc::from([model]),
             skeleton,
+            dense_multimesh: None,
         });
     }
 
@@ -102,6 +111,7 @@ impl Renderer3D {
             surfaces,
             instance_mats,
             skeleton,
+            dense_multimesh: None,
         });
     }
 
@@ -130,7 +140,18 @@ impl Renderer3D {
             );
             instance_mats.push((node_model_mat * local).to_cols_array_2d());
         }
-        self.queue_draw_multi(node, mesh, surfaces, Arc::from(instance_mats.into_boxed_slice()), None);
+        self.queued_draws.push(Draw3DInstance {
+            node,
+            kind: Draw3DKind::Mesh(mesh),
+            surfaces,
+            instance_mats: Arc::from(instance_mats.into_boxed_slice()),
+            skeleton: None,
+            dense_multimesh: Some(DenseMultiMeshDraw3D {
+                node_model,
+                instance_scale,
+                instances,
+            }),
+        });
     }
 
     pub fn remove_node(&mut self, node: NodeID) {
@@ -218,6 +239,12 @@ impl Renderer3D {
                     }
                     if draw.skeleton.is_some() && retained.skeleton != draw.skeleton {
                         retained.skeleton = draw.skeleton;
+                        draws_changed = true;
+                    }
+                    if draw.dense_multimesh.is_some()
+                        && retained.dense_multimesh != draw.dense_multimesh
+                    {
+                        retained.dense_multimesh = draw.dense_multimesh;
                         draws_changed = true;
                     }
                 }
