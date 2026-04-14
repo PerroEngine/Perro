@@ -111,9 +111,105 @@ impl RuntimeResourceApi {
         if source.is_empty() {
             return None;
         }
+        let normalized = normalize_source_slashes(source);
         if let Some(lookup) = self.static_material_lookup {
-            return lookup(source).cloned();
+            if let Some(found) = lookup(source).cloned() {
+                return Some(found);
+            }
+            if normalized.as_ref() != source
+                && let Some(found) = lookup(normalized.as_ref()).cloned()
+            {
+                return Some(found);
+            }
+            if let Some(alias) = normalized_static_material_lookup_alias(source)
+                && let Some(found) = lookup(alias.as_str()).cloned()
+            {
+                return Some(found);
+            }
+            if normalized.as_ref() != source
+                && let Some(alias) = normalized_static_material_lookup_alias(normalized.as_ref())
+                && let Some(found) = lookup(alias.as_str()).cloned()
+            {
+                return Some(found);
+            }
         }
         material_schema::load_from_source(source)
+            .or_else(|| material_schema::load_from_source(normalized.as_ref()))
+    }
+}
+
+fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
+    if source.contains('\\') {
+        std::borrow::Cow::Owned(source.replace('\\', "/"))
+    } else {
+        std::borrow::Cow::Borrowed(source)
+    }
+}
+
+fn normalized_static_material_lookup_alias(source: &str) -> Option<String> {
+    let (path, fragment) = split_source_fragment(source);
+    if !(path.ends_with(".glb") || path.ends_with(".gltf")) {
+        return None;
+    }
+    let Some(fragment) = fragment else {
+        return Some(format!("{path}:mat[0]"));
+    };
+    if let Some(index) = parse_fragment_index(fragment, "material") {
+        return Some(format!("{path}:mat[{index}]"));
+    }
+    if let Some(index) = parse_fragment_index(fragment, "mat") {
+        return Some(format!("{path}:material[{index}]"));
+    }
+    None
+}
+
+fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
+    let Some((path, selector)) = source.rsplit_once(':') else {
+        return (source, None);
+    };
+    if path.is_empty() || selector.contains('/') || selector.contains('\\') {
+        return (source, None);
+    }
+    if selector.contains('[') && selector.ends_with(']') {
+        return (path, Some(selector));
+    }
+    (source, None)
+}
+
+fn parse_fragment_index(fragment: &str, key: &str) -> Option<u32> {
+    let (name, rest) = fragment.split_once('[')?;
+    if name.trim() != key {
+        return None;
+    }
+    let value = rest.strip_suffix(']')?.trim();
+    value.parse::<u32>().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalized_static_material_lookup_alias;
+
+    #[test]
+    fn gltf_material_source_without_fragment_maps_to_mat_zero_alias() {
+        assert_eq!(
+            normalized_static_material_lookup_alias("res://models/hero.glb"),
+            Some("res://models/hero.glb:mat[0]".to_string())
+        );
+    }
+
+    #[test]
+    fn gltf_material_selector_aliases_to_mat_selector() {
+        assert_eq!(
+            normalized_static_material_lookup_alias("res://models/hero.glb:material[2]"),
+            Some("res://models/hero.glb:mat[2]".to_string())
+        );
+    }
+
+    #[test]
+    fn gltf_mat_selector_aliases_to_material_selector() {
+        assert_eq!(
+            normalized_static_material_lookup_alias("res://models/hero.glb:mat[1]"),
+            Some("res://models/hero.glb:material[1]".to_string())
+        );
     }
 }

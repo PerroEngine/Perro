@@ -4847,11 +4847,46 @@ fn load_mesh_from_source(
 ) -> Option<DecodedMesh> {
     let mut decoded = if let Some(mesh) = runtime_mesh {
         decode_runtime_mesh(mesh)?
-    } else if let Some(lookup) = static_mesh_lookup
-        && let Some(bytes) = lookup(source)
-        && let Some(decoded) = decode_pmesh(bytes)
-    {
-        decoded
+    } else if let Some(lookup) = static_mesh_lookup {
+        let normalized = normalize_source_slashes(source);
+        let source_variants = if normalized.as_ref() == source {
+            [source, source]
+        } else {
+            [source, normalized.as_ref()]
+        };
+        if let Some(bytes) = lookup(source)
+            && let Some(decoded) = decode_pmesh(bytes)
+        {
+            decoded
+        } else if source_variants[1] != source_variants[0]
+            && let Some(bytes) = lookup(source_variants[1])
+            && let Some(decoded) = decode_pmesh(bytes)
+        {
+            decoded
+        } else if let Some(alias) = normalized_static_mesh_lookup_alias(source)
+            && let Some(bytes) = lookup(alias.as_str())
+            && let Some(decoded) = decode_pmesh(bytes)
+        {
+            decoded
+        } else if source_variants[1] != source_variants[0]
+            && let Some(alias) = normalized_static_mesh_lookup_alias(source_variants[1])
+            && let Some(bytes) = lookup(alias.as_str())
+            && let Some(decoded) = decode_pmesh(bytes)
+        {
+            decoded
+        } else {
+            let (path, fragment) = split_source_fragment(source);
+            if path.ends_with(".pmesh") {
+                let bytes = load_asset(path).ok()?;
+                decode_pmesh(&bytes)?
+            } else if path.ends_with(".glb") || path.ends_with(".gltf") {
+                let mesh_index = parse_fragment_index(fragment, "mesh").unwrap_or(0);
+                let bytes = load_asset(path).ok()?;
+                decode_gltf_mesh(&bytes, mesh_index as usize)?
+            } else {
+                return None;
+            }
+        }
     } else {
         let (path, fragment) = split_source_fragment(source);
         if path.ends_with(".pmesh") {
@@ -4873,6 +4908,26 @@ fn load_mesh_from_source(
     }
 
     Some(decoded)
+}
+
+fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
+    if source.contains('\\') {
+        std::borrow::Cow::Owned(source.replace('\\', "/"))
+    } else {
+        std::borrow::Cow::Borrowed(source)
+    }
+}
+
+fn normalized_static_mesh_lookup_alias(source: &str) -> Option<String> {
+    let (path, fragment) = split_source_fragment(source);
+    if !(path.ends_with(".glb") || path.ends_with(".gltf")) {
+        return None;
+    }
+    match parse_fragment_index(fragment, "mesh") {
+        Some(0) => Some(path.to_string()),
+        Some(_) => None,
+        None => Some(format!("{path}:mesh[0]")),
+    }
 }
 
 pub(crate) fn validate_mesh_source(
@@ -4957,6 +5012,35 @@ fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {
     }
     let value = rest.strip_suffix(']')?.trim();
     value.parse::<u32>().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalized_static_mesh_lookup_alias;
+
+    #[test]
+    fn gltf_mesh_source_without_fragment_maps_to_mesh_zero_alias() {
+        assert_eq!(
+            normalized_static_mesh_lookup_alias("res://models/hero.glb"),
+            Some("res://models/hero.glb:mesh[0]".to_string())
+        );
+    }
+
+    #[test]
+    fn gltf_mesh_zero_fragment_maps_to_plain_path_alias() {
+        assert_eq!(
+            normalized_static_mesh_lookup_alias("res://models/hero.glb:mesh[0]"),
+            Some("res://models/hero.glb".to_string())
+        );
+    }
+
+    #[test]
+    fn gltf_non_zero_mesh_fragment_keeps_exact_lookup_only() {
+        assert_eq!(
+            normalized_static_mesh_lookup_alias("res://models/hero.glb:mesh[3]"),
+            None
+        );
+    }
 }
 
 const MESHLET_TRIANGLES: usize = 64;

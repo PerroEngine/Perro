@@ -1011,12 +1011,27 @@ fn materials_from_gltf_file(
         };
         out.push((
             format!("{res_path}:mat[{index}]"),
-            MaterialLiteral::Standard(derived),
+            MaterialLiteral::Standard(derived.clone()),
         ));
+        out.push((
+            format!("{res_path}:material[{index}]"),
+            MaterialLiteral::Standard(derived.clone()),
+        ));
+        if index == 0 {
+            out.push((res_path.to_string(), MaterialLiteral::Standard(derived)));
+        }
     }
     if out.is_empty() {
         out.push((
+            res_path.to_string(),
+            MaterialLiteral::Standard(StandardMaterial3D::default()),
+        ));
+        out.push((
             format!("{res_path}:mat[0]"),
+            MaterialLiteral::Standard(StandardMaterial3D::default()),
+        ));
+        out.push((
+            format!("{res_path}:material[0]"),
             MaterialLiteral::Standard(StandardMaterial3D::default()),
         ));
     }

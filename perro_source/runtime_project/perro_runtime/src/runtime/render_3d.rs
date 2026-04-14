@@ -1380,7 +1380,9 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
         return None;
     }
 
+    let normalized = normalize_source_slashes(source);
     let (path, _fragment) = split_source_fragment(source);
+    let (normalized_path, _) = split_source_fragment(normalized.as_ref());
     if let Some(lookup) = runtime
         .project()
         .and_then(|project| project.static_material_lookup)
@@ -1388,7 +1390,28 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
         if let Some(material) = lookup(source).cloned() {
             return Some(material);
         }
+        if normalized.as_ref() != source
+            && let Some(material) = lookup(normalized.as_ref()).cloned()
+        {
+            return Some(material);
+        }
+        if let Some(alias) = normalized_static_material_lookup_alias(source)
+            && let Some(material) = lookup(alias.as_str()).cloned()
+        {
+            return Some(material);
+        }
+        if normalized.as_ref() != source
+            && let Some(alias) = normalized_static_material_lookup_alias(normalized.as_ref())
+            && let Some(material) = lookup(alias.as_str()).cloned()
+        {
+            return Some(material);
+        }
         if let Some(material) = lookup(path).cloned() {
+            return Some(material);
+        }
+        if normalized_path != path
+            && let Some(material) = lookup(normalized_path).cloned()
+        {
             return Some(material);
         }
     }
@@ -1397,8 +1420,49 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
         return material_schema::load_from_source(source)
             .or_else(|| material_schema::load_from_source(path));
     }
+    if normalized_path.ends_with(".pmat")
+        || normalized_path.ends_with(".glb")
+        || normalized_path.ends_with(".gltf")
+    {
+        return material_schema::load_from_source(normalized.as_ref())
+            .or_else(|| material_schema::load_from_source(normalized_path));
+    }
 
     None
+}
+
+fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
+    if source.contains('\\') {
+        std::borrow::Cow::Owned(source.replace('\\', "/"))
+    } else {
+        std::borrow::Cow::Borrowed(source)
+    }
+}
+
+fn normalized_static_material_lookup_alias(source: &str) -> Option<String> {
+    let (path, fragment) = split_source_fragment(source);
+    if !(path.ends_with(".glb") || path.ends_with(".gltf")) {
+        return None;
+    }
+    let Some(fragment) = fragment else {
+        return Some(format!("{path}:mat[0]"));
+    };
+    if let Some(index) = parse_fragment_index(fragment, "material") {
+        return Some(format!("{path}:mat[{index}]"));
+    }
+    if let Some(index) = parse_fragment_index(fragment, "mat") {
+        return Some(format!("{path}:material[{index}]"));
+    }
+    None
+}
+
+fn parse_fragment_index(fragment: &str, key: &str) -> Option<u32> {
+    let (name, rest) = fragment.split_once('[')?;
+    if name.trim() != key {
+        return None;
+    }
+    let value = rest.strip_suffix(']')?.trim();
+    value.parse::<u32>().ok()
 }
 
 fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
