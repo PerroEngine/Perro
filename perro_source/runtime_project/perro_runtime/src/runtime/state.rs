@@ -332,6 +332,7 @@ pub(crate) struct Render3DState {
     pub(crate) retained_point_lights: AHashMap<NodeID, PointLight3DState>,
     pub(crate) retained_spot_lights: AHashMap<NodeID, SpotLight3DState>,
     pub(crate) retained_mesh_draws: AHashMap<NodeID, RetainedMeshDrawState>,
+    pub(crate) skeleton_cache_scratch: AHashMap<NodeID, SkeletonPalette>,
     pub(crate) removed_nodes: Vec<NodeID>,
 }
 
@@ -353,6 +354,7 @@ impl Render3DState {
             retained_point_lights: AHashMap::default(),
             retained_spot_lights: AHashMap::default(),
             retained_mesh_draws: AHashMap::default(),
+            skeleton_cache_scratch: AHashMap::default(),
             removed_nodes: Vec::new(),
         }
     }

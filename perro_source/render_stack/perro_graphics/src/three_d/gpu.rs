@@ -2489,8 +2489,6 @@ impl Gpu3D {
                 }
                 self.dirty_instance_spans_scratch.push(range.clone());
             }
-            self.dirty_instance_spans_scratch
-                .sort_unstable_by_key(|span| span.start);
             self.merged_instance_spans_scratch.clear();
             for span in self.dirty_instance_spans_scratch.iter().cloned() {
                 if let Some(last) = self.merged_instance_spans_scratch.last_mut()

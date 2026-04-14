@@ -15,7 +15,6 @@ use perro_render_bridge::{
     ResourceCommand, SkeletonPalette, Sky3DState, SkyTime3DState, SpotLight3DState,
 };
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 impl Runtime {
@@ -36,7 +35,8 @@ impl Runtime {
         let mut visible_now = std::mem::take(&mut self.render_3d.visible_now);
         visible_now.clear();
         self.render_3d.removed_nodes.clear();
-        let mut skeleton_cache: HashMap<NodeID, SkeletonPalette> = HashMap::new();
+        let mut skeleton_cache = std::mem::take(&mut self.render_3d.skeleton_cache_scratch);
+        skeleton_cache.clear();
 
         for node in traversal_ids.iter().copied() {
             let effective_visible = self.is_effectively_visible(node);
@@ -281,7 +281,7 @@ impl Runtime {
             }
 
             enum LocalMeshInstanceData {
-                Single(Arc<[[[f32; 4]; 4]]>),
+                Single,
                 Dense {
                     instance_scale: f32,
                     poses: Arc<[DenseInstancePose3D]>,
@@ -297,7 +297,7 @@ impl Runtime {
                     mesh.mesh,
                     mesh.surfaces.clone(),
                     Some(mesh.skeleton),
-                    LocalMeshInstanceData::Single(Arc::from([Mat4::IDENTITY.to_cols_array_2d()])),
+                    LocalMeshInstanceData::Single,
                 )),
                 SceneNodeData::MultiMeshInstance3D(mesh) => Some((
                     mesh.mesh,
@@ -334,17 +334,10 @@ impl Runtime {
                     .unwrap_or(perro_structs::Transform3D::IDENTITY)
                     .to_mat4();
                 let retained_instances = match &local_instances {
-                    LocalMeshInstanceData::Single(local_instance_mats) => {
-                        crate::runtime::state::RetainedMeshInstanceState::Matrices(Arc::from(
-                            local_instance_mats
-                                .iter()
-                                .map(|local| {
-                                    (node_global * Mat4::from_cols_array_2d(local))
-                                        .to_cols_array_2d()
-                                })
-                                .collect::<Vec<_>>()
-                                .into_boxed_slice(),
-                        ))
+                    LocalMeshInstanceData::Single => {
+                        crate::runtime::state::RetainedMeshInstanceState::Matrices(Arc::from([
+                            (node_global * Mat4::IDENTITY).to_cols_array_2d(),
+                        ]))
                     }
                     LocalMeshInstanceData::Dense {
                         poses,
@@ -494,11 +487,37 @@ impl Runtime {
             }
 
             let point_emitter_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::ParticleEmitter3D(emitter) => Some(emitter.clone()),
+                SceneNodeData::ParticleEmitter3D(emitter) => Some((
+                    emitter.profile.clone(),
+                    emitter.sim_mode,
+                    emitter.render_mode,
+                    emitter.transform,
+                    emitter.active,
+                    emitter.looping,
+                    emitter.prewarm,
+                    emitter.spawn_rate,
+                    emitter.seed,
+                    emitter.params.clone(),
+                    emitter.internal_simulation_time,
+                )),
                 _ => None,
             });
-            if effective_visible && let Some(emitter) = point_emitter_data {
-                let profile = resolve_particle_profile(self, &emitter.profile).unwrap_or_default();
+            if effective_visible
+                && let Some((
+                    emitter_profile,
+                    emitter_sim_mode,
+                    emitter_render_mode,
+                    emitter_transform,
+                    emitter_active,
+                    emitter_looping,
+                    emitter_prewarm,
+                    emitter_spawn_rate,
+                    emitter_seed,
+                    emitter_params,
+                    emitter_simulation_time,
+                )) = point_emitter_data
+            {
+                let profile = resolve_particle_profile(self, &emitter_profile).unwrap_or_default();
                 let lifetime_min = profile.lifetime_min.max(0.001);
                 let lifetime_max = profile.lifetime_max.max(lifetime_min);
                 if let Some(node_mut) = self.nodes.get_mut(node)
@@ -510,11 +529,11 @@ impl Runtime {
                     .project()
                     .map(|project| project.config.particle_sim_default)
                     .unwrap_or(perro_project::ParticleSimDefault::Cpu);
-                let sim_mode = resolve_particle_sim_mode(emitter.sim_mode, default_sim_mode);
-                let render_mode = resolve_particle_render_mode(emitter.render_mode);
+                let sim_mode = resolve_particle_sim_mode(emitter_sim_mode, default_sim_mode);
+                let render_mode = resolve_particle_render_mode(emitter_render_mode);
                 let particle_model = self
                     .get_global_transform_3d(node)
-                    .unwrap_or(emitter.transform)
+                    .unwrap_or(emitter_transform)
                     .to_mat4()
                     .to_cols_array_2d();
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(
@@ -522,16 +541,16 @@ impl Runtime {
                         node,
                         particles: Box::new(PointParticles3DState {
                             model: particle_model,
-                            active: emitter.active,
-                            looping: emitter.looping,
-                            prewarm: emitter.prewarm,
+                            active: emitter_active,
+                            looping: emitter_looping,
+                            prewarm: emitter_prewarm,
                             lifetime_min,
                             lifetime_max,
                             alive_budget: derived_particle_budget(
-                                emitter.spawn_rate.max(0.0),
+                                emitter_spawn_rate.max(0.0),
                                 lifetime_max,
                             ),
-                            emission_rate: emitter.spawn_rate.max(0.0),
+                            emission_rate: emitter_spawn_rate.max(0.0),
                             speed_min: profile.speed_min.max(0.0),
                             speed_max: profile.speed_max.max(profile.speed_min.max(0.0)),
                             spread_radians: profile.spread_radians.clamp(0.0, std::f32::consts::PI),
@@ -542,9 +561,9 @@ impl Runtime {
                             color_start: profile.color_start,
                             color_end: profile.color_end,
                             emissive: profile.emissive,
-                            seed: emitter.seed,
-                            params: emitter.params.clone(),
-                            simulation_time: emitter.internal_simulation_time.max(0.0),
+                            seed: emitter_seed,
+                            params: emitter_params,
+                            simulation_time: emitter_simulation_time.max(0.0),
                             simulation_delta: self.time.delta.max(0.0),
                             profile,
                             sim_mode,
@@ -562,6 +581,8 @@ impl Runtime {
 
         traversal_ids.clear();
         self.render_3d.traversal_ids = traversal_ids;
+        skeleton_cache.clear();
+        self.render_3d.skeleton_cache_scratch = skeleton_cache;
     }
 
     fn remove_no_longer_visible_render_3d_nodes(&mut self, visible_now: &ahash::AHashSet<NodeID>) {

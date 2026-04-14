@@ -250,7 +250,7 @@ impl Gpu {
             present_mode,
             alpha_mode,
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency: choose_max_frame_latency(vsync_enabled),
         };
         surface.configure(&device, &config);
 
@@ -1059,8 +1059,8 @@ fn linear_render_format(surface_format: wgpu::TextureFormat) -> wgpu::TextureFor
 fn choose_present_mode(modes: &[wgpu::PresentMode], vsync_enabled: bool) -> wgpu::PresentMode {
     let preferred = if vsync_enabled {
         [
-            wgpu::PresentMode::Fifo,
             wgpu::PresentMode::AutoVsync,
+            wgpu::PresentMode::Fifo,
             wgpu::PresentMode::FifoRelaxed,
         ]
         .as_slice()
@@ -1079,4 +1079,13 @@ fn choose_present_mode(modes: &[wgpu::PresentMode], vsync_enabled: bool) -> wgpu
         }
     }
     modes.first().copied().unwrap_or(wgpu::PresentMode::Fifo)
+}
+
+fn choose_max_frame_latency(vsync_enabled: bool) -> u32 {
+    let default = if vsync_enabled { 3 } else { 1 };
+    std::env::var("PERRO_FRAME_LATENCY")
+        .ok()
+        .and_then(|raw| raw.parse::<u32>().ok())
+        .map(|val| val.clamp(1, 8))
+        .unwrap_or(default)
 }
