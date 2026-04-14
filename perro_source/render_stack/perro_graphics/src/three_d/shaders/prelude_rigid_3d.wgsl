@@ -61,9 +61,9 @@ struct InstanceInput {
     @location(4) model_row_0: vec4<f32>,
     @location(5) model_row_1: vec4<f32>,
     @location(6) model_row_2: vec4<f32>,
-    @location(7) color: vec4<f32>,
+    @location(7) packed_color: u32,
     @location(8) pbr_params: vec4<f32>,
-    @location(9) emissive_factor: vec3<f32>,
+    @location(9) packed_emissive: u32,
     @location(10) material_params: vec4<f32>,
     @location(11) custom_params: vec2<u32>,
 };
@@ -92,6 +92,14 @@ struct FragmentInput {
     @location(7) uv: vec2<f32>,
 };
 
+fn unpack_rgba8(packed: u32) -> vec4<f32> {
+    let x = f32((packed >> 0u) & 0xffu) * (1.0 / 255.0);
+    let y = f32((packed >> 8u) & 0xffu) * (1.0 / 255.0);
+    let z = f32((packed >> 16u) & 0xffu) * (1.0 / 255.0);
+    let w = f32((packed >> 24u) & 0xffu) * (1.0 / 255.0);
+    return vec4<f32>(x, y, z, w);
+}
+
 @vertex
 fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     let p = vec4<f32>(v.pos, 1.0);
@@ -111,9 +119,11 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.clip_pos = scene.view_proj * world;
     out.world_pos = world.xyz;
     out.normal_ws = normal_ws;
-    out.color = inst.color;
+    let color = unpack_rgba8(inst.packed_color);
+    let emissive = unpack_rgba8(inst.packed_emissive);
+    out.color = color;
     out.pbr_params = inst.pbr_params;
-    out.emissive_factor = inst.emissive_factor;
+    out.emissive_factor = emissive.xyz;
     out.material_params = inst.material_params;
     out.custom_range = inst.custom_params;
     out.uv = v.uv;

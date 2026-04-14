@@ -142,14 +142,30 @@ struct RigidMeshVertex {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct InstanceGpu {
+struct TransformInstanceGpu {
     model_row_0: [f32; 4],
     model_row_1: [f32; 4],
     model_row_2: [f32; 4],
-    color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct MaterialInstanceGpu {
+    packed_color: u32,
     pbr_params: [f32; 4], // roughness, metallic, occlusion_strength, normal_scale
-    emissive_factor: [f32; 3], // rgb
+    packed_emissive: u32,
     material_params: [f32; 4], // alpha_mode, alpha_cutoff, double_sided, bitflags(debug/flat)
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct RigidInstanceMetaGpu {
+    custom_params: [u32; 2], // custom_params_offset, custom_params_len
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct SkinnedInstanceMetaGpu {
     skeleton_params: [u32; 4], // start, count, custom_params_offset, custom_params_len
 }
 
@@ -283,9 +299,18 @@ pub struct Gpu3D {
     staged_custom_params: Vec<[f32; 4]>,
     material_fallback_texture: Option<CachedMaterialTexture>,
     material_textures: AHashMap<u32, CachedMaterialTexture>,
-    instance_buffer: wgpu::Buffer,
-    instance_capacity: usize,
-    staged_instances: Vec<InstanceGpu>,
+    instance_transform_buffer: wgpu::Buffer,
+    instance_transform_capacity: usize,
+    staged_instance_transforms: Vec<TransformInstanceGpu>,
+    instance_material_buffer: wgpu::Buffer,
+    instance_material_capacity: usize,
+    staged_instance_materials: Vec<MaterialInstanceGpu>,
+    rigid_instance_meta_buffer: wgpu::Buffer,
+    rigid_instance_meta_capacity: usize,
+    staged_rigid_instance_meta: Vec<RigidInstanceMetaGpu>,
+    skinned_instance_meta_buffer: wgpu::Buffer,
+    skinned_instance_meta_capacity: usize,
+    staged_skinned_instance_meta: Vec<SkinnedInstanceMetaGpu>,
     multimesh_bind_group: wgpu::BindGroup,
     multimesh_draw_params_buffer: wgpu::Buffer,
     multimesh_draw_params_capacity: usize,
@@ -380,6 +405,10 @@ pub struct Gpu3D {
     last_occlusion_queried: u32,
     last_occlusion_visible: u32,
     last_occlusion_culled: u32,
+    dirty_instance_spans_scratch: Vec<Range<u32>>,
+    merged_instance_spans_scratch: Vec<Range<u32>>,
+    debug_point_instances_scratch: Vec<BuiltInstanceParts>,
+    debug_edge_instances_scratch: Vec<BuiltInstanceParts>,
 }
 
 pub struct Prepare3D<'a> {
@@ -1351,10 +1380,34 @@ impl Gpu3D {
                 | wgpu::BufferUsages::COPY_SRC,
         });
 
-        let instance_capacity = 256usize;
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_mesh_instances"),
-            size: (instance_capacity * std::mem::size_of::<InstanceGpu>()) as u64,
+        let instance_transform_capacity = 256usize;
+        let instance_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_mesh_instance_transforms"),
+            size: (instance_transform_capacity * std::mem::size_of::<TransformInstanceGpu>())
+                as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let instance_material_capacity = 256usize;
+        let instance_material_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_mesh_instance_materials"),
+            size: (instance_material_capacity * std::mem::size_of::<MaterialInstanceGpu>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let rigid_instance_meta_capacity = 256usize;
+        let rigid_instance_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_mesh_instance_rigid_meta"),
+            size: (rigid_instance_meta_capacity * std::mem::size_of::<RigidInstanceMetaGpu>())
+                as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let skinned_instance_meta_capacity = 256usize;
+        let skinned_instance_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_mesh_instance_skinned_meta"),
+            size: (skinned_instance_meta_capacity * std::mem::size_of::<SkinnedInstanceMetaGpu>())
+                as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1705,9 +1758,18 @@ impl Gpu3D {
             staged_custom_params: Vec::new(),
             material_fallback_texture: None,
             material_textures: AHashMap::new(),
-            instance_buffer,
-            instance_capacity,
-            staged_instances: Vec::new(),
+            instance_transform_buffer,
+            instance_transform_capacity,
+            staged_instance_transforms: Vec::new(),
+            instance_material_buffer,
+            instance_material_capacity,
+            staged_instance_materials: Vec::new(),
+            rigid_instance_meta_buffer,
+            rigid_instance_meta_capacity,
+            staged_rigid_instance_meta: Vec::new(),
+            skinned_instance_meta_buffer,
+            skinned_instance_meta_capacity,
+            staged_skinned_instance_meta: Vec::new(),
             multimesh_bind_group,
             multimesh_draw_params_buffer,
             multimesh_draw_params_capacity,
@@ -1802,6 +1864,10 @@ impl Gpu3D {
             last_occlusion_queried: 0,
             last_occlusion_visible: 0,
             last_occlusion_culled: 0,
+            dirty_instance_spans_scratch: Vec::new(),
+            merged_instance_spans_scratch: Vec::new(),
+            debug_point_instances_scratch: Vec::new(),
+            debug_edge_instances_scratch: Vec::new(),
             custom_pipelines: AHashMap::new(),
             custom_pipelines_rigid: AHashMap::new(),
         };
@@ -2238,7 +2304,8 @@ impl Gpu3D {
                 });
         let stable_instance_ranges = self.last_draw_instance_ranges.len() == draws.len()
             && self.last_draw_instance_ranges.iter().all(|range| {
-                range.start <= range.end && (range.end as usize) <= self.staged_instances.len()
+                range.start <= range.end
+                    && (range.end as usize) <= self.staged_instance_transforms.len()
             });
         let transform_only_changed =
             !draws_unchanged && transform_only_semantic && stable_instance_ranges;
@@ -2289,11 +2356,12 @@ impl Gpu3D {
                 }
             }
             self.update_shadow_state(queue, &camera, lighting);
-            self.last_total_drawn = self.staged_instances.len() + self.staged_multimesh_instances.len();
+            self.last_total_drawn =
+                self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
             return;
         }
         if transform_only_changed {
-            let mut dirty_instance_spans: Vec<Range<u32>> = Vec::new();
+            self.dirty_instance_spans_scratch.clear();
             for (draw, range) in draws.iter().zip(self.last_draw_instance_ranges.iter()) {
                 let Some(model) = draw.instance_mats.first() else {
                     continue;
@@ -2301,7 +2369,8 @@ impl Gpu3D {
                 if range.start >= range.end {
                     continue;
                 }
-                for instance in &mut self.staged_instances[range.start as usize..range.end as usize]
+                for instance in &mut self.staged_instance_transforms
+                    [range.start as usize..range.end as usize]
                 {
                     instance.model_row_0 = [
                         model[0][0],
@@ -2322,24 +2391,28 @@ impl Gpu3D {
                         model[3][2],
                     ];
                 }
-                dirty_instance_spans.push(range.clone());
+                self.dirty_instance_spans_scratch.push(range.clone());
             }
-            dirty_instance_spans.sort_unstable_by_key(|span| span.start);
-            let mut merged_spans: Vec<Range<u32>> = Vec::new();
-            for span in dirty_instance_spans {
-                if let Some(last) = merged_spans.last_mut() && span.start <= last.end {
+            self.dirty_instance_spans_scratch
+                .sort_unstable_by_key(|span| span.start);
+            self.merged_instance_spans_scratch.clear();
+            for span in self.dirty_instance_spans_scratch.iter().cloned() {
+                if let Some(last) = self.merged_instance_spans_scratch.last_mut()
+                    && span.start <= last.end
+                {
                     last.end = last.end.max(span.end);
                 } else {
-                    merged_spans.push(span);
+                    self.merged_instance_spans_scratch.push(span);
                 }
             }
-            for span in merged_spans {
-                let byte_start = span.start as u64 * std::mem::size_of::<InstanceGpu>() as u64;
+            for span in self.merged_instance_spans_scratch.iter() {
+                let byte_start =
+                    span.start as u64 * std::mem::size_of::<TransformInstanceGpu>() as u64;
                 queue.write_buffer(
-                    &self.instance_buffer,
+                    &self.instance_transform_buffer,
                     byte_start,
                     bytemuck::cast_slice(
-                        &self.staged_instances[span.start as usize..span.end as usize],
+                        &self.staged_instance_transforms[span.start as usize..span.end as usize],
                     ),
                 );
             }
@@ -2363,7 +2436,7 @@ impl Gpu3D {
                 self.frustum_cull_staging.clear();
                 self.frustum_cull_staging.reserve(self.draw_batches.len());
                 for batch in &self.draw_batches {
-                    let instance = &self.staged_instances[batch.instance_start as usize];
+                    let instance = &self.staged_instance_transforms[batch.instance_start as usize];
                     let model_cols = model_cols_from_affine_rows(instance);
                     self.frustum_cull_staging.push(FrustumCullItemGpu {
                         model_0: model_cols[0],
@@ -2412,7 +2485,7 @@ impl Gpu3D {
             self.last_draws.clear();
             self.last_draws.extend_from_slice(draws);
             self.last_draws_revision = draws_revision;
-            self.last_total_drawn = self.staged_instances.len() + self.staged_multimesh_instances.len();
+            self.last_total_drawn = self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
             return;
         }
 
@@ -2420,8 +2493,14 @@ impl Gpu3D {
         self.last_draws.extend_from_slice(draws);
         self.last_draws_revision = draws_revision;
 
-        self.staged_instances.clear();
-        self.staged_instances.reserve(draws.len());
+        self.staged_instance_transforms.clear();
+        self.staged_instance_transforms.reserve(draws.len());
+        self.staged_instance_materials.clear();
+        self.staged_instance_materials.reserve(draws.len());
+        self.staged_rigid_instance_meta.clear();
+        self.staged_rigid_instance_meta.reserve(draws.len());
+        self.staged_skinned_instance_meta.clear();
+        self.staged_skinned_instance_meta.reserve(draws.len());
         self.staged_skeletons.clear();
         self.staged_custom_params.clear();
         self.draw_batches.clear();
@@ -2443,16 +2522,18 @@ impl Gpu3D {
         let mut debug_points_double_sided = false;
         let mut debug_points_local_center = [0.0f32; 3];
         let mut debug_points_local_radius = 0.0f32;
-        let mut debug_point_instances: Vec<InstanceGpu> = Vec::new();
+        let mut debug_point_instances = std::mem::take(&mut self.debug_point_instances_scratch);
+        debug_point_instances.clear();
         let mut debug_edges_start: Option<u32> = None;
         let mut debug_edges_count: u32 = 0;
         let mut debug_edges_double_sided = false;
         let mut debug_edges_local_center = [0.0f32; 3];
         let mut debug_edges_local_radius = 0.0f32;
-        let mut debug_edge_instances: Vec<InstanceGpu> = Vec::new();
+        let mut debug_edge_instances = std::mem::take(&mut self.debug_edge_instances_scratch);
+        debug_edge_instances.clear();
 
         for draw in draws {
-            let draw_instance_start = self.staged_instances.len() as u32;
+            let draw_instance_start = self.staged_instance_transforms.len() as u32;
             let is_debug_point = matches!(draw.kind, Draw3DKind::DebugPointCube);
             let is_debug_edge = matches!(draw.kind, Draw3DKind::DebugEdgeCylinder);
             let mesh_source = match draw.kind {
@@ -2513,7 +2594,7 @@ impl Gpu3D {
             };
             if surface_entries.is_empty() {
                 self.last_draw_instance_ranges
-                    .push(draw_instance_start..(self.staged_instances.len() as u32));
+                    .push(draw_instance_start..(self.staged_instance_transforms.len() as u32));
                 continue;
             }
             if let Some(dense) = &draw.dense_multimesh {
@@ -2558,7 +2639,7 @@ impl Gpu3D {
                     }
                 }
                 self.last_draw_instance_ranges
-                    .push(draw_instance_start..(self.staged_instances.len() as u32));
+                    .push(draw_instance_start..(self.staged_instance_transforms.len() as u32));
                 continue;
             }
             // CPU occlusion query mode works at object granularity.
@@ -2586,7 +2667,7 @@ impl Gpu3D {
                     && !self.should_probe_or_draw(occlusion_key)
                 {
                     self.last_draw_instance_ranges
-                        .push(draw_instance_start..(self.staged_instances.len() as u32));
+                        .push(draw_instance_start..(self.staged_instance_transforms.len() as u32));
                     continue;
                 }
                 let occlusion_query =
@@ -2696,9 +2777,9 @@ impl Gpu3D {
                         );
                         let (custom_params_offset, custom_params_len) =
                             self.stage_custom_params(&material);
-                        let instance_start = self.staged_instances.len() as u32;
+                        let instance_start = self.staged_instance_transforms.len() as u32;
                         for model in instance_mats.iter().copied() {
-                            self.staged_instances.push(build_instance(
+                            let instance = build_instance(
                                 model,
                                 &material,
                                 self.meshlet_debug_view,
@@ -2707,10 +2788,14 @@ impl Gpu3D {
                                 skeleton_count,
                                 custom_params_offset,
                                 custom_params_len,
-                            ));
+                            );
+                            self.staged_instance_transforms.push(instance.transform);
+                            self.staged_instance_materials.push(instance.material);
+                            self.staged_rigid_instance_meta.push(instance.rigid_meta);
+                            self.staged_skinned_instance_meta.push(instance.skinned_meta);
                         }
                         let instance_count =
-                            (self.staged_instances.len() as u32).saturating_sub(instance_start);
+                            (self.staged_instance_transforms.len() as u32).saturating_sub(instance_start);
                         if instance_count > 0 {
                             let multi_instance = instance_count > 1;
                             let occlusion_bounds = if multi_instance {
@@ -2776,9 +2861,9 @@ impl Gpu3D {
                     // CPU query occlusion at meshlet granularity self-occludes dynamic meshes.
                     // Keep meshlet occlusion GPU-driven only; CPU mode skips meshlet occlusion.
                     let occlusion_query = None;
-                    let instance_start = self.staged_instances.len() as u32;
+                    let instance_start = self.staged_instance_transforms.len() as u32;
                     for model in instance_mats.iter().copied() {
-                        self.staged_instances.push(build_instance(
+                        let instance = build_instance(
                             model,
                             material,
                             self.meshlet_debug_view,
@@ -2787,10 +2872,14 @@ impl Gpu3D {
                             skeleton_count,
                             custom_params_offset,
                             custom_params_len,
-                        ));
+                        );
+                        self.staged_instance_transforms.push(instance.transform);
+                        self.staged_instance_materials.push(instance.material);
+                        self.staged_rigid_instance_meta.push(instance.rigid_meta);
+                        self.staged_skinned_instance_meta.push(instance.skinned_meta);
                     }
                     let instance_count =
-                        (self.staged_instances.len() as u32).saturating_sub(instance_start);
+                        (self.staged_instance_transforms.len() as u32).saturating_sub(instance_start);
                     if instance_count == 0 {
                         continue;
                     }
@@ -2826,15 +2915,25 @@ impl Gpu3D {
                 }
             }
             self.last_draw_instance_ranges
-                .push(draw_instance_start..(self.staged_instances.len() as u32));
+                .push(draw_instance_start..(self.staged_instance_transforms.len() as u32));
         }
         if !debug_point_instances.is_empty() {
-            debug_points_start = Some(self.staged_instances.len() as u32);
-            self.staged_instances.extend(debug_point_instances);
+            debug_points_start = Some(self.staged_instance_transforms.len() as u32);
+            for instance in debug_point_instances.drain(..) {
+                self.staged_instance_transforms.push(instance.transform);
+                self.staged_instance_materials.push(instance.material);
+                self.staged_rigid_instance_meta.push(instance.rigid_meta);
+                self.staged_skinned_instance_meta.push(instance.skinned_meta);
+            }
         }
         if !debug_edge_instances.is_empty() {
-            debug_edges_start = Some(self.staged_instances.len() as u32);
-            self.staged_instances.extend(debug_edge_instances);
+            debug_edges_start = Some(self.staged_instance_transforms.len() as u32);
+            for instance in debug_edge_instances.drain(..) {
+                self.staged_instance_transforms.push(instance.transform);
+                self.staged_instance_materials.push(instance.material);
+                self.staged_rigid_instance_meta.push(instance.rigid_meta);
+                self.staged_skinned_instance_meta.push(instance.skinned_meta);
+            }
         }
         if let Some(instance_start) = debug_points_start
             && debug_points_count > 0
@@ -2883,7 +2982,7 @@ impl Gpu3D {
         self.debug_frustum_visible_est = 0;
         for batch in &self.draw_batches {
             let model =
-                model_cols_from_affine_rows(&self.staged_instances[batch.instance_start as usize]);
+                model_cols_from_affine_rows(&self.staged_instance_transforms[batch.instance_start as usize]);
             if bounds_in_frustum(model, batch.local_center, batch.local_radius, &frustum) {
                 self.debug_frustum_visible_est = self.debug_frustum_visible_est.saturating_add(1);
             }
@@ -2894,12 +2993,36 @@ impl Gpu3D {
                 self.occlusion_query_keys_this_frame.len() as u32,
             );
         }
-        self.ensure_instance_capacity(device, self.staged_instances.len());
-        if !self.staged_instances.is_empty() {
+        self.ensure_instance_transform_capacity(device, self.staged_instance_transforms.len());
+        self.ensure_instance_material_capacity(device, self.staged_instance_materials.len());
+        self.ensure_rigid_instance_meta_capacity(device, self.staged_rigid_instance_meta.len());
+        self.ensure_skinned_instance_meta_capacity(device, self.staged_skinned_instance_meta.len());
+        if !self.staged_instance_transforms.is_empty() {
             queue.write_buffer(
-                &self.instance_buffer,
+                &self.instance_transform_buffer,
                 0,
-                bytemuck::cast_slice(&self.staged_instances),
+                bytemuck::cast_slice(&self.staged_instance_transforms),
+            );
+        }
+        if !self.staged_instance_materials.is_empty() {
+            queue.write_buffer(
+                &self.instance_material_buffer,
+                0,
+                bytemuck::cast_slice(&self.staged_instance_materials),
+            );
+        }
+        if !self.staged_rigid_instance_meta.is_empty() {
+            queue.write_buffer(
+                &self.rigid_instance_meta_buffer,
+                0,
+                bytemuck::cast_slice(&self.staged_rigid_instance_meta),
+            );
+        }
+        if !self.staged_skinned_instance_meta.is_empty() {
+            queue.write_buffer(
+                &self.skinned_instance_meta_buffer,
+                0,
+                bytemuck::cast_slice(&self.staged_skinned_instance_meta),
             );
         }
         self.ensure_skeleton_capacity(device, self.staged_skeletons.len().max(1));
@@ -2942,7 +3065,7 @@ impl Gpu3D {
                 .reserve(self.draw_batches.len() - self.frustum_cull_staging.len());
             for batch in &self.draw_batches {
                 let model_cols = model_cols_from_affine_rows(
-                    &self.staged_instances[batch.instance_start as usize],
+                    &self.staged_instance_transforms[batch.instance_start as usize],
                 );
                 self.indirect_staging.push(DrawIndexedIndirectGpu {
                     index_count: batch.mesh.index_count,
@@ -3015,7 +3138,9 @@ impl Gpu3D {
         }
         self.update_shadow_state(queue, &camera, lighting);
         self.last_total_meshlets = total_meshlets;
-        self.last_total_drawn = self.staged_instances.len() + self.staged_multimesh_instances.len();
+        self.last_total_drawn = self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
+        self.debug_point_instances_scratch = debug_point_instances;
+        self.debug_edge_instances_scratch = debug_edge_instances;
     }
 
     fn update_shadow_state(
@@ -3029,7 +3154,7 @@ impl Gpu3D {
                 camera,
                 lighting,
                 &self.draw_batches,
-                &self.staged_instances,
+                &self.staged_instance_transforms,
                 self.shadow_focus_center,
                 self.shadow_focus_radius,
                 self.depth_size.0,
@@ -3119,7 +3244,10 @@ impl Gpu3D {
                     };
                     shadow_pass.set_bind_group(0, camera_bg, &[]);
                     shadow_pass.set_vertex_buffer(0, vertex_buf.slice(..));
-                    shadow_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                    shadow_pass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
+                    if batch.path == RenderPath3D::Skinned {
+                        shadow_pass.set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
+                    }
                     shadow_pass.set_pipeline(pipeline);
                     current_state = Some(state);
                 }
@@ -3181,7 +3309,10 @@ impl Gpu3D {
                     };
                     prepass.set_bind_group(0, camera_bg, &[]);
                     prepass.set_vertex_buffer(0, vertex_buf.slice(..));
-                    prepass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                    prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
+                    if batch.path == RenderPath3D::Skinned {
+                        prepass.set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
+                    }
                     prepass.set_pipeline(pipeline);
                     current_state = Some(state);
                 }
@@ -3300,11 +3431,14 @@ impl Gpu3D {
                     if batch.path == RenderPath3D::Rigid {
                         pass.set_bind_group(0, &self.rigid_camera_bind_group, &[]);
                         pass.set_vertex_buffer(0, self.rigid_vertex_buffer.slice(..));
+                        pass.set_vertex_buffer(3, self.rigid_instance_meta_buffer.slice(..));
                     } else {
                         pass.set_bind_group(0, &self.camera_bind_group, &[]);
                         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                        pass.set_vertex_buffer(3, self.skinned_instance_meta_buffer.slice(..));
                     }
-                    pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                    pass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
+                    pass.set_vertex_buffer(2, self.instance_material_buffer.slice(..));
                     current_pipeline_key = Some(key);
                 }
                 if current_texture_slot != batch.base_color_texture_slot {
@@ -3514,21 +3648,72 @@ impl Gpu3D {
         self.material_textures.insert(slot, cached);
     }
 
-    fn ensure_instance_capacity(&mut self, device: &wgpu::Device, needed: usize) {
-        if needed <= self.instance_capacity {
+    fn ensure_instance_transform_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        if needed <= self.instance_transform_capacity {
             return;
         }
-        let mut new_capacity = self.instance_capacity.max(1);
+        let mut new_capacity = self.instance_transform_capacity.max(1);
         while new_capacity < needed {
             new_capacity *= 2;
         }
-        self.instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_mesh_instances"),
-            size: (new_capacity * std::mem::size_of::<InstanceGpu>()) as u64,
+        self.instance_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_mesh_instance_transforms"),
+            size: (new_capacity * std::mem::size_of::<TransformInstanceGpu>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        self.instance_capacity = new_capacity;
+        self.instance_transform_capacity = new_capacity;
+    }
+
+    fn ensure_instance_material_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        if needed <= self.instance_material_capacity {
+            return;
+        }
+        let mut new_capacity = self.instance_material_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.instance_material_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_mesh_instance_materials"),
+            size: (new_capacity * std::mem::size_of::<MaterialInstanceGpu>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.instance_material_capacity = new_capacity;
+    }
+
+    fn ensure_rigid_instance_meta_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        if needed <= self.rigid_instance_meta_capacity {
+            return;
+        }
+        let mut new_capacity = self.rigid_instance_meta_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.rigid_instance_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_mesh_instance_rigid_meta"),
+            size: (new_capacity * std::mem::size_of::<RigidInstanceMetaGpu>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.rigid_instance_meta_capacity = new_capacity;
+    }
+
+    fn ensure_skinned_instance_meta_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        if needed <= self.skinned_instance_meta_capacity {
+            return;
+        }
+        let mut new_capacity = self.skinned_instance_meta_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.skinned_instance_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_mesh_instance_skinned_meta"),
+            size: (new_capacity * std::mem::size_of::<SkinnedInstanceMetaGpu>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.skinned_instance_meta_capacity = new_capacity;
     }
 
     fn ensure_multimesh_instance_capacity(&mut self, device: &wgpu::Device, needed: usize) {
@@ -5094,6 +5279,14 @@ fn push_draw_batch(
     });
 }
 
+#[derive(Clone, Copy)]
+struct BuiltInstanceParts {
+    transform: TransformInstanceGpu,
+    material: MaterialInstanceGpu,
+    rigid_meta: RigidInstanceMetaGpu,
+    skinned_meta: SkinnedInstanceMetaGpu,
+}
+
 #[inline]
 fn build_instance(
     model: [[f32; 4]; 4],
@@ -5104,7 +5297,7 @@ fn build_instance(
     skeleton_count: u32,
     custom_params_offset: u32,
     custom_params_len: u32,
-) -> InstanceGpu {
+) -> BuiltInstanceParts {
     let (color, pbr_params, emissive_factor, debug_flags) = if debug_view {
         (debug_color, [0.5, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0], 1u32)
     } else {
@@ -5156,30 +5349,44 @@ fn build_instance(
     let params = material.standard_params();
     let material_flags = debug_flags | if params.flat_shading { 2u32 } else { 0u32 };
 
-    InstanceGpu {
-        model_row_0: [model[0][0], model[1][0], model[2][0], model[3][0]],
-        model_row_1: [model[0][1], model[1][1], model[2][1], model[3][1]],
-        model_row_2: [model[0][2], model[1][2], model[2][2], model[3][2]],
-        color,
-        pbr_params,
-        emissive_factor,
-        material_params: [
-            params.alpha_mode as f32,
-            params.alpha_cutoff,
-            if params.double_sided { 1.0 } else { 0.0 },
-            material_flags as f32,
-        ],
-        skeleton_params: [
-            skeleton_start,
-            skeleton_count,
-            custom_params_offset,
-            custom_params_len,
-        ],
+    BuiltInstanceParts {
+        transform: TransformInstanceGpu {
+            model_row_0: [model[0][0], model[1][0], model[2][0], model[3][0]],
+            model_row_1: [model[0][1], model[1][1], model[2][1], model[3][1]],
+            model_row_2: [model[0][2], model[1][2], model[2][2], model[3][2]],
+        },
+        material: MaterialInstanceGpu {
+            packed_color: pack_unorm4x8(color),
+            pbr_params,
+            packed_emissive: pack_unorm4x8([
+                emissive_factor[0],
+                emissive_factor[1],
+                emissive_factor[2],
+                1.0,
+            ]),
+            material_params: [
+                params.alpha_mode as f32,
+                params.alpha_cutoff,
+                if params.double_sided { 1.0 } else { 0.0 },
+                material_flags as f32,
+            ],
+        },
+        rigid_meta: RigidInstanceMetaGpu {
+            custom_params: [custom_params_offset, custom_params_len],
+        },
+        skinned_meta: SkinnedInstanceMetaGpu {
+            skeleton_params: [
+                skeleton_start,
+                skeleton_count,
+                custom_params_offset,
+                custom_params_len,
+            ],
+        },
     }
 }
 
 #[inline]
-fn model_cols_from_affine_rows(inst: &InstanceGpu) -> [[f32; 4]; 4] {
+fn model_cols_from_affine_rows(inst: &TransformInstanceGpu) -> [[f32; 4]; 4] {
     [
         [
             inst.model_row_0[0],
@@ -5843,7 +6050,7 @@ fn build_shadow_setup(
     camera: &Camera3DState,
     lighting: &Lighting3DState,
     draw_batches: &[DrawBatch],
-    staged_instances: &[InstanceGpu],
+    staged_instances: &[TransformInstanceGpu],
     fallback_focus_center: Vec3,
     fallback_focus_radius: f32,
     viewport_width: u32,
@@ -6134,7 +6341,7 @@ fn light_space_bounds(points_world: &[Vec3], light_view: Mat4) -> Option<(Vec3, 
 fn compute_shadow_focus_bounds(
     camera: &Camera3DState,
     draw_batches: &[DrawBatch],
-    staged_instances: &[InstanceGpu],
+    staged_instances: &[TransformInstanceGpu],
 ) -> (Vec3, f32, bool) {
     let mut any = false;
     let mut min = Vec3::splat(f32::INFINITY);
@@ -6318,3 +6525,4 @@ fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
         a[2] + (b[2] - a[2]) * t,
     ]
 }
+
