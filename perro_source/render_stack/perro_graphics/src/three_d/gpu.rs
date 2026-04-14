@@ -527,8 +527,8 @@ struct OcclusionState {
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
 const CULL_FLAG_DISABLE_HIZ_OCCLUSION: u32 = 1u32;
-const FRUSTUM_CULL_MIN_BATCHES: usize = 24;
-const FRUSTUM_CULL_MIN_INSTANCES: usize = 384;
+const FRUSTUM_CULL_MIN_BATCHES: usize = 64;
+const FRUSTUM_CULL_MIN_INSTANCES: usize = 768;
 const HIZ_OCCLUSION_MIN_BATCHES: usize = 80;
 const HIZ_OCCLUSION_MIN_INSTANCES: usize = 1024;
 const DEPTH_PREPASS_MIN_BATCHES: usize = 96;

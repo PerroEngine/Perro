@@ -9,7 +9,7 @@ use crate::{
     three_d::{gpu::validate_mesh_source, renderer::Draw3DInstance, renderer::Draw3DKind},
     two_d::renderer::{RectInstanceGpu, Renderer2D},
 };
-use perro_ids::NodeID;
+use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     Command2D, Command3D, PointParticles3DState, PostProcessingCommand, RenderBridge,
     RenderCommand, RenderEvent, ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand,
@@ -101,7 +101,13 @@ pub struct PerroGraphics {
     retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,
     retained_point_particles_cache_revision: u64,
     retained_sprites_cache: Vec<Sprite2DCommand>,
+    retained_sprites_cache_revision: u64,
     frame_rects_cache: Vec<RectInstanceGpu>,
+    used_texture_refs_cache: Vec<TextureID>,
+    used_mesh_refs_cache: Vec<MeshID>,
+    used_material_refs_cache: Vec<MaterialID>,
+    used_ref_draws_revision: u64,
+    used_ref_sprites_revision: u64,
     global_post_processing: PostProcessSet,
     accessibility: VisualAccessibilitySettings,
     frame_index: u32,
@@ -133,7 +139,13 @@ impl PerroGraphics {
             retained_point_particles_cache: Vec::new(),
             retained_point_particles_cache_revision: u64::MAX,
             retained_sprites_cache: Vec::new(),
+            retained_sprites_cache_revision: u64::MAX,
             frame_rects_cache: Vec::new(),
+            used_texture_refs_cache: Vec::new(),
+            used_mesh_refs_cache: Vec::new(),
+            used_material_refs_cache: Vec::new(),
+            used_ref_draws_revision: u64::MAX,
+            used_ref_sprites_revision: u64::MAX,
             global_post_processing: PostProcessSet::new(),
             accessibility: VisualAccessibilitySettings::default(),
             frame_index: 0,
@@ -570,27 +582,58 @@ impl GraphicsBackend for PerroGraphics {
                 .sort_unstable_by_key(|(node, _)| node.as_u64());
             self.retained_point_particles_cache_revision = point_particles_revision;
         }
-        self.retained_sprites_cache.clear();
-        self.retained_sprites_cache
-            .extend(self.renderer_2d.retained_sprites());
+        let sprites_revision = self.renderer_2d.retained_sprites_revision();
+        if sprites_revision != self.retained_sprites_cache_revision {
+            self.retained_sprites_cache.clear();
+            self.retained_sprites_cache
+                .extend(self.renderer_2d.retained_sprites());
+            self.retained_sprites_cache_revision = sprites_revision;
+        }
         self.frame_rects_cache.clear();
         self.frame_rects_cache
             .extend_from_slice(self.renderer_2d.retained_rects());
         self.frame_rects_cache
             .extend_from_slice(self.renderer_2d.frame_shapes());
-        self.resources.reset_ref_counts();
-        for sprite in &self.retained_sprites_cache {
-            self.resources.mark_texture_used(sprite.texture);
+        if self.used_ref_sprites_revision != sprites_revision {
+            self.used_texture_refs_cache.clear();
+            self.used_texture_refs_cache.extend(
+                self.retained_sprites_cache
+                    .iter()
+                    .map(|sprite| sprite.texture),
+            );
+            self.used_texture_refs_cache
+                .sort_unstable_by_key(|id| id.as_u64());
+            self.used_texture_refs_cache.dedup_by_key(|id| id.as_u64());
+            self.used_ref_sprites_revision = sprites_revision;
         }
-        for draw in &self.retained_draws_cache {
-            if let Draw3DKind::Mesh(mesh) = draw.kind {
-                self.resources.mark_mesh_used(mesh);
-            }
-            for surface in draw.surfaces.iter() {
-                if let Some(material) = surface.material {
-                    self.resources.mark_material_used(material);
+        if self.used_ref_draws_revision != draws_revision {
+            self.used_mesh_refs_cache.clear();
+            self.used_material_refs_cache.clear();
+            for draw in &self.retained_draws_cache {
+                if let Draw3DKind::Mesh(mesh) = draw.kind {
+                    self.used_mesh_refs_cache.push(mesh);
                 }
+                self.used_material_refs_cache
+                    .extend(draw.surfaces.iter().filter_map(|surface| surface.material));
             }
+            self.used_mesh_refs_cache
+                .sort_unstable_by_key(|id| id.as_u64());
+            self.used_mesh_refs_cache.dedup_by_key(|id| id.as_u64());
+            self.used_material_refs_cache
+                .sort_unstable_by_key(|id| id.as_u64());
+            self.used_material_refs_cache.dedup_by_key(|id| id.as_u64());
+            self.used_ref_draws_revision = draws_revision;
+        }
+
+        self.resources.reset_ref_counts();
+        for texture in &self.used_texture_refs_cache {
+            self.resources.mark_texture_used(*texture);
+        }
+        for mesh in &self.used_mesh_refs_cache {
+            self.resources.mark_mesh_used(*mesh);
+        }
+        for material in &self.used_material_refs_cache {
+            self.resources.mark_material_used(*material);
         }
         self.frame_index = self.frame_index.wrapping_add(1);
         if self.frame_index.is_multiple_of(GC_INTERVAL_FRAMES) {

@@ -70,6 +70,7 @@ pub struct Renderer2D {
     rect_dirty_ranges: Vec<Range<usize>>,
     rect_structure_dirty: bool,
     retained_sprites: HashMap<NodeID, Sprite2DCommand>,
+    retained_sprites_revision: u64,
     frame_shapes: Vec<RectInstanceGpu>,
 }
 
@@ -88,6 +89,7 @@ impl Renderer2D {
             rect_dirty_ranges: Vec::new(),
             rect_structure_dirty: false,
             retained_sprites: HashMap::new(),
+            retained_sprites_revision: 0,
             frame_shapes: Vec::new(),
         }
     }
@@ -138,7 +140,9 @@ impl Renderer2D {
 
     pub fn remove_node(&mut self, node: NodeID) {
         self.remove_retained_rect(node);
-        self.retained_sprites.remove(&node);
+        if self.retained_sprites.remove(&node).is_some() {
+            self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
+        }
     }
 
     fn apply_queued_rect_updates(&mut self) -> Renderer2DStats {
@@ -236,19 +240,30 @@ impl Renderer2D {
 
     fn flush_sprite_packets(&mut self, resources: &ResourceStore) -> Renderer2DStats {
         let mut stats = Renderer2DStats::default();
+        let mut changed = false;
         for SpritePacket { node, sprite } in self.queued_sprites.drain(..) {
             if resources.has_texture(sprite.texture) {
-                self.retained_sprites.insert(node, sprite);
+                if self.retained_sprites.insert(node, sprite) != Some(sprite) {
+                    changed = true;
+                }
                 stats.accepted_draws = stats.accepted_draws.saturating_add(1);
             } else {
                 if let Some(retained) = self.retained_sprites.get_mut(&node) {
                     // Keep previous texture binding until replacement exists,
                     // but still apply latest transform/depth updates.
+                    let old_model = retained.model;
+                    let old_z = retained.z_index;
                     retained.model = sprite.model;
                     retained.z_index = sprite.z_index;
+                    if retained.model != old_model || retained.z_index != old_z {
+                        changed = true;
+                    }
                 }
                 stats.rejected_draws = stats.rejected_draws.saturating_add(1);
             }
+        }
+        if changed {
+            self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
         }
         stats
     }
@@ -288,6 +303,11 @@ impl Renderer2D {
 
     pub fn camera(&self) -> Camera2DState {
         self.camera.clone()
+    }
+
+    #[inline]
+    pub fn retained_sprites_revision(&self) -> u64 {
+        self.retained_sprites_revision
     }
 
     fn upsert_retained_rect(&mut self, node: NodeID, rect: RectInstanceGpu) {
