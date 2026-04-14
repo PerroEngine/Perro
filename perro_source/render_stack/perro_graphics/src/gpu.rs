@@ -109,10 +109,11 @@ pub struct RenderGpuTiming {
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
     pub total: Duration,
+    pub presented: bool,
 }
 
 impl Gpu {
-    pub fn render_idle_clear(&mut self) {
+    pub fn render_idle_clear(&mut self) -> bool {
         // Keep window alive for the full surface lifetime.
         self.window_handle.id();
 
@@ -121,11 +122,11 @@ impl Gpu {
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
                 self.surface.configure(&self.device, &self.config);
-                return;
+                return false;
             }
             wgpu::CurrentSurfaceTexture::Timeout
             | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Validation => return,
+            | wgpu::CurrentSurfaceTexture::Validation => return false,
         };
 
         let swap_view = frame
@@ -161,6 +162,7 @@ impl Gpu {
         }
         self.queue.submit(Some(encoder.finish()));
         frame.present();
+        true
     }
 
     pub fn new(
@@ -712,6 +714,7 @@ impl Gpu {
         let present_start = Instant::now();
         frame.present();
         timing.present = present_start.elapsed();
+        timing.presented = true;
         timing.total = total_start.elapsed();
         timing
     }

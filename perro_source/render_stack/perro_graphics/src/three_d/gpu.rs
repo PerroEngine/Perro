@@ -527,8 +527,12 @@ struct OcclusionState {
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
 const CULL_FLAG_DISABLE_HIZ_OCCLUSION: u32 = 1u32;
-const FRUSTUM_CULL_MIN_BATCHES: usize = 64;
-const FRUSTUM_CULL_MIN_INSTANCES: usize = 768;
+const FRUSTUM_CULL_MIN_BATCHES: usize = 96;
+const FRUSTUM_CULL_MIN_INSTANCES: usize = 1024;
+const FRUSTUM_CULL_HIGH_VISIBLE_RATIO: f32 = 0.9;
+const FRUSTUM_CULL_HIGH_VISIBLE_MIN_SAMPLES: u32 = 24;
+const FRUSTUM_CULL_HIGH_VISIBLE_MIN_BATCHES: usize = 160;
+const FRUSTUM_CULL_HIGH_VISIBLE_MIN_INSTANCES: usize = 2048;
 const HIZ_OCCLUSION_MIN_BATCHES: usize = 80;
 const HIZ_OCCLUSION_MIN_INSTANCES: usize = 1024;
 const DEPTH_PREPASS_MIN_BATCHES: usize = 96;
@@ -3602,10 +3606,21 @@ impl Gpu3D {
 
     #[inline]
     fn should_run_frustum_cull(&self) -> bool {
+        let mut min_batches = FRUSTUM_CULL_MIN_BATCHES;
+        let mut min_instances = FRUSTUM_CULL_MIN_INSTANCES;
+        if self.cpu_occlusion_enabled
+            && self.last_occlusion_queried >= FRUSTUM_CULL_HIGH_VISIBLE_MIN_SAMPLES
+        {
+            let visible_ratio = self.last_occlusion_visible as f32 / self.last_occlusion_queried as f32;
+            if visible_ratio >= FRUSTUM_CULL_HIGH_VISIBLE_RATIO {
+                min_batches = FRUSTUM_CULL_HIGH_VISIBLE_MIN_BATCHES;
+                min_instances = FRUSTUM_CULL_HIGH_VISIBLE_MIN_INSTANCES;
+            }
+        }
         self.frustum_cull_enabled
             && !self.draw_batches.is_empty()
-            && (self.draw_batches.len() >= FRUSTUM_CULL_MIN_BATCHES
-                || self.staged_instance_transforms.len() >= FRUSTUM_CULL_MIN_INSTANCES)
+            && (self.draw_batches.len() >= min_batches
+                || self.staged_instance_transforms.len() >= min_instances)
     }
 
     #[inline]

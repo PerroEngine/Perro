@@ -9,6 +9,7 @@ use crate::{
     three_d::{gpu::validate_mesh_source, renderer::Draw3DInstance, renderer::Draw3DKind},
     two_d::renderer::{RectInstanceGpu, Renderer2D},
 };
+use ahash::AHashSet;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     Command2D, Command3D, PointParticles3DState, PostProcessingCommand, RenderBridge,
@@ -103,14 +104,15 @@ pub struct PerroGraphics {
     retained_sprites_cache: Vec<Sprite2DCommand>,
     retained_sprites_cache_revision: u64,
     frame_rects_cache: Vec<RectInstanceGpu>,
-    used_texture_refs_cache: Vec<TextureID>,
-    used_mesh_refs_cache: Vec<MeshID>,
-    used_material_refs_cache: Vec<MaterialID>,
+    used_texture_refs_cache: AHashSet<TextureID>,
+    used_mesh_refs_cache: AHashSet<MeshID>,
+    used_material_refs_cache: AHashSet<MaterialID>,
     used_ref_draws_revision: u64,
     used_ref_sprites_revision: u64,
     global_post_processing: PostProcessSet,
     accessibility: VisualAccessibilitySettings,
     frame_index: u32,
+    redraw_requested: bool,
 }
 
 impl PerroGraphics {
@@ -141,14 +143,15 @@ impl PerroGraphics {
             retained_sprites_cache: Vec::new(),
             retained_sprites_cache_revision: u64::MAX,
             frame_rects_cache: Vec::new(),
-            used_texture_refs_cache: Vec::new(),
-            used_mesh_refs_cache: Vec::new(),
-            used_material_refs_cache: Vec::new(),
+            used_texture_refs_cache: AHashSet::new(),
+            used_mesh_refs_cache: AHashSet::new(),
+            used_material_refs_cache: AHashSet::new(),
             used_ref_draws_revision: u64::MAX,
             used_ref_sprites_revision: u64::MAX,
             global_post_processing: PostProcessSet::new(),
             accessibility: VisualAccessibilitySettings::default(),
             frame_index: 0,
+            redraw_requested: true,
         }
     }
 
@@ -439,6 +442,7 @@ impl PerroGraphics {
 impl RenderBridge for PerroGraphics {
     fn submit(&mut self, command: RenderCommand) {
         self.frame.queue(command);
+        self.redraw_requested = true;
     }
 
     fn submit_many<I>(&mut self, commands: I)
@@ -446,6 +450,7 @@ impl RenderBridge for PerroGraphics {
         I: IntoIterator<Item = RenderCommand>,
     {
         self.frame.pending_commands.extend(commands);
+        self.redraw_requested = true;
     }
 
     fn drain_events(&mut self, out: &mut Vec<RenderEvent>) {
@@ -471,6 +476,7 @@ impl GraphicsBackend for PerroGraphics {
                 gpu_ref.resize(self.viewport.0.max(1), self.viewport.1.max(1));
             }
             self.gpu = gpu;
+            self.redraw_requested = true;
         }
     }
 
@@ -480,6 +486,7 @@ impl GraphicsBackend for PerroGraphics {
         if let Some(gpu) = &mut self.gpu {
             gpu.resize(width.max(1), height.max(1));
         }
+        self.redraw_requested = true;
     }
 
     fn set_smoothing(&mut self, enabled: bool) {
@@ -488,6 +495,7 @@ impl GraphicsBackend for PerroGraphics {
         if let Some(gpu) = &mut self.gpu {
             gpu.set_smoothing_samples(self.smoothing_samples);
         }
+        self.redraw_requested = true;
     }
 
     fn set_smoothing_samples(&mut self, samples: u32) {
@@ -496,6 +504,7 @@ impl GraphicsBackend for PerroGraphics {
         if let Some(gpu) = &mut self.gpu {
             gpu.set_smoothing_samples(samples);
         }
+        self.redraw_requested = true;
     }
 
     fn draw_frame(&mut self) {
@@ -505,6 +514,7 @@ impl GraphicsBackend for PerroGraphics {
     fn draw_frame_timed(&mut self) -> Option<DrawFrameTiming> {
         let total_start = Instant::now();
         let has_pending = !self.frame.pending_commands.is_empty();
+        let has_continuous_updates = self.renderer_3d.has_active_sky_animation();
         let has_retained_scene = self.renderer_2d.retained_sprite_count() > 0
             || !self.renderer_2d.retained_rects().is_empty()
             || self.renderer_3d.retained_draw_count() > 0
@@ -515,9 +525,18 @@ impl GraphicsBackend for PerroGraphics {
                 .next()
                 .is_some();
         if !has_pending && !has_retained_scene {
-            if let Some(gpu) = &mut self.gpu {
-                gpu.render_idle_clear();
+            if self.redraw_requested
+                && let Some(gpu) = &mut self.gpu
+            {
+                self.redraw_requested = !gpu.render_idle_clear();
             }
+            return Some(DrawFrameTiming {
+                total: total_start.elapsed(),
+                idle_clear: true,
+                ..DrawFrameTiming::default()
+            });
+        }
+        if !has_pending && !has_continuous_updates && !self.redraw_requested {
             return Some(DrawFrameTiming {
                 total: total_start.elapsed(),
                 idle_clear: true,
@@ -596,14 +615,8 @@ impl GraphicsBackend for PerroGraphics {
             .extend_from_slice(self.renderer_2d.frame_shapes());
         if self.used_ref_sprites_revision != sprites_revision {
             self.used_texture_refs_cache.clear();
-            self.used_texture_refs_cache.extend(
-                self.retained_sprites_cache
-                    .iter()
-                    .map(|sprite| sprite.texture),
-            );
             self.used_texture_refs_cache
-                .sort_unstable_by_key(|id| id.as_u64());
-            self.used_texture_refs_cache.dedup_by_key(|id| id.as_u64());
+                .extend(self.retained_sprites_cache.iter().map(|sprite| sprite.texture));
             self.used_ref_sprites_revision = sprites_revision;
         }
         if self.used_ref_draws_revision != draws_revision {
@@ -611,17 +624,11 @@ impl GraphicsBackend for PerroGraphics {
             self.used_material_refs_cache.clear();
             for draw in &self.retained_draws_cache {
                 if let Draw3DKind::Mesh(mesh) = draw.kind {
-                    self.used_mesh_refs_cache.push(mesh);
+                    self.used_mesh_refs_cache.insert(mesh);
                 }
                 self.used_material_refs_cache
                     .extend(draw.surfaces.iter().filter_map(|surface| surface.material));
             }
-            self.used_mesh_refs_cache
-                .sort_unstable_by_key(|id| id.as_u64());
-            self.used_mesh_refs_cache.dedup_by_key(|id| id.as_u64());
-            self.used_material_refs_cache
-                .sort_unstable_by_key(|id| id.as_u64());
-            self.used_material_refs_cache.dedup_by_key(|id| id.as_u64());
             self.used_ref_draws_revision = draws_revision;
         }
 
@@ -663,6 +670,7 @@ impl GraphicsBackend for PerroGraphics {
                 static_mesh_lookup: self.static_mesh_lookup,
                 static_shader_lookup: self.static_shader_lookup,
             });
+            self.redraw_requested = !gpu_timing.presented;
         }
         let timing = DrawFrameTiming {
             process_commands,

@@ -332,6 +332,11 @@ impl Renderer3D {
         self.camera.clone()
     }
 
+    #[inline]
+    pub fn has_active_sky_animation(&self) -> bool {
+        self.skies.values().any(|sky| !sky.time.paused)
+    }
+
     fn rebuild_sorted_lights_if_dirty(&mut self) {
         if self.ray_lights_dirty {
             self.ray_lights_sorted_cache.clear();
