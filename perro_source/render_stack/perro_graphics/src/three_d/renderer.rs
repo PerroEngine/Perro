@@ -1,6 +1,5 @@
 use crate::resources::ResourceStore;
 use ahash::AHashMap;
-use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MeshID, NodeID};
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, DenseInstancePose3D,
@@ -124,27 +123,13 @@ impl Renderer3D {
         instance_scale: f32,
         instances: Arc<[DenseInstancePose3D]>,
     ) {
-        let node_model_mat = Mat4::from_cols_array_2d(&node_model);
-        let scale = Vec3::splat(instance_scale.max(0.0001));
-        let mut instance_mats = Vec::with_capacity(instances.len());
-        for pose in instances.iter().copied() {
-            let local = Mat4::from_scale_rotation_translation(
-                scale,
-                Quat::from_xyzw(
-                    pose.rotation[0],
-                    pose.rotation[1],
-                    pose.rotation[2],
-                    pose.rotation[3],
-                ),
-                Vec3::new(pose.position[0], pose.position[1], pose.position[2]),
-            );
-            instance_mats.push((node_model_mat * local).to_cols_array_2d());
-        }
         self.queued_draws.push(Draw3DInstance {
             node,
             kind: Draw3DKind::Mesh(mesh),
             surfaces,
-            instance_mats: Arc::from(instance_mats.into_boxed_slice()),
+            // Dense path uploads compact pose data directly in GPU prepare.
+            // Keep this empty to avoid N x matrix expansion in retained CPU state.
+            instance_mats: Arc::from([]),
             skeleton: None,
             dense_multimesh: Some(DenseMultiMeshDraw3D {
                 node_model,

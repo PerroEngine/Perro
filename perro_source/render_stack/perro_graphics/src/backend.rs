@@ -67,6 +67,7 @@ pub struct DrawFrameTiming {
 #[derive(Default)]
 struct FrameState {
     pending_commands: Vec<RenderCommand>,
+    scratch_commands: Vec<RenderCommand>,
 }
 
 impl FrameState {
@@ -504,7 +505,8 @@ impl GraphicsBackend for PerroGraphics {
                 ..DrawFrameTiming::default()
             });
         }
-        let mut pending = Vec::new();
+        let mut pending = std::mem::take(&mut self.frame.scratch_commands);
+        pending.clear();
         std::mem::swap(&mut pending, &mut self.frame.pending_commands);
         let mut frame_dirty_bits = 0u32;
         for command in &pending {
@@ -538,7 +540,6 @@ impl GraphicsBackend for PerroGraphics {
         let process_start = Instant::now();
         self.process_commands(pending.drain(..));
         let process_commands = process_start.elapsed();
-        std::mem::swap(&mut pending, &mut self.frame.pending_commands);
         let prepare_start = Instant::now();
         let (camera_2d, _stats, upload) = self.renderer_2d.prepare_frame(&self.resources);
         let camera_2d_state = self.renderer_2d.camera();
@@ -609,7 +610,7 @@ impl GraphicsBackend for PerroGraphics {
                 static_shader_lookup: self.static_shader_lookup,
             });
         }
-        Some(DrawFrameTiming {
+        let timing = DrawFrameTiming {
             process_commands,
             prepare_cpu,
             gpu_prepare_2d: gpu_timing.prepare_2d,
@@ -625,7 +626,10 @@ impl GraphicsBackend for PerroGraphics {
             gpu_total: gpu_timing.total,
             total: total_start.elapsed(),
             idle_clear: false,
-        })
+        };
+        pending.clear();
+        self.frame.scratch_commands = pending;
+        Some(timing)
     }
 }
 

@@ -533,17 +533,23 @@ impl Gpu {
         let global_post_chain = post_processing_global.as_ref();
         let global_post_enabled = PostProcessor::has_effects(global_post_chain);
         let accessibility_enabled = self.accessibility.has_settings(accessibility);
+        let direct_present = self.sample_count == 1 && !post_requested && !accessibility_enabled;
         let depth_prepass_needed = (camera_post_enabled
             && PostProcessor::uses_depth(camera_post_chain))
             || (global_post_enabled && PostProcessor::uses_depth(global_post_chain));
         let scene_view = self.post.scene_view().clone();
         let intermediate_view = self.accessibility.intermediate_view().clone();
-        let color_view = self
-            .msaa_color
-            .as_ref()
-            .map(|t| &t.view)
-            .unwrap_or(&scene_view);
-        let resolve_view = if self.sample_count > 1 {
+        let color_view = if direct_present {
+            &swap_view
+        } else {
+            self.msaa_color
+                .as_ref()
+                .map(|t| &t.view)
+                .unwrap_or(&scene_view)
+        };
+        let resolve_view = if direct_present {
+            None
+        } else if self.sample_count > 1 {
             Some(&scene_view)
         } else {
             None
@@ -602,56 +608,57 @@ impl Gpu {
             Intermediate,
         }
         let mut current_tex = FrameTex::Scene;
-
-        let mut apply_post_chain = |effects: &[perro_structs::PostProcessEffect],
-                                    current_tex: &mut FrameTex| {
-            if effects.is_empty() {
-                return;
-            }
-            let (input_view, output_view, next_tex) = match *current_tex {
-                FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
-                FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene),
+        if !direct_present {
+            let mut apply_post_chain = |effects: &[perro_structs::PostProcessEffect],
+                                        current_tex: &mut FrameTex| {
+                if effects.is_empty() {
+                    return;
+                }
+                let (input_view, output_view, next_tex) = match *current_tex {
+                    FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
+                    FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene),
+                };
+                let post_context = PostProcessContext {
+                    device: &self.device,
+                    queue: &self.queue,
+                    output_view,
+                    camera: &camera_3d,
+                    static_shader_lookup,
+                };
+                let post_chain_data = PostProcessChainData {
+                    input_view,
+                    depth_view: self
+                        .three_d
+                        .as_ref()
+                        .expect("three_d is initialized when post-processing is active")
+                        .depth_prepass_view(),
+                    effects,
+                };
+                self.post
+                    .apply_chain(&post_context, &post_chain_data, &mut encoder);
+                *current_tex = next_tex;
             };
-            let post_context = PostProcessContext {
-                device: &self.device,
-                queue: &self.queue,
-                output_view,
-                camera: &camera_3d,
-                static_shader_lookup,
-            };
-            let post_chain_data = PostProcessChainData {
-                input_view,
-                depth_view: self
-                    .three_d
-                    .as_ref()
-                    .expect("three_d is initialized when post-processing is active")
-                    .depth_prepass_view(),
-                effects,
-            };
-            self.post
-                .apply_chain(&post_context, &post_chain_data, &mut encoder);
-            *current_tex = next_tex;
-        };
-        apply_post_chain(
-            if camera_post_enabled {
-                camera_post_chain
-            } else {
-                &[]
-            },
-            &mut current_tex,
-        );
-        apply_post_chain(
-            if global_post_enabled {
-                global_post_chain
-            } else {
-                &[]
-            },
-            &mut current_tex,
-        );
+            apply_post_chain(
+                if camera_post_enabled {
+                    camera_post_chain
+                } else {
+                    &[]
+                },
+                &mut current_tex,
+            );
+            apply_post_chain(
+                if global_post_enabled {
+                    global_post_chain
+                } else {
+                    &[]
+                },
+                &mut current_tex,
+            );
+        }
         timing.post_process = post_start.elapsed();
 
         let accessibility_start = Instant::now();
-        if accessibility_enabled {
+        if !direct_present && accessibility_enabled {
             let (accessibility_input_view, accessibility_output_view, next_tex) = match current_tex
             {
                 FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
@@ -669,12 +676,14 @@ impl Gpu {
         }
         timing.accessibility = accessibility_start.elapsed();
 
-        let final_input_view = match current_tex {
-            FrameTex::Scene => &scene_view,
-            FrameTex::Intermediate => &intermediate_view,
-        };
-        self.present
-            .apply(&self.device, &mut encoder, final_input_view, &swap_view);
+        if !direct_present {
+            let final_input_view = match current_tex {
+                FrameTex::Scene => &scene_view,
+                FrameTex::Intermediate => &intermediate_view,
+            };
+            self.present
+                .apply(&self.device, &mut encoder, final_input_view, &swap_view);
+        }
         let submit_start = Instant::now();
         self.queue.submit(Some(encoder.finish()));
         timing.submit_main = submit_start.elapsed();

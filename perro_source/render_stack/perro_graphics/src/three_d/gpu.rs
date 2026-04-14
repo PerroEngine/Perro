@@ -524,6 +524,12 @@ struct OcclusionState {
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
 const CULL_FLAG_DISABLE_HIZ_OCCLUSION: u32 = 1u32;
+const FRUSTUM_CULL_MIN_BATCHES: usize = 24;
+const FRUSTUM_CULL_MIN_INSTANCES: usize = 384;
+const HIZ_OCCLUSION_MIN_BATCHES: usize = 80;
+const HIZ_OCCLUSION_MIN_INSTANCES: usize = 1024;
+const DEPTH_PREPASS_MIN_BATCHES: usize = 96;
+const DEPTH_PREPASS_MIN_INSTANCES: usize = 1400;
 // Re-test occluded batches every frame so visibility recovers immediately when camera/object moves.
 const OCCLUSION_PROBE_INTERVAL: u64 = 1;
 
@@ -2328,7 +2334,8 @@ impl Gpu3D {
         self.last_proj_y_scale = projection_y_scale_from_projection(camera.projection);
 
         if draws_unchanged {
-            if self.frustum_cull_enabled && !self.draw_batches.is_empty() {
+            let frustum_cull_active = self.should_run_frustum_cull();
+            if frustum_cull_active {
                 let frustum = extract_frustum_planes(view_proj);
                 let mut planes = [[0.0f32; 4]; 6];
                 for (dst, plane) in planes.iter_mut().zip(frustum.iter()) {
@@ -2344,7 +2351,7 @@ impl Gpu3D {
                     0,
                     bytemuck::bytes_of(&cull_params),
                 );
-                if self.gpu_occlusion_enabled {
+                if self.should_run_hiz_occlusion(frustum_cull_active) {
                     let hiz_params = HizCullParamsGpu {
                         view_proj: uniform.view_proj,
                         draw_count: self.draw_batches.len() as u32,
@@ -2420,7 +2427,8 @@ impl Gpu3D {
                     ),
                 );
             }
-            if self.frustum_cull_enabled && !self.draw_batches.is_empty() {
+            let frustum_cull_active = self.should_run_frustum_cull();
+            if frustum_cull_active {
                 let frustum = extract_frustum_planes(view_proj);
                 let mut planes = [[0.0f32; 4]; 6];
                 for (dst, plane) in planes.iter_mut().zip(frustum.iter()) {
@@ -2470,7 +2478,7 @@ impl Gpu3D {
                     0,
                     bytemuck::cast_slice(&self.frustum_cull_staging),
                 );
-                if self.gpu_occlusion_enabled {
+                if self.should_run_hiz_occlusion(frustum_cull_active) {
                     let hiz_params = HizCullParamsGpu {
                         view_proj: uniform.view_proj,
                         draw_count: self.draw_batches.len() as u32,
@@ -3061,8 +3069,9 @@ impl Gpu3D {
                 bytemuck::cast_slice(&self.staged_multimesh_instances),
             );
         }
-        self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
-        if self.frustum_cull_enabled && !self.draw_batches.is_empty() {
+        let frustum_cull_active = self.should_run_frustum_cull();
+        if frustum_cull_active {
+            self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
             self.indirect_staging
                 .reserve(self.draw_batches.len() - self.indirect_staging.len());
             self.frustum_cull_staging
@@ -3125,7 +3134,7 @@ impl Gpu3D {
                 0,
                 bytemuck::cast_slice(&self.indirect_staging),
             );
-            if self.gpu_occlusion_enabled {
+            if self.should_run_hiz_occlusion(frustum_cull_active) {
                 let hiz_params = HizCullParamsGpu {
                     view_proj: uniform.view_proj,
                     draw_count: self.draw_batches.len() as u32,
@@ -3188,8 +3197,9 @@ impl Gpu3D {
         clear_color: wgpu::Color,
         depth_prepass_needed: bool,
     ) {
-        let hiz_active = self.gpu_occlusion_enabled && !self.draw_batches.is_empty();
-        let depth_prepass_active = hiz_active || depth_prepass_needed;
+        let frustum_cull_active = self.should_run_frustum_cull();
+        let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
+        let depth_prepass_active = self.should_run_depth_prepass(depth_prepass_needed, hiz_active);
         let query_count = if self.cpu_occlusion_enabled
             && self.pending_occlusion_query_count == 0
             && self.pending_occlusion_map_rx.is_none()
@@ -3262,7 +3272,7 @@ impl Gpu3D {
             }
             drop(shadow_pass);
         }
-        if self.frustum_cull_enabled && !self.draw_batches.is_empty() {
+        if frustum_cull_active {
             let mut cull_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("perro_frustum_cull_pass"),
                 timestamp_writes: None,
@@ -3320,7 +3330,7 @@ impl Gpu3D {
                     prepass.set_pipeline(pipeline);
                     current_state = Some(state);
                 }
-                if self.frustum_cull_enabled {
+                if frustum_cull_active {
                     let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
                     prepass.draw_indexed_indirect(&self.indirect_buffer, offset);
                 } else {
@@ -3455,7 +3465,7 @@ impl Gpu3D {
                 }
                 if let Some(query_index) = batch.occlusion_query {
                     pass.begin_occlusion_query(query_index);
-                    if self.frustum_cull_enabled {
+                    if frustum_cull_active {
                         let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
                         pass.draw_indexed_indirect(&self.indirect_buffer, offset);
                     } else {
@@ -3466,7 +3476,7 @@ impl Gpu3D {
                         pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
                     }
                     pass.end_occlusion_query();
-                } else if self.frustum_cull_enabled {
+                } else if frustum_cull_active {
                     let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
                     pass.draw_indexed_indirect(&self.indirect_buffer, offset);
                 } else {
@@ -3551,8 +3561,36 @@ impl Gpu3D {
     }
 
     #[inline]
+    fn should_run_frustum_cull(&self) -> bool {
+        self.frustum_cull_enabled
+            && !self.draw_batches.is_empty()
+            && (self.draw_batches.len() >= FRUSTUM_CULL_MIN_BATCHES
+                || self.staged_instance_transforms.len() >= FRUSTUM_CULL_MIN_INSTANCES)
+    }
+
+    #[inline]
+    fn should_run_hiz_occlusion(&self, frustum_cull_active: bool) -> bool {
+        frustum_cull_active
+            && self.gpu_occlusion_enabled
+            && (self.draw_batches.len() >= HIZ_OCCLUSION_MIN_BATCHES
+                || self.staged_instance_transforms.len() >= HIZ_OCCLUSION_MIN_INSTANCES)
+    }
+
+    #[inline]
+    fn should_run_depth_prepass(
+        &self,
+        depth_prepass_needed: bool,
+        hiz_active: bool,
+    ) -> bool {
+        depth_prepass_needed
+            || hiz_active
+            || (self.draw_batches.len() >= DEPTH_PREPASS_MIN_BATCHES
+                || self.staged_instance_transforms.len() >= DEPTH_PREPASS_MIN_INSTANCES)
+    }
+
+    #[inline]
     pub fn draw_call_count(&self) -> u32 {
-        self.draw_batches.len() as u32
+        (self.draw_batches.len() + self.multimesh_batches.len()) as u32
     }
 
     fn fallback_material_texture_bind_group(&self) -> &wgpu::BindGroup {

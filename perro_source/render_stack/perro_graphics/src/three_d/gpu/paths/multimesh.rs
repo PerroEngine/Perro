@@ -60,7 +60,7 @@ pub(super) fn create_multimesh_pipeline(
             entry_point: Some("fs_main"),
             targets: &[Some(wgpu::ColorTargetState {
                 format: color_format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                blend: Some(wgpu::BlendState::REPLACE),
                 write_mask: wgpu::ColorWrites::RED
                     | wgpu::ColorWrites::GREEN
                     | wgpu::ColorWrites::BLUE,

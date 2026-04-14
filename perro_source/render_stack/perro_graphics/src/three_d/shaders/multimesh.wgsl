@@ -42,9 +42,7 @@ struct InstanceInput {
 
 struct VertexOutput {
     @builtin(position) clip_pos: vec4<f32>,
-    @location(0) normal_ws: vec3<f32>,
-    @location(1) base_color: vec3<f32>,
-    @location(2) emissive: vec3<f32>,
+    @location(0) lit_color: vec3<f32>,
 };
 
 fn unpack_rgba8(v: u32) -> vec4<f32> {
@@ -82,17 +80,7 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
 
     let base = unpack_rgba8(draw.packed_color);
     let emissive = unpack_rgba8(draw.packed_emissive);
-    var out: VertexOutput;
-    out.clip_pos = scene.view_proj * world;
-    out.normal_ws = normal_ws;
-    out.base_color = base.rgb;
-    out.emissive = emissive.rgb;
-    return out;
-}
-
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let n = normalize(in.normal_ws);
+    let n = normalize(normal_ws);
     let ambient = scene.ambient_color.xyz * scene.ambient_color.w;
     var lit = ambient;
     let ray_count = u32(scene.ambient_and_counts.x);
@@ -102,6 +90,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let lambert = max(dot(n, l), 0.0);
         lit += ray.color_intensity.xyz * ray.color_intensity.w * lambert;
     }
-    let rgb = in.base_color * lit + in.emissive;
-    return vec4<f32>(rgb, 1.0);
+    var out: VertexOutput;
+    out.clip_pos = scene.view_proj * world;
+    out.lit_color = base.rgb * lit + emissive.rgb;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(in.lit_color, 1.0);
 }
