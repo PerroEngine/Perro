@@ -64,6 +64,7 @@ pub struct Gpu {
     two_d: Option<Gpu2D>,
     three_d: Option<Gpu3D>,
     point_particles_3d: Option<GpuPointParticles3D>,
+    last_prepare_particles_revision: u64,
     last_prepare_3d_camera: Option<Camera3DState>,
     last_prepare_3d_lighting: Option<Lighting3DState>,
     last_prepare_3d_draws_revision: u64,
@@ -83,6 +84,7 @@ pub struct RenderFrame<'a> {
     pub draws_3d: &'a [Draw3DInstance],
     pub draws_3d_revision: u64,
     pub point_particles_3d: &'a [(NodeID, PointParticles3DState)],
+    pub point_particles_3d_revision: u64,
     pub camera_2d: Camera2DUniform,
     pub post_processing_2d: Arc<[perro_structs::PostProcessEffect]>,
     pub post_processing_global: Arc<[perro_structs::PostProcessEffect]>,
@@ -90,6 +92,7 @@ pub struct RenderFrame<'a> {
     pub rects_2d: &'a [RectInstanceGpu],
     pub upload_2d: &'a RectUploadPlan,
     pub sprites_2d: &'a [Sprite2DCommand],
+    pub redraw_requested: bool,
     pub frame_dirty_bits: u32,
     pub static_texture_lookup: Option<StaticTextureLookup>,
     pub static_mesh_lookup: Option<StaticMeshLookup>,
@@ -279,6 +282,7 @@ impl Gpu {
             two_d: Some(two_d),
             three_d: Some(three_d),
             point_particles_3d: Some(point_particles_3d),
+            last_prepare_particles_revision: u64::MAX,
             last_prepare_3d_camera: None,
             last_prepare_3d_lighting: None,
             last_prepare_3d_draws_revision: u64::MAX,
@@ -365,6 +369,7 @@ impl Gpu {
             draws_3d,
             draws_3d_revision,
             point_particles_3d,
+            point_particles_3d_revision,
             camera_2d,
             post_processing_2d,
             post_processing_global,
@@ -372,6 +377,7 @@ impl Gpu {
             rects_2d,
             upload_2d,
             sprites_2d,
+            redraw_requested,
             frame_dirty_bits,
             static_texture_lookup,
             static_mesh_lookup,
@@ -387,11 +393,13 @@ impl Gpu {
 
         let has = |bit: u32| (frame_dirty_bits & bit) != 0;
 
-        let needs_2d = has(DIRTY_2D)
+        let has_2d_content = upload_2d.draw_count > 0 || !sprites_2d.is_empty();
+        let rect_upload_dirty = upload_2d.full_reupload || !upload_2d.dirty_ranges.is_empty();
+        let needs_2d_prepare = has(DIRTY_2D)
             || has(DIRTY_CAMERA_2D)
-            || (has(DIRTY_RESOURCES) && !sprites_2d.is_empty())
-            || upload_2d.draw_count > 0
-            || !sprites_2d.is_empty();
+            || rect_upload_dirty
+            || (has(DIRTY_RESOURCES) && has_2d_content)
+            || (redraw_requested && has_2d_content);
 
         let three_d_content_changed = self.last_prepare_3d_camera.as_ref() != Some(&camera_3d)
             || self.last_prepare_3d_lighting.as_ref() != Some(lighting_3d)
@@ -405,15 +413,26 @@ impl Gpu {
         let needs_3d_pipeline = has(DIRTY_3D)
             || has(DIRTY_CAMERA_3D)
             || has(DIRTY_LIGHTS_3D)
+            || has(DIRTY_RESOURCES)
             || needs_3d
             || needs_particles_3d
             || post_requested
             || three_d_content_changed;
 
+        let needs_3d_prepare = has(DIRTY_3D)
+            || has(DIRTY_CAMERA_3D)
+            || has(DIRTY_LIGHTS_3D)
+            || has(DIRTY_RESOURCES)
+            || three_d_content_changed;
+
         let needs_3d_particles_path = has(DIRTY_PARTICLES_3D) || needs_particles_3d;
+        let needs_3d_particles_prepare = needs_3d_particles_path
+            && (has(DIRTY_PARTICLES_3D)
+                || self.last_prepare_particles_revision != point_particles_3d_revision
+                || three_d_content_changed);
 
         let prepare_2d_start = Instant::now();
-        if needs_2d {
+        if needs_2d_prepare {
             if self.two_d.is_none() {
                 self.two_d = Some(Gpu2D::new(
                     &self.device,
@@ -464,13 +483,7 @@ impl Gpu {
                 ));
             }
             if let Some(three_d) = self.three_d.as_mut()
-                && (has(DIRTY_3D)
-                    || has(DIRTY_CAMERA_3D)
-                    || has(DIRTY_LIGHTS_3D)
-                    || has(DIRTY_RESOURCES)
-                    || needs_3d_particles_path
-                    || post_requested
-                    || three_d_content_changed)
+                && needs_3d_prepare
             {
                 three_d.prepare(
                     &self.device,
@@ -494,7 +507,7 @@ impl Gpu {
                 self.last_prepare_3d_width = self.config.width;
                 self.last_prepare_3d_height = self.config.height;
             }
-            if needs_3d_particles_path
+            if needs_3d_particles_prepare
                 && let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut()
             {
                 point_particles_3d_gpu.prepare(
@@ -507,10 +520,12 @@ impl Gpu {
                         height: self.config.height,
                     },
                 );
+                self.last_prepare_particles_revision = point_particles_3d_revision;
             }
         }
         if !needs_3d_particles_path {
             self.point_particles_3d = None;
+            self.last_prepare_particles_revision = u64::MAX;
         }
         timing.prepare_3d = prepare_3d_start.elapsed();
 

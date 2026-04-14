@@ -613,13 +613,15 @@ impl GraphicsBackend for PerroGraphics {
             .extend_from_slice(self.renderer_2d.retained_rects());
         self.frame_rects_cache
             .extend_from_slice(self.renderer_2d.frame_shapes());
-        if self.used_ref_sprites_revision != sprites_revision {
+        let sprites_refs_changed = self.used_ref_sprites_revision != sprites_revision;
+        if sprites_refs_changed {
             self.used_texture_refs_cache.clear();
             self.used_texture_refs_cache
                 .extend(self.retained_sprites_cache.iter().map(|sprite| sprite.texture));
             self.used_ref_sprites_revision = sprites_revision;
         }
-        if self.used_ref_draws_revision != draws_revision {
+        let draws_refs_changed = self.used_ref_draws_revision != draws_revision;
+        if draws_refs_changed {
             self.used_mesh_refs_cache.clear();
             self.used_material_refs_cache.clear();
             for draw in &self.retained_draws_cache {
@@ -632,15 +634,17 @@ impl GraphicsBackend for PerroGraphics {
             self.used_ref_draws_revision = draws_revision;
         }
 
-        self.resources.reset_ref_counts();
-        for texture in &self.used_texture_refs_cache {
-            self.resources.mark_texture_used(*texture);
-        }
-        for mesh in &self.used_mesh_refs_cache {
-            self.resources.mark_mesh_used(*mesh);
-        }
-        for material in &self.used_material_refs_cache {
-            self.resources.mark_material_used(*material);
+        if sprites_refs_changed || draws_refs_changed || (frame_dirty_bits & DIRTY_RESOURCES) != 0 {
+            self.resources.reset_ref_counts();
+            for texture in &self.used_texture_refs_cache {
+                self.resources.mark_texture_used(*texture);
+            }
+            for mesh in &self.used_mesh_refs_cache {
+                self.resources.mark_mesh_used(*mesh);
+            }
+            for material in &self.used_material_refs_cache {
+                self.resources.mark_material_used(*material);
+            }
         }
         self.frame_index = self.frame_index.wrapping_add(1);
         if self.frame_index.is_multiple_of(GC_INTERVAL_FRAMES) {
@@ -658,6 +662,7 @@ impl GraphicsBackend for PerroGraphics {
                 draws_3d: &self.retained_draws_cache,
                 draws_3d_revision: self.retained_draws_cache_revision,
                 point_particles_3d: &self.retained_point_particles_cache,
+                point_particles_3d_revision: self.retained_point_particles_cache_revision,
                 camera_2d,
                 post_processing_2d: camera_2d_state.post_processing.clone(),
                 post_processing_global: self.global_post_processing.as_slice().into(),
@@ -665,6 +670,7 @@ impl GraphicsBackend for PerroGraphics {
                 rects_2d: &self.frame_rects_cache,
                 upload_2d: &upload,
                 sprites_2d: &self.retained_sprites_cache,
+                redraw_requested: self.redraw_requested,
                 frame_dirty_bits,
                 static_texture_lookup: self.static_texture_lookup,
                 static_mesh_lookup: self.static_mesh_lookup,
