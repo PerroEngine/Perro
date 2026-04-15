@@ -2505,6 +2505,7 @@ dependencies = [
  "image",
  "perro_ids",
  "perro_io",
+ "perro_macros",
  "perro_meshlets",
  "perro_particle_math",
  "perro_render_bridge",
@@ -2545,6 +2546,10 @@ dependencies = [
  "flate2",
  "perro_assets",
 ]
+
+[[package]]
+name = "perro_macros"
+version = "0.1.0"
 
 [[package]]
 name = "perro_meshlets"

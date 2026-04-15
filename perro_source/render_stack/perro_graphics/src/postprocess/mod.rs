@@ -408,7 +408,8 @@ impl PostProcessor {
         let src = if let Some(lookup) = static_shader_lookup {
             let shader_hash = perro_ids::parse_hashed_source_uri(shader_path)
                 .unwrap_or_else(|| perro_ids::string_to_u64(shader_path));
-            lookup(shader_hash).map(|s| s.to_string())
+            let src = lookup(shader_hash);
+            (!src.is_empty()).then(|| src.to_string())
         } else {
             None
         }

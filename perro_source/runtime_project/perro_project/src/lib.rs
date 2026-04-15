@@ -1637,8 +1637,8 @@ pub fn lookup_animation(_path_hash: u64) -> Option<&'static AnimationClip> {
 fn default_static_textures_rs() -> String {
     r#"#![allow(unused_imports)]
 
-pub fn lookup_texture(_path_hash: u64) -> Option<&'static [u8]> {
-    None
+pub fn lookup_texture(_path_hash: u64) -> &'static [u8] {
+    b""
 }
 "#
     .to_string()
@@ -1647,8 +1647,8 @@ pub fn lookup_texture(_path_hash: u64) -> Option<&'static [u8]> {
 fn default_static_shaders_rs() -> String {
     r#"#![allow(unused_imports)]
 
-pub fn lookup_shader(_path_hash: u64) -> Option<&'static str> {
-    None
+pub fn lookup_shader(_path_hash: u64) -> &'static str {
+    ""
 }
 "#
     .to_string()
@@ -1658,8 +1658,8 @@ fn default_static_meshes_rs() -> String {
     r#"#![allow(unused_imports)]
 #![allow(dead_code)]
 
-pub fn lookup_mesh(_path_hash: u64) -> Option<&'static [u8]> {
-    None
+pub fn lookup_mesh(_path_hash: u64) -> &'static [u8] {
+    b""
 }
 "#
     .to_string()

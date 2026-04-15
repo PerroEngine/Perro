@@ -32,12 +32,13 @@ pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipeline
         let res_path = format!("res://{rel}");
         let full_path = res_dir.join(&rel);
         let data = fs::read(&full_path)?;
+        let minified = minify_wgsl_for_embed(&String::from_utf8_lossy(&data));
 
         let output_path = embedded_shaders_dir.join(&rel);
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&output_path, data)?;
+        fs::write(&output_path, minified)?;
         shaders.push((res_path, rel));
     }
 
@@ -57,16 +58,17 @@ pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipeline
     if !shaders.is_empty() {
         out.push('\n');
     }
-    out.push_str("pub fn lookup_shader(path_hash: u64) -> Option<&'static str> {\n");
+    out.push_str("static EMPTY_SHADER: &str = \"\";\n\n");
+    out.push_str("pub fn lookup_shader(path_hash: u64) -> &'static str {\n");
     out.push_str("    match path_hash {\n");
     for (index, (res_path, _)) in shaders.iter().enumerate() {
         let path_hash = perro_ids::string_to_u64(res_path);
         let _ = writeln!(
             out,
-            "        {path_hash}u64 => Some(SHADER_{index}),"
+            "        {path_hash}u64 => SHADER_{index},"
         );
     }
-    out.push_str("        _ => None,\n");
+    out.push_str("        _ => EMPTY_SHADER,\n");
     out.push_str("    }\n");
     out.push_str("}\n");
 
@@ -85,6 +87,31 @@ fn escape_str(input: &str) -> String {
             '\t' => out.push_str("\\t"),
             _ => out.push(ch),
         }
+    }
+    out
+}
+
+fn minify_wgsl_for_embed(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut last_blank = false;
+    for raw_line in src.lines() {
+        let mut line = raw_line.trim();
+        if line.starts_with("//") {
+            continue;
+        }
+        if let Some(idx) = line.find("//") {
+            line = line[..idx].trim_end();
+        }
+        if line.is_empty() {
+            if !last_blank {
+                out.push('\n');
+                last_blank = true;
+            }
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+        last_blank = false;
     }
     out
 }

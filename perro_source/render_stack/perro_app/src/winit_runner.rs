@@ -1333,10 +1333,11 @@ fn load_project_image_bytes(
         let hash = source_hash
             .or_else(|| perro_ids::parse_hashed_source_uri(source))
             .or_else(|| source.starts_with("res://").then(|| perro_ids::string_to_u64(source)));
-        if let Some(hash) = hash
-            && let Some(bytes) = lookup(hash)
-        {
-            return Some(bytes.to_vec());
+        if let Some(hash) = hash {
+            let bytes = lookup(hash);
+            if !bytes.is_empty() {
+                return Some(bytes.to_vec());
+            }
         }
     }
     None

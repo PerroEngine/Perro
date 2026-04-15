@@ -1,5 +1,7 @@
-pub const SPRITE_INSTANCED_WGSL: &str = include_str!("shaders/sprite_instanced.wgsl");
-pub const RECT_INSTANCED_WGSL: &str = include_str!("shaders/rect_instanced.wgsl");
+pub const SPRITE_INSTANCED_WGSL: &str =
+    perro_macros::include_str_stripped!("shaders/sprite_instanced.wgsl");
+pub const RECT_INSTANCED_WGSL: &str =
+    perro_macros::include_str_stripped!("shaders/rect_instanced.wgsl");
 
 #[inline]
 pub fn create_sprite_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {

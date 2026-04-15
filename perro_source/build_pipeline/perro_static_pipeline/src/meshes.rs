@@ -155,7 +155,8 @@ pub fn generate_static_meshes(
     if !mesh_refs.is_empty() {
         out.push('\n');
     }
-    out.push_str("pub fn lookup_mesh(path_hash: u64) -> Option<&'static [u8]> {\n");
+    out.push_str("static EMPTY_MESH: &[u8] = b\"\";\n\n");
+    out.push_str("pub fn lookup_mesh(path_hash: u64) -> &'static [u8] {\n");
     out.push_str("    match path_hash {\n");
     for mesh_ref in &mesh_refs {
         let index = *static_index_by_embedded
@@ -164,10 +165,10 @@ pub fn generate_static_meshes(
         let path_hash = perro_ids::string_to_u64(&mesh_ref.lookup_key);
         let _ = writeln!(
             out,
-            "        {path_hash}u64 => Some(MESH_{index}),"
+            "        {path_hash}u64 => MESH_{index},"
         );
     }
-    out.push_str("        _ => None,\n");
+    out.push_str("        _ => EMPTY_MESH,\n");
     out.push_str("    }\n");
     out.push_str("}\n");
 

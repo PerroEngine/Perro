@@ -26,7 +26,7 @@ pub type StaticParticleLookup = fn(u64) -> Option<&'static ParticleProfile3D>;
 pub type StaticAnimationLookup = fn(u64) -> Option<&'static AnimationClip>;
 pub type StaticSkeletonLookup = fn(u64) -> Option<&'static [u8]>;
 pub type StaticAudioLookup = fn(u64) -> Option<&'static [u8]>;
-pub type StaticBytesLookup = fn(u64) -> Option<&'static [u8]>;
+pub type StaticBytesLookup = fn(u64) -> &'static [u8];
 
 /// Immutable project boot data owned by the runtime.
 #[derive(Debug, Clone)]

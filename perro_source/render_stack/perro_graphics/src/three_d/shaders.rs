@@ -1,25 +1,25 @@
 mod regular {
-    pub const PRELUDE_WGSL: &str = include_str!("shaders/prelude_3d.wgsl");
-    pub const PRELUDE_RIGID_WGSL: &str = include_str!("shaders/prelude_rigid_3d.wgsl");
-    pub const PRELUDE_SKINNED_WGSL: &str = include_str!("shaders/prelude_skinned_3d.wgsl");
-    pub const MATERIAL_STANDARD_WGSL: &str = include_str!("shaders/material_standard.wgsl");
-    pub const MATERIAL_UNLIT_WGSL: &str = include_str!("shaders/material_unlit.wgsl");
-    pub const MATERIAL_TOON_WGSL: &str = include_str!("shaders/material_toon.wgsl");
-    pub const DEPTH_PREPASS_WGSL: &str = include_str!("shaders/depth_prepass.wgsl");
-    pub const DEPTH_PREPASS_RIGID_WGSL: &str = include_str!("shaders/depth_prepass_rigid.wgsl");
-    pub const DEPTH_PREPASS_SKINNED_WGSL: &str = include_str!("shaders/depth_prepass_skinned.wgsl");
-    pub const MULTIMESH_WGSL: &str = include_str!("shaders/multimesh.wgsl");
-    pub const SKY3D_ATMO_WGSL: &str = include_str!("shaders/sky3d_parts/atmo.wgsl");
-    pub const SKY3D_MOON_WGSL: &str = include_str!("shaders/sky3d_parts/moon.wgsl");
-    pub const SKY3D_SUN_WGSL: &str = include_str!("shaders/sky3d_parts/sun.wgsl");
-    pub const SKY3D_CLOUDS_WGSL: &str = include_str!("shaders/sky3d_parts/clouds.wgsl");
+    pub const PRELUDE_WGSL: &str = perro_macros::include_str_stripped!("shaders/prelude_3d.wgsl");
+    pub const PRELUDE_RIGID_WGSL: &str = perro_macros::include_str_stripped!("shaders/prelude_rigid_3d.wgsl");
+    pub const PRELUDE_SKINNED_WGSL: &str = perro_macros::include_str_stripped!("shaders/prelude_skinned_3d.wgsl");
+    pub const MATERIAL_STANDARD_WGSL: &str = perro_macros::include_str_stripped!("shaders/material_standard.wgsl");
+    pub const MATERIAL_UNLIT_WGSL: &str = perro_macros::include_str_stripped!("shaders/material_unlit.wgsl");
+    pub const MATERIAL_TOON_WGSL: &str = perro_macros::include_str_stripped!("shaders/material_toon.wgsl");
+    pub const DEPTH_PREPASS_WGSL: &str = perro_macros::include_str_stripped!("shaders/depth_prepass.wgsl");
+    pub const DEPTH_PREPASS_RIGID_WGSL: &str = perro_macros::include_str_stripped!("shaders/depth_prepass_rigid.wgsl");
+    pub const DEPTH_PREPASS_SKINNED_WGSL: &str = perro_macros::include_str_stripped!("shaders/depth_prepass_skinned.wgsl");
+    pub const MULTIMESH_WGSL: &str = perro_macros::include_str_stripped!("shaders/multimesh.wgsl");
+    pub const SKY3D_ATMO_WGSL: &str = perro_macros::include_str_stripped!("shaders/sky3d_parts/atmo.wgsl");
+    pub const SKY3D_MOON_WGSL: &str = perro_macros::include_str_stripped!("shaders/sky3d_parts/moon.wgsl");
+    pub const SKY3D_SUN_WGSL: &str = perro_macros::include_str_stripped!("shaders/sky3d_parts/sun.wgsl");
+    pub const SKY3D_CLOUDS_WGSL: &str = perro_macros::include_str_stripped!("shaders/sky3d_parts/clouds.wgsl");
 }
 
 mod culling {
-    pub const FRUSTUM_CULL_WGSL: &str = include_str!("shaders/frustum_cull.wgsl");
-    pub const HIZ_DEPTH_COPY_WGSL: &str = include_str!("shaders/hiz_depth_copy.wgsl");
-    pub const HIZ_DOWNSAMPLE_WGSL: &str = include_str!("shaders/hiz_downsample.wgsl");
-    pub const HIZ_OCCLUSION_CULL_WGSL: &str = include_str!("shaders/hiz_occlusion_cull.wgsl");
+    pub const FRUSTUM_CULL_WGSL: &str = perro_macros::include_str_stripped!("shaders/frustum_cull.wgsl");
+    pub const HIZ_DEPTH_COPY_WGSL: &str = perro_macros::include_str_stripped!("shaders/hiz_depth_copy.wgsl");
+    pub const HIZ_DOWNSAMPLE_WGSL: &str = perro_macros::include_str_stripped!("shaders/hiz_downsample.wgsl");
+    pub const HIZ_OCCLUSION_CULL_WGSL: &str = perro_macros::include_str_stripped!("shaders/hiz_occlusion_cull.wgsl");
 }
 
 #[inline]
@@ -233,3 +233,4 @@ pub fn create_hiz_occlusion_cull_shader_module(device: &wgpu::Device) -> wgpu::S
         source: wgpu::ShaderSource::Wgsl(culling::HIZ_OCCLUSION_CULL_WGSL.into()),
     })
 }
+

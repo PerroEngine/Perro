@@ -600,7 +600,8 @@ impl Gpu3D {
         let src = if let Some(lookup) = static_shader_lookup {
             let shader_hash = perro_ids::parse_hashed_source_uri(shader_path)
                 .unwrap_or_else(|| perro_ids::string_to_u64(shader_path));
-            lookup(shader_hash).map(Cow::Borrowed)
+            let src = lookup(shader_hash);
+            (!src.is_empty()).then_some(Cow::Borrowed(src))
         } else {
             None
         }
@@ -611,12 +612,12 @@ impl Gpu3D {
         })?;
         let wgsl = if path == RenderPath3D::Rigid {
             build_material_shader_with_prelude(
-                include_str!("shaders/prelude_rigid_3d.wgsl"),
+                perro_macros::include_str_stripped!("shaders/prelude_rigid_3d.wgsl"),
                 src.as_ref(),
             )
         } else {
             build_material_shader_with_prelude(
-                include_str!("shaders/prelude_skinned_3d.wgsl"),
+                perro_macros::include_str_stripped!("shaders/prelude_skinned_3d.wgsl"),
                 src.as_ref(),
             )
         };
@@ -4000,7 +4001,8 @@ impl Gpu3D {
         } else if let Some(lookup) = static_texture_lookup {
             let source_hash = perro_ids::parse_hashed_source_uri(source.as_str())
                 .unwrap_or_else(|| perro_ids::string_to_u64(source.as_str()));
-            if let Some(bytes) = lookup(source_hash) {
+            let bytes = lookup(source_hash);
+            if !bytes.is_empty() {
                 decode_ptex(bytes)
             } else {
                 load_texture_rgba(source.as_str())
@@ -4866,30 +4868,38 @@ fn load_mesh_from_source(
         } else {
             [source, normalized.as_ref()]
         };
-        let source_hash = perro_ids::parse_hashed_source_uri(source)
-            .unwrap_or_else(|| perro_ids::string_to_u64(source));
-        if let Some(bytes) = lookup(source_hash)
-            && let Some(decoded) = decode_pmesh(bytes)
-        {
-            decoded
-        } else if source_variants[1] != source_variants[0]
-            && let Some(bytes) = lookup(
+        let mut static_decoded = None;
+        let mut try_hash = |hash: u64| {
+            if static_decoded.is_some() {
+                return;
+            }
+            let bytes = lookup(hash);
+            if bytes.is_empty() {
+                return;
+            }
+            static_decoded = decode_pmesh(bytes);
+        };
+
+        try_hash(
+            perro_ids::parse_hashed_source_uri(source)
+                .unwrap_or_else(|| perro_ids::string_to_u64(source)),
+        );
+        if source_variants[1] != source_variants[0] {
+            try_hash(
                 perro_ids::parse_hashed_source_uri(source_variants[1])
                     .unwrap_or_else(|| perro_ids::string_to_u64(source_variants[1])),
-            )
-            && let Some(decoded) = decode_pmesh(bytes)
-        {
-            decoded
-        } else if let Some(alias) = normalized_static_mesh_lookup_alias(source)
-            && let Some(bytes) = lookup(perro_ids::string_to_u64(alias.as_str()))
-            && let Some(decoded) = decode_pmesh(bytes)
-        {
-            decoded
-        } else if source_variants[1] != source_variants[0]
+            );
+        }
+        if let Some(alias) = normalized_static_mesh_lookup_alias(source) {
+            try_hash(perro_ids::string_to_u64(alias.as_str()));
+        }
+        if source_variants[1] != source_variants[0]
             && let Some(alias) = normalized_static_mesh_lookup_alias(source_variants[1])
-            && let Some(bytes) = lookup(perro_ids::string_to_u64(alias.as_str()))
-            && let Some(decoded) = decode_pmesh(bytes)
         {
+            try_hash(perro_ids::string_to_u64(alias.as_str()));
+        }
+
+        if let Some(decoded) = static_decoded {
             decoded
         } else {
             let (path, fragment) = split_source_fragment(source);
@@ -7186,4 +7196,5 @@ fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
         a[2] + (b[2] - a[2]) * t,
     ]
 }
+
 

@@ -25,6 +25,7 @@ members = [
 
     "perro_source/script_stack/perro_scripting",
     "perro_source/script_stack/perro_scripting_macros",
+    "perro_source/render_stack/perro_macros",
 
     "perro_source/build_pipeline/perro_compiler",
     "perro_source/build_pipeline/perro_static_pipeline",

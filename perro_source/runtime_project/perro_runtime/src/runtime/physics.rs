@@ -1644,7 +1644,8 @@ fn load_trimesh_from_source(
         && let Some(lookup) = static_mesh_lookup
     {
         let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
-        if let Some(bytes) = lookup(source_hash)
+        let bytes = lookup(source_hash);
+        if !bytes.is_empty()
             && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
         {
             return Some(decoded);
@@ -1652,23 +1653,32 @@ fn load_trimesh_from_source(
 
         let normalized = normalize_source_slashes(source);
         if normalized.as_ref() != source
-            && let Some(bytes) = lookup(string_to_u64(normalized.as_ref()))
-            && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
         {
-            return Some(decoded);
+            let bytes = lookup(string_to_u64(normalized.as_ref()));
+            if !bytes.is_empty()
+                && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
+            {
+                return Some(decoded);
+            }
         }
         if let Some(alias) = normalized_static_mesh_lookup_alias(source)
-            && let Some(bytes) = lookup(string_to_u64(alias.as_str()))
-            && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
         {
-            return Some(decoded);
+            let bytes = lookup(string_to_u64(alias.as_str()));
+            if !bytes.is_empty()
+                && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
+            {
+                return Some(decoded);
+            }
         }
         if normalized.as_ref() != source
             && let Some(alias) = normalized_static_mesh_lookup_alias(normalized.as_ref())
-            && let Some(bytes) = lookup(string_to_u64(alias.as_str()))
-            && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
         {
-            return Some(decoded);
+            let bytes = lookup(string_to_u64(alias.as_str()));
+            if !bytes.is_empty()
+                && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
+            {
+                return Some(decoded);
+            }
         }
     }
 

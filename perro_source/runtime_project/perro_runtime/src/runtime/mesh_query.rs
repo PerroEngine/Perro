@@ -242,29 +242,37 @@ impl Runtime {
         if self.provider_mode() == crate::runtime_project::ProviderMode::Static
             && let Some(lookup) = self.project().and_then(|project| project.static_mesh_lookup)
         {
-            if let Some(bytes) = lookup(source_hash)
+            let bytes = lookup(source_hash);
+            if !bytes.is_empty()
                 && let Some(mesh) = decode_pmesh_query(bytes)
             {
                 return Some(mesh);
             }
-            if normalized.as_ref() != source
-                && let Some(bytes) = lookup(string_to_u64(normalized.as_ref()))
-                && let Some(mesh) = decode_pmesh_query(bytes)
-            {
-                return Some(mesh);
+            if normalized.as_ref() != source {
+                let bytes = lookup(string_to_u64(normalized.as_ref()));
+                if !bytes.is_empty()
+                    && let Some(mesh) = decode_pmesh_query(bytes)
+                {
+                    return Some(mesh);
+                }
             }
-            if let Some(alias) = normalized_static_mesh_lookup_alias(source)
-                && let Some(bytes) = lookup(string_to_u64(alias.as_str()))
-                && let Some(mesh) = decode_pmesh_query(bytes)
-            {
-                return Some(mesh);
+            if let Some(alias) = normalized_static_mesh_lookup_alias(source) {
+                let bytes = lookup(string_to_u64(alias.as_str()));
+                if !bytes.is_empty()
+                    && let Some(mesh) = decode_pmesh_query(bytes)
+                {
+                    return Some(mesh);
+                }
             }
             if normalized.as_ref() != source
                 && let Some(alias) = normalized_static_mesh_lookup_alias(normalized.as_ref())
-                && let Some(bytes) = lookup(string_to_u64(alias.as_str()))
-                && let Some(mesh) = decode_pmesh_query(bytes)
             {
-                return Some(mesh);
+                let bytes = lookup(string_to_u64(alias.as_str()));
+                if !bytes.is_empty()
+                    && let Some(mesh) = decode_pmesh_query(bytes)
+                {
+                    return Some(mesh);
+                }
             }
         }
 

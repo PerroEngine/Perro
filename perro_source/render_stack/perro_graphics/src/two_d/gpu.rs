@@ -435,7 +435,8 @@ impl Gpu2D {
         } else if let Some(lookup) = static_texture_lookup {
             let source_hash =
                 perro_ids::parse_hashed_source_uri(source).unwrap_or_else(|| perro_ids::string_to_u64(source));
-            if let Some(bytes) = lookup(source_hash) {
+            let bytes = lookup(source_hash);
+            if !bytes.is_empty() {
                 let Some(decoded) = decode_ptex(bytes) else {
                     return false;
                 };

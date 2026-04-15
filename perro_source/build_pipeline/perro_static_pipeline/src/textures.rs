@@ -92,16 +92,17 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
     if !textures.is_empty() {
         out.push('\n');
     }
-    out.push_str("pub fn lookup_texture(path_hash: u64) -> Option<&'static [u8]> {\n");
+    out.push_str("static EMPTY_TEXTURE: &[u8] = b\"\";\n\n");
+    out.push_str("pub fn lookup_texture(path_hash: u64) -> &'static [u8] {\n");
     out.push_str("    match path_hash {\n");
     for (index, (res_path, _)) in textures.iter().enumerate() {
         let path_hash = perro_ids::string_to_u64(res_path);
         let _ = writeln!(
             out,
-            "        {path_hash}u64 => Some(TEXTURE_{index}),"
+            "        {path_hash}u64 => TEXTURE_{index},"
         );
     }
-    out.push_str("        _ => None,\n");
+    out.push_str("        _ => EMPTY_TEXTURE,\n");
     out.push_str("    }\n");
     out.push_str("}\n");
 

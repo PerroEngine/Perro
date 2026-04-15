@@ -20,9 +20,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::window::Window;
 
-pub type StaticTextureLookup = fn(path_hash: u64) -> Option<&'static [u8]>;
-pub type StaticMeshLookup = fn(path_hash: u64) -> Option<&'static [u8]>;
-pub type StaticShaderLookup = fn(path_hash: u64) -> Option<&'static str>;
+pub type StaticTextureLookup = fn(path_hash: u64) -> &'static [u8];
+pub type StaticMeshLookup = fn(path_hash: u64) -> &'static [u8];
+pub type StaticShaderLookup = fn(path_hash: u64) -> &'static str;
 const GC_INTERVAL_FRAMES: u32 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
