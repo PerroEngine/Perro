@@ -307,17 +307,6 @@ fn build_gltf_mesh_entries(
             },
             pmesh,
         ));
-        if mesh_index == 0
-            && let Some((entry, bytes)) = entries.last().cloned()
-        {
-            entries.push((
-                MeshRef {
-                    lookup_key: res_path.to_string(),
-                    embedded_rel_path: entry.embedded_rel_path,
-                },
-                bytes,
-            ));
-        }
     }
 
     Ok(entries)

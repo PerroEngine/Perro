@@ -196,6 +196,7 @@ pub fn run_static_embedded_project(
         .with_static_material_lookup(input.assets.material_lookup)
         .with_static_particle_lookup(input.assets.particle_lookup)
         .with_static_animation_lookup(input.assets.animation_lookup)
+        .with_static_mesh_lookup(input.assets.mesh_lookup)
         .with_static_skeleton_lookup(input.assets.skeleton_lookup)
         .with_static_audio_lookup(input.assets.audio_lookup)
         .with_static_icon_lookup(input.assets.texture_lookup)

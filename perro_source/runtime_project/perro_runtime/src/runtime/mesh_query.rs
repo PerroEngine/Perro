@@ -4,6 +4,7 @@ use perro_ids::{MaterialID, NodeID};
 use perro_nodes::{MeshSurfaceBinding, SceneNodeData};
 use perro_runtime_context::sub_apis::{MeshMaterialRegion3D, MeshSurfaceHit3D};
 use perro_structs::Vector3;
+use perro_io::decompress_zlib;
 
 #[derive(Clone, Copy)]
 struct QueryTri {
@@ -31,7 +32,7 @@ impl Runtime {
         world_point: Vector3,
     ) -> Option<MeshSurfaceHit3D> {
         let node = self.query_node_mesh_data(node_id)?;
-        let mesh = load_query_mesh_data(node.source.as_str())?;
+        let mesh = self.load_query_mesh_data(node.source.as_str())?;
         if mesh.vertices.is_empty() || mesh.triangles.is_empty() {
             return None;
         }
@@ -109,7 +110,7 @@ impl Runtime {
         let Some(node) = self.query_node_mesh_data(node_id) else {
             return Vec::new();
         };
-        let Some(mesh) = load_query_mesh_data(node.source.as_str()) else {
+        let Some(mesh) = self.load_query_mesh_data(node.source.as_str()) else {
             return Vec::new();
         };
         if mesh.vertices.is_empty() || mesh.triangles.is_empty() {
@@ -226,24 +227,57 @@ impl Runtime {
             _ => None,
         }
     }
-}
 
-fn load_query_mesh_data(source: &str) -> Option<QueryMeshData> {
-    let source = source.trim();
-    if source.is_empty() {
-        return None;
-    }
-    if source.starts_with("__") {
-        return decode_builtin_query_mesh(source);
-    }
+    fn load_query_mesh_data(&self, source: &str) -> Option<QueryMeshData> {
+        let source = source.trim();
+        if source.is_empty() {
+            return None;
+        }
+        if source.starts_with("__") {
+            return decode_builtin_query_mesh(source);
+        }
 
-    let (path, fragment) = split_source_fragment(source);
-    let mesh_index = parse_fragment_index(fragment, "mesh").unwrap_or(0);
-    let bytes = perro_io::load_asset(path).ok()?;
-    if path.ends_with(".glb") || path.ends_with(".gltf") {
-        return decode_gltf_query_mesh(&bytes, mesh_index);
+        let normalized = normalize_source_slashes(source);
+        if self.provider_mode() == crate::runtime_project::ProviderMode::Static
+            && let Some(lookup) = self.project().and_then(|project| project.static_mesh_lookup)
+        {
+            if let Some(bytes) = lookup(source)
+                && let Some(mesh) = decode_pmesh_query(bytes)
+            {
+                return Some(mesh);
+            }
+            if normalized.as_ref() != source
+                && let Some(bytes) = lookup(normalized.as_ref())
+                && let Some(mesh) = decode_pmesh_query(bytes)
+            {
+                return Some(mesh);
+            }
+            if let Some(alias) = normalized_static_mesh_lookup_alias(source)
+                && let Some(bytes) = lookup(alias.as_str())
+                && let Some(mesh) = decode_pmesh_query(bytes)
+            {
+                return Some(mesh);
+            }
+            if normalized.as_ref() != source
+                && let Some(alias) = normalized_static_mesh_lookup_alias(normalized.as_ref())
+                && let Some(bytes) = lookup(alias.as_str())
+                && let Some(mesh) = decode_pmesh_query(bytes)
+            {
+                return Some(mesh);
+            }
+        }
+
+        let (path, fragment) = split_source_fragment(source);
+        let mesh_index = parse_fragment_index(fragment, "mesh").unwrap_or(0);
+        let bytes = perro_io::load_asset(path).ok()?;
+        if path.ends_with(".glb") || path.ends_with(".gltf") {
+            return decode_gltf_query_mesh(&bytes, mesh_index);
+        }
+        if path.ends_with(".pmesh") {
+            return decode_pmesh_query(&bytes);
+        }
+        None
     }
-    None
 }
 
 fn decode_builtin_query_mesh(source: &str) -> Option<QueryMeshData> {
@@ -527,6 +561,180 @@ fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<usize> {
     }
     let value = rest.strip_suffix(']')?.trim();
     value.parse::<usize>().ok()
+}
+
+fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
+    if source.contains('\\') {
+        std::borrow::Cow::Owned(source.replace('\\', "/"))
+    } else {
+        std::borrow::Cow::Borrowed(source)
+    }
+}
+
+fn normalized_static_mesh_lookup_alias(source: &str) -> Option<String> {
+    let (path, fragment) = split_source_fragment(source);
+    if !(path.ends_with(".glb") || path.ends_with(".gltf")) {
+        return None;
+    }
+    match parse_fragment_index(fragment, "mesh") {
+        Some(0) => Some(path.to_string()),
+        Some(_) => None,
+        None => Some(format!("{path}:mesh[0]")),
+    }
+}
+
+fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
+    if bytes.len() < 25 || &bytes[0..5] != b"PMESH" {
+        return None;
+    }
+    let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
+    if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6
+    {
+        return None;
+    }
+
+    let (flags, vertex_count, index_count, surface_count, raw_len, payload_start) = match version {
+        6 | 5 => {
+            if bytes.len() < 33 {
+                return None;
+            }
+            (
+                u32::from_le_bytes(bytes[9..13].try_into().ok()?),
+                u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize,
+                33usize,
+            )
+        }
+        4 => {
+            if bytes.len() < 29 {
+                return None;
+            }
+            (
+                1u32,
+                u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize,
+                29usize,
+            )
+        }
+        _ => (
+            1u32,
+            u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize,
+            u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
+            0usize,
+            u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize,
+            25usize,
+        ),
+    };
+
+    let raw = decompress_zlib(&bytes[payload_start..]).ok()?;
+    if raw.len() != raw_len {
+        return None;
+    }
+
+    let has_normal = version != 6 || (flags & (1 << 0)) != 0;
+    let has_uv0 = version == 6 && (flags & (1 << 1)) != 0;
+    let has_joints = if version == 6 {
+        (flags & (1 << 2)) != 0
+    } else if version == 5 {
+        (flags & 1) != 0
+    } else {
+        version >= 2
+    };
+    let has_weights = if version == 6 {
+        (flags & (1 << 3)) != 0
+    } else if version == 5 {
+        (flags & 1) != 0
+    } else {
+        version >= 2
+    };
+
+    let vertex_stride = if version == 6 {
+        12 + if has_normal { 12 } else { 0 }
+            + if has_uv0 { 8 } else { 0 }
+            + if has_joints { 8 } else { 0 }
+            + if has_weights { 16 } else { 0 }
+    } else if version == 5 {
+        if (flags & 1) != 0 { 56 } else { 32 }
+    } else if version == 4 || version == 3 {
+        56
+    } else if version == 2 {
+        48
+    } else {
+        24
+    };
+
+    let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
+    let index_bytes = index_count.checked_mul(4)?;
+    let surface_bytes = surface_count.checked_mul(8)?;
+    if raw.len() < vertex_bytes + index_bytes + surface_bytes {
+        return None;
+    }
+
+    let mut vertices = Vec::with_capacity(vertex_count);
+    for i in 0..vertex_count {
+        let off = i * vertex_stride;
+        let x = f32::from_le_bytes(raw[off..off + 4].try_into().ok()?);
+        let y = f32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?);
+        let z = f32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?);
+        vertices.push(Vec3::new(x, y, z));
+    }
+
+    let mut indices = Vec::with_capacity(index_count);
+    let index_start = vertex_bytes;
+    for i in 0..index_count {
+        let off = index_start + i * 4;
+        indices.push(u32::from_le_bytes(raw[off..off + 4].try_into().ok()?));
+    }
+
+    let mut surface_ranges = Vec::with_capacity(surface_count);
+    let surface_start = vertex_bytes + index_bytes;
+    for i in 0..surface_count {
+        let off = surface_start + i * 8;
+        let start = u32::from_le_bytes(raw[off..off + 4].try_into().ok()?) as usize;
+        let count = u32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?) as usize;
+        surface_ranges.push((start, count));
+    }
+    if surface_ranges.is_empty() {
+        surface_ranges.push((0, indices.len()));
+    }
+
+    let mut triangles = Vec::new();
+    for (surface_index, (start, count)) in surface_ranges.into_iter().enumerate() {
+        let end = start.saturating_add(count).min(indices.len());
+        let slice = &indices[start..end];
+        for tri in slice.chunks_exact(3) {
+            let ia = tri[0] as usize;
+            let ib = tri[1] as usize;
+            let ic = tri[2] as usize;
+            if ia >= vertices.len()
+                || ib >= vertices.len()
+                || ic >= vertices.len()
+                || ia == ib
+                || ib == ic
+                || ia == ic
+            {
+                continue;
+            }
+            triangles.push(QueryTri {
+                a: tri[0],
+                b: tri[1],
+                c: tri[2],
+                surface_index: surface_index as u32,
+            });
+        }
+    }
+
+    if vertices.is_empty() || triangles.is_empty() {
+        return None;
+    }
+    Some(QueryMeshData {
+        vertices,
+        triangles,
+    })
 }
 
 fn closest_point_on_triangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Vec3 {

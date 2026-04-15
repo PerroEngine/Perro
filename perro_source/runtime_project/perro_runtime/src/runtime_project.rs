@@ -40,6 +40,7 @@ pub struct RuntimeProject {
     pub static_material_lookup: Option<StaticMaterialLookup>,
     pub static_particle_lookup: Option<StaticParticleLookup>,
     pub static_animation_lookup: Option<StaticAnimationLookup>,
+    pub static_mesh_lookup: Option<StaticBytesLookup>,
     pub static_skeleton_lookup: Option<StaticSkeletonLookup>,
     pub static_audio_lookup: Option<StaticAudioLookup>,
     pub static_icon_lookup: Option<StaticBytesLookup>,
@@ -59,6 +60,7 @@ impl RuntimeProject {
             static_material_lookup: None,
             static_particle_lookup: None,
             static_animation_lookup: None,
+            static_mesh_lookup: None,
             static_skeleton_lookup: None,
             static_audio_lookup: None,
             static_icon_lookup: None,
@@ -78,6 +80,7 @@ impl RuntimeProject {
             static_material_lookup: None,
             static_particle_lookup: None,
             static_animation_lookup: None,
+            static_mesh_lookup: None,
             static_skeleton_lookup: None,
             static_audio_lookup: None,
             static_icon_lookup: None,
@@ -106,6 +109,7 @@ impl RuntimeProject {
             static_material_lookup: None,
             static_particle_lookup: None,
             static_animation_lookup: None,
+            static_mesh_lookup: None,
             static_skeleton_lookup: None,
             static_audio_lookup: None,
             static_icon_lookup: None,
@@ -140,6 +144,11 @@ impl RuntimeProject {
 
     pub fn with_static_animation_lookup(mut self, lookup: StaticAnimationLookup) -> Self {
         self.static_animation_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_static_mesh_lookup(mut self, lookup: StaticBytesLookup) -> Self {
+        self.static_mesh_lookup = Some(lookup);
         self
     }
 

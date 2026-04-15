@@ -5,6 +5,8 @@ use perro_resource_context::sub_apis::MeshAPI;
 
 impl MeshAPI for RuntimeResourceApi {
     fn load_mesh(&self, source: &str) -> MeshID {
+        let normalized = normalize_source_slashes(source);
+        let source = normalized.as_ref();
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.mesh_by_source.get(source).copied() {
             return id;
@@ -31,6 +33,8 @@ impl MeshAPI for RuntimeResourceApi {
     }
 
     fn reserve_mesh(&self, source: &str) -> MeshID {
+        let normalized = normalize_source_slashes(source);
+        let source = normalized.as_ref();
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.mesh_by_source.get(source).copied() {
             if state.mesh_pending_by_source.contains_key(source) {
@@ -69,6 +73,8 @@ impl MeshAPI for RuntimeResourceApi {
     }
 
     fn drop_mesh(&self, source: &str) -> bool {
+        let normalized = normalize_source_slashes(source);
+        let source = normalized.as_ref();
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         state.mesh_reserve_pending.remove(source);
         if state.mesh_pending_by_source.contains_key(source) {
@@ -110,6 +116,8 @@ impl RuntimeResourceApi {
     }
 
     pub(crate) fn register_loaded_mesh_source(&self, source: &str, id: MeshID) {
+        let normalized = normalize_source_slashes(source);
+        let source = normalized.as_ref();
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if source.trim().is_empty() || id.is_nil() {
             return;
@@ -121,5 +129,13 @@ impl RuntimeResourceApi {
         }
         state.mesh_reserve_pending.remove(source);
         state.mesh_drop_pending.remove(source);
+    }
+}
+
+fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
+    if source.contains('\\') {
+        std::borrow::Cow::Owned(source.replace('\\', "/"))
+    } else {
+        std::borrow::Cow::Borrowed(source)
     }
 }
