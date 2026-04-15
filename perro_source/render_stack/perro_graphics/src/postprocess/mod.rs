@@ -406,7 +406,9 @@ impl PostProcessor {
             return self.custom_pipelines.get(shader_path);
         }
         let src = if let Some(lookup) = static_shader_lookup {
-            lookup(shader_path).map(|s| s.to_string())
+            let shader_hash = perro_ids::parse_hashed_source_uri(shader_path)
+                .unwrap_or_else(|| perro_ids::string_to_u64(shader_path));
+            lookup(shader_hash).map(|s| s.to_string())
         } else {
             None
         }
@@ -642,3 +644,4 @@ fn encode_custom_param_value(value: &CustomPostParam) -> [f32; 4] {
         CustomPostParamValue::Vec4(v) => *v,
     }
 }
+

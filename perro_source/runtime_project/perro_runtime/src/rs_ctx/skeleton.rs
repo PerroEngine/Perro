@@ -1,4 +1,5 @@
 use super::core::RuntimeResourceApi;
+use perro_ids::{parse_hashed_source_uri, string_to_u64};
 use perro_io::{decompress_zlib, load_asset};
 use perro_nodes::skeleton_3d::Bone3D;
 use perro_resource_context::sub_apis::SkeletonAPI;
@@ -43,7 +44,11 @@ impl SkeletonAPI for RuntimeResourceApi {
 }
 
 fn load_bones_uncached(api: &RuntimeResourceApi, source: &str) -> Option<Vec<Bone3D>> {
-    if let Some(bytes) = api.static_skeleton_lookup.and_then(|lookup| lookup(source)) {
+    let path_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
+    if let Some(bytes) = api
+        .static_skeleton_lookup
+        .and_then(|lookup| lookup(path_hash))
+    {
         return decode_pskel(bytes).ok();
     }
 

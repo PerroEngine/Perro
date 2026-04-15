@@ -19,6 +19,11 @@ pub const fn string_to_u64(s: &str) -> u64 {
     mix64(hash ^ (bytes.len() as u64))
 }
 
+pub fn parse_hashed_source_uri(s: &str) -> Option<u64> {
+    let raw = s.strip_prefix("hash://")?;
+    raw.parse::<u64>().ok()
+}
+
 pub const fn mix64(mut x: u64) -> u64 {
     x ^= x >> 30;
     x = x.wrapping_mul(0xBF58476D1CE4E5B9);

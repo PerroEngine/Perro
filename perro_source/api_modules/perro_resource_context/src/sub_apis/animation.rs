@@ -3,9 +3,19 @@ use perro_ids::AnimationID;
 use std::sync::Arc;
 
 pub trait AnimationAPI {
-    fn load_animation_source(&self, source: &str) -> AnimationID;
-    fn reserve_animation_source(&self, source: &str) -> AnimationID;
-    fn drop_animation_source(&self, source: &str) -> bool;
+    fn load_animation_source_hashed(&self, source_hash: u64, source: Option<&str>) -> AnimationID;
+    fn reserve_animation_source_hashed(
+        &self,
+        source_hash: u64,
+        source: Option<&str>,
+    ) -> AnimationID;
+    fn load_animation_source(&self, source: &str) -> AnimationID {
+        self.load_animation_source_hashed(perro_ids::string_to_u64(source), Some(source))
+    }
+    fn reserve_animation_source(&self, source: &str) -> AnimationID {
+        self.reserve_animation_source_hashed(perro_ids::string_to_u64(source), Some(source))
+    }
+    fn drop_animation_source(&self, id: AnimationID) -> bool;
     fn get_animation(&self, id: AnimationID) -> Option<Arc<AnimationClip>>;
 }
 
@@ -24,13 +34,35 @@ impl<'res, R: AnimationAPI + ?Sized> AnimationModule<'res, R> {
     }
 
     #[inline]
+    pub fn load_hashed(&self, source_hash: u64) -> AnimationID {
+        self.api.load_animation_source_hashed(source_hash, None)
+    }
+
+    #[inline]
+    pub fn load_hashed_with_source(&self, source_hash: u64, source: &str) -> AnimationID {
+        self.api
+            .load_animation_source_hashed(source_hash, Some(source))
+    }
+
+    #[inline]
     pub fn reserve<S: AsRef<str>>(&self, source: S) -> AnimationID {
         self.api.reserve_animation_source(source.as_ref())
     }
 
     #[inline]
-    pub fn drop<S: AsRef<str>>(&self, source: S) -> bool {
-        self.api.drop_animation_source(source.as_ref())
+    pub fn reserve_hashed(&self, source_hash: u64) -> AnimationID {
+        self.api.reserve_animation_source_hashed(source_hash, None)
+    }
+
+    #[inline]
+    pub fn reserve_hashed_with_source(&self, source_hash: u64, source: &str) -> AnimationID {
+        self.api
+            .reserve_animation_source_hashed(source_hash, Some(source))
+    }
+
+    #[inline]
+    pub fn drop(&self, id: AnimationID) -> bool {
+        self.api.drop_animation_source(id)
     }
 
     #[inline]
@@ -41,6 +73,10 @@ impl<'res, R: AnimationAPI + ?Sized> AnimationModule<'res, R> {
 
 #[macro_export]
 macro_rules! animation_load {
+    ($res:expr, $source:literal) => {{
+        const __HASH: u64 = $crate::__perro_string_to_u64($source);
+        $res.Animations().load_hashed_with_source(__HASH, $source)
+    }};
     ($res:expr, $source:expr) => {
         $res.Animations().load($source)
     };
@@ -48,6 +84,10 @@ macro_rules! animation_load {
 
 #[macro_export]
 macro_rules! animation_reserve {
+    ($res:expr, $source:literal) => {{
+        const __HASH: u64 = $crate::__perro_string_to_u64($source);
+        $res.Animations().reserve_hashed_with_source(__HASH, $source)
+    }};
     ($res:expr, $source:expr) => {
         $res.Animations().reserve($source)
     };
@@ -55,7 +95,7 @@ macro_rules! animation_reserve {
 
 #[macro_export]
 macro_rules! animation_drop {
-    ($res:expr, $source:expr) => {
-        $res.Animations().drop($source)
+    ($res:expr, $id:expr) => {
+        $res.Animations().drop($id)
     };
 }

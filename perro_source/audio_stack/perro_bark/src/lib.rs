@@ -10,7 +10,7 @@ pub struct BarkPlayer {
     _stream: OutputStream,
     handle: OutputStreamHandle,
     state: Mutex<AudioState>,
-    static_audio_lookup: Option<fn(&str) -> Option<&'static [u8]>>,
+    static_audio_lookup: Option<fn(u64) -> Option<&'static [u8]>>,
 }
 
 struct Playback {
@@ -155,7 +155,7 @@ impl BarkPlayer {
     const UNRESERVED_TTL_MIN: Duration = Duration::from_millis(250);
 
     pub fn new(
-        static_audio_lookup: Option<fn(&str) -> Option<&'static [u8]>>,
+        static_audio_lookup: Option<fn(u64) -> Option<&'static [u8]>>,
     ) -> Result<Self, String> {
         let (stream, handle) = OutputStream::try_default()
             .map_err(|err| format!("audio output init failed: {err}"))?;
@@ -598,7 +598,7 @@ impl BarkPlayer {
         state: &mut AudioState,
         source: &str,
         reserved: bool,
-        static_audio_lookup: Option<fn(&str) -> Option<&'static [u8]>>,
+        static_audio_lookup: Option<fn(u64) -> Option<&'static [u8]>>,
     ) -> Result<(Arc<[u8]>, bool, SourceLoadStats), String> {
         if let Some(existing) = state.cache.get_mut(source) {
             if reserved {
@@ -611,7 +611,7 @@ impl BarkPlayer {
         let (bytes, load_stats) = if let Some(lookup) = static_audio_lookup {
             #[cfg(feature = "profile")]
             let lookup_begin = Instant::now();
-            let looked_up = lookup(source);
+            let looked_up = lookup(perro_ids::string_to_u64(source));
             #[cfg(feature = "profile")]
             let lookup_elapsed = lookup_begin.elapsed();
             if let Some(blob) = looked_up {
@@ -853,7 +853,7 @@ fn decode_static_pawdio(blob: &[u8]) -> Result<(Vec<u8>, Duration), String> {
 
 impl AudioController {
     pub fn new(
-        static_audio_lookup: Option<fn(&str) -> Option<&'static [u8]>>,
+        static_audio_lookup: Option<fn(u64) -> Option<&'static [u8]>>,
     ) -> Result<Self, String> {
         let (tx, rx) = mpsc::channel::<AudioCommand>();
         std::thread::Builder::new()
@@ -1054,3 +1054,4 @@ impl AudioController {
         self.tx.send(AudioCommand::StopBus { bus_id }).is_ok()
     }
 }
+

@@ -599,7 +599,9 @@ impl Gpu3D {
             return self.custom_pipelines.get(shader_path);
         }
         let src = if let Some(lookup) = static_shader_lookup {
-            lookup(shader_path).map(Cow::Borrowed)
+            let shader_hash = perro_ids::parse_hashed_source_uri(shader_path)
+                .unwrap_or_else(|| perro_ids::string_to_u64(shader_path));
+            lookup(shader_hash).map(Cow::Borrowed)
         } else {
             None
         }
@@ -3997,7 +3999,9 @@ impl Gpu3D {
         let decoded = if source == "__default__" {
             Some((vec![255u8, 255, 255, 255], 1, 1))
         } else if let Some(lookup) = static_texture_lookup {
-            if let Some(bytes) = lookup(source.as_str()) {
+            let source_hash = perro_ids::parse_hashed_source_uri(source.as_str())
+                .unwrap_or_else(|| perro_ids::string_to_u64(source.as_str()));
+            if let Some(bytes) = lookup(source_hash) {
                 decode_ptex(bytes)
             } else {
                 load_texture_rgba(source.as_str())
@@ -4863,23 +4867,28 @@ fn load_mesh_from_source(
         } else {
             [source, normalized.as_ref()]
         };
-        if let Some(bytes) = lookup(source)
+        let source_hash = perro_ids::parse_hashed_source_uri(source)
+            .unwrap_or_else(|| perro_ids::string_to_u64(source));
+        if let Some(bytes) = lookup(source_hash)
             && let Some(decoded) = decode_pmesh(bytes)
         {
             decoded
         } else if source_variants[1] != source_variants[0]
-            && let Some(bytes) = lookup(source_variants[1])
+            && let Some(bytes) = lookup(
+                perro_ids::parse_hashed_source_uri(source_variants[1])
+                    .unwrap_or_else(|| perro_ids::string_to_u64(source_variants[1])),
+            )
             && let Some(decoded) = decode_pmesh(bytes)
         {
             decoded
         } else if let Some(alias) = normalized_static_mesh_lookup_alias(source)
-            && let Some(bytes) = lookup(alias.as_str())
+            && let Some(bytes) = lookup(perro_ids::string_to_u64(alias.as_str()))
             && let Some(decoded) = decode_pmesh(bytes)
         {
             decoded
         } else if source_variants[1] != source_variants[0]
             && let Some(alias) = normalized_static_mesh_lookup_alias(source_variants[1])
-            && let Some(bytes) = lookup(alias.as_str())
+            && let Some(bytes) = lookup(perro_ids::string_to_u64(alias.as_str()))
             && let Some(decoded) = decode_pmesh(bytes)
         {
             decoded
@@ -7300,3 +7309,4 @@ fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
         a[2] + (b[2] - a[2]) * t,
     ]
 }
+

@@ -7,39 +7,55 @@ use std::sync::Arc;
 
 impl AnimationAPI for RuntimeResourceApi {
     fn load_animation_source(&self, source: &str) -> AnimationID {
-        let source = source.trim();
-        if source.is_empty() {
+        if let Some(hash) = perro_ids::parse_hashed_source_uri(source) {
+            self.load_animation_source_hashed(hash, None)
+        } else {
+            self.load_animation_source_hashed(perro_ids::string_to_u64(source), Some(source))
+        }
+    }
+
+    fn reserve_animation_source(&self, source: &str) -> AnimationID {
+        if let Some(hash) = perro_ids::parse_hashed_source_uri(source) {
+            self.reserve_animation_source_hashed(hash, None)
+        } else {
+            self.reserve_animation_source_hashed(perro_ids::string_to_u64(source), Some(source))
+        }
+    }
+
+    fn load_animation_source_hashed(&self, source_hash: u64, source: Option<&str>) -> AnimationID {
+        if source.is_some_and(|v| v.trim().is_empty()) {
             return AnimationID::nil();
         }
 
         let mut state = self.state.lock().expect("resource api mutex poisoned");
-        if let Some(id) = state.animation_by_source.get(source).copied() {
+        if let Some(id) = state.animation_by_source.get(&source_hash).copied() {
             return id;
         }
 
         let clip = self
-            .load_animation_source_data(source)
+            .load_animation_source_data(source_hash, source.map(str::trim))
             .unwrap_or_else(|| Arc::new(AnimationClip::default()));
         let id = state.allocate_animation_id();
-        state.animation_by_source.insert(source.to_string(), id);
+        state.animation_by_source.insert(source_hash, id);
         state.animation_data_by_id.insert(id, clip);
         id
     }
 
-    fn reserve_animation_source(&self, source: &str) -> AnimationID {
-        self.load_animation_source(source)
+    fn reserve_animation_source_hashed(
+        &self,
+        source_hash: u64,
+        source: Option<&str>,
+    ) -> AnimationID {
+        self.load_animation_source_hashed(source_hash, source)
     }
 
-    fn drop_animation_source(&self, source: &str) -> bool {
-        let source = source.trim();
-        if source.is_empty() {
+    fn drop_animation_source(&self, id: AnimationID) -> bool {
+        if id.is_nil() {
             return false;
         }
 
         let mut state = self.state.lock().expect("resource api mutex poisoned");
-        let Some(id) = state.animation_by_source.remove(source) else {
-            return false;
-        };
+        state.animation_by_source.retain(|_, existing| *existing != id);
         state.animation_data_by_id.remove(&id);
         let _ = state.free_animation_id(id);
         true
@@ -56,13 +72,20 @@ impl AnimationAPI for RuntimeResourceApi {
 }
 
 impl RuntimeResourceApi {
-    fn load_animation_source_data(&self, source: &str) -> Option<Arc<AnimationClip>> {
+    fn load_animation_source_data(
+        &self,
+        source_hash: u64,
+        source: Option<&str>,
+    ) -> Option<Arc<AnimationClip>> {
         if let Some(lookup) = self.static_animation_lookup
-            && let Some(clip) = lookup(source)
+            && let Some(clip) = lookup(source_hash)
         {
             return Some(Arc::new(clip.clone()));
         }
 
+        let Some(source) = source else {
+            return None;
+        };
         if source.ends_with(".panim")
             && let Ok(bytes) = perro_io::load_asset(source)
             && let Ok(text) = std::str::from_utf8(&bytes)
@@ -134,8 +157,8 @@ fps = 30
         RuntimeResourceApi::new(None, None, None, lookup, None, None)
     }
 
-    fn static_clip_lookup(path: &str) -> Option<&'static AnimationClip> {
-        if !path.ends_with(".panim") {
+    fn static_clip_lookup(path_hash: u64) -> Option<&'static AnimationClip> {
+        if path_hash != string_to_u64("res://test/clip.panim") {
             return None;
         }
         static CLIP: OnceLock<AnimationClip> = OnceLock::new();
@@ -369,7 +392,7 @@ fps = 30
 
     #[test]
     fn animation_loader_falls_back_to_file_when_static_lookup_misses() {
-        fn empty_lookup(_path: &str) -> Option<&'static AnimationClip> {
+        fn empty_lookup(_path_hash: u64) -> Option<&'static AnimationClip> {
             None
         }
 

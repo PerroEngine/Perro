@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, res_dir, static_dir};
+use crate::{StaticPipelineError, ensure_unique_hashes, res_dir, static_dir};
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::{Parser, SceneNodeData, SceneNodeDataBase, SceneValue};
 use rayon::prelude::*;
@@ -25,6 +25,7 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
             .collect();
     }
     scene_paths.sort();
+    ensure_unique_hashes("scene", scene_paths.iter().map(String::as_str))?;
 
     let mut emitted_scenes = scene_paths
         .par_iter()
@@ -53,15 +54,15 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
     }
 
     let mut lookup = String::new();
-    lookup.push_str("pub fn lookup_scene(path: &str) -> Option<&'static Scene> {\n");
-    lookup.push_str("    match path {\n");
+    lookup.push_str("pub fn lookup_scene(path_hash: u64) -> Option<&'static Scene> {\n");
+    lookup.push_str("    match path_hash {\n");
     for p in &scene_paths {
         let id = sanitize_ident(p);
+        let path_hash = perro_ids::string_to_u64(p);
         let _ = writeln!(
             lookup,
-            "        \"{}\" => Some(&SCENE_{}),",
-            escape_str(p),
-            id
+            "        {path_hash}u64 => Some(&SCENE_{}),",
+            id,
         );
     }
     lookup.push_str("        _ => None,\n");
@@ -168,7 +169,7 @@ fn emit_static_scene_const(
             tags_name
         };
         node_entries.push_str(&format!(
-            "    SceneNodeEntry {{ data: {data}, has_data_override: {has_data_override}, key: SceneKey(Cow::Borrowed(\"{key}\")), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, clear_script: {clear_script}, root_of: {root_of}, script_vars: Cow::Borrowed({script_vars}) }},\n",
+            "    SceneNodeEntry {{ data: {data}, has_data_override: {has_data_override}, key: SceneKey(Cow::Borrowed(\"{key}\")), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, script_hash: {script_hash}, clear_script: {clear_script}, root_of: {root_of}, script_vars: Cow::Borrowed({script_vars}) }},\n",
             data = data_const,
             has_data_override = node.has_data_override,
             key = escape_str(node.key.as_ref()),
@@ -182,7 +183,8 @@ fn emit_static_scene_const(
                 ),
                 None => "None".to_string(),
             },
-            script = opt_static_str(&node.script),
+            script = opt_static_script_str(&node.script),
+            script_hash = opt_static_script_hash(&node.script),
             clear_script = node.clear_script,
             root_of = opt_static_str(&node.root_of),
             script_vars = if node.script_vars.is_empty() {
@@ -341,9 +343,10 @@ fn emit_value_with_consts(
             format!("SceneValue::Vec4 {{ x: {x:?}, y: {y:?}, z: {z:?}, w: {w:?} }}")
         }
         SceneValue::Str(s) => format!(
-            "SceneValue::Str(Cow::Borrowed(\"{}\"))",
-            escape_str(s.as_ref())
+            "{}",
+            emit_static_scene_value_str(s.as_ref())
         ),
+        SceneValue::Hashed(v) => format!("SceneValue::Hashed({v}u64)"),
         SceneValue::Key(s) => {
             format!(
                 "SceneValue::Key(SceneValueKey(Cow::Borrowed(\"{}\")))",
@@ -401,6 +404,71 @@ fn opt_static_str(v: &Option<Cow<'static, str>>) -> String {
         Some(s) => format!("Some(Cow::Borrowed(\"{}\"))", escape_str(s.as_ref())),
         None => "None".to_string(),
     }
+}
+
+fn opt_static_script_str(v: &Option<Cow<'static, str>>) -> String {
+    match v {
+        Some(s) if static_hashable_path(s.as_ref()).is_some() => "None".to_string(),
+        Some(s) => format!("Some(Cow::Borrowed(\"{}\"))", escape_str(s.as_ref())),
+        None => "None".to_string(),
+    }
+}
+
+fn opt_static_script_hash(v: &Option<Cow<'static, str>>) -> String {
+    match v {
+        Some(s) => static_hashable_path(s.as_ref())
+            .map(|hash| format!("Some({hash}u64)"))
+            .unwrap_or_else(|| "None".to_string()),
+        None => "None".to_string(),
+    }
+}
+
+fn emit_static_scene_value_str(s: &str) -> String {
+    if let Some(hash) = static_hashable_path(s) {
+        format!("SceneValue::Hashed({hash}u64)")
+    } else {
+        format!("SceneValue::Str(Cow::Borrowed(\"{}\"))", escape_str(s))
+    }
+}
+
+fn static_hashable_path(s: &str) -> Option<u64> {
+    if !s.starts_with("res://") {
+        return None;
+    }
+    let path_part = s.split_once(':').map(|(head, _)| head).unwrap_or(s);
+    let ext = Path::new(path_part)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())?;
+    let hashable = matches!(
+        ext.as_str(),
+        "rs"
+            | "scn"
+            | "pmat"
+            | "panim"
+            | "pmesh"
+            | "pskel"
+            | "pparticle"
+            | "png"
+            | "jpg"
+            | "jpeg"
+            | "bmp"
+            | "gif"
+            | "ico"
+            | "tga"
+            | "webp"
+            | "rgba"
+            | "wgsl"
+            | "mp3"
+            | "wav"
+            | "ogg"
+            | "flac"
+            | "aac"
+            | "m4a"
+            | "glb"
+            | "gltf"
+    );
+    hashable.then(|| perro_ids::string_to_u64(s))
 }
 
 fn sanitize_ident(path: &str) -> String {

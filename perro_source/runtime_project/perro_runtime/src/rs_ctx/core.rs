@@ -4,6 +4,7 @@ use crate::runtime_project::{
     StaticSkeletonLookup,
 };
 use perro_bark::AudioController;
+use perro_ids::string_to_u64;
 use perro_project::LocalizationConfig;
 use perro_render_bridge::{RenderCommand, RenderEvent};
 use std::{
@@ -68,19 +69,20 @@ impl RuntimeResourceApi {
             RenderEvent::TextureCreated { request, id } => {
                 let _ = state.occupy_texture_id(*id);
                 if let Some(source) = state.texture_pending_source_by_request.remove(request) {
-                    state.texture_pending_by_source.remove(&source);
+                    let source_hash = string_to_u64(&source);
+                    state.texture_pending_by_source.remove(&source_hash);
                     let pending_id = state.texture_pending_id_by_request.remove(request);
-                    if state.texture_drop_pending.remove(&source) {
+                    if state.texture_drop_pending.remove(&source_hash) {
                         state.queued_commands.push(RenderCommand::Resource(
                             perro_render_bridge::ResourceCommand::DropTexture { id: *id },
                         ));
-                        state.texture_by_source.remove(&source);
+                        state.texture_by_source.remove(&source_hash);
                         if let Some(pending_id) = pending_id {
                             let _ = state.free_texture_id(pending_id);
                         }
                     } else {
-                        state.texture_by_source.insert(source.clone(), *id);
-                        if state.texture_reserve_pending.remove(&source) {
+                        state.texture_by_source.insert(source_hash, *id);
+                        if state.texture_reserve_pending.remove(&source_hash) {
                             state.queued_commands.push(RenderCommand::Resource(
                                 perro_render_bridge::ResourceCommand::SetTextureReserved {
                                     id: *id,
@@ -94,19 +96,21 @@ impl RuntimeResourceApi {
             RenderEvent::MeshCreated { request, id } => {
                 if id.is_nil() {
                     if let Some(source) = state.mesh_pending_source_by_request.remove(request) {
-                        state.mesh_pending_by_source.remove(&source);
+                        let source_hash = string_to_u64(&source);
+                        state.mesh_pending_by_source.remove(&source_hash);
                         if let Some(pending_id) = state.mesh_pending_id_by_request.remove(request) {
                             let _ = state.free_mesh_id(pending_id);
                         }
-                        state.mesh_by_source.remove(&source);
-                        state.mesh_reserve_pending.remove(&source);
-                        state.mesh_drop_pending.remove(&source);
+                        state.mesh_by_source.remove(&source_hash);
+                        state.mesh_reserve_pending.remove(&source_hash);
+                        state.mesh_drop_pending.remove(&source_hash);
                     }
                     return;
                 }
                 let _ = state.occupy_mesh_id(*id);
                 if let Some(source) = state.mesh_pending_source_by_request.remove(request) {
-                    state.mesh_pending_by_source.remove(&source);
+                    let source_hash = string_to_u64(&source);
+                    state.mesh_pending_by_source.remove(&source_hash);
                     let pending_id = state.mesh_pending_id_by_request.remove(request);
                     if let Some(pending_id) = pending_id
                         && pending_id != *id
@@ -116,17 +120,17 @@ impl RuntimeResourceApi {
                         let _ = state.free_mesh_id(pending_id);
                         state.mesh_id_alias.insert(pending_id, *id);
                     }
-                    if state.mesh_drop_pending.remove(&source) {
+                    if state.mesh_drop_pending.remove(&source_hash) {
                         state.queued_commands.push(RenderCommand::Resource(
                             perro_render_bridge::ResourceCommand::DropMesh { id: *id },
                         ));
-                        state.mesh_by_source.remove(&source);
+                        state.mesh_by_source.remove(&source_hash);
                         if let Some(pending_id) = pending_id {
                             let _ = state.free_mesh_id(pending_id);
                         }
                     } else {
-                        state.mesh_by_source.insert(source.clone(), *id);
-                        if state.mesh_reserve_pending.remove(&source) {
+                        state.mesh_by_source.insert(source_hash, *id);
+                        if state.mesh_reserve_pending.remove(&source_hash) {
                             state.queued_commands.push(RenderCommand::Resource(
                                 perro_render_bridge::ResourceCommand::SetMeshReserved {
                                     id: *id,
@@ -140,19 +144,20 @@ impl RuntimeResourceApi {
             RenderEvent::MaterialCreated { request, id } => {
                 let _ = state.occupy_material_id(*id);
                 if let Some(source) = state.material_pending_source_by_request.remove(request) {
-                    state.material_pending_by_source.remove(&source);
+                    let source_hash = string_to_u64(&source);
+                    state.material_pending_by_source.remove(&source_hash);
                     let pending_id = state.material_pending_id_by_request.remove(request);
-                    if state.material_drop_pending.remove(&source) {
+                    if state.material_drop_pending.remove(&source_hash) {
                         state.queued_commands.push(RenderCommand::Resource(
                             perro_render_bridge::ResourceCommand::DropMaterial { id: *id },
                         ));
-                        state.material_by_source.remove(&source);
+                        state.material_by_source.remove(&source_hash);
                         if let Some(pending_id) = pending_id {
                             let _ = state.free_material_id(pending_id);
                         }
                     } else {
-                        state.material_by_source.insert(source.clone(), *id);
-                        if state.material_reserve_pending.remove(&source) {
+                        state.material_by_source.insert(source_hash, *id);
+                        if state.material_reserve_pending.remove(&source_hash) {
                             state.queued_commands.push(RenderCommand::Resource(
                                 perro_render_bridge::ResourceCommand::SetMaterialReserved {
                                     id: *id,
@@ -165,31 +170,34 @@ impl RuntimeResourceApi {
             }
             RenderEvent::Failed { request, .. } => {
                 if let Some(source) = state.texture_pending_source_by_request.remove(request) {
-                    state.texture_pending_by_source.remove(&source);
+                    let source_hash = string_to_u64(&source);
+                    state.texture_pending_by_source.remove(&source_hash);
                     if let Some(pending_id) = state.texture_pending_id_by_request.remove(request) {
                         let _ = state.free_texture_id(pending_id);
                     }
-                    state.texture_by_source.remove(&source);
-                    state.texture_reserve_pending.remove(&source);
-                    state.texture_drop_pending.remove(&source);
+                    state.texture_by_source.remove(&source_hash);
+                    state.texture_reserve_pending.remove(&source_hash);
+                    state.texture_drop_pending.remove(&source_hash);
                 }
                 if let Some(source) = state.mesh_pending_source_by_request.remove(request) {
-                    state.mesh_pending_by_source.remove(&source);
+                    let source_hash = string_to_u64(&source);
+                    state.mesh_pending_by_source.remove(&source_hash);
                     if let Some(pending_id) = state.mesh_pending_id_by_request.remove(request) {
                         let _ = state.free_mesh_id(pending_id);
                     }
-                    state.mesh_by_source.remove(&source);
-                    state.mesh_reserve_pending.remove(&source);
-                    state.mesh_drop_pending.remove(&source);
+                    state.mesh_by_source.remove(&source_hash);
+                    state.mesh_reserve_pending.remove(&source_hash);
+                    state.mesh_drop_pending.remove(&source_hash);
                 }
                 if let Some(source) = state.material_pending_source_by_request.remove(request) {
-                    state.material_pending_by_source.remove(&source);
+                    let source_hash = string_to_u64(&source);
+                    state.material_pending_by_source.remove(&source_hash);
                     if let Some(pending_id) = state.material_pending_id_by_request.remove(request) {
                         let _ = state.free_material_id(pending_id);
                     }
-                    state.material_by_source.remove(&source);
-                    state.material_reserve_pending.remove(&source);
-                    state.material_drop_pending.remove(&source);
+                    state.material_by_source.remove(&source_hash);
+                    state.material_reserve_pending.remove(&source_hash);
+                    state.material_drop_pending.remove(&source_hash);
                 }
             }
         }

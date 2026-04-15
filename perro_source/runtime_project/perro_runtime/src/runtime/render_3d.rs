@@ -1,7 +1,7 @@
 use super::Runtime;
 use crate::material_schema;
 use glam::{Mat4, Quat, Vec3};
-use perro_ids::{MaterialID, MeshID, NodeID};
+use perro_ids::{MaterialID, MeshID, NodeID, parse_hashed_source_uri, string_to_u64};
 use perro_nodes::{
     CameraProjection, MaterialParamOverrideValue, MeshSurfaceBinding, SceneNodeData, Shape3D,
     particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
@@ -1379,6 +1379,13 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
     if source.is_empty() {
         return None;
     }
+    if let Some(hash) = parse_hashed_source_uri(source) {
+        return runtime
+            .project()
+            .and_then(|project| project.static_material_lookup)
+            .and_then(|lookup| lookup(hash))
+            .cloned();
+    }
 
     let normalized = normalize_source_slashes(source);
     let (path, _fragment) = split_source_fragment(source);
@@ -1387,30 +1394,30 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
         .project()
         .and_then(|project| project.static_material_lookup)
     {
-        if let Some(material) = lookup(source).cloned() {
+        if let Some(material) = lookup(string_to_u64(source)).cloned() {
             return Some(material);
         }
         if normalized.as_ref() != source
-            && let Some(material) = lookup(normalized.as_ref()).cloned()
+            && let Some(material) = lookup(string_to_u64(normalized.as_ref())).cloned()
         {
             return Some(material);
         }
         if let Some(alias) = normalized_static_material_lookup_alias(source)
-            && let Some(material) = lookup(alias.as_str()).cloned()
+            && let Some(material) = lookup(string_to_u64(alias.as_str())).cloned()
         {
             return Some(material);
         }
         if normalized.as_ref() != source
             && let Some(alias) = normalized_static_material_lookup_alias(normalized.as_ref())
-            && let Some(material) = lookup(alias.as_str()).cloned()
+            && let Some(material) = lookup(string_to_u64(alias.as_str())).cloned()
         {
             return Some(material);
         }
-        if let Some(material) = lookup(path).cloned() {
+        if let Some(material) = lookup(string_to_u64(path)).cloned() {
             return Some(material);
         }
         if normalized_path != path
-            && let Some(material) = lookup(normalized_path).cloned()
+            && let Some(material) = lookup(string_to_u64(normalized_path)).cloned()
         {
             return Some(material);
         }
@@ -1490,10 +1497,11 @@ fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<Parti
         return Some(path.clone());
     }
     let parsed = if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static {
+        let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
         if let Some(lookup) = runtime
             .project()
             .and_then(|project| project.static_particle_lookup)
-            && let Some(profile) = lookup(source)
+            && let Some(profile) = lookup(source_hash)
         {
             profile.clone()
         } else if let Some(inline) = source.strip_prefix("inline://") {

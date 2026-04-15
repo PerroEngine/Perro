@@ -38,6 +38,7 @@ pub enum SceneValue {
     Vec3 { x: f32, y: f32, z: f32 },
     Vec4 { x: f32, y: f32, z: f32, w: f32 },
     Str(Cow<'static, str>),
+    Hashed(u64),
     Key(SceneValueKey),
     Object(Cow<'static, [SceneObjectField]>),
     Array(Cow<'static, [SceneValue]>),
@@ -94,6 +95,13 @@ impl SceneValue {
         }
     }
 
+    pub fn as_hashed(&self) -> Option<u64> {
+        match self {
+            Self::Hashed(v) => Some(*v),
+            _ => None,
+        }
+    }
+
     pub fn as_key(&self) -> Option<&str> {
         match self {
             Self::Key(v) => Some(v.as_ref()),
@@ -135,6 +143,7 @@ pub struct SceneNodeEntry {
     pub children: Cow<'static, [SceneKey]>,
     pub parent: Option<SceneKey>,
     pub script: Option<Cow<'static, str>>,
+    pub script_hash: Option<u64>,
     pub clear_script: bool,
     pub root_of: Option<Cow<'static, str>>,
     pub script_vars: Cow<'static, [SceneObjectField]>,

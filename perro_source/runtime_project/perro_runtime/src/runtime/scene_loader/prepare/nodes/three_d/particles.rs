@@ -85,6 +85,7 @@ fn encode_value_for_pparticle(value: &SceneValue) -> Option<String> {
         SceneValue::Vec3 { x, y, z } => Some(format!("({x}, {y}, {z})")),
         SceneValue::Vec4 { x, y, z, w } => Some(format!("({x}, {y}, {z}, {w})")),
         SceneValue::Str(v) => Some(v.to_string()),
+        SceneValue::Hashed(v) => Some(format_hashed_source_uri(*v)),
         SceneValue::Key(v) => Some(v.to_string()),
         SceneValue::Object(_) | SceneValue::Array(_) => None,
     }

@@ -23,6 +23,7 @@ pub use skeletons::generate_static_skeletons;
 pub use textures::generate_static_textures;
 
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -51,6 +52,25 @@ pub(crate) fn embedded_dir(project_root: &Path) -> PathBuf {
 
 pub(crate) fn res_dir(project_root: &Path) -> PathBuf {
     project_root.join(RES_DIR)
+}
+
+pub(crate) fn ensure_unique_hashes<'a, I>(
+    kind: &str,
+    paths: I,
+) -> Result<(), StaticPipelineError>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let mut by_hash = HashMap::<u64, &'a str>::new();
+    for path in paths {
+        let hash = perro_ids::string_to_u64(path);
+        if let Some(prev) = by_hash.insert(hash, path) {
+            return Err(StaticPipelineError::SceneParse(format!(
+                "{kind} hash collision: `{prev}` + `{path}` => {hash}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineError> {

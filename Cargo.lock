@@ -2479,6 +2479,7 @@ name = "perro_compiler"
 version = "0.1.0"
 dependencies = [
  "perro_assets",
+ "perro_ids",
  "perro_io",
  "perro_project",
  "perro_scene",

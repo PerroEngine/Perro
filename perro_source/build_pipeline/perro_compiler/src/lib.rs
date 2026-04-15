@@ -2,7 +2,7 @@ use perro_assets::build_perro_assets_archive;
 use perro_io::walkdir::walk_dir;
 use perro_project::{ensure_source_overrides, load_project_toml};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{Display, Formatter},
     fs,
     path::{Path, PathBuf},
@@ -610,13 +610,26 @@ fn write_scripts_lib(scripts_src: &Path, copied: &[String]) -> Result<(), Compil
         out.push_str(&format!("pub mod {module};\n\n"));
     }
 
-    out.push_str(
-        "pub static SCRIPT_REGISTRY: &[(&str, ScriptConstructor<Runtime, RuntimeResourceApi, RuntimeInputApi>)] = &[\n",
-    );
+    let mut script_entries = Vec::<(String, u64)>::with_capacity(copied.len());
+    let mut hashes = HashMap::<u64, String>::new();
     for rel in copied {
         let module = module_name_from_rel(rel);
+        let path = format!("res://{rel}");
+        let hash = perro_ids::string_to_u64(&path);
+        if let Some(prev) = hashes.insert(hash, path.clone()) {
+            return Err(CompilerError::SceneParse(format!(
+                "script hash collision: `{prev}` + `{path}` => {hash}"
+            )));
+        }
+        script_entries.push((module, hash));
+    }
+
+    out.push_str(
+        "pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<Runtime, RuntimeResourceApi, RuntimeInputApi>)] = &[\n",
+    );
+    for (module, hash) in &script_entries {
         out.push_str(&format!(
-            "    (\"res://{rel}\", {module}::perro_create_script as ScriptConstructor<Runtime, RuntimeResourceApi, RuntimeInputApi>),\n"
+            "    ({hash}u64, {module}::perro_create_script as ScriptConstructor<Runtime, RuntimeResourceApi, RuntimeInputApi>),\n"
         ));
     }
     out.push_str("];\n");
@@ -654,19 +667,17 @@ pub extern \"C\" fn perro_script_registry_len() -> usize {\n\
 #[unsafe(no_mangle)]\n\
 pub extern \"C\" fn perro_script_registry_get(\n\
     index: usize,\n\
-    path_out: *mut *const u8,\n\
-    len_out: *mut usize,\n\
+    path_hash_out: *mut u64,\n\
     ctor_out: *mut ScriptConstructor<Runtime, RuntimeResourceApi, RuntimeInputApi>,\n\
 ) -> bool {\n\
-    if path_out.is_null() || len_out.is_null() || ctor_out.is_null() {\n\
+    if path_hash_out.is_null() || ctor_out.is_null() {\n\
         return false;\n\
     }\n\
-    let Some((path, ctor)) = SCRIPT_REGISTRY.get(index) else {\n\
+    let Some((path_hash, ctor)) = SCRIPT_REGISTRY.get(index) else {\n\
         return false;\n\
     };\n\
     unsafe {\n\
-        *path_out = path.as_ptr();\n\
-        *len_out = path.len();\n\
+        *path_hash_out = *path_hash;\n\
         *ctor_out = *ctor;\n\
     }\n\
     true\n\

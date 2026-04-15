@@ -1,6 +1,7 @@
 use crate::{Runtime, runtime_project::ProviderMode};
 use perro_ids::NodeID;
 use perro_ids::ScriptMemberID;
+use perro_ids::string_to_u64;
 use perro_io::{ProjectRoot, set_project_root};
 use perro_runtime_context::sub_apis::PreloadedSceneID;
 use perro_scene::Scene;
@@ -17,7 +18,7 @@ use prepare::{load_runtime_scene_from_disk, prepare_scene_with_loader};
 
 pub(crate) struct PendingScriptAttach {
     pub(crate) node_id: NodeID,
-    pub(crate) script_path: String,
+    pub(crate) script_path_hash: u64,
     pub(crate) scene_injected_vars: Vec<(ScriptMemberID, Variant)>,
 }
 
@@ -31,6 +32,30 @@ struct SceneLoadStats {
 }
 
 impl Runtime {
+    fn resolve_scene_by_hash_and_path(&self, path_hash: u64, path: &str) -> Result<Scene, String> {
+        if let Some(id) = self.preloaded_scene_paths.get(&path_hash).copied() {
+            if let Some(scene) = self.preloaded_scenes.get(&id) {
+                return Ok((**scene).clone());
+            }
+        }
+        match self.provider_mode {
+            ProviderMode::Dynamic => self
+                .get_or_load_dynamic_scene_cached(path)
+                .map(|s| (*s).clone()),
+            ProviderMode::Static => {
+                let static_lookup = self
+                    .project()
+                    .and_then(|project| project.static_scene_lookup);
+                match static_lookup.and_then(|lookup| lookup(path_hash)) {
+                    Some(scene) => Ok(scene.clone()),
+                    None => self
+                        .get_or_load_dynamic_scene_cached(path)
+                        .map(|s| (*s).clone()),
+                }
+            }
+        }
+    }
+
     fn get_or_load_dynamic_scene_cached(&self, path: &str) -> Result<Arc<Scene>, String> {
         if let Some(scene) = self.scene_cache.borrow().get(path).cloned() {
             return Ok(scene);
@@ -44,37 +69,25 @@ impl Runtime {
     }
 
     fn resolve_scene_by_path(&self, path: &str) -> Result<Scene, String> {
-        if let Some(id) = self.preloaded_scene_paths.get(path).copied() {
-            if let Some(scene) = self.preloaded_scenes.get(&id) {
-                return Ok((**scene).clone());
-            }
-        }
-        match self.provider_mode {
-            ProviderMode::Dynamic => self
-                .get_or_load_dynamic_scene_cached(path)
-                .map(|s| (*s).clone()),
-            ProviderMode::Static => {
-                let static_lookup = self
-                    .project()
-                    .and_then(|project| project.static_scene_lookup);
-                match static_lookup.and_then(|lookup| lookup(path)) {
-                    Some(scene) => Ok(scene.clone()),
-                    None => self
-                        .get_or_load_dynamic_scene_cached(path)
-                        .map(|s| (*s).clone()),
-                }
-            }
-        }
+        self.resolve_scene_by_hash_and_path(string_to_u64(path), path)
     }
 
     pub(crate) fn preload_scene_at_runtime(
         &mut self,
         path: &str,
     ) -> Result<PreloadedSceneID, String> {
-        if let Some(existing) = self.preloaded_scene_paths.get(path).copied() {
+        self.preload_scene_at_runtime_hashed(string_to_u64(path), path)
+    }
+
+    pub(crate) fn preload_scene_at_runtime_hashed(
+        &mut self,
+        path_hash: u64,
+        path: &str,
+    ) -> Result<PreloadedSceneID, String> {
+        if let Some(existing) = self.preloaded_scene_paths.get(&path_hash).copied() {
             return Ok(existing);
         }
-        let scene = Arc::new(self.resolve_scene_by_path(path)?);
+        let scene = Arc::new(self.resolve_scene_by_hash_and_path(path_hash, path)?);
         let mut next = self.next_preloaded_scene_id;
         if next == 0 {
             next = 1;
@@ -82,7 +95,7 @@ impl Runtime {
         let id = PreloadedSceneID::from_u64(next);
         self.next_preloaded_scene_id = next.saturating_add(1);
         self.preloaded_scenes.insert(id, scene);
-        self.preloaded_scene_paths.insert(path.to_string(), id);
+        self.preloaded_scene_paths.insert(path_hash, id);
         self.preloaded_scene_reverse_paths
             .insert(id, path.to_string());
         Ok(id)
@@ -94,15 +107,23 @@ impl Runtime {
         }
         let removed = self.preloaded_scenes.remove(&id).is_some();
         if let Some(path) = self.preloaded_scene_reverse_paths.remove(&id) {
-            self.preloaded_scene_paths.remove(path.as_str());
+            self.preloaded_scene_paths.remove(&string_to_u64(path.as_str()));
             let _ = self.scene_cache.borrow_mut().remove(path.as_str());
         }
         removed
     }
 
     pub(crate) fn free_preloaded_scene_by_path_at_runtime(&mut self, path: &str) -> bool {
+        self.free_preloaded_scene_by_path_at_runtime_hashed(string_to_u64(path), path)
+    }
+
+    pub(crate) fn free_preloaded_scene_by_path_at_runtime_hashed(
+        &mut self,
+        path_hash: u64,
+        path: &str,
+    ) -> bool {
         let mut removed = false;
-        if let Some(id) = self.preloaded_scene_paths.remove(path) {
+        if let Some(id) = self.preloaded_scene_paths.remove(&path_hash) {
             removed |= self.preloaded_scenes.remove(&id).is_some();
             self.preloaded_scene_reverse_paths.remove(&id);
         }
@@ -130,6 +151,14 @@ impl Runtime {
     }
 
     pub(crate) fn load_scene_at_runtime(&mut self, path: &str) -> Result<NodeID, String> {
+        self.load_scene_at_runtime_hashed(string_to_u64(path), path)
+    }
+
+    pub(crate) fn load_scene_at_runtime_hashed(
+        &mut self,
+        path_hash: u64,
+        path: &str,
+    ) -> Result<NodeID, String> {
         let static_lookup = self
             .project()
             .and_then(|project| project.static_scene_lookup);
@@ -141,7 +170,8 @@ impl Runtime {
                 })?;
                 merge_prepared_scene(self, prepared)?
             }
-            ProviderMode::Static => match static_lookup.and_then(|lookup| lookup(path)) {
+            ProviderMode::Static => {
+                match static_lookup.and_then(|lookup| lookup(path_hash)) {
                 Some(scene) => {
                     let prepared = prepare_scene_with_loader(scene, &|import_path| {
                         self.resolve_scene_by_path(import_path)
@@ -156,7 +186,8 @@ impl Runtime {
                         })?;
                     merge_prepared_scene(self, prepared)?
                 }
-            },
+                }
+            }
         };
 
         self.rebuild_internal_node_schedules();
@@ -267,13 +298,13 @@ impl Runtime {
                     let _ = (load_stats,);
                 }
             }
-            ProviderMode::Static => match static_lookup.and_then(|lookup| lookup(&main_scene_path))
-            {
+            ProviderMode::Static => {
+                match static_lookup.and_then(|lookup| lookup(string_to_u64(&main_scene_path))) {
                 Some(scene) => {
                     mode_label = "static";
                     let prepared = prepare_scene_with_loader(scene, &|path| {
                         static_lookup
-                            .and_then(|lookup| lookup(path))
+                            .and_then(|lookup| lookup(string_to_u64(path)))
                             .cloned()
                             .ok_or_else(|| {
                                 format!(
@@ -312,7 +343,8 @@ impl Runtime {
                         let _ = (load_stats,);
                     }
                 }
-            },
+                }
+            }
         }
         self.rebuild_internal_node_schedules();
         self.rebuild_node_tag_index();

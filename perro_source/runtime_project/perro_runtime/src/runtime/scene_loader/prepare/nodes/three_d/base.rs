@@ -204,7 +204,7 @@ fn parse_surface_binding(value: &SceneValue) -> MeshSurfaceBinding {
 
 fn parse_surface_material(value: &SceneValue) -> PendingSurfaceMaterial {
     match value {
-        SceneValue::Str(_) | SceneValue::Key(_) => PendingSurfaceMaterial {
+        SceneValue::Str(_) | SceneValue::Hashed(_) | SceneValue::Key(_) => PendingSurfaceMaterial {
             source: as_asset_source(value),
             inline: None,
         },

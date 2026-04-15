@@ -120,6 +120,7 @@ pub trait ScriptAPI {
     where
         F: FnOnce(&mut T) -> V;
     fn script_attach(&mut self, node_id: NodeID, script_path: &str) -> bool;
+    fn script_attach_hashed(&mut self, node_id: NodeID, script_path_hash: u64) -> bool;
     fn script_detach(&mut self, node_id: NodeID) -> bool;
     fn remove_script(&mut self, script_id: NodeID) -> bool;
     fn get_var(&mut self, script_id: NodeID, member: ScriptMemberID) -> Variant;
@@ -161,6 +162,10 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
 
     pub fn script_attach(&mut self, node_id: NodeID, script_path: &str) -> bool {
         self.rt.script_attach(node_id, script_path)
+    }
+
+    pub fn script_attach_hashed(&mut self, node_id: NodeID, script_path_hash: u64) -> bool {
+        self.rt.script_attach_hashed(node_id, script_path_hash)
     }
 
     pub fn script_detach(&mut self, node_id: NodeID) -> bool {
@@ -268,6 +273,10 @@ macro_rules! with_state_mut {
 /// - `path`: script path (for example `"res://scripts/foo.rs"`)
 #[macro_export]
 macro_rules! script_attach {
+    ($ctx:expr, $id:expr, $path:literal) => {{
+        const __PATH_HASH: u64 = $crate::__perro_string_to_u64($path);
+        $ctx.Scripts().script_attach_hashed($id, __PATH_HASH)
+    }};
     ($ctx:expr, $id:expr, $path:expr) => {
         $ctx.Scripts().script_attach($id, $path)
     };

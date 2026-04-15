@@ -34,7 +34,7 @@ use state::{
 };
 
 type RuntimeScriptCtor = ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>;
-type StaticScriptRegistry = &'static [(&'static str, RuntimeScriptCtor)];
+type StaticScriptRegistry = &'static [(u64, RuntimeScriptCtor)];
 
 pub struct Runtime {
     pub time: Timing,
@@ -42,7 +42,7 @@ pub struct Runtime {
     project: Option<Arc<RuntimeProject>>,
     pub(crate) scene_cache: RefCell<AHashMap<String, Arc<Scene>>>,
     pub(crate) preloaded_scenes: AHashMap<PreloadedSceneID, Arc<Scene>>,
-    pub(crate) preloaded_scene_paths: AHashMap<String, PreloadedSceneID>,
+    pub(crate) preloaded_scene_paths: AHashMap<u64, PreloadedSceneID>,
     pub(crate) preloaded_scene_reverse_paths: AHashMap<PreloadedSceneID, String>,
     pub(crate) next_preloaded_scene_id: u64,
 
@@ -150,11 +150,11 @@ impl Runtime {
             localization_config,
         );
         if let Some(entries) = script_registry {
-            for (path, ctor) in entries {
+            for (path_hash, ctor) in entries {
                 runtime
                     .script_runtime
                     .dynamic_script_registry
-                    .insert((*path).to_string(), *ctor);
+                    .insert(*path_hash, *ctor);
             }
         }
         if let Err(err) = runtime.load_boot_scene() {

@@ -244,7 +244,7 @@ pub(super) fn merge_prepared_scene(
             .collect::<Result<Vec<_>, String>>()?;
         script_nodes.push(PendingScriptAttach {
             node_id: id,
-            script_path: pending_script.script_path,
+            script_path_hash: pending_script.script_path_hash,
             scene_injected_vars,
         });
     }
@@ -269,6 +269,7 @@ fn scene_value_to_variant(value: &SceneValue, key_to: &HashMap<String, NodeID>) 
             Variant::from(*w),
         ]),
         SceneValue::Str(v) => Variant::from(v.to_string()),
+        SceneValue::Hashed(v) => Variant::from(*v),
         SceneValue::Key(v) => {
             if let Some(id) = key_to.get(v.as_ref()) {
                 Variant::from(*id)

@@ -1581,7 +1581,7 @@ fn default_static_scenes_rs() -> String {
 
 use perro_scene::Scene;
 
-pub fn lookup_scene(_path: &str) -> Option<&'static Scene> {
+pub fn lookup_scene(_path_hash: u64) -> Option<&'static Scene> {
     None
 }
 "#
@@ -1593,7 +1593,7 @@ fn default_static_materials_rs() -> String {
 
 use perro_render_bridge::Material3D;
 
-pub fn lookup_material(_path: &str) -> Option<&'static Material3D> {
+pub fn lookup_material(_path_hash: u64) -> Option<&'static Material3D> {
     None
 }
 "#
@@ -1605,7 +1605,7 @@ fn default_static_particles_rs() -> String {
 
 use perro_render_bridge::ParticleProfile3D;
 
-pub fn lookup_particle(_path: &str) -> Option<&'static ParticleProfile3D> {
+pub fn lookup_particle(_path_hash: u64) -> Option<&'static ParticleProfile3D> {
     None
 }
 "#
@@ -1617,7 +1617,7 @@ fn default_static_animations_rs() -> String {
 
 use perro_animation::AnimationClip;
 
-pub fn lookup_animation(_path: &str) -> Option<&'static AnimationClip> {
+pub fn lookup_animation(_path_hash: u64) -> Option<&'static AnimationClip> {
     None
 }
 "#
@@ -1627,7 +1627,7 @@ pub fn lookup_animation(_path: &str) -> Option<&'static AnimationClip> {
 fn default_static_textures_rs() -> String {
     r#"#![allow(unused_imports)]
 
-pub fn lookup_texture(_path: &str) -> Option<&'static [u8]> {
+pub fn lookup_texture(_path_hash: u64) -> Option<&'static [u8]> {
     None
 }
 "#
@@ -1637,7 +1637,7 @@ pub fn lookup_texture(_path: &str) -> Option<&'static [u8]> {
 fn default_static_shaders_rs() -> String {
     r#"#![allow(unused_imports)]
 
-pub fn lookup_shader(_path: &str) -> Option<&'static str> {
+pub fn lookup_shader(_path_hash: u64) -> Option<&'static str> {
     None
 }
 "#
@@ -1648,7 +1648,7 @@ fn default_static_meshes_rs() -> String {
     r#"#![allow(unused_imports)]
 #![allow(dead_code)]
 
-pub fn lookup_mesh(_path: &str) -> Option<&'static [u8]> {
+pub fn lookup_mesh(_path_hash: u64) -> Option<&'static [u8]> {
     None
 }
 "#
@@ -1659,7 +1659,7 @@ fn default_static_skeletons_rs() -> String {
     r#"#![allow(unused_imports)]
 #![allow(dead_code)]
 
-pub fn lookup_skeleton(_path: &str) -> Option<&'static [u8]> {
+pub fn lookup_skeleton(_path_hash: u64) -> Option<&'static [u8]> {
     None
 }
 "#
@@ -1669,7 +1669,7 @@ pub fn lookup_skeleton(_path: &str) -> Option<&'static [u8]> {
 fn default_static_audios_rs() -> String {
     r#"#![allow(unused_imports)]
 
-pub fn lookup_audio(_path: &str) -> Option<&'static [u8]> {
+pub fn lookup_audio(_path_hash: u64) -> Option<&'static [u8]> {
     None
 }
 "#
@@ -1680,7 +1680,7 @@ fn default_scripts_lib_rs() -> String {
     r#"use perro::runtime::{Runtime, RuntimeInputApi, RuntimeResourceApi};
 use perro::scripting::ScriptConstructor;
 
-pub static SCRIPT_REGISTRY: &[(&str, ScriptConstructor<Runtime, RuntimeResourceApi, RuntimeInputApi>)] = &[];
+pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<Runtime, RuntimeResourceApi, RuntimeInputApi>)] = &[];
 
 #[unsafe(no_mangle)]
 pub extern "C" fn perro_scripts_init() {}

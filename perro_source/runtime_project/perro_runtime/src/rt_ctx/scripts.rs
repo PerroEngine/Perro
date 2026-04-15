@@ -1,4 +1,5 @@
 use perro_ids::{NodeID, ScriptMemberID};
+use perro_ids::string_to_u64;
 use perro_input::InputContext;
 use perro_resource_context::ResourceContext;
 use perro_runtime_context::{
@@ -183,8 +184,25 @@ impl ScriptAPI for Runtime {
             return false;
         }
 
-        self.attach_script_instance(node_id, script_path, &[])
+        self.attach_script_instance(node_id, string_to_u64(script_path), &[])
             .is_ok()
+    }
+
+    fn script_attach_hashed(&mut self, node_id: NodeID, script_path_hash: u64) -> bool {
+        let Some(project) = self.project() else {
+            return false;
+        };
+        let project_root = project.root.clone();
+        let project_name = project.config.name.clone();
+
+        if self
+            .ensure_dynamic_script_registry_loaded(&project_root, &project_name)
+            .is_err()
+        {
+            return false;
+        }
+
+        self.attach_script_instance(node_id, script_path_hash, &[]).is_ok()
     }
 
     fn script_detach(&mut self, node_id: NodeID) -> bool {

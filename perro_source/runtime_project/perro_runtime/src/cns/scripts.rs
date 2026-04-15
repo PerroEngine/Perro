@@ -42,7 +42,7 @@ impl Runtime {
         for pending in script_nodes {
             self.attach_script_instance(
                 pending.node_id,
-                &pending.script_path,
+                pending.script_path_hash,
                 &pending.scene_injected_vars,
             )?;
         }
@@ -53,26 +53,28 @@ impl Runtime {
     pub(crate) fn attach_script_instance(
         &mut self,
         node: perro_ids::NodeID,
-        script_path: &str,
+        script_path_hash: u64,
         scene_injected_vars: &[(ScriptMemberID, Variant)],
     ) -> Result<(), String> {
         if node.is_nil() || self.nodes.get(node).is_none() {
             return Err(format!(
-                "node `{node}` not found for script `{script_path}`"
+                "node `{node}` not found for script hash `{script_path_hash}`"
             ));
         }
 
         let ctor = *self
             .script_runtime
             .dynamic_script_registry
-            .get(script_path)
+            .get(&script_path_hash)
             .ok_or_else(|| {
-                format!("script `{script_path}` is not present in the dynamic script registry")
+                format!(
+                    "script hash `{script_path_hash}` is not present in dynamic script registry"
+                )
             })?;
         let raw = ctor();
         if raw.is_null() {
             return Err(format!(
-                "script constructor returned null for `{script_path}`"
+                "script constructor returned null for hash `{script_path_hash}`"
             ));
         }
 
@@ -139,8 +141,7 @@ impl Runtime {
             type RegistryLenFn = unsafe extern "C" fn() -> usize;
             type RegistryGetFn = unsafe extern "C" fn(
                 usize,
-                *mut *const u8,
-                *mut usize,
+                *mut u64,
                 *mut ScriptConstructor<
                     Runtime,
                     crate::RuntimeResourceApi,
@@ -181,8 +182,7 @@ impl Runtime {
                 })?;
 
             for i in 0..registry_len() {
-                let mut ptr: *const u8 = std::ptr::null();
-                let mut len = 0usize;
+                let mut path_hash = 0u64;
                 let mut ctor = std::mem::MaybeUninit::<
                     ScriptConstructor<
                         Runtime,
@@ -190,20 +190,13 @@ impl Runtime {
                         perro_input::InputSnapshot,
                     >,
                 >::uninit();
-                let ok = registry_get(i, &mut ptr, &mut len, ctor.as_mut_ptr());
+                let ok = registry_get(i, &mut path_hash, ctor.as_mut_ptr());
                 if !ok {
                     return Err(format!("scripts registry entry {i} could not be read"));
                 }
-                if ptr.is_null() || len == 0 {
-                    return Err(format!("scripts registry entry {i} has an invalid path"));
-                }
-                let bytes = std::slice::from_raw_parts(ptr, len);
-                let path = std::str::from_utf8(bytes)
-                    .map_err(|err| format!("scripts registry entry {i} path is not UTF-8: {err}"))?
-                    .to_string();
                 self.script_runtime
                     .dynamic_script_registry
-                    .insert(path, ctor.assume_init());
+                    .insert(path_hash, ctor.assume_init());
             }
         }
 

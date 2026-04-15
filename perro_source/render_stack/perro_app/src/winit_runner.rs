@@ -1310,7 +1310,7 @@ fn load_project_image_bytes(
     }
     if source.starts_with("res://")
         && let Some(lookup) = project.static_icon_lookup
-        && let Some(bytes) = lookup(source)
+        && let Some(bytes) = lookup(perro_ids::string_to_u64(source))
     {
         return Some(bytes.to_vec());
     }

@@ -19,14 +19,14 @@ pub enum ProviderMode {
     Static,
 }
 
-pub type StaticSceneLookup = fn(&str) -> Option<&'static Scene>;
+pub type StaticSceneLookup = fn(u64) -> Option<&'static Scene>;
 pub type StaticLocalizationLookup = fn(Locale, u64) -> Option<&'static str>;
-pub type StaticMaterialLookup = fn(&str) -> Option<&'static Material3D>;
-pub type StaticParticleLookup = fn(&str) -> Option<&'static ParticleProfile3D>;
-pub type StaticAnimationLookup = fn(&str) -> Option<&'static AnimationClip>;
-pub type StaticSkeletonLookup = fn(&str) -> Option<&'static [u8]>;
-pub type StaticAudioLookup = fn(&str) -> Option<&'static [u8]>;
-pub type StaticBytesLookup = fn(&str) -> Option<&'static [u8]>;
+pub type StaticMaterialLookup = fn(u64) -> Option<&'static Material3D>;
+pub type StaticParticleLookup = fn(u64) -> Option<&'static ParticleProfile3D>;
+pub type StaticAnimationLookup = fn(u64) -> Option<&'static AnimationClip>;
+pub type StaticSkeletonLookup = fn(u64) -> Option<&'static [u8]>;
+pub type StaticAudioLookup = fn(u64) -> Option<&'static [u8]>;
+pub type StaticBytesLookup = fn(u64) -> Option<&'static [u8]>;
 
 /// Immutable project boot data owned by the runtime.
 #[derive(Debug, Clone)]

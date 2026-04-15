@@ -1,6 +1,6 @@
 use super::Runtime;
 use glam::{Mat3, Mat4, Vec3};
-use perro_ids::{MaterialID, NodeID};
+use perro_ids::{MaterialID, NodeID, parse_hashed_source_uri, string_to_u64};
 use perro_nodes::{MeshSurfaceBinding, SceneNodeData};
 use perro_runtime_context::sub_apis::{MeshMaterialRegion3D, MeshSurfaceHit3D};
 use perro_structs::Vector3;
@@ -238,29 +238,30 @@ impl Runtime {
         }
 
         let normalized = normalize_source_slashes(source);
+        let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
         if self.provider_mode() == crate::runtime_project::ProviderMode::Static
             && let Some(lookup) = self.project().and_then(|project| project.static_mesh_lookup)
         {
-            if let Some(bytes) = lookup(source)
+            if let Some(bytes) = lookup(source_hash)
                 && let Some(mesh) = decode_pmesh_query(bytes)
             {
                 return Some(mesh);
             }
             if normalized.as_ref() != source
-                && let Some(bytes) = lookup(normalized.as_ref())
+                && let Some(bytes) = lookup(string_to_u64(normalized.as_ref()))
                 && let Some(mesh) = decode_pmesh_query(bytes)
             {
                 return Some(mesh);
             }
             if let Some(alias) = normalized_static_mesh_lookup_alias(source)
-                && let Some(bytes) = lookup(alias.as_str())
+                && let Some(bytes) = lookup(string_to_u64(alias.as_str()))
                 && let Some(mesh) = decode_pmesh_query(bytes)
             {
                 return Some(mesh);
             }
             if normalized.as_ref() != source
                 && let Some(alias) = normalized_static_mesh_lookup_alias(normalized.as_ref())
-                && let Some(bytes) = lookup(alias.as_str())
+                && let Some(bytes) = lookup(string_to_u64(alias.as_str()))
                 && let Some(mesh) = decode_pmesh_query(bytes)
             {
                 return Some(mesh);

@@ -157,8 +157,20 @@ impl IntoPreloadedSceneTarget for &Cow<'static, str> {
 
 pub trait SceneAPI {
     fn scene_load(&mut self, path: &str) -> Result<NodeID, String>;
+    fn scene_load_hashed(&mut self, path_hash: u64, path: &str) -> Result<NodeID, String> {
+        let _ = path_hash;
+        self.scene_load(path)
+    }
     fn scene_preload(&mut self, _path: &str) -> Result<PreloadedSceneID, String> {
         Err("scene preload is not supported by this runtime".to_string())
+    }
+    fn scene_preload_hashed(
+        &mut self,
+        path_hash: u64,
+        path: &str,
+    ) -> Result<PreloadedSceneID, String> {
+        let _ = path_hash;
+        self.scene_preload(path)
     }
     fn scene_load_preloaded(&mut self, _id: PreloadedSceneID) -> Result<NodeID, String> {
         Err("preloaded scene loading is not supported by this runtime".to_string())
@@ -168,6 +180,10 @@ pub trait SceneAPI {
     }
     fn scene_free_preloaded_by_path(&mut self, _path: &str) -> bool {
         false
+    }
+    fn scene_free_preloaded_by_path_hash(&mut self, path_hash: u64, path: &str) -> bool {
+        let _ = path_hash;
+        self.scene_free_preloaded_by_path(path)
     }
 }
 
@@ -187,9 +203,17 @@ impl<'rt, R: SceneAPI + ?Sized> SceneModule<'rt, R> {
         }
     }
 
+    pub fn load_hashed(&mut self, path_hash: u64, path: &str) -> Result<NodeID, String> {
+        self.rt.scene_load_hashed(path_hash, path)
+    }
+
     pub fn preload<P: IntoScenePath>(&mut self, path: P) -> Result<PreloadedSceneID, String> {
         let path = path.into_scene_path();
         self.rt.scene_preload(path.as_ref())
+    }
+
+    pub fn preload_hashed(&mut self, path_hash: u64, path: &str) -> Result<PreloadedSceneID, String> {
+        self.rt.scene_preload_hashed(path_hash, path)
     }
 
     pub fn load_preloaded<I: IntoPreloadedSceneID>(&mut self, id: I) -> Result<NodeID, String> {
@@ -206,45 +230,51 @@ impl<'rt, R: SceneAPI + ?Sized> SceneModule<'rt, R> {
             PreloadedSceneTarget::Path(path) => self.rt.scene_free_preloaded_by_path(path.as_ref()),
         }
     }
+
+    pub fn drop_preloaded_hashed(&mut self, path_hash: u64, path: &str) -> bool {
+        self.rt.scene_free_preloaded_by_path_hash(path_hash, path)
+    }
 }
 
-/// Scene loading macros.
-///
-/// Loads a scene by path and returns the loaded scene root `NodeID`.
-///
-/// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
-/// - `path`: scene path (`&str`, `String`, `Cow<'static, str>`, and references)
 #[macro_export]
 macro_rules! scene_load {
+    ($ctx:expr, $path:literal) => {{
+        const __PATH_HASH: u64 = $crate::__perro_string_to_u64($path);
+        $ctx.Scene().load_hashed(__PATH_HASH, $path)
+    }};
     ($ctx:expr, $path:expr) => {
         $ctx.Scene().load($path)
     };
 }
 
-/// Scene preload macro.
-///
-/// Preloads a scene and returns `PreloadedSceneID`.
 #[macro_export]
 macro_rules! scene_preload {
+    ($ctx:expr, $path:literal) => {{
+        const __PATH_HASH: u64 = $crate::__perro_string_to_u64($path);
+        $ctx.Scene().preload_hashed(__PATH_HASH, $path)
+    }};
     ($ctx:expr, $path:expr) => {
         $ctx.Scene().preload($path)
     };
 }
 
-/// Preloaded scene free macro.
-///
-/// Frees/drops a cached scene by `PreloadedSceneID` or source path.
 #[macro_export]
 macro_rules! scene_free_preloaded {
+    ($ctx:expr, $path:literal) => {{
+        const __PATH_HASH: u64 = $crate::__perro_string_to_u64($path);
+        $ctx.Scene().drop_preloaded_hashed(__PATH_HASH, $path)
+    }};
     ($ctx:expr, $target:expr) => {
         $ctx.Scene().drop_preloaded($target)
     };
 }
 
-/// Alias for `scene_free_preloaded!`.
 #[macro_export]
 macro_rules! scene_drop_preloaded {
+    ($ctx:expr, $path:literal) => {{
+        const __PATH_HASH: u64 = $crate::__perro_string_to_u64($path);
+        $ctx.Scene().drop_preloaded_hashed(__PATH_HASH, $path)
+    }};
     ($ctx:expr, $target:expr) => {
         $ctx.Scene().drop_preloaded($target)
     };

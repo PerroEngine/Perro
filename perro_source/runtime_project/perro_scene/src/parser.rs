@@ -476,6 +476,7 @@ impl<'a> Parser<'a> {
                         children: Cow::Owned(Vec::new()),
                         parent: parent.map(SceneKey::from),
                         script: script.map(Cow::Owned),
+                        script_hash: None,
                         clear_script,
                         root_of: root_of.map(Cow::Owned),
                         script_vars: Cow::Owned(script_vars),

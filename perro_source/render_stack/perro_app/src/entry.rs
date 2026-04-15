@@ -7,7 +7,7 @@ use perro_scripting::ScriptConstructor;
 use std::path::Path;
 
 type StaticScriptRegistry = &'static [(
-    &'static str,
+    u64,
     ScriptConstructor<Runtime, perro_runtime::RuntimeResourceApi, perro_runtime::RuntimeInputApi>,
 )];
 

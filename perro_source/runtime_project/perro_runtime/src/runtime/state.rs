@@ -19,7 +19,7 @@ pub(crate) struct ScriptRuntimeState {
     pub(crate) pending_start_scripts: Vec<NodeID>,
     pub(crate) pending_start_flags: Vec<Option<NodeID>>,
     pub(crate) script_library: Option<libloading::Library>,
-    pub(crate) dynamic_script_registry: AHashMap<String, RuntimeScriptCtor>,
+    pub(crate) dynamic_script_registry: AHashMap<u64, RuntimeScriptCtor>,
 }
 
 impl ScriptRuntimeState {

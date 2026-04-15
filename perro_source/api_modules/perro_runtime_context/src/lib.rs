@@ -5,6 +5,8 @@ pub use perro_ids;
 pub use perro_nodes;
 pub use perro_structs;
 pub use perro_variant;
+#[doc(hidden)]
+pub use perro_ids::string_to_u64 as __perro_string_to_u64;
 
 pub use api::RuntimeContext;
 

@@ -1,5 +1,5 @@
 use crate::material_schema;
-use perro_ids::IntoTagID;
+use perro_ids::{IntoTagID, string_to_u64};
 use perro_io::load_asset;
 use perro_nodes::{
     ambient_light_3d::AmbientLight3D,
@@ -59,7 +59,7 @@ pub(super) struct PreparedScene {
 
 pub(super) struct PendingScript {
     pub(super) node_key: String,
-    pub(super) script_path: String,
+    pub(super) script_path_hash: u64,
     pub(super) scene_injected_vars: Vec<(String, SceneValue)>,
 }
 
@@ -240,10 +240,13 @@ fn push_entry_prepared(
             .collect(),
     });
 
-    if let Some(script) = &entry.script {
+    let script_path_hash = entry
+        .script_hash
+        .or_else(|| entry.script.as_ref().map(|script| string_to_u64(script.as_ref())));
+    if let Some(script_path_hash) = script_path_hash {
         scripts.push(PendingScript {
             node_key: key.clone(),
-            script_path: script.to_string(),
+            script_path_hash,
             scene_injected_vars: entry
                 .script_vars
                 .iter()
@@ -306,11 +309,20 @@ fn merge_root_host_entry(host: &SceneDefNodeEntry, base_root: &SceneDefNodeEntry
         merged.children = base_root.children.clone();
     }
     merged.parent = host.parent.clone().or_else(|| base_root.parent.clone());
-    merged.script = match (&host.script, host.clear_script) {
-        (Some(local), _) => Some(local.clone()),
-        (None, true) => None,
-        (None, false) => base_root.script.clone(),
-    };
+    if host.clear_script {
+        merged.script = None;
+        merged.script_hash = None;
+    } else if host.script.is_some() || host.script_hash.is_some() {
+        merged.script = host.script.clone();
+        merged.script_hash = host
+            .script_hash
+            .or_else(|| host.script.as_ref().map(|path| string_to_u64(path.as_ref())));
+    } else {
+        merged.script = base_root.script.clone();
+        merged.script_hash = base_root
+            .script_hash
+            .or_else(|| base_root.script.as_ref().map(|path| string_to_u64(path.as_ref())));
+    }
     merged.clear_script = false;
     merged.script_vars = merge_scene_object_fields(&base_root.script_vars, &host.script_vars);
     merged.data = if host.has_data_override {
@@ -416,6 +428,7 @@ fn remap_scene_value_keys(value: &SceneValue, key_map: &HashMap<String, String>)
             w: *w,
         },
         SceneValue::Str(v) => SceneValue::Str(v.clone()),
+        SceneValue::Hashed(v) => SceneValue::Hashed(*v),
         SceneValue::Key(v) => {
             let next = key_map
                 .get(v.as_ref())
@@ -589,7 +602,10 @@ mod tests {
             .iter()
             .find(|pending| pending.node_key == "host")
             .expect("host script");
-        assert_eq!(host_script.script_path, "res://base_script.rs");
+        assert_eq!(
+            host_script.script_path_hash,
+            string_to_u64("res://base_script.rs")
+        );
 
         let mut vars = BTreeMap::new();
         for (name, value) in &host_script.scene_injected_vars {
