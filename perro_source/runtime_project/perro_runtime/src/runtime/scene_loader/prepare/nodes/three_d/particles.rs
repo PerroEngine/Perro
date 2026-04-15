@@ -77,17 +77,26 @@ fn inline_pparticle(entries: &[SceneObjectField]) -> String {
 }
 
 fn encode_value_for_pparticle(value: &SceneValue) -> Option<String> {
+    if let Some(v) = value.as_const_param() {
+        return Some(match v {
+            perro_structs::ConstParamValue::Bool(v) => {
+                if v { "true" } else { "false" }.to_string()
+            }
+            perro_structs::ConstParamValue::I32(v) => v.to_string(),
+            perro_structs::ConstParamValue::F32(v) => v.to_string(),
+            perro_structs::ConstParamValue::Vec2(v) => format!("({}, {})", v[0], v[1]),
+            perro_structs::ConstParamValue::Vec3(v) => format!("({}, {}, {})", v[0], v[1], v[2]),
+            perro_structs::ConstParamValue::Vec4(v) => {
+                format!("({}, {}, {}, {})", v[0], v[1], v[2], v[3])
+            }
+        });
+    }
     match value {
-        SceneValue::Bool(v) => Some(if *v { "true" } else { "false" }.to_string()),
-        SceneValue::I32(v) => Some(v.to_string()),
-        SceneValue::F32(v) => Some(v.to_string()),
-        SceneValue::Vec2 { x, y } => Some(format!("({x}, {y})")),
-        SceneValue::Vec3 { x, y, z } => Some(format!("({x}, {y}, {z})")),
-        SceneValue::Vec4 { x, y, z, w } => Some(format!("({x}, {y}, {z}, {w})")),
         SceneValue::Str(v) => Some(v.to_string()),
         SceneValue::Hashed(v) => Some(v.to_string()),
         SceneValue::Key(v) => Some(v.to_string()),
         SceneValue::Object(_) | SceneValue::Array(_) => None,
+        _ => None,
     }
 }
 
@@ -112,17 +121,24 @@ fn as_particle_render_mode(value: &SceneValue) -> Option<ParticleType> {
 }
 
 fn as_particle_params(value: &SceneValue) -> Option<Vec<f32>> {
+    if let Some(v) = value.as_const_param() {
+        return match v {
+            perro_structs::ConstParamValue::F32(n) => Some(vec![n]),
+            perro_structs::ConstParamValue::I32(n) => Some(vec![n as f32]),
+            perro_structs::ConstParamValue::Vec2(v) => Some(v.to_vec()),
+            perro_structs::ConstParamValue::Vec3(v) => Some(v.to_vec()),
+            perro_structs::ConstParamValue::Vec4(v) => Some(v.to_vec()),
+            perro_structs::ConstParamValue::Bool(_) => None,
+        };
+    }
     match value {
-        SceneValue::Vec2 { x, y } => Some(vec![*x, *y]),
-        SceneValue::Vec3 { x, y, z } => Some(vec![*x, *y, *z]),
-        SceneValue::Vec4 { x, y, z, w } => Some(vec![*x, *y, *z, *w]),
         SceneValue::Object(entries) => {
             let mut indexed = Vec::<(usize, f32)>::new();
             for (k, v) in entries.as_ref() {
                 let idx = parse_param_key_index(k)?;
-                let val = match v {
-                    SceneValue::F32(n) => *n,
-                    SceneValue::I32(n) => *n as f32,
+                let val = match v.as_const_param() {
+                    Some(perro_structs::ConstParamValue::F32(n)) => n,
+                    Some(perro_structs::ConstParamValue::I32(n)) => n as f32,
                     _ => return None,
                 };
                 indexed.push((idx, val));

@@ -263,17 +263,7 @@ fn parse_surface_overrides(value: &SceneValue) -> Option<Vec<MaterialParamOverri
 }
 
 fn parse_override_value(value: &SceneValue) -> Option<MaterialParamOverrideValue> {
-    match value {
-        SceneValue::Bool(v) => Some(MaterialParamOverrideValue::Bool(*v)),
-        SceneValue::I32(v) => Some(MaterialParamOverrideValue::I32(*v)),
-        SceneValue::F32(v) => Some(MaterialParamOverrideValue::F32(*v)),
-        SceneValue::Vec2 { x, y } => Some(MaterialParamOverrideValue::Vec2([*x, *y])),
-        SceneValue::Vec3 { x, y, z } => Some(MaterialParamOverrideValue::Vec3([*x, *y, *z])),
-        SceneValue::Vec4 { x, y, z, w } => {
-            Some(MaterialParamOverrideValue::Vec4([*x, *y, *z, *w]))
-        }
-        _ => None,
-    }
+    value.as_const_param()
 }
 
 fn parse_color(value: &SceneValue) -> Option<[f32; 4]> {

@@ -16,21 +16,7 @@ impl DerefMut for MeshInstance3D {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum MaterialParamOverrideValue {
-    F32(f32),
-    I32(i32),
-    Bool(bool),
-    Vec2([f32; 2]),
-    Vec3([f32; 3]),
-    Vec4([f32; 4]),
-}
-
-impl Default for MaterialParamOverrideValue {
-    fn default() -> Self {
-        Self::F32(0.0)
-    }
-}
+pub type MaterialParamOverrideValue = perro_structs::ConstParamValue;
 
 #[derive(Clone, Debug, Default)]
 pub struct MaterialParamOverride {

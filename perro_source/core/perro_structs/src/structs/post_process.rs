@@ -50,15 +50,7 @@ pub enum PostProcessEffect {
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum CustomPostParamValue {
-    F32(f32),
-    I32(i32),
-    Bool(bool),
-    Vec2([f32; 2]),
-    Vec3([f32; 3]),
-    Vec4([f32; 4]),
-}
+pub type CustomPostParamValue = crate::ConstParamValue;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CustomPostParam {

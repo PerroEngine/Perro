@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use perro_structs::ConstParamValue;
 
 pub type SceneObjectField = (Cow<'static, str>, SceneValue);
 
@@ -106,6 +107,49 @@ impl SceneValue {
         match self {
             Self::Key(v) => Some(v.as_ref()),
             _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_const_param(&self) -> Option<ConstParamValue> {
+        ConstParamValue::try_from(self).ok()
+    }
+}
+
+impl TryFrom<&SceneValue> for ConstParamValue {
+    type Error = ();
+
+    fn try_from(value: &SceneValue) -> Result<Self, Self::Error> {
+        match value {
+            SceneValue::Bool(v) => Ok(Self::Bool(*v)),
+            SceneValue::I32(v) => Ok(Self::I32(*v)),
+            SceneValue::F32(v) => Ok(Self::F32(*v)),
+            SceneValue::Vec2 { x, y } => Ok(Self::Vec2([*x, *y])),
+            SceneValue::Vec3 { x, y, z } => Ok(Self::Vec3([*x, *y, *z])),
+            SceneValue::Vec4 { x, y, z, w } => Ok(Self::Vec4([*x, *y, *z, *w])),
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<ConstParamValue> for SceneValue {
+    fn from(value: ConstParamValue) -> Self {
+        match value {
+            ConstParamValue::Bool(v) => Self::Bool(v),
+            ConstParamValue::I32(v) => Self::I32(v),
+            ConstParamValue::F32(v) => Self::F32(v),
+            ConstParamValue::Vec2(v) => Self::Vec2 { x: v[0], y: v[1] },
+            ConstParamValue::Vec3(v) => Self::Vec3 {
+                x: v[0],
+                y: v[1],
+                z: v[2],
+            },
+            ConstParamValue::Vec4(v) => Self::Vec4 {
+                x: v[0],
+                y: v[1],
+                z: v[2],
+                w: v[3],
+            },
         }
     }
 }

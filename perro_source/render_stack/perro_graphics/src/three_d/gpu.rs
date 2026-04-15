@@ -5942,8 +5942,8 @@ fn pack_toon_pbr_params(band_count: u32, rim_strength: f32, outline_width: f32) 
 }
 
 #[inline]
-fn pack_material_params(alpha_mode: u32, alpha_cutoff: f32, double_sided: bool, flags: u32) -> u32 {
-    let mode_bits = alpha_mode & 0x3;
+fn pack_material_params(alpha_mode: u8, alpha_cutoff: f32, double_sided: bool, flags: u32) -> u32 {
+    let mode_bits = (alpha_mode as u32) & 0x3;
     let double_sided_bit = if double_sided { 1u32 } else { 0u32 };
     // bits: [0..1]=alpha_mode, [2]=double_sided, [3..15]=flags, [16..23]=alpha_cutoff u8
     let packed_flags = (flags & 0x1fff) << 3;

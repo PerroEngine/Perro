@@ -489,7 +489,7 @@ fn set_bool(value: &SceneValue, any: &mut bool, set: impl FnOnce(bool)) {
     }
 }
 
-fn set_alpha_mode(value: &SceneValue, any: &mut bool, set: impl FnOnce(u32)) {
+fn set_alpha_mode(value: &SceneValue, any: &mut bool, set: impl FnOnce(u8)) {
     if let Some(v) = as_alpha_mode(value) {
         set(v);
         *any = true;
@@ -540,7 +540,7 @@ fn as_bool(value: &SceneValue) -> Option<bool> {
     }
 }
 
-fn as_alpha_mode(value: &SceneValue) -> Option<u32> {
+fn as_alpha_mode(value: &SceneValue) -> Option<u8> {
     match value {
         SceneValue::Str(v) => match v.as_ref() {
             "OPAQUE" | "opaque" => Some(0),
@@ -548,7 +548,7 @@ fn as_alpha_mode(value: &SceneValue) -> Option<u32> {
             "BLEND" | "blend" => Some(2),
             _ => None,
         },
-        SceneValue::I32(v) if (0..=2).contains(v) => Some(*v as u32),
+        SceneValue::I32(v) if (0..=2).contains(v) => Some(*v as u8),
         _ => None,
     }
 }
@@ -589,15 +589,7 @@ fn as_texture_slot(value: &SceneValue) -> Option<u32> {
 }
 
 fn as_custom_param_value(value: &SceneValue) -> Option<CustomMaterialParamValue3D> {
-    match value {
-        SceneValue::Bool(v) => Some(CustomMaterialParamValue3D::Bool(*v)),
-        SceneValue::I32(v) => Some(CustomMaterialParamValue3D::I32(*v)),
-        SceneValue::F32(v) => Some(CustomMaterialParamValue3D::F32(*v)),
-        SceneValue::Vec2 { x, y } => Some(CustomMaterialParamValue3D::Vec2([*x, *y])),
-        SceneValue::Vec3 { x, y, z } => Some(CustomMaterialParamValue3D::Vec3([*x, *y, *z])),
-        SceneValue::Vec4 { x, y, z, w } => Some(CustomMaterialParamValue3D::Vec4([*x, *y, *z, *w])),
-        _ => None,
-    }
+    value.as_const_param()
 }
 
 fn as_custom_params(value: &SceneValue) -> Option<Vec<CustomMaterialParam3D>> {

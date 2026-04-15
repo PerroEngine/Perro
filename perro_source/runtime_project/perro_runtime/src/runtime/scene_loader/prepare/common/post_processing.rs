@@ -231,15 +231,7 @@ fn as_post_params(value: &SceneValue) -> Option<Vec<CustomPostParam>> {
 }
 
 fn post_param_value(value: &SceneValue) -> Option<CustomPostParamValue> {
-    match value {
-        SceneValue::Bool(v) => Some(CustomPostParamValue::Bool(*v)),
-        SceneValue::I32(v) => Some(CustomPostParamValue::I32(*v)),
-        SceneValue::F32(v) => Some(CustomPostParamValue::F32(*v)),
-        SceneValue::Vec2 { x, y } => Some(CustomPostParamValue::Vec2([*x, *y])),
-        SceneValue::Vec3 { x, y, z } => Some(CustomPostParamValue::Vec3([*x, *y, *z])),
-        SceneValue::Vec4 { x, y, z, w } => Some(CustomPostParamValue::Vec4([*x, *y, *z, *w])),
-        _ => None,
-    }
+    value.as_const_param()
 }
 
 fn parse_param_key_index(key: &str) -> Option<usize> {

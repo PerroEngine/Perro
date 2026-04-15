@@ -240,7 +240,7 @@ pub struct StandardMaterial3D {
     pub metallic_factor: f32,
     pub occlusion_strength: f32,
     pub emissive_factor: [f32; 3],
-    pub alpha_mode: u32, // 0=OPAQUE, 1=MASK, 2=BLEND
+    pub alpha_mode: u8, // 0=OPAQUE, 1=MASK, 2=BLEND
     pub alpha_cutoff: f32,
     pub double_sided: bool,
     pub flat_shading: bool,
@@ -288,7 +288,7 @@ pub const MATERIAL_TEXTURE_NONE: u32 = u32::MAX;
 pub struct UnlitMaterial3D {
     pub base_color_factor: [f32; 4],
     pub emissive_factor: [f32; 3],
-    pub alpha_mode: u32, // 0=OPAQUE, 1=MASK, 2=BLEND
+    pub alpha_mode: u8, // 0=OPAQUE, 1=MASK, 2=BLEND
     pub alpha_cutoff: f32,
     pub double_sided: bool,
     pub flat_shading: bool,
@@ -321,7 +321,7 @@ impl UnlitMaterial3D {
 pub struct ToonMaterial3D {
     pub base_color_factor: [f32; 4],
     pub emissive_factor: [f32; 3],
-    pub alpha_mode: u32, // 0=OPAQUE, 1=MASK, 2=BLEND
+    pub alpha_mode: u8, // 0=OPAQUE, 1=MASK, 2=BLEND
     pub alpha_cutoff: f32,
     pub double_sided: bool,
     pub flat_shading: bool,
@@ -358,15 +358,7 @@ impl ToonMaterial3D {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum CustomMaterialParamValue3D {
-    F32(f32),
-    I32(i32),
-    Bool(bool),
-    Vec2([f32; 2]),
-    Vec3([f32; 3]),
-    Vec4([f32; 4]),
-}
+pub type CustomMaterialParamValue3D = perro_structs::ConstParamValue;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CustomMaterialParam3D {
@@ -548,15 +540,7 @@ pub struct SkeletonPalette {
     pub matrices: Arc<[[[f32; 4]; 4]]>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum MaterialParamOverrideValue3D {
-    F32(f32),
-    I32(i32),
-    Bool(bool),
-    Vec2([f32; 2]),
-    Vec3([f32; 3]),
-    Vec4([f32; 4]),
-}
+pub type MaterialParamOverrideValue3D = perro_structs::ConstParamValue;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaterialParamOverride3D {

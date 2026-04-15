@@ -3,13 +3,13 @@ use crate::material_schema;
 use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MaterialID, MeshID, NodeID, parse_hashed_source_uri, string_to_u64};
 use perro_nodes::{
-    CameraProjection, MaterialParamOverrideValue, MeshSurfaceBinding, SceneNodeData, Shape3D,
+    CameraProjection, MeshSurfaceBinding, SceneNodeData, Shape3D,
     particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
 };
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, DenseInstancePose3D,
-    Material3D, MaterialParamOverride3D, MaterialParamOverrideValue3D, MeshSurfaceBinding3D,
+    Material3D, MaterialParamOverride3D, MeshSurfaceBinding3D,
     ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
     PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID,
     ResourceCommand, SkeletonPalette, Sky3DState, SkyTime3DState, SpotLight3DState,
@@ -800,26 +800,7 @@ impl Runtime {
                     .into_iter()
                     .map(|ovr| MaterialParamOverride3D {
                         name: ovr.name,
-                        value: match ovr.value {
-                            MaterialParamOverrideValue::F32(v) => {
-                                MaterialParamOverrideValue3D::F32(v)
-                            }
-                            MaterialParamOverrideValue::I32(v) => {
-                                MaterialParamOverrideValue3D::I32(v)
-                            }
-                            MaterialParamOverrideValue::Bool(v) => {
-                                MaterialParamOverrideValue3D::Bool(v)
-                            }
-                            MaterialParamOverrideValue::Vec2(v) => {
-                                MaterialParamOverrideValue3D::Vec2(v)
-                            }
-                            MaterialParamOverrideValue::Vec3(v) => {
-                                MaterialParamOverrideValue3D::Vec3(v)
-                            }
-                            MaterialParamOverrideValue::Vec4(v) => {
-                                MaterialParamOverrideValue3D::Vec4(v)
-                            }
-                        },
+                        value: ovr.value,
                     })
                     .collect::<Vec<_>>()
                     .into(),
