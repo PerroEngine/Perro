@@ -10,6 +10,11 @@ use std::{
 const IMAGE_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba",
 ];
+const PTEX_VERSION: u32 = 2;
+const PTEX_FLAG_FORMAT_MASK: u32 = 0b11;
+const PTEX_FLAG_FORMAT_RGBA8: u32 = 0;
+const PTEX_FLAG_FORMAT_RGB8: u32 = 1;
+const PTEX_FLAG_FORMAT_R8: u32 = 2;
 
 pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
@@ -42,15 +47,17 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
             })?;
             let rgba = image.to_rgba8();
             let (width, height) = rgba.dimensions();
-            let raw = rgba.into_raw();
-            let compressed = compress_zlib_best(&raw)?;
+            let raw_rgba = rgba.into_raw();
+            let (flags, packed_raw) = pack_texture_payload(&raw_rgba);
+            let compressed = compress_zlib_best(&packed_raw)?;
 
-            let mut ptex = Vec::with_capacity(20 + compressed.len());
+            let mut ptex = Vec::with_capacity(24 + compressed.len());
             ptex.extend_from_slice(b"PTEX");
-            ptex.extend_from_slice(&1u32.to_le_bytes());
+            ptex.extend_from_slice(&PTEX_VERSION.to_le_bytes());
             ptex.extend_from_slice(&width.to_le_bytes());
             ptex.extend_from_slice(&height.to_le_bytes());
-            ptex.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+            ptex.extend_from_slice(&(flags & PTEX_FLAG_FORMAT_MASK).to_le_bytes());
+            ptex.extend_from_slice(&(packed_raw.len() as u32).to_le_bytes());
             ptex.extend_from_slice(&compressed);
             Ok((res_path, ptex))
         })
@@ -114,4 +121,28 @@ fn escape_str(input: &str) -> String {
         }
     }
     out
+}
+
+fn pack_texture_payload(raw_rgba: &[u8]) -> (u32, Vec<u8>) {
+    let is_opaque = raw_rgba.chunks_exact(4).all(|px| px[3] == 255);
+    let is_gray_opaque = is_opaque
+        && raw_rgba
+            .chunks_exact(4)
+            .all(|px| px[0] == px[1] && px[1] == px[2]);
+
+    if is_gray_opaque {
+        let mut packed = Vec::with_capacity(raw_rgba.len() / 4);
+        for px in raw_rgba.chunks_exact(4) {
+            packed.push(px[0]);
+        }
+        (PTEX_FLAG_FORMAT_R8, packed)
+    } else if is_opaque {
+        let mut packed = Vec::with_capacity((raw_rgba.len() / 4) * 3);
+        for px in raw_rgba.chunks_exact(4) {
+            packed.extend_from_slice(&px[..3]);
+        }
+        (PTEX_FLAG_FORMAT_RGB8, packed)
+    } else {
+        (PTEX_FLAG_FORMAT_RGBA8, raw_rgba.to_vec())
+    }
 }

@@ -13,6 +13,10 @@ const VIRTUAL_WIDTH: f32 = 1920.0;
 const VIRTUAL_HEIGHT: f32 = 1080.0;
 const SPRITE_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const PTEX_MAGIC: &[u8; 4] = b"PTEX";
+const PTEX_FLAG_FORMAT_MASK: u32 = 0b11;
+const PTEX_FLAG_FORMAT_RGBA8: u32 = 0;
+const PTEX_FLAG_FORMAT_RGB8: u32 = 1;
+const PTEX_FLAG_FORMAT_R8: u32 = 2;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -608,25 +612,72 @@ fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
         return None;
     }
     let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-    if version != 1 {
+    if version != 1 && version != 2 {
         return None;
     }
     let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
     let height = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
-    let raw_len = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
     if width == 0 || height == 0 {
         return None;
     }
-    let expected_len = width.checked_mul(height)?.checked_mul(4)?;
-    if raw_len != expected_len {
+
+    if version == 1 {
+        let raw_len = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
+        let expected_len = width.checked_mul(height)?.checked_mul(4)?;
+        if raw_len != expected_len {
+            return None;
+        }
+        let Ok(rgba) = decompress_zlib(&bytes[20..]) else {
+            return None;
+        };
+        if rgba.len() != raw_len as usize {
+            return None;
+        }
+        return Some((rgba, width, height));
+    }
+
+    if bytes.len() < 24 {
         return None;
     }
-    let Ok(rgba) = decompress_zlib(&bytes[20..]) else {
+    let flags = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
+    let raw_len = u32::from_le_bytes(bytes[20..24].try_into().ok()?);
+    if flags & !PTEX_FLAG_FORMAT_MASK != 0 {
+        return None;
+    }
+    let pixel_count = width.checked_mul(height)? as usize;
+    let expected_raw_len = match flags & PTEX_FLAG_FORMAT_MASK {
+        PTEX_FLAG_FORMAT_RGBA8 => pixel_count.checked_mul(4)?,
+        PTEX_FLAG_FORMAT_RGB8 => pixel_count.checked_mul(3)?,
+        PTEX_FLAG_FORMAT_R8 => pixel_count,
+        _ => return None,
+    };
+    if raw_len as usize != expected_raw_len {
+        return None;
+    }
+    let Ok(raw) = decompress_zlib(&bytes[24..]) else {
         return None;
     };
-    if rgba.len() != raw_len as usize {
+    if raw.len() != expected_raw_len {
         return None;
     }
+    let rgba = match flags & PTEX_FLAG_FORMAT_MASK {
+        PTEX_FLAG_FORMAT_RGBA8 => raw,
+        PTEX_FLAG_FORMAT_RGB8 => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for px in raw.chunks_exact(3) {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            out
+        }
+        PTEX_FLAG_FORMAT_R8 => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for &v in &raw {
+                out.extend_from_slice(&[v, v, v, 255]);
+            }
+            out
+        }
+        _ => return None,
+    };
     Some((rgba, width, height))
 }
 

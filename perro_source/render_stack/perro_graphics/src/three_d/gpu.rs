@@ -67,6 +67,10 @@ const PACKED_STANDARD_NORMAL_SCALE_MAX: f32 = 4.0;
 const PACKED_TOON_RIM_STRENGTH_MAX: f32 = 4.0;
 const PACKED_TOON_OUTLINE_WIDTH_MAX: f32 = 4.0;
 const PTEX_MAGIC: &[u8; 4] = b"PTEX";
+const PTEX_FLAG_FORMAT_MASK: u32 = 0b11;
+const PTEX_FLAG_FORMAT_RGBA8: u32 = 0;
+const PTEX_FLAG_FORMAT_RGB8: u32 = 1;
+const PTEX_FLAG_FORMAT_R8: u32 = 2;
 const SHADOW_MAP_SIZE: u32 = 4096;
 const SHADOW_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const SHADOW_MAP_DEPTH_BIAS_CONST: i32 = 2;
@@ -5021,7 +5025,7 @@ fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_pmesh, normalized_static_mesh_lookup_alias};
+    use super::{decode_pmesh, decode_ptex, normalized_static_mesh_lookup_alias};
 
     #[test]
     fn gltf_mesh_source_without_fragment_maps_to_mesh_zero_alias() {
@@ -5122,6 +5126,25 @@ mod tests {
         assert_eq!(decoded.vertices[0].joints, [0, 0, 0, 0]);
         assert_eq!(decoded.indices.len(), 3);
         assert_eq!(decoded.surface_ranges.len(), 1);
+    }
+
+    #[test]
+    fn decode_ptex_accepts_version_2_rgb_payload() {
+        let raw_rgb = vec![10u8, 20, 30, 40, 50, 60];
+        let compressed = perro_io::compress_zlib_best(&raw_rgb).expect("compress ptex payload");
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"PTEX");
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes()); // rgb8
+        bytes.extend_from_slice(&(raw_rgb.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&compressed);
+
+        let decoded = decode_ptex(&bytes).expect("decode v2 ptex");
+        assert_eq!(decoded.1, 2);
+        assert_eq!(decoded.2, 1);
+        assert_eq!(decoded.0, vec![10u8, 20, 30, 255, 40, 50, 60, 255]);
     }
 }
 
@@ -5824,23 +5847,69 @@ fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
         return None;
     }
     let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-    if version != 1 {
+    if version != 1 && version != 2 {
         return None;
     }
     let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
     let height = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
-    let raw_len = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
     if width == 0 || height == 0 {
         return None;
     }
-    let expected_len = width.checked_mul(height)?.checked_mul(4)?;
-    if raw_len != expected_len {
+
+    if version == 1 {
+        let raw_len = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
+        let expected_len = width.checked_mul(height)?.checked_mul(4)?;
+        if raw_len != expected_len {
+            return None;
+        }
+        let rgba = decompress_zlib(&bytes[20..]).ok()?;
+        if rgba.len() != raw_len as usize {
+            return None;
+        }
+        return Some((rgba, width, height));
+    }
+
+    if bytes.len() < 24 {
         return None;
     }
-    let rgba = decompress_zlib(&bytes[20..]).ok()?;
-    if rgba.len() != raw_len as usize {
+    let flags = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
+    let raw_len = u32::from_le_bytes(bytes[20..24].try_into().ok()?);
+    if flags & !PTEX_FLAG_FORMAT_MASK != 0 {
         return None;
     }
+    let pixel_count = width.checked_mul(height)? as usize;
+    let expected_raw_len = match flags & PTEX_FLAG_FORMAT_MASK {
+        PTEX_FLAG_FORMAT_RGBA8 => pixel_count.checked_mul(4)?,
+        PTEX_FLAG_FORMAT_RGB8 => pixel_count.checked_mul(3)?,
+        PTEX_FLAG_FORMAT_R8 => pixel_count,
+        _ => return None,
+    };
+    if raw_len as usize != expected_raw_len {
+        return None;
+    }
+    let raw = decompress_zlib(&bytes[24..]).ok()?;
+    if raw.len() != expected_raw_len {
+        return None;
+    }
+
+    let rgba = match flags & PTEX_FLAG_FORMAT_MASK {
+        PTEX_FLAG_FORMAT_RGBA8 => raw,
+        PTEX_FLAG_FORMAT_RGB8 => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for px in raw.chunks_exact(3) {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            out
+        }
+        PTEX_FLAG_FORMAT_R8 => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for &v in &raw {
+                out.extend_from_slice(&[v, v, v, 255]);
+            }
+            out
+        }
+        _ => return None,
+    };
     Some((rgba, width, height))
 }
 

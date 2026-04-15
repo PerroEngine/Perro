@@ -9,7 +9,14 @@ use std::{
 };
 
 const PSKEL_MAGIC: &[u8; 5] = b"PSKEL";
-const PSKEL_VERSION: u32 = 1;
+const PSKEL_VERSION: u32 = 2;
+const PSKEL_BONE_FLAG_HAS_PARENT: u32 = 1 << 0;
+const PSKEL_BONE_FLAG_HAS_REST_POS: u32 = 1 << 1;
+const PSKEL_BONE_FLAG_HAS_REST_SCALE: u32 = 1 << 2;
+const PSKEL_BONE_FLAG_HAS_REST_ROT: u32 = 1 << 3;
+const PSKEL_BONE_FLAG_HAS_INV_POS: u32 = 1 << 4;
+const PSKEL_BONE_FLAG_HAS_INV_SCALE: u32 = 1 << 5;
+const PSKEL_BONE_FLAG_HAS_INV_ROT: u32 = 1 << 6;
 
 #[derive(Clone)]
 struct SkeletonRef {
@@ -340,9 +347,52 @@ fn encode_pskel(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
         let name_bytes = bone.name.as_bytes();
         raw.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes());
         raw.extend_from_slice(name_bytes);
-        raw.extend_from_slice(&bone.parent.to_le_bytes());
-        write_transform(&mut raw, bone.rest);
-        write_transform(&mut raw, bone.inv_bind);
+
+        let mut flags = 0u32;
+        if bone.parent != -1 {
+            flags |= PSKEL_BONE_FLAG_HAS_PARENT;
+        }
+        if !is_vec3_default(bone.rest.position, Vector3::ZERO) {
+            flags |= PSKEL_BONE_FLAG_HAS_REST_POS;
+        }
+        if !is_vec3_default(bone.rest.scale, Vector3::ONE) {
+            flags |= PSKEL_BONE_FLAG_HAS_REST_SCALE;
+        }
+        if !is_quat_default(bone.rest.rotation, Quaternion::IDENTITY) {
+            flags |= PSKEL_BONE_FLAG_HAS_REST_ROT;
+        }
+        if !is_vec3_default(bone.inv_bind.position, Vector3::ZERO) {
+            flags |= PSKEL_BONE_FLAG_HAS_INV_POS;
+        }
+        if !is_vec3_default(bone.inv_bind.scale, Vector3::ONE) {
+            flags |= PSKEL_BONE_FLAG_HAS_INV_SCALE;
+        }
+        if !is_quat_default(bone.inv_bind.rotation, Quaternion::IDENTITY) {
+            flags |= PSKEL_BONE_FLAG_HAS_INV_ROT;
+        }
+        raw.extend_from_slice(&flags.to_le_bytes());
+
+        if (flags & PSKEL_BONE_FLAG_HAS_PARENT) != 0 {
+            raw.extend_from_slice(&bone.parent.to_le_bytes());
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_REST_POS) != 0 {
+            write_vec3(&mut raw, bone.rest.position);
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_REST_SCALE) != 0 {
+            write_vec3(&mut raw, bone.rest.scale);
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_REST_ROT) != 0 {
+            write_quat(&mut raw, bone.rest.rotation);
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_INV_POS) != 0 {
+            write_vec3(&mut raw, bone.inv_bind.position);
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_INV_SCALE) != 0 {
+            write_vec3(&mut raw, bone.inv_bind.scale);
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_INV_ROT) != 0 {
+            write_quat(&mut raw, bone.inv_bind.rotation);
+        }
     }
 
     let compressed = compress_zlib_best(&raw)?;
@@ -520,17 +570,32 @@ fn parse_tuple(value: &str, count: usize, line_no: usize) -> Result<Vec<f32>, St
     Ok(out)
 }
 
-fn write_transform(out: &mut Vec<u8>, transform: Transform3D) {
-    write_f32(out, transform.position.x);
-    write_f32(out, transform.position.y);
-    write_f32(out, transform.position.z);
-    write_f32(out, transform.scale.x);
-    write_f32(out, transform.scale.y);
-    write_f32(out, transform.scale.z);
-    write_f32(out, transform.rotation.x);
-    write_f32(out, transform.rotation.y);
-    write_f32(out, transform.rotation.z);
-    write_f32(out, transform.rotation.w);
+fn write_vec3(out: &mut Vec<u8>, vec: Vector3) {
+    write_f32(out, vec.x);
+    write_f32(out, vec.y);
+    write_f32(out, vec.z);
+}
+
+fn write_quat(out: &mut Vec<u8>, quat: Quaternion) {
+    write_f32(out, quat.x);
+    write_f32(out, quat.y);
+    write_f32(out, quat.z);
+    write_f32(out, quat.w);
+}
+
+fn is_vec3_default(value: Vector3, default: Vector3) -> bool {
+    nearly_eq(value.x, default.x) && nearly_eq(value.y, default.y) && nearly_eq(value.z, default.z)
+}
+
+fn is_quat_default(value: Quaternion, default: Quaternion) -> bool {
+    nearly_eq(value.x, default.x)
+        && nearly_eq(value.y, default.y)
+        && nearly_eq(value.z, default.z)
+        && nearly_eq(value.w, default.w)
+}
+
+fn nearly_eq(a: f32, b: f32) -> bool {
+    (a - b).abs() <= 1.0e-6
 }
 
 fn write_f32(out: &mut Vec<u8>, value: f32) {
