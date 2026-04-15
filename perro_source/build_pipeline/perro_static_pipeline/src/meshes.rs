@@ -9,7 +9,11 @@ use std::{
 };
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
-const PMESH_VERSION: u32 = 4;
+const PMESH_VERSION: u32 = 6;
+const PMESH_FLAG_HAS_NORMAL: u32 = 1 << 0;
+const PMESH_FLAG_HAS_UV0: u32 = 1 << 1;
+const PMESH_FLAG_HAS_JOINTS: u32 = 1 << 2;
+const PMESH_FLAG_HAS_WEIGHTS: u32 = 1 << 3;
 const MESHLET_TRIANGLES: usize = 64;
 
 #[derive(Clone, Copy)]
@@ -188,6 +192,10 @@ fn build_gltf_mesh_entries(
         let mut vertices = Vec::<PackedVertex>::new();
         let mut indices = Vec::<u32>::new();
         let mut surface_ranges = Vec::<PackedSurfaceRange>::new();
+        let mut has_normals_any = false;
+        let mut has_uv_any = false;
+        let mut has_joints_any = false;
+        let mut has_weights_any = false;
 
         for primitive in mesh.primitives() {
             let reader = primitive
@@ -204,20 +212,33 @@ fn build_gltf_mesh_entries(
                 .read_normals()
                 .map(|iter| iter.collect())
                 .unwrap_or_default();
+            if !normals.is_empty() {
+                has_normals_any = true;
+            }
             let tex_coords: Vec<[f32; 2]> = reader
                 .read_tex_coords(0)
                 .map(|iter| iter.into_f32().collect())
                 .unwrap_or_default();
+            if !tex_coords.is_empty() {
+                has_uv_any = true;
+            }
             let joints: Vec<[u16; 4]> = reader
                 .read_joints(0)
                 .map(|iter| iter.into_u16().collect())
                 .unwrap_or_default();
+            if !joints.is_empty() {
+                has_joints_any = true;
+            }
             let mut weights: Vec<[f32; 4]> = reader
                 .read_weights(0)
                 .map(|iter| iter.into_f32().collect())
                 .unwrap_or_default();
+            if !weights.is_empty() {
+                has_weights_any = true;
+            }
             if weights.is_empty() && !joints.is_empty() {
                 weights = vec![[1.0, 0.0, 0.0, 0.0]; joints.len()];
+                has_weights_any = true;
             }
 
             let base_vertex = vertices.len() as u32;
@@ -266,7 +287,16 @@ fn build_gltf_mesh_entries(
         } else {
             (indices, surface_ranges, Vec::new())
         };
-        let pmesh = encode_pmesh(&vertices, &indices, &surface_ranges, &meshlets)?;
+        let pmesh = encode_pmesh(
+            &vertices,
+            &indices,
+            &surface_ranges,
+            &meshlets,
+            has_normals_any,
+            has_uv_any,
+            has_joints_any,
+            has_weights_any,
+        )?;
 
         let embedded_rel_path = format!("{rel_base}_mesh{mesh_index}.pmesh");
         let key_bracket = format!("{res_path}:mesh[{mesh_index}]");
@@ -298,12 +328,34 @@ fn encode_pmesh(
     indices: &[u32],
     surface_ranges: &[PackedSurfaceRange],
     meshlets: &[PackedMeshlet],
+    has_normals: bool,
+    has_uv0: bool,
+    has_joints: bool,
+    has_weights: bool,
 ) -> io::Result<Vec<u8>> {
+    let vertex_stride_bytes = (3 * std::mem::size_of::<f32>())
+        + if has_normals {
+            3 * std::mem::size_of::<f32>()
+        } else {
+            0
+        }
+        + if has_uv0 {
+            2 * std::mem::size_of::<f32>()
+        } else {
+            0
+        }
+        + if has_joints {
+            4 * std::mem::size_of::<u16>()
+        } else {
+            0
+        }
+        + if has_weights {
+            4 * std::mem::size_of::<f32>()
+        } else {
+            0
+        };
     let mut raw = Vec::<u8>::with_capacity(
-        vertices.len()
-            * ((8 * std::mem::size_of::<f32>())
-                + (4 * std::mem::size_of::<u16>())
-                + (4 * std::mem::size_of::<f32>()))
+        vertices.len() * vertex_stride_bytes
             + std::mem::size_of_val(indices)
             + surface_ranges.len() * (2 * std::mem::size_of::<u32>())
             + meshlets.len() * (2 * std::mem::size_of::<u32>() + 4 * std::mem::size_of::<f32>()),
@@ -313,19 +365,27 @@ fn encode_pmesh(
         write_f32(&mut raw, vertex.position[0]);
         write_f32(&mut raw, vertex.position[1]);
         write_f32(&mut raw, vertex.position[2]);
-        write_f32(&mut raw, vertex.normal[0]);
-        write_f32(&mut raw, vertex.normal[1]);
-        write_f32(&mut raw, vertex.normal[2]);
-        write_f32(&mut raw, vertex.uv[0]);
-        write_f32(&mut raw, vertex.uv[1]);
-        write_u16(&mut raw, vertex.joints[0]);
-        write_u16(&mut raw, vertex.joints[1]);
-        write_u16(&mut raw, vertex.joints[2]);
-        write_u16(&mut raw, vertex.joints[3]);
-        write_f32(&mut raw, vertex.weights[0]);
-        write_f32(&mut raw, vertex.weights[1]);
-        write_f32(&mut raw, vertex.weights[2]);
-        write_f32(&mut raw, vertex.weights[3]);
+        if has_normals {
+            write_f32(&mut raw, vertex.normal[0]);
+            write_f32(&mut raw, vertex.normal[1]);
+            write_f32(&mut raw, vertex.normal[2]);
+        }
+        if has_uv0 {
+            write_f32(&mut raw, vertex.uv[0]);
+            write_f32(&mut raw, vertex.uv[1]);
+        }
+        if has_joints {
+            write_u16(&mut raw, vertex.joints[0]);
+            write_u16(&mut raw, vertex.joints[1]);
+            write_u16(&mut raw, vertex.joints[2]);
+            write_u16(&mut raw, vertex.joints[3]);
+        }
+        if has_weights {
+            write_f32(&mut raw, vertex.weights[0]);
+            write_f32(&mut raw, vertex.weights[1]);
+            write_f32(&mut raw, vertex.weights[2]);
+            write_f32(&mut raw, vertex.weights[3]);
+        }
     }
     for &index in indices {
         raw.extend_from_slice(&index.to_le_bytes());
@@ -344,9 +404,23 @@ fn encode_pmesh(
     }
 
     let compressed = compress_zlib_best(&raw)?;
-    let mut out = Vec::with_capacity(5 + 6 * std::mem::size_of::<u32>() + compressed.len());
+    let mut out = Vec::with_capacity(5 + 7 * std::mem::size_of::<u32>() + compressed.len());
     out.extend_from_slice(PMESH_MAGIC);
     out.extend_from_slice(&PMESH_VERSION.to_le_bytes());
+    let mut flags = 0u32;
+    if has_normals {
+        flags |= PMESH_FLAG_HAS_NORMAL;
+    }
+    if has_uv0 {
+        flags |= PMESH_FLAG_HAS_UV0;
+    }
+    if has_joints {
+        flags |= PMESH_FLAG_HAS_JOINTS;
+    }
+    if has_weights {
+        flags |= PMESH_FLAG_HAS_WEIGHTS;
+    }
+    out.extend_from_slice(&flags.to_le_bytes());
     out.extend_from_slice(&(vertices.len() as u32).to_le_bytes());
     out.extend_from_slice(&(indices.len() as u32).to_le_bytes());
     out.extend_from_slice(&(surface_ranges.len() as u32).to_le_bytes());
