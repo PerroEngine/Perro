@@ -505,10 +505,6 @@ fn emit_op_literal(op: &Op) -> String {
     }
 }
 
-fn escape_str(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
 fn parse_vec3_literal(raw: &str) -> Option<[f32; 3]> {
     let raw = raw.trim();
     let inner = raw.strip_prefix('(')?.strip_suffix(')')?;

@@ -168,22 +168,27 @@ fn push_entry_prepared(
         .map(|p| remap_key(p.as_ref(), key_map));
     let mut merged_root_entry = None;
 
-    if let Some(root_of_path) = &entry.root_of {
-        if include_stack.contains(root_of_path.as_ref()) {
+    let root_of_source = entry
+        .root_of
+        .as_ref()
+        .map(|v| v.as_ref().to_string())
+        .or_else(|| entry.root_of_hash.map(|hash| hash.to_string()));
+    if let Some(root_of_path) = root_of_source.as_ref() {
+        if include_stack.contains(root_of_path) {
             return Err(format!(
                 "root_of cycle detected while loading `{}` for host `{}`",
-                root_of_path.as_ref(),
+                root_of_path,
                 key
             ));
         }
-        include_stack.insert(root_of_path.to_string());
+        include_stack.insert(root_of_path.clone());
         let root_merge_result = (|| {
-            let import_scene = load_scene(root_of_path.as_ref())?;
+            let import_scene = load_scene(root_of_path.as_str())?;
             let import_root = import_scene
                 .root
                 .as_ref()
                 .map(|v| v.as_ref().to_string())
-                .ok_or_else(|| format!("root_of scene `{}` has no @root", root_of_path.as_ref()))?;
+                .ok_or_else(|| format!("root_of scene `{}` has no @root", root_of_path))?;
             let import_root_node = import_scene
                 .nodes
                 .iter()
@@ -191,13 +196,13 @@ fn push_entry_prepared(
                 .ok_or_else(|| {
                     format!(
                         "root_of scene `{}` root key `{import_root}` was not found in node list",
-                        root_of_path.as_ref()
+                        root_of_path
                     )
                 })?;
             let merged = merge_root_host_entry(entry, import_root_node);
             expand_import_children_into_host(
                 key.as_str(),
-                root_of_path.as_ref(),
+                root_of_path.as_str(),
                 &import_scene,
                 &import_root,
                 prepared_nodes,
@@ -207,7 +212,7 @@ fn push_entry_prepared(
             )?;
             Ok::<SceneDefNodeEntry, String>(merged)
         })();
-        include_stack.remove(root_of_path.as_ref());
+        include_stack.remove(root_of_path);
         merged_root_entry = Some(root_merge_result?);
     }
 

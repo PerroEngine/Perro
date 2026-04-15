@@ -20,9 +20,6 @@ pub const fn string_to_u64(s: &str) -> u64 {
 }
 
 pub fn parse_hashed_source_uri(s: &str) -> Option<u64> {
-    if let Some(raw) = s.strip_prefix("hash://") {
-        return raw.parse::<u64>().ok();
-    }
     if s.as_bytes().iter().all(|b| b.is_ascii_digit()) {
         return s.parse::<u64>().ok();
     }

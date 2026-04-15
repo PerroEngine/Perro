@@ -1,6 +1,7 @@
 use crate::{Runtime, runtime_project::ProviderMode};
 use perro_ids::NodeID;
 use perro_ids::ScriptMemberID;
+use perro_ids::parse_hashed_source_uri;
 use perro_ids::string_to_u64;
 use perro_io::{ProjectRoot, set_project_root};
 use perro_runtime_context::sub_apis::PreloadedSceneID;
@@ -32,6 +33,10 @@ struct SceneLoadStats {
 }
 
 impl Runtime {
+    fn source_hash(path: &str) -> u64 {
+        parse_hashed_source_uri(path).unwrap_or_else(|| string_to_u64(path))
+    }
+
     fn resolve_scene_by_hash_and_path(&self, path_hash: u64, path: &str) -> Result<Scene, String> {
         if let Some(id) = self.preloaded_scene_paths.get(&path_hash).copied() {
             if let Some(scene) = self.preloaded_scenes.get(&id) {
@@ -69,14 +74,14 @@ impl Runtime {
     }
 
     fn resolve_scene_by_path(&self, path: &str) -> Result<Scene, String> {
-        self.resolve_scene_by_hash_and_path(string_to_u64(path), path)
+        self.resolve_scene_by_hash_and_path(Self::source_hash(path), path)
     }
 
     pub(crate) fn preload_scene_at_runtime(
         &mut self,
         path: &str,
     ) -> Result<PreloadedSceneID, String> {
-        self.preload_scene_at_runtime_hashed(string_to_u64(path), path)
+        self.preload_scene_at_runtime_hashed(Self::source_hash(path), path)
     }
 
     pub(crate) fn preload_scene_at_runtime_hashed(
@@ -107,14 +112,15 @@ impl Runtime {
         }
         let removed = self.preloaded_scenes.remove(&id).is_some();
         if let Some(path) = self.preloaded_scene_reverse_paths.remove(&id) {
-            self.preloaded_scene_paths.remove(&string_to_u64(path.as_str()));
+            self.preloaded_scene_paths
+                .remove(&Self::source_hash(path.as_str()));
             let _ = self.scene_cache.borrow_mut().remove(path.as_str());
         }
         removed
     }
 
     pub(crate) fn free_preloaded_scene_by_path_at_runtime(&mut self, path: &str) -> bool {
-        self.free_preloaded_scene_by_path_at_runtime_hashed(string_to_u64(path), path)
+        self.free_preloaded_scene_by_path_at_runtime_hashed(Self::source_hash(path), path)
     }
 
     pub(crate) fn free_preloaded_scene_by_path_at_runtime_hashed(
@@ -151,7 +157,7 @@ impl Runtime {
     }
 
     pub(crate) fn load_scene_at_runtime(&mut self, path: &str) -> Result<NodeID, String> {
-        self.load_scene_at_runtime_hashed(string_to_u64(path), path)
+        self.load_scene_at_runtime_hashed(Self::source_hash(path), path)
     }
 
     pub(crate) fn load_scene_at_runtime_hashed(
@@ -315,7 +321,7 @@ impl Runtime {
                     mode_label = "static";
                     let prepared = prepare_scene_with_loader(scene, &|path| {
                         static_lookup
-                            .and_then(|lookup| lookup(string_to_u64(path)))
+                            .and_then(|lookup| lookup(Self::source_hash(path)))
                             .cloned()
                             .ok_or_else(|| {
                                 format!(

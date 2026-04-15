@@ -146,6 +146,7 @@ pub struct SceneNodeEntry {
     pub script_hash: Option<u64>,
     pub clear_script: bool,
     pub root_of: Option<Cow<'static, str>>,
+    pub root_of_hash: Option<u64>,
     pub script_vars: Cow<'static, [SceneObjectField]>,
 }
 

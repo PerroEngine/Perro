@@ -949,10 +949,6 @@ fn custom_param_value_to_code(value: &CustomMaterialParamValue3D) -> String {
     }
 }
 
-fn escape_str(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
 fn materials_from_gltf_file(
     path: &Path,
     res_path: &str,

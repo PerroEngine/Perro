@@ -169,7 +169,7 @@ fn emit_static_scene_const(
             tags_name
         };
         node_entries.push_str(&format!(
-            "    SceneNodeEntry {{ data: {data}, has_data_override: {has_data_override}, key: SceneKey(Cow::Borrowed(\"{key}\")), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, script_hash: {script_hash}, clear_script: {clear_script}, root_of: {root_of}, script_vars: Cow::Borrowed({script_vars}) }},\n",
+            "    SceneNodeEntry {{ data: {data}, has_data_override: {has_data_override}, key: SceneKey(Cow::Borrowed(\"{key}\")), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, script_hash: {script_hash}, clear_script: {clear_script}, root_of: {root_of}, root_of_hash: {root_of_hash}, script_vars: Cow::Borrowed({script_vars}) }},\n",
             data = data_const,
             has_data_override = node.has_data_override,
             key = escape_str(node.key.as_ref()),
@@ -186,7 +186,8 @@ fn emit_static_scene_const(
             script = opt_static_script_str(&node.script),
             script_hash = opt_static_script_hash(&node.script),
             clear_script = node.clear_script,
-            root_of = opt_static_str(&node.root_of),
+            root_of = opt_static_root_of_str(&node.root_of),
+            root_of_hash = opt_static_root_of_hash(&node.root_of),
             script_vars = if node.script_vars.is_empty() {
                 uses_empty_fields = true;
                 "EMPTY_SCENE_FIELDS".to_string()
@@ -423,12 +424,41 @@ fn opt_static_script_hash(v: &Option<Cow<'static, str>>) -> String {
     }
 }
 
+fn opt_static_root_of_str(v: &Option<Cow<'static, str>>) -> String {
+    match v {
+        Some(s) if static_hashable_scene_path(s.as_ref()) => "None".to_string(),
+        Some(s) => format!("Some(Cow::Borrowed(\"{}\"))", escape_str(s.as_ref())),
+        None => "None".to_string(),
+    }
+}
+
+fn opt_static_root_of_hash(v: &Option<Cow<'static, str>>) -> String {
+    match v {
+        Some(s) if static_hashable_scene_path(s.as_ref()) => {
+            format!("Some({}u64)", perro_ids::string_to_u64(s.as_ref()))
+        }
+        None => "None".to_string(),
+        _ => "None".to_string(),
+    }
+}
+
 fn emit_static_scene_value_str(s: &str) -> String {
     if let Some(hash) = static_hashable_path(s) {
         format!("SceneValue::Hashed({hash}u64)")
     } else {
         format!("SceneValue::Str(Cow::Borrowed(\"{}\"))", escape_str(s))
     }
+}
+
+fn static_hashable_scene_path(s: &str) -> bool {
+    if !s.starts_with("res://") {
+        return false;
+    }
+    let (path_part, _) = split_source_fragment(s);
+    Path::new(path_part)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("scn"))
 }
 
 fn static_hashable_path(s: &str) -> Option<u64> {

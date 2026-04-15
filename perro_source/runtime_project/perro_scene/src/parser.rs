@@ -370,6 +370,7 @@ impl<'a> Parser<'a> {
                     let mut script = None;
                     let mut clear_script = false;
                     let mut root_of = None;
+                    let mut root_of_hash = None;
                     let mut script_vars: Vec<SceneObjectField> = Vec::new();
 
                     while matches!(self.current, Token::Ident(_)) {
@@ -412,7 +413,10 @@ impl<'a> Parser<'a> {
                             }
                             "root_of" => {
                                 root_of = Some(match v {
-                                    SceneValue::Str(s) => s.to_string(),
+                                    SceneValue::Str(s) => {
+                                        root_of_hash = perro_ids::parse_hashed_source_uri(s.as_ref());
+                                        s.to_string()
+                                    }
                                     _ => panic!("root_of must be a string"),
                                 })
                             }
@@ -479,6 +483,7 @@ impl<'a> Parser<'a> {
                         script_hash: None,
                         clear_script,
                         root_of: root_of.map(Cow::Owned),
+                        root_of_hash,
                         script_vars: Cow::Owned(script_vars),
                         data,
                     });

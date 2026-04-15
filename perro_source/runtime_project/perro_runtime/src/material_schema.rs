@@ -386,8 +386,8 @@ fn apply_custom(entries: &[SceneObjectField], out: &mut CustomMaterial3D, any: &
     for (name, value) in entries {
         match canonical_custom_key(name) {
             Some("shaderPath") => {
-                if let SceneValue::Str(v) = value {
-                    out.shader_path = v.clone();
+                if let Some(v) = as_source_token(value) {
+                    out.shader_path = v.into();
                     *any = true;
                 }
             }
@@ -549,6 +549,15 @@ fn as_alpha_mode(value: &SceneValue) -> Option<u32> {
             _ => None,
         },
         SceneValue::I32(v) if (0..=2).contains(v) => Some(*v as u32),
+        _ => None,
+    }
+}
+
+fn as_source_token(value: &SceneValue) -> Option<String> {
+    match value {
+        SceneValue::Str(v) => Some(v.to_string()),
+        SceneValue::Hashed(v) => Some(v.to_string()),
+        SceneValue::Key(v) => Some(v.to_string()),
         _ => None,
     }
 }
