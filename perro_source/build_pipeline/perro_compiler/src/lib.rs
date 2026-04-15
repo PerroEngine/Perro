@@ -392,9 +392,9 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
   project: perro_app::entry::StaticEmbeddedProjectInfo {{\n\
         project_root: &root,\n\
         project_name: \"{name}\",\n\
-        main_scene: \"{main_scene}\",\n\
-        icon: \"{icon}\",\n\
-        startup_splash: \"{startup_splash}\",\n\
+        main_scene_hash: {main_scene_hash}u64,\n\
+        icon_hash: {icon_hash}u64,\n\
+        startup_splash_hash: {startup_splash_hash}u64,\n\
         virtual_width: {w},\n\
         virtual_height: {h},\n\
   }},\n\
@@ -413,7 +413,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         target_fixed_update: {target_fixed_update},\n\
   }},\n\
   localization: perro_app::entry::StaticEmbeddedLocalizationConfig {{\n\
-        source_csv: {localization_source_csv},\n\
+        source_csv_hash: {localization_source_csv_hash},\n\
         key_column: {localization_key_column},\n\
         default_locale: {localization_default_locale},\n\
   }},\n\
@@ -434,9 +434,9 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
 }})\n\
 .expect(\"failed to run embedded static project\");",
         name = escape_str(&cfg.name),
-        main_scene = escape_str(&cfg.main_scene),
-        icon = escape_str(&cfg.icon),
-        startup_splash = escape_str(&cfg.startup_splash),
+        main_scene_hash = perro_ids::string_to_u64(&cfg.main_scene),
+        icon_hash = perro_ids::string_to_u64(&cfg.icon),
+        startup_splash_hash = perro_ids::string_to_u64(&cfg.startup_splash),
         w = cfg.virtual_width,
         h = cfg.virtual_height,
         vsync = cfg.vsync,
@@ -449,8 +449,11 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
         target_fps = emit_optional_f32(cfg.target_fps),
         target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
-        localization_source_csv =
-            emit_optional_static_str(cfg.localization.as_ref().map(|loc| loc.source_csv.as_str()),),
+        localization_source_csv_hash = emit_optional_u64(
+            cfg.localization
+                .as_ref()
+                .map(|loc| perro_ids::string_to_u64(&loc.source_csv)),
+        ),
         localization_key_column = emit_static_str(
             cfg.localization
                 .as_ref()
@@ -571,15 +574,15 @@ fn emit_optional_f32(value: Option<f32>) -> String {
     }
 }
 
-fn emit_static_str(value: &str) -> String {
-    format!("\"{}\"", escape_str(value))
-}
-
-fn emit_optional_static_str(value: Option<&str>) -> String {
+fn emit_optional_u64(value: Option<u64>) -> String {
     match value {
-        Some(value) => format!("Some(\"{}\")", escape_str(value)),
+        Some(v) => format!("Some({v}u64)"),
         None => "None".to_string(),
     }
+}
+
+fn emit_static_str(value: &str) -> String {
+    format!("\"{}\"", escape_str(value))
 }
 
 fn indent_block(src: &str, spaces: usize) -> String {

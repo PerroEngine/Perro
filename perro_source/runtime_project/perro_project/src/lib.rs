@@ -43,6 +43,7 @@ impl ParticleSimDefault {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalizationConfig {
     pub source_csv: String,
+    pub source_csv_hash: Option<u64>,
     pub key_column: String,
     pub default_locale: String,
 }
@@ -50,9 +51,9 @@ pub struct LocalizationConfig {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StaticProjectConfig {
     pub name: &'static str,
-    pub main_scene: &'static str,
-    pub icon: &'static str,
-    pub startup_splash: &'static str,
+    pub main_scene_hash: u64,
+    pub icon_hash: u64,
+    pub startup_splash_hash: u64,
     pub virtual_width: u32,
     pub virtual_height: u32,
     pub vsync: bool,
@@ -65,7 +66,7 @@ pub struct StaticProjectConfig {
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
-    pub localization_source_csv: Option<&'static str>,
+    pub localization_source_csv_hash: Option<u64>,
     pub localization_key_column: &'static str,
     pub localization_default_locale: &'static str,
 }
@@ -73,17 +74,17 @@ pub struct StaticProjectConfig {
 impl StaticProjectConfig {
     pub const fn new(
         name: &'static str,
-        main_scene: &'static str,
-        icon: &'static str,
-        startup_splash: &'static str,
+        main_scene_hash: u64,
+        icon_hash: u64,
+        startup_splash_hash: u64,
         virtual_width: u32,
         virtual_height: u32,
     ) -> Self {
         Self {
             name,
-            main_scene,
-            icon,
-            startup_splash,
+            main_scene_hash,
+            icon_hash,
+            startup_splash_hash,
             virtual_width,
             virtual_height,
             vsync: false,
@@ -96,7 +97,7 @@ impl StaticProjectConfig {
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
-            localization_source_csv: None,
+            localization_source_csv_hash: None,
             localization_key_column: "key",
             localization_default_locale: "en",
         }
@@ -152,18 +153,13 @@ impl StaticProjectConfig {
         self
     }
 
-    pub const fn with_startup_splash(mut self, startup_splash: &'static str) -> Self {
-        self.startup_splash = startup_splash;
-        self
-    }
-
-    pub const fn with_localization(
+    pub const fn with_localization_hashed(
         mut self,
-        source_csv: &'static str,
+        source_csv_hash: u64,
         key_column: &'static str,
         default_locale: &'static str,
     ) -> Self {
-        self.localization_source_csv = Some(source_csv);
+        self.localization_source_csv_hash = Some(source_csv_hash);
         self.localization_key_column = key_column;
         self.localization_default_locale = default_locale;
         self
@@ -172,9 +168,12 @@ impl StaticProjectConfig {
     pub fn to_runtime(self) -> ProjectConfig {
         ProjectConfig {
             name: self.name.to_string(),
-            main_scene: self.main_scene.to_string(),
-            icon: self.icon.to_string(),
-            startup_splash: self.startup_splash.to_string(),
+            main_scene: self.main_scene_hash.to_string(),
+            main_scene_hash: Some(self.main_scene_hash),
+            icon: self.icon_hash.to_string(),
+            icon_hash: Some(self.icon_hash),
+            startup_splash: self.startup_splash_hash.to_string(),
+            startup_splash_hash: Some(self.startup_splash_hash),
             virtual_width: self.virtual_width,
             virtual_height: self.virtual_height,
             vsync: self.vsync,
@@ -188,9 +187,10 @@ impl StaticProjectConfig {
             occlusion_culling: self.occlusion_culling,
             particle_sim_default: self.particle_sim_default,
             localization: self
-                .localization_source_csv
-                .map(|source_csv| LocalizationConfig {
-                    source_csv: source_csv.to_string(),
+                .localization_source_csv_hash
+                .map(|source_csv_hash| LocalizationConfig {
+                    source_csv: source_csv_hash.to_string(),
+                    source_csv_hash: Some(source_csv_hash),
                     key_column: self.localization_key_column.to_string(),
                     default_locale: self.localization_default_locale.to_string(),
                 }),
@@ -202,8 +202,11 @@ impl StaticProjectConfig {
 pub struct ProjectConfig {
     pub name: String,
     pub main_scene: String,
+    pub main_scene_hash: Option<u64>,
     pub icon: String,
+    pub icon_hash: Option<u64>,
     pub startup_splash: String,
+    pub startup_splash_hash: Option<u64>,
     pub virtual_width: u32,
     pub virtual_height: u32,
     pub vsync: bool,
@@ -224,8 +227,11 @@ impl ProjectConfig {
         Self {
             name: name.into(),
             main_scene: "res://main.scn".to_string(),
+            main_scene_hash: None,
             icon: "res://icon.png".to_string(),
+            icon_hash: None,
             startup_splash: "res://icon.png".to_string(),
+            startup_splash_hash: None,
             virtual_width: 1920,
             virtual_height: 1080,
             vsync: false,
@@ -590,8 +596,11 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     Ok(ProjectConfig {
         name,
         main_scene,
+        main_scene_hash: None,
         icon,
+        icon_hash: None,
         startup_splash,
+        startup_splash_hash: None,
         virtual_width,
         virtual_height,
         vsync,
@@ -787,6 +796,7 @@ fn parse_localization(
 
     Ok(Some(LocalizationConfig {
         source_csv,
+        source_csv_hash: None,
         key_column,
         default_locale,
     }))
@@ -1526,9 +1536,9 @@ fn project_root() -> std::path::PathBuf {
           project: perro_app::entry::StaticEmbeddedProjectInfo {
               project_root: &root,
               project_name: "__PROJECT_NAME__",
-              main_scene: "res://main.scn",
-              icon: "res://icon.png",
-              startup_splash: "res://icon.png",
+              main_scene_hash: 7300106721993353294u64,
+              icon_hash: 6859512821849760879u64,
+              startup_splash_hash: 6859512821849760879u64,
               virtual_width: 1920,
               virtual_height: 1080,
           },
@@ -1547,7 +1557,7 @@ fn project_root() -> std::path::PathBuf {
               target_fixed_update: Some(60.0),
           },
           localization: perro_app::entry::StaticEmbeddedLocalizationConfig {
-              source_csv: None,
+              source_csv_hash: None,
               key_column: "key",
               default_locale: "en",
           },

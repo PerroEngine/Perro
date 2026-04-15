@@ -38,6 +38,7 @@ const STARTUP_SPLASH_IMAGE_Z: i32 = 951;
 struct StartupSplashState {
     active: bool,
     source: Option<String>,
+    source_hash: Option<u64>,
     image_size: Option<(u32, u32)>,
     texture_requested: bool,
     texture_id: Option<TextureID>,
@@ -51,19 +52,30 @@ struct StartupSplashState {
 
 impl StartupSplashState {
     fn from_project(project: Option<&perro_runtime::RuntimeProject>, now: Instant) -> Self {
-        let mut source = project
-            .map(|p| p.config.startup_splash.trim().to_string())
-            .filter(|s| !s.is_empty());
-        if source.is_none() {
-            source = project
-                .map(|p| p.config.icon.trim().to_string())
-                .filter(|s| !s.is_empty());
+        let mut source = None::<String>;
+        let mut source_hash = None::<u64>;
+        if let Some(p) = project {
+            let splash = p.config.startup_splash.trim();
+            if !splash.is_empty() {
+                source = Some(splash.to_string());
+                source_hash = p.config.startup_splash_hash;
+            } else {
+                let icon = p.config.icon.trim();
+                if !icon.is_empty() {
+                    source = Some(icon.to_string());
+                    source_hash = p.config.icon_hash;
+                }
+            }
         }
-        let image_size =
-            project.and_then(|p| source.as_deref().and_then(|s| load_image_size(p, s)));
+        let image_size = project.and_then(|p| {
+            source
+                .as_deref()
+                .and_then(|s| load_image_size(p, s, source_hash))
+        });
         Self {
             active: true,
             source,
+            source_hash,
             image_size,
             texture_requested: false,
             texture_id: None,
@@ -428,7 +440,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
             commands.push(RenderCommand::Resource(ResourceCommand::CreateTexture {
                 request: STARTUP_SPLASH_TEXTURE_REQUEST,
                 id: TextureID::nil(),
-                source,
+                source: self
+                    .startup_splash
+                    .source_hash
+                    .map(|v| v.to_string())
+                    .unwrap_or(source),
                 reserved: true,
             }));
         }
@@ -1296,29 +1312,38 @@ fn load_project_window_icon(project: &perro_runtime::RuntimeProject) -> Option<I
 }
 
 fn load_project_icon_bytes(project: &perro_runtime::RuntimeProject) -> Option<Vec<u8>> {
-    load_project_image_bytes(project, project.config.icon.trim())
+    load_project_image_bytes(project, project.config.icon.trim(), project.config.icon_hash)
 }
 
 fn load_project_image_bytes(
     project: &perro_runtime::RuntimeProject,
     source: &str,
+    source_hash: Option<u64>,
 ) -> Option<Vec<u8>> {
     if let Some(path) = resolve_project_asset_path(project, source)
         && let Ok(bytes) = fs::read(path)
     {
         return Some(bytes);
     }
-    if source.starts_with("res://")
-        && let Some(lookup) = project.static_icon_lookup
-        && let Some(bytes) = lookup(perro_ids::string_to_u64(source))
-    {
-        return Some(bytes.to_vec());
+    if let Some(lookup) = project.static_icon_lookup {
+        let hash = source_hash
+            .or_else(|| perro_ids::parse_hashed_source_uri(source))
+            .or_else(|| source.starts_with("res://").then(|| perro_ids::string_to_u64(source)));
+        if let Some(hash) = hash
+            && let Some(bytes) = lookup(hash)
+        {
+            return Some(bytes.to_vec());
+        }
     }
     None
 }
 
-fn load_image_size(project: &perro_runtime::RuntimeProject, source: &str) -> Option<(u32, u32)> {
-    let bytes = load_project_image_bytes(project, source)?;
+fn load_image_size(
+    project: &perro_runtime::RuntimeProject,
+    source: &str,
+    source_hash: Option<u64>,
+) -> Option<(u32, u32)> {
+    let bytes = load_project_image_bytes(project, source, source_hash)?;
     let decoded = image::load_from_memory(&bytes).ok()?;
     Some((decoded.width().max(1), decoded.height().max(1)))
 }

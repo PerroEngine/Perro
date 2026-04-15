@@ -201,7 +201,14 @@ impl Runtime {
     pub(crate) fn load_boot_scene(&mut self) -> Result<(), String> {
         #[cfg(feature = "profile")]
         let boot_start = Instant::now();
-        let (project_root, project_name, main_scene_path, static_lookup, perro_assets_bytes) = {
+        let (
+            project_root,
+            project_name,
+            main_scene_path,
+            main_scene_hash,
+            static_lookup,
+            perro_assets_bytes,
+        ) = {
             let project = self
                 .project()
                 .ok_or_else(|| "Runtime project is not set".to_string())?;
@@ -209,6 +216,10 @@ impl Runtime {
                 project.root.clone(),
                 project.config.name.clone(),
                 project.config.main_scene.clone(),
+                project
+                    .config
+                    .main_scene_hash
+                    .unwrap_or_else(|| string_to_u64(&project.config.main_scene)),
                 project.static_scene_lookup,
                 project.perro_assets_bytes,
             )
@@ -299,7 +310,7 @@ impl Runtime {
                 }
             }
             ProviderMode::Static => {
-                match static_lookup.and_then(|lookup| lookup(string_to_u64(&main_scene_path))) {
+                match static_lookup.and_then(|lookup| lookup(main_scene_hash)) {
                 Some(scene) => {
                     mode_label = "static";
                     let prepared = prepare_scene_with_loader(scene, &|path| {

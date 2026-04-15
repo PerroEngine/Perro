@@ -115,9 +115,9 @@ pub struct StaticEmbeddedProject<'a> {
 pub struct StaticEmbeddedProjectInfo<'a> {
     pub project_root: &'a Path,
     pub project_name: &'static str,
-    pub main_scene: &'static str,
-    pub icon: &'static str,
-    pub startup_splash: &'static str,
+    pub main_scene_hash: u64,
+    pub icon_hash: u64,
+    pub startup_splash_hash: u64,
     pub virtual_width: u32,
     pub virtual_height: u32,
 }
@@ -139,7 +139,7 @@ pub struct StaticEmbeddedRuntimeConfig {
 }
 
 pub struct StaticEmbeddedLocalizationConfig {
-    pub source_csv: Option<&'static str>,
+    pub source_csv_hash: Option<u64>,
     pub key_column: &'static str,
     pub default_locale: &'static str,
 }
@@ -164,9 +164,9 @@ pub fn run_static_embedded_project(
 ) -> Result<(), ProjectLoadError> {
     let mut static_config = perro_runtime::StaticProjectConfig::new(
         input.project.project_name,
-        input.project.main_scene,
-        input.project.icon,
-        input.project.startup_splash,
+        input.project.main_scene_hash,
+        input.project.icon_hash,
+        input.project.startup_splash_hash,
         input.project.virtual_width,
         input.project.virtual_height,
     )
@@ -180,9 +180,9 @@ pub fn run_static_embedded_project(
     .with_meshlet_debug_view(input.graphics.meshlet_debug_view)
     .with_occlusion_culling(input.graphics.occlusion_culling)
     .with_particle_sim_default(input.graphics.particle_sim_default);
-    if let Some(source_csv) = input.localization.source_csv {
-        static_config = static_config.with_localization(
-            source_csv,
+    if let Some(source_csv_hash) = input.localization.source_csv_hash {
+        static_config = static_config.with_localization_hashed(
+            source_csv_hash,
             input.localization.key_column,
             input.localization.default_locale,
         );

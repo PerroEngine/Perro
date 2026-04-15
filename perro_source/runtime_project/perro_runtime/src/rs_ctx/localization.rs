@@ -298,6 +298,7 @@ mod tests {
             None,
             Some(LocalizationConfig {
                 source_csv: "res://localization.csv".to_string(),
+                source_csv_hash: None,
                 key_column: "key".to_string(),
                 default_locale: "en".to_string(),
             }),
@@ -363,6 +364,7 @@ mod tests {
             Some(static_lookup),
             Some(LocalizationConfig {
                 source_csv: "res://localization.csv".to_string(),
+                source_csv_hash: None,
                 key_column: "key".to_string(),
                 default_locale: "en".to_string(),
             }),

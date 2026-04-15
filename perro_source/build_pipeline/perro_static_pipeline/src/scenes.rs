@@ -435,7 +435,7 @@ fn static_hashable_path(s: &str) -> Option<u64> {
     if !s.starts_with("res://") {
         return None;
     }
-    let path_part = s.split_once(':').map(|(head, _)| head).unwrap_or(s);
+    let path_part = split_source_fragment(s).0;
     let ext = Path::new(path_part)
         .extension()
         .and_then(|e| e.to_str())
@@ -471,6 +471,19 @@ fn static_hashable_path(s: &str) -> Option<u64> {
     hashable.then(|| perro_ids::string_to_u64(s))
 }
 
+fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
+    let Some((path, selector)) = source.rsplit_once(':') else {
+        return (source, None);
+    };
+    if path.is_empty() || selector.contains('/') || selector.contains('\\') {
+        return (source, None);
+    }
+    if selector.contains('[') && selector.ends_with(']') {
+        return (path, Some(selector));
+    }
+    (source, None)
+}
+
 fn sanitize_ident(path: &str) -> String {
     let mut out = String::new();
     for c in path.chars() {
@@ -481,4 +494,21 @@ fn sanitize_ident(path: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::static_hashable_path;
+
+    #[test]
+    fn static_hashable_path_hashes_scheme_plus_fragment_paths() {
+        let source = "res://terrain.glb:mesh[0]";
+        assert_eq!(static_hashable_path(source), Some(perro_ids::string_to_u64(source)));
+    }
+
+    #[test]
+    fn static_hashable_path_hashes_script_paths() {
+        let source = "res://scripts/game_manager.rs";
+        assert_eq!(static_hashable_path(source), Some(perro_ids::string_to_u64(source)));
+    }
 }

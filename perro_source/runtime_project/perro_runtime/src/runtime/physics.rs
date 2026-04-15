@@ -1,7 +1,7 @@
 use crate::Runtime;
 use ahash::{AHashMap, AHashSet};
-use perro_ids::{NodeID, SignalID};
-use perro_io::load_asset;
+use perro_ids::{NodeID, SignalID, parse_hashed_source_uri, string_to_u64};
+use perro_io::{decompress_zlib, load_asset};
 use perro_nodes::{
     CollisionShape2D, CollisionShape3D, SceneNodeData, Shape2D, Shape3D, Triangle2DKind,
 };
@@ -756,7 +756,11 @@ impl Runtime {
                 }
 
                 for shape in &body.shapes {
-                    let Some(builder) = collider_builder_3d(shape) else {
+                    let Some(builder) = collider_builder_3d(
+                        shape,
+                        self.provider_mode,
+                        self.project().and_then(|project| project.static_mesh_lookup),
+                    ) else {
                         continue;
                     };
                     let handle = world.colliders.insert_with_parent(
@@ -1538,7 +1542,11 @@ fn collider_builder_2d(desc: &ShapeDesc2D) -> Option<r2::Collider> {
     )
 }
 
-fn collider_builder_3d(desc: &ShapeDesc3D) -> Option<r3::Collider> {
+fn collider_builder_3d(
+    desc: &ShapeDesc3D,
+    provider_mode: crate::runtime_project::ProviderMode,
+    static_mesh_lookup: Option<crate::runtime_project::StaticBytesLookup>,
+) -> Option<r3::Collider> {
     let sx = desc.local.scale.x.abs().max(0.0001);
     let sy = desc.local.scale.y.abs().max(0.0001);
     let sz = desc.local.scale.z.abs().max(0.0001);
@@ -1597,12 +1605,14 @@ fn collider_builder_3d(desc: &ShapeDesc3D) -> Option<r3::Collider> {
                 r3::ColliderBuilder::convex_hull(&points)?
             }
             Shape3D::TriMesh { source } => {
-                let (vertices, triangles) = load_trimesh_from_source(source, sx, sy, sz)?;
+                let (vertices, triangles) =
+                    load_trimesh_from_source(source, sx, sy, sz, provider_mode, static_mesh_lookup)?;
                 r3::ColliderBuilder::trimesh(vertices, triangles).ok()?
             }
         },
         ShapeKind3D::TriMesh { source } => {
-            let (vertices, triangles) = load_trimesh_from_source(source, sx, sy, sz)?;
+            let (vertices, triangles) =
+                load_trimesh_from_source(source, sx, sy, sz, provider_mode, static_mesh_lookup)?;
             r3::ColliderBuilder::trimesh(vertices, triangles).ok()?
         }
     };
@@ -1622,10 +1632,44 @@ fn load_trimesh_from_source(
     sx: f32,
     sy: f32,
     sz: f32,
+    provider_mode: crate::runtime_project::ProviderMode,
+    static_mesh_lookup: Option<crate::runtime_project::StaticBytesLookup>,
 ) -> Option<(Vec<na3::Point3<f32>>, Vec<[u32; 3]>)> {
     let source = source.trim();
     if source.is_empty() {
         return None;
+    }
+
+    if provider_mode == crate::runtime_project::ProviderMode::Static
+        && let Some(lookup) = static_mesh_lookup
+    {
+        let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
+        if let Some(bytes) = lookup(source_hash)
+            && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
+        {
+            return Some(decoded);
+        }
+
+        let normalized = normalize_source_slashes(source);
+        if normalized.as_ref() != source
+            && let Some(bytes) = lookup(string_to_u64(normalized.as_ref()))
+            && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
+        {
+            return Some(decoded);
+        }
+        if let Some(alias) = normalized_static_mesh_lookup_alias(source)
+            && let Some(bytes) = lookup(string_to_u64(alias.as_str()))
+            && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
+        {
+            return Some(decoded);
+        }
+        if normalized.as_ref() != source
+            && let Some(alias) = normalized_static_mesh_lookup_alias(normalized.as_ref())
+            && let Some(bytes) = lookup(string_to_u64(alias.as_str()))
+            && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
+        {
+            return Some(decoded);
+        }
     }
 
     let (path, fragment) = split_source_fragment(source);
@@ -1640,6 +1684,157 @@ fn load_trimesh_from_source(
         return load_trimesh_from_gltf_bytes(&bytes, mesh_index, sx, sy, sz);
     }
     None
+}
+
+fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
+    if source.contains('\\') {
+        std::borrow::Cow::Owned(source.replace('\\', "/"))
+    } else {
+        std::borrow::Cow::Borrowed(source)
+    }
+}
+
+fn normalized_static_mesh_lookup_alias(source: &str) -> Option<String> {
+    let (path, fragment) = split_source_fragment(source);
+    if !(path.ends_with(".glb") || path.ends_with(".gltf")) {
+        return None;
+    }
+    match parse_fragment_index(fragment, "mesh") {
+        Some(0) => Some(path.to_string()),
+        Some(_) => None,
+        None => Some(format!("{path}:mesh[0]")),
+    }
+}
+
+fn decode_pmesh_trimesh(
+    bytes: &[u8],
+    sx: f32,
+    sy: f32,
+    sz: f32,
+) -> Option<(Vec<na3::Point3<f32>>, Vec<[u32; 3]>)> {
+    if bytes.len() < 25 || &bytes[0..5] != b"PMESH" {
+        return None;
+    }
+    let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
+    if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6
+    {
+        return None;
+    }
+
+    let (flags, vertex_count, index_count, raw_len, payload_start) = match version {
+        6 | 5 => {
+            if bytes.len() < 33 {
+                return None;
+            }
+            (
+                u32::from_le_bytes(bytes[9..13].try_into().ok()?),
+                u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize,
+                33usize,
+            )
+        }
+        4 => {
+            if bytes.len() < 29 {
+                return None;
+            }
+            (
+                1u32,
+                u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
+                u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize,
+                29usize,
+            )
+        }
+        _ => (
+            1u32,
+            u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize,
+            u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
+            u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize,
+            25usize,
+        ),
+    };
+
+    let raw = decompress_zlib(&bytes[payload_start..]).ok()?;
+    if raw.len() != raw_len {
+        return None;
+    }
+
+    let has_normal = version != 6 || (flags & (1 << 0)) != 0;
+    let has_uv0 = version == 6 && (flags & (1 << 1)) != 0;
+    let has_joints = if version == 6 {
+        (flags & (1 << 2)) != 0
+    } else if version == 5 {
+        (flags & 1) != 0
+    } else {
+        version >= 2
+    };
+    let has_weights = if version == 6 {
+        (flags & (1 << 3)) != 0
+    } else if version == 5 {
+        (flags & 1) != 0
+    } else {
+        version >= 2
+    };
+
+    let vertex_stride = if version == 6 {
+        12 + if has_normal { 12 } else { 0 }
+            + if has_uv0 { 8 } else { 0 }
+            + if has_joints { 8 } else { 0 }
+            + if has_weights { 16 } else { 0 }
+    } else if version == 5 {
+        if (flags & 1) != 0 { 56 } else { 32 }
+    } else if version == 4 || version == 3 {
+        56
+    } else if version == 2 {
+        48
+    } else {
+        24
+    };
+
+    let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
+    let index_bytes = index_count.checked_mul(4)?;
+    if raw.len() < vertex_bytes + index_bytes {
+        return None;
+    }
+
+    let mut vertices = Vec::with_capacity(vertex_count);
+    for i in 0..vertex_count {
+        let off = i * vertex_stride;
+        let x = f32::from_le_bytes(raw[off..off + 4].try_into().ok()?);
+        let y = f32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?);
+        let z = f32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?);
+        vertices.push(na3::Point3::new(x * sx, y * sy, z * sz));
+    }
+
+    let mut triangles = Vec::new();
+    let index_start = vertex_bytes;
+    for tri_idx in (0..index_count / 3).map(|i| i * 3) {
+        let ia =
+            u32::from_le_bytes(raw[index_start + tri_idx * 4..index_start + tri_idx * 4 + 4].try_into().ok()?);
+        let ib = u32::from_le_bytes(
+            raw[index_start + (tri_idx + 1) * 4..index_start + (tri_idx + 1) * 4 + 4]
+                .try_into()
+                .ok()?,
+        );
+        let ic = u32::from_le_bytes(
+            raw[index_start + (tri_idx + 2) * 4..index_start + (tri_idx + 2) * 4 + 4]
+                .try_into()
+                .ok()?,
+        );
+        let a = ia as usize;
+        let b = ib as usize;
+        let c = ic as usize;
+        if a >= vertices.len() || b >= vertices.len() || c >= vertices.len() || a == b || b == c || a == c {
+            continue;
+        }
+        triangles.push([ia, ib, ic]);
+    }
+
+    if vertices.len() < 3 || triangles.is_empty() {
+        return None;
+    }
+    Some((vertices, triangles))
 }
 
 fn load_trimesh_from_gltf_bytes(
