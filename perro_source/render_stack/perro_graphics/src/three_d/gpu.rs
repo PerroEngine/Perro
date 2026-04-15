@@ -548,7 +548,6 @@ struct OcclusionState {
 }
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
-const PMESH_V5_FLAG_SKINNED: u32 = 1 << 0;
 const PMESH_V6_FLAG_HAS_NORMAL: u32 = 1 << 0;
 const PMESH_V6_FLAG_HAS_UV0: u32 = 1 << 1;
 const PMESH_V6_FLAG_HAS_JOINTS: u32 = 1 << 2;
@@ -5034,7 +5033,10 @@ fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_pmesh, decode_ptex, normalized_static_mesh_lookup_alias};
+    use super::{
+        PMESH_V6_FLAG_HAS_JOINTS, PMESH_V6_FLAG_HAS_NORMAL, PMESH_V6_FLAG_HAS_UV0,
+        PMESH_V6_FLAG_HAS_WEIGHTS, decode_pmesh, decode_ptex, normalized_static_mesh_lookup_alias,
+    };
 
     #[test]
     fn gltf_mesh_source_without_fragment_maps_to_mesh_zero_alias() {
@@ -5061,7 +5063,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_pmesh_accepts_version_4_payload() {
+    fn decode_pmesh_accepts_version_6_payload_with_all_attributes() {
         let mut raw = Vec::new();
         raw.extend_from_slice(&1.0f32.to_le_bytes());
         raw.extend_from_slice(&2.0f32.to_le_bytes());
@@ -5071,70 +5073,72 @@ mod tests {
         raw.extend_from_slice(&0.0f32.to_le_bytes());
         raw.extend_from_slice(&0.25f32.to_le_bytes());
         raw.extend_from_slice(&0.75f32.to_le_bytes());
-        raw.extend_from_slice(&0u16.to_le_bytes());
-        raw.extend_from_slice(&1u16.to_le_bytes());
-        raw.extend_from_slice(&2u16.to_le_bytes());
-        raw.extend_from_slice(&3u16.to_le_bytes());
-        raw.extend_from_slice(&1.0f32.to_le_bytes());
-        raw.extend_from_slice(&0.0f32.to_le_bytes());
-        raw.extend_from_slice(&0.0f32.to_le_bytes());
-        raw.extend_from_slice(&0.0f32.to_le_bytes());
+        raw.extend_from_slice(&4u16.to_le_bytes());
+        raw.extend_from_slice(&5u16.to_le_bytes());
+        raw.extend_from_slice(&6u16.to_le_bytes());
+        raw.extend_from_slice(&7u16.to_le_bytes());
+        raw.extend_from_slice(&0.1f32.to_le_bytes());
+        raw.extend_from_slice(&0.2f32.to_le_bytes());
+        raw.extend_from_slice(&0.3f32.to_le_bytes());
+        raw.extend_from_slice(&0.4f32.to_le_bytes());
         raw.extend_from_slice(&0u32.to_le_bytes());
         raw.extend_from_slice(&0u32.to_le_bytes());
         raw.extend_from_slice(&0u32.to_le_bytes());
         raw.extend_from_slice(&0u32.to_le_bytes());
         raw.extend_from_slice(&3u32.to_le_bytes());
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw.extend_from_slice(&3u32.to_le_bytes());
+        raw.extend_from_slice(&9.0f32.to_le_bytes());
+        raw.extend_from_slice(&8.0f32.to_le_bytes());
+        raw.extend_from_slice(&7.0f32.to_le_bytes());
+        raw.extend_from_slice(&6.0f32.to_le_bytes());
 
         let compressed = perro_io::compress_zlib_best(&raw).expect("compress pmesh payload");
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"PMESH");
-        bytes.extend_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(&6u32.to_le_bytes());
+        let flags = PMESH_V6_FLAG_HAS_NORMAL
+            | PMESH_V6_FLAG_HAS_UV0
+            | PMESH_V6_FLAG_HAS_JOINTS
+            | PMESH_V6_FLAG_HAS_WEIGHTS;
+        bytes.extend_from_slice(&flags.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
-        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&(raw.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&compressed);
 
-        let decoded = decode_pmesh(&bytes).expect("decode v4 pmesh");
+        let decoded = decode_pmesh(&bytes).expect("decode v6 pmesh");
         assert_eq!(decoded.vertices.len(), 1);
-        assert_eq!(decoded.indices.len(), 3);
+        assert_eq!(decoded.indices, vec![0, 0, 0]);
+        assert_eq!(decoded.vertices[0].pos, [1.0, 2.0, 3.0]);
+        assert_eq!(decoded.vertices[0].normal, [0.0, 1.0, 0.0]);
+        assert_eq!(decoded.vertices[0].uv, [0.25, 0.75]);
+        assert_eq!(decoded.vertices[0].joints, [4, 5, 6, 7]);
+        assert_eq!(decoded.vertices[0].weights, [0.1, 0.2, 0.3, 0.4]);
         assert_eq!(decoded.surface_ranges.len(), 1);
+        assert_eq!(decoded.surface_ranges[0].index_start, 0);
+        assert_eq!(decoded.surface_ranges[0].index_count, 3);
+        assert_eq!(decoded.meshlets.len(), 1);
+        assert_eq!(decoded.meshlets[0].index_start, 0);
+        assert_eq!(decoded.meshlets[0].index_count, 3);
+        assert_eq!(decoded.meshlets[0].center, [9.0, 8.0, 7.0]);
+        assert_eq!(decoded.meshlets[0].radius, 6.0);
     }
 
     #[test]
-    fn decode_pmesh_accepts_version_5_rigid_payload() {
-        let mut raw = Vec::new();
-        raw.extend_from_slice(&1.0f32.to_le_bytes());
-        raw.extend_from_slice(&2.0f32.to_le_bytes());
-        raw.extend_from_slice(&3.0f32.to_le_bytes());
-        raw.extend_from_slice(&0.0f32.to_le_bytes());
-        raw.extend_from_slice(&1.0f32.to_le_bytes());
-        raw.extend_from_slice(&0.0f32.to_le_bytes());
-        raw.extend_from_slice(&0.25f32.to_le_bytes());
-        raw.extend_from_slice(&0.75f32.to_le_bytes());
-        raw.extend_from_slice(&0u32.to_le_bytes());
-        raw.extend_from_slice(&0u32.to_le_bytes());
-        raw.extend_from_slice(&0u32.to_le_bytes());
-        raw.extend_from_slice(&0u32.to_le_bytes());
-        raw.extend_from_slice(&3u32.to_le_bytes());
-        let compressed = perro_io::compress_zlib_best(&raw).expect("compress pmesh payload");
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(b"PMESH");
-        bytes.extend_from_slice(&5u32.to_le_bytes());
-        bytes.extend_from_slice(&0u32.to_le_bytes()); // rigid
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        bytes.extend_from_slice(&0u32.to_le_bytes());
-        bytes.extend_from_slice(&(raw.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(&compressed);
-
-        let decoded = decode_pmesh(&bytes).expect("decode v5 rigid pmesh");
-        assert_eq!(decoded.vertices.len(), 1);
-        assert_eq!(decoded.vertices[0].joints, [0, 0, 0, 0]);
-        assert_eq!(decoded.indices.len(), 3);
-        assert_eq!(decoded.surface_ranges.len(), 1);
+    fn decode_pmesh_rejects_legacy_versions_v1_through_v5() {
+        for version in 1u32..=5 {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(b"PMESH");
+            bytes.extend_from_slice(&version.to_le_bytes());
+            bytes.resize(33, 0);
+            assert!(
+                decode_pmesh(&bytes).is_none(),
+                "legacy pmesh version {version} must reject"
+            );
+        }
     }
 
     #[test]
@@ -5154,6 +5158,23 @@ mod tests {
         assert_eq!(decoded.1, 2);
         assert_eq!(decoded.2, 1);
         assert_eq!(decoded.0, vec![10u8, 20, 30, 255, 40, 50, 60, 255]);
+    }
+
+    #[test]
+    fn decode_ptex_rejects_legacy_versions() {
+        for version in [1u32, 3, 4, 5] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(b"PTEX");
+            bytes.extend_from_slice(&version.to_le_bytes());
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            assert!(
+                decode_ptex(&bytes).is_none(),
+                "legacy ptex version {version} must reject"
+            );
+        }
     }
 }
 
@@ -5176,66 +5197,20 @@ fn build_meshlets(vertices: &[MeshVertex], indices: &[u32]) -> (Vec<u32>, Vec<De
 }
 
 fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
-    if bytes.len() < 25 || &bytes[0..5] != PMESH_MAGIC {
+    if bytes.len() < 33 || &bytes[0..5] != PMESH_MAGIC {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6
-    {
+    if version != 6 {
         return None;
     }
-    let (flags, vertex_count, index_count, surface_count, meshlet_count, raw_len, payload_start) =
-        if version == 6 {
-            if bytes.len() < 33 {
-                return None;
-            }
-            (
-                u32::from_le_bytes(bytes[9..13].try_into().ok()?),
-                u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize,
-                33usize,
-            )
-        } else if version == 5 {
-            if bytes.len() < 33 {
-                return None;
-            }
-            (
-                u32::from_le_bytes(bytes[9..13].try_into().ok()?),
-                u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize,
-                33usize,
-            )
-        } else if version == 4 {
-            if bytes.len() < 29 {
-                return None;
-            }
-            (
-                PMESH_V5_FLAG_SKINNED,
-                u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize,
-                29usize,
-            )
-        } else {
-            (
-                PMESH_V5_FLAG_SKINNED,
-                u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
-                0usize,
-                u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize,
-                25usize,
-            )
-        };
-    let raw = decompress_zlib(&bytes[payload_start..]).ok()?;
+    let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
+    let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
+    let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
+    let surface_count = u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize;
+    let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
+    let raw_len = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
+    let raw = decompress_zlib(&bytes[33..]).ok()?;
     if raw.len() != raw_len {
         return None;
     }
@@ -5244,20 +5219,11 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     let v6_has_uv0 = (flags & PMESH_V6_FLAG_HAS_UV0) != 0;
     let v6_has_joints = (flags & PMESH_V6_FLAG_HAS_JOINTS) != 0;
     let v6_has_weights = (flags & PMESH_V6_FLAG_HAS_WEIGHTS) != 0;
-    let vertex_stride = match version {
-        1 => 24,
-        2 => 48,
-        3 | 4 => 56,
-        5 if (flags & PMESH_V5_FLAG_SKINNED) != 0 => 56,
-        5 => 32,
-        6 => {
-            12 + if v6_has_normal { 12 } else { 0 }
-                + if v6_has_uv0 { 8 } else { 0 }
-                + if v6_has_joints { 8 } else { 0 }
-                + if v6_has_weights { 16 } else { 0 }
-        }
-        _ => return None,
-    };
+    let vertex_stride = 12
+        + if v6_has_normal { 12 } else { 0 }
+        + if v6_has_uv0 { 8 } else { 0 }
+        + if v6_has_joints { 8 } else { 0 }
+        + if v6_has_weights { 16 } else { 0 };
     let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
     let index_bytes = index_count.checked_mul(4)?;
     let surface_bytes = surface_count.checked_mul(8)?;
@@ -5280,19 +5246,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
             f32::from_le_bytes(raw[cursor + 8..cursor + 12].try_into().ok()?),
         ];
         cursor += 12;
-        let normal = if version == 6 {
-            if v6_has_normal {
-                let out = [
-                    f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
-                    f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
-                    f32::from_le_bytes(raw[cursor + 8..cursor + 12].try_into().ok()?),
-                ];
-                cursor += 12;
-                out
-            } else {
-                [0.0, 1.0, 0.0]
-            }
-        } else {
+        let normal = if v6_has_normal {
             let out = [
                 f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
                 f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
@@ -5300,19 +5254,10 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
             ];
             cursor += 12;
             out
+        } else {
+            [0.0, 1.0, 0.0]
         };
-        let uv = if version == 6 {
-            if v6_has_uv0 {
-                let out = [
-                    f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
-                    f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
-                ];
-                cursor += 8;
-                out
-            } else {
-                [0.0, 0.0]
-            }
-        } else if version >= 3 || version == 5 {
+        let uv = if v6_has_uv0 {
             let out = [
                 f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
                 f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
@@ -5322,78 +5267,27 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         } else {
             [0.0, 0.0]
         };
-        let (joints, weights) = if version == 6 {
-            let joints = if v6_has_joints {
-                let out = [
-                    u16::from_le_bytes(raw[cursor..cursor + 2].try_into().ok()?),
-                    u16::from_le_bytes(raw[cursor + 2..cursor + 4].try_into().ok()?),
-                    u16::from_le_bytes(raw[cursor + 4..cursor + 6].try_into().ok()?),
-                    u16::from_le_bytes(raw[cursor + 6..cursor + 8].try_into().ok()?),
-                ];
-                cursor += 8;
-                out
-            } else {
-                [0, 0, 0, 0]
-            };
-            let weights = if v6_has_weights {
-                let out = [
-                    f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
-                    f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
-                    f32::from_le_bytes(raw[cursor + 8..cursor + 12].try_into().ok()?),
-                    f32::from_le_bytes(raw[cursor + 12..cursor + 16].try_into().ok()?),
-                ];
-                out
-            } else {
-                [1.0, 0.0, 0.0, 0.0]
-            };
-            (joints, weights)
-        } else if version == 5 && (flags & PMESH_V5_FLAG_SKINNED) != 0 {
-            let joints = [
+        let joints = if v6_has_joints {
+            let out = [
                 u16::from_le_bytes(raw[cursor..cursor + 2].try_into().ok()?),
                 u16::from_le_bytes(raw[cursor + 2..cursor + 4].try_into().ok()?),
                 u16::from_le_bytes(raw[cursor + 4..cursor + 6].try_into().ok()?),
                 u16::from_le_bytes(raw[cursor + 6..cursor + 8].try_into().ok()?),
             ];
             cursor += 8;
-            let weights = [
-                f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
-                f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
-                f32::from_le_bytes(raw[cursor + 8..cursor + 12].try_into().ok()?),
-                f32::from_le_bytes(raw[cursor + 12..cursor + 16].try_into().ok()?),
-            ];
-            (joints, weights)
-        } else if version >= 3 && version != 5 {
-            let joints = [
-                u16::from_le_bytes(raw[cursor..cursor + 2].try_into().ok()?),
-                u16::from_le_bytes(raw[cursor + 2..cursor + 4].try_into().ok()?),
-                u16::from_le_bytes(raw[cursor + 4..cursor + 6].try_into().ok()?),
-                u16::from_le_bytes(raw[cursor + 6..cursor + 8].try_into().ok()?),
-            ];
-            cursor += 8;
-            let weights = [
-                f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
-                f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
-                f32::from_le_bytes(raw[cursor + 8..cursor + 12].try_into().ok()?),
-                f32::from_le_bytes(raw[cursor + 12..cursor + 16].try_into().ok()?),
-            ];
-            (joints, weights)
-        } else if version == 2 {
-            let joints = [
-                u16::from_le_bytes(raw[cursor..cursor + 2].try_into().ok()?),
-                u16::from_le_bytes(raw[cursor + 2..cursor + 4].try_into().ok()?),
-                u16::from_le_bytes(raw[cursor + 4..cursor + 6].try_into().ok()?),
-                u16::from_le_bytes(raw[cursor + 6..cursor + 8].try_into().ok()?),
-            ];
-            cursor += 8;
-            let weights = [
-                f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
-                f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
-                f32::from_le_bytes(raw[cursor + 8..cursor + 12].try_into().ok()?),
-                f32::from_le_bytes(raw[cursor + 12..cursor + 16].try_into().ok()?),
-            ];
-            (joints, weights)
+            out
         } else {
-            ([0, 0, 0, 0], [1.0, 0.0, 0.0, 0.0])
+            [0, 0, 0, 0]
+        };
+        let weights = if v6_has_weights {
+            [
+                f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
+                f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
+                f32::from_le_bytes(raw[cursor + 8..cursor + 12].try_into().ok()?),
+                f32::from_le_bytes(raw[cursor + 12..cursor + 16].try_into().ok()?),
+            ]
+        } else {
+            [1.0, 0.0, 0.0, 0.0]
         };
         vertices.push(MeshVertex {
             pos,
@@ -5852,33 +5746,16 @@ fn decode_gltf_texture(source_path: &str, texture_index: usize) -> Option<(Vec<u
 }
 
 fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
-    if bytes.len() < 20 || &bytes[0..4] != PTEX_MAGIC {
+    if bytes.len() < 24 || &bytes[0..4] != PTEX_MAGIC {
         return None;
     }
     let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-    if version != 1 && version != 2 {
+    if version != 2 {
         return None;
     }
     let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
     let height = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
     if width == 0 || height == 0 {
-        return None;
-    }
-
-    if version == 1 {
-        let raw_len = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
-        let expected_len = width.checked_mul(height)?.checked_mul(4)?;
-        if raw_len != expected_len {
-            return None;
-        }
-        let rgba = decompress_zlib(&bytes[20..]).ok()?;
-        if rgba.len() != raw_len as usize {
-            return None;
-        }
-        return Some((rgba, width, height));
-    }
-
-    if bytes.len() < 24 {
         return None;
     }
     let flags = u32::from_le_bytes(bytes[16..20].try_into().ok()?);

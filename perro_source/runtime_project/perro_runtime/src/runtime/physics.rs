@@ -1712,85 +1712,34 @@ fn decode_pmesh_trimesh(
     sy: f32,
     sz: f32,
 ) -> Option<(Vec<na3::Point3<f32>>, Vec<[u32; 3]>)> {
-    if bytes.len() < 25 || &bytes[0..5] != b"PMESH" {
+    if bytes.len() < 33 || &bytes[0..5] != b"PMESH" {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6
-    {
+    if version != 6 {
         return None;
     }
 
-    let (flags, vertex_count, index_count, raw_len, payload_start) = match version {
-        6 | 5 => {
-            if bytes.len() < 33 {
-                return None;
-            }
-            (
-                u32::from_le_bytes(bytes[9..13].try_into().ok()?),
-                u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize,
-                33usize,
-            )
-        }
-        4 => {
-            if bytes.len() < 29 {
-                return None;
-            }
-            (
-                1u32,
-                u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
-                u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize,
-                29usize,
-            )
-        }
-        _ => (
-            1u32,
-            u32::from_le_bytes(bytes[9..13].try_into().ok()?) as usize,
-            u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize,
-            u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize,
-            25usize,
-        ),
-    };
+    let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
+    let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
+    let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
+    let raw_len = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
+    let payload_start = 33usize;
 
     let raw = decompress_zlib(&bytes[payload_start..]).ok()?;
     if raw.len() != raw_len {
         return None;
     }
 
-    let has_normal = version != 6 || (flags & (1 << 0)) != 0;
-    let has_uv0 = version == 6 && (flags & (1 << 1)) != 0;
-    let has_joints = if version == 6 {
-        (flags & (1 << 2)) != 0
-    } else if version == 5 {
-        (flags & 1) != 0
-    } else {
-        version >= 2
-    };
-    let has_weights = if version == 6 {
-        (flags & (1 << 3)) != 0
-    } else if version == 5 {
-        (flags & 1) != 0
-    } else {
-        version >= 2
-    };
-
-    let vertex_stride = if version == 6 {
-        12 + if has_normal { 12 } else { 0 }
-            + if has_uv0 { 8 } else { 0 }
-            + if has_joints { 8 } else { 0 }
-            + if has_weights { 16 } else { 0 }
-    } else if version == 5 {
-        if (flags & 1) != 0 { 56 } else { 32 }
-    } else if version == 4 || version == 3 {
-        56
-    } else if version == 2 {
-        48
-    } else {
-        24
-    };
+    let has_normal = (flags & (1 << 0)) != 0;
+    let has_uv0 = (flags & (1 << 1)) != 0;
+    let has_joints = (flags & (1 << 2)) != 0;
+    let has_weights = (flags & (1 << 3)) != 0;
+    let vertex_stride = 12
+        + if has_normal { 12 } else { 0 }
+        + if has_uv0 { 8 } else { 0 }
+        + if has_joints { 8 } else { 0 }
+        + if has_weights { 16 } else { 0 };
 
     let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
     let index_bytes = index_count.checked_mul(4)?;

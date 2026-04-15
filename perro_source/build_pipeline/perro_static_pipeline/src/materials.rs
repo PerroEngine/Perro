@@ -836,63 +836,162 @@ fn as_custom_params(value: &SceneValue) -> Option<Vec<CustomParamLiteral>> {
 
 fn material_literal_to_code(material: &MaterialLiteral) -> String {
     match material {
-        MaterialLiteral::Standard(m) => format!(
-            "Material3D::Standard(StandardMaterial3D {{ base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}], roughness_factor: {:.6}, metallic_factor: {:.6}, occlusion_strength: {:.6}, emissive_factor: [{:.6}, {:.6}, {:.6}], alpha_mode: {}, alpha_cutoff: {:.6}, double_sided: {}, flat_shading: {}, normal_scale: {:.6}, base_color_texture: {}, metallic_roughness_texture: {}, normal_texture: {}, occlusion_texture: {}, emissive_texture: {} }})",
-            m.base_color_factor[0],
-            m.base_color_factor[1],
-            m.base_color_factor[2],
-            m.base_color_factor[3],
-            m.roughness_factor,
-            m.metallic_factor,
-            m.occlusion_strength,
-            m.emissive_factor[0],
-            m.emissive_factor[1],
-            m.emissive_factor[2],
-            m.alpha_mode,
-            m.alpha_cutoff,
-            if m.double_sided { "true" } else { "false" },
-            if m.flat_shading { "true" } else { "false" },
-            m.normal_scale,
-            m.base_color_texture,
-            m.metallic_roughness_texture,
-            m.normal_texture,
-            m.occlusion_texture,
-            m.emissive_texture
-        ),
-        MaterialLiteral::Unlit(m) => format!(
-            "Material3D::Unlit(UnlitMaterial3D {{ base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}], emissive_factor: [{:.6}, {:.6}, {:.6}], alpha_mode: {}, alpha_cutoff: {:.6}, double_sided: {}, flat_shading: {}, base_color_texture: {} }})",
-            m.base_color_factor[0],
-            m.base_color_factor[1],
-            m.base_color_factor[2],
-            m.base_color_factor[3],
-            m.emissive_factor[0],
-            m.emissive_factor[1],
-            m.emissive_factor[2],
-            m.alpha_mode,
-            m.alpha_cutoff,
-            if m.double_sided { "true" } else { "false" },
-            if m.flat_shading { "true" } else { "false" },
-            m.base_color_texture
-        ),
-        MaterialLiteral::Toon(m) => format!(
-            "Material3D::Toon(ToonMaterial3D {{ base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}], emissive_factor: [{:.6}, {:.6}, {:.6}], alpha_mode: {}, alpha_cutoff: {:.6}, double_sided: {}, flat_shading: {}, band_count: {}, rim_strength: {:.6}, outline_width: {:.6}, base_color_texture: {}, ramp_texture: {} }})",
-            m.base_color_factor[0],
-            m.base_color_factor[1],
-            m.base_color_factor[2],
-            m.base_color_factor[3],
-            m.emissive_factor[0],
-            m.emissive_factor[1],
-            m.emissive_factor[2],
-            m.alpha_mode,
-            m.alpha_cutoff,
-            if m.double_sided { "true" } else { "false" },
-            if m.flat_shading { "true" } else { "false" },
-            m.band_count,
-            m.rim_strength,
-            m.outline_width,
-            m.base_color_texture,
-            m.ramp_texture
-        ),
+        MaterialLiteral::Standard(m) => {
+            let d = StandardMaterial3D::default();
+            let mut fields = Vec::<String>::new();
+            if m.base_color_factor != d.base_color_factor {
+                fields.push(format!(
+                    "base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}]",
+                    m.base_color_factor[0], m.base_color_factor[1], m.base_color_factor[2], m.base_color_factor[3]
+                ));
+            }
+            if m.roughness_factor != d.roughness_factor {
+                fields.push(format!("roughness_factor: {:.6}", m.roughness_factor));
+            }
+            if m.metallic_factor != d.metallic_factor {
+                fields.push(format!("metallic_factor: {:.6}", m.metallic_factor));
+            }
+            if m.occlusion_strength != d.occlusion_strength {
+                fields.push(format!("occlusion_strength: {:.6}", m.occlusion_strength));
+            }
+            if m.emissive_factor != d.emissive_factor {
+                fields.push(format!(
+                    "emissive_factor: [{:.6}, {:.6}, {:.6}]",
+                    m.emissive_factor[0], m.emissive_factor[1], m.emissive_factor[2]
+                ));
+            }
+            if m.alpha_mode != d.alpha_mode {
+                fields.push(format!("alpha_mode: {}", m.alpha_mode));
+            }
+            if m.alpha_cutoff != d.alpha_cutoff {
+                fields.push(format!("alpha_cutoff: {:.6}", m.alpha_cutoff));
+            }
+            if m.double_sided != d.double_sided {
+                fields.push(format!("double_sided: {}", if m.double_sided { "true" } else { "false" }));
+            }
+            if m.flat_shading != d.flat_shading {
+                fields.push(format!("flat_shading: {}", if m.flat_shading { "true" } else { "false" }));
+            }
+            if m.normal_scale != d.normal_scale {
+                fields.push(format!("normal_scale: {:.6}", m.normal_scale));
+            }
+            if m.base_color_texture != d.base_color_texture {
+                fields.push(format!("base_color_texture: {}", m.base_color_texture));
+            }
+            if m.metallic_roughness_texture != d.metallic_roughness_texture {
+                fields.push(format!(
+                    "metallic_roughness_texture: {}",
+                    m.metallic_roughness_texture
+                ));
+            }
+            if m.normal_texture != d.normal_texture {
+                fields.push(format!("normal_texture: {}", m.normal_texture));
+            }
+            if m.occlusion_texture != d.occlusion_texture {
+                fields.push(format!("occlusion_texture: {}", m.occlusion_texture));
+            }
+            if m.emissive_texture != d.emissive_texture {
+                fields.push(format!("emissive_texture: {}", m.emissive_texture));
+            }
+            if fields.is_empty() {
+                "Material3D::Standard(StandardMaterial3D::const_default())".to_string()
+            } else {
+                format!(
+                    "Material3D::Standard(StandardMaterial3D {{ {}, ..StandardMaterial3D::const_default() }})",
+                    fields.join(", ")
+                )
+            }
+        }
+        MaterialLiteral::Unlit(m) => {
+            let d = UnlitMaterial3D::default();
+            let mut fields = Vec::<String>::new();
+            if m.base_color_factor != d.base_color_factor {
+                fields.push(format!(
+                    "base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}]",
+                    m.base_color_factor[0], m.base_color_factor[1], m.base_color_factor[2], m.base_color_factor[3]
+                ));
+            }
+            if m.emissive_factor != d.emissive_factor {
+                fields.push(format!(
+                    "emissive_factor: [{:.6}, {:.6}, {:.6}]",
+                    m.emissive_factor[0], m.emissive_factor[1], m.emissive_factor[2]
+                ));
+            }
+            if m.alpha_mode != d.alpha_mode {
+                fields.push(format!("alpha_mode: {}", m.alpha_mode));
+            }
+            if m.alpha_cutoff != d.alpha_cutoff {
+                fields.push(format!("alpha_cutoff: {:.6}", m.alpha_cutoff));
+            }
+            if m.double_sided != d.double_sided {
+                fields.push(format!("double_sided: {}", if m.double_sided { "true" } else { "false" }));
+            }
+            if m.flat_shading != d.flat_shading {
+                fields.push(format!("flat_shading: {}", if m.flat_shading { "true" } else { "false" }));
+            }
+            if m.base_color_texture != d.base_color_texture {
+                fields.push(format!("base_color_texture: {}", m.base_color_texture));
+            }
+            if fields.is_empty() {
+                "Material3D::Unlit(UnlitMaterial3D::const_default())".to_string()
+            } else {
+                format!(
+                    "Material3D::Unlit(UnlitMaterial3D {{ {}, ..UnlitMaterial3D::const_default() }})",
+                    fields.join(", ")
+                )
+            }
+        }
+        MaterialLiteral::Toon(m) => {
+            let d = ToonMaterial3D::default();
+            let mut fields = Vec::<String>::new();
+            if m.base_color_factor != d.base_color_factor {
+                fields.push(format!(
+                    "base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}]",
+                    m.base_color_factor[0], m.base_color_factor[1], m.base_color_factor[2], m.base_color_factor[3]
+                ));
+            }
+            if m.emissive_factor != d.emissive_factor {
+                fields.push(format!(
+                    "emissive_factor: [{:.6}, {:.6}, {:.6}]",
+                    m.emissive_factor[0], m.emissive_factor[1], m.emissive_factor[2]
+                ));
+            }
+            if m.alpha_mode != d.alpha_mode {
+                fields.push(format!("alpha_mode: {}", m.alpha_mode));
+            }
+            if m.alpha_cutoff != d.alpha_cutoff {
+                fields.push(format!("alpha_cutoff: {:.6}", m.alpha_cutoff));
+            }
+            if m.double_sided != d.double_sided {
+                fields.push(format!("double_sided: {}", if m.double_sided { "true" } else { "false" }));
+            }
+            if m.flat_shading != d.flat_shading {
+                fields.push(format!("flat_shading: {}", if m.flat_shading { "true" } else { "false" }));
+            }
+            if m.band_count != d.band_count {
+                fields.push(format!("band_count: {}", m.band_count));
+            }
+            if m.rim_strength != d.rim_strength {
+                fields.push(format!("rim_strength: {:.6}", m.rim_strength));
+            }
+            if m.outline_width != d.outline_width {
+                fields.push(format!("outline_width: {:.6}", m.outline_width));
+            }
+            if m.base_color_texture != d.base_color_texture {
+                fields.push(format!("base_color_texture: {}", m.base_color_texture));
+            }
+            if m.ramp_texture != d.ramp_texture {
+                fields.push(format!("ramp_texture: {}", m.ramp_texture));
+            }
+            if fields.is_empty() {
+                "Material3D::Toon(ToonMaterial3D::const_default())".to_string()
+            } else {
+                format!(
+                    "Material3D::Toon(ToonMaterial3D {{ {}, ..ToonMaterial3D::const_default() }})",
+                    fields.join(", ")
+                )
+            }
+        }
         MaterialLiteral::Custom(m) => {
             let params = if m.params.is_empty() {
                 "Cow::Borrowed(&[])".to_string()
@@ -1018,4 +1117,44 @@ fn materials_from_gltf_file(
         ));
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MaterialLiteral, material_literal_to_code};
+    use perro_render_bridge::{StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D};
+
+    #[test]
+    fn material_codegen_uses_default_ctor_for_default_standard() {
+        let code = material_literal_to_code(&MaterialLiteral::Standard(StandardMaterial3D::default()));
+        assert_eq!(code, "Material3D::Standard(StandardMaterial3D::const_default())");
+    }
+
+    #[test]
+    fn material_codegen_emits_sparse_standard_fields() {
+        let mut m = StandardMaterial3D::default();
+        m.double_sided = true;
+        m.base_color_texture = 7;
+        let code = material_literal_to_code(&MaterialLiteral::Standard(m));
+        assert!(code.contains("double_sided: true"));
+        assert!(code.contains("base_color_texture: 7"));
+        assert!(code.contains("..StandardMaterial3D::const_default()"));
+    }
+
+    #[test]
+    fn material_codegen_emits_sparse_toon_fields() {
+        let mut m = ToonMaterial3D::default();
+        m.band_count = 8;
+        m.ramp_texture = 4;
+        let code = material_literal_to_code(&MaterialLiteral::Toon(m));
+        assert!(code.contains("band_count: 8"));
+        assert!(code.contains("ramp_texture: 4"));
+        assert!(code.contains("..ToonMaterial3D::const_default()"));
+    }
+
+    #[test]
+    fn material_codegen_uses_default_ctor_for_default_unlit() {
+        let code = material_literal_to_code(&MaterialLiteral::Unlit(UnlitMaterial3D::default()));
+        assert_eq!(code, "Material3D::Unlit(UnlitMaterial3D::const_default())");
+    }
 }

@@ -257,7 +257,7 @@ fn decode_pskel(bytes: &[u8]) -> Result<Vec<Bone3D>, String> {
         return Err("invalid pskel magic".to_string());
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
-    if version != 1 && version != PSKEL_VERSION {
+    if version != PSKEL_VERSION {
         return Err(format!("unsupported pskel version {version}"));
     }
     let bone_count = u32::from_le_bytes(bytes[9..13].try_into().unwrap()) as usize;
@@ -275,40 +275,31 @@ fn decode_pskel(bytes: &[u8]) -> Result<Vec<Bone3D>, String> {
         let name = std::str::from_utf8(name_bytes)
             .map_err(|_| "invalid bone name utf8".to_string())?
             .to_string();
-        let (parent, rest, inv_bind) = if version == 1 {
-            (
-                read_i32(&raw, &mut cursor)?,
-                read_transform(&raw, &mut cursor)?,
-                read_transform(&raw, &mut cursor)?,
-            )
+        let flags = read_u32(&raw, &mut cursor)?;
+        let parent = if (flags & PSKEL_BONE_FLAG_HAS_PARENT) != 0 {
+            read_i32(&raw, &mut cursor)?
         } else {
-            let flags = read_u32(&raw, &mut cursor)?;
-            let parent = if (flags & PSKEL_BONE_FLAG_HAS_PARENT) != 0 {
-                read_i32(&raw, &mut cursor)?
-            } else {
-                -1
-            };
-            let mut rest = Transform3D::IDENTITY;
-            let mut inv_bind = Transform3D::IDENTITY;
-            if (flags & PSKEL_BONE_FLAG_HAS_REST_POS) != 0 {
-                rest.position = read_vec3(&raw, &mut cursor)?;
-            }
-            if (flags & PSKEL_BONE_FLAG_HAS_REST_SCALE) != 0 {
-                rest.scale = read_vec3(&raw, &mut cursor)?;
-            }
-            if (flags & PSKEL_BONE_FLAG_HAS_REST_ROT) != 0 {
-                rest.rotation = read_quat(&raw, &mut cursor)?;
-            }
-            if (flags & PSKEL_BONE_FLAG_HAS_INV_POS) != 0 {
-                inv_bind.position = read_vec3(&raw, &mut cursor)?;
-            }
-            if (flags & PSKEL_BONE_FLAG_HAS_INV_SCALE) != 0 {
-                inv_bind.scale = read_vec3(&raw, &mut cursor)?;
-            }
-            if (flags & PSKEL_BONE_FLAG_HAS_INV_ROT) != 0 {
-                inv_bind.rotation = read_quat(&raw, &mut cursor)?;
-            }
-            (parent, rest, inv_bind)
+            -1
+        };
+        let mut rest = Transform3D::IDENTITY;
+        let mut inv_bind = Transform3D::IDENTITY;
+        if (flags & PSKEL_BONE_FLAG_HAS_REST_POS) != 0 {
+            rest.position = read_vec3(&raw, &mut cursor)?;
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_REST_SCALE) != 0 {
+            rest.scale = read_vec3(&raw, &mut cursor)?;
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_REST_ROT) != 0 {
+            rest.rotation = read_quat(&raw, &mut cursor)?;
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_INV_POS) != 0 {
+            inv_bind.position = read_vec3(&raw, &mut cursor)?;
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_INV_SCALE) != 0 {
+            inv_bind.scale = read_vec3(&raw, &mut cursor)?;
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_INV_ROT) != 0 {
+            inv_bind.rotation = read_quat(&raw, &mut cursor)?;
         };
         bones.push(Bone3D {
             name: name.into(),
@@ -523,24 +514,6 @@ fn read_bytes<'a>(raw: &'a [u8], cursor: &mut usize, len: usize) -> Result<&'a [
     Ok(slice)
 }
 
-fn read_transform(raw: &[u8], cursor: &mut usize) -> Result<Transform3D, String> {
-    let px = read_f32(raw, cursor)?;
-    let py = read_f32(raw, cursor)?;
-    let pz = read_f32(raw, cursor)?;
-    let sx = read_f32(raw, cursor)?;
-    let sy = read_f32(raw, cursor)?;
-    let sz = read_f32(raw, cursor)?;
-    let rx = read_f32(raw, cursor)?;
-    let ry = read_f32(raw, cursor)?;
-    let rz = read_f32(raw, cursor)?;
-    let rw = read_f32(raw, cursor)?;
-    Ok(Transform3D::new(
-        Vector3::new(px, py, pz),
-        Quaternion::new(rx, ry, rz, rw),
-        Vector3::new(sx, sy, sz),
-    ))
-}
-
 fn read_vec3(raw: &[u8], cursor: &mut usize) -> Result<Vector3, String> {
     Ok(Vector3::new(
         read_f32(raw, cursor)?,
@@ -588,5 +561,17 @@ mod tests {
         assert_eq!(bones[0].inv_bind.position, Vector3::ZERO);
         assert_eq!(bones[0].inv_bind.scale, Vector3::ONE);
         assert_eq!(bones[0].inv_bind.rotation, Quaternion::IDENTITY);
+    }
+
+    #[test]
+    fn decode_pskel_rejects_legacy_versions() {
+        for version in [1u32, 3, 4, 5] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(b"PSKEL");
+            bytes.extend_from_slice(&version.to_le_bytes());
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            assert!(decode_pskel(&bytes).is_err(), "legacy pskel version {version} must reject");
+        }
     }
 }

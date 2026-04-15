@@ -255,6 +255,13 @@ pub struct StandardMaterial3D {
 
 impl Default for StandardMaterial3D {
     fn default() -> Self {
+        Self::const_default()
+    }
+}
+
+impl StandardMaterial3D {
+    #[inline]
+    pub const fn const_default() -> Self {
         Self {
             base_color_factor: [0.85, 0.85, 0.85, 1.0],
             roughness_factor: 0.5,
@@ -291,6 +298,13 @@ pub struct UnlitMaterial3D {
 
 impl Default for UnlitMaterial3D {
     fn default() -> Self {
+        Self::const_default()
+    }
+}
+
+impl UnlitMaterial3D {
+    #[inline]
+    pub const fn const_default() -> Self {
         Self {
             base_color_factor: [1.0, 1.0, 1.0, 1.0],
             emissive_factor: [0.0, 0.0, 0.0],
@@ -321,6 +335,13 @@ pub struct ToonMaterial3D {
 
 impl Default for ToonMaterial3D {
     fn default() -> Self {
+        Self::const_default()
+    }
+}
+
+impl ToonMaterial3D {
+    #[inline]
+    pub const fn const_default() -> Self {
         Self {
             base_color_factor: [1.0, 1.0, 1.0, 1.0],
             emissive_factor: [0.0, 0.0, 0.0],

@@ -1,11 +1,12 @@
 use crate::{StaticPipelineError, ensure_unique_hashes, res_dir, static_dir};
 use perro_animation::{
-    AnimationBoneSelector, AnimationEvent, AnimationEventScope, AnimationParam, AnimationTrackValue,
+    AnimationBoneSelector, AnimationEase, AnimationEvent, AnimationEventScope, AnimationInterpolation,
+    AnimationObjectKey, AnimationObjectTrack, AnimationParam, AnimationTrackValue,
 };
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::NodeField;
 use rayon::prelude::*;
-use std::{fmt::Write as _, fs, io, path::Path};
+use std::{borrow::Cow, fmt::Write as _, fs, io, path::Path};
 
 #[derive(Clone)]
 struct ParsedAnimation {
@@ -39,6 +40,7 @@ pub fn generate_static_animations(project_root: &Path) -> Result<(), StaticPipel
             let source = res_dir.join(rel);
             let text = fs::read_to_string(&source)?;
             let clip = perro_animation::parse_panim(&text).map_err(io::Error::other)?;
+            let clip = optimize_animation_clip(clip);
             Ok(ParsedAnimation {
                 lookup_key: format!("res://{rel}"),
                 clip,
@@ -82,6 +84,225 @@ pub fn generate_static_animations(project_root: &Path) -> Result<(), StaticPipel
     src.push_str(&lookup);
     fs::write(static_dir.join("animations.rs"), src)?;
     Ok(())
+}
+
+fn optimize_animation_clip(mut clip: perro_animation::AnimationClip) -> perro_animation::AnimationClip {
+    let mut tracks = clip.object_tracks.into_owned();
+    for track in &mut tracks {
+        optimize_animation_track_keys(track);
+    }
+    clip.object_tracks = Cow::Owned(tracks);
+    clip
+}
+
+fn optimize_animation_track_keys(track: &mut AnimationObjectTrack) {
+    if track.keys.len() < 3 {
+        return;
+    }
+
+    let mut keys = track.keys.to_vec();
+    let mut index = 1usize;
+    while index + 1 < keys.len() {
+        let prev = &keys[index - 1];
+        let middle = &keys[index];
+        let next = &keys[index + 1];
+        if is_redundant_middle_key(prev, middle, next) {
+            keys.remove(index);
+            index = index.saturating_sub(1).max(1);
+        } else {
+            index += 1;
+        }
+    }
+    track.keys = Cow::Owned(keys);
+}
+
+fn is_redundant_middle_key(
+    prev: &AnimationObjectKey,
+    middle: &AnimationObjectKey,
+    next: &AnimationObjectKey,
+) -> bool {
+    if prev.frame >= middle.frame || middle.frame >= next.frame {
+        return false;
+    }
+
+    let trio = [prev.clone(), middle.clone(), next.clone()];
+    let pair = [prev.clone(), next.clone()];
+    for frame in prev.frame..=next.frame {
+        let Some(a) = sample_track_value_from_keys(&trio, frame) else {
+            return false;
+        };
+        let Some(b) = sample_track_value_from_keys(&pair, frame) else {
+            return false;
+        };
+        if !track_value_exact_eq(&a, &b) {
+            return false;
+        }
+    }
+    true
+}
+
+fn sample_track_value_from_keys(keys: &[AnimationObjectKey], frame: u32) -> Option<AnimationTrackValue> {
+    if keys.is_empty() {
+        return None;
+    }
+
+    let mut prev_index = None::<usize>;
+    let mut next_index = None::<usize>;
+    for (index, key) in keys.iter().enumerate() {
+        if key.frame <= frame {
+            prev_index = Some(index);
+        } else {
+            next_index = Some(index);
+            break;
+        }
+    }
+
+    let prev_index = prev_index.or(Some(0))?;
+    let prev_key = &keys[prev_index];
+    let prev = &prev_key.value;
+    match prev_key.interpolation {
+        AnimationInterpolation::Step => Some(prev.clone()),
+        AnimationInterpolation::Linear => {
+            let Some(next_index) = next_index else {
+                return Some(prev.clone());
+            };
+            let next_key = &keys[next_index];
+            let frame_span = next_key.frame.saturating_sub(prev_key.frame);
+            if frame_span == 0 {
+                return Some(prev.clone());
+            }
+            let local = frame.saturating_sub(prev_key.frame);
+            let t = (local as f32 / frame_span as f32).clamp(0.0, 1.0);
+            let t = ease_sample(prev_key.ease, t);
+            Some(interpolate_values(prev, &next_key.value, t))
+        }
+    }
+}
+
+#[inline]
+fn ease_sample(ease: AnimationEase, t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    match ease {
+        AnimationEase::Linear => t,
+        AnimationEase::EaseIn => t * t,
+        AnimationEase::EaseOut => 1.0 - (1.0 - t) * (1.0 - t),
+        AnimationEase::EaseInOut => {
+            if t < 0.5 {
+                2.0 * t * t
+            } else {
+                1.0 - ((-2.0 * t + 2.0) * (-2.0 * t + 2.0)) * 0.5
+            }
+        }
+    }
+}
+
+fn interpolate_values(a: &AnimationTrackValue, b: &AnimationTrackValue, t: f32) -> AnimationTrackValue {
+    match (a, b) {
+        (AnimationTrackValue::F32(a), AnimationTrackValue::F32(b)) => {
+            AnimationTrackValue::F32(lerp_f32(*a, *b, t))
+        }
+        (AnimationTrackValue::I32(a), AnimationTrackValue::I32(b)) => {
+            AnimationTrackValue::I32(lerp_f32(*a as f32, *b as f32, t).round() as i32)
+        }
+        (AnimationTrackValue::U32(a), AnimationTrackValue::U32(b)) => {
+            AnimationTrackValue::U32(lerp_f32(*a as f32, *b as f32, t).round().max(0.0) as u32)
+        }
+        (AnimationTrackValue::Vec2(a), AnimationTrackValue::Vec2(b)) => {
+            AnimationTrackValue::Vec2([lerp_f32(a[0], b[0], t), lerp_f32(a[1], b[1], t)])
+        }
+        (AnimationTrackValue::Vec3(a), AnimationTrackValue::Vec3(b)) => AnimationTrackValue::Vec3([
+            lerp_f32(a[0], b[0], t),
+            lerp_f32(a[1], b[1], t),
+            lerp_f32(a[2], b[2], t),
+        ]),
+        (AnimationTrackValue::Vec4(a), AnimationTrackValue::Vec4(b)) => AnimationTrackValue::Vec4([
+            lerp_f32(a[0], b[0], t),
+            lerp_f32(a[1], b[1], t),
+            lerp_f32(a[2], b[2], t),
+            lerp_f32(a[3], b[3], t),
+        ]),
+        (AnimationTrackValue::Transform2D(a), AnimationTrackValue::Transform2D(b)) => {
+            let mut out = *a;
+            out.position.x = lerp_f32(a.position.x, b.position.x, t);
+            out.position.y = lerp_f32(a.position.y, b.position.y, t);
+            out.rotation = lerp_f32(a.rotation, b.rotation, t);
+            out.scale.x = lerp_f32(a.scale.x, b.scale.x, t);
+            out.scale.y = lerp_f32(a.scale.y, b.scale.y, t);
+            AnimationTrackValue::Transform2D(out)
+        }
+        (AnimationTrackValue::Transform3D(a), AnimationTrackValue::Transform3D(b)) => {
+            let mut out = *a;
+            out.position.x = lerp_f32(a.position.x, b.position.x, t);
+            out.position.y = lerp_f32(a.position.y, b.position.y, t);
+            out.position.z = lerp_f32(a.position.z, b.position.z, t);
+            out.scale.x = lerp_f32(a.scale.x, b.scale.x, t);
+            out.scale.y = lerp_f32(a.scale.y, b.scale.y, t);
+            out.scale.z = lerp_f32(a.scale.z, b.scale.z, t);
+            out.rotation = a.rotation.to_quat().slerp(b.rotation.to_quat(), t).into();
+            AnimationTrackValue::Transform3D(out)
+        }
+        _ => a.clone(),
+    }
+}
+
+#[inline]
+fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+fn track_value_exact_eq(a: &AnimationTrackValue, b: &AnimationTrackValue) -> bool {
+    match (a, b) {
+        (AnimationTrackValue::Bool(a), AnimationTrackValue::Bool(b)) => a == b,
+        (AnimationTrackValue::I32(a), AnimationTrackValue::I32(b)) => a == b,
+        (AnimationTrackValue::U32(a), AnimationTrackValue::U32(b)) => a == b,
+        (AnimationTrackValue::F32(a), AnimationTrackValue::F32(b)) => f32_cull_eq(*a, *b),
+        (AnimationTrackValue::Vec2(a), AnimationTrackValue::Vec2(b)) => {
+            f32_cull_eq(a[0], b[0]) && f32_cull_eq(a[1], b[1])
+        }
+        (AnimationTrackValue::Vec3(a), AnimationTrackValue::Vec3(b)) => {
+            f32_cull_eq(a[0], b[0]) && f32_cull_eq(a[1], b[1]) && f32_cull_eq(a[2], b[2])
+        }
+        (AnimationTrackValue::Vec4(a), AnimationTrackValue::Vec4(b)) => {
+            f32_cull_eq(a[0], b[0])
+                && f32_cull_eq(a[1], b[1])
+                && f32_cull_eq(a[2], b[2])
+                && f32_cull_eq(a[3], b[3])
+        }
+        (AnimationTrackValue::AssetPath(a), AnimationTrackValue::AssetPath(b)) => a == b,
+        (AnimationTrackValue::Transform2D(a), AnimationTrackValue::Transform2D(b)) => {
+            f32_cull_eq(a.position.x, b.position.x)
+                && f32_cull_eq(a.position.y, b.position.y)
+                && f32_cull_eq(a.rotation, b.rotation)
+                && f32_cull_eq(a.scale.x, b.scale.x)
+                && f32_cull_eq(a.scale.y, b.scale.y)
+        }
+        (AnimationTrackValue::Transform3D(a), AnimationTrackValue::Transform3D(b)) => {
+            f32_cull_eq(a.position.x, b.position.x)
+                && f32_cull_eq(a.position.y, b.position.y)
+                && f32_cull_eq(a.position.z, b.position.z)
+                && f32_cull_eq(a.scale.x, b.scale.x)
+                && f32_cull_eq(a.scale.y, b.scale.y)
+                && f32_cull_eq(a.scale.z, b.scale.z)
+                && f32_cull_eq(a.rotation.x, b.rotation.x)
+                && f32_cull_eq(a.rotation.y, b.rotation.y)
+                && f32_cull_eq(a.rotation.z, b.rotation.z)
+                && f32_cull_eq(a.rotation.w, b.rotation.w)
+        }
+        _ => false,
+    }
+}
+
+#[inline]
+fn f32_cull_eq(a: f32, b: f32) -> bool {
+    if a.to_bits() == b.to_bits() {
+        return true;
+    }
+    if !a.is_finite() || !b.is_finite() {
+        return false;
+    }
+    let delta = (a - b).abs();
+    let scale = 1.0f32.max(a.abs()).max(b.abs());
+    delta <= 1e-6 * scale
 }
 
 fn emit_static_animation_const(
@@ -427,6 +648,7 @@ fn escape_str(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use perro_animation::{AnimationEase, AnimationInterpolation, AnimationObjectTrack, AnimationTrackValue};
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -453,6 +675,101 @@ fps = 24
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         std::env::temp_dir().join(format!("perro_static_pipeline_{label}_{ts}"))
+    }
+
+    fn key(
+        frame: u32,
+        interpolation: AnimationInterpolation,
+        ease: AnimationEase,
+        value: AnimationTrackValue,
+    ) -> AnimationObjectKey {
+        AnimationObjectKey {
+            frame,
+            interpolation,
+            ease,
+            value,
+        }
+    }
+
+    fn assert_track_sampling_equal(original: &[AnimationObjectKey], optimized: &[AnimationObjectKey]) {
+        let start = original
+            .iter()
+            .map(|k| k.frame)
+            .min()
+            .expect("original keys should not be empty");
+        let end = original
+            .iter()
+            .map(|k| k.frame)
+            .max()
+            .expect("original keys should not be empty");
+        for frame in start..=end {
+            let a = sample_track_value_from_keys(original, frame).expect("original sample");
+            let b = sample_track_value_from_keys(optimized, frame).expect("optimized sample");
+            assert!(
+                track_value_exact_eq(&a, &b),
+                "sample mismatch at frame {frame}: original={a:?} optimized={b:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn optimize_track_keys_removes_redundant_linear_midpoint() {
+        let mut track = AnimationObjectTrack::default();
+        let original = vec![
+            key(0, AnimationInterpolation::Linear, AnimationEase::Linear, AnimationTrackValue::F32(0.0)),
+            key(50, AnimationInterpolation::Linear, AnimationEase::Linear, AnimationTrackValue::F32(5.0)),
+            key(100, AnimationInterpolation::Linear, AnimationEase::Linear, AnimationTrackValue::F32(10.0)),
+        ];
+        track.keys = Cow::Owned(original.clone());
+        optimize_animation_track_keys(&mut track);
+        assert_track_sampling_equal(&original, &track.keys);
+        assert_eq!(track.keys.len(), 2);
+        assert_eq!(track.keys[0].frame, 0);
+        assert_eq!(track.keys[1].frame, 100);
+    }
+
+    #[test]
+    fn optimize_track_keys_removes_redundant_step_key() {
+        let mut track = AnimationObjectTrack::default();
+        let original = vec![
+            key(0, AnimationInterpolation::Step, AnimationEase::Linear, AnimationTrackValue::Bool(false)),
+            key(50, AnimationInterpolation::Step, AnimationEase::Linear, AnimationTrackValue::Bool(false)),
+            key(100, AnimationInterpolation::Step, AnimationEase::Linear, AnimationTrackValue::Bool(true)),
+        ];
+        track.keys = Cow::Owned(original.clone());
+        optimize_animation_track_keys(&mut track);
+        assert_track_sampling_equal(&original, &track.keys);
+        assert_eq!(track.keys.len(), 2);
+        assert_eq!(track.keys[0].frame, 0);
+        assert_eq!(track.keys[1].frame, 100);
+    }
+
+    #[test]
+    fn optimize_track_keys_keeps_non_redundant_step_change() {
+        let mut track = AnimationObjectTrack::default();
+        let original = vec![
+            key(0, AnimationInterpolation::Step, AnimationEase::Linear, AnimationTrackValue::Bool(false)),
+            key(50, AnimationInterpolation::Step, AnimationEase::Linear, AnimationTrackValue::Bool(true)),
+            key(100, AnimationInterpolation::Step, AnimationEase::Linear, AnimationTrackValue::Bool(false)),
+        ];
+        track.keys = Cow::Owned(original.clone());
+        optimize_animation_track_keys(&mut track);
+        assert_track_sampling_equal(&original, &track.keys);
+        assert_eq!(track.keys.len(), 3);
+        assert_eq!(track.keys[1].frame, 50);
+    }
+
+    #[test]
+    fn optimize_track_keys_preserves_samples_with_ease_curve() {
+        let mut track = AnimationObjectTrack::default();
+        let original = vec![
+            key(0, AnimationInterpolation::Linear, AnimationEase::EaseInOut, AnimationTrackValue::Vec3([0.0, 10.0, -4.0])),
+            key(25, AnimationInterpolation::Linear, AnimationEase::EaseInOut, AnimationTrackValue::Vec3([2.0, 6.0, -1.0])),
+            key(50, AnimationInterpolation::Linear, AnimationEase::EaseInOut, AnimationTrackValue::Vec3([4.0, 2.0, 2.0])),
+        ];
+        track.keys = Cow::Owned(original.clone());
+        optimize_animation_track_keys(&mut track);
+        assert_track_sampling_equal(&original, &track.keys);
     }
 
     #[test]
@@ -485,8 +802,11 @@ fps = 24
             .join("animations.rs");
         let generated_src =
             std::fs::read_to_string(generated_rs).expect("generated animations.rs should exist");
+        let expected_hash = perro_ids::string_to_u64("res://animations/hero_run.panim");
         assert!(generated_src.contains("pub fn lookup_animation(path_hash: u64)"));
-        assert!(generated_src.contains("\"res://animations/hero_run.panim\""));
+        assert!(generated_src.contains(&format!(
+            "{expected_hash}u64 => Some(&CLIP_RES___ANIMATIONS_HERO_RUN_PANIM)"
+        )));
         assert!(generated_src.contains("pub static CLIP_RES___ANIMATIONS_HERO_RUN_PANIM"));
         assert!(!generated_src.contains("parse_panim"));
         assert!(!generated_src.contains("include_str!"));

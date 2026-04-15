@@ -41,17 +41,7 @@ pub fn generate_static_audios(project_root: &Path) -> Result<(), StaticPipelineE
             let res_path = format!("res://{rel}");
             let full_path = res_dir.join(&rel);
             let raw = fs::read(&full_path)?;
-            let ext = Path::new(&rel)
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|v| v.to_ascii_lowercase())
-                .unwrap_or_default();
-            let precompressed = matches!(ext.as_str(), "mp3" | "ogg" | "m4a" | "aac" | "flac");
-            let (flags, payload) = if precompressed {
-                (0u32, raw.clone())
-            } else {
-                (FLAG_ZLIB, compress_zlib_best(&raw)?)
-            };
+            let (flags, payload) = select_pawdio_payload(&raw)?;
 
             let mut pawdio = Vec::with_capacity(18 + payload.len());
             pawdio.extend_from_slice(PAWDIO_MAGIC);
@@ -123,4 +113,38 @@ fn escape_str(input: &str) -> String {
         }
     }
     out
+}
+
+fn select_pawdio_payload(raw: &[u8]) -> io::Result<(u32, Vec<u8>)> {
+    let compressed = compress_zlib_best(raw)?;
+    if compressed.len() < raw.len() {
+        Ok((FLAG_ZLIB, compressed))
+    } else {
+        Ok((0u32, raw.to_vec()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FLAG_ZLIB, select_pawdio_payload};
+
+    #[test]
+    fn select_payload_prefers_compressed_when_smaller() {
+        let raw = vec![0u8; 8192];
+        let (flags, payload) = select_pawdio_payload(&raw).expect("payload selection should work");
+        assert_eq!(flags, FLAG_ZLIB);
+        assert!(payload.len() < raw.len());
+    }
+
+    #[test]
+    fn select_payload_prefers_raw_when_compressed_not_smaller() {
+        let raw = (0..=255u8).cycle().take(1025).collect::<Vec<_>>();
+        let (flags, payload) = select_pawdio_payload(&raw).expect("payload selection should work");
+        if flags == FLAG_ZLIB {
+            assert!(payload.len() < raw.len());
+        } else {
+            assert_eq!(flags, 0);
+            assert_eq!(payload, raw);
+        }
+    }
 }

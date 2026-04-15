@@ -610,11 +610,11 @@ fn sprite_intersects_screen(
 }
 
 fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
-    if bytes.len() < 20 || &bytes[0..4] != PTEX_MAGIC {
+    if bytes.len() < 24 || &bytes[0..4] != PTEX_MAGIC {
         return None;
     }
     let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-    if version != 1 && version != 2 {
+    if version != 2 {
         return None;
     }
     let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
@@ -623,24 +623,6 @@ fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
         return None;
     }
 
-    if version == 1 {
-        let raw_len = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
-        let expected_len = width.checked_mul(height)?.checked_mul(4)?;
-        if raw_len != expected_len {
-            return None;
-        }
-        let Ok(rgba) = decompress_zlib(&bytes[20..]) else {
-            return None;
-        };
-        if rgba.len() != raw_len as usize {
-            return None;
-        }
-        return Some((rgba, width, height));
-    }
-
-    if bytes.len() < 24 {
-        return None;
-    }
     let flags = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
     let raw_len = u32::from_le_bytes(bytes[20..24].try_into().ok()?);
     if flags & !PTEX_FLAG_FORMAT_MASK != 0 {
@@ -874,4 +856,6 @@ fn create_sprite_pipeline(
         cache: None,
     })
 }
+
+
 

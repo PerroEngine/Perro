@@ -114,6 +114,7 @@ mod tests {
         AnimationEventScope, AnimationObject, AnimationObjectKey, AnimationObjectTrack,
         AnimationParam, AnimationTrackValue,
     };
+    use perro_ids::string_to_u64;
     use std::path::PathBuf;
     use std::sync::{Arc, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};

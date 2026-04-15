@@ -29,7 +29,7 @@ struct SkeletonAsset {
     bytes: Vec<u8>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 struct BoneLiteral {
     name: String,
     parent: i32,
@@ -83,7 +83,7 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
                             ))
                         })?;
                         let bones = parse_pskel_text(text).map_err(io::Error::other)?;
-                        encode_pskel(&bones)?
+                        encode_pskel_tightest(&bones)?
                     };
                     Ok(vec![SkeletonAsset {
                         entry: SkeletonRef {
@@ -223,7 +223,7 @@ fn build_gltf_skeleton_entries(
             });
         }
 
-        let pskel = encode_pskel(&bones)?;
+        let pskel = encode_pskel_tightest(&bones)?;
         let embedded_rel_path = format!("{rel_base}_skeleton{skin_index}.pskel");
         let key_bracket = format!("{res_path}:skeleton[{skin_index}]");
         entries.push((
@@ -345,7 +345,11 @@ fn quat_from_basis(x: Vector3, y: Vector3, z: Vector3) -> Quaternion {
     }
 }
 
-fn encode_pskel(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
+fn encode_pskel_tightest(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
+    encode_pskel_v2(bones)
+}
+
+fn encode_pskel_v2(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
     let mut raw = Vec::<u8>::new();
     for bone in bones {
         let name_bytes = bone.name.as_bytes();
@@ -398,12 +402,15 @@ fn encode_pskel(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
             write_quat(&mut raw, bone.inv_bind.rotation);
         }
     }
+    encode_pskel_blob(PSKEL_VERSION, bones.len(), &raw)
+}
 
+fn encode_pskel_blob(version: u32, bone_count: usize, raw: &[u8]) -> io::Result<Vec<u8>> {
     let compressed = compress_zlib_best(&raw)?;
     let mut out = Vec::with_capacity(5 + 4 * std::mem::size_of::<u32>() + compressed.len());
     out.extend_from_slice(PSKEL_MAGIC);
-    out.extend_from_slice(&PSKEL_VERSION.to_le_bytes());
-    out.extend_from_slice(&(bones.len() as u32).to_le_bytes());
+    out.extend_from_slice(&version.to_le_bytes());
+    out.extend_from_slice(&(bone_count as u32).to_le_bytes());
     out.extend_from_slice(&(raw.len() as u32).to_le_bytes());
     out.extend_from_slice(&compressed);
     Ok(out)
@@ -619,4 +626,136 @@ fn escape_str(input: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BoneLiteral, PSKEL_VERSION, encode_pskel_tightest, encode_pskel_v2};
+    use perro_structs::{Quaternion, Transform3D, Vector3};
+
+    fn dense_bone() -> BoneLiteral {
+        BoneLiteral {
+            name: "hip".to_string(),
+            parent: 0,
+            rest: Transform3D::new(
+                Vector3::new(1.1, 2.2, 3.3),
+                Quaternion::new(0.1, 0.2, 0.3, 0.9),
+                Vector3::new(1.2, 0.8, 1.4),
+            ),
+            inv_bind: Transform3D::new(
+                Vector3::new(4.4, 5.5, 6.6),
+                Quaternion::new(0.2, 0.3, 0.4, 0.8),
+                Vector3::new(0.7, 1.3, 0.9),
+            ),
+        }
+    }
+
+    fn sparse_bone() -> BoneLiteral {
+        BoneLiteral {
+            name: "root".to_string(),
+            parent: -1,
+            rest: Transform3D::IDENTITY,
+            inv_bind: Transform3D::IDENTITY,
+        }
+    }
+
+    fn decode_pskel_for_test(bytes: &[u8]) -> Vec<BoneLiteral> {
+        assert!(bytes.len() >= 17);
+        assert_eq!(&bytes[0..5], b"PSKEL");
+        let version = u32::from_le_bytes(bytes[5..9].try_into().expect("version"));
+        assert_eq!(version, PSKEL_VERSION);
+        let bone_count = u32::from_le_bytes(bytes[9..13].try_into().expect("count")) as usize;
+        let raw_len = u32::from_le_bytes(bytes[13..17].try_into().expect("raw_len")) as usize;
+        let raw = perro_io::decompress_zlib(&bytes[17..]).expect("decompress");
+        assert_eq!(raw.len(), raw_len);
+
+        let mut cursor = 0usize;
+        let mut out = Vec::with_capacity(bone_count);
+        for _ in 0..bone_count {
+            let name_len =
+                u32::from_le_bytes(raw[cursor..cursor + 4].try_into().expect("name_len")) as usize;
+            cursor += 4;
+            let name = std::str::from_utf8(&raw[cursor..cursor + name_len])
+                .expect("name utf8")
+                .to_string();
+            cursor += name_len;
+
+            let flags = u32::from_le_bytes(raw[cursor..cursor + 4].try_into().expect("flags"));
+            cursor += 4;
+            let parent = if (flags & (1 << 0)) != 0 {
+                let value = i32::from_le_bytes(raw[cursor..cursor + 4].try_into().expect("parent"));
+                cursor += 4;
+                value
+            } else {
+                -1
+            };
+            let mut rest = Transform3D::IDENTITY;
+            let mut inv_bind = Transform3D::IDENTITY;
+            if (flags & (1 << 1)) != 0 {
+                rest.position = read_vec3_from_raw(&raw, &mut cursor);
+            }
+            if (flags & (1 << 2)) != 0 {
+                rest.scale = read_vec3_from_raw(&raw, &mut cursor);
+            }
+            if (flags & (1 << 3)) != 0 {
+                rest.rotation = read_quat_from_raw(&raw, &mut cursor);
+            }
+            if (flags & (1 << 4)) != 0 {
+                inv_bind.position = read_vec3_from_raw(&raw, &mut cursor);
+            }
+            if (flags & (1 << 5)) != 0 {
+                inv_bind.scale = read_vec3_from_raw(&raw, &mut cursor);
+            }
+            if (flags & (1 << 6)) != 0 {
+                inv_bind.rotation = read_quat_from_raw(&raw, &mut cursor);
+            }
+            out.push(BoneLiteral {
+                name,
+                parent,
+                rest,
+                inv_bind,
+            });
+        }
+        out
+    }
+
+    fn read_f32_from_raw(raw: &[u8], cursor: &mut usize) -> f32 {
+        let value = f32::from_le_bytes(raw[*cursor..*cursor + 4].try_into().expect("f32"));
+        *cursor += 4;
+        value
+    }
+
+    fn read_vec3_from_raw(raw: &[u8], cursor: &mut usize) -> Vector3 {
+        Vector3::new(
+            read_f32_from_raw(raw, cursor),
+            read_f32_from_raw(raw, cursor),
+            read_f32_from_raw(raw, cursor),
+        )
+    }
+
+    fn read_quat_from_raw(raw: &[u8], cursor: &mut usize) -> Quaternion {
+        Quaternion::new(
+            read_f32_from_raw(raw, cursor),
+            read_f32_from_raw(raw, cursor),
+            read_f32_from_raw(raw, cursor),
+            read_f32_from_raw(raw, cursor),
+        )
+    }
+
+    #[test]
+    fn encode_pskel_tightest_emits_v2() {
+        let bones = vec![sparse_bone(); 64];
+        let v2 = encode_pskel_v2(&bones).expect("encode v2");
+        let selected = encode_pskel_tightest(&bones).expect("encode tightest");
+        assert_eq!(selected, v2);
+        assert_eq!(u32::from_le_bytes(selected[5..9].try_into().expect("version")), 2);
+    }
+
+    #[test]
+    fn encode_pskel_versions_decode_to_same_bones() {
+        let bones = vec![dense_bone(), sparse_bone()];
+        let selected = encode_pskel_tightest(&bones).expect("encode tightest");
+        let decoded = decode_pskel_for_test(&selected);
+        assert_eq!(decoded, bones);
+    }
 }

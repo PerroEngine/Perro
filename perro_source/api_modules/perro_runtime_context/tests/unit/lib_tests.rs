@@ -253,6 +253,10 @@ impl ScriptAPI for DummyRuntime {
         false
     }
 
+    fn script_attach_hashed(&mut self, _node: NodeID, _script_path_hash: u64) -> bool {
+        false
+    }
+
     fn script_detach(&mut self, _node: NodeID) -> bool {
         false
     }

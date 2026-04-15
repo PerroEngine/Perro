@@ -16,7 +16,7 @@ const PMESH_FLAG_HAS_JOINTS: u32 = 1 << 2;
 const PMESH_FLAG_HAS_WEIGHTS: u32 = 1 << 3;
 const MESHLET_TRIANGLES: usize = 64;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct PackedVertex {
     position: [f32; 3],
     normal: [f32; 3],
@@ -288,7 +288,7 @@ fn build_gltf_mesh_entries(
         } else {
             (indices, surface_ranges, Vec::new())
         };
-        let pmesh = encode_pmesh(
+        let pmesh = encode_pmesh_tightest_layout(
             &vertices,
             &indices,
             &surface_ranges,
@@ -311,6 +311,85 @@ fn build_gltf_mesh_entries(
     }
 
     Ok(entries)
+}
+
+fn encode_pmesh_tightest_layout(
+    vertices: &[PackedVertex],
+    indices: &[u32],
+    surface_ranges: &[PackedSurfaceRange],
+    meshlets: &[PackedMeshlet],
+    has_normals: bool,
+    has_uv0: bool,
+    has_joints: bool,
+    has_weights: bool,
+) -> io::Result<Vec<u8>> {
+    let baseline = encode_pmesh(
+        vertices,
+        indices,
+        surface_ranges,
+        meshlets,
+        has_normals,
+        has_uv0,
+        has_joints,
+        has_weights,
+    )?;
+    let (reordered_vertices, reordered_indices) = reorder_vertices_by_first_use(vertices, indices);
+    if reordered_vertices == vertices && reordered_indices == indices {
+        return Ok(baseline);
+    }
+    let reordered = encode_pmesh(
+        &reordered_vertices,
+        &reordered_indices,
+        surface_ranges,
+        meshlets,
+        has_normals,
+        has_uv0,
+        has_joints,
+        has_weights,
+    )?;
+    if reordered.len() < baseline.len() {
+        Ok(reordered)
+    } else {
+        Ok(baseline)
+    }
+}
+
+fn reorder_vertices_by_first_use(
+    vertices: &[PackedVertex],
+    indices: &[u32],
+) -> (Vec<PackedVertex>, Vec<u32>) {
+    if vertices.is_empty() || indices.is_empty() {
+        return (vertices.to_vec(), indices.to_vec());
+    }
+
+    let mut old_to_new = vec![u32::MAX; vertices.len()];
+    let mut reordered_vertices = Vec::with_capacity(vertices.len());
+    let mut reordered_indices = Vec::with_capacity(indices.len());
+
+    for &idx in indices {
+        let old_index = idx as usize;
+        let Some(vertex) = vertices.get(old_index).copied() else {
+            return (vertices.to_vec(), indices.to_vec());
+        };
+        let mapped = if old_to_new[old_index] == u32::MAX {
+            let new_index = reordered_vertices.len() as u32;
+            old_to_new[old_index] = new_index;
+            reordered_vertices.push(vertex);
+            new_index
+        } else {
+            old_to_new[old_index]
+        };
+        reordered_indices.push(mapped);
+    }
+
+    for (old_index, vertex) in vertices.iter().copied().enumerate() {
+        if old_to_new[old_index] == u32::MAX {
+            old_to_new[old_index] = reordered_vertices.len() as u32;
+            reordered_vertices.push(vertex);
+        }
+    }
+
+    (reordered_vertices, reordered_indices)
 }
 
 fn encode_pmesh(
@@ -485,7 +564,7 @@ fn pack_meshlets(vertices: &[PackedVertex], indices: &[u32]) -> (Vec<u32>, Vec<P
     if indices.len() < 3 {
         return (indices.to_vec(), Vec::new());
     }
-    let packed = pack_indices_spatial(vertices, indices);
+    let packed = indices.to_vec();
     let mut out = Vec::new();
     let tri_index_len = (packed.len() / 3) * 3;
     let chunk = MESHLET_TRIANGLES * 3;
@@ -503,81 +582,6 @@ fn pack_meshlets(vertices: &[PackedVertex], indices: &[u32]) -> (Vec<u32>, Vec<P
         start = end;
     }
     (packed, out)
-}
-
-fn pack_indices_spatial(vertices: &[PackedVertex], indices: &[u32]) -> Vec<u32> {
-    let tri_len = (indices.len() / 3) * 3;
-    if tri_len == 0 {
-        return indices.to_vec();
-    }
-
-    let mut centroids = Vec::with_capacity(tri_len / 3);
-    let mut cmin = [f32::INFINITY; 3];
-    let mut cmax = [f32::NEG_INFINITY; 3];
-    for tri in indices[..tri_len].chunks_exact(3) {
-        let Some(a) = vertices.get(tri[0] as usize) else {
-            return indices.to_vec();
-        };
-        let Some(b) = vertices.get(tri[1] as usize) else {
-            return indices.to_vec();
-        };
-        let Some(c) = vertices.get(tri[2] as usize) else {
-            return indices.to_vec();
-        };
-        let centroid = [
-            (a.position[0] + b.position[0] + c.position[0]) / 3.0,
-            (a.position[1] + b.position[1] + c.position[1]) / 3.0,
-            (a.position[2] + b.position[2] + c.position[2]) / 3.0,
-        ];
-        cmin[0] = cmin[0].min(centroid[0]);
-        cmin[1] = cmin[1].min(centroid[1]);
-        cmin[2] = cmin[2].min(centroid[2]);
-        cmax[0] = cmax[0].max(centroid[0]);
-        cmax[1] = cmax[1].max(centroid[1]);
-        cmax[2] = cmax[2].max(centroid[2]);
-        centroids.push((tri, centroid));
-    }
-
-    let span = [
-        (cmax[0] - cmin[0]).max(1.0e-6),
-        (cmax[1] - cmin[1]).max(1.0e-6),
-        (cmax[2] - cmin[2]).max(1.0e-6),
-    ];
-    let mut keyed = Vec::with_capacity(centroids.len());
-    for (tri, c) in centroids {
-        let nx = ((c[0] - cmin[0]) / span[0]).clamp(0.0, 1.0);
-        let ny = ((c[1] - cmin[1]) / span[1]).clamp(0.0, 1.0);
-        let nz = ((c[2] - cmin[2]) / span[2]).clamp(0.0, 1.0);
-        keyed.push((morton3(nx, ny, nz), [tri[0], tri[1], tri[2]]));
-    }
-    keyed.sort_unstable_by_key(|(key, _)| *key);
-
-    let mut packed = Vec::with_capacity(indices.len());
-    for (_, tri) in keyed {
-        packed.extend_from_slice(&tri);
-    }
-    if tri_len < indices.len() {
-        packed.extend_from_slice(&indices[tri_len..]);
-    }
-    packed
-}
-
-#[inline]
-fn morton3(nx: f32, ny: f32, nz: f32) -> u64 {
-    let qx = (nx * 1023.0).round() as u32;
-    let qy = (ny * 1023.0).round() as u32;
-    let qz = (nz * 1023.0).round() as u32;
-    interleave10(qx) | (interleave10(qy) << 1) | (interleave10(qz) << 2)
-}
-
-#[inline]
-fn interleave10(v: u32) -> u64 {
-    let mut x = (v & 0x3ff) as u64;
-    x = (x | (x << 16)) & 0x30000ff;
-    x = (x | (x << 8)) & 0x300f00f;
-    x = (x | (x << 4)) & 0x30c30c3;
-    x = (x | (x << 2)) & 0x9249249;
-    x
 }
 
 fn meshlet_bounds(vertices: &[PackedVertex], indices: &[u32]) -> Option<([f32; 3], f32)> {
@@ -632,4 +636,169 @@ fn escape_str(input: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        PackedSurfaceRange, PackedVertex, encode_pmesh, encode_pmesh_tightest_layout, pack_meshlets,
+        pack_meshlets_with_surfaces, reorder_vertices_by_first_use,
+    };
+
+    fn test_vertices() -> Vec<PackedVertex> {
+        vec![
+            PackedVertex {
+                position: [0.0, 0.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                uv: [0.0, 0.0],
+                joints: [0, 0, 0, 0],
+                weights: [1.0, 0.0, 0.0, 0.0],
+            },
+            PackedVertex {
+                position: [1.0, 0.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                uv: [1.0, 0.0],
+                joints: [0, 0, 0, 0],
+                weights: [1.0, 0.0, 0.0, 0.0],
+            },
+            PackedVertex {
+                position: [1.0, 1.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                uv: [1.0, 1.0],
+                joints: [0, 0, 0, 0],
+                weights: [1.0, 0.0, 0.0, 0.0],
+            },
+            PackedVertex {
+                position: [0.0, 1.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                uv: [0.0, 1.0],
+                joints: [0, 0, 0, 0],
+                weights: [1.0, 0.0, 0.0, 0.0],
+            },
+        ]
+    }
+
+    #[test]
+    fn pack_meshlets_keeps_index_order() {
+        let vertices = test_vertices();
+        let indices = vec![2, 1, 0, 0, 3, 2];
+        let (packed_indices, meshlets) = pack_meshlets(&vertices, &indices);
+        assert_eq!(packed_indices, indices);
+        assert_eq!(meshlets.len(), 1);
+        assert_eq!(meshlets[0].index_start, 0);
+        assert_eq!(meshlets[0].index_count, 6);
+    }
+
+    #[test]
+    fn pack_meshlets_with_surfaces_keeps_surface_order() {
+        let vertices = test_vertices();
+        let indices = vec![2, 1, 0, 0, 3, 2, 1, 2, 3];
+        let surfaces = vec![
+            PackedSurfaceRange {
+                index_start: 0,
+                index_count: 6,
+            },
+            PackedSurfaceRange {
+                index_start: 6,
+                index_count: 3,
+            },
+        ];
+        let (packed_indices, packed_surfaces, _meshlets) =
+            pack_meshlets_with_surfaces(&vertices, &indices, &surfaces);
+        assert_eq!(packed_indices, indices);
+        assert_eq!(packed_surfaces.len(), 2);
+        assert_eq!(packed_surfaces[0].index_start, 0);
+        assert_eq!(packed_surfaces[0].index_count, 6);
+        assert_eq!(packed_surfaces[1].index_start, 6);
+        assert_eq!(packed_surfaces[1].index_count, 3);
+    }
+
+    #[test]
+    fn reorder_vertices_keeps_bindings_for_indices() {
+        let vertices = vec![
+            PackedVertex {
+                position: [10.0, 0.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                uv: [0.1, 0.2],
+                joints: [1, 2, 3, 4],
+                weights: [0.4, 0.3, 0.2, 0.1],
+            },
+            PackedVertex {
+                position: [11.0, 0.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                uv: [0.3, 0.4],
+                joints: [5, 6, 7, 8],
+                weights: [0.25, 0.25, 0.25, 0.25],
+            },
+            PackedVertex {
+                position: [12.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+                uv: [0.5, 0.6],
+                joints: [9, 10, 11, 12],
+                weights: [1.0, 0.0, 0.0, 0.0],
+            },
+        ];
+        let indices = vec![2, 0, 2, 1, 0, 1];
+        let (reordered_vertices, remapped_indices) = reorder_vertices_by_first_use(&vertices, &indices);
+        for (position, &old_idx) in indices.iter().enumerate() {
+            let new_idx = remapped_indices[position] as usize;
+            assert_eq!(reordered_vertices[new_idx], vertices[old_idx as usize]);
+        }
+    }
+
+    #[test]
+    fn tighter_layout_selection_reduces_payload_when_better_order_exists() {
+        let mut vertices = Vec::new();
+        for i in 0..120 {
+            let even = i % 2 == 0;
+            vertices.push(PackedVertex {
+                position: if even {
+                    [1.0, 2.0, 3.0]
+                } else {
+                    [9.0, 8.0, 7.0]
+                },
+                normal: if even {
+                    [0.0, 1.0, 0.0]
+                } else {
+                    [0.0, 0.0, 1.0]
+                },
+                uv: if even { [0.2, 0.8] } else { [0.6, 0.4] },
+                joints: if even {
+                    [1, 1, 1, 1]
+                } else {
+                    [2, 2, 2, 2]
+                },
+                weights: if even {
+                    [1.0, 0.0, 0.0, 0.0]
+                } else {
+                    [0.0, 1.0, 0.0, 0.0]
+                },
+            });
+        }
+        let indices = (0..120u32)
+            .step_by(2)
+            .chain((1..120u32).step_by(2))
+            .collect::<Vec<_>>();
+        let surfaces = vec![PackedSurfaceRange {
+            index_start: 0,
+            index_count: indices.len() as u32,
+        }];
+        let meshlets = Vec::new();
+
+        let baseline = encode_pmesh(&vertices, &indices, &surfaces, &meshlets, true, true, true, true)
+            .expect("baseline encode");
+        let selected = encode_pmesh_tightest_layout(
+            &vertices,
+            &indices,
+            &surfaces,
+            &meshlets,
+            true,
+            true,
+            true,
+            true,
+        )
+        .expect("tightest encode");
+        assert!(selected.len() <= baseline.len());
+        assert!(selected.len() < baseline.len());
+    }
 }
