@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
+﻿use crate::{StaticPipelineError, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use perro_structs::{Quaternion, Transform3D, Vector3};
 use rayon::prelude::*;
@@ -143,16 +143,17 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
     if !skeleton_refs.is_empty() {
         out.push('\n');
     }
-    out.push_str("pub fn lookup_skeleton(path_hash: u64) -> Option<&'static [u8]> {\n");
+    out.push_str("static EMPTY_SKELETON: &[u8] = b\"\";\n\n");
+    out.push_str("pub const fn lookup_skeleton(path_hash: u64) -> &'static [u8] {\n");
     out.push_str("    match path_hash {\n");
     for (index, skel_ref) in skeleton_refs.iter().enumerate() {
         let path_hash = perro_ids::string_to_u64(&skel_ref.lookup_key);
         let _ = writeln!(
             out,
-            "        {path_hash}u64 => Some(SKELETON_{index}),"
+            "        {path_hash}u64 => SKELETON_{index},"
         );
     }
-    out.push_str("        _ => None,\n");
+    out.push_str("        _ => EMPTY_SKELETON,\n");
     out.push_str("    }\n");
     out.push_str("}\n");
 

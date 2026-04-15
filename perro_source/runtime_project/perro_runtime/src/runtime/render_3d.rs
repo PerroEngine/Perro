@@ -1383,8 +1383,7 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
         return runtime
             .project()
             .and_then(|project| project.static_material_lookup)
-            .and_then(|lookup| lookup(hash))
-            .cloned();
+            .map(|lookup| lookup(hash).clone());
     }
 
     let normalized = normalize_source_slashes(source);
@@ -1394,33 +1393,7 @@ fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material
         .project()
         .and_then(|project| project.static_material_lookup)
     {
-        if let Some(material) = lookup(string_to_u64(source)).cloned() {
-            return Some(material);
-        }
-        if normalized.as_ref() != source
-            && let Some(material) = lookup(string_to_u64(normalized.as_ref())).cloned()
-        {
-            return Some(material);
-        }
-        if let Some(alias) = normalized_static_material_lookup_alias(source)
-            && let Some(material) = lookup(string_to_u64(alias.as_str())).cloned()
-        {
-            return Some(material);
-        }
-        if normalized.as_ref() != source
-            && let Some(alias) = normalized_static_material_lookup_alias(normalized.as_ref())
-            && let Some(material) = lookup(string_to_u64(alias.as_str())).cloned()
-        {
-            return Some(material);
-        }
-        if let Some(material) = lookup(string_to_u64(path)).cloned() {
-            return Some(material);
-        }
-        if normalized_path != path
-            && let Some(material) = lookup(string_to_u64(normalized_path)).cloned()
-        {
-            return Some(material);
-        }
+        return Some(lookup(string_to_u64(source)).clone());
     }
 
     if path.ends_with(".pmat") || path.ends_with(".glb") || path.ends_with(".gltf") {
@@ -1444,32 +1417,6 @@ fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
     } else {
         std::borrow::Cow::Borrowed(source)
     }
-}
-
-fn normalized_static_material_lookup_alias(source: &str) -> Option<String> {
-    let (path, fragment) = split_source_fragment(source);
-    if !(path.ends_with(".glb") || path.ends_with(".gltf")) {
-        return None;
-    }
-    let Some(fragment) = fragment else {
-        return Some(format!("{path}:mat[0]"));
-    };
-    if let Some(index) = parse_fragment_index(fragment, "material") {
-        return Some(format!("{path}:mat[{index}]"));
-    }
-    if let Some(index) = parse_fragment_index(fragment, "mat") {
-        return Some(format!("{path}:material[{index}]"));
-    }
-    None
-}
-
-fn parse_fragment_index(fragment: &str, key: &str) -> Option<u32> {
-    let (name, rest) = fragment.split_once('[')?;
-    if name.trim() != key {
-        return None;
-    }
-    let value = rest.strip_suffix(']')?.trim();
-    value.parse::<u32>().ok()
 }
 
 fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
@@ -1497,15 +1444,14 @@ fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<Parti
         return Some(path.clone());
     }
     let parsed = if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static {
-        let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
-        if let Some(lookup) = runtime
+        if let Some(inline) = source.strip_prefix("inline://") {
+            parse_pparticle_source(inline)?
+        } else if let Some(lookup) = runtime
             .project()
             .and_then(|project| project.static_particle_lookup)
-            && let Some(profile) = lookup(source_hash)
         {
-            profile.clone()
-        } else if let Some(inline) = source.strip_prefix("inline://") {
-            parse_pparticle_source(inline)?
+            let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
+            lookup(source_hash).clone()
         } else {
             let bytes = perro_io::load_asset(source).ok()?;
             let text = std::str::from_utf8(&bytes).ok()?;

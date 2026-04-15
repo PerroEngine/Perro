@@ -10,7 +10,7 @@ pub struct BarkPlayer {
     _stream: OutputStream,
     handle: OutputStreamHandle,
     state: Mutex<AudioState>,
-    static_audio_lookup: Option<fn(u64) -> Option<&'static [u8]>>,
+    static_audio_lookup: Option<fn(u64) -> &'static [u8]>,
 }
 
 struct Playback {
@@ -155,7 +155,7 @@ impl BarkPlayer {
     const UNRESERVED_TTL_MIN: Duration = Duration::from_millis(250);
 
     pub fn new(
-        static_audio_lookup: Option<fn(u64) -> Option<&'static [u8]>>,
+        static_audio_lookup: Option<fn(u64) -> &'static [u8]>,
     ) -> Result<Self, String> {
         let (stream, handle) = OutputStream::try_default()
             .map_err(|err| format!("audio output init failed: {err}"))?;
@@ -598,7 +598,7 @@ impl BarkPlayer {
         state: &mut AudioState,
         source: &str,
         reserved: bool,
-        static_audio_lookup: Option<fn(u64) -> Option<&'static [u8]>>,
+        static_audio_lookup: Option<fn(u64) -> &'static [u8]>,
     ) -> Result<(Arc<[u8]>, bool, SourceLoadStats), String> {
         if let Some(existing) = state.cache.get_mut(source) {
             if reserved {
@@ -614,35 +614,19 @@ impl BarkPlayer {
             let looked_up = lookup(perro_ids::string_to_u64(source));
             #[cfg(feature = "profile")]
             let lookup_elapsed = lookup_begin.elapsed();
-            if let Some(blob) = looked_up {
-                let (decoded, decompress_elapsed) = decode_static_pawdio(blob)?;
-                #[cfg(not(feature = "profile"))]
-                let _ = decompress_elapsed;
-                #[cfg(feature = "profile")]
-                let stats = SourceLoadStats {
-                    kind: SourceLoadKind::Static,
-                    static_lookup: lookup_elapsed,
-                    pawdio_decompress: decompress_elapsed,
-                    disk_read: Duration::ZERO,
-                };
-                #[cfg(not(feature = "profile"))]
-                let stats = SourceLoadStats;
-                (decoded, stats)
-            } else {
-                #[cfg(feature = "profile")]
-                let disk_begin = Instant::now();
-                let disk = perro_io::load_asset(source).map_err(|err| err.to_string())?;
-                #[cfg(feature = "profile")]
-                let stats = SourceLoadStats {
-                    kind: SourceLoadKind::Disk,
-                    static_lookup: lookup_elapsed,
-                    pawdio_decompress: Duration::ZERO,
-                    disk_read: disk_begin.elapsed(),
-                };
-                #[cfg(not(feature = "profile"))]
-                let stats = SourceLoadStats;
-                (disk, stats)
-            }
+            let (decoded, decompress_elapsed) = decode_static_pawdio(looked_up)?;
+            #[cfg(not(feature = "profile"))]
+            let _ = decompress_elapsed;
+            #[cfg(feature = "profile")]
+            let stats = SourceLoadStats {
+                kind: SourceLoadKind::Static,
+                static_lookup: lookup_elapsed,
+                pawdio_decompress: decompress_elapsed,
+                disk_read: Duration::ZERO,
+            };
+            #[cfg(not(feature = "profile"))]
+            let stats = SourceLoadStats;
+            (decoded, stats)
         } else {
             #[cfg(feature = "profile")]
             let disk_begin = Instant::now();
@@ -802,6 +786,9 @@ fn decode_static_pawdio(blob: &[u8]) -> Result<(Vec<u8>, Duration), String> {
     const MAGIC: &[u8; 6] = b"PAWDIO";
     const HEADER_LEN_V2: usize = 18;
     const FLAG_ZLIB: u32 = 1;
+    if blob.is_empty() {
+        return Ok((Vec::new(), Duration::ZERO));
+    }
     if blob.len() < HEADER_LEN_V2 {
         return Err("static audio blob too small".to_string());
     }
@@ -865,7 +852,7 @@ mod tests {
 
 impl AudioController {
     pub fn new(
-        static_audio_lookup: Option<fn(u64) -> Option<&'static [u8]>>,
+        static_audio_lookup: Option<fn(u64) -> &'static [u8]>,
     ) -> Result<Self, String> {
         let (tx, rx) = mpsc::channel::<AudioCommand>();
         std::thread::Builder::new()

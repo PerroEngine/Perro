@@ -62,21 +62,22 @@ pub fn generate_static_animations(project_root: &Path) -> Result<(), StaticPipel
     src.push_str("const EMPTY_ANIMATION_KEYS: &[AnimationObjectKey] = &[];\n");
     src.push_str("const EMPTY_ANIMATION_PARAMS: &[AnimationParam] = &[];\n");
     src.push_str("const EMPTY_ANIMATION_EVENTS: &[AnimationFrameEvent] = &[];\n\n");
+    src.push_str("const EMPTY_ANIMATION_CLIP: AnimationClip = AnimationClip { name: Cow::Borrowed(\"\"), fps: 0.0, total_frames: 0, objects: Cow::Borrowed(EMPTY_ANIMATION_OBJECTS), object_tracks: Cow::Borrowed(EMPTY_ANIMATION_TRACKS), frame_events: Cow::Borrowed(EMPTY_ANIMATION_EVENTS) };\n\n");
 
     let mut lookup = String::new();
-    lookup.push_str("pub fn lookup_animation(path_hash: u64) -> Option<&'static AnimationClip> {\n");
+    lookup.push_str("pub const fn lookup_animation(path_hash: u64) -> &'static AnimationClip {\n");
     lookup.push_str("    match path_hash {\n");
 
     for anim in &parsed {
         src.push_str(&emit_static_animation_const(&anim.lookup_key, &anim.clip)?);
         let _ = writeln!(
             lookup,
-            "        {}u64 => Some(&CLIP_{}),",
+            "        {}u64 => &CLIP_{},",
             perro_ids::string_to_u64(&anim.lookup_key),
             sanitize_ident(&anim.lookup_key)
         );
     }
-    lookup.push_str("        _ => None,\n");
+    lookup.push_str("        _ => &EMPTY_ANIMATION_CLIP,\n");
     lookup.push_str("    }\n");
     lookup.push_str("}\n");
 
@@ -803,9 +804,9 @@ fps = 24
         let generated_src =
             std::fs::read_to_string(generated_rs).expect("generated animations.rs should exist");
         let expected_hash = perro_ids::string_to_u64("res://animations/hero_run.panim");
-        assert!(generated_src.contains("pub fn lookup_animation(path_hash: u64)"));
+        assert!(generated_src.contains("pub const fn lookup_animation(path_hash: u64) -> &'static AnimationClip"));
         assert!(generated_src.contains(&format!(
-            "{expected_hash}u64 => Some(&CLIP_RES___ANIMATIONS_HERO_RUN_PANIM)"
+            "{expected_hash}u64 => &CLIP_RES___ANIMATIONS_HERO_RUN_PANIM"
         )));
         assert!(generated_src.contains("pub static CLIP_RES___ANIMATIONS_HERO_RUN_PANIM"));
         assert!(!generated_src.contains("parse_panim"));

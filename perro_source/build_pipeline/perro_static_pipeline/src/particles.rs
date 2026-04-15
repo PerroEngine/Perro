@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, ensure_unique_hashes, res_dir, static_dir};
+﻿use crate::{StaticPipelineError, ensure_unique_hashes, res_dir, static_dir};
 use perro_io::walkdir::collect_file_paths;
 use perro_particle_math::{Op, compile_expression};
 use rayon::prelude::*;
@@ -70,17 +70,20 @@ pub fn generate_static_particles(project_root: &Path) -> Result<(), StaticPipeli
         let _ = writeln!(out, "static {const_name}: ParticleProfile3D = {init};");
     }
     out.push('\n');
-    out.push_str("pub fn lookup_particle(path_hash: u64) -> Option<&'static ParticleProfile3D> {\n");
+    out.push_str(
+        "static EMPTY_PARTICLE: ParticleProfile3D = ParticleProfile3D { path: ParticlePath3D::None, expr_x_ops: None, expr_y_ops: None, expr_z_ops: None, lifetime_min: 0.6, lifetime_max: 1.4, speed_min: 1.0, speed_max: 3.0, spread_radians: core::f32::consts::FRAC_PI_3, size: 6.0, size_min: 0.65, size_max: 1.35, force: [0.0, 0.0, 0.0], color_start: [1.0, 1.0, 1.0, 1.0], color_end: [1.0, 0.4, 0.1, 0.0], emissive: [0.0, 0.0, 0.0], spin_angular_velocity: 0.0 };\n\n",
+    );
+    out.push_str("pub const fn lookup_particle(path_hash: u64) -> &'static ParticleProfile3D {\n");
     out.push_str("    match path_hash {\n");
     for (path, index) in &particle_refs {
         let path_hash = perro_ids::string_to_u64(path);
         let _ = writeln!(
             out,
-            "        {path_hash}u64 => Some(&PARTICLE_{}),",
+            "        {path_hash}u64 => &PARTICLE_{},",
             index,
         );
     }
-    out.push_str("        _ => None,\n");
+    out.push_str("        _ => &EMPTY_PARTICLE,\n");
     out.push_str("    }\n");
     out.push_str("}\n");
 

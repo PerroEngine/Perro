@@ -51,11 +51,10 @@ impl Runtime {
                 let static_lookup = self
                     .project()
                     .and_then(|project| project.static_scene_lookup);
-                match static_lookup.and_then(|lookup| lookup(path_hash)) {
-                    Some(scene) => Ok(scene.clone()),
-                    None => self
-                        .get_or_load_dynamic_scene_cached(path)
-                        .map(|s| (*s).clone()),
+                if let Some(lookup) = static_lookup {
+                    Ok(lookup(path_hash).clone())
+                } else {
+                    self.get_or_load_dynamic_scene_cached(path).map(|s| (*s).clone())
                 }
             }
         }
@@ -177,21 +176,19 @@ impl Runtime {
                 merge_prepared_scene(self, prepared)?
             }
             ProviderMode::Static => {
-                match static_lookup.and_then(|lookup| lookup(path_hash)) {
-                Some(scene) => {
+                if let Some(lookup) = static_lookup {
+                    let scene = lookup(path_hash);
                     let prepared = prepare_scene_with_loader(scene, &|import_path| {
                         self.resolve_scene_by_path(import_path)
                     })?;
                     merge_prepared_scene(self, prepared)?
-                }
-                None => {
+                } else {
                     let runtime_scene = self.get_or_load_dynamic_scene_cached(path)?;
                     let prepared =
                         prepare_scene_with_loader(runtime_scene.as_ref(), &|import_path| {
                             self.resolve_scene_by_path(import_path)
                         })?;
                     merge_prepared_scene(self, prepared)?
-                }
                 }
             }
         };
@@ -316,26 +313,18 @@ impl Runtime {
                 }
             }
             ProviderMode::Static => {
-                match static_lookup.and_then(|lookup| lookup(main_scene_hash)) {
-                Some(scene) => {
+                if let Some(lookup) = static_lookup {
+                    let scene = lookup(main_scene_hash);
                     mode_label = "static";
                     let prepared = prepare_scene_with_loader(scene, &|path| {
-                        static_lookup
-                            .and_then(|lookup| lookup(Self::source_hash(path)))
-                            .cloned()
-                            .ok_or_else(|| {
-                                format!(
-                                    "failed to load scene `{path}` from static lookup during root_of expansion"
-                                )
-                            })
+                        Ok(lookup(Self::source_hash(path)).clone())
                     })?;
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
                     merged = merge_prepared_scene(self, prepared)?;
                     #[cfg(feature = "profile")]
                     let node_insert = node_insert_start.elapsed();
-                }
-                None => {
+                } else {
                     mode_label = "static_fallback_dynamic";
                     let (runtime_scene, load_stats) =
                         load_runtime_scene_from_disk(&main_scene_path)?;
@@ -359,7 +348,6 @@ impl Runtime {
                     {
                         let _ = (load_stats,);
                     }
-                }
                 }
             }
         }

@@ -54,18 +54,18 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
     }
 
     let mut lookup = String::new();
-    lookup.push_str("pub fn lookup_scene(path_hash: u64) -> Option<&'static Scene> {\n");
+    lookup.push_str("pub const fn lookup_scene(path_hash: u64) -> &'static Scene {\n");
     lookup.push_str("    match path_hash {\n");
     for p in &scene_paths {
         let id = sanitize_ident(p);
         let path_hash = perro_ids::string_to_u64(p);
         let _ = writeln!(
             lookup,
-            "        {path_hash}u64 => Some(&SCENE_{}),",
+            "        {path_hash}u64 => &SCENE_{},",
             id,
         );
     }
-    lookup.push_str("        _ => None,\n");
+    lookup.push_str("        _ => &EMPTY_SCENE,\n");
     lookup.push_str("    }\n");
     lookup.push_str("}\n");
 
@@ -79,6 +79,8 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
     if any_uses_empty_fields {
         shared_consts.push_str("const EMPTY_SCENE_FIELDS: &[SceneObjectField] = &[];\n");
     }
+    shared_consts.push_str("const EMPTY_SCENE_NODES: &[SceneNodeEntry] = &[];\n");
+    shared_consts.push_str("const EMPTY_SCENE: Scene = Scene { nodes: Cow::Borrowed(EMPTY_SCENE_NODES), root: None };\n");
     if !shared_consts.is_empty() {
         shared_consts.push('\n');
     }

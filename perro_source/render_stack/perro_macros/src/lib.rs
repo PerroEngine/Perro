@@ -124,27 +124,50 @@ fn collect_suffix_matches(dir: &Path, suffix: &str, out: &mut Vec<PathBuf>) -> R
 
 fn minify_text(src: &str) -> String {
     let mut out = String::with_capacity(src.len());
-    let mut last_blank = false;
+    let mut first = true;
     for raw in src.lines() {
-        let mut line = raw.trim();
-        if line.starts_with("//") {
-            continue;
-        }
-        if let Some(i) = line.find("//") {
-            line = line[..i].trim_end();
-        }
+        let line = strip_line_comment_preserving_strings(raw).trim();
         if line.is_empty() {
-            if !last_blank {
-                out.push('\n');
-                last_blank = true;
-            }
             continue;
+        }
+        if !first {
+            out.push(' ');
         }
         out.push_str(line);
-        out.push('\n');
-        last_blank = false;
+        first = false;
     }
     out
+}
+
+fn strip_line_comment_preserving_strings(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    let mut i = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'"' {
+            in_string = true;
+            i += 1;
+            continue;
+        }
+        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+            return &line[..i];
+        }
+        i += 1;
+    }
+    line
 }
 
 fn compile_error_tokens(msg: &str) -> TokenStream {

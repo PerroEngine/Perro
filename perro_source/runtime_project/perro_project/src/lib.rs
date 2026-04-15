@@ -1591,8 +1591,14 @@ fn default_static_scenes_rs() -> String {
 
 use perro_scene::Scene;
 
-pub fn lookup_scene(_path_hash: u64) -> Option<&'static Scene> {
-    None
+const EMPTY_SCENE_NODES: &[perro_scene::SceneNodeEntry] = &[];
+const EMPTY_SCENE: Scene = Scene {
+    nodes: std::borrow::Cow::Borrowed(EMPTY_SCENE_NODES),
+    root: None,
+};
+
+pub const fn lookup_scene(_path_hash: u64) -> &'static Scene {
+    &EMPTY_SCENE
 }
 "#
     .to_string()
@@ -1601,10 +1607,12 @@ pub fn lookup_scene(_path_hash: u64) -> Option<&'static Scene> {
 fn default_static_materials_rs() -> String {
     r#"#![allow(unused_imports)]
 
-use perro_render_bridge::Material3D;
+use perro_render_bridge::{Material3D, StandardMaterial3D};
 
-pub fn lookup_material(_path_hash: u64) -> Option<&'static Material3D> {
-    None
+const EMPTY_MATERIAL: Material3D = Material3D::Standard(StandardMaterial3D::const_default());
+
+pub const fn lookup_material(_path_hash: u64) -> &'static Material3D {
+    &EMPTY_MATERIAL
 }
 "#
     .to_string()
@@ -1613,10 +1621,30 @@ pub fn lookup_material(_path_hash: u64) -> Option<&'static Material3D> {
 fn default_static_particles_rs() -> String {
     r#"#![allow(unused_imports)]
 
-use perro_render_bridge::ParticleProfile3D;
+use perro_render_bridge::{ParticlePath3D, ParticleProfile3D};
 
-pub fn lookup_particle(_path_hash: u64) -> Option<&'static ParticleProfile3D> {
-    None
+const EMPTY_PARTICLE: ParticleProfile3D = ParticleProfile3D {
+    path: ParticlePath3D::None,
+    expr_x_ops: None,
+    expr_y_ops: None,
+    expr_z_ops: None,
+    lifetime_min: 0.6,
+    lifetime_max: 1.4,
+    speed_min: 1.0,
+    speed_max: 3.0,
+    spread_radians: core::f32::consts::FRAC_PI_3,
+    size: 6.0,
+    size_min: 0.65,
+    size_max: 1.35,
+    force: [0.0, 0.0, 0.0],
+    color_start: [1.0, 1.0, 1.0, 1.0],
+    color_end: [1.0, 0.4, 0.1, 0.0],
+    emissive: [0.0, 0.0, 0.0],
+    spin_angular_velocity: 0.0,
+};
+
+pub const fn lookup_particle(_path_hash: u64) -> &'static ParticleProfile3D {
+    &EMPTY_PARTICLE
 }
 "#
     .to_string()
@@ -1627,8 +1655,17 @@ fn default_static_animations_rs() -> String {
 
 use perro_animation::AnimationClip;
 
-pub fn lookup_animation(_path_hash: u64) -> Option<&'static AnimationClip> {
-    None
+const EMPTY_ANIMATION_CLIP: AnimationClip = AnimationClip {
+    name: std::borrow::Cow::Borrowed(""),
+    fps: 0.0,
+    total_frames: 0,
+    objects: std::borrow::Cow::Borrowed(&[]),
+    object_tracks: std::borrow::Cow::Borrowed(&[]),
+    frame_events: std::borrow::Cow::Borrowed(&[]),
+};
+
+pub const fn lookup_animation(_path_hash: u64) -> &'static AnimationClip {
+    &EMPTY_ANIMATION_CLIP
 }
 "#
     .to_string()
@@ -1637,7 +1674,7 @@ pub fn lookup_animation(_path_hash: u64) -> Option<&'static AnimationClip> {
 fn default_static_textures_rs() -> String {
     r#"#![allow(unused_imports)]
 
-pub fn lookup_texture(_path_hash: u64) -> &'static [u8] {
+pub const fn lookup_texture(_path_hash: u64) -> &'static [u8] {
     b""
 }
 "#
@@ -1647,7 +1684,7 @@ pub fn lookup_texture(_path_hash: u64) -> &'static [u8] {
 fn default_static_shaders_rs() -> String {
     r#"#![allow(unused_imports)]
 
-pub fn lookup_shader(_path_hash: u64) -> &'static str {
+pub const fn lookup_shader(_path_hash: u64) -> &'static str {
     ""
 }
 "#
@@ -1658,7 +1695,7 @@ fn default_static_meshes_rs() -> String {
     r#"#![allow(unused_imports)]
 #![allow(dead_code)]
 
-pub fn lookup_mesh(_path_hash: u64) -> &'static [u8] {
+pub const fn lookup_mesh(_path_hash: u64) -> &'static [u8] {
     b""
 }
 "#
@@ -1669,8 +1706,8 @@ fn default_static_skeletons_rs() -> String {
     r#"#![allow(unused_imports)]
 #![allow(dead_code)]
 
-pub fn lookup_skeleton(_path_hash: u64) -> Option<&'static [u8]> {
-    None
+pub const fn lookup_skeleton(_path_hash: u64) -> &'static [u8] {
+    b""
 }
 "#
     .to_string()
@@ -1679,8 +1716,8 @@ pub fn lookup_skeleton(_path_hash: u64) -> Option<&'static [u8]> {
 fn default_static_audios_rs() -> String {
     r#"#![allow(unused_imports)]
 
-pub fn lookup_audio(_path_hash: u64) -> Option<&'static [u8]> {
-    None
+pub const fn lookup_audio(_path_hash: u64) -> &'static [u8] {
+    b""
 }
 "#
     .to_string()

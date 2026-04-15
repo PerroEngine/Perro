@@ -1,6 +1,6 @@
 use super::core::RuntimeResourceApi;
 use crate::material_schema;
-use perro_ids::{MaterialID, string_to_u64};
+use perro_ids::MaterialID;
 use perro_render_bridge::{Material3D, RenderCommand, ResourceCommand};
 use perro_resource_context::sub_apis::MaterialAPI;
 
@@ -144,29 +144,7 @@ impl RuntimeResourceApi {
             return None;
         }
         if let Some(lookup) = self.static_material_lookup {
-            if let Some(found) = lookup(source_hash).cloned() {
-                return Some(found);
-            }
-            let Some(source) = source else {
-                return None;
-            };
-            let normalized = normalize_source_slashes(source);
-            if normalized.as_ref() != source
-                && let Some(found) = lookup(string_to_u64(normalized.as_ref())).cloned()
-            {
-                return Some(found);
-            }
-            if let Some(alias) = normalized_static_material_lookup_alias(source)
-                && let Some(found) = lookup(string_to_u64(alias.as_str())).cloned()
-            {
-                return Some(found);
-            }
-            if normalized.as_ref() != source
-                && let Some(alias) = normalized_static_material_lookup_alias(normalized.as_ref())
-                && let Some(found) = lookup(string_to_u64(alias.as_str())).cloned()
-            {
-                return Some(found);
-            }
+            return Some(lookup(source_hash).clone());
         }
         let Some(source) = source else {
             return None;
@@ -185,6 +163,7 @@ fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+#[cfg(test)]
 fn normalized_static_material_lookup_alias(source: &str) -> Option<String> {
     let (path, fragment) = split_source_fragment(source);
     if !(path.ends_with(".glb") || path.ends_with(".gltf")) {
@@ -202,6 +181,7 @@ fn normalized_static_material_lookup_alias(source: &str) -> Option<String> {
     None
 }
 
+#[cfg(test)]
 fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
     let Some((path, selector)) = source.rsplit_once(':') else {
         return (source, None);
@@ -215,6 +195,7 @@ fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
     (source, None)
 }
 
+#[cfg(test)]
 fn parse_fragment_index(fragment: &str, key: &str) -> Option<u32> {
     let (name, rest) = fragment.split_once('[')?;
     if name.trim() != key {

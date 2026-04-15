@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
+﻿use crate::{StaticPipelineError, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
 use perro_io::walkdir::collect_file_paths;
 use std::{fmt::Write as _, fs, path::Path};
 
@@ -59,7 +59,7 @@ pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipeline
         out.push('\n');
     }
     out.push_str("static EMPTY_SHADER: &str = \"\";\n\n");
-    out.push_str("pub fn lookup_shader(path_hash: u64) -> &'static str {\n");
+    out.push_str("pub const fn lookup_shader(path_hash: u64) -> &'static str {\n");
     out.push_str("    match path_hash {\n");
     for (index, (res_path, _)) in shaders.iter().enumerate() {
         let path_hash = perro_ids::string_to_u64(res_path);
@@ -93,25 +93,48 @@ fn escape_str(input: &str) -> String {
 
 fn minify_wgsl_for_embed(src: &str) -> String {
     let mut out = String::with_capacity(src.len());
-    let mut last_blank = false;
+    let mut first = true;
     for raw_line in src.lines() {
-        let mut line = raw_line.trim();
-        if line.starts_with("//") {
-            continue;
-        }
-        if let Some(idx) = line.find("//") {
-            line = line[..idx].trim_end();
-        }
+        let line = strip_line_comment_preserving_strings(raw_line).trim();
         if line.is_empty() {
-            if !last_blank {
-                out.push('\n');
-                last_blank = true;
-            }
             continue;
+        }
+        if !first {
+            out.push(' ');
         }
         out.push_str(line);
-        out.push('\n');
-        last_blank = false;
+        first = false;
     }
     out
+}
+
+fn strip_line_comment_preserving_strings(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    let mut i = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'"' {
+            in_string = true;
+            i += 1;
+            continue;
+        }
+        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+            return &line[..i];
+        }
+        i += 1;
+    }
+    line
 }

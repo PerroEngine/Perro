@@ -77,10 +77,8 @@ impl RuntimeResourceApi {
         source_hash: u64,
         source: Option<&str>,
     ) -> Option<Arc<AnimationClip>> {
-        if let Some(lookup) = self.static_animation_lookup
-            && let Some(clip) = lookup(source_hash)
-        {
-            return Some(Arc::new(clip.clone()));
+        if let Some(lookup) = self.static_animation_lookup {
+            return Some(Arc::new(lookup(source_hash).clone()));
         }
 
         let Some(source) = source else {
@@ -114,7 +112,6 @@ mod tests {
         AnimationEventScope, AnimationObject, AnimationObjectKey, AnimationObjectTrack,
         AnimationParam, AnimationTrackValue,
     };
-    use perro_ids::string_to_u64;
     use std::path::PathBuf;
     use std::sync::{Arc, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -158,14 +155,20 @@ fps = 30
         RuntimeResourceApi::new(None, None, None, lookup, None, None)
     }
 
-    fn static_clip_lookup(path_hash: u64) -> Option<&'static AnimationClip> {
-        if path_hash != string_to_u64("res://test/clip.panim") {
-            return None;
-        }
+    fn static_clip_lookup(_path_hash: u64) -> &'static AnimationClip {
+        static EMPTY_CLIP: AnimationClip = AnimationClip {
+            name: Cow::Borrowed(""),
+            fps: 0.0,
+            total_frames: 0,
+            objects: Cow::Borrowed(&[]),
+            object_tracks: Cow::Borrowed(&[]),
+            frame_events: Cow::Borrowed(&[]),
+        };
         static CLIP: OnceLock<AnimationClip> = OnceLock::new();
-        Some(CLIP.get_or_init(|| {
+        let _ = &EMPTY_CLIP;
+        CLIP.get_or_init(|| {
             perro_animation::parse_panim(TEST_PANIM_SRC).expect("test panim must parse")
-        }))
+        })
     }
 
     fn assert_f32_eq(actual: f32, expected: f32) {
@@ -392,9 +395,17 @@ fps = 30
     }
 
     #[test]
-    fn animation_loader_falls_back_to_file_when_static_lookup_misses() {
-        fn empty_lookup(_path_hash: u64) -> Option<&'static AnimationClip> {
-            None
+    fn animation_loader_returns_empty_clip_when_static_lookup_misses() {
+        fn empty_lookup(_path_hash: u64) -> &'static AnimationClip {
+            static EMPTY_CLIP: AnimationClip = AnimationClip {
+                name: Cow::Borrowed(""),
+                fps: 0.0,
+                total_frames: 0,
+                objects: Cow::Borrowed(&[]),
+                object_tracks: Cow::Borrowed(&[]),
+                frame_events: Cow::Borrowed(&[]),
+            };
+            &EMPTY_CLIP
         }
 
         let source = write_test_panim_file();
@@ -402,6 +413,7 @@ fps = 30
         let id = api.load_animation_source(&source);
         let clip = api.get_animation(id).expect("fallback clip should exist");
 
-        assert_eq!(clip.name.as_ref(), TEST_PANIM_NAME);
+        assert!(clip.name.is_empty());
+        assert_eq!(clip.total_frames, 0);
     }
 }

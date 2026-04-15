@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
+﻿use crate::{StaticPipelineError, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use rayon::prelude::*;
 use std::{
@@ -156,7 +156,7 @@ pub fn generate_static_meshes(
         out.push('\n');
     }
     out.push_str("static EMPTY_MESH: &[u8] = b\"\";\n\n");
-    out.push_str("pub fn lookup_mesh(path_hash: u64) -> &'static [u8] {\n");
+    out.push_str("pub const fn lookup_mesh(path_hash: u64) -> &'static [u8] {\n");
     out.push_str("    match path_hash {\n");
     for mesh_ref in &mesh_refs {
         let index = *static_index_by_embedded

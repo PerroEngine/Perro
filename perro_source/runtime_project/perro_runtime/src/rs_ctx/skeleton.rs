@@ -45,10 +45,11 @@ impl SkeletonAPI for RuntimeResourceApi {
 
 fn load_bones_uncached(api: &RuntimeResourceApi, source: &str) -> Option<Vec<Bone3D>> {
     let path_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
-    if let Some(bytes) = api
-        .static_skeleton_lookup
-        .and_then(|lookup| lookup(path_hash))
-    {
+    if let Some(lookup) = api.static_skeleton_lookup {
+        let bytes = lookup(path_hash);
+        if bytes.is_empty() {
+            return Some(Vec::new());
+        }
         return decode_pskel(bytes).ok();
     }
 

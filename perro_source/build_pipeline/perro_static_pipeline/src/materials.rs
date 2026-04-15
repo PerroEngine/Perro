@@ -91,17 +91,20 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
         );
     }
     out.push('\n');
-    out.push_str("pub fn lookup_material(path_hash: u64) -> Option<&'static Material3D> {\n");
+    out.push_str(
+        "static EMPTY_MATERIAL: Material3D = Material3D::Standard(StandardMaterial3D::const_default());\n\n",
+    );
+    out.push_str("pub const fn lookup_material(path_hash: u64) -> &'static Material3D {\n");
     out.push_str("    match path_hash {\n");
     for (path, index) in &material_refs {
         let path_hash = perro_ids::string_to_u64(path);
         let _ = writeln!(
             out,
-            "        {path_hash}u64 => Some(&MATERIAL_{}),",
+            "        {path_hash}u64 => &MATERIAL_{},",
             index,
         );
     }
-    out.push_str("        _ => None,\n");
+    out.push_str("        _ => &EMPTY_MATERIAL,\n");
     out.push_str("    }\n");
     out.push_str("}\n");
 

@@ -45,8 +45,7 @@ impl LocalizationAPI for RuntimeResourceApi {
                 .localization
                 .read()
                 .expect("resource api localization rwlock poisoned");
-            let value = lookup(localization.current_locale, string_to_u64(key))?;
-            return Some(value);
+            return Some(lookup(localization.current_locale, string_to_u64(key)));
         }
         let localization = self
             .localization
@@ -61,8 +60,7 @@ impl LocalizationAPI for RuntimeResourceApi {
                 .localization
                 .read()
                 .expect("resource api localization rwlock poisoned");
-            let value = lookup(localization.current_locale, key_hash)?;
-            return Some(value);
+            return Some(lookup(localization.current_locale, key_hash));
         }
         let localization = self
             .localization
@@ -73,8 +71,7 @@ impl LocalizationAPI for RuntimeResourceApi {
 
     fn localization_get_for_locale(&self, locale: Locale, key: &str) -> Option<&'static str> {
         if let Some(lookup) = self.static_localization_lookup {
-            let value = lookup(locale, string_to_u64(key))?;
-            return Some(value);
+            return Some(lookup(locale, string_to_u64(key)));
         }
 
         let locale_code = locale.code().trim().to_ascii_lowercase();
@@ -97,8 +94,7 @@ impl LocalizationAPI for RuntimeResourceApi {
         key_hash: u64,
     ) -> Option<&'static str> {
         if let Some(lookup) = self.static_localization_lookup {
-            let value = lookup(locale, key_hash)?;
-            return Some(value);
+            return Some(lookup(locale, key_hash));
         }
 
         let locale_code = locale.code().trim().to_ascii_lowercase();
@@ -345,14 +341,14 @@ mod tests {
 
     #[test]
     fn static_localization_switches_by_locale_code_even_with_configured_csv_source() {
-        fn static_lookup(locale: Locale, key_hash: u64) -> Option<&'static str> {
+        fn static_lookup(locale: Locale, key_hash: u64) -> &'static str {
             if key_hash != string_to_u64("camera.init") {
-                return None;
+                return "";
             }
             match locale {
-                Locale::EN => Some("Camera initialized"),
-                Locale::ES => Some("Camara inicializada"),
-                _ => None,
+                Locale::EN => "Camera initialized",
+                Locale::ES => "Camara inicializada",
+                _ => "",
             }
         }
 
