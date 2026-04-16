@@ -9,6 +9,7 @@ use perro_render_bridge::{
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use std::{fs, sync::Arc};
+use std::io::Write;
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize, Position, Size},
     event::{DeviceEvent, ElementState, WindowEvent},
@@ -21,7 +22,9 @@ use winit::{
 const DEFAULT_FPS_CAP: f32 = 60.0;
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 8;
-const LOG_INTERVAL_SECONDS: f32 = 2.5;
+const LOG_INTERVAL_SECONDS: f32 = 3.0;
+#[cfg(not(feature = "profile_heavy"))]
+const LOG_TIMING_SAMPLE_STRIDE: u32 = 20;
 const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
 const STARTUP_SPLASH_FADE_DURATION: Duration = Duration::from_millis(320);
 const STARTUP_SPLASH_HOLD_DURATION: Duration = Duration::from_millis(2000);
@@ -144,6 +147,23 @@ fn target_frame_duration(fps_cap: f32) -> Option<Duration> {
     }
     let d = Duration::from_secs_f64(secs);
     if d.is_zero() { None } else { Some(d) }
+}
+
+#[inline]
+fn avg_micros(total: Duration, samples: u32) -> u128 {
+    if samples == 0 {
+        return 0;
+    }
+    total.as_micros() / u128::from(samples)
+}
+
+#[inline]
+fn log_avg_sampled(update_us: u128, present_us: u128, total_us: u128, idle_us: u128) {
+    let mut out = std::io::stdout().lock();
+    let _ = writeln!(
+        out,
+        "avg(sampled): update=({update_us}us) | frame present=({present_us}us) | total=({total_us}us) | idle=({idle_us}us)"
+    );
 }
 
 pub struct WinitRunner;
@@ -295,6 +315,7 @@ struct RunnerState<B: GraphicsBackend> {
     fps_cap: f32,
     fixed_accumulator: f32,
     batch_frames: u32,
+    batch_timing_samples: u32,
     kbm_input: crate::input::KbmInput,
     gamepad_input: crate::input::GamepadInput,
     joycon_input: crate::input::JoyConInput,
@@ -330,6 +351,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             next_frame_deadline: now,
             run_start: now,
             batch_frames: 0,
+            batch_timing_samples: 0,
             batch_start: now,
             batch_work: Duration::ZERO,
             batch_simulation: Duration::ZERO,
@@ -481,6 +503,19 @@ impl<B: GraphicsBackend> RunnerState<B> {
         }
     }
 
+    #[inline]
+    fn should_sample_timing(&self) -> bool {
+        #[cfg(feature = "profile_heavy")]
+        {
+            true
+        }
+        #[cfg(not(feature = "profile_heavy"))]
+        {
+            let next_frame = self.batch_frames.saturating_add(1);
+            next_frame == 1 || next_frame.is_multiple_of(LOG_TIMING_SAMPLE_STRIDE)
+        }
+    }
+
     fn startup_splash_overlay_commands(&mut self, alpha: f32) -> Vec<RenderCommand> {
         let alpha = alpha.clamp(0.0, 1.0);
         if let Some(result) = self
@@ -590,15 +625,33 @@ impl<B: GraphicsBackend> RunnerState<B> {
         frame_delta: Duration,
         idle_duration: Duration,
     ) {
+        let should_sample_timing = self.should_sample_timing();
+        #[cfg(feature = "profile_heavy")]
         let work_start = Instant::now();
+        #[cfg(not(feature = "profile_heavy"))]
+        let work_start = should_sample_timing.then(Instant::now);
         let mut runtime_update_duration = Duration::ZERO;
 
+        #[cfg(feature = "profile_heavy")]
         let simulation_start = Instant::now();
+        #[cfg(not(feature = "profile_heavy"))]
+        let simulation_start = should_sample_timing.then(Instant::now);
+        #[cfg(feature = "profile_heavy")]
         let input_poll_start = Instant::now();
+        #[cfg(not(feature = "profile_heavy"))]
+        let input_poll_start = should_sample_timing.then(Instant::now);
         self.gamepad_input.begin_frame(&mut self.app);
         self.joycon_input.begin_frame(&mut self.app);
+        #[cfg(feature = "profile_heavy")]
         let input_poll_duration = input_poll_start.elapsed();
+        #[cfg(not(feature = "profile_heavy"))]
+        let input_poll_duration = input_poll_start
+            .map(|start| start.elapsed())
+            .unwrap_or(Duration::ZERO);
+        #[cfg(feature = "profile_heavy")]
         let fixed_start = Instant::now();
+        #[cfg(not(feature = "profile_heavy"))]
+        let fixed_start = should_sample_timing.then(Instant::now);
 
         let simulated_delta_seconds = {
             if let Some(effective_fixed_step) = self.fixed_timestep {
@@ -628,10 +681,20 @@ impl<B: GraphicsBackend> RunnerState<B> {
             }
         };
 
+        #[cfg(feature = "profile_heavy")]
         let fixed_duration = fixed_start.elapsed();
+        #[cfg(not(feature = "profile_heavy"))]
+        let fixed_duration = fixed_start
+            .map(|start| start.elapsed())
+            .unwrap_or(Duration::ZERO);
         let runtime_timing = self.app.update_runtime(frame_delta.as_secs_f32());
         runtime_update_duration += runtime_timing.total;
+        #[cfg(feature = "profile_heavy")]
         let simulation_duration = simulation_start.elapsed();
+        #[cfg(not(feature = "profile_heavy"))]
+        let simulation_duration = simulation_start
+            .map(|start| start.elapsed())
+            .unwrap_or(Duration::ZERO);
         #[cfg(not(feature = "profile_heavy"))]
         let _ = (
             runtime_update_duration,
@@ -643,7 +706,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
         let alpha = self.startup_splash.alpha(frame_start);
         let splash_overlay = self.startup_splash_overlay_commands(alpha);
+        #[cfg(feature = "profile_heavy")]
         let present_timing = self.app.present_with_overlay_timed(splash_overlay);
+        #[cfg(not(feature = "profile_heavy"))]
+        let present_timing = if should_sample_timing {
+            Some(self.app.present_with_overlay_timed(splash_overlay))
+        } else {
+            self.app.present_with_overlay(splash_overlay);
+            None
+        };
         let mut inflight_now = Vec::<RenderRequestID>::new();
         self.app
             .runtime
@@ -658,17 +729,33 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 self.startup_splash.first_frame_inflight.len()
             );
         }
+        #[cfg(feature = "profile_heavy")]
         let work_duration = work_start.elapsed();
+        #[cfg(not(feature = "profile_heavy"))]
+        let work_duration = work_start
+            .map(|start| start.elapsed())
+            .unwrap_or(Duration::ZERO);
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
 
         self.batch_frames = self.batch_frames.saturating_add(1);
-        self.batch_work += work_duration;
-        self.batch_simulation += simulation_duration;
-        self.batch_present += present_timing.gpu_present;
-        self.batch_idle += idle_duration;
+        if should_sample_timing {
+            self.batch_timing_samples = self.batch_timing_samples.saturating_add(1);
+            self.batch_work += work_duration;
+            self.batch_simulation += simulation_duration;
+            self.batch_idle += idle_duration;
+        }
+        #[cfg(not(feature = "profile_heavy"))]
+        if should_sample_timing {
+            let sampled_present = present_timing
+                .as_ref()
+                .map(|timing| timing.gpu_present)
+                .unwrap_or(Duration::ZERO);
+            self.batch_present += sampled_present;
+        }
         #[cfg(feature = "profile_heavy")]
         {
+            self.batch_present += present_timing.gpu_present;
             self.batch_runtime_update += runtime_update_duration;
             self.batch_input_poll += input_poll_duration;
             self.batch_fixed_update += fixed_duration;
@@ -792,6 +879,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let elapsed_since_start = frame_start.duration_since(self.run_start);
         self.app.set_elapsed_time(elapsed_since_start.as_secs_f32());
         let simulated_delta_seconds;
+        let should_sample_timing = self.should_sample_timing();
 
         let idle_duration = frame_start.saturating_duration_since(self.last_frame_end);
 
@@ -800,16 +888,33 @@ impl<B: GraphicsBackend> RunnerState<B> {
             return;
         }
 
+        #[cfg(feature = "profile_heavy")]
         let work_start = Instant::now();
+        #[cfg(not(feature = "profile_heavy"))]
+        let work_start = should_sample_timing.then(Instant::now);
         let mut runtime_update_duration = Duration::ZERO;
 
+        #[cfg(feature = "profile_heavy")]
         let simulation_start = Instant::now();
+        #[cfg(not(feature = "profile_heavy"))]
+        let simulation_start = should_sample_timing.then(Instant::now);
+        #[cfg(feature = "profile_heavy")]
         let input_poll_start = Instant::now();
+        #[cfg(not(feature = "profile_heavy"))]
+        let input_poll_start = should_sample_timing.then(Instant::now);
         // Poll device inputs before update so scripts see the latest state.
         self.gamepad_input.begin_frame(&mut self.app);
         self.joycon_input.begin_frame(&mut self.app);
+        #[cfg(feature = "profile_heavy")]
         let input_poll_duration = input_poll_start.elapsed();
+        #[cfg(not(feature = "profile_heavy"))]
+        let input_poll_duration = input_poll_start
+            .map(|start| start.elapsed())
+            .unwrap_or(Duration::ZERO);
+        #[cfg(feature = "profile_heavy")]
         let fixed_start = Instant::now();
+        #[cfg(not(feature = "profile_heavy"))]
+        let fixed_start = should_sample_timing.then(Instant::now);
 
         {
             if let Some(effective_fixed_step) = self.fixed_timestep {
@@ -840,10 +945,20 @@ impl<B: GraphicsBackend> RunnerState<B> {
             }
         }
 
+        #[cfg(feature = "profile_heavy")]
         let fixed_duration = fixed_start.elapsed();
+        #[cfg(not(feature = "profile_heavy"))]
+        let fixed_duration = fixed_start
+            .map(|start| start.elapsed())
+            .unwrap_or(Duration::ZERO);
         let runtime_timing = self.app.update_runtime(frame_delta.as_secs_f32());
         runtime_update_duration += runtime_timing.total;
+        #[cfg(feature = "profile_heavy")]
         let simulation_duration = simulation_start.elapsed();
+        #[cfg(not(feature = "profile_heavy"))]
+        let simulation_duration = simulation_start
+            .map(|start| start.elapsed())
+            .unwrap_or(Duration::ZERO);
         #[cfg(not(feature = "profile_heavy"))]
         let _ = (
             runtime_update_duration,
@@ -853,19 +968,43 @@ impl<B: GraphicsBackend> RunnerState<B> {
             simulated_delta_seconds,
         );
 
+        #[cfg(feature = "profile_heavy")]
         let present_timing = self.app.present_timed();
+        #[cfg(not(feature = "profile_heavy"))]
+        let present_timing = if should_sample_timing {
+            Some(self.app.present_timed())
+        } else {
+            self.app.present();
+            None
+        };
+        #[cfg(feature = "profile_heavy")]
         let work_duration = work_start.elapsed();
+        #[cfg(not(feature = "profile_heavy"))]
+        let work_duration = work_start
+            .map(|start| start.elapsed())
+            .unwrap_or(Duration::ZERO);
 
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
 
         self.batch_frames = self.batch_frames.saturating_add(1);
-        self.batch_work += work_duration;
-        self.batch_simulation += simulation_duration;
-        self.batch_present += present_timing.gpu_present;
-        self.batch_idle += idle_duration;
+        if should_sample_timing {
+            self.batch_timing_samples = self.batch_timing_samples.saturating_add(1);
+            self.batch_work += work_duration;
+            self.batch_simulation += simulation_duration;
+            self.batch_idle += idle_duration;
+        }
+        #[cfg(not(feature = "profile_heavy"))]
+        if should_sample_timing {
+            let sampled_present = present_timing
+                .as_ref()
+                .map(|timing| timing.gpu_present)
+                .unwrap_or(Duration::ZERO);
+            self.batch_present += sampled_present;
+        }
         #[cfg(feature = "profile_heavy")]
         {
+            self.batch_present += present_timing.gpu_present;
             self.batch_runtime_update += runtime_update_duration;
             self.batch_input_poll += input_poll_duration;
             self.batch_fixed_update += fixed_duration;
@@ -920,19 +1059,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
         }
 
         let batch_elapsed_secs = frame_end.duration_since(self.batch_start).as_secs_f32();
-        if batch_elapsed_secs >= LOG_INTERVAL_SECONDS && self.batch_frames > 0 {
-            let work_ms = self.batch_work.as_secs_f64() * 1_000.0;
-            let avg_work_us = (work_ms * 1_000.0) / self.batch_frames as f64;
-            let avg_simulation_us =
-                self.batch_simulation.as_micros() as f64 / self.batch_frames as f64;
-            let present_ms = self.batch_present.as_secs_f64() * 1_000.0;
-            let avg_present_us = (present_ms * 1_000.0) / self.batch_frames as f64;
-            let idle_ms = self.batch_idle.as_secs_f64() * 1_000.0;
-            let avg_idle_us = (idle_ms * 1_000.0) / self.batch_frames as f64;
-            println!(
-                "update: ({:.3}us avg) | frame present: ({:.3}us avg) | total: ({:.3}us avg) | idle: ({:.3}us avg)",
-                avg_simulation_us, avg_present_us, avg_work_us, avg_idle_us
-            );
+        if batch_elapsed_secs >= LOG_INTERVAL_SECONDS && self.batch_timing_samples > 0 {
+            let avg_work_us = avg_micros(self.batch_work, self.batch_timing_samples);
+            let avg_simulation_us = avg_micros(self.batch_simulation, self.batch_timing_samples);
+            let avg_present_us = avg_micros(self.batch_present, self.batch_timing_samples);
+            let avg_idle_us = avg_micros(self.batch_idle, self.batch_timing_samples);
+            log_avg_sampled(avg_simulation_us, avg_present_us, avg_work_us, avg_idle_us);
             #[cfg(feature = "profile_heavy")]
             {
                 let avg_runtime_update_us =
@@ -1086,9 +1218,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     pct_skip_prepare_3d_cull_inputs
                 );
             }
-            println!("---");
-
             self.batch_frames = 0;
+            self.batch_timing_samples = 0;
             self.batch_work = Duration::ZERO;
             self.batch_simulation = Duration::ZERO;
             self.batch_present = Duration::ZERO;

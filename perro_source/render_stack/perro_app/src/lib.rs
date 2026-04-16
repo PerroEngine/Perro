@@ -125,7 +125,15 @@ impl<B: GraphicsBackend> App<B> {
 
     #[inline]
     pub fn update_runtime(&mut self, delta_time: f32) -> perro_runtime::RuntimeUpdateTiming {
-        self.runtime.update_timed(delta_time)
+        #[cfg(feature = "profile_heavy")]
+        {
+            self.runtime.update_timed(delta_time)
+        }
+        #[cfg(not(feature = "profile_heavy"))]
+        {
+            self.runtime.update(delta_time);
+            perro_runtime::RuntimeUpdateTiming::default()
+        }
     }
 
     #[inline]
@@ -242,12 +250,29 @@ impl<B: GraphicsBackend> App<B> {
 
     #[inline]
     pub fn present(&mut self) {
-        let _ = self.present_timed();
+        self.present_with_overlay(std::iter::empty::<perro_render_bridge::RenderCommand>());
     }
 
     #[inline]
     pub fn present_timed(&mut self) -> PresentTiming {
         self.present_with_overlay_timed(std::iter::empty::<perro_render_bridge::RenderCommand>())
+    }
+
+    pub fn present_with_overlay<I>(&mut self, overlay_commands: I)
+    where
+        I: IntoIterator<Item = perro_render_bridge::RenderCommand>,
+    {
+        self.runtime.extract_render_2d_commands();
+        self.runtime.extract_render_3d_commands();
+        self.runtime.drain_render_commands(&mut self.command_buffer);
+        self.graphics.submit_many(self.command_buffer.drain(..));
+        self.graphics.submit_many(overlay_commands);
+        self.graphics.draw_frame();
+        self.graphics.drain_events(&mut self.event_buffer);
+        self.runtime
+            .apply_render_events(self.event_buffer.drain(..));
+        // Dirty markers are per-frame extraction hints; clear after a full frame.
+        self.runtime.clear_dirty_flags();
     }
 
     pub fn present_with_overlay_timed<I>(&mut self, overlay_commands: I) -> PresentTiming
