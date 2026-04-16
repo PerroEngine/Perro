@@ -3,7 +3,10 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     let emissive = unpack_rgba8(in.packed_emissive).xyz;
     let pbr = decode_standard_pbr_params(in.packed_pbr_params_0, in.packed_pbr_params_1);
     let material = decode_material_params(in.packed_material_params);
-    let base_sample = textureSample(material_base_color_tex, material_sampler, in.uv);
+    var base_sample = vec4<f32>(1.0, 1.0, 1.0, 1.0);
+    if material.has_base_color_texture {
+        base_sample = textureSample(material_base_color_tex, material_sampler, in.uv);
+    }
     let albedo = color.rgb * base_sample.rgb;
     var n = normalize(in.normal_ws);
     if material.flat_shading {

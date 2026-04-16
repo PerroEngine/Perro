@@ -78,9 +78,57 @@ pub struct PostProcessor {
     builtin_pipeline: wgpu::RenderPipeline,
     custom_pipelines: HashMap<String, wgpu::RenderPipeline>,
     uniform_buffer: wgpu::Buffer,
+    uniform_stride: u64,
+    uniform_capacity: usize,
     params_buffer: wgpu::Buffer,
     params_capacity: usize,
     frame_counter: u64,
+}
+
+#[inline]
+fn create_post_bind_group(
+    device: &wgpu::Device,
+    bgl: &wgpu::BindGroupLayout,
+    input_view: &wgpu::TextureView,
+    sampler: &wgpu::Sampler,
+    depth_view: &wgpu::TextureView,
+    uniform_buffer: &wgpu::Buffer,
+    uniform_size_bytes: u64,
+    params_buffer: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("perro_post_bg"),
+        layout: bgl,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(input_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(depth_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: uniform_buffer,
+                    offset: 0,
+                    size: Some(
+                        std::num::NonZeroU64::new(uniform_size_bytes)
+                            .expect("post uniform size must be non-zero"),
+                    ),
+                }),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: params_buffer.as_entire_binding(),
+            },
+        ],
+    })
 }
 
 impl PostProcessor {
@@ -140,7 +188,7 @@ impl PostProcessor {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
+                        has_dynamic_offset: true,
                         min_binding_size: Some(
                             std::num::NonZeroU64::new(std::mem::size_of::<PostUniform>() as u64)
                                 .expect("post uniform size must be non-zero"),
@@ -160,9 +208,13 @@ impl PostProcessor {
                 },
             ],
         });
+        let uniform_size_bytes = std::mem::size_of::<PostUniform>() as u64;
+        let uniform_stride =
+            align_up_uniform(uniform_size_bytes, device.limits().min_uniform_buffer_offset_alignment as u64);
+        let uniform_capacity = 1usize;
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_post_uniforms"),
-            size: std::mem::size_of::<PostUniform>() as u64,
+            size: uniform_stride * uniform_capacity as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -196,6 +248,8 @@ impl PostProcessor {
             builtin_pipeline,
             custom_pipelines: HashMap::new(),
             uniform_buffer,
+            uniform_stride,
+            uniform_capacity,
             params_buffer,
             params_capacity,
             frame_counter: 0,
@@ -282,32 +336,23 @@ impl PostProcessor {
             }
         }
         self.ensure_params_capacity(device, max_params);
-
-        let ping_a_view = self.ping_a_view.clone();
-        let ping_b_view = self.ping_b_view.clone();
-        let sampler = self.sampler.clone();
-        let bgl = self.bgl.clone();
-        let uniform_buffer = self.uniform_buffer.clone();
-        let params_buffer = self.params_buffer.clone();
-        let builtin_pipeline = self.builtin_pipeline.clone();
+        self.ensure_uniform_capacity(device, effects.len().max(1));
 
         let mut current_input = *input_view;
+        let mut input_kind = 0u8; // 0=external input_view, 1=ping_a, 2=ping_b
+        let mut bind_group_input: Option<wgpu::BindGroup> = None;
+        let mut bind_group_ping_a: Option<wgpu::BindGroup> = None;
+        let mut bind_group_ping_b: Option<wgpu::BindGroup> = None;
         let mut use_ping_a = true;
         for (index, effect) in effects.iter().enumerate() {
             let last = index + 1 == effects.len();
-            let custom_key = match effect {
-                PostProcessEffect::Custom { shader_path, .. } => {
-                    Some(shader_path.as_ref().to_string())
-                }
-                _ => None,
-            };
 
             // Use the new struct for encoded params
             let encoded_params = encode_effect_params(effect);
             let param_count = encoded_params.custom_params.len() as u32;
             if !encoded_params.custom_params.is_empty() {
                 queue.write_buffer(
-                    &params_buffer,
+                    &self.params_buffer,
                     0,
                     bytemuck::cast_slice(&encoded_params.custom_params),
                 );
@@ -327,47 +372,68 @@ impl PostProcessor {
                 far,
                 time: [time, time],
             };
-            queue.write_buffer(&uniform_buffer, 0, bytemuck::bytes_of(&uniform));
+            let uniform_offset = index as u64 * self.uniform_stride;
+            let uniform_dynamic_offset =
+                u32::try_from(uniform_offset).expect("post uniform dynamic offset overflow");
+            queue.write_buffer(
+                &self.uniform_buffer,
+                uniform_offset,
+                bytemuck::bytes_of(&uniform),
+            );
 
             let target_view = if last {
                 *output_view
             } else if use_ping_a {
-                &ping_a_view
+                &self.ping_a_view
             } else {
-                &ping_b_view
+                &self.ping_b_view
             };
-            let pipeline = match custom_key {
-                Some(ref key) => self.custom_pipelines.get(key).unwrap_or(&builtin_pipeline),
-                None => &builtin_pipeline,
+            let pipeline = match effect {
+                PostProcessEffect::Custom { shader_path, .. } => self
+                    .custom_pipelines
+                    .get(shader_path.as_ref())
+                    .unwrap_or(&self.builtin_pipeline),
+                _ => &self.builtin_pipeline,
             };
 
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("perro_post_bg"),
-                layout: &bgl,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(current_input),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                    // Note: Check if depth_view is actually needed/was passed correctly
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(depth_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: uniform_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 4,
-                        resource: params_buffer.as_entire_binding(),
-                    },
-                ],
-            });
+            let bind_group = match input_kind {
+                0 => bind_group_input.get_or_insert_with(|| {
+                    create_post_bind_group(
+                        device,
+                        &self.bgl,
+                        current_input,
+                        &self.sampler,
+                        depth_view,
+                        &self.uniform_buffer,
+                        std::mem::size_of::<PostUniform>() as u64,
+                        &self.params_buffer,
+                    )
+                }),
+                1 => bind_group_ping_a.get_or_insert_with(|| {
+                    create_post_bind_group(
+                        device,
+                        &self.bgl,
+                        &self.ping_a_view,
+                        &self.sampler,
+                        depth_view,
+                        &self.uniform_buffer,
+                        std::mem::size_of::<PostUniform>() as u64,
+                        &self.params_buffer,
+                    )
+                }),
+                _ => bind_group_ping_b.get_or_insert_with(|| {
+                    create_post_bind_group(
+                        device,
+                        &self.bgl,
+                        &self.ping_b_view,
+                        &self.sampler,
+                        depth_view,
+                        &self.uniform_buffer,
+                        std::mem::size_of::<PostUniform>() as u64,
+                        &self.params_buffer,
+                    )
+                }),
+            };
 
             {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -387,11 +453,12 @@ impl PostProcessor {
                     multiview_mask: None,
                 });
                 pass.set_pipeline(pipeline);
-                pass.set_bind_group(0, &bind_group, &[]);
+                pass.set_bind_group(0, &*bind_group, &[uniform_dynamic_offset]);
                 pass.draw(0..3, 0..1);
             }
 
             current_input = target_view;
+            input_kind = if use_ping_a { 1 } else { 2 };
             use_ping_a = !use_ping_a;
         }
     }
@@ -450,6 +517,31 @@ impl PostProcessor {
         });
         self.params_capacity = new_capacity;
     }
+
+    fn ensure_uniform_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        if needed <= self.uniform_capacity {
+            return;
+        }
+        let mut new_capacity = self.uniform_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_post_uniforms"),
+            size: self.uniform_stride * new_capacity as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.uniform_capacity = new_capacity;
+    }
+}
+
+#[inline]
+fn align_up_uniform(value: u64, alignment: u64) -> u64 {
+    if alignment <= 1 {
+        return value.max(1);
+    }
+    value.div_ceil(alignment) * alignment
 }
 
 fn create_pipeline(

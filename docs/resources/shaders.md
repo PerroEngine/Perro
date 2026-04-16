@@ -96,6 +96,7 @@ Notes for custom shaders:
 - `material_params`: `(alpha_mode, alpha_cutoff, double_sided, flags)`
   - `flags bit 0`: debug view
   - `flags bit 1`: flat shading enabled
+  - `flags bit 2`: base color texture bound
 - `custom_range`: `(offset, length)` for the custom params block.
 
 Example usage:
@@ -109,10 +110,12 @@ let glow = custom_f_param(in, 0u).x;
 
 Custom param packing:
 
-- `F32`, `I32`, `Bool` -> `vec4(x, 0, 0, 0)`
-- `Vec2` -> `vec4(x, y, 0, 0)`
-- `Vec3` -> `vec4(x, y, z, 0)`
-- `Vec4` -> `vec4(x, y, z, w)`
+- Runtime stores params in packed metadata + float payload buffers.
+- `custom_f_param(...)` / `custom_v_param(...)` return logical `vec4` values:
+  - `F32`, `I32`, `Bool` -> `vec4(x, 0, 0, 0)`
+  - `Vec2` -> `vec4(x, y, 0, 0)`
+  - `Vec3` -> `vec4(x, y, z, 0)`
+  - `Vec4` -> `vec4(x, y, z, w)`
 
 Custom param ordering:
 
@@ -144,6 +147,17 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
 
 ### Current Limitations
 
-- Custom params are packed into `vec4<f32>` slots.
 - Custom shaders can implement any shading model, but the only built-in inputs are the fields in
   `FragmentInput` plus `custom_f_param(in, index)`.
+
+### Runtime Performance Notes
+
+- Custom material parameter blocks are interned by value and reused across frames.
+- New unique custom param blocks append once and upload incrementally instead of re-uploading the
+  entire custom param buffer each frame.
+
+### Breaking Change
+
+- Shaders that directly accessed the old prelude symbol `custom_params` as
+  `array<vec4<f32>>` must be updated.
+- Use `custom_f_param(...)` / `custom_v_param(...)` helpers instead of raw storage access.

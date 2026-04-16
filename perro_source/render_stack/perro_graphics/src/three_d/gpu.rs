@@ -75,6 +75,13 @@ const SHADOW_MAP_SIZE: u32 = 4096;
 const SHADOW_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const SHADOW_MAP_DEPTH_BIAS_CONST: i32 = 2;
 const SHADOW_MAP_DEPTH_BIAS_SLOPE: f32 = 2.0;
+const MATERIAL_FLAG_MESHLET_DEBUG_VIEW: u32 = 1u32 << 0;
+const MATERIAL_FLAG_FLAT_SHADING: u32 = 1u32 << 1;
+const MATERIAL_FLAG_HAS_BASE_COLOR_TEXTURE: u32 = 1u32 << 2;
+const CUSTOM_PARAM_KIND_SCALAR: u32 = 0;
+const CUSTOM_PARAM_KIND_VEC2: u32 = 1;
+const CUSTOM_PARAM_KIND_VEC3: u32 = 2;
+const CUSTOM_PARAM_KIND_VEC4: u32 = 3;
 const TEMP_DISABLE_SHADOWS: bool = true;
 // Debug lock: force a fixed world-space directional light vector.
 // Set to false after validating shadow stability.
@@ -304,9 +311,18 @@ pub struct Gpu3D {
     skeleton_buffer: wgpu::Buffer,
     skeleton_capacity: usize,
     staged_skeletons: Vec<[[f32; 4]; 4]>,
-    custom_params_buffer: wgpu::Buffer,
-    custom_params_capacity: usize,
-    staged_custom_params: Vec<[f32; 4]>,
+    custom_params_meta_buffer: wgpu::Buffer,
+    custom_params_meta_capacity: usize,
+    staged_custom_params_meta: Vec<u32>,
+    custom_params_meta_uploaded: usize,
+    custom_params_values_buffer: wgpu::Buffer,
+    custom_params_values_capacity: usize,
+    staged_custom_params_values: Vec<f32>,
+    custom_params_values_uploaded: usize,
+    staged_custom_params_dedupe: AHashMap<Vec<u32>, (u32, u32)>,
+    staged_custom_params_key_scratch: Vec<u32>,
+    staged_custom_params_meta_scratch: Vec<u32>,
+    staged_custom_params_values_scratch: Vec<f32>,
     material_fallback_texture: Option<CachedMaterialTexture>,
     material_textures: AHashMap<u32, CachedMaterialTexture>,
     instance_transform_buffer: wgpu::Buffer,
@@ -782,12 +798,78 @@ impl Gpu3D {
     fn stage_custom_params(&mut self, material: &Material3D) -> (u32, u32) {
         match material {
             Material3D::Custom(custom) => {
-                let offset = self.staged_custom_params.len() as u32;
-                for param in custom.params.as_ref() {
-                    self.staged_custom_params
-                        .push(encode_custom_param_value(&param.value));
+                if custom.params.is_empty() {
+                    return (0, 0);
                 }
-                (offset, custom.params.len() as u32)
+                self.staged_custom_params_key_scratch.clear();
+                self.staged_custom_params_meta_scratch.clear();
+                self.staged_custom_params_values_scratch.clear();
+                self.staged_custom_params_meta_scratch
+                    .reserve(custom.params.len());
+                self.staged_custom_params_key_scratch
+                    .reserve(custom.params.len() * 5);
+                for param in custom.params.as_ref() {
+                    let value_offset = self.staged_custom_params_values_scratch.len() as u32;
+                    let kind = encode_custom_param_value_packed(
+                        &param.value,
+                        &mut self.staged_custom_params_values_scratch,
+                    );
+                    self.staged_custom_params_meta_scratch
+                        .push((value_offset << 2) | kind);
+                    self.staged_custom_params_key_scratch.push(kind);
+                    match kind {
+                        CUSTOM_PARAM_KIND_SCALAR => {
+                            self.staged_custom_params_key_scratch.push(
+                                self.staged_custom_params_values_scratch[value_offset as usize]
+                                    .to_bits(),
+                            );
+                        }
+                        CUSTOM_PARAM_KIND_VEC2 => {
+                            self.staged_custom_params_key_scratch
+                                .push(self.staged_custom_params_values_scratch[value_offset as usize].to_bits());
+                            self.staged_custom_params_key_scratch
+                                .push(self.staged_custom_params_values_scratch[value_offset as usize + 1].to_bits());
+                        }
+                        CUSTOM_PARAM_KIND_VEC3 => {
+                            self.staged_custom_params_key_scratch
+                                .push(self.staged_custom_params_values_scratch[value_offset as usize].to_bits());
+                            self.staged_custom_params_key_scratch
+                                .push(self.staged_custom_params_values_scratch[value_offset as usize + 1].to_bits());
+                            self.staged_custom_params_key_scratch
+                                .push(self.staged_custom_params_values_scratch[value_offset as usize + 2].to_bits());
+                        }
+                        _ => {
+                            self.staged_custom_params_key_scratch
+                                .push(self.staged_custom_params_values_scratch[value_offset as usize].to_bits());
+                            self.staged_custom_params_key_scratch
+                                .push(self.staged_custom_params_values_scratch[value_offset as usize + 1].to_bits());
+                            self.staged_custom_params_key_scratch
+                                .push(self.staged_custom_params_values_scratch[value_offset as usize + 2].to_bits());
+                            self.staged_custom_params_key_scratch
+                                .push(self.staged_custom_params_values_scratch[value_offset as usize + 3].to_bits());
+                        }
+                    }
+                }
+                if let Some(&cached) = self
+                    .staged_custom_params_dedupe
+                    .get(self.staged_custom_params_key_scratch.as_slice())
+                {
+                    return cached;
+                }
+                let offset = self.staged_custom_params_meta.len() as u32;
+                let value_base = self.staged_custom_params_values.len() as u32;
+                for meta in &self.staged_custom_params_meta_scratch {
+                    let kind = *meta & 0x3;
+                    let rel_offset = *meta >> 2;
+                    self.staged_custom_params_meta
+                        .push(((value_base + rel_offset) << 2) | kind);
+                }
+                self.staged_custom_params_values
+                    .extend_from_slice(&self.staged_custom_params_values_scratch);
+                let len = self.staged_custom_params_meta_scratch.len() as u32;
+                self.staged_custom_params_dedupe
+                    .insert(self.staged_custom_params_key_scratch.clone(), (offset, len));
+                (offset, len)
             }
             _ => (0, 0),
         }
@@ -853,6 +935,16 @@ impl Gpu3D {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         let rigid_camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -874,6 +966,16 @@ impl Gpu3D {
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
@@ -1027,10 +1129,17 @@ impl Gpu3D {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let custom_params_capacity = 1usize;
-        let custom_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_custom_material_params"),
-            size: (custom_params_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
+        let custom_params_meta_capacity = 1usize;
+        let custom_params_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_custom_material_params_meta"),
+            size: (custom_params_meta_capacity * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let custom_params_values_capacity = 1usize;
+        let custom_params_values_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_custom_material_params_values"),
+            size: (custom_params_values_capacity * std::mem::size_of::<f32>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1056,7 +1165,11 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: custom_params_buffer.as_entire_binding(),
+                    resource: custom_params_meta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: custom_params_values_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -1070,7 +1183,11 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: custom_params_buffer.as_entire_binding(),
+                    resource: custom_params_meta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: custom_params_values_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -1088,7 +1205,11 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: custom_params_buffer.as_entire_binding(),
+                    resource: custom_params_meta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: custom_params_values_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -1100,12 +1221,16 @@ impl Gpu3D {
                     binding: 0,
                     resource: shadow_camera_buffer.as_entire_binding(),
                 },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: custom_params_buffer.as_entire_binding(),
-                },
-            ],
-        });
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: custom_params_meta_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: custom_params_values_buffer.as_entire_binding(),
+                    },
+                ],
+            });
         let multimesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_multimesh_bg"),
             layout: &multimesh_bgl,
@@ -1801,9 +1926,18 @@ impl Gpu3D {
             skeleton_buffer,
             skeleton_capacity,
             staged_skeletons: Vec::new(),
-            custom_params_buffer,
-            custom_params_capacity,
-            staged_custom_params: Vec::new(),
+            custom_params_meta_buffer,
+            custom_params_meta_capacity,
+            staged_custom_params_meta: Vec::new(),
+            custom_params_meta_uploaded: 0,
+            custom_params_values_buffer,
+            custom_params_values_capacity,
+            staged_custom_params_values: Vec::new(),
+            custom_params_values_uploaded: 0,
+            staged_custom_params_dedupe: AHashMap::new(),
+            staged_custom_params_key_scratch: Vec::new(),
+            staged_custom_params_meta_scratch: Vec::new(),
+            staged_custom_params_values_scratch: Vec::new(),
             material_fallback_texture: None,
             material_textures: AHashMap::new(),
             instance_transform_buffer,
@@ -2711,7 +2845,9 @@ impl Gpu3D {
         self.staged_skinned_instance_meta.clear();
         self.staged_skinned_instance_meta.reserve(draws.len());
         self.staged_skeletons.clear();
-        self.staged_custom_params.clear();
+        self.staged_custom_params_meta_scratch.clear();
+        self.staged_custom_params_values_scratch.clear();
+        self.staged_custom_params_key_scratch.clear();
         self.draw_batches.clear();
         self.multimesh_batches.clear();
         self.staged_multimesh_instances.clear();
@@ -3276,13 +3412,30 @@ impl Gpu3D {
                 bytemuck::cast_slice(&self.staged_skeletons),
             );
         }
-        self.ensure_custom_params_capacity(device, self.staged_custom_params.len().max(1));
-        if !self.staged_custom_params.is_empty() {
+        self.ensure_custom_params_capacity(
+            device,
+            self.staged_custom_params_meta.len().max(1),
+            self.staged_custom_params_values.len().max(1),
+        );
+        if self.custom_params_meta_uploaded < self.staged_custom_params_meta.len() {
+            let upload_start = self.custom_params_meta_uploaded;
+            let byte_start = upload_start as u64 * std::mem::size_of::<u32>() as u64;
             queue.write_buffer(
-                &self.custom_params_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_custom_params),
+                &self.custom_params_meta_buffer,
+                byte_start,
+                bytemuck::cast_slice(&self.staged_custom_params_meta[upload_start..]),
             );
+            self.custom_params_meta_uploaded = self.staged_custom_params_meta.len();
+        }
+        if self.custom_params_values_uploaded < self.staged_custom_params_values.len() {
+            let upload_start = self.custom_params_values_uploaded;
+            let byte_start = upload_start as u64 * std::mem::size_of::<f32>() as u64;
+            queue.write_buffer(
+                &self.custom_params_values_buffer,
+                byte_start,
+                bytemuck::cast_slice(&self.staged_custom_params_values[upload_start..]),
+            );
+            self.custom_params_values_uploaded = self.staged_custom_params_values.len();
         }
         self.ensure_multimesh_draw_params_capacity(
             device,
@@ -4147,7 +4300,11 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: self.custom_params_buffer.as_entire_binding(),
+                    resource: self.custom_params_meta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.custom_params_values_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -4165,7 +4322,11 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: self.custom_params_buffer.as_entire_binding(),
+                    resource: self.custom_params_meta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.custom_params_values_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -4179,7 +4340,11 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: self.custom_params_buffer.as_entire_binding(),
+                    resource: self.custom_params_meta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.custom_params_values_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -4194,7 +4359,11 @@ impl Gpu3D {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: self.custom_params_buffer.as_entire_binding(),
+                        resource: self.custom_params_meta_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.custom_params_values_buffer.as_entire_binding(),
                     },
                 ],
             });
@@ -4232,22 +4401,46 @@ impl Gpu3D {
         self.skeleton_capacity = new_capacity;
     }
 
-    fn ensure_custom_params_capacity(&mut self, device: &wgpu::Device, needed: usize) {
-        if needed <= self.custom_params_capacity {
-            return;
+    fn ensure_custom_params_capacity(
+        &mut self,
+        device: &wgpu::Device,
+        meta_needed: usize,
+        values_needed: usize,
+    ) {
+        let mut rebuilt = false;
+        if meta_needed > self.custom_params_meta_capacity {
+            let mut new_capacity = self.custom_params_meta_capacity.max(1);
+            while new_capacity < meta_needed {
+                new_capacity *= 2;
+            }
+            self.custom_params_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_custom_material_params_meta"),
+                size: (new_capacity * std::mem::size_of::<u32>()) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.custom_params_meta_capacity = new_capacity;
+            self.custom_params_meta_uploaded = 0;
+            rebuilt = true;
         }
-        let mut new_capacity = self.custom_params_capacity.max(1);
-        while new_capacity < needed {
-            new_capacity *= 2;
+        if values_needed > self.custom_params_values_capacity {
+            let mut new_capacity = self.custom_params_values_capacity.max(1);
+            while new_capacity < values_needed {
+                new_capacity *= 2;
+            }
+            self.custom_params_values_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_custom_material_params_values"),
+                size: (new_capacity * std::mem::size_of::<f32>()) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.custom_params_values_capacity = new_capacity;
+            self.custom_params_values_uploaded = 0;
+            rebuilt = true;
         }
-        self.custom_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_custom_material_params"),
-            size: (new_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        self.rebuild_camera_bind_groups(device);
-        self.custom_params_capacity = new_capacity;
+        if rebuilt {
+            self.rebuild_camera_bind_groups(device);
+        }
     }
 
     fn ensure_frustum_cull_capacity(&mut self, device: &wgpu::Device, needed: usize) {
@@ -5978,7 +6171,7 @@ fn build_instance(
                 pack_standard_pbr_params(0.5, 0.0, 1.0, 1.0),
                 0,
                 [0.0, 0.0, 0.0],
-                1u32,
+                MATERIAL_FLAG_MESHLET_DEBUG_VIEW,
             )
         } else {
             match material {
@@ -6026,7 +6219,13 @@ fn build_instance(
             }
         };
     let params = material.standard_params();
-    let material_flags = debug_flags | if params.flat_shading { 2u32 } else { 0u32 };
+    let mut material_flags = debug_flags;
+    if params.flat_shading {
+        material_flags |= MATERIAL_FLAG_FLAT_SHADING;
+    }
+    if params.base_color_texture != MATERIAL_TEXTURE_NONE {
+        material_flags |= MATERIAL_FLAG_HAS_BASE_COLOR_TEXTURE;
+    }
 
     BuiltInstanceParts {
         transform: TransformInstanceGpu {
@@ -6096,16 +6295,35 @@ fn model_cols_from_affine_rows(inst: &TransformInstanceGpu) -> [[f32; 4]; 4] {
 }
 
 #[inline]
-fn encode_custom_param_value(value: &perro_render_bridge::CustomMaterialParamValue3D) -> [f32; 4] {
+fn encode_custom_param_value_packed(
+    value: &perro_render_bridge::CustomMaterialParamValue3D,
+    out: &mut Vec<f32>,
+) -> u32 {
     match value {
-        perro_render_bridge::CustomMaterialParamValue3D::F32(v) => [*v, 0.0, 0.0, 0.0],
-        perro_render_bridge::CustomMaterialParamValue3D::I32(v) => [*v as f32, 0.0, 0.0, 0.0],
-        perro_render_bridge::CustomMaterialParamValue3D::Bool(v) => {
-            [if *v { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0]
+        perro_render_bridge::CustomMaterialParamValue3D::F32(v) => {
+            out.push(*v);
+            CUSTOM_PARAM_KIND_SCALAR
         }
-        perro_render_bridge::CustomMaterialParamValue3D::Vec2(v) => [v[0], v[1], 0.0, 0.0],
-        perro_render_bridge::CustomMaterialParamValue3D::Vec3(v) => [v[0], v[1], v[2], 0.0],
-        perro_render_bridge::CustomMaterialParamValue3D::Vec4(v) => *v,
+        perro_render_bridge::CustomMaterialParamValue3D::I32(v) => {
+            out.push(*v as f32);
+            CUSTOM_PARAM_KIND_SCALAR
+        }
+        perro_render_bridge::CustomMaterialParamValue3D::Bool(v) => {
+            out.push(if *v { 1.0 } else { 0.0 });
+            CUSTOM_PARAM_KIND_SCALAR
+        }
+        perro_render_bridge::CustomMaterialParamValue3D::Vec2(v) => {
+            out.extend_from_slice(v);
+            CUSTOM_PARAM_KIND_VEC2
+        }
+        perro_render_bridge::CustomMaterialParamValue3D::Vec3(v) => {
+            out.extend_from_slice(v);
+            CUSTOM_PARAM_KIND_VEC3
+        }
+        perro_render_bridge::CustomMaterialParamValue3D::Vec4(v) => {
+            out.extend_from_slice(v);
+            CUSTOM_PARAM_KIND_VEC4
+        }
     }
 }
 

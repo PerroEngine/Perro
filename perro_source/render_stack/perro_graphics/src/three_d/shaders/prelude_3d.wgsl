@@ -44,6 +44,7 @@ struct DecodedMaterialParams {
     material_flags: u32,
     meshlet_debug_view: bool,
     flat_shading: bool,
+    has_base_color_texture: bool,
 }
 
 @group(0) @binding(0)
@@ -51,7 +52,9 @@ var<uniform> scene: Scene3D;
 @group(0) @binding(1)
 var<storage, read> skeletons: array<mat4x4<f32>>;
 @group(0) @binding(2)
-var<storage, read> custom_params: array<vec4<f32>>;
+var<storage, read> custom_params_meta: array<u32>;
+@group(0) @binding(3)
+var<storage, read> custom_params_values: array<f32>;
 @group(1) @binding(0)
 var material_sampler: sampler;
 @group(1) @binding(1)
@@ -135,6 +138,7 @@ fn decode_material_params(packed: u32) -> DecodedMaterialParams {
         flags,
         (flags & 0x1u) != 0u,
         (flags & 0x2u) != 0u,
+        (flags & 0x4u) != 0u,
     );
 }
 
@@ -201,14 +205,68 @@ fn custom_f_param(in: FragmentInput, index: u32) -> vec4<f32> {
     if index >= in.custom_range.y {
         return vec4<f32>(0.0);
     }
-    return custom_params[in.custom_range.x + index];
+    let packed_meta = custom_params_meta[in.custom_range.x + index];
+    let kind = packed_meta & 0x3u;
+    let value_offset = packed_meta >> 2u;
+    if kind == 0u {
+        return vec4<f32>(custom_params_values[value_offset], 0.0, 0.0, 0.0);
+    }
+    if kind == 1u {
+        return vec4<f32>(
+            custom_params_values[value_offset],
+            custom_params_values[value_offset + 1u],
+            0.0,
+            0.0,
+        );
+    }
+    if kind == 2u {
+        return vec4<f32>(
+            custom_params_values[value_offset],
+            custom_params_values[value_offset + 1u],
+            custom_params_values[value_offset + 2u],
+            0.0,
+        );
+    }
+    return vec4<f32>(
+        custom_params_values[value_offset],
+        custom_params_values[value_offset + 1u],
+        custom_params_values[value_offset + 2u],
+        custom_params_values[value_offset + 3u],
+    );
 }
 
 fn custom_v_param(out: VertexOutput, index: u32) -> vec4<f32> {
     if index >= out.custom_range.y {
         return vec4<f32>(0.0);
     }
-    return custom_params[out.custom_range.x + index];
+    let packed_meta = custom_params_meta[out.custom_range.x + index];
+    let kind = packed_meta & 0x3u;
+    let value_offset = packed_meta >> 2u;
+    if kind == 0u {
+        return vec4<f32>(custom_params_values[value_offset], 0.0, 0.0, 0.0);
+    }
+    if kind == 1u {
+        return vec4<f32>(
+            custom_params_values[value_offset],
+            custom_params_values[value_offset + 1u],
+            0.0,
+            0.0,
+        );
+    }
+    if kind == 2u {
+        return vec4<f32>(
+            custom_params_values[value_offset],
+            custom_params_values[value_offset + 1u],
+            custom_params_values[value_offset + 2u],
+            0.0,
+        );
+    }
+    return vec4<f32>(
+        custom_params_values[value_offset],
+        custom_params_values[value_offset + 1u],
+        custom_params_values[value_offset + 2u],
+        custom_params_values[value_offset + 3u],
+    );
 }
 
 fn custom_param(in: FragmentInput, index: u32) -> vec4<f32> {

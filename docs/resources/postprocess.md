@@ -37,6 +37,10 @@ camera + global post-processing. See [Visual Accessibility](visual_accessibility
   0 = original, 1 = full black & white.
 - `custom` (`shader`/`shader_path`, optional `params`)
 
+Runtime note:
+- Built-in effects do not read depth.
+- `custom` effects receive depth from `depth_tex` and can use it in `post_process`.
+
 ## Scene Authoring
 
 `post_processing` can be an array or an object. Arrays keep order. Objects support two forms:
@@ -182,6 +186,12 @@ The engine provides a prelude with:
 
 Use `type = "custom"` with `shader = "res://path/to/shader.wgsl"` in scenes, or
 `PostProcessEffect::Custom { shader_path, params }` in code.
+
+Performance notes:
+- Post uniforms are written with per-pass dynamic offsets (aligned uniform slots), so each pass
+  reads its own params without uniform overwrite hazards.
+- Input bind groups are reused per input source (`scene`, `ping_a`, `ping_b`) within a chain to
+  reduce bind-group creation churn.
 
 ### Example `post_process`
 

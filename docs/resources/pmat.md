@@ -76,6 +76,10 @@ Comments:
 - `occlusion_texture` (alias: `occlusionTexture`) int
 - `emissive_texture` (alias: `emissiveTexture`) int
 
+Note:
+- When `base_color_texture` is unset (`MATERIAL_TEXTURE_NONE` internally), the renderer skips the
+  base-color texture sample in Standard shading and uses factor-only color.
+
 ### Unlit
 
 - `base_color_factor` (alias: `baseColorFactor`, `color`) vec3/vec4

@@ -156,10 +156,21 @@ pub fn build_material_shader(material_wgsl: &str) -> String {
 }
 
 #[inline]
+fn sanitize_reserved_meta_identifier(wgsl: &str) -> String {
+    wgsl.replace(
+        "let meta = custom_params_meta",
+        "let packed_meta = custom_params_meta",
+    )
+    .replace("let kind = meta & 0x3u;", "let kind = packed_meta & 0x3u;")
+    .replace("let value_offset = meta >> 2u;", "let value_offset = packed_meta >> 2u;")
+}
+
+#[inline]
 pub fn build_material_shader_with_prelude(prelude_wgsl: &str, material_wgsl: &str) -> String {
     let has_custom_vertex = material_wgsl.contains("shade_vertex(");
     let mut out = String::new();
-    out.push_str(prelude_wgsl);
+    let sanitized_prelude = sanitize_reserved_meta_identifier(prelude_wgsl);
+    out.push_str(&sanitized_prelude);
     out.push('\n');
     out.push_str(material_wgsl);
     if has_custom_vertex {
