@@ -37,9 +37,14 @@ Custom material shaders are composed at runtime:
 
 1. The engine injects a **shared prelude** (scene/lighting structs, vertex wiring, helpers).
 2. Your WGSL file is appended.
-3. The engine appends a tiny wrapper fragment function:
+3. The engine appends tiny wrapper entry points:
 
 ```wgsl
+@vertex
+fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
+    return perro_vs_main_base(v, inst); // or shade_vertex(...) if you define it
+}
+
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     return shade_material(in);
@@ -48,7 +53,7 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
 
 ### What You Need To Implement
 
-Your `.wgsl` only needs to define:
+Your `.wgsl` must define:
 
 ```wgsl
 fn shade_material(in: FragmentInput) -> vec4<f32> {
@@ -56,13 +61,25 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
 }
 ```
 
-You **do not** need to define `vs_main`, bind groups, or scene structs.
+Optional vertex hook in same file:
+
+```wgsl
+fn shade_vertex(out: VertexOutput) -> VertexOutput {
+    let wobble = custom_v_param(out, 0u).x;
+    // modify out.clip_pos / out.world_pos / out.normal_ws / out.uv
+    return out;
+}
+```
+
+You **do not** need to define `vs_main`, `fs_main`, bind groups, or scene structs.
 
 Notes for custom shaders:
 
 - `in.material_params` packs: `alpha_mode`, `alpha_cutoff`, `double_sided`, and packed flags.
 - If you want alpha clipping or blending behavior, implement it in `shade_material`.
-- Use `custom_param(in, index)` to read custom params (each param is a vec4<f32>).
+- Use `custom_f_param(in, index)` to read custom params in fragment stage.
+- Use `custom_v_param(out, index)` inside `shade_vertex` for same params in vertex stage.
+- Legacy aliases `custom_param` and `custom_param_vertex` stay valid.
 
 ### FragmentInput Fields
 
@@ -87,7 +104,7 @@ Example usage:
 let base = in.color.rgb;
 let roughness = in.pbr_params.x; // if using Standard preset
 let alpha_mode = u32(in.material_params.x + 0.5);
-let glow = custom_param(in, 0u).x;
+let glow = custom_f_param(in, 0u).x;
 ```
 
 Custom param packing:
@@ -99,7 +116,7 @@ Custom param packing:
 
 Custom param ordering:
 
-- `custom_param(in, 0u)` maps to the **first** entry in `CustomMaterial3D::params`.
+- `custom_f_param(in, 0u)` maps to the **first** entry in `CustomMaterial3D::params`.
 - Names are metadata only; ordering is what binds to indices.
 
 ### Template Example (Complete File)
@@ -117,8 +134,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
         alpha = 1.0;
     }
 
-    let glow = custom_param(in, 0u).x;
-    let tint = custom_param(in, 1u);
+    let glow = custom_f_param(in, 0u).x;
+    let tint = custom_f_param(in, 1u);
 
     let color = base * tint.rgb + glow;
     return vec4<f32>(color, alpha);
@@ -129,4 +146,4 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
 
 - Custom params are packed into `vec4<f32>` slots.
 - Custom shaders can implement any shading model, but the only built-in inputs are the fields in
-  `FragmentInput` plus `custom_param(in, index)`.
+  `FragmentInput` plus `custom_f_param(in, index)`.

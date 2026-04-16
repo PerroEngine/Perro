@@ -401,7 +401,6 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
         msaa: {msaa},\n\
-        smaa: {smaa},\n\
         meshlets: {meshlets},\n\
         dev_meshlets: {dev_meshlets},\n\
         release_meshlets: {release_meshlets},\n\
@@ -442,7 +441,6 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         h = cfg.virtual_height,
         vsync = cfg.vsync,
         msaa = cfg.msaa,
-        smaa = cfg.smaa,
         meshlets = cfg.meshlets,
         dev_meshlets = cfg.dev_meshlets,
         release_meshlets = cfg.release_meshlets,

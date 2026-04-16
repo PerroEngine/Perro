@@ -47,12 +47,6 @@ struct PresentProcessor {
     pipeline: wgpu::RenderPipeline,
 }
 
-struct SmaaProcessor {
-    sampler: wgpu::Sampler,
-    bgl: wgpu::BindGroupLayout,
-    pipeline: wgpu::RenderPipeline,
-}
-
 pub struct Gpu {
     window_handle: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -61,11 +55,9 @@ pub struct Gpu {
     config: wgpu::SurfaceConfiguration,
     render_format: wgpu::TextureFormat,
     sample_count: u32,
-    smaa_enabled: bool,
     msaa_color: Option<MsaaColorTarget>,
     post: PostProcessor,
     accessibility: VisualAccessibilityProcessor,
-    smaa: SmaaProcessor,
     present: PresentProcessor,
     present_scene_bind_group: wgpu::BindGroup,
     present_intermediate_bind_group: wgpu::BindGroup,
@@ -195,7 +187,6 @@ impl Gpu {
     pub fn new(
         window: Arc<Window>,
         smoothing_samples: u32,
-        smaa_enabled: bool,
         vsync_enabled: bool,
         meshlets_enabled: bool,
         dev_meshlets: bool,
@@ -285,7 +276,6 @@ impl Gpu {
         let post = PostProcessor::new(&device, render_format, width, height);
         let accessibility =
             VisualAccessibilityProcessor::new(&device, render_format, width, height);
-        let smaa = SmaaProcessor::new(&device, render_format);
         let present = PresentProcessor::new(&device, surface_format);
         let present_scene_bind_group = present.create_bind_group(&device, post.scene_view());
         let present_intermediate_bind_group =
@@ -299,11 +289,9 @@ impl Gpu {
             config,
             render_format,
             sample_count,
-            smaa_enabled,
             msaa_color,
             post,
             accessibility,
-            smaa,
             present,
             present_scene_bind_group,
             present_intermediate_bind_group,
@@ -418,7 +406,6 @@ impl Gpu {
         let post_requested = PostProcessor::has_effects(camera_3d.post_processing.as_ref())
             || PostProcessor::has_effects(post_processing_2d.as_ref())
             || PostProcessor::has_effects(post_processing_global.as_ref());
-        let smaa_requested = self.smaa_enabled;
 
         let has = |bit: u32| (frame_dirty_bits & bit) != 0;
 
@@ -632,9 +619,12 @@ impl Gpu {
         let global_post_chain = post_processing_global.as_ref();
         let global_post_enabled = PostProcessor::has_effects(global_post_chain);
         let accessibility_enabled = self.accessibility.has_settings(accessibility);
+        let msaa_direct_present = self.sample_count > 1
+            && !post_requested
+            && !accessibility_enabled
+            && self.render_format == self.config.format;
         let direct_present = self.sample_count == 1
             && !post_requested
-            && !smaa_requested
             && !accessibility_enabled
             && self.render_format == self.config.format;
         let depth_prepass_needed = (camera_post_enabled
@@ -652,6 +642,8 @@ impl Gpu {
         };
         let resolve_view = if direct_present {
             None
+        } else if msaa_direct_present {
+            Some(&swap_view)
         } else if self.sample_count > 1 {
             Some(&scene_view)
         } else {
@@ -696,6 +688,25 @@ impl Gpu {
         }
         if let Some(two_d) = self.two_d.as_ref() {
             two_d.render_pass(&mut encoder, color_view, resolve_view, rect_draw_count);
+        } else if msaa_direct_present {
+            // No 2D renderer pass means no place left to trigger MSAA resolve.
+            // Do a minimal resolve-only pass once at the end of scene rendering.
+            let _resolve_only_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("perro_msaa_resolve_only_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_view,
+                    resolve_target: Some(&swap_view),
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
         }
         timing.encode_main = encode_start.elapsed();
 
@@ -778,21 +789,7 @@ impl Gpu {
         }
         timing.accessibility = accessibility_start.elapsed();
 
-        if !direct_present && smaa_requested {
-            let (smaa_input_view, smaa_output_view, next_tex) = match current_tex {
-                FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
-                FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene),
-            };
-            self.smaa.apply(
-                &self.device,
-                &mut encoder,
-                smaa_input_view,
-                smaa_output_view,
-            );
-            current_tex = next_tex;
-        }
-
-        if !direct_present {
+        if !direct_present && !msaa_direct_present {
             let final_bind_group = match current_tex {
                 FrameTex::Scene => &self.present_scene_bind_group,
                 FrameTex::Intermediate => &self.present_intermediate_bind_group,
@@ -1075,182 +1072,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         });
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, bind_group, &[]);
-        pass.draw(0..3, 0..1);
-    }
-}
-
-impl SmaaProcessor {
-    fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("perro_smaa_shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                r#"
-@group(0) @binding(0) var input_tex: texture_2d<f32>;
-@group(0) @binding(1) var input_sampler: sampler;
-
-struct VsOut {
-    @builtin(position) pos: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-};
-
-@vertex
-fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
-    var pos = array<vec2<f32>, 3>(
-        vec2<f32>(-1.0, -3.0),
-        vec2<f32>(3.0, 1.0),
-        vec2<f32>(-1.0, 1.0),
-    );
-    var out: VsOut;
-    out.pos = vec4<f32>(pos[vid], 0.0, 1.0);
-    out.uv = (out.pos.xy * vec2<f32>(0.5, -0.5)) + vec2<f32>(0.5, 0.5);
-    return out;
-}
-
-fn luma(c: vec3<f32>) -> f32 {
-    return dot(c, vec3<f32>(0.299, 0.587, 0.114));
-}
-
-@fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let dims = vec2<f32>(textureDimensions(input_tex, 0));
-    let px = vec2<f32>(1.0 / dims.x, 1.0 / dims.y);
-
-    let c = textureSample(input_tex, input_sampler, in.uv).rgb;
-    let l = textureSample(input_tex, input_sampler, in.uv - vec2<f32>(px.x, 0.0)).rgb;
-    let r = textureSample(input_tex, input_sampler, in.uv + vec2<f32>(px.x, 0.0)).rgb;
-    let t = textureSample(input_tex, input_sampler, in.uv - vec2<f32>(0.0, px.y)).rgb;
-    let b = textureSample(input_tex, input_sampler, in.uv + vec2<f32>(0.0, px.y)).rgb;
-
-    let lum_c = luma(c);
-    let edge_h = abs(luma(l) - lum_c) + abs(luma(r) - lum_c);
-    let edge_v = abs(luma(t) - lum_c) + abs(luma(b) - lum_c);
-    let edge = max(edge_h, edge_v);
-
-    let threshold = 0.06;
-    if edge < threshold {
-        return vec4<f32>(c, 1.0);
-    }
-
-    let blend_h = smoothstep(threshold, threshold * 4.0, edge_h);
-    let blend_v = smoothstep(threshold, threshold * 4.0, edge_v);
-    let horiz = 0.5 * (l + r);
-    let vert = 0.5 * (t + b);
-    let smoothed = mix(c, mix(horiz, vert, blend_v), blend_h);
-
-    return vec4<f32>(smoothed, 1.0);
-}
-"#
-                .into(),
-            ),
-        });
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("perro_smaa_sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-            ..Default::default()
-        });
-        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("perro_smaa_bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_smaa_layout"),
-            bind_group_layouts: &[Some(&bgl)],
-            immediate_size: 0,
-        });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_smaa_pipeline"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-        Self {
-            sampler,
-            bgl,
-            pipeline,
-        }
-    }
-
-    fn apply(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        input_view: &wgpu::TextureView,
-        output_view: &wgpu::TextureView,
-    ) {
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_smaa_bg"),
-            layout: &self.bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(input_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
-
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("perro_smaa_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: output_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
         pass.draw(0..3, 0..1);
     }
 }

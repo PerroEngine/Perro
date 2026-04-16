@@ -106,7 +106,6 @@ pub struct PerroGraphics {
     vsync_enabled: bool,
     smoothing_enabled: bool,
     smoothing_samples: u32,
-    smaa_enabled: bool,
     static_texture_lookup: Option<StaticTextureLookup>,
     static_mesh_lookup: Option<StaticMeshLookup>,
     static_shader_lookup: Option<StaticShaderLookup>,
@@ -146,7 +145,6 @@ impl PerroGraphics {
             vsync_enabled: true,
             smoothing_enabled: true,
             smoothing_samples: 4,
-            smaa_enabled: false,
             static_texture_lookup: None,
             static_mesh_lookup: None,
             static_shader_lookup: None,
@@ -180,11 +178,6 @@ impl PerroGraphics {
 
     pub fn with_msaa(mut self, enabled: bool) -> Self {
         self.set_smoothing(enabled);
-        self
-    }
-
-    pub fn with_smaa(mut self, enabled: bool) -> Self {
-        self.smaa_enabled = enabled;
         self
     }
 
@@ -498,7 +491,6 @@ impl GraphicsBackend for PerroGraphics {
             let mut gpu = Gpu::new(
                 window,
                 self.smoothing_samples,
-                self.smaa_enabled,
                 self.vsync_enabled,
                 self.meshlets_enabled,
                 self.dev_meshlets,

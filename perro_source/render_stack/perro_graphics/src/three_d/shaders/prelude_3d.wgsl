@@ -157,8 +157,7 @@ fn decode_toon_params(packed_0: u32, packed_1: u32) -> vec3<f32> {
     );
 }
 
-@vertex
-fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
+fn perro_vs_main_base(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     var pos = v.pos;
     var normal = v.normal;
     if inst.skeleton_params.y > 0u {
@@ -198,11 +197,26 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     return out;
 }
 
-fn custom_param(in: FragmentInput, index: u32) -> vec4<f32> {
+fn custom_f_param(in: FragmentInput, index: u32) -> vec4<f32> {
     if index >= in.custom_range.y {
         return vec4<f32>(0.0);
     }
     return custom_params[in.custom_range.x + index];
+}
+
+fn custom_v_param(out: VertexOutput, index: u32) -> vec4<f32> {
+    if index >= out.custom_range.y {
+        return vec4<f32>(0.0);
+    }
+    return custom_params[out.custom_range.x + index];
+}
+
+fn custom_param(in: FragmentInput, index: u32) -> vec4<f32> {
+    return custom_f_param(in, index);
+}
+
+fn custom_param_vertex(out: VertexOutput, index: u32) -> vec4<f32> {
+    return custom_v_param(out, index);
 }
 
 fn shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light: vec3<f32>) -> f32 {

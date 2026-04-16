@@ -157,11 +157,23 @@ pub fn build_material_shader(material_wgsl: &str) -> String {
 
 #[inline]
 pub fn build_material_shader_with_prelude(prelude_wgsl: &str, material_wgsl: &str) -> String {
+    let has_custom_vertex = material_wgsl.contains("shade_vertex(");
     let mut out = String::new();
     out.push_str(prelude_wgsl);
     out.push('\n');
     out.push_str(material_wgsl);
-    out.push_str("\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    return shade_material(in);\n}\n");
+    if has_custom_vertex {
+        out.push_str(
+            "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {\n    return shade_vertex(perro_vs_main_base(v, inst));\n}\n",
+        );
+    } else {
+        out.push_str(
+            "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {\n    return perro_vs_main_base(v, inst);\n}\n",
+        );
+    }
+    out.push_str(
+        "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    return shade_material(in);\n}\n",
+    );
     out
 }
 
