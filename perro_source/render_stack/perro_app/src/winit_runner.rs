@@ -156,11 +156,11 @@ fn avg_micros(total: Duration, samples: u32) -> u128 {
 }
 
 #[inline]
-fn log_avg_sampled(update_us: u128, present_us: u128, total_us: u128, idle_us: u128) {
+fn log_avg_sampled(update_us: u128, render_us: u128, total_us: u128, idle_us: u128) {
     let mut out = std::io::stdout().lock();
     let _ = writeln!(
         out,
-        "avg(sampled): update=({update_us}us) | frame present=({present_us}us) | total=({total_us}us) | idle=({idle_us}us)"
+        "avg(sampled): update=({update_us}us) | render=({render_us}us) | total=({total_us}us) | idle=({idle_us}us)"
     );
 }
 
