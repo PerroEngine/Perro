@@ -17,6 +17,8 @@ use perro_render_bridge::{
 use std::borrow::Cow;
 use std::sync::Arc;
 
+const PARTICLE_PATH_CACHE_MAX: usize = 256;
+
 impl Runtime {
     fn mesh_request(node: NodeID) -> RenderRequestID {
         RenderRequestID::new((node.as_u64() << 8) | 0x3E)
@@ -1445,6 +1447,18 @@ fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<Parti
         let text = std::str::from_utf8(&bytes).ok()?;
         parse_pparticle_source(text)?
     };
+    if !runtime.render_3d.particle_path_cache.contains_key(source) {
+        while runtime.render_3d.particle_path_cache.len() >= PARTICLE_PATH_CACHE_MAX {
+            let Some(evict_key) = runtime.render_3d.particle_path_cache_order.pop_front() else {
+                break;
+            };
+            runtime.render_3d.particle_path_cache.remove(evict_key.as_str());
+        }
+        runtime
+            .render_3d
+            .particle_path_cache_order
+            .push_back(source.to_string());
+    }
     runtime
         .render_3d
         .particle_path_cache

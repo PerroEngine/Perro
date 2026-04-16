@@ -37,6 +37,7 @@ use perro_structs::{
 };
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 #[cfg(feature = "profile")]
 use std::time::Duration;
 #[cfg(feature = "profile")]
@@ -117,7 +118,7 @@ pub(super) fn load_runtime_scene_from_disk(
 
 pub(super) fn prepare_scene_with_loader(
     scene: &Scene,
-    load_scene: &dyn Fn(&str) -> Result<Scene, String>,
+    load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
 ) -> Result<PreparedScene, String> {
     let mut include_stack = HashSet::new();
     prepare_scene_with_stack(scene, &mut include_stack, load_scene)
@@ -126,7 +127,7 @@ pub(super) fn prepare_scene_with_loader(
 fn prepare_scene_with_stack(
     scene: &Scene,
     include_stack: &mut HashSet<String>,
-    load_scene: &dyn Fn(&str) -> Result<Scene, String>,
+    load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
 ) -> Result<PreparedScene, String> {
     let mut prepared_nodes = Vec::with_capacity(scene.nodes.len());
     let mut scripts = Vec::new();
@@ -157,7 +158,7 @@ fn push_entry_prepared(
     prepared_nodes: &mut Vec<PendingNode>,
     scripts: &mut Vec<PendingScript>,
     include_stack: &mut HashSet<String>,
-    load_scene: &dyn Fn(&str) -> Result<Scene, String>,
+    load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
 ) -> Result<(), String> {
     let key = key_override
         .map(|v| v.to_string())
@@ -271,7 +272,7 @@ fn expand_import_children_into_host(
     prepared_nodes: &mut Vec<PendingNode>,
     scripts: &mut Vec<PendingScript>,
     include_stack: &mut HashSet<String>,
-    load_scene: &dyn Fn(&str) -> Result<Scene, String>,
+    load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
 ) -> Result<(), String> {
     let mut map = HashMap::<String, String>::new();
     map.insert(import_root.to_string(), host_key.to_string());
@@ -597,7 +598,7 @@ mod tests {
         .parse_scene();
 
         let prepared = prepare_scene_with_loader(&host, &|path| match path {
-            "res://base.scn" => Ok(base.clone()),
+            "res://base.scn" => Ok(std::sync::Arc::new(base.clone())),
             _ => Err(format!("unknown scene path `{path}`")),
         })
         .expect("prepare scene");
@@ -677,7 +678,7 @@ mod tests {
         .parse_scene();
 
         let prepared = prepare_scene_with_loader(&host, &|path| match path {
-            "res://base.scn" => Ok(base.clone()),
+            "res://base.scn" => Ok(std::sync::Arc::new(base.clone())),
             _ => Err(format!("unknown scene path `{path}`")),
         })
         .expect("prepare scene");
@@ -711,7 +712,7 @@ mod tests {
         .parse_scene();
 
         let prepared = prepare_scene_with_loader(&host, &|path| match path {
-            "res://base.scn" => Ok(base.clone()),
+            "res://base.scn" => Ok(std::sync::Arc::new(base.clone())),
             _ => Err(format!("unknown scene path `{path}`")),
         })
         .expect("prepare scene");

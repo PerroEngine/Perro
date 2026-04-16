@@ -5,6 +5,8 @@ use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType};
 use perro_resource_context::ResourceContext;
 use perro_runtime_context::RuntimeContext;
 
+const NONE_POS: u32 = u32::MAX;
+
 impl Runtime {
     pub(crate) fn rebuild_internal_node_schedules(&mut self) {
         self.internal_updates.internal_update_nodes.clear();
@@ -27,12 +29,12 @@ impl Runtime {
             if self.internal_updates.internal_update_pos.len() <= slot {
                 self.internal_updates
                     .internal_update_pos
-                    .resize(slot + 1, None);
+                    .resize(slot + 1, NONE_POS);
             }
-            if self.internal_updates.internal_update_pos[slot].is_none() {
+            if self.internal_updates.internal_update_pos[slot] == NONE_POS {
                 let pos = self.internal_updates.internal_update_nodes.len();
                 self.internal_updates.internal_update_nodes.push(id);
-                self.internal_updates.internal_update_pos[slot] = Some(pos);
+                self.internal_updates.internal_update_pos[slot] = pos as u32;
             }
         }
         if matches!(ty.get_internal_fixed_update(), InternalFixedUpdate::True) {
@@ -40,12 +42,12 @@ impl Runtime {
             if self.internal_updates.internal_fixed_update_pos.len() <= slot {
                 self.internal_updates
                     .internal_fixed_update_pos
-                    .resize(slot + 1, None);
+                    .resize(slot + 1, NONE_POS);
             }
-            if self.internal_updates.internal_fixed_update_pos[slot].is_none() {
+            if self.internal_updates.internal_fixed_update_pos[slot] == NONE_POS {
                 let pos = self.internal_updates.internal_fixed_update_nodes.len();
                 self.internal_updates.internal_fixed_update_nodes.push(id);
-                self.internal_updates.internal_fixed_update_pos[slot] = Some(pos);
+                self.internal_updates.internal_fixed_update_pos[slot] = pos as u32;
             }
         }
     }
@@ -54,14 +56,17 @@ impl Runtime {
         self.unregister_physics_body(id);
         let slot = id.index() as usize;
 
-        if let Some(Some(pos)) = self.internal_updates.internal_update_pos.get(slot).copied() {
+        if let Some(&raw_pos) = self.internal_updates.internal_update_pos.get(slot)
+            && raw_pos != NONE_POS
+        {
+            let pos = raw_pos as usize;
             let last_pos = self
                 .internal_updates
                 .internal_update_nodes
                 .len()
                 .saturating_sub(1);
             self.internal_updates.internal_update_nodes.swap_remove(pos);
-            self.internal_updates.internal_update_pos[slot] = None;
+            self.internal_updates.internal_update_pos[slot] = NONE_POS;
             if pos <= last_pos.saturating_sub(1)
                 && let Some(moved) = self
                     .internal_updates
@@ -73,18 +78,16 @@ impl Runtime {
                 if self.internal_updates.internal_update_pos.len() <= moved_slot {
                     self.internal_updates
                         .internal_update_pos
-                        .resize(moved_slot + 1, None);
+                        .resize(moved_slot + 1, NONE_POS);
                 }
-                self.internal_updates.internal_update_pos[moved_slot] = Some(pos);
+                self.internal_updates.internal_update_pos[moved_slot] = pos as u32;
             }
         }
 
-        if let Some(Some(pos)) = self
-            .internal_updates
-            .internal_fixed_update_pos
-            .get(slot)
-            .copied()
+        if let Some(&raw_pos) = self.internal_updates.internal_fixed_update_pos.get(slot)
+            && raw_pos != NONE_POS
         {
+            let pos = raw_pos as usize;
             let last_pos = self
                 .internal_updates
                 .internal_fixed_update_nodes
@@ -93,7 +96,7 @@ impl Runtime {
             self.internal_updates
                 .internal_fixed_update_nodes
                 .swap_remove(pos);
-            self.internal_updates.internal_fixed_update_pos[slot] = None;
+            self.internal_updates.internal_fixed_update_pos[slot] = NONE_POS;
             if pos <= last_pos.saturating_sub(1)
                 && let Some(moved) = self
                     .internal_updates
@@ -105,9 +108,9 @@ impl Runtime {
                 if self.internal_updates.internal_fixed_update_pos.len() <= moved_slot {
                     self.internal_updates
                         .internal_fixed_update_pos
-                        .resize(moved_slot + 1, None);
+                        .resize(moved_slot + 1, NONE_POS);
                 }
-                self.internal_updates.internal_fixed_update_pos[moved_slot] = Some(pos);
+                self.internal_updates.internal_fixed_update_pos[moved_slot] = pos as u32;
             }
         }
     }
@@ -130,12 +133,12 @@ impl Runtime {
                 if self.internal_updates.physics_body_pos_2d.len() <= slot {
                     self.internal_updates
                         .physics_body_pos_2d
-                        .resize(slot + 1, None);
+                        .resize(slot + 1, NONE_POS);
                 }
-                if self.internal_updates.physics_body_pos_2d[slot].is_none() {
+                if self.internal_updates.physics_body_pos_2d[slot] == NONE_POS {
                     let pos = self.internal_updates.physics_body_nodes_2d.len();
                     self.internal_updates.physics_body_nodes_2d.push(id);
-                    self.internal_updates.physics_body_pos_2d[slot] = Some(pos);
+                    self.internal_updates.physics_body_pos_2d[slot] = pos as u32;
                 }
             }
             NodeType::StaticBody3D | NodeType::Area3D | NodeType::RigidBody3D => {
@@ -143,12 +146,12 @@ impl Runtime {
                 if self.internal_updates.physics_body_pos_3d.len() <= slot {
                     self.internal_updates
                         .physics_body_pos_3d
-                        .resize(slot + 1, None);
+                        .resize(slot + 1, NONE_POS);
                 }
-                if self.internal_updates.physics_body_pos_3d[slot].is_none() {
+                if self.internal_updates.physics_body_pos_3d[slot] == NONE_POS {
                     let pos = self.internal_updates.physics_body_nodes_3d.len();
                     self.internal_updates.physics_body_nodes_3d.push(id);
-                    self.internal_updates.physics_body_pos_3d[slot] = Some(pos);
+                    self.internal_updates.physics_body_pos_3d[slot] = pos as u32;
                 }
             }
             _ => {}
@@ -158,14 +161,17 @@ impl Runtime {
     fn unregister_physics_body(&mut self, id: NodeID) {
         let slot = id.index() as usize;
 
-        if let Some(Some(pos)) = self.internal_updates.physics_body_pos_2d.get(slot).copied() {
+        if let Some(&raw_pos) = self.internal_updates.physics_body_pos_2d.get(slot)
+            && raw_pos != NONE_POS
+        {
+            let pos = raw_pos as usize;
             let last_pos = self
                 .internal_updates
                 .physics_body_nodes_2d
                 .len()
                 .saturating_sub(1);
             self.internal_updates.physics_body_nodes_2d.swap_remove(pos);
-            self.internal_updates.physics_body_pos_2d[slot] = None;
+            self.internal_updates.physics_body_pos_2d[slot] = NONE_POS;
             if pos <= last_pos.saturating_sub(1)
                 && let Some(moved) = self
                     .internal_updates
@@ -177,20 +183,23 @@ impl Runtime {
                 if self.internal_updates.physics_body_pos_2d.len() <= moved_slot {
                     self.internal_updates
                         .physics_body_pos_2d
-                        .resize(moved_slot + 1, None);
+                        .resize(moved_slot + 1, NONE_POS);
                 }
-                self.internal_updates.physics_body_pos_2d[moved_slot] = Some(pos);
+                self.internal_updates.physics_body_pos_2d[moved_slot] = pos as u32;
             }
         }
 
-        if let Some(Some(pos)) = self.internal_updates.physics_body_pos_3d.get(slot).copied() {
+        if let Some(&raw_pos) = self.internal_updates.physics_body_pos_3d.get(slot)
+            && raw_pos != NONE_POS
+        {
+            let pos = raw_pos as usize;
             let last_pos = self
                 .internal_updates
                 .physics_body_nodes_3d
                 .len()
                 .saturating_sub(1);
             self.internal_updates.physics_body_nodes_3d.swap_remove(pos);
-            self.internal_updates.physics_body_pos_3d[slot] = None;
+            self.internal_updates.physics_body_pos_3d[slot] = NONE_POS;
             if pos <= last_pos.saturating_sub(1)
                 && let Some(moved) = self
                     .internal_updates
@@ -202,9 +211,9 @@ impl Runtime {
                 if self.internal_updates.physics_body_pos_3d.len() <= moved_slot {
                     self.internal_updates
                         .physics_body_pos_3d
-                        .resize(moved_slot + 1, None);
+                        .resize(moved_slot + 1, NONE_POS);
                 }
-                self.internal_updates.physics_body_pos_3d[moved_slot] = Some(pos);
+                self.internal_updates.physics_body_pos_3d[moved_slot] = pos as u32;
             }
         }
     }

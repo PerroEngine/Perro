@@ -15,16 +15,18 @@ pub(crate) struct ScriptCollection<R: RuntimeAPI + ?Sized> {
     instances: Vec<ScriptInstance<R>>,
     ids: Vec<NodeID>,
     // NodeID.index() -> instance index. Lookup validates full NodeID equality.
-    index: Vec<Option<usize>>,
+    index: Vec<u32>,
 
     update: Vec<usize>,
     fixed: Vec<usize>,
 
     // instance index -> schedule position
-    update_pos: Vec<Option<usize>>,
-    fixed_pos: Vec<Option<usize>>,
+    update_pos: Vec<u32>,
+    fixed_pos: Vec<u32>,
     schedule_epoch: u64,
 }
+
+const NONE_SLOT: u32 = u32::MAX;
 
 impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     pub(crate) fn new() -> Self {
@@ -102,7 +104,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
 
         // If this slot maps to a stale generation, remove that stale instance first.
         let slot = id.index() as usize;
-        if let Some(Some(existing_i)) = self.index.get(slot).copied()
+        if let Some(existing_i) = self.slot_value(&self.index, slot)
             && self.ids.get(existing_i).copied() != Some(id)
         {
             let stale = self.ids[existing_i];
@@ -266,16 +268,18 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     #[inline]
     fn instance_index_for(&self, id: NodeID) -> Option<usize> {
         let slot = id.index() as usize;
-        let i = (*self.index.get(slot)?)?;
+        let i = self.slot_value(&self.index, slot)?;
         (self.ids.get(i).copied() == Some(id)).then_some(i)
     }
 
     #[inline]
     fn set_index_slot(&mut self, slot: usize, value: Option<usize>) {
         if self.index.len() <= slot {
-            self.index.resize(slot + 1, None);
+            self.index.resize(slot + 1, NONE_SLOT);
         }
-        self.index[slot] = value;
+        self.index[slot] = value
+            .and_then(|v| u32::try_from(v).ok())
+            .unwrap_or(NONE_SLOT);
     }
 
     fn remove_from_schedules_by_index(&mut self, i: usize) {
@@ -316,19 +320,37 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     }
 
     #[inline]
-    fn set_reverse_slot(slots: &mut Vec<Option<usize>>, index: usize, value: Option<usize>) {
+    fn set_reverse_slot(slots: &mut Vec<u32>, index: usize, value: Option<usize>) {
         if slots.len() <= index {
-            slots.resize(index + 1, None);
+            slots.resize(index + 1, NONE_SLOT);
         }
-        slots[index] = value;
+        slots[index] = value
+            .and_then(|v| u32::try_from(v).ok())
+            .unwrap_or(NONE_SLOT);
     }
 
     #[inline]
-    fn take_reverse_slot(slots: &mut [Option<usize>], index: usize) -> Option<usize> {
+    fn take_reverse_slot(slots: &mut [u32], index: usize) -> Option<usize> {
         if index >= slots.len() {
             return None;
         }
-        slots[index].take()
+        let value = slots[index];
+        slots[index] = NONE_SLOT;
+        if value == NONE_SLOT {
+            None
+        } else {
+            Some(value as usize)
+        }
+    }
+
+    #[inline]
+    fn slot_value(&self, slots: &[u32], index: usize) -> Option<usize> {
+        let value = *slots.get(index)?;
+        if value == NONE_SLOT {
+            None
+        } else {
+            Some(value as usize)
+        }
     }
 
     #[inline]

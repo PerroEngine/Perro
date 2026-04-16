@@ -67,19 +67,19 @@ fn bench_internal_schedule_unregister() {
             runtime
                 .internal_updates
                 .internal_update_pos
-                .resize(slot + 1, None);
+                .resize(slot + 1, u32::MAX);
         }
         if runtime.internal_updates.internal_fixed_update_pos.len() <= slot {
             runtime
                 .internal_updates
                 .internal_fixed_update_pos
-                .resize(slot + 1, None);
+                .resize(slot + 1, u32::MAX);
         }
         runtime.internal_updates.internal_update_pos[slot] =
-            Some(runtime.internal_updates.internal_update_nodes.len());
+            runtime.internal_updates.internal_update_nodes.len() as u32;
         runtime.internal_updates.internal_update_nodes.push(id);
         runtime.internal_updates.internal_fixed_update_pos[slot] =
-            Some(runtime.internal_updates.internal_fixed_update_nodes.len());
+            runtime.internal_updates.internal_fixed_update_nodes.len() as u32;
         runtime
             .internal_updates
             .internal_fixed_update_nodes

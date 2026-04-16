@@ -75,7 +75,7 @@ fn print_usage() {
         "  perro_cli dev [--path <project_dir>] [--profile]      # build scripts + run dev runner"
     );
     eprintln!(
-        "  perro_cli flamegraph [--path <project_dir>] [--profile] [--root]    # run cargo flamegraph for dev runner"
+        "  perro_cli flamegraph [--path <project_dir>] [--profile] [--root]    # run cargo flamegraph for dev runner (auto-installs tool if missing)"
     );
     eprintln!("  perro_cli format [--path <project_dir>]   # rustfmt .rs under project res only");
     eprintln!("  perro_cli clean [--path <project_dir>]    # remove project target/");
@@ -1105,6 +1105,7 @@ fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
     let dev_runner_dir = project_dir.join(".perro").join("dev_runner");
     let target_dir = project_dir.join("target");
+    ensure_cargo_flamegraph_installed()?;
     log_step("Running Flamegraph");
 
     let mut cmd = Command::new("cargo");
@@ -1138,6 +1139,36 @@ fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
     }
 
     log_done("Flamegraph Complete");
+    Ok(())
+}
+
+fn ensure_cargo_flamegraph_installed() -> Result<(), String> {
+    let check_status = Command::new("cargo")
+        .arg("flamegraph")
+        .arg("--version")
+        .status();
+
+    if let Ok(status) = check_status
+        && status.success()
+    {
+        return Ok(());
+    }
+
+    log_note("cargo-flamegraph missing; installing via `cargo install flamegraph`");
+    let install_status = Command::new("cargo")
+        .arg("install")
+        .arg("flamegraph")
+        .status()
+        .map_err(|err| format!("failed to run `cargo install flamegraph`: {err}"))?;
+
+    if !install_status.success() {
+        return Err(format!(
+            "`cargo install flamegraph` failed with exit code {:?}",
+            install_status.code()
+        ));
+    }
+
+    log_done("cargo-flamegraph Installed");
     Ok(())
 }
 

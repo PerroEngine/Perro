@@ -12,6 +12,7 @@ use perro_render_bridge::{
     SkeletonPalette, Sky3DState, SpotLight3DState,
 };
 use perro_structs::{Transform2D, Transform3D};
+use std::collections::VecDeque;
 
 pub(crate) struct ScriptRuntimeState {
     pub(crate) active_script_stack: Vec<(usize, NodeID)>,
@@ -72,12 +73,12 @@ impl TransformRuntimeState {
 pub(crate) struct InternalUpdateState {
     pub(crate) internal_update_nodes: Vec<NodeID>,
     pub(crate) internal_fixed_update_nodes: Vec<NodeID>,
-    pub(crate) internal_update_pos: Vec<Option<usize>>,
-    pub(crate) internal_fixed_update_pos: Vec<Option<usize>>,
+    pub(crate) internal_update_pos: Vec<u32>,
+    pub(crate) internal_fixed_update_pos: Vec<u32>,
     pub(crate) physics_body_nodes_2d: Vec<NodeID>,
     pub(crate) physics_body_nodes_3d: Vec<NodeID>,
-    pub(crate) physics_body_pos_2d: Vec<Option<usize>>,
-    pub(crate) physics_body_pos_3d: Vec<Option<usize>>,
+    pub(crate) physics_body_pos_2d: Vec<u32>,
+    pub(crate) physics_body_pos_3d: Vec<u32>,
 }
 
 impl InternalUpdateState {
@@ -325,6 +326,7 @@ pub(crate) struct Render3DState {
     pub(crate) material_surface_overrides: AHashMap<NodeID, Vec<Option<Material3D>>>,
     pub(crate) collision_debug_state: AHashMap<NodeID, CollisionDebugState>,
     pub(crate) particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile3D>,
+    pub(crate) particle_path_cache_order: VecDeque<String>,
     pub(crate) last_camera: Option<Camera3DState>,
     pub(crate) retained_ambient_lights: AHashMap<NodeID, AmbientLight3DState>,
     pub(crate) retained_skies: AHashMap<NodeID, Sky3DState>,
@@ -347,6 +349,7 @@ impl Render3DState {
             material_surface_overrides: AHashMap::default(),
             collision_debug_state: AHashMap::default(),
             particle_path_cache: AHashMap::default(),
+            particle_path_cache_order: VecDeque::new(),
             last_camera: None,
             retained_ambient_lights: AHashMap::default(),
             retained_skies: AHashMap::default(),

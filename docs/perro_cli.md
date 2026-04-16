@@ -5,6 +5,7 @@ This document covers Perro CLI in command-first style. Commands are shown using 
 - `check`
 - `dev`
 - `build`
+- `flamegraph`
 - `format`
 - `clean`
 - `new`
@@ -21,6 +22,7 @@ Preferred usage:
 perro check [--path <project_dir>]
 perro dev [--path <project_dir>]
 perro build [--path <project_dir>]
+perro flamegraph [--path <project_dir>] [--profile] [--root]
 perro format [--path <project_dir>]
 perro clean [--path <project_dir>]
 perro new [--path <parent_dir>] [--name <project_name>]
@@ -121,6 +123,42 @@ What it does:
 6. Copies the built executable to `<project>/.output/` for clean, predictable exports.
 
 Use this for full static project bundle generation and build.
+
+## `flamegraph`
+
+Command:
+
+```powershell
+perro flamegraph --path <project_dir> [--profile] [--root]
+```
+
+What it does:
+
+1. Runs the same scripts build pipeline as `check`.
+2. Checks `cargo flamegraph` availability; auto-runs `cargo install flamegraph` when missing.
+3. Runs `cargo flamegraph --release` from `<project_dir>/.perro/dev_runner`.
+4. Sets `CARGO_TARGET_DIR=<project_dir>/target` so profiler build output stays project-local.
+5. Forces debug symbols for release profiling (`CARGO_PROFILE_RELEASE_DEBUG=true`).
+6. Passes project path through to dev runner (`-- --path <project_dir>`).
+
+Flags:
+
+- `--profile`: enables dev runner `profile` feature when building/profiling.
+- `--root`: forwards `--root` to `cargo flamegraph` (useful on Linux when elevated perf access is required).
+
+Notes:
+
+- `perro flamegraph` auto-installs `cargo-flamegraph` when missing.
+- Linux: install `perf` (`linux-tools` package family).
+- macOS: install `dtrace`/Xcode command line tools.
+- Windows: `cargo-flamegraph` support is limited; prefer running profiling from WSL/Linux for full flamegraph output.
+
+Example:
+
+```powershell
+perro flamegraph --path D:\GameProjects\MyGame
+perro flamegraph --path D:\GameProjects\MyGame --profile
+```
 
 ## `format`
 

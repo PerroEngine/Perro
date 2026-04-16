@@ -37,24 +37,26 @@ impl Runtime {
         parse_hashed_source_uri(path).unwrap_or_else(|| string_to_u64(path))
     }
 
-    fn resolve_scene_by_hash_and_path(&self, path_hash: u64, path: &str) -> Result<Scene, String> {
+    fn resolve_scene_by_hash_and_path(
+        &self,
+        path_hash: u64,
+        path: &str,
+    ) -> Result<Arc<Scene>, String> {
         if let Some(id) = self.preloaded_scene_paths.get(&path_hash).copied() {
             if let Some(scene) = self.preloaded_scenes.get(&id) {
-                return Ok((**scene).clone());
+                return Ok(scene.clone());
             }
         }
         match self.provider_mode {
-            ProviderMode::Dynamic => self
-                .get_or_load_dynamic_scene_cached(path)
-                .map(|s| (*s).clone()),
+            ProviderMode::Dynamic => self.get_or_load_dynamic_scene_cached(path),
             ProviderMode::Static => {
                 let static_lookup = self
                     .project()
                     .and_then(|project| project.static_scene_lookup);
                 if let Some(lookup) = static_lookup {
-                    Ok(lookup(path_hash).clone())
+                    Ok(Arc::new(lookup(path_hash).clone()))
                 } else {
-                    self.get_or_load_dynamic_scene_cached(path).map(|s| (*s).clone())
+                    self.get_or_load_dynamic_scene_cached(path)
                 }
             }
         }
@@ -72,7 +74,7 @@ impl Runtime {
         Ok(scene)
     }
 
-    fn resolve_scene_by_path(&self, path: &str) -> Result<Scene, String> {
+    fn resolve_scene_by_path(&self, path: &str) -> Result<Arc<Scene>, String> {
         self.resolve_scene_by_hash_and_path(Self::source_hash(path), path)
     }
 
@@ -91,7 +93,7 @@ impl Runtime {
         if let Some(existing) = self.preloaded_scene_paths.get(&path_hash).copied() {
             return Ok(existing);
         }
-        let scene = Arc::new(self.resolve_scene_by_hash_and_path(path_hash, path)?);
+        let scene = self.resolve_scene_by_hash_and_path(path_hash, path)?;
         let mut next = self.next_preloaded_scene_id;
         if next == 0 {
             next = 1;
@@ -273,6 +275,7 @@ impl Runtime {
         self.render_3d.material_surface_sources.clear();
         self.render_3d.material_surface_overrides.clear();
         self.render_3d.particle_path_cache.clear();
+        self.render_3d.particle_path_cache_order.clear();
         self.render_3d.removed_nodes.clear();
         if self.provider_mode == ProviderMode::Dynamic {
             self.script_runtime.dynamic_script_registry.clear();
@@ -298,7 +301,7 @@ impl Runtime {
                 }
                 let prepared = prepare_scene_with_loader(&runtime_scene, &|path| {
                     let (scene, _) = load_runtime_scene_from_disk(path)?;
-                    Ok(scene)
+                    Ok(Arc::new(scene))
                 })?;
                 #[cfg(feature = "profile")]
                 let node_insert_start = Instant::now();
@@ -317,7 +320,7 @@ impl Runtime {
                     let scene = lookup(main_scene_hash);
                     mode_label = "static";
                     let prepared = prepare_scene_with_loader(scene, &|path| {
-                        Ok(lookup(Self::source_hash(path)).clone())
+                        Ok(Arc::new(lookup(Self::source_hash(path)).clone()))
                     })?;
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
@@ -335,7 +338,7 @@ impl Runtime {
                     }
                     let prepared = prepare_scene_with_loader(&runtime_scene, &|path| {
                         let (scene, _) = load_runtime_scene_from_disk(path)?;
-                        Ok(scene)
+                        Ok(Arc::new(scene))
                     })?;
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
