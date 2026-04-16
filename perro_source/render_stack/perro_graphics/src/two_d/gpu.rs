@@ -433,8 +433,8 @@ impl Gpu2D {
         let (rgba, width, height) = if source == "__default__" {
             (vec![255u8, 255, 255, 255], 1u32, 1u32)
         } else if let Some(lookup) = static_texture_lookup {
-            let source_hash =
-                perro_ids::parse_hashed_source_uri(source).unwrap_or_else(|| perro_ids::string_to_u64(source));
+            let source_hash = perro_ids::parse_hashed_source_uri(source)
+                .unwrap_or_else(|| perro_ids::string_to_u64(source));
             let bytes = lookup(source_hash);
             if !bytes.is_empty() {
                 let Some(decoded) = decode_ptex(bytes) else {
@@ -857,6 +857,3 @@ fn create_sprite_pipeline(
         cache: None,
     })
 }
-
-
-

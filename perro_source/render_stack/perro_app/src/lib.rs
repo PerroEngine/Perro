@@ -15,43 +15,78 @@ pub struct App<B: GraphicsBackend> {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PresentTiming {
-    pub extract_2d: Duration,
-    pub extract_3d: Duration,
-    pub drain_commands: Duration,
-    pub submit_commands: Duration,
-    pub draw_frame: Duration,
-    pub draw_process_commands: Duration,
-    pub draw_prepare_cpu: Duration,
-    pub draw_gpu_prepare_2d: Duration,
-    pub draw_gpu_prepare_3d: Duration,
-    pub draw_gpu_prepare_particles_3d: Duration,
-    pub draw_gpu_prepare_3d_frustum: Duration,
-    pub draw_gpu_prepare_3d_hiz: Duration,
-    pub draw_gpu_prepare_3d_indirect: Duration,
-    pub draw_gpu_prepare_3d_cull_inputs: Duration,
-    pub draw_gpu_acquire: Duration,
-    pub draw_gpu_acquire_surface: Duration,
-    pub draw_gpu_acquire_view: Duration,
-    pub draw_gpu_encode_main: Duration,
-    pub draw_gpu_submit_main: Duration,
-    pub draw_gpu_submit_finish_main: Duration,
-    pub draw_gpu_submit_queue_main: Duration,
-    pub draw_gpu_post_process: Duration,
-    pub draw_gpu_accessibility: Duration,
-    pub draw_gpu_present: Duration,
-    pub draw_calls_2d: u32,
-    pub draw_calls_3d: u32,
-    pub draw_calls_total: u32,
-    pub skip_prepare_2d: u32,
-    pub skip_prepare_3d: u32,
-    pub skip_prepare_particles_3d: u32,
-    pub skip_prepare_3d_frustum: u32,
-    pub skip_prepare_3d_hiz: u32,
-    pub skip_prepare_3d_indirect: u32,
-    pub skip_prepare_3d_cull_inputs: u32,
-    pub drain_events: Duration,
-    pub apply_events: Duration,
+    pub gpu_present: Duration,
     pub total: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub extract_2d: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub extract_3d: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub drain_commands: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub submit_commands: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_process_commands: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_prepare_cpu: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_prepare_2d: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_prepare_3d: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_prepare_particles_3d: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_prepare_3d_frustum: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_prepare_3d_hiz: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_prepare_3d_indirect: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_prepare_3d_cull_inputs: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_acquire: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_acquire_surface: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_acquire_view: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_encode_main: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_submit_main: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_submit_finish_main: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_submit_queue_main: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_post_process: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_accessibility: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_gpu_present: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_calls_2d: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_calls_3d: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_calls_total: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub skip_prepare_2d: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub skip_prepare_3d: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub skip_prepare_particles_3d: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub skip_prepare_3d_frustum: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub skip_prepare_3d_hiz: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub skip_prepare_3d_indirect: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub skip_prepare_3d_cull_inputs: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub drain_events: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub apply_events: Duration,
 }
 
 impl<B: GraphicsBackend> App<B> {
@@ -221,151 +256,201 @@ impl<B: GraphicsBackend> App<B> {
     {
         let total_start = std::time::Instant::now();
 
+        #[cfg(feature = "profile_heavy")]
         let extract_2d_start = std::time::Instant::now();
         self.runtime.extract_render_2d_commands();
+        #[cfg(feature = "profile_heavy")]
         let extract_2d = extract_2d_start.elapsed();
 
+        #[cfg(feature = "profile_heavy")]
         let extract_3d_start = std::time::Instant::now();
         self.runtime.extract_render_3d_commands();
+        #[cfg(feature = "profile_heavy")]
         let extract_3d = extract_3d_start.elapsed();
 
+        #[cfg(feature = "profile_heavy")]
         let drain_commands_start = std::time::Instant::now();
         self.runtime.drain_render_commands(&mut self.command_buffer);
+        #[cfg(feature = "profile_heavy")]
         let drain_commands = drain_commands_start.elapsed();
 
+        #[cfg(feature = "profile_heavy")]
         let submit_start = std::time::Instant::now();
         self.graphics.submit_many(self.command_buffer.drain(..));
         self.graphics.submit_many(overlay_commands);
+        #[cfg(feature = "profile_heavy")]
         let submit_commands = submit_start.elapsed();
 
         let draw_frame_start = std::time::Instant::now();
+        #[cfg(feature = "profile_heavy")]
         let draw_timing = self.graphics.draw_frame_timed();
-        let draw_frame = draw_frame_start.elapsed();
+        #[cfg(not(feature = "profile_heavy"))]
+        self.graphics.draw_frame();
+        let gpu_present = draw_frame_start.elapsed();
 
+        #[cfg(feature = "profile_heavy")]
         let drain_events_start = std::time::Instant::now();
         self.graphics.drain_events(&mut self.event_buffer);
+        #[cfg(feature = "profile_heavy")]
         let drain_events = drain_events_start.elapsed();
 
+        #[cfg(feature = "profile_heavy")]
         let apply_events_start = std::time::Instant::now();
         self.runtime
             .apply_render_events(self.event_buffer.drain(..));
+        #[cfg(feature = "profile_heavy")]
         let apply_events = apply_events_start.elapsed();
         // Dirty markers are per-frame extraction hints; clear after a full frame.
         self.runtime.clear_dirty_flags();
 
         PresentTiming {
+            gpu_present,
+            total: total_start.elapsed(),
+            #[cfg(feature = "profile_heavy")]
             extract_2d,
+            #[cfg(feature = "profile_heavy")]
             extract_3d,
+            #[cfg(feature = "profile_heavy")]
             drain_commands,
+            #[cfg(feature = "profile_heavy")]
             submit_commands,
-            draw_frame,
+            #[cfg(feature = "profile_heavy")]
             draw_process_commands: draw_timing
                 .as_ref()
                 .map(|t| t.process_commands)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_prepare_cpu: draw_timing
                 .as_ref()
                 .map(|t| t.prepare_cpu)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_prepare_2d: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_prepare_2d)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_prepare_3d: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_prepare_3d)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_prepare_particles_3d: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_prepare_particles_3d)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_prepare_3d_frustum: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_prepare_3d_frustum)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_prepare_3d_hiz: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_prepare_3d_hiz)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_prepare_3d_indirect: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_prepare_3d_indirect)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_prepare_3d_cull_inputs: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_prepare_3d_cull_inputs)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_acquire: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_acquire)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_acquire_surface: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_acquire_surface)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_acquire_view: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_acquire_view)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_encode_main: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_encode_main)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_submit_main: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_submit_main)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_submit_finish_main: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_submit_finish_main)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_submit_queue_main: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_submit_queue_main)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_post_process: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_post_process)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_accessibility: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_accessibility)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_gpu_present: draw_timing
                 .as_ref()
                 .map(|t| t.gpu_present)
                 .unwrap_or(Duration::ZERO),
+            #[cfg(feature = "profile_heavy")]
             draw_calls_2d: draw_timing.as_ref().map(|t| t.draw_calls_2d).unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
             draw_calls_3d: draw_timing.as_ref().map(|t| t.draw_calls_3d).unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
             draw_calls_total: draw_timing
                 .as_ref()
                 .map(|t| t.draw_calls_2d.saturating_add(t.draw_calls_3d))
                 .unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
             skip_prepare_2d: draw_timing.as_ref().map(|t| t.skip_prepare_2d).unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
             skip_prepare_3d: draw_timing.as_ref().map(|t| t.skip_prepare_3d).unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
             skip_prepare_particles_3d: draw_timing
                 .as_ref()
                 .map(|t| t.skip_prepare_particles_3d)
                 .unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
             skip_prepare_3d_frustum: draw_timing
                 .as_ref()
                 .map(|t| t.skip_prepare_3d_frustum)
                 .unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
             skip_prepare_3d_hiz: draw_timing
                 .as_ref()
                 .map(|t| t.skip_prepare_3d_hiz)
                 .unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
             skip_prepare_3d_indirect: draw_timing
                 .as_ref()
                 .map(|t| t.skip_prepare_3d_indirect)
                 .unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
             skip_prepare_3d_cull_inputs: draw_timing
                 .as_ref()
                 .map(|t| t.skip_prepare_3d_cull_inputs)
                 .unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
             drain_events,
+            #[cfg(feature = "profile_heavy")]
             apply_events,
-            total: total_start.elapsed(),
         }
     }
 

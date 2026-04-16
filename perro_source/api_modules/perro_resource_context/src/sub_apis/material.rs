@@ -4,11 +4,7 @@ use perro_render_bridge::Material3D;
 pub trait MaterialAPI {
     fn load_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID;
     fn create_material(&self, material: Material3D) -> MaterialID;
-    fn reserve_material_source_hashed(
-        &self,
-        source_hash: u64,
-        source: Option<&str>,
-    ) -> MaterialID;
+    fn reserve_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID;
     fn load_material_source(&self, source: &str) -> MaterialID {
         self.load_material_source_hashed(perro_ids::string_to_u64(source), Some(source))
     }
@@ -39,7 +35,8 @@ impl<'res, R: MaterialAPI + ?Sized> MaterialModule<'res, R> {
 
     #[inline]
     pub fn load_hashed_with_source(&self, source_hash: u64, source: &str) -> MaterialID {
-        self.api.load_material_source_hashed(source_hash, Some(source))
+        self.api
+            .load_material_source_hashed(source_hash, Some(source))
     }
 
     #[inline]

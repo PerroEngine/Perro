@@ -55,7 +55,9 @@ impl AnimationAPI for RuntimeResourceApi {
         }
 
         let mut state = self.state.lock().expect("resource api mutex poisoned");
-        state.animation_by_source.retain(|_, existing| *existing != id);
+        state
+            .animation_by_source
+            .retain(|_, existing| *existing != id);
         state.animation_data_by_id.remove(&id);
         let _ = state.free_animation_id(id);
         true

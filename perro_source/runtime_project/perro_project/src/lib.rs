@@ -186,14 +186,14 @@ impl StaticProjectConfig {
             meshlet_debug_view: self.meshlet_debug_view,
             occlusion_culling: self.occlusion_culling,
             particle_sim_default: self.particle_sim_default,
-            localization: self
-                .localization_source_csv_hash
-                .map(|source_csv_hash| LocalizationConfig {
+            localization: self.localization_source_csv_hash.map(|source_csv_hash| {
+                LocalizationConfig {
                     source_csv: source_csv_hash.to_string(),
                     source_csv_hash: Some(source_csv_hash),
                     key_column: self.localization_key_column.to_string(),
                     default_locale: self.localization_default_locale.to_string(),
-                }),
+                }
+            }),
         }
     }
 }

@@ -212,7 +212,11 @@ impl<'rt, R: SceneAPI + ?Sized> SceneModule<'rt, R> {
         self.rt.scene_preload(path.as_ref())
     }
 
-    pub fn preload_hashed(&mut self, path_hash: u64, path: &str) -> Result<PreloadedSceneID, String> {
+    pub fn preload_hashed(
+        &mut self,
+        path_hash: u64,
+        path: &str,
+    ) -> Result<PreloadedSceneID, String> {
         self.rt.scene_preload_hashed(path_hash, path)
     }
 

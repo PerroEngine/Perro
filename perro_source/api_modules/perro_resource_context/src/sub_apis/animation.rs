@@ -86,7 +86,8 @@ macro_rules! animation_load {
 macro_rules! animation_reserve {
     ($res:expr, $source:literal) => {{
         const __HASH: u64 = $crate::__perro_string_to_u64($source);
-        $res.Animations().reserve_hashed_with_source(__HASH, $source)
+        $res.Animations()
+            .reserve_hashed_with_source(__HASH, $source)
     }};
     ($res:expr, $source:expr) => {
         $res.Animations().reserve($source)

@@ -572,7 +572,10 @@ mod tests {
             bytes.extend_from_slice(&version.to_le_bytes());
             bytes.extend_from_slice(&0u32.to_le_bytes());
             bytes.extend_from_slice(&0u32.to_le_bytes());
-            assert!(decode_pskel(&bytes).is_err(), "legacy pskel version {version} must reject");
+            assert!(
+                decode_pskel(&bytes).is_err(),
+                "legacy pskel version {version} must reject"
+            );
         }
     }
 }

@@ -414,7 +414,8 @@ impl<'a> Parser<'a> {
                             "root_of" => {
                                 root_of = Some(match v {
                                     SceneValue::Str(s) => {
-                                        root_of_hash = perro_ids::parse_hashed_source_uri(s.as_ref());
+                                        root_of_hash =
+                                            perro_ids::parse_hashed_source_uri(s.as_ref());
                                         s.to_string()
                                     }
                                     _ => panic!("root_of must be a string"),

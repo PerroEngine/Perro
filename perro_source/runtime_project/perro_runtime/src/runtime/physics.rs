@@ -759,7 +759,8 @@ impl Runtime {
                     let Some(builder) = collider_builder_3d(
                         shape,
                         self.provider_mode,
-                        self.project().and_then(|project| project.static_mesh_lookup),
+                        self.project()
+                            .and_then(|project| project.static_mesh_lookup),
                     ) else {
                         continue;
                     };
@@ -1605,8 +1606,14 @@ fn collider_builder_3d(
                 r3::ColliderBuilder::convex_hull(&points)?
             }
             Shape3D::TriMesh { source } => {
-                let (vertices, triangles) =
-                    load_trimesh_from_source(source, sx, sy, sz, provider_mode, static_mesh_lookup)?;
+                let (vertices, triangles) = load_trimesh_from_source(
+                    source,
+                    sx,
+                    sy,
+                    sz,
+                    provider_mode,
+                    static_mesh_lookup,
+                )?;
                 r3::ColliderBuilder::trimesh(vertices, triangles).ok()?
             }
         },
@@ -1652,8 +1659,7 @@ fn load_trimesh_from_source(
         }
 
         let normalized = normalize_source_slashes(source);
-        if normalized.as_ref() != source
-        {
+        if normalized.as_ref() != source {
             let bytes = lookup(string_to_u64(normalized.as_ref()));
             if !bytes.is_empty()
                 && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
@@ -1661,8 +1667,7 @@ fn load_trimesh_from_source(
                 return Some(decoded);
             }
         }
-        if let Some(alias) = normalized_static_mesh_lookup_alias(source)
-        {
+        if let Some(alias) = normalized_static_mesh_lookup_alias(source) {
             let bytes = lookup(string_to_u64(alias.as_str()));
             if !bytes.is_empty()
                 && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
@@ -1769,8 +1774,11 @@ fn decode_pmesh_trimesh(
     let mut triangles = Vec::new();
     let index_start = vertex_bytes;
     for tri_idx in (0..index_count / 3).map(|i| i * 3) {
-        let ia =
-            u32::from_le_bytes(raw[index_start + tri_idx * 4..index_start + tri_idx * 4 + 4].try_into().ok()?);
+        let ia = u32::from_le_bytes(
+            raw[index_start + tri_idx * 4..index_start + tri_idx * 4 + 4]
+                .try_into()
+                .ok()?,
+        );
         let ib = u32::from_le_bytes(
             raw[index_start + (tri_idx + 1) * 4..index_start + (tri_idx + 1) * 4 + 4]
                 .try_into()
@@ -1784,7 +1792,13 @@ fn decode_pmesh_trimesh(
         let a = ia as usize;
         let b = ib as usize;
         let c = ic as usize;
-        if a >= vertices.len() || b >= vertices.len() || c >= vertices.len() || a == b || b == c || a == c {
+        if a >= vertices.len()
+            || b >= vertices.len()
+            || c >= vertices.len()
+            || a == b
+            || b == c
+            || a == c
+        {
             continue;
         }
         triangles.push([ia, ib, ic]);

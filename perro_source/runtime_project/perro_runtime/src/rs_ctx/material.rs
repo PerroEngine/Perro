@@ -69,11 +69,7 @@ impl MaterialAPI for RuntimeResourceApi {
         MaterialID::nil()
     }
 
-    fn reserve_material_source_hashed(
-        &self,
-        source_hash: u64,
-        source: Option<&str>,
-    ) -> MaterialID {
+    fn reserve_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID {
         let material = self
             .load_material_source_data(source_hash, source)
             .unwrap_or_default();
@@ -132,13 +128,19 @@ impl MaterialAPI for RuntimeResourceApi {
         let _ = state.free_material_id(id);
         state
             .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::DropMaterial { id }));
+            .push(RenderCommand::Resource(ResourceCommand::DropMaterial {
+                id,
+            }));
         true
     }
 }
 
 impl RuntimeResourceApi {
-    fn load_material_source_data(&self, source_hash: u64, source: Option<&str>) -> Option<Material3D> {
+    fn load_material_source_data(
+        &self,
+        source_hash: u64,
+        source: Option<&str>,
+    ) -> Option<Material3D> {
         let source = source.map(str::trim);
         if source.is_some_and(|v| v.is_empty()) {
             return None;

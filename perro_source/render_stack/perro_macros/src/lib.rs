@@ -33,11 +33,11 @@ fn parse_input(input: TokenStream) -> Result<String, String> {
     let tokens: Vec<TokenTree> = input.into_iter().collect();
     match tokens.as_slice() {
         [TokenTree::Literal(lit)] => parse_string_literal(&lit.to_string()),
-        [TokenTree::Ident(ident), TokenTree::Punct(p), TokenTree::Group(group)]
-            if ident.to_string() == "include_str" && p.as_char() == '!' =>
-        {
-            parse_include_str(group)
-        }
+        [
+            TokenTree::Ident(ident),
+            TokenTree::Punct(p),
+            TokenTree::Group(group),
+        ] if ident.to_string() == "include_str" && p.as_char() == '!' => parse_include_str(group),
         _ => Err(
             "expected string literal path or include_str!(\"path\") in include_str_stripped!"
                 .to_string(),
@@ -66,8 +66,12 @@ fn parse_string_literal(raw: &str) -> Result<String, String> {
 
 fn load_source(path: &str) -> Result<String, String> {
     let resolved = resolve_path(path)?;
-    fs::read_to_string(&resolved)
-        .map_err(|e| format!("include_str_stripped! failed read `{}`: {e}", resolved.display()))
+    fs::read_to_string(&resolved).map_err(|e| {
+        format!(
+            "include_str_stripped! failed read `{}`: {e}",
+            resolved.display()
+        )
+    })
 }
 
 fn resolve_path(path: &str) -> Result<PathBuf, String> {
@@ -101,12 +105,15 @@ fn resolve_path(path: &str) -> Result<PathBuf, String> {
         ));
     }
 
-    Err(format!("failed resolve `{path}` from crate root `{}`", base.display()))
+    Err(format!(
+        "failed resolve `{path}` from crate root `{}`",
+        base.display()
+    ))
 }
 
 fn collect_suffix_matches(dir: &Path, suffix: &str, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    let entries = fs::read_dir(dir)
-        .map_err(|e| format!("failed read dir `{}`: {e}", dir.display()))?;
+    let entries =
+        fs::read_dir(dir).map_err(|e| format!("failed read dir `{}`: {e}", dir.display()))?;
     for entry in entries {
         let entry = entry.map_err(|e| format!("failed read dir entry: {e}"))?;
         let path = entry.path();
@@ -172,7 +179,10 @@ fn strip_line_comment_preserving_strings(line: &str) -> &str {
 
 fn compile_error_tokens(msg: &str) -> TokenStream {
     let mut stream = TokenStream::new();
-    stream.extend([TokenTree::Ident(Ident::new("compile_error", Span::call_site()))]);
+    stream.extend([TokenTree::Ident(Ident::new(
+        "compile_error",
+        Span::call_site(),
+    ))]);
     stream.extend([TokenTree::Punct(Punct::new('!', Spacing::Alone))]);
     let mut inner = TokenStream::new();
     inner.extend([TokenTree::Literal(Literal::string(msg))]);

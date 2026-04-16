@@ -1,4 +1,4 @@
-﻿use crate::{StaticPipelineError, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
+use crate::{StaticPipelineError, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use rayon::prelude::*;
 use std::{
@@ -88,10 +88,7 @@ pub fn generate_static_audios(project_root: &Path) -> Result<(), StaticPipelineE
     out.push_str("    match path_hash {\n");
     for (index, (res_path, _)) in audios.iter().enumerate() {
         let path_hash = perro_ids::string_to_u64(res_path);
-        let _ = writeln!(
-            out,
-            "        {path_hash}u64 => AUDIO_{index},"
-        );
+        let _ = writeln!(out, "        {path_hash}u64 => AUDIO_{index},");
     }
     out.push_str("        _ => EMPTY_AUDIO,\n");
     out.push_str("    }\n");

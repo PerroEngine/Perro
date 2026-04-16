@@ -1,14 +1,21 @@
-const BUILTIN_POST_BODY_WGSL: &str = perro_macros::include_str_stripped!("shaders/postprocess_builtin_body.wgsl");
+const BUILTIN_POST_BODY_WGSL: &str =
+    perro_macros::include_str_stripped!("shaders/postprocess_builtin_body.wgsl");
 const EFFECT_BLUR_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/blur.wgsl");
-const EFFECT_PIXELATE_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/pixelate.wgsl");
+const EFFECT_PIXELATE_WGSL: &str =
+    perro_macros::include_str_stripped!("shaders/effects/pixelate.wgsl");
 const EFFECT_WARP_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/warp.wgsl");
-const EFFECT_VIGNETTE_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/vignette.wgsl");
+const EFFECT_VIGNETTE_WGSL: &str =
+    perro_macros::include_str_stripped!("shaders/effects/vignette.wgsl");
 const EFFECT_CRT_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/crt.wgsl");
-const EFFECT_COLOR_FILTER_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/color_filter.wgsl");
-const EFFECT_REVERSE_FILTER_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/reverse_filter.wgsl");
+const EFFECT_COLOR_FILTER_WGSL: &str =
+    perro_macros::include_str_stripped!("shaders/effects/color_filter.wgsl");
+const EFFECT_REVERSE_FILTER_WGSL: &str =
+    perro_macros::include_str_stripped!("shaders/effects/reverse_filter.wgsl");
 const EFFECT_BLOOM_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/bloom.wgsl");
-const EFFECT_SATURATE_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/saturate.wgsl");
-const EFFECT_BLACK_WHITE_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/black_white.wgsl");
+const EFFECT_SATURATE_WGSL: &str =
+    perro_macros::include_str_stripped!("shaders/effects/saturate.wgsl");
+const EFFECT_BLACK_WHITE_WGSL: &str =
+    perro_macros::include_str_stripped!("shaders/effects/black_white.wgsl");
 
 pub fn create_builtin_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     let mut wgsl = String::new();
@@ -101,4 +108,3 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 }
 
 "#;
-

@@ -31,9 +31,7 @@ impl TextureAPI for RuntimeResourceApi {
         let request = state.allocate_request();
         let id = state.allocate_texture_id();
         state.texture_by_source.insert(source_hash, id);
-        state
-            .texture_pending_by_source
-            .insert(source_hash, request);
+        state.texture_pending_by_source.insert(source_hash, request);
         state
             .texture_pending_source_by_request
             .insert(request, source.to_string());
@@ -69,9 +67,7 @@ impl TextureAPI for RuntimeResourceApi {
         let request = state.allocate_request();
         let id = state.allocate_texture_id();
         state.texture_by_source.insert(source_hash, id);
-        state
-            .texture_pending_by_source
-            .insert(source_hash, request);
+        state.texture_pending_by_source.insert(source_hash, request);
         state
             .texture_pending_source_by_request
             .insert(request, source.to_string());

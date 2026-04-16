@@ -59,11 +59,7 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
     for p in &scene_paths {
         let id = sanitize_ident(p);
         let path_hash = perro_ids::string_to_u64(p);
-        let _ = writeln!(
-            lookup,
-            "        {path_hash}u64 => &SCENE_{},",
-            id,
-        );
+        let _ = writeln!(lookup, "        {path_hash}u64 => &SCENE_{},", id,);
     }
     lookup.push_str("        _ => &EMPTY_SCENE,\n");
     lookup.push_str("    }\n");
@@ -345,10 +341,7 @@ fn emit_value_with_consts(
         SceneValue::Vec4 { x, y, z, w } => {
             format!("SceneValue::Vec4 {{ x: {x:?}, y: {y:?}, z: {z:?}, w: {w:?} }}")
         }
-        SceneValue::Str(s) => format!(
-            "{}",
-            emit_static_scene_value_str(s.as_ref())
-        ),
+        SceneValue::Str(s) => format!("{}", emit_static_scene_value_str(s.as_ref())),
         SceneValue::Hashed(v) => format!("SceneValue::Hashed({v}u64)"),
         SceneValue::Key(s) => {
             format!(
@@ -474,8 +467,7 @@ fn static_hashable_path(s: &str) -> Option<u64> {
         .map(|e| e.to_ascii_lowercase())?;
     let hashable = matches!(
         ext.as_str(),
-        "rs"
-            | "scn"
+        "rs" | "scn"
             | "pmat"
             | "panim"
             | "pmesh"
@@ -535,12 +527,18 @@ mod tests {
     #[test]
     fn static_hashable_path_hashes_scheme_plus_fragment_paths() {
         let source = "res://terrain.glb:mesh[0]";
-        assert_eq!(static_hashable_path(source), Some(perro_ids::string_to_u64(source)));
+        assert_eq!(
+            static_hashable_path(source),
+            Some(perro_ids::string_to_u64(source))
+        );
     }
 
     #[test]
     fn static_hashable_path_hashes_script_paths() {
         let source = "res://scripts/game_manager.rs";
-        assert_eq!(static_hashable_path(source), Some(perro_ids::string_to_u64(source)));
+        assert_eq!(
+            static_hashable_path(source),
+            Some(perro_ids::string_to_u64(source))
+        );
     }
 }

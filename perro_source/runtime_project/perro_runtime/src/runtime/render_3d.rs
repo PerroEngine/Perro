@@ -9,10 +9,10 @@ use perro_nodes::{
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, DenseInstancePose3D,
-    Material3D, MaterialParamOverride3D, MeshSurfaceBinding3D,
-    ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
-    PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, RenderRequestID,
-    ResourceCommand, SkeletonPalette, Sky3DState, SkyTime3DState, SpotLight3DState,
+    Material3D, MaterialParamOverride3D, MeshSurfaceBinding3D, ParticlePath3D, ParticleProfile3D,
+    ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState, PointParticles3DState,
+    RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SkeletonPalette, Sky3DState,
+    SkyTime3DState, SpotLight3DState,
 };
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -1433,7 +1433,8 @@ fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<Parti
             .project()
             .and_then(|project| project.static_particle_lookup)
         {
-            let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
+            let source_hash =
+                parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
             lookup(source_hash).clone()
         } else {
             let bytes = perro_io::load_asset(source).ok()?;
@@ -1452,7 +1453,10 @@ fn resolve_particle_profile(runtime: &mut Runtime, source: &str) -> Option<Parti
             let Some(evict_key) = runtime.render_3d.particle_path_cache_order.pop_front() else {
                 break;
             };
-            runtime.render_3d.particle_path_cache.remove(evict_key.as_str());
+            runtime
+                .render_3d
+                .particle_path_cache
+                .remove(evict_key.as_str());
         }
         runtime
             .render_3d

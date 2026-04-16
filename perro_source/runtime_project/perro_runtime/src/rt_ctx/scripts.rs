@@ -1,5 +1,5 @@
-use perro_ids::{NodeID, ScriptMemberID};
 use perro_ids::string_to_u64;
+use perro_ids::{NodeID, ScriptMemberID};
 use perro_input::InputContext;
 use perro_resource_context::ResourceContext;
 use perro_runtime_context::{
@@ -202,7 +202,8 @@ impl ScriptAPI for Runtime {
             return false;
         }
 
-        self.attach_script_instance(node_id, script_path_hash, &[]).is_ok()
+        self.attach_script_instance(node_id, script_path_hash, &[])
+            .is_ok()
     }
 
     fn script_detach(&mut self, node_id: NodeID) -> bool {

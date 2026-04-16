@@ -54,10 +54,7 @@ pub(crate) fn res_dir(project_root: &Path) -> PathBuf {
     project_root.join(RES_DIR)
 }
 
-pub(crate) fn ensure_unique_hashes<'a, I>(
-    kind: &str,
-    paths: I,
-) -> Result<(), StaticPipelineError>
+pub(crate) fn ensure_unique_hashes<'a, I>(kind: &str, paths: I) -> Result<(), StaticPipelineError>
 where
     I: IntoIterator<Item = &'a str>,
 {

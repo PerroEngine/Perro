@@ -154,9 +154,7 @@ impl BarkPlayer {
     const UNRESERVED_TTL_FALLBACK: Duration = Duration::from_secs(1);
     const UNRESERVED_TTL_MIN: Duration = Duration::from_millis(250);
 
-    pub fn new(
-        static_audio_lookup: Option<fn(u64) -> &'static [u8]>,
-    ) -> Result<Self, String> {
+    pub fn new(static_audio_lookup: Option<fn(u64) -> &'static [u8]>) -> Result<Self, String> {
         let (stream, handle) = OutputStream::try_default()
             .map_err(|err| format!("audio output init failed: {err}"))?;
         Ok(Self {
@@ -851,9 +849,7 @@ mod tests {
 }
 
 impl AudioController {
-    pub fn new(
-        static_audio_lookup: Option<fn(u64) -> &'static [u8]>,
-    ) -> Result<Self, String> {
+    pub fn new(static_audio_lookup: Option<fn(u64) -> &'static [u8]>) -> Result<Self, String> {
         let (tx, rx) = mpsc::channel::<AudioCommand>();
         std::thread::Builder::new()
             .name("perro_bark_audio".to_string())
@@ -1053,4 +1049,3 @@ impl AudioController {
         self.tx.send(AudioCommand::StopBus { bus_id }).is_ok()
     }
 }
-

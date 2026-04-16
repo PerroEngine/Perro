@@ -645,4 +645,3 @@ fn encode_custom_param_value(value: &CustomPostParam) -> [f32; 4] {
         CustomPostParamValue::Vec4(v) => *v,
     }
 }
-

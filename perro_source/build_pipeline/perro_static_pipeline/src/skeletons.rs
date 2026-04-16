@@ -1,4 +1,4 @@
-﻿use crate::{StaticPipelineError, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
+use crate::{StaticPipelineError, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use perro_structs::{Quaternion, Transform3D, Vector3};
 use rayon::prelude::*;
@@ -123,7 +123,9 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
     skeleton_refs.dedup_by(|a, b| a.lookup_key == b.lookup_key);
     ensure_unique_hashes(
         "skeleton",
-        skeleton_refs.iter().map(|skeleton| skeleton.lookup_key.as_str()),
+        skeleton_refs
+            .iter()
+            .map(|skeleton| skeleton.lookup_key.as_str()),
     )?;
 
     let mut out = String::new();
@@ -148,10 +150,7 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
     out.push_str("    match path_hash {\n");
     for (index, skel_ref) in skeleton_refs.iter().enumerate() {
         let path_hash = perro_ids::string_to_u64(&skel_ref.lookup_key);
-        let _ = writeln!(
-            out,
-            "        {path_hash}u64 => SKELETON_{index},"
-        );
+        let _ = writeln!(out, "        {path_hash}u64 => SKELETON_{index},");
     }
     out.push_str("        _ => EMPTY_SKELETON,\n");
     out.push_str("    }\n");
@@ -749,7 +748,10 @@ mod tests {
         let v2 = encode_pskel_v2(&bones).expect("encode v2");
         let selected = encode_pskel_tightest(&bones).expect("encode tightest");
         assert_eq!(selected, v2);
-        assert_eq!(u32::from_le_bytes(selected[5..9].try_into().expect("version")), 2);
+        assert_eq!(
+            u32::from_le_bytes(selected[5..9].try_into().expect("version")),
+            2
+        );
     }
 
     #[test]

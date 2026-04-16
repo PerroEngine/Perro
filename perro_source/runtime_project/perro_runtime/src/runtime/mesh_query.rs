@@ -1,10 +1,10 @@
 use super::Runtime;
 use glam::{Mat3, Mat4, Vec3};
 use perro_ids::{MaterialID, NodeID, parse_hashed_source_uri, string_to_u64};
+use perro_io::decompress_zlib;
 use perro_nodes::{MeshSurfaceBinding, SceneNodeData};
 use perro_runtime_context::sub_apis::{MeshMaterialRegion3D, MeshSurfaceHit3D};
 use perro_structs::Vector3;
-use perro_io::decompress_zlib;
 
 #[derive(Clone, Copy)]
 struct QueryTri {
@@ -240,7 +240,9 @@ impl Runtime {
         let normalized = normalize_source_slashes(source);
         let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
         if self.provider_mode() == crate::runtime_project::ProviderMode::Static
-            && let Some(lookup) = self.project().and_then(|project| project.static_mesh_lookup)
+            && let Some(lookup) = self
+                .project()
+                .and_then(|project| project.static_mesh_lookup)
         {
             let bytes = lookup(source_hash);
             if !bytes.is_empty()
