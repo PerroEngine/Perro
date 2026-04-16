@@ -55,14 +55,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if in.shape_kind == 1u {
         let radius = 0.5 * min(in.size.x, in.size.y);
         let local = in.local_pos * in.size;
-        let d = length(local);
+        let d2 = dot(local, local);
+        let radius2 = radius * radius;
         if in.filled == 1u {
-            if d > radius {
+            if d2 > radius2 {
                 discard;
             }
         } else {
             let t = max(in.thickness, 0.0);
-            if d > radius || d < max(radius - t, 0.0) {
+            let inner = max(radius - t, 0.0);
+            let inner2 = inner * inner;
+            if d2 > radius2 || d2 < inner2 {
                 discard;
             }
         }

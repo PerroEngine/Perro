@@ -12,7 +12,7 @@ fn bloom_sample(uv: vec2<f32>, strength: f32, threshold: f32, radius: f32) -> ve
     sum += textureSample(input_tex, input_sampler, uv + vec2<f32>(0.0, -o.y)).rgb;
     sum += textureSample(input_tex, input_sampler, uv + vec2<f32>(o.x, -o.y)).rgb;
     sum += textureSample(input_tex, input_sampler, uv + vec2<f32>(-o.x, 0.0)).rgb;
-    sum += textureSample(input_tex, input_sampler, uv).rgb;
+    sum += base.rgb;
     sum += textureSample(input_tex, input_sampler, uv + vec2<f32>(o.x, 0.0)).rgb;
     sum += textureSample(input_tex, input_sampler, uv + vec2<f32>(-o.x, o.y)).rgb;
     sum += textureSample(input_tex, input_sampler, uv + vec2<f32>(0.0, o.y)).rgb;

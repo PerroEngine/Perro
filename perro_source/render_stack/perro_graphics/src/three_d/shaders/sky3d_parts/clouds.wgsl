@@ -271,7 +271,10 @@
 
         // ── Backlit shadow + silver lining ────────────────────
         let sun_angle_to_ray = clamp(dot(ray, sun_dir), 0.0, 1.0);
-        let corona_phase     = pow(sun_angle_to_ray, 12.0);
+        let sun_angle2       = sun_angle_to_ray * sun_angle_to_ray;
+        let sun_angle4       = sun_angle2 * sun_angle2;
+        let sun_angle8       = sun_angle4 * sun_angle4;
+        let corona_phase     = sun_angle8 * sun_angle4;
         let cloud_edge_rim = smoothstep(0.04, 0.38, clouds_amount_real)
                            * (1.0 - smoothstep(0.38, 0.62, clouds_amount_real));
         let corona_intensity = corona_phase * cloud_edge_rim * sun_behind;
@@ -324,7 +327,9 @@
                 vec3<f32>(0.0), vec3<f32>(1.0)
             );
             let sun_dist_c = distance(ray, sun_dir);
-            let sun_punch  = pow(1.0 - clamp(sun_dist_c, 0.0, 1.0), 5.0);
+            let sun_punch_base = 1.0 - clamp(sun_dist_c, 0.0, 1.0);
+            let sun_punch2 = sun_punch_base * sun_punch_base;
+            let sun_punch  = sun_punch2 * sun_punch2 * sun_punch_base;
             clouds_color_real = mix(clouds_color_real, sun_col_clouds_real,
                 sun_punch * 0.42);
         }
@@ -404,7 +409,10 @@
     {
         let scatter_angle = clamp(dot(ray, sun_dir), 0.0, 1.0);
         let scatter_wide  = exp(-max(1.0 - scatter_angle, 0.0) * 2.8) * 0.12;
-        let scatter_tight = pow(scatter_angle, 14.0) * 0.22; 
+        let scatter_angle2 = scatter_angle * scatter_angle;
+        let scatter_angle4 = scatter_angle2 * scatter_angle2;
+        let scatter_angle8 = scatter_angle4 * scatter_angle4;
+        let scatter_tight = scatter_angle8 * scatter_angle4 * scatter_angle2 * 0.22; 
         let scatter_total = (scatter_wide + scatter_tight)
                         * sun_cloud_cover * day_t * sun_visibility;
         let scatter_col = mix(

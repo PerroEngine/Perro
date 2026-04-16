@@ -52,6 +52,7 @@ fn graphics_from_project_config(
     PerroGraphics::new()
         .with_vsync(config.vsync)
         .with_msaa(config.msaa)
+        .with_smaa(config.smaa)
         .with_meshlets_enabled(config.meshlets)
         .with_dev_meshlets(!release_mode && config.dev_meshlets)
         .with_meshlet_debug_view(config.meshlet_debug_view)
@@ -125,6 +126,7 @@ pub struct StaticEmbeddedProjectInfo<'a> {
 pub struct StaticEmbeddedGraphicsConfig {
     pub vsync: bool,
     pub msaa: bool,
+    pub smaa: bool,
     pub meshlets: bool,
     pub dev_meshlets: bool,
     pub release_meshlets: bool,
@@ -174,6 +176,7 @@ pub fn run_static_embedded_project(
     .with_target_fps(input.runtime.target_fps)
     .with_target_fixed_update(input.runtime.target_fixed_update)
     .with_msaa(input.graphics.msaa)
+    .with_smaa(input.graphics.smaa)
     .with_meshlets(input.graphics.meshlets)
     .with_dev_meshlets(input.graphics.dev_meshlets)
     .with_release_meshlets(input.graphics.release_meshlets)

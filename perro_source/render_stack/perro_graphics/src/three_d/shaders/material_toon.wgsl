@@ -34,8 +34,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     let ray_count = u32(scene.ambient_and_counts.x);
     for (var i = 0u; i < ray_count; i = i + 1u) {
         let ray = scene.ray_lights[i];
-        let dir = normalize(ray.direction.xyz);
-        let l = -dir;
+        let ray_dir = ray.direction.xyz;
+        let l = -ray_dir * inverseSqrt(max(dot(ray_dir, ray_dir), 1.0e-8));
         var radiance = ray.color_intensity.xyz * ray.color_intensity.w;
         if i == 0u {
             radiance *= shadow_factor(in.world_pos, n, l);
@@ -47,11 +47,13 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     for (var i = 0u; i < point_count; i = i + 1u) {
         let light = scene.point_lights[i];
         let to_light = light.position_range.xyz - in.world_pos;
-        let dist = length(to_light);
-        if dist <= light.position_range.w {
-            let l = to_light / max(dist, 0.0001);
+        let dist_sq = dot(to_light, to_light);
+        let range_sq = light.position_range.w * light.position_range.w;
+        if dist_sq <= range_sq {
+            let inv_dist = inverseSqrt(max(dist_sq, 1.0e-8));
+            let l = to_light * inv_dist;
             let radiance = light.color_intensity.xyz * light.color_intensity.w;
-            let attenuation = 1.0 / max(dist * dist, 1.0);
+            let attenuation = 1.0 / max(dist_sq, 1.0);
             light_rgb += radiance * attenuation * lambert(n, l);
         }
     }
@@ -60,15 +62,19 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     for (var i = 0u; i < spot_count; i = i + 1u) {
         let light = scene.spot_lights[i];
         let to_light = light.position_range.xyz - in.world_pos;
-        let dist = length(to_light);
-        if dist <= light.position_range.w {
-            let l = to_light / max(dist, 0.0001);
-            let cos_theta = dot(normalize(light.direction_outer_cos.xyz), -l);
+        let dist_sq = dot(to_light, to_light);
+        let range_sq = light.position_range.w * light.position_range.w;
+        if dist_sq <= range_sq {
+            let inv_dist = inverseSqrt(max(dist_sq, 1.0e-8));
+            let l = to_light * inv_dist;
+            let spot_dir = light.direction_outer_cos.xyz
+                * inverseSqrt(max(dot(light.direction_outer_cos.xyz, light.direction_outer_cos.xyz), 1.0e-8));
+            let cos_theta = dot(spot_dir, -l);
             let outer_cos = light.direction_outer_cos.w;
             let inner_cos = light.inner_cos_pad.x;
             let t = clamp((cos_theta - outer_cos) / max(inner_cos - outer_cos, 0.0001), 0.0, 1.0);
             let radiance = light.color_intensity.xyz * light.color_intensity.w * t;
-            let attenuation = 1.0 / max(dist * dist, 1.0);
+            let attenuation = 1.0 / max(dist_sq, 1.0);
             light_rgb += radiance * attenuation * lambert(n, l);
         }
     }

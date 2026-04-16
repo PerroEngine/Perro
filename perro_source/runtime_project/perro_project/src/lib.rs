@@ -60,6 +60,7 @@ pub struct StaticProjectConfig {
     pub target_fps: Option<f32>,
     pub target_fixed_update: Option<f32>,
     pub msaa: bool,
+    pub smaa: bool,
     pub meshlets: bool,
     pub dev_meshlets: bool,
     pub release_meshlets: bool,
@@ -91,6 +92,7 @@ impl StaticProjectConfig {
             target_fps: None,
             target_fixed_update: Some(60.0),
             msaa: true,
+            smaa: false,
             meshlets: false,
             dev_meshlets: false,
             release_meshlets: true,
@@ -120,6 +122,11 @@ impl StaticProjectConfig {
 
     pub const fn with_msaa(mut self, enabled: bool) -> Self {
         self.msaa = enabled;
+        self
+    }
+
+    pub const fn with_smaa(mut self, enabled: bool) -> Self {
+        self.smaa = enabled;
         self
     }
 
@@ -180,6 +187,7 @@ impl StaticProjectConfig {
             target_fps: self.target_fps,
             target_fixed_update: self.target_fixed_update,
             msaa: self.msaa,
+            smaa: self.smaa,
             meshlets: self.meshlets,
             dev_meshlets: self.dev_meshlets,
             release_meshlets: self.release_meshlets,
@@ -213,6 +221,7 @@ pub struct ProjectConfig {
     pub target_fps: Option<f32>,
     pub target_fixed_update: Option<f32>,
     pub msaa: bool,
+    pub smaa: bool,
     pub meshlets: bool,
     pub dev_meshlets: bool,
     pub release_meshlets: bool,
@@ -238,6 +247,7 @@ impl ProjectConfig {
             target_fps: None,
             target_fixed_update: Some(60.0),
             msaa: true,
+            smaa: false,
             meshlets: false,
             dev_meshlets: false,
             release_meshlets: true,
@@ -465,6 +475,7 @@ virtual_resolution = "1920x1080"
 vsync = false
 
 msaa = true
+smaa = false
 
 meshlets = false
 dev_meshlets = false
@@ -577,6 +588,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let target_fps = parse_target_fps(runtime_table)?;
     let target_fixed_update = parse_target_fixed_update(runtime_table)?;
     let msaa = parse_bool_with_default(graphics_table, "msaa", true)?;
+    let smaa = parse_bool_with_default(graphics_table, "smaa", false)?;
     let meshlets = parse_bool_with_default(graphics_table, "meshlets", false)?;
     let dev_meshlets = parse_bool_with_default(graphics_table, "dev_meshlets", false)?;
     let release_meshlets = parse_bool_with_default(graphics_table, "release_meshlets", true)?;
@@ -607,6 +619,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         target_fps,
         target_fixed_update,
         msaa,
+        smaa,
         meshlets,
         dev_meshlets,
         release_meshlets,
@@ -630,6 +643,7 @@ fn parse_bool_with_default(
             match key {
                 "vsync" => "graphics.vsync",
                 "msaa" => "graphics.msaa",
+                "smaa" => "graphics.smaa",
                 "meshlets" => "graphics.meshlets",
                 "dev_meshlets" => "graphics.dev_meshlets",
                 "release_meshlets" => "graphics.release_meshlets",
@@ -1545,6 +1559,7 @@ fn project_root() -> std::path::PathBuf {
           graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {
               vsync: false,
               msaa: true,
+              smaa: false,
               meshlets: false,
               dev_meshlets: false,
               release_meshlets: true,

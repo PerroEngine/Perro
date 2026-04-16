@@ -81,9 +81,9 @@ fn hash01f(v: f32) -> f32 {
 }
 
 fn safe_normalize(v: vec3<f32>, fallback: vec3<f32>) -> vec3<f32> {
-    let len = length(v);
-    if len > 1.0e-6 {
-        return v / len;
+    let len_sq = dot(v, v);
+    if len_sq > 1.0e-12 {
+        return v * inverseSqrt(len_sq);
     }
     return fallback;
 }

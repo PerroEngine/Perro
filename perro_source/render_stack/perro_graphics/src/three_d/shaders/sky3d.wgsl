@@ -53,6 +53,25 @@ fn rotate2(v: vec2<f32>, angle: f32) -> vec2<f32> {
     return vec2<f32>(v.x * c - v.y * s, v.x * s + v.y * c);
 }
 
+fn pow5(x: f32) -> f32 {
+    let x2 = x * x;
+    return x2 * x2 * x;
+}
+
+fn pow12(x: f32) -> f32 {
+    let x2 = x * x;
+    let x4 = x2 * x2;
+    let x8 = x4 * x4;
+    return x8 * x4;
+}
+
+fn pow14(x: f32) -> f32 {
+    let x2 = x * x;
+    let x4 = x2 * x2;
+    let x8 = x4 * x4;
+    return x8 * x4 * x2;
+}
+
 fn perlin2(p: vec2<f32>) -> f32 {
     let i = floor(p);
     let f = fract(p);
@@ -207,6 +226,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let sky_time           = sky.params2.w;
     let day_t_runtime      = sky.params2.z;
     let style_blend_global = clamp(sky.wind.z, 0.0, 1.0);
+    let wind               = vec2<f32>(sky.wind.x, sky.wind.y);
+    let wind_len           = max(length(wind), 1.0e-4);
+    let wind_dir           = wind / wind_len;
     let day_from_sun       = smoothstep(-0.14, 0.28, sun_dir.y);
     let day_t              = mix(day_t_runtime, day_from_sun, 0.75);
     let night_t            = clamp(1.0 - day_t, 0.0, 1.0);
@@ -291,13 +313,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if (moon_dir.y > CLOUD_BASE_HEIGHT && day_t < 0.8) {
         let moon_uv_y      = max(moon_dir.y - CLOUD_BASE_HEIGHT, 0.003) * 0.85;
         let moon_sky_uv    = moon_dir.xz / sqrt(moon_uv_y);
-        let cloud_clock_m  = sky_time
-            * (0.011 + length(vec2<f32>(sky.wind.x, sky.wind.y)) * 0.06);
-        let wind_s_m       = vec2<f32>(sky.wind.x, sky.wind.y);
-        let wind_dir_m     = wind_s_m / max(length(wind_s_m), 1.0e-4);
+        let cloud_clock_m  = sky_time * (0.011 + wind_len * 0.06);
         let cloud_size_m   = clamp(sky.params0.x, 0.0, 1.0);
         let clouds_scale_m = mix(1.55, 0.55, cloud_size_m);
-        let drift_m        = wind_dir_m * cloud_clock_m * 1.12
+        let drift_m        = wind_dir * cloud_clock_m * 1.12
                            + vec2<f32>(-0.014, -0.005);
         let moon_cloud_uv  = (moon_sky_uv + drift_m) * clouds_scale_m;
         let moon_cloud_raw     = perlin_fbm(moon_cloud_uv, 2);
@@ -362,14 +381,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if (sun_dir.y > CLOUD_BASE_HEIGHT) {
         let sun_uv_y       = max(sun_dir.y - CLOUD_BASE_HEIGHT, 0.003) * 0.85;
         let sun_sky_uv     = sun_dir.xz / sqrt(sun_uv_y);
-        let cloud_clock_sun = sky_time
-            * (0.011 + length(vec2<f32>(sky.wind.x, sky.wind.y)) * 0.06);
-        let wind_s         = vec2<f32>(sky.wind.x, sky.wind.y);
-        let wind_dir_sun   = wind_s / max(length(wind_s), 1.0e-4);
+        let cloud_clock_sun = sky_time * (0.011 + wind_len * 0.06);
         let cloud_size_s   = clamp(sky.params0.x, 0.0, 1.0);
         let clouds_scale_s = mix(1.55, 0.55, cloud_size_s);
 
-        let drift_sun    = wind_dir_sun * cloud_clock_sun * 1.12
+        let drift_sun    = wind_dir * cloud_clock_sun * 1.12
                          + vec2<f32>(-0.014, -0.005);
         let sun_cloud_uv = (sun_sky_uv + drift_sun) * clouds_scale_s;
         let sun_cloud_raw     = perlin_fbm(sun_cloud_uv, 2);
@@ -481,7 +497,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     {
         let scatter_angle = clamp(dot(ray, sun_dir), 0.0, 1.0);
         let scatter_wide  = exp(-max(1.0 - scatter_angle, 0.0) * 2.8) * 0.30;
-        let scatter_tight = pow(scatter_angle, 14.0) * 0.55;
+        let scatter_tight = pow14(scatter_angle) * 0.55;
         let scatter_total = (scatter_wide + scatter_tight)
                           * sun_cloud_cover * day_t * sun_visibility;
         let scatter_col = mix(
@@ -533,10 +549,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if (ray.y > CLOUD_BASE_HEIGHT) {
         let cloud_size     = clamp(sky.params0.x, 0.0, 1.0);
         let cloud_variance = clamp(sky.params0.z, 0.0, 1.0);
-        let wind           = vec2<f32>(sky.wind.x, sky.wind.y);
-        let wind_len       = max(length(wind), 1.0e-4);
-        let wind_dir       = wind / wind_len;
-
         let sky_uv_y_adjusted = max(ray.y - CLOUD_BASE_HEIGHT, 0.003) * 0.85;
         let sky_uv            = ray.xz / sqrt(sky_uv_y_adjusted);
 
@@ -798,7 +810,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
         // ── Backlit shadow + silver lining ────────────────────
         let sun_angle_to_ray = clamp(dot(ray, sun_dir), 0.0, 1.0);
-        let corona_phase     = pow(sun_angle_to_ray, 12.0);
+        let corona_phase     = pow12(sun_angle_to_ray);
         let cloud_edge_rim = smoothstep(0.04, 0.38, clouds_amount_real)
                            * (1.0 - smoothstep(0.38, 0.62, clouds_amount_real));
         let corona_intensity = corona_phase * cloud_edge_rim * sun_behind;
@@ -851,7 +863,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 vec3<f32>(0.0), vec3<f32>(1.0)
             );
             let sun_dist_c = distance(ray, sun_dir);
-            let sun_punch  = pow(1.0 - clamp(sun_dist_c, 0.0, 1.0), 5.0);
+            let sun_punch  = pow5(1.0 - clamp(sun_dist_c, 0.0, 1.0));
             clouds_color_real = mix(clouds_color_real, sun_col_clouds_real,
                 sun_punch * 0.42);
         }
@@ -931,7 +943,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     {
         let scatter_angle = clamp(dot(ray, sun_dir), 0.0, 1.0);
         let scatter_wide  = exp(-max(1.0 - scatter_angle, 0.0) * 2.8) * 0.12;
-        let scatter_tight = pow(scatter_angle, 14.0) * 0.22; 
+        let scatter_tight = pow14(scatter_angle) * 0.22; 
         let scatter_total = (scatter_wide + scatter_tight)
                         * sun_cloud_cover * day_t * sun_visibility;
         let scatter_col = mix(

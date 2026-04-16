@@ -71,10 +71,10 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
 
-    let sx = length(item.model_0.xyz);
-    let sy = length(item.model_1.xyz);
-    let sz = length(item.model_2.xyz);
-    let scale = max(max(sx, sy), max(sz, 1.0e-6));
+    let sx2 = dot(item.model_0.xyz, item.model_0.xyz);
+    let sy2 = dot(item.model_1.xyz, item.model_1.xyz);
+    let sz2 = dot(item.model_2.xyz, item.model_2.xyz);
+    let scale = sqrt(max(max(sx2, sy2), max(sz2, 1.0e-12)));
     let radius_world = max(item.local_center_radius.w, 0.0) * scale;
 
     // Approximate projected radius in pixels to select Hi-Z mip level.

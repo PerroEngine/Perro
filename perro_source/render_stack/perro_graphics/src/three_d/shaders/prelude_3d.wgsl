@@ -209,8 +209,6 @@ fn shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light:
     if shadow.params0.x < 0.5 {
         return 1.0;
     }
-    let n = normalize(normal_ws);
-    let l = normalize(light_dir_to_light);
     let receiver_pos = world_pos;
     let light_clip = shadow.light_view_proj * vec4<f32>(receiver_pos, 1.0);
     if abs(light_clip.w) <= 1.0e-6 {
@@ -261,13 +259,20 @@ fn geometry_smith(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, roughness: f32) -> f
     return ggx1 * ggx2;
 }
 
+fn pow5(x: f32) -> f32 {
+    let x2 = x * x;
+    return x2 * x2 * x;
+}
+
 fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
-    return f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - cos_theta, 5.0);
+    let m = 1.0 - cos_theta;
+    return f0 + (vec3<f32>(1.0) - f0) * pow5(m);
 }
 
 fn fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> vec3<f32> {
     let one_minus_roughness = vec3<f32>(1.0 - roughness);
-    return f0 + (max(one_minus_roughness, f0) - f0) * pow(1.0 - cos_theta, 5.0);
+    let m = 1.0 - cos_theta;
+    return f0 + (max(one_minus_roughness, f0) - f0) * pow5(m);
 }
 
 fn brdf_pbr(

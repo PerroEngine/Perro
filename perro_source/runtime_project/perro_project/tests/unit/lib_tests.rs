@@ -22,6 +22,7 @@ virtual_resolution = "1280x720"
     assert_eq!(parsed.virtual_height, 720);
     assert!(!parsed.vsync);
     assert!(parsed.msaa);
+    assert!(!parsed.smaa);
     assert!(!parsed.meshlets);
     assert!(!parsed.dev_meshlets);
     assert!(parsed.release_meshlets);
@@ -49,6 +50,7 @@ virtual_height = 1080
     assert_eq!(parsed.virtual_height, 1080);
     assert!(!parsed.vsync);
     assert!(parsed.msaa);
+    assert!(!parsed.smaa);
     assert!(!parsed.meshlets);
     assert!(!parsed.dev_meshlets);
     assert!(parsed.release_meshlets);
@@ -70,6 +72,7 @@ icon = "res://icon.png"
 virtual_resolution = "1920x1080"
 vsync = true
 msaa = false
+smaa = true
 meshlets = true
 dev_meshlets = true
 release_meshlets = false
@@ -81,6 +84,7 @@ particle_sim_default = "gpu"
     let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
     assert!(parsed.vsync);
     assert!(!parsed.msaa);
+    assert!(parsed.smaa);
     assert!(parsed.meshlets);
     assert!(parsed.dev_meshlets);
     assert!(!parsed.release_meshlets);

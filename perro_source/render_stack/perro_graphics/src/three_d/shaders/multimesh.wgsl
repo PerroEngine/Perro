@@ -64,7 +64,7 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     let scale = bitcast<f32>(draw.scale_bits);
     let rot = normalize(inst.rotation);
     let local_pos = rotate_vec_by_quat(v.pos * scale, rot) + inst.position;
-    let local_nrm = normalize(rotate_vec_by_quat(v.normal, rot));
+    let local_nrm = rotate_vec_by_quat(v.normal, rot);
     let p = vec4<f32>(local_pos, 1.0);
     let world = vec4<f32>(
         dot(draw.model_row_0, p),
@@ -80,13 +80,14 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
 
     let base = unpack_rgba8(draw.packed_color);
     let emissive = unpack_rgba8(draw.packed_emissive);
-    let n = normalize(normal_ws);
+    let n = normal_ws;
     let ambient = scene.ambient_color.xyz * scene.ambient_color.w;
     var lit = ambient;
     let ray_count = u32(scene.ambient_and_counts.x);
     if ray_count > 0u {
         let ray = scene.ray_lights[0];
-        let l = -normalize(ray.direction.xyz);
+        let ray_dir = ray.direction.xyz;
+        let l = -ray_dir * inverseSqrt(max(dot(ray_dir, ray_dir), 1.0e-8));
         let lambert = max(dot(n, l), 0.0);
         lit += ray.color_intensity.xyz * ray.color_intensity.w * lambert;
     }

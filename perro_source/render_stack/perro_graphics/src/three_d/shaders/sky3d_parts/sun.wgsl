@@ -123,7 +123,10 @@
     {
         let scatter_angle = clamp(dot(ray, sun_dir), 0.0, 1.0);
         let scatter_wide  = exp(-max(1.0 - scatter_angle, 0.0) * 2.8) * 0.30;
-        let scatter_tight = pow(scatter_angle, 14.0) * 0.55;
+        let scatter_angle2 = scatter_angle * scatter_angle;
+        let scatter_angle4 = scatter_angle2 * scatter_angle2;
+        let scatter_angle8 = scatter_angle4 * scatter_angle4;
+        let scatter_tight = scatter_angle8 * scatter_angle4 * scatter_angle2 * 0.55;
         let scatter_total = (scatter_wide + scatter_tight)
                           * sun_cloud_cover * day_t * sun_visibility;
         let scatter_col = mix(

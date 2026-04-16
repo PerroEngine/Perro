@@ -6,10 +6,10 @@ use perro_render_bridge::{
     Camera2DState, Command2D, Rect2DCommand, RenderCommand, RenderRequestID, ResourceCommand,
     Sprite2DCommand,
 };
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use std::{fs, sync::Arc};
-use std::io::Write;
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize, Position, Size},
     event::{DeviceEvent, ElementState, WindowEvent},
@@ -56,7 +56,6 @@ struct StartupSplashState {
     fade_started_at: Option<Instant>,
     first_frame_inflight: Vec<RenderRequestID>,
     first_frame_captured: bool,
-    debug_frame_counter: u32,
 }
 
 impl StartupSplashState {
@@ -93,7 +92,6 @@ impl StartupSplashState {
             fade_started_at: None,
             first_frame_inflight: Vec::new(),
             first_frame_captured: false,
-            debug_frame_counter: 0,
         }
     }
 
@@ -330,15 +328,6 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let now = Instant::now();
         let startup_splash = StartupSplashState::from_project(app.runtime.project(), now);
         let normalized_fixed_timestep = normalize_fixed_timestep_seconds(fixed_timestep);
-        if let Some(raw) = fixed_timestep
-            && raw >= 1.0
-            && let Some(step) = normalized_fixed_timestep
-        {
-            println!(
-                "[runtime] target_fixed_update interpreted as Hz: {raw} -> step {:.6}s",
-                step
-            );
-        }
         Self {
             app,
             title: title.to_owned(),
@@ -466,24 +455,19 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     window.set_cursor_visible(false);
                     (true, true)
                 }
-                Err(locked_err) => match window.set_cursor_grab(CursorGrabMode::Confined) {
+                Err(_locked_err) => match window.set_cursor_grab(CursorGrabMode::Confined) {
                     Ok(_) => {
                         window.set_cursor_visible(false);
                         (true, false)
                     }
-                    Err(confined_err) => {
-                        println!(
-                            "[runtime] failed to capture cursor (locked: {locked_err}; confined: {confined_err})"
-                        );
+                    Err(_confined_err) => {
                         window.set_cursor_visible(true);
                         (false, false)
                     }
                 },
             }
         } else {
-            if let Err(err) = window.set_cursor_grab(CursorGrabMode::None) {
-                println!("[runtime] failed to release cursor capture: {err}");
-            }
+            let _ = window.set_cursor_grab(CursorGrabMode::None);
             window.set_cursor_visible(true);
             (false, false)
         }
@@ -724,10 +708,6 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 .first_frame_inflight
                 .extend(inflight_now.iter().copied());
             self.startup_splash.first_frame_captured = true;
-            println!(
-                "[splash] captured first-frame inflight requests: {}",
-                self.startup_splash.first_frame_inflight.len()
-            );
         }
         #[cfg(feature = "profile_heavy")]
         let work_duration = work_start.elapsed();
@@ -809,16 +789,6 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_sim_delta_seconds += simulated_delta_seconds;
         }
 
-        let pending_first_frame = if self.startup_splash.first_frame_captured {
-            self.startup_splash
-                .first_frame_inflight
-                .iter()
-                .copied()
-                .filter(|request| self.app.runtime.is_render_request_inflight(*request))
-                .count()
-        } else {
-            usize::MAX
-        };
         let shown_for = frame_start.saturating_duration_since(self.startup_splash.shown_at);
         let hard_timeout_hit = shown_for >= STARTUP_SPLASH_HARD_TIMEOUT;
         if self.startup_splash.fade_started_at.is_none() {
@@ -826,28 +796,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 self.startup_splash.fade_started_at = Some(frame_start);
             }
         }
-        self.startup_splash.debug_frame_counter =
-            self.startup_splash.debug_frame_counter.wrapping_add(1);
-        if self.startup_splash.debug_frame_counter % 10 == 1 {
-            println!(
-                "[splash] active={} captured={} inflight_now={} tracked={} pending={} alpha={:.2} fade={} timeout={}",
-                self.startup_splash.active,
-                self.startup_splash.first_frame_captured,
-                inflight_now.len(),
-                self.startup_splash.first_frame_inflight.len(),
-                if pending_first_frame == usize::MAX {
-                    -1
-                } else {
-                    pending_first_frame as i32
-                },
-                alpha,
-                self.startup_splash.fade_started_at.is_some(),
-                hard_timeout_hit
-            );
-        }
         if self.startup_splash.should_finish(frame_start) {
             self.end_startup_splash();
-            println!("[splash] finished");
         }
 
         if let Some(window) = &self.window {
@@ -1326,7 +1276,6 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.startup_splash.fade_started_at = None;
                 self.startup_splash.first_frame_inflight.clear();
                 self.startup_splash.first_frame_captured = false;
-                self.startup_splash.debug_frame_counter = 0;
             }
             self.fixed_accumulator = 0.0;
             self.batch_start = now;
