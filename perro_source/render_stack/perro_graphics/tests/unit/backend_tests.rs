@@ -133,6 +133,7 @@ fn draw_3d_updates_retained_state_per_node() {
         node: node_a,
         model: model_a,
         skeleton: None,
+        meshlet_override: None,
     })));
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: created_meshes[1],
@@ -140,6 +141,7 @@ fn draw_3d_updates_retained_state_per_node() {
         node: node_b,
         model: model_b,
         skeleton: None,
+        meshlet_override: None,
     })));
     graphics.draw_frame();
 
@@ -153,6 +155,7 @@ fn draw_3d_updates_retained_state_per_node() {
             instance_mats: Arc::from([model_a]),
             skeleton: None,
             dense_multimesh: None,
+            meshlet_override: None,
         })
     );
     assert_eq!(
@@ -164,6 +167,7 @@ fn draw_3d_updates_retained_state_per_node() {
             instance_mats: Arc::from([model_b]),
             skeleton: None,
             dense_multimesh: None,
+            meshlet_override: None,
         })
     );
 }
@@ -231,6 +235,7 @@ fn draw_multi_3d_retains_all_instance_mats() {
         node,
         instance_mats: instance_mats.clone(),
         skeleton: None,
+        meshlet_override: None,
     })));
     graphics.draw_frame();
 
@@ -243,6 +248,7 @@ fn draw_multi_3d_retains_all_instance_mats() {
             instance_mats,
             skeleton: None,
             dense_multimesh: None,
+            meshlet_override: None,
         })
     );
 }
@@ -293,6 +299,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         node,
         model: first_model,
         skeleton: None,
+        meshlet_override: None,
     })));
     graphics.draw_frame();
     assert_eq!(
@@ -304,6 +311,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             instance_mats: Arc::from([first_model]),
             skeleton: None,
             dense_multimesh: None,
+            meshlet_override: None,
         })
     );
 
@@ -320,6 +328,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         node,
         model: second_model,
         skeleton: None,
+        meshlet_override: None,
     })));
     graphics.draw_frame();
 
@@ -332,6 +341,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             instance_mats: Arc::from([second_model]),
             skeleton: None,
             dense_multimesh: None,
+            meshlet_override: None,
         })
     );
 }
@@ -382,6 +392,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         node,
         model: first_model,
         skeleton: None,
+        meshlet_override: None,
     })));
     graphics.draw_frame();
 
@@ -398,6 +409,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         node,
         model: second_model,
         skeleton: None,
+        meshlet_override: None,
     })));
     graphics.draw_frame();
 
@@ -410,6 +422,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
             instance_mats: Arc::from([second_model]),
             skeleton: None,
             dense_multimesh: None,
+            meshlet_override: None,
         })
     );
 }

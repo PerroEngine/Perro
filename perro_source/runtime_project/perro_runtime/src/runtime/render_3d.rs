@@ -293,18 +293,21 @@ impl Runtime {
                 MeshID,
                 Vec<MeshSurfaceBinding>,
                 Option<NodeID>,
+                Option<bool>,
                 LocalMeshInstanceData,
             )> = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::MeshInstance3D(mesh) => Some((
                     mesh.mesh,
                     mesh.surfaces.clone(),
                     Some(mesh.skeleton),
+                    mesh.meshlet_override,
                     LocalMeshInstanceData::Single,
                 )),
                 SceneNodeData::MultiMeshInstance3D(mesh) => Some((
                     mesh.mesh,
                     mesh.surfaces.clone(),
                     None,
+                    mesh.meshlet_override,
                     LocalMeshInstanceData::Dense {
                         instance_scale: mesh.instance_scale.max(0.0001),
                         poses: Arc::from(
@@ -326,7 +329,7 @@ impl Runtime {
                 )),
                 _ => None,
             });
-            if let Some((mesh, surfaces, skeleton, local_instances)) = mesh_data
+            if let Some((mesh, surfaces, skeleton, meshlet_override, local_instances)) = mesh_data
                 && effective_visible
                 && let Some((mesh, resolved_surfaces)) =
                     self.resolve_render_mesh_assets(node, mesh, surfaces)
@@ -384,6 +387,7 @@ impl Runtime {
                     surfaces: resolved_surfaces.clone(),
                     instances: retained_instances.clone(),
                     skeleton: skeleton_palette.clone(),
+                    meshlet_override,
                 };
                 if self.render_3d.retained_mesh_draws.get(&node) != Some(&draw_state) {
                     let draw_command = match retained_instances {
@@ -398,6 +402,7 @@ impl Runtime {
                             node_model,
                             instance_scale,
                             instances: poses,
+                            meshlet_override,
                         },
                         crate::runtime::state::RetainedMeshInstanceState::Matrices(
                             instance_mats,
@@ -410,6 +415,7 @@ impl Runtime {
                                 .copied()
                                 .unwrap_or(Mat4::IDENTITY.to_cols_array_2d()),
                             skeleton: skeleton_palette,
+                            meshlet_override,
                         },
                         crate::runtime::state::RetainedMeshInstanceState::Matrices(
                             instance_mats,
@@ -419,6 +425,7 @@ impl Runtime {
                             node,
                             instance_mats,
                             skeleton: skeleton_palette,
+                            meshlet_override,
                         },
                     };
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(draw_command)));

@@ -47,6 +47,10 @@ pub struct MeshInstance3D {
     pub mesh: MeshID,
     pub surfaces: Vec<MeshSurfaceBinding>,
     pub skeleton: NodeID,
+    // None => follow renderer default.
+    // Some(true) => force meshlet draw.
+    // Some(false) => force classic indexed draw.
+    pub meshlet_override: Option<bool>,
 }
 
 impl MeshInstance3D {
@@ -56,6 +60,7 @@ impl MeshInstance3D {
             mesh: MeshID::nil(),
             surfaces: Vec::new(),
             skeleton: NodeID::nil(),
+            meshlet_override: None,
         }
     }
 
@@ -84,5 +89,10 @@ impl MeshInstance3D {
     #[inline]
     pub fn material(&self) -> Option<MaterialID> {
         self.surfaces.first().and_then(|surface| surface.material)
+    }
+
+    #[inline]
+    pub fn set_meshlet_override(&mut self, override_enabled: Option<bool>) {
+        self.meshlet_override = override_enabled;
     }
 }

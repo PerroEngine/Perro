@@ -635,6 +635,7 @@ pub enum Command3D {
         node: NodeID,
         model: [[f32; 4]; 4],
         skeleton: Option<SkeletonPalette>,
+        meshlet_override: Option<bool>,
     },
     DrawMulti {
         mesh: MeshID,
@@ -642,6 +643,7 @@ pub enum Command3D {
         node: NodeID,
         instance_mats: Arc<[[[f32; 4]; 4]]>,
         skeleton: Option<SkeletonPalette>,
+        meshlet_override: Option<bool>,
     },
     DrawMultiDense {
         mesh: MeshID,
@@ -650,6 +652,7 @@ pub enum Command3D {
         node_model: [[f32; 4]; 4],
         instance_scale: f32,
         instances: Arc<[DenseInstancePose3D]>,
+        meshlet_override: Option<bool>,
     },
     DrawDebugPoint3D {
         node: NodeID,

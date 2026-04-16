@@ -369,6 +369,7 @@ pub(crate) struct RetainedMeshDrawState {
     pub(crate) surfaces: std::sync::Arc<[MeshSurfaceBinding3D]>,
     pub(crate) instances: RetainedMeshInstanceState,
     pub(crate) skeleton: Option<SkeletonPalette>,
+    pub(crate) meshlet_override: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

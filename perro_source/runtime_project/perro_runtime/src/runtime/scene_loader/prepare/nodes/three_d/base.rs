@@ -71,11 +71,18 @@ fn apply_node_3d_fields(node: &mut Node3D, fields: &[SceneObjectField]) {
 
 fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
-        if name != "surfaces" {
-            return;
-        }
-        if let SceneValue::Array(items) = value {
-            node.surfaces = parse_surface_bindings(items.as_ref());
+        match name {
+            "surfaces" => {
+                if let SceneValue::Array(items) = value {
+                    node.surfaces = parse_surface_bindings(items.as_ref());
+                }
+            }
+            "meshlets" | "use_meshlets" => {
+                if let Some(v) = as_bool(value) {
+                    node.meshlet_override = Some(v);
+                }
+            }
+            _ => {}
         }
     });
 }
@@ -99,6 +106,11 @@ fn apply_multi_mesh_instance_3d_fields(
             "instance_scale" => {
                 if let Some(v) = as_f32(value) {
                     node.instance_scale = v.max(0.0001);
+                }
+            }
+            "meshlets" | "use_meshlets" => {
+                if let Some(v) = as_bool(value) {
+                    node.meshlet_override = Some(v);
                 }
             }
             _ => {}

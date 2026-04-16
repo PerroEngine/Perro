@@ -466,6 +466,71 @@ fn mesh_under_parent_uses_global_transform() {
 }
 
 #[test]
+fn mesh_instance_passes_meshlet_override_to_draw_command() {
+    let mut runtime = Runtime::new();
+    let mut mesh = MeshInstance3D::new();
+    mesh.mesh = MeshID::from_parts(420, 0);
+    mesh.meshlet_override = Some(false);
+    set_primary_material(&mut mesh, MaterialID::from_parts(421, 0));
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(
+                command_3d.as_ref(),
+                Command3D::Draw {
+                    node: draw_node,
+                    meshlet_override,
+                    ..
+                } if *draw_node == node && *meshlet_override == Some(false)
+            )
+    )));
+}
+
+#[test]
+fn multi_mesh_instance_passes_meshlet_override_to_draw_command() {
+    let mut runtime = Runtime::new();
+    let mut multi = MultiMeshInstance3D::new();
+    multi.mesh = MeshID::from_parts(430, 0);
+    multi.meshlet_override = Some(true);
+    set_primary_material_multi(&mut multi, MaterialID::from_parts(431, 0));
+    multi.instances = vec![(Vector3::new(0.0, 0.0, 0.0), Quaternion::IDENTITY)];
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MultiMeshInstance3D(multi)));
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(commands.iter().any(|command| {
+        matches!(
+            command,
+            RenderCommand::ThreeD(command_3d)
+                if matches!(
+                    command_3d.as_ref(),
+                    Command3D::DrawMulti {
+                        node: draw_node,
+                        meshlet_override,
+                        ..
+                    } if *draw_node == node && *meshlet_override == Some(true)
+                )
+                || matches!(
+                    command_3d.as_ref(),
+                    Command3D::DrawMultiDense {
+                        node: draw_node,
+                        meshlet_override,
+                        ..
+                    } if *draw_node == node && *meshlet_override == Some(true)
+                )
+        )
+    }));
+}
+
+#[test]
 fn collision_shape_debug_rebuilds_when_parent_moves() {
     let mut runtime = Runtime::new();
 

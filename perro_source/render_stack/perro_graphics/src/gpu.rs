@@ -619,7 +619,10 @@ impl Gpu {
         let global_post_chain = post_processing_global.as_ref();
         let global_post_enabled = PostProcessor::has_effects(global_post_chain);
         let accessibility_enabled = self.accessibility.has_settings(accessibility);
-        let direct_present = self.sample_count == 1 && !post_requested && !accessibility_enabled;
+        let direct_present = self.sample_count == 1
+            && !post_requested
+            && !accessibility_enabled
+            && self.render_format == self.config.format;
         let depth_prepass_needed = (camera_post_enabled
             && PostProcessor::uses_depth(camera_post_chain))
             || (global_post_enabled && PostProcessor::uses_depth(global_post_chain));

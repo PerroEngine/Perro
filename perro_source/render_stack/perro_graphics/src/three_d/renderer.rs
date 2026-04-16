@@ -33,6 +33,7 @@ pub struct Draw3DInstance {
     pub instance_mats: Arc<[[[f32; 4]; 4]]>,
     pub skeleton: Option<SkeletonPalette>,
     pub dense_multimesh: Option<DenseMultiMeshDraw3D>,
+    pub meshlet_override: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -91,6 +92,7 @@ impl Renderer3D {
         surfaces: Arc<[MeshSurfaceBinding3D]>,
         model: [[f32; 4]; 4],
         skeleton: Option<SkeletonPalette>,
+        meshlet_override: Option<bool>,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
@@ -99,6 +101,7 @@ impl Renderer3D {
             instance_mats: Arc::from([model]),
             skeleton,
             dense_multimesh: None,
+            meshlet_override,
         });
     }
 
@@ -109,6 +112,7 @@ impl Renderer3D {
         surfaces: Arc<[MeshSurfaceBinding3D]>,
         instance_mats: Arc<[[[f32; 4]; 4]]>,
         skeleton: Option<SkeletonPalette>,
+        meshlet_override: Option<bool>,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
@@ -117,6 +121,7 @@ impl Renderer3D {
             instance_mats,
             skeleton,
             dense_multimesh: None,
+            meshlet_override,
         });
     }
 
@@ -128,6 +133,7 @@ impl Renderer3D {
         node_model: [[f32; 4]; 4],
         instance_scale: f32,
         instances: Arc<[DenseInstancePose3D]>,
+        meshlet_override: Option<bool>,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
@@ -142,6 +148,7 @@ impl Renderer3D {
                 instance_scale,
                 instances,
             }),
+            meshlet_override,
         });
     }
 
@@ -248,6 +255,10 @@ impl Renderer3D {
                         && retained.dense_multimesh != draw.dense_multimesh
                     {
                         retained.dense_multimesh = draw.dense_multimesh;
+                        draws_changed = true;
+                    }
+                    if retained.meshlet_override != draw.meshlet_override {
+                        retained.meshlet_override = draw.meshlet_override;
                         draws_changed = true;
                     }
                 }

@@ -2871,9 +2871,12 @@ impl Gpu3D {
             }
             // CPU occlusion query mode works at object granularity.
             // Force whole-mesh batching in that mode so each object can be queried.
+            let builtin_primitive_source = is_builtin_primitive_mesh_source(mesh_source);
+            let allow_meshlets = draw.meshlet_override.unwrap_or(!builtin_primitive_source);
             let use_meshlets = !is_debug_point
                 && !is_debug_edge
                 && self.meshlets_enabled
+                && allow_meshlets
                 && !mesh_asset.meshlets.is_empty()
                 && surface_entries.len() == 1
                 && !self.cpu_occlusion_enabled;
@@ -5029,6 +5032,12 @@ fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
         return (path, Some(selector));
     }
     (source, None)
+}
+
+#[inline]
+fn is_builtin_primitive_mesh_source(source: &str) -> bool {
+    let (base, _) = split_source_fragment(source);
+    base.starts_with("__") && base.ends_with("__")
 }
 
 fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {

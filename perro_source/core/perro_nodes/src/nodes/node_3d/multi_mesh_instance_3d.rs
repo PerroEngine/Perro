@@ -24,6 +24,10 @@ pub struct MultiMeshInstance3D {
     pub surfaces: Vec<MeshSurfaceBinding>,
     pub instances: Vec<(Vector3, Quaternion)>,
     pub instance_scale: f32,
+    // None => follow renderer default.
+    // Some(true) => force meshlet draw.
+    // Some(false) => force classic indexed draw.
+    pub meshlet_override: Option<bool>,
 }
 
 impl MultiMeshInstance3D {
@@ -34,6 +38,7 @@ impl MultiMeshInstance3D {
             surfaces: Vec::new(),
             instances: Vec::new(),
             instance_scale: 1.0,
+            meshlet_override: None,
         }
     }
 
@@ -43,6 +48,11 @@ impl MultiMeshInstance3D {
                 .resize_with(surface_index + 1, MeshSurfaceBinding::default);
         }
         &mut self.surfaces[surface_index]
+    }
+
+    #[inline]
+    pub fn set_meshlet_override(&mut self, override_enabled: Option<bool>) {
+        self.meshlet_override = override_enabled;
     }
 }
 

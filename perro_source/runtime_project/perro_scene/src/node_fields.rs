@@ -97,6 +97,7 @@ pub enum MeshInstance3DField {
     Surfaces,
     Model,
     Skeleton,
+    Meshlets,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -289,6 +290,9 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "surfaces" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Surfaces)),
             "model" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Model)),
             "skeleton" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Skeleton)),
+            "meshlets" | "use_meshlets" => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::Meshlets))
+            }
             _ => None,
         },
         NodeType::MultiMeshInstance3D => match field {
@@ -296,6 +300,9 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "material" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Material)),
             "surfaces" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Surfaces)),
             "model" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Model)),
+            "meshlets" | "use_meshlets" => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::Meshlets))
+            }
             _ => None,
         },
         NodeType::Skeleton3D => match field {
