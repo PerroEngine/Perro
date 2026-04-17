@@ -151,7 +151,10 @@ Notes:
 - `perro flamegraph` auto-installs `cargo-flamegraph` when missing.
 - Linux: install `perf` (`linux-tools` package family).
 - macOS: install `dtrace`/Xcode command line tools.
-- Windows: `cargo-flamegraph` support is limited; prefer running profiling from WSL/Linux for full flamegraph output.
+- Windows: CLI asks to relaunch elevated (UAC) before flamegraph when shell lacks admin rights.
+- Windows: `cargo-flamegraph` uses `blondie` and often needs elevated PowerShell/Terminal.
+- Windows: if error includes `NotAnAdmin`, rerun as Administrator.
+- Windows fallback: prefer WSL/Linux profiling for full flamegraph support.
 
 Example:
 

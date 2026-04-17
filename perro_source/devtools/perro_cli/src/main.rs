@@ -1085,6 +1085,10 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
 }
 
 fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    if maybe_relaunch_flamegraph_as_admin(args)? {
+        return Ok(());
+    }
+
     let profile = args.iter().any(|a| a == "--profile");
     let root = args.iter().any(|a| a == "--root");
     let project_dir = parse_flag_value(args, "--path")
@@ -1132,14 +1136,108 @@ fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
     })?;
 
     if !status.success() {
-        return Err(format!(
-            "cargo flamegraph failed with exit code {:?}",
-            status.code()
-        ));
+        let mut msg = format!("cargo flamegraph failed with exit code {:?}", status.code());
+        if cfg!(target_os = "windows") {
+            msg.push_str(
+                "\nWindows note: cargo-flamegraph uses blondie + often needs elevated terminal."
+            );
+            msg.push_str("\nIf output includes `NotAnAdmin`, rerun PowerShell as Administrator.");
+            msg.push_str("\nFallback: run flamegraph in WSL/Linux for full perf support.");
+        }
+        return Err(msg);
     }
 
     log_done("Flamegraph Complete");
     Ok(())
+}
+
+fn maybe_relaunch_flamegraph_as_admin(args: &[String]) -> Result<bool, String> {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = args;
+        Ok(false)
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if is_windows_process_elevated()? || !io::stdin().is_terminal() {
+            return Ok(false);
+        }
+
+        log_note("Windows flamegraph often needs Administrator permission (UAC).");
+        let elevate =
+            prompt_yes_no("Relaunch this flamegraph command as Administrator now? [y/N] ")?;
+        if !elevate {
+            return Ok(false);
+        }
+
+        relaunch_self_as_admin(args)?;
+        Ok(true)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn is_windows_process_elevated() -> Result<bool, String> {
+    let output = Command::new("powershell")
+        .arg("-NoProfile")
+        .arg("-Command")
+        .arg("[bool](([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))")
+        .output()
+        .map_err(|err| format!("failed to check Administrator privilege: {err}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "failed to check Administrator privilege; PowerShell exited with {:?}",
+            output.status.code()
+        ));
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .to_ascii_lowercase();
+    match text.as_str() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err("failed to parse Administrator privilege check output".to_string()),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn relaunch_self_as_admin(args: &[String]) -> Result<(), String> {
+    let current_exe =
+        env::current_exe().map_err(|err| format!("failed to locate current executable: {err}"))?;
+    let exe = powershell_single_quoted(&current_exe.to_string_lossy());
+    let forwarded = args
+        .iter()
+        .skip(1)
+        .map(|arg| format!("'{}'", powershell_single_quoted(arg)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let arg_list = format!("@({forwarded})");
+    let script = format!(
+        "$p = Start-Process -FilePath '{exe}' -ArgumentList {arg_list} -Verb RunAs -Wait -PassThru; exit $p.ExitCode"
+    );
+
+    let status = Command::new("powershell")
+        .arg("-NoProfile")
+        .arg("-Command")
+        .arg(script)
+        .status()
+        .map_err(|err| format!("failed to relaunch elevated command: {err}"))?;
+
+    if !status.success() {
+        return Err(format!(
+            "elevated flamegraph command failed with exit code {:?}",
+            status.code()
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn powershell_single_quoted(input: &str) -> String {
+    input.replace('\'', "''")
 }
 
 fn ensure_cargo_flamegraph_installed() -> Result<(), String> {
