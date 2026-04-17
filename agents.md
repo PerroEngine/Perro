@@ -45,7 +45,7 @@ Useful crates:
 - Test all: `cargo test`
 - Run CLI help: `cargo run -p perro_cli -- --help`
 
-## Caveman Rule (Nano)
+## Caveman Rule (IMPORTANT)
 
 - tiny words
 - 1 line = 1 idea
