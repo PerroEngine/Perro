@@ -1,9 +1,10 @@
 use crate::resources::ResourceStore;
+use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use perro_ids::NodeID;
 use perro_render_bridge::{Camera2DState, DrawShape2DCommand, Rect2DCommand, Sprite2DCommand};
 use perro_structs::DrawShape2D;
-use std::{collections::HashMap, ops::Range};
+use std::ops::Range;
 
 #[derive(Debug, Clone, Copy)]
 struct SpritePacket {
@@ -66,10 +67,10 @@ pub struct Renderer2D {
     virtual_size: [f32; 2],
     retained_rects: Vec<RectInstanceGpu>,
     retained_nodes: Vec<NodeID>,
-    node_to_rect_index: HashMap<NodeID, usize>,
+    node_to_rect_index: AHashMap<NodeID, usize>,
     rect_dirty_ranges: Vec<Range<usize>>,
     rect_structure_dirty: bool,
-    retained_sprites: HashMap<NodeID, Sprite2DCommand>,
+    retained_sprites: AHashMap<NodeID, Sprite2DCommand>,
     retained_sprites_revision: u64,
     frame_shapes: Vec<RectInstanceGpu>,
 }
@@ -85,10 +86,10 @@ impl Renderer2D {
             virtual_size: [DEFAULT_VIRTUAL_WIDTH, DEFAULT_VIRTUAL_HEIGHT],
             retained_rects: Vec::new(),
             retained_nodes: Vec::new(),
-            node_to_rect_index: HashMap::new(),
+            node_to_rect_index: AHashMap::new(),
             rect_dirty_ranges: Vec::new(),
             rect_structure_dirty: false,
-            retained_sprites: HashMap::new(),
+            retained_sprites: AHashMap::new(),
             retained_sprites_revision: 0,
             frame_shapes: Vec::new(),
         }
@@ -181,6 +182,10 @@ impl Renderer2D {
 
     fn flush_shape_packets(&mut self) {
         self.frame_shapes.clear();
+        if self.frame_shapes.capacity() < self.queued_shapes.len() {
+            self.frame_shapes
+                .reserve(self.queued_shapes.len() - self.frame_shapes.capacity());
+        }
         for draw in self.queued_shapes.drain(..) {
             let center = normalized_screen_to_virtual_centered(draw.position, self.virtual_size);
             match draw.shape {

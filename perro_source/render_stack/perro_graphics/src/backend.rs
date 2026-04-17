@@ -25,6 +25,16 @@ pub type StaticMeshLookup = fn(path_hash: u64) -> &'static [u8];
 pub type StaticShaderLookup = fn(path_hash: u64) -> &'static str;
 const GC_INTERVAL_FRAMES: u32 = 4;
 
+#[inline]
+fn normalize_aa_sample_count(samples: u32) -> u32 {
+    match samples {
+        0 | 1 => 1,
+        2 => 2,
+        4 => 4,
+        _ => 8,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OcclusionCullingMode {
     Cpu,
@@ -106,6 +116,7 @@ pub struct PerroGraphics {
     vsync_enabled: bool,
     smoothing_enabled: bool,
     smoothing_samples: u32,
+    smoothing_quality_samples: u32,
     static_texture_lookup: Option<StaticTextureLookup>,
     static_mesh_lookup: Option<StaticMeshLookup>,
     static_shader_lookup: Option<StaticShaderLookup>,
@@ -145,6 +156,7 @@ impl PerroGraphics {
             vsync_enabled: true,
             smoothing_enabled: true,
             smoothing_samples: 4,
+            smoothing_quality_samples: 4,
             static_texture_lookup: None,
             static_mesh_lookup: None,
             static_shader_lookup: None,
@@ -178,6 +190,11 @@ impl PerroGraphics {
 
     pub fn with_msaa(mut self, enabled: bool) -> Self {
         self.set_smoothing(enabled);
+        self
+    }
+
+    pub fn with_msaa_samples(mut self, samples: u32) -> Self {
+        self.set_smoothing_samples(samples);
         self
     }
 
@@ -518,7 +535,11 @@ impl GraphicsBackend for PerroGraphics {
 
     fn set_smoothing(&mut self, enabled: bool) {
         self.smoothing_enabled = enabled;
-        self.smoothing_samples = if enabled { 4 } else { 1 };
+        self.smoothing_samples = if enabled {
+            self.smoothing_quality_samples.max(2)
+        } else {
+            1
+        };
         if let Some(gpu) = &mut self.gpu {
             gpu.set_smoothing_samples(self.smoothing_samples);
         }
@@ -526,10 +547,14 @@ impl GraphicsBackend for PerroGraphics {
     }
 
     fn set_smoothing_samples(&mut self, samples: u32) {
-        self.smoothing_samples = samples;
-        self.smoothing_enabled = samples > 1;
+        let normalized = normalize_aa_sample_count(samples);
+        self.smoothing_samples = normalized;
+        self.smoothing_enabled = normalized > 1;
+        if normalized > 1 {
+            self.smoothing_quality_samples = normalized;
+        }
         if let Some(gpu) = &mut self.gpu {
-            gpu.set_smoothing_samples(samples);
+            gpu.set_smoothing_samples(normalized);
         }
         self.redraw_requested = true;
     }
@@ -546,11 +571,7 @@ impl GraphicsBackend for PerroGraphics {
             || !self.renderer_2d.retained_rects().is_empty()
             || self.renderer_3d.retained_draw_count() > 0
             || self.renderer_3d.has_retained_non_draw_state()
-            || self
-                .particles_3d
-                .retained_point_particles()
-                .next()
-                .is_some();
+            || self.particles_3d.retained_point_particle_count() > 0;
         if !has_pending && !has_retained_scene {
             if self.redraw_requested
                 && let Some(gpu) = &mut self.gpu
@@ -613,15 +634,23 @@ impl GraphicsBackend for PerroGraphics {
         let draws_revision = self.renderer_3d.draw_revision();
         if draws_revision != self.retained_draws_cache_revision {
             self.retained_draws_cache.clear();
+            let draw_count = self.renderer_3d.retained_draw_count();
+            if self.retained_draws_cache.capacity() < draw_count {
+                self.retained_draws_cache
+                    .reserve(draw_count - self.retained_draws_cache.capacity());
+            }
             self.retained_draws_cache
-                .extend(self.renderer_3d.all_draws());
-            self.retained_draws_cache
-                .sort_unstable_by_key(|draw| draw.node.as_u64());
+                .extend_from_slice(self.renderer_3d.retained_draws_sorted());
             self.retained_draws_cache_revision = draws_revision;
         }
         let point_particles_revision = self.particles_3d.retained_point_particles_revision();
         if point_particles_revision != self.retained_point_particles_cache_revision {
             self.retained_point_particles_cache.clear();
+            let point_particles_count = self.particles_3d.retained_point_particle_count();
+            if self.retained_point_particles_cache.capacity() < point_particles_count {
+                self.retained_point_particles_cache
+                    .reserve(point_particles_count - self.retained_point_particles_cache.capacity());
+            }
             self.retained_point_particles_cache
                 .extend(self.particles_3d.retained_point_particles());
             self.retained_point_particles_cache
@@ -631,11 +660,23 @@ impl GraphicsBackend for PerroGraphics {
         let sprites_revision = self.renderer_2d.retained_sprites_revision();
         if sprites_revision != self.retained_sprites_cache_revision {
             self.retained_sprites_cache.clear();
+            let sprite_count = self.renderer_2d.retained_sprite_count();
+            if self.retained_sprites_cache.capacity() < sprite_count {
+                self.retained_sprites_cache
+                    .reserve(sprite_count - self.retained_sprites_cache.capacity());
+            }
             self.retained_sprites_cache
                 .extend(self.renderer_2d.retained_sprites());
             self.retained_sprites_cache_revision = sprites_revision;
         }
         self.frame_rects_cache.clear();
+        let retained_rect_count = self.renderer_2d.retained_rects().len();
+        let frame_shape_count = self.renderer_2d.frame_shapes().len();
+        let total_rect_count = retained_rect_count + frame_shape_count;
+        if self.frame_rects_cache.capacity() < total_rect_count {
+            self.frame_rects_cache
+                .reserve(total_rect_count - self.frame_rects_cache.capacity());
+        }
         self.frame_rects_cache
             .extend_from_slice(self.renderer_2d.retained_rects());
         self.frame_rects_cache
@@ -643,6 +684,8 @@ impl GraphicsBackend for PerroGraphics {
         let sprites_refs_changed = self.used_ref_sprites_revision != sprites_revision;
         if sprites_refs_changed {
             self.used_texture_refs_cache.clear();
+            self.used_texture_refs_cache
+                .reserve(self.retained_sprites_cache.len());
             self.used_texture_refs_cache.extend(
                 self.retained_sprites_cache
                     .iter()
@@ -654,6 +697,10 @@ impl GraphicsBackend for PerroGraphics {
         if draws_refs_changed {
             self.used_mesh_refs_cache.clear();
             self.used_material_refs_cache.clear();
+            self.used_mesh_refs_cache
+                .reserve(self.retained_draws_cache.len());
+            self.used_material_refs_cache
+                .reserve(self.retained_draws_cache.len());
             for draw in &self.retained_draws_cache {
                 if let Draw3DKind::Mesh(mesh) = draw.kind {
                     self.used_mesh_refs_cache.insert(mesh);

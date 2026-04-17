@@ -55,6 +55,7 @@ pub struct Gpu {
     config: wgpu::SurfaceConfiguration,
     render_format: wgpu::TextureFormat,
     sample_count: u32,
+    max_supported_sample_count: u32,
     msaa_color: Option<MsaaColorTarget>,
     post: PostProcessor,
     accessibility: VisualAccessibilityProcessor,
@@ -254,7 +255,11 @@ impl Gpu {
         };
         surface.configure(&device, &config);
 
-        let sample_count = normalize_sample_count(smoothing_samples);
+        let max_supported_sample_count = max_supported_msaa_sample_count(&adapter, render_format);
+        let sample_count = clamp_supported_sample_count(
+            normalize_sample_count(smoothing_samples),
+            max_supported_sample_count,
+        );
         let two_d = Gpu2D::new(&device, render_format, sample_count);
         let three_d = Gpu3D::new(
             &device,
@@ -289,6 +294,7 @@ impl Gpu {
             config,
             render_format,
             sample_count,
+            max_supported_sample_count,
             msaa_color,
             post,
             accessibility,
@@ -346,7 +352,10 @@ impl Gpu {
     }
 
     pub fn set_smoothing_samples(&mut self, samples: u32) {
-        let sample_count = normalize_sample_count(samples);
+        let sample_count = clamp_supported_sample_count(
+            normalize_sample_count(samples),
+            self.max_supported_sample_count,
+        );
         if sample_count == self.sample_count {
             return;
         }
@@ -888,7 +897,44 @@ fn normalize_sample_count(samples: u32) -> u32 {
     match samples {
         0 | 1 => 1,
         2 => 2,
-        _ => SMOOTH_SAMPLE_COUNT,
+        4 => SMOOTH_SAMPLE_COUNT,
+        _ => 8,
+    }
+}
+
+fn max_supported_msaa_sample_count(
+    adapter: &wgpu::Adapter,
+    format: wgpu::TextureFormat,
+) -> u32 {
+    let features = adapter.get_texture_format_features(format);
+    let flags = features.flags;
+    for count in [16u32, 8, 4, 2, 1] {
+        if sample_count_supported(flags, count) {
+            return count;
+        }
+    }
+    1
+}
+
+fn clamp_supported_sample_count(requested: u32, max_supported: u32) -> u32 {
+    for count in [16u32, 8, 4, 2, 1] {
+        if count > requested || count > max_supported {
+            continue;
+        }
+        return count;
+    }
+    1
+}
+
+#[inline]
+fn sample_count_supported(flags: wgpu::TextureFormatFeatureFlags, sample_count: u32) -> bool {
+    match sample_count {
+        1 => true,
+        2 => flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X2),
+        4 => flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X4),
+        8 => flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X8),
+        16 => flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X16),
+        _ => false,
     }
 }
 

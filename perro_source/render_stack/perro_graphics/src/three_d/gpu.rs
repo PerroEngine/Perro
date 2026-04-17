@@ -508,6 +508,7 @@ struct MeshAssetRange {
 
 #[derive(Clone)]
 struct DrawBatch {
+    state_key: u64,
     mesh: MeshRange,
     instance_start: u32,
     instance_count: u32,
@@ -3326,13 +3327,20 @@ impl Gpu3D {
         if let Some(instance_start) = debug_points_start
             && debug_points_count > 0
         {
+            let material_kind = MaterialPipelineKind::Standard;
             self.draw_batches.push(DrawBatch {
+                state_key: draw_batch_state_key(
+                    RenderPath3D::Rigid,
+                    true,
+                    debug_points_double_sided,
+                    &material_kind,
+                ),
                 mesh: default_mesh.full,
                 instance_start,
                 instance_count: debug_points_count,
                 path: RenderPath3D::Rigid,
                 double_sided: debug_points_double_sided,
-                material_kind: MaterialPipelineKind::Standard,
+                material_kind,
                 draw_on_top: true,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
                 local_center: debug_points_local_center,
@@ -3348,13 +3356,20 @@ impl Gpu3D {
             let debug_edge_mesh = self
                 .resolve_builtin_mesh_asset("__cylinder__")
                 .unwrap_or_else(|| default_mesh.clone());
+            let material_kind = MaterialPipelineKind::Standard;
             self.draw_batches.push(DrawBatch {
+                state_key: draw_batch_state_key(
+                    RenderPath3D::Rigid,
+                    true,
+                    debug_edges_double_sided,
+                    &material_kind,
+                ),
                 mesh: debug_edge_mesh.full,
                 instance_start,
                 instance_count: debug_edges_count,
                 path: RenderPath3D::Rigid,
                 double_sided: debug_edges_double_sided,
-                material_kind: MaterialPipelineKind::Standard,
+                material_kind,
                 draw_on_top: true,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
                 local_center: debug_edges_local_center,
@@ -3869,17 +3884,10 @@ impl Gpu3D {
             pass.set_bind_group(1, self.fallback_material_texture_bind_group(), &[]);
             pass.set_bind_group(2, &self.shadow_bind_group, &[]);
             pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            let mut current_path = None;
-            let mut current_material_kind: Option<&MaterialPipelineKind> = None;
-            let mut current_double_sided = None;
-            let mut current_draw_on_top = None;
+            let mut current_state_key = None;
             let mut current_texture_slot = MATERIAL_TEXTURE_NONE;
             for (i, batch) in self.draw_batches.iter().enumerate() {
-                if current_path != Some(batch.path)
-                    || current_material_kind != Some(&batch.material_kind)
-                    || current_double_sided != Some(batch.double_sided)
-                    || current_draw_on_top != Some(batch.draw_on_top)
-                {
+                if current_state_key != Some(batch.state_key) {
                     let pipeline = self.pipeline_for_batch(batch);
                     pass.set_pipeline(pipeline);
                     if batch.path == RenderPath3D::Rigid {
@@ -3893,10 +3901,7 @@ impl Gpu3D {
                     }
                     pass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
                     pass.set_vertex_buffer(2, self.instance_material_buffer.slice(..));
-                    current_path = Some(batch.path);
-                    current_material_kind = Some(&batch.material_kind);
-                    current_double_sided = Some(batch.double_sided);
-                    current_draw_on_top = Some(batch.draw_on_top);
+                    current_state_key = Some(batch.state_key);
                 }
                 if current_texture_slot != batch.base_color_texture_slot {
                     pass.set_bind_group(
@@ -6093,6 +6098,7 @@ fn push_draw_batch(
     }
     let (local_center, local_radius) = local_bounds;
     draw_batches.push(DrawBatch {
+        state_key: draw_batch_state_key(render_path, false, double_sided, &material_kind),
         mesh,
         instance_start,
         instance_count,
@@ -6453,26 +6459,12 @@ fn override_bool(value: &MaterialParamOverrideValue3D) -> Option<bool> {
 
 #[inline]
 fn compare_draw_batch_keys(a: &DrawBatch, b: &DrawBatch) -> Ordering {
-    a.path.cmp(&b.path).then_with(|| {
-        a.draw_on_top
-            .cmp(&b.draw_on_top)
-            .then_with(|| a.double_sided.cmp(&b.double_sided))
-            .then_with(|| compare_material_pipeline_kind(&a.material_kind, &b.material_kind))
-            .then_with(|| a.base_color_texture_slot.cmp(&b.base_color_texture_slot))
-            .then_with(|| a.mesh.index_start.cmp(&b.mesh.index_start))
-            .then_with(|| a.mesh.base_vertex.cmp(&b.mesh.base_vertex))
-            .then_with(|| a.instance_start.cmp(&b.instance_start))
-    })
-}
-
-#[inline]
-fn compare_material_pipeline_kind(a: &MaterialPipelineKind, b: &MaterialPipelineKind) -> Ordering {
-    material_pipeline_kind_rank(a)
-        .cmp(&material_pipeline_kind_rank(b))
-        .then_with(|| match (a, b) {
-            (MaterialPipelineKind::Custom(ka), MaterialPipelineKind::Custom(kb)) => ka.cmp(kb),
-            _ => Ordering::Equal,
-        })
+    a.state_key
+        .cmp(&b.state_key)
+        .then_with(|| a.base_color_texture_slot.cmp(&b.base_color_texture_slot))
+        .then_with(|| a.mesh.index_start.cmp(&b.mesh.index_start))
+        .then_with(|| a.mesh.base_vertex.cmp(&b.mesh.base_vertex))
+        .then_with(|| a.instance_start.cmp(&b.instance_start))
 }
 
 #[inline]
@@ -6483,6 +6475,27 @@ fn material_pipeline_kind_rank(kind: &MaterialPipelineKind) -> u8 {
         MaterialPipelineKind::Toon => 2,
         MaterialPipelineKind::Custom(_) => 3,
     }
+}
+
+#[inline]
+fn draw_batch_state_key(
+    path: RenderPath3D,
+    draw_on_top: bool,
+    double_sided: bool,
+    material_kind: &MaterialPipelineKind,
+) -> u64 {
+    let path_bits = match path {
+        RenderPath3D::Rigid => 0u64,
+        RenderPath3D::Skinned => 1u64,
+    };
+    let top_bits = u64::from(draw_on_top) << 1;
+    let sided_bits = u64::from(double_sided) << 2;
+    let rank_bits = (material_pipeline_kind_rank(material_kind) as u64) << 3;
+    let custom_bits = match material_kind {
+        MaterialPipelineKind::Custom(token) => (*token as u64) << 8,
+        _ => 0u64,
+    };
+    path_bits | top_bits | sided_bits | rank_bits | custom_bits
 }
 
 #[inline]

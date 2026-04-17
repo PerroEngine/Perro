@@ -1,6 +1,6 @@
+use ahash::AHashMap;
 use perro_ids::{MaterialID, MeshID, TextureID};
 use perro_render_bridge::{Material3D, RuntimeMeshData};
-use std::collections::HashMap;
 
 #[derive(Default)]
 struct SlotArena {
@@ -91,19 +91,19 @@ pub struct ResourceStore {
     meshes: SlotArena,
     textures: SlotArena,
     materials: SlotArena,
-    mesh_by_source: HashMap<String, MeshID>,
-    mesh_source_by: HashMap<MeshID, String>,
+    mesh_by_source: AHashMap<String, MeshID>,
+    mesh_source_by: AHashMap<MeshID, String>,
     mesh_source_by_slot: Vec<Option<String>>,
-    runtime_mesh_by_source: HashMap<String, RuntimeMeshData>,
-    texture_by_source: HashMap<String, TextureID>,
-    texture_source_by: HashMap<TextureID, String>,
+    runtime_mesh_by_source: AHashMap<String, RuntimeMeshData>,
+    texture_by_source: AHashMap<String, TextureID>,
+    texture_source_by: AHashMap<TextureID, String>,
     texture_source_by_slot: Vec<Option<String>>,
-    material_by: HashMap<MaterialID, Material3D>,
-    material_by_source: HashMap<String, MaterialID>,
-    material_source_by: HashMap<MaterialID, String>,
-    mesh_meta_by: HashMap<MeshID, ResourceMeta>,
-    texture_meta_by: HashMap<TextureID, ResourceMeta>,
-    material_meta_by: HashMap<MaterialID, ResourceMeta>,
+    material_by: AHashMap<MaterialID, Material3D>,
+    material_by_source: AHashMap<String, MaterialID>,
+    material_source_by: AHashMap<MaterialID, String>,
+    mesh_meta_by: AHashMap<MeshID, ResourceMeta>,
+    texture_meta_by: AHashMap<TextureID, ResourceMeta>,
+    material_meta_by: AHashMap<MaterialID, ResourceMeta>,
 }
 
 impl ResourceStore {

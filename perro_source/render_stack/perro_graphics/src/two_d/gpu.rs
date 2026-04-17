@@ -2,11 +2,11 @@ use super::renderer::{Camera2DUniform, RectInstanceGpu, RectUploadPlan};
 use super::shaders::{create_rect_shader_module, create_sprite_shader_module};
 use crate::backend::StaticTextureLookup;
 use crate::resources::ResourceStore;
+use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use perro_ids::TextureID;
 use perro_io::{decompress_zlib, load_asset};
 use perro_render_bridge::Sprite2DCommand;
-use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
 const VIRTUAL_WIDTH: f32 = 1920.0;
@@ -41,9 +41,10 @@ struct SpriteInstanceGpu {
     tint: [f32; 4],
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct SpriteBatch {
     texture: TextureID,
+    bind_group: wgpu::BindGroup,
     instance_start: u32,
     instance_count: u32,
 }
@@ -72,7 +73,7 @@ pub struct Gpu2D {
     camera_bind_group: wgpu::BindGroup,
     sprite_instances: Vec<SpriteInstanceGpu>,
     sprite_batches: Vec<SpriteBatch>,
-    sprite_textures: HashMap<TextureID, CachedSpriteTexture>,
+    sprite_textures: AHashMap<TextureID, CachedSpriteTexture>,
     last_camera: Option<Camera2DUniform>,
 }
 
@@ -239,7 +240,7 @@ impl Gpu2D {
             camera_bind_group,
             sprite_instances: Vec::new(),
             sprite_batches: Vec::new(),
-            sprite_textures: HashMap::new(),
+            sprite_textures: AHashMap::new(),
             last_camera: None,
         }
     }
@@ -297,10 +298,12 @@ impl Gpu2D {
                     continue;
                 }
                 let offset = range.start as u64 * stride;
+                let start = range.start;
+                let end = range.end;
                 queue.write_buffer(
                     &self.rect_instance_buffer,
                     offset,
-                    bytemuck::cast_slice(&rects[range.clone()]),
+                    bytemuck::cast_slice(&rects[start..end]),
                 );
             }
         }
@@ -310,17 +313,22 @@ impl Gpu2D {
         self.sprite_instances.reserve(sprites.len());
         self.sprite_batches.reserve(sprites.len());
         for sprite in sprites {
-            if !self.ensure_sprite_texture(
-                device,
-                queue,
-                resources,
-                sprite.texture,
-                static_texture_lookup,
-            ) {
-                continue;
-            }
-            let Some(texture) = self.sprite_textures.get(&sprite.texture) else {
-                continue;
+            let texture = if let Some(texture) = self.sprite_textures.get(&sprite.texture) {
+                texture
+            } else {
+                if !self.ensure_sprite_texture(
+                    device,
+                    queue,
+                    resources,
+                    sprite.texture,
+                    static_texture_lookup,
+                ) {
+                    continue;
+                }
+                let Some(texture) = self.sprite_textures.get(&sprite.texture) else {
+                    continue;
+                };
+                texture
             };
             if !sprite_intersects_screen(
                 sprite,
@@ -347,6 +355,7 @@ impl Gpu2D {
             }
             self.sprite_batches.push(SpriteBatch {
                 texture: sprite.texture,
+                bind_group: texture.bind_group.clone(),
                 instance_start: idx,
                 instance_count: 1,
             });
@@ -398,10 +407,7 @@ impl Gpu2D {
             pass.set_vertex_buffer(0, self.sprite_vertex_buffer.slice(..));
             pass.set_vertex_buffer(1, self.sprite_instance_buffer.slice(..));
             for batch in &self.sprite_batches {
-                let Some(tex) = self.sprite_textures.get(&batch.texture) else {
-                    continue;
-                };
-                pass.set_bind_group(1, &tex.bind_group, &[]);
+                pass.set_bind_group(1, &batch.bind_group, &[]);
                 pass.draw(
                     0..6,
                     batch.instance_start..batch.instance_start + batch.instance_count,

@@ -67,6 +67,7 @@ pub struct Renderer3D {
     ray_lights_sorted_cache: Vec<(NodeID, RayLight3DState)>,
     point_lights_sorted_cache: Vec<(NodeID, PointLight3DState)>,
     spot_lights_sorted_cache: Vec<(NodeID, SpotLight3DState)>,
+    retained_draws_sorted_cache: Vec<Draw3DInstance>,
     ray_lights_dirty: bool,
     point_lights_dirty: bool,
     spot_lights_dirty: bool,
@@ -155,6 +156,7 @@ impl Renderer3D {
     pub fn remove_node(&mut self, node: NodeID) {
         if self.retained_draws.remove(&node).is_some() {
             self.draw_revision = self.draw_revision.wrapping_add(1);
+            self.rebuild_sorted_draws_cache();
         }
         self.ambient_lights.remove(&node);
         self.skies.remove(&node);
@@ -267,6 +269,7 @@ impl Renderer3D {
         }
         if draws_changed {
             self.draw_revision = self.draw_revision.wrapping_add(1);
+            self.rebuild_sorted_draws_cache();
         }
 
         let mut lighting = Lighting3DState::default();
@@ -335,6 +338,10 @@ impl Renderer3D {
         self.retained_draws.values().cloned()
     }
 
+    pub fn retained_draws_sorted(&self) -> &[Draw3DInstance] {
+        &self.retained_draws_sorted_cache
+    }
+
     pub fn draw_revision(&self) -> u64 {
         self.draw_revision
     }
@@ -374,6 +381,19 @@ impl Renderer3D {
             self.spot_lights_dirty = false;
         }
     }
+
+    fn rebuild_sorted_draws_cache(&mut self) {
+        self.retained_draws_sorted_cache.clear();
+        if self.retained_draws_sorted_cache.capacity() < self.retained_draws.len() {
+            self.retained_draws_sorted_cache.reserve(
+                self.retained_draws.len() - self.retained_draws_sorted_cache.capacity(),
+            );
+        }
+        self.retained_draws_sorted_cache
+            .extend(self.retained_draws.values().cloned());
+        self.retained_draws_sorted_cache
+            .sort_unstable_by_key(|draw| draw.node.as_u64());
+    }
 }
 
 impl Default for Renderer3D {
@@ -389,6 +409,7 @@ impl Default for Renderer3D {
             ray_lights_sorted_cache: Vec::new(),
             point_lights_sorted_cache: Vec::new(),
             spot_lights_sorted_cache: Vec::new(),
+            retained_draws_sorted_cache: Vec::new(),
             ray_lights_dirty: false,
             point_lights_dirty: false,
             spot_lights_dirty: false,

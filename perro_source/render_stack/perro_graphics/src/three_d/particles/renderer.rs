@@ -1,11 +1,11 @@
+use ahash::AHashMap;
 use perro_ids::NodeID;
 use perro_render_bridge::PointParticles3DState;
-use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct Particles3DRenderer {
     queued_points: Vec<(NodeID, PointParticles3DState)>,
-    retained_points: HashMap<NodeID, PointParticles3DState>,
+    retained_points: AHashMap<NodeID, PointParticles3DState>,
     retained_points_revision: u64,
 }
 
@@ -43,6 +43,11 @@ impl Particles3DRenderer {
         self.retained_points
             .iter()
             .map(|(node, particles)| (*node, particles.clone()))
+    }
+
+    #[inline]
+    pub fn retained_point_particle_count(&self) -> usize {
+        self.retained_points.len()
     }
 
     #[inline]
