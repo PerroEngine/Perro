@@ -34,6 +34,12 @@ impl From<std::io::Error> for CompilerError {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScriptsBuildProfile {
+    Debug,
+    Release,
+}
+
 pub fn sync_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError> {
     let res_dir = project_root.join("res");
     let scripts_src = project_root.join(".perro").join("scripts").join("src");
@@ -70,17 +76,28 @@ pub fn sync_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError> {
 }
 
 pub fn compile_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError> {
+    compile_scripts_with_profile(project_root, ScriptsBuildProfile::Release)
+}
+
+pub fn compile_scripts_with_profile(
+    project_root: &Path,
+    profile: ScriptsBuildProfile,
+) -> Result<Vec<String>, CompilerError> {
     ensure_source_overrides(project_root)?;
     let copied = sync_scripts(project_root)?;
     let scripts_crate = project_root.join(".perro").join("scripts");
     let target_dir = project_root.join("target");
 
-    let status = Command::new("cargo")
-        .arg("build")
-        .arg("--release")
+    let mut cmd = Command::new("cargo");
+    cmd.arg("build")
         .env("CARGO_TARGET_DIR", target_dir)
-        .current_dir(scripts_crate)
-        .status()?;
+        .current_dir(scripts_crate);
+    if profile == ScriptsBuildProfile::Release {
+        cmd.arg("--release")
+            .env("CARGO_PROFILE_RELEASE_INCREMENTAL", "true")
+            .env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "64");
+    }
+    let status = cmd.status()?;
 
     if !status.success() {
         return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
@@ -94,7 +111,7 @@ pub fn compile_project_bundle(project_root: &Path, profile: bool) -> Result<(), 
     let cfg = load_project_toml(project_root)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     reset_embedded_dir(project_root)?;
-    let _ = compile_scripts(project_root)?;
+    let _ = sync_scripts(project_root)?;
     perro_static_pipeline::generate_static_scenes(project_root).map_err(|err| {
         CompilerError::SceneParse(format!("scene static generation failed: {err}"))
     })?;

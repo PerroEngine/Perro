@@ -206,38 +206,56 @@ impl Runtime {
 }
 
 fn resolve_scripts_dylib_path(project_root: &Path) -> Result<PathBuf, String> {
-    let release_dir = project_root.join("target").join("release");
-    let file_name = scripts_dylib_name();
-    let primary = release_dir.join(file_name);
-    if primary.exists() {
-        return Ok(primary);
-    }
+    let profiles = ["debug", "release"];
+    let mut scanned = Vec::<String>::new();
+    let mut candidates = Vec::<(std::time::SystemTime, PathBuf)>::new();
+    for profile in profiles {
+        let profile_dir = project_root.join("target").join(profile);
+        let file_name = scripts_dylib_name();
+        let primary = profile_dir.join(file_name);
+        scanned.push(primary.display().to_string());
+        if primary.exists() {
+            if let Ok(meta) = fs::metadata(&primary)
+                && let Ok(modified) = meta.modified()
+            {
+                candidates.push((modified, primary.clone()));
+            }
+        }
 
-    let deps_dir = release_dir.join("deps");
-    if deps_dir.exists() {
-        let prefix = scripts_dylib_prefix();
-        let suffix = scripts_dylib_suffix();
-        let entries = fs::read_dir(&deps_dir).map_err(|err| {
-            format!(
-                "failed to scan `{}` for scripts dylib: {err}",
-                deps_dir.display()
-            )
-        })?;
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
-                continue;
-            };
-            if name.starts_with(prefix) && name.ends_with(suffix) {
-                return Ok(path);
+        let deps_dir = profile_dir.join("deps");
+        scanned.push(deps_dir.display().to_string());
+        if deps_dir.exists() {
+            let prefix = scripts_dylib_prefix();
+            let suffix = scripts_dylib_suffix();
+            let entries = fs::read_dir(&deps_dir).map_err(|err| {
+                format!(
+                    "failed to scan `{}` for scripts dylib: {err}",
+                    deps_dir.display()
+                )
+            })?;
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
+                    continue;
+                };
+                if name.starts_with(prefix) && name.ends_with(suffix) {
+                    if let Ok(meta) = fs::metadata(&path)
+                        && let Ok(modified) = meta.modified()
+                    {
+                        candidates.push((modified, path));
+                    }
+                }
             }
         }
     }
 
+    if let Some((_, path)) = candidates.into_iter().max_by_key(|(modified, _)| *modified) {
+        return Ok(path);
+    }
+
     Err(format!(
-        "scripts dylib not found at `{}` (or `{}`)",
-        primary.display(),
-        deps_dir.display()
+        "scripts dylib not found. searched: {}",
+        scanned.join(", ")
     ))
 }
 

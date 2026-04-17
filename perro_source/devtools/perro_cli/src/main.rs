@@ -1,4 +1,4 @@
-use perro_compiler::{compile_project_bundle, compile_scripts};
+use perro_compiler::{compile_project_bundle, compile_scripts_with_profile, ScriptsBuildProfile};
 use perro_project::{create_new_project, default_script_empty_rs};
 use serde_json::Value;
 use std::env;
@@ -460,7 +460,7 @@ fn new_script_command(args: &[String], cwd: &Path) -> Result<(), String> {
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
     log_step("Building Scripts");
-    compile_scripts(&project_dir)
+    compile_scripts_with_profile(&project_dir, ScriptsBuildProfile::Debug)
         .map(|_| {
             log_done("Scripts Built");
         })
@@ -997,7 +997,7 @@ fn scripts_command(args: &[String], cwd: &Path) -> Result<(), String> {
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
     log_step("Building Scripts");
-    compile_scripts(&project_dir)
+    compile_scripts_with_profile(&project_dir, ScriptsBuildProfile::Debug)
         .map(|_| {
             log_done("Scripts Built");
         })
@@ -1019,7 +1019,7 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     update_project_vscode_linked_projects(&project_dir)?;
 
     log_step("Building Scripts");
-    compile_scripts(&project_dir).map_err(|err| {
+    compile_scripts_with_profile(&project_dir, ScriptsBuildProfile::Debug).map_err(|err| {
         format!(
             "scripts pipeline failed for {}: {err}",
             project_dir.display()
@@ -1095,7 +1095,7 @@ fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
     update_project_vscode_linked_projects(&project_dir)?;
 
     log_step("Building Scripts");
-    compile_scripts(&project_dir).map_err(|err| {
+    compile_scripts_with_profile(&project_dir, ScriptsBuildProfile::Release).map_err(|err| {
         format!(
             "scripts pipeline failed for {}: {err}",
             project_dir.display()
