@@ -515,6 +515,7 @@ struct DrawBatch {
     path: RenderPath3D,
     double_sided: bool,
     material_kind: MaterialPipelineKind,
+    alpha_mode: u8,
     draw_on_top: bool,
     base_color_texture_slot: u32,
     local_center: [f32; 3],
@@ -3200,10 +3201,11 @@ impl Gpu3D {
                                 instance_count,
                                 standard_params.double_sided || self.meshlet_debug_view,
                                 material_kind,
+                                standard_params.alpha_mode,
                                 standard_params.base_color_texture,
                                 occlusion_bounds,
                                 occlusion_query,
-                                multi_instance,
+                                multi_instance || standard_params.alpha_mode == 2,
                                 true,
                             );
                         }
@@ -3292,10 +3294,11 @@ impl Gpu3D {
                         instance_count,
                         standard_params.double_sided || self.meshlet_debug_view,
                         material_kind.clone(),
+                        standard_params.alpha_mode,
                         standard_params.base_color_texture,
                         (occlusion_center, occlusion_radius),
                         occlusion_query,
-                        multi_instance,
+                        multi_instance || standard_params.alpha_mode == 2,
                         true,
                     );
                 }
@@ -3333,6 +3336,7 @@ impl Gpu3D {
                     RenderPath3D::Rigid,
                     true,
                     debug_points_double_sided,
+                    0,
                     &material_kind,
                 ),
                 mesh: default_mesh.full,
@@ -3341,6 +3345,7 @@ impl Gpu3D {
                 path: RenderPath3D::Rigid,
                 double_sided: debug_points_double_sided,
                 material_kind,
+                alpha_mode: 0,
                 draw_on_top: true,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
                 local_center: debug_points_local_center,
@@ -3362,6 +3367,7 @@ impl Gpu3D {
                     RenderPath3D::Rigid,
                     true,
                     debug_edges_double_sided,
+                    0,
                     &material_kind,
                 ),
                 mesh: debug_edge_mesh.full,
@@ -3370,6 +3376,7 @@ impl Gpu3D {
                 path: RenderPath3D::Rigid,
                 double_sided: debug_edges_double_sided,
                 material_kind,
+                alpha_mode: 0,
                 draw_on_top: true,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
                 local_center: debug_edges_local_center,
@@ -3397,7 +3404,7 @@ impl Gpu3D {
         self.has_shadow_casters = self
             .draw_batches
             .iter()
-            .any(|batch| !batch.draw_on_top && batch.casts_shadows);
+            .any(|batch| !batch.draw_on_top && batch.casts_shadows && batch.alpha_mode == 0);
         if occlusion_capture_this_frame {
             self.ensure_occlusion_query_capacity(
                 device,
@@ -3683,7 +3690,7 @@ impl Gpu3D {
             shadow_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             let mut current_state: Option<(RenderPath3D, bool)> = None;
             for batch in &self.draw_batches {
-                if batch.draw_on_top || !batch.casts_shadows {
+                if batch.draw_on_top || !batch.casts_shadows || batch.alpha_mode != 0 {
                     continue;
                 }
                 let state = (batch.path, batch.double_sided);
@@ -3753,7 +3760,7 @@ impl Gpu3D {
             prepass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             let mut current_state: Option<(RenderPath3D, bool)> = None;
             for (i, batch) in self.draw_batches.iter().enumerate() {
-                if batch.draw_on_top {
+                if batch.draw_on_top || batch.alpha_mode != 0 {
                     continue;
                 }
                 let state = (batch.path, batch.double_sided);
@@ -6087,6 +6094,7 @@ fn push_draw_batch(
     instance_count: u32,
     double_sided: bool,
     material_kind: MaterialPipelineKind,
+    alpha_mode: u8,
     base_color_texture_slot: u32,
     local_bounds: ([f32; 3], f32),
     occlusion_query: Option<u32>,
@@ -6098,13 +6106,20 @@ fn push_draw_batch(
     }
     let (local_center, local_radius) = local_bounds;
     draw_batches.push(DrawBatch {
-        state_key: draw_batch_state_key(render_path, false, double_sided, &material_kind),
+        state_key: draw_batch_state_key(
+            render_path,
+            false,
+            double_sided,
+            alpha_mode,
+            &material_kind,
+        ),
         mesh,
         instance_start,
         instance_count,
         path: render_path,
         double_sided,
         material_kind,
+        alpha_mode,
         draw_on_top: false,
         base_color_texture_slot,
         local_center,
@@ -6482,6 +6497,7 @@ fn draw_batch_state_key(
     path: RenderPath3D,
     draw_on_top: bool,
     double_sided: bool,
+    alpha_mode: u8,
     material_kind: &MaterialPipelineKind,
 ) -> u64 {
     let path_bits = match path {
@@ -6490,12 +6506,13 @@ fn draw_batch_state_key(
     };
     let top_bits = u64::from(draw_on_top) << 1;
     let sided_bits = u64::from(double_sided) << 2;
-    let rank_bits = (material_pipeline_kind_rank(material_kind) as u64) << 3;
+    let alpha_bits = u64::from(alpha_mode == 2) << 3;
+    let rank_bits = (material_pipeline_kind_rank(material_kind) as u64) << 4;
     let custom_bits = match material_kind {
-        MaterialPipelineKind::Custom(token) => (*token as u64) << 8,
+        MaterialPipelineKind::Custom(token) => (*token as u64) << 9,
         _ => 0u64,
     };
-    path_bits | top_bits | sided_bits | rank_bits | custom_bits
+    path_bits | top_bits | sided_bits | alpha_bits | rank_bits | custom_bits
 }
 
 #[inline]
