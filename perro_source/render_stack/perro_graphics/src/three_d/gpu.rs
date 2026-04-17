@@ -293,8 +293,10 @@ pub struct Gpu3D {
     pipeline_shadow_depth_rigid_double_sided: wgpu::RenderPipeline,
     pipeline_multimesh_culled: wgpu::RenderPipeline,
     pipeline_multimesh_double_sided: wgpu::RenderPipeline,
-    custom_pipelines: AHashMap<String, CustomPipeline>,
-    custom_pipelines_rigid: AHashMap<String, CustomPipeline>,
+    custom_pipelines: AHashMap<u32, CustomPipeline>,
+    custom_pipelines_rigid: AHashMap<u32, CustomPipeline>,
+    custom_pipeline_tokens: AHashMap<String, u32>,
+    next_custom_pipeline_token: u32,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     rigid_camera_bind_group: wgpu::BindGroup,
@@ -541,7 +543,7 @@ enum MaterialPipelineKind {
     Standard,
     Unlit,
     Toon,
-    Custom(String),
+    Custom(u32),
 }
 
 struct CustomPipeline {
@@ -600,18 +602,30 @@ struct DecodedMeshlet {
 }
 
 impl Gpu3D {
+    fn custom_pipeline_token(&mut self, shader_path: &str) -> u32 {
+        if let Some(&token) = self.custom_pipeline_tokens.get(shader_path) {
+            return token;
+        }
+        let token = self.next_custom_pipeline_token;
+        self.next_custom_pipeline_token = self.next_custom_pipeline_token.wrapping_add(1).max(1);
+        self.custom_pipeline_tokens
+            .insert(shader_path.to_string(), token);
+        token
+    }
+
     fn ensure_custom_pipeline(
         &mut self,
         device: &wgpu::Device,
         path: RenderPath3D,
         shader_path: &str,
         static_shader_lookup: Option<StaticShaderLookup>,
-    ) -> Option<&CustomPipeline> {
-        if path == RenderPath3D::Rigid && self.custom_pipelines_rigid.contains_key(shader_path) {
-            return self.custom_pipelines_rigid.get(shader_path);
+    ) -> Option<u32> {
+        let token = self.custom_pipeline_token(shader_path);
+        if path == RenderPath3D::Rigid && self.custom_pipelines_rigid.contains_key(&token) {
+            return Some(token);
         }
-        if path == RenderPath3D::Skinned && self.custom_pipelines.contains_key(shader_path) {
-            return self.custom_pipelines.get(shader_path);
+        if path == RenderPath3D::Skinned && self.custom_pipelines.contains_key(&token) {
+            return Some(token);
         }
         let src = if let Some(lookup) = static_shader_lookup {
             let shader_hash = perro_ids::parse_hashed_source_uri(shader_path)
@@ -685,13 +699,13 @@ impl Gpu3D {
             &mut self.custom_pipelines
         };
         map.insert(
-            shader_path.to_string(),
+            token,
             CustomPipeline {
                 pipeline_culled,
                 pipeline_double_sided,
             },
         );
-        map.get(shader_path)
+        Some(token)
     }
 
     fn material_pipeline_kind(
@@ -707,11 +721,10 @@ impl Gpu3D {
             Material3D::Toon(_) => MaterialPipelineKind::Toon,
             Material3D::Custom(custom) => {
                 let shader_path = custom.shader_path.as_ref();
-                if self
-                    .ensure_custom_pipeline(device, render_path, shader_path, static_shader_lookup)
-                    .is_some()
+                if let Some(token) =
+                    self.ensure_custom_pipeline(device, render_path, shader_path, static_shader_lookup)
                 {
-                    MaterialPipelineKind::Custom(shader_path.to_string())
+                    MaterialPipelineKind::Custom(token)
                 } else {
                     MaterialPipelineKind::Standard
                 }
@@ -766,13 +779,13 @@ impl Gpu3D {
                     &self.pipeline_toon_culled
                 }
             }
-            MaterialPipelineKind::Custom(path) => {
+            MaterialPipelineKind::Custom(token) => {
                 let map = if is_rigid {
                     &self.custom_pipelines_rigid
                 } else {
                     &self.custom_pipelines
                 };
-                map.get(path)
+                map.get(token)
                     .map(|pipeline| {
                         if batch.double_sided {
                             &pipeline.pipeline_double_sided
@@ -2059,6 +2072,8 @@ impl Gpu3D {
             debug_edge_instances_scratch: Vec::new(),
             custom_pipelines: AHashMap::new(),
             custom_pipelines_rigid: AHashMap::new(),
+            custom_pipeline_tokens: AHashMap::new(),
+            next_custom_pipeline_token: 1,
         };
         gpu.rebuild_hiz_bind_groups(device);
         gpu
@@ -2396,6 +2411,8 @@ impl Gpu3D {
         self.sample_count = sample_count;
         self.custom_pipelines.clear();
         self.custom_pipelines_rigid.clear();
+        self.custom_pipeline_tokens.clear();
+        self.next_custom_pipeline_token = 1;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(self.occlusion_mode);
         self.gpu_occlusion_enabled = gpu_occlusion_enabled;
         self.cpu_occlusion_enabled = cpu_occlusion_enabled;
