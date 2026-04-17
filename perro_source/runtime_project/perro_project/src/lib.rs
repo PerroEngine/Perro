@@ -2246,6 +2246,9 @@ fn ensure_patch_block_in_manifest(path: &Path) -> std::io::Result<()> {
         out.push_str(&overrides);
         out.push('\n');
     }
+    if src == out {
+        return Ok(());
+    }
     fs::write(path, out)
 }
 
