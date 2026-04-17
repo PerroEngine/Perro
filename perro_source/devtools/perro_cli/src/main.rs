@@ -1,4 +1,4 @@
-use perro_compiler::{compile_project_bundle, compile_scripts_with_profile, ScriptsBuildProfile};
+use perro_compiler::{ScriptsBuildProfile, compile_project_bundle, compile_scripts_with_profile};
 use perro_project::{create_new_project, default_script_empty_rs};
 use serde_json::Value;
 use std::env;
@@ -1139,7 +1139,7 @@ fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
         let mut msg = format!("cargo flamegraph failed with exit code {:?}", status.code());
         if cfg!(target_os = "windows") {
             msg.push_str(
-                "\nWindows note: cargo-flamegraph uses blondie + often needs elevated terminal."
+                "\nWindows note: cargo-flamegraph uses blondie + often needs elevated terminal.",
             );
             msg.push_str("\nIf output includes `NotAnAdmin`, rerun PowerShell as Administrator.");
             msg.push_str("\nFallback: run flamegraph in WSL/Linux for full perf support.");

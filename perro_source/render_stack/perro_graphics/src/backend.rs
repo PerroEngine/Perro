@@ -648,8 +648,9 @@ impl GraphicsBackend for PerroGraphics {
             self.retained_point_particles_cache.clear();
             let point_particles_count = self.particles_3d.retained_point_particle_count();
             if self.retained_point_particles_cache.capacity() < point_particles_count {
-                self.retained_point_particles_cache
-                    .reserve(point_particles_count - self.retained_point_particles_cache.capacity());
+                self.retained_point_particles_cache.reserve(
+                    point_particles_count - self.retained_point_particles_cache.capacity(),
+                );
             }
             self.retained_point_particles_cache
                 .extend(self.particles_3d.retained_point_particles());

@@ -70,16 +70,11 @@ pub fn run_dev_project_from_path(
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, false);
     let app = create_dev_app(graphics, project);
-    let fps_cap = app
-        .runtime
-        .project()
-        .and_then(|p| p.config.target_fps)
-        .unwrap_or(0.0);
     let fixed = app
         .runtime
         .project()
         .and_then(|p| p.config.target_fixed_update);
-    WinitRunner::new().run_with_fps_cap_and_timestep(app, &window_title, fps_cap, fixed);
+    WinitRunner::new().run_with_timestep(app, &window_title, fixed);
     Ok(())
 }
 
@@ -91,16 +86,11 @@ pub fn run_static_project_from_path(
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, true);
     let app = create_static_app(graphics, project);
-    let fps_cap = app
-        .runtime
-        .project()
-        .and_then(|p| p.config.target_fps)
-        .unwrap_or(0.0);
     let fixed = app
         .runtime
         .project()
         .and_then(|p| p.config.target_fixed_update);
-    WinitRunner::new().run_with_fps_cap_and_timestep(app, &window_title, fps_cap, fixed);
+    WinitRunner::new().run_with_timestep(app, &window_title, fixed);
     Ok(())
 }
 
@@ -134,7 +124,6 @@ pub struct StaticEmbeddedGraphicsConfig {
 }
 
 pub struct StaticEmbeddedRuntimeConfig {
-    pub target_fps: Option<f32>,
     pub target_fixed_update: Option<f32>,
 }
 
@@ -171,7 +160,6 @@ pub fn run_static_embedded_project(
         input.project.virtual_height,
     )
     .with_vsync(input.graphics.vsync)
-    .with_target_fps(input.runtime.target_fps)
     .with_target_fixed_update(input.runtime.target_fixed_update)
     .with_msaa(input.graphics.msaa)
     .with_meshlets(input.graphics.meshlets)
@@ -213,15 +201,10 @@ pub fn run_static_embedded_project(
         input.assets.static_script_registry,
     );
     let app = App::new(runtime, graphics);
-    let fps_cap = app
-        .runtime
-        .project()
-        .and_then(|p| p.config.target_fps)
-        .unwrap_or(0.0);
     let fixed = app
         .runtime
         .project()
         .and_then(|p| p.config.target_fixed_update);
-    WinitRunner::new().run_with_fps_cap_and_timestep(app, &window_title, fps_cap, fixed);
+    WinitRunner::new().run_with_timestep(app, &window_title, fixed);
     Ok(())
 }

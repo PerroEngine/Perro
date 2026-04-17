@@ -9,5 +9,4 @@ vsync = false
 msaa = true
 
 [runtime]
-target_fps = "uncapped"
 target_fixed_update = 60

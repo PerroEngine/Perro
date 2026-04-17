@@ -19,9 +19,9 @@ use winit::{
     window::{CursorGrabMode, Icon, Window, WindowAttributes},
 };
 
-const DEFAULT_FPS_CAP: f32 = 60.0;
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 8;
+const MAX_FRAME_DELTA_SECONDS: f32 = 0.250;
 const LOG_INTERVAL_SECONDS: f32 = 3.0;
 #[cfg(not(feature = "profile_heavy"))]
 const LOG_TIMING_SAMPLE_STRIDE: u32 = 20;
@@ -135,19 +135,6 @@ fn normalize_fixed_timestep_seconds(value: Option<f32>) -> Option<f32> {
 }
 
 #[inline]
-fn target_frame_duration(fps_cap: f32) -> Option<Duration> {
-    if !fps_cap.is_finite() || fps_cap <= 0.0 {
-        return None;
-    }
-    let secs = 1.0f64 / fps_cap as f64;
-    if !secs.is_finite() || secs <= 0.0 {
-        return None;
-    }
-    let d = Duration::from_secs_f64(secs);
-    if d.is_zero() { None } else { Some(d) }
-}
-
-#[inline]
 fn avg_micros(total: Duration, samples: u32) -> u128 {
     if samples == 0 {
         return 0;
@@ -155,12 +142,119 @@ fn avg_micros(total: Duration, samples: u32) -> u128 {
     total.as_micros() / u128::from(samples)
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct FixedStepPlan {
+    steps: u32,
+    step_seconds: f32,
+    accumulator_after: f32,
+    dropped_catchup: bool,
+}
+
 #[inline]
-fn log_avg_sampled(update_us: u128, render_us: u128, total_us: u128, idle_us: u128) {
+fn plan_fixed_steps(
+    frame_delta_seconds: f32,
+    fixed_timestep: f32,
+    accumulator: f32,
+) -> FixedStepPlan {
+    let mut next_accumulator =
+        accumulator + frame_delta_seconds.clamp(0.0, MAX_FRAME_DELTA_SECONDS);
+    let mut steps = 0u32;
+    while next_accumulator >= fixed_timestep && steps < MAX_FIXED_STEPS_PER_FRAME {
+        next_accumulator -= fixed_timestep;
+        steps += 1;
+    }
+    let dropped_catchup = steps == MAX_FIXED_STEPS_PER_FRAME && next_accumulator >= fixed_timestep;
+    if dropped_catchup {
+        next_accumulator %= fixed_timestep;
+    }
+    FixedStepPlan {
+        steps,
+        step_seconds: fixed_timestep,
+        accumulator_after: next_accumulator,
+        dropped_catchup,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct CsvFrameSample {
+    frame_index: u64,
+    sampled: bool,
+    frame_delta_us: u128,
+    idle_before_frame_us: u128,
+    simulation_us: u128,
+    render_active_us: u128,
+    work_active_us: u128,
+    present_wait_us: u128,
+    fixed_steps: u32,
+    fixed_step_us: u128,
+    fixed_accum_before_us: u128,
+    fixed_accum_after_us: u128,
+    fixed_catchup_dropped: bool,
+}
+
+struct TimingCsvWriter {
+    file: fs::File,
+}
+
+impl TimingCsvWriter {
+    fn from_env() -> Option<Self> {
+        let path = std::env::var("PERRO_TIMING_CSV").ok()?;
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()?;
+        let _ = writeln!(
+            file,
+            "frame,sampled,frame_delta_us,idle_before_frame_us,simulation_us,render_active_us,work_active_us,present_wait_us,fixed_steps,fixed_step_us,fixed_accum_before_us,fixed_accum_after_us,fixed_catchup_dropped"
+        );
+        Some(Self { file })
+    }
+
+    fn write(&mut self, sample: CsvFrameSample) {
+        let _ = writeln!(
+            self.file,
+            "{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            sample.frame_index,
+            if sample.sampled { 1 } else { 0 },
+            sample.frame_delta_us,
+            sample.idle_before_frame_us,
+            sample.simulation_us,
+            sample.render_active_us,
+            sample.work_active_us,
+            sample.present_wait_us,
+            sample.fixed_steps,
+            sample.fixed_step_us,
+            sample.fixed_accum_before_us,
+            sample.fixed_accum_after_us,
+            if sample.fixed_catchup_dropped { 1 } else { 0 }
+        );
+        let _ = self.file.flush();
+    }
+}
+
+#[inline]
+fn log_avg_sampled(
+    update_us: u128,
+    render_us: u128,
+    total_us: u128,
+    idle_before_frame_us: u128,
+    present_wait_us: u128,
+) {
+    let frame_us = total_us
+        .saturating_add(idle_before_frame_us)
+        .saturating_add(present_wait_us);
+    let fps_x100 = if frame_us > 0 {
+        (100_000_000u128 / frame_us) as u64
+    } else {
+        0
+    };
     let mut out = std::io::stdout().lock();
     let _ = writeln!(
         out,
-        "avg(sampled): update=({update_us}us) | render=({render_us}us) | total=({total_us}us) | idle=({idle_us}us)"
+        "avg(sampled): update=({update_us}us) | render=({render_us}us) | total=({total_us}us) | idle=({idle_before_frame_us}us) | present_wait=({present_wait_us}us) | frame=({frame_us}us) | fps=({}.{:02})",
+        fps_x100 / 100,
+        fps_x100 % 100
     );
 }
 
@@ -172,22 +266,17 @@ impl WinitRunner {
     }
 
     pub fn run<B: GraphicsBackend>(self, app: App<B>, title: &str) {
-        self.run_with_fps_cap_and_timestep(app, title, DEFAULT_FPS_CAP, DEFAULT_FIXED_TIMESTEP);
+        self.run_with_timestep(app, title, DEFAULT_FIXED_TIMESTEP);
     }
 
-    pub fn run_with_fps_cap<B: GraphicsBackend>(self, app: App<B>, title: &str, fps_cap: f32) {
-        self.run_with_fps_cap_and_timestep(app, title, fps_cap, DEFAULT_FIXED_TIMESTEP);
-    }
-
-    pub fn run_with_fps_cap_and_timestep<B: GraphicsBackend>(
+    pub fn run_with_timestep<B: GraphicsBackend>(
         self,
         app: App<B>,
         title: &str,
-        fps_cap: f32,
         fixed_timestep: Option<f32>,
     ) {
         let event_loop = EventLoop::new().expect("failed to create winit event loop");
-        let mut state = RunnerState::new(app, title, fps_cap, fixed_timestep);
+        let mut state = RunnerState::new(app, title, fixed_timestep);
         event_loop
             .run_app(&mut state)
             .expect("winit event loop failed");
@@ -210,12 +299,13 @@ struct RunnerState<B: GraphicsBackend> {
     window: Option<Arc<Window>>,
     last_frame_start: Instant,
     last_frame_end: Instant,
-    next_frame_deadline: Instant,
     run_start: Instant,
     batch_start: Instant,
     batch_work: Duration,
     batch_simulation: Duration,
     batch_present: Duration,
+    batch_idle_before_frame: Duration,
+    batch_present_wait: Duration,
     #[cfg(feature = "profile_heavy")]
     batch_runtime_update: Duration,
     #[cfg(feature = "profile_heavy")]
@@ -310,8 +400,9 @@ struct RunnerState<B: GraphicsBackend> {
     #[cfg(feature = "profile_heavy")]
     batch_sim_delta_seconds: f64,
     fixed_timestep: Option<f32>,
-    fps_cap: f32,
     fixed_accumulator: f32,
+    frame_index: u64,
+    timing_csv: Option<TimingCsvWriter>,
     batch_frames: u32,
     batch_timing_samples: u32,
     kbm_input: crate::input::KbmInput,
@@ -324,7 +415,7 @@ struct RunnerState<B: GraphicsBackend> {
 }
 
 impl<B: GraphicsBackend> RunnerState<B> {
-    fn new(app: App<B>, title: &str, fps_cap: f32, fixed_timestep: Option<f32>) -> Self {
+    fn new(app: App<B>, title: &str, fixed_timestep: Option<f32>) -> Self {
         let now = Instant::now();
         let startup_splash = StartupSplashState::from_project(app.runtime.project(), now);
         let normalized_fixed_timestep = normalize_fixed_timestep_seconds(fixed_timestep);
@@ -332,12 +423,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
             app,
             title: title.to_owned(),
             window: None,
-            fps_cap,
             fixed_timestep: normalized_fixed_timestep,
             fixed_accumulator: 0.0,
             last_frame_start: now,
             last_frame_end: now,
-            next_frame_deadline: now,
             run_start: now,
             batch_frames: 0,
             batch_timing_samples: 0,
@@ -345,6 +434,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
             batch_work: Duration::ZERO,
             batch_simulation: Duration::ZERO,
             batch_present: Duration::ZERO,
+            batch_idle_before_frame: Duration::ZERO,
+            batch_present_wait: Duration::ZERO,
             #[cfg(feature = "profile_heavy")]
             batch_runtime_update: Duration::ZERO,
             #[cfg(feature = "profile_heavy")]
@@ -438,6 +529,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
             batch_idle: Duration::ZERO,
             #[cfg(feature = "profile_heavy")]
             batch_sim_delta_seconds: 0.0,
+            frame_index: 0,
+            timing_csv: TimingCsvWriter::from_env(),
             kbm_input: crate::input::KbmInput::new(),
             gamepad_input: crate::input::GamepadInput::new(),
             joycon_input: crate::input::JoyConInput::new(),
@@ -605,6 +698,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
     fn step_startup_frame(
         &mut self,
+        frame_index: u64,
         frame_start: Instant,
         frame_delta: Duration,
         idle_duration: Duration,
@@ -637,25 +731,27 @@ impl<B: GraphicsBackend> RunnerState<B> {
         #[cfg(not(feature = "profile_heavy"))]
         let fixed_start = should_sample_timing.then(Instant::now);
 
+        let fixed_accumulator_before = self.fixed_accumulator;
+        let mut fixed_steps = 1u32;
+        let mut fixed_step_seconds = frame_delta.as_secs_f32();
+        let mut fixed_catchup_dropped = false;
         let simulated_delta_seconds = {
             if let Some(effective_fixed_step) = self.fixed_timestep {
-                self.fixed_accumulator += frame_delta.as_secs_f32();
-                let mut steps = 0u32;
-                while self.fixed_accumulator >= effective_fixed_step
-                    && steps < MAX_FIXED_STEPS_PER_FRAME
-                {
+                let plan = plan_fixed_steps(
+                    frame_delta.as_secs_f32(),
+                    effective_fixed_step,
+                    self.fixed_accumulator,
+                );
+                fixed_steps = plan.steps;
+                fixed_step_seconds = plan.step_seconds;
+                fixed_catchup_dropped = plan.dropped_catchup;
+                for _ in 0..plan.steps {
                     let update_start = Instant::now();
                     self.app.fixed_update_runtime(effective_fixed_step);
                     runtime_update_duration += update_start.elapsed();
-                    self.fixed_accumulator -= effective_fixed_step;
-                    steps += 1;
                 }
-                if steps == MAX_FIXED_STEPS_PER_FRAME
-                    && self.fixed_accumulator >= effective_fixed_step
-                {
-                    self.fixed_accumulator = 0.0;
-                }
-                effective_fixed_step as f64 * steps as f64
+                self.fixed_accumulator = plan.accumulator_after;
+                effective_fixed_step as f64 * plan.steps as f64
             } else {
                 let variable_step = frame_delta.as_secs_f32();
                 let update_start = Instant::now();
@@ -715,27 +811,54 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let work_duration = work_start
             .map(|start| start.elapsed())
             .unwrap_or(Duration::ZERO);
+        #[cfg(feature = "profile_heavy")]
+        let present_wait_duration = present_timing.gpu_present;
+        #[cfg(not(feature = "profile_heavy"))]
+        let present_wait_duration = present_timing
+            .as_ref()
+            .map(|timing| timing.gpu_present)
+            .unwrap_or(Duration::ZERO);
+        #[cfg(feature = "profile_heavy")]
+        let present_active_duration = present_timing.total.saturating_sub(present_wait_duration);
+        #[cfg(not(feature = "profile_heavy"))]
+        let present_active_duration = present_timing
+            .as_ref()
+            .map(|timing| timing.total.saturating_sub(timing.gpu_present))
+            .unwrap_or(Duration::ZERO);
+        let active_work_duration = work_duration.saturating_sub(present_wait_duration);
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
 
         self.batch_frames = self.batch_frames.saturating_add(1);
         if should_sample_timing {
             self.batch_timing_samples = self.batch_timing_samples.saturating_add(1);
-            self.batch_work += work_duration;
+            self.batch_work += active_work_duration;
             self.batch_simulation += simulation_duration;
-            self.batch_idle += idle_duration;
+            self.batch_present += present_active_duration;
+            self.batch_idle_before_frame += idle_duration;
+            self.batch_present_wait += present_wait_duration;
+            self.batch_idle += idle_duration + present_wait_duration;
         }
-        #[cfg(not(feature = "profile_heavy"))]
-        if should_sample_timing {
-            let sampled_present = present_timing
-                .as_ref()
-                .map(|timing| timing.gpu_present)
-                .unwrap_or(Duration::ZERO);
-            self.batch_present += sampled_present;
+        if let Some(csv) = &mut self.timing_csv {
+            csv.write(CsvFrameSample {
+                frame_index,
+                sampled: should_sample_timing,
+                frame_delta_us: frame_delta.as_micros(),
+                idle_before_frame_us: idle_duration.as_micros(),
+                simulation_us: simulation_duration.as_micros(),
+                render_active_us: present_active_duration.as_micros(),
+                work_active_us: active_work_duration.as_micros(),
+                present_wait_us: present_wait_duration.as_micros(),
+                fixed_steps,
+                fixed_step_us: Duration::from_secs_f32(fixed_step_seconds).as_micros(),
+                fixed_accum_before_us: Duration::from_secs_f32(fixed_accumulator_before)
+                    .as_micros(),
+                fixed_accum_after_us: Duration::from_secs_f32(self.fixed_accumulator).as_micros(),
+                fixed_catchup_dropped,
+            });
         }
         #[cfg(feature = "profile_heavy")]
         {
-            self.batch_present += present_timing.gpu_present;
             self.batch_runtime_update += runtime_update_duration;
             self.batch_input_poll += input_poll_duration;
             self.batch_fixed_update += fixed_duration;
@@ -807,21 +930,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
     }
 
     fn step_frame(&mut self, now: Instant) {
-        if let Some(target) = target_frame_duration(self.fps_cap) {
-            if self.next_frame_deadline <= self.last_frame_start {
-                self.next_frame_deadline = self.last_frame_start + target;
-            }
-
-            if now < self.next_frame_deadline {
-                return;
-            }
-
-            self.next_frame_deadline = now + target;
-        } else {
-            // Uncapped mode for tiny/invalid frame targets.
-            self.next_frame_deadline = now;
-        }
-
+        self.frame_index = self.frame_index.saturating_add(1);
+        let frame_index = self.frame_index;
         let frame_start = now;
         let frame_delta = frame_start.duration_since(self.last_frame_start);
         self.last_frame_start = frame_start;
@@ -834,7 +944,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let idle_duration = frame_start.saturating_duration_since(self.last_frame_end);
 
         if self.startup_splash.active {
-            self.step_startup_frame(frame_start, frame_delta, idle_duration);
+            self.step_startup_frame(frame_index, frame_start, frame_delta, idle_duration);
             return;
         }
 
@@ -866,26 +976,27 @@ impl<B: GraphicsBackend> RunnerState<B> {
         #[cfg(not(feature = "profile_heavy"))]
         let fixed_start = should_sample_timing.then(Instant::now);
 
+        let fixed_accumulator_before = self.fixed_accumulator;
+        let mut fixed_steps = 1u32;
+        let mut fixed_step_seconds = frame_delta.as_secs_f32();
+        let mut fixed_catchup_dropped = false;
         {
             if let Some(effective_fixed_step) = self.fixed_timestep {
-                self.fixed_accumulator += frame_delta.as_secs_f32();
-                let mut steps = 0u32;
-                while self.fixed_accumulator >= effective_fixed_step
-                    && steps < MAX_FIXED_STEPS_PER_FRAME
-                {
+                let plan = plan_fixed_steps(
+                    frame_delta.as_secs_f32(),
+                    effective_fixed_step,
+                    self.fixed_accumulator,
+                );
+                fixed_steps = plan.steps;
+                fixed_step_seconds = plan.step_seconds;
+                fixed_catchup_dropped = plan.dropped_catchup;
+                for _ in 0..plan.steps {
                     let update_start = Instant::now();
                     self.app.fixed_update_runtime(effective_fixed_step);
                     runtime_update_duration += update_start.elapsed();
-                    self.fixed_accumulator -= effective_fixed_step;
-                    steps += 1;
                 }
-                if steps == MAX_FIXED_STEPS_PER_FRAME
-                    && self.fixed_accumulator >= effective_fixed_step
-                {
-                    // Drop excess accumulated time to avoid spiral-of-death behavior.
-                    self.fixed_accumulator = 0.0;
-                }
-                simulated_delta_seconds = effective_fixed_step as f64 * steps as f64;
+                self.fixed_accumulator = plan.accumulator_after;
+                simulated_delta_seconds = effective_fixed_step as f64 * plan.steps as f64;
             } else {
                 let variable_step = frame_delta.as_secs_f32();
                 let update_start = Instant::now();
@@ -933,6 +1044,21 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let work_duration = work_start
             .map(|start| start.elapsed())
             .unwrap_or(Duration::ZERO);
+        #[cfg(feature = "profile_heavy")]
+        let present_wait_duration = present_timing.gpu_present;
+        #[cfg(not(feature = "profile_heavy"))]
+        let present_wait_duration = present_timing
+            .as_ref()
+            .map(|timing| timing.gpu_present)
+            .unwrap_or(Duration::ZERO);
+        #[cfg(feature = "profile_heavy")]
+        let present_active_duration = present_timing.total.saturating_sub(present_wait_duration);
+        #[cfg(not(feature = "profile_heavy"))]
+        let present_active_duration = present_timing
+            .as_ref()
+            .map(|timing| timing.total.saturating_sub(timing.gpu_present))
+            .unwrap_or(Duration::ZERO);
+        let active_work_duration = work_duration.saturating_sub(present_wait_duration);
 
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
@@ -940,21 +1066,33 @@ impl<B: GraphicsBackend> RunnerState<B> {
         self.batch_frames = self.batch_frames.saturating_add(1);
         if should_sample_timing {
             self.batch_timing_samples = self.batch_timing_samples.saturating_add(1);
-            self.batch_work += work_duration;
+            self.batch_work += active_work_duration;
             self.batch_simulation += simulation_duration;
-            self.batch_idle += idle_duration;
+            self.batch_present += present_active_duration;
+            self.batch_idle_before_frame += idle_duration;
+            self.batch_present_wait += present_wait_duration;
+            self.batch_idle += idle_duration + present_wait_duration;
         }
-        #[cfg(not(feature = "profile_heavy"))]
-        if should_sample_timing {
-            let sampled_present = present_timing
-                .as_ref()
-                .map(|timing| timing.gpu_present)
-                .unwrap_or(Duration::ZERO);
-            self.batch_present += sampled_present;
+        if let Some(csv) = &mut self.timing_csv {
+            csv.write(CsvFrameSample {
+                frame_index,
+                sampled: should_sample_timing,
+                frame_delta_us: frame_delta.as_micros(),
+                idle_before_frame_us: idle_duration.as_micros(),
+                simulation_us: simulation_duration.as_micros(),
+                render_active_us: present_active_duration.as_micros(),
+                work_active_us: active_work_duration.as_micros(),
+                present_wait_us: present_wait_duration.as_micros(),
+                fixed_steps,
+                fixed_step_us: Duration::from_secs_f32(fixed_step_seconds).as_micros(),
+                fixed_accum_before_us: Duration::from_secs_f32(fixed_accumulator_before)
+                    .as_micros(),
+                fixed_accum_after_us: Duration::from_secs_f32(self.fixed_accumulator).as_micros(),
+                fixed_catchup_dropped,
+            });
         }
         #[cfg(feature = "profile_heavy")]
         {
-            self.batch_present += present_timing.gpu_present;
             self.batch_runtime_update += runtime_update_duration;
             self.batch_input_poll += input_poll_duration;
             self.batch_fixed_update += fixed_duration;
@@ -1013,8 +1151,17 @@ impl<B: GraphicsBackend> RunnerState<B> {
             let avg_work_us = avg_micros(self.batch_work, self.batch_timing_samples);
             let avg_simulation_us = avg_micros(self.batch_simulation, self.batch_timing_samples);
             let avg_present_us = avg_micros(self.batch_present, self.batch_timing_samples);
-            let avg_idle_us = avg_micros(self.batch_idle, self.batch_timing_samples);
-            log_avg_sampled(avg_simulation_us, avg_present_us, avg_work_us, avg_idle_us);
+            let avg_idle_before_frame_us =
+                avg_micros(self.batch_idle_before_frame, self.batch_timing_samples);
+            let avg_present_wait_us =
+                avg_micros(self.batch_present_wait, self.batch_timing_samples);
+            log_avg_sampled(
+                avg_simulation_us,
+                avg_present_us,
+                avg_work_us,
+                avg_idle_before_frame_us,
+                avg_present_wait_us,
+            );
             #[cfg(feature = "profile_heavy")]
             {
                 let avg_runtime_update_us =
@@ -1173,6 +1320,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_work = Duration::ZERO;
             self.batch_simulation = Duration::ZERO;
             self.batch_present = Duration::ZERO;
+            self.batch_idle_before_frame = Duration::ZERO;
+            self.batch_present_wait = Duration::ZERO;
             self.batch_idle = Duration::ZERO;
             #[cfg(feature = "profile_heavy")]
             {
@@ -1268,7 +1417,6 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             let now = Instant::now();
             self.last_frame_start = now;
             self.last_frame_end = now;
-            self.next_frame_deadline = now;
             self.run_start = now;
             if self.startup_splash.active {
                 self.startup_splash.shown_at = now;
@@ -1278,11 +1426,15 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.startup_splash.first_frame_captured = false;
             }
             self.fixed_accumulator = 0.0;
+            self.frame_index = 0;
             self.batch_start = now;
             self.batch_frames = 0;
+            self.batch_timing_samples = 0;
             self.batch_work = Duration::ZERO;
             self.batch_simulation = Duration::ZERO;
             self.batch_present = Duration::ZERO;
+            self.batch_idle_before_frame = Duration::ZERO;
+            self.batch_present_wait = Duration::ZERO;
             self.batch_idle = Duration::ZERO;
             #[cfg(feature = "profile_heavy")]
             {
@@ -1469,14 +1621,42 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
         if event_loop.exiting() {
             return;
         }
-        if self.fixed_timestep.is_none() && target_frame_duration(self.fps_cap).is_none() {
-            // Uncapped: tick here to reduce latency between redraw events.
-            self.step_frame(Instant::now());
-            return;
-        }
         if let Some(window) = &self.window {
             window.request_redraw();
         }
+    }
+}
+
+#[cfg(test)]
+mod fixed_step_tests {
+    use super::{MAX_FIXED_STEPS_PER_FRAME, plan_fixed_steps};
+
+    #[test]
+    fn fixed_step_plan_caps_large_delta() {
+        let plan = plan_fixed_steps(1.0, 1.0 / 60.0, 0.0);
+        assert_eq!(plan.steps, MAX_FIXED_STEPS_PER_FRAME);
+        assert!(plan.dropped_catchup);
+        assert!(plan.accumulator_after < 1.0 / 60.0);
+    }
+
+    #[test]
+    fn fixed_step_plan_keeps_substep_remainder() {
+        let step = 1.0 / 60.0;
+        let start = step * 0.5;
+        let plan = plan_fixed_steps(step * 2.25, step, start);
+        assert_eq!(plan.steps, 2);
+        assert!(!plan.dropped_catchup);
+        assert!((plan.accumulator_after - (step * 0.75)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn fixed_step_plan_drops_full_catchup_but_keeps_fractional_progress() {
+        let step = 1.0 / 60.0;
+        let start = step * 0.25;
+        let plan = plan_fixed_steps(step * 20.0, step, start);
+        assert_eq!(plan.steps, MAX_FIXED_STEPS_PER_FRAME);
+        assert!(plan.dropped_catchup);
+        assert!(plan.accumulator_after < step);
     }
 }
 

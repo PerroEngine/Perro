@@ -385,9 +385,8 @@ impl Renderer3D {
     fn rebuild_sorted_draws_cache(&mut self) {
         self.retained_draws_sorted_cache.clear();
         if self.retained_draws_sorted_cache.capacity() < self.retained_draws.len() {
-            self.retained_draws_sorted_cache.reserve(
-                self.retained_draws.len() - self.retained_draws_sorted_cache.capacity(),
-            );
+            self.retained_draws_sorted_cache
+                .reserve(self.retained_draws.len() - self.retained_draws_sorted_cache.capacity());
         }
         self.retained_draws_sorted_cache
             .extend(self.retained_draws.values().cloned());

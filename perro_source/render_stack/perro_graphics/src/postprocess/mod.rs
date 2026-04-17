@@ -209,8 +209,10 @@ impl PostProcessor {
             ],
         });
         let uniform_size_bytes = std::mem::size_of::<PostUniform>() as u64;
-        let uniform_stride =
-            align_up_uniform(uniform_size_bytes, device.limits().min_uniform_buffer_offset_alignment as u64);
+        let uniform_stride = align_up_uniform(
+            uniform_size_bytes,
+            device.limits().min_uniform_buffer_offset_alignment as u64,
+        );
         let uniform_capacity = 1usize;
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_post_uniforms"),

@@ -902,10 +902,7 @@ fn normalize_sample_count(samples: u32) -> u32 {
     }
 }
 
-fn max_supported_msaa_sample_count(
-    adapter: &wgpu::Adapter,
-    format: wgpu::TextureFormat,
-) -> u32 {
+fn max_supported_msaa_sample_count(adapter: &wgpu::Adapter, format: wgpu::TextureFormat) -> u32 {
     let features = adapter.get_texture_format_features(format);
     let flags = features.flags;
     for count in [16u32, 8, 4, 2, 1] {

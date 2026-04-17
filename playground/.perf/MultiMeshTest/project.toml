@@ -20,13 +20,4 @@ occlusion_culling = "gpu"
 particle_sim_default = "gpu"
 
 [runtime]
-target_fps = 60
 target_fixed_update = 60
-
-# Optional CSV localization table.
-# Columns example: key,en,es,fr,ja,zh
-#
-# [localization]
-# source = "res://localization.csv"
-# key = "key"
-# default_locale = "en"
