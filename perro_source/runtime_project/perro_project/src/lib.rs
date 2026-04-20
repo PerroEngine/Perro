@@ -296,6 +296,11 @@ pub fn resolve_local_path(input: &str, local_root: &Path) -> PathBuf {
         return local_root.join(rel);
     }
 
+    #[cfg(not(target_os = "windows"))]
+    if input.starts_with('/') {
+        return PathBuf::from(input);
+    }
+
     if input.starts_with('/') {
         let rel = input.trim_start_matches('/');
         if rel.is_empty() {

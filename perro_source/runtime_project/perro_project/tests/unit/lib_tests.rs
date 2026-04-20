@@ -140,6 +140,7 @@ virtual_resolution = "1920x1080"
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn resolve_local_path_maps_slash_to_local_root() {
     let root = PathBuf::from("D:/workspace");
     assert_eq!(
@@ -147,6 +148,17 @@ fn resolve_local_path_maps_slash_to_local_root() {
         PathBuf::from("D:/workspace").join("games").join("demo")
     );
     assert_eq!(resolve_local_path("/", &root), root);
+}
+
+#[test]
+#[cfg(not(target_os = "windows"))]
+fn resolve_local_path_keeps_unix_absolute_path() {
+    let root = PathBuf::from("/workspace");
+    assert_eq!(
+        resolve_local_path("/games/demo", &root),
+        PathBuf::from("/games/demo")
+    );
+    assert_eq!(resolve_local_path("/", &root), PathBuf::from("/"));
 }
 
 #[test]
