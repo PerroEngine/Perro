@@ -4,6 +4,8 @@ pub const POINT_PARTICLES_GPU_WGSL: &str =
     perro_macros::include_str_stripped!("shaders/point_particles_gpu.wgsl");
 pub const POINT_PARTICLES_COMPUTE_WGSL: &str =
     perro_macros::include_str_stripped!("shaders/point_particles_compute.wgsl");
+pub const POINT_PARTICLES_COMPUTE_RENDER_WGSL: &str =
+    perro_macros::include_str_stripped!("shaders/point_particles_compute_render.wgsl");
 pub const POINT_PARTICLES_COMPUTE_STUB_WGSL: &str = r#"
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -54,7 +56,7 @@ fn gpu_compute_particles_enabled() -> bool {
         .ok()
         .as_deref()
         .map(|v| matches!(v, "1" | "true" | "TRUE" | "on" | "ON"))
-        .unwrap_or(false)
+        .unwrap_or(true)
 }
 
 #[inline]
@@ -83,5 +85,15 @@ pub fn create_point_particles_compute_shader_module(device: &wgpu::Device) -> wg
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_point_particles_compute"),
         source: wgpu::ShaderSource::Wgsl(source.into()),
+    })
+}
+
+#[inline]
+pub fn create_point_particles_compute_render_shader_module(
+    device: &wgpu::Device,
+) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_point_particles_compute_render"),
+        source: wgpu::ShaderSource::Wgsl(POINT_PARTICLES_COMPUTE_RENDER_WGSL.into()),
     })
 }

@@ -1,7 +1,9 @@
 fn shade_material(in: FragmentInput) -> vec4<f32> {
-    let alpha_mode = u32(in.material_params.x + 0.5);
-    let alpha_cutoff = clamp(in.material_params.y, 0.0, 1.0);
-    var alpha = clamp(in.color.a, 0.0, 1.0);
+    let material = decode_material_params(in.packed_material_params);
+    let alpha_mode = material.alpha_mode;
+    let alpha_cutoff = material.alpha_cutoff;
+    let vertex_color = unpack_rgba8(in.packed_color);
+    var alpha = clamp(vertex_color.a, 0.0, 1.0);
     if alpha_mode == 1u && alpha < alpha_cutoff {
         discard;
     }

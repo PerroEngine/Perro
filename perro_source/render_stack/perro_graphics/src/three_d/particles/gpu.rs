@@ -1,6 +1,6 @@
 use super::shaders::{
-    create_point_particles_compute_shader_module, create_point_particles_gpu_shader_module,
-    create_point_particles_shader_module,
+    create_point_particles_compute_render_shader_module, create_point_particles_compute_shader_module,
+    create_point_particles_gpu_shader_module, create_point_particles_shader_module,
 };
 use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
@@ -640,6 +640,7 @@ impl GpuPointParticles3D {
             compilation_options: Default::default(),
             cache: None,
         });
+        let compute_render_shader = create_point_particles_compute_render_shader_module(device);
         let compute_render_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_particles3d_compute_render_layout"),
@@ -651,13 +652,13 @@ impl GpuPointParticles3D {
                 label: Some("perro_particles3d_compute_render_pipeline"),
                 layout: Some(&compute_render_layout),
                 vertex: wgpu::VertexState {
-                    module: &compute_shader,
+                    module: &compute_render_shader,
                     entry_point: Some("vs_main"),
                     buffers: &[],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
-                    module: &compute_shader,
+                    module: &compute_render_shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: color_format,
@@ -697,13 +698,13 @@ impl GpuPointParticles3D {
                 label: Some("perro_particles3d_compute_render_billboard_pipeline"),
                 layout: Some(&compute_render_layout),
                 vertex: wgpu::VertexState {
-                    module: &compute_shader,
+                    module: &compute_render_shader,
                     entry_point: Some("vs_billboard"),
                     buffers: &[],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
-                    module: &compute_shader,
+                    module: &compute_render_shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: color_format,
@@ -1051,9 +1052,11 @@ impl GpuPointParticles3D {
                     }
                 }
                 ParticleSimulationMode3D::GpuCompute => {
-                    if !gpu_compute_particles_enabled()
-                        || !self.push_compute_emitter_particles(*node, emitter)
-                    {
+                    if !gpu_compute_particles_enabled() {
+                        if !self.push_hybrid_emitter_particles(*node, emitter) {
+                            self.push_emitter_particles(*node, emitter);
+                        }
+                    } else if !self.push_compute_emitter_particles(*node, emitter) {
                         self.push_emitter_particles(*node, emitter);
                     }
                 }
@@ -2576,7 +2579,7 @@ fn gpu_compute_particles_enabled() -> bool {
         .ok()
         .as_deref()
         .map(|v| matches!(v, "1" | "true" | "TRUE" | "on" | "ON"))
-        .unwrap_or(false)
+        .unwrap_or(true)
 }
 
 fn append_emitter_map_entries(

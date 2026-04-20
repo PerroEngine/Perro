@@ -64,8 +64,6 @@ var<storage, read> particle_spawn_origins: array<vec4<f32>>;
 @group(1) @binding(7)
 var<storage, read> particle_spawn_rotations: array<vec4<f32>>;
 
-@group(1) @binding(8)
-var<storage, read> particles_read: array<ComputedParticle>;
 
 fn hash01(seed: u32) -> f32 {
     var x = seed * 747796405u + 2891336453u;
@@ -126,190 +124,233 @@ fn eval_expr(
     for (var i: u32 = 0u; i < ops_len; i = i + 1u) {
         let op = expr_ops[ops_offset + i].words;
         let code = op.x;
-        if code == 0u {
-            if sp >= 64u { return 0.0; }
-            stack[sp] = bitcast<f32>(op.y);
-            sp = sp + 1u;
-        } else if code == 1u {
-            if sp >= 64u { return 0.0; }
-            stack[sp] = t;
-            sp = sp + 1u;
-        } else if code == 2u {
-            if sp >= 64u { return 0.0; }
-            stack[sp] = life;
-            sp = sp + 1u;
-        } else if code == 3u {
-            if sp >= 64u { return 0.0; }
-            stack[sp] = particle_id;
-            sp = sp + 1u;
-        } else if code == 4u {
-            if sp >= 64u { return 0.0; }
-            stack[sp] = rand0;
-            sp = sp + 1u;
-        } else if code == 5u {
-            if sp >= 64u { return 0.0; }
-            stack[sp] = rand1;
-            sp = sp + 1u;
-        } else if code == 6u {
-            if sp >= 64u { return 0.0; }
-            stack[sp] = rand2;
-            sp = sp + 1u;
-        } else if code == 7u {
-            if sp < 1u { return 0.0; }
-            sp = sp - 1u;
-            let idx_raw = floor(stack[sp]);
-            var value: f32 = 0.0;
-            if idx_raw >= 0.0 {
-                let idx = u32(idx_raw);
-                if idx < params_len {
-                    value = custom_params[params_offset + idx];
-                }
+        switch code {
+            case 0u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = bitcast<f32>(op.y);
+                sp = sp + 1u;
             }
-            stack[sp] = value;
-            sp = sp + 1u;
-        } else if code == 8u { // add
-            if sp < 2u { return 0.0; }
-            sp = sp - 1u; let b = stack[sp];
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = a + b; sp = sp + 1u;
-        } else if code == 9u { // sub
-            if sp < 2u { return 0.0; }
-            sp = sp - 1u; let b = stack[sp];
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = a - b; sp = sp + 1u;
-        } else if code == 10u { // mul
-            if sp < 2u { return 0.0; }
-            sp = sp - 1u; let b = stack[sp];
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = a * b; sp = sp + 1u;
-        } else if code == 11u { // div
-            if sp < 2u { return 0.0; }
-            sp = sp - 1u; let b = stack[sp];
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = a / b; sp = sp + 1u;
-        } else if code == 12u { // pow
-            if sp < 2u { return 0.0; }
-            sp = sp - 1u; let b = stack[sp];
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = pow(a, b); sp = sp + 1u;
-        } else if code == 13u { // neg
-            if sp < 1u { return 0.0; }
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = -a; sp = sp + 1u;
-        } else if code == 14u { // sin
-            if sp < 1u { return 0.0; }
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = sin(a); sp = sp + 1u;
-        } else if code == 15u { // cos
-            if sp < 1u { return 0.0; }
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = cos(a); sp = sp + 1u;
-        } else if code == 16u { // tan
-            if sp < 1u { return 0.0; }
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = tan(a); sp = sp + 1u;
-        } else if code == 17u { // abs
-            if sp < 1u { return 0.0; }
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = abs(a); sp = sp + 1u;
-        } else if code == 18u { // sqrt
-            if sp < 1u { return 0.0; }
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = sqrt(max(a, 0.0)); sp = sp + 1u;
-        } else if code == 19u { // min
-            if sp < 2u { return 0.0; }
-            sp = sp - 1u; let b = stack[sp];
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = min(a, b); sp = sp + 1u;
-        } else if code == 20u { // max
-            if sp < 2u { return 0.0; }
-            sp = sp - 1u; let b = stack[sp];
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = max(a, b); sp = sp + 1u;
-        } else if code == 21u { // clamp
-            if sp < 3u { return 0.0; }
-            sp = sp - 1u; let hi = stack[sp];
-            sp = sp - 1u; let lo = stack[sp];
-            sp = sp - 1u; let x = stack[sp];
-            stack[sp] = clamp(x, lo, hi); sp = sp + 1u;
-        } else if code == 22u { // speed
-            if sp >= 64u { return 0.0; }
-            stack[sp] = speed;
-            sp = sp + 1u;
-        } else if code == 23u { // lifetime
-            if sp >= 64u { return 0.0; }
-            stack[sp] = lifetime;
-            sp = sp + 1u;
-        } else if code == 24u { // age_left
-            if sp >= 64u { return 0.0; }
-            stack[sp] = max(lifetime - life, 0.0);
-            sp = sp + 1u;
-        } else if code == 25u { // age01
-            if sp >= 64u { return 0.0; }
-            stack[sp] = t;
-            sp = sp + 1u;
-        } else if code == 26u { // spawn_time
-            if sp >= 64u { return 0.0; }
-            stack[sp] = spawn_time;
-            sp = sp + 1u;
-        } else if code == 27u { // emitter_time
-            if sp >= 64u { return 0.0; }
-            stack[sp] = emitter_time;
-            sp = sp + 1u;
-        } else if code == 28u { // dir_x
-            if sp >= 64u { return 0.0; }
-            stack[sp] = dir_x;
-            sp = sp + 1u;
-        } else if code == 29u { // dir_y
-            if sp >= 64u { return 0.0; }
-            stack[sp] = dir_y;
-            sp = sp + 1u;
-        } else if code == 30u { // dir_z
-            if sp >= 64u { return 0.0; }
-            stack[sp] = dir_z;
-            sp = sp + 1u;
-        } else if code == 31u { // vel_x
-            if sp >= 64u { return 0.0; }
-            stack[sp] = vel_x;
-            sp = sp + 1u;
-        } else if code == 32u { // vel_y
-            if sp >= 64u { return 0.0; }
-            stack[sp] = vel_y;
-            sp = sp + 1u;
-        } else if code == 33u { // vel_z
-            if sp >= 64u { return 0.0; }
-            stack[sp] = vel_z;
-            sp = sp + 1u;
-        } else if code == 34u { // seed
-            if sp >= 64u { return 0.0; }
-            stack[sp] = seed;
-            sp = sp + 1u;
-        } else if code == 35u { // ring_u
-            if sp >= 64u { return 0.0; }
-            stack[sp] = ring_u;
-            sp = sp + 1u;
-        } else if code == 36u { // index01
-            if sp >= 64u { return 0.0; }
-            stack[sp] = index01;
-            sp = sp + 1u;
-        } else if code == 37u { // emitter_x
-            if sp >= 64u { return 0.0; }
-            stack[sp] = emitter_x;
-            sp = sp + 1u;
-        } else if code == 38u { // emitter_y
-            if sp >= 64u { return 0.0; }
-            stack[sp] = emitter_y;
-            sp = sp + 1u;
-        } else if code == 39u { // emitter_z
-            if sp >= 64u { return 0.0; }
-            stack[sp] = emitter_z;
-            sp = sp + 1u;
-        } else if code == 43u { // hash
-            if sp < 1u { return 0.0; }
-            sp = sp - 1u; let a = stack[sp];
-            stack[sp] = hash01f(a); sp = sp + 1u;
-        } else {
-            return 0.0;
+            case 1u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = t;
+                sp = sp + 1u;
+            }
+            case 2u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = life;
+                sp = sp + 1u;
+            }
+            case 3u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = particle_id;
+                sp = sp + 1u;
+            }
+            case 4u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = rand0;
+                sp = sp + 1u;
+            }
+            case 5u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = rand1;
+                sp = sp + 1u;
+            }
+            case 6u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = rand2;
+                sp = sp + 1u;
+            }
+            case 7u: {
+                if sp < 1u { return 0.0; }
+                sp = sp - 1u;
+                let idx_raw = floor(stack[sp]);
+                var value: f32 = 0.0;
+                if idx_raw >= 0.0 {
+                    let idx = u32(idx_raw);
+                    if idx < params_len {
+                        value = custom_params[params_offset + idx];
+                    }
+                }
+                stack[sp] = value;
+                sp = sp + 1u;
+            }
+            case 8u: {
+                if sp < 2u { return 0.0; }
+                sp = sp - 1u; let b = stack[sp];
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = a + b; sp = sp + 1u;
+            }
+            case 9u: {
+                if sp < 2u { return 0.0; }
+                sp = sp - 1u; let b = stack[sp];
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = a - b; sp = sp + 1u;
+            }
+            case 10u: {
+                if sp < 2u { return 0.0; }
+                sp = sp - 1u; let b = stack[sp];
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = a * b; sp = sp + 1u;
+            }
+            case 11u: {
+                if sp < 2u { return 0.0; }
+                sp = sp - 1u; let b = stack[sp];
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = a / b; sp = sp + 1u;
+            }
+            case 12u: {
+                if sp < 2u { return 0.0; }
+                sp = sp - 1u; let b = stack[sp];
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = pow(a, b); sp = sp + 1u;
+            }
+            case 13u: {
+                if sp < 1u { return 0.0; }
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = -a; sp = sp + 1u;
+            }
+            case 14u: {
+                if sp < 1u { return 0.0; }
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = sin(a); sp = sp + 1u;
+            }
+            case 15u: {
+                if sp < 1u { return 0.0; }
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = cos(a); sp = sp + 1u;
+            }
+            case 16u: {
+                if sp < 1u { return 0.0; }
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = tan(a); sp = sp + 1u;
+            }
+            case 17u: {
+                if sp < 1u { return 0.0; }
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = abs(a); sp = sp + 1u;
+            }
+            case 18u: {
+                if sp < 1u { return 0.0; }
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = sqrt(max(a, 0.0)); sp = sp + 1u;
+            }
+            case 19u: {
+                if sp < 2u { return 0.0; }
+                sp = sp - 1u; let b = stack[sp];
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = min(a, b); sp = sp + 1u;
+            }
+            case 20u: {
+                if sp < 2u { return 0.0; }
+                sp = sp - 1u; let b = stack[sp];
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = max(a, b); sp = sp + 1u;
+            }
+            case 21u: {
+                if sp < 3u { return 0.0; }
+                sp = sp - 1u; let hi = stack[sp];
+                sp = sp - 1u; let lo = stack[sp];
+                sp = sp - 1u; let x = stack[sp];
+                stack[sp] = clamp(x, lo, hi); sp = sp + 1u;
+            }
+            case 22u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = speed;
+                sp = sp + 1u;
+            }
+            case 23u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = lifetime;
+                sp = sp + 1u;
+            }
+            case 24u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = max(lifetime - life, 0.0);
+                sp = sp + 1u;
+            }
+            case 25u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = t;
+                sp = sp + 1u;
+            }
+            case 26u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = spawn_time;
+                sp = sp + 1u;
+            }
+            case 27u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = emitter_time;
+                sp = sp + 1u;
+            }
+            case 28u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = dir_x;
+                sp = sp + 1u;
+            }
+            case 29u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = dir_y;
+                sp = sp + 1u;
+            }
+            case 30u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = dir_z;
+                sp = sp + 1u;
+            }
+            case 31u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = vel_x;
+                sp = sp + 1u;
+            }
+            case 32u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = vel_y;
+                sp = sp + 1u;
+            }
+            case 33u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = vel_z;
+                sp = sp + 1u;
+            }
+            case 34u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = seed;
+                sp = sp + 1u;
+            }
+            case 35u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = ring_u;
+                sp = sp + 1u;
+            }
+            case 36u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = index01;
+                sp = sp + 1u;
+            }
+            case 37u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = emitter_x;
+                sp = sp + 1u;
+            }
+            case 38u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = emitter_y;
+                sp = sp + 1u;
+            }
+            case 39u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = emitter_z;
+                sp = sp + 1u;
+            }
+            case 43u: {
+                if sp < 1u { return 0.0; }
+                sp = sp - 1u; let a = stack[sp];
+                stack[sp] = hash01f(a); sp = sp + 1u;
+            }
+            default: {
+                return 0.0;
+            }
         }
     }
     if sp == 1u {
@@ -541,49 +582,4 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     particles[idx] = eval_particle(idx);
 }
-
-struct ParticleOut {
-    @builtin(position) clip_pos: vec4<f32>,
-    @location(0) color: vec4<f32>,
-    @location(1) emissive: vec3<f32>,
-}
-
-@vertex
-fn vs_main(@builtin(instance_index) particle_index: u32) -> ParticleOut {
-    var out: ParticleOut;
-    let p = particles_read[particle_index];
-    out.clip_pos = camera.view_proj * vec4<f32>(p.world_pos.xyz, 1.0);
-    out.color = p.color;
-    out.emissive = p.emissive.xyz;
-    return out;
-}
-
-@vertex
-fn vs_billboard(
-    @builtin(instance_index) particle_index: u32,
-    @builtin(vertex_index) vertex_index: u32,
-) -> ParticleOut {
-    var out: ParticleOut;
-    let p = particles_read[particle_index];
-    let center_clip = camera.view_proj * vec4<f32>(p.world_pos.xyz, 1.0);
-    let corners = array<vec2<f32>, 4>(
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>(1.0, -1.0),
-        vec2<f32>(-1.0, 1.0),
-        vec2<f32>(1.0, 1.0),
-    );
-    let half_size = max(p.world_pos.w * 0.5, 1.0);
-    let ndc_offset = corners[vertex_index] * half_size * camera.inv_view_size * 2.0;
-    out.clip_pos = center_clip + vec4<f32>(ndc_offset * center_clip.w, 0.0, 0.0);
-    out.color = p.color;
-    out.emissive = p.emissive.xyz;
-    return out;
-}
-
-@fragment
-fn fs_main(in: ParticleOut) -> @location(0) vec4<f32> {
-    let rgb = in.color.rgb + in.emissive;
-    return vec4<f32>(rgb, in.color.a);
-}
-
 
