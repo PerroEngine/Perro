@@ -80,7 +80,7 @@ fn print_usage() {
     eprintln!("  perro_cli format [--path <project_dir>]   # rustfmt .rs under project res only");
     eprintln!("  perro_cli clean [--path <project_dir>]    # remove project target/");
     eprintln!(
-        "  perro_cli install                          # add `perro` source-mode command (PowerShell)"
+        "  perro_cli install                          # add `perro` source-mode command in shell profile"
     );
     eprintln!("  perro_cli new [--path <parent_dir>] [--name <project_name>]");
     eprintln!(
@@ -279,31 +279,60 @@ const PROFILE_SNIPPET_BEGIN: &str = "# >>> perro_cli source-mode >>>";
 const PROFILE_SNIPPET_END: &str = "# <<< perro_cli source-mode <<<";
 
 fn install_command(args: &[String]) -> Result<(), String> {
-    if !cfg!(target_os = "windows") {
-        return Err(
-            "install currently supports Windows PowerShell profile setup only. Use the docs snippet manually for other shells."
-                .to_string(),
-        );
-    }
-
     let explicit_profile = parse_flag_value(args, "--profile").map(PathBuf::from);
-    let profile_paths = if let Some(path) = explicit_profile {
-        vec![path]
-    } else {
-        default_powershell_profile_paths()
-    };
-    let workspace_manifest =
-        normalize_powershell_path(&workspace_root().join("Cargo.toml")).replace('\\', "\\\\");
-    let snippet = format!(
-        "{PROFILE_SNIPPET_BEGIN}\n\
+
+    if cfg!(target_os = "windows") {
+        let profile_paths = if let Some(path) = explicit_profile {
+            vec![path]
+        } else {
+            default_powershell_profile_paths()
+        };
+        let workspace_manifest =
+            normalize_powershell_path(&workspace_root().join("Cargo.toml")).replace('\\', "\\\\");
+        let snippet = format!(
+            "{PROFILE_SNIPPET_BEGIN}\n\
 function perro {{\n\
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)\n\
     cargo run --manifest-path \"{workspace_manifest}\" -p perro_cli -- @Args\n\
 }}\n\
 {PROFILE_SNIPPET_END}\n"
-    );
+        );
+        install_snippet_into_profiles(&profile_paths, &snippet)?;
+        if let Some(primary) = profile_paths.first() {
+            println!("restart PowerShell or run: . \"{}\"", primary.display());
+        }
+        return Ok(());
+    }
 
-    for profile_path in &profile_paths {
+    if cfg!(target_os = "linux") {
+        let profile_paths = if let Some(path) = explicit_profile {
+            vec![path]
+        } else {
+            default_posix_profile_paths()
+        };
+        let workspace_manifest = shell_single_quote_path(&workspace_root().join("Cargo.toml"));
+        let snippet = format!(
+            "{PROFILE_SNIPPET_BEGIN}\n\
+perro() {{\n\
+    cargo run --manifest-path {workspace_manifest} -p perro_cli -- \"$@\"\n\
+}}\n\
+{PROFILE_SNIPPET_END}\n"
+        );
+        install_snippet_into_profiles(&profile_paths, &snippet)?;
+        if let Some(primary) = profile_paths.first() {
+            println!("restart shell or run: . \"{}\"", primary.display());
+        }
+        return Ok(());
+    }
+
+    Err(
+        "install currently supports Windows PowerShell + Linux POSIX shells only. Use docs snippet manually for this platform."
+            .to_string(),
+    )
+}
+
+fn install_snippet_into_profiles(profile_paths: &[PathBuf], snippet: &str) -> Result<(), String> {
+    for profile_path in profile_paths {
         let parent = profile_path.parent().ok_or_else(|| {
             format!(
                 "invalid profile path (no parent directory): {}",
@@ -320,7 +349,7 @@ function perro {{\n\
             String::new()
         };
 
-        let updated = replace_or_append_snippet(&existing, &snippet)?;
+        let updated = replace_or_append_snippet(&existing, snippet)?;
         fs::write(profile_path, updated)
             .map_err(|err| format!("failed to write {}: {err}", profile_path.display()))?;
         println!(
@@ -328,10 +357,26 @@ function perro {{\n\
             profile_path.display()
         );
     }
-    if let Some(primary) = profile_paths.first() {
-        println!("restart PowerShell or run: . \"{}\"", primary.display());
-    }
     Ok(())
+}
+
+fn default_posix_profile_paths() -> Vec<PathBuf> {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let home = PathBuf::from(home);
+    let mut paths = vec![
+        home.join(".profile"),
+        home.join(".bashrc"),
+        home.join(".zshrc"),
+    ];
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn shell_single_quote_path(path: &Path) -> String {
+    let raw = path.to_string_lossy();
+    let escaped = raw.replace('\'', "'\"'\"'");
+    format!("'{escaped}'")
 }
 
 fn default_powershell_profile_paths() -> Vec<PathBuf> {

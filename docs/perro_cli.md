@@ -1,6 +1,6 @@
 # Perro CLI
 
-This document covers Perro CLI in command-first style. Commands are shown using `perro`, assuming you ran `perro_cli install` and restarted PowerShell, or installed from crates.io when available.
+This document covers Perro CLI in command-first style. Commands are shown using `perro`, assuming you ran `perro_cli install` and reloaded your shell profile, or installed from crates.io when available.
 
 - `check`
 - `dev`
@@ -199,10 +199,12 @@ perro install
 
 What it does:
 
-1. Adds/updates a `perro` PowerShell function in your profile.
-2. That function runs source-mode CLI from your local repo via `cargo run -p perro_cli -- ...`.
+1. Adds/updates a `perro` shell function in your profile.
+2. On Windows, updates PowerShell profiles.
+3. On Linux, updates POSIX shell profiles (`~/.profile`, `~/.bashrc`, `~/.zshrc`).
+4. Function runs source-mode CLI from your local repo via `cargo run -p perro_cli -- ...`.
 
-After running install, open a new PowerShell and use:
+After running install, open a new shell (or source your updated profile) and use:
 
 ```powershell
 perro new --path D:\GameProjects --name MyGame
