@@ -326,7 +326,9 @@ impl Runtime {
                     let node_insert_start = Instant::now();
                     merged = merge_prepared_scene(self, prepared)?;
                     #[cfg(feature = "profile")]
-                    let node_insert = node_insert_start.elapsed();
+                    {
+                        node_insert = node_insert_start.elapsed();
+                    }
                 } else {
                     mode_label = "static_fallback_dynamic";
                     let (runtime_scene, load_stats) =

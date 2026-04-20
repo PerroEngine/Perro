@@ -234,6 +234,7 @@ impl Gpu {
             .unwrap_or(caps.formats[0]);
         let render_format = linear_render_format(surface_format);
         let present_mode = choose_present_mode(&caps.present_modes, vsync_enabled);
+        let max_frame_latency = choose_max_frame_latency(vsync_enabled);
         let alpha_mode = if caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
             wgpu::CompositeAlphaMode::Opaque
         } else {
@@ -251,8 +252,12 @@ impl Gpu {
             present_mode,
             alpha_mode,
             view_formats: vec![],
-            desired_maximum_frame_latency: choose_max_frame_latency(vsync_enabled),
+            desired_maximum_frame_latency: max_frame_latency,
         };
+        eprintln!(
+            "[perro][gfx] vsync=({vsync_enabled}) present_mode=({present_mode:?}) max_frame_latency=({max_frame_latency}) present_caps=({:?})",
+            caps.present_modes
+        );
         surface.configure(&device, &config);
 
         let max_supported_sample_count = max_supported_msaa_sample_count(&adapter, render_format);
@@ -1128,6 +1133,15 @@ fn linear_render_format(surface_format: wgpu::TextureFormat) -> wgpu::TextureFor
 }
 
 fn choose_present_mode(modes: &[wgpu::PresentMode], vsync_enabled: bool) -> wgpu::PresentMode {
+    if let Some(forced) = parse_present_mode_override() {
+        if modes.contains(&forced) {
+            return forced;
+        }
+        eprintln!(
+            "[perro][gfx] PERRO_PRESENT_MODE set but unsupported by surface: ({forced:?})"
+        );
+    }
+
     let preferred = if vsync_enabled {
         [
             wgpu::PresentMode::AutoVsync,
@@ -1159,4 +1173,23 @@ fn choose_max_frame_latency(vsync_enabled: bool) -> u32 {
         .and_then(|raw| raw.parse::<u32>().ok())
         .map(|val| val.clamp(1, 8))
         .unwrap_or(default)
+}
+
+fn parse_present_mode_override() -> Option<wgpu::PresentMode> {
+    let raw = std::env::var("PERRO_PRESENT_MODE").ok()?;
+    let norm = raw.trim().to_ascii_lowercase();
+    match norm.as_str() {
+        "autovsync" | "auto_vsync" => Some(wgpu::PresentMode::AutoVsync),
+        "fiforelaxed" | "fifo_relaxed" => Some(wgpu::PresentMode::FifoRelaxed),
+        "fifo" => Some(wgpu::PresentMode::Fifo),
+        "mailbox" => Some(wgpu::PresentMode::Mailbox),
+        "immediate" => Some(wgpu::PresentMode::Immediate),
+        "autonovsync" | "auto_novsync" => Some(wgpu::PresentMode::AutoNoVsync),
+        _ => {
+            eprintln!(
+                "[perro][gfx] unknown PERRO_PRESENT_MODE=({raw}); ignore override"
+            );
+            None
+        }
+    }
 }
