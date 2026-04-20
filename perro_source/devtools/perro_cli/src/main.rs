@@ -72,7 +72,7 @@ fn print_usage() {
         "  perro_cli build [--path <project_dir>] [--profile]    # full static project bundle + build"
     );
     eprintln!(
-        "  perro_cli dev [--path <project_dir>] [--profile]      # build scripts + run dev runner"
+        "  perro_cli dev [--path <project_dir>] [--profile] [--release]      # build scripts + run dev runner"
     );
     eprintln!(
         "  perro_cli flamegraph [--path <project_dir>] [--profile] [--root]    # run cargo flamegraph for dev runner (auto-installs tool if missing)"
@@ -337,13 +337,19 @@ function perro {{\n\
 fn default_powershell_profile_paths() -> Vec<PathBuf> {
     let user_profile = env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string());
     let docs = PathBuf::from(user_profile).join("Documents");
-    let ps7 = docs
-        .join("PowerShell")
-        .join("Microsoft.PowerShell_profile.ps1");
-    let ps5 = docs
-        .join("WindowsPowerShell")
-        .join("Microsoft.PowerShell_profile.ps1");
-    vec![ps7, ps5]
+    let ps7_dir = docs.join("PowerShell");
+    let ps5_dir = docs.join("WindowsPowerShell");
+
+    // Install for current host + all hosts in both pwsh (7+) and Windows PowerShell (5.1).
+    let mut paths = vec![
+        ps7_dir.join("Microsoft.PowerShell_profile.ps1"),
+        ps7_dir.join("profile.ps1"),
+        ps5_dir.join("Microsoft.PowerShell_profile.ps1"),
+        ps5_dir.join("profile.ps1"),
+    ];
+    paths.sort();
+    paths.dedup();
+    paths
 }
 
 fn normalize_powershell_path(path: &Path) -> String {
@@ -1011,6 +1017,7 @@ fn scripts_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
 fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let profile = args.iter().any(|a| a == "--profile");
+    let release = args.iter().any(|a| a == "--release");
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
@@ -1032,11 +1039,11 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     log_step("Building Dev Runner");
 
     let mut build_cmd = Command::new("cargo");
-    build_cmd
-        .arg("build")
-        .arg("--release")
-        .env("CARGO_TARGET_DIR", &target_dir)
-        .current_dir(&dev_runner_dir);
+    build_cmd.arg("build").env("CARGO_TARGET_DIR", &target_dir);
+    if release {
+        build_cmd.arg("--release");
+    }
+    build_cmd.current_dir(&dev_runner_dir);
     if profile {
         build_cmd.arg("--features").arg("profile");
     }
@@ -1055,10 +1062,11 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     }
     log_done("Dev Runner Built");
 
+    let profile_dir = if release { "release" } else { "debug" };
     let runner_path = if cfg!(target_os = "windows") {
-        target_dir.join("release").join("perro_dev_runner.exe")
+        target_dir.join(profile_dir).join("perro_dev_runner.exe")
     } else {
-        target_dir.join("release").join("perro_dev_runner")
+        target_dir.join(profile_dir).join("perro_dev_runner")
     };
     log_note("Running Dev Runner");
 
