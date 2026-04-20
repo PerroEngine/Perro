@@ -48,7 +48,7 @@
             perlin_fbm(macro_uv * 0.55 + vec2<f32>( 13.0,  -7.0), 2),
             perlin_fbm(macro_uv * 0.55 + vec2<f32>( -5.0,  11.0), 2)
         ) - vec2<f32>(0.5, 0.5);
-        let macro_shape = perlin_fbm(macro_uv + macro_warp * 1.35, 3);
+        let macro_shape = perlin_fbm(macro_uv + macro_warp * 1.35, 2);
         let macro_bias  = smoothstep(0.35, 1.0, macro_shape) * 0.22;
 
         // ── Top layer ─────────────────────────────────────────
@@ -59,7 +59,7 @@
             perlin_fbm(top_uv * 0.7 + vec2<f32>( 19.0, -23.0), 2),
             perlin_fbm(top_uv * 0.7 + vec2<f32>(-17.0,  29.0), 2)
         ) - vec2<f32>(0.5, 0.5);
-        let noise_top_raw = perlin_fbm(top_uv + top_warp * 0.95, 4);
+        let noise_top_raw = perlin_fbm(top_uv + top_warp * 0.95, 3);
 
         // ── Mid layer ─────────────────────────────────────────
         drift = rotate2(wind_dir, shear_mid) * cloud_clock * 0.94
@@ -69,7 +69,7 @@
             perlin_fbm(mid_uv * 0.68 + vec2<f32>(  7.0, -31.0), 2),
             perlin_fbm(mid_uv * 0.68 + vec2<f32>(-29.0,   5.0), 2)
         ) - vec2<f32>(0.5, 0.5);
-        let noise_middle_raw = perlin_fbm(mid_uv + mid_warp * 0.82, 4);
+        let noise_middle_raw = perlin_fbm(mid_uv + mid_warp * 0.82, 3);
 
         // ── Bottom layer ──────────────────────────────────────
         // Uses a tighter scale (1.32x) so the dark shadow underside has a
@@ -82,13 +82,13 @@
             perlin_fbm(bot_uv * 0.75 + vec2<f32>(-13.0,  17.0), 2),
             perlin_fbm(bot_uv * 0.72 + vec2<f32>( 23.0, -11.0), 2)
         ) - vec2<f32>(0.5, 0.5);
-        let noise_bottom_raw = perlin_fbm(bot_uv + bot_warp * 0.74, 4);
+        let noise_bottom_raw = perlin_fbm(bot_uv + bot_warp * 0.74, 3);
 
         // ── Micro detail ──────────────────────────────────────
         let detail_micro = perlin_fbm(
             (sky_uv + wind_dir * cloud_clock * 1.28 + vec2<f32>(9.0, -13.0))
                 * (clouds_scale * 1.75),
-            3
+            2
         );
 
         // ── Threshold layers ──────────────────────────────────
@@ -199,7 +199,7 @@
         let wisp_night = perlin_fbm(
             sky_uv * (clouds_scale * 1.80)
             + wind_dir * cloud_clock * 1.75
-            + vec2<f32>(-11.0, 47.0), 4
+            + vec2<f32>(-11.0, 47.0), 3
         );
         let wisp_fray = smoothstep(0.42, 0.88, wisp_night);
 

@@ -115,6 +115,9 @@ struct SkyUniform {
     wind: [f32; 4],    // x,y = cloud wind, z = style_blend (0 toon, 1 realistic), w = reserved
 }
 
+const SKY_PARAMS2_W_OFFSET: u64 =
+    std::mem::offset_of!(SkyUniform, params2) as u64 + (3 * std::mem::size_of::<f32>() as u64);
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 struct RayLightGpu {
@@ -376,6 +379,7 @@ pub struct Gpu3D {
     shadow_focus_center: Vec3,
     shadow_focus_radius: f32,
     last_sky: Option<SkyUniform>,
+    last_sky_cloud_time_seconds: f32,
     sky_enabled: bool,
     mesh_vertices: Vec<MeshVertex>,
     rigid_mesh_vertices: Vec<RigidMeshVertex>,
@@ -2025,6 +2029,7 @@ impl Gpu3D {
             shadow_focus_center: Vec3::ZERO,
             shadow_focus_radius: 64.0,
             last_sky: None,
+            last_sky_cloud_time_seconds: -1.0,
             sky_enabled: false,
             mesh_vertices: vertices,
             rigid_mesh_vertices: rigid_vertices,
@@ -2513,11 +2518,28 @@ impl Gpu3D {
         let uniform = build_scene_uniform(&camera, lighting, width, height);
         let sky_uniform = build_sky_uniform(&camera, lighting, width, height);
         self.sky_enabled = sky_uniform.is_some();
-        if self.last_sky != sky_uniform {
-            if let Some(sky) = sky_uniform {
-                queue.write_buffer(&self.sky_buffer, 0, bytemuck::bytes_of(&sky));
+        match sky_uniform {
+            Some(sky) => {
+                let cloud_time_seconds = sky.params2[3];
+                let mut static_sky = sky;
+                static_sky.params2[3] = 0.0;
+                if self.last_sky != Some(static_sky) {
+                    queue.write_buffer(&self.sky_buffer, 0, bytemuck::bytes_of(&sky));
+                    self.last_sky = Some(static_sky);
+                    self.last_sky_cloud_time_seconds = cloud_time_seconds;
+                } else if self.last_sky_cloud_time_seconds != cloud_time_seconds {
+                    queue.write_buffer(
+                        &self.sky_buffer,
+                        SKY_PARAMS2_W_OFFSET,
+                        bytemuck::bytes_of(&cloud_time_seconds),
+                    );
+                    self.last_sky_cloud_time_seconds = cloud_time_seconds;
+                }
             }
-            self.last_sky = sky_uniform;
+            None => {
+                self.last_sky = None;
+                self.last_sky_cloud_time_seconds = -1.0;
+            }
         }
         let draws_unchanged = self.last_draws_revision == draws_revision;
         let has_dense_multimesh = draws.iter().any(|d| d.dense_multimesh.is_some());

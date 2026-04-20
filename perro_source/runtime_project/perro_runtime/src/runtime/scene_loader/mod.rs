@@ -288,7 +288,7 @@ impl Runtime {
         #[cfg(feature = "profile")]
         let mut parse: Option<Duration> = None;
         #[cfg(feature = "profile")]
-        let mut node_insert = Duration::ZERO;
+        let mut node_insert: Option<Duration> = None;
         let merged;
         match self.provider_mode {
             ProviderMode::Dynamic => {
@@ -308,7 +308,7 @@ impl Runtime {
                 merged = merge_prepared_scene(self, prepared)?;
                 #[cfg(feature = "profile")]
                 {
-                    node_insert = node_insert_start.elapsed();
+                    node_insert = Some(node_insert_start.elapsed());
                 }
                 #[cfg(not(feature = "profile"))]
                 {
@@ -327,7 +327,7 @@ impl Runtime {
                     merged = merge_prepared_scene(self, prepared)?;
                     #[cfg(feature = "profile")]
                     {
-                        node_insert = node_insert_start.elapsed();
+                        node_insert = Some(node_insert_start.elapsed());
                     }
                 } else {
                     mode_label = "static_fallback_dynamic";
@@ -347,7 +347,7 @@ impl Runtime {
                     merged = merge_prepared_scene(self, prepared)?;
                     #[cfg(feature = "profile")]
                     {
-                        node_insert = node_insert_start.elapsed();
+                        node_insert = Some(node_insert_start.elapsed());
                     }
                     #[cfg(not(feature = "profile"))]
                     {
@@ -368,7 +368,7 @@ impl Runtime {
             mode_label,
             source_load,
             parse,
-            node_insert,
+            node_insert: node_insert.unwrap_or(Duration::ZERO),
             total_excluding_debug_print: boot_start.elapsed(),
         };
         #[cfg(feature = "profile")]

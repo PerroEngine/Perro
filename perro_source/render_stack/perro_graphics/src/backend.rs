@@ -604,8 +604,13 @@ impl GraphicsBackend for PerroGraphics {
                     }
                 }
                 RenderCommand::ThreeD(cmd_3d) => {
-                    frame_dirty_bits |= DIRTY_3D;
                     match &**cmd_3d {
+                        Command3D::Draw { .. }
+                        | Command3D::DrawMulti { .. }
+                        | Command3D::DrawMultiDense { .. }
+                        | Command3D::DrawDebugPoint3D { .. }
+                        | Command3D::DrawDebugLine3D { .. }
+                        | Command3D::RemoveNode { .. } => frame_dirty_bits |= DIRTY_3D,
                         Command3D::SetCamera { .. } => frame_dirty_bits |= DIRTY_CAMERA_3D,
                         Command3D::SetAmbientLight { .. }
                         | Command3D::SetSky { .. }
@@ -615,7 +620,6 @@ impl GraphicsBackend for PerroGraphics {
                         Command3D::UpsertPointParticles { .. } => {
                             frame_dirty_bits |= DIRTY_PARTICLES_3D
                         }
-                        _ => {}
                     }
                 }
                 RenderCommand::Resource(_) => frame_dirty_bits |= DIRTY_RESOURCES,

@@ -593,35 +593,6 @@ impl Gpu {
         }
         timing.prepare_3d = prepare_3d_start.elapsed();
 
-        let acquire_start = Instant::now();
-        let acquire_surface_start = Instant::now();
-        let frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                timing.acquire_surface = acquire_surface_start.elapsed();
-                self.surface.configure(&self.device, &self.config);
-                timing.acquire = acquire_start.elapsed();
-                timing.total = total_start.elapsed();
-                return timing;
-            }
-            wgpu::CurrentSurfaceTexture::Timeout
-            | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Validation => {
-                timing.acquire_surface = acquire_surface_start.elapsed();
-                timing.acquire = acquire_start.elapsed();
-                timing.total = total_start.elapsed();
-                return timing;
-            }
-        };
-        timing.acquire_surface = acquire_surface_start.elapsed();
-
-        let acquire_view_start = Instant::now();
-        let swap_view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        timing.acquire_view = acquire_view_start.elapsed();
-        timing.acquire = acquire_start.elapsed();
         let (camera_post_chain, camera_post_enabled) =
             if PostProcessor::has_effects(camera_3d.post_processing.as_ref()) {
                 (camera_3d.post_processing.as_ref(), true)
@@ -644,10 +615,46 @@ impl Gpu {
         let depth_prepass_needed = (camera_post_enabled
             && PostProcessor::uses_depth(camera_post_chain))
             || (global_post_enabled && PostProcessor::uses_depth(global_post_chain));
+        let mut frame = None;
+        let mut swap_view = None;
+        if direct_present || msaa_direct_present {
+            let acquire_start = Instant::now();
+            let acquire_surface_start = Instant::now();
+            let acquired = match self.surface.get_current_texture() {
+                wgpu::CurrentSurfaceTexture::Success(frame)
+                | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+                wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                    timing.acquire_surface = acquire_surface_start.elapsed();
+                    self.surface.configure(&self.device, &self.config);
+                    timing.acquire = acquire_start.elapsed();
+                    timing.total = total_start.elapsed();
+                    return timing;
+                }
+                wgpu::CurrentSurfaceTexture::Timeout
+                | wgpu::CurrentSurfaceTexture::Occluded
+                | wgpu::CurrentSurfaceTexture::Validation => {
+                    timing.acquire_surface = acquire_surface_start.elapsed();
+                    timing.acquire = acquire_start.elapsed();
+                    timing.total = total_start.elapsed();
+                    return timing;
+                }
+            };
+            timing.acquire_surface = acquire_surface_start.elapsed();
+            let acquire_view_start = Instant::now();
+            let view = acquired
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            timing.acquire_view = acquire_view_start.elapsed();
+            timing.acquire = acquire_start.elapsed();
+            frame = Some(acquired);
+            swap_view = Some(view);
+        }
         let scene_view = self.post.scene_view().clone();
         let intermediate_view = self.accessibility.intermediate_view().clone();
         let color_view = if direct_present {
-            &swap_view
+            swap_view
+                .as_ref()
+                .expect("swap view exists for direct present path")
         } else {
             self.msaa_color
                 .as_ref()
@@ -657,7 +664,11 @@ impl Gpu {
         let resolve_view = if direct_present {
             None
         } else if msaa_direct_present {
-            Some(&swap_view)
+            Some(
+                swap_view
+                    .as_ref()
+                    .expect("swap view exists for msaa direct present path"),
+            )
         } else if self.sample_count > 1 {
             Some(&scene_view)
         } else {
@@ -702,14 +713,13 @@ impl Gpu {
         }
         if let Some(two_d) = self.two_d.as_ref() {
             two_d.render_pass(&mut encoder, color_view, resolve_view, rect_draw_count);
-        } else if msaa_direct_present {
-            // No 2D renderer pass means no place left to trigger MSAA resolve.
-            // Do a minimal resolve-only pass once at the end of scene rendering.
+        } else if let Some(resolve_target) = resolve_view {
+            // No 2D pass still needs one resolve pass on MSAA paths.
             let _resolve_only_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_msaa_resolve_only_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: color_view,
-                    resolve_target: Some(&swap_view),
+                    resolve_target: Some(resolve_target),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -731,61 +741,45 @@ impl Gpu {
             Intermediate,
         }
         let mut current_tex = FrameTex::Scene;
-        if !direct_present {
-            let mut apply_post_chain =
-                |effects: &[perro_structs::PostProcessEffect], current_tex: &mut FrameTex| {
-                    if effects.is_empty() {
-                        return;
-                    }
-                    let (input_view, output_view, next_tex) = match *current_tex {
-                        FrameTex::Scene => {
-                            (&scene_view, &intermediate_view, FrameTex::Intermediate)
-                        }
-                        FrameTex::Intermediate => {
-                            (&intermediate_view, &scene_view, FrameTex::Scene)
-                        }
-                    };
-                    let post_context = PostProcessContext {
-                        device: &self.device,
-                        queue: &self.queue,
-                        output_view,
-                        camera: &camera_3d,
-                        static_shader_lookup,
-                    };
-                    let post_chain_data = PostProcessChainData {
-                        input_view,
-                        depth_view: self
-                            .three_d
-                            .as_ref()
-                            .expect("three_d is initialized when post-processing is active")
-                            .depth_prepass_view(),
-                        effects,
-                    };
-                    self.post
-                        .apply_chain(&post_context, &post_chain_data, &mut encoder);
-                    *current_tex = next_tex;
+        let mut apply_post_chain =
+            |effects: &[perro_structs::PostProcessEffect], current_tex: &mut FrameTex| {
+                if effects.is_empty() {
+                    return;
+                }
+                let (input_view, output_view, next_tex) = match *current_tex {
+                    FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
+                    FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene),
                 };
-            apply_post_chain(
-                if camera_post_enabled {
-                    camera_post_chain
-                } else {
-                    &[]
-                },
-                &mut current_tex,
-            );
-            apply_post_chain(
-                if global_post_enabled {
-                    global_post_chain
-                } else {
-                    &[]
-                },
-                &mut current_tex,
-            );
+                let post_context = PostProcessContext {
+                    device: &self.device,
+                    queue: &self.queue,
+                    output_view,
+                    camera: &camera_3d,
+                    static_shader_lookup,
+                };
+                let post_chain_data = PostProcessChainData {
+                    input_view,
+                    depth_view: self
+                        .three_d
+                        .as_ref()
+                        .expect("three_d is initialized when post-processing is active")
+                        .depth_prepass_view(),
+                    effects,
+                };
+                self.post
+                    .apply_chain(&post_context, &post_chain_data, &mut encoder);
+                *current_tex = next_tex;
+            };
+        if camera_post_enabled {
+            apply_post_chain(camera_post_chain, &mut current_tex);
+        }
+        if global_post_enabled {
+            apply_post_chain(global_post_chain, &mut current_tex);
         }
         timing.post_process = post_start.elapsed();
 
         let accessibility_start = Instant::now();
-        if !direct_present && accessibility_enabled {
+        if accessibility_enabled {
             let (accessibility_input_view, accessibility_output_view, next_tex) = match current_tex
             {
                 FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
@@ -808,8 +802,36 @@ impl Gpu {
                 FrameTex::Scene => &self.present_scene_bind_group,
                 FrameTex::Intermediate => &self.present_intermediate_bind_group,
             };
-            self.present
-                .apply(&mut encoder, final_bind_group, &swap_view);
+            let acquire_start = Instant::now();
+            let acquire_surface_start = Instant::now();
+            let acquired = match self.surface.get_current_texture() {
+                wgpu::CurrentSurfaceTexture::Success(frame)
+                | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+                wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                    timing.acquire_surface = acquire_surface_start.elapsed();
+                    self.surface.configure(&self.device, &self.config);
+                    timing.acquire = acquire_start.elapsed();
+                    timing.total = total_start.elapsed();
+                    return timing;
+                }
+                wgpu::CurrentSurfaceTexture::Timeout
+                | wgpu::CurrentSurfaceTexture::Occluded
+                | wgpu::CurrentSurfaceTexture::Validation => {
+                    timing.acquire_surface = acquire_surface_start.elapsed();
+                    timing.acquire = acquire_start.elapsed();
+                    timing.total = total_start.elapsed();
+                    return timing;
+                }
+            };
+            timing.acquire_surface = acquire_surface_start.elapsed();
+            let acquire_view_start = Instant::now();
+            let view = acquired
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            timing.acquire_view = acquire_view_start.elapsed();
+            timing.acquire = acquire_start.elapsed();
+            self.present.apply(&mut encoder, final_bind_group, &view);
+            frame = Some(acquired);
         }
         let submit_start = Instant::now();
         let submit_finish_start = Instant::now();
@@ -830,9 +852,11 @@ impl Gpu {
             .map(|three_d| three_d.draw_call_count())
             .unwrap_or(0);
         let present_start = Instant::now();
-        frame.present();
-        timing.present = present_start.elapsed();
-        timing.presented = true;
+        if let Some(frame) = frame {
+            frame.present();
+            timing.present = present_start.elapsed();
+            timing.presented = true;
+        }
         timing.total = total_start.elapsed();
         timing
     }
@@ -1167,7 +1191,7 @@ fn choose_present_mode(modes: &[wgpu::PresentMode], vsync_enabled: bool) -> wgpu
 }
 
 fn choose_max_frame_latency(vsync_enabled: bool) -> u32 {
-    let default = if vsync_enabled { 3 } else { 2 };
+    let default = if vsync_enabled { 3 } else { 3 };
     std::env::var("PERRO_FRAME_LATENCY")
         .ok()
         .and_then(|raw| raw.parse::<u32>().ok())
