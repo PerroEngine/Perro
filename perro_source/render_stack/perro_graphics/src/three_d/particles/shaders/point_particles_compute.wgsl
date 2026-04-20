@@ -64,7 +64,7 @@ var<storage, read> particle_spawn_origins: array<vec4<f32>>;
 @group(1) @binding(7)
 var<storage, read> particle_spawn_rotations: array<vec4<f32>>;
 
-@group(1) @binding(0)
+@group(1) @binding(8)
 var<storage, read> particles_read: array<ComputedParticle>;
 
 fn hash01(seed: u32) -> f32 {

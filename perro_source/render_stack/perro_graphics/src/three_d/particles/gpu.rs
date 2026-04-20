@@ -115,8 +115,6 @@ pub struct GpuPointParticles3D {
     hybrid_params_bg: wgpu::BindGroup,
     compute_bgl: wgpu::BindGroupLayout,
     compute_bg: wgpu::BindGroup,
-    compute_render_bgl: wgpu::BindGroupLayout,
-    compute_render_bg: wgpu::BindGroup,
     particle_buffer: wgpu::Buffer,
     particle_capacity: usize,
     billboard_particle_buffer: wgpu::Buffer,
@@ -616,13 +614,8 @@ impl GpuPointParticles3D {
                     },
                     count: None,
                 },
-            ],
-        });
-        let compute_render_bgl =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("perro_particles3d_compute_render_bgl"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
+                wgpu::BindGroupLayoutEntry {
+                    binding: 8,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -630,8 +623,9 @@ impl GpuPointParticles3D {
                         min_binding_size: None,
                     },
                     count: None,
-                }],
-            });
+                },
+            ],
+        });
         let compute_shader = create_point_particles_compute_shader_module(device);
         let compute_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_particles3d_compute_layout"),
@@ -649,7 +643,7 @@ impl GpuPointParticles3D {
         let compute_render_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_particles3d_compute_render_layout"),
-                bind_group_layouts: &[Some(&camera_bgl), Some(&compute_render_bgl)],
+                bind_group_layouts: &[Some(&camera_bgl), Some(&compute_bgl)],
                 immediate_size: 0,
             });
         let compute_render_pipeline =
@@ -912,15 +906,11 @@ impl GpuPointParticles3D {
                     binding: 7,
                     resource: compute_particle_spawn_rotation_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: compute_particle_buffer.as_entire_binding(),
+                },
             ],
-        });
-        let compute_render_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_particles3d_compute_render_bg"),
-            layout: &compute_render_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: compute_particle_buffer.as_entire_binding(),
-            }],
         });
         Self {
             cpu_pipeline,
@@ -937,8 +927,6 @@ impl GpuPointParticles3D {
             hybrid_params_bg,
             compute_bgl,
             compute_bg,
-            compute_render_bgl,
-            compute_render_bg,
             particle_buffer,
             particle_capacity,
             billboard_particle_buffer,
@@ -1063,7 +1051,9 @@ impl GpuPointParticles3D {
                     }
                 }
                 ParticleSimulationMode3D::GpuCompute => {
-                    if !self.push_compute_emitter_particles(*node, emitter) {
+                    if !gpu_compute_particles_enabled()
+                        || !self.push_compute_emitter_particles(*node, emitter)
+                    {
                         self.push_emitter_particles(*node, emitter);
                     }
                 }
@@ -1314,7 +1304,7 @@ impl GpuPointParticles3D {
             if self.compute_has_point {
                 pass.set_pipeline(&self.compute_render_pipeline);
                 pass.set_bind_group(0, &self.camera_bg, &[]);
-                pass.set_bind_group(1, &self.compute_render_bg, &[]);
+                pass.set_bind_group(1, &self.compute_bg, &[]);
                 for range in &self.compute_point_ranges {
                     pass.draw(0..1, range.start..(range.start + range.count));
                 }
@@ -1322,7 +1312,7 @@ impl GpuPointParticles3D {
             if self.compute_has_billboard {
                 pass.set_pipeline(&self.compute_render_billboard_pipeline);
                 pass.set_bind_group(0, &self.camera_bg, &[]);
-                pass.set_bind_group(1, &self.compute_render_bg, &[]);
+                pass.set_bind_group(1, &self.compute_bg, &[]);
                 for range in &self.compute_billboard_ranges {
                     pass.draw(0..4, range.start..(range.start + range.count));
                 }
@@ -1635,15 +1625,11 @@ impl GpuPointParticles3D {
                             .compute_particle_spawn_rotation_buffer
                             .as_entire_binding(),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: self.compute_particle_buffer.as_entire_binding(),
+                    },
                 ],
-            });
-            self.compute_render_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("perro_particles3d_compute_render_bg"),
-                layout: &self.compute_render_bgl,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.compute_particle_buffer.as_entire_binding(),
-                }],
             });
         }
         spawn_origin_recreated || spawn_rotation_recreated
@@ -2583,6 +2569,14 @@ fn push_instance_range(ranges: &mut Vec<InstanceRange>, start: u32, count: u32, 
         count,
         path_kind,
     });
+}
+
+fn gpu_compute_particles_enabled() -> bool {
+    std::env::var("PERRO_ENABLE_GPU_COMPUTE_PARTICLES")
+        .ok()
+        .as_deref()
+        .map(|v| matches!(v, "1" | "true" | "TRUE" | "on" | "ON"))
+        .unwrap_or(false)
 }
 
 fn append_emitter_map_entries(
