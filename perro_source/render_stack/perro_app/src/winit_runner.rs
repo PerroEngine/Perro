@@ -16,7 +16,7 @@ use winit::{
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     monitor::MonitorHandle,
-    window::{CursorGrabMode, Icon, Window, WindowAttributes},
+    window::{CursorGrabMode, Fullscreen, Icon, Window, WindowAttributes},
 };
 
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
@@ -1689,6 +1689,11 @@ fn window_attributes(
     let Some(monitor) = pick_monitor(event_loop) else {
         return attrs.with_inner_size(Size::Physical(desired));
     };
+    if let Some(mode) = parse_window_mode_override() {
+        if mode == "borderless" || mode == "borderless_fullscreen" {
+            return attrs.with_fullscreen(Some(Fullscreen::Borderless(Some(monitor))));
+        }
+    }
 
     let max_width =
         ((monitor.size().width as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
@@ -1699,6 +1704,12 @@ fn window_attributes(
 
     attrs = attrs.with_inner_size(Size::Physical(fitted));
     attrs.with_position(Position::Physical(centered))
+}
+
+fn parse_window_mode_override() -> Option<String> {
+    std::env::var("PERRO_WINDOW_MODE")
+        .ok()
+        .map(|raw| raw.trim().to_ascii_lowercase())
 }
 
 fn load_project_window_icon(project: &perro_runtime::RuntimeProject) -> Option<Icon> {

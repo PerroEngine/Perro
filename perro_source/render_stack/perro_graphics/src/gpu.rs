@@ -1175,8 +1175,8 @@ fn choose_present_mode(modes: &[wgpu::PresentMode], vsync_enabled: bool) -> wgpu
         .as_slice()
     } else {
         [
-            wgpu::PresentMode::Mailbox,
             wgpu::PresentMode::Immediate,
+            wgpu::PresentMode::Mailbox,
             wgpu::PresentMode::AutoNoVsync,
         ]
         .as_slice()
@@ -1191,7 +1191,7 @@ fn choose_present_mode(modes: &[wgpu::PresentMode], vsync_enabled: bool) -> wgpu
 }
 
 fn choose_max_frame_latency(vsync_enabled: bool) -> u32 {
-    let default = if vsync_enabled { 3 } else { 3 };
+    let default = if vsync_enabled { 3 } else { 1 };
     std::env::var("PERRO_FRAME_LATENCY")
         .ok()
         .and_then(|raw| raw.parse::<u32>().ok())
