@@ -1,0 +1,4031 @@
+@root = main
+
+[main]
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/main]
+
+[mm_cone]
+parent = @root
+    [MultiMeshInstance3D]
+        mesh = "__cone__"
+        material = {
+            type = standard
+            base_color_factor = (0.98, 0.55, 0.18, 1.0)
+            metallic_factor = 0.05
+            roughness_factor = 0.78
+            alpha_mode = OPAQUE
+            double_sided = false
+        }
+        instance_scale = 0.9
+        instances = [
+            {
+                position = (0, 0, 0)
+                rotation_deg = (0, 0, 0)
+            },
+            {
+                position = (3, 0, 0)
+                rotation_deg = (0, 13, 0)
+            },
+            {
+                position = (6, 0, 0)
+                rotation_deg = (0, 26, 0)
+            },
+            {
+                position = (9, 0, 0)
+                rotation_deg = (0, 39, 0)
+            },
+            {
+                position = (12, 0, 0)
+                rotation_deg = (0, 52, 0)
+            },
+            {
+                position = (15, 0, 0)
+                rotation_deg = (0, 65, 0)
+            },
+            {
+                position = (18, 0, 0)
+                rotation_deg = (0, 78, 0)
+            },
+            {
+                position = (21, 0, 0)
+                rotation_deg = (0, 91, 0)
+            },
+            {
+                position = (24, 0, 0)
+                rotation_deg = (0, 104, 0)
+            },
+            {
+                position = (27, 0, 0)
+                rotation_deg = (0, 117, 0)
+            },
+            {
+                position = (0, 0, 3)
+                rotation_deg = (0, 19, 0)
+            },
+            {
+                position = (3, 0, 3)
+                rotation_deg = (0, 32, 0)
+            },
+            {
+                position = (6, 0, 3)
+                rotation_deg = (0, 45, 0)
+            },
+            {
+                position = (9, 0, 3)
+                rotation_deg = (0, 58, 0)
+            },
+            {
+                position = (12, 0, 3)
+                rotation_deg = (0, 71, 0)
+            },
+            {
+                position = (15, 0, 3)
+                rotation_deg = (0, 84, 0)
+            },
+            {
+                position = (18, 0, 3)
+                rotation_deg = (0, 97, 0)
+            },
+            {
+                position = (21, 0, 3)
+                rotation_deg = (0, 110, 0)
+            },
+            {
+                position = (24, 0, 3)
+                rotation_deg = (0, 123, 0)
+            },
+            {
+                position = (27, 0, 3)
+                rotation_deg = (0, 136, 0)
+            },
+            {
+                position = (0, 0, 6)
+                rotation_deg = (0, 38, 0)
+            },
+            {
+                position = (3, 0, 6)
+                rotation_deg = (0, 51, 0)
+            },
+            {
+                position = (6, 0, 6)
+                rotation_deg = (0, 64, 0)
+            },
+            {
+                position = (9, 0, 6)
+                rotation_deg = (0, 77, 0)
+            },
+            {
+                position = (12, 0, 6)
+                rotation_deg = (0, 90, 0)
+            },
+            {
+                position = (15, 0, 6)
+                rotation_deg = (0, 103, 0)
+            },
+            {
+                position = (18, 0, 6)
+                rotation_deg = (0, 116, 0)
+            },
+            {
+                position = (21, 0, 6)
+                rotation_deg = (0, 129, 0)
+            },
+            {
+                position = (24, 0, 6)
+                rotation_deg = (0, 142, 0)
+            },
+            {
+                position = (27, 0, 6)
+                rotation_deg = (0, 155, 0)
+            },
+            {
+                position = (0, 0, 9)
+                rotation_deg = (0, 57, 0)
+            },
+            {
+                position = (3, 0, 9)
+                rotation_deg = (0, 70, 0)
+            },
+            {
+                position = (6, 0, 9)
+                rotation_deg = (0, 83, 0)
+            },
+            {
+                position = (9, 0, 9)
+                rotation_deg = (0, 96, 0)
+            },
+            {
+                position = (12, 0, 9)
+                rotation_deg = (0, 109, 0)
+            },
+            {
+                position = (15, 0, 9)
+                rotation_deg = (0, 122, 0)
+            },
+            {
+                position = (18, 0, 9)
+                rotation_deg = (0, 135, 0)
+            },
+            {
+                position = (21, 0, 9)
+                rotation_deg = (0, 148, 0)
+            },
+            {
+                position = (24, 0, 9)
+                rotation_deg = (0, 161, 0)
+            },
+            {
+                position = (27, 0, 9)
+                rotation_deg = (0, 174, 0)
+            },
+            {
+                position = (0, 0, 12)
+                rotation_deg = (0, 76, 0)
+            },
+            {
+                position = (3, 0, 12)
+                rotation_deg = (0, 89, 0)
+            },
+            {
+                position = (6, 0, 12)
+                rotation_deg = (0, 102, 0)
+            },
+            {
+                position = (9, 0, 12)
+                rotation_deg = (0, 115, 0)
+            },
+            {
+                position = (12, 0, 12)
+                rotation_deg = (0, 128, 0)
+            },
+            {
+                position = (15, 0, 12)
+                rotation_deg = (0, 141, 0)
+            },
+            {
+                position = (18, 0, 12)
+                rotation_deg = (0, 154, 0)
+            },
+            {
+                position = (21, 0, 12)
+                rotation_deg = (0, 167, 0)
+            },
+            {
+                position = (24, 0, 12)
+                rotation_deg = (0, 180, 0)
+            },
+            {
+                position = (27, 0, 12)
+                rotation_deg = (0, 193, 0)
+            },
+            {
+                position = (0, 0, 15)
+                rotation_deg = (0, 95, 0)
+            },
+            {
+                position = (3, 0, 15)
+                rotation_deg = (0, 108, 0)
+            },
+            {
+                position = (6, 0, 15)
+                rotation_deg = (0, 121, 0)
+            },
+            {
+                position = (9, 0, 15)
+                rotation_deg = (0, 134, 0)
+            },
+            {
+                position = (12, 0, 15)
+                rotation_deg = (0, 147, 0)
+            },
+            {
+                position = (15, 0, 15)
+                rotation_deg = (0, 160, 0)
+            },
+            {
+                position = (18, 0, 15)
+                rotation_deg = (0, 173, 0)
+            },
+            {
+                position = (21, 0, 15)
+                rotation_deg = (0, 186, 0)
+            },
+            {
+                position = (24, 0, 15)
+                rotation_deg = (0, 199, 0)
+            },
+            {
+                position = (27, 0, 15)
+                rotation_deg = (0, 212, 0)
+            },
+            {
+                position = (0, 0, 18)
+                rotation_deg = (0, 114, 0)
+            },
+            {
+                position = (3, 0, 18)
+                rotation_deg = (0, 127, 0)
+            },
+            {
+                position = (6, 0, 18)
+                rotation_deg = (0, 140, 0)
+            },
+            {
+                position = (9, 0, 18)
+                rotation_deg = (0, 153, 0)
+            },
+            {
+                position = (12, 0, 18)
+                rotation_deg = (0, 166, 0)
+            },
+            {
+                position = (15, 0, 18)
+                rotation_deg = (0, 179, 0)
+            },
+            {
+                position = (18, 0, 18)
+                rotation_deg = (0, 192, 0)
+            },
+            {
+                position = (21, 0, 18)
+                rotation_deg = (0, 205, 0)
+            },
+            {
+                position = (24, 0, 18)
+                rotation_deg = (0, 218, 0)
+            },
+            {
+                position = (27, 0, 18)
+                rotation_deg = (0, 231, 0)
+            },
+            {
+                position = (0, 0, 21)
+                rotation_deg = (0, 133, 0)
+            },
+            {
+                position = (3, 0, 21)
+                rotation_deg = (0, 146, 0)
+            },
+            {
+                position = (6, 0, 21)
+                rotation_deg = (0, 159, 0)
+            },
+            {
+                position = (9, 0, 21)
+                rotation_deg = (0, 172, 0)
+            },
+            {
+                position = (12, 0, 21)
+                rotation_deg = (0, 185, 0)
+            },
+            {
+                position = (15, 0, 21)
+                rotation_deg = (0, 198, 0)
+            },
+            {
+                position = (18, 0, 21)
+                rotation_deg = (0, 211, 0)
+            },
+            {
+                position = (21, 0, 21)
+                rotation_deg = (0, 224, 0)
+            },
+            {
+                position = (24, 0, 21)
+                rotation_deg = (0, 237, 0)
+            },
+            {
+                position = (27, 0, 21)
+                rotation_deg = (0, 250, 0)
+            },
+            {
+                position = (0, 0, 24)
+                rotation_deg = (0, 152, 0)
+            },
+            {
+                position = (3, 0, 24)
+                rotation_deg = (0, 165, 0)
+            },
+            {
+                position = (6, 0, 24)
+                rotation_deg = (0, 178, 0)
+            },
+            {
+                position = (9, 0, 24)
+                rotation_deg = (0, 191, 0)
+            },
+            {
+                position = (12, 0, 24)
+                rotation_deg = (0, 204, 0)
+            },
+            {
+                position = (15, 0, 24)
+                rotation_deg = (0, 217, 0)
+            },
+            {
+                position = (18, 0, 24)
+                rotation_deg = (0, 230, 0)
+            },
+            {
+                position = (21, 0, 24)
+                rotation_deg = (0, 243, 0)
+            },
+            {
+                position = (24, 0, 24)
+                rotation_deg = (0, 256, 0)
+            },
+            {
+                position = (27, 0, 24)
+                rotation_deg = (0, 269, 0)
+            },
+            {
+                position = (0, 0, 27)
+                rotation_deg = (0, 171, 0)
+            },
+            {
+                position = (3, 0, 27)
+                rotation_deg = (0, 184, 0)
+            },
+            {
+                position = (6, 0, 27)
+                rotation_deg = (0, 197, 0)
+            },
+            {
+                position = (9, 0, 27)
+                rotation_deg = (0, 210, 0)
+            },
+            {
+                position = (12, 0, 27)
+                rotation_deg = (0, 223, 0)
+            },
+            {
+                position = (15, 0, 27)
+                rotation_deg = (0, 236, 0)
+            },
+            {
+                position = (18, 0, 27)
+                rotation_deg = (0, 249, 0)
+            },
+            {
+                position = (21, 0, 27)
+                rotation_deg = (0, 262, 0)
+            },
+            {
+                position = (24, 0, 27)
+                rotation_deg = (0, 275, 0)
+            },
+            {
+                position = (27, 0, 27)
+                rotation_deg = (0, 288, 0)
+            },
+            {
+                position = (0, -3, 0)
+                rotation_deg = (0, 7, 0)
+            },
+            {
+                position = (3, -3, 0)
+                rotation_deg = (0, 20, 0)
+            },
+            {
+                position = (6, -3, 0)
+                rotation_deg = (0, 33, 0)
+            },
+            {
+                position = (9, -3, 0)
+                rotation_deg = (0, 46, 0)
+            },
+            {
+                position = (12, -3, 0)
+                rotation_deg = (0, 59, 0)
+            },
+            {
+                position = (15, -3, 0)
+                rotation_deg = (0, 72, 0)
+            },
+            {
+                position = (18, -3, 0)
+                rotation_deg = (0, 85, 0)
+            },
+            {
+                position = (21, -3, 0)
+                rotation_deg = (0, 98, 0)
+            },
+            {
+                position = (24, -3, 0)
+                rotation_deg = (0, 111, 0)
+            },
+            {
+                position = (27, -3, 0)
+                rotation_deg = (0, 124, 0)
+            },
+            {
+                position = (0, -3, 3)
+                rotation_deg = (0, 26, 0)
+            },
+            {
+                position = (3, -3, 3)
+                rotation_deg = (0, 39, 0)
+            },
+            {
+                position = (6, -3, 3)
+                rotation_deg = (0, 52, 0)
+            },
+            {
+                position = (9, -3, 3)
+                rotation_deg = (0, 65, 0)
+            },
+            {
+                position = (12, -3, 3)
+                rotation_deg = (0, 78, 0)
+            },
+            {
+                position = (15, -3, 3)
+                rotation_deg = (0, 91, 0)
+            },
+            {
+                position = (18, -3, 3)
+                rotation_deg = (0, 104, 0)
+            },
+            {
+                position = (21, -3, 3)
+                rotation_deg = (0, 117, 0)
+            },
+            {
+                position = (24, -3, 3)
+                rotation_deg = (0, 130, 0)
+            },
+            {
+                position = (27, -3, 3)
+                rotation_deg = (0, 143, 0)
+            },
+            {
+                position = (0, -3, 6)
+                rotation_deg = (0, 45, 0)
+            },
+            {
+                position = (3, -3, 6)
+                rotation_deg = (0, 58, 0)
+            },
+            {
+                position = (6, -3, 6)
+                rotation_deg = (0, 71, 0)
+            },
+            {
+                position = (9, -3, 6)
+                rotation_deg = (0, 84, 0)
+            },
+            {
+                position = (12, -3, 6)
+                rotation_deg = (0, 97, 0)
+            },
+            {
+                position = (15, -3, 6)
+                rotation_deg = (0, 110, 0)
+            },
+            {
+                position = (18, -3, 6)
+                rotation_deg = (0, 123, 0)
+            },
+            {
+                position = (21, -3, 6)
+                rotation_deg = (0, 136, 0)
+            },
+            {
+                position = (24, -3, 6)
+                rotation_deg = (0, 149, 0)
+            },
+            {
+                position = (27, -3, 6)
+                rotation_deg = (0, 162, 0)
+            },
+            {
+                position = (0, -3, 9)
+                rotation_deg = (0, 64, 0)
+            },
+            {
+                position = (3, -3, 9)
+                rotation_deg = (0, 77, 0)
+            },
+            {
+                position = (6, -3, 9)
+                rotation_deg = (0, 90, 0)
+            },
+            {
+                position = (9, -3, 9)
+                rotation_deg = (0, 103, 0)
+            },
+            {
+                position = (12, -3, 9)
+                rotation_deg = (0, 116, 0)
+            },
+            {
+                position = (15, -3, 9)
+                rotation_deg = (0, 129, 0)
+            },
+            {
+                position = (18, -3, 9)
+                rotation_deg = (0, 142, 0)
+            },
+            {
+                position = (21, -3, 9)
+                rotation_deg = (0, 155, 0)
+            },
+            {
+                position = (24, -3, 9)
+                rotation_deg = (0, 168, 0)
+            },
+            {
+                position = (27, -3, 9)
+                rotation_deg = (0, 181, 0)
+            },
+            {
+                position = (0, -3, 12)
+                rotation_deg = (0, 83, 0)
+            },
+            {
+                position = (3, -3, 12)
+                rotation_deg = (0, 96, 0)
+            },
+            {
+                position = (6, -3, 12)
+                rotation_deg = (0, 109, 0)
+            },
+            {
+                position = (9, -3, 12)
+                rotation_deg = (0, 122, 0)
+            },
+            {
+                position = (12, -3, 12)
+                rotation_deg = (0, 135, 0)
+            },
+            {
+                position = (15, -3, 12)
+                rotation_deg = (0, 148, 0)
+            },
+            {
+                position = (18, -3, 12)
+                rotation_deg = (0, 161, 0)
+            },
+            {
+                position = (21, -3, 12)
+                rotation_deg = (0, 174, 0)
+            },
+            {
+                position = (24, -3, 12)
+                rotation_deg = (0, 187, 0)
+            },
+            {
+                position = (27, -3, 12)
+                rotation_deg = (0, 200, 0)
+            },
+            {
+                position = (0, -3, 15)
+                rotation_deg = (0, 102, 0)
+            },
+            {
+                position = (3, -3, 15)
+                rotation_deg = (0, 115, 0)
+            },
+            {
+                position = (6, -3, 15)
+                rotation_deg = (0, 128, 0)
+            },
+            {
+                position = (9, -3, 15)
+                rotation_deg = (0, 141, 0)
+            },
+            {
+                position = (12, -3, 15)
+                rotation_deg = (0, 154, 0)
+            },
+            {
+                position = (15, -3, 15)
+                rotation_deg = (0, 167, 0)
+            },
+            {
+                position = (18, -3, 15)
+                rotation_deg = (0, 180, 0)
+            },
+            {
+                position = (21, -3, 15)
+                rotation_deg = (0, 193, 0)
+            },
+            {
+                position = (24, -3, 15)
+                rotation_deg = (0, 206, 0)
+            },
+            {
+                position = (27, -3, 15)
+                rotation_deg = (0, 219, 0)
+            },
+            {
+                position = (0, -3, 18)
+                rotation_deg = (0, 121, 0)
+            },
+            {
+                position = (3, -3, 18)
+                rotation_deg = (0, 134, 0)
+            },
+            {
+                position = (6, -3, 18)
+                rotation_deg = (0, 147, 0)
+            },
+            {
+                position = (9, -3, 18)
+                rotation_deg = (0, 160, 0)
+            },
+            {
+                position = (12, -3, 18)
+                rotation_deg = (0, 173, 0)
+            },
+            {
+                position = (15, -3, 18)
+                rotation_deg = (0, 186, 0)
+            },
+            {
+                position = (18, -3, 18)
+                rotation_deg = (0, 199, 0)
+            },
+            {
+                position = (21, -3, 18)
+                rotation_deg = (0, 212, 0)
+            },
+            {
+                position = (24, -3, 18)
+                rotation_deg = (0, 225, 0)
+            },
+            {
+                position = (27, -3, 18)
+                rotation_deg = (0, 238, 0)
+            },
+            {
+                position = (0, -3, 21)
+                rotation_deg = (0, 140, 0)
+            },
+            {
+                position = (3, -3, 21)
+                rotation_deg = (0, 153, 0)
+            },
+            {
+                position = (6, -3, 21)
+                rotation_deg = (0, 166, 0)
+            },
+            {
+                position = (9, -3, 21)
+                rotation_deg = (0, 179, 0)
+            },
+            {
+                position = (12, -3, 21)
+                rotation_deg = (0, 192, 0)
+            },
+            {
+                position = (15, -3, 21)
+                rotation_deg = (0, 205, 0)
+            },
+            {
+                position = (18, -3, 21)
+                rotation_deg = (0, 218, 0)
+            },
+            {
+                position = (21, -3, 21)
+                rotation_deg = (0, 231, 0)
+            },
+            {
+                position = (24, -3, 21)
+                rotation_deg = (0, 244, 0)
+            },
+            {
+                position = (27, -3, 21)
+                rotation_deg = (0, 257, 0)
+            },
+            {
+                position = (0, -3, 24)
+                rotation_deg = (0, 159, 0)
+            },
+            {
+                position = (3, -3, 24)
+                rotation_deg = (0, 172, 0)
+            },
+            {
+                position = (6, -3, 24)
+                rotation_deg = (0, 185, 0)
+            },
+            {
+                position = (9, -3, 24)
+                rotation_deg = (0, 198, 0)
+            },
+            {
+                position = (12, -3, 24)
+                rotation_deg = (0, 211, 0)
+            },
+            {
+                position = (15, -3, 24)
+                rotation_deg = (0, 224, 0)
+            },
+            {
+                position = (18, -3, 24)
+                rotation_deg = (0, 237, 0)
+            },
+            {
+                position = (21, -3, 24)
+                rotation_deg = (0, 250, 0)
+            },
+            {
+                position = (24, -3, 24)
+                rotation_deg = (0, 263, 0)
+            },
+            {
+                position = (27, -3, 24)
+                rotation_deg = (0, 276, 0)
+            },
+            {
+                position = (0, -3, 27)
+                rotation_deg = (0, 178, 0)
+            },
+            {
+                position = (3, -3, 27)
+                rotation_deg = (0, 191, 0)
+            },
+            {
+                position = (6, -3, 27)
+                rotation_deg = (0, 204, 0)
+            },
+            {
+                position = (9, -3, 27)
+                rotation_deg = (0, 217, 0)
+            },
+            {
+                position = (12, -3, 27)
+                rotation_deg = (0, 230, 0)
+            },
+            {
+                position = (15, -3, 27)
+                rotation_deg = (0, 243, 0)
+            },
+            {
+                position = (18, -3, 27)
+                rotation_deg = (0, 256, 0)
+            },
+            {
+                position = (21, -3, 27)
+                rotation_deg = (0, 269, 0)
+            },
+            {
+                position = (24, -3, 27)
+                rotation_deg = (0, 282, 0)
+            },
+            {
+                position = (27, -3, 27)
+                rotation_deg = (0, 295, 0)
+            },
+            {
+                position = (0, -6, 0)
+                rotation_deg = (0, 14, 0)
+            },
+            {
+                position = (3, -6, 0)
+                rotation_deg = (0, 27, 0)
+            },
+            {
+                position = (6, -6, 0)
+                rotation_deg = (0, 40, 0)
+            },
+            {
+                position = (9, -6, 0)
+                rotation_deg = (0, 53, 0)
+            },
+            {
+                position = (12, -6, 0)
+                rotation_deg = (0, 66, 0)
+            },
+            {
+                position = (15, -6, 0)
+                rotation_deg = (0, 79, 0)
+            },
+            {
+                position = (18, -6, 0)
+                rotation_deg = (0, 92, 0)
+            },
+            {
+                position = (21, -6, 0)
+                rotation_deg = (0, 105, 0)
+            },
+            {
+                position = (24, -6, 0)
+                rotation_deg = (0, 118, 0)
+            },
+            {
+                position = (27, -6, 0)
+                rotation_deg = (0, 131, 0)
+            },
+            {
+                position = (0, -6, 3)
+                rotation_deg = (0, 33, 0)
+            },
+            {
+                position = (3, -6, 3)
+                rotation_deg = (0, 46, 0)
+            },
+            {
+                position = (6, -6, 3)
+                rotation_deg = (0, 59, 0)
+            },
+            {
+                position = (9, -6, 3)
+                rotation_deg = (0, 72, 0)
+            },
+            {
+                position = (12, -6, 3)
+                rotation_deg = (0, 85, 0)
+            },
+            {
+                position = (15, -6, 3)
+                rotation_deg = (0, 98, 0)
+            },
+            {
+                position = (18, -6, 3)
+                rotation_deg = (0, 111, 0)
+            },
+            {
+                position = (21, -6, 3)
+                rotation_deg = (0, 124, 0)
+            },
+            {
+                position = (24, -6, 3)
+                rotation_deg = (0, 137, 0)
+            },
+            {
+                position = (27, -6, 3)
+                rotation_deg = (0, 150, 0)
+            },
+            {
+                position = (0, -6, 6)
+                rotation_deg = (0, 52, 0)
+            },
+            {
+                position = (3, -6, 6)
+                rotation_deg = (0, 65, 0)
+            },
+            {
+                position = (6, -6, 6)
+                rotation_deg = (0, 78, 0)
+            },
+            {
+                position = (9, -6, 6)
+                rotation_deg = (0, 91, 0)
+            },
+            {
+                position = (12, -6, 6)
+                rotation_deg = (0, 104, 0)
+            },
+            {
+                position = (15, -6, 6)
+                rotation_deg = (0, 117, 0)
+            },
+            {
+                position = (18, -6, 6)
+                rotation_deg = (0, 130, 0)
+            },
+            {
+                position = (21, -6, 6)
+                rotation_deg = (0, 143, 0)
+            },
+            {
+                position = (24, -6, 6)
+                rotation_deg = (0, 156, 0)
+            },
+            {
+                position = (27, -6, 6)
+                rotation_deg = (0, 169, 0)
+            },
+            {
+                position = (0, -6, 9)
+                rotation_deg = (0, 71, 0)
+            },
+            {
+                position = (3, -6, 9)
+                rotation_deg = (0, 84, 0)
+            },
+            {
+                position = (6, -6, 9)
+                rotation_deg = (0, 97, 0)
+            },
+            {
+                position = (9, -6, 9)
+                rotation_deg = (0, 110, 0)
+            },
+            {
+                position = (12, -6, 9)
+                rotation_deg = (0, 123, 0)
+            },
+            {
+                position = (15, -6, 9)
+                rotation_deg = (0, 136, 0)
+            },
+            {
+                position = (18, -6, 9)
+                rotation_deg = (0, 149, 0)
+            },
+            {
+                position = (21, -6, 9)
+                rotation_deg = (0, 162, 0)
+            },
+            {
+                position = (24, -6, 9)
+                rotation_deg = (0, 175, 0)
+            },
+            {
+                position = (27, -6, 9)
+                rotation_deg = (0, 188, 0)
+            },
+            {
+                position = (0, -6, 12)
+                rotation_deg = (0, 90, 0)
+            },
+            {
+                position = (3, -6, 12)
+                rotation_deg = (0, 103, 0)
+            },
+            {
+                position = (6, -6, 12)
+                rotation_deg = (0, 116, 0)
+            },
+            {
+                position = (9, -6, 12)
+                rotation_deg = (0, 129, 0)
+            },
+            {
+                position = (12, -6, 12)
+                rotation_deg = (0, 142, 0)
+            },
+            {
+                position = (15, -6, 12)
+                rotation_deg = (0, 155, 0)
+            },
+            {
+                position = (18, -6, 12)
+                rotation_deg = (0, 168, 0)
+            },
+            {
+                position = (21, -6, 12)
+                rotation_deg = (0, 181, 0)
+            },
+            {
+                position = (24, -6, 12)
+                rotation_deg = (0, 194, 0)
+            },
+            {
+                position = (27, -6, 12)
+                rotation_deg = (0, 207, 0)
+            },
+            {
+                position = (0, -6, 15)
+                rotation_deg = (0, 109, 0)
+            },
+            {
+                position = (3, -6, 15)
+                rotation_deg = (0, 122, 0)
+            },
+            {
+                position = (6, -6, 15)
+                rotation_deg = (0, 135, 0)
+            },
+            {
+                position = (9, -6, 15)
+                rotation_deg = (0, 148, 0)
+            },
+            {
+                position = (12, -6, 15)
+                rotation_deg = (0, 161, 0)
+            },
+            {
+                position = (15, -6, 15)
+                rotation_deg = (0, 174, 0)
+            },
+            {
+                position = (18, -6, 15)
+                rotation_deg = (0, 187, 0)
+            },
+            {
+                position = (21, -6, 15)
+                rotation_deg = (0, 200, 0)
+            },
+            {
+                position = (24, -6, 15)
+                rotation_deg = (0, 213, 0)
+            },
+            {
+                position = (27, -6, 15)
+                rotation_deg = (0, 226, 0)
+            },
+            {
+                position = (0, -6, 18)
+                rotation_deg = (0, 128, 0)
+            },
+            {
+                position = (3, -6, 18)
+                rotation_deg = (0, 141, 0)
+            },
+            {
+                position = (6, -6, 18)
+                rotation_deg = (0, 154, 0)
+            },
+            {
+                position = (9, -6, 18)
+                rotation_deg = (0, 167, 0)
+            },
+            {
+                position = (12, -6, 18)
+                rotation_deg = (0, 180, 0)
+            },
+            {
+                position = (15, -6, 18)
+                rotation_deg = (0, 193, 0)
+            },
+            {
+                position = (18, -6, 18)
+                rotation_deg = (0, 206, 0)
+            },
+            {
+                position = (21, -6, 18)
+                rotation_deg = (0, 219, 0)
+            },
+            {
+                position = (24, -6, 18)
+                rotation_deg = (0, 232, 0)
+            },
+            {
+                position = (27, -6, 18)
+                rotation_deg = (0, 245, 0)
+            },
+            {
+                position = (0, -6, 21)
+                rotation_deg = (0, 147, 0)
+            },
+            {
+                position = (3, -6, 21)
+                rotation_deg = (0, 160, 0)
+            },
+            {
+                position = (6, -6, 21)
+                rotation_deg = (0, 173, 0)
+            },
+            {
+                position = (9, -6, 21)
+                rotation_deg = (0, 186, 0)
+            },
+            {
+                position = (12, -6, 21)
+                rotation_deg = (0, 199, 0)
+            },
+            {
+                position = (15, -6, 21)
+                rotation_deg = (0, 212, 0)
+            },
+            {
+                position = (18, -6, 21)
+                rotation_deg = (0, 225, 0)
+            },
+            {
+                position = (21, -6, 21)
+                rotation_deg = (0, 238, 0)
+            },
+            {
+                position = (24, -6, 21)
+                rotation_deg = (0, 251, 0)
+            },
+            {
+                position = (27, -6, 21)
+                rotation_deg = (0, 264, 0)
+            },
+            {
+                position = (0, -6, 24)
+                rotation_deg = (0, 166, 0)
+            },
+            {
+                position = (3, -6, 24)
+                rotation_deg = (0, 179, 0)
+            },
+            {
+                position = (6, -6, 24)
+                rotation_deg = (0, 192, 0)
+            },
+            {
+                position = (9, -6, 24)
+                rotation_deg = (0, 205, 0)
+            },
+            {
+                position = (12, -6, 24)
+                rotation_deg = (0, 218, 0)
+            },
+            {
+                position = (15, -6, 24)
+                rotation_deg = (0, 231, 0)
+            },
+            {
+                position = (18, -6, 24)
+                rotation_deg = (0, 244, 0)
+            },
+            {
+                position = (21, -6, 24)
+                rotation_deg = (0, 257, 0)
+            },
+            {
+                position = (24, -6, 24)
+                rotation_deg = (0, 270, 0)
+            },
+            {
+                position = (27, -6, 24)
+                rotation_deg = (0, 283, 0)
+            },
+            {
+                position = (0, -6, 27)
+                rotation_deg = (0, 185, 0)
+            },
+            {
+                position = (3, -6, 27)
+                rotation_deg = (0, 198, 0)
+            },
+            {
+                position = (6, -6, 27)
+                rotation_deg = (0, 211, 0)
+            },
+            {
+                position = (9, -6, 27)
+                rotation_deg = (0, 224, 0)
+            },
+            {
+                position = (12, -6, 27)
+                rotation_deg = (0, 237, 0)
+            },
+            {
+                position = (15, -6, 27)
+                rotation_deg = (0, 250, 0)
+            },
+            {
+                position = (18, -6, 27)
+                rotation_deg = (0, 263, 0)
+            },
+            {
+                position = (21, -6, 27)
+                rotation_deg = (0, 276, 0)
+            },
+            {
+                position = (24, -6, 27)
+                rotation_deg = (0, 289, 0)
+            },
+            {
+                position = (27, -6, 27)
+                rotation_deg = (0, 302, 0)
+            },
+            {
+                position = (0, -9, 0)
+                rotation_deg = (0, 21, 0)
+            },
+            {
+                position = (3, -9, 0)
+                rotation_deg = (0, 34, 0)
+            },
+            {
+                position = (6, -9, 0)
+                rotation_deg = (0, 47, 0)
+            },
+            {
+                position = (9, -9, 0)
+                rotation_deg = (0, 60, 0)
+            },
+            {
+                position = (12, -9, 0)
+                rotation_deg = (0, 73, 0)
+            },
+            {
+                position = (15, -9, 0)
+                rotation_deg = (0, 86, 0)
+            },
+            {
+                position = (18, -9, 0)
+                rotation_deg = (0, 99, 0)
+            },
+            {
+                position = (21, -9, 0)
+                rotation_deg = (0, 112, 0)
+            },
+            {
+                position = (24, -9, 0)
+                rotation_deg = (0, 125, 0)
+            },
+            {
+                position = (27, -9, 0)
+                rotation_deg = (0, 138, 0)
+            },
+            {
+                position = (0, -9, 3)
+                rotation_deg = (0, 40, 0)
+            },
+            {
+                position = (3, -9, 3)
+                rotation_deg = (0, 53, 0)
+            },
+            {
+                position = (6, -9, 3)
+                rotation_deg = (0, 66, 0)
+            },
+            {
+                position = (9, -9, 3)
+                rotation_deg = (0, 79, 0)
+            },
+            {
+                position = (12, -9, 3)
+                rotation_deg = (0, 92, 0)
+            },
+            {
+                position = (15, -9, 3)
+                rotation_deg = (0, 105, 0)
+            },
+            {
+                position = (18, -9, 3)
+                rotation_deg = (0, 118, 0)
+            },
+            {
+                position = (21, -9, 3)
+                rotation_deg = (0, 131, 0)
+            },
+            {
+                position = (24, -9, 3)
+                rotation_deg = (0, 144, 0)
+            },
+            {
+                position = (27, -9, 3)
+                rotation_deg = (0, 157, 0)
+            },
+            {
+                position = (0, -9, 6)
+                rotation_deg = (0, 59, 0)
+            },
+            {
+                position = (3, -9, 6)
+                rotation_deg = (0, 72, 0)
+            },
+            {
+                position = (6, -9, 6)
+                rotation_deg = (0, 85, 0)
+            },
+            {
+                position = (9, -9, 6)
+                rotation_deg = (0, 98, 0)
+            },
+            {
+                position = (12, -9, 6)
+                rotation_deg = (0, 111, 0)
+            },
+            {
+                position = (15, -9, 6)
+                rotation_deg = (0, 124, 0)
+            },
+            {
+                position = (18, -9, 6)
+                rotation_deg = (0, 137, 0)
+            },
+            {
+                position = (21, -9, 6)
+                rotation_deg = (0, 150, 0)
+            },
+            {
+                position = (24, -9, 6)
+                rotation_deg = (0, 163, 0)
+            },
+            {
+                position = (27, -9, 6)
+                rotation_deg = (0, 176, 0)
+            },
+            {
+                position = (0, -9, 9)
+                rotation_deg = (0, 78, 0)
+            },
+            {
+                position = (3, -9, 9)
+                rotation_deg = (0, 91, 0)
+            },
+            {
+                position = (6, -9, 9)
+                rotation_deg = (0, 104, 0)
+            },
+            {
+                position = (9, -9, 9)
+                rotation_deg = (0, 117, 0)
+            },
+            {
+                position = (12, -9, 9)
+                rotation_deg = (0, 130, 0)
+            },
+            {
+                position = (15, -9, 9)
+                rotation_deg = (0, 143, 0)
+            },
+            {
+                position = (18, -9, 9)
+                rotation_deg = (0, 156, 0)
+            },
+            {
+                position = (21, -9, 9)
+                rotation_deg = (0, 169, 0)
+            },
+            {
+                position = (24, -9, 9)
+                rotation_deg = (0, 182, 0)
+            },
+            {
+                position = (27, -9, 9)
+                rotation_deg = (0, 195, 0)
+            },
+            {
+                position = (0, -9, 12)
+                rotation_deg = (0, 97, 0)
+            },
+            {
+                position = (3, -9, 12)
+                rotation_deg = (0, 110, 0)
+            },
+            {
+                position = (6, -9, 12)
+                rotation_deg = (0, 123, 0)
+            },
+            {
+                position = (9, -9, 12)
+                rotation_deg = (0, 136, 0)
+            },
+            {
+                position = (12, -9, 12)
+                rotation_deg = (0, 149, 0)
+            },
+            {
+                position = (15, -9, 12)
+                rotation_deg = (0, 162, 0)
+            },
+            {
+                position = (18, -9, 12)
+                rotation_deg = (0, 175, 0)
+            },
+            {
+                position = (21, -9, 12)
+                rotation_deg = (0, 188, 0)
+            },
+            {
+                position = (24, -9, 12)
+                rotation_deg = (0, 201, 0)
+            },
+            {
+                position = (27, -9, 12)
+                rotation_deg = (0, 214, 0)
+            },
+            {
+                position = (0, -9, 15)
+                rotation_deg = (0, 116, 0)
+            },
+            {
+                position = (3, -9, 15)
+                rotation_deg = (0, 129, 0)
+            },
+            {
+                position = (6, -9, 15)
+                rotation_deg = (0, 142, 0)
+            },
+            {
+                position = (9, -9, 15)
+                rotation_deg = (0, 155, 0)
+            },
+            {
+                position = (12, -9, 15)
+                rotation_deg = (0, 168, 0)
+            },
+            {
+                position = (15, -9, 15)
+                rotation_deg = (0, 181, 0)
+            },
+            {
+                position = (18, -9, 15)
+                rotation_deg = (0, 194, 0)
+            },
+            {
+                position = (21, -9, 15)
+                rotation_deg = (0, 207, 0)
+            },
+            {
+                position = (24, -9, 15)
+                rotation_deg = (0, 220, 0)
+            },
+            {
+                position = (27, -9, 15)
+                rotation_deg = (0, 233, 0)
+            },
+            {
+                position = (0, -9, 18)
+                rotation_deg = (0, 135, 0)
+            },
+            {
+                position = (3, -9, 18)
+                rotation_deg = (0, 148, 0)
+            },
+            {
+                position = (6, -9, 18)
+                rotation_deg = (0, 161, 0)
+            },
+            {
+                position = (9, -9, 18)
+                rotation_deg = (0, 174, 0)
+            },
+            {
+                position = (12, -9, 18)
+                rotation_deg = (0, 187, 0)
+            },
+            {
+                position = (15, -9, 18)
+                rotation_deg = (0, 200, 0)
+            },
+            {
+                position = (18, -9, 18)
+                rotation_deg = (0, 213, 0)
+            },
+            {
+                position = (21, -9, 18)
+                rotation_deg = (0, 226, 0)
+            },
+            {
+                position = (24, -9, 18)
+                rotation_deg = (0, 239, 0)
+            },
+            {
+                position = (27, -9, 18)
+                rotation_deg = (0, 252, 0)
+            },
+            {
+                position = (0, -9, 21)
+                rotation_deg = (0, 154, 0)
+            },
+            {
+                position = (3, -9, 21)
+                rotation_deg = (0, 167, 0)
+            },
+            {
+                position = (6, -9, 21)
+                rotation_deg = (0, 180, 0)
+            },
+            {
+                position = (9, -9, 21)
+                rotation_deg = (0, 193, 0)
+            },
+            {
+                position = (12, -9, 21)
+                rotation_deg = (0, 206, 0)
+            },
+            {
+                position = (15, -9, 21)
+                rotation_deg = (0, 219, 0)
+            },
+            {
+                position = (18, -9, 21)
+                rotation_deg = (0, 232, 0)
+            },
+            {
+                position = (21, -9, 21)
+                rotation_deg = (0, 245, 0)
+            },
+            {
+                position = (24, -9, 21)
+                rotation_deg = (0, 258, 0)
+            },
+            {
+                position = (27, -9, 21)
+                rotation_deg = (0, 271, 0)
+            },
+            {
+                position = (0, -9, 24)
+                rotation_deg = (0, 173, 0)
+            },
+            {
+                position = (3, -9, 24)
+                rotation_deg = (0, 186, 0)
+            },
+            {
+                position = (6, -9, 24)
+                rotation_deg = (0, 199, 0)
+            },
+            {
+                position = (9, -9, 24)
+                rotation_deg = (0, 212, 0)
+            },
+            {
+                position = (12, -9, 24)
+                rotation_deg = (0, 225, 0)
+            },
+            {
+                position = (15, -9, 24)
+                rotation_deg = (0, 238, 0)
+            },
+            {
+                position = (18, -9, 24)
+                rotation_deg = (0, 251, 0)
+            },
+            {
+                position = (21, -9, 24)
+                rotation_deg = (0, 264, 0)
+            },
+            {
+                position = (24, -9, 24)
+                rotation_deg = (0, 277, 0)
+            },
+            {
+                position = (27, -9, 24)
+                rotation_deg = (0, 290, 0)
+            },
+            {
+                position = (0, -9, 27)
+                rotation_deg = (0, 192, 0)
+            },
+            {
+                position = (3, -9, 27)
+                rotation_deg = (0, 205, 0)
+            },
+            {
+                position = (6, -9, 27)
+                rotation_deg = (0, 218, 0)
+            },
+            {
+                position = (9, -9, 27)
+                rotation_deg = (0, 231, 0)
+            },
+            {
+                position = (12, -9, 27)
+                rotation_deg = (0, 244, 0)
+            },
+            {
+                position = (15, -9, 27)
+                rotation_deg = (0, 257, 0)
+            },
+            {
+                position = (18, -9, 27)
+                rotation_deg = (0, 270, 0)
+            },
+            {
+                position = (21, -9, 27)
+                rotation_deg = (0, 283, 0)
+            },
+            {
+                position = (24, -9, 27)
+                rotation_deg = (0, 296, 0)
+            },
+            {
+                position = (27, -9, 27)
+                rotation_deg = (0, 309, 0)
+            },
+            {
+                position = (0, -12, 0)
+                rotation_deg = (0, 28, 0)
+            },
+            {
+                position = (3, -12, 0)
+                rotation_deg = (0, 41, 0)
+            },
+            {
+                position = (6, -12, 0)
+                rotation_deg = (0, 54, 0)
+            },
+            {
+                position = (9, -12, 0)
+                rotation_deg = (0, 67, 0)
+            },
+            {
+                position = (12, -12, 0)
+                rotation_deg = (0, 80, 0)
+            },
+            {
+                position = (15, -12, 0)
+                rotation_deg = (0, 93, 0)
+            },
+            {
+                position = (18, -12, 0)
+                rotation_deg = (0, 106, 0)
+            },
+            {
+                position = (21, -12, 0)
+                rotation_deg = (0, 119, 0)
+            },
+            {
+                position = (24, -12, 0)
+                rotation_deg = (0, 132, 0)
+            },
+            {
+                position = (27, -12, 0)
+                rotation_deg = (0, 145, 0)
+            },
+            {
+                position = (0, -12, 3)
+                rotation_deg = (0, 47, 0)
+            },
+            {
+                position = (3, -12, 3)
+                rotation_deg = (0, 60, 0)
+            },
+            {
+                position = (6, -12, 3)
+                rotation_deg = (0, 73, 0)
+            },
+            {
+                position = (9, -12, 3)
+                rotation_deg = (0, 86, 0)
+            },
+            {
+                position = (12, -12, 3)
+                rotation_deg = (0, 99, 0)
+            },
+            {
+                position = (15, -12, 3)
+                rotation_deg = (0, 112, 0)
+            },
+            {
+                position = (18, -12, 3)
+                rotation_deg = (0, 125, 0)
+            },
+            {
+                position = (21, -12, 3)
+                rotation_deg = (0, 138, 0)
+            },
+            {
+                position = (24, -12, 3)
+                rotation_deg = (0, 151, 0)
+            },
+            {
+                position = (27, -12, 3)
+                rotation_deg = (0, 164, 0)
+            },
+            {
+                position = (0, -12, 6)
+                rotation_deg = (0, 66, 0)
+            },
+            {
+                position = (3, -12, 6)
+                rotation_deg = (0, 79, 0)
+            },
+            {
+                position = (6, -12, 6)
+                rotation_deg = (0, 92, 0)
+            },
+            {
+                position = (9, -12, 6)
+                rotation_deg = (0, 105, 0)
+            },
+            {
+                position = (12, -12, 6)
+                rotation_deg = (0, 118, 0)
+            },
+            {
+                position = (15, -12, 6)
+                rotation_deg = (0, 131, 0)
+            },
+            {
+                position = (18, -12, 6)
+                rotation_deg = (0, 144, 0)
+            },
+            {
+                position = (21, -12, 6)
+                rotation_deg = (0, 157, 0)
+            },
+            {
+                position = (24, -12, 6)
+                rotation_deg = (0, 170, 0)
+            },
+            {
+                position = (27, -12, 6)
+                rotation_deg = (0, 183, 0)
+            },
+            {
+                position = (0, -12, 9)
+                rotation_deg = (0, 85, 0)
+            },
+            {
+                position = (3, -12, 9)
+                rotation_deg = (0, 98, 0)
+            },
+            {
+                position = (6, -12, 9)
+                rotation_deg = (0, 111, 0)
+            },
+            {
+                position = (9, -12, 9)
+                rotation_deg = (0, 124, 0)
+            },
+            {
+                position = (12, -12, 9)
+                rotation_deg = (0, 137, 0)
+            },
+            {
+                position = (15, -12, 9)
+                rotation_deg = (0, 150, 0)
+            },
+            {
+                position = (18, -12, 9)
+                rotation_deg = (0, 163, 0)
+            },
+            {
+                position = (21, -12, 9)
+                rotation_deg = (0, 176, 0)
+            },
+            {
+                position = (24, -12, 9)
+                rotation_deg = (0, 189, 0)
+            },
+            {
+                position = (27, -12, 9)
+                rotation_deg = (0, 202, 0)
+            },
+            {
+                position = (0, -12, 12)
+                rotation_deg = (0, 104, 0)
+            },
+            {
+                position = (3, -12, 12)
+                rotation_deg = (0, 117, 0)
+            },
+            {
+                position = (6, -12, 12)
+                rotation_deg = (0, 130, 0)
+            },
+            {
+                position = (9, -12, 12)
+                rotation_deg = (0, 143, 0)
+            },
+            {
+                position = (12, -12, 12)
+                rotation_deg = (0, 156, 0)
+            },
+            {
+                position = (15, -12, 12)
+                rotation_deg = (0, 169, 0)
+            },
+            {
+                position = (18, -12, 12)
+                rotation_deg = (0, 182, 0)
+            },
+            {
+                position = (21, -12, 12)
+                rotation_deg = (0, 195, 0)
+            },
+            {
+                position = (24, -12, 12)
+                rotation_deg = (0, 208, 0)
+            },
+            {
+                position = (27, -12, 12)
+                rotation_deg = (0, 221, 0)
+            },
+            {
+                position = (0, -12, 15)
+                rotation_deg = (0, 123, 0)
+            },
+            {
+                position = (3, -12, 15)
+                rotation_deg = (0, 136, 0)
+            },
+            {
+                position = (6, -12, 15)
+                rotation_deg = (0, 149, 0)
+            },
+            {
+                position = (9, -12, 15)
+                rotation_deg = (0, 162, 0)
+            },
+            {
+                position = (12, -12, 15)
+                rotation_deg = (0, 175, 0)
+            },
+            {
+                position = (15, -12, 15)
+                rotation_deg = (0, 188, 0)
+            },
+            {
+                position = (18, -12, 15)
+                rotation_deg = (0, 201, 0)
+            },
+            {
+                position = (21, -12, 15)
+                rotation_deg = (0, 214, 0)
+            },
+            {
+                position = (24, -12, 15)
+                rotation_deg = (0, 227, 0)
+            },
+            {
+                position = (27, -12, 15)
+                rotation_deg = (0, 240, 0)
+            },
+            {
+                position = (0, -12, 18)
+                rotation_deg = (0, 142, 0)
+            },
+            {
+                position = (3, -12, 18)
+                rotation_deg = (0, 155, 0)
+            },
+            {
+                position = (6, -12, 18)
+                rotation_deg = (0, 168, 0)
+            },
+            {
+                position = (9, -12, 18)
+                rotation_deg = (0, 181, 0)
+            },
+            {
+                position = (12, -12, 18)
+                rotation_deg = (0, 194, 0)
+            },
+            {
+                position = (15, -12, 18)
+                rotation_deg = (0, 207, 0)
+            },
+            {
+                position = (18, -12, 18)
+                rotation_deg = (0, 220, 0)
+            },
+            {
+                position = (21, -12, 18)
+                rotation_deg = (0, 233, 0)
+            },
+            {
+                position = (24, -12, 18)
+                rotation_deg = (0, 246, 0)
+            },
+            {
+                position = (27, -12, 18)
+                rotation_deg = (0, 259, 0)
+            },
+            {
+                position = (0, -12, 21)
+                rotation_deg = (0, 161, 0)
+            },
+            {
+                position = (3, -12, 21)
+                rotation_deg = (0, 174, 0)
+            },
+            {
+                position = (6, -12, 21)
+                rotation_deg = (0, 187, 0)
+            },
+            {
+                position = (9, -12, 21)
+                rotation_deg = (0, 200, 0)
+            },
+            {
+                position = (12, -12, 21)
+                rotation_deg = (0, 213, 0)
+            },
+            {
+                position = (15, -12, 21)
+                rotation_deg = (0, 226, 0)
+            },
+            {
+                position = (18, -12, 21)
+                rotation_deg = (0, 239, 0)
+            },
+            {
+                position = (21, -12, 21)
+                rotation_deg = (0, 252, 0)
+            },
+            {
+                position = (24, -12, 21)
+                rotation_deg = (0, 265, 0)
+            },
+            {
+                position = (27, -12, 21)
+                rotation_deg = (0, 278, 0)
+            },
+            {
+                position = (0, -12, 24)
+                rotation_deg = (0, 180, 0)
+            },
+            {
+                position = (3, -12, 24)
+                rotation_deg = (0, 193, 0)
+            },
+            {
+                position = (6, -12, 24)
+                rotation_deg = (0, 206, 0)
+            },
+            {
+                position = (9, -12, 24)
+                rotation_deg = (0, 219, 0)
+            },
+            {
+                position = (12, -12, 24)
+                rotation_deg = (0, 232, 0)
+            },
+            {
+                position = (15, -12, 24)
+                rotation_deg = (0, 245, 0)
+            },
+            {
+                position = (18, -12, 24)
+                rotation_deg = (0, 258, 0)
+            },
+            {
+                position = (21, -12, 24)
+                rotation_deg = (0, 271, 0)
+            },
+            {
+                position = (24, -12, 24)
+                rotation_deg = (0, 284, 0)
+            },
+            {
+                position = (27, -12, 24)
+                rotation_deg = (0, 297, 0)
+            },
+            {
+                position = (0, -12, 27)
+                rotation_deg = (0, 199, 0)
+            },
+            {
+                position = (3, -12, 27)
+                rotation_deg = (0, 212, 0)
+            },
+            {
+                position = (6, -12, 27)
+                rotation_deg = (0, 225, 0)
+            },
+            {
+                position = (9, -12, 27)
+                rotation_deg = (0, 238, 0)
+            },
+            {
+                position = (12, -12, 27)
+                rotation_deg = (0, 251, 0)
+            },
+            {
+                position = (15, -12, 27)
+                rotation_deg = (0, 264, 0)
+            },
+            {
+                position = (18, -12, 27)
+                rotation_deg = (0, 277, 0)
+            },
+            {
+                position = (21, -12, 27)
+                rotation_deg = (0, 290, 0)
+            },
+            {
+                position = (24, -12, 27)
+                rotation_deg = (0, 303, 0)
+            },
+            {
+                position = (27, -12, 27)
+                rotation_deg = (0, 316, 0)
+            },
+            {
+                position = (0, -15, 0)
+                rotation_deg = (0, 35, 0)
+            },
+            {
+                position = (3, -15, 0)
+                rotation_deg = (0, 48, 0)
+            },
+            {
+                position = (6, -15, 0)
+                rotation_deg = (0, 61, 0)
+            },
+            {
+                position = (9, -15, 0)
+                rotation_deg = (0, 74, 0)
+            },
+            {
+                position = (12, -15, 0)
+                rotation_deg = (0, 87, 0)
+            },
+            {
+                position = (15, -15, 0)
+                rotation_deg = (0, 100, 0)
+            },
+            {
+                position = (18, -15, 0)
+                rotation_deg = (0, 113, 0)
+            },
+            {
+                position = (21, -15, 0)
+                rotation_deg = (0, 126, 0)
+            },
+            {
+                position = (24, -15, 0)
+                rotation_deg = (0, 139, 0)
+            },
+            {
+                position = (27, -15, 0)
+                rotation_deg = (0, 152, 0)
+            },
+            {
+                position = (0, -15, 3)
+                rotation_deg = (0, 54, 0)
+            },
+            {
+                position = (3, -15, 3)
+                rotation_deg = (0, 67, 0)
+            },
+            {
+                position = (6, -15, 3)
+                rotation_deg = (0, 80, 0)
+            },
+            {
+                position = (9, -15, 3)
+                rotation_deg = (0, 93, 0)
+            },
+            {
+                position = (12, -15, 3)
+                rotation_deg = (0, 106, 0)
+            },
+            {
+                position = (15, -15, 3)
+                rotation_deg = (0, 119, 0)
+            },
+            {
+                position = (18, -15, 3)
+                rotation_deg = (0, 132, 0)
+            },
+            {
+                position = (21, -15, 3)
+                rotation_deg = (0, 145, 0)
+            },
+            {
+                position = (24, -15, 3)
+                rotation_deg = (0, 158, 0)
+            },
+            {
+                position = (27, -15, 3)
+                rotation_deg = (0, 171, 0)
+            },
+            {
+                position = (0, -15, 6)
+                rotation_deg = (0, 73, 0)
+            },
+            {
+                position = (3, -15, 6)
+                rotation_deg = (0, 86, 0)
+            },
+            {
+                position = (6, -15, 6)
+                rotation_deg = (0, 99, 0)
+            },
+            {
+                position = (9, -15, 6)
+                rotation_deg = (0, 112, 0)
+            },
+            {
+                position = (12, -15, 6)
+                rotation_deg = (0, 125, 0)
+            },
+            {
+                position = (15, -15, 6)
+                rotation_deg = (0, 138, 0)
+            },
+            {
+                position = (18, -15, 6)
+                rotation_deg = (0, 151, 0)
+            },
+            {
+                position = (21, -15, 6)
+                rotation_deg = (0, 164, 0)
+            },
+            {
+                position = (24, -15, 6)
+                rotation_deg = (0, 177, 0)
+            },
+            {
+                position = (27, -15, 6)
+                rotation_deg = (0, 190, 0)
+            },
+            {
+                position = (0, -15, 9)
+                rotation_deg = (0, 92, 0)
+            },
+            {
+                position = (3, -15, 9)
+                rotation_deg = (0, 105, 0)
+            },
+            {
+                position = (6, -15, 9)
+                rotation_deg = (0, 118, 0)
+            },
+            {
+                position = (9, -15, 9)
+                rotation_deg = (0, 131, 0)
+            },
+            {
+                position = (12, -15, 9)
+                rotation_deg = (0, 144, 0)
+            },
+            {
+                position = (15, -15, 9)
+                rotation_deg = (0, 157, 0)
+            },
+            {
+                position = (18, -15, 9)
+                rotation_deg = (0, 170, 0)
+            },
+            {
+                position = (21, -15, 9)
+                rotation_deg = (0, 183, 0)
+            },
+            {
+                position = (24, -15, 9)
+                rotation_deg = (0, 196, 0)
+            },
+            {
+                position = (27, -15, 9)
+                rotation_deg = (0, 209, 0)
+            },
+            {
+                position = (0, -15, 12)
+                rotation_deg = (0, 111, 0)
+            },
+            {
+                position = (3, -15, 12)
+                rotation_deg = (0, 124, 0)
+            },
+            {
+                position = (6, -15, 12)
+                rotation_deg = (0, 137, 0)
+            },
+            {
+                position = (9, -15, 12)
+                rotation_deg = (0, 150, 0)
+            },
+            {
+                position = (12, -15, 12)
+                rotation_deg = (0, 163, 0)
+            },
+            {
+                position = (15, -15, 12)
+                rotation_deg = (0, 176, 0)
+            },
+            {
+                position = (18, -15, 12)
+                rotation_deg = (0, 189, 0)
+            },
+            {
+                position = (21, -15, 12)
+                rotation_deg = (0, 202, 0)
+            },
+            {
+                position = (24, -15, 12)
+                rotation_deg = (0, 215, 0)
+            },
+            {
+                position = (27, -15, 12)
+                rotation_deg = (0, 228, 0)
+            },
+            {
+                position = (0, -15, 15)
+                rotation_deg = (0, 130, 0)
+            },
+            {
+                position = (3, -15, 15)
+                rotation_deg = (0, 143, 0)
+            },
+            {
+                position = (6, -15, 15)
+                rotation_deg = (0, 156, 0)
+            },
+            {
+                position = (9, -15, 15)
+                rotation_deg = (0, 169, 0)
+            },
+            {
+                position = (12, -15, 15)
+                rotation_deg = (0, 182, 0)
+            },
+            {
+                position = (15, -15, 15)
+                rotation_deg = (0, 195, 0)
+            },
+            {
+                position = (18, -15, 15)
+                rotation_deg = (0, 208, 0)
+            },
+            {
+                position = (21, -15, 15)
+                rotation_deg = (0, 221, 0)
+            },
+            {
+                position = (24, -15, 15)
+                rotation_deg = (0, 234, 0)
+            },
+            {
+                position = (27, -15, 15)
+                rotation_deg = (0, 247, 0)
+            },
+            {
+                position = (0, -15, 18)
+                rotation_deg = (0, 149, 0)
+            },
+            {
+                position = (3, -15, 18)
+                rotation_deg = (0, 162, 0)
+            },
+            {
+                position = (6, -15, 18)
+                rotation_deg = (0, 175, 0)
+            },
+            {
+                position = (9, -15, 18)
+                rotation_deg = (0, 188, 0)
+            },
+            {
+                position = (12, -15, 18)
+                rotation_deg = (0, 201, 0)
+            },
+            {
+                position = (15, -15, 18)
+                rotation_deg = (0, 214, 0)
+            },
+            {
+                position = (18, -15, 18)
+                rotation_deg = (0, 227, 0)
+            },
+            {
+                position = (21, -15, 18)
+                rotation_deg = (0, 240, 0)
+            },
+            {
+                position = (24, -15, 18)
+                rotation_deg = (0, 253, 0)
+            },
+            {
+                position = (27, -15, 18)
+                rotation_deg = (0, 266, 0)
+            },
+            {
+                position = (0, -15, 21)
+                rotation_deg = (0, 168, 0)
+            },
+            {
+                position = (3, -15, 21)
+                rotation_deg = (0, 181, 0)
+            },
+            {
+                position = (6, -15, 21)
+                rotation_deg = (0, 194, 0)
+            },
+            {
+                position = (9, -15, 21)
+                rotation_deg = (0, 207, 0)
+            },
+            {
+                position = (12, -15, 21)
+                rotation_deg = (0, 220, 0)
+            },
+            {
+                position = (15, -15, 21)
+                rotation_deg = (0, 233, 0)
+            },
+            {
+                position = (18, -15, 21)
+                rotation_deg = (0, 246, 0)
+            },
+            {
+                position = (21, -15, 21)
+                rotation_deg = (0, 259, 0)
+            },
+            {
+                position = (24, -15, 21)
+                rotation_deg = (0, 272, 0)
+            },
+            {
+                position = (27, -15, 21)
+                rotation_deg = (0, 285, 0)
+            },
+            {
+                position = (0, -15, 24)
+                rotation_deg = (0, 187, 0)
+            },
+            {
+                position = (3, -15, 24)
+                rotation_deg = (0, 200, 0)
+            },
+            {
+                position = (6, -15, 24)
+                rotation_deg = (0, 213, 0)
+            },
+            {
+                position = (9, -15, 24)
+                rotation_deg = (0, 226, 0)
+            },
+            {
+                position = (12, -15, 24)
+                rotation_deg = (0, 239, 0)
+            },
+            {
+                position = (15, -15, 24)
+                rotation_deg = (0, 252, 0)
+            },
+            {
+                position = (18, -15, 24)
+                rotation_deg = (0, 265, 0)
+            },
+            {
+                position = (21, -15, 24)
+                rotation_deg = (0, 278, 0)
+            },
+            {
+                position = (24, -15, 24)
+                rotation_deg = (0, 291, 0)
+            },
+            {
+                position = (27, -15, 24)
+                rotation_deg = (0, 304, 0)
+            },
+            {
+                position = (0, -15, 27)
+                rotation_deg = (0, 206, 0)
+            },
+            {
+                position = (3, -15, 27)
+                rotation_deg = (0, 219, 0)
+            },
+            {
+                position = (6, -15, 27)
+                rotation_deg = (0, 232, 0)
+            },
+            {
+                position = (9, -15, 27)
+                rotation_deg = (0, 245, 0)
+            },
+            {
+                position = (12, -15, 27)
+                rotation_deg = (0, 258, 0)
+            },
+            {
+                position = (15, -15, 27)
+                rotation_deg = (0, 271, 0)
+            },
+            {
+                position = (18, -15, 27)
+                rotation_deg = (0, 284, 0)
+            },
+            {
+                position = (21, -15, 27)
+                rotation_deg = (0, 297, 0)
+            },
+            {
+                position = (24, -15, 27)
+                rotation_deg = (0, 310, 0)
+            },
+            {
+                position = (27, -15, 27)
+                rotation_deg = (0, 323, 0)
+            },
+            {
+                position = (0, -18, 0)
+                rotation_deg = (0, 42, 0)
+            },
+            {
+                position = (3, -18, 0)
+                rotation_deg = (0, 55, 0)
+            },
+            {
+                position = (6, -18, 0)
+                rotation_deg = (0, 68, 0)
+            },
+            {
+                position = (9, -18, 0)
+                rotation_deg = (0, 81, 0)
+            },
+            {
+                position = (12, -18, 0)
+                rotation_deg = (0, 94, 0)
+            },
+            {
+                position = (15, -18, 0)
+                rotation_deg = (0, 107, 0)
+            },
+            {
+                position = (18, -18, 0)
+                rotation_deg = (0, 120, 0)
+            },
+            {
+                position = (21, -18, 0)
+                rotation_deg = (0, 133, 0)
+            },
+            {
+                position = (24, -18, 0)
+                rotation_deg = (0, 146, 0)
+            },
+            {
+                position = (27, -18, 0)
+                rotation_deg = (0, 159, 0)
+            },
+            {
+                position = (0, -18, 3)
+                rotation_deg = (0, 61, 0)
+            },
+            {
+                position = (3, -18, 3)
+                rotation_deg = (0, 74, 0)
+            },
+            {
+                position = (6, -18, 3)
+                rotation_deg = (0, 87, 0)
+            },
+            {
+                position = (9, -18, 3)
+                rotation_deg = (0, 100, 0)
+            },
+            {
+                position = (12, -18, 3)
+                rotation_deg = (0, 113, 0)
+            },
+            {
+                position = (15, -18, 3)
+                rotation_deg = (0, 126, 0)
+            },
+            {
+                position = (18, -18, 3)
+                rotation_deg = (0, 139, 0)
+            },
+            {
+                position = (21, -18, 3)
+                rotation_deg = (0, 152, 0)
+            },
+            {
+                position = (24, -18, 3)
+                rotation_deg = (0, 165, 0)
+            },
+            {
+                position = (27, -18, 3)
+                rotation_deg = (0, 178, 0)
+            },
+            {
+                position = (0, -18, 6)
+                rotation_deg = (0, 80, 0)
+            },
+            {
+                position = (3, -18, 6)
+                rotation_deg = (0, 93, 0)
+            },
+            {
+                position = (6, -18, 6)
+                rotation_deg = (0, 106, 0)
+            },
+            {
+                position = (9, -18, 6)
+                rotation_deg = (0, 119, 0)
+            },
+            {
+                position = (12, -18, 6)
+                rotation_deg = (0, 132, 0)
+            },
+            {
+                position = (15, -18, 6)
+                rotation_deg = (0, 145, 0)
+            },
+            {
+                position = (18, -18, 6)
+                rotation_deg = (0, 158, 0)
+            },
+            {
+                position = (21, -18, 6)
+                rotation_deg = (0, 171, 0)
+            },
+            {
+                position = (24, -18, 6)
+                rotation_deg = (0, 184, 0)
+            },
+            {
+                position = (27, -18, 6)
+                rotation_deg = (0, 197, 0)
+            },
+            {
+                position = (0, -18, 9)
+                rotation_deg = (0, 99, 0)
+            },
+            {
+                position = (3, -18, 9)
+                rotation_deg = (0, 112, 0)
+            },
+            {
+                position = (6, -18, 9)
+                rotation_deg = (0, 125, 0)
+            },
+            {
+                position = (9, -18, 9)
+                rotation_deg = (0, 138, 0)
+            },
+            {
+                position = (12, -18, 9)
+                rotation_deg = (0, 151, 0)
+            },
+            {
+                position = (15, -18, 9)
+                rotation_deg = (0, 164, 0)
+            },
+            {
+                position = (18, -18, 9)
+                rotation_deg = (0, 177, 0)
+            },
+            {
+                position = (21, -18, 9)
+                rotation_deg = (0, 190, 0)
+            },
+            {
+                position = (24, -18, 9)
+                rotation_deg = (0, 203, 0)
+            },
+            {
+                position = (27, -18, 9)
+                rotation_deg = (0, 216, 0)
+            },
+            {
+                position = (0, -18, 12)
+                rotation_deg = (0, 118, 0)
+            },
+            {
+                position = (3, -18, 12)
+                rotation_deg = (0, 131, 0)
+            },
+            {
+                position = (6, -18, 12)
+                rotation_deg = (0, 144, 0)
+            },
+            {
+                position = (9, -18, 12)
+                rotation_deg = (0, 157, 0)
+            },
+            {
+                position = (12, -18, 12)
+                rotation_deg = (0, 170, 0)
+            },
+            {
+                position = (15, -18, 12)
+                rotation_deg = (0, 183, 0)
+            },
+            {
+                position = (18, -18, 12)
+                rotation_deg = (0, 196, 0)
+            },
+            {
+                position = (21, -18, 12)
+                rotation_deg = (0, 209, 0)
+            },
+            {
+                position = (24, -18, 12)
+                rotation_deg = (0, 222, 0)
+            },
+            {
+                position = (27, -18, 12)
+                rotation_deg = (0, 235, 0)
+            },
+            {
+                position = (0, -18, 15)
+                rotation_deg = (0, 137, 0)
+            },
+            {
+                position = (3, -18, 15)
+                rotation_deg = (0, 150, 0)
+            },
+            {
+                position = (6, -18, 15)
+                rotation_deg = (0, 163, 0)
+            },
+            {
+                position = (9, -18, 15)
+                rotation_deg = (0, 176, 0)
+            },
+            {
+                position = (12, -18, 15)
+                rotation_deg = (0, 189, 0)
+            },
+            {
+                position = (15, -18, 15)
+                rotation_deg = (0, 202, 0)
+            },
+            {
+                position = (18, -18, 15)
+                rotation_deg = (0, 215, 0)
+            },
+            {
+                position = (21, -18, 15)
+                rotation_deg = (0, 228, 0)
+            },
+            {
+                position = (24, -18, 15)
+                rotation_deg = (0, 241, 0)
+            },
+            {
+                position = (27, -18, 15)
+                rotation_deg = (0, 254, 0)
+            },
+            {
+                position = (0, -18, 18)
+                rotation_deg = (0, 156, 0)
+            },
+            {
+                position = (3, -18, 18)
+                rotation_deg = (0, 169, 0)
+            },
+            {
+                position = (6, -18, 18)
+                rotation_deg = (0, 182, 0)
+            },
+            {
+                position = (9, -18, 18)
+                rotation_deg = (0, 195, 0)
+            },
+            {
+                position = (12, -18, 18)
+                rotation_deg = (0, 208, 0)
+            },
+            {
+                position = (15, -18, 18)
+                rotation_deg = (0, 221, 0)
+            },
+            {
+                position = (18, -18, 18)
+                rotation_deg = (0, 234, 0)
+            },
+            {
+                position = (21, -18, 18)
+                rotation_deg = (0, 247, 0)
+            },
+            {
+                position = (24, -18, 18)
+                rotation_deg = (0, 260, 0)
+            },
+            {
+                position = (27, -18, 18)
+                rotation_deg = (0, 273, 0)
+            },
+            {
+                position = (0, -18, 21)
+                rotation_deg = (0, 175, 0)
+            },
+            {
+                position = (3, -18, 21)
+                rotation_deg = (0, 188, 0)
+            },
+            {
+                position = (6, -18, 21)
+                rotation_deg = (0, 201, 0)
+            },
+            {
+                position = (9, -18, 21)
+                rotation_deg = (0, 214, 0)
+            },
+            {
+                position = (12, -18, 21)
+                rotation_deg = (0, 227, 0)
+            },
+            {
+                position = (15, -18, 21)
+                rotation_deg = (0, 240, 0)
+            },
+            {
+                position = (18, -18, 21)
+                rotation_deg = (0, 253, 0)
+            },
+            {
+                position = (21, -18, 21)
+                rotation_deg = (0, 266, 0)
+            },
+            {
+                position = (24, -18, 21)
+                rotation_deg = (0, 279, 0)
+            },
+            {
+                position = (27, -18, 21)
+                rotation_deg = (0, 292, 0)
+            },
+            {
+                position = (0, -18, 24)
+                rotation_deg = (0, 194, 0)
+            },
+            {
+                position = (3, -18, 24)
+                rotation_deg = (0, 207, 0)
+            },
+            {
+                position = (6, -18, 24)
+                rotation_deg = (0, 220, 0)
+            },
+            {
+                position = (9, -18, 24)
+                rotation_deg = (0, 233, 0)
+            },
+            {
+                position = (12, -18, 24)
+                rotation_deg = (0, 246, 0)
+            },
+            {
+                position = (15, -18, 24)
+                rotation_deg = (0, 259, 0)
+            },
+            {
+                position = (18, -18, 24)
+                rotation_deg = (0, 272, 0)
+            },
+            {
+                position = (21, -18, 24)
+                rotation_deg = (0, 285, 0)
+            },
+            {
+                position = (24, -18, 24)
+                rotation_deg = (0, 298, 0)
+            },
+            {
+                position = (27, -18, 24)
+                rotation_deg = (0, 311, 0)
+            },
+            {
+                position = (0, -18, 27)
+                rotation_deg = (0, 213, 0)
+            },
+            {
+                position = (3, -18, 27)
+                rotation_deg = (0, 226, 0)
+            },
+            {
+                position = (6, -18, 27)
+                rotation_deg = (0, 239, 0)
+            },
+            {
+                position = (9, -18, 27)
+                rotation_deg = (0, 252, 0)
+            },
+            {
+                position = (12, -18, 27)
+                rotation_deg = (0, 265, 0)
+            },
+            {
+                position = (15, -18, 27)
+                rotation_deg = (0, 278, 0)
+            },
+            {
+                position = (18, -18, 27)
+                rotation_deg = (0, 291, 0)
+            },
+            {
+                position = (21, -18, 27)
+                rotation_deg = (0, 304, 0)
+            },
+            {
+                position = (24, -18, 27)
+                rotation_deg = (0, 317, 0)
+            },
+            {
+                position = (27, -18, 27)
+                rotation_deg = (0, 330, 0)
+            },
+            {
+                position = (0, -21, 0)
+                rotation_deg = (0, 49, 0)
+            },
+            {
+                position = (3, -21, 0)
+                rotation_deg = (0, 62, 0)
+            },
+            {
+                position = (6, -21, 0)
+                rotation_deg = (0, 75, 0)
+            },
+            {
+                position = (9, -21, 0)
+                rotation_deg = (0, 88, 0)
+            },
+            {
+                position = (12, -21, 0)
+                rotation_deg = (0, 101, 0)
+            },
+            {
+                position = (15, -21, 0)
+                rotation_deg = (0, 114, 0)
+            },
+            {
+                position = (18, -21, 0)
+                rotation_deg = (0, 127, 0)
+            },
+            {
+                position = (21, -21, 0)
+                rotation_deg = (0, 140, 0)
+            },
+            {
+                position = (24, -21, 0)
+                rotation_deg = (0, 153, 0)
+            },
+            {
+                position = (27, -21, 0)
+                rotation_deg = (0, 166, 0)
+            },
+            {
+                position = (0, -21, 3)
+                rotation_deg = (0, 68, 0)
+            },
+            {
+                position = (3, -21, 3)
+                rotation_deg = (0, 81, 0)
+            },
+            {
+                position = (6, -21, 3)
+                rotation_deg = (0, 94, 0)
+            },
+            {
+                position = (9, -21, 3)
+                rotation_deg = (0, 107, 0)
+            },
+            {
+                position = (12, -21, 3)
+                rotation_deg = (0, 120, 0)
+            },
+            {
+                position = (15, -21, 3)
+                rotation_deg = (0, 133, 0)
+            },
+            {
+                position = (18, -21, 3)
+                rotation_deg = (0, 146, 0)
+            },
+            {
+                position = (21, -21, 3)
+                rotation_deg = (0, 159, 0)
+            },
+            {
+                position = (24, -21, 3)
+                rotation_deg = (0, 172, 0)
+            },
+            {
+                position = (27, -21, 3)
+                rotation_deg = (0, 185, 0)
+            },
+            {
+                position = (0, -21, 6)
+                rotation_deg = (0, 87, 0)
+            },
+            {
+                position = (3, -21, 6)
+                rotation_deg = (0, 100, 0)
+            },
+            {
+                position = (6, -21, 6)
+                rotation_deg = (0, 113, 0)
+            },
+            {
+                position = (9, -21, 6)
+                rotation_deg = (0, 126, 0)
+            },
+            {
+                position = (12, -21, 6)
+                rotation_deg = (0, 139, 0)
+            },
+            {
+                position = (15, -21, 6)
+                rotation_deg = (0, 152, 0)
+            },
+            {
+                position = (18, -21, 6)
+                rotation_deg = (0, 165, 0)
+            },
+            {
+                position = (21, -21, 6)
+                rotation_deg = (0, 178, 0)
+            },
+            {
+                position = (24, -21, 6)
+                rotation_deg = (0, 191, 0)
+            },
+            {
+                position = (27, -21, 6)
+                rotation_deg = (0, 204, 0)
+            },
+            {
+                position = (0, -21, 9)
+                rotation_deg = (0, 106, 0)
+            },
+            {
+                position = (3, -21, 9)
+                rotation_deg = (0, 119, 0)
+            },
+            {
+                position = (6, -21, 9)
+                rotation_deg = (0, 132, 0)
+            },
+            {
+                position = (9, -21, 9)
+                rotation_deg = (0, 145, 0)
+            },
+            {
+                position = (12, -21, 9)
+                rotation_deg = (0, 158, 0)
+            },
+            {
+                position = (15, -21, 9)
+                rotation_deg = (0, 171, 0)
+            },
+            {
+                position = (18, -21, 9)
+                rotation_deg = (0, 184, 0)
+            },
+            {
+                position = (21, -21, 9)
+                rotation_deg = (0, 197, 0)
+            },
+            {
+                position = (24, -21, 9)
+                rotation_deg = (0, 210, 0)
+            },
+            {
+                position = (27, -21, 9)
+                rotation_deg = (0, 223, 0)
+            },
+            {
+                position = (0, -21, 12)
+                rotation_deg = (0, 125, 0)
+            },
+            {
+                position = (3, -21, 12)
+                rotation_deg = (0, 138, 0)
+            },
+            {
+                position = (6, -21, 12)
+                rotation_deg = (0, 151, 0)
+            },
+            {
+                position = (9, -21, 12)
+                rotation_deg = (0, 164, 0)
+            },
+            {
+                position = (12, -21, 12)
+                rotation_deg = (0, 177, 0)
+            },
+            {
+                position = (15, -21, 12)
+                rotation_deg = (0, 190, 0)
+            },
+            {
+                position = (18, -21, 12)
+                rotation_deg = (0, 203, 0)
+            },
+            {
+                position = (21, -21, 12)
+                rotation_deg = (0, 216, 0)
+            },
+            {
+                position = (24, -21, 12)
+                rotation_deg = (0, 229, 0)
+            },
+            {
+                position = (27, -21, 12)
+                rotation_deg = (0, 242, 0)
+            },
+            {
+                position = (0, -21, 15)
+                rotation_deg = (0, 144, 0)
+            },
+            {
+                position = (3, -21, 15)
+                rotation_deg = (0, 157, 0)
+            },
+            {
+                position = (6, -21, 15)
+                rotation_deg = (0, 170, 0)
+            },
+            {
+                position = (9, -21, 15)
+                rotation_deg = (0, 183, 0)
+            },
+            {
+                position = (12, -21, 15)
+                rotation_deg = (0, 196, 0)
+            },
+            {
+                position = (15, -21, 15)
+                rotation_deg = (0, 209, 0)
+            },
+            {
+                position = (18, -21, 15)
+                rotation_deg = (0, 222, 0)
+            },
+            {
+                position = (21, -21, 15)
+                rotation_deg = (0, 235, 0)
+            },
+            {
+                position = (24, -21, 15)
+                rotation_deg = (0, 248, 0)
+            },
+            {
+                position = (27, -21, 15)
+                rotation_deg = (0, 261, 0)
+            },
+            {
+                position = (0, -21, 18)
+                rotation_deg = (0, 163, 0)
+            },
+            {
+                position = (3, -21, 18)
+                rotation_deg = (0, 176, 0)
+            },
+            {
+                position = (6, -21, 18)
+                rotation_deg = (0, 189, 0)
+            },
+            {
+                position = (9, -21, 18)
+                rotation_deg = (0, 202, 0)
+            },
+            {
+                position = (12, -21, 18)
+                rotation_deg = (0, 215, 0)
+            },
+            {
+                position = (15, -21, 18)
+                rotation_deg = (0, 228, 0)
+            },
+            {
+                position = (18, -21, 18)
+                rotation_deg = (0, 241, 0)
+            },
+            {
+                position = (21, -21, 18)
+                rotation_deg = (0, 254, 0)
+            },
+            {
+                position = (24, -21, 18)
+                rotation_deg = (0, 267, 0)
+            },
+            {
+                position = (27, -21, 18)
+                rotation_deg = (0, 280, 0)
+            },
+            {
+                position = (0, -21, 21)
+                rotation_deg = (0, 182, 0)
+            },
+            {
+                position = (3, -21, 21)
+                rotation_deg = (0, 195, 0)
+            },
+            {
+                position = (6, -21, 21)
+                rotation_deg = (0, 208, 0)
+            },
+            {
+                position = (9, -21, 21)
+                rotation_deg = (0, 221, 0)
+            },
+            {
+                position = (12, -21, 21)
+                rotation_deg = (0, 234, 0)
+            },
+            {
+                position = (15, -21, 21)
+                rotation_deg = (0, 247, 0)
+            },
+            {
+                position = (18, -21, 21)
+                rotation_deg = (0, 260, 0)
+            },
+            {
+                position = (21, -21, 21)
+                rotation_deg = (0, 273, 0)
+            },
+            {
+                position = (24, -21, 21)
+                rotation_deg = (0, 286, 0)
+            },
+            {
+                position = (27, -21, 21)
+                rotation_deg = (0, 299, 0)
+            },
+            {
+                position = (0, -21, 24)
+                rotation_deg = (0, 201, 0)
+            },
+            {
+                position = (3, -21, 24)
+                rotation_deg = (0, 214, 0)
+            },
+            {
+                position = (6, -21, 24)
+                rotation_deg = (0, 227, 0)
+            },
+            {
+                position = (9, -21, 24)
+                rotation_deg = (0, 240, 0)
+            },
+            {
+                position = (12, -21, 24)
+                rotation_deg = (0, 253, 0)
+            },
+            {
+                position = (15, -21, 24)
+                rotation_deg = (0, 266, 0)
+            },
+            {
+                position = (18, -21, 24)
+                rotation_deg = (0, 279, 0)
+            },
+            {
+                position = (21, -21, 24)
+                rotation_deg = (0, 292, 0)
+            },
+            {
+                position = (24, -21, 24)
+                rotation_deg = (0, 305, 0)
+            },
+            {
+                position = (27, -21, 24)
+                rotation_deg = (0, 318, 0)
+            },
+            {
+                position = (0, -21, 27)
+                rotation_deg = (0, 220, 0)
+            },
+            {
+                position = (3, -21, 27)
+                rotation_deg = (0, 233, 0)
+            },
+            {
+                position = (6, -21, 27)
+                rotation_deg = (0, 246, 0)
+            },
+            {
+                position = (9, -21, 27)
+                rotation_deg = (0, 259, 0)
+            },
+            {
+                position = (12, -21, 27)
+                rotation_deg = (0, 272, 0)
+            },
+            {
+                position = (15, -21, 27)
+                rotation_deg = (0, 285, 0)
+            },
+            {
+                position = (18, -21, 27)
+                rotation_deg = (0, 298, 0)
+            },
+            {
+                position = (21, -21, 27)
+                rotation_deg = (0, 311, 0)
+            },
+            {
+                position = (24, -21, 27)
+                rotation_deg = (0, 324, 0)
+            },
+            {
+                position = (27, -21, 27)
+                rotation_deg = (0, 337, 0)
+            },
+            {
+                position = (0, -24, 0)
+                rotation_deg = (0, 56, 0)
+            },
+            {
+                position = (3, -24, 0)
+                rotation_deg = (0, 69, 0)
+            },
+            {
+                position = (6, -24, 0)
+                rotation_deg = (0, 82, 0)
+            },
+            {
+                position = (9, -24, 0)
+                rotation_deg = (0, 95, 0)
+            },
+            {
+                position = (12, -24, 0)
+                rotation_deg = (0, 108, 0)
+            },
+            {
+                position = (15, -24, 0)
+                rotation_deg = (0, 121, 0)
+            },
+            {
+                position = (18, -24, 0)
+                rotation_deg = (0, 134, 0)
+            },
+            {
+                position = (21, -24, 0)
+                rotation_deg = (0, 147, 0)
+            },
+            {
+                position = (24, -24, 0)
+                rotation_deg = (0, 160, 0)
+            },
+            {
+                position = (27, -24, 0)
+                rotation_deg = (0, 173, 0)
+            },
+            {
+                position = (0, -24, 3)
+                rotation_deg = (0, 75, 0)
+            },
+            {
+                position = (3, -24, 3)
+                rotation_deg = (0, 88, 0)
+            },
+            {
+                position = (6, -24, 3)
+                rotation_deg = (0, 101, 0)
+            },
+            {
+                position = (9, -24, 3)
+                rotation_deg = (0, 114, 0)
+            },
+            {
+                position = (12, -24, 3)
+                rotation_deg = (0, 127, 0)
+            },
+            {
+                position = (15, -24, 3)
+                rotation_deg = (0, 140, 0)
+            },
+            {
+                position = (18, -24, 3)
+                rotation_deg = (0, 153, 0)
+            },
+            {
+                position = (21, -24, 3)
+                rotation_deg = (0, 166, 0)
+            },
+            {
+                position = (24, -24, 3)
+                rotation_deg = (0, 179, 0)
+            },
+            {
+                position = (27, -24, 3)
+                rotation_deg = (0, 192, 0)
+            },
+            {
+                position = (0, -24, 6)
+                rotation_deg = (0, 94, 0)
+            },
+            {
+                position = (3, -24, 6)
+                rotation_deg = (0, 107, 0)
+            },
+            {
+                position = (6, -24, 6)
+                rotation_deg = (0, 120, 0)
+            },
+            {
+                position = (9, -24, 6)
+                rotation_deg = (0, 133, 0)
+            },
+            {
+                position = (12, -24, 6)
+                rotation_deg = (0, 146, 0)
+            },
+            {
+                position = (15, -24, 6)
+                rotation_deg = (0, 159, 0)
+            },
+            {
+                position = (18, -24, 6)
+                rotation_deg = (0, 172, 0)
+            },
+            {
+                position = (21, -24, 6)
+                rotation_deg = (0, 185, 0)
+            },
+            {
+                position = (24, -24, 6)
+                rotation_deg = (0, 198, 0)
+            },
+            {
+                position = (27, -24, 6)
+                rotation_deg = (0, 211, 0)
+            },
+            {
+                position = (0, -24, 9)
+                rotation_deg = (0, 113, 0)
+            },
+            {
+                position = (3, -24, 9)
+                rotation_deg = (0, 126, 0)
+            },
+            {
+                position = (6, -24, 9)
+                rotation_deg = (0, 139, 0)
+            },
+            {
+                position = (9, -24, 9)
+                rotation_deg = (0, 152, 0)
+            },
+            {
+                position = (12, -24, 9)
+                rotation_deg = (0, 165, 0)
+            },
+            {
+                position = (15, -24, 9)
+                rotation_deg = (0, 178, 0)
+            },
+            {
+                position = (18, -24, 9)
+                rotation_deg = (0, 191, 0)
+            },
+            {
+                position = (21, -24, 9)
+                rotation_deg = (0, 204, 0)
+            },
+            {
+                position = (24, -24, 9)
+                rotation_deg = (0, 217, 0)
+            },
+            {
+                position = (27, -24, 9)
+                rotation_deg = (0, 230, 0)
+            },
+            {
+                position = (0, -24, 12)
+                rotation_deg = (0, 132, 0)
+            },
+            {
+                position = (3, -24, 12)
+                rotation_deg = (0, 145, 0)
+            },
+            {
+                position = (6, -24, 12)
+                rotation_deg = (0, 158, 0)
+            },
+            {
+                position = (9, -24, 12)
+                rotation_deg = (0, 171, 0)
+            },
+            {
+                position = (12, -24, 12)
+                rotation_deg = (0, 184, 0)
+            },
+            {
+                position = (15, -24, 12)
+                rotation_deg = (0, 197, 0)
+            },
+            {
+                position = (18, -24, 12)
+                rotation_deg = (0, 210, 0)
+            },
+            {
+                position = (21, -24, 12)
+                rotation_deg = (0, 223, 0)
+            },
+            {
+                position = (24, -24, 12)
+                rotation_deg = (0, 236, 0)
+            },
+            {
+                position = (27, -24, 12)
+                rotation_deg = (0, 249, 0)
+            },
+            {
+                position = (0, -24, 15)
+                rotation_deg = (0, 151, 0)
+            },
+            {
+                position = (3, -24, 15)
+                rotation_deg = (0, 164, 0)
+            },
+            {
+                position = (6, -24, 15)
+                rotation_deg = (0, 177, 0)
+            },
+            {
+                position = (9, -24, 15)
+                rotation_deg = (0, 190, 0)
+            },
+            {
+                position = (12, -24, 15)
+                rotation_deg = (0, 203, 0)
+            },
+            {
+                position = (15, -24, 15)
+                rotation_deg = (0, 216, 0)
+            },
+            {
+                position = (18, -24, 15)
+                rotation_deg = (0, 229, 0)
+            },
+            {
+                position = (21, -24, 15)
+                rotation_deg = (0, 242, 0)
+            },
+            {
+                position = (24, -24, 15)
+                rotation_deg = (0, 255, 0)
+            },
+            {
+                position = (27, -24, 15)
+                rotation_deg = (0, 268, 0)
+            },
+            {
+                position = (0, -24, 18)
+                rotation_deg = (0, 170, 0)
+            },
+            {
+                position = (3, -24, 18)
+                rotation_deg = (0, 183, 0)
+            },
+            {
+                position = (6, -24, 18)
+                rotation_deg = (0, 196, 0)
+            },
+            {
+                position = (9, -24, 18)
+                rotation_deg = (0, 209, 0)
+            },
+            {
+                position = (12, -24, 18)
+                rotation_deg = (0, 222, 0)
+            },
+            {
+                position = (15, -24, 18)
+                rotation_deg = (0, 235, 0)
+            },
+            {
+                position = (18, -24, 18)
+                rotation_deg = (0, 248, 0)
+            },
+            {
+                position = (21, -24, 18)
+                rotation_deg = (0, 261, 0)
+            },
+            {
+                position = (24, -24, 18)
+                rotation_deg = (0, 274, 0)
+            },
+            {
+                position = (27, -24, 18)
+                rotation_deg = (0, 287, 0)
+            },
+            {
+                position = (0, -24, 21)
+                rotation_deg = (0, 189, 0)
+            },
+            {
+                position = (3, -24, 21)
+                rotation_deg = (0, 202, 0)
+            },
+            {
+                position = (6, -24, 21)
+                rotation_deg = (0, 215, 0)
+            },
+            {
+                position = (9, -24, 21)
+                rotation_deg = (0, 228, 0)
+            },
+            {
+                position = (12, -24, 21)
+                rotation_deg = (0, 241, 0)
+            },
+            {
+                position = (15, -24, 21)
+                rotation_deg = (0, 254, 0)
+            },
+            {
+                position = (18, -24, 21)
+                rotation_deg = (0, 267, 0)
+            },
+            {
+                position = (21, -24, 21)
+                rotation_deg = (0, 280, 0)
+            },
+            {
+                position = (24, -24, 21)
+                rotation_deg = (0, 293, 0)
+            },
+            {
+                position = (27, -24, 21)
+                rotation_deg = (0, 306, 0)
+            },
+            {
+                position = (0, -24, 24)
+                rotation_deg = (0, 208, 0)
+            },
+            {
+                position = (3, -24, 24)
+                rotation_deg = (0, 221, 0)
+            },
+            {
+                position = (6, -24, 24)
+                rotation_deg = (0, 234, 0)
+            },
+            {
+                position = (9, -24, 24)
+                rotation_deg = (0, 247, 0)
+            },
+            {
+                position = (12, -24, 24)
+                rotation_deg = (0, 260, 0)
+            },
+            {
+                position = (15, -24, 24)
+                rotation_deg = (0, 273, 0)
+            },
+            {
+                position = (18, -24, 24)
+                rotation_deg = (0, 286, 0)
+            },
+            {
+                position = (21, -24, 24)
+                rotation_deg = (0, 299, 0)
+            },
+            {
+                position = (24, -24, 24)
+                rotation_deg = (0, 312, 0)
+            },
+            {
+                position = (27, -24, 24)
+                rotation_deg = (0, 325, 0)
+            },
+            {
+                position = (0, -24, 27)
+                rotation_deg = (0, 227, 0)
+            },
+            {
+                position = (3, -24, 27)
+                rotation_deg = (0, 240, 0)
+            },
+            {
+                position = (6, -24, 27)
+                rotation_deg = (0, 253, 0)
+            },
+            {
+                position = (9, -24, 27)
+                rotation_deg = (0, 266, 0)
+            },
+            {
+                position = (12, -24, 27)
+                rotation_deg = (0, 279, 0)
+            },
+            {
+                position = (15, -24, 27)
+                rotation_deg = (0, 292, 0)
+            },
+            {
+                position = (18, -24, 27)
+                rotation_deg = (0, 305, 0)
+            },
+            {
+                position = (21, -24, 27)
+                rotation_deg = (0, 318, 0)
+            },
+            {
+                position = (24, -24, 27)
+                rotation_deg = (0, 331, 0)
+            },
+            {
+                position = (27, -24, 27)
+                rotation_deg = (0, 344, 0)
+            },
+            {
+                position = (0, -27, 0)
+                rotation_deg = (0, 63, 0)
+            },
+            {
+                position = (3, -27, 0)
+                rotation_deg = (0, 76, 0)
+            },
+            {
+                position = (6, -27, 0)
+                rotation_deg = (0, 89, 0)
+            },
+            {
+                position = (9, -27, 0)
+                rotation_deg = (0, 102, 0)
+            },
+            {
+                position = (12, -27, 0)
+                rotation_deg = (0, 115, 0)
+            },
+            {
+                position = (15, -27, 0)
+                rotation_deg = (0, 128, 0)
+            },
+            {
+                position = (18, -27, 0)
+                rotation_deg = (0, 141, 0)
+            },
+            {
+                position = (21, -27, 0)
+                rotation_deg = (0, 154, 0)
+            },
+            {
+                position = (24, -27, 0)
+                rotation_deg = (0, 167, 0)
+            },
+            {
+                position = (27, -27, 0)
+                rotation_deg = (0, 180, 0)
+            },
+            {
+                position = (0, -27, 3)
+                rotation_deg = (0, 82, 0)
+            },
+            {
+                position = (3, -27, 3)
+                rotation_deg = (0, 95, 0)
+            },
+            {
+                position = (6, -27, 3)
+                rotation_deg = (0, 108, 0)
+            },
+            {
+                position = (9, -27, 3)
+                rotation_deg = (0, 121, 0)
+            },
+            {
+                position = (12, -27, 3)
+                rotation_deg = (0, 134, 0)
+            },
+            {
+                position = (15, -27, 3)
+                rotation_deg = (0, 147, 0)
+            },
+            {
+                position = (18, -27, 3)
+                rotation_deg = (0, 160, 0)
+            },
+            {
+                position = (21, -27, 3)
+                rotation_deg = (0, 173, 0)
+            },
+            {
+                position = (24, -27, 3)
+                rotation_deg = (0, 186, 0)
+            },
+            {
+                position = (27, -27, 3)
+                rotation_deg = (0, 199, 0)
+            },
+            {
+                position = (0, -27, 6)
+                rotation_deg = (0, 101, 0)
+            },
+            {
+                position = (3, -27, 6)
+                rotation_deg = (0, 114, 0)
+            },
+            {
+                position = (6, -27, 6)
+                rotation_deg = (0, 127, 0)
+            },
+            {
+                position = (9, -27, 6)
+                rotation_deg = (0, 140, 0)
+            },
+            {
+                position = (12, -27, 6)
+                rotation_deg = (0, 153, 0)
+            },
+            {
+                position = (15, -27, 6)
+                rotation_deg = (0, 166, 0)
+            },
+            {
+                position = (18, -27, 6)
+                rotation_deg = (0, 179, 0)
+            },
+            {
+                position = (21, -27, 6)
+                rotation_deg = (0, 192, 0)
+            },
+            {
+                position = (24, -27, 6)
+                rotation_deg = (0, 205, 0)
+            },
+            {
+                position = (27, -27, 6)
+                rotation_deg = (0, 218, 0)
+            },
+            {
+                position = (0, -27, 9)
+                rotation_deg = (0, 120, 0)
+            },
+            {
+                position = (3, -27, 9)
+                rotation_deg = (0, 133, 0)
+            },
+            {
+                position = (6, -27, 9)
+                rotation_deg = (0, 146, 0)
+            },
+            {
+                position = (9, -27, 9)
+                rotation_deg = (0, 159, 0)
+            },
+            {
+                position = (12, -27, 9)
+                rotation_deg = (0, 172, 0)
+            },
+            {
+                position = (15, -27, 9)
+                rotation_deg = (0, 185, 0)
+            },
+            {
+                position = (18, -27, 9)
+                rotation_deg = (0, 198, 0)
+            },
+            {
+                position = (21, -27, 9)
+                rotation_deg = (0, 211, 0)
+            },
+            {
+                position = (24, -27, 9)
+                rotation_deg = (0, 224, 0)
+            },
+            {
+                position = (27, -27, 9)
+                rotation_deg = (0, 237, 0)
+            },
+            {
+                position = (0, -27, 12)
+                rotation_deg = (0, 139, 0)
+            },
+            {
+                position = (3, -27, 12)
+                rotation_deg = (0, 152, 0)
+            },
+            {
+                position = (6, -27, 12)
+                rotation_deg = (0, 165, 0)
+            },
+            {
+                position = (9, -27, 12)
+                rotation_deg = (0, 178, 0)
+            },
+            {
+                position = (12, -27, 12)
+                rotation_deg = (0, 191, 0)
+            },
+            {
+                position = (15, -27, 12)
+                rotation_deg = (0, 204, 0)
+            },
+            {
+                position = (18, -27, 12)
+                rotation_deg = (0, 217, 0)
+            },
+            {
+                position = (21, -27, 12)
+                rotation_deg = (0, 230, 0)
+            },
+            {
+                position = (24, -27, 12)
+                rotation_deg = (0, 243, 0)
+            },
+            {
+                position = (27, -27, 12)
+                rotation_deg = (0, 256, 0)
+            },
+            {
+                position = (0, -27, 15)
+                rotation_deg = (0, 158, 0)
+            },
+            {
+                position = (3, -27, 15)
+                rotation_deg = (0, 171, 0)
+            },
+            {
+                position = (6, -27, 15)
+                rotation_deg = (0, 184, 0)
+            },
+            {
+                position = (9, -27, 15)
+                rotation_deg = (0, 197, 0)
+            },
+            {
+                position = (12, -27, 15)
+                rotation_deg = (0, 210, 0)
+            },
+            {
+                position = (15, -27, 15)
+                rotation_deg = (0, 223, 0)
+            },
+            {
+                position = (18, -27, 15)
+                rotation_deg = (0, 236, 0)
+            },
+            {
+                position = (21, -27, 15)
+                rotation_deg = (0, 249, 0)
+            },
+            {
+                position = (24, -27, 15)
+                rotation_deg = (0, 262, 0)
+            },
+            {
+                position = (27, -27, 15)
+                rotation_deg = (0, 275, 0)
+            },
+            {
+                position = (0, -27, 18)
+                rotation_deg = (0, 177, 0)
+            },
+            {
+                position = (3, -27, 18)
+                rotation_deg = (0, 190, 0)
+            },
+            {
+                position = (6, -27, 18)
+                rotation_deg = (0, 203, 0)
+            },
+            {
+                position = (9, -27, 18)
+                rotation_deg = (0, 216, 0)
+            },
+            {
+                position = (12, -27, 18)
+                rotation_deg = (0, 229, 0)
+            },
+            {
+                position = (15, -27, 18)
+                rotation_deg = (0, 242, 0)
+            },
+            {
+                position = (18, -27, 18)
+                rotation_deg = (0, 255, 0)
+            },
+            {
+                position = (21, -27, 18)
+                rotation_deg = (0, 268, 0)
+            },
+            {
+                position = (24, -27, 18)
+                rotation_deg = (0, 281, 0)
+            },
+            {
+                position = (27, -27, 18)
+                rotation_deg = (0, 294, 0)
+            },
+            {
+                position = (0, -27, 21)
+                rotation_deg = (0, 196, 0)
+            },
+            {
+                position = (3, -27, 21)
+                rotation_deg = (0, 209, 0)
+            },
+            {
+                position = (6, -27, 21)
+                rotation_deg = (0, 222, 0)
+            },
+            {
+                position = (9, -27, 21)
+                rotation_deg = (0, 235, 0)
+            },
+            {
+                position = (12, -27, 21)
+                rotation_deg = (0, 248, 0)
+            },
+            {
+                position = (15, -27, 21)
+                rotation_deg = (0, 261, 0)
+            },
+            {
+                position = (18, -27, 21)
+                rotation_deg = (0, 274, 0)
+            },
+            {
+                position = (21, -27, 21)
+                rotation_deg = (0, 287, 0)
+            },
+            {
+                position = (24, -27, 21)
+                rotation_deg = (0, 300, 0)
+            },
+            {
+                position = (27, -27, 21)
+                rotation_deg = (0, 313, 0)
+            },
+            {
+                position = (0, -27, 24)
+                rotation_deg = (0, 215, 0)
+            },
+            {
+                position = (3, -27, 24)
+                rotation_deg = (0, 228, 0)
+            },
+            {
+                position = (6, -27, 24)
+                rotation_deg = (0, 241, 0)
+            },
+            {
+                position = (9, -27, 24)
+                rotation_deg = (0, 254, 0)
+            },
+            {
+                position = (12, -27, 24)
+                rotation_deg = (0, 267, 0)
+            },
+            {
+                position = (15, -27, 24)
+                rotation_deg = (0, 280, 0)
+            },
+            {
+                position = (18, -27, 24)
+                rotation_deg = (0, 293, 0)
+            },
+            {
+                position = (21, -27, 24)
+                rotation_deg = (0, 306, 0)
+            },
+            {
+                position = (24, -27, 24)
+                rotation_deg = (0, 319, 0)
+            },
+            {
+                position = (27, -27, 24)
+                rotation_deg = (0, 332, 0)
+            },
+            {
+                position = (0, -27, 27)
+                rotation_deg = (0, 234, 0)
+            },
+            {
+                position = (3, -27, 27)
+                rotation_deg = (0, 247, 0)
+            },
+            {
+                position = (6, -27, 27)
+                rotation_deg = (0, 260, 0)
+            },
+            {
+                position = (9, -27, 27)
+                rotation_deg = (0, 273, 0)
+            },
+            {
+                position = (12, -27, 27)
+                rotation_deg = (0, 286, 0)
+            },
+            {
+                position = (15, -27, 27)
+                rotation_deg = (0, 299, 0)
+            },
+            {
+                position = (18, -27, 27)
+                rotation_deg = (0, 312, 0)
+            },
+            {
+                position = (21, -27, 27)
+                rotation_deg = (0, 325, 0)
+            },
+            {
+                position = (24, -27, 27)
+                rotation_deg = (0, 338, 0)
+            },
+            {
+                position = (27, -27, 27)
+                rotation_deg = (0, 351, 0)
+            },
+        ]
+        [Node3D]
+            position = (0, 0, 0)
+            rotation = (0, 0, 0, 1)
+            scale = (1, 1, 1)
+            visible = true
+        [/Node3D]
+    [/MultiMeshInstance3D]
+[/mm_cone]

@@ -57,7 +57,6 @@ pub struct StaticProjectConfig {
     pub virtual_width: u32,
     pub virtual_height: u32,
     pub vsync: bool,
-    pub target_fps: Option<f32>,
     pub target_fixed_update: Option<f32>,
     pub msaa: bool,
     pub meshlets: bool,
@@ -88,7 +87,6 @@ impl StaticProjectConfig {
             virtual_width,
             virtual_height,
             vsync: false,
-            target_fps: None,
             target_fixed_update: Some(60.0),
             msaa: true,
             meshlets: false,
@@ -105,11 +103,6 @@ impl StaticProjectConfig {
 
     pub const fn with_vsync(mut self, enabled: bool) -> Self {
         self.vsync = enabled;
-        self
-    }
-
-    pub const fn with_target_fps(mut self, target_fps: Option<f32>) -> Self {
-        self.target_fps = target_fps;
         self
     }
 
@@ -177,7 +170,6 @@ impl StaticProjectConfig {
             virtual_width: self.virtual_width,
             virtual_height: self.virtual_height,
             vsync: self.vsync,
-            target_fps: self.target_fps,
             target_fixed_update: self.target_fixed_update,
             msaa: self.msaa,
             meshlets: self.meshlets,
@@ -210,7 +202,6 @@ pub struct ProjectConfig {
     pub virtual_width: u32,
     pub virtual_height: u32,
     pub vsync: bool,
-    pub target_fps: Option<f32>,
     pub target_fixed_update: Option<f32>,
     pub msaa: bool,
     pub meshlets: bool,
@@ -235,7 +226,6 @@ impl ProjectConfig {
             virtual_width: 1920,
             virtual_height: 1080,
             vsync: false,
-            target_fps: None,
             target_fixed_update: Some(60.0),
             msaa: true,
             meshlets: false,
@@ -476,7 +466,6 @@ occlusion_culling = "gpu"
 particle_sim_default = "gpu"
 
 [runtime]
-target_fps = "uncapped"
 target_fixed_update = 60
 
 # Optional CSV localization table.
@@ -574,7 +563,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     }
 
     let vsync = parse_bool_with_default(graphics_table, "vsync", false)?;
-    let target_fps = parse_target_fps(runtime_table)?;
+    reject_target_fps(runtime_table)?;
     let target_fixed_update = parse_target_fixed_update(runtime_table)?;
     let msaa = parse_bool_with_default(graphics_table, "msaa", true)?;
     let meshlets = parse_bool_with_default(graphics_table, "meshlets", false)?;
@@ -604,7 +593,6 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         virtual_width,
         virtual_height,
         vsync,
-        target_fps,
         target_fixed_update,
         msaa,
         meshlets,
@@ -641,39 +629,16 @@ fn parse_bool_with_default(
     })
 }
 
-fn parse_target_fps(
-    runtime: Option<&toml::map::Map<String, Value>>,
-) -> Result<Option<f32>, ProjectError> {
+fn reject_target_fps(runtime: Option<&toml::map::Map<String, Value>>) -> Result<(), ProjectError> {
     let Some(runtime) = runtime else {
-        return Ok(None);
+        return Ok(());
     };
     let Some(value) = runtime.get("target_fps") else {
-        return Ok(None);
+        return Ok(());
     };
-    if let Some(raw) = value.as_str() {
-        if raw.trim().eq_ignore_ascii_case("uncapped") {
-            return Ok(None);
-        }
-        return Err(ProjectError::InvalidField(
-            "runtime.target_fps",
-            "expected a number or \"uncapped\"".to_string(),
-        ));
-    }
-    if let Some(num) = value.as_float() {
-        if num <= 0.0 || !num.is_finite() {
-            return Ok(None);
-        }
-        return Ok(Some(num as f32));
-    }
-    if let Some(num) = value.as_integer() {
-        if num <= 0 {
-            return Ok(None);
-        }
-        return Ok(Some(num as f32));
-    }
     Err(ProjectError::InvalidField(
         "runtime.target_fps",
-        "expected a number or \"uncapped\"".to_string(),
+        format!("target_fps unsupported; remove field (found: {value})"),
     ))
 }
 
@@ -1553,7 +1518,6 @@ fn project_root() -> std::path::PathBuf {
               particle_sim_default: perro_app::entry::ParticleSimDefault::Cpu,
           },
           runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {
-              target_fps: None,
               target_fixed_update: Some(60.0),
           },
           localization: perro_app::entry::StaticEmbeddedLocalizationConfig {

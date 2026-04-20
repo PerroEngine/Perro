@@ -723,9 +723,12 @@ impl Gpu3D {
             Material3D::Toon(_) => MaterialPipelineKind::Toon,
             Material3D::Custom(custom) => {
                 let shader_path = custom.shader_path.as_ref();
-                if let Some(token) =
-                    self.ensure_custom_pipeline(device, render_path, shader_path, static_shader_lookup)
-                {
+                if let Some(token) = self.ensure_custom_pipeline(
+                    device,
+                    render_path,
+                    shader_path,
+                    static_shader_lookup,
+                ) {
                     MaterialPipelineKind::Custom(token)
                 } else {
                     MaterialPipelineKind::Standard
@@ -840,28 +843,46 @@ impl Gpu3D {
                             );
                         }
                         CUSTOM_PARAM_KIND_VEC2 => {
-                            self.staged_custom_params_key_scratch
-                                .push(self.staged_custom_params_values_scratch[value_offset as usize].to_bits());
-                            self.staged_custom_params_key_scratch
-                                .push(self.staged_custom_params_values_scratch[value_offset as usize + 1].to_bits());
+                            self.staged_custom_params_key_scratch.push(
+                                self.staged_custom_params_values_scratch[value_offset as usize]
+                                    .to_bits(),
+                            );
+                            self.staged_custom_params_key_scratch.push(
+                                self.staged_custom_params_values_scratch[value_offset as usize + 1]
+                                    .to_bits(),
+                            );
                         }
                         CUSTOM_PARAM_KIND_VEC3 => {
-                            self.staged_custom_params_key_scratch
-                                .push(self.staged_custom_params_values_scratch[value_offset as usize].to_bits());
-                            self.staged_custom_params_key_scratch
-                                .push(self.staged_custom_params_values_scratch[value_offset as usize + 1].to_bits());
-                            self.staged_custom_params_key_scratch
-                                .push(self.staged_custom_params_values_scratch[value_offset as usize + 2].to_bits());
+                            self.staged_custom_params_key_scratch.push(
+                                self.staged_custom_params_values_scratch[value_offset as usize]
+                                    .to_bits(),
+                            );
+                            self.staged_custom_params_key_scratch.push(
+                                self.staged_custom_params_values_scratch[value_offset as usize + 1]
+                                    .to_bits(),
+                            );
+                            self.staged_custom_params_key_scratch.push(
+                                self.staged_custom_params_values_scratch[value_offset as usize + 2]
+                                    .to_bits(),
+                            );
                         }
                         _ => {
-                            self.staged_custom_params_key_scratch
-                                .push(self.staged_custom_params_values_scratch[value_offset as usize].to_bits());
-                            self.staged_custom_params_key_scratch
-                                .push(self.staged_custom_params_values_scratch[value_offset as usize + 1].to_bits());
-                            self.staged_custom_params_key_scratch
-                                .push(self.staged_custom_params_values_scratch[value_offset as usize + 2].to_bits());
-                            self.staged_custom_params_key_scratch
-                                .push(self.staged_custom_params_values_scratch[value_offset as usize + 3].to_bits());
+                            self.staged_custom_params_key_scratch.push(
+                                self.staged_custom_params_values_scratch[value_offset as usize]
+                                    .to_bits(),
+                            );
+                            self.staged_custom_params_key_scratch.push(
+                                self.staged_custom_params_values_scratch[value_offset as usize + 1]
+                                    .to_bits(),
+                            );
+                            self.staged_custom_params_key_scratch.push(
+                                self.staged_custom_params_values_scratch[value_offset as usize + 2]
+                                    .to_bits(),
+                            );
+                            self.staged_custom_params_key_scratch.push(
+                                self.staged_custom_params_values_scratch[value_offset as usize + 3]
+                                    .to_bits(),
+                            );
                         }
                     }
                 }
@@ -1236,16 +1257,16 @@ impl Gpu3D {
                     binding: 0,
                     resource: shadow_camera_buffer.as_entire_binding(),
                 },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: custom_params_meta_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: custom_params_values_buffer.as_entire_binding(),
-                    },
-                ],
-            });
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: custom_params_meta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: custom_params_values_buffer.as_entire_binding(),
+                },
+            ],
+        });
         let multimesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_multimesh_bg"),
             layout: &multimesh_bgl,

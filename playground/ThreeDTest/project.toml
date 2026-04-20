@@ -16,7 +16,6 @@ occlusion_culling = "gpu"
 particle_sim_default = "gpu"
 
 [runtime]
-target_fps = 360
 target_fixed_update = 60
 
 [localization]

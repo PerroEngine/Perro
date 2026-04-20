@@ -425,7 +425,6 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         particle_sim_default: {particle_sim_default},\n\
   }},\n\
   runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {{\n\
-        target_fps: {target_fps},\n\
         target_fixed_update: {target_fixed_update},\n\
   }},\n\
   localization: perro_app::entry::StaticEmbeddedLocalizationConfig {{\n\
@@ -463,7 +462,6 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         meshlet_debug_view = cfg.meshlet_debug_view,
         occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
         particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
-        target_fps = emit_optional_f32(cfg.target_fps),
         target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
         localization_source_csv_hash = emit_optional_u64(
             cfg.localization

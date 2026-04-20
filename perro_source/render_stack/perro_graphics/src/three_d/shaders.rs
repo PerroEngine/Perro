@@ -162,7 +162,10 @@ fn sanitize_reserved_meta_identifier(wgsl: &str) -> String {
         "let packed_meta = custom_params_meta",
     )
     .replace("let kind = meta & 0x3u;", "let kind = packed_meta & 0x3u;")
-    .replace("let value_offset = meta >> 2u;", "let value_offset = packed_meta >> 2u;")
+    .replace(
+        "let value_offset = meta >> 2u;",
+        "let value_offset = packed_meta >> 2u;",
+    )
 }
 
 #[inline]

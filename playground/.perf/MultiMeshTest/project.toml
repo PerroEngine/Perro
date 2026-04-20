@@ -1,7 +1,8 @@
 [project]
-name = "Input"
+name = "MultiMeshTest"
 main_scene = "res://main.scn"
 icon = "res://icon.png"
+startup_splash = "res://icon.png"
 
 [graphics]
 virtual_resolution = "1920x1080"
@@ -9,8 +10,8 @@ vsync = false
 
 msaa = true
 
-meshlets = false
-dev_meshlets = false
+meshlets = true
+dev_meshlets = true
 release_meshlets = true
 meshlet_debug_view = false
 
