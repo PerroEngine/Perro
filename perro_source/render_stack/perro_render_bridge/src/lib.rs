@@ -14,7 +14,7 @@ impl RenderRequestID {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Camera2DState {
     pub position: [f32; 2],
     pub rotation_radians: f32,

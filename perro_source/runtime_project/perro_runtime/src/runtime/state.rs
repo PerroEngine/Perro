@@ -4,11 +4,12 @@ use crate::{
     runtime::RuntimeScriptCtor,
 };
 use ahash::{AHashMap, AHashSet};
-use perro_ids::{MeshID, NodeID, TagID, TextureID};
+use perro_ids::{MeshID, NodeID, TagID};
 use perro_nodes::Spatial;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, DenseInstancePose3D, Material3D, MeshSurfaceBinding3D,
     PointLight3DState, RayLight3DState, RenderCommand, RenderEvent, RenderRequestID,
+    Sprite2DCommand,
     SkeletonPalette, Sky3DState, SpotLight3DState,
 };
 use perro_structs::{Transform2D, Transform3D};
@@ -299,8 +300,9 @@ pub(crate) struct Render2DState {
     pub(crate) traversal_ids: Vec<NodeID>,
     pub(crate) visible_now: AHashSet<NodeID>,
     pub(crate) prev_visible: AHashSet<NodeID>,
-    pub(crate) retained_sprite_textures: AHashMap<NodeID, TextureID>,
+    pub(crate) retained_sprites: AHashMap<NodeID, Sprite2DCommand>,
     pub(crate) texture_sources: AHashMap<NodeID, String>,
+    pub(crate) last_camera: Option<perro_render_bridge::Camera2DState>,
     pub(crate) removed_nodes: Vec<NodeID>,
 }
 
@@ -310,8 +312,9 @@ impl Render2DState {
             traversal_ids: Vec::new(),
             visible_now: AHashSet::default(),
             prev_visible: AHashSet::default(),
-            retained_sprite_textures: AHashMap::default(),
+            retained_sprites: AHashMap::default(),
             texture_sources: AHashMap::default(),
+            last_camera: None,
             removed_nodes: Vec::new(),
         }
     }

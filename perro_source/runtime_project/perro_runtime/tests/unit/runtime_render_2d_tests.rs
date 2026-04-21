@@ -55,6 +55,28 @@ fn sprite_requests_texture_once_until_created() {
 }
 
 #[test]
+fn unchanged_sprite_skips_redundant_upsert() {
+    let mut runtime = Runtime::new();
+    let mut sprite = Sprite2D::new();
+    sprite.texture = TextureID::from_parts(12, 0);
+    let expected_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Sprite2D(sprite)));
+
+    runtime.extract_render_2d_commands();
+    let first = collect_commands(&mut runtime);
+    assert_eq!(first.len(), 1);
+    assert!(matches!(
+        first[0],
+        RenderCommand::TwoD(Command2D::UpsertSprite { node, .. }) if node == expected_node
+    ));
+
+    runtime.extract_render_2d_commands();
+    let second = collect_commands(&mut runtime);
+    assert!(second.is_empty());
+}
+
+#[test]
 fn sprite_becoming_invisible_emits_remove_node() {
     let mut runtime = Runtime::new();
     let mut sprite = Sprite2D::new();
@@ -86,6 +108,27 @@ fn sprite_becoming_invisible_emits_remove_node() {
         second[0],
         RenderCommand::TwoD(Command2D::RemoveNode { node }) if node == expected_node
     ));
+}
+
+#[test]
+fn unchanged_camera_2d_skips_redundant_set_camera() {
+    let mut runtime = Runtime::new();
+    let mut camera = Camera2D::new();
+    camera.active = true;
+    camera.zoom = 1.5;
+    runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Camera2D(camera)));
+
+    runtime.extract_render_2d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(first
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::TwoD(Command2D::SetCamera { .. }))));
+
+    runtime.extract_render_2d_commands();
+    let second = collect_commands(&mut runtime);
+    assert!(second.is_empty());
 }
 
 #[test]

@@ -64,7 +64,12 @@ impl Runtime {
                 }
             });
             if let Some(camera) = camera_data {
-                self.queue_render_command(RenderCommand::TwoD(Command2D::SetCamera { camera }));
+                if self.render_2d.last_camera.as_ref() != Some(&camera) {
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::SetCamera {
+                        camera: camera.clone(),
+                    }));
+                    self.render_2d.last_camera = Some(camera);
+                }
             }
         }
         self.remove_no_longer_visible_render_2d_nodes(&visible_now);
@@ -94,34 +99,25 @@ impl Runtime {
             return;
         };
 
+        let sprite = Sprite2DCommand {
+            texture: resolved_texture,
+            model,
+            tint: [1.0, 1.0, 1.0, 1.0],
+            z_index,
+        };
         let needs_upsert = self
             .render_2d
-            .retained_sprite_textures
+            .retained_sprites
             .get(&node)
-            .is_none_or(|cached| *cached != resolved_texture);
+            .is_none_or(|cached| *cached != sprite);
         if needs_upsert {
             self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertSprite {
                 node,
-                sprite: Sprite2DCommand {
-                    texture: resolved_texture,
-                    model,
-                    tint: [1.0, 1.0, 1.0, 1.0],
-                    z_index,
-                },
+                sprite,
             }));
             self.render_2d
-                .retained_sprite_textures
-                .insert(node, resolved_texture);
-        } else {
-            self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertSprite {
-                node,
-                sprite: Sprite2DCommand {
-                    texture: resolved_texture,
-                    model,
-                    tint: [1.0, 1.0, 1.0, 1.0],
-                    z_index,
-                },
-            }));
+                .retained_sprites
+                .insert(node, sprite);
         }
         visible_now.insert(node);
     }
@@ -183,7 +179,7 @@ impl Runtime {
         }
         while let Some(node) = self.render_2d.removed_nodes.pop() {
             self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
-            self.render_2d.retained_sprite_textures.remove(&node);
+            self.render_2d.retained_sprites.remove(&node);
         }
     }
 }

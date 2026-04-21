@@ -265,8 +265,9 @@ impl Runtime {
         self.render_2d.traversal_ids.clear();
         self.render_2d.visible_now.clear();
         self.render_2d.prev_visible.clear();
-        self.render_2d.retained_sprite_textures.clear();
+        self.render_2d.retained_sprites.clear();
         self.render_2d.texture_sources.clear();
+        self.render_2d.last_camera = None;
         self.render_2d.removed_nodes.clear();
         self.render_3d.traversal_ids.clear();
         self.render_3d.visible_now.clear();
