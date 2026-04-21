@@ -5318,8 +5318,10 @@ fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        PMESH_V6_FLAG_HAS_JOINTS, PMESH_V6_FLAG_HAS_NORMAL, PMESH_V6_FLAG_HAS_UV0,
-        PMESH_V6_FLAG_HAS_WEIGHTS, decode_pmesh, decode_ptex, normalized_static_mesh_lookup_alias,
+        MATERIAL_TEXTURE_NONE, MaterialPipelineKind, MeshRange, PMESH_V6_FLAG_HAS_JOINTS,
+        PMESH_V6_FLAG_HAS_NORMAL, PMESH_V6_FLAG_HAS_UV0, PMESH_V6_FLAG_HAS_WEIGHTS,
+        RenderPath3D, decode_pmesh, decode_ptex, draw_batch_state_key,
+        normalized_static_mesh_lookup_alias, push_draw_batch,
     };
 
     #[test]
@@ -5459,6 +5461,123 @@ mod tests {
                 "legacy ptex version {version} must reject"
             );
         }
+    }
+
+    #[test]
+    fn push_draw_batch_merges_compatible_adjacent_ranges() {
+        let mut batches = Vec::new();
+        let mesh = MeshRange {
+            index_start: 4,
+            index_count: 36,
+            base_vertex: 0,
+        };
+
+        push_draw_batch(
+            &mut batches,
+            RenderPath3D::Rigid,
+            mesh,
+            0,
+            1,
+            false,
+            MaterialPipelineKind::Standard,
+            0,
+            MATERIAL_TEXTURE_NONE,
+            ([1.0, 2.0, 3.0], 2.0),
+            None,
+            false,
+            true,
+        );
+        push_draw_batch(
+            &mut batches,
+            RenderPath3D::Rigid,
+            mesh,
+            1,
+            2,
+            false,
+            MaterialPipelineKind::Standard,
+            0,
+            MATERIAL_TEXTURE_NONE,
+            ([9.0, 9.0, 9.0], 4.0),
+            None,
+            false,
+            true,
+        );
+
+        assert_eq!(batches.len(), 1);
+        let merged = &batches[0];
+        assert_eq!(merged.instance_start, 0);
+        assert_eq!(merged.instance_count, 3);
+        assert_eq!(
+            merged.state_key,
+            draw_batch_state_key(
+                RenderPath3D::Rigid,
+                false,
+                false,
+                0,
+                &MaterialPipelineKind::Standard
+            )
+        );
+        assert_eq!(merged.local_center, [0.0, 0.0, 0.0]);
+        assert_eq!(merged.local_radius, 1.0e9);
+        assert!(merged.disable_hiz_occlusion);
+    }
+
+    #[test]
+    fn push_draw_batch_keeps_separate_batches_when_not_mergeable() {
+        let mut batches = Vec::new();
+        let mesh = MeshRange {
+            index_start: 7,
+            index_count: 12,
+            base_vertex: 0,
+        };
+
+        push_draw_batch(
+            &mut batches,
+            RenderPath3D::Rigid,
+            mesh,
+            0,
+            1,
+            false,
+            MaterialPipelineKind::Standard,
+            0,
+            MATERIAL_TEXTURE_NONE,
+            ([0.0, 0.0, 0.0], 1.0),
+            None,
+            false,
+            true,
+        );
+        push_draw_batch(
+            &mut batches,
+            RenderPath3D::Rigid,
+            mesh,
+            2,
+            1,
+            false,
+            MaterialPipelineKind::Standard,
+            0,
+            MATERIAL_TEXTURE_NONE,
+            ([0.0, 0.0, 0.0], 1.0),
+            None,
+            false,
+            true,
+        );
+        push_draw_batch(
+            &mut batches,
+            RenderPath3D::Rigid,
+            mesh,
+            3,
+            1,
+            false,
+            MaterialPipelineKind::Standard,
+            0,
+            MATERIAL_TEXTURE_NONE,
+            ([0.0, 0.0, 0.0], 1.0),
+            Some(11),
+            false,
+            true,
+        );
+
+        assert_eq!(batches.len(), 3);
     }
 }
 
@@ -6147,15 +6266,47 @@ fn push_draw_batch(
     if instance_count == 0 {
         return;
     }
+    let state_key = draw_batch_state_key(
+        render_path,
+        false,
+        double_sided,
+        alpha_mode,
+        &material_kind,
+    );
     let (local_center, local_radius) = local_bounds;
+    if occlusion_query.is_none()
+        && let Some(prev) = draw_batches.last_mut()
+    {
+        let prev_end = prev.instance_start.saturating_add(prev.instance_count);
+        let same_mesh = prev.mesh.index_start == mesh.index_start
+            && prev.mesh.index_count == mesh.index_count
+            && prev.mesh.base_vertex == mesh.base_vertex;
+        let same_batch_state = prev.state_key == state_key
+            && prev.path == render_path
+            && prev.double_sided == double_sided
+            && prev.material_kind == material_kind
+            && prev.alpha_mode == alpha_mode
+            && prev.draw_on_top == false
+            && prev.base_color_texture_slot == base_color_texture_slot
+            && prev.occlusion_query.is_none()
+            && prev.casts_shadows == casts_shadows;
+        if same_mesh && same_batch_state && prev_end == instance_start {
+            prev.instance_count = prev.instance_count.saturating_add(instance_count);
+            prev.disable_hiz_occlusion |= disable_hiz_occlusion;
+            // Multiple instances do not share one tight bound in this path.
+            if prev.instance_count > 1 {
+                prev.local_center = [0.0, 0.0, 0.0];
+                prev.local_radius = 1.0e9;
+                prev.disable_hiz_occlusion = true;
+            } else {
+                prev.local_center = local_center;
+                prev.local_radius = local_radius.max(0.0);
+            }
+            return;
+        }
+    }
     draw_batches.push(DrawBatch {
-        state_key: draw_batch_state_key(
-            render_path,
-            false,
-            double_sided,
-            alpha_mode,
-            &material_kind,
-        ),
+        state_key,
         mesh,
         instance_start,
         instance_count,
