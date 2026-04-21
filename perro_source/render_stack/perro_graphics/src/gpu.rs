@@ -741,35 +741,35 @@ impl Gpu {
             Intermediate,
         }
         let mut current_tex = FrameTex::Scene;
-        let mut apply_post_chain =
-            |effects: &[perro_structs::PostProcessEffect], current_tex: &mut FrameTex| {
-                if effects.is_empty() {
-                    return;
-                }
-                let (input_view, output_view, next_tex) = match *current_tex {
-                    FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
-                    FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene),
-                };
-                let post_context = PostProcessContext {
-                    device: &self.device,
-                    queue: &self.queue,
-                    output_view,
-                    camera: &camera_3d,
-                    static_shader_lookup,
-                };
-                let post_chain_data = PostProcessChainData {
-                    input_view,
-                    depth_view: self
-                        .three_d
-                        .as_ref()
-                        .expect("three_d is initialized when post-processing is active")
-                        .depth_prepass_view(),
-                    effects,
-                };
-                self.post
-                    .apply_chain(&post_context, &post_chain_data, &mut encoder);
-                *current_tex = next_tex;
+        let mut apply_post_chain = |effects: &[perro_structs::PostProcessEffect],
+                                    current_tex: &mut FrameTex| {
+            if effects.is_empty() {
+                return;
+            }
+            let (input_view, output_view, next_tex) = match *current_tex {
+                FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
+                FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene),
             };
+            let post_context = PostProcessContext {
+                device: &self.device,
+                queue: &self.queue,
+                output_view,
+                camera: &camera_3d,
+                static_shader_lookup,
+            };
+            let post_chain_data = PostProcessChainData {
+                input_view,
+                depth_view: self
+                    .three_d
+                    .as_ref()
+                    .expect("three_d is initialized when post-processing is active")
+                    .depth_prepass_view(),
+                effects,
+            };
+            self.post
+                .apply_chain(&post_context, &post_chain_data, &mut encoder);
+            *current_tex = next_tex;
+        };
         if camera_post_enabled {
             apply_post_chain(camera_post_chain, &mut current_tex);
         }
@@ -1161,9 +1161,7 @@ fn choose_present_mode(modes: &[wgpu::PresentMode], vsync_enabled: bool) -> wgpu
         if modes.contains(&forced) {
             return forced;
         }
-        eprintln!(
-            "[perro][gfx] PERRO_PRESENT_MODE set but unsupported by surface: ({forced:?})"
-        );
+        eprintln!("[perro][gfx] PERRO_PRESENT_MODE set but unsupported by surface: ({forced:?})");
     }
 
     let preferred = if vsync_enabled {
@@ -1210,9 +1208,7 @@ fn parse_present_mode_override() -> Option<wgpu::PresentMode> {
         "immediate" => Some(wgpu::PresentMode::Immediate),
         "autonovsync" | "auto_novsync" => Some(wgpu::PresentMode::AutoNoVsync),
         _ => {
-            eprintln!(
-                "[perro][gfx] unknown PERRO_PRESENT_MODE=({raw}); ignore override"
-            );
+            eprintln!("[perro][gfx] unknown PERRO_PRESENT_MODE=({raw}); ignore override");
             None
         }
     }

@@ -603,25 +603,23 @@ impl GraphicsBackend for PerroGraphics {
                         frame_dirty_bits |= DIRTY_CAMERA_2D;
                     }
                 }
-                RenderCommand::ThreeD(cmd_3d) => {
-                    match &**cmd_3d {
-                        Command3D::Draw { .. }
-                        | Command3D::DrawMulti { .. }
-                        | Command3D::DrawMultiDense { .. }
-                        | Command3D::DrawDebugPoint3D { .. }
-                        | Command3D::DrawDebugLine3D { .. }
-                        | Command3D::RemoveNode { .. } => frame_dirty_bits |= DIRTY_3D,
-                        Command3D::SetCamera { .. } => frame_dirty_bits |= DIRTY_CAMERA_3D,
-                        Command3D::SetAmbientLight { .. }
-                        | Command3D::SetSky { .. }
-                        | Command3D::SetRayLight { .. }
-                        | Command3D::SetPointLight { .. }
-                        | Command3D::SetSpotLight { .. } => frame_dirty_bits |= DIRTY_LIGHTS_3D,
-                        Command3D::UpsertPointParticles { .. } => {
-                            frame_dirty_bits |= DIRTY_PARTICLES_3D
-                        }
+                RenderCommand::ThreeD(cmd_3d) => match &**cmd_3d {
+                    Command3D::Draw { .. }
+                    | Command3D::DrawMulti { .. }
+                    | Command3D::DrawMultiDense { .. }
+                    | Command3D::DrawDebugPoint3D { .. }
+                    | Command3D::DrawDebugLine3D { .. }
+                    | Command3D::RemoveNode { .. } => frame_dirty_bits |= DIRTY_3D,
+                    Command3D::SetCamera { .. } => frame_dirty_bits |= DIRTY_CAMERA_3D,
+                    Command3D::SetAmbientLight { .. }
+                    | Command3D::SetSky { .. }
+                    | Command3D::SetRayLight { .. }
+                    | Command3D::SetPointLight { .. }
+                    | Command3D::SetSpotLight { .. } => frame_dirty_bits |= DIRTY_LIGHTS_3D,
+                    Command3D::UpsertPointParticles { .. } => {
+                        frame_dirty_bits |= DIRTY_PARTICLES_3D
                     }
-                }
+                },
                 RenderCommand::Resource(_) => frame_dirty_bits |= DIRTY_RESOURCES,
                 RenderCommand::PostProcessing(_) => frame_dirty_bits |= DIRTY_POSTFX,
                 RenderCommand::VisualAccessibility(_) => frame_dirty_bits |= DIRTY_ACCESSIBILITY,

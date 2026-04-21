@@ -1,6 +1,7 @@
 use super::shaders::{
-    create_point_particles_compute_render_shader_module, create_point_particles_compute_shader_module,
-    create_point_particles_gpu_shader_module, create_point_particles_shader_module,
+    create_point_particles_compute_render_shader_module,
+    create_point_particles_compute_shader_module, create_point_particles_gpu_shader_module,
+    create_point_particles_shader_module,
 };
 use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};

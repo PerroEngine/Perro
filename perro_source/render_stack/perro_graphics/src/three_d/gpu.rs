@@ -371,7 +371,8 @@ pub struct Gpu3D {
     surface_entries_scratch: Vec<(MeshRange, Material3D)>,
     last_draws: Vec<Draw3DInstance>,
     last_draws_revision: u64,
-    last_draw_instance_ranges: Vec<Range<u32>>,
+    last_draw_instance_spans: Vec<Range<u32>>,
+    last_draw_instance_span_ranges: Vec<Range<usize>>,
     last_scene: Option<Scene3DUniform>,
     last_shadow_scene: Option<Scene3DUniform>,
     last_shadow: Option<ShadowUniform>,
@@ -2021,7 +2022,8 @@ impl Gpu3D {
             surface_entries_scratch: Vec::new(),
             last_draws: Vec::new(),
             last_draws_revision: u64::MAX,
-            last_draw_instance_ranges: Vec::new(),
+            last_draw_instance_spans: Vec::new(),
+            last_draw_instance_span_ranges: Vec::new(),
             last_scene: None,
             last_shadow_scene: None,
             last_shadow: None,
@@ -2555,8 +2557,15 @@ impl Gpu3D {
                         && next.instance_mats.len() == 1
                         && same_draw_except_model(prev, next)
                 });
-        let stable_instance_ranges = self.last_draw_instance_ranges.len() == draws.len()
-            && self.last_draw_instance_ranges.iter().all(|range| {
+        let stable_instance_ranges = self.last_draw_instance_span_ranges.len() == draws.len()
+            && self
+                .last_draw_instance_span_ranges
+                .iter()
+                .all(|span_range| {
+                    span_range.start <= span_range.end
+                        && span_range.end <= self.last_draw_instance_spans.len()
+                })
+            && self.last_draw_instance_spans.iter().all(|range| {
                 range.start <= range.end
                     && (range.end as usize) <= self.staged_instance_transforms.len()
             });
@@ -2680,22 +2689,26 @@ impl Gpu3D {
         }
         if transform_only_changed {
             self.dirty_instance_spans_scratch.clear();
-            for (draw, range) in draws.iter().zip(self.last_draw_instance_ranges.iter()) {
+            for (draw, span_range) in draws.iter().zip(self.last_draw_instance_span_ranges.iter()) {
                 let Some(model) = draw.instance_mats.first() else {
                     continue;
                 };
-                if range.start >= range.end {
-                    continue;
+                for range in self.last_draw_instance_spans[span_range.clone()].iter() {
+                    if range.start >= range.end {
+                        continue;
+                    }
+                    for instance in &mut self.staged_instance_transforms
+                        [range.start as usize..range.end as usize]
+                    {
+                        instance.model_row_0 = [model[0][0], model[1][0], model[2][0], model[3][0]];
+                        instance.model_row_1 = [model[0][1], model[1][1], model[2][1], model[3][1]];
+                        instance.model_row_2 = [model[0][2], model[1][2], model[2][2], model[3][2]];
+                    }
+                    self.dirty_instance_spans_scratch.push(range.clone());
                 }
-                for instance in
-                    &mut self.staged_instance_transforms[range.start as usize..range.end as usize]
-                {
-                    instance.model_row_0 = [model[0][0], model[1][0], model[2][0], model[3][0]];
-                    instance.model_row_1 = [model[0][1], model[1][1], model[2][1], model[3][1]];
-                    instance.model_row_2 = [model[0][2], model[1][2], model[2][2], model[3][2]];
-                }
-                self.dirty_instance_spans_scratch.push(range.clone());
             }
+            self.dirty_instance_spans_scratch
+                .sort_unstable_by_key(|span| span.start);
             self.merged_instance_spans_scratch.clear();
             for span in self.dirty_instance_spans_scratch.iter().cloned() {
                 if let Some(last) = self.merged_instance_spans_scratch.last_mut()
@@ -2915,8 +2928,10 @@ impl Gpu3D {
         self.staged_multimesh_instances.clear();
         self.staged_multimesh_draw_params.clear();
         self.draw_batches.reserve(draws.len());
-        self.last_draw_instance_ranges.clear();
-        self.last_draw_instance_ranges.reserve(draws.len());
+        self.last_draw_instance_spans.clear();
+        self.last_draw_instance_spans.reserve(draws.len());
+        self.last_draw_instance_span_ranges.clear();
+        self.last_draw_instance_span_ranges.reserve(draws.len());
         self.frustum_cull_staging.clear();
         self.indirect_staging.clear();
         let mut total_meshlets = 0usize;
@@ -2943,6 +2958,7 @@ impl Gpu3D {
 
         for draw in draws {
             let draw_instance_start = self.staged_instance_transforms.len() as u32;
+            let draw_span_start = self.last_draw_instance_spans.len();
             let is_debug_point = matches!(draw.kind, Draw3DKind::DebugPointCube);
             let is_debug_edge = matches!(draw.kind, Draw3DKind::DebugEdgeCylinder);
             let mesh_source = match draw.kind {
@@ -3002,8 +3018,11 @@ impl Gpu3D {
                 }
             }
             if surface_entries.is_empty() {
-                self.last_draw_instance_ranges
+                self.last_draw_instance_spans
                     .push(draw_instance_start..(self.staged_instance_transforms.len() as u32));
+                let draw_span_end = self.last_draw_instance_spans.len();
+                self.last_draw_instance_span_ranges
+                    .push(draw_span_start..draw_span_end);
                 continue;
             }
             if let Some(dense) = &draw.dense_multimesh {
@@ -3063,8 +3082,11 @@ impl Gpu3D {
                         });
                     }
                 }
-                self.last_draw_instance_ranges
+                self.last_draw_instance_spans
                     .push(draw_instance_start..(self.staged_instance_transforms.len() as u32));
+                let draw_span_end = self.last_draw_instance_spans.len();
+                self.last_draw_instance_span_ranges
+                    .push(draw_span_start..draw_span_end);
                 continue;
             }
             // CPU occlusion query mode works at object granularity.
@@ -3094,8 +3116,11 @@ impl Gpu3D {
                     && !is_debug_edge
                     && !self.should_probe_or_draw(occlusion_key)
                 {
-                    self.last_draw_instance_ranges
+                    self.last_draw_instance_spans
                         .push(draw_instance_start..(self.staged_instance_transforms.len() as u32));
+                    let draw_span_end = self.last_draw_instance_spans.len();
+                    self.last_draw_instance_span_ranges
+                        .push(draw_span_start..draw_span_end);
                     continue;
                 }
                 let occlusion_query =
@@ -3346,8 +3371,11 @@ impl Gpu3D {
                     );
                 }
             }
-            self.last_draw_instance_ranges
+            self.last_draw_instance_spans
                 .push(draw_instance_start..(self.staged_instance_transforms.len() as u32));
+            let draw_span_end = self.last_draw_instance_spans.len();
+            self.last_draw_instance_span_ranges
+                .push(draw_span_start..draw_span_end);
         }
         self.surface_entries_scratch = surface_entries;
         if !debug_point_instances.is_empty() {
@@ -3430,6 +3458,7 @@ impl Gpu3D {
             });
         }
         self.draw_batches.sort_unstable_by(compare_draw_batch_keys);
+        self.compact_sorted_draw_batches(draws.len());
         self.multimesh_batches
             .sort_unstable_by_key(|b| (b.double_sided, b.mesh.index_start, b.draw_param_index));
         if HIZ_DEBUG_READBACK_ENABLED {
@@ -4142,6 +4171,191 @@ impl Gpu3D {
         queue.write_buffer(&self.hiz_cull_params, 0, bytemuck::bytes_of(&params));
         self.last_hiz_params = Some(params);
         true
+    }
+
+    fn compact_sorted_draw_batches(&mut self, draw_count: usize) {
+        if draw_count == 0 {
+            self.last_draw_instance_spans.clear();
+            self.last_draw_instance_span_ranges.clear();
+            return;
+        }
+        if self.draw_batches.is_empty() {
+            self.last_draw_instance_spans.clear();
+            self.last_draw_instance_span_ranges.clear();
+            self.last_draw_instance_span_ranges.reserve(draw_count);
+            for _ in 0..draw_count {
+                self.last_draw_instance_span_ranges.push(0..0);
+            }
+            return;
+        }
+        if self.staged_instance_transforms.is_empty() {
+            return;
+        }
+
+        let src_instance_count = self.staged_instance_transforms.len();
+        let mut instance_owner = vec![u32::MAX; src_instance_count];
+        if self.last_draw_instance_span_ranges.len() == draw_count {
+            for (draw_index, span_range) in self.last_draw_instance_span_ranges.iter().enumerate() {
+                if span_range.start > span_range.end
+                    || span_range.end > self.last_draw_instance_spans.len()
+                {
+                    continue;
+                }
+                for span in self.last_draw_instance_spans[span_range.clone()].iter() {
+                    let start = span.start as usize;
+                    let end = span.end as usize;
+                    if start >= end || end > src_instance_count {
+                        continue;
+                    }
+                    for owner in &mut instance_owner[start..end] {
+                        *owner = draw_index as u32;
+                    }
+                }
+            }
+        }
+
+        let src_transforms = std::mem::take(&mut self.staged_instance_transforms);
+        let src_materials = std::mem::take(&mut self.staged_instance_materials);
+        let src_rigid_meta = std::mem::take(&mut self.staged_rigid_instance_meta);
+        let src_skinned_meta = std::mem::take(&mut self.staged_skinned_instance_meta);
+        let src_batches = std::mem::take(&mut self.draw_batches);
+
+        let mut dst_transforms = Vec::with_capacity(src_transforms.len());
+        let mut dst_materials = Vec::with_capacity(src_materials.len());
+        let mut dst_rigid_meta = Vec::with_capacity(src_rigid_meta.len());
+        let mut dst_skinned_meta = Vec::with_capacity(src_skinned_meta.len());
+        let mut dst_batches = Vec::with_capacity(src_batches.len());
+        let mut spans_per_draw: Vec<Vec<Range<u32>>> = vec![Vec::new(); draw_count];
+
+        let mut batch_index = 0usize;
+        while batch_index < src_batches.len() {
+            let mut merged_batch = src_batches[batch_index].clone();
+            let batch_group_start = &src_batches[batch_index];
+            let dst_instance_start = dst_transforms.len() as u32;
+            let mut merged_instance_count = 0u32;
+            let mut merged_disable_hiz = false;
+            let mut scan = batch_index;
+            while scan < src_batches.len()
+                && (scan == batch_index
+                    || Self::can_compact_merge_batches(batch_group_start, &src_batches[scan]))
+            {
+                let batch = &src_batches[scan];
+                let src_start = batch.instance_start as usize;
+                let src_end = (batch.instance_start + batch.instance_count) as usize;
+                if src_start < src_end
+                    && src_end <= src_transforms.len()
+                    && src_end <= src_materials.len()
+                    && src_end <= src_rigid_meta.len()
+                    && src_end <= src_skinned_meta.len()
+                {
+                    let dst_copy_start = dst_transforms.len() as u32;
+                    dst_transforms.extend_from_slice(&src_transforms[src_start..src_end]);
+                    dst_materials.extend_from_slice(&src_materials[src_start..src_end]);
+                    dst_rigid_meta.extend_from_slice(&src_rigid_meta[src_start..src_end]);
+                    dst_skinned_meta.extend_from_slice(&src_skinned_meta[src_start..src_end]);
+                    let copied_count = (src_end - src_start) as u32;
+                    merged_instance_count = merged_instance_count.saturating_add(copied_count);
+
+                    let mut run_owner = u32::MAX;
+                    let mut run_src_start = batch.instance_start;
+                    let src_batch_end = batch.instance_start.saturating_add(batch.instance_count);
+                    for src_instance in batch.instance_start..src_batch_end {
+                        let owner = instance_owner[src_instance as usize];
+                        if owner != run_owner {
+                            if run_owner != u32::MAX {
+                                let run_start =
+                                    dst_copy_start + (run_src_start - batch.instance_start);
+                                let run_end =
+                                    dst_copy_start + (src_instance - batch.instance_start);
+                                Self::push_compacted_draw_span(
+                                    &mut spans_per_draw,
+                                    run_owner as usize,
+                                    run_start..run_end,
+                                );
+                            }
+                            run_owner = owner;
+                            run_src_start = src_instance;
+                        }
+                    }
+                    if run_owner != u32::MAX {
+                        let run_start = dst_copy_start + (run_src_start - batch.instance_start);
+                        let run_end = dst_copy_start + (src_batch_end - batch.instance_start);
+                        Self::push_compacted_draw_span(
+                            &mut spans_per_draw,
+                            run_owner as usize,
+                            run_start..run_end,
+                        );
+                    }
+                }
+                merged_disable_hiz |= batch.disable_hiz_occlusion;
+                scan += 1;
+            }
+
+            if merged_instance_count > 0 {
+                merged_batch.instance_start = dst_instance_start;
+                merged_batch.instance_count = merged_instance_count;
+                merged_batch.disable_hiz_occlusion = merged_disable_hiz;
+                if merged_instance_count > 1 {
+                    merged_batch.local_center = [0.0, 0.0, 0.0];
+                    merged_batch.local_radius = 1.0e9;
+                    merged_batch.disable_hiz_occlusion = true;
+                }
+                dst_batches.push(merged_batch);
+            }
+            batch_index = scan;
+        }
+
+        self.staged_instance_transforms = dst_transforms;
+        self.staged_instance_materials = dst_materials;
+        self.staged_rigid_instance_meta = dst_rigid_meta;
+        self.staged_skinned_instance_meta = dst_skinned_meta;
+        self.draw_batches = dst_batches;
+
+        self.last_draw_instance_spans.clear();
+        self.last_draw_instance_span_ranges.clear();
+        self.last_draw_instance_span_ranges.reserve(draw_count);
+        for spans in spans_per_draw.iter_mut() {
+            let start = self.last_draw_instance_spans.len();
+            self.last_draw_instance_spans.extend(spans.drain(..));
+            let end = self.last_draw_instance_spans.len();
+            self.last_draw_instance_span_ranges.push(start..end);
+        }
+    }
+
+    #[inline]
+    fn can_compact_merge_batches(base: &DrawBatch, next: &DrawBatch) -> bool {
+        base.state_key == next.state_key
+            && base.mesh.index_start == next.mesh.index_start
+            && base.mesh.index_count == next.mesh.index_count
+            && base.mesh.base_vertex == next.mesh.base_vertex
+            && base.path == next.path
+            && base.double_sided == next.double_sided
+            && base.material_kind == next.material_kind
+            && base.alpha_mode == next.alpha_mode
+            && base.draw_on_top == next.draw_on_top
+            && base.base_color_texture_slot == next.base_color_texture_slot
+            && base.occlusion_query.is_none()
+            && next.occlusion_query.is_none()
+            && base.casts_shadows == next.casts_shadows
+    }
+
+    #[inline]
+    fn push_compacted_draw_span(
+        spans_per_draw: &mut [Vec<Range<u32>>],
+        draw_index: usize,
+        span: Range<u32>,
+    ) {
+        if span.start >= span.end || draw_index >= spans_per_draw.len() {
+            return;
+        }
+        let spans = &mut spans_per_draw[draw_index];
+        if let Some(last) = spans.last_mut()
+            && span.start <= last.end
+        {
+            last.end = last.end.max(span.end);
+        } else {
+            spans.push(span);
+        }
     }
 
     #[inline]
@@ -5319,9 +5533,9 @@ fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {
 mod tests {
     use super::{
         MATERIAL_TEXTURE_NONE, MaterialPipelineKind, MeshRange, PMESH_V6_FLAG_HAS_JOINTS,
-        PMESH_V6_FLAG_HAS_NORMAL, PMESH_V6_FLAG_HAS_UV0, PMESH_V6_FLAG_HAS_WEIGHTS,
-        RenderPath3D, decode_pmesh, decode_ptex, draw_batch_state_key,
-        normalized_static_mesh_lookup_alias, push_draw_batch,
+        PMESH_V6_FLAG_HAS_NORMAL, PMESH_V6_FLAG_HAS_UV0, PMESH_V6_FLAG_HAS_WEIGHTS, RenderPath3D,
+        decode_pmesh, decode_ptex, draw_batch_state_key, normalized_static_mesh_lookup_alias,
+        push_draw_batch,
     };
 
     #[test]
@@ -6266,13 +6480,8 @@ fn push_draw_batch(
     if instance_count == 0 {
         return;
     }
-    let state_key = draw_batch_state_key(
-        render_path,
-        false,
-        double_sided,
-        alpha_mode,
-        &material_kind,
-    );
+    let state_key =
+        draw_batch_state_key(render_path, false, double_sided, alpha_mode, &material_kind);
     let (local_center, local_radius) = local_bounds;
     if occlusion_query.is_none()
         && let Some(prev) = draw_batches.last_mut()
