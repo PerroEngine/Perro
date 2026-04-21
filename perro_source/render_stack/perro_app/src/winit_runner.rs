@@ -923,9 +923,6 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.end_startup_splash();
         }
 
-        if let Some(window) = &self.window {
-            window.request_redraw();
-        }
         self.app.begin_input_frame();
     }
 
@@ -1373,11 +1370,6 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 self.batch_sim_delta_seconds = 0.0;
             }
             self.batch_start = frame_end;
-        }
-
-        // Keep a continuous redraw chain like the legacy runner.
-        if let Some(window) = &self.window {
-            window.request_redraw();
         }
 
         // Clear per-frame pressed/released flags after update to preserve
