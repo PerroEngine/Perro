@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use perro_io::{ProjectRoot, load_asset, save_asset, set_project_root};
+use perro_io::{load_asset, save_asset, set_project_root, ProjectRoot};
 
 pub fn set_project_root_disk(root: &str, name: &str) {
     set_project_root(ProjectRoot::Disk {

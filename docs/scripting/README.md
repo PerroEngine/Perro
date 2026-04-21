@@ -15,6 +15,7 @@ Script dependencies:
 
 See:
 - [Script Contexts](contexts/README.md)
+- [Script Utility Modules](modules.md)
 - [Math Types](math_types.md)
 - [Node Types](nodes.md)
 - [Scene Node Templates](scene_node_templates.md)

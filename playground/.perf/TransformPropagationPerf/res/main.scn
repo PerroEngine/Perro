@@ -1,0 +1,56 @@
+@root = main
+
+[main]
+
+[Node3D]
+    position = (0, 0, 0)
+[/Node3D]
+[/main]
+
+[inst]
+root_of = "res://Instance.scn"
+[/inst]
+
+[inst2]
+root_of = "res://Instance.scn"
+[/inst2]
+
+[inst3]
+root_of = "res://Instance.scn"
+[/inst3]
+
+[inst4]
+root_of = "res://Instance.scn"
+[/inst4]
+
+[inst6]
+root_of = "res://Instance.scn"
+[/inst6]
+
+[inst7]
+root_of = "res://Instance.scn"
+[/inst7]
+
+[inst8]
+root_of = "res://Instance.scn"
+[/inst8]
+
+[camera]
+parent = @root
+
+[Camera3D]
+    active = true
+    [Node3D]
+        position = (0, 15, 100)
+    [/Node3D]
+[/Camera3D]
+[/camera]
+
+[ambient]
+parent = @root
+
+[AmbientLight3D]
+    color = (1.0, 1.0, 1.0)
+    intensity = 0.8
+[/AmbientLight3D]
+[/ambient]
