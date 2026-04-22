@@ -2426,7 +2426,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_scene" => Some("perro_source/runtime_project/perro_scene"),
         "perro_runtime_context" => Some("perro_source/api_modules/perro_runtime_context"),
         "perro_resource_context" => Some("perro_source/api_modules/perro_resource_context"),
-        "perro_api" => Some("perro_source/api_modules/perro"),
+        "perro_api" => Some("perro_source/api_modules/perro_api"),
         "perro_modules" => Some("perro_source/api_modules/perro_modules"),
         "perro_input" => Some("perro_source/api_modules/perro_input"),
         "perro_render_bridge" => Some("perro_source/render_stack/perro_render_bridge"),

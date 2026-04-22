@@ -37,7 +37,7 @@ perro_internal_updates = { path = "../../../../perro_source/runtime_project/perr
 perro_project = { path = "../../../../perro_source/runtime_project/perro_project" }
 perro_runtime = { path = "../../../../perro_source/runtime_project/perro_runtime" }
 perro_scene = { path = "../../../../perro_source/runtime_project/perro_scene" }
-perro_api = { path = "../../../../perro_source/api_modules/perro" }
+perro_api = { path = "../../../../perro_source/api_modules/perro_api" }
 perro_input = { path = "../../../../perro_source/api_modules/perro_input" }
 perro_modules = { path = "../../../../perro_source/api_modules/perro_modules" }
 perro_resource_context = { path = "../../../../perro_source/api_modules/perro_resource_context" }
