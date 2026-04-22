@@ -453,12 +453,32 @@ fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
     {
         return Err("`perro new` only accepts --path and --name".to_string());
     }
-    let base_dir = parse_flag_value(args, "--path")
+    let mut project_name = parse_flag_value(args, "--name");
+    let mut base_dir_input = parse_flag_value(args, "--path");
+
+    if project_name.is_none() && base_dir_input.is_none() {
+        if !io::stdin().is_terminal() {
+            return Err(
+                "`perro new` without --name/--path needs interactive terminal input".to_string(),
+            );
+        }
+        let input_name = prompt_text(
+            &format!("Project name [{DEFAULT_PROJECT_NAME}]: "),
+            Some(DEFAULT_PROJECT_NAME),
+        )?;
+        let input_root = prompt_text(
+            &format!("Project root folder [{}]: ", normalize_powershell_path(cwd)),
+            Some(&normalize_powershell_path(cwd)),
+        )?;
+        project_name = Some(input_name);
+        base_dir_input = Some(input_root);
+    }
+
+    let base_dir = base_dir_input
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
     let base_dir = base_dir.canonicalize().unwrap_or(base_dir);
-    let project_name =
-        parse_flag_value(args, "--name").unwrap_or_else(|| DEFAULT_PROJECT_NAME.to_string());
+    let project_name = project_name.unwrap_or_else(|| DEFAULT_PROJECT_NAME.to_string());
     let project_dir = base_dir.join(sanitize_project_dir_name(&project_name));
 
     create_new_project(&project_dir, &project_name).map_err(|err| {
@@ -799,6 +819,22 @@ fn prompt_yes_no(prompt: &str) -> Result<bool, String> {
         .map_err(|err| format!("failed to read input: {err}"))?;
     let answer = input.trim().to_ascii_lowercase();
     Ok(matches!(answer.as_str(), "y" | "yes"))
+}
+
+fn prompt_text(prompt: &str, default: Option<&str>) -> Result<String, String> {
+    print!("{prompt}");
+    io::stdout()
+        .flush()
+        .map_err(|err| format!("failed to flush prompt: {err}"))?;
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|err| format!("failed to read input: {err}"))?;
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Ok(default.unwrap_or("").to_string());
+    }
+    Ok(trimmed.to_string())
 }
 
 fn update_workspace_vscode_linked_projects(
