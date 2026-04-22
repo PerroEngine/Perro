@@ -35,6 +35,16 @@ root_of = "res://Instance.scn"
 root_of = "res://Instance.scn"
 [/inst8]
 
+[inst9]
+root_of = "res://Instance.scn"
+[/inst9]
+
+
+[inst10]
+root_of = "res://Instance.scn"
+[/inst10]
+
+
 [camera]
 parent = @root
 

@@ -2,27 +2,10 @@ use perro::prelude::*;
 
 type SelfNodeType = MeshInstance3D;
 
-const CHAIN_DEPTH: usize = 100;
+const CHAIN_DEPTH: usize = 125;
 const LERP_SECONDS: f32 = 3.0;
 const TARGET_RADIUS: f32 = 12.0;
 const MAX_DT: f32 = 1.0 / 20.0;
-
-fn hash_u32(mut x: u32) -> u32 {
-    x ^= x >> 16;
-    x = x.wrapping_mul(0x7feb_352d);
-    x ^= x >> 15;
-    x = x.wrapping_mul(0x846c_a68b);
-    x ^= x >> 16;
-    x
-}
-
-fn rand01(seed: u32) -> f32 {
-    hash_u32(seed) as f32 / u32::MAX as f32
-}
-
-fn rand11(seed: u32) -> f32 {
-    rand01(seed) * 2.0 - 1.0
-}
 
 fn next_target(seed: u32) -> Vector3 {
     let dir = Vector3::new(
@@ -32,7 +15,7 @@ fn next_target(seed: u32) -> Vector3 {
     )
     .normalized();
 
-    let radius = TARGET_RADIUS * (0.25 + rand01(seed.wrapping_add(0xDEAD_BEEF)) * 0.75);
+    let radius = TARGET_RADIUS * lerp(0.25, 1.0, rand01(seed.wrapping_add(0xDEAD_BEEF)));
     dir * radius
 }
 
@@ -91,7 +74,8 @@ lifecycle!({
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         self_id: NodeID,
-    ) {}
+    ) {
+    }
 
     fn on_update(
         &self,
@@ -113,7 +97,7 @@ lifecycle!({
         })
         .unwrap_or((Vector3::ZERO, Vector3::ZERO, 0.0));
 
-        let t = (timer / LERP_SECONDS).clamp(0.0, 1.0);
+        let t = clamp01(timer / LERP_SECONDS);
         let _ = with_node_mut!(ctx, SelfNodeType, self_id, |node| {
             node.position = from.lerped(to, t);
         });
@@ -125,7 +109,8 @@ lifecycle!({
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         self_id: NodeID,
-    ) {}
+    ) {
+    }
 
     fn on_removal(
         &self,
@@ -133,7 +118,8 @@ lifecycle!({
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         self_id: NodeID,
-    ) {}
+    ) {
+    }
 });
 
 methods!({
@@ -143,5 +129,6 @@ methods!({
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         self_id: NodeID,
-    ) {}
+    ) {
+    }
 });
