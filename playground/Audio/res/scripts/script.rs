@@ -1,4 +1,4 @@
-use perro::prelude::*;
+use perro_api::prelude::*;
 
 type SelfNodeType = Node2D;
 

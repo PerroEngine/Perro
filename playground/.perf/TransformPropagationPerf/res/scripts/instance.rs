@@ -1,4 +1,4 @@
-use perro::prelude::*;
+use perro_api::prelude::*;
 
 type SelfNodeType = MeshInstance3D;
 

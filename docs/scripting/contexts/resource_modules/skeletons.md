@@ -33,7 +33,7 @@ Important behavior:
 Example:
 
 ```rust
-use perro::prelude::*;
+use perro_api::prelude::*;
 
 let bones = skeleton_load_bones!(res, "res://models/rig.glb:skeleton[0]");
 with_node_mut!(ctx, Skeleton3D, self_id, |skel| {

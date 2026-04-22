@@ -925,7 +925,7 @@ The comprehensive docs live in the main Perro repository on GitHub: `https://git
 }
 
 pub fn default_script_example_rs() -> String {
-    r#"use perro::prelude::*;
+    r#"use perro_api::prelude::*;
 
 // Script is authored against a node type. This default template uses Node2D.
 type SelfNodeType = Node2D;
@@ -1116,7 +1116,7 @@ methods!({
 }
 
 pub fn default_script_empty_rs() -> String {
-    r#"use perro::prelude::*;
+    r#"use perro_api::prelude::*;
 
 type SelfNodeType = Node2D;
 
@@ -1193,7 +1193,7 @@ fn default_deps_toml() -> String {
 # On `perro check`, `perro dev`, and `perro build`, these are merged into:
 #   .perro/scripts/Cargo.toml -> [dependencies]
 #
-# Keep `perro` managed by the engine; it is injected automatically.
+# Keep `perro_api` + `perro_runtime` managed by the engine; they are injected automatically.
 #
 # Example:
 # serde = { version = "1", features = ["derive"] }
@@ -1215,7 +1215,7 @@ build = "build.rs"
 
 [dependencies]
 perro_app = "0.1.0"
-perro = "0.1.0"
+perro_api = "0.1.0"
 perro_scene = "0.1.0"
 perro_render_bridge = "0.1.0"
 perro_animation = "0.1.0"
@@ -1360,7 +1360,8 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-perro = "0.1.0"
+perro_api = "0.1.0"
+perro_runtime = "0.1.0"
 
 [profile.dev]
 opt-level = 0
@@ -1693,8 +1694,8 @@ pub const fn lookup_audio(_path_hash: u64) -> &'static [u8] {
 }
 
 fn default_scripts_lib_rs() -> String {
-    r#"use perro::runtime::{Runtime, RuntimeInputApi, RuntimeResourceApi};
-use perro::scripting::ScriptConstructor;
+    r#"use perro_runtime::{Runtime, RuntimeInputApi, RuntimeResourceApi};
+use perro_api::scripting::ScriptConstructor;
 
 pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<Runtime, RuntimeResourceApi, RuntimeInputApi>)] = &[];
 
@@ -1818,14 +1819,16 @@ fn ensure_scripts_manifest_user_deps(
 
     let mut desired = toml::value::Table::new();
     for (name, spec) in extra_deps {
-        if name != "perro" {
+        if name != "perro_api" && name != "perro_runtime" {
             desired.insert(name.clone(), spec.clone());
         }
     }
 
     let before_len = scripts_deps_table.len();
     let mut changed = false;
-    scripts_deps_table.retain(|name, _| name == "perro" || desired.contains_key(name));
+    scripts_deps_table.retain(|name, _| {
+        name == "perro_api" || name == "perro_runtime" || desired.contains_key(name)
+    });
     if scripts_deps_table.len() != before_len {
         changed = true;
     }
@@ -1887,8 +1890,18 @@ fn ensure_project_manifest_deps(path: &Path) -> std::io::Result<()> {
 
     let mut changed = false;
 
-    if !deps_table.contains_key("perro") {
-        deps_table.insert("perro".to_string(), Value::String("0.1.0".to_string()));
+    if !deps_table.contains_key("perro_api") {
+        deps_table.insert(
+            "perro_api".to_string(),
+            Value::String("0.1.0".to_string()),
+        );
+        changed = true;
+    }
+    if !deps_table.contains_key("perro_runtime") {
+        deps_table.insert(
+            "perro_runtime".to_string(),
+            Value::String("0.1.0".to_string()),
+        );
         changed = true;
     }
 
@@ -2048,8 +2061,18 @@ fn ensure_scripts_manifest_deps(path: &Path) -> std::io::Result<()> {
 
     let mut changed = false;
 
-    if !deps_table.contains_key("perro") {
-        deps_table.insert("perro".to_string(), Value::String("0.1.0".to_string()));
+    if !deps_table.contains_key("perro_api") {
+        deps_table.insert(
+            "perro_api".to_string(),
+            Value::String("0.1.0".to_string()),
+        );
+        changed = true;
+    }
+    if !deps_table.contains_key("perro_runtime") {
+        deps_table.insert(
+            "perro_runtime".to_string(),
+            Value::String("0.1.0".to_string()),
+        );
         changed = true;
     }
 
@@ -2348,7 +2371,7 @@ fn collect_perro_dep_keys(table: Option<&Value>, out: &mut BTreeSet<String>) {
         return;
     };
     for key in table.keys() {
-        if key.starts_with("perro_") || key == "perro" {
+        if key.starts_with("perro_") || key == "perro_api" {
             out.insert(key.to_string());
         }
     }
@@ -2403,7 +2426,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_scene" => Some("perro_source/runtime_project/perro_scene"),
         "perro_runtime_context" => Some("perro_source/api_modules/perro_runtime_context"),
         "perro_resource_context" => Some("perro_source/api_modules/perro_resource_context"),
-        "perro" => Some("perro_source/api_modules/perro"),
+        "perro_api" => Some("perro_source/api_modules/perro"),
         "perro_modules" => Some("perro_source/api_modules/perro_modules"),
         "perro_input" => Some("perro_source/api_modules/perro_input"),
         "perro_render_bridge" => Some("perro_source/render_stack/perro_render_bridge"),

@@ -38,7 +38,7 @@ Custom structs/enums used by script APIs must support Variant conversion.
 For new code, derive `Variant` on those types.
 
 ```rust
-use perro::prelude::*;
+use perro_api::prelude::*;
 
 #[derive(Clone, Copy, Variant)]
 pub struct OrbitGoal {

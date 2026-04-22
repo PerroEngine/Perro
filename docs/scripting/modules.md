@@ -1,17 +1,17 @@
 # Script Utility Modules
 
-Perro exposes utility modules through `perro::modules`.
+Perro exposes utility modules through `perro_api::modules`.
 
 Import from `prelude`:
 
 ```rust
-use perro::prelude::*;
+use perro_api::prelude::*;
 ```
 
 Or import specific module:
 
 ```rust
-use perro::modules::random;
+use perro_api::modules::random;
 ```
 
 ## `modules::file`
@@ -160,7 +160,7 @@ Use stream helpers when you need multiple stable random values from one base see
 Example:
 
 ```rust
-use perro::prelude::*;
+use perro_api::prelude::*;
 
 let base_seed = hash_str("enemy_wave_01");
 

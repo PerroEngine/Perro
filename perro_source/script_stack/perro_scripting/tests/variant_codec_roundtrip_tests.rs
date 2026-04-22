@@ -1,4 +1,4 @@
-extern crate self as perro;
+extern crate self as perro_api;
 
 pub mod variant {
     pub use perro_variant::{Variant, VariantCodec};

@@ -230,22 +230,23 @@ serde = { version = "1", features = ["derive"] }
     let scripts_manifest =
         fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
             .expect("read scripts manifest");
-    assert!(scripts_manifest.contains("perro = \"0.1.0\""));
+    assert!(scripts_manifest.contains("perro_api = \"0.1.0\""));
+    assert!(scripts_manifest.contains("perro_runtime = \"0.1.0\""));
     assert!(scripts_manifest.contains("serde"));
 
     fs::remove_dir_all(&root).expect("cleanup");
 }
 
 #[test]
-fn ensure_source_overrides_ignores_perro_override_in_deps_toml() {
-    let root = unique_temp_dir("perro_deps_ignore_perro");
+fn ensure_source_overrides_ignores_perro_api_override_in_deps_toml() {
+    let root = unique_temp_dir("perro_deps_ignore_perro_api");
     ensure_project_layout(&root).expect("layout");
     ensure_project_scaffold(&root, "Deps Ignore").expect("scaffold");
 
     fs::write(
         root.join("deps.toml"),
         r#"[dependencies]
-perro = "9.9.9"
+perro_api = "9.9.9"
 rand = "0.9"
 "#,
     )
@@ -256,9 +257,10 @@ rand = "0.9"
     let scripts_manifest =
         fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
             .expect("read scripts manifest");
-    assert!(scripts_manifest.contains("perro = \"0.1.0\""));
+    assert!(scripts_manifest.contains("perro_api = \"0.1.0\""));
+    assert!(scripts_manifest.contains("perro_runtime = \"0.1.0\""));
     assert!(scripts_manifest.contains("rand = \"0.9\""));
-    assert!(!scripts_manifest.contains("perro = \"9.9.9\""));
+    assert!(!scripts_manifest.contains("perro_api = \"9.9.9\""));
 
     fs::remove_dir_all(&root).expect("cleanup");
 }
@@ -284,7 +286,8 @@ rand = "0.9"
     let scripts_manifest =
         fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
             .expect("read scripts manifest");
-    assert!(scripts_manifest.contains("perro = \"0.1.0\""));
+    assert!(scripts_manifest.contains("perro_api = \"0.1.0\""));
+    assert!(scripts_manifest.contains("perro_runtime = \"0.1.0\""));
     assert!(!scripts_manifest.contains("rand = \"0.9\""));
 
     fs::remove_dir_all(&root).expect("cleanup");

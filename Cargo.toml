@@ -56,7 +56,7 @@ perro_project = {path="perro_source/runtime_project/perro_project"}
 perro_runtime_context = {path = "perro_source/api_modules/perro_runtime_context"}
 perro_modules = {path="perro_source/api_modules/perro_modules"}
 perro_input = {path="perro_source/api_modules/perro_input"}
-perro = {path="perro_source/api_modules/perro"}
+perro_api = {path="perro_source/api_modules/perro"}
 perro_resource_context = {path="perro_source/api_modules/perro_resource_context"}
 
 perro_app = {path="perro_source/render_stack/perro_app"}

@@ -1,5 +1,5 @@
 [package]
-name = "perro"
+name = "perro_api"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,7 +7,6 @@ edition = "2024"
 perro_ids = "0.1.0"
 perro_input = "0.1.0"
 perro_resource_context = "0.1.0"
-perro_runtime = "0.1.0"
 perro_runtime_context = "0.1.0"
 perro_scripting = "0.1.0"
 perro_nodes = "0.1.0"

@@ -3,7 +3,6 @@ pub use perro_input as input;
 pub use perro_modules as modules;
 pub use perro_nodes as nodes;
 pub use perro_resource_context as resource_context;
-pub use perro_runtime as runtime;
 pub use perro_runtime_context as runtime_context;
 pub use perro_scripting as scripting;
 pub use perro_structs as structs;

@@ -1,15 +1,22 @@
-[workspace]
-
-[package]
-name = "perro_dev_runner"
-version = "0.1.0"
-edition = "2024"
-
 [dependencies]
 perro_app = "0.1.0"
 perro_project = "0.1.0"
 
+[features]
+profile = ["perro_app/profile"]
+
+[package]
+edition = "2024"
+name = "perro_dev_runner"
+version = "0.1.0"
+
+[profile.release]
+debug = true
+
+[workspace]
+
 [patch.crates-io]
+perro_animation = { path = "../../../../perro_source/core/perro_animation" }
 perro_ids = { path = "../../../../perro_source/core/perro_ids" }
 perro_nodes = { path = "../../../../perro_source/core/perro_nodes" }
 perro_particle_math = { path = "../../../../perro_source/core/perro_particle_math" }
