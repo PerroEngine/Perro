@@ -6,6 +6,7 @@ Core pieces:
 - `#[State]` data struct
 - `lifecycle!` for engine entry points
 - `methods!` for callable behavior methods
+- bare Rust modules for shared code (`res/**.rs` with no script behavior)
 - script contexts (`RuntimeContext`, `ResourceContext`, `InputContext`)
 
 Script dependencies:
@@ -14,6 +15,7 @@ Script dependencies:
 - Keep `perro` managed by Perro; do not override it in `deps.toml`.
 
 See:
+- [Project Script Modules](project_modules.md)
 - [Script Contexts](contexts/README.md)
 - [Script Utility Modules](modules.md)
 - [Math Types](math_types.md)

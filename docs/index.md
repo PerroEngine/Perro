@@ -5,6 +5,7 @@
 
 ## Scripting
 - [Scripting Overview](scripting/README.md)
+- [Project Script Modules](scripting/project_modules.md)
 - [Script Utility Modules](scripting/modules.md)
 - [Script Contexts](scripting/contexts/README.md)
 - [Math Types](scripting/math_types.md)

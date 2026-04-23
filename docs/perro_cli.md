@@ -58,8 +58,9 @@ perro check --path <project_dir>
 What it does:
 
 1. Syncs every `*.rs` file from `<project_dir>/res/**` into `<project_dir>/.perro/scripts/src` as generated `*.gen.rs`.
-2. Regenerates the scripts registry in `.perro/scripts/src/lib.rs`.
-3. Builds the scripts crate in release mode (`cargo build --release`) at `<project_dir>/.perro/scripts`.
+2. Regenerates module exports in `.perro/scripts/src/lib.rs` for all synced Rust files.
+3. Regenerates runtime scripts registry in `.perro/scripts/src/lib.rs` for behavior scripts (files that export script constructor).
+4. Builds the scripts crate in release mode (`cargo build --release`) at `<project_dir>/.perro/scripts`.
 
 Use this when you only need script compilation/update.
 

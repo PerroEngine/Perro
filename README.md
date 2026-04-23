@@ -8,7 +8,7 @@
 
 ## Rust as a Scripting Language
 
-While **Rust** is typically a low-level systems language, Perro uses it as a scripting language for games programming. Scripts are organized into clear sections: `#[State]` data, lifecycle entry points (`lifecycle!`), and behavior methods (`methods!`).
+While **Rust** is typically a low-level systems language, Perro uses it as a scripting language for games programming. Behavior scripts are organized into clear sections: `#[State]` data, lifecycle entry points (`lifecycle!`), and behavior methods (`methods!`). Perro also supports bare Rust modules in `res/**.rs` for shared functions/constants/types.
 
 This system is structured and architected as such to make scripts simple to write and clearly lay out access to runtime state (script/node mutations/reads)
 
