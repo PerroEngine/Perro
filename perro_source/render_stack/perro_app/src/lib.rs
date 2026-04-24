@@ -282,11 +282,12 @@ impl<B: GraphicsBackend> App<B> {
         self.graphics.submit_many(self.command_buffer.drain(..));
         self.graphics.submit_many(overlay_commands);
         self.graphics.draw_frame();
+        // Dirty markers are per-frame extraction hints.
+        // Clear extraction work from this frame before ingesting new render events.
+        self.runtime.clear_dirty_flags();
         self.graphics.drain_events(&mut self.event_buffer);
         self.runtime
             .apply_render_events(self.event_buffer.drain(..));
-        // Dirty markers are per-frame extraction hints; clear after a full frame.
-        self.runtime.clear_dirty_flags();
     }
 
     pub fn present_with_overlay_timed<I>(&mut self, overlay_commands: I) -> PresentTiming
@@ -332,6 +333,9 @@ impl<B: GraphicsBackend> App<B> {
         let gpu_present = draw_frame_start.elapsed();
         #[cfg(feature = "profile_heavy")]
         let graphics_profile = self.graphics.profile_snapshot();
+        // Dirty markers are per-frame extraction hints.
+        // Clear extraction work from this frame before ingesting new render events.
+        self.runtime.clear_dirty_flags();
 
         #[cfg(feature = "profile_heavy")]
         let drain_events_start = std::time::Instant::now();
@@ -345,8 +349,6 @@ impl<B: GraphicsBackend> App<B> {
             .apply_render_events(self.event_buffer.drain(..));
         #[cfg(feature = "profile_heavy")]
         let apply_events = apply_events_start.elapsed();
-        // Dirty markers are per-frame extraction hints; clear after a full frame.
-        self.runtime.clear_dirty_flags();
 
         PresentTiming {
             gpu_present,

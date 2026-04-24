@@ -28,6 +28,9 @@ impl Runtime {
         {
             self.resource_api.register_loaded_mesh_source(&source, *id);
         }
+        if let Some(node) = decode_render_request_node_from_event(&event) {
+            self.mark_needs_rerender(node);
+        }
         self.resource_api.apply_render_event(&event);
         self.render.apply_event(event);
     }
@@ -84,4 +87,38 @@ fn decode_3d_mesh_request_node(request: RenderRequestID) -> Option<NodeID> {
         return None;
     }
     Some(NodeID::from_u64(request.0 >> 8))
+}
+
+#[inline]
+fn decode_2d_texture_request_node(request: RenderRequestID) -> Option<NodeID> {
+    if (request.0 & 0xFF) != 0x2D {
+        return None;
+    }
+    Some(NodeID::from_u64(request.0 >> 8))
+}
+
+#[inline]
+fn decode_3d_material_request_node(request: RenderRequestID) -> Option<NodeID> {
+    if (request.0 & 0xFF) != 0x3F {
+        return None;
+    }
+    Some(NodeID::from_u64(request.0 >> 16))
+}
+
+#[inline]
+fn decode_render_request_node(request: RenderRequestID) -> Option<NodeID> {
+    decode_2d_texture_request_node(request)
+        .or_else(|| decode_3d_mesh_request_node(request))
+        .or_else(|| decode_3d_material_request_node(request))
+}
+
+#[inline]
+fn decode_render_request_node_from_event(event: &RenderEvent) -> Option<NodeID> {
+    let request = match event {
+        RenderEvent::MeshCreated { request, .. }
+        | RenderEvent::TextureCreated { request, .. }
+        | RenderEvent::MaterialCreated { request, .. }
+        | RenderEvent::Failed { request, .. } => *request,
+    };
+    decode_render_request_node(request)
 }
