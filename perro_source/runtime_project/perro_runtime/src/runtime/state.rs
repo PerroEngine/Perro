@@ -278,6 +278,10 @@ impl RenderState {
         !self.inflight_requests.is_empty()
     }
 
+    pub(crate) fn has_resolved_requests(&self) -> bool {
+        !self.resolved_requests.is_empty()
+    }
+
     pub(crate) fn is_request_inflight(&self, request: RenderRequestID) -> bool {
         self.inflight_requests.contains(&request)
     }
@@ -493,6 +497,14 @@ impl DirtyState {
                 self.pending_transform_root_flags[index] = 0;
             }
         }
+    }
+
+    pub(crate) fn has_any_dirty(&self) -> bool {
+        !self.dirty_indices.is_empty()
+    }
+
+    pub(crate) fn has_pending_transform_roots(&self) -> bool {
+        !self.pending_transform_roots.is_empty()
     }
 
     #[inline]

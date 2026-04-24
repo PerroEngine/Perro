@@ -568,6 +568,14 @@ impl NodeAPI for Runtime {
             }
             None => global,
         };
+        if self
+            .nodes
+            .get(node_id)
+            .and_then(|node| node.with_base_ref::<Node2D, _>(|base| base.transform))
+            == Some(local)
+        {
+            return true;
+        }
         self.with_base_node_mut::<Node2D, _, _>(node_id, |node| {
             node.transform = local;
         })
@@ -594,6 +602,14 @@ impl NodeAPI for Runtime {
             }
             None => global,
         };
+        if self
+            .nodes
+            .get(node_id)
+            .and_then(|node| node.with_base_ref::<Node3D, _>(|base| base.transform))
+            == Some(local)
+        {
+            return true;
+        }
         self.with_base_node_mut::<Node3D, _, _>(node_id, |node| {
             node.transform = local;
         })

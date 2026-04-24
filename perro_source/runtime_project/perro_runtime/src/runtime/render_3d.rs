@@ -28,6 +28,14 @@ impl Runtime {
         RenderRequestID::new((node.as_u64() << 16) | ((surface_index as u64) << 8) | 0x3F)
     }
     pub fn extract_render_3d_commands(&mut self) {
+        let has_extraction_work = self.dirty.has_any_dirty()
+            || self.dirty.has_pending_transform_roots()
+            || self.has_inflight_render_requests()
+            || self.has_resolved_render_requests();
+        if !has_extraction_work {
+            return;
+        }
+
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
 

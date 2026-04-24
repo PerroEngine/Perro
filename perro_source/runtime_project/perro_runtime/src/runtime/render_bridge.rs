@@ -49,6 +49,10 @@ impl Runtime {
         self.render.has_inflight_requests()
     }
 
+    pub fn has_resolved_render_requests(&self) -> bool {
+        self.render.has_resolved_requests()
+    }
+
     pub fn is_render_request_inflight(&self, request: RenderRequestID) -> bool {
         self.render.is_request_inflight(request)
     }
