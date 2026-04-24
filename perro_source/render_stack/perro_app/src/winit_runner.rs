@@ -233,6 +233,83 @@ impl TimingCsvWriter {
     }
 }
 
+#[cfg(feature = "profile_heavy")]
+struct ProfileCsvWriter {
+    file: fs::File,
+}
+
+#[cfg(feature = "profile_heavy")]
+impl ProfileCsvWriter {
+    fn from_env() -> Option<Self> {
+        let path = std::env::var("PERRO_PROFILE_CSV").ok()?;
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()?;
+        let _ = writeln!(
+            file,
+            "batch_end_frame,frames,sampled_frames,avg_draw_calls_2d,avg_draw_calls_3d,avg_draw_calls_total,avg_draw_instances_3d,avg_instances_per_draw_3d,avg_draw_material_refs_3d,avg_render_commands,avg_dirty_nodes,avg_extract2d_us,avg_extract3d_us,avg_drain_commands_us,avg_submit_commands_us,avg_draw_process_us,avg_draw_prep_us,avg_active_meshes,avg_active_materials,avg_active_textures,avg_present_wait_us,avg_frame_us"
+        );
+        Some(Self { file })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn write(
+        &mut self,
+        batch_end_frame: u64,
+        frames: u32,
+        sampled_frames: u32,
+        avg_draw_calls_2d: f64,
+        avg_draw_calls_3d: f64,
+        avg_draw_calls_total: f64,
+        avg_draw_instances_3d: f64,
+        avg_instances_per_draw_3d: f64,
+        avg_draw_material_refs_3d: f64,
+        avg_render_commands: f64,
+        avg_dirty_nodes: f64,
+        avg_extract2d_us: f64,
+        avg_extract3d_us: f64,
+        avg_drain_commands_us: f64,
+        avg_submit_commands_us: f64,
+        avg_draw_process_us: f64,
+        avg_draw_prep_us: f64,
+        avg_active_meshes: f64,
+        avg_active_materials: f64,
+        avg_active_textures: f64,
+        avg_present_wait_us: f64,
+        avg_frame_us: f64,
+    ) {
+        let _ = writeln!(
+            self.file,
+            "{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}",
+            batch_end_frame,
+            frames,
+            sampled_frames,
+            avg_draw_calls_2d,
+            avg_draw_calls_3d,
+            avg_draw_calls_total,
+            avg_draw_instances_3d,
+            avg_instances_per_draw_3d,
+            avg_draw_material_refs_3d,
+            avg_render_commands,
+            avg_dirty_nodes,
+            avg_extract2d_us,
+            avg_extract3d_us,
+            avg_drain_commands_us,
+            avg_submit_commands_us,
+            avg_draw_process_us,
+            avg_draw_prep_us,
+            avg_active_meshes,
+            avg_active_materials,
+            avg_active_textures,
+            avg_present_wait_us,
+            avg_frame_us,
+        );
+        let _ = self.file.flush();
+    }
+}
+
 #[inline]
 fn log_avg_sampled(
     update_us: u128,
@@ -379,6 +456,10 @@ struct RunnerState<B: GraphicsBackend> {
     #[cfg(feature = "profile_heavy")]
     batch_draw_calls_total: u64,
     #[cfg(feature = "profile_heavy")]
+    batch_draw_instances_3d: u64,
+    #[cfg(feature = "profile_heavy")]
+    batch_draw_material_refs_3d: u64,
+    #[cfg(feature = "profile_heavy")]
     batch_skip_prepare_2d: u64,
     #[cfg(feature = "profile_heavy")]
     batch_skip_prepare_3d: u64,
@@ -403,8 +484,20 @@ struct RunnerState<B: GraphicsBackend> {
     fixed_accumulator: f32,
     frame_index: u64,
     timing_csv: Option<TimingCsvWriter>,
+    #[cfg(feature = "profile_heavy")]
+    profile_csv: Option<ProfileCsvWriter>,
     batch_frames: u32,
     batch_timing_samples: u32,
+    #[cfg(feature = "profile_heavy")]
+    batch_render_command_count: u64,
+    #[cfg(feature = "profile_heavy")]
+    batch_dirty_node_count: u64,
+    #[cfg(feature = "profile_heavy")]
+    batch_active_meshes: u64,
+    #[cfg(feature = "profile_heavy")]
+    batch_active_materials: u64,
+    #[cfg(feature = "profile_heavy")]
+    batch_active_textures: u64,
     kbm_input: crate::input::KbmInput,
     gamepad_input: crate::input::GamepadInput,
     joycon_input: crate::input::JoyConInput,
@@ -428,8 +521,21 @@ impl<B: GraphicsBackend> RunnerState<B> {
             last_frame_start: now,
             last_frame_end: now,
             run_start: now,
+            timing_csv: TimingCsvWriter::from_env(),
+            #[cfg(feature = "profile_heavy")]
+            profile_csv: ProfileCsvWriter::from_env(),
             batch_frames: 0,
             batch_timing_samples: 0,
+            #[cfg(feature = "profile_heavy")]
+            batch_render_command_count: 0,
+            #[cfg(feature = "profile_heavy")]
+            batch_dirty_node_count: 0,
+            #[cfg(feature = "profile_heavy")]
+            batch_active_meshes: 0,
+            #[cfg(feature = "profile_heavy")]
+            batch_active_materials: 0,
+            #[cfg(feature = "profile_heavy")]
+            batch_active_textures: 0,
             batch_start: now,
             batch_work: Duration::ZERO,
             batch_simulation: Duration::ZERO,
@@ -509,6 +615,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
             #[cfg(feature = "profile_heavy")]
             batch_draw_calls_total: 0,
             #[cfg(feature = "profile_heavy")]
+            batch_draw_instances_3d: 0,
+            #[cfg(feature = "profile_heavy")]
+            batch_draw_material_refs_3d: 0,
+            #[cfg(feature = "profile_heavy")]
             batch_skip_prepare_2d: 0,
             #[cfg(feature = "profile_heavy")]
             batch_skip_prepare_3d: 0,
@@ -530,7 +640,6 @@ impl<B: GraphicsBackend> RunnerState<B> {
             #[cfg(feature = "profile_heavy")]
             batch_sim_delta_seconds: 0.0,
             frame_index: 0,
-            timing_csv: TimingCsvWriter::from_env(),
             kbm_input: crate::input::KbmInput::new(),
             gamepad_input: crate::input::GamepadInput::new(),
             joycon_input: crate::input::JoyConInput::new(),
@@ -899,6 +1008,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_draw_calls_2d += present_timing.draw_calls_2d as u64;
             self.batch_draw_calls_3d += present_timing.draw_calls_3d as u64;
             self.batch_draw_calls_total += present_timing.draw_calls_total as u64;
+            self.batch_draw_instances_3d += present_timing.draw_instances_3d as u64;
+            self.batch_draw_material_refs_3d += present_timing.draw_material_refs_3d as u64;
+            self.batch_render_command_count += present_timing.render_command_count as u64;
+            self.batch_dirty_node_count += present_timing.dirty_node_count as u64;
+            self.batch_active_meshes += present_timing.active_meshes as u64;
+            self.batch_active_materials += present_timing.active_materials as u64;
+            self.batch_active_textures += present_timing.active_textures as u64;
             self.batch_skip_prepare_2d += present_timing.skip_prepare_2d as u64;
             self.batch_skip_prepare_3d += present_timing.skip_prepare_3d as u64;
             self.batch_skip_prepare_particles_3d += present_timing.skip_prepare_particles_3d as u64;
@@ -1130,6 +1246,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_draw_calls_2d += present_timing.draw_calls_2d as u64;
             self.batch_draw_calls_3d += present_timing.draw_calls_3d as u64;
             self.batch_draw_calls_total += present_timing.draw_calls_total as u64;
+            self.batch_draw_instances_3d += present_timing.draw_instances_3d as u64;
+            self.batch_draw_material_refs_3d += present_timing.draw_material_refs_3d as u64;
+            self.batch_render_command_count += present_timing.render_command_count as u64;
+            self.batch_dirty_node_count += present_timing.dirty_node_count as u64;
+            self.batch_active_meshes += present_timing.active_meshes as u64;
+            self.batch_active_materials += present_timing.active_materials as u64;
+            self.batch_active_textures += present_timing.active_textures as u64;
             self.batch_skip_prepare_2d += present_timing.skip_prepare_2d as u64;
             self.batch_skip_prepare_3d += present_timing.skip_prepare_3d as u64;
             self.batch_skip_prepare_particles_3d += present_timing.skip_prepare_particles_3d as u64;
@@ -1233,10 +1356,32 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 let avg_draw_calls_3d = self.batch_draw_calls_3d as f64 / self.batch_frames as f64;
                 let avg_draw_calls_total =
                     self.batch_draw_calls_total as f64 / self.batch_frames as f64;
+                let avg_draw_instances_3d =
+                    self.batch_draw_instances_3d as f64 / self.batch_frames as f64;
+                let avg_instances_per_draw_3d = if self.batch_draw_calls_3d > 0 {
+                    self.batch_draw_instances_3d as f64 / self.batch_draw_calls_3d as f64
+                } else {
+                    0.0
+                };
+                let avg_draw_material_refs_3d =
+                    self.batch_draw_material_refs_3d as f64 / self.batch_frames as f64;
+                let avg_render_commands =
+                    self.batch_render_command_count as f64 / self.batch_frames as f64;
+                let avg_dirty_nodes = self.batch_dirty_node_count as f64 / self.batch_frames as f64;
+                let avg_active_meshes =
+                    self.batch_active_meshes as f64 / self.batch_frames as f64;
+                let avg_active_materials =
+                    self.batch_active_materials as f64 / self.batch_frames as f64;
+                let avg_active_textures =
+                    self.batch_active_textures as f64 / self.batch_frames as f64;
                 let avg_present_drain_events_us =
                     self.batch_present_drain_events.as_micros() as f64 / self.batch_frames as f64;
                 let avg_present_apply_events_us =
                     self.batch_present_apply_events.as_micros() as f64 / self.batch_frames as f64;
+                let avg_frame_us = (self.batch_work.as_micros() as f64
+                    + self.batch_idle_before_frame.as_micros() as f64
+                    + self.batch_present_wait.as_micros() as f64)
+                    / self.batch_frames as f64;
                 let pct_skip_prepare_2d =
                     (self.batch_skip_prepare_2d as f64 * 100.0) / self.batch_frames as f64;
                 let pct_skip_prepare_3d =
@@ -1311,6 +1456,32 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     pct_skip_prepare_3d_indirect,
                     pct_skip_prepare_3d_cull_inputs
                 );
+                if let Some(csv) = &mut self.profile_csv {
+                    csv.write(
+                        self.frame_index,
+                        self.batch_frames,
+                        self.batch_timing_samples,
+                        avg_draw_calls_2d,
+                        avg_draw_calls_3d,
+                        avg_draw_calls_total,
+                        avg_draw_instances_3d,
+                        avg_instances_per_draw_3d,
+                        avg_draw_material_refs_3d,
+                        avg_render_commands,
+                        avg_dirty_nodes,
+                        avg_present_extract_2d_us,
+                        avg_present_extract_3d_us,
+                        avg_present_drain_commands_us,
+                        avg_present_submit_commands_us,
+                        avg_draw_process_commands_us,
+                        avg_draw_prepare_cpu_us,
+                        avg_active_meshes,
+                        avg_active_materials,
+                        avg_active_textures,
+                        self.batch_present_wait.as_micros() as f64 / self.batch_frames as f64,
+                        avg_frame_us,
+                    );
+                }
             }
             self.batch_frames = 0;
             self.batch_timing_samples = 0;
@@ -1358,6 +1529,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 self.batch_draw_calls_2d = 0;
                 self.batch_draw_calls_3d = 0;
                 self.batch_draw_calls_total = 0;
+                self.batch_draw_instances_3d = 0;
+                self.batch_draw_material_refs_3d = 0;
+                self.batch_render_command_count = 0;
+                self.batch_dirty_node_count = 0;
+                self.batch_active_meshes = 0;
+                self.batch_active_materials = 0;
+                self.batch_active_textures = 0;
                 self.batch_skip_prepare_2d = 0;
                 self.batch_skip_prepare_3d = 0;
                 self.batch_skip_prepare_particles_3d = 0;
@@ -1466,6 +1644,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.batch_draw_calls_2d = 0;
                 self.batch_draw_calls_3d = 0;
                 self.batch_draw_calls_total = 0;
+                self.batch_draw_instances_3d = 0;
+                self.batch_draw_material_refs_3d = 0;
+                self.batch_render_command_count = 0;
+                self.batch_dirty_node_count = 0;
+                self.batch_active_meshes = 0;
+                self.batch_active_materials = 0;
+                self.batch_active_textures = 0;
                 self.batch_skip_prepare_2d = 0;
                 self.batch_skip_prepare_3d = 0;
                 self.batch_skip_prepare_particles_3d = 0;

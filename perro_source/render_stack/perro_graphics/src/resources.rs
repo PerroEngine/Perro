@@ -114,6 +114,21 @@ impl ResourceStore {
     }
 
     #[inline]
+    pub fn active_mesh_count(&self) -> usize {
+        self.mesh_meta_by.len()
+    }
+
+    #[inline]
+    pub fn active_material_count(&self) -> usize {
+        self.material_meta_by.len()
+    }
+
+    #[inline]
+    pub fn active_texture_count(&self) -> usize {
+        self.texture_meta_by.len()
+    }
+
+    #[inline]
     fn set_mesh_source_slot(&mut self, index: u32, source: &str) {
         if index == 0 {
             return;

@@ -72,7 +72,7 @@ fn print_usage() {
         "  perro_cli build [--path <project_dir>] [--profile]    # full static project bundle + build"
     );
     eprintln!(
-        "  perro_cli dev [--path <project_dir>] [--profile] [--release]      # build scripts + run dev runner"
+        "  perro_cli dev [--path <project_dir>] [--profile] [--release] [--csv-profile [csv_name]]      # build scripts + run dev runner"
     );
     eprintln!(
         "  perro_cli flamegraph [--path <project_dir>] [--profile] [--root]    # run cargo flamegraph for dev runner (auto-installs tool if missing)"
@@ -97,6 +97,17 @@ fn print_usage() {
 fn parse_flag_value(args: &[String], flag: &str) -> Option<String> {
     let idx = args.iter().position(|a| a == flag)?;
     args.get(idx + 1).cloned()
+}
+
+fn parse_optional_flag_value(args: &[String], flag: &str) -> Option<Option<String>> {
+    let idx = args.iter().position(|a| a == flag)?;
+    let next = args.get(idx + 1);
+    if let Some(val) = next
+        && !val.starts_with("--")
+    {
+        return Some(Some(val.clone()));
+    }
+    Some(None)
 }
 
 fn resolve_local_path(input: &str, local_root: &Path) -> PathBuf {
@@ -1101,12 +1112,35 @@ fn scripts_command(args: &[String], cwd: &Path) -> Result<(), String> {
 }
 
 fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
-    let profile = args.iter().any(|a| a == "--profile");
+    let profile_requested = args.iter().any(|a| a == "--profile");
     let release = args.iter().any(|a| a == "--release");
+    let csv_profile_name = parse_optional_flag_value(args, "--csv-profile").map(|raw| {
+        PathBuf::from(raw.unwrap_or_else(|| "profiling.csv".to_string()))
+    });
+    let profile = profile_requested || csv_profile_name.is_some();
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    let profiling_dir = ensure_profiling_output_dir(&project_dir)?;
+    let csv_profile_path = csv_profile_name.as_ref().map(|name| {
+        profiling_dir.join(
+            name.file_name()
+                .unwrap_or_else(|| std::ffi::OsStr::new("profile_metrics.csv")),
+        )
+    });
+    if let Some(csv_profile_path) = &csv_profile_path {
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(csv_profile_path)
+            .map_err(|err| {
+                format!(
+                    "failed to initialize profile csv {}: {err}",
+                    csv_profile_path.display()
+                )
+            })?;
+    }
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
 
@@ -1155,17 +1189,21 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     };
     log_note("Running Dev Runner");
 
-    let run_status = Command::new(&runner_path)
+    let mut run_cmd = Command::new(&runner_path);
+    run_cmd
         .arg("--path")
         .arg(project_dir.to_string_lossy().to_string())
-        .current_dir(&project_dir)
-        .status()
-        .map_err(|err| {
-            format!(
-                "failed to launch project dev runner at {}: {err}",
-                runner_path.display()
-            )
-        })?;
+        .current_dir(&project_dir);
+    if let Some(path) = &csv_profile_path {
+        run_cmd.env("PERRO_PROFILE_CSV", path.to_string_lossy().to_string());
+    }
+
+    let run_status = run_cmd.status().map_err(|err| {
+        format!(
+            "failed to launch project dev runner at {}: {err}",
+            runner_path.display()
+        )
+    })?;
 
     if !run_status.success() {
         return Err(format!(
@@ -1188,6 +1226,8 @@ fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    let profiling_dir = ensure_profiling_output_dir(&project_dir)?;
+    let flamegraph_output_path = profiling_dir.join("flamegraph.svg");
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
 
@@ -1207,6 +1247,8 @@ fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
     let mut cmd = Command::new("cargo");
     cmd.arg("flamegraph")
+        .arg("-o")
+        .arg(flamegraph_output_path.to_string_lossy().to_string())
         .arg("--release")
         .env("CARGO_TARGET_DIR", &target_dir)
         .env("CARGO_PROFILE_RELEASE_DEBUG", "true")
@@ -1240,8 +1282,18 @@ fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
         return Err(msg);
     }
 
-    log_done("Flamegraph Complete");
+    log_done(&format!(
+        "Flamegraph Complete ({})",
+        flamegraph_output_path.display()
+    ));
     Ok(())
+}
+
+fn ensure_profiling_output_dir(project_dir: &Path) -> Result<PathBuf, String> {
+    let dir = project_dir.join(".output").join("profiling");
+    fs::create_dir_all(&dir)
+        .map_err(|err| format!("failed to create profiling output dir {}: {err}", dir.display()))?;
+    Ok(dir)
 }
 
 fn maybe_relaunch_flamegraph_as_admin(args: &[String]) -> Result<bool, String> {

@@ -70,6 +70,10 @@ pub struct PresentTiming {
     #[cfg(feature = "profile_heavy")]
     pub draw_calls_total: u32,
     #[cfg(feature = "profile_heavy")]
+    pub draw_instances_3d: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_material_refs_3d: u32,
+    #[cfg(feature = "profile_heavy")]
     pub skip_prepare_2d: u32,
     #[cfg(feature = "profile_heavy")]
     pub skip_prepare_3d: u32,
@@ -87,6 +91,16 @@ pub struct PresentTiming {
     pub drain_events: Duration,
     #[cfg(feature = "profile_heavy")]
     pub apply_events: Duration,
+    #[cfg(feature = "profile_heavy")]
+    pub render_command_count: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub dirty_node_count: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub active_meshes: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub active_materials: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub active_textures: u32,
 }
 
 impl<B: GraphicsBackend> App<B> {
@@ -280,6 +294,8 @@ impl<B: GraphicsBackend> App<B> {
         I: IntoIterator<Item = perro_render_bridge::RenderCommand>,
     {
         let total_start = std::time::Instant::now();
+        #[cfg(feature = "profile_heavy")]
+        let dirty_node_count = self.runtime.dirty_node_count() as u32;
 
         #[cfg(feature = "profile_heavy")]
         let extract_2d_start = std::time::Instant::now();
@@ -297,6 +313,8 @@ impl<B: GraphicsBackend> App<B> {
         let drain_commands_start = std::time::Instant::now();
         self.runtime.drain_render_commands(&mut self.command_buffer);
         #[cfg(feature = "profile_heavy")]
+        let render_command_count = self.command_buffer.len() as u32;
+        #[cfg(feature = "profile_heavy")]
         let drain_commands = drain_commands_start.elapsed();
 
         #[cfg(feature = "profile_heavy")]
@@ -312,6 +330,8 @@ impl<B: GraphicsBackend> App<B> {
         #[cfg(not(feature = "profile_heavy"))]
         self.graphics.draw_frame();
         let gpu_present = draw_frame_start.elapsed();
+        #[cfg(feature = "profile_heavy")]
+        let graphics_profile = self.graphics.profile_snapshot();
 
         #[cfg(feature = "profile_heavy")]
         let drain_events_start = std::time::Instant::now();
@@ -444,6 +464,16 @@ impl<B: GraphicsBackend> App<B> {
                 .map(|t| t.draw_calls_2d.saturating_add(t.draw_calls_3d))
                 .unwrap_or(0),
             #[cfg(feature = "profile_heavy")]
+            draw_instances_3d: draw_timing
+                .as_ref()
+                .map(|t| t.draw_instances_3d)
+                .unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
+            draw_material_refs_3d: draw_timing
+                .as_ref()
+                .map(|t| t.draw_material_refs_3d)
+                .unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
             skip_prepare_2d: draw_timing.as_ref().map(|t| t.skip_prepare_2d).unwrap_or(0),
             #[cfg(feature = "profile_heavy")]
             skip_prepare_3d: draw_timing.as_ref().map(|t| t.skip_prepare_3d).unwrap_or(0),
@@ -476,6 +506,16 @@ impl<B: GraphicsBackend> App<B> {
             drain_events,
             #[cfg(feature = "profile_heavy")]
             apply_events,
+            #[cfg(feature = "profile_heavy")]
+            render_command_count,
+            #[cfg(feature = "profile_heavy")]
+            dirty_node_count,
+            #[cfg(feature = "profile_heavy")]
+            active_meshes: graphics_profile.active_meshes,
+            #[cfg(feature = "profile_heavy")]
+            active_materials: graphics_profile.active_materials,
+            #[cfg(feature = "profile_heavy")]
+            active_textures: graphics_profile.active_textures,
         }
     }
 

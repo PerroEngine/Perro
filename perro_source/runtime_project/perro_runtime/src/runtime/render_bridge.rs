@@ -72,6 +72,10 @@ impl Runtime {
     pub fn clear_dirty_flags(&mut self) {
         self.dirty.clear();
     }
+
+    pub fn dirty_node_count(&self) -> usize {
+        self.dirty.dirty_count()
+    }
 }
 
 #[inline]

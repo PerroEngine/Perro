@@ -54,6 +54,17 @@ pub trait GraphicsBackend: RenderBridge {
         self.draw_frame();
         None
     }
+
+    fn profile_snapshot(&self) -> GraphicsProfileSnapshot {
+        GraphicsProfileSnapshot::default()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GraphicsProfileSnapshot {
+    pub active_meshes: u32,
+    pub active_materials: u32,
+    pub active_textures: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -79,6 +90,8 @@ pub struct DrawFrameTiming {
     pub gpu_present: Duration,
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
+    pub draw_instances_3d: u32,
+    pub draw_material_refs_3d: u32,
     pub skip_prepare_2d: u32,
     pub skip_prepare_3d: u32,
     pub skip_prepare_particles_3d: u32,
@@ -100,6 +113,19 @@ struct FrameState {
 impl FrameState {
     fn queue(&mut self, command: RenderCommand) {
         self.pending_commands.push(command);
+    }
+}
+
+#[inline]
+fn draw_instance_count(draw: &Draw3DInstance) -> u32 {
+    if let Some(dense) = &draw.dense_multimesh {
+        return dense.instances.len().min(u32::MAX as usize) as u32;
+    }
+    let count = draw.instance_mats.len();
+    if count == 0 {
+        1
+    } else {
+        count.min(u32::MAX as usize) as u32
     }
 }
 
@@ -559,6 +585,14 @@ impl GraphicsBackend for PerroGraphics {
         self.redraw_requested = true;
     }
 
+    fn profile_snapshot(&self) -> GraphicsProfileSnapshot {
+        GraphicsProfileSnapshot {
+            active_meshes: self.resources.active_mesh_count() as u32,
+            active_materials: self.resources.active_material_count() as u32,
+            active_textures: self.resources.active_texture_count() as u32,
+        }
+    }
+
     fn draw_frame(&mut self) {
         let _ = self.draw_frame_timed();
     }
@@ -780,6 +814,11 @@ impl GraphicsBackend for PerroGraphics {
             gpu_present: gpu_timing.present,
             draw_calls_2d: gpu_timing.draw_calls_2d,
             draw_calls_3d: gpu_timing.draw_calls_3d,
+            draw_instances_3d: self.retained_draws_cache.iter().fold(0u32, |acc, draw| {
+                acc.saturating_add(draw_instance_count(draw))
+            }),
+            draw_material_refs_3d: self.used_material_refs_cache.len().min(u32::MAX as usize)
+                as u32,
             skip_prepare_2d: gpu_timing.skip_prepare_2d,
             skip_prepare_3d: gpu_timing.skip_prepare_3d,
             skip_prepare_particles_3d: gpu_timing.skip_prepare_particles_3d,

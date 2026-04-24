@@ -507,6 +507,10 @@ impl DirtyState {
         !self.pending_transform_roots.is_empty()
     }
 
+    pub(crate) fn dirty_count(&self) -> usize {
+        self.dirty_indices.len()
+    }
+
     #[inline]
     fn mark(&mut self, id: NodeID, flag: u8) {
         let index = id.index() as usize;
