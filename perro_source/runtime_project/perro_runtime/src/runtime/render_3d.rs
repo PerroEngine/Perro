@@ -28,8 +28,19 @@ impl Runtime {
         RenderRequestID::new((node.as_u64() << 16) | ((surface_index as u64) << 8) | 0x3F)
     }
     pub fn extract_render_3d_commands(&mut self) {
+        let bootstrap_scan = self.render_3d.prev_visible.is_empty()
+            && self.render_3d.retained_ambient_lights.is_empty()
+            && self.render_3d.retained_skies.is_empty()
+            && self.render_3d.retained_ray_lights.is_empty()
+            && self.render_3d.retained_point_lights.is_empty()
+            && self.render_3d.retained_spot_lights.is_empty()
+            && self.render_3d.retained_mesh_draws.is_empty()
+            && self.render_3d.collision_debug_state.is_empty()
+            && self.render_3d.last_camera.is_none();
         let has_extraction_work = self.dirty.has_any_dirty()
-            || self.dirty.has_pending_transform_roots();
+            || self.dirty.has_pending_transform_roots()
+            || !self.render_3d.removed_nodes.is_empty()
+            || bootstrap_scan;
         if !has_extraction_work {
             return;
         }
@@ -39,14 +50,41 @@ impl Runtime {
 
         let mut traversal_ids = std::mem::take(&mut self.render_3d.traversal_ids);
         traversal_ids.clear();
-        traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
+        traversal_ids.extend(
+            self.dirty
+                .dirty_indices()
+                .iter()
+                .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id)),
+        );
+        if traversal_ids.is_empty() && bootstrap_scan {
+            traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
+        }
+        let mut traversal_seen: ahash::AHashSet<NodeID> = traversal_ids.iter().copied().collect();
+        let mut traversal_cursor = 0usize;
+        while traversal_cursor < traversal_ids.len() {
+            let node = traversal_ids[traversal_cursor];
+            traversal_cursor += 1;
+            if let Some(node_ref) = self.nodes.get(node) {
+                for &child in node_ref.get_children_ids() {
+                    if traversal_seen.insert(child) {
+                        traversal_ids.push(child);
+                    }
+                }
+            }
+        }
         let mut visible_now = std::mem::take(&mut self.render_3d.visible_now);
         visible_now.clear();
-        self.render_3d.removed_nodes.clear();
+        visible_now.extend(self.render_3d.prev_visible.iter().copied());
+        let mut removed_nodes = std::mem::take(&mut self.render_3d.removed_nodes);
+        for node in removed_nodes.drain(..) {
+            visible_now.remove(&node);
+        }
+        self.render_3d.removed_nodes = removed_nodes;
         let mut skeleton_cache = std::mem::take(&mut self.render_3d.skeleton_cache_scratch);
         skeleton_cache.clear();
 
         for node in traversal_ids.iter().copied() {
+            visible_now.remove(&node);
             let effective_visible = self.is_effectively_visible(node);
             let camera_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::Camera3D(camera) if camera.active && effective_visible => Some((

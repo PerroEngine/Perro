@@ -405,6 +405,7 @@ impl NodeAPI for Runtime {
             if self.nodes.get(current).is_none() {
                 continue;
             }
+            self.note_removed_render_node(current);
 
             // Remove script state first so script-side lookups cannot outlive node removal.
             let _ = self.remove_script_instance(current);

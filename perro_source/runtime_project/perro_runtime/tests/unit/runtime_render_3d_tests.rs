@@ -207,6 +207,7 @@ fn mesh_under_invisible_parent_emits_remove_node() {
     {
         parent_node.visible = false;
     }
+    runtime.mark_needs_rerender(parent);
     runtime.extract_render_3d_commands();
     let second = collect_commands(&mut runtime);
     assert!(second.iter().any(|command| matches!(

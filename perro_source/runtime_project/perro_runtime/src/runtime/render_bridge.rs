@@ -79,6 +79,11 @@ impl Runtime {
     pub fn dirty_node_count(&self) -> usize {
         self.dirty.dirty_count()
     }
+
+    pub(crate) fn note_removed_render_node(&mut self, node: NodeID) {
+        self.render_2d.removed_nodes.push(node);
+        self.render_3d.removed_nodes.push(node);
+    }
 }
 
 #[inline]

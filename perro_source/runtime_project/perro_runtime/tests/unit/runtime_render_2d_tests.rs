@@ -100,6 +100,7 @@ fn sprite_becoming_invisible_emits_remove_node() {
     if let SceneNodeData::Sprite2D(sprite) = &mut node.data {
         sprite.visible = false;
     }
+    runtime.mark_needs_rerender(expected_node);
 
     runtime.extract_render_2d_commands();
     let second = collect_commands(&mut runtime);
