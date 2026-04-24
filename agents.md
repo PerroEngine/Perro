@@ -21,7 +21,7 @@ Root:
 - `docs/`: markdown docs.
 - `playground/`: sample projects.
 
-In `perro_source/`:
+In `perro_source/`: 
 
 - `core/`: ids, nodes, structs, animation, variant.
 - `runtime_project/`: runtime loop, scene load, project runtime glue.

@@ -289,7 +289,7 @@ impl Runtime {
         #[cfg(feature = "profile")]
         let mut parse: Option<Duration> = None;
         #[cfg(feature = "profile")]
-        let mut node_insert: Option<Duration> = None;
+        let node_insert: Option<Duration>;
         let merged;
         match self.provider_mode {
             ProviderMode::Dynamic => {
