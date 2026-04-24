@@ -936,8 +936,8 @@ type SelfNodeType = Node2D;
 // Custom structs/enums used in #[State] or methods! typed params/returns should derive Variant.
 // Without Variant, runtime variant conversion for those types will not compile.
 #[derive(Clone, Copy, Variant)]
-pub struct OrbitGoal {
-    pub axis: Vector3,
+struct OrbitGoal {
+    axis: Vector3,
 }
 
 impl Default for OrbitGoal {
@@ -949,9 +949,9 @@ impl Default for OrbitGoal {
 }
 
 #[derive(Clone, Copy, Variant)]
-pub struct MotionSample {
-    pub velocity: Vector3,
-    pub drift: Vector3,
+struct MotionSample {
+    velocity: Vector3,
+    drift: Vector3,
 }
 
 impl Default for MotionSample {
@@ -965,7 +965,7 @@ impl Default for MotionSample {
 
 // Define state struct with #[State] and use #[default = _] for default values on initialization.
 #[State]
-pub struct ExampleState {
+struct ExampleState {
     #[default = 5]
     count: i32,
 
@@ -1121,7 +1121,7 @@ pub fn default_script_empty_rs() -> String {
 type SelfNodeType = Node2D;
 
 #[State]
-pub struct EmptyState {}
+struct EmptyState {}
 
 lifecycle!({
     fn on_init(
