@@ -148,9 +148,7 @@ impl RuntimeResourceApi {
         if let Some(lookup) = self.static_material_lookup {
             return Some(lookup(source_hash).clone());
         }
-        let Some(source) = source else {
-            return None;
-        };
+        let source = source?;
         let normalized = normalize_source_slashes(source);
         material_schema::load_from_source(source)
             .or_else(|| material_schema::load_from_source(normalized.as_ref()))

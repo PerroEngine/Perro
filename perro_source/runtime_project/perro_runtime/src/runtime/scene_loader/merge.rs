@@ -147,8 +147,10 @@ pub(super) fn merge_prepared_scene(
         let target = *key_to
             .get(&target_key)
             .ok_or_else(|| format!("mesh skeleton target `{target_key}` not found"))?;
-        if let Some(node_data) = runtime.nodes.get_mut(mesh_node) {
-            if let SceneNodeData::MeshInstance3D(mesh) = &mut node_data.data { mesh.skeleton = target }
+        if let Some(node_data) = runtime.nodes.get_mut(mesh_node)
+            && let SceneNodeData::MeshInstance3D(mesh) = &mut node_data.data
+        {
+            mesh.skeleton = target;
         }
     }
 

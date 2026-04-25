@@ -83,9 +83,7 @@ impl RuntimeResourceApi {
             return Some(Arc::new(lookup(source_hash).clone()));
         }
 
-        let Some(source) = source else {
-            return None;
-        };
+        let source = source?;
         if source.ends_with(".panim")
             && let Ok(bytes) = perro_io::load_asset(source)
             && let Ok(text) = std::str::from_utf8(&bytes)

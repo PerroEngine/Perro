@@ -1229,7 +1229,7 @@ macro_rules! tag_remove {
 /// - `any(expr, expr, ...)`
 /// - `not(expr)`
 #[macro_export]
-/// R is the return type of the underlying API method call this macro expands to.
+///   R is the return type of the underlying API method call this macro expands to.
 macro_rules! query {
     ($ctx:expr, tags[$($tag:tt)*], in_subtree($parent:expr) $(,)?) => {{
         let _ = &$ctx;
@@ -1303,7 +1303,7 @@ macro_rules! query {
 /// - `query_first!(ctx, all(name["Enemy1"])) -> Option<NodeID>`
 /// - `query_first!(ctx, all(tags["enemy"]), in_subtree(parent_id)) -> Option<NodeID>`
 #[macro_export]
-/// R is the return type of the underlying API method call this macro expands to.
+///   R is the return type of the underlying API method call this macro expands to.
 macro_rules! query_first {
     ($ctx:expr, $kind:ident $args:tt, in_subtree($parent:expr) $(,)?) => {{
         $crate::query!($ctx, $kind $args, in_subtree($parent))
