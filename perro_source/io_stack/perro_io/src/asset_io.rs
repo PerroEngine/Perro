@@ -100,12 +100,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
 /// Load an asset fully into memory
 pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
     match resolve_path(path) {
-        ResolvedPath::Disk(pb) => {
-            if path.ends_with(".wgsl") || path.ends_with(".pmat") {
-                eprintln!("[perro_io] load_asset {} -> {}", path, pb.display());
-            }
-            fs::read(pb)
-        }
+        ResolvedPath::Disk(pb) => fs::read(pb),
         ResolvedPath::PerroAssets(virtual_path) => {
             if let Some(archive) = PERRO_ASSETS_ARCHIVE.read().unwrap().as_ref() {
                 archive.read_file(&virtual_path)
