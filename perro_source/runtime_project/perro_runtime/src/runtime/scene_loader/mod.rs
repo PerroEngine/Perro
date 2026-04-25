@@ -281,6 +281,7 @@ impl Runtime {
         if self.provider_mode == ProviderMode::Dynamic {
             self.script_runtime.dynamic_script_registry.clear();
         }
+        self.script_runtime.script_behavior_cache.clear();
         self.script_runtime.script_library = None;
         self.node_index.node_tag_index.clear();
         let mode_label;

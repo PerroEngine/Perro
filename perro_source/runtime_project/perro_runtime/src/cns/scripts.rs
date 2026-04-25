@@ -71,19 +71,33 @@ impl Runtime {
                     "script hash `{script_path_hash}` is not present in dynamic script registry"
                 )
             })?;
-        let raw = ctor();
-        if raw.is_null() {
-            return Err(format!(
-                "script constructor returned null for hash `{script_path_hash}`"
-            ));
-        }
-
-        let behavior: Box<
-            dyn ScriptBehavior<Self, crate::RuntimeResourceApi, perro_input::InputSnapshot>,
-        > = unsafe { Box::from_raw(raw) };
         let behavior: Arc<
             dyn ScriptBehavior<Self, crate::RuntimeResourceApi, perro_input::InputSnapshot>,
-        > = behavior.into();
+        > = if let Some(cached) = self
+            .script_runtime
+            .script_behavior_cache
+            .get(&script_path_hash)
+        {
+            Arc::clone(cached)
+        } else {
+            let raw = ctor();
+            if raw.is_null() {
+                return Err(format!(
+                    "script constructor returned null for hash `{script_path_hash}`"
+                ));
+            }
+
+            let behavior: Box<
+                dyn ScriptBehavior<Self, crate::RuntimeResourceApi, perro_input::InputSnapshot>,
+            > = unsafe { Box::from_raw(raw) };
+            let behavior: Arc<
+                dyn ScriptBehavior<Self, crate::RuntimeResourceApi, perro_input::InputSnapshot>,
+            > = behavior.into();
+            self.script_runtime
+                .script_behavior_cache
+                .insert(script_path_hash, Arc::clone(&behavior));
+            behavior
+        };
         let state = behavior.create_state();
         let flags = behavior.script_flags();
         if self.scripts.get_instance(node).is_some() {

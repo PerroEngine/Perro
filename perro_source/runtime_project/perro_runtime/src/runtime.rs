@@ -8,7 +8,7 @@ use perro_ids::NodeID;
 use perro_input::InputSnapshot;
 use perro_runtime_context::sub_apis::PreloadedSceneID;
 use perro_scene::Scene;
-use perro_scripting::ScriptConstructor;
+use perro_scripting::{ScriptBehavior, ScriptConstructor};
 use std::time::Duration;
 use std::{cell::RefCell, sync::Arc};
 
@@ -34,6 +34,7 @@ use state::{
 };
 
 type RuntimeScriptCtor = ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>;
+type RuntimeScriptBehavior = dyn ScriptBehavior<Runtime, RuntimeResourceApi, InputSnapshot>;
 type StaticScriptRegistry = &'static [(u64, RuntimeScriptCtor)];
 
 pub struct Runtime {
