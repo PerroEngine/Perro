@@ -310,14 +310,14 @@ impl ProfileCsvWriter {
     }
 }
 
-#[cfg(feature = "profile_heavy")]
+#[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
 #[derive(Clone, Copy, Debug, Default)]
 struct ProcessMemorySample {
     physical_mem: usize,
     virtual_mem: usize,
 }
 
-#[cfg(feature = "profile_heavy")]
+#[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
 #[inline]
 fn process_memory_sample() -> Option<ProcessMemorySample> {
     let sample = memory_stats::memory_stats()?;
@@ -327,12 +327,12 @@ fn process_memory_sample() -> Option<ProcessMemorySample> {
     })
 }
 
-#[cfg(feature = "profile_heavy")]
+#[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
 struct MemProfileCsvWriter {
     file: fs::File,
 }
 
-#[cfg(feature = "profile_heavy")]
+#[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
 impl MemProfileCsvWriter {
     fn from_env() -> Option<Self> {
         let path = std::env::var("PERRO_MEM_PROFILE_CSV").ok()?;
@@ -343,7 +343,7 @@ impl MemProfileCsvWriter {
             .ok()?;
         let _ = writeln!(
             file,
-            "batch_end_frame,rss_bytes,virtual_bytes,rss_mib,virtual_mib,avg_active_meshes,avg_active_materials,avg_active_textures"
+            "batch_end_frame,rss_bytes,virtual_bytes,rss_mib,virtual_mib,avg_update_us,avg_render_us,avg_idle_us,avg_present_wait_us,avg_frame_us,avg_fps"
         );
         Some(Self { file })
     }
@@ -352,27 +352,33 @@ impl MemProfileCsvWriter {
         &mut self,
         batch_end_frame: u64,
         sample: ProcessMemorySample,
-        avg_active_meshes: f64,
-        avg_active_materials: f64,
-        avg_active_textures: f64,
+        avg_update_us: u128,
+        avg_render_us: u128,
+        avg_idle_us: u128,
+        avg_present_wait_us: u128,
+        avg_frame_us: u128,
+        avg_fps: f64,
     ) {
         let _ = writeln!(
             self.file,
-            "{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6}",
+            "{},{},{},{:.6},{:.6},{},{},{},{},{},{:.6}",
             batch_end_frame,
             sample.physical_mem,
             sample.virtual_mem,
             bytes_to_mib(sample.physical_mem),
             bytes_to_mib(sample.virtual_mem),
-            avg_active_meshes,
-            avg_active_materials,
-            avg_active_textures
+            avg_update_us,
+            avg_render_us,
+            avg_idle_us,
+            avg_present_wait_us,
+            avg_frame_us,
+            avg_fps,
         );
         let _ = self.file.flush();
     }
 }
 
-#[cfg(feature = "profile_heavy")]
+#[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
 #[inline]
 fn bytes_to_mib(bytes: usize) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)
@@ -554,9 +560,9 @@ struct RunnerState<B: GraphicsBackend> {
     timing_csv: Option<TimingCsvWriter>,
     #[cfg(feature = "profile_heavy")]
     profile_csv: Option<ProfileCsvWriter>,
-    #[cfg(feature = "profile_heavy")]
+    #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
     mem_profile_enabled: bool,
-    #[cfg(feature = "profile_heavy")]
+    #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
     mem_profile_csv: Option<MemProfileCsvWriter>,
     batch_frames: u32,
     batch_timing_samples: u32,
@@ -596,12 +602,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
             timing_csv: TimingCsvWriter::from_env(),
             #[cfg(feature = "profile_heavy")]
             profile_csv: ProfileCsvWriter::from_env(),
-            #[cfg(feature = "profile_heavy")]
+            #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
             mem_profile_enabled: std::env::var("PERRO_MEM_PROFILE").ok().is_some_and(|raw| {
                 let normalized = raw.trim().to_ascii_lowercase();
                 matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
             }),
-            #[cfg(feature = "profile_heavy")]
+            #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
             mem_profile_csv: MemProfileCsvWriter::from_env(),
             batch_frames: 0,
             batch_timing_samples: 0,
@@ -1361,6 +1367,31 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 avg_idle_before_frame_us,
                 avg_present_wait_us,
             );
+            #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
+            if self.mem_profile_enabled
+                && let Some(sample) = process_memory_sample()
+            {
+                let avg_frame_us = avg_work_us
+                    .saturating_add(avg_idle_before_frame_us)
+                    .saturating_add(avg_present_wait_us);
+                let avg_fps = if avg_frame_us > 0 {
+                    1_000_000.0 / avg_frame_us as f64
+                } else {
+                    0.0
+                };
+                if let Some(csv) = &mut self.mem_profile_csv {
+                    csv.write(
+                        self.frame_index,
+                        sample,
+                        avg_simulation_us,
+                        avg_present_us,
+                        avg_idle_before_frame_us,
+                        avg_present_wait_us,
+                        avg_frame_us,
+                        avg_fps,
+                    );
+                }
+            }
             #[cfg(feature = "profile_heavy")]
             {
                 let avg_runtime_update_us =
@@ -1559,27 +1590,6 @@ impl<B: GraphicsBackend> RunnerState<B> {
                         self.batch_present_wait.as_micros() as f64 / self.batch_frames as f64,
                         avg_frame_us,
                     );
-                }
-                if self.mem_profile_enabled
-                    && let Some(sample) = process_memory_sample()
-                {
-                    println!(
-                        "mem: rss=({:.2}MiB) virtual=({:.2}MiB) resources=(mesh:{:.2}, material:{:.2}, texture:{:.2})",
-                        bytes_to_mib(sample.physical_mem),
-                        bytes_to_mib(sample.virtual_mem),
-                        avg_active_meshes,
-                        avg_active_materials,
-                        avg_active_textures
-                    );
-                    if let Some(csv) = &mut self.mem_profile_csv {
-                        csv.write(
-                            self.frame_index,
-                            sample,
-                            avg_active_meshes,
-                            avg_active_materials,
-                            avg_active_textures,
-                        );
-                    }
                 }
             }
             self.batch_frames = 0;

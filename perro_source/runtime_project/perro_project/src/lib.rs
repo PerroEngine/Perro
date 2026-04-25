@@ -1415,6 +1415,7 @@ perro_project = "0.1.0"
 
 [features]
 profile = ["perro_app/profile"]
+mem_profile = ["perro_app/mem_profile"]
 
 [profile.release]
 debug = true
@@ -1724,6 +1725,11 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
         .join(".perro")
         .join("dev_runner")
         .join("Cargo.toml");
+    let dev_runner_main = project_root
+        .join(".perro")
+        .join("dev_runner")
+        .join("src")
+        .join("main.rs");
     let scripts_cargo_config = project_root
         .join(".perro")
         .join("scripts")
@@ -1736,6 +1742,7 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
     ensure_project_manifest_features(&project_manifest)?;
     ensure_scripts_manifest_deps(&scripts_manifest)?;
     ensure_scripts_manifest_user_deps(project_root, &scripts_manifest)?;
+    ensure_dev_runner_source_sync(&dev_runner_manifest, &dev_runner_main)?;
     ensure_dev_runner_manifest_deps(&dev_runner_manifest)?;
     ensure_dev_runner_manifest_features(&dev_runner_manifest)?;
     ensure_dev_runner_manifest_profile_debug(&dev_runner_manifest)?;
@@ -1744,6 +1751,18 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
     ensure_patch_block_in_manifest(&scripts_manifest)?;
     ensure_patch_block_in_manifest(&dev_runner_manifest)?;
     ensure_scripts_target_dir_config(&scripts_cargo_config)?;
+    Ok(())
+}
+
+fn ensure_dev_runner_source_sync(manifest_path: &Path, main_rs_path: &Path) -> std::io::Result<()> {
+    if let Some(parent) = manifest_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if let Some(parent) = main_rs_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(manifest_path, default_dev_runner_crate_toml())?;
+    fs::write(main_rs_path, default_dev_runner_main_rs())?;
     Ok(())
 }
 
@@ -1937,6 +1956,13 @@ fn ensure_project_manifest_features(path: &Path) -> std::io::Result<()> {
         features_table.insert(
             "profile".to_string(),
             Value::Array(vec![Value::String("perro_app/profile".to_string())]),
+        );
+        changed = true;
+    }
+    if !features_table.contains_key("mem_profile") {
+        features_table.insert(
+            "mem_profile".to_string(),
+            Value::Array(vec![Value::String("perro_app/mem_profile".to_string())]),
         );
         changed = true;
     }

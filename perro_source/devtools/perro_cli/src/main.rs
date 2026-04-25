@@ -1265,7 +1265,7 @@ fn mem_profile_command(args: &[String], cwd: &Path) -> Result<(), String> {
         build_cmd.arg("--release");
     }
     build_cmd.current_dir(&dev_runner_dir);
-    build_cmd.arg("--features").arg("profile");
+    build_cmd.arg("--features").arg("mem_profile");
     let build_status = build_cmd.status().map_err(|err| {
         format!(
             "failed to build project dev runner from {}: {err}",

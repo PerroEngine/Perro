@@ -24,6 +24,7 @@ memory-stats = "1.2.0"
 
 [features]
 profile = ["perro_runtime/profile", "profile_heavy"]
+mem_profile = []
 profile_heavy = []
 
 [target.'cfg(target_os = "windows")'.dependencies]
