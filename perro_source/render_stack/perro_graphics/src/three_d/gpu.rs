@@ -7045,13 +7045,7 @@ fn projection_matrix(projection: CameraProjectionState, aspect: f32) -> Mat4 {
             near,
             far,
         } => {
-            let fov_y_radians = if fov_y_degrees.is_finite() {
-                fov_y_degrees
-                    .to_radians()
-                    .clamp(10.0f32.to_radians(), 120.0f32.to_radians())
-            } else {
-                60.0f32.to_radians()
-            };
+            let fov_y_radians = adjusted_perspective_fov_y_radians(fov_y_degrees, aspect);
             let near = sanitize_near(near);
             let far = sanitize_far(far, near);
             Mat4::perspective_rh_gl(fov_y_radians, aspect.max(1.0e-6), near, far)
@@ -7087,13 +7081,8 @@ fn projection_matrix(projection: CameraProjectionState, aspect: f32) -> Mat4 {
 fn projection_y_scale_from_projection(projection: CameraProjectionState) -> f32 {
     match projection {
         CameraProjectionState::Perspective { fov_y_degrees, .. } => {
-            let fov_y_radians = if fov_y_degrees.is_finite() {
-                fov_y_degrees
-                    .to_radians()
-                    .clamp(10.0f32.to_radians(), 120.0f32.to_radians())
-            } else {
-                60.0f32.to_radians()
-            };
+            let fov_y_radians =
+                adjusted_perspective_fov_y_radians(fov_y_degrees, CAMERA_FOV_REFERENCE_ASPECT);
             1.0 / (fov_y_radians * 0.5).tan().max(1.0e-6)
         }
         CameraProjectionState::Orthographic { size, .. } => {
@@ -7112,6 +7101,27 @@ fn projection_y_scale_from_projection(projection: CameraProjectionState) -> f32 
             (2.0 * near / (top - bottom).abs().max(1.0e-6)).max(1.0e-6)
         }
     }
+}
+
+const CAMERA_FOV_REFERENCE_ASPECT: f32 = 16.0 / 9.0;
+
+fn adjusted_perspective_fov_y_radians(fov_y_degrees: f32, aspect: f32) -> f32 {
+    let base_fov_y_radians = if fov_y_degrees.is_finite() {
+        fov_y_degrees
+            .to_radians()
+            .clamp(10.0f32.to_radians(), 120.0f32.to_radians())
+    } else {
+        60.0f32.to_radians()
+    };
+    let safe_aspect = aspect.max(1.0e-6);
+    let base_aspect = CAMERA_FOV_REFERENCE_ASPECT.max(1.0e-6);
+    let base_tan_y = (base_fov_y_radians * 0.5).tan().max(1.0e-6);
+
+    // Keep diagonal/corner FOV stable across aspect ratios so ultrawide views
+    // do not over-expand horizontal perspective.
+    let diagonal_tan = base_tan_y * (1.0 + base_aspect * base_aspect).sqrt();
+    let adjusted_tan_y = diagonal_tan / (1.0 + safe_aspect * safe_aspect).sqrt();
+    (2.0 * adjusted_tan_y.atan()).clamp(10.0f32.to_radians(), 120.0f32.to_radians())
 }
 
 fn sanitize_near(near: f32) -> f32 {

@@ -2646,9 +2646,7 @@ fn projection_matrix(projection: CameraProjectionState, aspect: f32) -> Mat4 {
             near,
             far,
         } => {
-            let fov_y_radians = fov_y_degrees
-                .to_radians()
-                .clamp(10.0f32.to_radians(), 120.0f32.to_radians());
+            let fov_y_radians = adjusted_perspective_fov_y_radians(fov_y_degrees, aspect);
             Mat4::perspective_rh_gl(
                 fov_y_radians,
                 aspect.max(1.0e-6),
@@ -2684,6 +2682,24 @@ fn projection_matrix(projection: CameraProjectionState, aspect: f32) -> Mat4 {
             far.max(near + 1.0e-3),
         ),
     }
+}
+
+const CAMERA_FOV_REFERENCE_ASPECT: f32 = 16.0 / 9.0;
+
+fn adjusted_perspective_fov_y_radians(fov_y_degrees: f32, aspect: f32) -> f32 {
+    let base_fov_y_radians = if fov_y_degrees.is_finite() {
+        fov_y_degrees
+            .to_radians()
+            .clamp(10.0f32.to_radians(), 120.0f32.to_radians())
+    } else {
+        60.0f32.to_radians()
+    };
+    let safe_aspect = aspect.max(1.0e-6);
+    let base_aspect = CAMERA_FOV_REFERENCE_ASPECT.max(1.0e-6);
+    let base_tan_y = (base_fov_y_radians * 0.5).tan().max(1.0e-6);
+    let diagonal_tan = base_tan_y * (1.0 + base_aspect * base_aspect).sqrt();
+    let adjusted_tan_y = diagonal_tan / (1.0 + safe_aspect * safe_aspect).sqrt();
+    (2.0 * adjusted_tan_y.atan()).clamp(10.0f32.to_radians(), 120.0f32.to_radians())
 }
 
 #[inline]
