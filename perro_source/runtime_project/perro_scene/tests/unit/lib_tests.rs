@@ -196,3 +196,37 @@ fn parse_root_of_without_type_block() {
     assert_eq!(main.root_of.as_deref(), Some("res://base.scn"));
     assert!(!main.has_data_override);
 }
+
+#[test]
+fn parse_header_only_node_without_type_block_defaults_to_node() {
+    let src = r#"
+    @root = root
+    [relationship_manager]
+    parent = @root
+    script = "res://scripts/relationship_manager.rs"
+    script_vars = {
+        max_character_id = 36
+    }
+    [/relationship_manager]
+    "#;
+
+    let scene = Parser::new(src).parse_scene();
+    let node = scene
+        .nodes
+        .iter()
+        .find(|n| n.key.as_ref() == "relationship_manager")
+        .expect("relationship_manager node");
+
+    assert_eq!(node.data.ty.as_ref(), "Node");
+    assert!(!node.has_data_override);
+    assert_eq!(node.parent.as_ref().map(|k| k.as_ref()), Some("root"));
+    assert_eq!(
+        node.script.as_ref().map(|s| s.as_ref()),
+        Some("res://scripts/relationship_manager.rs")
+    );
+    assert!(
+        node.script_vars
+            .iter()
+            .any(|(name, _)| name.as_ref() == "max_character_id")
+    );
+}

@@ -443,9 +443,6 @@ impl<'a> Parser<'a> {
                     self.advance();
 
                     let (data, has_data_override) = if self.current == Token::Slash {
-                        if root_of.is_none() {
-                            panic!("Node `{key}` must define a type block unless it uses root_of");
-                        }
                         (
                             SceneNodeData {
                                 ty: Cow::Borrowed("Node"),
