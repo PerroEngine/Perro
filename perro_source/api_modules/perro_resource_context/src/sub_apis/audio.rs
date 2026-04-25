@@ -4,26 +4,8 @@ pub trait AudioAPI {
     fn load_audio_source(&self, source: &str) -> bool;
     fn reserve_audio_source(&self, source: &str) -> bool;
     fn drop_audio_source(&self, source: &str) -> bool;
-    fn play_audio(
-        &self,
-        source: &str,
-        bus_id: AudioBusID,
-        looped: bool,
-        volume: f32,
-        speed: f32,
-        from_start: f32,
-        from_end: f32,
-    ) -> bool;
-    fn stop_audio(
-        &self,
-        source: &str,
-        bus_id: AudioBusID,
-        looped: bool,
-        volume: f32,
-        speed: f32,
-        from_start: f32,
-        from_end: f32,
-    ) -> bool;
+    fn play_audio(&self, audio: Audio<'_>) -> bool;
+    fn stop_audio(&self, audio: Audio<'_>) -> bool;
     fn stop_audio_source(&self, source: &str) -> bool;
     fn audio_length_seconds(&self, source: &str) -> Option<f32>;
     fn stop_all_audio(&self);
@@ -72,28 +54,12 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
 
     #[inline]
     pub fn play(&self, audio: Audio<'_>) -> bool {
-        self.api.play_audio(
-            audio.source,
-            audio.bus,
-            audio.looped,
-            audio.volume,
-            audio.speed,
-            audio.from_start,
-            audio.from_end,
-        )
+        self.api.play_audio(audio)
     }
 
     #[inline]
     pub fn stop_audio(&self, audio: Audio<'_>) -> bool {
-        self.api.stop_audio(
-            audio.source,
-            audio.bus,
-            audio.looped,
-            audio.volume,
-            audio.speed,
-            audio.from_start,
-            audio.from_end,
-        )
+        self.api.stop_audio(audio)
     }
 
     #[inline]

@@ -131,9 +131,7 @@ impl Renderer3D {
         node: NodeID,
         mesh: MeshID,
         surfaces: Arc<[MeshSurfaceBinding3D]>,
-        node_model: [[f32; 4]; 4],
-        instance_scale: f32,
-        instances: Arc<[DenseInstancePose3D]>,
+        dense_draw: DenseMultiMeshDraw3D,
         meshlet_override: Option<bool>,
     ) {
         self.queued_draws.push(Draw3DInstance {
@@ -144,11 +142,7 @@ impl Renderer3D {
             // Keep this empty to avoid N x matrix expansion in retained CPU state.
             instance_mats: Arc::from([]),
             skeleton: None,
-            dense_multimesh: Some(DenseMultiMeshDraw3D {
-                node_model,
-                instance_scale,
-                instances,
-            }),
+            dense_multimesh: Some(dense_draw),
             meshlet_override,
         });
     }

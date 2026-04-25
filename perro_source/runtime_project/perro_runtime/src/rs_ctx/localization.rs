@@ -146,17 +146,15 @@ impl RuntimeResourceApi {
     }
 }
 
+type LocalizationByKey = HashMap<&'static str, &'static str>;
+type LocalizationByHash = HashMap<u64, &'static str>;
+type LocalizationLookupMaps = (LocalizationByKey, LocalizationByHash);
+
 fn read_localization_csv(
     source: &str,
     key_column: &str,
     locale_code: &str,
-) -> Result<
-    (
-        HashMap<&'static str, &'static str>,
-        HashMap<u64, &'static str>,
-    ),
-    String,
-> {
+) -> Result<LocalizationLookupMaps, String> {
     let bytes = perro_io::load_asset(source)
         .map_err(|err| format!("failed to read localization csv `{source}`: {err}"))?;
     let mut reader = csv::ReaderBuilder::new()
@@ -174,8 +172,8 @@ fn read_localization_csv(
         format!("csv `{source}` is missing locale column `{locale_code}` in header row")
     })?;
 
-    let mut by_key: HashMap<&'static str, &'static str> = HashMap::new();
-    let mut by_hash: HashMap<u64, &'static str> = HashMap::new();
+    let mut by_key: LocalizationByKey = HashMap::new();
+    let mut by_hash: LocalizationByHash = HashMap::new();
 
     for row in reader.records() {
         let row = row.map_err(|err| format!("failed to parse csv row in `{source}`: {err}"))?;

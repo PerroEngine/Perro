@@ -3166,12 +3166,14 @@ impl Gpu3D {
                         debug_point_instances.push(build_instance(
                             model,
                             material,
-                            self.meshlet_debug_view,
-                            debug_color(draw.node.as_u64()),
-                            skeleton_start,
-                            skeleton_count,
-                            custom_params_offset,
-                            custom_params_len,
+                            BuildInstanceArgs {
+                                debug_view: self.meshlet_debug_view,
+                                debug_color: debug_color(draw.node.as_u64()),
+                                skeleton_start,
+                                skeleton_count,
+                                custom_params_offset,
+                                custom_params_len,
+                            },
                         ));
                         debug_points_count = debug_points_count.saturating_add(1);
                     }
@@ -3198,12 +3200,14 @@ impl Gpu3D {
                         debug_edge_instances.push(build_instance(
                             model,
                             material,
-                            self.meshlet_debug_view,
-                            debug_color(draw.node.as_u64()),
-                            skeleton_start,
-                            skeleton_count,
-                            custom_params_offset,
-                            custom_params_len,
+                            BuildInstanceArgs {
+                                debug_view: self.meshlet_debug_view,
+                                debug_color: debug_color(draw.node.as_u64()),
+                                skeleton_start,
+                                skeleton_count,
+                                custom_params_offset,
+                                custom_params_len,
+                            },
                         ));
                         debug_edges_count = debug_edges_count.saturating_add(1);
                     }
@@ -3235,12 +3239,14 @@ impl Gpu3D {
                             let instance = build_instance(
                                 model,
                                 material,
-                                self.meshlet_debug_view,
-                                debug_color(draw.node.as_u64()),
-                                skeleton_start,
-                                skeleton_count,
-                                custom_params_offset,
-                                custom_params_len,
+                                BuildInstanceArgs {
+                                    debug_view: self.meshlet_debug_view,
+                                    debug_color: debug_color(draw.node.as_u64()),
+                                    skeleton_start,
+                                    skeleton_count,
+                                    custom_params_offset,
+                                    custom_params_len,
+                                },
                             );
                             self.staged_instance_transforms.push(instance.transform);
                             self.staged_instance_materials.push(instance.material);
@@ -3259,22 +3265,26 @@ impl Gpu3D {
                             };
                             push_draw_batch(
                                 &mut self.draw_batches,
-                                if skeleton_count > 0 {
-                                    RenderPath3D::Skinned
-                                } else {
-                                    RenderPath3D::Rigid
+                                DrawBatchPush {
+                                    render_path: if skeleton_count > 0 {
+                                        RenderPath3D::Skinned
+                                    } else {
+                                        RenderPath3D::Rigid
+                                    },
+                                    mesh: *range,
+                                    instance_start,
+                                    instance_count,
+                                    double_sided: standard_params.double_sided
+                                        || self.meshlet_debug_view,
+                                    material_kind,
+                                    alpha_mode: standard_params.alpha_mode,
+                                    base_color_texture_slot: standard_params.base_color_texture,
+                                    local_bounds: occlusion_bounds,
+                                    occlusion_query,
+                                    disable_hiz_occlusion: multi_instance
+                                        || standard_params.alpha_mode == 2,
+                                    casts_shadows: true,
                                 },
-                                *range,
-                                instance_start,
-                                instance_count,
-                                standard_params.double_sided || self.meshlet_debug_view,
-                                material_kind,
-                                standard_params.alpha_mode,
-                                standard_params.base_color_texture,
-                                occlusion_bounds,
-                                occlusion_query,
-                                multi_instance || standard_params.alpha_mode == 2,
-                                true,
                             );
                         }
                     }
@@ -3321,12 +3331,16 @@ impl Gpu3D {
                         let instance = build_instance(
                             model,
                             material,
-                            self.meshlet_debug_view,
-                            debug_color((draw.node.as_u64() << 32) ^ meshlet.index_start as u64),
-                            skeleton_start,
-                            skeleton_count,
-                            custom_params_offset,
-                            custom_params_len,
+                            BuildInstanceArgs {
+                                debug_view: self.meshlet_debug_view,
+                                debug_color: debug_color(
+                                    (draw.node.as_u64() << 32) ^ meshlet.index_start as u64,
+                                ),
+                                skeleton_start,
+                                skeleton_count,
+                                custom_params_offset,
+                                custom_params_len,
+                            },
                         );
                         self.staged_instance_transforms.push(instance.transform);
                         self.staged_instance_materials.push(instance.material);
@@ -3348,26 +3362,30 @@ impl Gpu3D {
                     };
                     push_draw_batch(
                         &mut self.draw_batches,
-                        if skeleton_count > 0 {
-                            RenderPath3D::Skinned
-                        } else {
-                            RenderPath3D::Rigid
+                        DrawBatchPush {
+                            render_path: if skeleton_count > 0 {
+                                RenderPath3D::Skinned
+                            } else {
+                                RenderPath3D::Rigid
+                            },
+                            mesh: MeshRange {
+                                index_start: meshlet.index_start,
+                                index_count: meshlet.index_count,
+                                base_vertex: mesh_asset.full.base_vertex,
+                            },
+                            instance_start,
+                            instance_count,
+                            double_sided: standard_params.double_sided
+                                || self.meshlet_debug_view,
+                            material_kind: material_kind.clone(),
+                            alpha_mode: standard_params.alpha_mode,
+                            base_color_texture_slot: standard_params.base_color_texture,
+                            local_bounds: (occlusion_center, occlusion_radius),
+                            occlusion_query,
+                            disable_hiz_occlusion: multi_instance
+                                || standard_params.alpha_mode == 2,
+                            casts_shadows: true,
                         },
-                        MeshRange {
-                            index_start: meshlet.index_start,
-                            index_count: meshlet.index_count,
-                            base_vertex: mesh_asset.full.base_vertex,
-                        },
-                        instance_start,
-                        instance_count,
-                        standard_params.double_sided || self.meshlet_debug_view,
-                        material_kind.clone(),
-                        standard_params.alpha_mode,
-                        standard_params.base_color_texture,
-                        (occlusion_center, occlusion_radius),
-                        occlusion_query,
-                        multi_instance || standard_params.alpha_mode == 2,
-                        true,
                     );
                 }
             }
@@ -3668,16 +3686,16 @@ impl Gpu3D {
         lighting: &Lighting3DState,
     ) {
         let (shadow_scene, shadow_uniform, enabled, focus_center, focus_radius) =
-            build_shadow_setup(
+            build_shadow_setup(ShadowSetupArgs {
                 camera,
                 lighting,
-                &self.draw_batches,
-                &self.staged_instance_transforms,
-                self.shadow_focus_center,
-                self.shadow_focus_radius,
-                self.depth_size.0,
-                self.depth_size.1,
-            );
+                draw_batches: &self.draw_batches,
+                staged_instances: &self.staged_instance_transforms,
+                fallback_focus_center: self.shadow_focus_center,
+                fallback_focus_radius: self.shadow_focus_radius,
+                viewport_width: self.depth_size.0,
+                viewport_height: self.depth_size.1,
+            });
         self.shadow_focus_center = focus_center;
         self.shadow_focus_radius = focus_radius;
         if self.last_shadow_scene != Some(shadow_scene) {
@@ -3718,13 +3736,13 @@ impl Gpu3D {
         } else {
             None
         };
-        if self.draw_batches.is_empty()
-            && self.multimesh_batches.is_empty()
-            && !self.sky_enabled
-            && !depth_prepass_active
-            && !hiz_active
-            && !(self.shadow_pass_enabled && self.has_shadow_casters)
-        {
+        let has_any_work = !self.draw_batches.is_empty()
+            || !self.multimesh_batches.is_empty()
+            || self.sky_enabled
+            || depth_prepass_active
+            || hiz_active
+            || (self.shadow_pass_enabled && self.has_shadow_casters);
+        if !has_any_work {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_mesh_clear_only_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -5688,33 +5706,37 @@ mod tests {
 
         push_draw_batch(
             &mut batches,
-            RenderPath3D::Rigid,
-            mesh,
-            0,
-            1,
-            false,
-            MaterialPipelineKind::Standard,
-            0,
-            MATERIAL_TEXTURE_NONE,
-            ([1.0, 2.0, 3.0], 2.0),
-            None,
-            false,
-            true,
+            DrawBatchPush {
+                render_path: RenderPath3D::Rigid,
+                mesh,
+                instance_start: 0,
+                instance_count: 1,
+                double_sided: false,
+                material_kind: MaterialPipelineKind::Standard,
+                alpha_mode: 0,
+                base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+                local_bounds: ([1.0, 2.0, 3.0], 2.0),
+                occlusion_query: None,
+                disable_hiz_occlusion: false,
+                casts_shadows: true,
+            },
         );
         push_draw_batch(
             &mut batches,
-            RenderPath3D::Rigid,
-            mesh,
-            1,
-            2,
-            false,
-            MaterialPipelineKind::Standard,
-            0,
-            MATERIAL_TEXTURE_NONE,
-            ([9.0, 9.0, 9.0], 4.0),
-            None,
-            false,
-            true,
+            DrawBatchPush {
+                render_path: RenderPath3D::Rigid,
+                mesh,
+                instance_start: 1,
+                instance_count: 2,
+                double_sided: false,
+                material_kind: MaterialPipelineKind::Standard,
+                alpha_mode: 0,
+                base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+                local_bounds: ([9.0, 9.0, 9.0], 4.0),
+                occlusion_query: None,
+                disable_hiz_occlusion: false,
+                casts_shadows: true,
+            },
         );
 
         assert_eq!(batches.len(), 1);
@@ -5747,48 +5769,54 @@ mod tests {
 
         push_draw_batch(
             &mut batches,
-            RenderPath3D::Rigid,
-            mesh,
-            0,
-            1,
-            false,
-            MaterialPipelineKind::Standard,
-            0,
-            MATERIAL_TEXTURE_NONE,
-            ([0.0, 0.0, 0.0], 1.0),
-            None,
-            false,
-            true,
+            DrawBatchPush {
+                render_path: RenderPath3D::Rigid,
+                mesh,
+                instance_start: 0,
+                instance_count: 1,
+                double_sided: false,
+                material_kind: MaterialPipelineKind::Standard,
+                alpha_mode: 0,
+                base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+                local_bounds: ([0.0, 0.0, 0.0], 1.0),
+                occlusion_query: None,
+                disable_hiz_occlusion: false,
+                casts_shadows: true,
+            },
         );
         push_draw_batch(
             &mut batches,
-            RenderPath3D::Rigid,
-            mesh,
-            2,
-            1,
-            false,
-            MaterialPipelineKind::Standard,
-            0,
-            MATERIAL_TEXTURE_NONE,
-            ([0.0, 0.0, 0.0], 1.0),
-            None,
-            false,
-            true,
+            DrawBatchPush {
+                render_path: RenderPath3D::Rigid,
+                mesh,
+                instance_start: 2,
+                instance_count: 1,
+                double_sided: false,
+                material_kind: MaterialPipelineKind::Standard,
+                alpha_mode: 0,
+                base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+                local_bounds: ([0.0, 0.0, 0.0], 1.0),
+                occlusion_query: None,
+                disable_hiz_occlusion: false,
+                casts_shadows: true,
+            },
         );
         push_draw_batch(
             &mut batches,
-            RenderPath3D::Rigid,
-            mesh,
-            3,
-            1,
-            false,
-            MaterialPipelineKind::Standard,
-            0,
-            MATERIAL_TEXTURE_NONE,
-            ([0.0, 0.0, 0.0], 1.0),
-            Some(11),
-            false,
-            true,
+            DrawBatchPush {
+                render_path: RenderPath3D::Rigid,
+                mesh,
+                instance_start: 3,
+                instance_count: 1,
+                double_sided: false,
+                material_kind: MaterialPipelineKind::Standard,
+                alpha_mode: 0,
+                base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+                local_bounds: ([0.0, 0.0, 0.0], 1.0),
+                occlusion_query: Some(11),
+                disable_hiz_occlusion: false,
+                casts_shadows: true,
+            },
         );
 
         assert_eq!(batches.len(), 3);
@@ -6462,8 +6490,7 @@ fn create_sky_pipeline(
     })
 }
 
-fn push_draw_batch(
-    draw_batches: &mut Vec<DrawBatch>,
+struct DrawBatchPush {
     render_path: RenderPath3D,
     mesh: MeshRange,
     instance_start: u32,
@@ -6476,7 +6503,23 @@ fn push_draw_batch(
     occlusion_query: Option<u32>,
     disable_hiz_occlusion: bool,
     casts_shadows: bool,
-) {
+}
+
+fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatchPush) {
+    let DrawBatchPush {
+        render_path,
+        mesh,
+        instance_start,
+        instance_count,
+        double_sided,
+        material_kind,
+        alpha_mode,
+        base_color_texture_slot,
+        local_bounds,
+        occlusion_query,
+        disable_hiz_occlusion,
+        casts_shadows,
+    } = batch;
     if instance_count == 0 {
         return;
     }
@@ -6541,6 +6584,16 @@ struct BuiltInstanceParts {
     skinned_meta: SkinnedInstanceMetaGpu,
 }
 
+#[derive(Clone, Copy)]
+struct BuildInstanceArgs {
+    debug_view: bool,
+    debug_color: [f32; 4],
+    skeleton_start: u32,
+    skeleton_count: u32,
+    custom_params_offset: u32,
+    custom_params_len: u32,
+}
+
 #[inline]
 fn quantize_unorm8(v: f32) -> u32 {
     ((v.clamp(0.0, 1.0) * 255.0) + 0.5).floor() as u32
@@ -6598,13 +6651,16 @@ fn pack_material_params(alpha_mode: u8, alpha_cutoff: f32, double_sided: bool, f
 fn build_instance(
     model: [[f32; 4]; 4],
     material: &perro_render_bridge::Material3D,
-    debug_view: bool,
-    debug_color: [f32; 4],
-    skeleton_start: u32,
-    skeleton_count: u32,
-    custom_params_offset: u32,
-    custom_params_len: u32,
+    args: BuildInstanceArgs,
 ) -> BuiltInstanceParts {
+    let BuildInstanceArgs {
+        debug_view,
+        debug_color,
+        skeleton_start,
+        skeleton_count,
+        custom_params_offset,
+        custom_params_len,
+    } = args;
     let (color, packed_pbr_params_0, packed_pbr_params_1, emissive_factor, debug_flags) =
         if debug_view {
             (
@@ -7394,16 +7450,30 @@ fn build_scene_uniform(
     scene
 }
 
-fn build_shadow_setup(
-    camera: &Camera3DState,
-    lighting: &Lighting3DState,
-    draw_batches: &[DrawBatch],
-    staged_instances: &[TransformInstanceGpu],
+struct ShadowSetupArgs<'a> {
+    camera: &'a Camera3DState,
+    lighting: &'a Lighting3DState,
+    draw_batches: &'a [DrawBatch],
+    staged_instances: &'a [TransformInstanceGpu],
     fallback_focus_center: Vec3,
     fallback_focus_radius: f32,
     viewport_width: u32,
     viewport_height: u32,
+}
+
+fn build_shadow_setup(
+    args: ShadowSetupArgs<'_>,
 ) -> (Scene3DUniform, ShadowUniform, bool, Vec3, f32) {
+    let ShadowSetupArgs {
+        camera,
+        lighting,
+        draw_batches,
+        staged_instances,
+        fallback_focus_center,
+        fallback_focus_radius,
+        viewport_width,
+        viewport_height,
+    } = args;
     let mut shadow_scene = Scene3DUniform::zeroed();
     let mut shadow_uniform = ShadowUniform::zeroed();
     if TEMP_DISABLE_SHADOWS {

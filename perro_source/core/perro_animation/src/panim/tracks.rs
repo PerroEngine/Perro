@@ -899,6 +899,11 @@ fn bone_selector_key(selector: &AnimationBoneSelector) -> String {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "hot parse path; flat args avoid extra packet construction in tight loops"
+)]
+#[inline(always)]
 fn insert_track_key(
     tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
     object: String,
@@ -926,6 +931,11 @@ fn insert_track_key(
     );
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "hot parse path; flat args avoid extra packet construction in tight loops"
+)]
+#[inline(always)]
 fn insert_track_key_with_bone_target(
     tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
     object: String,
@@ -968,6 +978,11 @@ fn insert_track_key_with_bone_target(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "hot parse path; flat args avoid extra packet construction in tight loops"
+)]
+#[inline(always)]
 fn apply_track_control(
     tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
     object: String,

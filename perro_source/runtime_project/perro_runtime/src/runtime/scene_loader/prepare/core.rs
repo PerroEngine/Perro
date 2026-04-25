@@ -206,10 +206,12 @@ fn push_entry_prepared(
                 root_of_path.as_str(),
                 &import_scene,
                 &import_root,
-                prepared_nodes,
-                scripts,
-                include_stack,
-                load_scene,
+                ImportExpandCtx {
+                    prepared_nodes,
+                    scripts,
+                    include_stack,
+                    load_scene,
+                },
             )?;
             Ok::<SceneDefNodeEntry, String>(merged)
         })();
@@ -264,15 +266,19 @@ fn push_entry_prepared(
     Ok(())
 }
 
+struct ImportExpandCtx<'a> {
+    prepared_nodes: &'a mut Vec<PendingNode>,
+    scripts: &'a mut Vec<PendingScript>,
+    include_stack: &'a mut HashSet<String>,
+    load_scene: &'a dyn Fn(&str) -> Result<Arc<Scene>, String>,
+}
+
 fn expand_import_children_into_host(
     host_key: &str,
     path: &str,
     import_scene: &Scene,
     import_root: &str,
-    prepared_nodes: &mut Vec<PendingNode>,
-    scripts: &mut Vec<PendingScript>,
-    include_stack: &mut HashSet<String>,
-    load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
+    ctx: ImportExpandCtx<'_>,
 ) -> Result<(), String> {
     let mut map = HashMap::<String, String>::new();
     map.insert(import_root.to_string(), host_key.to_string());
@@ -296,10 +302,10 @@ fn expand_import_children_into_host(
             node,
             Some(remapped_key.as_str()),
             &map,
-            prepared_nodes,
-            scripts,
-            include_stack,
-            load_scene,
+            ctx.prepared_nodes,
+            ctx.scripts,
+            ctx.include_stack,
+            ctx.load_scene,
         )?;
     }
     Ok(())

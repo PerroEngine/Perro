@@ -428,9 +428,11 @@ impl PerroGraphics {
                             node,
                             mesh,
                             surfaces,
-                            node_model,
-                            instance_scale,
-                            instances,
+                            crate::three_d::renderer::DenseMultiMeshDraw3D {
+                                node_model,
+                                instance_scale,
+                                instances,
+                            },
                             meshlet_override,
                         );
                     }

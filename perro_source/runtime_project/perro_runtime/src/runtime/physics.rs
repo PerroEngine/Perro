@@ -1636,6 +1636,8 @@ fn collider_builder_3d(
     )
 }
 
+type TriMeshData = (Vec<na3::Point3<f32>>, Vec<[u32; 3]>);
+
 fn load_trimesh_from_source(
     source: &str,
     sx: f32,
@@ -1643,7 +1645,7 @@ fn load_trimesh_from_source(
     sz: f32,
     provider_mode: crate::runtime_project::ProviderMode,
     static_mesh_lookup: Option<crate::runtime_project::StaticBytesLookup>,
-) -> Option<(Vec<na3::Point3<f32>>, Vec<[u32; 3]>)> {
+) -> Option<TriMeshData> {
     let source = source.trim();
     if source.is_empty() {
         return None;
@@ -1728,7 +1730,7 @@ fn decode_pmesh_trimesh(
     sx: f32,
     sy: f32,
     sz: f32,
-) -> Option<(Vec<na3::Point3<f32>>, Vec<[u32; 3]>)> {
+) -> Option<TriMeshData> {
     if bytes.len() < 33 || &bytes[0..5] != b"PMESH" {
         return None;
     }
@@ -1818,7 +1820,7 @@ fn load_trimesh_from_gltf_bytes(
     sx: f32,
     sy: f32,
     sz: f32,
-) -> Option<(Vec<na3::Point3<f32>>, Vec<[u32; 3]>)> {
+) -> Option<TriMeshData> {
     let (doc, buffers, _images) = gltf::import_slice(bytes).ok()?;
     let mesh = doc.meshes().nth(mesh_index)?;
 

@@ -1,6 +1,6 @@
 use super::core::RuntimeResourceApi;
 use perro_ids::AudioBusID;
-use perro_resource_context::sub_apis::AudioAPI;
+use perro_resource_context::sub_apis::{Audio, AudioAPI};
 
 impl AudioAPI for RuntimeResourceApi {
     fn load_audio_source(&self, source: &str) -> bool {
@@ -33,42 +33,40 @@ impl AudioAPI for RuntimeResourceApi {
         player.drop_source(source)
     }
 
-    fn play_audio(
-        &self,
-        source: &str,
-        bus_id: AudioBusID,
-        looped: bool,
-        volume: f32,
-        speed: f32,
-        from_start: f32,
-        from_end: f32,
-    ) -> bool {
+    fn play_audio(&self, audio: Audio<'_>) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
         };
         let Some(player) = guard.as_ref() else {
             return false;
         };
-        player.play_source(source, bus_id, looped, volume, speed, from_start, from_end)
+        player.play_source(perro_bark::AudioPlaybackRequest {
+            source: audio.source,
+            bus_id: audio.bus,
+            looped: audio.looped,
+            volume: audio.volume,
+            speed: audio.speed,
+            from_start: audio.from_start,
+            from_end: audio.from_end,
+        })
     }
 
-    fn stop_audio(
-        &self,
-        source: &str,
-        bus_id: AudioBusID,
-        looped: bool,
-        volume: f32,
-        speed: f32,
-        from_start: f32,
-        from_end: f32,
-    ) -> bool {
+    fn stop_audio(&self, audio: Audio<'_>) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
         };
         let Some(player) = guard.as_ref() else {
             return false;
         };
-        player.stop_match(source, bus_id, looped, volume, speed, from_start, from_end)
+        player.stop_match(perro_bark::AudioPlaybackRequest {
+            source: audio.source,
+            bus_id: audio.bus,
+            looped: audio.looped,
+            volume: audio.volume,
+            speed: audio.speed,
+            from_start: audio.from_start,
+            from_end: audio.from_end,
+        })
     }
 
     fn stop_audio_source(&self, source: &str) -> bool {

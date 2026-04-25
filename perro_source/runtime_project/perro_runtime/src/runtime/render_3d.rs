@@ -333,13 +333,14 @@ impl Runtime {
                     poses: Arc<[DenseInstancePose3D]>,
                 },
             }
-            let mesh_data: Option<(
+            type LocalMeshData = (
                 MeshID,
                 Vec<MeshSurfaceBinding>,
                 Option<NodeID>,
                 Option<bool>,
                 LocalMeshInstanceData,
-            )> = self.nodes.get(node).and_then(|node| match &node.data {
+            );
+            let mesh_data: Option<LocalMeshData> = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::MeshInstance3D(mesh) => Some((
                     mesh.mesh,
                     mesh.surfaces.clone(),

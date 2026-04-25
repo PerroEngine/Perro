@@ -39,6 +39,42 @@ struct AudioState {
     cache_bytes: usize,
 }
 
+#[derive(Clone, Copy)]
+pub struct AudioPlaybackRequest<'a> {
+    pub source: &'a str,
+    pub bus_id: AudioBusID,
+    pub looped: bool,
+    pub volume: f32,
+    pub speed: f32,
+    pub from_start: f32,
+    pub from_end: f32,
+}
+
+#[derive(Clone)]
+struct OwnedAudioPlaybackRequest {
+    source: String,
+    bus_id: AudioBusID,
+    looped: bool,
+    volume: f32,
+    speed: f32,
+    from_start: f32,
+    from_end: f32,
+}
+
+impl From<AudioPlaybackRequest<'_>> for OwnedAudioPlaybackRequest {
+    fn from(value: AudioPlaybackRequest<'_>) -> Self {
+        Self {
+            source: value.source.to_string(),
+            bus_id: value.bus_id,
+            looped: value.looped,
+            volume: value.volume,
+            speed: value.speed,
+            from_start: value.from_start,
+            from_end: value.from_end,
+        }
+    }
+}
+
 #[cfg(feature = "profile")]
 #[derive(Clone, Copy)]
 enum SourceLoadKind {
@@ -87,25 +123,13 @@ enum AudioCommand {
         source: String,
     },
     Play {
-        source: String,
-        bus_id: AudioBusID,
-        looped: bool,
-        volume: f32,
-        speed: f32,
-        from_start: f32,
-        from_end: f32,
+        request: OwnedAudioPlaybackRequest,
     },
     Stop {
         source: String,
     },
     StopMatch {
-        source: String,
-        bus_id: AudioBusID,
-        looped: bool,
-        volume: f32,
-        speed: f32,
-        from_start: f32,
-        from_end: f32,
+        request: OwnedAudioPlaybackRequest,
     },
     StopAll,
     SetMasterVolume {
@@ -191,16 +215,16 @@ impl BarkPlayer {
         Some(Duration::from_secs_f64(seconds))
     }
 
-    pub fn play_source(
-        &self,
-        source: &str,
-        bus_id: AudioBusID,
-        looped: bool,
-        volume: f32,
-        speed: f32,
-        from_start: f32,
-        from_end: f32,
-    ) -> Result<(), String> {
+    pub fn play_source(&self, request: AudioPlaybackRequest<'_>) -> Result<(), String> {
+        let AudioPlaybackRequest {
+            source,
+            bus_id,
+            looped,
+            volume,
+            speed,
+            from_start,
+            from_end,
+        } = request;
         #[cfg(feature = "profile")]
         let play_begin = Instant::now();
         let (bytes, cache_hit, load_stats) = {
@@ -450,16 +474,16 @@ impl BarkPlayer {
         removed_any
     }
 
-    pub fn stop_match(
-        &self,
-        source: &str,
-        bus_id: AudioBusID,
-        looped: bool,
-        volume: f32,
-        speed: f32,
-        from_start: f32,
-        from_end: f32,
-    ) -> bool {
+    pub fn stop_match(&self, request: AudioPlaybackRequest<'_>) -> bool {
+        let AudioPlaybackRequest {
+            source,
+            bus_id,
+            looped,
+            volume,
+            speed,
+            from_start,
+            from_end,
+        } = request;
         let Ok(mut state) = self.state.lock() else {
             return false;
         };
@@ -866,34 +890,30 @@ impl AudioController {
                         AudioCommand::DropAsset { source } => {
                             let _ = player.drop_source_asset(&source);
                         }
-                        AudioCommand::Play {
-                            source,
-                            bus_id,
-                            looped,
-                            volume,
-                            speed,
-                            from_start,
-                            from_end,
-                        } => {
-                            let _ = player.play_source(
-                                &source, bus_id, looped, volume, speed, from_start, from_end,
-                            );
+                        AudioCommand::Play { request } => {
+                            let _ = player.play_source(AudioPlaybackRequest {
+                                source: request.source.as_str(),
+                                bus_id: request.bus_id,
+                                looped: request.looped,
+                                volume: request.volume,
+                                speed: request.speed,
+                                from_start: request.from_start,
+                                from_end: request.from_end,
+                            });
                         }
                         AudioCommand::Stop { source } => {
                             let _ = player.stop_source(&source);
                         }
-                        AudioCommand::StopMatch {
-                            source,
-                            bus_id,
-                            looped,
-                            volume,
-                            speed,
-                            from_start,
-                            from_end,
-                        } => {
-                            let _ = player.stop_match(
-                                &source, bus_id, looped, volume, speed, from_start, from_end,
-                            );
+                        AudioCommand::StopMatch { request } => {
+                            let _ = player.stop_match(AudioPlaybackRequest {
+                                source: request.source.as_str(),
+                                bus_id: request.bus_id,
+                                looped: request.looped,
+                                volume: request.volume,
+                                speed: request.speed,
+                                from_start: request.from_start,
+                                from_end: request.from_end,
+                            });
                         }
                         AudioCommand::StopAll => player.stop_all(),
                         AudioCommand::SetMasterVolume { volume } => {
@@ -920,25 +940,10 @@ impl AudioController {
         Ok(Self { tx })
     }
 
-    pub fn play_source(
-        &self,
-        source: &str,
-        bus_id: AudioBusID,
-        looped: bool,
-        volume: f32,
-        speed: f32,
-        from_start: f32,
-        from_end: f32,
-    ) -> bool {
+    pub fn play_source(&self, request: AudioPlaybackRequest<'_>) -> bool {
         self.tx
             .send(AudioCommand::Play {
-                source: source.to_string(),
-                bus_id,
-                looped,
-                volume,
-                speed,
-                from_start,
-                from_end,
+                request: request.into(),
             })
             .is_ok()
     }
@@ -992,25 +997,10 @@ impl AudioController {
             .is_ok()
     }
 
-    pub fn stop_match(
-        &self,
-        source: &str,
-        bus_id: AudioBusID,
-        looped: bool,
-        volume: f32,
-        speed: f32,
-        from_start: f32,
-        from_end: f32,
-    ) -> bool {
+    pub fn stop_match(&self, request: AudioPlaybackRequest<'_>) -> bool {
         self.tx
             .send(AudioCommand::StopMatch {
-                source: source.to_string(),
-                bus_id,
-                looped,
-                volume,
-                speed,
-                from_start,
-                from_end,
+                request: request.into(),
             })
             .is_ok()
     }

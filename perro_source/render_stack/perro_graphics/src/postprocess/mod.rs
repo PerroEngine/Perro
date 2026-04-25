@@ -85,47 +85,48 @@ pub struct PostProcessor {
     frame_counter: u64,
 }
 
-#[inline]
-fn create_post_bind_group(
-    device: &wgpu::Device,
-    bgl: &wgpu::BindGroupLayout,
-    input_view: &wgpu::TextureView,
-    sampler: &wgpu::Sampler,
-    depth_view: &wgpu::TextureView,
-    uniform_buffer: &wgpu::Buffer,
+struct PostBindGroupDesc<'a> {
+    bgl: &'a wgpu::BindGroupLayout,
+    input_view: &'a wgpu::TextureView,
+    sampler: &'a wgpu::Sampler,
+    depth_view: &'a wgpu::TextureView,
+    uniform_buffer: &'a wgpu::Buffer,
     uniform_size_bytes: u64,
-    params_buffer: &wgpu::Buffer,
-) -> wgpu::BindGroup {
+    params_buffer: &'a wgpu::Buffer,
+}
+
+#[inline]
+fn create_post_bind_group(device: &wgpu::Device, desc: PostBindGroupDesc<'_>) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("perro_post_bg"),
-        layout: bgl,
+        layout: desc.bgl,
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureView(input_view),
+                resource: wgpu::BindingResource::TextureView(desc.input_view),
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: wgpu::BindingResource::Sampler(sampler),
+                resource: wgpu::BindingResource::Sampler(desc.sampler),
             },
             wgpu::BindGroupEntry {
                 binding: 2,
-                resource: wgpu::BindingResource::TextureView(depth_view),
+                resource: wgpu::BindingResource::TextureView(desc.depth_view),
             },
             wgpu::BindGroupEntry {
                 binding: 3,
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: uniform_buffer,
+                    buffer: desc.uniform_buffer,
                     offset: 0,
                     size: Some(
-                        std::num::NonZeroU64::new(uniform_size_bytes)
+                        std::num::NonZeroU64::new(desc.uniform_size_bytes)
                             .expect("post uniform size must be non-zero"),
                     ),
                 }),
             },
             wgpu::BindGroupEntry {
                 binding: 4,
-                resource: params_buffer.as_entire_binding(),
+                resource: desc.params_buffer.as_entire_binding(),
             },
         ],
     })
@@ -402,37 +403,43 @@ impl PostProcessor {
                 0 => bind_group_input.get_or_insert_with(|| {
                     create_post_bind_group(
                         device,
-                        &self.bgl,
-                        current_input,
-                        &self.sampler,
-                        depth_view,
-                        &self.uniform_buffer,
-                        std::mem::size_of::<PostUniform>() as u64,
-                        &self.params_buffer,
+                        PostBindGroupDesc {
+                            bgl: &self.bgl,
+                            input_view: current_input,
+                            sampler: &self.sampler,
+                            depth_view,
+                            uniform_buffer: &self.uniform_buffer,
+                            uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
+                            params_buffer: &self.params_buffer,
+                        },
                     )
                 }),
                 1 => bind_group_ping_a.get_or_insert_with(|| {
                     create_post_bind_group(
                         device,
-                        &self.bgl,
-                        &self.ping_a_view,
-                        &self.sampler,
-                        depth_view,
-                        &self.uniform_buffer,
-                        std::mem::size_of::<PostUniform>() as u64,
-                        &self.params_buffer,
+                        PostBindGroupDesc {
+                            bgl: &self.bgl,
+                            input_view: &self.ping_a_view,
+                            sampler: &self.sampler,
+                            depth_view,
+                            uniform_buffer: &self.uniform_buffer,
+                            uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
+                            params_buffer: &self.params_buffer,
+                        },
                     )
                 }),
                 _ => bind_group_ping_b.get_or_insert_with(|| {
                     create_post_bind_group(
                         device,
-                        &self.bgl,
-                        &self.ping_b_view,
-                        &self.sampler,
-                        depth_view,
-                        &self.uniform_buffer,
-                        std::mem::size_of::<PostUniform>() as u64,
-                        &self.params_buffer,
+                        PostBindGroupDesc {
+                            bgl: &self.bgl,
+                            input_view: &self.ping_b_view,
+                            sampler: &self.sampler,
+                            depth_view,
+                            uniform_buffer: &self.uniform_buffer,
+                            uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
+                            params_buffer: &self.params_buffer,
+                        },
                     )
                 }),
             };

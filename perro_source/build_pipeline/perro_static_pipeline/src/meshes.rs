@@ -294,10 +294,12 @@ fn build_gltf_mesh_entries(
             &indices,
             &surface_ranges,
             &meshlets,
-            has_normals_any,
-            has_uv_any,
-            has_joints_any,
-            has_weights_any,
+            PackedMeshLayoutFlags {
+                has_normals: has_normals_any,
+                has_uv0: has_uv_any,
+                has_joints: has_joints_any,
+                has_weights: has_weights_any,
+            },
         )?;
 
         let embedded_rel_path = format!("{rel_base}_mesh{mesh_index}.pmesh");
@@ -314,25 +316,27 @@ fn build_gltf_mesh_entries(
     Ok(entries)
 }
 
+#[derive(Clone, Copy)]
+struct PackedMeshLayoutFlags {
+    has_normals: bool,
+    has_uv0: bool,
+    has_joints: bool,
+    has_weights: bool,
+}
+
 fn encode_pmesh_tightest_layout(
     vertices: &[PackedVertex],
     indices: &[u32],
     surface_ranges: &[PackedSurfaceRange],
     meshlets: &[PackedMeshlet],
-    has_normals: bool,
-    has_uv0: bool,
-    has_joints: bool,
-    has_weights: bool,
+    layout_flags: PackedMeshLayoutFlags,
 ) -> io::Result<Vec<u8>> {
     let baseline = encode_pmesh(
         vertices,
         indices,
         surface_ranges,
         meshlets,
-        has_normals,
-        has_uv0,
-        has_joints,
-        has_weights,
+        layout_flags,
     )?;
     let (reordered_vertices, reordered_indices) = reorder_vertices_by_first_use(vertices, indices);
     if reordered_vertices == vertices && reordered_indices == indices {
@@ -343,10 +347,7 @@ fn encode_pmesh_tightest_layout(
         &reordered_indices,
         surface_ranges,
         meshlets,
-        has_normals,
-        has_uv0,
-        has_joints,
-        has_weights,
+        layout_flags,
     )?;
     if reordered.len() < baseline.len() {
         Ok(reordered)
@@ -398,11 +399,14 @@ fn encode_pmesh(
     indices: &[u32],
     surface_ranges: &[PackedSurfaceRange],
     meshlets: &[PackedMeshlet],
-    has_normals: bool,
-    has_uv0: bool,
-    has_joints: bool,
-    has_weights: bool,
+    layout_flags: PackedMeshLayoutFlags,
 ) -> io::Result<Vec<u8>> {
+    let PackedMeshLayoutFlags {
+        has_normals,
+        has_uv0,
+        has_joints,
+        has_weights,
+    } = layout_flags;
     let vertex_stride_bytes = (3 * std::mem::size_of::<f32>())
         + if has_normals {
             3 * std::mem::size_of::<f32>()
@@ -783,12 +787,21 @@ mod tests {
         }];
         let meshlets = Vec::new();
 
-        let baseline = encode_pmesh(
-            &vertices, &indices, &surfaces, &meshlets, true, true, true, true,
-        )
-        .expect("baseline encode");
+        let full_layout = PackedMeshLayoutFlags {
+            has_normals: true,
+            has_uv0: true,
+            has_joints: true,
+            has_weights: true,
+        };
+        let baseline =
+            encode_pmesh(&vertices, &indices, &surfaces, &meshlets, full_layout)
+                .expect("baseline encode");
         let selected = encode_pmesh_tightest_layout(
-            &vertices, &indices, &surfaces, &meshlets, true, true, true, true,
+            &vertices,
+            &indices,
+            &surfaces,
+            &meshlets,
+            full_layout,
         )
         .expect("tightest encode");
         assert!(selected.len() <= baseline.len());
