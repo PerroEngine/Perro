@@ -16,12 +16,12 @@ pub mod prelude {
     };
     pub use crate::random as RandomMod;
     pub use crate::random::{
-        chance, choose_index, hash, hash2_u32, hash3_u32, hash64_bytes, hash64_str, hash64_u128,
-        hash64_u32, hash64_u64, hash_bool, hash_bytes, hash_combine, hash_combine3, hash_combine4,
-        hash_f32, hash_i32, hash_i64, hash_str, hash_u128, hash_u32, hash_u64, rand01,
-        rand01_stream, rand11, rand11_stream, rand_in_circle, rand_range, rand_range_f32,
-        rand_range_i32, rand_range_u32, rand_u32, rand_u32_stream, rand_unit_vec2, rand_unit_vec3,
-        shuffle, HashToU32, RandRangeValue, SeededRng,
+        HashToU32, RandRangeValue, SeededRng, chance, choose_index, hash, hash_bool, hash_bytes,
+        hash_combine, hash_combine3, hash_combine4, hash_f32, hash_i32, hash_i64, hash_str,
+        hash_u32, hash_u64, hash_u128, hash2_u32, hash3_u32, hash64_bytes, hash64_str, hash64_u32,
+        hash64_u64, hash64_u128, rand_in_circle, rand_range, rand_range_f32, rand_range_i32,
+        rand_range_u32, rand_u32, rand_u32_stream, rand_unit_vec2, rand_unit_vec3, rand01,
+        rand01_stream, rand11, rand11_stream, shuffle,
     };
     pub use crate::{log_error, log_info, log_print, log_warn};
 }

@@ -48,6 +48,7 @@ fn main() {
             "check" => scripts_command(&args, &cwd),
             "build" => project_command(&args, &cwd),
             "dev" => dev_command(&args, &cwd),
+            "mem-profile" => mem_profile_command(&args, &cwd),
             "flamegraph" => flamegraph_command(&args, &cwd),
             "format" => format_command(&args, &cwd),
             _ => {
@@ -73,6 +74,9 @@ fn print_usage() {
     );
     eprintln!(
         "  perro_cli dev [--path <project_dir>] [--profile] [--release] [--csv-profile [csv_name]]      # build scripts + run dev runner"
+    );
+    eprintln!(
+        "  perro_cli mem-profile [--path <project_dir>] [--release] [--csv [csv_name]]    # run dev runner + process memory samples"
     );
     eprintln!(
         "  perro_cli flamegraph [--path <project_dir>] [--profile] [--root]    # run cargo flamegraph for dev runner (auto-installs tool if missing)"
@@ -1114,9 +1118,8 @@ fn scripts_command(args: &[String], cwd: &Path) -> Result<(), String> {
 fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let profile_requested = args.iter().any(|a| a == "--profile");
     let release = args.iter().any(|a| a == "--release");
-    let csv_profile_name = parse_optional_flag_value(args, "--csv-profile").map(|raw| {
-        PathBuf::from(raw.unwrap_or_else(|| "profiling.csv".to_string()))
-    });
+    let csv_profile_name = parse_optional_flag_value(args, "--csv-profile")
+        .map(|raw| PathBuf::from(raw.unwrap_or_else(|| "profiling.csv".to_string())));
     let profile = profile_requested || csv_profile_name.is_some();
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
@@ -1215,6 +1218,105 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn mem_profile_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let release = args.iter().any(|a| a == "--release");
+    let csv_name = parse_optional_flag_value(args, "--csv")
+        .map(|raw| PathBuf::from(raw.unwrap_or_else(|| "memory_profile.csv".to_string())));
+    let project_dir = parse_flag_value(args, "--path")
+        .map(|p| resolve_local_path(&p, cwd))
+        .unwrap_or_else(|| cwd.to_path_buf());
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    let profiling_dir = ensure_profiling_output_dir(&project_dir)?;
+    let csv_path = profiling_dir.join(
+        csv_name
+            .as_ref()
+            .and_then(|name| name.file_name())
+            .unwrap_or_else(|| std::ffi::OsStr::new("memory_profile.csv")),
+    );
+    fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&csv_path)
+        .map_err(|err| {
+            format!(
+                "failed to initialize memory profile csv {}: {err}",
+                csv_path.display()
+            )
+        })?;
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
+
+    log_step("Building Scripts");
+    compile_scripts_with_profile(&project_dir, ScriptsBuildProfile::Debug).map_err(|err| {
+        format!(
+            "scripts pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })?;
+    log_done("Scripts Built");
+
+    let dev_runner_dir = project_dir.join(".perro").join("dev_runner");
+    let target_dir = project_dir.join("target");
+    log_step("Building Dev Runner");
+
+    let mut build_cmd = Command::new("cargo");
+    build_cmd.arg("build").env("CARGO_TARGET_DIR", &target_dir);
+    if release {
+        build_cmd.arg("--release");
+    }
+    build_cmd.current_dir(&dev_runner_dir);
+    build_cmd.arg("--features").arg("profile");
+    let build_status = build_cmd.status().map_err(|err| {
+        format!(
+            "failed to build project dev runner from {}: {err}",
+            dev_runner_dir.display()
+        )
+    })?;
+
+    if !build_status.success() {
+        return Err(format!(
+            "project dev runner build failed with exit code {:?}",
+            build_status.code()
+        ));
+    }
+    log_done("Dev Runner Built");
+
+    let profile_dir = if release { "release" } else { "debug" };
+    let runner_path = if cfg!(target_os = "windows") {
+        target_dir.join(profile_dir).join("perro_dev_runner.exe")
+    } else {
+        target_dir.join(profile_dir).join("perro_dev_runner")
+    };
+    log_note("Running Dev Runner");
+
+    let mut run_cmd = Command::new(&runner_path);
+    run_cmd
+        .arg("--path")
+        .arg(project_dir.to_string_lossy().to_string())
+        .current_dir(&project_dir)
+        .env("PERRO_MEM_PROFILE", "1")
+        .env(
+            "PERRO_MEM_PROFILE_CSV",
+            csv_path.to_string_lossy().to_string(),
+        );
+
+    let run_status = run_cmd.status().map_err(|err| {
+        format!(
+            "failed to launch project dev runner at {}: {err}",
+            runner_path.display()
+        )
+    })?;
+
+    if !run_status.success() {
+        return Err(format!(
+            "project dev runner failed with exit code {:?}",
+            run_status.code()
+        ));
+    }
+    log_done("Dev Runner Finished");
+    Ok(())
+}
+
 fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
     if maybe_relaunch_flamegraph_as_admin(args)? {
         return Ok(());
@@ -1291,8 +1393,12 @@ fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
 fn ensure_profiling_output_dir(project_dir: &Path) -> Result<PathBuf, String> {
     let dir = project_dir.join(".output").join("profiling");
-    fs::create_dir_all(&dir)
-        .map_err(|err| format!("failed to create profiling output dir {}: {err}", dir.display()))?;
+    fs::create_dir_all(&dir).map_err(|err| {
+        format!(
+            "failed to create profiling output dir {}: {err}",
+            dir.display()
+        )
+    })?;
     Ok(dir)
 }
 

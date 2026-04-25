@@ -153,9 +153,7 @@ impl Runtime {
                 node,
                 sprite,
             }));
-            self.render_2d
-                .retained_sprites
-                .insert(node, sprite);
+            self.render_2d.retained_sprites.insert(node, sprite);
         }
         visible_now.insert(node);
     }

@@ -9,8 +9,7 @@ use perro_nodes::Spatial;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, DenseInstancePose3D, Material3D, MeshSurfaceBinding3D,
     PointLight3DState, RayLight3DState, RenderCommand, RenderEvent, RenderRequestID,
-    Sprite2DCommand,
-    SkeletonPalette, Sky3DState, SpotLight3DState,
+    SkeletonPalette, Sky3DState, SpotLight3DState, Sprite2DCommand,
 };
 use perro_structs::{Transform2D, Transform3D};
 use std::{collections::VecDeque, sync::Arc};

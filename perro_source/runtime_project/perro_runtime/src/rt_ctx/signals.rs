@@ -38,7 +38,8 @@ impl SignalAPI for Runtime {
             .registry
             .single_signal_connection(signal)
         {
-            let Some(instance_index) = self.scripts.instance_index_for_id(connection.script_id) else {
+            let Some(instance_index) = self.scripts.instance_index_for_id(connection.script_id)
+            else {
                 return 0;
             };
             let Some(instance) = self

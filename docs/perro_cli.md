@@ -4,6 +4,7 @@ This document covers Perro CLI in command-first style. Commands are shown using 
 
 - `check`
 - `dev`
+- `mem-profile`
 - `build`
 - `flamegraph`
 - `format`
@@ -21,6 +22,7 @@ Preferred usage:
 ```powershell
 perro check [--path <project_dir>]
 perro dev [--path <project_dir>]
+perro mem-profile [--path <project_dir>] [--release] [--csv [csv_name]]
 perro build [--path <project_dir>]
 perro flamegraph [--path <project_dir>] [--profile] [--root]
 perro format [--path <project_dir>]
@@ -124,6 +126,26 @@ What it does:
 6. Copies the built executable to `<project>/.output/` for clean, predictable exports.
 
 Use this for full static project bundle generation and build.
+
+## `mem-profile`
+
+Command:
+
+```powershell
+perro mem-profile --path <project_dir> [--release] [--csv [csv_name]]
+```
+
+What it does:
+
+1. Runs the same scripts build pipeline as `check`.
+2. Builds the project-local dev runner with `profile` feature enabled.
+3. Launches dev runner with memory profiling enabled (`PERRO_MEM_PROFILE=1`).
+4. Writes batch memory samples CSV in `<project_dir>/.output/profiling/` (default file: `memory_profile.csv`).
+
+Flags:
+
+- `--release`: builds and runs release dev runner binary.
+- `--csv [csv_name]`: custom output file name under `.output/profiling/`.
 
 ## `flamegraph`
 

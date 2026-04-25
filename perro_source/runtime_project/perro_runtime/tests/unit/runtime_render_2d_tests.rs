@@ -123,9 +123,11 @@ fn unchanged_camera_2d_skips_redundant_set_camera() {
 
     runtime.extract_render_2d_commands();
     let first = collect_commands(&mut runtime);
-    assert!(first
-        .iter()
-        .any(|cmd| matches!(cmd, RenderCommand::TwoD(Command2D::SetCamera { .. }))));
+    assert!(
+        first
+            .iter()
+            .any(|cmd| matches!(cmd, RenderCommand::TwoD(Command2D::SetCamera { .. })))
+    );
 
     runtime.extract_render_2d_commands();
     let second = collect_commands(&mut runtime);
