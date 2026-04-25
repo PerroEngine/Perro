@@ -1,7 +1,7 @@
 use crate::{
     cns::{ScriptCollection, SignalConnection, SignalRegistry},
     render_result::RuntimeRenderResult,
-    runtime::RuntimeScriptCtor,
+    runtime::{RuntimeScriptBehavior, RuntimeScriptCtor},
 };
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{MeshID, NodeID, TagID};
@@ -13,7 +13,7 @@ use perro_render_bridge::{
     SkeletonPalette, Sky3DState, SpotLight3DState,
 };
 use perro_structs::{Transform2D, Transform3D};
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Arc};
 
 pub(crate) struct ScriptRuntimeState {
     pub(crate) active_script_stack: Vec<(usize, NodeID)>,
@@ -22,6 +22,7 @@ pub(crate) struct ScriptRuntimeState {
     pub(crate) pending_start_flags: Vec<Option<NodeID>>,
     pub(crate) script_library: Option<libloading::Library>,
     pub(crate) dynamic_script_registry: AHashMap<u64, RuntimeScriptCtor>,
+    pub(crate) script_behavior_cache: AHashMap<u64, Arc<RuntimeScriptBehavior>>,
 }
 
 impl ScriptRuntimeState {
@@ -33,6 +34,7 @@ impl ScriptRuntimeState {
             pending_start_flags: Vec::new(),
             script_library: None,
             dynamic_script_registry: AHashMap::default(),
+            script_behavior_cache: AHashMap::default(),
         }
     }
 }
