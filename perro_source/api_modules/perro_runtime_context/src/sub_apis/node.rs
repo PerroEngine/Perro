@@ -494,6 +494,22 @@ pub trait NodeAPI {
         world_point: Vector3,
     ) -> Option<MeshSurfaceHit3D>;
 
+    /// Finds the first mesh surface hit along a world-space ray for a 3D mesh node.
+    ///
+    /// `ray_direction` does not need to be normalized.
+    /// Returns `None` when:
+    /// - node does not exist
+    /// - node is not a mesh-bearing 3D node
+    /// - mesh source cannot be resolved/decoded
+    /// - ray misses all triangles within `max_distance`
+    fn mesh_surface_on_world_ray(
+        &mut self,
+        node_id: NodeID,
+        ray_origin: Vector3,
+        ray_direction: Vector3,
+        max_distance: f32,
+    ) -> Option<MeshSurfaceHit3D>;
+
     /// Returns regions (one per matching surface) where `material` exists on a mesh node.
     ///
     /// Region bounds/centers are coarse geometric summaries for gameplay queries.
@@ -758,6 +774,21 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         world_point: Vector3,
     ) -> Option<MeshSurfaceHit3D> {
         self.rt.mesh_surface_at_world_point(node_id, world_point)
+    }
+
+    pub fn mesh_surface_on_world_ray(
+        &mut self,
+        node_id: NodeID,
+        ray_origin: Vector3,
+        ray_direction: Vector3,
+        max_distance: f32,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.rt.mesh_surface_on_world_ray(
+            node_id,
+            ray_origin,
+            ray_direction,
+            max_distance,
+        )
     }
 
     pub fn mesh_material_regions(
@@ -1128,6 +1159,17 @@ macro_rules! to_local_transform_3d {
 macro_rules! mesh_surface_at_world_point_3d {
     ($ctx:expr, $id:expr, $point:expr) => {
         $ctx.Nodes().mesh_surface_at_world_point($id, $point)
+    };
+}
+
+/// Finds first mesh surface hit along a world-space ray for a mesh node.
+/// Usage:
+/// `mesh_surface_on_world_ray_3d!(ctx, node_id, ray_origin, ray_direction, max_distance) -> Option<MeshSurfaceHit3D>`.
+#[macro_export]
+macro_rules! mesh_surface_on_world_ray_3d {
+    ($ctx:expr, $id:expr, $origin:expr, $direction:expr, $max_distance:expr) => {
+        $ctx.Nodes()
+            .mesh_surface_on_world_ray($id, $origin, $direction, $max_distance)
     };
 }
 

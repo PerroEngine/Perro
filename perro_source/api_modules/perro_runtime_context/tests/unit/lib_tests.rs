@@ -225,6 +225,16 @@ impl NodeAPI for DummyRuntime {
         None
     }
 
+    fn mesh_surface_on_world_ray(
+        &mut self,
+        _node_id: NodeID,
+        _ray_origin: perro_structs::Vector3,
+        _ray_direction: perro_structs::Vector3,
+        _max_distance: f32,
+    ) -> Option<MeshSurfaceHit3D> {
+        None
+    }
+
     fn mesh_material_regions(
         &mut self,
         _node_id: NodeID,
@@ -517,6 +527,16 @@ fn script_macros_typecheck_and_forward() {
     );
     assert_eq!(
         mesh_surface_at_world_point_3d!(&mut ctx, id, Vector3::new(0.0, 0.0, 0.0)),
+        None
+    );
+    assert_eq!(
+        mesh_surface_on_world_ray_3d!(
+            &mut ctx,
+            id,
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            100.0
+        ),
         None
     );
     assert!(mesh_material_regions_3d!(&mut ctx, id, perro_ids::MaterialID::new(1)).is_empty());

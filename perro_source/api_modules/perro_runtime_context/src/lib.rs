@@ -28,7 +28,7 @@ pub mod prelude {
         get_children, get_global_transform_2d, get_global_transform_3d, get_node_children_ids,
         get_node_name, get_node_parent_id, get_node_tags, get_node_type, get_var, has_attribute,
         member, members_with, mesh_material_regions_3d, mesh_surface_at_world_point_3d, query,
-        query_first, remove_node, reparent, reparent_multi, scene_drop_preloaded,
+        mesh_surface_on_world_ray_3d, query_first, remove_node, reparent, reparent_multi, scene_drop_preloaded,
         scene_free_preloaded, scene_load, scene_preload, script_attach, script_detach,
         set_global_transform_2d, set_global_transform_3d, set_node_name, set_var, signal_connect,
         signal_disconnect, signal_emit, tag_add, tag_remove, tag_set, to_global_point_2d,

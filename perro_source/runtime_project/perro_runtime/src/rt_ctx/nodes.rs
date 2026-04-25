@@ -713,6 +713,16 @@ impl NodeAPI for Runtime {
         self.query_mesh_surface_at_world_point(node_id, world_point)
     }
 
+    fn mesh_surface_on_world_ray(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        ray_origin: Vector3,
+        ray_direction: Vector3,
+        max_distance: f32,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.query_mesh_surface_on_world_ray(node_id, ray_origin, ray_direction, max_distance)
+    }
+
     fn mesh_material_regions(
         &mut self,
         node_id: perro_ids::NodeID,

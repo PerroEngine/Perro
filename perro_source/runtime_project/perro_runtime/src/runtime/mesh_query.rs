@@ -86,10 +86,7 @@ impl Runtime {
             local_normal,
             d2,
         ) = best?;
-        let material = node
-            .surfaces
-            .get(surface_index as usize)
-            .and_then(|surface| surface.material);
+        let material = self.query_surface_material(node_id, &node, surface_index);
         Some(MeshSurfaceHit3D {
             instance_index,
             surface_index,
@@ -99,6 +96,92 @@ impl Runtime {
             world_normal: world_normal.into(),
             local_normal: local_normal.into(),
             distance: d2.sqrt(),
+        })
+    }
+
+    pub(crate) fn query_mesh_surface_on_world_ray(
+        &mut self,
+        node_id: NodeID,
+        ray_origin: Vector3,
+        ray_direction: Vector3,
+        max_distance: f32,
+    ) -> Option<MeshSurfaceHit3D> {
+        let node = self.query_node_mesh_data(node_id)?;
+        let mesh = self.load_query_mesh_data(node.source.as_str())?;
+        if mesh.vertices.is_empty() || mesh.triangles.is_empty() {
+            return None;
+        }
+
+        let ray_origin_world: Vec3 = ray_origin.into();
+        let ray_dir_world_raw: Vec3 = ray_direction.into();
+        let ray_dir_len = ray_dir_world_raw.length();
+        if ray_dir_len <= 0.000001 {
+            return None;
+        }
+        let ray_dir_world = ray_dir_world_raw / ray_dir_len;
+        let max_t = if max_distance.is_finite() && max_distance > 0.0 {
+            max_distance
+        } else {
+            f32::INFINITY
+        };
+
+        let node_world = self.get_global_transform_3d(node_id)?.to_mat4();
+        let mut best: Option<(u32, u32, Vec3, Vec3, Vec3, Vec3, f32)> = None;
+
+        for (instance_index, local) in node.instance_local.iter().enumerate() {
+            let world_from_mesh = node_world * *local;
+            let mesh_from_world = world_from_mesh.inverse();
+            let world_normal_basis = Mat3::from_mat4(world_from_mesh).inverse().transpose();
+
+            for tri in mesh.triangles.iter().copied() {
+                let a = *mesh.vertices.get(tri.a as usize)?;
+                let b = *mesh.vertices.get(tri.b as usize)?;
+                let c = *mesh.vertices.get(tri.c as usize)?;
+
+                let aw = world_from_mesh.transform_point3(a);
+                let bw = world_from_mesh.transform_point3(b);
+                let cw = world_from_mesh.transform_point3(c);
+                let Some(t) = ray_intersect_triangle(ray_origin_world, ray_dir_world, aw, bw, cw)
+                else {
+                    continue;
+                };
+                if t > max_t {
+                    continue;
+                }
+
+                match best {
+                    Some((_, _, _, _, _, _, best_t)) if t >= best_t => {}
+                    _ => {
+                        let local_normal = (b - a).cross(c - a).normalize_or_zero();
+                        let world_normal = (world_normal_basis * local_normal).normalize_or_zero();
+                        let hit_world = ray_origin_world + ray_dir_world * t;
+                        let hit_local = mesh_from_world.transform_point3(hit_world);
+                        best = Some((
+                            instance_index as u32,
+                            tri.surface_index,
+                            hit_world,
+                            hit_local,
+                            world_normal,
+                            local_normal,
+                            t,
+                        ));
+                    }
+                }
+            }
+        }
+
+        let (instance_index, surface_index, hit_world, hit_local, world_normal, local_normal, t) =
+            best?;
+        let material = self.query_surface_material(node_id, &node, surface_index);
+        Some(MeshSurfaceHit3D {
+            instance_index,
+            surface_index,
+            material,
+            world_point: hit_world.into(),
+            local_point: hit_local.into(),
+            world_normal: world_normal.into(),
+            local_normal: local_normal.into(),
+            distance: t,
         })
     }
 
@@ -226,6 +309,25 @@ impl Runtime {
             }
             _ => None,
         }
+    }
+
+    fn query_surface_material(
+        &self,
+        node_id: NodeID,
+        node: &QueryNodeData,
+        surface_index: u32,
+    ) -> Option<MaterialID> {
+        let index = surface_index as usize;
+        node.surfaces
+            .get(index)
+            .and_then(|surface| surface.material)
+            .or_else(|| {
+                self.render_3d
+                    .retained_mesh_draws
+                    .get(&node_id)
+                    .and_then(|draw| draw.surfaces.get(index))
+                    .and_then(|surface| surface.material)
+            })
     }
 
     fn load_query_mesh_data(&self, source: &str) -> Option<QueryMeshData> {
@@ -693,6 +795,35 @@ fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
         vertices,
         triangles,
     })
+}
+
+fn ray_intersect_triangle(origin: Vec3, direction: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Option<f32> {
+    let ab = b - a;
+    let ac = c - a;
+    let pvec = direction.cross(ac);
+    let det = ab.dot(pvec);
+    if det.abs() <= 0.000001 {
+        return None;
+    }
+    let inv_det = 1.0 / det;
+
+    let tvec = origin - a;
+    let u = tvec.dot(pvec) * inv_det;
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+
+    let qvec = tvec.cross(ab);
+    let v = direction.dot(qvec) * inv_det;
+    if v < 0.0 || (u + v) > 1.0 {
+        return None;
+    }
+
+    let t = ac.dot(qvec) * inv_det;
+    if t < 0.0 {
+        return None;
+    }
+    Some(t)
 }
 
 fn closest_point_on_triangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Vec3 {

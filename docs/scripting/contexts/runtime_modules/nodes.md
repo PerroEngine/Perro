@@ -78,6 +78,7 @@ Tag/query macros:
 Mesh surface/material query macros:
 
 - `mesh_surface_at_world_point_3d!(ctx, node_id, world_point) -> Option<MeshSurfaceHit3D>`
+- `mesh_surface_on_world_ray_3d!(ctx, node_id, ray_origin, ray_direction, max_distance) -> Option<MeshSurfaceHit3D>`
 - `mesh_material_regions_3d!(ctx, node_id, material_id) -> Vec<MeshMaterialRegion3D>`
 
 `MeshSurfaceHit3D` fields:
