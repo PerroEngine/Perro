@@ -40,13 +40,10 @@ fn build_area_2d(data: &SceneDefNodeData) -> Area2D {
 
 fn apply_collision_shape_2d_fields(node: &mut CollisionShape2D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
-        match resolve_node_field("CollisionShape2D", name) {
-            Some(NodeField::CollisionShape2D(CollisionShape2DField::Shape)) => {
-                if let Some(shape) = as_shape_2d(value) {
-                    node.shape = shape;
-                }
+        if let Some(NodeField::CollisionShape2D(CollisionShape2DField::Shape)) = resolve_node_field("CollisionShape2D", name) {
+            if let Some(shape) = as_shape_2d(value) {
+                node.shape = shape;
             }
-            _ => {}
         }
     });
 }

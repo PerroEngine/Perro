@@ -395,11 +395,7 @@ fn log_avg_sampled(
     let frame_us = total_us
         .saturating_add(idle_before_frame_us)
         .saturating_add(present_wait_us);
-    let fps_x100 = if frame_us > 0 {
-        (100_000_000u128 / frame_us) as u64
-    } else {
-        0
-    };
+    let fps_x100 = 100_000_000u128.checked_div(frame_us).unwrap_or(0) as u64;
     let mut out = std::io::stdout().lock();
     let _ = writeln!(
         out,
@@ -1115,11 +1111,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
         let shown_for = frame_start.saturating_duration_since(self.startup_splash.shown_at);
         let hard_timeout_hit = shown_for >= STARTUP_SPLASH_HARD_TIMEOUT;
-        if self.startup_splash.fade_started_at.is_none() {
-            if shown_for >= STARTUP_SPLASH_HOLD_DURATION || hard_timeout_hit {
+        if self.startup_splash.fade_started_at.is_none()
+            && (shown_for >= STARTUP_SPLASH_HOLD_DURATION || hard_timeout_hit) {
                 self.startup_splash.fade_started_at = Some(frame_start);
             }
-        }
         if self.startup_splash.should_finish(frame_start) {
             self.end_startup_splash();
         }
@@ -1809,17 +1804,16 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                     self.set_cursor_capture(false);
                 }
                 self.kbm_input
-                    .handle_window_event(&mut self.app, &keyboard_event);
+                    .handle_window_event(&mut self.app, keyboard_event);
             }
             mouse_event @ WindowEvent::MouseInput { state, .. } => {
                 if self.startup_splash.blocks_input() {
                     return;
                 }
-                if state == ElementState::Pressed && !self.cursor_captured {
-                    if self.cursor_inside_window {
+                if state == ElementState::Pressed && !self.cursor_captured
+                    && self.cursor_inside_window {
                         self.set_cursor_capture(true);
                     }
-                }
                 self.kbm_input
                     .handle_window_event(&mut self.app, &mouse_event);
             }
@@ -1855,14 +1849,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 if self.startup_splash.blocks_input() {
                     return;
                 }
-                if self.cursor_captured {
-                    if let Some(window) = &self.window {
+                if self.cursor_captured
+                    && let Some(window) = &self.window {
                         let (captured, uses_raw_motion) =
                             Self::apply_cursor_capture(window.as_ref(), true);
                         self.cursor_captured = captured;
                         self.capture_uses_raw_motion = uses_raw_motion;
                     }
-                }
             }
             WindowEvent::Focused(false) => {
                 if self.startup_splash.blocks_input() {
@@ -1975,11 +1968,10 @@ fn window_attributes(
     let Some(monitor) = pick_monitor(event_loop) else {
         return attrs.with_inner_size(Size::Physical(desired));
     };
-    if let Some(mode) = parse_window_mode_override() {
-        if mode == "borderless" || mode == "borderless_fullscreen" {
+    if let Some(mode) = parse_window_mode_override()
+        && (mode == "borderless" || mode == "borderless_fullscreen") {
             return attrs.with_fullscreen(Some(Fullscreen::Borderless(Some(monitor))));
         }
-    }
 
     let max_width =
         ((monitor.size().width as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;

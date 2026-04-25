@@ -252,8 +252,10 @@ impl Default for PhysicsState {
 
 impl PhysicsWorld2D {
     fn new() -> Self {
-        let mut integration_parameters = r2::IntegrationParameters::default();
-        integration_parameters.max_ccd_substeps = 4;
+        let integration_parameters = r2::IntegrationParameters {
+            max_ccd_substeps: 4,
+            ..r2::IntegrationParameters::default()
+        };
         Self {
             pipeline: r2::PhysicsPipeline::new(),
             gravity: na2::Vector2::new(0.0, -9.81),
@@ -274,8 +276,10 @@ impl PhysicsWorld2D {
 
 impl PhysicsWorld3D {
     fn new() -> Self {
-        let mut integration_parameters = r3::IntegrationParameters::default();
-        integration_parameters.max_ccd_substeps = 4;
+        let integration_parameters = r3::IntegrationParameters {
+            max_ccd_substeps: 4,
+            ..r3::IntegrationParameters::default()
+        };
         Self {
             pipeline: r3::PhysicsPipeline::new(),
             gravity: na3::Vector3::new(0.0, -9.81, 0.0),
@@ -417,8 +421,8 @@ impl Runtime {
                 .map(|node| node.children_slice().len())
                 .unwrap_or(0);
             let mut shapes = Vec::with_capacity(child_count);
-            if needs_shape_rebuild {
-                if let Some(node) = self.nodes.get(id) {
+            if needs_shape_rebuild
+                && let Some(node) = self.nodes.get(id) {
                     for &child_id in node.children_slice() {
                         let Some(child) = self.nodes.get(child_id) else {
                             continue;
@@ -430,7 +434,6 @@ impl Runtime {
                         }
                     }
                 }
-            }
 
             out.push(BodyDesc2D {
                 id,
@@ -516,8 +519,8 @@ impl Runtime {
                 .map(|node| node.children_slice().len())
                 .unwrap_or(0);
             let mut shapes = Vec::with_capacity(child_count);
-            if needs_shape_rebuild {
-                if let Some(node) = self.nodes.get(id) {
+            if needs_shape_rebuild
+                && let Some(node) = self.nodes.get(id) {
                     for &child_id in node.children_slice() {
                         let Some(child) = self.nodes.get(child_id) else {
                             continue;
@@ -535,7 +538,6 @@ impl Runtime {
                         }
                     }
                 }
-            }
 
             out.push(BodyDesc3D {
                 id,

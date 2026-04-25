@@ -1128,7 +1128,7 @@ fn materials_from_gltf_file(
         };
         out.push((
             format!("{res_path}:mat[{index}]"),
-            MaterialLiteral::Standard(derived.clone()),
+            MaterialLiteral::Standard(derived),
         ));
     }
     if out.is_empty() {

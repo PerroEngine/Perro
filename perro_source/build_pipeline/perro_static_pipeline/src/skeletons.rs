@@ -406,7 +406,7 @@ fn encode_pskel_v2(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
 }
 
 fn encode_pskel_blob(version: u32, bone_count: usize, raw: &[u8]) -> io::Result<Vec<u8>> {
-    let compressed = compress_zlib_best(&raw)?;
+    let compressed = compress_zlib_best(raw)?;
     let mut out = Vec::with_capacity(5 + 4 * std::mem::size_of::<u32>() + compressed.len());
     out.extend_from_slice(PSKEL_MAGIC);
     out.extend_from_slice(&version.to_le_bytes());

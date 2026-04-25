@@ -783,8 +783,7 @@ mod backend {
 
         let serial = format!("{:?}", peripheral.id())
             .replace("PeripheralId(", "")
-            .replace(')', "")
-            .replace(':', "")
+            .replace([')', ':'], "")
             .to_uppercase();
 
         Some((side, serial, tag))

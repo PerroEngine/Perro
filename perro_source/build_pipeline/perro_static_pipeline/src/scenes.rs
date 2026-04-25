@@ -341,7 +341,7 @@ fn emit_value_with_consts(
         SceneValue::Vec4 { x, y, z, w } => {
             format!("SceneValue::Vec4 {{ x: {x:?}, y: {y:?}, z: {z:?}, w: {w:?} }}")
         }
-        SceneValue::Str(s) => format!("{}", emit_static_scene_value_str(s.as_ref())),
+        SceneValue::Str(s) => emit_static_scene_value_str(s.as_ref()).to_string(),
         SceneValue::Hashed(v) => format!("SceneValue::Hashed({v}u64)"),
         SceneValue::Key(s) => {
             format!(

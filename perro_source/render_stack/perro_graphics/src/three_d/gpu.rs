@@ -3225,16 +3225,16 @@ impl Gpu3D {
                             } else {
                                 RenderPath3D::Rigid
                             },
-                            &material,
+                            material,
                             static_shader_lookup,
                         );
                         let (custom_params_offset, custom_params_len) =
-                            self.stage_custom_params(&material);
+                            self.stage_custom_params(material);
                         let instance_start = self.staged_instance_transforms.len() as u32;
                         for model in instance_mats.iter().copied() {
                             let instance = build_instance(
                                 model,
-                                &material,
+                                material,
                                 self.meshlet_debug_view,
                                 debug_color(draw.node.as_u64()),
                                 skeleton_start,
@@ -4316,7 +4316,7 @@ impl Gpu3D {
         self.last_draw_instance_span_ranges.reserve(draw_count);
         for spans in spans_per_draw.iter_mut() {
             let start = self.last_draw_instance_spans.len();
-            self.last_draw_instance_spans.extend(spans.drain(..));
+            self.last_draw_instance_spans.append(spans);
             let end = self.last_draw_instance_spans.len();
             self.last_draw_instance_span_ranges.push(start..end);
         }
@@ -4424,7 +4424,7 @@ impl Gpu3D {
         } else {
             global_source
                 .map(ToString::to_string)
-                .or_else(|| gltf_source)
+                .or(gltf_source)
         };
         let Some(source) = source else {
             self.material_textures.remove(&slot);
@@ -6495,7 +6495,7 @@ fn push_draw_batch(
             && prev.double_sided == double_sided
             && prev.material_kind == material_kind
             && prev.alpha_mode == alpha_mode
-            && prev.draw_on_top == false
+            && !prev.draw_on_top
             && prev.base_color_texture_slot == base_color_texture_slot
             && prev.occlusion_query.is_none()
             && prev.casts_shadows == casts_shadows;

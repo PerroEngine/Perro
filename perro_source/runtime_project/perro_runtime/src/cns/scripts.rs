@@ -228,13 +228,12 @@ fn resolve_scripts_dylib_path(project_root: &Path) -> Result<PathBuf, String> {
         let file_name = scripts_dylib_name();
         let primary = profile_dir.join(file_name);
         scanned.push(primary.display().to_string());
-        if primary.exists() {
-            if let Ok(meta) = fs::metadata(&primary)
+        if primary.exists()
+            && let Ok(meta) = fs::metadata(&primary)
                 && let Ok(modified) = meta.modified()
             {
                 candidates.push((modified, primary.clone()));
             }
-        }
 
         let deps_dir = profile_dir.join("deps");
         scanned.push(deps_dir.display().to_string());
@@ -252,13 +251,12 @@ fn resolve_scripts_dylib_path(project_root: &Path) -> Result<PathBuf, String> {
                 let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
                     continue;
                 };
-                if name.starts_with(prefix) && name.ends_with(suffix) {
-                    if let Ok(meta) = fs::metadata(&path)
+                if name.starts_with(prefix) && name.ends_with(suffix)
+                    && let Ok(meta) = fs::metadata(&path)
                         && let Ok(modified) = meta.modified()
                     {
                         candidates.push((modified, path));
                     }
-                }
             }
         }
     }

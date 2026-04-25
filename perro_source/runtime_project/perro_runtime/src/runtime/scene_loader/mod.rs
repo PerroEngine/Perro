@@ -42,11 +42,10 @@ impl Runtime {
         path_hash: u64,
         path: &str,
     ) -> Result<Arc<Scene>, String> {
-        if let Some(id) = self.preloaded_scene_paths.get(&path_hash).copied() {
-            if let Some(scene) = self.preloaded_scenes.get(&id) {
+        if let Some(id) = self.preloaded_scene_paths.get(&path_hash).copied()
+            && let Some(scene) = self.preloaded_scenes.get(&id) {
                 return Ok(scene.clone());
             }
-        }
         match self.provider_mode {
             ProviderMode::Dynamic => self.get_or_load_dynamic_scene_cached(path),
             ProviderMode::Static => {
