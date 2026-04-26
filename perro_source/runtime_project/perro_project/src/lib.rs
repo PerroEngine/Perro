@@ -893,6 +893,15 @@ fn write_if_missing(path: PathBuf, contents: &str) -> std::io::Result<()> {
     fs::write(path, contents)
 }
 
+fn write_if_changed(path: &Path, contents: &str) -> std::io::Result<()> {
+    if let Ok(existing) = fs::read_to_string(path)
+        && existing == contents
+    {
+        return Ok(());
+    }
+    fs::write(path, contents)
+}
+
 fn crate_name_from_project_name(project_name: &str) -> String {
     let mut out = String::with_capacity(project_name.len() + 8);
     for c in project_name.chars() {
@@ -1892,8 +1901,8 @@ fn ensure_dev_runner_source_sync(manifest_path: &Path, main_rs_path: &Path) -> s
     if let Some(parent) = main_rs_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(manifest_path, default_dev_runner_crate_toml())?;
-    fs::write(main_rs_path, default_dev_runner_main_rs())?;
+    write_if_changed(manifest_path, &default_dev_runner_crate_toml())?;
+    write_if_changed(main_rs_path, &default_dev_runner_main_rs())?;
     Ok(())
 }
 

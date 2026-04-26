@@ -9,7 +9,9 @@ use std::{
 };
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
-const PMESH_VERSION: u32 = 6;
+const PMESH_VERSION_V6: u32 = 6;
+const PMESH_VERSION_V7: u32 = 7;
+const PMESH_FLAG_INDEX_U16: u32 = 1 << 4;
 
 pub fn generate_static_collision_trimeshes(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_root = res_dir(project_root);
@@ -217,9 +219,17 @@ fn decode_pmesh_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if version != PMESH_VERSION {
+    if version != PMESH_VERSION_V6 && version != PMESH_VERSION_V7 {
         return None;
     }
+    if version == PMESH_VERSION_V7 {
+        decode_pmesh_trimesh_v7(bytes)
+    } else {
+        decode_pmesh_trimesh_v6(bytes)
+    }
+}
+
+fn decode_pmesh_trimesh_v6(bytes: &[u8]) -> Option<TriMeshData> {
     let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
     let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
     let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
@@ -239,12 +249,56 @@ fn decode_pmesh_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
         + if has_weights { 16 } else { 0 };
     let vertex_bytes = vertex_count.checked_mul(stride)?;
     let index_bytes = index_count.checked_mul(4)?;
+    decode_pmesh_trimesh_from_raw(
+        raw,
+        vertex_count,
+        index_count,
+        stride,
+        vertex_bytes,
+        index_bytes,
+        false,
+    )
+}
+
+fn decode_pmesh_trimesh_v7(bytes: &[u8]) -> Option<TriMeshData> {
+    let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
+    let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
+    let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
+    let raw_len = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
+    let raw = decompress_zlib(&bytes[33..]).ok()?;
+    if raw.len() != raw_len {
+        return None;
+    }
+    let index_u16 = (flags & PMESH_FLAG_INDEX_U16) != 0;
+    let vertex_stride = 12usize;
+    let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
+    let index_bytes = index_count.checked_mul(if index_u16 { 2 } else { 4 })?;
+    decode_pmesh_trimesh_from_raw(
+        raw,
+        vertex_count,
+        index_count,
+        vertex_stride,
+        vertex_bytes,
+        index_bytes,
+        index_u16,
+    )
+}
+
+fn decode_pmesh_trimesh_from_raw(
+    raw: Vec<u8>,
+    vertex_count: usize,
+    index_count: usize,
+    vertex_stride: usize,
+    vertex_bytes: usize,
+    index_bytes: usize,
+    index_u16: bool,
+) -> Option<TriMeshData> {
     if raw.len() < vertex_bytes + index_bytes {
         return None;
     }
     let mut vertices = Vec::with_capacity(vertex_count);
     for i in 0..vertex_count {
-        let off = i * stride;
+        let off = i * vertex_stride;
         let x = f32::from_le_bytes(raw[off..off + 4].try_into().ok()?);
         let y = f32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?);
         let z = f32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?);
@@ -253,25 +307,19 @@ fn decode_pmesh_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
     let mut triangles = Vec::new();
     let index_start = vertex_bytes;
     for tri in (0..index_count / 3).map(|i| i * 3) {
-        let ia = u32::from_le_bytes(
-            raw[index_start + tri * 4..index_start + tri * 4 + 4]
-                .try_into()
-                .ok()?,
-        );
-        let ib = u32::from_le_bytes(
-            raw[index_start + (tri + 1) * 4..index_start + (tri + 1) * 4 + 4]
-                .try_into()
-                .ok()?,
-        );
-        let ic = u32::from_le_bytes(
-            raw[index_start + (tri + 2) * 4..index_start + (tri + 2) * 4 + 4]
-                .try_into()
-                .ok()?,
-        );
+        let ia = read_index(raw.as_slice(), index_start, tri, index_u16)?;
+        let ib = read_index(raw.as_slice(), index_start, tri + 1, index_u16)?;
+        let ic = read_index(raw.as_slice(), index_start, tri + 2, index_u16)?;
         let a = ia as usize;
         let b = ib as usize;
         let c = ic as usize;
-        if a >= vertices.len() || b >= vertices.len() || c >= vertices.len() || a == b || b == c || a == c {
+        if a >= vertices.len()
+            || b >= vertices.len()
+            || c >= vertices.len()
+            || a == b
+            || b == c
+            || a == c
+        {
             continue;
         }
         triangles.push([ia, ib, ic]);
@@ -280,6 +328,16 @@ fn decode_pmesh_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
         return None;
     }
     Some((vertices, triangles))
+}
+
+fn read_index(raw: &[u8], index_start: usize, index: usize, index_u16: bool) -> Option<u32> {
+    if index_u16 {
+        let off = index_start + index * 2;
+        Some(u16::from_le_bytes(raw[off..off + 2].try_into().ok()?) as u32)
+    } else {
+        let off = index_start + index * 4;
+        Some(u32::from_le_bytes(raw[off..off + 4].try_into().ok()?))
+    }
 }
 
 fn load_trimesh_from_gltf_bytes(bytes: &[u8], mesh_index: usize) -> Option<TriMeshData> {
@@ -328,23 +386,36 @@ fn load_trimesh_from_gltf_bytes(bytes: &[u8], mesh_index: usize) -> Option<TriMe
 }
 
 fn encode_collision_pmesh(vertices: &[[f32; 3]], triangles: &[[u32; 3]]) -> Result<Vec<u8>, StaticPipelineError> {
-    let mut raw = Vec::<u8>::with_capacity(vertices.len() * 12 + triangles.len() * 12);
+    let use_u16_indices = vertices.len() <= u16::MAX as usize;
+    let mut raw = Vec::<u8>::with_capacity(
+        vertices.len() * 12 + triangles.len() * if use_u16_indices { 6 } else { 12 },
+    );
     for p in vertices {
         raw.extend_from_slice(&p[0].to_le_bytes());
         raw.extend_from_slice(&p[1].to_le_bytes());
         raw.extend_from_slice(&p[2].to_le_bytes());
     }
     for tri in triangles {
-        raw.extend_from_slice(&tri[0].to_le_bytes());
-        raw.extend_from_slice(&tri[1].to_le_bytes());
-        raw.extend_from_slice(&tri[2].to_le_bytes());
+        if use_u16_indices {
+            raw.extend_from_slice(&(tri[0] as u16).to_le_bytes());
+            raw.extend_from_slice(&(tri[1] as u16).to_le_bytes());
+            raw.extend_from_slice(&(tri[2] as u16).to_le_bytes());
+        } else {
+            raw.extend_from_slice(&tri[0].to_le_bytes());
+            raw.extend_from_slice(&tri[1].to_le_bytes());
+            raw.extend_from_slice(&tri[2].to_le_bytes());
+        }
     }
     let compressed = compress_zlib_best(&raw)
         .map_err(|e| StaticPipelineError::SceneParse(format!("collision trimesh compress fail: {e}")))?;
     let mut out = Vec::<u8>::with_capacity(33 + compressed.len());
     out.extend_from_slice(PMESH_MAGIC);
-    out.extend_from_slice(&PMESH_VERSION.to_le_bytes());
-    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&PMESH_VERSION_V7.to_le_bytes());
+    let mut flags = 0u32;
+    if use_u16_indices {
+        flags |= PMESH_FLAG_INDEX_U16;
+    }
+    out.extend_from_slice(&flags.to_le_bytes());
     out.extend_from_slice(&(vertices.len() as u32).to_le_bytes());
     out.extend_from_slice(&((triangles.len() * 3) as u32).to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());

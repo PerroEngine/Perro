@@ -1981,10 +1981,9 @@ fn decode_pmesh_trimesh(
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if version != 6 {
+    if version != 6 && version != 7 {
         return None;
     }
-
     let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
     let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
     let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
@@ -1996,18 +1995,21 @@ fn decode_pmesh_trimesh(
         return None;
     }
 
-    let has_normal = (flags & (1 << 0)) != 0;
-    let has_uv0 = (flags & (1 << 1)) != 0;
-    let has_joints = (flags & (1 << 2)) != 0;
-    let has_weights = (flags & (1 << 3)) != 0;
-    let vertex_stride = 12
-        + if has_normal { 12 } else { 0 }
-        + if has_uv0 { 8 } else { 0 }
-        + if has_joints { 8 } else { 0 }
-        + if has_weights { 16 } else { 0 };
-
+    let index_u16 = version == 7 && (flags & (1 << 4)) != 0;
+    let vertex_stride = if version == 7 {
+        12
+    } else {
+        let has_normal = (flags & (1 << 0)) != 0;
+        let has_uv0 = (flags & (1 << 1)) != 0;
+        let has_joints = (flags & (1 << 2)) != 0;
+        let has_weights = (flags & (1 << 3)) != 0;
+        12 + if has_normal { 12 } else { 0 }
+            + if has_uv0 { 8 } else { 0 }
+            + if has_joints { 8 } else { 0 }
+            + if has_weights { 16 } else { 0 }
+    };
     let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
-    let index_bytes = index_count.checked_mul(4)?;
+    let index_bytes = index_count.checked_mul(if index_u16 { 2 } else { 4 })?;
     if raw.len() < vertex_bytes + index_bytes {
         return None;
     }
@@ -2024,21 +2026,9 @@ fn decode_pmesh_trimesh(
     let mut triangles = Vec::new();
     let index_start = vertex_bytes;
     for tri_idx in (0..index_count / 3).map(|i| i * 3) {
-        let ia = u32::from_le_bytes(
-            raw[index_start + tri_idx * 4..index_start + tri_idx * 4 + 4]
-                .try_into()
-                .ok()?,
-        );
-        let ib = u32::from_le_bytes(
-            raw[index_start + (tri_idx + 1) * 4..index_start + (tri_idx + 1) * 4 + 4]
-                .try_into()
-                .ok()?,
-        );
-        let ic = u32::from_le_bytes(
-            raw[index_start + (tri_idx + 2) * 4..index_start + (tri_idx + 2) * 4 + 4]
-                .try_into()
-                .ok()?,
-        );
+        let ia = read_trimesh_index(raw.as_slice(), index_start, tri_idx, index_u16)?;
+        let ib = read_trimesh_index(raw.as_slice(), index_start, tri_idx + 1, index_u16)?;
+        let ic = read_trimesh_index(raw.as_slice(), index_start, tri_idx + 2, index_u16)?;
         let a = ia as usize;
         let b = ib as usize;
         let c = ic as usize;
@@ -2058,6 +2048,16 @@ fn decode_pmesh_trimesh(
         return None;
     }
     Some((vertices, triangles))
+}
+
+fn read_trimesh_index(raw: &[u8], index_start: usize, index: usize, index_u16: bool) -> Option<u32> {
+    if index_u16 {
+        let off = index_start + index * 2;
+        Some(u16::from_le_bytes(raw[off..off + 2].try_into().ok()?) as u32)
+    } else {
+        let off = index_start + index * 4;
+        Some(u32::from_le_bytes(raw[off..off + 4].try_into().ok()?))
+    }
 }
 
 fn load_trimesh_from_gltf_bytes(
