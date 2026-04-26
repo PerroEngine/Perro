@@ -1501,6 +1501,40 @@ perro_project = "0.1.0"
 profile = ["perro_app/profile"]
 mem_profile = ["perro_app/mem_profile"]
 
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package.perro_runtime]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev.package.perro_app]
+opt-level = 3
+
+[profile.dev.package.perro_graphics]
+opt-level = 3
+
+[profile.dev.package.rapier2d]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev.package.rapier3d]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev.package.parry2d]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev.package.parry3d]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
 [profile.release]
 debug = true
 "#
@@ -2303,18 +2337,51 @@ fn ensure_dev_runner_manifest_profile_debug(path: &Path) -> std::io::Result<()> 
     let Some(profile_table) = profile.as_table_mut() else {
         return Ok(());
     };
-    let release = profile_table
-        .entry("release")
-        .or_insert_with(|| Value::Table(Default::default()));
-    let Some(release_table) = release.as_table_mut() else {
-        return Ok(());
-    };
-
     let mut changed = false;
 
-    if !release_table.contains_key("debug") {
-        release_table.insert("debug".to_string(), Value::Boolean(true));
-        changed = true;
+    {
+        let release = profile_table
+            .entry("release")
+            .or_insert_with(|| Value::Table(Default::default()));
+        let Some(release_table) = release.as_table_mut() else {
+            return Ok(());
+        };
+        if !release_table.contains_key("debug") {
+            release_table.insert("debug".to_string(), Value::Boolean(true));
+            changed = true;
+        }
+    }
+
+    {
+        let dev = profile_table
+            .entry("dev")
+            .or_insert_with(|| Value::Table(Default::default()));
+        let Some(dev_table) = dev.as_table_mut() else {
+            return Ok(());
+        };
+        if !dev_table.contains_key("opt-level") {
+            dev_table.insert("opt-level".to_string(), Value::Integer(1));
+            changed = true;
+        }
+
+        let dev_package = dev_table
+            .entry("package")
+            .or_insert_with(|| Value::Table(Default::default()));
+        let Some(dev_package_table) = dev_package.as_table_mut() else {
+            return Ok(());
+        };
+        changed |= ensure_dev_package_opt_level(dev_package_table, "perro_runtime");
+        changed |= ensure_dev_package_opt_level(dev_package_table, "perro_app");
+        changed |= ensure_dev_package_opt_level(dev_package_table, "perro_graphics");
+        changed |= ensure_dev_package_opt_level(dev_package_table, "rapier2d");
+        changed |= ensure_dev_package_opt_level(dev_package_table, "rapier3d");
+        changed |= ensure_dev_package_opt_level(dev_package_table, "parry2d");
+        changed |= ensure_dev_package_opt_level(dev_package_table, "parry3d");
+        changed |= ensure_dev_package_fast_checks(dev_package_table, "perro_runtime");
+        changed |= ensure_dev_package_fast_checks(dev_package_table, "rapier2d");
+        changed |= ensure_dev_package_fast_checks(dev_package_table, "rapier3d");
+        changed |= ensure_dev_package_fast_checks(dev_package_table, "parry2d");
+        changed |= ensure_dev_package_fast_checks(dev_package_table, "parry3d");
     }
 
     if !changed {
@@ -2324,6 +2391,45 @@ fn ensure_dev_runner_manifest_profile_debug(path: &Path) -> std::io::Result<()> 
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
     fs::write(path, rendered)
+}
+
+fn ensure_dev_package_opt_level(
+    dev_package_table: &mut toml::map::Map<String, Value>,
+    crate_name: &str,
+) -> bool {
+    let package = dev_package_table
+        .entry(crate_name.to_string())
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(package_table) = package.as_table_mut() else {
+        return false;
+    };
+    if package_table.contains_key("opt-level") {
+        return false;
+    }
+    package_table.insert("opt-level".to_string(), Value::Integer(3));
+    true
+}
+
+fn ensure_dev_package_fast_checks(
+    dev_package_table: &mut toml::map::Map<String, Value>,
+    crate_name: &str,
+) -> bool {
+    let package = dev_package_table
+        .entry(crate_name.to_string())
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(package_table) = package.as_table_mut() else {
+        return false;
+    };
+    let mut changed = false;
+    if !package_table.contains_key("debug-assertions") {
+        package_table.insert("debug-assertions".to_string(), Value::Boolean(false));
+        changed = true;
+    }
+    if !package_table.contains_key("overflow-checks") {
+        package_table.insert("overflow-checks".to_string(), Value::Boolean(false));
+        changed = true;
+    }
+    changed
 }
 
 fn ensure_scripts_manifest_rust_analyzer_cfg(path: &Path) -> std::io::Result<()> {
