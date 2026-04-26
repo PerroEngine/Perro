@@ -87,7 +87,6 @@ opt-level = 2
 lto = "none"
 codegen-units = 64
 panic = "abort"
-strip = "symbols"
 incremental = true
 debug = false
 debug-assertions = false

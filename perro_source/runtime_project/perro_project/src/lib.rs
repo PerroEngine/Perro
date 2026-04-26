@@ -443,6 +443,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         &default_static_meshes_rs(),
     )?;
     write_if_missing(
+        project_static_src.join("collision_trimeshes.rs"),
+        &default_static_collision_trimeshes_rs(),
+    )?;
+    write_if_missing(
         project_static_src.join("skeletons.rs"),
         &default_static_skeletons_rs(),
     )?;
@@ -1312,11 +1316,14 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 panic = "abort"
-strip = "symbols"
+strip = "none"
 incremental = true
 debug = false
 debug-assertions = false
 overflow-checks = false
+
+[profile.release.package.{crate_name}]
+strip = "symbols"
  "#
     )
 }
@@ -1619,6 +1626,7 @@ fn project_root() -> std::path::PathBuf {
               particle_lookup: static_assets::particles::lookup_particle,
               animation_lookup: static_assets::animations::lookup_animation,
               mesh_lookup: static_assets::meshes::lookup_mesh,
+              collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,
               skeleton_lookup: static_assets::skeletons::lookup_skeleton,
               texture_lookup: static_assets::textures::lookup_texture,
               shader_lookup: static_assets::shaders::lookup_shader,
@@ -1633,7 +1641,7 @@ fn project_root() -> std::path::PathBuf {
 }
 
 fn default_static_mod_rs() -> String {
-    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod animations;\npub mod meshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n".to_string()
+    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod particles;\npub mod animations;\npub mod meshes;\npub mod collision_trimeshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n".to_string()
 }
 
 fn default_static_scenes_rs() -> String {
@@ -1746,6 +1754,16 @@ fn default_static_meshes_rs() -> String {
 #![allow(dead_code)]
 
 pub const fn lookup_mesh(_path_hash: u64) -> &'static [u8] {
+    b""
+}
+"#
+    .to_string()
+}
+
+fn default_static_collision_trimeshes_rs() -> String {
+    r#"#![allow(unused_imports)]
+
+pub const fn lookup_collision_trimesh(_path_hash: u64) -> &'static [u8] {
     b""
 }
 "#

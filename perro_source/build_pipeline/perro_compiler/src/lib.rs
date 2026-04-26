@@ -117,6 +117,9 @@ pub fn compile_project_bundle(project_root: &Path, profile: bool) -> Result<(), 
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     reset_embedded_dir(project_root)?;
     let _ = sync_scripts(project_root)?;
+    perro_static_pipeline::generate_static_collision_trimeshes(project_root).map_err(|err| {
+        CompilerError::SceneParse(format!("collision trimesh static generation failed: {err}"))
+    })?;
     perro_static_pipeline::generate_static_scenes(project_root).map_err(|err| {
         CompilerError::SceneParse(format!("scene static generation failed: {err}"))
     })?;
@@ -447,6 +450,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         particle_lookup: static_assets::particles::lookup_particle,\n\
         animation_lookup: static_assets::animations::lookup_animation,\n\
         mesh_lookup: static_assets::meshes::lookup_mesh,\n\
+        collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,\n\
         skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\
         texture_lookup: static_assets::textures::lookup_texture,\n\
         shader_lookup: static_assets::shaders::lookup_shader,\n\

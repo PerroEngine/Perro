@@ -319,3 +319,20 @@ rand = "0.9"
 
     fs::remove_dir_all(&root).expect("cleanup");
 }
+
+#[test]
+fn scaffold_project_release_strip_only_targets_project_package() {
+    let root = unique_temp_dir("perro_release_strip_project_only");
+    ensure_project_layout(&root).expect("layout");
+    ensure_project_scaffold(&root, "Strip Scope").expect("scaffold");
+
+    let project_manifest =
+        fs::read_to_string(root.join(".perro").join("project").join("Cargo.toml"))
+            .expect("read project manifest");
+    assert!(project_manifest.contains("[profile.release]\n"));
+    assert!(project_manifest.contains("strip = \"none\""));
+    assert!(project_manifest.contains("[profile.release.package.strip_scope]"));
+    assert!(project_manifest.contains("strip = \"symbols\""));
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
