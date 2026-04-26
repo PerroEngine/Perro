@@ -8,8 +8,8 @@ gltf = { version = "1.4.1", features = ["import", "utils"] }
 ahash = "0.8"
 glam = "0.31.0"
 libloading = "0.8"
-rapier2d = "0.23"
-rapier3d = "0.23"
+rapier2d = { version = "0.23", features = ["simd-stable", "parallel"] }
+rapier3d = { version = "0.23", features = ["simd-stable", "parallel"] }
 csv = "1.4"
 image = { version = "0.25", default-features = true, features = ["png"] }
 rayon = "1.10"

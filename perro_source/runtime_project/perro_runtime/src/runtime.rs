@@ -95,7 +95,28 @@ pub struct RuntimeFixedUpdateTiming {
     pub snapshot_update: Duration,
     pub script_fixed_update: Duration,
     pub physics: Duration,
+    pub physics_pre_transforms: Duration,
+    pub physics_collect: Duration,
+    pub physics_sync_world: Duration,
+    pub physics_apply_forces_impulses: Duration,
+    pub physics_step: Duration,
+    pub physics_sync_nodes: Duration,
+    pub physics_post_transforms: Duration,
+    pub physics_signals: Duration,
     pub internal_fixed_update: Duration,
+    pub total: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct RuntimePhysicsStepTiming {
+    pub pre_transforms: Duration,
+    pub collect: Duration,
+    pub sync_world: Duration,
+    pub apply_forces_impulses: Duration,
+    pub step: Duration,
+    pub sync_nodes: Duration,
+    pub post_transforms: Duration,
+    pub signals: Duration,
     pub total: Duration,
 }
 
@@ -240,9 +261,7 @@ impl Runtime {
         self.run_fixed_schedule();
         let script_fixed_update = script_fixed_start.elapsed();
 
-        let physics_start = Instant::now();
-        self.physics_fixed_step();
-        let physics = physics_start.elapsed();
+        let physics_timing = self.physics_fixed_step_timed();
 
         let internal_fixed_start = Instant::now();
         self.run_internal_fixed_update_schedule();
@@ -251,7 +270,15 @@ impl Runtime {
         RuntimeFixedUpdateTiming {
             snapshot_update,
             script_fixed_update,
-            physics,
+            physics: physics_timing.total,
+            physics_pre_transforms: physics_timing.pre_transforms,
+            physics_collect: physics_timing.collect,
+            physics_sync_world: physics_timing.sync_world,
+            physics_apply_forces_impulses: physics_timing.apply_forces_impulses,
+            physics_step: physics_timing.step,
+            physics_sync_nodes: physics_timing.sync_nodes,
+            physics_post_transforms: physics_timing.post_transforms,
+            physics_signals: physics_timing.signals,
             internal_fixed_update,
             total: total_start.elapsed(),
         }

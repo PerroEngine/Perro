@@ -20,7 +20,7 @@ use winit::{
 };
 
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
-const MAX_FIXED_STEPS_PER_FRAME: u32 = 8;
+const MAX_FIXED_STEPS_PER_FRAME: u32 = 2;
 const MAX_FRAME_DELTA_SECONDS: f32 = 0.250;
 const LOG_INTERVAL_SECONDS: f32 = 3.0;
 #[cfg(not(feature = "profile_heavy"))]
@@ -468,6 +468,22 @@ struct RunnerState<B: GraphicsBackend> {
     #[cfg(feature = "profile_heavy")]
     batch_fixed_internal_update: Duration,
     #[cfg(feature = "profile_heavy")]
+    batch_fixed_physics_pre_transforms: Duration,
+    #[cfg(feature = "profile_heavy")]
+    batch_fixed_physics_collect: Duration,
+    #[cfg(feature = "profile_heavy")]
+    batch_fixed_physics_sync_world: Duration,
+    #[cfg(feature = "profile_heavy")]
+    batch_fixed_physics_apply_forces_impulses: Duration,
+    #[cfg(feature = "profile_heavy")]
+    batch_fixed_physics_step: Duration,
+    #[cfg(feature = "profile_heavy")]
+    batch_fixed_physics_sync_nodes: Duration,
+    #[cfg(feature = "profile_heavy")]
+    batch_fixed_physics_post_transforms: Duration,
+    #[cfg(feature = "profile_heavy")]
+    batch_fixed_physics_signals: Duration,
+    #[cfg(feature = "profile_heavy")]
     batch_runtime_start_schedule: Duration,
     #[cfg(feature = "profile_heavy")]
     batch_runtime_snapshot_update: Duration,
@@ -645,6 +661,22 @@ impl<B: GraphicsBackend> RunnerState<B> {
             batch_fixed_physics_update: Duration::ZERO,
             #[cfg(feature = "profile_heavy")]
             batch_fixed_internal_update: Duration::ZERO,
+            #[cfg(feature = "profile_heavy")]
+            batch_fixed_physics_pre_transforms: Duration::ZERO,
+            #[cfg(feature = "profile_heavy")]
+            batch_fixed_physics_collect: Duration::ZERO,
+            #[cfg(feature = "profile_heavy")]
+            batch_fixed_physics_sync_world: Duration::ZERO,
+            #[cfg(feature = "profile_heavy")]
+            batch_fixed_physics_apply_forces_impulses: Duration::ZERO,
+            #[cfg(feature = "profile_heavy")]
+            batch_fixed_physics_step: Duration::ZERO,
+            #[cfg(feature = "profile_heavy")]
+            batch_fixed_physics_sync_nodes: Duration::ZERO,
+            #[cfg(feature = "profile_heavy")]
+            batch_fixed_physics_post_transforms: Duration::ZERO,
+            #[cfg(feature = "profile_heavy")]
+            batch_fixed_physics_signals: Duration::ZERO,
             #[cfg(feature = "profile_heavy")]
             batch_runtime_start_schedule: Duration::ZERO,
             #[cfg(feature = "profile_heavy")]
@@ -960,6 +992,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
                         self.batch_fixed_script_update += timing.script_fixed_update;
                         self.batch_fixed_physics_update += timing.physics;
                         self.batch_fixed_internal_update += timing.internal_fixed_update;
+                        self.batch_fixed_physics_pre_transforms += timing.physics_pre_transforms;
+                        self.batch_fixed_physics_collect += timing.physics_collect;
+                        self.batch_fixed_physics_sync_world += timing.physics_sync_world;
+                        self.batch_fixed_physics_apply_forces_impulses +=
+                            timing.physics_apply_forces_impulses;
+                        self.batch_fixed_physics_step += timing.physics_step;
+                        self.batch_fixed_physics_sync_nodes += timing.physics_sync_nodes;
+                        self.batch_fixed_physics_post_transforms += timing.physics_post_transforms;
+                        self.batch_fixed_physics_signals += timing.physics_signals;
                     }
                     #[cfg(not(feature = "profile_heavy"))]
                     {
@@ -980,6 +1021,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     self.batch_fixed_script_update += timing.script_fixed_update;
                     self.batch_fixed_physics_update += timing.physics;
                     self.batch_fixed_internal_update += timing.internal_fixed_update;
+                    self.batch_fixed_physics_pre_transforms += timing.physics_pre_transforms;
+                    self.batch_fixed_physics_collect += timing.physics_collect;
+                    self.batch_fixed_physics_sync_world += timing.physics_sync_world;
+                    self.batch_fixed_physics_apply_forces_impulses +=
+                        timing.physics_apply_forces_impulses;
+                    self.batch_fixed_physics_step += timing.physics_step;
+                    self.batch_fixed_physics_sync_nodes += timing.physics_sync_nodes;
+                    self.batch_fixed_physics_post_transforms += timing.physics_post_transforms;
+                    self.batch_fixed_physics_signals += timing.physics_signals;
                 }
                 #[cfg(not(feature = "profile_heavy"))]
                 {
@@ -1232,6 +1282,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
                         self.batch_fixed_script_update += timing.script_fixed_update;
                         self.batch_fixed_physics_update += timing.physics;
                         self.batch_fixed_internal_update += timing.internal_fixed_update;
+                        self.batch_fixed_physics_pre_transforms += timing.physics_pre_transforms;
+                        self.batch_fixed_physics_collect += timing.physics_collect;
+                        self.batch_fixed_physics_sync_world += timing.physics_sync_world;
+                        self.batch_fixed_physics_apply_forces_impulses +=
+                            timing.physics_apply_forces_impulses;
+                        self.batch_fixed_physics_step += timing.physics_step;
+                        self.batch_fixed_physics_sync_nodes += timing.physics_sync_nodes;
+                        self.batch_fixed_physics_post_transforms += timing.physics_post_transforms;
+                        self.batch_fixed_physics_signals += timing.physics_signals;
                     }
                     #[cfg(not(feature = "profile_heavy"))]
                     {
@@ -1252,6 +1311,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     self.batch_fixed_script_update += timing.script_fixed_update;
                     self.batch_fixed_physics_update += timing.physics;
                     self.batch_fixed_internal_update += timing.internal_fixed_update;
+                    self.batch_fixed_physics_pre_transforms += timing.physics_pre_transforms;
+                    self.batch_fixed_physics_collect += timing.physics_collect;
+                    self.batch_fixed_physics_sync_world += timing.physics_sync_world;
+                    self.batch_fixed_physics_apply_forces_impulses +=
+                        timing.physics_apply_forces_impulses;
+                    self.batch_fixed_physics_step += timing.physics_step;
+                    self.batch_fixed_physics_sync_nodes += timing.physics_sync_nodes;
+                    self.batch_fixed_physics_post_transforms += timing.physics_post_transforms;
+                    self.batch_fixed_physics_signals += timing.physics_signals;
                 }
                 #[cfg(not(feature = "profile_heavy"))]
                 {
@@ -1467,6 +1535,27 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     self.batch_fixed_physics_update.as_micros() as f64 / self.batch_frames as f64;
                 let avg_fixed_internal_update_us =
                     self.batch_fixed_internal_update.as_micros() as f64 / self.batch_frames as f64;
+                let avg_fixed_physics_pre_transforms_us =
+                    self.batch_fixed_physics_pre_transforms.as_micros() as f64
+                        / self.batch_frames as f64;
+                let avg_fixed_physics_collect_us =
+                    self.batch_fixed_physics_collect.as_micros() as f64 / self.batch_frames as f64;
+                let avg_fixed_physics_sync_world_us =
+                    self.batch_fixed_physics_sync_world.as_micros() as f64
+                        / self.batch_frames as f64;
+                let avg_fixed_physics_apply_forces_impulses_us =
+                    self.batch_fixed_physics_apply_forces_impulses.as_micros() as f64
+                        / self.batch_frames as f64;
+                let avg_fixed_physics_step_us =
+                    self.batch_fixed_physics_step.as_micros() as f64 / self.batch_frames as f64;
+                let avg_fixed_physics_sync_nodes_us =
+                    self.batch_fixed_physics_sync_nodes.as_micros() as f64
+                        / self.batch_frames as f64;
+                let avg_fixed_physics_post_transforms_us =
+                    self.batch_fixed_physics_post_transforms.as_micros() as f64
+                        / self.batch_frames as f64;
+                let avg_fixed_physics_signals_us =
+                    self.batch_fixed_physics_signals.as_micros() as f64 / self.batch_frames as f64;
                 let avg_runtime_script_update_us =
                     self.batch_runtime_script_update.as_micros() as f64 / self.batch_frames as f64;
                 let avg_runtime_script_count =
@@ -1586,6 +1675,17 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     avg_fixed_internal_update_us
                 );
                 println!(
+                    "physics breakdown: pre_xform=({:.3}us) collect=({:.3}us) sync_world=({:.3}us) apply=({:.3}us) step=({:.3}us) sync_nodes=({:.3}us) post_xform=({:.3}us) signals=({:.3}us)",
+                    avg_fixed_physics_pre_transforms_us,
+                    avg_fixed_physics_collect_us,
+                    avg_fixed_physics_sync_world_us,
+                    avg_fixed_physics_apply_forces_impulses_us,
+                    avg_fixed_physics_step_us,
+                    avg_fixed_physics_sync_nodes_us,
+                    avg_fixed_physics_post_transforms_us,
+                    avg_fixed_physics_signals_us
+                );
+                println!(
                     "user scripts: ({:.3}us avg) | script calls/frame: ({:.2}) | slowest script: ({:.3}us)",
                     avg_runtime_script_update_us,
                     avg_runtime_script_count,
@@ -1683,6 +1783,14 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 self.batch_fixed_script_update = Duration::ZERO;
                 self.batch_fixed_physics_update = Duration::ZERO;
                 self.batch_fixed_internal_update = Duration::ZERO;
+                self.batch_fixed_physics_pre_transforms = Duration::ZERO;
+                self.batch_fixed_physics_collect = Duration::ZERO;
+                self.batch_fixed_physics_sync_world = Duration::ZERO;
+                self.batch_fixed_physics_apply_forces_impulses = Duration::ZERO;
+                self.batch_fixed_physics_step = Duration::ZERO;
+                self.batch_fixed_physics_sync_nodes = Duration::ZERO;
+                self.batch_fixed_physics_post_transforms = Duration::ZERO;
+                self.batch_fixed_physics_signals = Duration::ZERO;
                 self.batch_runtime_start_schedule = Duration::ZERO;
                 self.batch_runtime_snapshot_update = Duration::ZERO;
                 self.batch_runtime_script_update = Duration::ZERO;
@@ -1802,6 +1910,14 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.batch_fixed_script_update = Duration::ZERO;
                 self.batch_fixed_physics_update = Duration::ZERO;
                 self.batch_fixed_internal_update = Duration::ZERO;
+                self.batch_fixed_physics_pre_transforms = Duration::ZERO;
+                self.batch_fixed_physics_collect = Duration::ZERO;
+                self.batch_fixed_physics_sync_world = Duration::ZERO;
+                self.batch_fixed_physics_apply_forces_impulses = Duration::ZERO;
+                self.batch_fixed_physics_step = Duration::ZERO;
+                self.batch_fixed_physics_sync_nodes = Duration::ZERO;
+                self.batch_fixed_physics_post_transforms = Duration::ZERO;
+                self.batch_fixed_physics_signals = Duration::ZERO;
                 self.batch_runtime_start_schedule = Duration::ZERO;
                 self.batch_runtime_snapshot_update = Duration::ZERO;
                 self.batch_runtime_script_update = Duration::ZERO;

@@ -76,6 +76,12 @@ perro_bark = {path = "perro_source/audio_stack/perro_bark"}
 perro_cli = {path="perro_source/devtools/perro_cli"}
 perro_dev_runner = {path="perro_source/devtools/perro_dev_runner"}
 
+[profile.release.package.rapier2d]
+opt-level = 3
+
+[profile.release.package.rapier3d]
+opt-level = 3
+
 [profile.release]
 opt-level = 2
 lto = "none"

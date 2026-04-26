@@ -2955,9 +2955,11 @@ dependencies = [
  "ordered-float 4.6.0",
  "parry2d",
  "profiling",
+ "rayon",
  "rustc-hash 2.1.1",
  "simba",
  "thiserror 1.0.69",
+ "vec_map",
 ]
 
 [[package]]
@@ -2979,9 +2981,11 @@ dependencies = [
  "ordered-float 4.6.0",
  "parry3d",
  "profiling",
+ "rayon",
  "rustc-hash 2.1.1",
  "simba",
  "thiserror 1.0.69",
+ "vec_map",
 ]
 
 [[package]]

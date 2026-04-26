@@ -10,10 +10,13 @@ use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use perro_variant::Variant;
 use rapier2d::{na as na2, prelude as r2};
 use rapier3d::{na as na3, prelude as r3};
+use super::RuntimePhysicsStepTiming;
 
 const MAX_CCD_SUBSTEPS: usize = 2;
 const CCD_MIN_SPEED_SQ_2D: f32 = 16.0;
 const CCD_MIN_SPEED_SQ_3D: f32 = 16.0;
+const MAX_RIGID_SPEED_2D: f32 = 80.0;
+const MAX_RIGID_SPEED_3D: f32 = 80.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BodyKind {
@@ -303,33 +306,68 @@ impl PhysicsWorld3D {
 }
 
 impl Runtime {
-    pub(crate) fn physics_fixed_step(&mut self) {
-        // Ensure global transform cache reflects queued transform-root dirtiness
-        // before we collect body descriptors for this physics tick.
+    pub(crate) fn physics_fixed_step_timed(&mut self) -> RuntimePhysicsStepTiming {
+        let total_start = std::time::Instant::now();
+
+        let pre_transforms_start = std::time::Instant::now();
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
+        let pre_transforms = pre_transforms_start.elapsed();
 
+        let collect_start = std::time::Instant::now();
         let bodies_2d = self.collect_body_descs_2d();
         let bodies_3d = self.collect_body_descs_3d();
+        let collect = collect_start.elapsed();
+
+        let sync_world_start = std::time::Instant::now();
         self.sync_world_2d(&bodies_2d);
         self.sync_world_3d(&bodies_3d);
+        let sync_world = sync_world_start.elapsed();
+
+        let apply_forces_impulses_start = std::time::Instant::now();
         self.apply_pending_forces_2d();
         self.apply_pending_forces_3d();
         self.apply_pending_impulses_2d();
         self.apply_pending_impulses_3d();
+        let apply_forces_impulses = apply_forces_impulses_start.elapsed();
+
+        let step_start = std::time::Instant::now();
         self.step_world_2d();
         self.step_world_3d();
+        let step = step_start.elapsed();
+
+        let sync_nodes_start = std::time::Instant::now();
         self.sync_world_to_nodes_2d();
         self.sync_world_to_nodes_3d();
+        let sync_nodes = sync_nodes_start.elapsed();
 
-        // Physics writes globals via set_global_transform_* which queues transform roots.
-        // Flush now so same-tick reads (including debugging and overlap users) see up-to-date globals.
+        let post_transforms_start = std::time::Instant::now();
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
+        let post_transforms = post_transforms_start.elapsed();
+
+        let signals_start = std::time::Instant::now();
         self.emit_collision_signals_2d();
         self.emit_collision_signals_3d();
         self.emit_area_signals_2d();
         self.emit_area_signals_3d();
+        let signals = signals_start.elapsed();
+
+        RuntimePhysicsStepTiming {
+            pre_transforms,
+            collect,
+            sync_world,
+            apply_forces_impulses,
+            step,
+            sync_nodes,
+            post_transforms,
+            signals,
+            total: total_start.elapsed(),
+        }
+    }
+
+    pub(crate) fn physics_fixed_step(&mut self) {
+        let _ = self.physics_fixed_step_timed();
     }
 
     pub(crate) fn queue_impulse_2d(&mut self, id: NodeID, impulse: Vector2) {
@@ -638,8 +676,9 @@ impl Runtime {
                     if !approx_eq_f32(rb.angular_damping(), rigid.angular_damping) {
                         rb.set_angular_damping(rigid.angular_damping);
                     }
+                    let target_speed_sq = target_lin.norm_squared();
                     let target_ccd = rigid.continuous_collision_detection
-                        && target_lin.norm_squared() >= CCD_MIN_SPEED_SQ_2D;
+                        && target_speed_sq >= CCD_MIN_SPEED_SQ_2D;
                     if rb.is_ccd_enabled() != target_ccd {
                         rb.enable_ccd(target_ccd);
                     }
@@ -810,8 +849,9 @@ impl Runtime {
                         rb.set_angular_damping(rigid.angular_damping);
                     }
                     rb.set_additional_mass(rigid.mass.max(0.0), true);
+                    let target_speed_sq = target_lin.norm_squared();
                     let target_ccd = rigid.continuous_collision_detection
-                        && target_lin.norm_squared() >= CCD_MIN_SPEED_SQ_3D;
+                        && target_speed_sq >= CCD_MIN_SPEED_SQ_3D;
                     if rb.is_ccd_enabled() != target_ccd {
                         rb.enable_ccd(target_ccd);
                     }
@@ -951,6 +991,7 @@ impl Runtime {
                 na2::Vector2::new(impulse.impulse.x, impulse.impulse.y),
                 true,
             );
+            clamp_rb_speed_2d(rb, MAX_RIGID_SPEED_2D);
         }
         self.physics.pending_impulses_2d = pending;
     }
@@ -979,6 +1020,7 @@ impl Runtime {
                 na2::Vector2::new(force.force.x * dt, force.force.y * dt),
                 true,
             );
+            clamp_rb_speed_2d(rb, MAX_RIGID_SPEED_2D);
         }
         self.physics.pending_forces_2d = pending;
     }
@@ -1008,6 +1050,7 @@ impl Runtime {
                 na3::Vector3::new(impulse.impulse.x, impulse.impulse.y, impulse.impulse.z),
                 true,
             );
+            clamp_rb_speed_3d(rb, MAX_RIGID_SPEED_3D);
         }
         self.physics.pending_impulses_3d = pending;
     }
@@ -1038,6 +1081,7 @@ impl Runtime {
                 na3::Vector3::new(force.force.x * dt, force.force.y * dt, force.force.z * dt),
                 true,
             );
+            clamp_rb_speed_3d(rb, MAX_RIGID_SPEED_3D);
         }
         self.physics.pending_forces_3d = pending;
     }
@@ -1343,6 +1387,7 @@ impl Runtime {
         let _ = SignalAPI::signal_emit(self, signal_id, &params);
     }
 }
+
 fn body_signature_seed(kind: BodyKind) -> u64 {
     match kind {
         BodyKind::Static => 0xA91B_D58C_24F1_7E31,
@@ -1524,6 +1569,34 @@ fn shape_desc_3d(shape: &CollisionShape3D, friction: f32, restitution: f32) -> S
 
 fn approx_eq_f32(a: f32, b: f32) -> bool {
     (a - b).abs() <= 0.000_01
+}
+
+fn clamp_rb_speed_2d(rb: &mut r2::RigidBody, max_speed: f32) {
+    if max_speed <= 0.0 {
+        return;
+    }
+    let current = *rb.linvel();
+    let speed_sq = current.norm_squared();
+    let max_sq = max_speed * max_speed;
+    if speed_sq <= max_sq || speed_sq <= 0.0 {
+        return;
+    }
+    let scale = max_speed / speed_sq.sqrt();
+    rb.set_linvel(current * scale, true);
+}
+
+fn clamp_rb_speed_3d(rb: &mut r3::RigidBody, max_speed: f32) {
+    if max_speed <= 0.0 {
+        return;
+    }
+    let current = *rb.linvel();
+    let speed_sq = current.norm_squared();
+    let max_sq = max_speed * max_speed;
+    if speed_sq <= max_sq || speed_sq <= 0.0 {
+        return;
+    }
+    let scale = max_speed / speed_sq.sqrt();
+    rb.set_linvel(current * scale, true);
 }
 
 fn build_rigid_body_2d(desc: &BodyDesc2D) -> r2::RigidBody {
