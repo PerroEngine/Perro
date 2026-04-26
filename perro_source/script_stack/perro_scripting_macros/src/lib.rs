@@ -100,6 +100,7 @@ fn derive_state_field_struct(
 
     let mut from_fields = Vec::new();
     let mut to_fields = Vec::new();
+    let mut schema_fields = Vec::new();
 
     for field in fields.named {
         let Some(field_ident) = field.ident else {
@@ -107,6 +108,7 @@ fn derive_state_field_struct(
         };
         let field_ty = field.ty;
         let field_key = field_ident.to_string();
+        schema_fields.push(field_key.clone());
 
         from_fields.push(quote! {
             #field_ident: <#field_ty as ::perro_api::variant::VariantCodec>::from_variant(obj.get(#field_key)?)?
@@ -129,6 +131,12 @@ fn derive_state_field_struct(
                 let mut out = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
                 #(#to_fields)*
                 ::perro_api::variant::Variant::Object(out)
+            }
+        }
+
+        impl #impl_generics ::perro_api::variant::VariantSchema for #ident #ty_generics #where_clause {
+            fn field_names() -> &'static [&'static str] {
+                &[#(#schema_fields),*]
             }
         }
     };
@@ -278,6 +286,8 @@ fn derive_state_field_enum(
                 ::perro_api::variant::Variant::Object(out)
             }
         }
+
+        impl #impl_generics ::perro_api::variant::VariantSchema for #ident #ty_generics #where_clause {}
     };
 
     expanded.into()

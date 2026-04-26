@@ -2230,7 +2230,7 @@ fn generate_get_var_body(state_ty: &str, fields: &[ScriptField]) -> String {
             field.name
         ));
     }
-    out.push_str("            _ => Variant::Null,\n");
+    out.push_str("            _ => __perro_get_nested_var(state, var).unwrap_or(Variant::Null),\n");
     out.push_str("        }");
     out
 }
@@ -2286,9 +2286,80 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
             "            {const_name} => {{\n                {assign_block}\n            }}\n"
         ));
     }
-    out.push_str("            _ => {}\n");
+    out.push_str("            _ => {\n");
+    out.push_str("                __perro_set_nested_var(state, var, value);\n");
+    out.push_str("            }\n");
     out.push_str("        }\n");
-    out.push('}');
+    out.push_str("}\n\n");
+
+    out.push_str(
+        "fn __perro_get_nested_by_hash(prefix: &str, value: &Variant, var: ScriptMemberID) -> Option<Variant> {\n",
+    );
+    out.push_str("    let obj = value.as_object()?;\n");
+    out.push_str("    for (key, child) in obj {\n");
+    out.push_str("        let full = if prefix.is_empty() {\n");
+    out.push_str("            key.to_string()\n");
+    out.push_str("        } else {\n");
+    out.push_str("            format!(\"{prefix}.{}\", key.as_ref())\n");
+    out.push_str("        };\n");
+    out.push_str("        if ScriptMemberID::from_string(full.as_str()) == var {\n");
+    out.push_str("            return Some(child.clone());\n");
+    out.push_str("        }\n");
+    out.push_str("        if let Some(found) = __perro_get_nested_by_hash(full.as_str(), child, var) {\n");
+    out.push_str("            return Some(found);\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    None\n");
+    out.push_str("}\n\n");
+
+    out.push_str(
+        "fn __perro_set_nested_by_hash(prefix: &str, value: &mut Variant, var: ScriptMemberID, new_value: &Variant) -> bool {\n",
+    );
+    out.push_str("    let Some(obj) = value.as_object_mut() else {\n");
+    out.push_str("        return false;\n");
+    out.push_str("    };\n");
+    out.push_str("    for (key, child) in obj {\n");
+    out.push_str("        let full = if prefix.is_empty() {\n");
+    out.push_str("            key.to_string()\n");
+    out.push_str("        } else {\n");
+    out.push_str("            format!(\"{prefix}.{}\", key.as_ref())\n");
+    out.push_str("        };\n");
+    out.push_str("        if ScriptMemberID::from_string(full.as_str()) == var {\n");
+    out.push_str("            *child = new_value.clone();\n");
+    out.push_str("            return true;\n");
+    out.push_str("        }\n");
+    out.push_str(
+        "        if __perro_set_nested_by_hash(full.as_str(), child, var, new_value) {\n",
+    );
+    out.push_str("            return true;\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    false\n");
+    out.push_str("}\n\n");
+
+    out.push_str(&format!(
+        "fn __perro_get_nested_var(state: &{state_ty}, var: ScriptMemberID) -> Option<Variant> {{\n"
+    ));
+    for field in fields {
+        out.push_str(&format!(
+            "    {{\n        let nested_root = perro_api::variant::VariantCodec::to_variant(&state.{});\n        if let Some(value) = __perro_get_nested_by_hash(\"{}\", &nested_root, var) {{\n            return Some(value);\n        }}\n    }}\n",
+            field.name, field.name
+        ));
+    }
+    out.push_str("    None\n");
+    out.push_str("}\n\n");
+
+    out.push_str(&format!(
+        "fn __perro_set_nested_var(state: &mut {state_ty}, var: ScriptMemberID, value: &Variant) {{\n"
+    ));
+    for field in fields {
+        let ty = normalize_type(&field.ty);
+        out.push_str(&format!(
+            "    {{\n        let mut nested_root = perro_api::variant::VariantCodec::to_variant(&state.{});\n        if __perro_set_nested_by_hash(\"{}\", &mut nested_root, var, value) {{\n            if let Some(decoded) = <{ty} as perro_api::variant::VariantCodec>::from_variant(&nested_root) {{\n                state.{} = decoded;\n            }}\n            return;\n        }}\n    }}\n",
+            field.name, field.name, field.name
+        ));
+    }
+    out.push_str("}\n");
     out
 }
 
@@ -2733,6 +2804,29 @@ pub struct StateOnly {
             transpiled_exports_script_ctor(&transpiled),
             "state-backed scripts should register constructors"
         );
+    }
+
+    #[test]
+    fn transpiled_state_includes_nested_var_helpers() {
+        let source = r#"
+use perro_api::prelude::*;
+
+#[derive(Variant, Clone)]
+pub struct Person {
+    pub name: String,
+}
+
+#[State]
+pub struct NestedState {
+    #[default = Person { name: String::new() }]
+    pub person: Person,
+}
+"#;
+
+        let transpiled = transpile_frontend_script(source, "res://scripts/nested_state.rs");
+        assert!(transpiled.contains("__perro_get_nested_var"));
+        assert!(transpiled.contains("__perro_set_nested_var"));
+        assert!(transpiled.contains("ScriptMemberID::from_string(full.as_str())"));
     }
 
     #[test]

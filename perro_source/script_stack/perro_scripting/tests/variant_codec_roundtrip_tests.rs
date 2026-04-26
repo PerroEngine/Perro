@@ -1,11 +1,11 @@
 extern crate self as perro_api;
 
 pub mod variant {
-    pub use perro_variant::{Variant, VariantCodec};
+    pub use perro_variant::{Variant, VariantCodec, VariantSchema};
 }
 
 use perro_scripting::Variant;
-use perro_variant::VariantCodec;
+use perro_variant::{VariantCodec, VariantSchema};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -145,4 +145,18 @@ fn enum_encoding_shape_contains_variant_tag_and_data() {
         Some("Charging")
     );
     assert!(obj.get("__data").is_some());
+}
+
+#[test]
+fn derive_variant_emits_schema_field_names_for_structs() {
+    assert_eq!(Vec3Like::field_names(), &["x", "y", "z"]);
+    assert_eq!(
+        BotProfile::field_names(),
+        &["name", "enabled", "tuning", "overrides", "focus"]
+    );
+}
+
+#[test]
+fn derive_variant_schema_for_enum_defaults_to_empty() {
+    assert!(BotState::field_names().is_empty());
 }

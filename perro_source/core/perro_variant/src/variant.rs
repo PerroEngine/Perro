@@ -187,6 +187,16 @@ pub trait VariantCodec: Sized {
     fn to_variant(&self) -> Variant;
 }
 
+/// Optional compile-time introspection metadata for Variant-derived types.
+///
+/// By default types expose no fields (`&[]`). `#[derive(Variant)]` on structs
+/// emits direct field-name metadata.
+pub trait VariantSchema {
+    fn field_names() -> &'static [&'static str] {
+        &[]
+    }
+}
+
 impl fmt::Display for Variant {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
