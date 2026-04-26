@@ -9,7 +9,7 @@ use perro_input::InputSnapshot;
 use perro_runtime_context::sub_apis::PreloadedSceneID;
 use perro_scene::Scene;
 use perro_scripting::{ScriptBehavior, ScriptConstructor};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{cell::RefCell, sync::Arc};
 
 mod input_bridge;
@@ -87,6 +87,15 @@ pub struct RuntimeUpdateTiming {
     pub snapshot_update: Duration,
     pub update_schedule: UpdateScheduleTiming,
     pub internal_update: Duration,
+    pub total: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RuntimeFixedUpdateTiming {
+    pub snapshot_update: Duration,
+    pub script_fixed_update: Duration,
+    pub physics: Duration,
+    pub internal_fixed_update: Duration,
     pub total: Duration,
 }
 
@@ -216,6 +225,36 @@ impl Runtime {
         self.run_fixed_schedule();
         self.physics_fixed_step();
         self.run_internal_fixed_update_schedule();
+    }
+
+    #[inline]
+    pub fn fixed_update_timed(&mut self, fixed_delta_time: f32) -> RuntimeFixedUpdateTiming {
+        let total_start = Instant::now();
+        self.time.fixed_delta = fixed_delta_time;
+
+        let snapshot_start = Instant::now();
+        self.schedules.snapshot_fixed(&self.scripts);
+        let snapshot_update = snapshot_start.elapsed();
+
+        let script_fixed_start = Instant::now();
+        self.run_fixed_schedule();
+        let script_fixed_update = script_fixed_start.elapsed();
+
+        let physics_start = Instant::now();
+        self.physics_fixed_step();
+        let physics = physics_start.elapsed();
+
+        let internal_fixed_start = Instant::now();
+        self.run_internal_fixed_update_schedule();
+        let internal_fixed_update = internal_fixed_start.elapsed();
+
+        RuntimeFixedUpdateTiming {
+            snapshot_update,
+            script_fixed_update,
+            physics,
+            internal_fixed_update,
+            total: total_start.elapsed(),
+        }
     }
 }
 

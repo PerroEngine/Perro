@@ -10,6 +10,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 const SKY_DAY_SECONDS: f32 = 1580.0;
+const SKY_CLOUD_TIME_SPEED_SCALE: f32 = 0.2;
+const SKY_CLOUD_TIME_UPDATE_EVERY_FRAMES: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Draw3DKind {
@@ -75,6 +77,8 @@ pub struct Renderer3D {
     draw_revision: u64,
     last_frame_time: Option<Instant>,
     cloud_time_seconds: f32,
+    cloud_time_pending_seconds: f32,
+    cloud_time_pending_frames: u32,
 }
 
 impl Renderer3D {
@@ -202,8 +206,16 @@ impl Renderer3D {
             .last_frame_time
             .map(|prev| now.duration_since(prev).as_secs_f32())
             .unwrap_or(0.0);
+        let dt = dt.max(0.0);
         self.last_frame_time = Some(now);
-        self.cloud_time_seconds = (self.cloud_time_seconds + dt.max(0.0)).rem_euclid(1.0e9);
+        self.cloud_time_pending_seconds += dt;
+        self.cloud_time_pending_frames = self.cloud_time_pending_frames.wrapping_add(1);
+        if self.cloud_time_pending_frames >= SKY_CLOUD_TIME_UPDATE_EVERY_FRAMES {
+            let cloud_step = self.cloud_time_pending_seconds * SKY_CLOUD_TIME_SPEED_SCALE;
+            self.cloud_time_seconds = (self.cloud_time_seconds + cloud_step).rem_euclid(1.0e9);
+            self.cloud_time_pending_seconds = 0.0;
+            self.cloud_time_pending_frames = 0;
+        }
 
         for draw in self.queued_draws.drain(..) {
             let material_ready = draw.surfaces.iter().all(|surface| {
@@ -420,6 +432,8 @@ impl Default for Renderer3D {
             draw_revision: 0,
             last_frame_time: None,
             cloud_time_seconds: 0.0,
+            cloud_time_pending_seconds: 0.0,
+            cloud_time_pending_frames: 0,
         }
     }
 }

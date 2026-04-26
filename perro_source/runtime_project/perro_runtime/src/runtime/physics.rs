@@ -11,6 +11,10 @@ use perro_variant::Variant;
 use rapier2d::{na as na2, prelude as r2};
 use rapier3d::{na as na3, prelude as r3};
 
+const MAX_CCD_SUBSTEPS: usize = 2;
+const CCD_MIN_SPEED_SQ_2D: f32 = 16.0;
+const CCD_MIN_SPEED_SQ_3D: f32 = 16.0;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BodyKind {
     Static,
@@ -253,7 +257,7 @@ impl Default for PhysicsState {
 impl PhysicsWorld2D {
     fn new() -> Self {
         let integration_parameters = r2::IntegrationParameters {
-            max_ccd_substeps: 4,
+            max_ccd_substeps: MAX_CCD_SUBSTEPS,
             ..r2::IntegrationParameters::default()
         };
         Self {
@@ -277,7 +281,7 @@ impl PhysicsWorld2D {
 impl PhysicsWorld3D {
     fn new() -> Self {
         let integration_parameters = r3::IntegrationParameters {
-            max_ccd_substeps: 4,
+            max_ccd_substeps: MAX_CCD_SUBSTEPS,
             ..r3::IntegrationParameters::default()
         };
         Self {
@@ -592,33 +596,63 @@ impl Runtime {
             state.kind = body.kind;
             if let Some(rb) = world.bodies.get_mut(state.handle) {
                 rb.set_enabled(body.enabled);
-                rb.set_body_type(
-                    match body.kind {
-                        BodyKind::Static => r2::RigidBodyType::Fixed,
-                        BodyKind::Area => r2::RigidBodyType::Fixed,
-                        BodyKind::Rigid => r2::RigidBodyType::Dynamic,
-                    },
-                    true,
-                );
-                rb.set_position(transform_to_iso2(body.global), true);
+                let target_body_type = match body.kind {
+                    BodyKind::Static => r2::RigidBodyType::Fixed,
+                    BodyKind::Area => r2::RigidBodyType::Fixed,
+                    BodyKind::Rigid => r2::RigidBodyType::Dynamic,
+                };
+                if rb.body_type() != target_body_type {
+                    rb.set_body_type(target_body_type, true);
+                }
+
+                let target_pos = transform_to_iso2(body.global);
+                let current_pos = rb.position();
+                let pos_changed = !approx_eq_f32(
+                    current_pos.translation.vector.x,
+                    target_pos.translation.vector.x,
+                ) || !approx_eq_f32(
+                    current_pos.translation.vector.y,
+                    target_pos.translation.vector.y,
+                ) || !approx_eq_f32(current_pos.rotation.angle(), target_pos.rotation.angle());
+                if pos_changed {
+                    rb.set_position(target_pos, true);
+                }
 
                 if let Some(rigid) = body.rigid {
-                    rb.set_linvel(
-                        na2::Vector2::new(rigid.linear_velocity.x, rigid.linear_velocity.y),
-                        true,
-                    );
-                    rb.set_angvel(rigid.angular_velocity, true);
-                    rb.set_gravity_scale(rigid.gravity_scale, true);
-                    rb.set_linear_damping(rigid.linear_damping);
-                    rb.set_angular_damping(rigid.angular_damping);
-                    rb.enable_ccd(rigid.continuous_collision_detection);
+                    let target_lin = na2::Vector2::new(rigid.linear_velocity.x, rigid.linear_velocity.y);
+                    let current_lin = rb.linvel();
+                    if !approx_eq_f32(current_lin.x, target_lin.x)
+                        || !approx_eq_f32(current_lin.y, target_lin.y)
+                    {
+                        rb.set_linvel(target_lin, true);
+                    }
+                    if !approx_eq_f32(rb.angvel(), rigid.angular_velocity) {
+                        rb.set_angvel(rigid.angular_velocity, true);
+                    }
+                    if !approx_eq_f32(rb.gravity_scale(), rigid.gravity_scale) {
+                        rb.set_gravity_scale(rigid.gravity_scale, true);
+                    }
+                    if !approx_eq_f32(rb.linear_damping(), rigid.linear_damping) {
+                        rb.set_linear_damping(rigid.linear_damping);
+                    }
+                    if !approx_eq_f32(rb.angular_damping(), rigid.angular_damping) {
+                        rb.set_angular_damping(rigid.angular_damping);
+                    }
+                    let target_ccd = rigid.continuous_collision_detection
+                        && target_lin.norm_squared() >= CCD_MIN_SPEED_SQ_2D;
+                    if rb.is_ccd_enabled() != target_ccd {
+                        rb.enable_ccd(target_ccd);
+                    }
                 } else {
-                    rb.enable_ccd(false);
+                    if rb.is_ccd_enabled() {
+                        rb.enable_ccd(false);
+                    }
                 }
             }
 
             if state.shape_signature != body.shape_signature {
                 for handle in state.colliders.drain(..) {
+                    world.collider_owners.remove(&handle);
                     let _ =
                         world
                             .colliders
@@ -712,45 +746,85 @@ impl Runtime {
             state.kind = body.kind;
             if let Some(rb) = world.bodies.get_mut(state.handle) {
                 rb.set_enabled(body.enabled);
-                rb.set_body_type(
-                    match body.kind {
-                        BodyKind::Static => r3::RigidBodyType::Fixed,
-                        BodyKind::Area => r3::RigidBodyType::Fixed,
-                        BodyKind::Rigid => r3::RigidBodyType::Dynamic,
-                    },
-                    true,
-                );
-                rb.set_position(transform_to_iso3(body.global), true);
+                let target_body_type = match body.kind {
+                    BodyKind::Static => r3::RigidBodyType::Fixed,
+                    BodyKind::Area => r3::RigidBodyType::Fixed,
+                    BodyKind::Rigid => r3::RigidBodyType::Dynamic,
+                };
+                if rb.body_type() != target_body_type {
+                    rb.set_body_type(target_body_type, true);
+                }
+
+                let target_pos = transform_to_iso3(body.global);
+                let current_pos = rb.position();
+                let pos_changed = !approx_eq_f32(
+                    current_pos.translation.vector.x,
+                    target_pos.translation.vector.x,
+                ) || !approx_eq_f32(
+                    current_pos.translation.vector.y,
+                    target_pos.translation.vector.y,
+                ) || !approx_eq_f32(
+                    current_pos.translation.vector.z,
+                    target_pos.translation.vector.z,
+                ) || !approx_eq_f32(current_pos.rotation.i, target_pos.rotation.i)
+                    || !approx_eq_f32(current_pos.rotation.j, target_pos.rotation.j)
+                    || !approx_eq_f32(current_pos.rotation.k, target_pos.rotation.k)
+                    || !approx_eq_f32(current_pos.rotation.w, target_pos.rotation.w);
+                if pos_changed {
+                    rb.set_position(target_pos, true);
+                }
 
                 if let Some(rigid) = body.rigid {
-                    rb.set_linvel(
-                        na3::Vector3::new(
-                            rigid.linear_velocity.x,
-                            rigid.linear_velocity.y,
-                            rigid.linear_velocity.z,
-                        ),
-                        true,
+                    let target_lin = na3::Vector3::new(
+                        rigid.linear_velocity.x,
+                        rigid.linear_velocity.y,
+                        rigid.linear_velocity.z,
                     );
-                    rb.set_angvel(
-                        na3::Vector3::new(
-                            rigid.angular_velocity.x,
-                            rigid.angular_velocity.y,
-                            rigid.angular_velocity.z,
-                        ),
-                        true,
+                    let current_lin = rb.linvel();
+                    if !approx_eq_f32(current_lin.x, target_lin.x)
+                        || !approx_eq_f32(current_lin.y, target_lin.y)
+                        || !approx_eq_f32(current_lin.z, target_lin.z)
+                    {
+                        rb.set_linvel(target_lin, true);
+                    }
+
+                    let target_ang = na3::Vector3::new(
+                        rigid.angular_velocity.x,
+                        rigid.angular_velocity.y,
+                        rigid.angular_velocity.z,
                     );
-                    rb.set_gravity_scale(rigid.gravity_scale, true);
-                    rb.set_linear_damping(rigid.linear_damping);
-                    rb.set_angular_damping(rigid.angular_damping);
+                    let current_ang = rb.angvel();
+                    if !approx_eq_f32(current_ang.x, target_ang.x)
+                        || !approx_eq_f32(current_ang.y, target_ang.y)
+                        || !approx_eq_f32(current_ang.z, target_ang.z)
+                    {
+                        rb.set_angvel(target_ang, true);
+                    }
+                    if !approx_eq_f32(rb.gravity_scale(), rigid.gravity_scale) {
+                        rb.set_gravity_scale(rigid.gravity_scale, true);
+                    }
+                    if !approx_eq_f32(rb.linear_damping(), rigid.linear_damping) {
+                        rb.set_linear_damping(rigid.linear_damping);
+                    }
+                    if !approx_eq_f32(rb.angular_damping(), rigid.angular_damping) {
+                        rb.set_angular_damping(rigid.angular_damping);
+                    }
                     rb.set_additional_mass(rigid.mass.max(0.0), true);
-                    rb.enable_ccd(rigid.continuous_collision_detection);
+                    let target_ccd = rigid.continuous_collision_detection
+                        && target_lin.norm_squared() >= CCD_MIN_SPEED_SQ_3D;
+                    if rb.is_ccd_enabled() != target_ccd {
+                        rb.enable_ccd(target_ccd);
+                    }
                 } else {
-                    rb.enable_ccd(false);
+                    if rb.is_ccd_enabled() {
+                        rb.enable_ccd(false);
+                    }
                 }
             }
 
             if state.shape_signature != body.shape_signature {
                 for handle in state.colliders.drain(..) {
+                    world.collider_owners.remove(&handle);
                     let _ =
                         world
                             .colliders
@@ -1447,6 +1521,11 @@ fn shape_desc_3d(shape: &CollisionShape3D, friction: f32, restitution: f32) -> S
         restitution,
     }
 }
+
+fn approx_eq_f32(a: f32, b: f32) -> bool {
+    (a - b).abs() <= 0.000_01
+}
+
 fn build_rigid_body_2d(desc: &BodyDesc2D) -> r2::RigidBody {
     let mut builder = match desc.kind {
         BodyKind::Static => r2::RigidBodyBuilder::fixed(),

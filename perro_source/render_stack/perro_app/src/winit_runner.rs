@@ -460,6 +460,14 @@ struct RunnerState<B: GraphicsBackend> {
     #[cfg(feature = "profile_heavy")]
     batch_fixed_update: Duration,
     #[cfg(feature = "profile_heavy")]
+    batch_fixed_snapshot_update: Duration,
+    #[cfg(feature = "profile_heavy")]
+    batch_fixed_script_update: Duration,
+    #[cfg(feature = "profile_heavy")]
+    batch_fixed_physics_update: Duration,
+    #[cfg(feature = "profile_heavy")]
+    batch_fixed_internal_update: Duration,
+    #[cfg(feature = "profile_heavy")]
     batch_runtime_start_schedule: Duration,
     #[cfg(feature = "profile_heavy")]
     batch_runtime_snapshot_update: Duration,
@@ -629,6 +637,14 @@ impl<B: GraphicsBackend> RunnerState<B> {
             batch_input_poll: Duration::ZERO,
             #[cfg(feature = "profile_heavy")]
             batch_fixed_update: Duration::ZERO,
+            #[cfg(feature = "profile_heavy")]
+            batch_fixed_snapshot_update: Duration::ZERO,
+            #[cfg(feature = "profile_heavy")]
+            batch_fixed_script_update: Duration::ZERO,
+            #[cfg(feature = "profile_heavy")]
+            batch_fixed_physics_update: Duration::ZERO,
+            #[cfg(feature = "profile_heavy")]
+            batch_fixed_internal_update: Duration::ZERO,
             #[cfg(feature = "profile_heavy")]
             batch_runtime_start_schedule: Duration::ZERO,
             #[cfg(feature = "profile_heavy")]
@@ -936,17 +952,41 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 fixed_step_seconds = plan.step_seconds;
                 fixed_catchup_dropped = plan.dropped_catchup;
                 for _ in 0..plan.steps {
-                    let update_start = Instant::now();
-                    self.app.fixed_update_runtime(effective_fixed_step);
-                    runtime_update_duration += update_start.elapsed();
+                    #[cfg(feature = "profile_heavy")]
+                    {
+                        let timing = self.app.fixed_update_runtime_timed(effective_fixed_step);
+                        runtime_update_duration += timing.total;
+                        self.batch_fixed_snapshot_update += timing.snapshot_update;
+                        self.batch_fixed_script_update += timing.script_fixed_update;
+                        self.batch_fixed_physics_update += timing.physics;
+                        self.batch_fixed_internal_update += timing.internal_fixed_update;
+                    }
+                    #[cfg(not(feature = "profile_heavy"))]
+                    {
+                        let update_start = Instant::now();
+                        self.app.fixed_update_runtime(effective_fixed_step);
+                        runtime_update_duration += update_start.elapsed();
+                    }
                 }
                 self.fixed_accumulator = plan.accumulator_after;
                 effective_fixed_step as f64 * plan.steps as f64
             } else {
                 let variable_step = frame_delta.as_secs_f32();
-                let update_start = Instant::now();
-                self.app.fixed_update_runtime(variable_step);
-                runtime_update_duration += update_start.elapsed();
+                #[cfg(feature = "profile_heavy")]
+                {
+                    let timing = self.app.fixed_update_runtime_timed(variable_step);
+                    runtime_update_duration += timing.total;
+                    self.batch_fixed_snapshot_update += timing.snapshot_update;
+                    self.batch_fixed_script_update += timing.script_fixed_update;
+                    self.batch_fixed_physics_update += timing.physics;
+                    self.batch_fixed_internal_update += timing.internal_fixed_update;
+                }
+                #[cfg(not(feature = "profile_heavy"))]
+                {
+                    let update_start = Instant::now();
+                    self.app.fixed_update_runtime(variable_step);
+                    runtime_update_duration += update_start.elapsed();
+                }
                 variable_step as f64
             }
         };
@@ -1184,17 +1224,41 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 fixed_step_seconds = plan.step_seconds;
                 fixed_catchup_dropped = plan.dropped_catchup;
                 for _ in 0..plan.steps {
-                    let update_start = Instant::now();
-                    self.app.fixed_update_runtime(effective_fixed_step);
-                    runtime_update_duration += update_start.elapsed();
+                    #[cfg(feature = "profile_heavy")]
+                    {
+                        let timing = self.app.fixed_update_runtime_timed(effective_fixed_step);
+                        runtime_update_duration += timing.total;
+                        self.batch_fixed_snapshot_update += timing.snapshot_update;
+                        self.batch_fixed_script_update += timing.script_fixed_update;
+                        self.batch_fixed_physics_update += timing.physics;
+                        self.batch_fixed_internal_update += timing.internal_fixed_update;
+                    }
+                    #[cfg(not(feature = "profile_heavy"))]
+                    {
+                        let update_start = Instant::now();
+                        self.app.fixed_update_runtime(effective_fixed_step);
+                        runtime_update_duration += update_start.elapsed();
+                    }
                 }
                 self.fixed_accumulator = plan.accumulator_after;
                 simulated_delta_seconds = effective_fixed_step as f64 * plan.steps as f64;
             } else {
                 let variable_step = frame_delta.as_secs_f32();
-                let update_start = Instant::now();
-                self.app.fixed_update_runtime(variable_step);
-                runtime_update_duration += update_start.elapsed();
+                #[cfg(feature = "profile_heavy")]
+                {
+                    let timing = self.app.fixed_update_runtime_timed(variable_step);
+                    runtime_update_duration += timing.total;
+                    self.batch_fixed_snapshot_update += timing.snapshot_update;
+                    self.batch_fixed_script_update += timing.script_fixed_update;
+                    self.batch_fixed_physics_update += timing.physics;
+                    self.batch_fixed_internal_update += timing.internal_fixed_update;
+                }
+                #[cfg(not(feature = "profile_heavy"))]
+                {
+                    let update_start = Instant::now();
+                    self.app.fixed_update_runtime(variable_step);
+                    runtime_update_duration += update_start.elapsed();
+                }
                 simulated_delta_seconds = variable_step as f64;
             }
         }
@@ -1395,6 +1459,14 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     self.batch_input_poll.as_micros() as f64 / self.batch_frames as f64;
                 let avg_fixed_update_us =
                     self.batch_fixed_update.as_micros() as f64 / self.batch_frames as f64;
+                let avg_fixed_snapshot_update_us =
+                    self.batch_fixed_snapshot_update.as_micros() as f64 / self.batch_frames as f64;
+                let avg_fixed_script_update_us =
+                    self.batch_fixed_script_update.as_micros() as f64 / self.batch_frames as f64;
+                let avg_fixed_physics_update_us =
+                    self.batch_fixed_physics_update.as_micros() as f64 / self.batch_frames as f64;
+                let avg_fixed_internal_update_us =
+                    self.batch_fixed_internal_update.as_micros() as f64 / self.batch_frames as f64;
                 let avg_runtime_script_update_us =
                     self.batch_runtime_script_update.as_micros() as f64 / self.batch_frames as f64;
                 let avg_runtime_script_count =
@@ -1507,6 +1579,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     avg_input_poll_us, avg_fixed_update_us, avg_runtime_update_us
                 );
                 println!(
+                    "fixed breakdown: snapshot=({:.3}us) scripts=({:.3}us) physics=({:.3}us) internal=({:.3}us)",
+                    avg_fixed_snapshot_update_us,
+                    avg_fixed_script_update_us,
+                    avg_fixed_physics_update_us,
+                    avg_fixed_internal_update_us
+                );
+                println!(
                     "user scripts: ({:.3}us avg) | script calls/frame: ({:.2}) | slowest script: ({:.3}us)",
                     avg_runtime_script_update_us,
                     avg_runtime_script_count,
@@ -1600,6 +1679,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 self.batch_runtime_update = Duration::ZERO;
                 self.batch_input_poll = Duration::ZERO;
                 self.batch_fixed_update = Duration::ZERO;
+                self.batch_fixed_snapshot_update = Duration::ZERO;
+                self.batch_fixed_script_update = Duration::ZERO;
+                self.batch_fixed_physics_update = Duration::ZERO;
+                self.batch_fixed_internal_update = Duration::ZERO;
                 self.batch_runtime_start_schedule = Duration::ZERO;
                 self.batch_runtime_snapshot_update = Duration::ZERO;
                 self.batch_runtime_script_update = Duration::ZERO;
@@ -1715,6 +1798,10 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.batch_runtime_update = Duration::ZERO;
                 self.batch_input_poll = Duration::ZERO;
                 self.batch_fixed_update = Duration::ZERO;
+                self.batch_fixed_snapshot_update = Duration::ZERO;
+                self.batch_fixed_script_update = Duration::ZERO;
+                self.batch_fixed_physics_update = Duration::ZERO;
+                self.batch_fixed_internal_update = Duration::ZERO;
                 self.batch_runtime_start_schedule = Duration::ZERO;
                 self.batch_runtime_snapshot_update = Duration::ZERO;
                 self.batch_runtime_script_update = Duration::ZERO;

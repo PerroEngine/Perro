@@ -263,6 +263,22 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn fixed_update_runtime_timed(
+        &mut self,
+        fixed_delta_time: f32,
+    ) -> perro_runtime::RuntimeFixedUpdateTiming {
+        #[cfg(feature = "profile_heavy")]
+        {
+            self.runtime.fixed_update_timed(fixed_delta_time)
+        }
+        #[cfg(not(feature = "profile_heavy"))]
+        {
+            self.runtime.fixed_update(fixed_delta_time);
+            perro_runtime::RuntimeFixedUpdateTiming::default()
+        }
+    }
+
+    #[inline]
     pub fn present(&mut self) {
         self.present_with_overlay(std::iter::empty::<perro_render_bridge::RenderCommand>());
     }
