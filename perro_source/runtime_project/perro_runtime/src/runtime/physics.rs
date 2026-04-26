@@ -12,11 +12,16 @@ use rapier2d::{na as na2, prelude as r2};
 use rapier3d::{na as na3, prelude as r3};
 use super::RuntimePhysicsStepTiming;
 
-const MAX_CCD_SUBSTEPS: usize = 2;
-const CCD_MIN_SPEED_SQ_2D: f32 = 16.0;
-const CCD_MIN_SPEED_SQ_3D: f32 = 16.0;
+const MAX_CCD_SUBSTEPS: usize = 1;
 const MAX_RIGID_SPEED_2D: f32 = 80.0;
 const MAX_RIGID_SPEED_3D: f32 = 80.0;
+const CCD_MIN_SPEED_RATIO_OF_MAX: f32 = 0.5;
+const CCD_MIN_SPEED_SQ_2D: f32 =
+    MAX_RIGID_SPEED_2D * CCD_MIN_SPEED_RATIO_OF_MAX * MAX_RIGID_SPEED_2D
+        * CCD_MIN_SPEED_RATIO_OF_MAX;
+const CCD_MIN_SPEED_SQ_3D: f32 =
+    MAX_RIGID_SPEED_3D * CCD_MIN_SPEED_RATIO_OF_MAX * MAX_RIGID_SPEED_3D
+        * CCD_MIN_SPEED_RATIO_OF_MAX;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BodyKind {
@@ -924,9 +929,11 @@ impl Runtime {
     }
 
     fn step_world_2d(&mut self) {
+        let gravity_y = self.physics_gravity();
         let Some(world) = self.physics.world_2d.as_mut() else {
             return;
         };
+        world.gravity.y = gravity_y;
         world.integration_parameters.dt = self.time.fixed_delta.max(0.000_1);
         world.pipeline.step(
             &world.gravity,
@@ -946,9 +953,11 @@ impl Runtime {
     }
 
     fn step_world_3d(&mut self) {
+        let gravity_y = self.physics_gravity();
         let Some(world) = self.physics.world_3d.as_mut() else {
             return;
         };
+        world.gravity.y = gravity_y;
         world.integration_parameters.dt = self.time.fixed_delta.max(0.000_1);
         world.pipeline.step(
             &world.gravity,
@@ -969,6 +978,7 @@ impl Runtime {
 
     fn apply_pending_impulses_2d(&mut self) {
         let mut pending = std::mem::take(&mut self.physics.pending_impulses_2d);
+        let coef = self.physics_coef();
         let Some(world) = self.physics.world_2d.as_mut() else {
             return;
         };
@@ -988,7 +998,7 @@ impl Runtime {
                 continue;
             }
             rb.apply_impulse(
-                na2::Vector2::new(impulse.impulse.x, impulse.impulse.y),
+                na2::Vector2::new(impulse.impulse.x * coef, impulse.impulse.y * coef),
                 true,
             );
             clamp_rb_speed_2d(rb, MAX_RIGID_SPEED_2D);
@@ -998,6 +1008,7 @@ impl Runtime {
 
     fn apply_pending_forces_2d(&mut self) {
         let mut pending = std::mem::take(&mut self.physics.pending_forces_2d);
+        let coef = self.physics_coef();
         let Some(world) = self.physics.world_2d.as_mut() else {
             return;
         };
@@ -1017,7 +1028,7 @@ impl Runtime {
                 continue;
             }
             rb.apply_impulse(
-                na2::Vector2::new(force.force.x * dt, force.force.y * dt),
+                na2::Vector2::new(force.force.x * dt * coef, force.force.y * dt * coef),
                 true,
             );
             clamp_rb_speed_2d(rb, MAX_RIGID_SPEED_2D);
@@ -1027,6 +1038,7 @@ impl Runtime {
 
     fn apply_pending_impulses_3d(&mut self) {
         let mut pending = std::mem::take(&mut self.physics.pending_impulses_3d);
+        let coef = self.physics_coef();
         let Some(world) = self.physics.world_3d.as_mut() else {
             return;
         };
@@ -1047,7 +1059,11 @@ impl Runtime {
                 continue;
             }
             rb.apply_impulse(
-                na3::Vector3::new(impulse.impulse.x, impulse.impulse.y, impulse.impulse.z),
+                na3::Vector3::new(
+                    impulse.impulse.x * coef,
+                    impulse.impulse.y * coef,
+                    impulse.impulse.z * coef,
+                ),
                 true,
             );
             clamp_rb_speed_3d(rb, MAX_RIGID_SPEED_3D);
@@ -1057,6 +1073,7 @@ impl Runtime {
 
     fn apply_pending_forces_3d(&mut self) {
         let mut pending = std::mem::take(&mut self.physics.pending_forces_3d);
+        let coef = self.physics_coef();
         let Some(world) = self.physics.world_3d.as_mut() else {
             return;
         };
@@ -1078,7 +1095,11 @@ impl Runtime {
                 continue;
             }
             rb.apply_impulse(
-                na3::Vector3::new(force.force.x * dt, force.force.y * dt, force.force.z * dt),
+                na3::Vector3::new(
+                    force.force.x * dt * coef,
+                    force.force.y * dt * coef,
+                    force.force.z * dt * coef,
+                ),
                 true,
             );
             clamp_rb_speed_3d(rb, MAX_RIGID_SPEED_3D);
@@ -1183,6 +1204,21 @@ impl Runtime {
                 _ => {}
             }
         }
+    }
+
+    fn physics_gravity(&self) -> f32 {
+        self.project()
+            .map(|p| p.config.physics_gravity)
+            .filter(|v| v.is_finite())
+            .unwrap_or(-9.81)
+            * self.physics_coef()
+    }
+
+    fn physics_coef(&self) -> f32 {
+        self.project()
+            .map(|p| p.config.physics_coef)
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(1.0)
     }
 
     fn emit_collision_signals_2d(&mut self) {

@@ -125,6 +125,8 @@ pub struct StaticEmbeddedGraphicsConfig {
 
 pub struct StaticEmbeddedRuntimeConfig {
     pub target_fixed_update: Option<f32>,
+    pub physics_gravity: f32,
+    pub physics_coef: f32,
 }
 
 pub struct StaticEmbeddedLocalizationConfig {
@@ -161,6 +163,8 @@ pub fn run_static_embedded_project(
     )
     .with_vsync(input.graphics.vsync)
     .with_target_fixed_update(input.runtime.target_fixed_update)
+    .with_physics_gravity(input.runtime.physics_gravity)
+    .with_physics_coef(input.runtime.physics_coef)
     .with_msaa(input.graphics.msaa)
     .with_meshlets(input.graphics.meshlets)
     .with_dev_meshlets(input.graphics.dev_meshlets)

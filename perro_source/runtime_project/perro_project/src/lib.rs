@@ -58,6 +58,8 @@ pub struct StaticProjectConfig {
     pub virtual_height: u32,
     pub vsync: bool,
     pub target_fixed_update: Option<f32>,
+    pub physics_gravity: f32,
+    pub physics_coef: f32,
     pub msaa: bool,
     pub meshlets: bool,
     pub dev_meshlets: bool,
@@ -88,6 +90,8 @@ impl StaticProjectConfig {
             virtual_height,
             vsync: false,
             target_fixed_update: Some(60.0),
+            physics_gravity: -9.81,
+            physics_coef: 1.0,
             msaa: true,
             meshlets: false,
             dev_meshlets: false,
@@ -108,6 +112,16 @@ impl StaticProjectConfig {
 
     pub const fn with_target_fixed_update(mut self, target_fixed_update: Option<f32>) -> Self {
         self.target_fixed_update = target_fixed_update;
+        self
+    }
+
+    pub const fn with_physics_gravity(mut self, gravity: f32) -> Self {
+        self.physics_gravity = gravity;
+        self
+    }
+
+    pub const fn with_physics_coef(mut self, coef: f32) -> Self {
+        self.physics_coef = coef;
         self
     }
 
@@ -171,6 +185,8 @@ impl StaticProjectConfig {
             virtual_height: self.virtual_height,
             vsync: self.vsync,
             target_fixed_update: self.target_fixed_update,
+            physics_gravity: self.physics_gravity,
+            physics_coef: self.physics_coef,
             msaa: self.msaa,
             meshlets: self.meshlets,
             dev_meshlets: self.dev_meshlets,
@@ -203,6 +219,8 @@ pub struct ProjectConfig {
     pub virtual_height: u32,
     pub vsync: bool,
     pub target_fixed_update: Option<f32>,
+    pub physics_gravity: f32,
+    pub physics_coef: f32,
     pub msaa: bool,
     pub meshlets: bool,
     pub dev_meshlets: bool,
@@ -227,6 +245,8 @@ impl ProjectConfig {
             virtual_height: 1080,
             vsync: false,
             target_fixed_update: Some(60.0),
+            physics_gravity: -9.81,
+            physics_coef: 1.0,
             msaa: true,
             meshlets: false,
             dev_meshlets: false,
@@ -473,6 +493,10 @@ particle_sim_default = "gpu"
 [runtime]
 target_fixed_update = 60
 
+[physics]
+gravity = -9.81
+coef = 1.0
+
 # Optional CSV localization table.
 # Columns example: key,en,es,fr,ja,zh
 #
@@ -501,6 +525,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         .and_then(Value::as_table)
         .ok_or(ProjectError::MissingField("graphics"))?;
     let runtime_table = value.get("runtime").and_then(Value::as_table);
+    let physics_table = value.get("physics").and_then(Value::as_table);
     let localization_table = value.get("localization").and_then(Value::as_table);
 
     let name = project_table
@@ -570,6 +595,8 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let vsync = parse_bool_with_default(graphics_table, "vsync", false)?;
     reject_target_fps(runtime_table)?;
     let target_fixed_update = parse_target_fixed_update(runtime_table)?;
+    let physics_gravity = parse_physics_gravity(physics_table)?;
+    let physics_coef = parse_physics_coef(physics_table)?;
     let msaa = parse_bool_with_default(graphics_table, "msaa", true)?;
     let meshlets = parse_bool_with_default(graphics_table, "meshlets", false)?;
     let dev_meshlets = parse_bool_with_default(graphics_table, "dev_meshlets", false)?;
@@ -599,6 +626,8 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         virtual_height,
         vsync,
         target_fixed_update,
+        physics_gravity,
+        physics_coef,
         msaa,
         meshlets,
         dev_meshlets,
@@ -672,6 +701,54 @@ fn parse_target_fixed_update(
         "runtime.target_fixed_update",
         "expected a positive number".to_string(),
     ))
+}
+
+fn parse_physics_gravity(
+    physics: Option<&toml::map::Map<String, Value>>,
+) -> Result<f32, ProjectError> {
+    let Some(physics) = physics else {
+        return Ok(-9.81);
+    };
+    let Some(value) = physics.get("gravity") else {
+        return Ok(-9.81);
+    };
+    let Some(num) = value.as_float().or_else(|| value.as_integer().map(|v| v as f64)) else {
+        return Err(ProjectError::InvalidField(
+            "physics.gravity",
+            "must be a finite number".to_string(),
+        ));
+    };
+    if !num.is_finite() {
+        return Err(ProjectError::InvalidField(
+            "physics.gravity",
+            "must be a finite number".to_string(),
+        ));
+    }
+    Ok(num as f32)
+}
+
+fn parse_physics_coef(
+    physics: Option<&toml::map::Map<String, Value>>,
+) -> Result<f32, ProjectError> {
+    let Some(physics) = physics else {
+        return Ok(1.0);
+    };
+    let Some(value) = physics.get("coef") else {
+        return Ok(1.0);
+    };
+    let Some(num) = value.as_float().or_else(|| value.as_integer().map(|v| v as f64)) else {
+        return Err(ProjectError::InvalidField(
+            "physics.coef",
+            "must be a finite positive number".to_string(),
+        ));
+    };
+    if !num.is_finite() || num <= 0.0 {
+        return Err(ProjectError::InvalidField(
+            "physics.coef",
+            "must be a finite positive number".to_string(),
+        ));
+    }
+    Ok(num as f32)
 }
 fn parse_occlusion_culling_with_default(
     table: &toml::map::Map<String, Value>,
@@ -1526,6 +1603,8 @@ fn project_root() -> std::path::PathBuf {
           },
           runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {
               target_fixed_update: Some(60.0),
+              physics_gravity: -9.81,
+              physics_coef: 1.0,
           },
           localization: perro_app::entry::StaticEmbeddedLocalizationConfig {
               source_csv_hash: None,
