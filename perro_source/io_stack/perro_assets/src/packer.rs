@@ -3,13 +3,13 @@ use std::{
     collections::HashSet,
     fs,
     fs::File,
-    io::{self, Seek, SeekFrom, Write},
+    io::{self, Cursor, Seek, SeekFrom, Write},
     path::Path,
 };
 
 use super::common::{
-    FLAG_COMPRESSED, PERRO_ASSETS_MAGIC, PerroAssetsEntryMeta, PerroAssetsHeader, write_header,
-    write_index_entry,
+    FLAG_COMPRESSED, PERRO_ASSETS_COMPRESSED_MAGIC, PERRO_ASSETS_MAGIC, PerroAssetsEntryMeta,
+    PerroAssetsHeader, write_header, write_index_entry,
 };
 use crate::compression::compress_deflate_best;
 use crate::walkdir::collect_file_paths;
@@ -181,13 +181,43 @@ pub fn build_perro_archive_from_entries(
     entries: &[(String, std::path::PathBuf)],
 ) -> io::Result<()> {
     let mut file = File::create(output)?;
+    write_perro_archive_from_entries(&mut file, entries, true)
+}
+
+/// Build a generic `.perro` archive, then wrap the full archive in DEFLATE when smaller.
+pub fn build_compressed_perro_archive_from_entries(
+    output: &Path,
+    entries: &[(String, std::path::PathBuf)],
+) -> io::Result<()> {
+    let mut raw = Cursor::new(Vec::<u8>::new());
+    write_perro_archive_from_entries(&mut raw, entries, false)?;
+    let raw = raw.into_inner();
+    let compressed = compress_deflate_best(&raw)?;
+
+    let mut file = File::create(output)?;
+    if compressed.len() + 16 < raw.len() {
+        file.write_all(&PERRO_ASSETS_COMPRESSED_MAGIC)?;
+        file.write_all(&1u32.to_le_bytes())?;
+        file.write_all(&(raw.len() as u64).to_le_bytes())?;
+        file.write_all(&compressed)?;
+    } else {
+        file.write_all(&raw)?;
+    }
+    Ok(())
+}
+
+fn write_perro_archive_from_entries<W: Write + Seek>(
+    writer: &mut W,
+    entries: &[(String, std::path::PathBuf)],
+    compress_entries: bool,
+) -> io::Result<()> {
     let header = PerroAssetsHeader {
         magic: PERRO_ASSETS_MAGIC,
         version: 1,
         file_count: 0,
         index_offset: 0,
     };
-    write_header(&mut file, &header)?;
+    write_header(writer, &header)?;
 
     let mut sorted = entries.to_vec();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
@@ -198,8 +228,12 @@ pub fn build_perro_archive_from_entries(
             |(virtual_path, source_path)| -> io::Result<(String, Vec<u8>, u32, u64)> {
                 let data = fs::read(&source_path)?;
                 let original_size = data.len() as u64;
-                let compressed = compress_deflate_best(&data)?;
-                if compressed.len() < data.len() {
+                let compressed = if compress_entries {
+                    compress_deflate_best(&data)?
+                } else {
+                    Vec::new()
+                };
+                if compress_entries && compressed.len() < data.len() {
                     Ok((virtual_path, compressed, FLAG_COMPRESSED, original_size))
                 } else {
                     Ok((virtual_path, data, 0, original_size))
@@ -210,8 +244,8 @@ pub fn build_perro_archive_from_entries(
 
     let mut index_entries = Vec::<PerroAssetsEntry>::with_capacity(processed.len());
     for (virtual_path, data, flags, original_size) in processed {
-        let offset = file.stream_position()?;
-        file.write_all(&data)?;
+        let offset = writer.stream_position()?;
+        writer.write_all(&data)?;
         index_entries.push(PerroAssetsEntry {
             path: virtual_path,
             meta: PerroAssetsEntryMeta {
@@ -223,19 +257,19 @@ pub fn build_perro_archive_from_entries(
         });
     }
 
-    let index_offset = file.stream_position()?;
+    let index_offset = writer.stream_position()?;
     for entry in &index_entries {
-        write_index_entry(&mut file, &entry.path, &entry.meta)?;
+        write_index_entry(writer, &entry.path, &entry.meta)?;
     }
 
-    file.seek(SeekFrom::Start(0))?;
+    writer.seek(SeekFrom::Start(0))?;
     let header = PerroAssetsHeader {
         magic: PERRO_ASSETS_MAGIC,
         version: 1,
         file_count: index_entries.len() as u32,
         index_offset,
     };
-    write_header(&mut file, &header)?;
+    write_header(writer, &header)?;
     Ok(())
 }
 

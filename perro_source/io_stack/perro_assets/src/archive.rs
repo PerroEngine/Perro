@@ -4,7 +4,11 @@ use std::io::{self, Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::Arc;
 
-use super::common::{FLAG_COMPRESSED, PerroAssetsEntryMeta, read_header, read_index_entry};
+use super::common::{
+    FLAG_COMPRESSED, PERRO_ASSETS_COMPRESSED_MAGIC, PERRO_ASSETS_MAGIC, PerroAssetsEntryMeta,
+    read_header, read_index_entry,
+};
+use super::compression::decompress_deflate;
 
 pub type PerroAssetsEntry = PerroAssetsEntryMeta;
 
@@ -22,6 +26,7 @@ impl PerroAssetsArchive {
 
     /// Open a .perro archive from owned bytes.
     pub fn open_from_owned_bytes(data: Vec<u8>) -> io::Result<Self> {
+        let data = decode_archive_container(data)?;
         let arc: Arc<[u8]> = Arc::from(data.into_boxed_slice());
         Self::open_from_arc(arc)
     }
@@ -126,6 +131,45 @@ impl PerroAssetsArchive {
     pub fn list_files(&self) -> Vec<String> {
         self.index.keys().cloned().collect()
     }
+}
+
+fn decode_archive_container(data: Vec<u8>) -> io::Result<Vec<u8>> {
+    if data.len() < 4 || data[..4] == PERRO_ASSETS_MAGIC {
+        return Ok(data);
+    }
+
+    if data[..4] != PERRO_ASSETS_COMPRESSED_MAGIC {
+        return Ok(data);
+    }
+
+    if data.len() < 16 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Compressed PerroAssets header too short",
+        ));
+    }
+
+    let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
+    if version != 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Unsupported compressed PerroAssets version {version}"),
+        ));
+    }
+
+    let original_size = u64::from_le_bytes(data[8..16].try_into().unwrap()) as usize;
+    let mut out = decompress_deflate(&data[16..])?;
+    if out.len() != original_size {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "Compressed PerroAssets size mismatch: expected {}, got {}",
+                original_size,
+                out.len()
+            ),
+        ));
+    }
+    Ok(std::mem::take(&mut out))
 }
 
 /// Streaming file handle (for uncompressed files only)

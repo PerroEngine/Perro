@@ -1,4 +1,4 @@
-use perro_assets::{build_perro_archive_from_entries, build_perro_assets_archive};
+use perro_assets::{build_compressed_perro_archive_from_entries, build_perro_assets_archive};
 use perro_io::walkdir::walk_dir;
 use perro_project::{ensure_source_overrides, load_project_toml};
 use std::{
@@ -878,7 +878,10 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
     if package_file.exists() {
         fs::remove_file(&package_file)?;
     }
-    build_perro_archive_from_entries(&package_file, &archive_entries)?;
+    build_compressed_perro_archive_from_entries(&package_file, &archive_entries)?;
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
     Ok(package_file)
 }
 

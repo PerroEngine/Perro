@@ -143,6 +143,8 @@ What it does:
 4. Builds both runtime-loadable modules.
 5. Packs manifest + scripts module + pack module + DLC resources into:
    - `<project_dir>/.output/dlc/<dlc_name>.dlc`
+6. Compresses the final `.dlc` when it reduces file size.
+7. Removes the temporary `.dlc.staging` folder after a successful pack.
 
 Name rules:
 

@@ -84,6 +84,8 @@ Pipeline:
 4. Builds both runtime-loadable modules.
 5. Packs manifest + modules + DLC resources into:
    - `.output/dlc/NAME.dlc`
+6. Compresses the final `.dlc` when it reduces file size.
+7. Removes the temporary `.dlc.staging` folder after a successful pack.
 
 Important split:
 
@@ -106,6 +108,7 @@ Release installed mount:
 - Scans install directory:
   - `LocalAppData/<ProjectName>/dlc/*.dlc`
 - Loads manifest + scripts module + pack module from each `.dlc`.
+- Decompresses compressed `.dlc` packs in memory during mount.
 - Mounts each as `dlc://NAME/...`.
 
 `user://` data path uses:
