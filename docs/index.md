@@ -22,3 +22,6 @@
 - [`.pskel` Format](resources/pskel.md)
 - [Post Processing](resources/postprocess.md)
 - [Visual Accessibility](resources/visual_accessibility.md)
+
+## DLC
+- [DLC Guide](dlc.md)

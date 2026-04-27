@@ -175,6 +175,68 @@ pub fn build_perro_assets_archive(
     Ok(())
 }
 
+/// Build a generic `.perro` archive from explicit `(virtual_path, source_file)` entries.
+pub fn build_perro_archive_from_entries(
+    output: &Path,
+    entries: &[(String, std::path::PathBuf)],
+) -> io::Result<()> {
+    let mut file = File::create(output)?;
+    let header = PerroAssetsHeader {
+        magic: PERRO_ASSETS_MAGIC,
+        version: 1,
+        file_count: 0,
+        index_offset: 0,
+    };
+    write_header(&mut file, &header)?;
+
+    let mut sorted = entries.to_vec();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let processed = sorted
+        .into_par_iter()
+        .map(|(virtual_path, source_path)| -> io::Result<(String, Vec<u8>, u32, u64)> {
+            let data = fs::read(&source_path)?;
+            let original_size = data.len() as u64;
+            let compressed = compress_deflate_best(&data)?;
+            if compressed.len() < data.len() {
+                Ok((virtual_path, compressed, FLAG_COMPRESSED, original_size))
+            } else {
+                Ok((virtual_path, data, 0, original_size))
+            }
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+
+    let mut index_entries = Vec::<PerroAssetsEntry>::with_capacity(processed.len());
+    for (virtual_path, data, flags, original_size) in processed {
+        let offset = file.stream_position()?;
+        file.write_all(&data)?;
+        index_entries.push(PerroAssetsEntry {
+            path: virtual_path,
+            meta: PerroAssetsEntryMeta {
+                offset,
+                size: data.len() as u64,
+                original_size,
+                flags,
+            },
+        });
+    }
+
+    let index_offset = file.stream_position()?;
+    for entry in &index_entries {
+        write_index_entry(&mut file, &entry.path, &entry.meta)?;
+    }
+
+    file.seek(SeekFrom::Start(0))?;
+    let header = PerroAssetsHeader {
+        magic: PERRO_ASSETS_MAGIC,
+        version: 1,
+        file_count: index_entries.len() as u32,
+        index_offset,
+    };
+    write_header(&mut file, &header)?;
+    Ok(())
+}
+
 #[cfg(test)]
 #[path = "../tests/unit/packer_tests.rs"]
 mod tests;

@@ -244,6 +244,7 @@ pub(super) fn merge_prepared_scene(
         script_nodes.push(PendingScriptAttach {
             node_id: id,
             script_path_hash: pending_script.script_path_hash,
+            script_mount: pending_script.script_mount.clone(),
             scene_injected_vars,
         });
     }

@@ -1,4 +1,6 @@
-use perro_compiler::{ScriptsBuildProfile, compile_project_bundle, compile_scripts_with_profile};
+use perro_compiler::{
+    ScriptsBuildProfile, compile_dlc_bundle, compile_project_bundle, compile_scripts_with_profile,
+};
 use perro_project::{create_new_project, default_script_empty_rs};
 use serde_json::Value;
 use std::env;
@@ -40,6 +42,7 @@ fn main() {
     } else {
         match command {
             "new" => new_command(&args, &cwd),
+            "new_dlc" => new_dlc_command(&args, &cwd),
             "new_script" => new_script_command(&args, &cwd),
             "new_scene" => new_scene_command(&args, &cwd),
             "new_animation" => new_animation_command(&args, &cwd),
@@ -47,6 +50,7 @@ fn main() {
             "install" => install_command(&args),
             "check" => scripts_command(&args, &cwd),
             "build" => project_command(&args, &cwd),
+            "dlc" => dlc_command(&args, &cwd),
             "dev" => dev_command(&args, &cwd),
             "mem-profile" => mem_profile_command(&args, &cwd),
             "flamegraph" => flamegraph_command(&args, &cwd),
@@ -73,6 +77,9 @@ fn print_usage() {
         "  perro_cli build [--path <project_dir>] [--profile]    # full static project bundle + build"
     );
     eprintln!(
+        "  perro_cli dlc --name <dlc_name> [--path <project_dir>] # build one runtime-loadable DLC package"
+    );
+    eprintln!(
         "  perro_cli dev [--path <project_dir>] [--profile] [--release] [--csv-profile [csv_name]]      # build scripts + run dev runner"
     );
     eprintln!(
@@ -87,14 +94,15 @@ fn print_usage() {
         "  perro_cli install                          # add `perro` source-mode command in shell profile"
     );
     eprintln!("  perro_cli new [--path <parent_dir>] [--name <project_name>]");
+    eprintln!("  perro_cli new_dlc --name <dlc_name> [--path <project_dir>]");
     eprintln!(
-        "  perro_cli new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>]"
+        "  perro_cli new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>]"
     );
     eprintln!(
-        "  perro_cli new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--template 2D|3D]"
+        "  perro_cli new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--template 2D|3D]"
     );
     eprintln!(
-        "  perro_cli new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>]"
+        "  perro_cli new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>]"
     );
 }
 
@@ -226,13 +234,18 @@ fn sanitize_animation_file_name(name: &str) -> Result<String, String> {
     Ok(rendered)
 }
 
-fn resolve_res_subdir(input: &str, res_root: &Path) -> Result<PathBuf, String> {
+fn resolve_res_subdir(input: &str, res_root: &Path, allowed_prefix: &str) -> Result<PathBuf, String> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return Ok(res_root.to_path_buf());
     }
-    let rel = if let Some(stripped) = trimmed.strip_prefix("res://") {
+
+    let rel = if let Some(stripped) = trimmed.strip_prefix(allowed_prefix) {
         stripped.trim_start_matches('/').trim_start_matches('\\')
+    } else if trimmed.contains("://") {
+        return Err(format!(
+            "path must use `{allowed_prefix}*` or `/...` style segments"
+        ));
     } else if trimmed.starts_with('/') || trimmed.starts_with('\\') {
         trimmed.trim_start_matches('/').trim_start_matches('\\')
     } else {
@@ -247,6 +260,47 @@ fn resolve_res_subdir(input: &str, res_root: &Path) -> Result<PathBuf, String> {
         return Err("res subdir cannot contain `..` segments".to_string());
     }
     Ok(res_root.join(rel_path))
+}
+
+fn validate_dlc_name(raw: &str) -> Result<String, String> {
+    let dlc = raw.trim();
+    if dlc.is_empty() {
+        return Err("dlc name cannot be empty".to_string());
+    }
+    if dlc.eq_ignore_ascii_case("self") {
+        return Err("dlc name `self` is reserved".to_string());
+    }
+    if dlc.contains('/') || dlc.contains('\\') {
+        return Err("dlc name must not include path separators".to_string());
+    }
+    if Path::new(dlc)
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("dlc name must not include `..` segments".to_string());
+    }
+    Ok(dlc.to_string())
+}
+
+fn resolve_content_root(project_dir: &Path, args: &[String]) -> Result<PathBuf, String> {
+    if let Some(raw_dlc) = parse_flag_value(args, "--dlc") {
+        let dlc = validate_dlc_name(&raw_dlc)?;
+        return Ok(project_dir.join("dlcs").join(dlc));
+    }
+
+    let res_root = project_dir.join("res");
+    if !res_root.exists() {
+        return Err(format!("res directory not found at {}", res_root.display()));
+    }
+    Ok(res_root)
+}
+
+fn resolve_content_prefix(args: &[String]) -> Result<String, String> {
+    if let Some(raw_dlc) = parse_flag_value(args, "--dlc") {
+        let dlc = validate_dlc_name(&raw_dlc)?;
+        return Ok(format!("dlc://{dlc}/"));
+    }
+    Ok("res://".to_string())
 }
 
 fn write_new_file(path: &Path, contents: &str) -> Result<(), String> {
@@ -514,6 +568,68 @@ fn new_command(args: &[String], cwd: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn new_dlc_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let Some(raw_name) = parse_flag_value(args, "--name") else {
+        return Err("missing required flag `--name`".to_string());
+    };
+    let dlc_name = validate_dlc_name(&raw_name)?;
+
+    let project_dir = if let Some(raw_project) = parse_flag_value(args, "--path") {
+        resolve_local_path(&raw_project, cwd)
+    } else {
+        find_project_root(cwd).ok_or_else(|| {
+            "could not find project.toml. Run from a project directory or pass --path <project_dir>."
+                .to_string()
+        })?
+    };
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    if !project_dir.join("project.toml").exists() {
+        return Err(format!(
+            "invalid --path `{}` for new_dlc. Use project root (directory containing project.toml).",
+            project_dir.display()
+        ));
+    }
+
+    let dlc_root = project_dir.join("dlcs").join(&dlc_name);
+    if dlc_root.exists() {
+        return Err(format!("dlc already exists: {}", dlc_root.display()));
+    }
+
+    fs::create_dir_all(dlc_root.join("scenes"))
+        .map_err(|err| format!("failed to create dlc scenes dir: {err}"))?;
+    fs::create_dir_all(dlc_root.join("scripts"))
+        .map_err(|err| format!("failed to create dlc scripts dir: {err}"))?;
+    fs::create_dir_all(dlc_root.join("materials"))
+        .map_err(|err| format!("failed to create dlc materials dir: {err}"))?;
+    fs::create_dir_all(dlc_root.join("meshes"))
+        .map_err(|err| format!("failed to create dlc meshes dir: {err}"))?;
+
+    let script_path = dlc_root.join("scripts").join("script.rs");
+    write_new_file(&script_path, &default_script_empty_rs())?;
+
+    let scene_path = dlc_root.join("scenes").join("main.scn");
+    let scene = format!(
+        "@root = main\n\n[main]\nscript = \"dlc://{dlc_name}/scripts/script.rs\"\n[Node2D]\n    position = (0, 0)\n[/Node2D]\n[/main]\n"
+    );
+    write_new_file(&scene_path, &scene)?;
+
+    println!(
+        "created dlc `{}` at {}",
+        dlc_name,
+        normalize_powershell_path(&dlc_root)
+    );
+    println!(
+        "reference scene with: dlc://{}/scenes/main.scn",
+        dlc_name
+    );
+    println!(
+        "reference script with: dlc://{}/scripts/script.rs",
+        dlc_name
+    );
+    maybe_open_file_in_editor(args, &scene_path)?;
+    Ok(())
+}
+
 fn new_script_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let Some(raw_name) = parse_flag_value(args, "--name") else {
         return Err("missing required flag `--name`".to_string());
@@ -529,15 +645,13 @@ fn new_script_command(args: &[String], cwd: &Path) -> Result<(), String> {
         })?
     };
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
-    let res_root = project_dir.join("res");
-    if !res_root.exists() {
-        return Err(format!("res directory not found at {}", res_root.display()));
-    }
+    let content_root = resolve_content_root(&project_dir, args)?;
+    let content_prefix = resolve_content_prefix(args)?;
 
     let target_dir = if let Some(raw_path) = parse_flag_value(args, "--res") {
-        resolve_res_subdir(&raw_path, &res_root)?
+        resolve_res_subdir(&raw_path, &content_root, &content_prefix)?
     } else {
-        res_root
+        content_root
     };
 
     let target_path = target_dir.join(file_name);
@@ -641,15 +755,13 @@ fn new_scene_command(args: &[String], cwd: &Path) -> Result<(), String> {
         })?
     };
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
-    let res_root = project_dir.join("res");
-    if !res_root.exists() {
-        return Err(format!("res directory not found at {}", res_root.display()));
-    }
+    let content_root = resolve_content_root(&project_dir, args)?;
+    let content_prefix = resolve_content_prefix(args)?;
 
     let target_dir = if let Some(raw_path) = parse_flag_value(args, "--res") {
-        resolve_res_subdir(&raw_path, &res_root)?
+        resolve_res_subdir(&raw_path, &content_root, &content_prefix)?
     } else {
-        res_root
+        content_root
     };
 
     let target_path = target_dir.join(file_name);
@@ -708,15 +820,13 @@ fn new_animation_command(args: &[String], cwd: &Path) -> Result<(), String> {
         })?
     };
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
-    let res_root = project_dir.join("res");
-    if !res_root.exists() {
-        return Err(format!("res directory not found at {}", res_root.display()));
-    }
+    let content_root = resolve_content_root(&project_dir, args)?;
+    let content_prefix = resolve_content_prefix(args)?;
 
     let target_dir = if let Some(raw_path) = parse_flag_value(args, "--res") {
-        resolve_res_subdir(&raw_path, &res_root)?
+        resolve_res_subdir(&raw_path, &content_root, &content_prefix)?
     } else {
-        res_root.join("animations")
+        content_root.join("animations")
     };
 
     let target_path = target_dir.join(file_name);
@@ -1113,6 +1223,30 @@ fn scripts_command(args: &[String], cwd: &Path) -> Result<(), String> {
                 project_dir.display()
             )
         })
+}
+
+fn dlc_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let Some(raw_dlc_name) = parse_flag_value(args, "--name") else {
+        return Err("missing required flag `--name`".to_string());
+    };
+    let dlc_name = validate_dlc_name(&raw_dlc_name)?;
+    let project_dir = parse_flag_value(args, "--path")
+        .map(|p| resolve_local_path(&p, cwd))
+        .unwrap_or_else(|| cwd.to_path_buf());
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
+
+    log_step("Building DLC");
+    let package = compile_dlc_bundle(&project_dir, &dlc_name).map_err(|err| {
+        format!(
+            "dlc pipeline failed for {} ({}): {err}",
+            project_dir.display(),
+            dlc_name
+        )
+    })?;
+    log_done(&format!("DLC Built ({})", package.display()));
+    Ok(())
 }
 
 fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {

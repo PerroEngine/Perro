@@ -1,6 +1,7 @@
 use perro_ids::string_to_u64;
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_input::InputContext;
+use perro_io::set_dlc_self_context;
 use perro_resource_context::ResourceContext;
 use perro_runtime_context::{
     RuntimeContext,
@@ -57,8 +58,15 @@ impl Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputContext<'_, perro_input::InputSnapshot> =
             unsafe { InputContext::new(&*input_ptr) };
+        let mount = self
+            .script_runtime
+            .script_instance_dlc_mounts
+            .get(&id)
+            .cloned();
+        set_dlc_self_context(mount.as_deref());
         let mut ctx = RuntimeContext::new(self);
         behavior.on_all_init(&mut ctx, &res, &ipt, id);
+        set_dlc_self_context(None);
     }
 
     #[inline(always)]
@@ -81,8 +89,15 @@ impl Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputContext<'_, perro_input::InputSnapshot> =
             unsafe { InputContext::new(&*input_ptr) };
+        let mount = self
+            .script_runtime
+            .script_instance_dlc_mounts
+            .get(&id)
+            .cloned();
+        set_dlc_self_context(mount.as_deref());
         let mut ctx = RuntimeContext::new(self);
         behavior.on_removal(&mut ctx, &res, &ipt, id);
+        set_dlc_self_context(None);
     }
 
     #[inline(always)]
@@ -90,6 +105,7 @@ impl Runtime {
         self.call_removal_script(id);
         self.unqueue_start_script(id);
         self.signal_runtime.registry.disconnect_script(id);
+        self.script_runtime.script_instance_dlc_mounts.remove(&id);
         self.scripts.remove(id).is_some()
     }
 
@@ -108,11 +124,18 @@ impl Runtime {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return,
         };
+        let mount = self
+            .script_runtime
+            .script_instance_dlc_mounts
+            .get(&id)
+            .cloned();
         self.script_runtime
             .active_script_stack
             .push((instance_index, id));
+        set_dlc_self_context(mount.as_deref());
         let mut ctx = RuntimeContext::new(self);
         behavior.on_update(&mut ctx, res, ipt, id);
+        set_dlc_self_context(None);
         let _ = self.script_runtime.active_script_stack.pop();
     }
 
@@ -131,11 +154,18 @@ impl Runtime {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return,
         };
+        let mount = self
+            .script_runtime
+            .script_instance_dlc_mounts
+            .get(&id)
+            .cloned();
         self.script_runtime
             .active_script_stack
             .push((instance_index, id));
+        set_dlc_self_context(mount.as_deref());
         let mut ctx = RuntimeContext::new(self);
         behavior.on_fixed_update(&mut ctx, res, ipt, id);
+        set_dlc_self_context(None);
         let _ = self.script_runtime.active_script_stack.pop();
     }
 }
@@ -184,7 +214,7 @@ impl ScriptAPI for Runtime {
             return false;
         }
 
-        self.attach_script_instance(node_id, string_to_u64(script_path), &[])
+        self.attach_script_instance(node_id, string_to_u64(script_path), None, &[])
             .is_ok()
     }
 
@@ -202,7 +232,7 @@ impl ScriptAPI for Runtime {
             return false;
         }
 
-        self.attach_script_instance(node_id, script_path_hash, &[])
+        self.attach_script_instance(node_id, script_path_hash, None, &[])
             .is_ok()
     }
 
@@ -257,8 +287,15 @@ impl ScriptAPI for Runtime {
         self.script_runtime
             .active_script_stack
             .push((instance_index, script_id));
+        let mount = self
+            .script_runtime
+            .script_instance_dlc_mounts
+            .get(&script_id)
+            .cloned();
+        set_dlc_self_context(mount.as_deref());
         let mut ctx = RuntimeContext::new(self);
         let out = behavior.call_method(method, &mut ctx, &res, &ipt, script_id, params);
+        set_dlc_self_context(None);
         let _ = self.script_runtime.active_script_stack.pop();
         out
     }

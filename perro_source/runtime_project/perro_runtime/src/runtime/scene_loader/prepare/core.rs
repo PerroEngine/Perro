@@ -61,6 +61,7 @@ pub(super) struct PreparedScene {
 pub(super) struct PendingScript {
     pub(super) node_key: String,
     pub(super) script_path_hash: u64,
+    pub(super) script_mount: Option<String>,
     pub(super) scene_injected_vars: Vec<(String, SceneValue)>,
 }
 
@@ -106,7 +107,10 @@ pub(super) fn load_runtime_scene_from_disk(
         .map_err(|err| format!("scene `{path}` is not valid UTF-8: {err}"))?;
     #[cfg(feature = "profile")]
     let parse_start = Instant::now();
-    let scene = Parser::new(source).parse_scene();
+    let mut scene = Parser::new(source).parse_scene();
+    if let Some(mount_name) = parse_dlc_mount_name(path) {
+        resolve_scene_dlc_self_paths(&mut scene, &mount_name);
+    }
     #[cfg(feature = "profile")]
     let parse = parse_start.elapsed();
     #[cfg(feature = "profile")]
@@ -114,6 +118,79 @@ pub(super) fn load_runtime_scene_from_disk(
     #[cfg(not(feature = "profile"))]
     let stats = RuntimeSceneLoadStats;
     Ok((scene, stats))
+}
+
+fn parse_dlc_mount_name(path: &str) -> Option<String> {
+    let rest = path.strip_prefix("dlc://")?;
+    let (mount, _) = rest.split_once('/').unwrap_or((rest, ""));
+    if mount.eq_ignore_ascii_case("self") || mount.is_empty() {
+        return None;
+    }
+    Some(mount.to_string())
+}
+
+fn resolve_scene_dlc_self_paths(scene: &mut Scene, mount_name: &str) {
+    let prefix = "dlc://self/";
+    let replacement = format!("dlc://{mount_name}/");
+    let replacement_ref = replacement.as_str();
+    for node in scene.nodes.to_mut() {
+        if let Some(script) = node.script.as_ref()
+            && script.starts_with(prefix)
+        {
+            let resolved = script.replacen(prefix, replacement_ref, 1);
+            node.script = Some(Cow::Owned(resolved.clone()));
+            node.script_hash = Some(string_to_u64(&resolved));
+        }
+        if let Some(root_of) = node.root_of.as_ref()
+            && root_of.starts_with(prefix)
+        {
+            let resolved = root_of.replacen(prefix, replacement_ref, 1);
+            node.root_of = Some(Cow::Owned(resolved.clone()));
+            node.root_of_hash = Some(string_to_u64(&resolved));
+        }
+        resolve_scene_value_fields_dlc_self(node.script_vars.to_mut(), prefix, replacement_ref);
+        resolve_scene_node_data_dlc_self(&mut node.data, prefix, replacement_ref);
+    }
+}
+
+fn resolve_scene_node_data_dlc_self(data: &mut SceneDefNodeData, prefix: &str, replacement: &str) {
+    resolve_scene_value_fields_dlc_self(data.fields.to_mut(), prefix, replacement);
+    if let Some(base) = data.base.as_mut()
+        && let perro_scene::SceneNodeDataBase::Owned(base_data) = base
+    {
+        resolve_scene_node_data_dlc_self(base_data.as_mut(), prefix, replacement);
+    }
+}
+
+fn resolve_scene_value_fields_dlc_self(
+    fields: &mut [SceneObjectField],
+    prefix: &str,
+    replacement: &str,
+) {
+    for (_, value) in fields {
+        resolve_scene_value_dlc_self(value, prefix, replacement);
+    }
+}
+
+fn resolve_scene_value_dlc_self(value: &mut SceneValue, prefix: &str, replacement: &str) {
+    match value {
+        SceneValue::Str(v) => {
+            if v.as_ref().starts_with(prefix) {
+                *v = Cow::Owned(v.replacen(prefix, replacement, 1));
+            }
+        }
+        SceneValue::Object(fields) => {
+            for (_, item) in fields.to_mut() {
+                resolve_scene_value_dlc_self(item, prefix, replacement);
+            }
+        }
+        SceneValue::Array(values) => {
+            for item in values.to_mut() {
+                resolve_scene_value_dlc_self(item, prefix, replacement);
+            }
+        }
+        _ => {}
+    }
 }
 
 pub(super) fn prepare_scene_with_loader(
@@ -252,9 +329,14 @@ fn push_entry_prepared(
         .script_hash
         .or_else(|| entry.script.as_ref().map(|script| string_to_u64(script.as_ref())));
     if let Some(script_path_hash) = script_path_hash {
+        let script_mount = entry
+            .script
+            .as_ref()
+            .and_then(|path| parse_dlc_mount_name(path.as_ref()));
         scripts.push(PendingScript {
             node_key: key.clone(),
             script_path_hash,
+            script_mount,
             scene_injected_vars: entry
                 .script_vars
                 .iter()

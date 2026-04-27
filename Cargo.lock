@@ -2494,6 +2494,7 @@ dependencies = [
  "perro_project",
  "perro_scene",
  "perro_static_pipeline",
+ "toml",
 ]
 
 [[package]]

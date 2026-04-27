@@ -10,6 +10,7 @@ This document covers Perro CLI in command-first style. Commands are shown using 
 - `format`
 - `clean`
 - `new`
+- `new_dlc`
 - `new_script`
 - `new_scene`
 - `new_animation`
@@ -28,9 +29,10 @@ perro flamegraph [--path <project_dir>] [--profile] [--root]
 perro format [--path <project_dir>]
 perro clean [--path <project_dir>]
 perro new [--path <parent_dir>] [--name <project_name>]
-perro new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>] [--no-open]
-perro new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--template 2D|3D] [--no-open]
-perro new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>] [--no-open]
+perro new_dlc --name <dlc_name> [--path <project_dir>] [--no-open]
+perro new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
+perro new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--template 2D|3D] [--no-open]
+perro new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
 perro install
 ```
 
@@ -91,6 +93,60 @@ Examples:
 perro new --path D:\GameProjects --name MyGame
 perro new --name MyGame
 ```
+
+## `new_dlc`
+
+Command:
+
+```powershell
+perro new_dlc --name <dlc_name> [--path <project_dir>] [--no-open]
+```
+
+What it does:
+
+1. Resolves `<project_dir>` (defaults to current working directory, walking up to find `project.toml`).
+2. Creates `<project_dir>/dlcs/<dlc_name>/`.
+3. Creates starter directories:
+   - `scenes/`
+   - `scripts/`
+   - `materials/`
+   - `meshes/`
+4. Creates starter files:
+   - `scenes/main.scn`
+   - `scripts/script.rs`
+5. Starter scene uses `dlc://<dlc_name>/scripts/script.rs`.
+
+Name rules:
+
+- `self` is reserved for `dlc://self/...` and is rejected as a DLC name (case-insensitive).
+
+Examples:
+
+```powershell
+perro new_dlc --name CosmeticsPack
+perro new_dlc --name CosmeticsPack --path D:\GameProjects\MyGame
+```
+
+## `dlc`
+
+Command:
+
+```powershell
+perro dlc --name <dlc_name> [--path <project_dir>]
+```
+
+What it does:
+
+1. Reads source from `<project_dir>/dlcs/<dlc_name>/`.
+2. Generates DLC scripts crate under `.perro/dlc/<dlc_name>/scripts/`.
+3. Generates DLC pack crate under `.perro/dlc/<dlc_name>/pack/`.
+4. Builds both runtime-loadable modules.
+5. Packs manifest + scripts module + pack module + DLC resources into:
+   - `<project_dir>/.output/dlc/<dlc_name>.dlc`
+
+Name rules:
+
+- `self` is reserved for `dlc://self/...` and is rejected as a DLC name (case-insensitive).
 
 ## `dev`
 
@@ -239,19 +295,26 @@ perro check --path D:\GameProjects\MyGame
 Command:
 
 ```powershell
-perro new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>] [--no-open]
+perro new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
 ```
 
 What it does:
 
 1. Resolves `<project_dir>` (defaults to current working directory, walking up to find `project.toml`).
-2. Resolves `<res_subdir>` relative to the project `res` root.
+2. Resolves target root:
+   - default: project `res/`
+   - with `--dlc <name>`: project `dlcs/<name>/`
+3. Resolves `<res_subdir>` relative to that selected root.
 3. Creates a new `*.rs` script using the empty script template.
 4. Opens the new file in VS Code (disable with `--no-open`).
 
 Notes:
 
-- `--res` accepts `res://` or `/`-style paths, for example `res://scripts` or `/scripts`.
+- Base game mode:
+  - `--res` accepts `res://` or `/`-style paths, for example `res://scripts` or `/scripts`.
+- DLC mode (`--dlc <name>`):
+  - `--res` accepts `dlc://<name>/...` or `/`-style paths.
+  - Example: `--res dlc://ExpansionOne/scripts` or `--res /scripts`.
 - `--name` can be passed without `.rs`; the extension is added automatically.
 
 Examples:
@@ -260,6 +323,8 @@ Examples:
 perro new_script --name PlayerController
 perro new_script --name PlayerController --res /scripts
 perro new_script --name PlayerController --path D:\GameProjects\MyGame --res res://scripts
+perro new_script --name DlcController --path D:\GameProjects\MyGame --dlc ExpansionOne --res /scripts
+perro new_script --name DlcController --path D:\GameProjects\MyGame --dlc ExpansionOne --res dlc://ExpansionOne/scripts
 perro new_script --name PlayerController --no-open
 ```
 
@@ -268,20 +333,26 @@ perro new_script --name PlayerController --no-open
 Command:
 
 ```powershell
-perro new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--template 2D|3D] [--no-open]
+perro new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--template 2D|3D] [--no-open]
 ```
 
 What it does:
 
 1. Resolves `<project_dir>` (defaults to current working directory, walking up to find `project.toml`).
-2. Resolves `<res_subdir>` relative to the project `res` root.
+2. Resolves target root:
+   - default: project `res/`
+   - with `--dlc <name>`: project `dlcs/<name>/`
+3. Resolves `<res_subdir>` relative to that selected root.
 3. Creates a new `*.scn` scene using the selected template.
 4. Opens the new file in VS Code (disable with `--no-open`).
 
 Notes:
 
 - `--template` defaults to `2D`.
-- `--res` accepts `res://` or `/`-style paths, for example `res://scenes` or `/scenes`.
+- Base game mode:
+  - `--res` accepts `res://` or `/`-style paths, for example `res://scenes` or `/scenes`.
+- DLC mode (`--dlc <name>`):
+  - `--res` accepts `dlc://<name>/...` or `/`-style paths.
 - `--name` can be passed without `.scn`; the extension is added automatically.
 - `--name` must be a file name only (no path separators).
 
@@ -292,6 +363,7 @@ perro new_scene --name Main
 perro new_scene --name Main3D --template 3D
 perro new_scene --name Main --res /scenes
 perro new_scene --name Main --path D:\GameProjects\MyGame --res res://scenes --template 2D
+perro new_scene --name DlcIntro --path D:\GameProjects\MyGame --dlc ExpansionOne --res /scenes
 perro new_scene --name Main --no-open
 ```
 
@@ -300,20 +372,26 @@ perro new_scene --name Main --no-open
 Command:
 
 ```powershell
-perro new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>] [--no-open]
+perro new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
 ```
 
 What it does:
 
 1. Resolves `<project_dir>` (defaults to current working directory, walking up to find `project.toml`).
-2. Resolves `<res_subdir>` relative to the project `res` root.
+2. Resolves target root:
+   - default: project `res/`
+   - with `--dlc <name>`: project `dlcs/<name>/`
+3. Resolves `<res_subdir>` relative to that selected root.
 3. Creates a new `*.panim` animation clip using the default animation template.
 4. Opens the new file in VS Code (disable with `--no-open`).
 
 Notes:
 
 - Defaults to `res/animations` when `--res` is omitted.
-- `--res` accepts `res://` or `/`-style paths, for example `res://animations` or `/animations`.
+- Base game mode:
+  - `--res` accepts `res://` or `/`-style paths, for example `res://animations` or `/animations`.
+- DLC mode (`--dlc <name>`):
+  - `--res` accepts `dlc://<name>/...` or `/`-style paths.
 - `--name` can be passed without `.panim`; the extension is added automatically.
 - `--name` must be a file name only (no path separators).
 
@@ -323,5 +401,6 @@ Examples:
 perro new_animation --name CubeMove
 perro new_animation --name HeroRun --res /animations
 perro new_animation --name HeroRun --path D:\GameProjects\MyGame --res res://animations
+perro new_animation --name DlcIdle --path D:\GameProjects\MyGame --dlc ExpansionOne --res /animations
 perro new_animation --name HeroRun --no-open
 ```

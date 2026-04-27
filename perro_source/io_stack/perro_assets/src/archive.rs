@@ -1,6 +1,7 @@
 use flate2::read::DeflateDecoder;
 use std::collections::HashMap;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::path::Path;
 use std::sync::Arc;
 
 use super::common::{FLAG_COMPRESSED, PerroAssetsEntryMeta, read_header, read_index_entry};
@@ -16,6 +17,22 @@ impl PerroAssetsArchive {
     /// Open a .perro archive from embedded bytes (include_bytes!)
     pub fn open_from_bytes(data: &'static [u8]) -> io::Result<Self> {
         let arc: Arc<[u8]> = Arc::from(data);
+        Self::open_from_arc(arc)
+    }
+
+    /// Open a .perro archive from owned bytes.
+    pub fn open_from_owned_bytes(data: Vec<u8>) -> io::Result<Self> {
+        let arc: Arc<[u8]> = Arc::from(data.into_boxed_slice());
+        Self::open_from_arc(arc)
+    }
+
+    /// Open a .perro archive from file path.
+    pub fn open_from_file(path: &Path) -> io::Result<Self> {
+        let bytes = std::fs::read(path)?;
+        Self::open_from_owned_bytes(bytes)
+    }
+
+    fn open_from_arc(arc: Arc<[u8]>) -> io::Result<Self> {
         let mut cursor = Cursor::new(&*arc);
         let index = Self::parse_index(&mut cursor)?;
         Ok(Self { data: arc, index })

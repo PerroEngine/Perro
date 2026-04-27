@@ -12,14 +12,18 @@ use perro_render_bridge::{
     SkeletonPalette, Sky3DState, SpotLight3DState, Sprite2DCommand,
 };
 use perro_structs::{Transform2D, Transform3D};
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 
 pub(crate) struct ScriptRuntimeState {
     pub(crate) active_script_stack: Vec<(usize, NodeID)>,
     pub(crate) last_node_lookup: Option<(NodeID, usize, u32)>,
     pub(crate) pending_start_scripts: Vec<NodeID>,
     pub(crate) pending_start_flags: Vec<Option<NodeID>>,
-    pub(crate) script_library: Option<libloading::Library>,
+    pub(crate) script_libraries: Vec<libloading::Library>,
+    pub(crate) base_scripts_loaded: bool,
+    pub(crate) mounted_dlc_script_libs: AHashMap<String, PathBuf>,
+    pub(crate) loaded_dlc_script_libs: AHashSet<String>,
+    pub(crate) script_instance_dlc_mounts: AHashMap<NodeID, String>,
     pub(crate) dynamic_script_registry: AHashMap<u64, RuntimeScriptCtor>,
     pub(crate) script_behavior_cache: AHashMap<u64, Arc<RuntimeScriptBehavior>>,
 }
@@ -31,7 +35,11 @@ impl ScriptRuntimeState {
             last_node_lookup: None,
             pending_start_scripts: Vec::new(),
             pending_start_flags: Vec::new(),
-            script_library: None,
+            script_libraries: Vec::new(),
+            base_scripts_loaded: false,
+            mounted_dlc_script_libs: AHashMap::default(),
+            loaded_dlc_script_libs: AHashSet::default(),
+            script_instance_dlc_mounts: AHashMap::default(),
             dynamic_script_registry: AHashMap::default(),
             script_behavior_cache: AHashMap::default(),
         }

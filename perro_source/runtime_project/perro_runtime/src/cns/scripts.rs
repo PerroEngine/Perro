@@ -1,6 +1,7 @@
 use crate::{Runtime, runtime_project::ProviderMode};
 use perro_ids::ScriptMemberID;
 use perro_input::InputContext;
+use perro_io::set_dlc_self_context;
 use perro_resource_context::ResourceContext;
 use perro_runtime_context::RuntimeContext;
 use perro_scripting::{ScriptBehavior, ScriptConstructor};
@@ -28,21 +29,17 @@ impl Runtime {
             .name
             .clone();
 
-        match self.provider_mode() {
-            ProviderMode::Dynamic => {
-                self.ensure_dynamic_script_registry_loaded(&project_root, &project_name)?
-            }
-            ProviderMode::Static => {
-                if self.script_runtime.dynamic_script_registry.is_empty() {
-                    return Ok(());
-                }
-            }
+        if self.provider_mode() == ProviderMode::Dynamic
+            || !self.script_runtime.mounted_dlc_script_libs.is_empty()
+        {
+            self.ensure_dynamic_script_registry_loaded(&project_root, &project_name)?;
         }
 
         for pending in script_nodes {
             self.attach_script_instance(
                 pending.node_id,
                 pending.script_path_hash,
+                pending.script_mount.as_deref(),
                 &pending.scene_injected_vars,
             )?;
         }
@@ -54,6 +51,7 @@ impl Runtime {
         &mut self,
         node: perro_ids::NodeID,
         script_path_hash: u64,
+        script_mount: Option<&str>,
         scene_injected_vars: &[(ScriptMemberID, Variant)],
     ) -> Result<(), String> {
         if node.is_nil() || self.nodes.get(node).is_none() {
@@ -103,6 +101,13 @@ impl Runtime {
         if self.scripts.get_instance(node).is_some() {
             self.remove_script_instance(node);
         }
+        if let Some(mount) = script_mount {
+            self.script_runtime
+                .script_instance_dlc_mounts
+                .insert(node, mount.to_ascii_lowercase());
+        } else {
+            self.script_runtime.script_instance_dlc_mounts.remove(&node);
+        }
         self.scripts.insert(node, Arc::clone(&behavior), state);
         let _ = self.scripts.with_instance_mut(node, |instance| {
             instance
@@ -119,8 +124,15 @@ impl Runtime {
             // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
             let ipt: InputContext<'_, perro_input::InputSnapshot> =
                 unsafe { InputContext::new(&*input_ptr) };
+            let mount = self
+                .script_runtime
+                .script_instance_dlc_mounts
+                .get(&node)
+                .cloned();
+            set_dlc_self_context(mount.as_deref());
             let mut ctx = RuntimeContext::new(self);
             behavior.on_init(&mut ctx, &res, &ipt, node);
+            set_dlc_self_context(None);
         }
         if flags.has_all_init() {
             self.queue_start_script(node);
@@ -134,13 +146,38 @@ impl Runtime {
         project_root: &Path,
         project_name: &str,
     ) -> Result<(), String> {
-        if !self.script_runtime.dynamic_script_registry.is_empty() {
-            return Ok(());
+        if self.provider_mode() == ProviderMode::Dynamic && !self.script_runtime.base_scripts_loaded
+        {
+            let dylib_path = resolve_scripts_dylib_path(project_root)?;
+            self.load_script_registry_library(&dylib_path, project_root, project_name)?;
+            self.script_runtime.base_scripts_loaded = true;
         }
 
-        let dylib_path = resolve_scripts_dylib_path(project_root)?;
+        let mounted = self
+            .script_runtime
+            .mounted_dlc_script_libs
+            .clone()
+            .into_iter()
+            .collect::<Vec<_>>();
+        for (dlc_key, dylib_path) in mounted {
+            if self.script_runtime.loaded_dlc_script_libs.contains(&dlc_key) {
+                continue;
+            }
+            self.load_script_registry_library(&dylib_path, project_root, project_name)?;
+            self.script_runtime.loaded_dlc_script_libs.insert(dlc_key);
+        }
+
+        Ok(())
+    }
+
+    fn load_script_registry_library(
+        &mut self,
+        dylib_path: &Path,
+        project_root: &Path,
+        project_name: &str,
+    ) -> Result<(), String> {
         let library = unsafe {
-            libloading::Library::new(&dylib_path).map_err(|err| {
+            libloading::Library::new(dylib_path).map_err(|err| {
                 format!(
                     "failed to load scripts dylib `{}`: {err}",
                     dylib_path.display()
@@ -214,7 +251,7 @@ impl Runtime {
             }
         }
 
-        self.script_runtime.script_library = Some(library);
+        self.script_runtime.script_libraries.push(library);
         Ok(())
     }
 }

@@ -1,4 +1,4 @@
-use perro_assets::build_perro_assets_archive;
+use perro_assets::{build_perro_archive_from_entries, build_perro_assets_archive};
 use perro_io::walkdir::walk_dir;
 use perro_project::{ensure_source_overrides, load_project_toml};
 use std::{
@@ -40,20 +40,50 @@ pub enum ScriptsBuildProfile {
     Release,
 }
 
+fn validate_dlc_name(dlc_name: &str) -> Result<(), CompilerError> {
+    if dlc_name.eq_ignore_ascii_case("self") {
+        return Err(CompilerError::SceneParse(
+            "dlc name `self` is reserved".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn sync_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError> {
     let res_dir = project_root.join("res");
     let scripts_src = project_root.join(".perro").join("scripts").join("src");
+    sync_scripts_from_source(&res_dir, &scripts_src, "res://")
+}
+
+pub fn sync_dlc_scripts(project_root: &Path, dlc_name: &str) -> Result<Vec<String>, CompilerError> {
+    validate_dlc_name(dlc_name)?;
+    let dlc_root = project_root.join("dlcs").join(dlc_name);
+    let scripts_src = project_root
+        .join(".perro")
+        .join("dlc")
+        .join(dlc_name)
+        .join("scripts")
+        .join("src");
+    let prefix = format!("dlc://{dlc_name}/");
+    sync_scripts_from_source(&dlc_root, &scripts_src, &prefix)
+}
+
+fn sync_scripts_from_source(
+    source_dir: &Path,
+    scripts_src: &Path,
+    script_path_prefix: &str,
+) -> Result<Vec<String>, CompilerError> {
     fs::create_dir_all(&scripts_src)?;
 
     let mut copied = Vec::<String>::new();
     let mut registrable = Vec::<String>::new();
     let mut generated_rel_paths = HashSet::<String>::new();
-    if res_dir.exists() {
-        walk_dir(&res_dir, &mut |path| {
+    if source_dir.exists() {
+        walk_dir(source_dir, &mut |path| {
             if path.extension().and_then(|e| e.to_str()) != Some("rs") {
                 return Ok(());
             }
-            let rel = path.strip_prefix(&res_dir).unwrap();
+            let rel = path.strip_prefix(source_dir).unwrap();
             let rel_norm = rel.to_string_lossy().replace('\\', "/");
             let generated_rel = generated_script_rel(&rel_norm);
             let dst = scripts_src.join(&generated_rel);
@@ -76,7 +106,7 @@ pub fn sync_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError> {
     copied.sort();
     registrable.sort();
     let _ = remove_stale_generated_scripts(&scripts_src, &generated_rel_paths)?;
-    let _ = write_scripts_lib(&scripts_src, &copied, &registrable)?;
+    let _ = write_scripts_lib(&scripts_src, &copied, &registrable, script_path_prefix)?;
     Ok(copied)
 }
 
@@ -107,8 +137,559 @@ pub fn compile_scripts_with_profile(
     if !status.success() {
         return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
     }
+    compile_all_dlc_scripts_with_profile(project_root, profile)?;
 
     Ok(copied)
+}
+
+fn compile_all_dlc_scripts_with_profile(
+    project_root: &Path,
+    profile: ScriptsBuildProfile,
+) -> Result<(), CompilerError> {
+    let dlcs_root = project_root.join("dlcs");
+    if !dlcs_root.exists() {
+        return Ok(());
+    }
+    let entries = fs::read_dir(&dlcs_root)?;
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(dlc_name) = path.file_name().and_then(|v| v.to_str()) else {
+            continue;
+        };
+        let crate_slug = sanitize_crate_slug(dlc_name);
+        let crate_name = format!("scripts_{crate_slug}");
+        let scripts_crate = project_root
+            .join(".perro")
+            .join("dlc")
+            .join(dlc_name)
+            .join("scripts");
+        let scripts_src = scripts_crate.join("src");
+        fs::create_dir_all(&scripts_src)?;
+        write_dlc_scripts_manifest(project_root, &crate_name, &scripts_crate)?;
+        write_string_if_changed(&scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
+        let _ = sync_dlc_scripts(project_root, dlc_name)?;
+        compile_scripts_crate(project_root, &scripts_crate, profile)?;
+        let dylib = resolve_compiled_dylib(
+            project_root,
+            &dylib_name_for_crate(&crate_name),
+            &dylib_prefix_for_crate(&crate_name),
+        )?;
+        fs::copy(dylib, scripts_crate.join(scripts_dylib_name()))?;
+    }
+    Ok(())
+}
+
+fn compile_scripts_crate(
+    project_root: &Path,
+    scripts_crate: &Path,
+    profile: ScriptsBuildProfile,
+) -> Result<(), CompilerError> {
+    let target_dir = project_root.join("target");
+    let mut cmd = Command::new("cargo");
+    cmd.arg("build")
+        .env("CARGO_TARGET_DIR", target_dir)
+        .current_dir(scripts_crate);
+    if profile == ScriptsBuildProfile::Release {
+        cmd.arg("--release")
+            .env("CARGO_PROFILE_RELEASE_INCREMENTAL", "true")
+            .env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "64");
+    }
+    let status = cmd.status()?;
+    if !status.success() {
+        return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
+    }
+    Ok(())
+}
+
+fn write_dlc_scripts_manifest(
+    project_root: &Path,
+    crate_name: &str,
+    scripts_crate: &Path,
+) -> Result<(), CompilerError> {
+    fs::create_dir_all(scripts_crate.join("src"))?;
+    let engine_root = engine_root_dir();
+    let perro_api_path = normalize_toml_path(
+        &engine_root
+            .join("perro_source")
+            .join("api_modules")
+            .join("perro_api"),
+    );
+    let perro_runtime_path = normalize_toml_path(
+        &engine_root
+            .join("perro_source")
+            .join("runtime_project")
+            .join("perro_runtime"),
+    );
+    let mut manifest = format!(
+        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_runtime = {{ path = \"{perro_runtime_path}\" }}\n"
+    );
+    let extra_deps = read_extra_script_deps(project_root)?;
+    if !extra_deps.is_empty() {
+        for line in extra_deps {
+            manifest.push_str(&line);
+            manifest.push('\n');
+        }
+    }
+    manifest.push_str(&build_patch_crates_io_block(&engine_root));
+    let manifest_path = scripts_crate.join("Cargo.toml");
+    write_string_if_changed(&manifest_path, &manifest)?;
+    write_dlc_internal_crate_gitignore(scripts_crate)?;
+    Ok(())
+}
+
+fn engine_root_dir() -> PathBuf {
+    let raw = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..");
+    raw.canonicalize().unwrap_or(raw)
+}
+
+fn normalize_toml_path(path: &Path) -> String {
+    let raw = path.to_string_lossy();
+    let stripped = raw.strip_prefix("\\\\?\\").unwrap_or(raw.as_ref());
+    stripped.replace('\\', "/")
+}
+
+fn build_patch_crates_io_block(engine_root: &Path) -> String {
+    const CRATES: &[(&str, &str)] = &[
+        ("perro_animation", "perro_source/core/perro_animation"),
+        ("perro_nodes", "perro_source/core/perro_nodes"),
+        ("perro_structs", "perro_source/core/perro_structs"),
+        ("perro_ids", "perro_source/core/perro_ids"),
+        ("perro_variant", "perro_source/core/perro_variant"),
+        ("perro_particle_math", "perro_source/core/perro_particle_math"),
+        ("perro_runtime", "perro_source/runtime_project/perro_runtime"),
+        (
+            "perro_internal_updates",
+            "perro_source/runtime_project/perro_internal_updates",
+        ),
+        ("perro_scene", "perro_source/runtime_project/perro_scene"),
+        (
+            "perro_runtime_context",
+            "perro_source/api_modules/perro_runtime_context",
+        ),
+        (
+            "perro_resource_context",
+            "perro_source/api_modules/perro_resource_context",
+        ),
+        ("perro_api", "perro_source/api_modules/perro_api"),
+        ("perro_modules", "perro_source/api_modules/perro_modules"),
+        ("perro_input", "perro_source/api_modules/perro_input"),
+        (
+            "perro_render_bridge",
+            "perro_source/render_stack/perro_render_bridge",
+        ),
+        ("perro_graphics", "perro_source/render_stack/perro_graphics"),
+        ("perro_meshlets", "perro_source/render_stack/perro_meshlets"),
+        ("perro_app", "perro_source/render_stack/perro_app"),
+        ("perro_scripting", "perro_source/script_stack/perro_scripting"),
+        (
+            "perro_scripting_macros",
+            "perro_source/script_stack/perro_scripting_macros",
+        ),
+        ("perro_compiler", "perro_source/build_pipeline/perro_compiler"),
+        (
+            "perro_static_pipeline",
+            "perro_source/build_pipeline/perro_static_pipeline",
+        ),
+        ("perro_io", "perro_source/io_stack/perro_io"),
+        ("perro_assets", "perro_source/io_stack/perro_assets"),
+        ("perro_bark", "perro_source/audio_stack/perro_bark"),
+        ("perro_project", "perro_source/runtime_project/perro_project"),
+        ("perro_cli", "perro_source/devtools/perro_cli"),
+        ("perro_dev_runner", "perro_source/devtools/perro_dev_runner"),
+    ];
+    let mut out = String::new();
+    out.push_str("\n[patch.crates-io]\n");
+    for (name, rel) in CRATES {
+        let full = normalize_toml_path(&engine_root.join(rel));
+        out.push_str(&format!("{name} = {{ path = \"{full}\" }}\n"));
+    }
+    out
+}
+
+fn read_extra_script_deps(project_root: &Path) -> Result<Vec<String>, CompilerError> {
+    let deps_toml = project_root.join("deps.toml");
+    if !deps_toml.exists() {
+        return Ok(Vec::new());
+    }
+    let src = fs::read_to_string(&deps_toml)?;
+    let parsed = src
+        .parse::<toml::Value>()
+        .map_err(|err| CompilerError::SceneParse(format!("failed to parse {}: {err}", deps_toml.display())))?;
+    let Some(table) = parsed.get("dependencies").and_then(toml::Value::as_table) else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    for (name, spec) in table {
+        if name == "perro_api" || name == "perro_runtime" {
+            continue;
+        }
+        if let Some(v) = spec.as_str() {
+            out.push(format!("{name} = \"{v}\""));
+        } else {
+            out.push(format!("{name} = {}", spec));
+        }
+    }
+    Ok(out)
+}
+
+fn sanitize_crate_slug(input: &str) -> String {
+    let mut out = String::new();
+    for c in input.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push('_');
+        }
+    }
+    let trimmed = out.trim_matches('_');
+    if trimmed.is_empty() {
+        "dlc".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn write_dlc_manifest(
+    path: &Path,
+    dlc_name: &str,
+    script_lib_rel: &str,
+    pack_lib_rel: &str,
+) -> Result<(), CompilerError> {
+    let body = format!(
+        "name = \"{dlc_name}\"\nversion = \"0.1.0\"\nrequired_perro = \"0.1.0\"\nrequired_project = \"*\"\nscript_lib = \"{script_lib_rel}\"\npack_lib = \"{pack_lib_rel}\"\n"
+    );
+    write_string_if_changed(path, &body)?;
+    Ok(())
+}
+
+fn write_dlc_pack_manifest(crate_name: &str, pack_dir: &Path) -> Result<(), CompilerError> {
+    fs::create_dir_all(pack_dir.join("src"))?;
+    let manifest = format!(
+        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n"
+    );
+    write_string_if_changed(&pack_dir.join("Cargo.toml"), &manifest)?;
+    write_dlc_internal_crate_gitignore(pack_dir)?;
+    Ok(())
+}
+
+fn write_dlc_internal_crate_gitignore(crate_root: &Path) -> Result<(), CompilerError> {
+    write_string_if_changed(&crate_root.join(".gitignore"), &default_dlc_internal_gitignore())?;
+    Ok(())
+}
+
+fn default_dlc_internal_gitignore() -> String {
+    "target/\nCargo.lock\nscripts.dll\nlibscripts.so\nlibscripts.dylib\npack.dll\nlibpack.so\nlibpack.dylib\n".to_string()
+}
+
+fn write_dlc_pack_lib(
+    _project_root: &Path,
+    dlc_name: &str,
+    dlc_root: &Path,
+    pack_dir: &Path,
+) -> Result<(), CompilerError> {
+    let mut rel_files = Vec::<String>::new();
+    if dlc_root.exists() {
+        walk_dir(dlc_root, &mut |path| {
+            if path.is_dir() {
+                return Ok(());
+            }
+            let rel = path
+                .strip_prefix(dlc_root)
+                .map_err(|err| std::io::Error::other(err.to_string()))?;
+            let rel_norm = rel.to_string_lossy().replace('\\', "/");
+            if rel_norm.ends_with(".rs") {
+                return Ok(());
+            }
+            rel_files.push(rel_norm);
+            Ok(())
+        })?;
+    }
+    rel_files.sort();
+
+    let mut src = String::new();
+    src.push_str("pub struct DlcPackEntry {\n");
+    src.push_str("    pub hash: u64,\n");
+    src.push_str("    pub path: &'static str,\n");
+    src.push_str("    pub data: &'static [u8],\n");
+    src.push_str("}\n\n");
+    src.push_str("pub static DLC_PACK_REGISTRY: &[DlcPackEntry] = &[\n");
+    for rel in &rel_files {
+        let virtual_path = format!("dlc://{dlc_name}/{rel}");
+        let hash = perro_ids::string_to_u64(&virtual_path);
+        let full = normalize_toml_path(&dlc_root.join(rel.replace('/', "\\")));
+        src.push_str(&format!(
+            "    DlcPackEntry {{ hash: {hash}u64, path: \"{virtual_path}\", data: include_bytes!(r#\"{full}\"#) }},\n"
+        ));
+    }
+    src.push_str("];\n\n");
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
+    );
+    src.push_str("    if data_out.is_null() || len_out.is_null() {\n        return false;\n    }\n");
+    src.push_str(
+        "    for entry in DLC_PACK_REGISTRY {\n        if entry.hash == path_hash {\n            unsafe {\n                *data_out = entry.data.as_ptr();\n                *len_out = entry.data.len();\n            }\n            return true;\n        }\n    }\n    false\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_has(path_hash: u64) -> bool {\n    DLC_PACK_REGISTRY.iter().any(|entry| entry.hash == path_hash)\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_registry_len() -> usize {\n    DLC_PACK_REGISTRY.len()\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_registry_get(index: usize, path_hash_out: *mut u64, path_out: *mut *const u8, path_len_out: *mut usize, data_out: *mut *const u8, data_len_out: *mut usize) -> bool {\n",
+    );
+    src.push_str(
+        "    if path_hash_out.is_null() || path_out.is_null() || path_len_out.is_null() || data_out.is_null() || data_len_out.is_null() {\n        return false;\n    }\n",
+    );
+    src.push_str(
+        "    let Some(entry) = DLC_PACK_REGISTRY.get(index) else {\n        return false;\n    };\n",
+    );
+    src.push_str(
+        "    unsafe {\n        *path_hash_out = entry.hash;\n        *path_out = entry.path.as_ptr();\n        *path_len_out = entry.path.len();\n        *data_out = entry.data.as_ptr();\n        *data_len_out = entry.data.len();\n    }\n    true\n}\n",
+    );
+
+    write_string_if_changed(&pack_dir.join("src").join("lib.rs"), &src)?;
+    Ok(())
+}
+
+fn resolve_compiled_dylib(
+    project_root: &Path,
+    dylib_name: &str,
+    dylib_prefix: &str,
+) -> Result<PathBuf, CompilerError> {
+    let profiles = ["release", "debug"];
+    let mut scanned = Vec::<String>::new();
+    let mut candidates = Vec::<(std::time::SystemTime, PathBuf)>::new();
+    for profile in profiles {
+        let profile_dir = project_root.join("target").join(profile);
+        let primary = profile_dir.join(dylib_name);
+        scanned.push(primary.display().to_string());
+        if primary.exists()
+            && let Ok(meta) = fs::metadata(&primary)
+            && let Ok(modified) = meta.modified()
+        {
+            candidates.push((modified, primary.clone()));
+        }
+
+        let deps_dir = profile_dir.join("deps");
+        scanned.push(deps_dir.display().to_string());
+        if deps_dir.exists() {
+            for entry in fs::read_dir(&deps_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
+                    continue;
+                };
+                if name.starts_with(dylib_prefix)
+                    && name.ends_with(scripts_dylib_suffix())
+                    && let Ok(meta) = fs::metadata(&path)
+                    && let Ok(modified) = meta.modified()
+                {
+                    candidates.push((modified, path));
+                }
+            }
+        }
+    }
+    if let Some((_, path)) = candidates.into_iter().max_by_key(|(modified, _)| *modified) {
+        return Ok(path);
+    }
+    Err(CompilerError::SceneParse(format!(
+        "scripts dylib not found. scanned: {}",
+        scanned.join(", ")
+    )))
+}
+
+fn default_scripts_lib_rs() -> String {
+    r#"use perro_runtime::{Runtime, RuntimeInputApi, RuntimeResourceApi};
+use perro_api::scripting::ScriptConstructor;
+
+pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<Runtime, RuntimeResourceApi, RuntimeInputApi>)] = &[];
+
+#[unsafe(no_mangle)]
+pub extern "C" fn perro_scripts_init() {}
+"#
+    .to_string()
+}
+
+#[cfg(target_os = "windows")]
+fn scripts_dylib_name() -> &'static str {
+    "scripts.dll"
+}
+
+#[cfg(target_os = "linux")]
+fn scripts_dylib_name() -> &'static str {
+    "libscripts.so"
+}
+
+#[cfg(target_os = "macos")]
+fn scripts_dylib_name() -> &'static str {
+    "libscripts.dylib"
+}
+
+#[cfg(target_os = "windows")]
+fn runtime_pack_dylib_name() -> &'static str {
+    "pack.dll"
+}
+
+#[cfg(target_os = "linux")]
+fn runtime_pack_dylib_name() -> &'static str {
+    "libpack.so"
+}
+
+#[cfg(target_os = "macos")]
+fn runtime_pack_dylib_name() -> &'static str {
+    "libpack.dylib"
+}
+
+#[cfg(target_os = "windows")]
+fn dylib_name_for_crate(crate_name: &str) -> String {
+    format!("{crate_name}.dll")
+}
+
+#[cfg(target_os = "linux")]
+fn dylib_name_for_crate(crate_name: &str) -> String {
+    format!("lib{crate_name}.so")
+}
+
+#[cfg(target_os = "macos")]
+fn dylib_name_for_crate(crate_name: &str) -> String {
+    format!("lib{crate_name}.dylib")
+}
+
+#[cfg(target_os = "windows")]
+fn dylib_prefix_for_crate(crate_name: &str) -> String {
+    format!("{crate_name}-")
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn dylib_prefix_for_crate(crate_name: &str) -> String {
+    format!("lib{crate_name}-")
+}
+
+#[cfg(target_os = "windows")]
+fn scripts_dylib_suffix() -> &'static str {
+    ".dll"
+}
+
+#[cfg(target_os = "linux")]
+fn scripts_dylib_suffix() -> &'static str {
+    ".so"
+}
+
+#[cfg(target_os = "macos")]
+fn scripts_dylib_suffix() -> &'static str {
+    ".dylib"
+}
+
+pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf, CompilerError> {
+    validate_dlc_name(dlc_name)?;
+    ensure_source_overrides(project_root)?;
+    let dlc_root = project_root.join("dlcs").join(dlc_name);
+    if !dlc_root.exists() {
+        return Err(CompilerError::SceneParse(format!(
+            "dlc source not found: {}",
+            dlc_root.display()
+        )));
+    }
+
+    let generated_root = project_root.join(".perro").join("dlc").join(dlc_name);
+    let scripts_crate = generated_root.join("scripts");
+    let scripts_src = scripts_crate.join("src");
+    let pack_dir = generated_root.join("pack");
+    fs::create_dir_all(&scripts_src)?;
+    fs::create_dir_all(&pack_dir)?;
+
+    let crate_slug = sanitize_crate_slug(dlc_name);
+    let crate_name = format!("scripts_{crate_slug}");
+    write_dlc_scripts_manifest(project_root, &crate_name, &scripts_crate)?;
+    write_string_if_changed(&scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
+
+    let _ = sync_dlc_scripts(project_root, dlc_name)?;
+    compile_scripts_crate(project_root, &scripts_crate, ScriptsBuildProfile::Release)?;
+    let output_dylib_name = scripts_dylib_name();
+    let dylib = resolve_compiled_dylib(
+        project_root,
+        &dylib_name_for_crate(&crate_name),
+        &dylib_prefix_for_crate(&crate_name),
+    )?;
+    let staged_dylib = scripts_crate.join(output_dylib_name);
+    fs::copy(&dylib, &staged_dylib)?;
+
+    let pack_crate_name = format!("pack_{}", sanitize_crate_slug(dlc_name));
+    write_dlc_pack_manifest(&pack_crate_name, &pack_dir)?;
+    write_dlc_pack_lib(project_root, dlc_name, &dlc_root, &pack_dir)?;
+    compile_scripts_crate(project_root, &pack_dir, ScriptsBuildProfile::Release)?;
+    let pack_dylib_name = runtime_pack_dylib_name();
+    let built_pack_dylib = resolve_compiled_dylib(
+        project_root,
+        &dylib_name_for_crate(&pack_crate_name),
+        &dylib_prefix_for_crate(&pack_crate_name),
+    )?;
+    let staged_pack_dylib = pack_dir.join(pack_dylib_name);
+    fs::copy(&built_pack_dylib, &staged_pack_dylib)?;
+
+    let package_root = project_root.join(".output").join("dlc");
+    fs::create_dir_all(&package_root)?;
+    let staging = package_root.join(format!("{dlc_name}.dlc.staging"));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
+    fs::create_dir_all(staging.join("scripts"))?;
+    fs::create_dir_all(staging.join("pack"))?;
+    fs::copy(&staged_dylib, staging.join("scripts").join(output_dylib_name))?;
+    fs::copy(&staged_pack_dylib, staging.join("pack").join(pack_dylib_name))?;
+    write_dlc_manifest(
+        &staging.join("manifest.toml"),
+        dlc_name,
+        &format!("scripts/{output_dylib_name}"),
+        &format!("pack/{pack_dylib_name}"),
+    )?;
+
+    let mut archive_entries = Vec::<(String, PathBuf)>::new();
+    archive_entries.push((
+        "manifest.toml".to_string(),
+        staging.join("manifest.toml"),
+    ));
+    archive_entries.push((
+        format!("scripts/{output_dylib_name}"),
+        staging.join("scripts").join(output_dylib_name),
+    ));
+    archive_entries.push((
+        format!("pack/{pack_dylib_name}"),
+        staging.join("pack").join(pack_dylib_name),
+    ));
+
+    let mut rel_files = Vec::<String>::new();
+    walk_dir(&dlc_root, &mut |path| {
+        if path.is_dir() {
+            return Ok(());
+        }
+        let rel = path.strip_prefix(&dlc_root).unwrap();
+        let rel_norm = rel.to_string_lossy().replace('\\', "/");
+        if rel_norm.ends_with(".rs") {
+            return Ok(());
+        }
+        rel_files.push(rel_norm);
+        Ok(())
+    })?;
+    rel_files.sort();
+    for rel in rel_files {
+        archive_entries.push((format!("res/{rel}"), dlc_root.join(rel.replace('/', "\\"))));
+    }
+
+    let package_file = package_root.join(format!("{dlc_name}.dlc"));
+    if package_file.exists() {
+        fs::remove_file(&package_file)?;
+    }
+    build_perro_archive_from_entries(&package_file, &archive_entries)?;
+    Ok(package_file)
 }
 
 pub fn compile_project_bundle(project_root: &Path, profile: bool) -> Result<(), CompilerError> {
@@ -638,6 +1219,7 @@ fn write_scripts_lib(
     scripts_src: &Path,
     copied: &[String],
     registrable: &[String],
+    script_path_prefix: &str,
 ) -> Result<bool, CompilerError> {
     let mut out = String::new();
     out.push_str("#![allow(unused_imports, unused_variables, dead_code)]\n");
@@ -694,7 +1276,7 @@ fn write_scripts_lib(
     let mut hashes = HashMap::<u64, String>::new();
     for rel in registrable {
         let module = module_name_from_rel(rel);
-        let path = format!("res://{rel}");
+        let path = format!("{script_path_prefix}{rel}");
         let hash = perro_ids::string_to_u64(&path);
         if let Some(prev) = hashes.insert(hash, path.clone()) {
             return Err(CompilerError::SceneParse(format!(

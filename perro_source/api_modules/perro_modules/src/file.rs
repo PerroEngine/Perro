@@ -33,7 +33,8 @@ pub fn save_string(path: &str, data: &str) -> io::Result<()> {
 pub fn exists(path: &str) -> bool {
     match perro_io::resolve_path(path) {
         perro_io::ResolvedPath::Disk(pb) => pb.exists(),
-        perro_io::ResolvedPath::PerroAssets(_) => load_asset(path).is_ok(),
+        perro_io::ResolvedPath::PerroAssets(_)
+        | perro_io::ResolvedPath::DlcPerroAssets { .. } => load_asset(path).is_ok(),
     }
 }
 
@@ -41,6 +42,9 @@ pub fn resolve_path_string(path: &str) -> String {
     match perro_io::resolve_path(path) {
         perro_io::ResolvedPath::Disk(pb) => pb.to_string_lossy().to_string(),
         perro_io::ResolvedPath::PerroAssets(vpath) => format!("perroassets://{vpath}"),
+        perro_io::ResolvedPath::DlcPerroAssets { dlc, virtual_path } => {
+            format!("perroassets+dlc://{dlc}/{virtual_path}")
+        }
     }
 }
 
