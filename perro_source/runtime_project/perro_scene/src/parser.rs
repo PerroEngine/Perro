@@ -418,7 +418,7 @@ impl<'a> Parser<'a> {
                                 root_of = Some(match v {
                                     SceneValue::Str(s) => {
                                         root_of_hash =
-                                            perro_ids::parse_hashed_source_uri(s.as_ref());
+                                            parse_source_hash_literal_or_dlc_path(s.as_ref());
                                         s.to_string()
                                     }
                                     _ => panic!("root_of must be a string"),
@@ -593,10 +593,14 @@ mod tests {
     }
 
     #[test]
-    fn parser_sets_script_hash_for_dlc_prefixed_literal() {
-        let src = "@root = main\n\n[main]\nscript = \"DLC_42\"\n[/main]\n";
+    fn parser_sets_root_of_hash_for_dlc_paths() {
+        let src = "@root = main\n\n[main]\nroot_of = \"dlc://test/scenes/main.scn\"\n[/main]\n";
         let scene = Parser::new(src).parse_scene();
         let node = &scene.nodes[0];
-        assert_eq!(node.script_hash, Some(42));
+        assert_eq!(
+            node.root_of_hash,
+            Some(string_to_u64("dlc://test/scenes/main.scn"))
+        );
     }
+
 }

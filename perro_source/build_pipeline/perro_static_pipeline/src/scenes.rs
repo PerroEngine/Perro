@@ -1,6 +1,5 @@
 use crate::{
-    StaticPipelineError, asset_uri, ensure_unique_hashes, is_asset_uri, res_dir, static_dir,
-    strip_asset_prefix,
+    StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, strip_asset_prefix,
 };
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::{Parser, SceneNodeData, SceneNodeDataBase, SceneValue};
@@ -409,23 +408,15 @@ fn opt_static_str(v: &Option<Cow<'static, str>>) -> String {
 
 fn opt_static_script_str(v: &Option<Cow<'static, str>>) -> String {
     match v {
-        Some(s) => {
-            if let Some(literal) = dlc_script_hash_literal(s.as_ref()) {
-                return format!("Some(Cow::Borrowed(\"{}\"))", literal);
-            }
-            if static_hashable_path(s.as_ref()).is_some() {
-                return "None".to_string();
-            }
-            format!("Some(Cow::Borrowed(\"{}\"))", escape_str(s.as_ref()))
-        }
+        Some(s) if static_hashable_path(s.as_ref()).is_some() => "None".to_string(),
+        Some(s) => format!("Some(Cow::Borrowed(\"{}\"))", escape_str(s.as_ref())),
         None => "None".to_string(),
     }
 }
 
 fn opt_static_script_hash(v: &Option<Cow<'static, str>>) -> String {
     match v {
-        Some(s) => perro_ids::parse_hashed_source_uri(s.as_ref())
-            .or_else(|| static_hashable_path(s.as_ref()))
+        Some(s) => static_hashable_path(s.as_ref())
             .map(|hash| format!("Some({hash}u64)"))
             .unwrap_or_else(|| "None".to_string()),
         None => "None".to_string(),
@@ -459,7 +450,7 @@ fn emit_static_scene_value_str(s: &str) -> String {
 }
 
 fn static_hashable_scene_path(s: &str) -> bool {
-    if !is_asset_uri(s) {
+    if !is_res_uri(s) {
         return false;
     }
     let (path_part, _) = split_source_fragment(s);
@@ -470,7 +461,7 @@ fn static_hashable_scene_path(s: &str) -> bool {
 }
 
 fn static_hashable_path(s: &str) -> Option<u64> {
-    if !is_asset_uri(s) {
+    if !is_res_uri(s) {
         return None;
     }
     let path_part = split_source_fragment(s).0;
@@ -508,20 +499,8 @@ fn static_hashable_path(s: &str) -> Option<u64> {
     hashable.then(|| perro_ids::string_to_u64(s))
 }
 
-fn dlc_script_hash_literal(path: &str) -> Option<String> {
-    let mount = dlc_mount_name(path)?;
-    let mount_tag = mount.to_ascii_uppercase();
-    let hash = perro_ids::string_to_u64(path);
-    Some(format!("DLC_{mount_tag}_{hash}"))
-}
-
-fn dlc_mount_name(path: &str) -> Option<&str> {
-    let rest = path.strip_prefix("dlc://")?;
-    let (mount, _tail) = rest.split_once('/').unwrap_or((rest, ""));
-    if mount.is_empty() {
-        return None;
-    }
-    Some(mount)
+fn is_res_uri(path: &str) -> bool {
+    path.starts_with("res://")
 }
 
 fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
@@ -551,8 +530,7 @@ fn sanitize_ident(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{dlc_script_hash_literal, static_hashable_path};
-    use std::borrow::Cow;
+    use super::static_hashable_path;
 
     #[test]
     fn static_hashable_path_hashes_scheme_plus_fragment_paths() {
@@ -571,17 +549,10 @@ mod tests {
             Some(perro_ids::string_to_u64(source))
         );
     }
-
+    
     #[test]
-    fn dlc_script_hash_literal_prefixes_mount_name() {
-        let source = "dlc://test/scripts/script.rs";
-        let expected = format!("DLC_TEST_{}", perro_ids::string_to_u64(source));
-        assert_eq!(dlc_script_hash_literal(source), Some(expected));
-    }
-
-    #[test]
-    fn opt_static_script_hash_accepts_dlc_hash_literal() {
-        let hash = super::opt_static_script_hash(&Some(Cow::Borrowed("DLC_TEST_42")));
-        assert_eq!(hash, "Some(42u64)");
+    fn static_hashable_path_does_not_hash_dlc_paths() {
+        let source = "dlc://test/models/hero.glb";
+        assert_eq!(static_hashable_path(source), None);
     }
 }
