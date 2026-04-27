@@ -192,18 +192,29 @@ pub fn build_compressed_perro_archive_from_entries(
     let mut raw = Cursor::new(Vec::<u8>::new());
     write_perro_archive_from_entries(&mut raw, entries, false)?;
     let raw = raw.into_inner();
-    let compressed = compress_deflate_best(&raw)?;
+    let raw_wrapped = wrap_compressed_archive(&raw)?;
 
-    let mut file = File::create(output)?;
-    if compressed.len() + 16 < raw.len() {
-        file.write_all(&PERRO_ASSETS_COMPRESSED_MAGIC)?;
-        file.write_all(&1u32.to_le_bytes())?;
-        file.write_all(&(raw.len() as u64).to_le_bytes())?;
-        file.write_all(&compressed)?;
-    } else {
-        file.write_all(&raw)?;
-    }
+    let mut entry_compressed = Cursor::new(Vec::<u8>::new());
+    write_perro_archive_from_entries(&mut entry_compressed, entries, true)?;
+    let entry_compressed = entry_compressed.into_inner();
+
+    let best = [raw, raw_wrapped, entry_compressed]
+        .into_iter()
+        .min_by_key(Vec::len)
+        .unwrap();
+
+    fs::write(output, best)?;
     Ok(())
+}
+
+fn wrap_compressed_archive(raw: &[u8]) -> io::Result<Vec<u8>> {
+    let compressed = compress_deflate_best(raw)?;
+    let mut out = Vec::with_capacity(16 + compressed.len());
+    out.extend_from_slice(&PERRO_ASSETS_COMPRESSED_MAGIC);
+    out.extend_from_slice(&1u32.to_le_bytes());
+    out.extend_from_slice(&(raw.len() as u64).to_le_bytes());
+    out.extend_from_slice(&compressed);
+    Ok(out)
 }
 
 fn write_perro_archive_from_entries<W: Write + Seek>(

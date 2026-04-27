@@ -128,9 +128,8 @@ pub fn compile_scripts_with_profile(
         .env("CARGO_TARGET_DIR", target_dir)
         .current_dir(scripts_crate);
     if profile == ScriptsBuildProfile::Release {
-        cmd.arg("--release")
-            .env("CARGO_PROFILE_RELEASE_INCREMENTAL", "true")
-            .env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "64");
+        cmd.arg("--release");
+        apply_fast_release_dylib_profile(&mut cmd);
     }
     let status = cmd.status()?;
 
@@ -194,15 +193,45 @@ fn compile_scripts_crate(
         .env("CARGO_TARGET_DIR", target_dir)
         .current_dir(scripts_crate);
     if profile == ScriptsBuildProfile::Release {
-        cmd.arg("--release")
-            .env("CARGO_PROFILE_RELEASE_INCREMENTAL", "true")
-            .env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "64");
+        cmd.arg("--release");
+        apply_fast_release_dylib_profile(&mut cmd);
     }
     let status = cmd.status()?;
     if !status.success() {
         return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
     }
     Ok(())
+}
+
+fn compile_dlc_package_crate(
+    project_root: &Path,
+    scripts_crate: &Path,
+) -> Result<(), CompilerError> {
+    let target_dir = project_root.join("target");
+    let mut cmd = Command::new("cargo");
+    cmd.arg("build")
+        .arg("--release")
+        .env("CARGO_TARGET_DIR", target_dir)
+        .current_dir(scripts_crate);
+    apply_dlc_release_dylib_profile(&mut cmd);
+    let status = cmd.status()?;
+    if !status.success() {
+        return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
+    }
+    Ok(())
+}
+
+fn apply_fast_release_dylib_profile(cmd: &mut Command) {
+    cmd.env("CARGO_PROFILE_RELEASE_INCREMENTAL", "true")
+        .env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "64");
+}
+
+fn apply_dlc_release_dylib_profile(cmd: &mut Command) {
+    cmd.env("CARGO_PROFILE_RELEASE_OPT_LEVEL", "3")
+        .env("CARGO_PROFILE_RELEASE_LTO", "fat")
+        .env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "1")
+        .env("CARGO_PROFILE_RELEASE_PANIC", "abort")
+        .env("CARGO_PROFILE_RELEASE_INCREMENTAL", "false");
 }
 
 fn write_dlc_scripts_manifest(
@@ -798,7 +827,7 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
     write_string_if_changed(&scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
 
     let _ = sync_dlc_scripts(project_root, dlc_name)?;
-    compile_scripts_crate(project_root, &scripts_crate, ScriptsBuildProfile::Release)?;
+    compile_dlc_package_crate(project_root, &scripts_crate)?;
     let output_dylib_name = scripts_dylib_name();
     let dylib = resolve_compiled_dylib(
         project_root,
@@ -812,7 +841,7 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
     write_dlc_pack_manifest(project_root, &pack_crate_name, &pack_dir)?;
     generate_dlc_static_assets(project_root, dlc_name, &dlc_root, &pack_dir)?;
     write_dlc_pack_lib(project_root, dlc_name, &dlc_root, &pack_dir)?;
-    compile_scripts_crate(project_root, &pack_dir, ScriptsBuildProfile::Release)?;
+    compile_dlc_package_crate(project_root, &pack_dir)?;
     let pack_dylib_name = runtime_pack_dylib_name();
     let built_pack_dylib = resolve_compiled_dylib(
         project_root,
