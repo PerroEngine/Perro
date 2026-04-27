@@ -385,7 +385,7 @@ fn write_dlc_internal_crate_gitignore(crate_root: &Path) -> Result<(), CompilerE
 }
 
 fn default_dlc_internal_gitignore() -> String {
-    "target/\nCargo.lock\nscripts.dll\nlibscripts.so\nlibscripts.dylib\npack.dll\nlibpack.so\nlibpack.dylib\n".to_string()
+    "target/\nsrc/\nCargo.lock\nscripts.dll\nlibscripts.so\nlibscripts.dylib\npack.dll\nlibpack.so\nlibpack.dylib\n".to_string()
 }
 
 fn write_dlc_pack_lib(
