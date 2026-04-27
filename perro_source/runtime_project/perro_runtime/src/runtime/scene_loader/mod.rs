@@ -4,8 +4,8 @@ use perro_ids::ScriptMemberID;
 use perro_ids::parse_hashed_source_uri;
 use perro_ids::string_to_u64;
 use perro_io::{
-    ProjectRoot, clear_dlc_mounts, data_local_dir, mount_dlc_archive, mount_dlc_disk,
-    read_mounted_dlc_file, set_project_root, is_reserved_dlc_name,
+    ProjectRoot, clear_dlc_mounts, data_local_dir, is_reserved_dlc_name, mount_dlc_archive,
+    mount_dlc_disk, read_mounted_dlc_file, set_project_root,
 };
 use perro_runtime_context::sub_apis::PreloadedSceneID;
 use perro_scene::Scene;
@@ -49,9 +49,10 @@ impl Runtime {
         path: &str,
     ) -> Result<Arc<Scene>, String> {
         if let Some(id) = self.preloaded_scene_paths.get(&path_hash).copied()
-            && let Some(scene) = self.preloaded_scenes.get(&id) {
-                return Ok(scene.clone());
-            }
+            && let Some(scene) = self.preloaded_scenes.get(&id)
+        {
+            return Ok(scene.clone());
+        }
         match self.provider_mode {
             ProviderMode::Dynamic => self.get_or_load_dynamic_scene_cached(path),
             ProviderMode::Static => {
@@ -188,9 +189,10 @@ impl Runtime {
             ProviderMode::Static => {
                 if path.starts_with("dlc://") {
                     let runtime_scene = self.get_or_load_dynamic_scene_cached(path)?;
-                    let prepared = prepare_scene_with_loader(runtime_scene.as_ref(), &|import_path| {
-                        self.resolve_scene_by_path(import_path)
-                    })?;
+                    let prepared =
+                        prepare_scene_with_loader(runtime_scene.as_ref(), &|import_path| {
+                            self.resolve_scene_by_path(import_path)
+                        })?;
                     merge_prepared_scene(self, prepared)?
                 } else if let Some(lookup) = static_lookup {
                     let scene = lookup(path_hash);
@@ -339,9 +341,8 @@ impl Runtime {
                 if let Some(lookup) = static_lookup {
                     let scene = lookup(main_scene_hash);
                     mode_label = "static";
-                    let prepared = prepare_scene_with_loader(scene, &|path| {
-                        Ok(Arc::new(lookup(Self::source_hash(path)).clone()))
-                    })?;
+                    let prepared =
+                        prepare_scene_with_loader(scene, &|path| self.resolve_scene_by_path(path))?;
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
                     merged = merge_prepared_scene(self, prepared)?;
@@ -422,7 +423,10 @@ impl Runtime {
                 .map_err(|err| format!("failed to scan dlc dir `{}`: {err}", dev_dlcs.display()))?;
             for entry in entries {
                 let entry = entry.map_err(|err| {
-                    format!("failed to read dlc entry in `{}`: {err}", dev_dlcs.display())
+                    format!(
+                        "failed to read dlc entry in `{}`: {err}",
+                        dev_dlcs.display()
+                    )
                 })?;
                 let path = entry.path();
                 if !path.is_dir() {
@@ -439,9 +443,14 @@ impl Runtime {
                     continue;
                 }
                 mount_dlc_disk(name, &path).map_err(|err| {
-                    format!("failed to mount dev dlc `{}` from `{}`: {err}", name, path.display())
+                    format!(
+                        "failed to mount dev dlc `{}` from `{}`: {err}",
+                        name,
+                        path.display()
+                    )
                 })?;
-                if let Some(script_dylib) = resolve_dev_dlc_scripts_dylib_path(&project_root, name) {
+                if let Some(script_dylib) = resolve_dev_dlc_scripts_dylib_path(&project_root, name)
+                {
                     self.script_runtime
                         .mounted_dlc_script_libs
                         .insert(name.to_ascii_lowercase(), script_dylib);
@@ -498,13 +507,14 @@ impl Runtime {
                     )
                 })?;
 
-                let manifest_bytes = read_mounted_dlc_file(stem, "manifest.toml").map_err(|err| {
-                    format!(
-                        "failed to read manifest.toml from dlc `{}` (`{}`): {err}",
-                        stem,
-                        path.display()
-                    )
-                })?;
+                let manifest_bytes =
+                    read_mounted_dlc_file(stem, "manifest.toml").map_err(|err| {
+                        format!(
+                            "failed to read manifest.toml from dlc `{}` (`{}`): {err}",
+                            stem,
+                            path.display()
+                        )
+                    })?;
                 let manifest_text = String::from_utf8(manifest_bytes).map_err(|err| {
                     format!(
                         "manifest.toml in dlc `{}` is not valid UTF-8 (`{}`): {err}",
@@ -538,15 +548,13 @@ impl Runtime {
                     .mounted_dlc_script_libs
                     .insert(stem.to_ascii_lowercase(), script_path);
 
-                let pack_path =
-                    extract_dlc_archive_file_to_cache(stem, &pack_rel, &extract_root).map_err(
-                        |err| {
-                            format!(
-                                "failed to extract pack lib `{}` from dlc `{}`: {err}",
-                                pack_rel, stem
-                            )
-                        },
-                    )?;
+                let pack_path = extract_dlc_archive_file_to_cache(stem, &pack_rel, &extract_root)
+                    .map_err(|err| {
+                    format!(
+                        "failed to extract pack lib `{}` from dlc `{}`: {err}",
+                        pack_rel, stem
+                    )
+                })?;
                 if let Ok(lib) = unsafe { libloading::Library::new(&pack_path) } {
                     self.script_runtime.script_libraries.push(lib);
                 }
@@ -554,6 +562,85 @@ impl Runtime {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime_project::RuntimeProject;
+    use perro_scene::{Scene, SceneKey, SceneNodeData, SceneNodeEntry};
+    use std::{borrow::Cow, fs};
+
+    const EMPTY_FIELDS: &[perro_scene::SceneObjectField] = &[];
+    const EMPTY_KEYS: &[SceneKey] = &[];
+    const EMPTY_TAGS: &[Cow<'static, str>] = &[];
+    const HOST_DATA: SceneNodeData = SceneNodeData {
+        ty: Cow::Borrowed("Node"),
+        fields: Cow::Borrowed(EMPTY_FIELDS),
+        base: None,
+    };
+    const HOST_NODES: &[SceneNodeEntry] = &[SceneNodeEntry {
+        data: HOST_DATA,
+        has_data_override: true,
+        key: SceneKey(Cow::Borrowed("wi")),
+        name: Some(Cow::Borrowed("wi")),
+        tags: Cow::Borrowed(EMPTY_TAGS),
+        children: Cow::Borrowed(EMPTY_KEYS),
+        parent: None,
+        script: None,
+        script_hash: None,
+        clear_script: false,
+        root_of: Some(Cow::Borrowed("dlc://test/scenes/main.scn")),
+        root_of_hash: None,
+        script_vars: Cow::Borrowed(EMPTY_FIELDS),
+    }];
+    static HOST_SCENE: Scene = Scene {
+        nodes: Cow::Borrowed(HOST_NODES),
+        root: Some(SceneKey(Cow::Borrowed("wi"))),
+    };
+    static EMPTY_SCENE: Scene = Scene {
+        nodes: Cow::Borrowed(&[]),
+        root: None,
+    };
+
+    fn test_lookup(path_hash: u64) -> &'static Scene {
+        if path_hash == perro_ids::string_to_u64("res://boot.scn") {
+            &HOST_SCENE
+        } else {
+            &EMPTY_SCENE
+        }
+    }
+
+    #[test]
+    fn static_boot_root_of_loads_dlc_scene_from_mount() {
+        let test_root = std::env::temp_dir().join(format!(
+            "perro_runtime_static_dlc_scene_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&test_root);
+        let dlc_scene_dir = test_root.join("dlcs").join("test").join("scenes");
+        fs::create_dir_all(&dlc_scene_dir).unwrap();
+        fs::write(
+            dlc_scene_dir.join("main.scn"),
+            "@root = main\n\n[main]\n[Node]\n[/Node]\n[/main]\n",
+        )
+        .unwrap();
+
+        let mut project = RuntimeProject::new("Static Dlc Test", &test_root);
+        project.config.main_scene = "res://boot.scn".to_string();
+        project.config.main_scene_hash = Some(perro_ids::string_to_u64("res://boot.scn"));
+        project.static_scene_lookup = Some(test_lookup);
+
+        let mut runtime = Runtime::new();
+        runtime.project = Some(Arc::new(project));
+        runtime.provider_mode = ProviderMode::Static;
+
+        let result = runtime.load_boot_scene();
+        let _ = fs::remove_dir_all(&test_root);
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(runtime.nodes.len(), 2);
     }
 }
 

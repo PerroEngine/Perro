@@ -716,7 +716,10 @@ fn parse_physics_gravity(
     let Some(value) = physics.get("gravity") else {
         return Ok(-9.81);
     };
-    let Some(num) = value.as_float().or_else(|| value.as_integer().map(|v| v as f64)) else {
+    let Some(num) = value
+        .as_float()
+        .or_else(|| value.as_integer().map(|v| v as f64))
+    else {
         return Err(ProjectError::InvalidField(
             "physics.gravity",
             "must be a finite number".to_string(),
@@ -740,7 +743,10 @@ fn parse_physics_coef(
     let Some(value) = physics.get("coef") else {
         return Ok(1.0);
     };
-    let Some(num) = value.as_float().or_else(|| value.as_integer().map(|v| v as f64)) else {
+    let Some(num) = value
+        .as_float()
+        .or_else(|| value.as_integer().map(|v| v as f64))
+    else {
         return Err(ProjectError::InvalidField(
             "physics.coef",
             "must be a finite positive number".to_string(),

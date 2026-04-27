@@ -1,3 +1,4 @@
+use super::RuntimePhysicsStepTiming;
 use crate::Runtime;
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{NodeID, SignalID, parse_hashed_source_uri, string_to_u64};
@@ -10,18 +11,19 @@ use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use perro_variant::Variant;
 use rapier2d::{na as na2, prelude as r2};
 use rapier3d::{na as na3, prelude as r3};
-use super::RuntimePhysicsStepTiming;
 
 const MAX_CCD_SUBSTEPS: usize = 1;
 const MAX_RIGID_SPEED_2D: f32 = 80.0;
 const MAX_RIGID_SPEED_3D: f32 = 80.0;
 const CCD_MIN_SPEED_RATIO_OF_MAX: f32 = 0.5;
-const CCD_MIN_SPEED_SQ_2D: f32 =
-    MAX_RIGID_SPEED_2D * CCD_MIN_SPEED_RATIO_OF_MAX * MAX_RIGID_SPEED_2D
-        * CCD_MIN_SPEED_RATIO_OF_MAX;
-const CCD_MIN_SPEED_SQ_3D: f32 =
-    MAX_RIGID_SPEED_3D * CCD_MIN_SPEED_RATIO_OF_MAX * MAX_RIGID_SPEED_3D
-        * CCD_MIN_SPEED_RATIO_OF_MAX;
+const CCD_MIN_SPEED_SQ_2D: f32 = MAX_RIGID_SPEED_2D
+    * CCD_MIN_SPEED_RATIO_OF_MAX
+    * MAX_RIGID_SPEED_2D
+    * CCD_MIN_SPEED_RATIO_OF_MAX;
+const CCD_MIN_SPEED_SQ_3D: f32 = MAX_RIGID_SPEED_3D
+    * CCD_MIN_SPEED_RATIO_OF_MAX
+    * MAX_RIGID_SPEED_3D
+    * CCD_MIN_SPEED_RATIO_OF_MAX;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BodyKind {
@@ -471,19 +473,18 @@ impl Runtime {
                 .map(|node| node.children_slice().len())
                 .unwrap_or(0);
             let mut shapes = Vec::with_capacity(child_count);
-            if needs_shape_rebuild
-                && let Some(node) = self.nodes.get(id) {
-                    for &child_id in node.children_slice() {
-                        let Some(child) = self.nodes.get(child_id) else {
-                            continue;
-                        };
-                        if let SceneNodeData::CollisionShape2D(shape) = &child.data {
-                            let mut desc = shape_desc_2d(shape, material.0, material.1);
-                            desc.sensor = kind == BodyKind::Area;
-                            shapes.push(desc);
-                        }
+            if needs_shape_rebuild && let Some(node) = self.nodes.get(id) {
+                for &child_id in node.children_slice() {
+                    let Some(child) = self.nodes.get(child_id) else {
+                        continue;
+                    };
+                    if let SceneNodeData::CollisionShape2D(shape) = &child.data {
+                        let mut desc = shape_desc_2d(shape, material.0, material.1);
+                        desc.sensor = kind == BodyKind::Area;
+                        shapes.push(desc);
                     }
                 }
+            }
 
             out.push(BodyDesc2D {
                 id,
@@ -569,25 +570,24 @@ impl Runtime {
                 .map(|node| node.children_slice().len())
                 .unwrap_or(0);
             let mut shapes = Vec::with_capacity(child_count);
-            if needs_shape_rebuild
-                && let Some(node) = self.nodes.get(id) {
-                    for &child_id in node.children_slice() {
-                        let Some(child) = self.nodes.get(child_id) else {
-                            continue;
-                        };
-                        if let SceneNodeData::CollisionShape3D(shape) = &child.data {
-                            let mut desc = shape_desc_3d(shape, material.0, material.1);
-                            // Physics colliders inherit parent body global scale.
-                            desc.local.scale = Vector3::new(
-                                desc.local.scale.x * global.scale.x,
-                                desc.local.scale.y * global.scale.y,
-                                desc.local.scale.z * global.scale.z,
-                            );
-                            desc.sensor = kind == BodyKind::Area;
-                            shapes.push(desc);
-                        }
+            if needs_shape_rebuild && let Some(node) = self.nodes.get(id) {
+                for &child_id in node.children_slice() {
+                    let Some(child) = self.nodes.get(child_id) else {
+                        continue;
+                    };
+                    if let SceneNodeData::CollisionShape3D(shape) = &child.data {
+                        let mut desc = shape_desc_3d(shape, material.0, material.1);
+                        // Physics colliders inherit parent body global scale.
+                        desc.local.scale = Vector3::new(
+                            desc.local.scale.x * global.scale.x,
+                            desc.local.scale.y * global.scale.y,
+                            desc.local.scale.z * global.scale.z,
+                        );
+                        desc.sensor = kind == BodyKind::Area;
+                        shapes.push(desc);
                     }
                 }
+            }
 
             out.push(BodyDesc3D {
                 id,
@@ -653,19 +653,21 @@ impl Runtime {
 
                 let target_pos = transform_to_iso2(body.global);
                 let current_pos = rb.position();
-                let pos_changed = !approx_eq_f32(
-                    current_pos.translation.vector.x,
-                    target_pos.translation.vector.x,
-                ) || !approx_eq_f32(
-                    current_pos.translation.vector.y,
-                    target_pos.translation.vector.y,
-                ) || !approx_eq_f32(current_pos.rotation.angle(), target_pos.rotation.angle());
+                let pos_changed =
+                    !approx_eq_f32(
+                        current_pos.translation.vector.x,
+                        target_pos.translation.vector.x,
+                    ) || !approx_eq_f32(
+                        current_pos.translation.vector.y,
+                        target_pos.translation.vector.y,
+                    ) || !approx_eq_f32(current_pos.rotation.angle(), target_pos.rotation.angle());
                 if pos_changed {
                     rb.set_position(target_pos, true);
                 }
 
                 if let Some(rigid) = body.rigid {
-                    let target_lin = na2::Vector2::new(rigid.linear_velocity.x, rigid.linear_velocity.y);
+                    let target_lin =
+                        na2::Vector2::new(rigid.linear_velocity.x, rigid.linear_velocity.y);
                     let current_lin = rb.linvel();
                     if !approx_eq_f32(current_lin.x, target_lin.x)
                         || !approx_eq_f32(current_lin.y, target_lin.y)
@@ -767,7 +769,9 @@ impl Runtime {
             .world_3d
             .take()
             .unwrap_or_else(PhysicsWorld3D::new);
-        let static_mesh_lookup = self.project().and_then(|project| project.static_mesh_lookup);
+        let static_mesh_lookup = self
+            .project()
+            .and_then(|project| project.static_mesh_lookup);
         let static_collision_trimesh_lookup = self
             .project()
             .and_then(|project| project.static_collision_trimesh_lookup);
@@ -808,19 +812,20 @@ impl Runtime {
 
                 let target_pos = transform_to_iso3(body.global);
                 let current_pos = rb.position();
-                let pos_changed = !approx_eq_f32(
-                    current_pos.translation.vector.x,
-                    target_pos.translation.vector.x,
-                ) || !approx_eq_f32(
-                    current_pos.translation.vector.y,
-                    target_pos.translation.vector.y,
-                ) || !approx_eq_f32(
-                    current_pos.translation.vector.z,
-                    target_pos.translation.vector.z,
-                ) || !approx_eq_f32(current_pos.rotation.i, target_pos.rotation.i)
-                    || !approx_eq_f32(current_pos.rotation.j, target_pos.rotation.j)
-                    || !approx_eq_f32(current_pos.rotation.k, target_pos.rotation.k)
-                    || !approx_eq_f32(current_pos.rotation.w, target_pos.rotation.w);
+                let pos_changed =
+                    !approx_eq_f32(
+                        current_pos.translation.vector.x,
+                        target_pos.translation.vector.x,
+                    ) || !approx_eq_f32(
+                        current_pos.translation.vector.y,
+                        target_pos.translation.vector.y,
+                    ) || !approx_eq_f32(
+                        current_pos.translation.vector.z,
+                        target_pos.translation.vector.z,
+                    ) || !approx_eq_f32(current_pos.rotation.i, target_pos.rotation.i)
+                        || !approx_eq_f32(current_pos.rotation.j, target_pos.rotation.j)
+                        || !approx_eq_f32(current_pos.rotation.k, target_pos.rotation.k)
+                        || !approx_eq_f32(current_pos.rotation.w, target_pos.rotation.w);
                 if pos_changed {
                     rb.set_position(target_pos, true);
                 }
@@ -1971,12 +1976,7 @@ fn normalized_static_mesh_lookup_alias(source: &str) -> Option<String> {
     }
 }
 
-fn decode_pmesh_trimesh(
-    bytes: &[u8],
-    sx: f32,
-    sy: f32,
-    sz: f32,
-) -> Option<TriMeshData> {
+fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMeshData> {
     if bytes.len() < 33 || &bytes[0..5] != b"PMESH" {
         return None;
     }
@@ -2050,7 +2050,12 @@ fn decode_pmesh_trimesh(
     Some((vertices, triangles))
 }
 
-fn read_trimesh_index(raw: &[u8], index_start: usize, index: usize, index_u16: bool) -> Option<u32> {
+fn read_trimesh_index(
+    raw: &[u8],
+    index_start: usize,
+    index: usize,
+    index_u16: bool,
+) -> Option<u32> {
     if index_u16 {
         let off = index_start + index * 2;
         Some(u16::from_le_bytes(raw[off..off + 2].try_into().ok()?) as u32)
@@ -2149,7 +2154,8 @@ fn simplify_trimesh_data(
     triangles: Vec<[u32; 3]>,
 ) -> Option<TriMeshData> {
     let (vertices, triangles) = weld_and_filter_mesh(vertices, triangles)?;
-    if let Some((reduced_vertices, reduced_triangles)) = simplify_coplanar_mesh(&vertices, &triangles)
+    if let Some((reduced_vertices, reduced_triangles)) =
+        simplify_coplanar_mesh(&vertices, &triangles)
     {
         return weld_and_filter_mesh(reduced_vertices, reduced_triangles);
     }
@@ -2244,8 +2250,7 @@ fn simplify_coplanar_mesh(
 
     let mut unique_2d = pts2d.clone();
     unique_2d.sort_by(|a, b| {
-        a[0]
-            .partial_cmp(&b[0])
+        a[0].partial_cmp(&b[0])
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a[1].partial_cmp(&b[1]).unwrap_or(std::cmp::Ordering::Equal))
     });
@@ -2340,8 +2345,7 @@ fn unproject_axis_on_plane(
 fn convex_hull_2d(points: &[[f32; 2]]) -> Vec<[f32; 2]> {
     let mut pts = points.to_vec();
     pts.sort_by(|a, b| {
-        a[0]
-            .partial_cmp(&b[0])
+        a[0].partial_cmp(&b[0])
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a[1].partial_cmp(&b[1]).unwrap_or(std::cmp::Ordering::Equal))
     });

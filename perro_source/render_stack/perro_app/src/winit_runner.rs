@@ -1202,9 +1202,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let shown_for = frame_start.saturating_duration_since(self.startup_splash.shown_at);
         let hard_timeout_hit = shown_for >= STARTUP_SPLASH_HARD_TIMEOUT;
         if self.startup_splash.fade_started_at.is_none()
-            && (shown_for >= STARTUP_SPLASH_HOLD_DURATION || hard_timeout_hit) {
-                self.startup_splash.fade_started_at = Some(frame_start);
-            }
+            && (shown_for >= STARTUP_SPLASH_HOLD_DURATION || hard_timeout_hit)
+        {
+            self.startup_splash.fade_started_at = Some(frame_start);
+        }
         if self.startup_splash.should_finish(frame_start) {
             self.end_startup_splash();
         }
@@ -2013,10 +2014,12 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 if self.startup_splash.blocks_input() {
                     return;
                 }
-                if state == ElementState::Pressed && !self.cursor_captured
-                    && self.cursor_inside_window {
-                        self.set_cursor_capture(true);
-                    }
+                if state == ElementState::Pressed
+                    && !self.cursor_captured
+                    && self.cursor_inside_window
+                {
+                    self.set_cursor_capture(true);
+                }
                 self.kbm_input
                     .handle_window_event(&mut self.app, &mouse_event);
             }
@@ -2053,12 +2056,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                     return;
                 }
                 if self.cursor_captured
-                    && let Some(window) = &self.window {
-                        let (captured, uses_raw_motion) =
-                            Self::apply_cursor_capture(window.as_ref(), true);
-                        self.cursor_captured = captured;
-                        self.capture_uses_raw_motion = uses_raw_motion;
-                    }
+                    && let Some(window) = &self.window
+                {
+                    let (captured, uses_raw_motion) =
+                        Self::apply_cursor_capture(window.as_ref(), true);
+                    self.cursor_captured = captured;
+                    self.capture_uses_raw_motion = uses_raw_motion;
+                }
             }
             WindowEvent::Focused(false) => {
                 if self.startup_splash.blocks_input() {
@@ -2172,9 +2176,10 @@ fn window_attributes(
         return attrs.with_inner_size(Size::Physical(desired));
     };
     if let Some(mode) = parse_window_mode_override()
-        && (mode == "borderless" || mode == "borderless_fullscreen") {
-            return attrs.with_fullscreen(Some(Fullscreen::Borderless(Some(monitor))));
-        }
+        && (mode == "borderless" || mode == "borderless_fullscreen")
+    {
+        return attrs.with_fullscreen(Some(Fullscreen::Borderless(Some(monitor))));
+    }
 
     let max_width =
         ((monitor.size().width as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;

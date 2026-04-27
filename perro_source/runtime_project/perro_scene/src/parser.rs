@@ -602,5 +602,4 @@ mod tests {
             Some(string_to_u64("dlc://test/scenes/main.scn"))
         );
     }
-
 }

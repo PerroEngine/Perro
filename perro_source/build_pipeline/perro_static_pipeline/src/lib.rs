@@ -28,8 +28,8 @@ pub use textures::generate_static_textures;
 use std::{
     collections::HashMap,
     fs,
-    sync::{OnceLock, RwLock},
     path::{Path, PathBuf},
+    sync::{OnceLock, RwLock},
 };
 
 const PERRO_DIR: &str = ".perro";

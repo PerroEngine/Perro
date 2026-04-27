@@ -148,10 +148,7 @@ pub fn set_dlc_self_context(name: Option<&str>) {
 pub enum ResolvedPath {
     Disk(PathBuf),
     PerroAssets(String),
-    DlcPerroAssets {
-        dlc: String,
-        virtual_path: String,
-    },
+    DlcPerroAssets { dlc: String, virtual_path: String },
 }
 
 /// Resolve virtual path (res://foo/bar.png or user://save.dat) to actual location

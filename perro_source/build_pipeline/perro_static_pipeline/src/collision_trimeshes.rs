@@ -1,6 +1,6 @@
 use crate::{
-    StaticPipelineError, asset_prefix, ensure_unique_hashes, is_asset_uri, res_dir,
-    static_dir, strip_asset_prefix,
+    StaticPipelineError, asset_prefix, ensure_unique_hashes, is_asset_uri, res_dir, static_dir,
+    strip_asset_prefix,
 };
 use perro_io::{compress_zlib_best, decompress_zlib, walkdir::collect_file_paths};
 use perro_scene::{Parser, SceneNodeData, SceneValue};
@@ -28,10 +28,16 @@ pub fn generate_static_collision_trimeshes(project_root: &Path) -> Result<(), St
 
     let mut packed = Vec::<(String, Vec<u8>)>::new();
     for source in &sources {
-        let (verts, tris) = load_trimesh_from_source(&res_root, source)
-            .ok_or_else(|| StaticPipelineError::SceneParse(format!("failed to load collision trimesh source `{source}`")))?;
-        let (verts, tris) = simplify_trimesh_data(verts, tris)
-            .ok_or_else(|| StaticPipelineError::SceneParse(format!("failed to simplify collision trimesh source `{source}`")))?;
+        let (verts, tris) = load_trimesh_from_source(&res_root, source).ok_or_else(|| {
+            StaticPipelineError::SceneParse(format!(
+                "failed to load collision trimesh source `{source}`"
+            ))
+        })?;
+        let (verts, tris) = simplify_trimesh_data(verts, tris).ok_or_else(|| {
+            StaticPipelineError::SceneParse(format!(
+                "failed to simplify collision trimesh source `{source}`"
+            ))
+        })?;
         packed.push((source.clone(), encode_collision_pmesh(&verts, &tris)?));
     }
     packed.sort_by(|a, b| a.0.cmp(&b.0));
@@ -370,7 +376,10 @@ fn load_trimesh_from_gltf_bytes(bytes: &[u8], mesh_index: usize) -> Option<TriMe
                 let ia = tri[0] as usize;
                 let ib = tri[1] as usize;
                 let ic = tri[2] as usize;
-                if ia >= local_positions.len() || ib >= local_positions.len() || ic >= local_positions.len() {
+                if ia >= local_positions.len()
+                    || ib >= local_positions.len()
+                    || ic >= local_positions.len()
+                {
                     continue;
                 }
                 let a = base + tri[0];
@@ -392,7 +401,10 @@ fn load_trimesh_from_gltf_bytes(bytes: &[u8], mesh_index: usize) -> Option<TriMe
     Some((vertices, triangles))
 }
 
-fn encode_collision_pmesh(vertices: &[[f32; 3]], triangles: &[[u32; 3]]) -> Result<Vec<u8>, StaticPipelineError> {
+fn encode_collision_pmesh(
+    vertices: &[[f32; 3]],
+    triangles: &[[u32; 3]],
+) -> Result<Vec<u8>, StaticPipelineError> {
     let use_u16_indices = vertices.len() <= u16::MAX as usize;
     let mut raw = Vec::<u8>::with_capacity(
         vertices.len() * 12 + triangles.len() * if use_u16_indices { 6 } else { 12 },
@@ -413,8 +425,9 @@ fn encode_collision_pmesh(vertices: &[[f32; 3]], triangles: &[[u32; 3]]) -> Resu
             raw.extend_from_slice(&tri[2].to_le_bytes());
         }
     }
-    let compressed = compress_zlib_best(&raw)
-        .map_err(|e| StaticPipelineError::SceneParse(format!("collision trimesh compress fail: {e}")))?;
+    let compressed = compress_zlib_best(&raw).map_err(|e| {
+        StaticPipelineError::SceneParse(format!("collision trimesh compress fail: {e}"))
+    })?;
     let mut out = Vec::<u8>::with_capacity(33 + compressed.len());
     out.extend_from_slice(PMESH_MAGIC);
     out.extend_from_slice(&PMESH_VERSION_V7.to_le_bytes());
@@ -471,7 +484,12 @@ fn weld_and_filter_mesh(vertices: Vec<[f32; 3]>, triangles: Vec<[u32; 3]>) -> Op
         if a == b || b == c || a == c {
             continue;
         }
-        if triangle_area_sq(out_vertices[a as usize], out_vertices[b as usize], out_vertices[c as usize]) <= 1.0e-12 {
+        if triangle_area_sq(
+            out_vertices[a as usize],
+            out_vertices[b as usize],
+            out_vertices[c as usize],
+        ) <= 1.0e-12
+        {
             continue;
         }
         let mut ord = [a, b, c];
@@ -518,7 +536,11 @@ fn simplify_coplanar_mesh(vertices: &[[f32; 3]], triangles: &[[u32; 3]]) -> Opti
     }
 
     let mut unique_2d = pts2d.clone();
-    unique_2d.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a[1].partial_cmp(&b[1]).unwrap_or(std::cmp::Ordering::Equal)));
+    unique_2d.sort_by(|a, b| {
+        a[0].partial_cmp(&b[0])
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a[1].partial_cmp(&b[1]).unwrap_or(std::cmp::Ordering::Equal))
+    });
     unique_2d.dedup_by(|a, b| (a[0] - b[0]).abs() <= 1.0e-5 && (a[1] - b[1]).abs() <= 1.0e-5);
     if unique_2d.len() < 3 {
         return None;
@@ -582,8 +604,7 @@ fn project_axis(p: [f32; 3], axis: usize) -> [f32; 2] {
 fn convex_hull_2d(points: &[[f32; 2]]) -> Vec<[f32; 2]> {
     let mut pts = points.to_vec();
     pts.sort_by(|a, b| {
-        a[0]
-            .partial_cmp(&b[0])
+        a[0].partial_cmp(&b[0])
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a[1].partial_cmp(&b[1]).unwrap_or(std::cmp::Ordering::Equal))
     });

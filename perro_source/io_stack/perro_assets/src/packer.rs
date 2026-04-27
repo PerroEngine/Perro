@@ -194,16 +194,18 @@ pub fn build_perro_archive_from_entries(
 
     let processed = sorted
         .into_par_iter()
-        .map(|(virtual_path, source_path)| -> io::Result<(String, Vec<u8>, u32, u64)> {
-            let data = fs::read(&source_path)?;
-            let original_size = data.len() as u64;
-            let compressed = compress_deflate_best(&data)?;
-            if compressed.len() < data.len() {
-                Ok((virtual_path, compressed, FLAG_COMPRESSED, original_size))
-            } else {
-                Ok((virtual_path, data, 0, original_size))
-            }
-        })
+        .map(
+            |(virtual_path, source_path)| -> io::Result<(String, Vec<u8>, u32, u64)> {
+                let data = fs::read(&source_path)?;
+                let original_size = data.len() as u64;
+                let compressed = compress_deflate_best(&data)?;
+                if compressed.len() < data.len() {
+                    Ok((virtual_path, compressed, FLAG_COMPRESSED, original_size))
+                } else {
+                    Ok((virtual_path, data, 0, original_size))
+                }
+            },
+        )
         .collect::<io::Result<Vec<_>>>()?;
 
     let mut index_entries = Vec::<PerroAssetsEntry>::with_capacity(processed.len());

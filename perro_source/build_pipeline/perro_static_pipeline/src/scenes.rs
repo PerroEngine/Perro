@@ -1,5 +1,6 @@
 use crate::{
-    StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, strip_asset_prefix,
+    StaticPipelineError, asset_prefix, asset_uri, ensure_unique_hashes, res_dir, static_dir,
+    strip_asset_prefix,
 };
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::{Parser, SceneNodeData, SceneNodeDataBase, SceneValue};
@@ -37,8 +38,11 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
             })?;
             let full_path = res_dir.join(rel);
             let src = fs::read_to_string(&full_path)?;
-            let parsed = std::panic::catch_unwind(|| Parser::new(&src).parse_scene())
+            let mut parsed = std::panic::catch_unwind(|| Parser::new(&src).parse_scene())
                 .map_err(|_| io::Error::other(format!("failed to parse scene: {res_path}")))?;
+            if let Some(mount_name) = static_dlc_mount_name() {
+                resolve_scene_dlc_self_paths(&mut parsed, &mount_name);
+            }
             let emitted = emit_static_scene_const(res_path, &parsed)
                 .map_err(|err| io::Error::other(err.to_string()))?;
             Ok((res_path.clone(), emitted))
@@ -449,6 +453,76 @@ fn emit_static_scene_value_str(s: &str) -> String {
     }
 }
 
+fn static_dlc_mount_name() -> Option<String> {
+    let prefix = asset_prefix();
+    let rest = prefix.strip_prefix("dlc://")?;
+    let mount = rest.trim_end_matches('/');
+    if mount.is_empty() || mount.eq_ignore_ascii_case("self") {
+        return None;
+    }
+    Some(mount.to_string())
+}
+
+fn resolve_scene_dlc_self_paths(scene: &mut perro_scene::Scene, mount_name: &str) {
+    let prefix = "dlc://self/";
+    let replacement = format!("dlc://{mount_name}/");
+    let replacement_ref = replacement.as_str();
+    for node in scene.nodes.to_mut() {
+        if let Some(script) = node.script.as_ref()
+            && script.starts_with(prefix)
+        {
+            node.script = Some(Cow::Owned(script.replacen(prefix, replacement_ref, 1)));
+        }
+        if let Some(root_of) = node.root_of.as_ref()
+            && root_of.starts_with(prefix)
+        {
+            node.root_of = Some(Cow::Owned(root_of.replacen(prefix, replacement_ref, 1)));
+        }
+        resolve_scene_value_fields_dlc_self(node.script_vars.to_mut(), prefix, replacement_ref);
+        resolve_scene_node_data_dlc_self(&mut node.data, prefix, replacement_ref);
+    }
+}
+
+fn resolve_scene_node_data_dlc_self(data: &mut SceneNodeData, prefix: &str, replacement: &str) {
+    resolve_scene_value_fields_dlc_self(data.fields.to_mut(), prefix, replacement);
+    if let Some(base) = data.base.as_mut()
+        && let SceneNodeDataBase::Owned(base_data) = base
+    {
+        resolve_scene_node_data_dlc_self(base_data.as_mut(), prefix, replacement);
+    }
+}
+
+fn resolve_scene_value_fields_dlc_self(
+    fields: &mut [perro_scene::SceneObjectField],
+    prefix: &str,
+    replacement: &str,
+) {
+    for (_, value) in fields {
+        resolve_scene_value_dlc_self(value, prefix, replacement);
+    }
+}
+
+fn resolve_scene_value_dlc_self(value: &mut SceneValue, prefix: &str, replacement: &str) {
+    match value {
+        SceneValue::Str(v) => {
+            if v.as_ref().starts_with(prefix) {
+                *v = Cow::Owned(v.replacen(prefix, replacement, 1));
+            }
+        }
+        SceneValue::Object(fields) => {
+            for (_, item) in fields.to_mut() {
+                resolve_scene_value_dlc_self(item, prefix, replacement);
+            }
+        }
+        SceneValue::Array(values) => {
+            for item in values.to_mut() {
+                resolve_scene_value_dlc_self(item, prefix, replacement);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn static_hashable_scene_path(s: &str) -> bool {
     if !is_res_uri(s) {
         return false;
@@ -530,7 +604,8 @@ fn sanitize_ident(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::static_hashable_path;
+    use super::{resolve_scene_dlc_self_paths, static_hashable_path};
+    use perro_scene::Parser;
 
     #[test]
     fn static_hashable_path_hashes_scheme_plus_fragment_paths() {
@@ -549,10 +624,36 @@ mod tests {
             Some(perro_ids::string_to_u64(source))
         );
     }
-    
+
     #[test]
     fn static_hashable_path_does_not_hash_dlc_paths() {
         let source = "dlc://test/models/hero.glb";
         assert_eq!(static_hashable_path(source), None);
+    }
+
+    #[test]
+    fn resolve_scene_dlc_self_paths_rewrites_scene_strings() {
+        let mut scene = Parser::new(
+            r#"
+            @root = main
+            [main]
+            script = "dlc://self/scripts/script.rs"
+            script_vars = { mesh = "dlc://self/models/hero.glb" }
+            [Node]
+            [/Node]
+            [/main]
+            "#,
+        )
+        .parse_scene();
+
+        resolve_scene_dlc_self_paths(&mut scene, "test");
+        let node = &scene.nodes[0];
+        assert_eq!(node.script.as_deref(), Some("dlc://test/scripts/script.rs"));
+        let mesh = node
+            .script_vars
+            .iter()
+            .find(|(k, _)| k.as_ref() == "mesh")
+            .and_then(|(_, v)| v.as_str());
+        assert_eq!(mesh, Some("dlc://test/models/hero.glb"));
     }
 }

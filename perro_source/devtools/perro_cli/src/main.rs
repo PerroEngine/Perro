@@ -234,7 +234,11 @@ fn sanitize_animation_file_name(name: &str) -> Result<String, String> {
     Ok(rendered)
 }
 
-fn resolve_res_subdir(input: &str, res_root: &Path, allowed_prefix: &str) -> Result<PathBuf, String> {
+fn resolve_res_subdir(
+    input: &str,
+    res_root: &Path,
+    allowed_prefix: &str,
+) -> Result<PathBuf, String> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return Ok(res_root.to_path_buf());
@@ -620,10 +624,7 @@ fn new_dlc_command(args: &[String], cwd: &Path) -> Result<(), String> {
         dlc_name,
         normalize_powershell_path(&dlc_root)
     );
-    println!(
-        "reference scene with: dlc://{}/scenes/main.scn",
-        dlc_name
-    );
+    println!("reference scene with: dlc://{}/scenes/main.scn", dlc_name);
     println!(
         "reference script with: dlc://{}/scripts/script.rs",
         dlc_name
@@ -1227,7 +1228,10 @@ fn project_internal_linked_manifests(project_dir: &Path) -> Result<Vec<String>, 
             .map_err(|err| format!("failed to read {}: {err}", dlc_root.display()))?;
         for entry in entries {
             let entry = entry.map_err(|err| {
-                format!("failed to read dlc generated entry in {}: {err}", dlc_root.display())
+                format!(
+                    "failed to read dlc generated entry in {}: {err}",
+                    dlc_root.display()
+                )
             })?;
             let path = entry.path();
             if !path.is_dir() {

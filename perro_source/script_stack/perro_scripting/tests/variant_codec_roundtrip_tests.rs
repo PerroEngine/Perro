@@ -4,8 +4,8 @@ pub mod variant {
     pub use perro_variant::{Variant, VariantCodec, VariantSchema};
 }
 
-use perro_scripting::Variant;
 use perro_ids::ScriptMemberID;
+use perro_scripting::Variant;
 use perro_variant::{VariantCodec, VariantSchema};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -178,7 +178,11 @@ fn derive_variant_schema_for_enum_defaults_to_empty() {
     assert!(BotState::field_names().is_empty());
 }
 
-fn nested_get_by_hash(prefix: &str, value: &perro_variant::Variant, var: ScriptMemberID) -> Option<perro_variant::Variant> {
+fn nested_get_by_hash(
+    prefix: &str,
+    value: &perro_variant::Variant,
+    var: ScriptMemberID,
+) -> Option<perro_variant::Variant> {
     let obj = value.as_object()?;
     for (key, child) in obj {
         let full = if prefix.is_empty() {
@@ -235,7 +239,11 @@ fn generated_style_get_var(state: &DeepState, var: ScriptMemberID) -> perro_vari
     }
 }
 
-fn generated_style_set_var(state: &mut DeepState, var: ScriptMemberID, value: &perro_variant::Variant) {
+fn generated_style_set_var(
+    state: &mut DeepState,
+    var: ScriptMemberID,
+    value: &perro_variant::Variant,
+) {
     const TOP_PLAYERS: ScriptMemberID = perro_ids::ScriptMemberID::from_string("players");
     const TOP_TOP: ScriptMemberID = perro_ids::ScriptMemberID::from_string("top");
     match var {
@@ -252,7 +260,8 @@ fn generated_style_set_var(state: &mut DeepState, var: ScriptMemberID, value: &p
         _ => {
             let mut nested_root = perro_variant::VariantCodec::to_variant(&state.players);
             if nested_set_by_hash("players", &mut nested_root, var, value)
-                && let Some(decoded) = <DeepMid as perro_variant::VariantCodec>::from_variant(&nested_root)
+                && let Some(decoded) =
+                    <DeepMid as perro_variant::VariantCodec>::from_variant(&nested_root)
             {
                 state.players = decoded;
             }

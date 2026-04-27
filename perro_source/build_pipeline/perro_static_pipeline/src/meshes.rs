@@ -1,4 +1,6 @@
-use crate::{StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
+use crate::{
+    StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
+};
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use rayon::prelude::*;
 use std::{
@@ -331,13 +333,7 @@ fn encode_pmesh_tightest_layout(
     meshlets: &[PackedMeshlet],
     layout_flags: PackedMeshLayoutFlags,
 ) -> io::Result<Vec<u8>> {
-    let baseline = encode_pmesh(
-        vertices,
-        indices,
-        surface_ranges,
-        meshlets,
-        layout_flags,
-    )?;
+    let baseline = encode_pmesh(vertices, indices, surface_ranges, meshlets, layout_flags)?;
     let (reordered_vertices, reordered_indices) = reorder_vertices_by_first_use(vertices, indices);
     if reordered_vertices == vertices && reordered_indices == indices {
         return Ok(baseline);
@@ -793,17 +789,11 @@ mod tests {
             has_joints: true,
             has_weights: true,
         };
-        let baseline =
-            encode_pmesh(&vertices, &indices, &surfaces, &meshlets, full_layout)
-                .expect("baseline encode");
-        let selected = encode_pmesh_tightest_layout(
-            &vertices,
-            &indices,
-            &surfaces,
-            &meshlets,
-            full_layout,
-        )
-        .expect("tightest encode");
+        let baseline = encode_pmesh(&vertices, &indices, &surfaces, &meshlets, full_layout)
+            .expect("baseline encode");
+        let selected =
+            encode_pmesh_tightest_layout(&vertices, &indices, &surfaces, &meshlets, full_layout)
+                .expect("tightest encode");
         assert!(selected.len() <= baseline.len());
         assert!(selected.len() < baseline.len());
     }

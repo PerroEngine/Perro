@@ -340,40 +340,41 @@ impl Runtime {
                 Option<bool>,
                 LocalMeshInstanceData,
             );
-            let mesh_data: Option<LocalMeshData> = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::MeshInstance3D(mesh) => Some((
-                    mesh.mesh,
-                    mesh.surfaces.clone(),
-                    Some(mesh.skeleton),
-                    mesh.meshlet_override,
-                    LocalMeshInstanceData::Single,
-                )),
-                SceneNodeData::MultiMeshInstance3D(mesh) => Some((
-                    mesh.mesh,
-                    mesh.surfaces.clone(),
-                    None,
-                    mesh.meshlet_override,
-                    LocalMeshInstanceData::Dense {
-                        instance_scale: mesh.instance_scale.max(0.0001),
-                        poses: Arc::from(
-                            mesh.instances
-                                .iter()
-                                .map(|instance| DenseInstancePose3D {
-                                    position: [instance.0.x, instance.0.y, instance.0.z],
-                                    rotation: [
-                                        instance.1.x,
-                                        instance.1.y,
-                                        instance.1.z,
-                                        instance.1.w,
-                                    ],
-                                })
-                                .collect::<Vec<_>>()
-                                .into_boxed_slice(),
-                        ),
-                    },
-                )),
-                _ => None,
-            });
+            let mesh_data: Option<LocalMeshData> =
+                self.nodes.get(node).and_then(|node| match &node.data {
+                    SceneNodeData::MeshInstance3D(mesh) => Some((
+                        mesh.mesh,
+                        mesh.surfaces.clone(),
+                        Some(mesh.skeleton),
+                        mesh.meshlet_override,
+                        LocalMeshInstanceData::Single,
+                    )),
+                    SceneNodeData::MultiMeshInstance3D(mesh) => Some((
+                        mesh.mesh,
+                        mesh.surfaces.clone(),
+                        None,
+                        mesh.meshlet_override,
+                        LocalMeshInstanceData::Dense {
+                            instance_scale: mesh.instance_scale.max(0.0001),
+                            poses: Arc::from(
+                                mesh.instances
+                                    .iter()
+                                    .map(|instance| DenseInstancePose3D {
+                                        position: [instance.0.x, instance.0.y, instance.0.z],
+                                        rotation: [
+                                            instance.1.x,
+                                            instance.1.y,
+                                            instance.1.z,
+                                            instance.1.w,
+                                        ],
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .into_boxed_slice(),
+                            ),
+                        },
+                    )),
+                    _ => None,
+                });
             if let Some((mesh, surfaces, skeleton, meshlet_override, local_instances)) = mesh_data
                 && effective_visible
                 && let Some((mesh, resolved_surfaces)) =

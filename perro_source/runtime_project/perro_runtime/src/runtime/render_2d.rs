@@ -102,12 +102,13 @@ impl Runtime {
                 }
             });
             if let Some(camera) = camera_data
-                && self.render_2d.last_camera.as_ref() != Some(&camera) {
-                    self.queue_render_command(RenderCommand::TwoD(Command2D::SetCamera {
-                        camera: camera.clone(),
-                    }));
-                    self.render_2d.last_camera = Some(camera);
-                }
+                && self.render_2d.last_camera.as_ref() != Some(&camera)
+            {
+                self.queue_render_command(RenderCommand::TwoD(Command2D::SetCamera {
+                    camera: camera.clone(),
+                }));
+                self.render_2d.last_camera = Some(camera);
+            }
         }
         self.remove_no_longer_visible_render_2d_nodes(&visible_now);
 

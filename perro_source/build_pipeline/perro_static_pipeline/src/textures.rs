@@ -1,4 +1,6 @@
-use crate::{StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
+use crate::{
+    StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
+};
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use rayon::prelude::*;
 use std::{

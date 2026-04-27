@@ -261,8 +261,14 @@ fn build_patch_crates_io_block(engine_root: &Path) -> String {
         ("perro_structs", "perro_source/core/perro_structs"),
         ("perro_ids", "perro_source/core/perro_ids"),
         ("perro_variant", "perro_source/core/perro_variant"),
-        ("perro_particle_math", "perro_source/core/perro_particle_math"),
-        ("perro_runtime", "perro_source/runtime_project/perro_runtime"),
+        (
+            "perro_particle_math",
+            "perro_source/core/perro_particle_math",
+        ),
+        (
+            "perro_runtime",
+            "perro_source/runtime_project/perro_runtime",
+        ),
         (
             "perro_internal_updates",
             "perro_source/runtime_project/perro_internal_updates",
@@ -286,12 +292,18 @@ fn build_patch_crates_io_block(engine_root: &Path) -> String {
         ("perro_graphics", "perro_source/render_stack/perro_graphics"),
         ("perro_meshlets", "perro_source/render_stack/perro_meshlets"),
         ("perro_app", "perro_source/render_stack/perro_app"),
-        ("perro_scripting", "perro_source/script_stack/perro_scripting"),
+        (
+            "perro_scripting",
+            "perro_source/script_stack/perro_scripting",
+        ),
         (
             "perro_scripting_macros",
             "perro_source/script_stack/perro_scripting_macros",
         ),
-        ("perro_compiler", "perro_source/build_pipeline/perro_compiler"),
+        (
+            "perro_compiler",
+            "perro_source/build_pipeline/perro_compiler",
+        ),
         (
             "perro_static_pipeline",
             "perro_source/build_pipeline/perro_static_pipeline",
@@ -299,7 +311,10 @@ fn build_patch_crates_io_block(engine_root: &Path) -> String {
         ("perro_io", "perro_source/io_stack/perro_io"),
         ("perro_assets", "perro_source/io_stack/perro_assets"),
         ("perro_bark", "perro_source/audio_stack/perro_bark"),
-        ("perro_project", "perro_source/runtime_project/perro_project"),
+        (
+            "perro_project",
+            "perro_source/runtime_project/perro_project",
+        ),
         ("perro_cli", "perro_source/devtools/perro_cli"),
         ("perro_dev_runner", "perro_source/devtools/perro_dev_runner"),
     ];
@@ -318,9 +333,9 @@ fn read_extra_script_deps(project_root: &Path) -> Result<Vec<String>, CompilerEr
         return Ok(Vec::new());
     }
     let src = fs::read_to_string(&deps_toml)?;
-    let parsed = src
-        .parse::<toml::Value>()
-        .map_err(|err| CompilerError::SceneParse(format!("failed to parse {}: {err}", deps_toml.display())))?;
+    let parsed = src.parse::<toml::Value>().map_err(|err| {
+        CompilerError::SceneParse(format!("failed to parse {}: {err}", deps_toml.display()))
+    })?;
     let Some(table) = parsed.get("dependencies").and_then(toml::Value::as_table) else {
         return Ok(Vec::new());
     };
@@ -450,12 +465,22 @@ fn write_dlc_pack_lib(
     src.push_str("    pub material_lookup: extern \"C\" fn(u64) -> *const Material3D,\n");
     src.push_str("    pub particle_lookup: extern \"C\" fn(u64) -> *const ParticleProfile3D,\n");
     src.push_str("    pub animation_lookup: extern \"C\" fn(u64) -> *const AnimationClip,\n");
-    src.push_str("    pub mesh_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
+    src.push_str(
+        "    pub mesh_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+    );
     src.push_str("    pub collision_trimesh_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
-    src.push_str("    pub skeleton_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
-    src.push_str("    pub texture_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
-    src.push_str("    pub shader_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
-    src.push_str("    pub audio_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
+    src.push_str(
+        "    pub skeleton_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+    );
+    src.push_str(
+        "    pub texture_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+    );
+    src.push_str(
+        "    pub shader_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+    );
+    src.push_str(
+        "    pub audio_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+    );
     src.push_str("    pub assets_ptr: extern \"C\" fn() -> *const u8,\n");
     src.push_str("    pub assets_len: extern \"C\" fn() -> usize,\n");
     src.push_str("}\n\n");
@@ -476,11 +501,15 @@ fn write_dlc_pack_lib(
     src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_static_lookup_api() -> *const PerroDlcStaticLookupApi {\n    &PERRO_DLC_STATIC_LOOKUP_API\n}\n\n",
     );
-    src.push_str("static DLC_PACK_ASSETS_PERRO: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n");
+    src.push_str(
+        "static DLC_PACK_ASSETS_PERRO: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n",
+    );
     src.push_str(
         "fn write_bytes_out(bytes: &'static [u8], data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
     );
-    src.push_str("    if data_out.is_null() || len_out.is_null() {\n        return false;\n    }\n");
+    src.push_str(
+        "    if data_out.is_null() || len_out.is_null() {\n        return false;\n    }\n",
+    );
     src.push_str("    unsafe {\n        *data_out = bytes.as_ptr();\n        *len_out = bytes.len();\n    }\n");
     src.push_str("    true\n}\n\n");
     src.push_str(
@@ -529,7 +558,9 @@ fn write_dlc_pack_lib(
     src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
     );
-    src.push_str("    if data_out.is_null() || len_out.is_null() {\n        return false;\n    }\n");
+    src.push_str(
+        "    if data_out.is_null() || len_out.is_null() {\n        return false;\n    }\n",
+    );
     src.push_str(
         "    let Some(bytes) = perro_dlc_pack_lookup_typed(path_hash) else {\n        return false;\n    };\n    unsafe {\n        *data_out = bytes.as_ptr();\n        *len_out = bytes.len();\n    }\n    true\n}\n\n",
     );
@@ -799,8 +830,14 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
     }
     fs::create_dir_all(staging.join("scripts"))?;
     fs::create_dir_all(staging.join("pack"))?;
-    fs::copy(&staged_dylib, staging.join("scripts").join(output_dylib_name))?;
-    fs::copy(&staged_pack_dylib, staging.join("pack").join(pack_dylib_name))?;
+    fs::copy(
+        &staged_dylib,
+        staging.join("scripts").join(output_dylib_name),
+    )?;
+    fs::copy(
+        &staged_pack_dylib,
+        staging.join("pack").join(pack_dylib_name),
+    )?;
     write_dlc_manifest(
         &staging.join("manifest.toml"),
         dlc_name,
@@ -809,10 +846,7 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
     )?;
 
     let mut archive_entries = Vec::<(String, PathBuf)>::new();
-    archive_entries.push((
-        "manifest.toml".to_string(),
-        staging.join("manifest.toml"),
-    ));
+    archive_entries.push(("manifest.toml".to_string(), staging.join("manifest.toml")));
     archive_entries.push((
         format!("scripts/{output_dylib_name}"),
         staging.join("scripts").join(output_dylib_name),
@@ -3059,7 +3093,9 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
     out.push_str("        if ScriptMemberID::from_string(full.as_str()) == var {\n");
     out.push_str("            return Some(child.clone());\n");
     out.push_str("        }\n");
-    out.push_str("        if let Some(found) = __perro_get_nested_by_hash(full.as_str(), child, var) {\n");
+    out.push_str(
+        "        if let Some(found) = __perro_get_nested_by_hash(full.as_str(), child, var) {\n",
+    );
     out.push_str("            return Some(found);\n");
     out.push_str("        }\n");
     out.push_str("    }\n");
@@ -3082,9 +3118,7 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
     out.push_str("            *child = new_value.clone();\n");
     out.push_str("            return true;\n");
     out.push_str("        }\n");
-    out.push_str(
-        "        if __perro_set_nested_by_hash(full.as_str(), child, var, new_value) {\n",
-    );
+    out.push_str("        if __perro_set_nested_by_hash(full.as_str(), child, var, new_value) {\n");
     out.push_str("            return true;\n");
     out.push_str("        }\n");
     out.push_str("    }\n");

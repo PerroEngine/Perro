@@ -3375,8 +3375,7 @@ impl Gpu3D {
                             },
                             instance_start,
                             instance_count,
-                            double_sided: standard_params.double_sided
-                                || self.meshlet_debug_view,
+                            double_sided: standard_params.double_sided || self.meshlet_debug_view,
                             material_kind: material_kind.clone(),
                             alpha_mode: standard_params.alpha_mode,
                             base_color_texture_slot: standard_params.base_color_texture,
@@ -4440,9 +4439,7 @@ impl Gpu3D {
         let source = if gltf_source.is_some() {
             gltf_source.or_else(|| global_source.map(ToString::to_string))
         } else {
-            global_source
-                .map(ToString::to_string)
-                .or(gltf_source)
+            global_source.map(ToString::to_string).or(gltf_source)
         };
         let Some(source) = source else {
             self.material_textures.remove(&slot);
