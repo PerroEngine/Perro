@@ -368,6 +368,7 @@ impl<'a> Parser<'a> {
                     let mut tags = Vec::new();
                     let mut parent = None;
                     let mut script = None;
+                    let mut script_hash = None;
                     let mut clear_script = false;
                     let mut root_of = None;
                     let mut root_of_hash = None;
@@ -396,11 +397,13 @@ impl<'a> Parser<'a> {
                             }
                             "script" => match v {
                                 SceneValue::Str(s) => {
+                                    script_hash = parse_source_hash_literal_or_dlc_path(s.as_ref());
                                     script = Some(s.to_string());
                                     clear_script = false;
                                 }
                                 SceneValue::Key(k) if k.as_ref() == "null" => {
                                     script = None;
+                                    script_hash = None;
                                     clear_script = true;
                                 }
                                 _ => panic!("script must be a string or null"),
@@ -478,7 +481,7 @@ impl<'a> Parser<'a> {
                         children: Cow::Owned(Vec::new()),
                         parent: parent.map(SceneKey::from),
                         script: script.map(Cow::Owned),
-                        script_hash: None,
+                        script_hash,
                         clear_script,
                         root_of: root_of.map(Cow::Owned),
                         root_of_hash,
@@ -560,5 +563,40 @@ fn euler_xyz_radians_to_quat_value(x: f32, y: f32, z: f32) -> SceneValue {
         y: rotation.y,
         z: rotation.z,
         w: rotation.w,
+    }
+}
+
+fn parse_source_hash_literal_or_dlc_path(s: &str) -> Option<u64> {
+    perro_ids::parse_hashed_source_uri(s).or_else(|| {
+        if s.starts_with("dlc://") {
+            Some(perro_ids::string_to_u64(s))
+        } else {
+            None
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Parser;
+    use perro_ids::string_to_u64;
+
+    #[test]
+    fn parser_sets_script_hash_for_dlc_paths() {
+        let src = "@root = main\n\n[main]\nscript = \"dlc://test/scripts/script.rs\"\n[/main]\n";
+        let scene = Parser::new(src).parse_scene();
+        let node = &scene.nodes[0];
+        assert_eq!(
+            node.script_hash,
+            Some(string_to_u64("dlc://test/scripts/script.rs"))
+        );
+    }
+
+    #[test]
+    fn parser_sets_script_hash_for_dlc_prefixed_literal() {
+        let src = "@root = main\n\n[main]\nscript = \"DLC_42\"\n[/main]\n";
+        let scene = Parser::new(src).parse_scene();
+        let node = &scene.nodes[0];
+        assert_eq!(node.script_hash, Some(42));
     }
 }

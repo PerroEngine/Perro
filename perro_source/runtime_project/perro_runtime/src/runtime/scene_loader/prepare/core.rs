@@ -1,5 +1,5 @@
 use crate::material_schema;
-use perro_ids::{IntoTagID, string_to_u64};
+use perro_ids::{IntoTagID, parse_hashed_source_uri, string_to_u64};
 use perro_io::load_asset;
 use perro_nodes::{
     ambient_light_3d::AmbientLight3D,
@@ -127,6 +127,18 @@ fn parse_dlc_mount_name(path: &str) -> Option<String> {
         return None;
     }
     Some(mount.to_string())
+}
+
+fn parse_dlc_mount_hash_literal(path: &str) -> Option<String> {
+    let rest = path.strip_prefix("DLC_")?;
+    let (mount_tag, hash_part) = rest.rsplit_once('_')?;
+    if mount_tag.is_empty()
+        || hash_part.is_empty()
+        || !hash_part.as_bytes().iter().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(mount_tag.to_ascii_lowercase())
 }
 
 fn resolve_scene_dlc_self_paths(scene: &mut Scene, mount_name: &str) {
@@ -327,12 +339,20 @@ fn push_entry_prepared(
 
     let script_path_hash = entry
         .script_hash
-        .or_else(|| entry.script.as_ref().map(|script| string_to_u64(script.as_ref())));
+        .or_else(|| {
+            entry.script.as_ref().and_then(|script| {
+                parse_hashed_source_uri(script.as_ref())
+                    .or_else(|| Some(string_to_u64(script.as_ref())))
+            })
+        });
     if let Some(script_path_hash) = script_path_hash {
         let script_mount = entry
             .script
             .as_ref()
-            .and_then(|path| parse_dlc_mount_name(path.as_ref()));
+            .and_then(|path| {
+                parse_dlc_mount_name(path.as_ref())
+                    .or_else(|| parse_dlc_mount_hash_literal(path.as_ref()))
+            });
         scripts.push(PendingScript {
             node_key: key.clone(),
             script_path_hash,
@@ -818,5 +838,45 @@ mod tests {
             }
             other => panic!("expected inherited Node2D host node, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parse_dlc_mount_hash_literal_extracts_mount() {
+        assert_eq!(
+            parse_dlc_mount_hash_literal("DLC_TEST_42"),
+            Some("test".to_string())
+        );
+        assert_eq!(
+            parse_dlc_mount_hash_literal("DLC_My-Pack_42"),
+            Some("my-pack".to_string())
+        );
+    }
+
+    #[test]
+    fn prepare_scene_extracts_mount_from_dlc_hash_literal_script() {
+        let scene = Parser::new(
+            r#"
+            @root = main
+            [main]
+            script = "DLC_TEST_42"
+            [Node]
+            [/Node]
+            [/main]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unexpected path load `{path}`"))
+        })
+        .expect("prepare scene");
+
+        let pending = prepared
+            .scripts
+            .iter()
+            .find(|pending| pending.node_key == "main")
+            .expect("main pending script");
+        assert_eq!(pending.script_path_hash, 42);
+        assert_eq!(pending.script_mount.as_deref(), Some("test"));
     }
 }

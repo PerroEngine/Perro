@@ -23,6 +23,17 @@ pub fn parse_hashed_source_uri(s: &str) -> Option<u64> {
     if s.as_bytes().iter().all(|b| b.is_ascii_digit()) {
         return s.parse::<u64>().ok();
     }
+    if let Some(rest) = s.strip_prefix("DLC_") {
+        if rest.as_bytes().iter().all(|b| b.is_ascii_digit()) {
+            return rest.parse::<u64>().ok();
+        }
+        if let Some((mount, hash_part)) = rest.rsplit_once('_')
+            && !mount.is_empty()
+            && hash_part.as_bytes().iter().all(|b| b.is_ascii_digit())
+        {
+            return hash_part.parse::<u64>().ok();
+        }
+    }
     None
 }
 
@@ -289,5 +300,32 @@ pub struct ScriptMemberID(pub u64);
 impl ScriptMemberID {
     pub const fn from_string(s: &str) -> Self {
         Self(string_to_u64(s))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_hashed_source_uri, string_to_u64};
+
+    #[test]
+    fn parse_hashed_source_uri_accepts_decimal() {
+        assert_eq!(parse_hashed_source_uri("42"), Some(42));
+    }
+
+    #[test]
+    fn parse_hashed_source_uri_accepts_dlc_prefix_decimal() {
+        assert_eq!(parse_hashed_source_uri("DLC_42"), Some(42));
+    }
+
+    #[test]
+    fn parse_hashed_source_uri_accepts_dlc_mount_prefix_decimal() {
+        assert_eq!(parse_hashed_source_uri("DLC_TEST_42"), Some(42));
+    }
+
+    #[test]
+    fn parse_hashed_source_uri_rejects_raw_dlc_path() {
+        let dlc_path = "dlc://test/scripts/script.rs";
+        assert_eq!(parse_hashed_source_uri(dlc_path), None);
+        assert_ne!(parse_hashed_source_uri(dlc_path), Some(string_to_u64(dlc_path)));
     }
 }
