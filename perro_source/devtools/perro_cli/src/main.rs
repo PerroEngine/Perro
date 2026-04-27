@@ -612,6 +612,8 @@ fn new_dlc_command(args: &[String], cwd: &Path) -> Result<(), String> {
         "@root = main\n\n[main]\nscript = \"dlc://{dlc_name}/scripts/script.rs\"\n[Node2D]\n    position = (0, 0)\n[/Node2D]\n[/main]\n"
     );
     write_new_file(&scene_path, &scene)?;
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
 
     println!(
         "created dlc `{}` at {}",
@@ -1159,7 +1161,6 @@ fn update_project_vscode_linked_projects(project_dir: &Path) -> Result<(), Strin
         ));
     };
 
-    let linked_manifest = ".perro/scripts/Cargo.toml".to_string();
     let vfs_entry = "${workspaceFolder}/res/".to_string();
 
     let entry = root
@@ -1171,11 +1172,22 @@ fn update_project_vscode_linked_projects(project_dir: &Path) -> Result<(), Strin
             settings_path.display()
         ));
     };
-    if !arr
-        .iter()
-        .any(|v| v.as_str() == Some(linked_manifest.as_str()))
-    {
-        arr.push(Value::String(linked_manifest));
+    arr.retain(|v| {
+        let Some(s) = v.as_str() else {
+            return false;
+        };
+        if Path::new(s).is_absolute() {
+            return Path::new(s).exists();
+        }
+        project_dir.join(s).exists()
+    });
+    for linked_manifest in project_internal_linked_manifests(project_dir)? {
+        if !arr
+            .iter()
+            .any(|v| v.as_str() == Some(linked_manifest.as_str()))
+        {
+            arr.push(Value::String(linked_manifest));
+        }
     }
 
     let vfs = root
@@ -1203,6 +1215,34 @@ fn update_project_vscode_linked_projects(project_dir: &Path) -> Result<(), Strin
     fs::write(&settings_path, format!("{rendered}\n"))
         .map_err(|err| format!("failed to write {}: {err}", settings_path.display()))?;
     Ok(())
+}
+
+fn project_internal_linked_manifests(project_dir: &Path) -> Result<Vec<String>, String> {
+    let mut out = Vec::<String>::new();
+    out.push(".perro/scripts/Cargo.toml".to_string());
+
+    let dlc_root = project_dir.join(".perro").join("dlc");
+    if dlc_root.exists() {
+        let entries = fs::read_dir(&dlc_root)
+            .map_err(|err| format!("failed to read {}: {err}", dlc_root.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|err| {
+                format!("failed to read dlc generated entry in {}: {err}", dlc_root.display())
+            })?;
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
+                continue;
+            };
+            out.push(format!(".perro/dlc/{name}/scripts/Cargo.toml"));
+        }
+    }
+
+    out.sort();
+    out.dedup();
+    Ok(out)
 }
 
 fn scripts_command(args: &[String], cwd: &Path) -> Result<(), String> {

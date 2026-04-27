@@ -9,5 +9,5 @@ perro_ids = "0.1.0"
 perro_io = "0.1.0"
 perro_project = "0.1.0"
 perro_scene = "0.1.0"
-perro_static_pipeline = "0.1.0"
+perro_static_pipeline = { path = "../perro_static_pipeline" }
 toml = "0.8.23"

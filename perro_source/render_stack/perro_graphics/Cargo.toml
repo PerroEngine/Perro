@@ -10,7 +10,7 @@ glam = "0.31.0"
 ahash = "0.8.12"
 
 perro_ids = "0.1.0"
-perro_meshlets = "0.1.0"
+perro_meshlets = { path = "../perro_meshlets" }
 perro_render_bridge = "0.1.0"
 perro_particle_math = "0.1.0"
 perro_io = "0.1.0"

@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_compiler = "0.1.0"
+perro_compiler = { path = "../../build_pipeline/perro_compiler" }
 perro_project = "0.1.0"
 serde_json = "1"
