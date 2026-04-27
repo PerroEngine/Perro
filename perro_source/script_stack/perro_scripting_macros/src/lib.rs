@@ -139,6 +139,12 @@ fn derive_state_field_struct(
                 &[#(#schema_fields),*]
             }
         }
+
+        impl #impl_generics ::core::convert::From<#ident #ty_generics> for ::perro_api::variant::Variant #where_clause {
+            fn from(value: #ident #ty_generics) -> Self {
+                ::perro_api::variant::VariantCodec::to_variant(&value)
+            }
+        }
     };
 
     expanded.into()
@@ -288,6 +294,12 @@ fn derive_state_field_enum(
         }
 
         impl #impl_generics ::perro_api::variant::VariantSchema for #ident #ty_generics #where_clause {}
+
+        impl #impl_generics ::core::convert::From<#ident #ty_generics> for ::perro_api::variant::Variant #where_clause {
+            fn from(value: #ident #ty_generics) -> Self {
+                ::perro_api::variant::VariantCodec::to_variant(&value)
+            }
+        }
     };
 
     expanded.into()

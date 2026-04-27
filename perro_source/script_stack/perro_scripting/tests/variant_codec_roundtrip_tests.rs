@@ -125,6 +125,15 @@ fn custom_enum_roundtrip_variant_codec_all_variants() {
 }
 
 #[test]
+fn derived_enum_works_in_params_macro() {
+    let params = perro_variant::params![BotState::Idle];
+    let encoded = params.first().expect("param");
+    let decoded = <BotState as VariantCodec>::from_variant(encoded).expect("decode BotState");
+
+    assert_eq!(decoded, BotState::Idle);
+}
+
+#[test]
 fn complex_nested_struct_and_enum_roundtrip_variant_codec() {
     let value = BrainSnapshot {
         profile: sample_profile(),
