@@ -449,6 +449,12 @@ impl Runtime {
             }
         }
 
+        // Dynamic provider should always resolve dlc:// from source disk mounts.
+        // Do not mount installed .dlc archives in this mode.
+        if self.provider_mode == ProviderMode::Dynamic {
+            return Ok(());
+        }
+
         let install_root = data_local_dir()
             .unwrap_or_else(std::env::temp_dir)
             .join(project_name)

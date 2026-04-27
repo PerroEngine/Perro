@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
+use crate::{StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
 use perro_io::walkdir::collect_file_paths;
 use std::{fmt::Write as _, fs, path::Path};
 
@@ -29,7 +29,7 @@ pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipeline
 
     let mut shaders = Vec::<(String, String)>::with_capacity(shader_paths.len());
     for rel in shader_paths {
-        let res_path = format!("res://{rel}");
+        let res_path = asset_uri(&rel);
         let full_path = res_dir.join(&rel);
         let data = fs::read(&full_path)?;
         let minified = minify_wgsl_for_embed(&String::from_utf8_lossy(&data));

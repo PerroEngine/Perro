@@ -368,240 +368,164 @@ fn write_dlc_manifest(
     Ok(())
 }
 
-fn write_dlc_pack_manifest(crate_name: &str, pack_dir: &Path) -> Result<(), CompilerError> {
+fn write_dlc_pack_manifest(
+    _project_root: &Path,
+    crate_name: &str,
+    pack_dir: &Path,
+) -> Result<(), CompilerError> {
     fs::create_dir_all(pack_dir.join("src"))?;
-    let manifest = format!(
-        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n"
+    let engine_root = engine_root_dir();
+    let perro_api_path = normalize_toml_path(
+        &engine_root
+            .join("perro_source")
+            .join("api_modules")
+            .join("perro_api"),
     );
+    let perro_scene_path = normalize_toml_path(
+        &engine_root
+            .join("perro_source")
+            .join("runtime_project")
+            .join("perro_scene"),
+    );
+    let perro_render_bridge_path = normalize_toml_path(
+        &engine_root
+            .join("perro_source")
+            .join("render_stack")
+            .join("perro_render_bridge"),
+    );
+    let perro_animation_path = normalize_toml_path(
+        &engine_root
+            .join("perro_source")
+            .join("core")
+            .join("perro_animation"),
+    );
+    let perro_structs_path = normalize_toml_path(
+        &engine_root
+            .join("perro_source")
+            .join("core")
+            .join("perro_structs"),
+    );
+    let manifest = format!(
+        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_scene = {{ path = \"{perro_scene_path}\" }}\nperro_render_bridge = {{ path = \"{perro_render_bridge_path}\" }}\nperro_animation = {{ path = \"{perro_animation_path}\" }}\nperro_structs = {{ path = \"{perro_structs_path}\" }}\n"
+    );
+    let mut manifest = manifest;
+    manifest.push_str(&build_patch_crates_io_block(&engine_root));
     write_string_if_changed(&pack_dir.join("Cargo.toml"), &manifest)?;
+    write_dlc_internal_crate_gitignore(pack_dir)?;
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DlcPackAssetKind {
-    Scene,
-    Material,
-    Particle,
-    Animation,
-    Mesh,
-    CollisionTrimesh,
-    Skeleton,
-    Texture,
-    Shader,
-    Audio,
-    Localization,
-    Other,
+fn write_dlc_internal_crate_gitignore(crate_root: &Path) -> Result<(), CompilerError> {
+    write_string_if_changed(
+        &crate_root.join(".gitignore"),
+        &default_dlc_internal_gitignore(),
+    )?;
+    Ok(())
 }
 
-impl DlcPackAssetKind {
-    const ALL: [DlcPackAssetKind; 12] = [
-        DlcPackAssetKind::Scene,
-        DlcPackAssetKind::Material,
-        DlcPackAssetKind::Particle,
-        DlcPackAssetKind::Animation,
-        DlcPackAssetKind::Mesh,
-        DlcPackAssetKind::CollisionTrimesh,
-        DlcPackAssetKind::Skeleton,
-        DlcPackAssetKind::Texture,
-        DlcPackAssetKind::Shader,
-        DlcPackAssetKind::Audio,
-        DlcPackAssetKind::Localization,
-        DlcPackAssetKind::Other,
-    ];
-
-    fn table_suffix(self) -> &'static str {
-        match self {
-            DlcPackAssetKind::Scene => "SCENES",
-            DlcPackAssetKind::Material => "MATERIALS",
-            DlcPackAssetKind::Particle => "PARTICLES",
-            DlcPackAssetKind::Animation => "ANIMATIONS",
-            DlcPackAssetKind::Mesh => "MESHES",
-            DlcPackAssetKind::CollisionTrimesh => "COLLISION_TRIMESHES",
-            DlcPackAssetKind::Skeleton => "SKELETONS",
-            DlcPackAssetKind::Texture => "TEXTURES",
-            DlcPackAssetKind::Shader => "SHADERS",
-            DlcPackAssetKind::Audio => "AUDIOS",
-            DlcPackAssetKind::Localization => "LOCALIZATIONS",
-            DlcPackAssetKind::Other => "OTHER",
-        }
-    }
-
-    fn module_name(self) -> &'static str {
-        match self {
-            DlcPackAssetKind::Scene => "scenes",
-            DlcPackAssetKind::Material => "materials",
-            DlcPackAssetKind::Particle => "particles",
-            DlcPackAssetKind::Animation => "animations",
-            DlcPackAssetKind::Mesh => "meshes",
-            DlcPackAssetKind::CollisionTrimesh => "collision_trimeshes",
-            DlcPackAssetKind::Skeleton => "skeletons",
-            DlcPackAssetKind::Texture => "textures",
-            DlcPackAssetKind::Shader => "shaders",
-            DlcPackAssetKind::Audio => "audios",
-            DlcPackAssetKind::Localization => "localizations",
-            DlcPackAssetKind::Other => "other",
-        }
-    }
-
-    fn embedded_dir_name(self) -> &'static str {
-        self.module_name()
-    }
-}
-
-#[derive(Clone, Debug)]
-struct DlcPackGeneratedEntry {
-    kind: DlcPackAssetKind,
-    virtual_path: String,
-    rel: String,
-    hash: u64,
-    include_rel: String,
-}
-
-fn classify_dlc_pack_asset_kind(rel: &str) -> DlcPackAssetKind {
-    let normalized = rel.replace('\\', "/");
-    let first_segment = normalized
-        .split('/')
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    match first_segment.as_str() {
-        "scenes" => return DlcPackAssetKind::Scene,
-        "materials" => return DlcPackAssetKind::Material,
-        "particles" => return DlcPackAssetKind::Particle,
-        "animations" => return DlcPackAssetKind::Animation,
-        "meshes" => return DlcPackAssetKind::Mesh,
-        "collision_trimeshes" => return DlcPackAssetKind::CollisionTrimesh,
-        "skeletons" => return DlcPackAssetKind::Skeleton,
-        "textures" => return DlcPackAssetKind::Texture,
-        "shaders" => return DlcPackAssetKind::Shader,
-        "audios" => return DlcPackAssetKind::Audio,
-        "localizations" => return DlcPackAssetKind::Localization,
-        _ => {}
-    }
-
-    let ext = Path::new(&normalized)
-        .extension()
-        .and_then(|v| v.to_str())
-        .map(|v| v.to_ascii_lowercase())
-        .unwrap_or_default();
-    match ext.as_str() {
-        "scn" => DlcPackAssetKind::Scene,
-        "pmat" => DlcPackAssetKind::Material,
-        "ppart" => DlcPackAssetKind::Particle,
-        "panim" => DlcPackAssetKind::Animation,
-        "pmesh" | "glb" | "gltf" => DlcPackAssetKind::Mesh,
-        "pskel" => DlcPackAssetKind::Skeleton,
-        "png" | "jpg" | "jpeg" | "bmp" | "gif" | "ico" | "tga" | "webp" | "rgba" | "ptex" => {
-            DlcPackAssetKind::Texture
-        }
-        "wgsl" => DlcPackAssetKind::Shader,
-        "mp3" | "wav" | "ogg" | "flac" | "aac" | "m4a" | "pawdio" => DlcPackAssetKind::Audio,
-        "csv" => DlcPackAssetKind::Localization,
-        _ => DlcPackAssetKind::Other,
-    }
+fn default_dlc_internal_gitignore() -> String {
+    "target/\nsrc/\nembedded/\nCargo.lock\nscripts.dll\nlibscripts.so\nlibscripts.dylib\npack.dll\nlibpack.so\nlibpack.dylib\n".to_string()
 }
 
 fn write_dlc_pack_lib(
     _project_root: &Path,
-    dlc_name: &str,
-    dlc_root: &Path,
+    _dlc_name: &str,
+    _dlc_root: &Path,
     pack_dir: &Path,
 ) -> Result<(), CompilerError> {
-    let mut rel_files = Vec::<String>::new();
-    if dlc_root.exists() {
-        walk_dir(dlc_root, &mut |path| {
-            if path.is_dir() {
-                return Ok(());
-            }
-            let rel = path
-                .strip_prefix(dlc_root)
-                .map_err(|err| std::io::Error::other(err.to_string()))?;
-            let rel_norm = rel.to_string_lossy().replace('\\', "/");
-            if rel_norm.ends_with(".rs") {
-                return Ok(());
-            }
-            rel_files.push(rel_norm);
-            Ok(())
-        })?;
-    }
-    rel_files.sort();
-
-    let embedded_root = pack_dir.join("embedded");
-    let static_root = pack_dir.join("src").join("static");
-    fs::create_dir_all(&embedded_root)?;
-    fs::create_dir_all(&static_root)?;
-
-    let mut entries = Vec::<DlcPackGeneratedEntry>::with_capacity(rel_files.len());
-    for rel in &rel_files {
-        let kind = classify_dlc_pack_asset_kind(rel);
-        let virtual_path = format!("dlc://{dlc_name}/{rel}");
-        let hash = perro_ids::string_to_u64(&virtual_path);
-        let include_rel = format!(
-            "{}/{}",
-            kind.embedded_dir_name(),
-            rel.replace('\\', "/")
-        );
-        let staged = embedded_root.join(include_rel.replace('/', "\\"));
-        if let Some(parent) = staged.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::copy(
-            dlc_root.join(rel.replace('/', "\\")),
-            &staged,
-        )?;
-        entries.push(DlcPackGeneratedEntry {
-            kind,
-            virtual_path,
-            rel: rel.clone(),
-            hash,
-            include_rel,
-        });
-    }
-    entries.sort_by(|a, b| a.rel.cmp(&b.rel));
-
-    for kind in DlcPackAssetKind::ALL {
-        write_string_if_changed(
-            &static_root.join(format!("{}.rs", kind.module_name())),
-            &generate_dlc_pack_static_module(kind, &entries),
-        )?;
-    }
-    let mut mod_src = String::new();
-    for kind in DlcPackAssetKind::ALL {
-        mod_src.push_str(&format!("pub mod {};\n", kind.module_name()));
-    }
-    write_string_if_changed(&static_root.join("mod.rs"), &mod_src)?;
-
     let mut src = String::new();
     src.push_str("#[path = \"static/mod.rs\"]\n");
     src.push_str("pub mod static_assets;\n\n");
+    src.push_str("use perro_animation::AnimationClip;\n");
+    src.push_str("use perro_render_bridge::{Material3D, ParticleProfile3D};\n");
+    src.push_str("use perro_scene::Scene;\n\n");
     src.push_str("pub struct DlcPackEntry {\n");
     src.push_str("    pub hash: u64,\n");
     src.push_str("    pub path: &'static str,\n");
     src.push_str("    pub data: &'static [u8],\n");
     src.push_str("}\n\n");
-    for kind in DlcPackAssetKind::ALL {
-        src.push_str(&format!(
-            "pub use static_assets::{}::DLC_PACK_{}_REGISTRY;\n",
-            kind.module_name(),
-            kind.table_suffix()
-        ));
-    }
-    src.push('\n');
-    src.push_str("fn registry_tables() -> [&'static [DlcPackEntry]; 12] {\n");
-    src.push_str("    [\n");
-    for kind in DlcPackAssetKind::ALL {
-        src.push_str(&format!("        DLC_PACK_{}_REGISTRY,\n", kind.table_suffix()));
-    }
-    src.push_str("    ]\n");
+    src.push_str("#[repr(C)]\n");
+    src.push_str("pub struct PerroDlcStaticLookupApi {\n");
+    src.push_str("    pub scene_lookup: extern \"C\" fn(u64) -> *const Scene,\n");
+    src.push_str("    pub material_lookup: extern \"C\" fn(u64) -> *const Material3D,\n");
+    src.push_str("    pub particle_lookup: extern \"C\" fn(u64) -> *const ParticleProfile3D,\n");
+    src.push_str("    pub animation_lookup: extern \"C\" fn(u64) -> *const AnimationClip,\n");
+    src.push_str("    pub mesh_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
+    src.push_str("    pub collision_trimesh_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
+    src.push_str("    pub skeleton_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
+    src.push_str("    pub texture_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
+    src.push_str("    pub shader_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
+    src.push_str("    pub audio_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
+    src.push_str("    pub assets_ptr: extern \"C\" fn() -> *const u8,\n");
+    src.push_str("    pub assets_len: extern \"C\" fn() -> usize,\n");
     src.push_str("}\n\n");
-    src.push_str("pub fn perro_dlc_pack_lookup_typed(path_hash: u64) -> Option<&'static [u8]> {\n");
-    for kind in DlcPackAssetKind::ALL {
-        src.push_str(&format!(
-            "    if let Some(bytes) = static_assets::{}::lookup(path_hash) {{\n        return Some(bytes);\n    }}\n",
-            kind.module_name()
-        ));
-    }
-    src.push_str("    None\n}\n\n");
+    src.push_str("pub static PERRO_DLC_STATIC_LOOKUP_API: PerroDlcStaticLookupApi = PerroDlcStaticLookupApi {\n");
+    src.push_str("    scene_lookup: perro_dlc_pack_lookup_scene,\n");
+    src.push_str("    material_lookup: perro_dlc_pack_lookup_material,\n");
+    src.push_str("    particle_lookup: perro_dlc_pack_lookup_particle,\n");
+    src.push_str("    animation_lookup: perro_dlc_pack_lookup_animation,\n");
+    src.push_str("    mesh_lookup: perro_dlc_pack_lookup_mesh,\n");
+    src.push_str("    collision_trimesh_lookup: perro_dlc_pack_lookup_collision_trimesh,\n");
+    src.push_str("    skeleton_lookup: perro_dlc_pack_lookup_skeleton,\n");
+    src.push_str("    texture_lookup: perro_dlc_pack_lookup_texture,\n");
+    src.push_str("    shader_lookup: perro_dlc_pack_lookup_shader,\n");
+    src.push_str("    audio_lookup: perro_dlc_pack_lookup_audio,\n");
+    src.push_str("    assets_ptr: perro_dlc_pack_assets_ptr,\n");
+    src.push_str("    assets_len: perro_dlc_pack_assets_len,\n");
+    src.push_str("};\n\n");
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_static_lookup_api() -> *const PerroDlcStaticLookupApi {\n    &PERRO_DLC_STATIC_LOOKUP_API\n}\n\n",
+    );
+    src.push_str("static DLC_PACK_ASSETS_PERRO: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n");
+    src.push_str(
+        "fn write_bytes_out(bytes: &'static [u8], data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
+    );
+    src.push_str("    if data_out.is_null() || len_out.is_null() {\n        return false;\n    }\n");
+    src.push_str("    unsafe {\n        *data_out = bytes.as_ptr();\n        *len_out = bytes.len();\n    }\n");
+    src.push_str("    true\n}\n\n");
+    src.push_str(
+        "fn write_str_out(text: &'static str, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
+    );
+    src.push_str("    write_bytes_out(text.as_bytes(), data_out, len_out)\n}\n\n");
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_assets_ptr() -> *const u8 {\n    DLC_PACK_ASSETS_PERRO.as_ptr()\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_assets_len() -> usize {\n    DLC_PACK_ASSETS_PERRO.len()\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_scene(path_hash: u64) -> *const Scene {\n    static_assets::scenes::lookup_scene(path_hash) as *const Scene\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_material(path_hash: u64) -> *const Material3D {\n    static_assets::materials::lookup_material(path_hash) as *const Material3D\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_particle(path_hash: u64) -> *const ParticleProfile3D {\n    static_assets::particles::lookup_particle(path_hash) as *const ParticleProfile3D\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_animation(path_hash: u64) -> *const AnimationClip {\n    static_assets::animations::lookup_animation(path_hash) as *const AnimationClip\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_mesh(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::meshes::lookup_mesh(path_hash), data_out, len_out)\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_collision_trimesh(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::collision_trimeshes::lookup_collision_trimesh(path_hash), data_out, len_out)\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_skeleton(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::skeletons::lookup_skeleton(path_hash), data_out, len_out)\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_texture(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::textures::lookup_texture(path_hash), data_out, len_out)\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_audio(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::audios::lookup_audio(path_hash), data_out, len_out)\n}\n\n",
+    );
+    src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_shader(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_str_out(static_assets::shaders::lookup_shader(path_hash), data_out, len_out)\n}\n\n",
+    );
+    src.push_str(
+        "pub fn perro_dlc_pack_lookup_typed(_path_hash: u64) -> Option<&'static [u8]> {\n    None\n}\n\n",
+    );
     src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
     );
@@ -613,7 +537,7 @@ fn write_dlc_pack_lib(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_has(path_hash: u64) -> bool {\n    perro_dlc_pack_lookup_typed(path_hash).is_some()\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_registry_len() -> usize {\n    registry_tables().iter().map(|registry| registry.len()).sum()\n}\n\n",
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_registry_len() -> usize {\n    0\n}\n\n",
     );
     src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_registry_get(index: usize, path_hash_out: *mut u64, path_out: *mut *const u8, path_len_out: *mut usize, data_out: *mut *const u8, data_len_out: *mut usize) -> bool {\n",
@@ -621,50 +545,10 @@ fn write_dlc_pack_lib(
     src.push_str(
         "    if path_hash_out.is_null() || path_out.is_null() || path_len_out.is_null() || data_out.is_null() || data_len_out.is_null() {\n        return false;\n    }\n",
     );
-    src.push_str(
-        "    let mut remaining = index;\n    let mut selected: Option<&DlcPackEntry> = None;\n    for registry in registry_tables() {\n        if remaining < registry.len() {\n            selected = registry.get(remaining);\n            break;\n        }\n        remaining -= registry.len();\n    }\n    let Some(entry) = selected else {\n        return false;\n    };\n",
-    );
-    src.push_str(
-        "    unsafe {\n        *path_hash_out = entry.hash;\n        *path_out = entry.path.as_ptr();\n        *path_len_out = entry.path.len();\n        *data_out = entry.data.as_ptr();\n        *data_len_out = entry.data.len();\n    }\n    true\n}\n",
-    );
+    src.push_str("    let _ = index;\n    false\n}\n");
 
     write_string_if_changed(&pack_dir.join("src").join("lib.rs"), &src)?;
     Ok(())
-}
-
-fn generate_dlc_pack_static_module(kind: DlcPackAssetKind, entries: &[DlcPackGeneratedEntry]) -> String {
-    let mut out = String::new();
-    out.push_str("// Auto-generated by Perro DLC pack pipeline. Do not edit.\n");
-    out.push_str("use crate::DlcPackEntry;\n\n");
-    out.push_str(&format!(
-        "pub static DLC_PACK_{}_REGISTRY: &[DlcPackEntry] = &[\n",
-        kind.table_suffix()
-    ));
-    for entry in entries {
-        if entry.kind != kind {
-            continue;
-        }
-        let include_path = format!("../../embedded/{}", entry.include_rel);
-        out.push_str(&format!(
-            "    DlcPackEntry {{ hash: {}u64, path: \"{}\", data: include_bytes!(\"{}\") }},\n",
-            entry.hash,
-            escape_str(&entry.virtual_path),
-            escape_str(&include_path)
-        ));
-    }
-    out.push_str("];\n\n");
-    out.push_str("pub fn lookup(path_hash: u64) -> Option<&'static [u8]> {\n");
-    out.push_str(&format!(
-        "    for entry in DLC_PACK_{}_REGISTRY {{\n",
-        kind.table_suffix()
-    ));
-    out.push_str("        if entry.hash == path_hash {\n");
-    out.push_str("            return Some(entry.data);\n");
-    out.push_str("        }\n");
-    out.push_str("    }\n");
-    out.push_str("    None\n");
-    out.push_str("}\n");
-    out
 }
 
 fn resolve_compiled_dylib(
@@ -796,6 +680,69 @@ fn scripts_dylib_suffix() -> &'static str {
     ".dylib"
 }
 
+fn generate_dlc_static_assets(
+    project_root: &Path,
+    dlc_name: &str,
+    dlc_root: &Path,
+    pack_dir: &Path,
+) -> Result<(), CompilerError> {
+    let static_root = pack_dir.join("src").join("static");
+    let embedded_root = pack_dir.join("embedded");
+    if static_root.exists() {
+        fs::remove_dir_all(&static_root)?;
+    }
+    if embedded_root.exists() {
+        fs::remove_dir_all(&embedded_root)?;
+    }
+    fs::create_dir_all(&static_root)?;
+    fs::create_dir_all(&embedded_root)?;
+
+    let overrides = perro_static_pipeline::StaticPipelineOverrides {
+        res_dir: dlc_root.to_path_buf(),
+        static_dir: static_root.clone(),
+        embedded_dir: embedded_root.clone(),
+        asset_prefix: format!("dlc://{dlc_name}/"),
+    };
+    perro_static_pipeline::set_static_pipeline_overrides(Some(overrides));
+    let bake_result = (|| -> Result<(), CompilerError> {
+        let cfg = load_project_toml(project_root)
+            .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+        perro_static_pipeline::generate_static_collision_trimeshes(project_root)
+            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        perro_static_pipeline::generate_static_scenes(project_root)
+            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        perro_static_pipeline::generate_static_materials(project_root)
+            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        perro_static_pipeline::generate_static_particles(project_root)
+            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        perro_static_pipeline::generate_static_animations(project_root)
+            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        perro_static_pipeline::generate_static_meshes(project_root, cfg.meshlets)
+            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        perro_static_pipeline::generate_static_skeletons(project_root)
+            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        perro_static_pipeline::generate_static_textures(project_root)
+            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        perro_static_pipeline::generate_static_shaders(project_root)
+            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        perro_static_pipeline::generate_static_audios(project_root)
+            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        perro_static_pipeline::generate_empty_localizations(project_root)
+            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        perro_static_pipeline::write_static_mod_rs(project_root)
+            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        build_perro_assets_archive(
+            &embedded_root.join("assets.perro"),
+            dlc_root,
+            project_root,
+            &[],
+        )?;
+        Ok(())
+    })();
+    perro_static_pipeline::set_static_pipeline_overrides(None);
+    bake_result
+}
+
 pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf, CompilerError> {
     validate_dlc_name(dlc_name)?;
     ensure_source_overrides(project_root)?;
@@ -831,7 +778,8 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
     fs::copy(&dylib, &staged_dylib)?;
 
     let pack_crate_name = format!("pack_{}", sanitize_crate_slug(dlc_name));
-    write_dlc_pack_manifest(&pack_crate_name, &pack_dir)?;
+    write_dlc_pack_manifest(project_root, &pack_crate_name, &pack_dir)?;
+    generate_dlc_static_assets(project_root, dlc_name, &dlc_root, &pack_dir)?;
     write_dlc_pack_lib(project_root, dlc_name, &dlc_root, &pack_dir)?;
     compile_scripts_crate(project_root, &pack_dir, ScriptsBuildProfile::Release)?;
     let pack_dylib_name = runtime_pack_dylib_name();

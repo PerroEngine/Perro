@@ -323,6 +323,12 @@ pub fn generate_static_localizations(
     Ok(())
 }
 
+pub fn generate_empty_localizations(project_root: &Path) -> Result<(), StaticPipelineError> {
+    let static_dir = static_dir(project_root);
+    fs::create_dir_all(&static_dir)?;
+    write_empty_localizations(&static_dir)
+}
+
 fn write_empty_localizations(static_dir: &Path) -> Result<(), StaticPipelineError> {
     fs::write(
         static_dir.join("localizations.rs"),

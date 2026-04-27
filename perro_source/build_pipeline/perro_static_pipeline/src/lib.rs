@@ -15,6 +15,7 @@ pub use animations::generate_static_animations;
 pub use audios::generate_static_audios;
 pub use collision_trimeshes::generate_static_collision_trimeshes;
 pub use error::StaticPipelineError;
+pub use localizations::generate_empty_localizations;
 pub use localizations::generate_static_localizations;
 pub use materials::generate_static_materials;
 pub use meshes::generate_static_meshes;
@@ -27,6 +28,7 @@ pub use textures::generate_static_textures;
 use std::{
     collections::HashMap,
     fs,
+    sync::{OnceLock, RwLock},
     path::{Path, PathBuf},
 };
 
@@ -37,7 +39,33 @@ const STATIC_DIR: &str = "static";
 const EMBEDDED_DIR: &str = "embedded";
 const RES_DIR: &str = "res";
 
+#[derive(Clone, Debug)]
+pub struct StaticPipelineOverrides {
+    pub res_dir: PathBuf,
+    pub static_dir: PathBuf,
+    pub embedded_dir: PathBuf,
+    pub asset_prefix: String,
+}
+
+fn overrides_cell() -> &'static RwLock<Option<StaticPipelineOverrides>> {
+    static CELL: OnceLock<RwLock<Option<StaticPipelineOverrides>>> = OnceLock::new();
+    CELL.get_or_init(|| RwLock::new(None))
+}
+
+fn current_overrides() -> Option<StaticPipelineOverrides> {
+    overrides_cell().read().ok().and_then(|v| v.clone())
+}
+
+pub fn set_static_pipeline_overrides(overrides: Option<StaticPipelineOverrides>) {
+    if let Ok(mut slot) = overrides_cell().write() {
+        *slot = overrides;
+    }
+}
+
 pub(crate) fn static_dir(project_root: &Path) -> PathBuf {
+    if let Some(overrides) = current_overrides() {
+        return overrides.static_dir;
+    }
     project_root
         .join(PERRO_DIR)
         .join(PROJECT_DIR)
@@ -46,6 +74,9 @@ pub(crate) fn static_dir(project_root: &Path) -> PathBuf {
 }
 
 pub(crate) fn embedded_dir(project_root: &Path) -> PathBuf {
+    if let Some(overrides) = current_overrides() {
+        return overrides.embedded_dir;
+    }
     project_root
         .join(PERRO_DIR)
         .join(PROJECT_DIR)
@@ -53,7 +84,28 @@ pub(crate) fn embedded_dir(project_root: &Path) -> PathBuf {
 }
 
 pub(crate) fn res_dir(project_root: &Path) -> PathBuf {
+    if let Some(overrides) = current_overrides() {
+        return overrides.res_dir;
+    }
     project_root.join(RES_DIR)
+}
+
+pub(crate) fn asset_prefix() -> String {
+    current_overrides()
+        .map(|overrides| overrides.asset_prefix)
+        .unwrap_or_else(|| "res://".to_string())
+}
+
+pub(crate) fn is_asset_uri(path: &str) -> bool {
+    path.starts_with(&asset_prefix())
+}
+
+pub(crate) fn asset_uri(rel: &str) -> String {
+    format!("{}{}", asset_prefix(), rel.replace('\\', "/"))
+}
+
+pub(crate) fn strip_asset_prefix(path: &str) -> Option<String> {
+    path.strip_prefix(&asset_prefix()).map(str::to_string)
 }
 
 pub(crate) fn ensure_unique_hashes<'a, I>(kind: &str, paths: I) -> Result<(), StaticPipelineError>

@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
+use crate::{StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use rayon::prelude::*;
 use std::{
@@ -35,7 +35,7 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
                     .map(|ext| ext.to_ascii_lowercase())
                     .is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.as_str()))
             })
-            .map(|rel| (format!("res://{rel}"), res_dir.join(rel)))
+            .map(|rel| (asset_uri(&rel), res_dir.join(rel)))
             .collect();
     }
     let mut encoded = texture_inputs

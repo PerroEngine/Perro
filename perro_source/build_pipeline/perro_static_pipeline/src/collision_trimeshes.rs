@@ -1,4 +1,7 @@
-use crate::{StaticPipelineError, ensure_unique_hashes, res_dir, static_dir};
+use crate::{
+    StaticPipelineError, asset_prefix, ensure_unique_hashes, is_asset_uri, res_dir,
+    static_dir, strip_asset_prefix,
+};
 use perro_io::{compress_zlib_best, decompress_zlib, walkdir::collect_file_paths};
 use perro_scene::{Parser, SceneNodeData, SceneValue};
 use std::{
@@ -104,8 +107,12 @@ fn collect_collision_trimesh_sources(res_root: &Path) -> Result<Vec<String>, Sta
             continue;
         }
         let src = fs::read_to_string(res_root.join(&rel))?;
-        let scene = std::panic::catch_unwind(|| Parser::new(&src).parse_scene())
-            .map_err(|_| StaticPipelineError::SceneParse(format!("failed to parse scene: res://{rel}")))?;
+        let scene = std::panic::catch_unwind(|| Parser::new(&src).parse_scene()).map_err(|_| {
+            StaticPipelineError::SceneParse(format!(
+                "failed to parse scene: {}{rel}",
+                asset_prefix()
+            ))
+        })?;
         collect_collision_sources_from_scene(&scene, &mut out);
     }
     Ok(out.into_iter().collect())
@@ -131,7 +138,7 @@ fn collect_collision_sources_from_node_data(data: &SceneNodeData, out: &mut BTre
     for (name, value) in data.fields.as_ref() {
         let name = name.as_ref();
         if name.eq_ignore_ascii_case("trimesh") {
-            if let Some(source) = as_res_asset_source(value) {
+            if let Some(source) = as_asset_source(value) {
                 out.insert(source);
             }
             continue;
@@ -152,7 +159,7 @@ fn collect_collision_sources_from_node_data(data: &SceneNodeData, out: &mut BTre
 }
 
 fn extract_trimesh_source_from_shape_value(value: &SceneValue) -> Option<String> {
-    if let Some(source) = as_res_asset_source(value) {
+    if let Some(source) = as_asset_source(value) {
         return Some(source);
     }
     let SceneValue::Object(entries) = value else {
@@ -167,7 +174,7 @@ fn extract_trimesh_source_from_shape_value(value: &SceneValue) -> Option<String>
         {
             ty = Some(raw.to_ascii_lowercase());
         } else if matches!(key, "source" | "mesh" | "trimesh") {
-            source = as_res_asset_source(v);
+            source = as_asset_source(v);
         }
     }
     let ty = ty?;
@@ -177,12 +184,12 @@ fn extract_trimesh_source_from_shape_value(value: &SceneValue) -> Option<String>
     None
 }
 
-fn as_res_asset_source(value: &SceneValue) -> Option<String> {
+fn as_asset_source(value: &SceneValue) -> Option<String> {
     let raw = match value {
         SceneValue::Str(v) => v.as_ref(),
         _ => return None,
     };
-    if !raw.starts_with("res://") {
+    if !is_asset_uri(raw) {
         return None;
     }
     let (path, _) = split_source_fragment(raw);
@@ -202,7 +209,7 @@ fn load_trimesh_from_source(res_root: &Path, source: &str) -> Option<TriMeshData
     } else {
         0
     };
-    let rel = path.trim_start_matches("res://");
+    let rel = strip_asset_prefix(path)?;
     let full = res_root.join(rel);
     let bytes = fs::read(full).ok()?;
     if path.ends_with(".pmesh") {

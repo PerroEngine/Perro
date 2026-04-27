@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, ensure_unique_hashes, res_dir, static_dir};
+use crate::{StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir};
 use perro_io::walkdir::collect_file_paths;
 use perro_particle_math::{Op, compile_expression};
 use rayon::prelude::*;
@@ -27,7 +27,7 @@ pub fn generate_static_particles(project_root: &Path) -> Result<(), StaticPipeli
     let mut particles = particle_paths
         .into_par_iter()
         .map(|rel| -> io::Result<(String, ParticleLiteral)> {
-            let res_path = format!("res://{rel}");
+            let res_path = asset_uri(&rel);
             let full_path = res_dir.join(&rel);
             let src = fs::read_to_string(&full_path)?;
             let parsed = parse_pparticle_source(&src).ok_or_else(|| {

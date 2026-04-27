@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
+use crate::{StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir};
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use rayon::prelude::*;
 use std::{
@@ -80,7 +80,7 @@ pub fn generate_static_meshes(
     let processed = mesh_paths
         .into_par_iter()
         .map(|rel| -> io::Result<Vec<MeshAsset>> {
-            let res_path = format!("res://{rel}");
+            let res_path = asset_uri(&rel);
             let full_path = res_dir.join(&rel);
             let ext = Path::new(&rel)
                 .extension()

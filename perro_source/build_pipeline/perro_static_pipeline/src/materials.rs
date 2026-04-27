@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, ensure_unique_hashes, res_dir, static_dir};
+use crate::{StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir};
 use perro_io::walkdir::collect_file_paths;
 use perro_render_bridge::{
     CustomMaterialParamValue3D, StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D,
@@ -31,7 +31,7 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
     let mut materials = material_paths
         .into_par_iter()
         .map(|rel| -> io::Result<Vec<(String, MaterialLiteral)>> {
-            let res_path = format!("res://{rel}");
+            let res_path = asset_uri(&rel);
             let full_path = res_dir.join(&rel);
             let ext = Path::new(&rel)
                 .extension()

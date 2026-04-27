@@ -1,4 +1,7 @@
-use crate::{StaticPipelineError, ensure_unique_hashes, res_dir, static_dir};
+use crate::{
+    StaticPipelineError, asset_uri, ensure_unique_hashes, is_asset_uri, res_dir, static_dir,
+    strip_asset_prefix,
+};
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::{Parser, SceneNodeData, SceneNodeDataBase, SceneValue};
 use rayon::prelude::*;
@@ -21,7 +24,7 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
                     .and_then(|e| e.to_str())
                     .is_some_and(|ext| ext.eq_ignore_ascii_case("scn"))
             })
-            .map(|rel| format!("res://{rel}"))
+            .map(|rel| asset_uri(&rel))
             .collect();
     }
     scene_paths.sort();
@@ -30,7 +33,9 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
     let mut emitted_scenes = scene_paths
         .par_iter()
         .map(|res_path| -> io::Result<(String, EmittedScene)> {
-            let rel = res_path.trim_start_matches("res://");
+            let rel = strip_asset_prefix(res_path).ok_or_else(|| {
+                io::Error::other(format!("scene path not in asset space: {res_path}"))
+            })?;
             let full_path = res_dir.join(rel);
             let src = fs::read_to_string(&full_path)?;
             let parsed = std::panic::catch_unwind(|| Parser::new(&src).parse_scene())
@@ -446,7 +451,7 @@ fn emit_static_scene_value_str(s: &str) -> String {
 }
 
 fn static_hashable_scene_path(s: &str) -> bool {
-    if !s.starts_with("res://") {
+    if !is_asset_uri(s) {
         return false;
     }
     let (path_part, _) = split_source_fragment(s);
@@ -457,7 +462,7 @@ fn static_hashable_scene_path(s: &str) -> bool {
 }
 
 fn static_hashable_path(s: &str) -> Option<u64> {
-    if !s.starts_with("res://") {
+    if !is_asset_uri(s) {
         return None;
     }
     let path_part = split_source_fragment(s).0;

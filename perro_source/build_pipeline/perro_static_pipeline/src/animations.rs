@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, ensure_unique_hashes, res_dir, static_dir};
+use crate::{StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir};
 use perro_animation::{
     AnimationBoneSelector, AnimationEase, AnimationEvent, AnimationEventScope,
     AnimationInterpolation, AnimationObjectKey, AnimationObjectTrack, AnimationParam,
@@ -43,7 +43,7 @@ pub fn generate_static_animations(project_root: &Path) -> Result<(), StaticPipel
             let clip = perro_animation::parse_panim(&text).map_err(io::Error::other)?;
             let clip = optimize_animation_clip(clip);
             Ok(ParsedAnimation {
-                lookup_key: format!("res://{rel}"),
+                lookup_key: asset_uri(rel),
                 clip,
             })
         })
