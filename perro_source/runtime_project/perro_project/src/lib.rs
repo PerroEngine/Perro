@@ -1269,13 +1269,7 @@ methods!({
 }
 
 fn default_gitignore() -> String {
-    r#"target/
-.perro/project/embedded/
-.perro/project/src/static/
-.perro/scripts/src/
-.output/
-"#
-    .to_string()
+    "target/\n.perro/\n.output/\n".to_string()
 }
 
 fn default_deps_toml() -> String {

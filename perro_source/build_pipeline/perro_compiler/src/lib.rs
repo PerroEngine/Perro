@@ -237,7 +237,6 @@ fn write_dlc_scripts_manifest(
     manifest.push_str(&build_patch_crates_io_block(&engine_root));
     let manifest_path = scripts_crate.join("Cargo.toml");
     write_string_if_changed(&manifest_path, &manifest)?;
-    write_dlc_internal_crate_gitignore(scripts_crate)?;
     Ok(())
 }
 
@@ -375,17 +374,131 @@ fn write_dlc_pack_manifest(crate_name: &str, pack_dir: &Path) -> Result<(), Comp
         "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n"
     );
     write_string_if_changed(&pack_dir.join("Cargo.toml"), &manifest)?;
-    write_dlc_internal_crate_gitignore(pack_dir)?;
     Ok(())
 }
 
-fn write_dlc_internal_crate_gitignore(crate_root: &Path) -> Result<(), CompilerError> {
-    write_string_if_changed(&crate_root.join(".gitignore"), &default_dlc_internal_gitignore())?;
-    Ok(())
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DlcPackAssetKind {
+    Scene,
+    Material,
+    Particle,
+    Animation,
+    Mesh,
+    CollisionTrimesh,
+    Skeleton,
+    Texture,
+    Shader,
+    Audio,
+    Localization,
+    Other,
 }
 
-fn default_dlc_internal_gitignore() -> String {
-    "target/\nsrc/\nCargo.lock\nscripts.dll\nlibscripts.so\nlibscripts.dylib\npack.dll\nlibpack.so\nlibpack.dylib\n".to_string()
+impl DlcPackAssetKind {
+    const ALL: [DlcPackAssetKind; 12] = [
+        DlcPackAssetKind::Scene,
+        DlcPackAssetKind::Material,
+        DlcPackAssetKind::Particle,
+        DlcPackAssetKind::Animation,
+        DlcPackAssetKind::Mesh,
+        DlcPackAssetKind::CollisionTrimesh,
+        DlcPackAssetKind::Skeleton,
+        DlcPackAssetKind::Texture,
+        DlcPackAssetKind::Shader,
+        DlcPackAssetKind::Audio,
+        DlcPackAssetKind::Localization,
+        DlcPackAssetKind::Other,
+    ];
+
+    fn table_suffix(self) -> &'static str {
+        match self {
+            DlcPackAssetKind::Scene => "SCENES",
+            DlcPackAssetKind::Material => "MATERIALS",
+            DlcPackAssetKind::Particle => "PARTICLES",
+            DlcPackAssetKind::Animation => "ANIMATIONS",
+            DlcPackAssetKind::Mesh => "MESHES",
+            DlcPackAssetKind::CollisionTrimesh => "COLLISION_TRIMESHES",
+            DlcPackAssetKind::Skeleton => "SKELETONS",
+            DlcPackAssetKind::Texture => "TEXTURES",
+            DlcPackAssetKind::Shader => "SHADERS",
+            DlcPackAssetKind::Audio => "AUDIOS",
+            DlcPackAssetKind::Localization => "LOCALIZATIONS",
+            DlcPackAssetKind::Other => "OTHER",
+        }
+    }
+
+    fn module_name(self) -> &'static str {
+        match self {
+            DlcPackAssetKind::Scene => "scenes",
+            DlcPackAssetKind::Material => "materials",
+            DlcPackAssetKind::Particle => "particles",
+            DlcPackAssetKind::Animation => "animations",
+            DlcPackAssetKind::Mesh => "meshes",
+            DlcPackAssetKind::CollisionTrimesh => "collision_trimeshes",
+            DlcPackAssetKind::Skeleton => "skeletons",
+            DlcPackAssetKind::Texture => "textures",
+            DlcPackAssetKind::Shader => "shaders",
+            DlcPackAssetKind::Audio => "audios",
+            DlcPackAssetKind::Localization => "localizations",
+            DlcPackAssetKind::Other => "other",
+        }
+    }
+
+    fn embedded_dir_name(self) -> &'static str {
+        self.module_name()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct DlcPackGeneratedEntry {
+    kind: DlcPackAssetKind,
+    virtual_path: String,
+    rel: String,
+    hash: u64,
+    include_rel: String,
+}
+
+fn classify_dlc_pack_asset_kind(rel: &str) -> DlcPackAssetKind {
+    let normalized = rel.replace('\\', "/");
+    let first_segment = normalized
+        .split('/')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match first_segment.as_str() {
+        "scenes" => return DlcPackAssetKind::Scene,
+        "materials" => return DlcPackAssetKind::Material,
+        "particles" => return DlcPackAssetKind::Particle,
+        "animations" => return DlcPackAssetKind::Animation,
+        "meshes" => return DlcPackAssetKind::Mesh,
+        "collision_trimeshes" => return DlcPackAssetKind::CollisionTrimesh,
+        "skeletons" => return DlcPackAssetKind::Skeleton,
+        "textures" => return DlcPackAssetKind::Texture,
+        "shaders" => return DlcPackAssetKind::Shader,
+        "audios" => return DlcPackAssetKind::Audio,
+        "localizations" => return DlcPackAssetKind::Localization,
+        _ => {}
+    }
+
+    let ext = Path::new(&normalized)
+        .extension()
+        .and_then(|v| v.to_str())
+        .map(|v| v.to_ascii_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "scn" => DlcPackAssetKind::Scene,
+        "pmat" => DlcPackAssetKind::Material,
+        "ppart" => DlcPackAssetKind::Particle,
+        "panim" => DlcPackAssetKind::Animation,
+        "pmesh" | "glb" | "gltf" => DlcPackAssetKind::Mesh,
+        "pskel" => DlcPackAssetKind::Skeleton,
+        "png" | "jpg" | "jpeg" | "bmp" | "gif" | "ico" | "tga" | "webp" | "rgba" | "ptex" => {
+            DlcPackAssetKind::Texture
+        }
+        "wgsl" => DlcPackAssetKind::Shader,
+        "mp3" | "wav" | "ogg" | "flac" | "aac" | "m4a" | "pawdio" => DlcPackAssetKind::Audio,
+        "csv" => DlcPackAssetKind::Localization,
+        _ => DlcPackAssetKind::Other,
+    }
 }
 
 fn write_dlc_pack_lib(
@@ -413,34 +526,94 @@ fn write_dlc_pack_lib(
     }
     rel_files.sort();
 
+    let embedded_root = pack_dir.join("embedded");
+    let static_root = pack_dir.join("src").join("static");
+    fs::create_dir_all(&embedded_root)?;
+    fs::create_dir_all(&static_root)?;
+
+    let mut entries = Vec::<DlcPackGeneratedEntry>::with_capacity(rel_files.len());
+    for rel in &rel_files {
+        let kind = classify_dlc_pack_asset_kind(rel);
+        let virtual_path = format!("dlc://{dlc_name}/{rel}");
+        let hash = perro_ids::string_to_u64(&virtual_path);
+        let include_rel = format!(
+            "{}/{}",
+            kind.embedded_dir_name(),
+            rel.replace('\\', "/")
+        );
+        let staged = embedded_root.join(include_rel.replace('/', "\\"));
+        if let Some(parent) = staged.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(
+            dlc_root.join(rel.replace('/', "\\")),
+            &staged,
+        )?;
+        entries.push(DlcPackGeneratedEntry {
+            kind,
+            virtual_path,
+            rel: rel.clone(),
+            hash,
+            include_rel,
+        });
+    }
+    entries.sort_by(|a, b| a.rel.cmp(&b.rel));
+
+    for kind in DlcPackAssetKind::ALL {
+        write_string_if_changed(
+            &static_root.join(format!("{}.rs", kind.module_name())),
+            &generate_dlc_pack_static_module(kind, &entries),
+        )?;
+    }
+    let mut mod_src = String::new();
+    for kind in DlcPackAssetKind::ALL {
+        mod_src.push_str(&format!("pub mod {};\n", kind.module_name()));
+    }
+    write_string_if_changed(&static_root.join("mod.rs"), &mod_src)?;
+
     let mut src = String::new();
+    src.push_str("#[path = \"static/mod.rs\"]\n");
+    src.push_str("pub mod static_assets;\n\n");
     src.push_str("pub struct DlcPackEntry {\n");
     src.push_str("    pub hash: u64,\n");
     src.push_str("    pub path: &'static str,\n");
     src.push_str("    pub data: &'static [u8],\n");
     src.push_str("}\n\n");
-    src.push_str("pub static DLC_PACK_REGISTRY: &[DlcPackEntry] = &[\n");
-    for rel in &rel_files {
-        let virtual_path = format!("dlc://{dlc_name}/{rel}");
-        let hash = perro_ids::string_to_u64(&virtual_path);
-        let full = normalize_toml_path(&dlc_root.join(rel.replace('/', "\\")));
+    for kind in DlcPackAssetKind::ALL {
         src.push_str(&format!(
-            "    DlcPackEntry {{ hash: {hash}u64, path: \"{virtual_path}\", data: include_bytes!(r#\"{full}\"#) }},\n"
+            "pub use static_assets::{}::DLC_PACK_{}_REGISTRY;\n",
+            kind.module_name(),
+            kind.table_suffix()
         ));
     }
-    src.push_str("];\n\n");
+    src.push('\n');
+    src.push_str("fn registry_tables() -> [&'static [DlcPackEntry]; 12] {\n");
+    src.push_str("    [\n");
+    for kind in DlcPackAssetKind::ALL {
+        src.push_str(&format!("        DLC_PACK_{}_REGISTRY,\n", kind.table_suffix()));
+    }
+    src.push_str("    ]\n");
+    src.push_str("}\n\n");
+    src.push_str("pub fn perro_dlc_pack_lookup_typed(path_hash: u64) -> Option<&'static [u8]> {\n");
+    for kind in DlcPackAssetKind::ALL {
+        src.push_str(&format!(
+            "    if let Some(bytes) = static_assets::{}::lookup(path_hash) {{\n        return Some(bytes);\n    }}\n",
+            kind.module_name()
+        ));
+    }
+    src.push_str("    None\n}\n\n");
     src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
     );
     src.push_str("    if data_out.is_null() || len_out.is_null() {\n        return false;\n    }\n");
     src.push_str(
-        "    for entry in DLC_PACK_REGISTRY {\n        if entry.hash == path_hash {\n            unsafe {\n                *data_out = entry.data.as_ptr();\n                *len_out = entry.data.len();\n            }\n            return true;\n        }\n    }\n    false\n}\n\n",
+        "    let Some(bytes) = perro_dlc_pack_lookup_typed(path_hash) else {\n        return false;\n    };\n    unsafe {\n        *data_out = bytes.as_ptr();\n        *len_out = bytes.len();\n    }\n    true\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_has(path_hash: u64) -> bool {\n    DLC_PACK_REGISTRY.iter().any(|entry| entry.hash == path_hash)\n}\n\n",
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_has(path_hash: u64) -> bool {\n    perro_dlc_pack_lookup_typed(path_hash).is_some()\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_registry_len() -> usize {\n    DLC_PACK_REGISTRY.len()\n}\n\n",
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_registry_len() -> usize {\n    registry_tables().iter().map(|registry| registry.len()).sum()\n}\n\n",
     );
     src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_registry_get(index: usize, path_hash_out: *mut u64, path_out: *mut *const u8, path_len_out: *mut usize, data_out: *mut *const u8, data_len_out: *mut usize) -> bool {\n",
@@ -449,7 +622,7 @@ fn write_dlc_pack_lib(
         "    if path_hash_out.is_null() || path_out.is_null() || path_len_out.is_null() || data_out.is_null() || data_len_out.is_null() {\n        return false;\n    }\n",
     );
     src.push_str(
-        "    let Some(entry) = DLC_PACK_REGISTRY.get(index) else {\n        return false;\n    };\n",
+        "    let mut remaining = index;\n    let mut selected: Option<&DlcPackEntry> = None;\n    for registry in registry_tables() {\n        if remaining < registry.len() {\n            selected = registry.get(remaining);\n            break;\n        }\n        remaining -= registry.len();\n    }\n    let Some(entry) = selected else {\n        return false;\n    };\n",
     );
     src.push_str(
         "    unsafe {\n        *path_hash_out = entry.hash;\n        *path_out = entry.path.as_ptr();\n        *path_len_out = entry.path.len();\n        *data_out = entry.data.as_ptr();\n        *data_len_out = entry.data.len();\n    }\n    true\n}\n",
@@ -457,6 +630,41 @@ fn write_dlc_pack_lib(
 
     write_string_if_changed(&pack_dir.join("src").join("lib.rs"), &src)?;
     Ok(())
+}
+
+fn generate_dlc_pack_static_module(kind: DlcPackAssetKind, entries: &[DlcPackGeneratedEntry]) -> String {
+    let mut out = String::new();
+    out.push_str("// Auto-generated by Perro DLC pack pipeline. Do not edit.\n");
+    out.push_str("use crate::DlcPackEntry;\n\n");
+    out.push_str(&format!(
+        "pub static DLC_PACK_{}_REGISTRY: &[DlcPackEntry] = &[\n",
+        kind.table_suffix()
+    ));
+    for entry in entries {
+        if entry.kind != kind {
+            continue;
+        }
+        let include_path = format!("../../embedded/{}", entry.include_rel);
+        out.push_str(&format!(
+            "    DlcPackEntry {{ hash: {}u64, path: \"{}\", data: include_bytes!(\"{}\") }},\n",
+            entry.hash,
+            escape_str(&entry.virtual_path),
+            escape_str(&include_path)
+        ));
+    }
+    out.push_str("];\n\n");
+    out.push_str("pub fn lookup(path_hash: u64) -> Option<&'static [u8]> {\n");
+    out.push_str(&format!(
+        "    for entry in DLC_PACK_{}_REGISTRY {{\n",
+        kind.table_suffix()
+    ));
+    out.push_str("        if entry.hash == path_hash {\n");
+    out.push_str("            return Some(entry.data);\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    None\n");
+    out.push_str("}\n");
+    out
 }
 
 fn resolve_compiled_dylib(
