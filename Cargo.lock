@@ -2640,6 +2640,7 @@ dependencies = [
  "perro_scene",
  "perro_scripting",
  "perro_structs",
+ "perro_ui",
  "perro_variant",
  "rapier2d",
  "rapier3d",

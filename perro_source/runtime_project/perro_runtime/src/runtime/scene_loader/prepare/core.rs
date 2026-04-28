@@ -32,8 +32,11 @@ use perro_scene::{
     StaticBody3DField, resolve_node_field,
 };
 use perro_structs::{
-    CustomPostParam, CustomPostParamValue, PostProcessEffect, PostProcessSet, Quaternion, Vector2,
-    Vector3,
+    Color, CustomPostParam, CustomPostParamValue, PostProcessEffect, PostProcessSet, Quaternion,
+    Vector2, Vector3,
+};
+use perro_ui::{
+    UiButton, UiGrid, UiHBox, UiLabel, UiMouseFilter, UiPanel, UiRoot, UiTextAlign, UiVBox,
 };
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -625,6 +628,13 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "RayLight3D" => Ok(SceneNodeData::RayLight3D(build_ray_light_3d(data))),
         "PointLight3D" => Ok(SceneNodeData::PointLight3D(build_point_light_3d(data))),
         "SpotLight3D" => Ok(SceneNodeData::SpotLight3D(build_spot_light_3d(data))),
+        "UiRoot" => Ok(SceneNodeData::UiRoot(build_ui_root(data))),
+        "UiPanel" => Ok(SceneNodeData::UiPanel(build_ui_panel(data))),
+        "UiButton" => Ok(SceneNodeData::UiButton(build_ui_button(data))),
+        "UiLabel" => Ok(SceneNodeData::UiLabel(build_ui_label(data))),
+        "UiHBox" => Ok(SceneNodeData::UiHBox(build_ui_hbox(data))),
+        "UiVBox" => Ok(SceneNodeData::UiVBox(build_ui_vbox(data))),
+        "UiGrid" => Ok(SceneNodeData::UiGrid(build_ui_grid(data))),
         other => Err(format!("unsupported scene node type `{other}`")),
     }
 }
@@ -821,6 +831,90 @@ mod tests {
                 assert_eq!(node_2d.rotation, 1.25);
             }
             other => panic!("expected inherited Node2D host node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scene_loader_builds_ui_nodes_from_scene_blocks() {
+        let scene = Parser::new(
+            r##"
+            @root = menu
+            [menu]
+            [UiButton]
+                visible = false
+                input_enabled = false
+                mouse_filter = "pass"
+                position_percent = (50, 25)
+                size = (240, 48)
+                pivot = (0, 0)
+                padding = (1, 2, 3, 4)
+                text = "Play"
+                text_color = "#FF0000"
+                fill = "#101820"
+                hover_fill = "#202830"
+                pressed_fill = "#303840"
+                disabled = true
+            [/UiButton]
+            [/menu]
+
+            [items]
+            parent = menu
+            [UiGrid]
+                columns = 3
+                h_spacing = 8
+                v_spacing = 12
+            [/UiGrid]
+            [/items]
+            "##,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        })
+        .expect("prepare scene");
+
+        let menu = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key == "menu")
+            .expect("menu node");
+        match &menu.node.data {
+            SceneNodeData::UiButton(button) => {
+                assert!(!button.visible);
+                assert!(!button.input_enabled);
+                assert_eq!(button.mouse_filter, UiMouseFilter::Pass);
+                assert_eq!(button.text.as_ref(), "Play");
+                assert_eq!(button.text_color, Color::RED);
+                assert!(button.disabled);
+                assert_eq!(
+                    button.layout.size.resolve(Vector2::new(800.0, 600.0)),
+                    Vector2::new(240.0, 48.0)
+                );
+                assert_eq!(
+                    button.layout.padding,
+                    perro_ui::UiRect::new(1.0, 2.0, 3.0, 4.0)
+                );
+                match button.layout.position.x {
+                    perro_ui::UiUnit::Percent(v) => assert_eq!(v, 50.0),
+                    other => panic!("expected percent x, got {other:?}"),
+                }
+            }
+            other => panic!("expected UiButton menu node, got {other:?}"),
+        }
+
+        let items = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key == "items")
+            .expect("items node");
+        match &items.node.data {
+            SceneNodeData::UiGrid(grid) => {
+                assert_eq!(grid.columns, 3);
+                assert_eq!(grid.h_spacing, 8.0);
+                assert_eq!(grid.v_spacing, 12.0);
+            }
+            other => panic!("expected UiGrid items node, got {other:?}"),
         }
     }
 
