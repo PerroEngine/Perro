@@ -172,6 +172,11 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.layout.translation = v;
             }
         }
+        "scale" => {
+            if let Some(v) = as_vec2(value) {
+                node.layout.scale = v;
+            }
+        }
         "min_size" => {
             if let Some(v) = as_vec2(value) {
                 node.layout.min_size = v;

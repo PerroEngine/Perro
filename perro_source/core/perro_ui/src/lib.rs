@@ -267,6 +267,7 @@ pub struct UiLayoutData {
     pub size: UiVector2,
     pub pivot: UiVector2,
     pub translation: Vector2,
+    pub scale: Vector2,
     pub min_size: Vector2,
     pub max_size: Vector2,
     pub margin: UiRect,
@@ -288,6 +289,7 @@ impl UiLayoutData {
             size: UiVector2::ZERO,
             pivot: UiVector2::percent(50.0, 50.0),
             translation: Vector2::ZERO,
+            scale: Vector2::ONE,
             min_size: Vector2::ZERO,
             max_size: Self::NO_MAX_SIZE,
             margin: UiRect::ZERO,
@@ -322,7 +324,11 @@ impl UiLayoutData {
     }
 
     pub fn compute_rect(&self, parent: ComputedUiRect) -> ComputedUiRect {
-        let size = self.resolved_size(parent.size);
+        let resolved_size = self.resolved_size(parent.size);
+        let size = Vector2::new(
+            resolved_size.x * self.scale.x,
+            resolved_size.y * self.scale.y,
+        );
         let anchor = self.anchor.direction();
         let anchor_point = parent.center
             + Vector2::new(
@@ -930,6 +936,19 @@ mod tests {
             layout.resolved_size(Vector2::new(400.0, 400.0)),
             Vector2::new(300.0, 80.0)
         );
+    }
+
+    #[test]
+    fn scale_applies_after_size_clamp() {
+        let mut layout = UiLayoutData::new();
+        layout.size = UiVector2::ratio(0.5, 0.1);
+        layout.max_size = Vector2::new(1200.0, 90.0);
+        layout.scale = Vector2::new(2.0, 0.5);
+
+        let parent = ComputedUiRect::new(Vector2::ZERO, Vector2::new(3000.0, 1000.0));
+        let rect = layout.compute_rect(parent);
+
+        assert_eq!(rect.size, Vector2::new(2400.0, 45.0));
     }
 
     #[test]

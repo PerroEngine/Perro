@@ -853,6 +853,7 @@ mod tests {
                 min_h = 40
                 max_w = 1200
                 max_h = 96
+                scale = (2, 0.5)
                 pivot_ratio = (0, 0)
                 padding = (1, 2, 3, 4)
                 text = "Play"
@@ -924,6 +925,7 @@ mod tests {
                 );
                 assert_eq!(button.layout.min_size, Vector2::new(120.0, 40.0));
                 assert_eq!(button.layout.max_size, Vector2::new(1200.0, 96.0));
+                assert_eq!(button.layout.scale, Vector2::new(2.0, 0.5));
                 assert_eq!(
                     button.layout.padding,
                     perro_ui::UiRect::new(1.0, 2.0, 3.0, 4.0)

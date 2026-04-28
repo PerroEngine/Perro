@@ -442,6 +442,7 @@ fn script_macros_typecheck_and_forward() {
     assert!(!set_node_name!(&mut ctx, id, "player"));
     assert!(!set_ui_min_size!(&mut ctx, id, Vector2::new(100.0, 50.0)));
     assert!(!set_ui_max_size!(&mut ctx, id, Vector2::new(1200.0, 96.0)));
+    assert!(!set_ui_scale!(&mut ctx, id, Vector2::new(2.0, 0.5)));
     assert!(!set_ui_min_w!(&mut ctx, id, 100.0));
     assert!(!set_ui_min_h!(&mut ctx, id, 50.0));
     assert!(!set_ui_max_w!(&mut ctx, id, 1200.0));

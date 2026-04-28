@@ -348,6 +348,14 @@ pub trait NodeAPI {
         .is_some()
     }
 
+    /// Sets UI scale. Works on `UiBox` and descendants.
+    fn set_ui_scale(&mut self, node_id: NodeID, scale: Vector2) -> bool {
+        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
+            node.layout.scale = scale;
+        })
+        .is_some()
+    }
+
     /// Sets UI minimum width in pixels. Works on `UiBox` and descendants.
     fn set_ui_min_w(&mut self, node_id: NodeID, value: f32) -> bool {
         self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
@@ -636,6 +644,10 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 
     pub fn set_ui_max_size(&mut self, node_id: NodeID, size: Vector2) -> bool {
         self.rt.set_ui_max_size(node_id, size)
+    }
+
+    pub fn set_ui_scale(&mut self, node_id: NodeID, scale: Vector2) -> bool {
+        self.rt.set_ui_scale(node_id, scale)
     }
 
     pub fn set_ui_min_w(&mut self, node_id: NodeID, value: f32) -> bool {
@@ -1029,6 +1041,13 @@ macro_rules! set_ui_min_size {
 macro_rules! set_ui_max_size {
     ($ctx:expr, $id:expr, $size:expr) => {
         $ctx.Nodes().set_ui_max_size($id, $size)
+    };
+}
+
+#[macro_export]
+macro_rules! set_ui_scale {
+    ($ctx:expr, $id:expr, $scale:expr) => {
+        $ctx.Nodes().set_ui_scale($id, $scale)
     };
 }
 

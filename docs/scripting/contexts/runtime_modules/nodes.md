@@ -42,6 +42,7 @@ Metadata/hierarchy macros:
 - `set_node_name!(ctx, node_id, name) -> bool`
 - `set_ui_min_size!(ctx, node_id, Vector2) -> bool`
 - `set_ui_max_size!(ctx, node_id, Vector2) -> bool`
+- `set_ui_scale!(ctx, node_id, Vector2) -> bool`
 - `set_ui_min_w!(ctx, node_id, pixels) -> bool`
 - `set_ui_min_h!(ctx, node_id, pixels) -> bool`
 - `set_ui_max_w!(ctx, node_id, pixels) -> bool`

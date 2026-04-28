@@ -79,6 +79,7 @@ Common fields live on `UiBox` data and all UI nodes inherit them:
 - `pivot_percent`
 - `pivot_ratio`
 - `translation`
+- `scale`
 - `min_size`
 - `max_size`
 - `min_w`
@@ -117,6 +118,7 @@ Children use parent UI rect as parent.
 `position_ratio = (0.5, 0.5)` means no offset from the anchor.
 `pivot_ratio = (0.5, 0.5)` means pivot at node center.
 `translation` applies after anchor / position / pivot resolve.
+`scale` multiplies final clamped size.
 `min_size`, `max_size`, `min_w`, `min_h`, `max_w`, and `max_h` are pixel clamps after size resolve.
 
 Example:

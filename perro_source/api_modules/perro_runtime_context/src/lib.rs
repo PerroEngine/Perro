@@ -32,10 +32,11 @@ pub mod prelude {
         scene_drop_preloaded, scene_free_preloaded, scene_load, scene_preload, script_attach,
         script_detach, set_global_transform_2d, set_global_transform_3d, set_node_name,
         set_ui_max_h, set_ui_max_size, set_ui_max_w, set_ui_min_h, set_ui_min_size, set_ui_min_w,
-        set_var, signal_connect, signal_disconnect, signal_emit, tag_add, tag_remove, tag_set,
-        to_global_point_2d, to_global_point_3d, to_global_transform_2d, to_global_transform_3d,
-        to_local_point_2d, to_local_point_3d, to_local_transform_2d, to_local_transform_3d,
-        with_base_node, with_base_node_mut, with_node, with_node_mut, with_state, with_state_mut,
+        set_ui_scale, set_var, signal_connect, signal_disconnect, signal_emit, tag_add, tag_remove,
+        tag_set, to_global_point_2d, to_global_point_3d, to_global_transform_2d,
+        to_global_transform_3d, to_local_point_2d, to_local_point_3d, to_local_transform_2d,
+        to_local_transform_3d, with_base_node, with_base_node_mut, with_node, with_node_mut,
+        with_state, with_state_mut,
     };
     pub use perro_ids::prelude::{
         AnimationID, AudioBusID, LightID, MaterialID, MeshID, NodeID, PreloadedSceneID,
