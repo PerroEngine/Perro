@@ -477,6 +477,7 @@ impl PerroGraphics {
                         self.particles_3d.remove_node(node);
                     }
                 },
+                RenderCommand::Ui(_cmd) => {}
                 RenderCommand::VisualAccessibility(command) => match command {
                     VisualAccessibilityCommand::EnableColorBlind { mode, strength } => {
                         self.accessibility.color_blind =
@@ -657,6 +658,7 @@ impl GraphicsBackend for PerroGraphics {
                     }
                 },
                 RenderCommand::Resource(_) => frame_dirty_bits |= DIRTY_RESOURCES,
+                RenderCommand::Ui(_) => frame_dirty_bits |= DIRTY_2D,
                 RenderCommand::PostProcessing(_) => frame_dirty_bits |= DIRTY_POSTFX,
                 RenderCommand::VisualAccessibility(_) => frame_dirty_bits |= DIRTY_ACCESSIBILITY,
             }

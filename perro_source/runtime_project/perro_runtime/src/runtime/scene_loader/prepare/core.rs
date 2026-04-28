@@ -844,6 +844,7 @@ mod tests {
                 visible = false
                 input_enabled = false
                 mouse_filter = "pass"
+                anchor = "tr"
                 position_percent = (50, 25)
                 size = (240, 48)
                 pivot = (0, 0)
@@ -884,6 +885,7 @@ mod tests {
                 assert!(!button.visible);
                 assert!(!button.input_enabled);
                 assert_eq!(button.mouse_filter, UiMouseFilter::Pass);
+                assert_eq!(button.layout.anchor, perro_ui::UiAnchor::TopRight);
                 assert_eq!(button.text.as_ref(), "Play");
                 assert_eq!(button.text_color, Color::RED);
                 assert!(button.disabled);

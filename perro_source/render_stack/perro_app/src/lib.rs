@@ -294,6 +294,7 @@ impl<B: GraphicsBackend> App<B> {
     {
         self.runtime.extract_render_2d_commands();
         self.runtime.extract_render_3d_commands();
+        self.runtime.extract_render_ui_commands();
         self.runtime.drain_render_commands(&mut self.command_buffer);
         self.graphics.submit_many(self.command_buffer.drain(..));
         self.graphics.submit_many(overlay_commands);
@@ -325,6 +326,8 @@ impl<B: GraphicsBackend> App<B> {
         self.runtime.extract_render_3d_commands();
         #[cfg(feature = "profile_heavy")]
         let extract_3d = extract_3d_start.elapsed();
+
+        self.runtime.extract_render_ui_commands();
 
         #[cfg(feature = "profile_heavy")]
         let drain_commands_start = std::time::Instant::now();

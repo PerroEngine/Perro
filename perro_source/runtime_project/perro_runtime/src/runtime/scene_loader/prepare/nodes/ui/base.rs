@@ -107,6 +107,11 @@ fn apply_ui_root_fields(node: &mut UiRoot, fields: &[SceneObjectField]) {
                 node.mouse_filter = v;
             }
         }
+        "anchor" => {
+            if let Some(v) = as_ui_anchor(value) {
+                node.layout.anchor = v;
+            }
+        }
         "position" => {
             if let Some(v) = as_vec2(value) {
                 node.layout.position = v.into();
@@ -271,6 +276,25 @@ fn as_ui_mouse_filter(value: &SceneValue) -> Option<UiMouseFilter> {
         "stop" => Some(UiMouseFilter::Stop),
         "pass" => Some(UiMouseFilter::Pass),
         "ignore" => Some(UiMouseFilter::Ignore),
+        _ => None,
+    }
+}
+
+fn as_ui_anchor(value: &SceneValue) -> Option<perro_ui::UiAnchor> {
+    match as_str(value)?
+        .to_ascii_lowercase()
+        .replace([' ', '-', '_'], "")
+        .as_str()
+    {
+        "c" | "center" | "middle" => Some(perro_ui::UiAnchor::Center),
+        "l" | "left" | "centerleft" | "middleleft" => Some(perro_ui::UiAnchor::Left),
+        "r" | "right" | "centerright" | "middleright" => Some(perro_ui::UiAnchor::Right),
+        "t" | "top" | "topcenter" | "topmiddle" => Some(perro_ui::UiAnchor::Top),
+        "b" | "bottom" | "bottomcenter" | "bottommiddle" => Some(perro_ui::UiAnchor::Bottom),
+        "tl" | "topleft" | "lefttop" => Some(perro_ui::UiAnchor::TopLeft),
+        "tr" | "topright" | "righttop" => Some(perro_ui::UiAnchor::TopRight),
+        "bl" | "bottomleft" | "leftbottom" => Some(perro_ui::UiAnchor::BottomLeft),
+        "br" | "bottomright" | "rightbottom" => Some(perro_ui::UiAnchor::BottomRight),
         _ => None,
     }
 }

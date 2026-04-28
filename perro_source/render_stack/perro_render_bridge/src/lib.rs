@@ -22,6 +22,62 @@ pub struct Camera2DState {
     pub post_processing: Arc<[PostProcessEffect]>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UiRectState {
+    pub center: [f32; 2],
+    pub size: [f32; 2],
+    pub z_index: i32,
+}
+
+impl UiRectState {
+    pub fn screen_min_max(self, viewport: [f32; 2]) -> ([f32; 2], [f32; 2]) {
+        let screen_center = [viewport[0] * 0.5, viewport[1] * 0.5];
+        let center = [
+            screen_center[0] + self.center[0],
+            screen_center[1] - self.center[1],
+        ];
+        let half = [self.size[0] * 0.5, self.size[1] * 0.5];
+        (
+            [center[0] - half[0], center[1] - half[1]],
+            [center[0] + half[0], center[1] + half[1]],
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UiCommand {
+    UpsertPanel {
+        node: NodeID,
+        rect: UiRectState,
+        fill: [f32; 4],
+        stroke: [f32; 4],
+        stroke_width: f32,
+        corner_radius: f32,
+    },
+    UpsertButton {
+        node: NodeID,
+        rect: UiRectState,
+        text: Cow<'static, str>,
+        text_color: [f32; 4],
+        fill: [f32; 4],
+        stroke: [f32; 4],
+        stroke_width: f32,
+        corner_radius: f32,
+        disabled: bool,
+    },
+    UpsertLabel {
+        node: NodeID,
+        rect: UiRectState,
+        text: Cow<'static, str>,
+        color: [f32; 4],
+        font_size: f32,
+    },
+    RemoveNode {
+        node: NodeID,
+    },
+    Clear,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Camera3DState {
     pub position: [f32; 3],
@@ -708,6 +764,7 @@ pub enum RenderCommand {
     Resource(ResourceCommand),
     TwoD(Command2D),
     ThreeD(Box<Command3D>),
+    Ui(UiCommand),
     PostProcessing(PostProcessingCommand),
     VisualAccessibility(VisualAccessibilityCommand),
 }
@@ -767,4 +824,23 @@ pub trait RenderBridge {
     }
 
     fn drain_events(&mut self, out: &mut Vec<RenderEvent>);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ui_rect_converts_center_origin_y_up_to_screen_rect() {
+        let rect = UiRectState {
+            center: [300.0, 0.0],
+            size: [200.0, 100.0],
+            z_index: 0,
+        };
+
+        let (min, max) = rect.screen_min_max([800.0, 600.0]);
+
+        assert_eq!(min, [600.0, 250.0]);
+        assert_eq!(max, [800.0, 350.0]);
+    }
 }

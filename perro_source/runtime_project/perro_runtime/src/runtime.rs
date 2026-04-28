@@ -19,6 +19,7 @@ mod physics;
 mod render_2d;
 mod render_3d;
 mod render_bridge;
+mod render_ui;
 mod scene_loader;
 mod scheduling;
 mod state;
