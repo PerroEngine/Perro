@@ -1,104 +1,150 @@
 # UI Nodes
 
-UI nodes are data-only scene nodes backed by the `perro_ui` crate.
-They are registered in `perro_nodes` with `UiRoot` as their base node type.
+UI nodes are data-only scene nodes backed by `perro_ui`.
+They use `UiBox` as their base node type.
 
-## Registry Tree
+## Tree
 
 ```text
-UiRoot
+UiBox
 - UiPanel
 - UiButton
 - UiLabel
-- UiHBox
-- UiVBox
+- UiLayout
+- UiHLayout
+- UiVLayout
 - UiGrid
 ```
 
-## Coordinate Space
+## Nodes
 
-UI layout resolves against the parent UI rect.
-Top level UI nodes use the virtual viewport as parent.
+`UiBox`
 
-`UiLayout::position` and `UiLayout::size` use `UiVector2`.
-Each axis can be pixels or percent:
-
-```rust
-let center = UiVector2::percent(50.0, 50.0);
-let fixed = UiVector2::pixels(320.0, 64.0);
-let mixed = UiVector2::new(UiUnit::px(24.0), UiUnit::pct(50.0));
-```
-
-For a `1920 x 1080` virtual viewport:
-
-```text
-UiVector2::percent(50.0, 50.0) -> Vector2::new(960.0, 540.0)
-```
-
-For a child inside a `400 x 200` panel:
-
-```text
-UiVector2::percent(50.0, 50.0) -> Vector2::new(200.0, 100.0)
-```
-
-Default UI origin is centered.
-`UiLayout::position` defaults to `50%, 50%`.
-`UiLayout::pivot` defaults to `50%, 50%`.
-So a node with no position change sits at parent center.
-
-Use `UiLayout::translation` for a pixel bump after parent-space position is resolved.
-This lets container children offset themselves without changing their slot.
-
-`padding` belongs to the parent content area.
-`margin` belongs to the child outer area.
-
-## Core Types
-
-`UiRoot`
-
-- Base UI state.
+- Invisible UI container.
 - Holds `layout`, `visible`, `input_enabled`, and `mouse_filter`.
-- Sibling base to `Node2D` and `Node3D`.
+- Can have UI children.
+- Use it to group children, move them together, or create a padded child area.
 
 `UiPanel`
 
-- Rect visual.
-- Holds a `UiStyle`.
-- Derefs to `UiRoot`.
+- Drawn rect.
+- Holds `style`.
+- Can have children.
 
 `UiButton`
 
-- Pressable rect + text state.
+- Button rect + text state.
 - Holds normal, hover, and pressed styles.
-- Derefs to `UiRoot`.
+- Can have children.
 
 `UiLabel`
 
 - Text visual.
 - Holds `text`, `color`, `font_size`, and text alignment.
-- Derefs to `UiRoot`.
+- Can have children, but usually should not.
 
-`UiHBox`
+`UiLayout`
 
-- Lays children left to right.
-- Derefs to `UiRoot`.
+- Invisible layout container.
+- Uses `mode = "h" | "v" | "grid"`.
+- Also accepts `horizontal`, `vertical`, `row`, `column`, and `g`.
 
-`UiVBox`
+`UiHLayout`
 
-- Lays children top to bottom.
-- Derefs to `UiRoot`.
+- Invisible horizontal layout container.
+- Presets `mode = "h"`.
+
+`UiVLayout`
+
+- Invisible vertical layout container.
+- Presets `mode = "v"`.
 
 `UiGrid`
 
-- Lays children into a grid.
+- Invisible grid layout container.
 - Uses `columns`, `h_spacing`, and `v_spacing`.
-- Derefs to `UiRoot`.
 
-All UI nodes can have children.
-Containers only add automatic child placement.
-`UiPanel`, `UiButton`, and `UiLabel` can still hold children; their children use the node rect as parent space.
+## Layout Fields
 
-## Current Scope
+Common fields live on `UiBox` data and all UI nodes inherit them:
 
-The first implementation adds crate types and node registry support.
-Layout pass, hit testing, text shaping, and render submission are next runtime layers.
+- `anchor`
+- `position`
+- `position_percent`
+- `position_ratio`
+- `size`
+- `size_percent`
+- `size_ratio`
+- `pivot`
+- `pivot_percent`
+- `pivot_ratio`
+- `translation`
+- `min_size`
+- `max_size`
+- `min_w`
+- `min_h`
+- `max_w`
+- `max_h`
+- `padding`
+- `margin`
+- `z_index`
+- `visible`
+- `input_enabled`
+- `mouse_filter`
+
+Anchors:
+
+```text
+c center
+l left
+r right
+t top
+b bottom
+tl top_left
+tr top_right
+bl bottom_left
+br bottom_right
+```
+
+Default anchor is `center`.
+
+## Coordinate Space
+
+UI space uses center origin.
+Top-level UI nodes use the virtual viewport as parent.
+Children use parent UI rect as parent.
+
+`position_ratio = (0.5, 0.5)` means no offset from the anchor.
+`pivot_ratio = (0.5, 0.5)` means pivot at node center.
+`translation` applies after anchor / position / pivot resolve.
+`min_size`, `max_size`, `min_w`, `min_h`, `max_w`, and `max_h` are pixel clamps after size resolve.
+
+Example:
+
+```text
+[menu]
+[UiBox]
+    anchor = "tr"
+    size = (300, 200)
+    padding = 12
+[/UiBox]
+[/menu]
+```
+
+## Current Runtime Scope
+
+Done:
+
+- anchor / pivot / translation / size resolve through parent chain
+- UI render commands are emitted for panel/button/label
+- egui-style screen rect conversion exists in render bridge
+
+Not done:
+
+- padding as child content inset
+- margin
+- H/V/Grid child placement
+- Fill / FitChildren
+- text measure
+- hit test / focus / clicks
+- actual egui paint backend

@@ -17,7 +17,9 @@ use crate::spot_light_3d::SpotLight3D;
 use crate::sprite_2d::Sprite2D;
 use perro_ids::{NodeID, TagID};
 use perro_structs::{Transform2D, Transform3D};
-use perro_ui::{UiButton, UiGrid, UiHBox, UiLabel, UiNodeBase, UiPanel, UiRoot, UiVBox};
+use perro_ui::{
+    UiBox, UiButton, UiGrid, UiHLayout, UiLabel, UiLayout, UiNodeBase, UiPanel, UiVLayout,
+};
 use std::borrow::Cow;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -89,7 +91,7 @@ macro_rules! __node3d_base_expr {
 
 #[macro_export]
 macro_rules! __ui_base_expr {
-    (UiRoot, None, $inner:ident, $f:ident) => {
+    (UiBox, None, $inner:ident, $f:ident) => {
         Some($f($inner))
     };
     ($_variant:ident, None, $inner:ident, $_f:ident) => {{
@@ -103,7 +105,7 @@ macro_rules! __ui_base_expr {
 
 #[macro_export]
 macro_rules! __ui_base_mut_expr {
-    (UiRoot, None, $inner:ident, $f:ident) => {
+    (UiBox, None, $inner:ident, $f:ident) => {
         Some($f($inner))
     };
     ($_variant:ident, None, $inner:ident, $_f:ident) => {{
@@ -171,7 +173,7 @@ macro_rules! __impl_exact_node_base_dispatch_3d {
 
 #[macro_export]
 macro_rules! __impl_exact_node_base_dispatch_ui {
-    (UiRoot, $ty_ui:ty, $variant_ui:ident) => {};
+    (UiBox, $ty_ui:ty, $variant_ui:ident) => {};
     ($variant:ident, $ty_ui:ty, $variant_ui:ident) => {
         impl NodeBaseDispatch for $ty_ui {
             const BASE_NODE_TYPE: NodeType = NodeType::$variant_ui;
@@ -757,8 +759,8 @@ macro_rules! define_scene_nodes {
             }
         }
 
-        impl NodeBaseDispatch for UiRoot {
-            const BASE_NODE_TYPE: NodeType = NodeType::UiRoot;
+        impl NodeBaseDispatch for UiBox {
+            const BASE_NODE_TYPE: NodeType = NodeType::UiBox;
 
             fn with_base_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
                 match data {
@@ -827,13 +829,14 @@ define_scene_nodes! {
         SpotLight3D => (Node3D, SpotLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False)
     }
     ui: {
-        UiRoot => (None, UiRoot, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiPanel => (UiRoot, UiPanel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiButton => (UiRoot, UiButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiLabel => (UiRoot, UiLabel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiHBox => (UiRoot, UiHBox, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiVBox => (UiRoot, UiVBox, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiGrid => (UiRoot, UiGrid, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False)
+        UiBox => (None, UiBox, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiPanel => (UiBox, UiPanel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiButton => (UiBox, UiButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiLabel => (UiBox, UiLabel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiLayout => (UiBox, UiLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiHLayout => (UiBox, UiHLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiVLayout => (UiBox, UiVLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiGrid => (UiBox, UiGrid, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False)
     }
     resource: {
         AnimationPlayer => (None, AnimationPlayer, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False)

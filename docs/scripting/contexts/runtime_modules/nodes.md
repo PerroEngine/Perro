@@ -40,6 +40,12 @@ Metadata/hierarchy macros:
 
 - `get_node_name!(ctx, node_id) -> Option<Cow<'static, str>>`
 - `set_node_name!(ctx, node_id, name) -> bool`
+- `set_ui_min_size!(ctx, node_id, Vector2) -> bool`
+- `set_ui_max_size!(ctx, node_id, Vector2) -> bool`
+- `set_ui_min_w!(ctx, node_id, pixels) -> bool`
+- `set_ui_min_h!(ctx, node_id, pixels) -> bool`
+- `set_ui_max_w!(ctx, node_id, pixels) -> bool`
+- `set_ui_max_h!(ctx, node_id, pixels) -> bool`
 - `get_node_parent_id!(ctx, node_id) -> Option<NodeID>`
 - `get_node_children_ids!(ctx, node_id) -> Option<Vec<NodeID>>`
 - `get_node_type!(ctx, node_id) -> Option<NodeType>`

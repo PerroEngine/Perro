@@ -19,6 +19,10 @@ impl UiUnit {
         Self::Percent(value)
     }
 
+    pub const fn ratio(value: f32) -> Self {
+        Self::Percent(value * 100.0)
+    }
+
     pub fn resolve(self, parent_axis: f32) -> f32 {
         match self {
             Self::Pixels(value) => value,
@@ -63,6 +67,13 @@ impl UiVector2 {
         Self {
             x: UiUnit::Percent(x),
             y: UiUnit::Percent(y),
+        }
+    }
+
+    pub const fn ratio(x: f32, y: f32) -> Self {
+        Self {
+            x: UiUnit::ratio(x),
+            y: UiUnit::ratio(y),
         }
     }
 
@@ -180,8 +191,16 @@ pub enum UiTextAlign {
 pub enum UiContainerKind {
     #[default]
     None,
-    HBox,
-    VBox,
+    HLayout,
+    VLayout,
+    Grid,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum UiLayoutMode {
+    #[default]
+    H,
+    V,
     Grid,
 }
 
@@ -242,13 +261,14 @@ impl ComputedUiRect {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiLayout {
+pub struct UiLayoutData {
     pub anchor: UiAnchor,
     pub position: UiVector2,
     pub size: UiVector2,
     pub pivot: UiVector2,
     pub translation: Vector2,
     pub min_size: Vector2,
+    pub max_size: Vector2,
     pub margin: UiRect,
     pub padding: UiRect,
     pub h_size: UiSizeMode,
@@ -258,7 +278,9 @@ pub struct UiLayout {
     pub z_index: i32,
 }
 
-impl UiLayout {
+impl UiLayoutData {
+    pub const NO_MAX_SIZE: Vector2 = Vector2::new(f32::INFINITY, f32::INFINITY);
+
     pub const fn new() -> Self {
         Self {
             anchor: UiAnchor::Center,
@@ -267,6 +289,7 @@ impl UiLayout {
             pivot: UiVector2::percent(50.0, 50.0),
             translation: Vector2::ZERO,
             min_size: Vector2::ZERO,
+            max_size: Self::NO_MAX_SIZE,
             margin: UiRect::ZERO,
             padding: UiRect::ZERO,
             h_size: UiSizeMode::Fixed,
@@ -282,7 +305,11 @@ impl UiLayout {
     }
 
     pub fn resolved_size(&self, parent_size: Vector2) -> Vector2 {
-        self.size.resolve(parent_size)
+        let size = self.size.resolve(parent_size);
+        Vector2::new(
+            size.x.max(self.min_size.x).min(self.max_size.x),
+            size.y.max(self.min_size.y).min(self.max_size.y),
+        )
     }
 
     pub fn resolved_pivot_offset(&self, resolved_size: Vector2) -> Vector2 {
@@ -295,25 +322,16 @@ impl UiLayout {
     }
 
     pub fn compute_rect(&self, parent: ComputedUiRect) -> ComputedUiRect {
-        let resolved_size = self.resolved_size(parent.size);
-        let size = Vector2::new(
-            resolved_size.x.max(self.min_size.x),
-            resolved_size.y.max(self.min_size.y),
-        );
+        let size = self.resolved_size(parent.size);
         let anchor = self.anchor.direction();
-        let anchor_point = parent.center + Vector2::new(
-            parent.size.x * 0.5 * anchor.x,
-            parent.size.y * 0.5 * anchor.y,
-        );
-        let inward_from_edge = Vector2::new(
-            size.x * 0.5 * anchor.x,
-            size.y * 0.5 * anchor.y,
-        );
+        let anchor_point = parent.center
+            + Vector2::new(
+                parent.size.x * 0.5 * anchor.x,
+                parent.size.y * 0.5 * anchor.y,
+            );
+        let inward_from_edge = Vector2::new(size.x * 0.5 * anchor.x, size.y * 0.5 * anchor.y);
         let pivot = self.pivot.resolve(Vector2::new(1.0, 1.0));
-        let pivot_offset = Vector2::new(
-            (0.5 - pivot.x) * size.x,
-            (0.5 - pivot.y) * size.y,
-        );
+        let pivot_offset = Vector2::new((0.5 - pivot.x) * size.x, (0.5 - pivot.y) * size.y);
         let position = self.position.resolve_centered(parent.size);
 
         ComputedUiRect::new(
@@ -323,24 +341,24 @@ impl UiLayout {
     }
 }
 
-impl Default for UiLayout {
+impl Default for UiLayoutData {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiRoot {
-    pub layout: UiLayout,
+pub struct UiBox {
+    pub layout: UiLayoutData,
     pub visible: bool,
     pub input_enabled: bool,
     pub mouse_filter: UiMouseFilter,
 }
 
-impl UiRoot {
+impl UiBox {
     pub const fn new() -> Self {
         Self {
-            layout: UiLayout::new(),
+            layout: UiLayoutData::new(),
             visible: true,
             input_enabled: true,
             mouse_filter: UiMouseFilter::Stop,
@@ -348,15 +366,15 @@ impl UiRoot {
     }
 }
 
-impl Default for UiRoot {
+impl Default for UiBox {
     fn default() -> Self {
         Self::new()
     }
 }
 
 pub trait UiNodeBase {
-    fn ui_base(&self) -> &UiRoot;
-    fn ui_base_mut(&mut self) -> &mut UiRoot;
+    fn ui_base(&self) -> &UiBox;
+    fn ui_base_mut(&mut self) -> &mut UiBox;
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -403,14 +421,14 @@ impl Default for UiStyle {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiPanel {
-    pub base: UiRoot,
+    pub base: UiBox,
     pub style: UiStyle,
 }
 
 impl UiPanel {
     pub const fn new() -> Self {
         Self {
-            base: UiRoot::new(),
+            base: UiBox::new(),
             style: UiStyle::panel(),
         }
     }
@@ -423,7 +441,7 @@ impl Default for UiPanel {
 }
 
 impl Deref for UiPanel {
-    type Target = UiRoot;
+    type Target = UiBox;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -437,18 +455,18 @@ impl DerefMut for UiPanel {
 }
 
 impl UiNodeBase for UiPanel {
-    fn ui_base(&self) -> &UiRoot {
+    fn ui_base(&self) -> &UiBox {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiRoot {
+    fn ui_base_mut(&mut self) -> &mut UiBox {
         &mut self.base
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiLabel {
-    pub base: UiRoot,
+    pub base: UiBox,
     pub text: Cow<'static, str>,
     pub color: Color,
     pub font_size: f32,
@@ -459,7 +477,7 @@ pub struct UiLabel {
 impl UiLabel {
     pub const fn new() -> Self {
         Self {
-            base: UiRoot::new(),
+            base: UiBox::new(),
             text: Cow::Borrowed(""),
             color: Color::WHITE,
             font_size: 16.0,
@@ -484,7 +502,7 @@ impl Default for UiLabel {
 }
 
 impl Deref for UiLabel {
-    type Target = UiRoot;
+    type Target = UiBox;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -498,18 +516,18 @@ impl DerefMut for UiLabel {
 }
 
 impl UiNodeBase for UiLabel {
-    fn ui_base(&self) -> &UiRoot {
+    fn ui_base(&self) -> &UiBox {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiRoot {
+    fn ui_base_mut(&mut self) -> &mut UiBox {
         &mut self.base
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiButton {
-    pub base: UiRoot,
+    pub base: UiBox,
     pub text: Cow<'static, str>,
     pub text_color: Color,
     pub style: UiStyle,
@@ -521,7 +539,7 @@ pub struct UiButton {
 impl UiButton {
     pub const fn new() -> Self {
         Self {
-            base: UiRoot::new(),
+            base: UiBox::new(),
             text: Cow::Borrowed("Button"),
             text_color: Color::WHITE,
             style: UiStyle::button(),
@@ -557,7 +575,7 @@ impl Default for UiButton {
 }
 
 impl Deref for UiButton {
-    type Target = UiRoot;
+    type Target = UiBox;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -571,135 +589,226 @@ impl DerefMut for UiButton {
 }
 
 impl UiNodeBase for UiButton {
-    fn ui_base(&self) -> &UiRoot {
+    fn ui_base(&self) -> &UiBox {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiRoot {
+    fn ui_base_mut(&mut self) -> &mut UiBox {
         &mut self.base
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiBoxContainer {
-    pub base: UiRoot,
-    pub direction: UiBoxDirection,
+pub struct UiLayoutContainer {
+    pub base: UiBox,
+    pub mode: UiLayoutMode,
     pub spacing: f32,
+    pub h_spacing: f32,
+    pub v_spacing: f32,
+    pub columns: u32,
 }
 
-impl UiBoxContainer {
-    pub const fn horizontal() -> Self {
+impl UiLayoutContainer {
+    pub const fn new(mode: UiLayoutMode) -> Self {
         Self {
-            base: UiRoot::new(),
-            direction: UiBoxDirection::Horizontal,
+            base: UiBox::new(),
+            mode,
             spacing: 0.0,
+            h_spacing: 0.0,
+            v_spacing: 0.0,
+            columns: 1,
         }
+    }
+
+    pub const fn horizontal() -> Self {
+        Self::new(UiLayoutMode::H)
     }
 
     pub const fn vertical() -> Self {
+        Self::new(UiLayoutMode::V)
+    }
+
+    pub const fn grid() -> Self {
+        Self::new(UiLayoutMode::Grid)
+    }
+}
+
+impl Default for UiLayoutContainer {
+    fn default() -> Self {
+        Self::new(UiLayoutMode::H)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiFixedLayoutContainer {
+    pub base: UiBox,
+    pub spacing: f32,
+    pub h_spacing: f32,
+    pub v_spacing: f32,
+    pub columns: u32,
+}
+
+impl UiFixedLayoutContainer {
+    pub const fn new() -> Self {
         Self {
-            base: UiRoot::new(),
-            direction: UiBoxDirection::Vertical,
+            base: UiBox::new(),
             spacing: 0.0,
+            h_spacing: 0.0,
+            v_spacing: 0.0,
+            columns: 1,
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum UiBoxDirection {
-    Horizontal,
-    Vertical,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct UiHBox {
-    pub inner: UiBoxContainer,
-}
-
-impl UiHBox {
-    pub const fn new() -> Self {
-        Self {
-            inner: UiBoxContainer::horizontal(),
-        }
-    }
-}
-
-impl Default for UiHBox {
+impl Default for UiFixedLayoutContainer {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Deref for UiHBox {
-    type Target = UiRoot;
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiLayout {
+    pub inner: UiLayoutContainer,
+}
+
+impl UiLayout {
+    pub const fn new() -> Self {
+        Self {
+            inner: UiLayoutContainer::horizontal(),
+        }
+    }
+}
+
+impl Default for UiLayout {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiLayout {
+    type Target = UiBox;
 
     fn deref(&self) -> &Self::Target {
         &self.inner.base
     }
 }
 
-impl DerefMut for UiHBox {
+impl DerefMut for UiLayout {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner.base
     }
 }
 
-impl UiNodeBase for UiHBox {
-    fn ui_base(&self) -> &UiRoot {
+impl UiNodeBase for UiLayout {
+    fn ui_base(&self) -> &UiBox {
         &self.inner.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiRoot {
+    fn ui_base_mut(&mut self) -> &mut UiBox {
         &mut self.inner.base
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiVBox {
-    pub inner: UiBoxContainer,
+pub struct UiHLayout {
+    pub inner: UiFixedLayoutContainer,
 }
 
-impl UiVBox {
+impl UiHLayout {
     pub const fn new() -> Self {
         Self {
-            inner: UiBoxContainer::vertical(),
+            inner: UiFixedLayoutContainer::new(),
         }
+    }
+
+    pub const fn mode(&self) -> UiLayoutMode {
+        UiLayoutMode::H
     }
 }
 
-impl Default for UiVBox {
+impl Default for UiHLayout {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Deref for UiVBox {
-    type Target = UiRoot;
+impl Deref for UiHLayout {
+    type Target = UiBox;
 
     fn deref(&self) -> &Self::Target {
         &self.inner.base
     }
 }
 
-impl DerefMut for UiVBox {
+impl DerefMut for UiHLayout {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner.base
     }
 }
 
-impl UiNodeBase for UiVBox {
-    fn ui_base(&self) -> &UiRoot {
+impl UiNodeBase for UiHLayout {
+    fn ui_base(&self) -> &UiBox {
         &self.inner.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiRoot {
+    fn ui_base_mut(&mut self) -> &mut UiBox {
         &mut self.inner.base
     }
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiVLayout {
+    pub inner: UiFixedLayoutContainer,
+}
+
+impl UiVLayout {
+    pub const fn new() -> Self {
+        Self {
+            inner: UiFixedLayoutContainer::new(),
+        }
+    }
+
+    pub const fn mode(&self) -> UiLayoutMode {
+        UiLayoutMode::V
+    }
+}
+
+impl Default for UiVLayout {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiVLayout {
+    type Target = UiBox;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner.base
+    }
+}
+
+impl DerefMut for UiVLayout {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner.base
+    }
+}
+
+impl UiNodeBase for UiVLayout {
+    fn ui_base(&self) -> &UiBox {
+        &self.inner.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiBox {
+        &mut self.inner.base
+    }
+}
+
+pub type UiHBox = UiHLayout;
+pub type UiVBox = UiVLayout;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiGrid {
-    pub base: UiRoot,
+    pub base: UiBox,
     pub columns: u32,
     pub h_spacing: f32,
     pub v_spacing: f32,
@@ -708,7 +817,7 @@ pub struct UiGrid {
 impl UiGrid {
     pub const fn new() -> Self {
         Self {
-            base: UiRoot::new(),
+            base: UiBox::new(),
             columns: 1,
             h_spacing: 0.0,
             v_spacing: 0.0,
@@ -723,7 +832,7 @@ impl Default for UiGrid {
 }
 
 impl Deref for UiGrid {
-    type Target = UiRoot;
+    type Target = UiBox;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -737,11 +846,11 @@ impl DerefMut for UiGrid {
 }
 
 impl UiNodeBase for UiGrid {
-    fn ui_base(&self) -> &UiRoot {
+    fn ui_base(&self) -> &UiBox {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiRoot {
+    fn ui_base_mut(&mut self) -> &mut UiBox {
         &mut self.base
     }
 }
@@ -752,7 +861,7 @@ mod tests {
 
     #[test]
     fn percent_position_resolves_against_viewport() {
-        let mut layout = UiLayout::new();
+        let mut layout = UiLayoutData::new();
         layout.position = UiVector2::percent(50.0, 50.0);
 
         assert_eq!(
@@ -763,7 +872,7 @@ mod tests {
 
     #[test]
     fn default_layout_origin_centers_in_parent() {
-        let mut layout = UiLayout::new();
+        let mut layout = UiLayoutData::new();
         layout.size = UiVector2::pixels(200.0, 100.0);
 
         assert_eq!(
@@ -793,8 +902,39 @@ mod tests {
     }
 
     #[test]
+    fn ratio_units_match_percent_units() {
+        let value = UiVector2::ratio(0.5, 0.25);
+
+        assert_eq!(
+            value.resolve(Vector2::new(800.0, 600.0)),
+            Vector2::new(400.0, 150.0)
+        );
+        assert_eq!(
+            value.resolve_centered(Vector2::new(800.0, 600.0)),
+            Vector2::new(0.0, -150.0)
+        );
+    }
+
+    #[test]
+    fn size_respects_min_and_max_size() {
+        let mut layout = UiLayoutData::new();
+        layout.size = UiVector2::ratio(0.5, 0.1);
+        layout.min_size = Vector2::new(300.0, 80.0);
+        layout.max_size = Vector2::new(1200.0, 90.0);
+
+        assert_eq!(
+            layout.resolved_size(Vector2::new(3000.0, 1000.0)),
+            Vector2::new(1200.0, 90.0)
+        );
+        assert_eq!(
+            layout.resolved_size(Vector2::new(400.0, 400.0)),
+            Vector2::new(300.0, 80.0)
+        );
+    }
+
+    #[test]
     fn right_anchor_offsets_size_inward() {
-        let mut layout = UiLayout::new();
+        let mut layout = UiLayoutData::new();
         layout.anchor = UiAnchor::Right;
         layout.position = UiVector2::ZERO;
         layout.size = UiVector2::pixels(200.0, 100.0);
@@ -809,7 +949,7 @@ mod tests {
 
     #[test]
     fn top_left_anchor_uses_center_origin_y_up() {
-        let mut layout = UiLayout::new();
+        let mut layout = UiLayoutData::new();
         layout.anchor = UiAnchor::TopLeft;
         layout.position = UiVector2::ZERO;
         layout.size = UiVector2::pixels(100.0, 50.0);

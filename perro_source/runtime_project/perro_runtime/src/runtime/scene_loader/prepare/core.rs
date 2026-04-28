@@ -36,7 +36,8 @@ use perro_structs::{
     Vector2, Vector3,
 };
 use perro_ui::{
-    UiButton, UiGrid, UiHBox, UiLabel, UiMouseFilter, UiPanel, UiRoot, UiTextAlign, UiVBox,
+    UiBox, UiButton, UiGrid, UiHLayout, UiLabel, UiLayout, UiMouseFilter, UiPanel, UiTextAlign,
+    UiVLayout,
 };
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -628,12 +629,13 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "RayLight3D" => Ok(SceneNodeData::RayLight3D(build_ray_light_3d(data))),
         "PointLight3D" => Ok(SceneNodeData::PointLight3D(build_point_light_3d(data))),
         "SpotLight3D" => Ok(SceneNodeData::SpotLight3D(build_spot_light_3d(data))),
-        "UiRoot" => Ok(SceneNodeData::UiRoot(build_ui_root(data))),
+        "UiBox" => Ok(SceneNodeData::UiBox(build_ui_box(data))),
         "UiPanel" => Ok(SceneNodeData::UiPanel(build_ui_panel(data))),
         "UiButton" => Ok(SceneNodeData::UiButton(build_ui_button(data))),
         "UiLabel" => Ok(SceneNodeData::UiLabel(build_ui_label(data))),
-        "UiHBox" => Ok(SceneNodeData::UiHBox(build_ui_hbox(data))),
-        "UiVBox" => Ok(SceneNodeData::UiVBox(build_ui_vbox(data))),
+        "UiLayout" => Ok(SceneNodeData::UiLayout(build_ui_layout(data))),
+        "UiHLayout" | "UiHBox" => Ok(SceneNodeData::UiHLayout(build_ui_hlayout(data))),
+        "UiVLayout" | "UiVBox" => Ok(SceneNodeData::UiVLayout(build_ui_vlayout(data))),
         "UiGrid" => Ok(SceneNodeData::UiGrid(build_ui_grid(data))),
         other => Err(format!("unsupported scene node type `{other}`")),
     }
@@ -845,9 +847,13 @@ mod tests {
                 input_enabled = false
                 mouse_filter = "pass"
                 anchor = "tr"
-                position_percent = (50, 25)
-                size = (240, 48)
-                pivot = (0, 0)
+                position_ratio = (0.5, 0.25)
+                size_ratio = (0.5, 0.1)
+                min_w = 120
+                min_h = 40
+                max_w = 1200
+                max_h = 96
+                pivot_ratio = (0, 0)
                 padding = (1, 2, 3, 4)
                 text = "Play"
                 text_color = "#FF0000"
@@ -866,6 +872,29 @@ mod tests {
                 v_spacing = 12
             [/UiGrid]
             [/items]
+
+            [generic]
+            parent = menu
+            [UiLayout]
+                mode = "grid"
+                columns = 2
+                spacing = 4
+            [/UiLayout]
+            [/generic]
+
+            [forced_h]
+            parent = menu
+            [UiHLayout]
+                mode = "v"
+            [/UiHLayout]
+            [/forced_h]
+
+            [forced_v]
+            parent = menu
+            [UiVLayout]
+                mode = "grid"
+            [/UiVLayout]
+            [/forced_v]
             "##,
         )
         .parse_scene();
@@ -890,9 +919,11 @@ mod tests {
                 assert_eq!(button.text_color, Color::RED);
                 assert!(button.disabled);
                 assert_eq!(
-                    button.layout.size.resolve(Vector2::new(800.0, 600.0)),
-                    Vector2::new(240.0, 48.0)
+                    button.layout.resolved_size(Vector2::new(3000.0, 1200.0)),
+                    Vector2::new(1200.0, 96.0)
                 );
+                assert_eq!(button.layout.min_size, Vector2::new(120.0, 40.0));
+                assert_eq!(button.layout.max_size, Vector2::new(1200.0, 96.0));
                 assert_eq!(
                     button.layout.padding,
                     perro_ui::UiRect::new(1.0, 2.0, 3.0, 4.0)
@@ -900,6 +931,14 @@ mod tests {
                 match button.layout.position.x {
                     perro_ui::UiUnit::Percent(v) => assert_eq!(v, 50.0),
                     other => panic!("expected percent x, got {other:?}"),
+                }
+                match button.layout.position.y {
+                    perro_ui::UiUnit::Percent(v) => assert_eq!(v, 25.0),
+                    other => panic!("expected percent y, got {other:?}"),
+                }
+                match button.layout.pivot.x {
+                    perro_ui::UiUnit::Percent(v) => assert_eq!(v, 0.0),
+                    other => panic!("expected percent pivot x, got {other:?}"),
                 }
             }
             other => panic!("expected UiButton menu node, got {other:?}"),
@@ -917,6 +956,44 @@ mod tests {
                 assert_eq!(grid.v_spacing, 12.0);
             }
             other => panic!("expected UiGrid items node, got {other:?}"),
+        }
+
+        let generic = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key == "generic")
+            .expect("generic node");
+        match &generic.node.data {
+            SceneNodeData::UiLayout(layout) => {
+                assert_eq!(layout.inner.mode, perro_ui::UiLayoutMode::Grid);
+                assert_eq!(layout.inner.columns, 2);
+                assert_eq!(layout.inner.spacing, 4.0);
+            }
+            other => panic!("expected UiLayout generic node, got {other:?}"),
+        }
+
+        let forced_h = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key == "forced_h")
+            .expect("forced_h node");
+        match &forced_h.node.data {
+            SceneNodeData::UiHLayout(layout) => {
+                assert_eq!(layout.mode(), perro_ui::UiLayoutMode::H);
+            }
+            other => panic!("expected UiHLayout forced_h node, got {other:?}"),
+        }
+
+        let forced_v = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key == "forced_v")
+            .expect("forced_v node");
+        match &forced_v.node.data {
+            SceneNodeData::UiVLayout(layout) => {
+                assert_eq!(layout.mode(), perro_ui::UiLayoutMode::V);
+            }
+            other => panic!("expected UiVLayout forced_v node, got {other:?}"),
         }
     }
 

@@ -4,7 +4,7 @@ use perro_ids::NodeID;
 use perro_nodes::SceneNodeData;
 use perro_render_bridge::{RenderCommand, UiCommand, UiRectState};
 use perro_structs::Vector2;
-use perro_ui::{ComputedUiRect, UiRoot, UiStyle};
+use perro_ui::{ComputedUiRect, UiBox, UiStyle};
 use std::borrow::Cow;
 
 impl Runtime {
@@ -57,14 +57,15 @@ impl Runtime {
     }
 }
 
-fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiRoot> {
+fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
     match data {
-        SceneNodeData::UiRoot(root) => Some(root),
+        SceneNodeData::UiBox(root) => Some(root),
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
         SceneNodeData::UiLabel(node) => Some(&node.base),
-        SceneNodeData::UiHBox(node) => Some(&node.inner.base),
-        SceneNodeData::UiVBox(node) => Some(&node.inner.base),
+        SceneNodeData::UiLayout(node) => Some(&node.inner.base),
+        SceneNodeData::UiHLayout(node) => Some(&node.inner.base),
+        SceneNodeData::UiVLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiGrid(node) => Some(&node.base),
         _ => None,
     }

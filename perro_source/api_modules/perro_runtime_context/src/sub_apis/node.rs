@@ -1,5 +1,5 @@
 use perro_ids::{IntoTagID, MaterialID, NodeID, TagID};
-use perro_nodes::{NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData};
+use perro_nodes::{NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData, UiBox};
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
 
@@ -332,6 +332,54 @@ pub trait NodeAPI {
     where
         S: Into<Cow<'static, str>>;
 
+    /// Sets UI minimum size in pixels. Works on `UiBox` and descendants.
+    fn set_ui_min_size(&mut self, node_id: NodeID, size: Vector2) -> bool {
+        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
+            node.layout.min_size = size;
+        })
+        .is_some()
+    }
+
+    /// Sets UI maximum size in pixels. Works on `UiBox` and descendants.
+    fn set_ui_max_size(&mut self, node_id: NodeID, size: Vector2) -> bool {
+        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
+            node.layout.max_size = size;
+        })
+        .is_some()
+    }
+
+    /// Sets UI minimum width in pixels. Works on `UiBox` and descendants.
+    fn set_ui_min_w(&mut self, node_id: NodeID, value: f32) -> bool {
+        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
+            node.layout.min_size.x = value;
+        })
+        .is_some()
+    }
+
+    /// Sets UI minimum height in pixels. Works on `UiBox` and descendants.
+    fn set_ui_min_h(&mut self, node_id: NodeID, value: f32) -> bool {
+        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
+            node.layout.min_size.y = value;
+        })
+        .is_some()
+    }
+
+    /// Sets UI maximum width in pixels. Works on `UiBox` and descendants.
+    fn set_ui_max_w(&mut self, node_id: NodeID, value: f32) -> bool {
+        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
+            node.layout.max_size.x = value;
+        })
+        .is_some()
+    }
+
+    /// Sets UI maximum height in pixels. Works on `UiBox` and descendants.
+    fn set_ui_max_h(&mut self, node_id: NodeID, value: f32) -> bool {
+        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
+            node.layout.max_size.y = value;
+        })
+        .is_some()
+    }
+
     /// Returns parent node id if node exists.
     fn get_node_parent_id(&mut self, node_id: NodeID) -> Option<NodeID>;
 
@@ -580,6 +628,30 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         S: Into<Cow<'static, str>>,
     {
         self.rt.set_node_name(node_id, name)
+    }
+
+    pub fn set_ui_min_size(&mut self, node_id: NodeID, size: Vector2) -> bool {
+        self.rt.set_ui_min_size(node_id, size)
+    }
+
+    pub fn set_ui_max_size(&mut self, node_id: NodeID, size: Vector2) -> bool {
+        self.rt.set_ui_max_size(node_id, size)
+    }
+
+    pub fn set_ui_min_w(&mut self, node_id: NodeID, value: f32) -> bool {
+        self.rt.set_ui_min_w(node_id, value)
+    }
+
+    pub fn set_ui_min_h(&mut self, node_id: NodeID, value: f32) -> bool {
+        self.rt.set_ui_min_h(node_id, value)
+    }
+
+    pub fn set_ui_max_w(&mut self, node_id: NodeID, value: f32) -> bool {
+        self.rt.set_ui_max_w(node_id, value)
+    }
+
+    pub fn set_ui_max_h(&mut self, node_id: NodeID, value: f32) -> bool {
+        self.rt.set_ui_max_h(node_id, value)
     }
 
     pub fn get_node_parent_id(&mut self, node_id: NodeID) -> Option<NodeID> {
@@ -943,6 +1015,48 @@ macro_rules! get_node_name {
 macro_rules! set_node_name {
     ($ctx:expr, $id:expr, $name:expr) => {
         $ctx.Nodes().set_node_name($id, $name)
+    };
+}
+
+#[macro_export]
+macro_rules! set_ui_min_size {
+    ($ctx:expr, $id:expr, $size:expr) => {
+        $ctx.Nodes().set_ui_min_size($id, $size)
+    };
+}
+
+#[macro_export]
+macro_rules! set_ui_max_size {
+    ($ctx:expr, $id:expr, $size:expr) => {
+        $ctx.Nodes().set_ui_max_size($id, $size)
+    };
+}
+
+#[macro_export]
+macro_rules! set_ui_min_w {
+    ($ctx:expr, $id:expr, $value:expr) => {
+        $ctx.Nodes().set_ui_min_w($id, $value)
+    };
+}
+
+#[macro_export]
+macro_rules! set_ui_min_h {
+    ($ctx:expr, $id:expr, $value:expr) => {
+        $ctx.Nodes().set_ui_min_h($id, $value)
+    };
+}
+
+#[macro_export]
+macro_rules! set_ui_max_w {
+    ($ctx:expr, $id:expr, $value:expr) => {
+        $ctx.Nodes().set_ui_max_w($id, $value)
+    };
+}
+
+#[macro_export]
+macro_rules! set_ui_max_h {
+    ($ctx:expr, $id:expr, $value:expr) => {
+        $ctx.Nodes().set_ui_max_h($id, $value)
     };
 }
 

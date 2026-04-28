@@ -94,19 +94,23 @@ Physics 3D:
 
 ## UI Nodes
 
-UI nodes inherit from `UiRoot` in the node registry:
+UI nodes inherit from `UiBox` in the node registry:
 
+- `UiBox`
 - `UiPanel`
 - `UiButton`
 - `UiLabel`
-- `UiHBox`
-- `UiVBox`
+- `UiLayout`
+- `UiHLayout`
+- `UiVLayout`
 - `UiGrid`
 
 UI positions and sizes resolve against the parent UI rect.
 Root UI nodes use the virtual viewport as parent.
-Each axis can be pixels or percent, so `UiVector2::percent(50.0, 50.0)` means parent center.
-All UI nodes can have children; `UiHBox`, `UiVBox`, and `UiGrid` only add automatic child placement.
+Each axis can be pixels or ratio, so `UiVector2::ratio(0.5, 0.5)` means parent center.
+All UI nodes can have children.
+`UiBox` is the invisible generic container.
+`UiLayout`, `UiHLayout`, `UiVLayout`, and `UiGrid` add automatic child placement.
 
 See [UI Nodes](ui.md).
 

@@ -1,5 +1,5 @@
-fn build_ui_root(data: &SceneDefNodeData) -> UiRoot {
-    let mut node = UiRoot::new();
+fn build_ui_box(data: &SceneDefNodeData) -> UiBox {
+    let mut node = UiBox::new();
     apply_ui_root_data(&mut node, data);
     node
 }
@@ -34,23 +34,33 @@ fn build_ui_label(data: &SceneDefNodeData) -> UiLabel {
     node
 }
 
-fn build_ui_hbox(data: &SceneDefNodeData) -> UiHBox {
-    let mut node = UiHBox::new();
+fn build_ui_layout(data: &SceneDefNodeData) -> UiLayout {
+    let mut node = UiLayout::new();
     if let Some(base) = data.base_ref() {
         apply_ui_root_data(&mut node.inner.base, base);
     }
     apply_ui_root_fields(&mut node.inner.base, &data.fields);
-    apply_ui_box_fields(&mut node.inner.spacing, &data.fields);
+    apply_ui_container_fields(&mut node.inner, &data.fields, true);
     node
 }
 
-fn build_ui_vbox(data: &SceneDefNodeData) -> UiVBox {
-    let mut node = UiVBox::new();
+fn build_ui_hlayout(data: &SceneDefNodeData) -> UiHLayout {
+    let mut node = UiHLayout::new();
     if let Some(base) = data.base_ref() {
         apply_ui_root_data(&mut node.inner.base, base);
     }
     apply_ui_root_fields(&mut node.inner.base, &data.fields);
-    apply_ui_box_fields(&mut node.inner.spacing, &data.fields);
+    apply_ui_fixed_container_fields(&mut node.inner, &data.fields);
+    node
+}
+
+fn build_ui_vlayout(data: &SceneDefNodeData) -> UiVLayout {
+    let mut node = UiVLayout::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.inner.base, base);
+    }
+    apply_ui_root_fields(&mut node.inner.base, &data.fields);
+    apply_ui_fixed_container_fields(&mut node.inner, &data.fields);
     node
 }
 
@@ -83,14 +93,14 @@ fn build_ui_grid(data: &SceneDefNodeData) -> UiGrid {
     node
 }
 
-fn apply_ui_root_data(target: &mut UiRoot, data: &SceneDefNodeData) {
+fn apply_ui_root_data(target: &mut UiBox, data: &SceneDefNodeData) {
     if let Some(base) = data.base_ref() {
         apply_ui_root_data(target, base);
     }
     apply_ui_root_fields(target, &data.fields);
 }
 
-fn apply_ui_root_fields(node: &mut UiRoot, fields: &[SceneObjectField]) {
+fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "visible" => {
             if let Some(v) = as_bool(value) {
@@ -122,6 +132,11 @@ fn apply_ui_root_fields(node: &mut UiRoot, fields: &[SceneObjectField]) {
                 node.layout.position = perro_ui::UiVector2::percent(v.x, v.y);
             }
         }
+        "position_ratio" => {
+            if let Some(v) = as_vec2(value) {
+                node.layout.position = perro_ui::UiVector2::ratio(v.x, v.y);
+            }
+        }
         "size" => {
             if let Some(v) = as_vec2(value) {
                 node.layout.size = v.into();
@@ -130,6 +145,11 @@ fn apply_ui_root_fields(node: &mut UiRoot, fields: &[SceneObjectField]) {
         "size_percent" | "size_pct" => {
             if let Some(v) = as_vec2(value) {
                 node.layout.size = perro_ui::UiVector2::percent(v.x, v.y);
+            }
+        }
+        "size_ratio" => {
+            if let Some(v) = as_vec2(value) {
+                node.layout.size = perro_ui::UiVector2::ratio(v.x, v.y);
             }
         }
         "pivot" => {
@@ -142,6 +162,11 @@ fn apply_ui_root_fields(node: &mut UiRoot, fields: &[SceneObjectField]) {
                 node.layout.pivot = perro_ui::UiVector2::percent(v.x, v.y);
             }
         }
+        "pivot_ratio" => {
+            if let Some(v) = as_vec2(value) {
+                node.layout.pivot = perro_ui::UiVector2::ratio(v.x, v.y);
+            }
+        }
         "translation" => {
             if let Some(v) = as_vec2(value) {
                 node.layout.translation = v;
@@ -150,6 +175,31 @@ fn apply_ui_root_fields(node: &mut UiRoot, fields: &[SceneObjectField]) {
         "min_size" => {
             if let Some(v) = as_vec2(value) {
                 node.layout.min_size = v;
+            }
+        }
+        "max_size" => {
+            if let Some(v) = as_vec2(value) {
+                node.layout.max_size = v;
+            }
+        }
+        "min_w" | "min_width" => {
+            if let Some(v) = as_f32(value) {
+                node.layout.min_size.x = v;
+            }
+        }
+        "min_h" | "min_height" => {
+            if let Some(v) = as_f32(value) {
+                node.layout.min_size.y = v;
+            }
+        }
+        "max_w" | "max_width" => {
+            if let Some(v) = as_f32(value) {
+                node.layout.max_size.x = v;
+            }
+        }
+        "max_h" | "max_height" => {
+            if let Some(v) = as_f32(value) {
+                node.layout.max_size.y = v;
             }
         }
         "padding" => {
@@ -230,13 +280,73 @@ fn apply_ui_label_fields(node: &mut UiLabel, fields: &[SceneObjectField]) {
     });
 }
 
-fn apply_ui_box_fields(spacing: &mut f32, fields: &[SceneObjectField]) {
-    SceneFieldIterRef::new(fields).for_each(|name, value| {
-        if name == "spacing"
-            && let Some(v) = as_f32(value)
-        {
-            *spacing = v;
+fn apply_ui_container_fields(
+    node: &mut perro_ui::UiLayoutContainer,
+    fields: &[SceneObjectField],
+    allow_mode: bool,
+) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "mode" | "layout" | "kind" => {
+            if allow_mode
+                && let Some(v) = as_ui_layout_mode(value)
+            {
+                node.mode = v;
+            }
         }
+        "spacing" => {
+            if let Some(v) = as_f32(value) {
+                node.spacing = v;
+            }
+        }
+        "h_spacing" | "horizontal_spacing" => {
+            if let Some(v) = as_f32(value) {
+                node.h_spacing = v;
+            }
+        }
+        "v_spacing" | "vertical_spacing" => {
+            if let Some(v) = as_f32(value) {
+                node.v_spacing = v;
+            }
+        }
+        "columns" => {
+            if let Some(v) = as_i32(value)
+                && v > 0
+            {
+                node.columns = v as u32;
+            }
+        }
+        _ => {}
+    });
+}
+
+fn apply_ui_fixed_container_fields(
+    node: &mut perro_ui::UiFixedLayoutContainer,
+    fields: &[SceneObjectField],
+) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "spacing" => {
+            if let Some(v) = as_f32(value) {
+                node.spacing = v;
+            }
+        }
+        "h_spacing" | "horizontal_spacing" => {
+            if let Some(v) = as_f32(value) {
+                node.h_spacing = v;
+            }
+        }
+        "v_spacing" | "vertical_spacing" => {
+            if let Some(v) = as_f32(value) {
+                node.v_spacing = v;
+            }
+        }
+        "columns" => {
+            if let Some(v) = as_i32(value)
+                && v > 0
+            {
+                node.columns = v as u32;
+            }
+        }
+        _ => {}
     });
 }
 
@@ -295,6 +405,21 @@ fn as_ui_anchor(value: &SceneValue) -> Option<perro_ui::UiAnchor> {
         "tr" | "topright" | "righttop" => Some(perro_ui::UiAnchor::TopRight),
         "bl" | "bottomleft" | "leftbottom" => Some(perro_ui::UiAnchor::BottomLeft),
         "br" | "bottomright" | "rightbottom" => Some(perro_ui::UiAnchor::BottomRight),
+        _ => None,
+    }
+}
+
+fn as_ui_layout_mode(value: &SceneValue) -> Option<perro_ui::UiLayoutMode> {
+    match as_str(value)?
+        .to_ascii_lowercase()
+        .replace([' ', '-', '_'], "")
+        .as_str()
+    {
+        "h" | "horizontal" | "hlayout" | "hbox" | "row" => Some(perro_ui::UiLayoutMode::H),
+        "v" | "vertical" | "vlayout" | "vbox" | "column" | "col" => {
+            Some(perro_ui::UiLayoutMode::V)
+        }
+        "g" | "grid" => Some(perro_ui::UiLayoutMode::Grid),
         _ => None,
     }
 }
