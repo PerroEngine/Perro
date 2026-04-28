@@ -7,3 +7,4 @@ pub use animation_player::*;
 pub use node_2d::*;
 pub use node_3d::*;
 pub use node_registry::*;
+pub use perro_ui::*;

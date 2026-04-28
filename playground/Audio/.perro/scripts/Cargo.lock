@@ -1414,6 +1414,7 @@ version = "0.1.0"
 dependencies = [
  "perro_ids",
  "perro_structs",
+ "perro_ui",
 ]
 
 [[package]]
@@ -1523,6 +1524,13 @@ name = "perro_structs"
 version = "0.1.0"
 dependencies = [
  "glam",
+]
+
+[[package]]
+name = "perro_ui"
+version = "0.1.0"
+dependencies = [
+ "perro_structs",
 ]
 
 [[package]]

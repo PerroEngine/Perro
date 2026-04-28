@@ -92,6 +92,24 @@ Physics 3D:
 - Bones are loaded via `ResourceContext::Skeletons().load_bones(source)`.
 - Typical flow: scene specifies a `skeleton` path, and scene loader fills `bones`.
 
+## UI Nodes
+
+UI nodes inherit from `UiRoot` in the node registry:
+
+- `UiPanel`
+- `UiButton`
+- `UiLabel`
+- `UiHBox`
+- `UiVBox`
+- `UiGrid`
+
+UI positions and sizes resolve against the parent UI rect.
+Root UI nodes use the virtual viewport as parent.
+Each axis can be pixels or percent, so `UiVector2::percent(50.0, 50.0)` means parent center.
+All UI nodes can have children; `UiHBox`, `UiVBox`, and `UiGrid` only add automatic child placement.
+
+See [UI Nodes](ui.md).
+
 ## Scene Authoring Templates
 
 For copy/paste scene node authoring templates (with all exposed fields, including nil/empty-default fields), see:

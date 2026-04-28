@@ -3,6 +3,7 @@ members = [
     "perro_source/core/perro_ids",
     "perro_source/core/perro_animation",
     "perro_source/core/perro_nodes",
+    "perro_source/core/perro_ui",
     "perro_source/core/perro_structs",
     "perro_source/core/perro_variant",
     "perro_source/core/perro_particle_math",
@@ -42,6 +43,7 @@ resolver = "3"
 
 [patch.crates-io]
 perro_nodes = {path = "perro_source/core/perro_nodes"}
+perro_ui = {path = "perro_source/core/perro_ui"}
 perro_structs = {path = "perro_source/core/perro_structs"}
 perro_ids = {path = "perro_source/core/perro_ids"}
 perro_animation = {path = "perro_source/core/perro_animation"}

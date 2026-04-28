@@ -2649,6 +2649,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
     match crate_name {
         "perro_animation" => Some("perro_source/core/perro_animation"),
         "perro_nodes" => Some("perro_source/core/perro_nodes"),
+        "perro_ui" => Some("perro_source/core/perro_ui"),
         "perro_structs" => Some("perro_source/core/perro_structs"),
         "perro_ids" => Some("perro_source/core/perro_ids"),
         "perro_variant" => Some("perro_source/core/perro_variant"),

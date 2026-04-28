@@ -287,6 +287,7 @@ fn build_patch_crates_io_block(engine_root: &Path) -> String {
     const CRATES: &[(&str, &str)] = &[
         ("perro_animation", "perro_source/core/perro_animation"),
         ("perro_nodes", "perro_source/core/perro_nodes"),
+        ("perro_ui", "perro_source/core/perro_ui"),
         ("perro_structs", "perro_source/core/perro_structs"),
         ("perro_ids", "perro_source/core/perro_ids"),
         ("perro_variant", "perro_source/core/perro_variant"),

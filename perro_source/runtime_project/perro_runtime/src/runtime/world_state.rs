@@ -28,6 +28,13 @@ impl Runtime {
             SceneNodeData::SpotLight3D(node) => node.visible,
             SceneNodeData::ParticleEmitter3D(node) => node.visible,
             SceneNodeData::Skeleton3D(node) => node.visible,
+            SceneNodeData::UiRoot(node) => node.visible,
+            SceneNodeData::UiPanel(node) => node.visible,
+            SceneNodeData::UiButton(node) => node.visible,
+            SceneNodeData::UiLabel(node) => node.visible,
+            SceneNodeData::UiHBox(node) => node.visible,
+            SceneNodeData::UiVBox(node) => node.visible,
+            SceneNodeData::UiGrid(node) => node.visible,
             SceneNodeData::AnimationPlayer(_) => true,
         }
     }
