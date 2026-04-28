@@ -1157,9 +1157,11 @@ mod tests {
 
     #[test]
     fn material_codegen_emits_sparse_standard_fields() {
-        let mut m = StandardMaterial3D::default();
-        m.double_sided = true;
-        m.base_color_texture = 7;
+        let m = StandardMaterial3D {
+            double_sided: true,
+            base_color_texture: 7,
+            ..Default::default()
+        };
         let code = material_literal_to_code(&MaterialLiteral::Standard(m));
         assert!(code.contains("double_sided: true"));
         assert!(code.contains("base_color_texture: 7"));
@@ -1168,9 +1170,11 @@ mod tests {
 
     #[test]
     fn material_codegen_emits_sparse_toon_fields() {
-        let mut m = ToonMaterial3D::default();
-        m.band_count = 8;
-        m.ramp_texture = 4;
+        let m = ToonMaterial3D {
+            band_count: 8,
+            ramp_texture: 4,
+            ..Default::default()
+        };
         let code = material_literal_to_code(&MaterialLiteral::Toon(m));
         assert!(code.contains("band_count: 8"));
         assert!(code.contains("ramp_texture: 4"));

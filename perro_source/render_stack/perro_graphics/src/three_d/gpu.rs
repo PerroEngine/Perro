@@ -5547,10 +5547,10 @@ fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        MATERIAL_TEXTURE_NONE, MaterialPipelineKind, MeshRange, PMESH_V6_FLAG_HAS_JOINTS,
-        PMESH_V6_FLAG_HAS_NORMAL, PMESH_V6_FLAG_HAS_UV0, PMESH_V6_FLAG_HAS_WEIGHTS, RenderPath3D,
-        decode_pmesh, decode_ptex, draw_batch_state_key, normalized_static_mesh_lookup_alias,
-        push_draw_batch,
+        DrawBatchPush, MATERIAL_TEXTURE_NONE, MaterialPipelineKind, MeshRange,
+        PMESH_V6_FLAG_HAS_JOINTS, PMESH_V6_FLAG_HAS_NORMAL, PMESH_V6_FLAG_HAS_UV0,
+        PMESH_V6_FLAG_HAS_WEIGHTS, RenderPath3D, decode_pmesh, decode_ptex, draw_batch_state_key,
+        normalized_static_mesh_lookup_alias, push_draw_batch,
     };
 
     #[test]

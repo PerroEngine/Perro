@@ -14,7 +14,7 @@ use super::*;
 fn test_number_type_checks() {
     assert!(Number::I32(42).is_int());
     assert!(Number::U64(100).is_int());
-    assert!(!Number::F32(3.14).is_int());
+    assert!(!Number::F32(3.5).is_int());
 
     assert!(Number::F64(2.71).is_float());
     assert!(!Number::I64(42).is_float());
@@ -32,7 +32,7 @@ fn test_number_as_i64_lossy() {
     assert_eq!(Number::I128(i128::MAX).as_i64_lossy(), None);
 
     // Floats return None
-    assert_eq!(Number::F32(3.14).as_i64_lossy(), None);
+    assert_eq!(Number::F32(3.5).as_i64_lossy(), None);
     assert_eq!(Number::F64(2.71).as_i64_lossy(), None);
 }
 
@@ -40,7 +40,7 @@ fn test_number_as_i64_lossy() {
 fn test_number_as_f64_lossy() {
     assert_eq!(Number::I32(42).as_f64_lossy(), Some(42.0));
     assert_eq!(Number::U64(100).as_f64_lossy(), Some(100.0));
-    assert_eq!(Number::F32(3.14).as_f64_lossy(), Some(3.14f32 as f64));
+    assert_eq!(Number::F32(3.5).as_f64_lossy(), Some(3.5f32 as f64));
     assert_eq!(Number::F64(2.71).as_f64_lossy(), Some(2.71));
 }
 
@@ -64,7 +64,7 @@ fn test_variant_string() {
 
 #[test]
 fn test_variant_bytes() {
-    let v = Variant::bytes(&[1, 2, 3, 4]);
+    let v = Variant::bytes([1, 2, 3, 4]);
     assert_eq!(v.as_bytes(), Some(&[1u8, 2, 3, 4][..]));
 
     let v2 = Variant::bytes(vec![5, 6, 7]);
@@ -246,15 +246,15 @@ fn test_from_unsigned_ints() {
 
 #[test]
 fn test_from_floats() {
-    let v1: Variant = 3.14f32.into();
+    let v1: Variant = 3.5f32.into();
     if let Variant::Number(Number::F32(f)) = v1 {
-        assert!((f - 3.14).abs() < 0.001);
+        assert!((f - 3.5).abs() < 0.001);
     } else {
         panic!("Expected F32");
     }
 
-    let v2: Variant = 2.71828f64.into();
-    assert_eq!(v2.as_number(), Some(Number::F64(2.71828)));
+    let v2: Variant = 2.5f64.into();
+    assert_eq!(v2.as_number(), Some(Number::F64(2.5)));
 }
 
 #[test]
@@ -342,7 +342,7 @@ fn test_variant_clone() {
 fn test_number_equality() {
     assert_eq!(Number::I32(42), Number::I32(42));
     assert_ne!(Number::I32(42), Number::I64(42));
-    assert_ne!(Number::F32(3.14), Number::F64(3.14));
+    assert_ne!(Number::F32(3.5), Number::F64(3.5));
 }
 
 #[test]

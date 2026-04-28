@@ -73,7 +73,7 @@ fn sync_scripts_from_source(
     scripts_src: &Path,
     script_path_prefix: &str,
 ) -> Result<Vec<String>, CompilerError> {
-    fs::create_dir_all(&scripts_src)?;
+    fs::create_dir_all(scripts_src)?;
 
     let mut copied = Vec::<String>::new();
     let mut registrable = Vec::<String>::new();
@@ -105,8 +105,8 @@ fn sync_scripts_from_source(
 
     copied.sort();
     registrable.sort();
-    let _ = remove_stale_generated_scripts(&scripts_src, &generated_rel_paths)?;
-    let _ = write_scripts_lib(&scripts_src, &copied, &registrable, script_path_prefix)?;
+    let _ = remove_stale_generated_scripts(scripts_src, &generated_rel_paths)?;
+    let _ = write_scripts_lib(scripts_src, &copied, &registrable, script_path_prefix)?;
     Ok(copied)
 }
 

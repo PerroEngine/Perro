@@ -851,27 +851,6 @@ fn decode_static_pawdio(blob: &[u8]) -> Result<(Vec<u8>, Duration), String> {
     Ok((payload.to_vec(), Duration::ZERO))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::decode_static_pawdio;
-
-    #[test]
-    fn decode_static_pawdio_rejects_legacy_versions() {
-        for version in [1u32, 3, 4, 5] {
-            let mut blob = Vec::new();
-            blob.extend_from_slice(b"PAWDIO");
-            blob.extend_from_slice(&version.to_le_bytes());
-            blob.extend_from_slice(&0u32.to_le_bytes());
-            blob.extend_from_slice(&0u32.to_le_bytes());
-            let err = decode_static_pawdio(&blob).expect_err("legacy version must fail");
-            assert!(
-                err.contains("unsupported .pawdio version"),
-                "unexpected err for version {version}: {err}"
-            );
-        }
-    }
-}
-
 impl AudioController {
     pub fn new(static_audio_lookup: Option<fn(u64) -> &'static [u8]>) -> Result<Self, String> {
         let (tx, rx) = mpsc::channel::<AudioCommand>();
@@ -1037,5 +1016,26 @@ impl AudioController {
 
     pub fn stop_bus(&self, bus_id: AudioBusID) -> bool {
         self.tx.send(AudioCommand::StopBus { bus_id }).is_ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_static_pawdio;
+
+    #[test]
+    fn decode_static_pawdio_rejects_legacy_versions() {
+        for version in [1u32, 3, 4, 5] {
+            let mut blob = Vec::new();
+            blob.extend_from_slice(b"PAWDIO");
+            blob.extend_from_slice(&version.to_le_bytes());
+            blob.extend_from_slice(&0u32.to_le_bytes());
+            blob.extend_from_slice(&0u32.to_le_bytes());
+            let err = decode_static_pawdio(&blob).expect_err("legacy version must fail");
+            assert!(
+                err.contains("unsupported .pawdio version"),
+                "unexpected err for version {version}: {err}"
+            );
+        }
     }
 }

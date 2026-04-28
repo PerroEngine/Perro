@@ -1756,6 +1756,12 @@ fn collider_builder_3d(
     let sx = desc.local.scale.x.abs().max(0.0001);
     let sy = desc.local.scale.y.abs().max(0.0001);
     let sz = desc.local.scale.z.abs().max(0.0001);
+    let mut trimesh_load = TrimeshLoadCtx {
+        provider_mode,
+        static_mesh_lookup,
+        static_collision_trimesh_lookup,
+        trimesh_cache,
+    };
 
     let shape = match &desc.shape {
         ShapeKind3D::Primitive(shape) => match shape {
@@ -1811,30 +1817,14 @@ fn collider_builder_3d(
                 r3::ColliderBuilder::convex_hull(&points)?
             }
             Shape3D::TriMesh { source } => {
-                let (vertices, triangles) = load_trimesh_from_source(
-                    source,
-                    sx,
-                    sy,
-                    sz,
-                    provider_mode,
-                    static_mesh_lookup,
-                    static_collision_trimesh_lookup,
-                    trimesh_cache,
-                )?;
+                let (vertices, triangles) =
+                    load_trimesh_from_source(source, [sx, sy, sz], &mut trimesh_load)?;
                 r3::ColliderBuilder::trimesh(vertices, triangles).ok()?
             }
         },
         ShapeKind3D::TriMesh { source } => {
-            let (vertices, triangles) = load_trimesh_from_source(
-                source,
-                sx,
-                sy,
-                sz,
-                provider_mode,
-                static_mesh_lookup,
-                static_collision_trimesh_lookup,
-                trimesh_cache,
-            )?;
+            let (vertices, triangles) =
+                load_trimesh_from_source(source, [sx, sy, sz], &mut trimesh_load)?;
             r3::ColliderBuilder::trimesh(vertices, triangles).ok()?
         }
     };
@@ -1851,28 +1841,31 @@ fn collider_builder_3d(
 
 type TriMeshData = (Vec<na3::Point3<f32>>, Vec<[u32; 3]>);
 
-fn load_trimesh_from_source(
-    source: &str,
-    sx: f32,
-    sy: f32,
-    sz: f32,
+struct TrimeshLoadCtx<'a> {
     provider_mode: crate::runtime_project::ProviderMode,
     static_mesh_lookup: Option<crate::runtime_project::StaticBytesLookup>,
     static_collision_trimesh_lookup: Option<crate::runtime_project::StaticBytesLookup>,
-    trimesh_cache: &mut AHashMap<u64, TriMeshData>,
+    trimesh_cache: &'a mut AHashMap<u64, TriMeshData>,
+}
+
+fn load_trimesh_from_source(
+    source: &str,
+    scale: [f32; 3],
+    ctx: &mut TrimeshLoadCtx<'_>,
 ) -> Option<TriMeshData> {
     let source = source.trim();
     if source.is_empty() {
         return None;
     }
+    let [sx, sy, sz] = scale;
 
-    let cache_key = trimesh_cache_key(source, sx, sy, sz, provider_mode);
-    if let Some(cached) = trimesh_cache.get(&cache_key) {
+    let cache_key = trimesh_cache_key(source, sx, sy, sz, ctx.provider_mode);
+    if let Some(cached) = ctx.trimesh_cache.get(&cache_key) {
         return Some(cached.clone());
     }
 
-    if provider_mode == crate::runtime_project::ProviderMode::Static
-        && let Some(lookup) = static_collision_trimesh_lookup
+    if ctx.provider_mode == crate::runtime_project::ProviderMode::Static
+        && let Some(lookup) = ctx.static_collision_trimesh_lookup
     {
         let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
         let bytes = lookup(source_hash);
@@ -1880,7 +1873,7 @@ fn load_trimesh_from_source(
             && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
         {
             let simplified = simplify_trimesh_data(decoded.0, decoded.1)?;
-            trimesh_cache.insert(cache_key, simplified.clone());
+            ctx.trimesh_cache.insert(cache_key, simplified.clone());
             return Some(simplified);
         }
 
@@ -1891,7 +1884,7 @@ fn load_trimesh_from_source(
                 && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
             {
                 let simplified = simplify_trimesh_data(decoded.0, decoded.1)?;
-                trimesh_cache.insert(cache_key, simplified.clone());
+                ctx.trimesh_cache.insert(cache_key, simplified.clone());
                 return Some(simplified);
             }
         }
@@ -1901,7 +1894,7 @@ fn load_trimesh_from_source(
                 && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
             {
                 let simplified = simplify_trimesh_data(decoded.0, decoded.1)?;
-                trimesh_cache.insert(cache_key, simplified.clone());
+                ctx.trimesh_cache.insert(cache_key, simplified.clone());
                 return Some(simplified);
             }
         }
@@ -1913,14 +1906,14 @@ fn load_trimesh_from_source(
                 && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
             {
                 let simplified = simplify_trimesh_data(decoded.0, decoded.1)?;
-                trimesh_cache.insert(cache_key, simplified.clone());
+                ctx.trimesh_cache.insert(cache_key, simplified.clone());
                 return Some(simplified);
             }
         }
     }
 
-    if provider_mode == crate::runtime_project::ProviderMode::Static
-        && let Some(lookup) = static_mesh_lookup
+    if ctx.provider_mode == crate::runtime_project::ProviderMode::Static
+        && let Some(lookup) = ctx.static_mesh_lookup
     {
         let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
         let bytes = lookup(source_hash);
@@ -1928,7 +1921,7 @@ fn load_trimesh_from_source(
             && let Some(decoded) = decode_pmesh_trimesh(bytes, sx, sy, sz)
         {
             let simplified = simplify_trimesh_data(decoded.0, decoded.1)?;
-            trimesh_cache.insert(cache_key, simplified.clone());
+            ctx.trimesh_cache.insert(cache_key, simplified.clone());
             return Some(simplified);
         }
     }
@@ -1944,13 +1937,13 @@ fn load_trimesh_from_source(
     if path.ends_with(".pmesh") {
         let loaded = decode_pmesh_trimesh(&bytes, sx, sy, sz)?;
         let simplified = simplify_trimesh_data(loaded.0, loaded.1)?;
-        trimesh_cache.insert(cache_key, simplified.clone());
+        ctx.trimesh_cache.insert(cache_key, simplified.clone());
         return Some(simplified);
     }
     if path.ends_with(".glb") || path.ends_with(".gltf") {
         let loaded = load_trimesh_from_gltf_bytes(&bytes, mesh_index, sx, sy, sz)?;
         let simplified = simplify_trimesh_data(loaded.0, loaded.1)?;
-        trimesh_cache.insert(cache_key, simplified.clone());
+        ctx.trimesh_cache.insert(cache_key, simplified.clone());
         return Some(simplified);
     }
     None

@@ -504,10 +504,8 @@ fn resolve_scene_value_fields_dlc_self(
 
 fn resolve_scene_value_dlc_self(value: &mut SceneValue, prefix: &str, replacement: &str) {
     match value {
-        SceneValue::Str(v) => {
-            if v.as_ref().starts_with(prefix) {
-                *v = Cow::Owned(v.replacen(prefix, replacement, 1));
-            }
+        SceneValue::Str(v) if v.as_ref().starts_with(prefix) => {
+            *v = Cow::Owned(v.replacen(prefix, replacement, 1));
         }
         SceneValue::Object(fields) => {
             for (_, item) in fields.to_mut() {

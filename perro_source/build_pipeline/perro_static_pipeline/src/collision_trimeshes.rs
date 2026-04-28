@@ -149,10 +149,10 @@ fn collect_collision_sources_from_node_data(data: &SceneNodeData, out: &mut BTre
             }
             continue;
         }
-        if name.eq_ignore_ascii_case("shape") {
-            if let Some(source) = extract_trimesh_source_from_shape_value(value) {
-                out.insert(source);
-            }
+        if name.eq_ignore_ascii_case("shape")
+            && let Some(source) = extract_trimesh_source_from_shape_value(value)
+        {
+            out.insert(source);
         }
     }
     if let Some(base) = &data.base {

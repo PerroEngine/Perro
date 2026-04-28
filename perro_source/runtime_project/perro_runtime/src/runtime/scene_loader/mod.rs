@@ -11,7 +11,7 @@ use perro_runtime_context::sub_apis::PreloadedSceneID;
 use perro_scene::Scene;
 use perro_variant::Variant;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 #[cfg(feature = "profile")]
 use std::time::{Duration, Instant};
@@ -565,6 +565,90 @@ impl Runtime {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn runtime_scripts_dylib_name() -> &'static str {
+    "scripts.dll"
+}
+
+#[cfg(target_os = "linux")]
+fn runtime_scripts_dylib_name() -> &'static str {
+    "libscripts.so"
+}
+
+#[cfg(target_os = "macos")]
+fn runtime_scripts_dylib_name() -> &'static str {
+    "libscripts.dylib"
+}
+
+fn resolve_dev_dlc_scripts_dylib_path(project_root: &Path, dlc_name: &str) -> Option<PathBuf> {
+    let staged = project_root
+        .join(".perro")
+        .join("dlc")
+        .join(dlc_name)
+        .join("scripts")
+        .join(runtime_scripts_dylib_name());
+    if staged.exists() {
+        return Some(staged);
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn runtime_pack_dylib_name() -> &'static str {
+    "pack.dll"
+}
+
+#[cfg(target_os = "linux")]
+fn runtime_pack_dylib_name() -> &'static str {
+    "libpack.so"
+}
+
+#[cfg(target_os = "macos")]
+fn runtime_pack_dylib_name() -> &'static str {
+    "libpack.dylib"
+}
+
+fn parse_manifest_string(manifest: &str, key: &str) -> Option<String> {
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || !trimmed.starts_with(key) {
+            continue;
+        }
+        let (_, rhs) = trimmed.split_once('=')?;
+        let value = rhs.trim().trim_matches('"').to_string();
+        if !value.is_empty() {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn extract_dlc_archive_file_to_cache(
+    dlc_name: &str,
+    virtual_path: &str,
+    cache_root: &Path,
+) -> Result<PathBuf, std::io::Error> {
+    let bytes = read_mounted_dlc_file(dlc_name, virtual_path)?;
+    let target = cache_root.join(virtual_path.replace('/', "\\"));
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&target, bytes)?;
+    Ok(target)
+}
+
+#[cfg(feature = "profile")]
+fn as_us(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1_000_000.0
+}
+
+#[cfg(feature = "profile")]
+fn fmt_duration(duration: Option<Duration>) -> String {
+    duration
+        .map(|value| format!("{:.3}", as_us(value)))
+        .unwrap_or_else(|| "n/a".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -642,88 +726,4 @@ mod tests {
         assert_eq!(result, Ok(()));
         assert_eq!(runtime.nodes.len(), 2);
     }
-}
-
-#[cfg(target_os = "windows")]
-fn runtime_scripts_dylib_name() -> &'static str {
-    "scripts.dll"
-}
-
-#[cfg(target_os = "linux")]
-fn runtime_scripts_dylib_name() -> &'static str {
-    "libscripts.so"
-}
-
-#[cfg(target_os = "macos")]
-fn runtime_scripts_dylib_name() -> &'static str {
-    "libscripts.dylib"
-}
-
-fn resolve_dev_dlc_scripts_dylib_path(project_root: &PathBuf, dlc_name: &str) -> Option<PathBuf> {
-    let staged = project_root
-        .join(".perro")
-        .join("dlc")
-        .join(dlc_name)
-        .join("scripts")
-        .join(runtime_scripts_dylib_name());
-    if staged.exists() {
-        return Some(staged);
-    }
-    None
-}
-
-#[cfg(target_os = "windows")]
-fn runtime_pack_dylib_name() -> &'static str {
-    "pack.dll"
-}
-
-#[cfg(target_os = "linux")]
-fn runtime_pack_dylib_name() -> &'static str {
-    "libpack.so"
-}
-
-#[cfg(target_os = "macos")]
-fn runtime_pack_dylib_name() -> &'static str {
-    "libpack.dylib"
-}
-
-fn parse_manifest_string(manifest: &str, key: &str) -> Option<String> {
-    for line in manifest.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('#') || !trimmed.starts_with(key) {
-            continue;
-        }
-        let (_, rhs) = trimmed.split_once('=')?;
-        let value = rhs.trim().trim_matches('"').to_string();
-        if !value.is_empty() {
-            return Some(value);
-        }
-    }
-    None
-}
-
-fn extract_dlc_archive_file_to_cache(
-    dlc_name: &str,
-    virtual_path: &str,
-    cache_root: &PathBuf,
-) -> Result<PathBuf, std::io::Error> {
-    let bytes = read_mounted_dlc_file(dlc_name, virtual_path)?;
-    let target = cache_root.join(virtual_path.replace('/', "\\"));
-    if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&target, bytes)?;
-    Ok(target)
-}
-
-#[cfg(feature = "profile")]
-fn as_us(duration: Duration) -> f64 {
-    duration.as_secs_f64() * 1_000_000.0
-}
-
-#[cfg(feature = "profile")]
-fn fmt_duration(duration: Option<Duration>) -> String {
-    duration
-        .map(|value| format!("{:.3}", as_us(value)))
-        .unwrap_or_else(|| "n/a".to_string())
 }

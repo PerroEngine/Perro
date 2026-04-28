@@ -333,6 +333,18 @@ struct MemProfileCsvWriter {
 }
 
 #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
+struct MemProfileCsvSample {
+    batch_end_frame: u64,
+    sample: ProcessMemorySample,
+    avg_update_us: u128,
+    avg_render_us: u128,
+    avg_idle_us: u128,
+    avg_present_wait_us: u128,
+    avg_frame_us: u128,
+    avg_fps: f64,
+}
+
+#[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
 impl MemProfileCsvWriter {
     fn from_env() -> Option<Self> {
         let path = std::env::var("PERRO_MEM_PROFILE_CSV").ok()?;
@@ -348,31 +360,21 @@ impl MemProfileCsvWriter {
         Some(Self { file })
     }
 
-    fn write(
-        &mut self,
-        batch_end_frame: u64,
-        sample: ProcessMemorySample,
-        avg_update_us: u128,
-        avg_render_us: u128,
-        avg_idle_us: u128,
-        avg_present_wait_us: u128,
-        avg_frame_us: u128,
-        avg_fps: f64,
-    ) {
+    fn write(&mut self, row: MemProfileCsvSample) {
         let _ = writeln!(
             self.file,
             "{},{},{},{:.6},{:.6},{},{},{},{},{},{:.6}",
-            batch_end_frame,
-            sample.physical_mem,
-            sample.virtual_mem,
-            bytes_to_mib(sample.physical_mem),
-            bytes_to_mib(sample.virtual_mem),
-            avg_update_us,
-            avg_render_us,
-            avg_idle_us,
-            avg_present_wait_us,
-            avg_frame_us,
-            avg_fps,
+            row.batch_end_frame,
+            row.sample.physical_mem,
+            row.sample.virtual_mem,
+            bytes_to_mib(row.sample.physical_mem),
+            bytes_to_mib(row.sample.virtual_mem),
+            row.avg_update_us,
+            row.avg_render_us,
+            row.avg_idle_us,
+            row.avg_present_wait_us,
+            row.avg_frame_us,
+            row.avg_fps,
         );
         let _ = self.file.flush();
     }
@@ -1508,16 +1510,16 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     0.0
                 };
                 if let Some(csv) = &mut self.mem_profile_csv {
-                    csv.write(
-                        self.frame_index,
+                    csv.write(MemProfileCsvSample {
+                        batch_end_frame: self.frame_index,
                         sample,
-                        avg_simulation_us,
-                        avg_present_us,
-                        avg_idle_before_frame_us,
+                        avg_update_us: avg_simulation_us,
+                        avg_render_us: avg_present_us,
+                        avg_idle_us: avg_idle_before_frame_us,
                         avg_present_wait_us,
                         avg_frame_us,
                         avg_fps,
-                    );
+                    });
                 }
             }
             #[cfg(feature = "profile_heavy")]

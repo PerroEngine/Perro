@@ -642,8 +642,9 @@ fn escape_str(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PackedSurfaceRange, PackedVertex, encode_pmesh, encode_pmesh_tightest_layout,
-        pack_meshlets, pack_meshlets_with_surfaces, reorder_vertices_by_first_use,
+        PackedMeshLayoutFlags, PackedSurfaceRange, PackedVertex, encode_pmesh,
+        encode_pmesh_tightest_layout, pack_meshlets, pack_meshlets_with_surfaces,
+        reorder_vertices_by_first_use,
     };
 
     fn test_vertices() -> Vec<PackedVertex> {

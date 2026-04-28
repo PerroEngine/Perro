@@ -382,8 +382,8 @@ fn bench_internal_schedule_take_vs_index_scan() {
     let t1 = std::time::Instant::now();
     let mut now_acc = 0u64;
     for _ in 0..rounds {
-        for i in 0..index_schedule.len() {
-            now_acc = now_acc.wrapping_add(index_schedule[i].as_u64());
+        for id in &index_schedule {
+            now_acc = now_acc.wrapping_add(id.as_u64());
         }
     }
     let now_us = t1.elapsed().as_micros();
@@ -424,8 +424,8 @@ fn bench_physics_scan_ids_copy_vs_direct_iter() {
     let t1 = std::time::Instant::now();
     let mut now_acc = 0u64;
     for _ in 0..rounds {
-        for i in 0..ids.len() {
-            now_acc = now_acc.wrapping_add(ids[i].as_u64());
+        for id in &ids {
+            now_acc = now_acc.wrapping_add(id.as_u64());
         }
     }
     let now_us = t1.elapsed().as_micros();

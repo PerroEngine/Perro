@@ -128,72 +128,47 @@ impl Default for UiRect {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum UiSizeMode {
+    #[default]
     Fixed,
     Fill,
     FitChildren,
 }
 
-impl Default for UiSizeMode {
-    fn default() -> Self {
-        Self::Fixed
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum UiHorizontalAlign {
+    #[default]
     Left,
     Center,
     Right,
     Fill,
 }
 
-impl Default for UiHorizontalAlign {
-    fn default() -> Self {
-        Self::Left
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum UiVerticalAlign {
+    #[default]
     Top,
     Center,
     Bottom,
     Fill,
 }
 
-impl Default for UiVerticalAlign {
-    fn default() -> Self {
-        Self::Top
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum UiTextAlign {
+    #[default]
     Start,
     Center,
     End,
 }
 
-impl Default for UiTextAlign {
-    fn default() -> Self {
-        Self::Start
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum UiContainerKind {
+    #[default]
     None,
     HBox,
     VBox,
     Grid,
-}
-
-impl Default for UiContainerKind {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -284,17 +259,12 @@ pub trait UiNodeBase {
     fn ui_base_mut(&mut self) -> &mut UiRoot;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum UiMouseFilter {
+    #[default]
     Stop,
     Pass,
     Ignore,
-}
-
-impl Default for UiMouseFilter {
-    fn default() -> Self {
-        Self::Stop
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
