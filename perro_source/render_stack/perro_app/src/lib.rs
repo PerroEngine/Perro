@@ -1,5 +1,5 @@
 use perro_graphics::GraphicsBackend;
-use perro_input::{GamepadAxis, GamepadButton, JoyConButton, KeyCode, MouseButton};
+use perro_input::{GamepadAxis, GamepadButton, JoyConButton, KeyCode, MouseButton, MouseMode};
 use perro_render_bridge::RenderEvent;
 use perro_runtime::Runtime;
 use std::sync::Arc;
@@ -156,6 +156,11 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn apply_input_commands(&mut self) {
+        self.runtime.apply_input_commands();
+    }
+
+    #[inline]
     pub fn set_key_state(&mut self, key: KeyCode, is_down: bool) {
         self.runtime.set_key_state(key, is_down);
     }
@@ -178,6 +183,21 @@ impl<B: GraphicsBackend> App<B> {
     #[inline]
     pub fn set_mouse_position(&mut self, x: f32, y: f32) {
         self.runtime.set_mouse_position(x, y);
+    }
+
+    #[inline]
+    pub fn set_mouse_mode_state(&mut self, mode: MouseMode) {
+        self.runtime.set_mouse_mode_state(mode);
+    }
+
+    #[inline]
+    pub fn mouse_mode(&self) -> MouseMode {
+        self.runtime.mouse_mode()
+    }
+
+    #[inline]
+    pub fn take_mouse_mode_request(&mut self) -> Option<MouseMode> {
+        self.runtime.take_mouse_mode_request()
     }
 
     #[inline]

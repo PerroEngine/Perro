@@ -13,6 +13,38 @@ pub use player::{PlayerBinding, PlayerModule, PlayerState};
 use std::cell::RefCell;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum MouseMode {
+    Visible,
+    Hidden,
+    Captured,
+    Confined,
+    ConfinedHidden,
+}
+
+impl MouseMode {
+    #[inline]
+    pub fn cursor_visible(self) -> bool {
+        matches!(self, Self::Visible | Self::Confined)
+    }
+
+    #[inline]
+    pub fn is_captured(self) -> bool {
+        matches!(self, Self::Captured)
+    }
+
+    #[inline]
+    pub fn is_confined(self) -> bool {
+        matches!(self, Self::Confined | Self::ConfinedHidden)
+    }
+}
+
+impl Default for MouseMode {
+    fn default() -> Self {
+        Self::Visible
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GamepadIndex(pub usize);
 
 impl From<usize> for GamepadIndex {
@@ -50,6 +82,7 @@ pub struct InputSnapshot {
     joycons: Vec<JoyConState>,
     players: Vec<PlayerState>,
     commands: RefCell<Vec<InputCommand>>,
+    pending_mouse_mode: Option<MouseMode>,
 }
 
 impl InputSnapshot {
@@ -61,6 +94,7 @@ impl InputSnapshot {
             joycons: Vec::new(),
             players: Vec::new(),
             commands: RefCell::new(Vec::new()),
+            pending_mouse_mode: None,
         }
     }
 
@@ -118,6 +152,21 @@ impl InputSnapshot {
     #[inline]
     pub fn set_mouse_position(&mut self, x: f32, y: f32) {
         self.mouse.set_position(x, y);
+    }
+
+    #[inline]
+    pub fn set_mouse_mode_state(&mut self, mode: MouseMode) {
+        self.mouse.set_mode(mode);
+    }
+
+    #[inline]
+    pub fn mouse_mode(&self) -> MouseMode {
+        self.mouse.mode()
+    }
+
+    #[inline]
+    pub fn take_mouse_mode_request(&mut self) -> Option<MouseMode> {
+        self.pending_mouse_mode.take()
     }
 
     #[inline]
@@ -202,6 +251,10 @@ impl InputSnapshot {
                 InputCommand::RequestJoyConCalibration { index } => {
                     let state = self.joycon_mut(index);
                     state.set_calibration_requested(true);
+                }
+                InputCommand::SetMouseMode { mode } => {
+                    self.mouse.set_mode(mode);
+                    self.pending_mouse_mode = Some(mode);
                 }
             }
         }
@@ -344,6 +397,9 @@ pub enum InputCommand {
     RequestJoyConCalibration {
         index: usize,
     },
+    SetMouseMode {
+        mode: MouseMode,
+    },
 }
 
 pub trait InputAPI {
@@ -453,6 +509,20 @@ impl<'ipt, IP: InputAPI + ?Sized> InputContext<'ipt, IP> {
                 .push(InputCommand::RequestJoyConCalibration { index });
         }
     }
+
+    #[inline]
+    pub fn set_mouse_mode(&self, mode: MouseMode) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer
+                .borrow_mut()
+                .push(InputCommand::SetMouseMode { mode });
+        }
+    }
+
+    #[inline]
+    pub fn mouse_mode(&self) -> MouseMode {
+        self.ipt.mouse().mode()
+    }
 }
 
 pub struct KeyModule<'ipt, IP: InputAPI + ?Sized> {
@@ -522,6 +592,45 @@ impl<'ipt, IP: InputAPI + ?Sized> MouseModule<'ipt, IP> {
     #[inline]
     pub fn viewport_size(&self) -> Vector2 {
         self.ipt.mouse().viewport_size()
+    }
+
+    #[inline]
+    pub fn mode(&self) -> MouseMode {
+        self.ipt.mouse().mode()
+    }
+
+    #[inline]
+    pub fn set_mode(&self, mode: MouseMode) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer
+                .borrow_mut()
+                .push(InputCommand::SetMouseMode { mode });
+        }
+    }
+
+    #[inline]
+    pub fn show(&self) {
+        self.set_mode(MouseMode::Visible);
+    }
+
+    #[inline]
+    pub fn hide(&self) {
+        self.set_mode(MouseMode::Hidden);
+    }
+
+    #[inline]
+    pub fn capture(&self) {
+        self.set_mode(MouseMode::Captured);
+    }
+
+    #[inline]
+    pub fn confine(&self) {
+        self.set_mode(MouseMode::Confined);
+    }
+
+    #[inline]
+    pub fn confine_hidden(&self) {
+        self.set_mode(MouseMode::ConfinedHidden);
     }
 }
 
@@ -602,6 +711,11 @@ impl<'ipt, IP: InputAPI + ?Sized> MouseStateModule<'ipt, IP> {
     #[inline]
     pub fn viewport_size(&self) -> Vector2 {
         self.ipt.mouse().viewport_size()
+    }
+
+    #[inline]
+    pub fn mode(&self) -> MouseMode {
+        self.ipt.mouse().mode()
     }
 }
 
@@ -689,6 +803,7 @@ pub struct MouseState {
     position_y: f32,
     viewport_width: f32,
     viewport_height: f32,
+    mode: MouseMode,
 }
 
 impl MouseState {
@@ -705,6 +820,7 @@ impl MouseState {
             position_y: 0.0,
             viewport_width: 1.0,
             viewport_height: 1.0,
+            mode: MouseMode::Visible,
         }
     }
 
@@ -756,6 +872,16 @@ impl MouseState {
     pub fn set_viewport_size(&mut self, width: u32, height: u32) {
         self.viewport_width = (width.max(1)) as f32;
         self.viewport_height = (height.max(1)) as f32;
+    }
+
+    #[inline]
+    pub fn set_mode(&mut self, mode: MouseMode) {
+        self.mode = mode;
+    }
+
+    #[inline]
+    pub fn mode(&self) -> MouseMode {
+        self.mode
     }
 
     #[inline]
@@ -996,24 +1122,123 @@ macro_rules! viewport_size {
 
 #[macro_export]
 /// Signature:
+/// - `mouse_mode!(&InputContext<_>) -> MouseMode`
+///
+/// Usage:
+/// - `mouse_mode!(ipt) -> MouseMode`
+macro_rules! mouse_mode {
+    ($ipt:expr) => {
+        $ipt.Mouse().mode()
+    };
+}
+
+#[macro_export]
+/// Signature:
+/// - `mouse_set_mode!(&InputContext<_>, MouseMode) -> ()`
+///
+/// Usage:
+/// - `mouse_set_mode!(ipt, MouseMode::Captured)`
+macro_rules! mouse_set_mode {
+    ($ipt:expr, $mode:expr) => {{ $ipt.Mouse().set_mode($mode) }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `mouse_show!(&InputContext<_>) -> ()`
+macro_rules! mouse_show {
+    ($ipt:expr) => {{ $ipt.Mouse().show() }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `mouse_hide!(&InputContext<_>) -> ()`
+macro_rules! mouse_hide {
+    ($ipt:expr) => {{ $ipt.Mouse().hide() }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `mouse_capture!(&InputContext<_>) -> ()`
+macro_rules! mouse_capture {
+    ($ipt:expr) => {{ $ipt.Mouse().capture() }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `mouse_confine!(&InputContext<_>) -> ()`
+macro_rules! mouse_confine {
+    ($ipt:expr) => {{ $ipt.Mouse().confine() }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `mouse_confine_hidden!(&InputContext<_>) -> ()`
+macro_rules! mouse_confine_hidden {
+    ($ipt:expr) => {{ $ipt.Mouse().confine_hidden() }};
+}
+
+#[macro_export]
+/// Signature:
 /// - `joycon_request_calibration!(&InputContext<_>, JoyConIndex) -> ()`
 macro_rules! joycon_request_calibration {
     ($ipt:expr, $index:expr) => {{ $ipt.request_joycon_calibration($index) }};
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InputContext, InputSnapshot, MouseMode};
+
+    #[test]
+    fn mouse_mode_defaults_visible() {
+        let input = InputSnapshot::new();
+
+        assert_eq!(input.mouse_mode(), MouseMode::Visible);
+    }
+
+    #[test]
+    fn mouse_mode_command_sets_state_and_request() {
+        let mut input = InputSnapshot::new();
+        {
+            let ctx = InputContext::new(&input);
+            ctx.Mouse().capture();
+        }
+
+        input.apply_queued_commands();
+
+        assert_eq!(input.mouse_mode(), MouseMode::Captured);
+        assert_eq!(input.take_mouse_mode_request(), Some(MouseMode::Captured));
+        assert_eq!(input.take_mouse_mode_request(), None);
+    }
+
+    #[test]
+    fn mouse_mode_macro_queues_request() {
+        let mut input = InputSnapshot::new();
+        {
+            let ctx = InputContext::new(&input);
+            mouse_set_mode!(&ctx, MouseMode::Confined);
+        }
+
+        input.apply_queued_commands();
+
+        assert_eq!(mouse_mode!(InputContext::new(&input)), MouseMode::Confined);
+        assert_eq!(input.take_mouse_mode_request(), Some(MouseMode::Confined));
+    }
 }
 
 pub mod prelude {
     pub use crate::{
         GamepadAxis, GamepadButton, GamepadIndex, GamepadModule, GamepadState, InputAPI,
         InputContext, InputSnapshot, JoyConButton, JoyConIndex, JoyConModule, JoyConSide,
-        JoyConState, KeyCode, KeyModule, KeyboardModule, KeyboardState, MouseButton, MouseModule,
-        MouseState, MouseStateModule, PlayerBinding, PlayerModule, PlayerState, gamepad_accel,
-        gamepad_down, gamepad_get, gamepad_gyro, gamepad_left_stick, gamepad_list, gamepad_pressed,
-        gamepad_released, gamepad_right_stick, joycon_accel, joycon_calibrated, joycon_calibrating,
-        joycon_calibration_bias, joycon_connected, joycon_down, joycon_get, joycon_gyro,
-        joycon_list, joycon_needs_calibration, joycon_pressed, joycon_released,
+        JoyConState, KeyCode, KeyModule, KeyboardModule, KeyboardState, MouseButton, MouseMode,
+        MouseModule, MouseState, MouseStateModule, PlayerBinding, PlayerModule, PlayerState,
+        gamepad_accel, gamepad_down, gamepad_get, gamepad_gyro, gamepad_left_stick, gamepad_list,
+        gamepad_pressed, gamepad_released, gamepad_right_stick, joycon_accel, joycon_calibrated,
+        joycon_calibrating, joycon_calibration_bias, joycon_connected, joycon_down, joycon_get,
+        joycon_gyro, joycon_list, joycon_needs_calibration, joycon_pressed, joycon_released,
         joycon_request_calibration, joycon_side, joycon_stick, key_down, key_pressed, key_released,
-        mouse_delta, mouse_down, mouse_position, mouse_pressed, mouse_released, mouse_wheel,
-        player_bind, player_get, player_list, viewport_size,
+        mouse_capture, mouse_confine, mouse_confine_hidden, mouse_delta, mouse_down, mouse_hide,
+        mouse_mode, mouse_position, mouse_pressed, mouse_released, mouse_set_mode, mouse_show,
+        mouse_wheel, player_bind, player_get, player_list, viewport_size,
     };
     pub use perro_structs::Vector2;
 }

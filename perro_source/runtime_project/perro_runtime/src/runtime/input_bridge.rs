@@ -1,11 +1,16 @@
 use super::Runtime;
-use perro_input::{GamepadAxis, GamepadButton, KeyCode, MouseButton};
+use perro_input::{GamepadAxis, GamepadButton, KeyCode, MouseButton, MouseMode};
 
 impl Runtime {
     #[inline]
     pub fn begin_input_frame(&mut self) {
         self.input.apply_queued_commands();
         self.input.begin_frame();
+    }
+
+    #[inline]
+    pub fn apply_input_commands(&mut self) {
+        self.input.apply_queued_commands();
     }
 
     #[inline]
@@ -31,6 +36,21 @@ impl Runtime {
     #[inline]
     pub fn set_mouse_position(&mut self, x: f32, y: f32) {
         self.input.set_mouse_position(x, y);
+    }
+
+    #[inline]
+    pub fn set_mouse_mode_state(&mut self, mode: MouseMode) {
+        self.input.set_mouse_mode_state(mode);
+    }
+
+    #[inline]
+    pub fn mouse_mode(&self) -> MouseMode {
+        self.input.mouse_mode()
+    }
+
+    #[inline]
+    pub fn take_mouse_mode_request(&mut self) -> Option<MouseMode> {
+        self.input.take_mouse_mode_request()
     }
 
     #[inline]

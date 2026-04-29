@@ -187,16 +187,19 @@ impl UiRenderer {
     }
 
     fn rebuild_primitives(&mut self, viewport: [f32; 2]) {
-        self.fonts
-            .begin_pass(2048, AlphaFromCoverage::default());
+        self.fonts.begin_pass(2048, AlphaFromCoverage::default());
         self.shapes.clear();
         self.primitives.clear();
         if self.shapes.capacity() < self.nodes.len() {
-            self.shapes.reserve(self.nodes.len() - self.shapes.capacity());
+            self.shapes
+                .reserve(self.nodes.len() - self.shapes.capacity());
         }
 
-        let mut ordered: Vec<(NodeID, &UiDraw)> =
-            self.nodes.iter().map(|(node, draw)| (*node, draw)).collect();
+        let mut ordered: Vec<(NodeID, &UiDraw)> = self
+            .nodes
+            .iter()
+            .map(|(node, draw)| (*node, draw))
+            .collect();
         ordered.sort_unstable_by(|(a_node, a_draw), (b_node, b_draw)| {
             ui_rect(a_draw)
                 .z_index
@@ -242,10 +245,11 @@ impl UiRenderer {
             self.fonts.texture_atlas().prepared_discs(),
         );
         self.primitives = tessellator.tessellate_shapes(std::mem::take(&mut self.shapes));
-        self.primitives.retain(|primitive| match &primitive.primitive {
-            Primitive::Mesh(mesh) => !mesh.vertices.is_empty() && !mesh.indices.is_empty(),
-            Primitive::Callback(_) => false,
-        });
+        self.primitives
+            .retain(|primitive| match &primitive.primitive {
+                Primitive::Mesh(mesh) => !mesh.vertices.is_empty() && !mesh.indices.is_empty(),
+                Primitive::Callback(_) => false,
+            });
 
         self.textures_delta.clear();
         if let Some(delta) = self.fonts.font_image_delta() {

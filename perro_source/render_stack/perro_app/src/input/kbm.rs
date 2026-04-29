@@ -77,6 +77,10 @@ impl KbmInput {
         app.set_mouse_position(next.x as f32, next.y as f32);
         self.last_cursor_position = Some(next);
     }
+
+    pub fn reset_cursor_position(&mut self) {
+        self.last_cursor_position = None;
+    }
 }
 
 impl Default for KbmInput {

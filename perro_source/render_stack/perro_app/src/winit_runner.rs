@@ -1,6 +1,7 @@
 use crate::App;
 use perro_graphics::GraphicsBackend;
 use perro_ids::{NodeID, TextureID, string_to_u64};
+use perro_input::MouseMode;
 use perro_io::decompress_zlib;
 use perro_render_bridge::{
     Camera2DState, Command2D, Rect2DCommand, RenderCommand, RenderRequestID, ResourceCommand,
@@ -601,8 +602,8 @@ struct RunnerState<B: GraphicsBackend> {
     kbm_input: crate::input::KbmInput,
     gamepad_input: crate::input::GamepadInput,
     joycon_input: crate::input::JoyConInput,
-    cursor_captured: bool,
-    capture_uses_raw_motion: bool,
+    mouse_mode: MouseMode,
+    mouse_uses_raw_motion: bool,
     cursor_inside_window: bool,
     startup_splash: StartupSplashState,
 }
@@ -774,49 +775,85 @@ impl<B: GraphicsBackend> RunnerState<B> {
             kbm_input: crate::input::KbmInput::new(),
             gamepad_input: crate::input::GamepadInput::new(),
             joycon_input: crate::input::JoyConInput::new(),
-            cursor_captured: false,
-            capture_uses_raw_motion: false,
+            mouse_mode: MouseMode::Visible,
+            mouse_uses_raw_motion: false,
             cursor_inside_window: false,
             startup_splash,
         }
     }
 
-    fn apply_cursor_capture(window: &Window, capture: bool) -> (bool, bool) {
-        if capture {
-            match window.set_cursor_grab(CursorGrabMode::Locked) {
+    fn apply_mouse_mode(window: &Window, mode: MouseMode) -> (MouseMode, bool) {
+        match mode {
+            MouseMode::Visible => {
+                let _ = window.set_cursor_grab(CursorGrabMode::None);
+                window.set_cursor_visible(true);
+                (MouseMode::Visible, false)
+            }
+            MouseMode::Hidden => {
+                let _ = window.set_cursor_grab(CursorGrabMode::None);
+                window.set_cursor_visible(false);
+                (MouseMode::Hidden, false)
+            }
+            MouseMode::Captured => match window.set_cursor_grab(CursorGrabMode::Locked) {
                 Ok(_) => {
                     window.set_cursor_visible(false);
-                    (true, true)
+                    (MouseMode::Captured, true)
                 }
                 Err(_locked_err) => match window.set_cursor_grab(CursorGrabMode::Confined) {
                     Ok(_) => {
                         window.set_cursor_visible(false);
-                        (true, false)
+                        (MouseMode::ConfinedHidden, false)
                     }
                     Err(_confined_err) => {
                         window.set_cursor_visible(true);
-                        (false, false)
+                        (MouseMode::Visible, false)
                     }
                 },
-            }
-        } else {
-            let _ = window.set_cursor_grab(CursorGrabMode::None);
-            window.set_cursor_visible(true);
-            (false, false)
+            },
+            MouseMode::Confined => match window.set_cursor_grab(CursorGrabMode::Confined) {
+                Ok(_) => {
+                    window.set_cursor_visible(true);
+                    (MouseMode::Confined, false)
+                }
+                Err(_err) => {
+                    window.set_cursor_visible(true);
+                    (MouseMode::Visible, false)
+                }
+            },
+            MouseMode::ConfinedHidden => match window.set_cursor_grab(CursorGrabMode::Confined) {
+                Ok(_) => {
+                    window.set_cursor_visible(false);
+                    (MouseMode::ConfinedHidden, false)
+                }
+                Err(_err) => {
+                    window.set_cursor_visible(false);
+                    (MouseMode::Hidden, false)
+                }
+            },
         }
     }
 
-    fn set_cursor_capture(&mut self, capture: bool) {
-        if self.cursor_captured == capture {
+    fn set_mouse_mode(&mut self, mode: MouseMode) {
+        if self.mouse_mode == mode {
             return;
         }
         if let Some(window) = &self.window {
-            let (captured, uses_raw_motion) = Self::apply_cursor_capture(window.as_ref(), capture);
-            self.cursor_captured = captured;
-            self.capture_uses_raw_motion = uses_raw_motion;
+            let (applied_mode, uses_raw_motion) = Self::apply_mouse_mode(window.as_ref(), mode);
+            self.mouse_mode = applied_mode;
+            self.mouse_uses_raw_motion = uses_raw_motion;
+            self.app.set_mouse_mode_state(applied_mode);
+            self.kbm_input.reset_cursor_position();
         } else {
-            self.cursor_captured = false;
-            self.capture_uses_raw_motion = false;
+            self.mouse_mode = MouseMode::Visible;
+            self.mouse_uses_raw_motion = false;
+            self.app.set_mouse_mode_state(MouseMode::Visible);
+        }
+    }
+
+    fn apply_mouse_mode_request(&mut self) {
+        self.app.apply_input_commands();
+        if let Some(mode) = self.app.take_mouse_mode_request() {
+            self.set_mouse_mode(mode);
         }
     }
 
@@ -1051,6 +1088,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .unwrap_or(Duration::ZERO);
         let runtime_timing = self.app.update_runtime(frame_delta.as_secs_f32());
         runtime_update_duration += runtime_timing.total;
+        self.apply_mouse_mode_request();
         #[cfg(feature = "profile_heavy")]
         let simulation_duration = simulation_start.elapsed();
         #[cfg(not(feature = "profile_heavy"))]
@@ -1342,6 +1380,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .unwrap_or(Duration::ZERO);
         let runtime_timing = self.app.update_runtime(frame_delta.as_secs_f32());
         runtime_update_duration += runtime_timing.total;
+        self.apply_mouse_mode_request();
         #[cfg(feature = "profile_heavy")]
         let simulation_duration = simulation_start.elapsed();
         #[cfg(not(feature = "profile_heavy"))]
@@ -1877,11 +1916,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             }
             window.set_visible(true);
             self.window = Some(window);
-            self.cursor_captured = false;
-            self.capture_uses_raw_motion = false;
-            if self.cursor_inside_window {
-                self.set_cursor_capture(true);
-            }
+            self.set_mouse_mode(MouseMode::Visible);
             let now = Instant::now();
             self.last_frame_start = now;
             self.last_frame_end = now;
@@ -2007,20 +2042,14 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 if key_event.state == ElementState::Pressed
                     && matches!(&key_event.physical_key, PhysicalKey::Code(KeyCode::Escape))
                 {
-                    self.set_cursor_capture(false);
+                    self.set_mouse_mode(MouseMode::Visible);
                 }
                 self.kbm_input
                     .handle_window_event(&mut self.app, keyboard_event);
             }
-            mouse_event @ WindowEvent::MouseInput { state, .. } => {
+            mouse_event @ WindowEvent::MouseInput { .. } => {
                 if self.startup_splash.blocks_input() {
                     return;
-                }
-                if state == ElementState::Pressed
-                    && !self.cursor_captured
-                    && self.cursor_inside_window
-                {
-                    self.set_cursor_capture(true);
                 }
                 self.kbm_input
                     .handle_window_event(&mut self.app, &mouse_event);
@@ -2057,21 +2086,14 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 if self.startup_splash.blocks_input() {
                     return;
                 }
-                if self.cursor_captured
-                    && let Some(window) = &self.window
-                {
-                    let (captured, uses_raw_motion) =
-                        Self::apply_cursor_capture(window.as_ref(), true);
-                    self.cursor_captured = captured;
-                    self.capture_uses_raw_motion = uses_raw_motion;
-                }
+                self.apply_mouse_mode_request();
             }
             WindowEvent::Focused(false) => {
                 if self.startup_splash.blocks_input() {
                     return;
                 }
                 self.cursor_inside_window = false;
-                self.set_cursor_capture(false);
+                self.set_mouse_mode(MouseMode::Visible);
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 if let Some(window) = &self.window {
@@ -2096,8 +2118,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
         if self.startup_splash.blocks_input() {
             return;
         }
-        if self.cursor_captured
-            && self.capture_uses_raw_motion
+        if self.mouse_mode == MouseMode::Captured
+            && self.mouse_uses_raw_motion
             && let DeviceEvent::MouseMotion { delta } = event
         {
             self.kbm_input

@@ -728,9 +728,9 @@ impl GraphicsBackend for PerroGraphics {
             .extend_from_slice(self.renderer_2d.retained_rects());
         self.frame_rects_cache
             .extend_from_slice(self.renderer_2d.frame_shapes());
-        let ui_paint =
-            self.renderer_ui
-                .prepare_paint([self.viewport.0 as f32, self.viewport.1 as f32]);
+        let ui_paint = self
+            .renderer_ui
+            .prepare_paint([self.viewport.0 as f32, self.viewport.1 as f32]);
         let sprites_refs_changed = self.used_ref_sprites_revision != sprites_revision;
         if sprites_refs_changed {
             self.used_texture_refs_cache.clear();
