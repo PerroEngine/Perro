@@ -106,9 +106,7 @@ impl Runtime {
                 parent_node.get_children_ids(),
                 child,
                 content_rect,
-                auto_layout.columns,
-                auto_layout.h_spacing,
-                auto_layout.v_spacing,
+                auto_layout,
             ),
         }
         .or_else(|| {
@@ -158,13 +156,7 @@ impl Runtime {
                 } else {
                     0.0
                 },
-                if layout.v_size == UiSizeMode::Fill {
-                    (content.size.y - layout.margin.vertical()).max(0.0)
-                } else if parent_layout.v_align == UiVerticalAlign::Fill {
-                    (content.size.y - layout.margin.vertical()).max(0.0)
-                } else {
-                    0.0
-                },
+                ui_fill_height(layout, parent_layout, content.size.y),
             );
             let size = self.resolve_ui_size(sibling, content.size, Some(fill_size));
             if sibling == child {
@@ -207,13 +199,7 @@ impl Runtime {
                 continue;
             };
             let fill_size = Vector2::new(
-                if layout.h_size == UiSizeMode::Fill {
-                    (content.size.x - layout.margin.horizontal()).max(0.0)
-                } else if parent_layout.h_align == UiHorizontalAlign::Fill {
-                    (content.size.x - layout.margin.horizontal()).max(0.0)
-                } else {
-                    0.0
-                },
+                ui_fill_width(layout, parent_layout, content.size.x),
                 if layout.v_size == UiSizeMode::Fill {
                     fill_height
                 } else {
@@ -244,12 +230,10 @@ impl Runtime {
         children: &[NodeID],
         child: NodeID,
         content: ComputedUiRect,
-        columns: u32,
-        h_spacing: f32,
-        v_spacing: f32,
+        auto: UiAutoLayout,
     ) -> Option<ComputedUiRect> {
-        let columns = columns.max(1) as usize;
-        let cell_width = ((content.size.x - h_spacing * (columns.saturating_sub(1) as f32))
+        let columns = auto.columns.max(1) as usize;
+        let cell_width = ((content.size.x - auto.h_spacing * (columns.saturating_sub(1) as f32))
             / columns as f32)
             .max(0.0);
         let mut child_index = None;
@@ -267,16 +251,7 @@ impl Runtime {
             if sibling == child {
                 child_index = Some(ui_index);
             }
-            let fill_size = Vector2::new(
-                if layout.h_size == UiSizeMode::Fill {
-                    (cell_width - layout.margin.horizontal()).max(0.0)
-                } else if parent_layout.h_align == UiHorizontalAlign::Fill {
-                    (cell_width - layout.margin.horizontal()).max(0.0)
-                } else {
-                    0.0
-                },
-                0.0,
-            );
+            let fill_size = Vector2::new(ui_fill_width(layout, parent_layout, cell_width), 0.0);
             let size = self.resolve_ui_size(
                 sibling,
                 Vector2::new(cell_width, content.size.y),
@@ -292,20 +267,8 @@ impl Runtime {
             .and_then(|node| ui_root_from_data(&node.data))
             .map(|ui| &ui.layout)?;
         let fill_size = Vector2::new(
-            if layout.h_size == UiSizeMode::Fill {
-                (cell_width - layout.margin.horizontal()).max(0.0)
-            } else if parent_layout.h_align == UiHorizontalAlign::Fill {
-                (cell_width - layout.margin.horizontal()).max(0.0)
-            } else {
-                0.0
-            },
-            if layout.v_size == UiSizeMode::Fill {
-                (max_row_height - layout.margin.vertical()).max(0.0)
-            } else if parent_layout.v_align == UiVerticalAlign::Fill {
-                (max_row_height - layout.margin.vertical()).max(0.0)
-            } else {
-                0.0
-            },
+            ui_fill_width(layout, parent_layout, cell_width),
+            ui_fill_height(layout, parent_layout, max_row_height),
         );
         let size = self.resolve_ui_size(
             child,
@@ -316,8 +279,8 @@ impl Runtime {
         let row = index / columns;
         let min = content.min();
         let max = content.max();
-        let cell_min_x = min.x + col as f32 * (cell_width + h_spacing);
-        let cell_top_y = max.y - row as f32 * (max_row_height + v_spacing);
+        let cell_min_x = min.x + col as f32 * (cell_width + auto.h_spacing);
+        let cell_top_y = max.y - row as f32 * (max_row_height + auto.v_spacing);
         let center = Vector2::new(
             align_h_center(
                 cell_min_x,
@@ -712,6 +675,22 @@ fn ui_auto_layout_from_data(data: &SceneNodeData) -> Option<UiAutoLayout> {
     }
 }
 
+fn ui_fill_width(layout: &UiLayoutData, parent_layout: &UiLayoutData, available: f32) -> f32 {
+    if layout.h_size == UiSizeMode::Fill || parent_layout.h_align == UiHorizontalAlign::Fill {
+        (available - layout.margin.horizontal()).max(0.0)
+    } else {
+        0.0
+    }
+}
+
+fn ui_fill_height(layout: &UiLayoutData, parent_layout: &UiLayoutData, available: f32) -> f32 {
+    if layout.v_size == UiSizeMode::Fill || parent_layout.v_align == UiVerticalAlign::Fill {
+        (available - layout.margin.vertical()).max(0.0)
+    } else {
+        0.0
+    }
+}
+
 fn ui_text_measure(data: &SceneNodeData) -> Vector2 {
     match data {
         SceneNodeData::UiLabel(label) => measure_text(label.text.as_ref(), label.font_size),
@@ -801,11 +780,7 @@ fn ui_command_from_node(
     match data {
         SceneNodeData::UiPanel(panel) => Some(panel_command(node, rect, &panel.style)),
         SceneNodeData::UiButton(button) => {
-            let style = if button.disabled {
-                button.style.clone()
-            } else {
-                button.style.clone()
-            };
+            let style = &button.style;
             Some(UiCommand::UpsertButton {
                 node,
                 rect,
