@@ -83,6 +83,7 @@ impl Runtime {
     pub(crate) fn note_removed_render_node(&mut self, node: NodeID) {
         self.render_2d.removed_nodes.push(node);
         self.render_3d.removed_nodes.push(node);
+        self.render_ui.removed_nodes.push(node);
     }
 }
 

@@ -30,8 +30,8 @@ pub(crate) use scene_loader::PendingScriptAttach;
 pub(crate) use state::CollisionDebugState;
 use state::{
     DirtyState, InternalUpdateState, NodeApiScratchState, NodeIndexState, Render2DState,
-    Render3DState, RenderState, ScriptRuntimeState, ScriptSchedules, SignalRuntimeState,
-    TransformRuntimeState,
+    Render3DState, RenderState, RenderUiState, ScriptRuntimeState, ScriptSchedules,
+    SignalRuntimeState, TransformRuntimeState,
 };
 
 type RuntimeScriptCtor = ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>;
@@ -59,6 +59,7 @@ pub struct Runtime {
 
     render_2d: Render2DState,
     render_3d: Render3DState,
+    render_ui: RenderUiState,
     pub(crate) signal_runtime: SignalRuntimeState,
     pub(crate) node_index: NodeIndexState,
     pub(crate) node_api_scratch: NodeApiScratchState,
@@ -146,6 +147,7 @@ impl Runtime {
             internal_updates: InternalUpdateState::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
+            render_ui: RenderUiState::new(),
             signal_runtime: SignalRuntimeState::new(),
             node_index: NodeIndexState::new(),
             node_api_scratch: NodeApiScratchState::new(),

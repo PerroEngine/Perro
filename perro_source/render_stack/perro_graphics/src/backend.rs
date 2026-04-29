@@ -7,7 +7,8 @@ use crate::{
     three_d::particles::renderer::Particles3DRenderer,
     three_d::renderer::Renderer3D,
     three_d::{gpu::validate_mesh_source, renderer::Draw3DInstance, renderer::Draw3DKind},
-    two_d::renderer::{RectInstanceGpu, Renderer2D},
+    two_d::renderer::{RectInstanceGpu, RectUploadPlan, Renderer2D},
+    ui::renderer::UiRenderer,
 };
 use ahash::AHashSet;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
@@ -136,6 +137,7 @@ pub struct PerroGraphics {
     renderer_2d: Renderer2D,
     renderer_3d: Renderer3D,
     particles_3d: Particles3DRenderer,
+    renderer_ui: UiRenderer,
     gpu: Option<Gpu>,
     events: Vec<RenderEvent>,
     viewport: (u32, u32),
@@ -176,6 +178,7 @@ impl PerroGraphics {
             renderer_2d: Renderer2D::new(),
             renderer_3d: Renderer3D::new(),
             particles_3d: Particles3DRenderer::new(),
+            renderer_ui: UiRenderer::new(),
             gpu: None,
             events: Vec::new(),
             viewport: (0, 0),
@@ -477,7 +480,9 @@ impl PerroGraphics {
                         self.particles_3d.remove_node(node);
                     }
                 },
-                RenderCommand::Ui(_cmd) => {}
+                RenderCommand::Ui(cmd) => {
+                    self.renderer_ui.submit(cmd);
+                }
                 RenderCommand::VisualAccessibility(command) => match command {
                     VisualAccessibilityCommand::EnableColorBlind { mode, strength } => {
                         self.accessibility.color_blind =
@@ -606,6 +611,7 @@ impl GraphicsBackend for PerroGraphics {
         let has_continuous_updates = self.renderer_3d.has_active_sky_animation();
         let has_retained_scene = self.renderer_2d.retained_sprite_count() > 0
             || !self.renderer_2d.retained_rects().is_empty()
+            || self.renderer_ui.retained_count() > 0
             || self.renderer_3d.retained_draw_count() > 0
             || self.renderer_3d.has_retained_non_draw_state()
             || self.particles_3d.retained_point_particle_count() > 0;
@@ -713,7 +719,9 @@ impl GraphicsBackend for PerroGraphics {
         self.frame_rects_cache.clear();
         let retained_rect_count = self.renderer_2d.retained_rects().len();
         let frame_shape_count = self.renderer_2d.frame_shapes().len();
-        let total_rect_count = retained_rect_count + frame_shape_count;
+        let ui_primitives = self.renderer_ui.primitives();
+        let ui_rect_count = ui_primitives.len();
+        let total_rect_count = retained_rect_count + frame_shape_count + ui_rect_count;
         if self.frame_rects_cache.capacity() < total_rect_count {
             self.frame_rects_cache
                 .reserve(total_rect_count - self.frame_rects_cache.capacity());
@@ -722,6 +730,18 @@ impl GraphicsBackend for PerroGraphics {
             .extend_from_slice(self.renderer_2d.retained_rects());
         self.frame_rects_cache
             .extend_from_slice(self.renderer_2d.frame_shapes());
+        self.frame_rects_cache.extend_from_slice(ui_primitives);
+        let combined_upload;
+        let upload = if ui_rect_count > 0 {
+            combined_upload = RectUploadPlan {
+                full_reupload: true,
+                dirty_ranges: Vec::new(),
+                draw_count: total_rect_count,
+            };
+            &combined_upload
+        } else {
+            &upload
+        };
         let sprites_refs_changed = self.used_ref_sprites_revision != sprites_revision;
         if sprites_refs_changed {
             self.used_texture_refs_cache.clear();
@@ -786,7 +806,7 @@ impl GraphicsBackend for PerroGraphics {
                 post_processing_global: self.global_post_processing.as_slice().into(),
                 accessibility: self.accessibility,
                 rects_2d: &self.frame_rects_cache,
-                upload_2d: &upload,
+                upload_2d: upload,
                 sprites_2d: &self.retained_sprites_cache,
                 redraw_requested: self.redraw_requested,
                 frame_dirty_bits,

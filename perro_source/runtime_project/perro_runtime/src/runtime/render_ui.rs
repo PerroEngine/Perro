@@ -12,28 +12,126 @@ use std::borrow::Cow;
 
 impl Runtime {
     pub fn extract_render_ui_commands(&mut self) {
+        let bootstrap_scan = self.render_ui.prev_visible.is_empty()
+            && self.render_ui.retained_commands.is_empty()
+            && self.render_ui.computed_rects.is_empty();
+        let has_extraction_work = self.dirty.has_any_dirty()
+            || self.dirty.has_pending_transform_roots()
+            || !self.render_ui.removed_nodes.is_empty()
+            || bootstrap_scan;
+        if !has_extraction_work {
+            return;
+        }
+
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+
         let viewport = self.input.viewport_size();
         let root_rect = ComputedUiRect::new(Vector2::ZERO, viewport);
-        let mut computed = AHashMap::<NodeID, ComputedUiRect>::default();
-        let node_ids: Vec<NodeID> = self.nodes.iter().map(|(id, _)| id).collect();
+        let mut traversal_ids = std::mem::take(&mut self.render_ui.traversal_ids);
+        traversal_ids.clear();
+        traversal_ids.extend(
+            self.dirty
+                .dirty_indices()
+                .iter()
+                .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id)),
+        );
+        if traversal_ids.is_empty() && bootstrap_scan {
+            traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
+        }
+        let mut traversal_seen: ahash::AHashSet<NodeID> = traversal_ids.iter().copied().collect();
+        let mut traversal_cursor = 0usize;
+        while traversal_cursor < traversal_ids.len() {
+            let node = traversal_ids[traversal_cursor];
+            traversal_cursor += 1;
+            if let Some(parent) = self.nodes.get(node).map(|node| node.parent)
+                && !parent.is_nil()
+                && let Some(parent_node) = self.nodes.get(parent)
+                && ui_auto_layout_from_data(&parent_node.data).is_some()
+            {
+                for &sibling in parent_node.get_children_ids() {
+                    if traversal_seen.insert(sibling) {
+                        traversal_ids.push(sibling);
+                    }
+                }
+            }
+            if let Some(node_ref) = self.nodes.get(node) {
+                for &child in node_ref.get_children_ids() {
+                    if traversal_seen.insert(child) {
+                        traversal_ids.push(child);
+                    }
+                }
+            }
+        }
 
-        self.queue_render_command(RenderCommand::Ui(UiCommand::Clear));
-        for node in node_ids.iter().copied() {
+        let mut visible_now = std::mem::take(&mut self.render_ui.visible_now);
+        visible_now.clear();
+        visible_now.extend(self.render_ui.prev_visible.iter().copied());
+        let mut removed_nodes = std::mem::take(&mut self.render_ui.removed_nodes);
+        for node in removed_nodes.drain(..) {
+            visible_now.remove(&node);
+            self.render_ui.computed_rects.remove(&node);
+            self.render_ui.retained_rects.remove(&node);
+            if self.render_ui.retained_commands.remove(&node).is_some() {
+                self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
+            }
+        }
+        self.render_ui.removed_nodes = removed_nodes;
+
+        let mut computed = std::mem::take(&mut self.render_ui.computed_rects);
+        for node in traversal_ids.iter().copied() {
+            computed.remove(&node);
+        }
+        for node in traversal_ids.iter().copied() {
             self.compute_ui_rect(node, root_rect, &mut computed);
         }
 
-        for node in node_ids {
+        for node in traversal_ids.iter().copied() {
+            visible_now.remove(&node);
             let Some(rect) = computed.get(&node).copied() else {
+                self.remove_retained_ui_node(node);
                 continue;
             };
             let effective_visible = self.is_effectively_visible(node);
             let Some(command) = self.nodes.get(node).and_then(|scene_node| {
                 ui_command_from_node(node, &scene_node.data, rect, effective_visible)
             }) else {
+                self.remove_retained_ui_node(node);
                 continue;
             };
-            self.queue_render_command(RenderCommand::Ui(command));
+            if self.render_ui.retained_commands.get(&node) != Some(&command) {
+                self.queue_render_command(RenderCommand::Ui(command.clone()));
+                self.render_ui.retained_commands.insert(node, command);
+            }
+            if let Some(rect) = computed.get(&node).copied() {
+                self.render_ui.retained_rects.insert(
+                    node,
+                    UiRectState {
+                        center: [rect.center.x, rect.center.y],
+                        size: [rect.size.x, rect.size.y],
+                        z_index: ui_root_from_data(
+                            &self
+                                .nodes
+                                .get(node)
+                                .expect("node exists while extracting ui")
+                                .data,
+                        )
+                        .map(|ui| ui.layout.z_index)
+                        .unwrap_or(0),
+                    },
+                );
+            }
+            visible_now.insert(node);
         }
+        self.remove_no_longer_visible_ui_nodes(&visible_now);
+
+        self.render_ui.computed_rects = computed;
+        std::mem::swap(&mut self.render_ui.prev_visible, &mut visible_now);
+        visible_now.clear();
+        self.render_ui.visible_now = visible_now;
+
+        traversal_ids.clear();
+        self.render_ui.traversal_ids = traversal_ids;
     }
 
     fn compute_ui_rect(
@@ -73,6 +171,25 @@ impl Runtime {
         };
         computed.insert(node, rect);
         Some(rect)
+    }
+
+    fn remove_retained_ui_node(&mut self, node: NodeID) {
+        self.render_ui.retained_rects.remove(&node);
+        if self.render_ui.retained_commands.remove(&node).is_some() {
+            self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
+        }
+    }
+
+    fn remove_no_longer_visible_ui_nodes(&mut self, visible_now: &ahash::AHashSet<NodeID>) {
+        let mut to_remove = Vec::new();
+        for node in self.render_ui.prev_visible.iter().copied() {
+            if !visible_now.contains(&node) {
+                to_remove.push(node);
+            }
+        }
+        for node in to_remove {
+            self.remove_retained_ui_node(node);
+        }
     }
 
     fn compute_ui_child_rect(
@@ -812,5 +929,74 @@ fn panel_command(node: NodeID, rect: UiRectState, style: &UiStyle) -> UiCommand 
         stroke: style.stroke.to_rgba(),
         stroke_width: style.stroke_width,
         corner_radius: style.corner_radius,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use perro_nodes::{SceneNode, SceneNodeData};
+    use perro_structs::Color;
+    use perro_ui::{UiPanel, UiVector2};
+
+    #[test]
+    fn unchanged_ui_skips_redundant_upsert() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let node = insert_panel(&mut runtime, [120.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert_eq!(commands.iter().filter(|cmd| matches!(cmd, RenderCommand::Ui(UiCommand::UpsertPanel { node: n, .. }) if *n == node)).count(), 1);
+
+        runtime.clear_dirty_flags();
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn dirty_ui_node_emits_changed_upsert_only() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let node = insert_panel(&mut runtime, [120.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        runtime.clear_dirty_flags();
+
+        if let Some(scene_node) = runtime.nodes.get_mut(node)
+            && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+        {
+            panel.style.fill = Color::new(0.8, 0.1, 0.1, 1.0);
+        }
+        runtime.mark_needs_rerender(node);
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+
+        assert_eq!(commands.len(), 1);
+        assert!(
+            matches!(&commands[0], RenderCommand::Ui(UiCommand::UpsertPanel { node: n, fill, .. }) if *n == node && *fill == [0.8, 0.1, 0.1, 1.0])
+        );
+    }
+
+    fn insert_panel(runtime: &mut Runtime, size: [f32; 2], fill: Color) -> NodeID {
+        let mut panel = UiPanel::new();
+        panel.layout.size = UiVector2::pixels(size[0], size[1]);
+        panel.style.fill = fill;
+        let node = runtime
+            .nodes
+            .insert(SceneNode::new(SceneNodeData::UiPanel(panel)));
+        runtime
+            .nodes
+            .get_mut(node)
+            .expect("inserted node exists")
+            .id = node;
+        runtime.mark_needs_rerender(node);
+        node
     }
 }

@@ -9,9 +9,10 @@ use perro_nodes::Spatial;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, DenseInstancePose3D, Material3D, MeshSurfaceBinding3D,
     PointLight3DState, RayLight3DState, RenderCommand, RenderEvent, RenderRequestID,
-    SkeletonPalette, Sky3DState, SpotLight3DState, Sprite2DCommand,
+    SkeletonPalette, Sky3DState, SpotLight3DState, Sprite2DCommand, UiCommand, UiRectState,
 };
 use perro_structs::{Transform2D, Transform3D};
+use perro_ui::ComputedUiRect;
 use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 
 pub(crate) struct ScriptRuntimeState {
@@ -317,6 +318,30 @@ pub(crate) struct Render2DState {
     pub(crate) texture_sources: AHashMap<NodeID, String>,
     pub(crate) last_camera: Option<perro_render_bridge::Camera2DState>,
     pub(crate) removed_nodes: Vec<NodeID>,
+}
+
+pub(crate) struct RenderUiState {
+    pub(crate) traversal_ids: Vec<NodeID>,
+    pub(crate) visible_now: AHashSet<NodeID>,
+    pub(crate) prev_visible: AHashSet<NodeID>,
+    pub(crate) computed_rects: AHashMap<NodeID, ComputedUiRect>,
+    pub(crate) retained_commands: AHashMap<NodeID, UiCommand>,
+    pub(crate) retained_rects: AHashMap<NodeID, UiRectState>,
+    pub(crate) removed_nodes: Vec<NodeID>,
+}
+
+impl RenderUiState {
+    pub(crate) fn new() -> Self {
+        Self {
+            traversal_ids: Vec::new(),
+            visible_now: AHashSet::default(),
+            prev_visible: AHashSet::default(),
+            computed_rects: AHashMap::default(),
+            retained_commands: AHashMap::default(),
+            retained_rects: AHashMap::default(),
+            removed_nodes: Vec::new(),
+        }
+    }
 }
 
 impl Render2DState {

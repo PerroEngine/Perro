@@ -8,6 +8,7 @@ bytemuck = { version = "1.24.0", features = ["derive"] }
 pollster = "0.4.0"
 glam = "0.31.0"
 ahash = "0.8.12"
+epaint = "0.33.0"
 
 perro_ids = "0.1.0"
 perro_meshlets = { path = "../perro_meshlets" }
