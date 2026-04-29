@@ -1,5 +1,5 @@
 use perro_ids::{IntoTagID, MaterialID, NodeID, TagID};
-use perro_nodes::{NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData, UiBox};
+use perro_nodes::{NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData, UiBox, UiRect};
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
 
@@ -356,6 +356,22 @@ pub trait NodeAPI {
         .is_some()
     }
 
+    /// Sets UI padding in pixels. Works on `UiBox` and descendants.
+    fn set_ui_padding(&mut self, node_id: NodeID, padding: UiRect) -> bool {
+        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
+            node.layout.padding = padding;
+        })
+        .is_some()
+    }
+
+    /// Sets UI margin in pixels. Works on `UiBox` and descendants.
+    fn set_ui_margin(&mut self, node_id: NodeID, margin: UiRect) -> bool {
+        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
+            node.layout.margin = margin;
+        })
+        .is_some()
+    }
+
     /// Sets UI minimum width in pixels. Works on `UiBox` and descendants.
     fn set_ui_min_w(&mut self, node_id: NodeID, value: f32) -> bool {
         self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
@@ -648,6 +664,14 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 
     pub fn set_ui_scale(&mut self, node_id: NodeID, scale: Vector2) -> bool {
         self.rt.set_ui_scale(node_id, scale)
+    }
+
+    pub fn set_ui_padding(&mut self, node_id: NodeID, padding: UiRect) -> bool {
+        self.rt.set_ui_padding(node_id, padding)
+    }
+
+    pub fn set_ui_margin(&mut self, node_id: NodeID, margin: UiRect) -> bool {
+        self.rt.set_ui_margin(node_id, margin)
     }
 
     pub fn set_ui_min_w(&mut self, node_id: NodeID, value: f32) -> bool {
@@ -1048,6 +1072,20 @@ macro_rules! set_ui_max_size {
 macro_rules! set_ui_scale {
     ($ctx:expr, $id:expr, $scale:expr) => {
         $ctx.Nodes().set_ui_scale($id, $scale)
+    };
+}
+
+#[macro_export]
+macro_rules! set_ui_padding {
+    ($ctx:expr, $id:expr, $padding:expr) => {
+        $ctx.Nodes().set_ui_padding($id, $padding)
+    };
+}
+
+#[macro_export]
+macro_rules! set_ui_margin {
+    ($ctx:expr, $id:expr, $margin:expr) => {
+        $ctx.Nodes().set_ui_margin($id, $margin)
     };
 }
 

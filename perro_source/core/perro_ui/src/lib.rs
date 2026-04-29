@@ -145,6 +145,14 @@ impl UiRect {
             bottom,
         }
     }
+
+    pub const fn horizontal(self) -> f32 {
+        self.left + self.right
+    }
+
+    pub const fn vertical(self) -> f32 {
+        self.top + self.bottom
+    }
 }
 
 impl Default for UiRect {
@@ -258,6 +266,13 @@ impl ComputedUiRect {
         let max = self.max();
         point.x >= min.x && point.x <= max.x && point.y >= min.y && point.y <= max.y
     }
+
+    pub fn inset(self, inset: UiRect) -> Self {
+        let min = self.min() + Vector2::new(inset.left, inset.bottom);
+        let max = self.max() - Vector2::new(inset.right, inset.top);
+        let size = Vector2::new((max.x - min.x).max(0.0), (max.y - min.y).max(0.0));
+        Self::new(min + size * 0.5, size)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -314,6 +329,11 @@ impl UiLayoutData {
         )
     }
 
+    pub fn resolved_scaled_size(&self, parent_size: Vector2) -> Vector2 {
+        let size = self.resolved_size(parent_size);
+        Vector2::new(size.x * self.scale.x, size.y * self.scale.y)
+    }
+
     pub fn resolved_pivot_offset(&self, resolved_size: Vector2) -> Vector2 {
         self.pivot.resolve(resolved_size)
     }
@@ -324,11 +344,7 @@ impl UiLayoutData {
     }
 
     pub fn compute_rect(&self, parent: ComputedUiRect) -> ComputedUiRect {
-        let resolved_size = self.resolved_size(parent.size);
-        let size = Vector2::new(
-            resolved_size.x * self.scale.x,
-            resolved_size.y * self.scale.y,
-        );
+        let size = self.resolved_scaled_size(parent.size);
         let anchor = self.anchor.direction();
         let anchor_point = parent.center
             + Vector2::new(
@@ -949,6 +965,16 @@ mod tests {
         let rect = layout.compute_rect(parent);
 
         assert_eq!(rect.size, Vector2::new(2400.0, 45.0));
+    }
+
+    #[test]
+    fn rect_inset_uses_top_bottom_edges() {
+        let rect = ComputedUiRect::new(Vector2::ZERO, Vector2::new(100.0, 80.0));
+
+        assert_eq!(
+            rect.inset(UiRect::new(10.0, 20.0, 30.0, 5.0)),
+            ComputedUiRect::new(Vector2::new(-10.0, -7.5), Vector2::new(60.0, 55.0))
+        );
     }
 
     #[test]

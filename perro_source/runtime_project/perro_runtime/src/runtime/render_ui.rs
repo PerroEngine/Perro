@@ -4,7 +4,7 @@ use perro_ids::NodeID;
 use perro_nodes::SceneNodeData;
 use perro_render_bridge::{RenderCommand, UiCommand, UiRectState};
 use perro_structs::Vector2;
-use perro_ui::{ComputedUiRect, UiBox, UiStyle};
+use perro_ui::{ComputedUiRect, UiBox, UiLayoutData, UiLayoutMode, UiStyle};
 use std::borrow::Cow;
 
 impl Runtime {
@@ -51,10 +51,185 @@ impl Runtime {
             self.compute_ui_rect(scene_node.parent, root_rect, computed)
                 .unwrap_or(root_rect)
         };
-        let rect = ui_root.layout.compute_rect(parent_rect);
+        let rect = if scene_node.parent.is_nil() {
+            ui_root.layout.compute_rect(parent_rect)
+        } else {
+            self.compute_ui_child_rect(scene_node.parent, node, parent_rect, &ui_root.layout)
+                .unwrap_or_else(|| {
+                    let parent_content = self
+                        .nodes
+                        .get(scene_node.parent)
+                        .and_then(|parent| ui_root_from_data(&parent.data))
+                        .map(|parent| parent_rect.inset(parent.layout.padding))
+                        .unwrap_or(parent_rect);
+                    ui_root
+                        .layout
+                        .compute_rect(parent_content.inset(ui_root.layout.margin))
+                })
+        };
         computed.insert(node, rect);
         Some(rect)
     }
+
+    fn compute_ui_child_rect(
+        &self,
+        parent: NodeID,
+        child: NodeID,
+        parent_rect: ComputedUiRect,
+        child_layout: &UiLayoutData,
+    ) -> Option<ComputedUiRect> {
+        let parent_node = self.nodes.get(parent)?;
+        let parent_ui = ui_root_from_data(&parent_node.data)?;
+        let content_rect = parent_rect.inset(parent_ui.layout.padding);
+        let auto_layout = ui_auto_layout_from_data(&parent_node.data)?;
+        match auto_layout.mode {
+            UiLayoutMode::H => self.compute_ui_h_child_rect(
+                parent_node.get_children_ids(),
+                child,
+                content_rect,
+                auto_layout.h_spacing,
+            ),
+            UiLayoutMode::V => self.compute_ui_v_child_rect(
+                parent_node.get_children_ids(),
+                child,
+                content_rect,
+                auto_layout.v_spacing,
+            ),
+            UiLayoutMode::Grid => self.compute_ui_grid_child_rect(
+                parent_node.get_children_ids(),
+                child,
+                content_rect,
+                auto_layout.columns,
+                auto_layout.h_spacing,
+                auto_layout.v_spacing,
+            ),
+        }
+        .or_else(|| Some(child_layout.compute_rect(content_rect.inset(child_layout.margin))))
+    }
+
+    fn compute_ui_h_child_rect(
+        &self,
+        children: &[NodeID],
+        child: NodeID,
+        content: ComputedUiRect,
+        spacing: f32,
+    ) -> Option<ComputedUiRect> {
+        let min = content.min();
+        let max = content.max();
+        let mut x = min.x;
+        for sibling in children.iter().copied() {
+            let Some(layout) = self
+                .nodes
+                .get(sibling)
+                .and_then(|node| ui_root_from_data(&node.data))
+                .map(|ui| &ui.layout)
+            else {
+                continue;
+            };
+            let size = layout.resolved_scaled_size(content.size);
+            if sibling == child {
+                let center = Vector2::new(
+                    x + layout.margin.left + size.x * 0.5,
+                    max.y - layout.margin.top - size.y * 0.5,
+                ) + layout.translation;
+                return Some(ComputedUiRect::new(center, size));
+            }
+            x += size.x + layout.margin.horizontal() + spacing;
+        }
+        None
+    }
+
+    fn compute_ui_v_child_rect(
+        &self,
+        children: &[NodeID],
+        child: NodeID,
+        content: ComputedUiRect,
+        spacing: f32,
+    ) -> Option<ComputedUiRect> {
+        let min = content.min();
+        let max = content.max();
+        let mut y = max.y;
+        for sibling in children.iter().copied() {
+            let Some(layout) = self
+                .nodes
+                .get(sibling)
+                .and_then(|node| ui_root_from_data(&node.data))
+                .map(|ui| &ui.layout)
+            else {
+                continue;
+            };
+            let size = layout.resolved_scaled_size(content.size);
+            if sibling == child {
+                let center = Vector2::new(
+                    min.x + layout.margin.left + size.x * 0.5,
+                    y - layout.margin.top - size.y * 0.5,
+                ) + layout.translation;
+                return Some(ComputedUiRect::new(center, size));
+            }
+            y -= size.y + layout.margin.vertical() + spacing;
+        }
+        None
+    }
+
+    fn compute_ui_grid_child_rect(
+        &self,
+        children: &[NodeID],
+        child: NodeID,
+        content: ComputedUiRect,
+        columns: u32,
+        h_spacing: f32,
+        v_spacing: f32,
+    ) -> Option<ComputedUiRect> {
+        let columns = columns.max(1) as usize;
+        let cell_width = ((content.size.x - h_spacing * (columns.saturating_sub(1) as f32))
+            / columns as f32)
+            .max(0.0);
+        let mut child_index = None;
+        let mut max_row_height = 0.0_f32;
+        let mut ui_index = 0_usize;
+        for sibling in children.iter().copied() {
+            let Some(layout) = self
+                .nodes
+                .get(sibling)
+                .and_then(|node| ui_root_from_data(&node.data))
+                .map(|ui| &ui.layout)
+            else {
+                continue;
+            };
+            if sibling == child {
+                child_index = Some(ui_index);
+            }
+            let size = layout.resolved_scaled_size(Vector2::new(cell_width, content.size.y));
+            max_row_height = max_row_height.max(size.y + layout.margin.vertical());
+            ui_index += 1;
+        }
+        let index = child_index?;
+        let layout = self
+            .nodes
+            .get(child)
+            .and_then(|node| ui_root_from_data(&node.data))
+            .map(|ui| &ui.layout)?;
+        let size = layout.resolved_scaled_size(Vector2::new(cell_width, content.size.y));
+        let col = index % columns;
+        let row = index / columns;
+        let min = content.min();
+        let max = content.max();
+        let cell_min_x = min.x + col as f32 * (cell_width + h_spacing);
+        let cell_top_y = max.y - row as f32 * (max_row_height + v_spacing);
+        let center = Vector2::new(
+            cell_min_x + layout.margin.left + size.x * 0.5,
+            cell_top_y - layout.margin.top - size.y * 0.5,
+        ) + layout.translation;
+        Some(ComputedUiRect::new(center, size))
+    }
+}
+
+#[derive(Clone, Copy)]
+struct UiAutoLayout {
+    mode: UiLayoutMode,
+    columns: u32,
+    h_spacing: f32,
+    v_spacing: f32,
 }
 
 fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
@@ -67,6 +242,48 @@ fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiHLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiVLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiGrid(node) => Some(&node.base),
+        _ => None,
+    }
+}
+
+fn ui_auto_layout_from_data(data: &SceneNodeData) -> Option<UiAutoLayout> {
+    match data {
+        SceneNodeData::UiLayout(node) => {
+            let h_spacing = if node.inner.h_spacing != 0.0 {
+                node.inner.h_spacing
+            } else {
+                node.inner.spacing
+            };
+            let v_spacing = if node.inner.v_spacing != 0.0 {
+                node.inner.v_spacing
+            } else {
+                node.inner.spacing
+            };
+            Some(UiAutoLayout {
+                mode: node.inner.mode,
+                columns: node.inner.columns.max(1),
+                h_spacing,
+                v_spacing,
+            })
+        }
+        SceneNodeData::UiHLayout(node) => Some(UiAutoLayout {
+            mode: UiLayoutMode::H,
+            columns: node.inner.columns.max(1),
+            h_spacing: node.inner.h_spacing.max(node.inner.spacing),
+            v_spacing: node.inner.v_spacing.max(node.inner.spacing),
+        }),
+        SceneNodeData::UiVLayout(node) => Some(UiAutoLayout {
+            mode: UiLayoutMode::V,
+            columns: node.inner.columns.max(1),
+            h_spacing: node.inner.h_spacing.max(node.inner.spacing),
+            v_spacing: node.inner.v_spacing.max(node.inner.spacing),
+        }),
+        SceneNodeData::UiGrid(node) => Some(UiAutoLayout {
+            mode: UiLayoutMode::Grid,
+            columns: node.columns.max(1),
+            h_spacing: node.h_spacing,
+            v_spacing: node.v_spacing,
+        }),
         _ => None,
     }
 }

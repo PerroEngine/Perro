@@ -138,14 +138,14 @@ Example:
 Done:
 
 - anchor / pivot / translation / size resolve through parent chain
+- padding as child content inset
+- margin as child outer inset
+- H/V/Grid child placement
 - UI render commands are emitted for panel/button/label
 - egui-style screen rect conversion exists in render bridge
 
 Not done:
 
-- padding as child content inset
-- margin
-- H/V/Grid child placement
 - Fill / FitChildren
 - text measure
 - hit test / focus / clicks
