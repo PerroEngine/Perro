@@ -177,6 +177,26 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.layout.scale = v;
             }
         }
+        "h_size" | "horizontal_size" | "width_mode" => {
+            if let Some(v) = as_ui_size_mode(value) {
+                node.layout.h_size = v;
+            }
+        }
+        "v_size" | "vertical_size" | "height_mode" => {
+            if let Some(v) = as_ui_size_mode(value) {
+                node.layout.v_size = v;
+            }
+        }
+        "h_align" | "horizontal_align" => {
+            if let Some(v) = as_ui_horizontal_align(value) {
+                node.layout.h_align = v;
+            }
+        }
+        "v_align" | "vertical_align" => {
+            if let Some(v) = as_ui_vertical_align(value) {
+                node.layout.v_align = v;
+            }
+        }
         "min_size" => {
             if let Some(v) = as_vec2(value) {
                 node.layout.min_size = v;
@@ -425,6 +445,49 @@ fn as_ui_layout_mode(value: &SceneValue) -> Option<perro_ui::UiLayoutMode> {
             Some(perro_ui::UiLayoutMode::V)
         }
         "g" | "grid" => Some(perro_ui::UiLayoutMode::Grid),
+        _ => None,
+    }
+}
+
+fn as_ui_size_mode(value: &SceneValue) -> Option<perro_ui::UiSizeMode> {
+    match as_str(value)?
+        .to_ascii_lowercase()
+        .replace([' ', '-', '_'], "")
+        .as_str()
+    {
+        "fixed" | "f" => Some(perro_ui::UiSizeMode::Fixed),
+        "fill" | "expand" => Some(perro_ui::UiSizeMode::Fill),
+        "fit" | "fitchild" | "fitchildren" | "wrap" | "content" => {
+            Some(perro_ui::UiSizeMode::FitChildren)
+        }
+        _ => None,
+    }
+}
+
+fn as_ui_horizontal_align(value: &SceneValue) -> Option<perro_ui::UiHorizontalAlign> {
+    match as_str(value)?
+        .to_ascii_lowercase()
+        .replace([' ', '-', '_'], "")
+        .as_str()
+    {
+        "start" | "left" | "l" => Some(perro_ui::UiHorizontalAlign::Left),
+        "center" | "c" | "middle" => Some(perro_ui::UiHorizontalAlign::Center),
+        "end" | "right" | "r" => Some(perro_ui::UiHorizontalAlign::Right),
+        "fill" | "stretch" => Some(perro_ui::UiHorizontalAlign::Fill),
+        _ => None,
+    }
+}
+
+fn as_ui_vertical_align(value: &SceneValue) -> Option<perro_ui::UiVerticalAlign> {
+    match as_str(value)?
+        .to_ascii_lowercase()
+        .replace([' ', '-', '_'], "")
+        .as_str()
+    {
+        "start" | "top" | "t" => Some(perro_ui::UiVerticalAlign::Top),
+        "center" | "c" | "middle" => Some(perro_ui::UiVerticalAlign::Center),
+        "end" | "bottom" | "b" => Some(perro_ui::UiVerticalAlign::Bottom),
+        "fill" | "stretch" => Some(perro_ui::UiVerticalAlign::Fill),
         _ => None,
     }
 }

@@ -3,7 +3,7 @@ use crate::{
     sub_apis::{AnimPlayerAPI, SceneAPI},
 };
 use perro_ids::{AnimationID, IntoTagID, NodeID, TagID};
-use perro_nodes::prelude::{Node2D, UiRect};
+use perro_nodes::prelude::{Node2D, UiRect, UiSizeMode};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::any::Any;
 
@@ -445,6 +445,8 @@ fn script_macros_typecheck_and_forward() {
     assert!(!set_ui_scale!(&mut ctx, id, Vector2::new(2.0, 0.5)));
     assert!(!set_ui_padding!(&mut ctx, id, UiRect::all(8.0)));
     assert!(!set_ui_margin!(&mut ctx, id, UiRect::symmetric(4.0, 2.0)));
+    assert!(!set_ui_h_size!(&mut ctx, id, UiSizeMode::Fill));
+    assert!(!set_ui_v_size!(&mut ctx, id, UiSizeMode::FitChildren));
     assert!(!set_ui_min_w!(&mut ctx, id, 100.0));
     assert!(!set_ui_min_h!(&mut ctx, id, 50.0));
     assert!(!set_ui_max_w!(&mut ctx, id, 1200.0));

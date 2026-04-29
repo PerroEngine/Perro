@@ -323,6 +323,10 @@ impl UiLayoutData {
 
     pub fn resolved_size(&self, parent_size: Vector2) -> Vector2 {
         let size = self.size.resolve(parent_size);
+        self.clamp_size(size)
+    }
+
+    pub fn clamp_size(&self, size: Vector2) -> Vector2 {
         Vector2::new(
             size.x.max(self.min_size.x).min(self.max_size.x),
             size.y.max(self.min_size.y).min(self.max_size.y),
@@ -331,6 +335,10 @@ impl UiLayoutData {
 
     pub fn resolved_scaled_size(&self, parent_size: Vector2) -> Vector2 {
         let size = self.resolved_size(parent_size);
+        self.scale_size(size)
+    }
+
+    pub fn scale_size(&self, size: Vector2) -> Vector2 {
         Vector2::new(size.x * self.scale.x, size.y * self.scale.y)
     }
 
@@ -345,6 +353,10 @@ impl UiLayoutData {
 
     pub fn compute_rect(&self, parent: ComputedUiRect) -> ComputedUiRect {
         let size = self.resolved_scaled_size(parent.size);
+        self.compute_rect_with_size(parent, size)
+    }
+
+    pub fn compute_rect_with_size(&self, parent: ComputedUiRect, size: Vector2) -> ComputedUiRect {
         let anchor = self.anchor.direction();
         let anchor_point = parent.center
             + Vector2::new(
@@ -643,11 +655,15 @@ impl UiLayoutContainer {
     }
 
     pub const fn horizontal() -> Self {
-        Self::new(UiLayoutMode::H)
+        let mut value = Self::new(UiLayoutMode::H);
+        value.base.layout.v_align = UiVerticalAlign::Center;
+        value
     }
 
     pub const fn vertical() -> Self {
-        Self::new(UiLayoutMode::V)
+        let mut value = Self::new(UiLayoutMode::V);
+        value.base.layout.h_align = UiHorizontalAlign::Center;
+        value
     }
 
     pub const fn grid() -> Self {
@@ -672,13 +688,15 @@ pub struct UiFixedLayoutContainer {
 
 impl UiFixedLayoutContainer {
     pub const fn new() -> Self {
-        Self {
+        let mut value = Self {
             base: UiBox::new(),
             spacing: 0.0,
             h_spacing: 0.0,
             v_spacing: 0.0,
             columns: 1,
-        }
+        };
+        value.base.layout.v_align = UiVerticalAlign::Center;
+        value
     }
 }
 
@@ -785,9 +803,11 @@ pub struct UiVLayout {
 
 impl UiVLayout {
     pub const fn new() -> Self {
-        Self {
+        let mut value = Self {
             inner: UiFixedLayoutContainer::new(),
-        }
+        };
+        value.inner.base.layout.h_align = UiHorizontalAlign::Center;
+        value
     }
 
     pub const fn mode(&self) -> UiLayoutMode {

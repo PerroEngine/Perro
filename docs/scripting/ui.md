@@ -80,6 +80,10 @@ Common fields live on `UiBox` data and all UI nodes inherit them:
 - `pivot_ratio`
 - `translation`
 - `scale`
+- `h_size`
+- `v_size`
+- `h_align`
+- `v_align`
 - `min_size`
 - `max_size`
 - `min_w`
@@ -119,6 +123,9 @@ Children use parent UI rect as parent.
 `pivot_ratio = (0.5, 0.5)` means pivot at node center.
 `translation` applies after anchor / position / pivot resolve.
 `scale` multiplies final clamped size.
+`h_size` and `v_size` accept `fixed`, `fill`, or `fit_children`.
+`h_align` accepts `start`, `center`, `end`, or `fill`.
+`v_align` accepts `start`, `center`, `end`, or `fill`.
 `min_size`, `max_size`, `min_w`, `min_h`, `max_w`, and `max_h` are pixel clamps after size resolve.
 
 Example:
@@ -141,12 +148,14 @@ Done:
 - padding as child content inset
 - margin as child outer inset
 - H/V/Grid child placement
+- H/V/Grid alignment
+- Fill / FitChildren
+- approximate text measure
 - UI render commands are emitted for panel/button/label
 - egui-style screen rect conversion exists in render bridge
 
 Not done:
 
-- Fill / FitChildren
-- text measure
+- exact font/glyph text measure
 - hit test / focus / clicks
 - actual egui paint backend

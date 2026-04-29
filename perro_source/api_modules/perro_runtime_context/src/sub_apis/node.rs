@@ -1,5 +1,7 @@
 use perro_ids::{IntoTagID, MaterialID, NodeID, TagID};
-use perro_nodes::{NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData, UiBox, UiRect};
+use perro_nodes::{
+    NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData, UiBox, UiRect, UiSizeMode,
+};
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
 
@@ -372,6 +374,22 @@ pub trait NodeAPI {
         .is_some()
     }
 
+    /// Sets UI horizontal size mode. Works on `UiBox` and descendants.
+    fn set_ui_h_size(&mut self, node_id: NodeID, mode: UiSizeMode) -> bool {
+        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
+            node.layout.h_size = mode;
+        })
+        .is_some()
+    }
+
+    /// Sets UI vertical size mode. Works on `UiBox` and descendants.
+    fn set_ui_v_size(&mut self, node_id: NodeID, mode: UiSizeMode) -> bool {
+        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
+            node.layout.v_size = mode;
+        })
+        .is_some()
+    }
+
     /// Sets UI minimum width in pixels. Works on `UiBox` and descendants.
     fn set_ui_min_w(&mut self, node_id: NodeID, value: f32) -> bool {
         self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
@@ -672,6 +690,14 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 
     pub fn set_ui_margin(&mut self, node_id: NodeID, margin: UiRect) -> bool {
         self.rt.set_ui_margin(node_id, margin)
+    }
+
+    pub fn set_ui_h_size(&mut self, node_id: NodeID, mode: UiSizeMode) -> bool {
+        self.rt.set_ui_h_size(node_id, mode)
+    }
+
+    pub fn set_ui_v_size(&mut self, node_id: NodeID, mode: UiSizeMode) -> bool {
+        self.rt.set_ui_v_size(node_id, mode)
     }
 
     pub fn set_ui_min_w(&mut self, node_id: NodeID, value: f32) -> bool {
@@ -1086,6 +1112,20 @@ macro_rules! set_ui_padding {
 macro_rules! set_ui_margin {
     ($ctx:expr, $id:expr, $margin:expr) => {
         $ctx.Nodes().set_ui_margin($id, $margin)
+    };
+}
+
+#[macro_export]
+macro_rules! set_ui_h_size {
+    ($ctx:expr, $id:expr, $mode:expr) => {
+        $ctx.Nodes().set_ui_h_size($id, $mode)
+    };
+}
+
+#[macro_export]
+macro_rules! set_ui_v_size {
+    ($ctx:expr, $id:expr, $mode:expr) => {
+        $ctx.Nodes().set_ui_v_size($id, $mode)
     };
 }
 
