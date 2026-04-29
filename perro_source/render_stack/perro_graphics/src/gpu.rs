@@ -11,8 +11,10 @@ use crate::{
         gpu::{Gpu2D, Prepare2D},
         renderer::{Camera2DUniform, RectInstanceGpu, RectUploadPlan},
     },
+    ui::gpu::GpuUi,
     visual_accessibility::VisualAccessibilityProcessor,
 };
+use epaint::{ClippedPrimitive, textures::TexturesDelta};
 use perro_ids::NodeID;
 use perro_render_bridge::{Camera3DState, PointParticles3DState, Sprite2DCommand};
 use perro_structs::VisualAccessibilitySettings;
@@ -63,6 +65,7 @@ pub struct Gpu {
     present_scene_bind_group: wgpu::BindGroup,
     present_intermediate_bind_group: wgpu::BindGroup,
     two_d: Option<Gpu2D>,
+    ui: Option<GpuUi>,
     three_d: Option<Gpu3D>,
     point_particles_3d: Option<GpuPointParticles3D>,
     last_prepare_particles_revision: u64,
@@ -93,6 +96,8 @@ pub struct RenderFrame<'a> {
     pub rects_2d: &'a [RectInstanceGpu],
     pub upload_2d: &'a RectUploadPlan,
     pub sprites_2d: &'a [Sprite2DCommand],
+    pub ui_primitives: &'a [ClippedPrimitive],
+    pub ui_textures_delta: &'a TexturesDelta,
     pub redraw_requested: bool,
     pub frame_dirty_bits: u32,
     pub static_texture_lookup: Option<StaticTextureLookup>,
@@ -266,6 +271,7 @@ impl Gpu {
             max_supported_sample_count,
         );
         let two_d = Gpu2D::new(&device, render_format, sample_count);
+        let ui = Some(GpuUi::new(&device, surface_format));
         let three_d = Gpu3D::new(
             &device,
             render_format,
@@ -307,6 +313,7 @@ impl Gpu {
             present_scene_bind_group,
             present_intermediate_bind_group,
             two_d: Some(two_d),
+            ui,
             three_d: Some(three_d),
             point_particles_3d: Some(point_particles_3d),
             last_prepare_particles_revision: u64::MAX,
@@ -412,6 +419,8 @@ impl Gpu {
             static_texture_lookup,
             static_mesh_lookup,
             static_shader_lookup,
+            ui_primitives,
+            ui_textures_delta,
         } = frame;
         let rect_draw_count = upload_2d.draw_count as u32;
         // Keep window alive for the full surface lifetime.
@@ -831,7 +840,28 @@ impl Gpu {
             timing.acquire_view = acquire_view_start.elapsed();
             timing.acquire = acquire_start.elapsed();
             self.present.apply(&mut encoder, final_bind_group, &view);
+            swap_view = Some(view);
             frame = Some(acquired);
+        }
+        if ui_primitives.is_empty() {
+            if let Some(ui) = self.ui.as_mut() {
+                ui.clear();
+            }
+        } else {
+            if self.ui.is_none() {
+                self.ui = Some(GpuUi::new(&self.device, self.config.format));
+            }
+            if let (Some(ui), Some(output_view)) = (self.ui.as_mut(), swap_view.as_ref()) {
+                let viewport = [self.config.width.max(1), self.config.height.max(1)];
+                ui.prepare(
+                    &self.device,
+                    &self.queue,
+                    viewport,
+                    ui_primitives,
+                    ui_textures_delta,
+                );
+                ui.render_pass(&mut encoder, output_view, viewport);
+            }
         }
         let submit_start = Instant::now();
         let submit_finish_start = Instant::now();
@@ -845,7 +875,8 @@ impl Gpu {
             .two_d
             .as_ref()
             .map(|two_d| two_d.draw_call_count(rect_draw_count))
-            .unwrap_or(0);
+            .unwrap_or(0)
+            + self.ui.as_ref().map(GpuUi::draw_call_count).unwrap_or(0);
         timing.draw_calls_3d = self
             .three_d
             .as_ref()

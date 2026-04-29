@@ -2,7 +2,7 @@ use super::Runtime;
 use ahash::AHashMap;
 use perro_ids::NodeID;
 use perro_nodes::SceneNodeData;
-use perro_render_bridge::{RenderCommand, UiCommand, UiRectState};
+use perro_render_bridge::{RenderCommand, UiCommand, UiRectState, UiTextAlignState};
 use perro_structs::Vector2;
 use perro_ui::{
     ComputedUiRect, UiBox, UiHorizontalAlign, UiLayoutData, UiLayoutMode, UiSizeMode, UiStyle,
@@ -916,8 +916,18 @@ fn ui_command_from_node(
             text: Cow::Owned(label.text.to_string()),
             color: label.color.to_rgba(),
             font_size: label.font_size,
+            h_align: text_align_state(label.h_align),
+            v_align: text_align_state(label.v_align),
         }),
         _ => None,
+    }
+}
+
+fn text_align_state(align: perro_ui::UiTextAlign) -> UiTextAlignState {
+    match align {
+        perro_ui::UiTextAlign::Start => UiTextAlignState::Start,
+        perro_ui::UiTextAlign::Center => UiTextAlignState::Center,
+        perro_ui::UiTextAlign::End => UiTextAlignState::End,
     }
 }
 

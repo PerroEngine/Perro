@@ -1,0 +1,10 @@
+# Optional script crate dependencies.
+# On `perro check`, `perro dev`, and `perro build`, these are merged into:
+#   .perro/scripts/Cargo.toml -> [dependencies]
+#
+# Keep `perro_api` + `perro_runtime` managed by the engine; they are injected automatically.
+#
+# Example:
+# serde = { version = "1", features = ["derive"] }
+# rand = "0.9"
+[dependencies]

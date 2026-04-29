@@ -8,7 +8,8 @@
     "playground/TwoDTest/.perro/scripts/Cargo.toml",
     "playground/phys_threed/.perro/scripts/Cargo.toml",
     "playground/phys_twod/.perro/scripts/Cargo.toml",
-    "playground/.perf/TransformPropagationPerf/.perro/scripts/Cargo.toml"
+    "playground/.perf/TransformPropagationPerf/.perro/scripts/Cargo.toml",
+    "playground/UiTest/.perro/scripts/Cargo.toml"
   ],
   "rust-analyzer.vfs.extraIncludes": [
     "${workspaceFolder}/playground/Animation/res/",
@@ -19,6 +20,7 @@
     "${workspaceFolder}/playground/TwoDTest/res/",
     "${workspaceFolder}/playground/phys_threed/res/",
     "${workspaceFolder}/playground/phys_twod/res/",
-    "${workspaceFolder}/playground/.perf/TransformPropagationPerf/res/"
+    "${workspaceFolder}/playground/.perf/TransformPropagationPerf/res/",
+    "${workspaceFolder}/playground/UiTest/res/"
   ]
 }

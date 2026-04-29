@@ -153,9 +153,10 @@ Done:
 - approximate text measure
 - UI render commands are emitted for panel/button/label
 - egui-style screen rect conversion exists in render bridge
+- egui tessellation path draws panel/button/label primitives
+- font atlas upload + mesh draw path exists in graphics backend
 
 Not done:
 
 - exact font/glyph text measure
 - hit test / focus / clicks
-- actual egui paint backend

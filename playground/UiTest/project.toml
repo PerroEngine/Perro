@@ -1,0 +1,35 @@
+[project]
+name = "UiTest"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+startup_splash = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+vsync = false
+
+msaa = true
+
+meshlets = false
+dev_meshlets = false
+release_meshlets = true
+meshlet_debug_view = false
+
+occlusion_culling = "gpu"
+
+particle_sim_default = "gpu"
+
+[runtime]
+target_fixed_update = 60
+
+[physics]
+gravity = -9.81
+coef = 1.0
+
+# Optional CSV localization table.
+# Columns example: key,en,es,fr,ja,zh
+#
+# [localization]
+# source = "res://localization.csv"
+# key = "key"
+# default_locale = "en"

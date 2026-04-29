@@ -71,11 +71,21 @@ pub enum UiCommand {
         text: Cow<'static, str>,
         color: [f32; 4],
         font_size: f32,
+        h_align: UiTextAlignState,
+        v_align: UiTextAlignState,
     },
     RemoveNode {
         node: NodeID,
     },
     Clear,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum UiTextAlignState {
+    #[default]
+    Start,
+    Center,
+    End,
 }
 
 #[derive(Debug, Clone, PartialEq)]

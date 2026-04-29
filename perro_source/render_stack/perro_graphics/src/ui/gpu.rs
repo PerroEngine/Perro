@@ -1,0 +1,444 @@
+use bytemuck::{Pod, Zeroable};
+use epaint::{ClippedPrimitive, ImageData, Primitive, TextureId, textures::TexturesDelta};
+use std::borrow::Cow;
+use wgpu::util::DeviceExt;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Zeroable, Pod)]
+struct UiVertexGpu {
+    pos: [f32; 2],
+    uv: [f32; 2],
+    color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Zeroable, Pod)]
+struct UiUniformGpu {
+    screen_size: [f32; 2],
+    _pad: [f32; 2],
+}
+
+struct UiTextureGpu {
+    texture: wgpu::Texture,
+    bind_group: wgpu::BindGroup,
+}
+
+struct UiMeshGpu {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    index_count: u32,
+    clip_rect: [u32; 4],
+}
+
+pub struct GpuUi {
+    pipeline: wgpu::RenderPipeline,
+    uniform_buffer: wgpu::Buffer,
+    uniform_bind_group: wgpu::BindGroup,
+    texture_bind_group_layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    font_texture: Option<UiTextureGpu>,
+    meshes: Vec<UiMeshGpu>,
+    vertices: Vec<UiVertexGpu>,
+    indices: Vec<u32>,
+}
+
+impl GpuUi {
+    pub fn new(device: &wgpu::Device, output_format: wgpu::TextureFormat) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("perro_ui_epaint_shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(UI_SHADER)),
+        });
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_ui_uniform"),
+            size: std::mem::size_of::<UiUniformGpu>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("perro_ui_uniform_bgl"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_ui_uniform_bg"),
+            layout: &uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        });
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("perro_ui_texture_bgl"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("perro_ui_sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("perro_ui_pipeline_layout"),
+            bind_group_layouts: &[Some(&uniform_bind_group_layout), Some(&texture_bind_group_layout)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("perro_ui_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<UiVertexGpu>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 0,
+                            shader_location: 0,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 8,
+                            shader_location: 1,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x4,
+                            offset: 16,
+                            shader_location: 2,
+                        },
+                    ],
+                }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: output_format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+        Self {
+            pipeline,
+            uniform_buffer,
+            uniform_bind_group,
+            texture_bind_group_layout,
+            sampler,
+            font_texture: None,
+            meshes: Vec::new(),
+            vertices: Vec::new(),
+            indices: Vec::new(),
+        }
+    }
+
+    pub fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        viewport: [u32; 2],
+        primitives: &[ClippedPrimitive],
+        textures_delta: &TexturesDelta,
+    ) {
+        queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::bytes_of(&UiUniformGpu {
+                screen_size: [viewport[0].max(1) as f32, viewport[1].max(1) as f32],
+                _pad: [0.0, 0.0],
+            }),
+        );
+        for (texture_id, delta) in &textures_delta.set {
+            if *texture_id == TextureId::default() {
+                self.apply_font_delta(device, queue, delta);
+            }
+        }
+        self.meshes.clear();
+        for primitive in primitives {
+            let Primitive::Mesh(mesh) = &primitive.primitive else {
+                continue;
+            };
+            if mesh.texture_id != TextureId::default()
+                || mesh.vertices.is_empty()
+                || mesh.indices.is_empty()
+            {
+                continue;
+            }
+            self.vertices.clear();
+            self.indices.clear();
+            self.vertices.reserve(mesh.vertices.len());
+            self.indices.extend_from_slice(&mesh.indices);
+            self.vertices.extend(mesh.vertices.iter().map(|vertex| {
+                let [r, g, b, a] = vertex.color.to_array();
+                UiVertexGpu {
+                    pos: [vertex.pos.x, vertex.pos.y],
+                    uv: [vertex.uv.x, vertex.uv.y],
+                    color: [
+                        r as f32 / 255.0,
+                        g as f32 / 255.0,
+                        b as f32 / 255.0,
+                        a as f32 / 255.0,
+                    ],
+                }
+            }));
+            let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("perro_ui_vertices"),
+                contents: bytemuck::cast_slice(&self.vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("perro_ui_indices"),
+                contents: bytemuck::cast_slice(&self.indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+            self.meshes.push(UiMeshGpu {
+                vertex_buffer,
+                index_buffer,
+                index_count: mesh.indices.len().min(u32::MAX as usize) as u32,
+                clip_rect: clip_rect(primitive, viewport),
+            });
+        }
+    }
+
+    pub fn render_pass(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        output_view: &wgpu::TextureView,
+        viewport: [u32; 2],
+    ) {
+        if self.meshes.is_empty() || self.font_texture.is_none() {
+            return;
+        }
+        let font_texture = self.font_texture.as_ref().expect("checked above");
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("perro_ui_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: output_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+        pass.set_bind_group(1, &font_texture.bind_group, &[]);
+        for mesh in &self.meshes {
+            if mesh.clip_rect[2] == 0 || mesh.clip_rect[3] == 0 {
+                continue;
+            }
+            pass.set_scissor_rect(
+                mesh.clip_rect[0],
+                mesh.clip_rect[1],
+                mesh.clip_rect[2].min(viewport[0]),
+                mesh.clip_rect[3].min(viewport[1]),
+            );
+            pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+            pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+        }
+    }
+
+    pub fn draw_call_count(&self) -> u32 {
+        self.meshes.len().min(u32::MAX as usize) as u32
+    }
+
+    pub fn clear(&mut self) {
+        self.meshes.clear();
+    }
+
+    fn apply_font_delta(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        delta: &epaint::ImageDelta,
+    ) {
+        let ImageData::Color(image) = &delta.image;
+        let size = [image.size[0] as u32, image.size[1] as u32];
+        let mut rgba = Vec::with_capacity(image.pixels.len() * 4);
+        for pixel in &image.pixels {
+            rgba.extend_from_slice(&pixel.to_array());
+        }
+        if delta.pos.is_none() || self.font_texture.is_none() {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("perro_ui_font_texture"),
+                size: wgpu::Extent3d {
+                    width: size[0].max(1),
+                    height: size[1].max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_ui_font_bg"),
+                layout: &self.texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            });
+            self.font_texture = Some(UiTextureGpu {
+                texture,
+                bind_group,
+            });
+        }
+        let Some(font_texture) = self.font_texture.as_ref() else {
+            return;
+        };
+        let origin = delta.pos.unwrap_or([0, 0]);
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &font_texture.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: origin[0] as u32,
+                    y: origin[1] as u32,
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size[0].max(1) * 4),
+                rows_per_image: Some(size[1].max(1)),
+            },
+            wgpu::Extent3d {
+                width: size[0].max(1),
+                height: size[1].max(1),
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+}
+
+fn clip_rect(primitive: &ClippedPrimitive, viewport: [u32; 2]) -> [u32; 4] {
+    let min_x = primitive.clip_rect.min.x.floor().max(0.0) as u32;
+    let min_y = primitive.clip_rect.min.y.floor().max(0.0) as u32;
+    let max_x = primitive
+        .clip_rect
+        .max
+        .x
+        .ceil()
+        .min(viewport[0] as f32)
+        .max(min_x as f32) as u32;
+    let max_y = primitive
+        .clip_rect
+        .max
+        .y
+        .ceil()
+        .min(viewport[1] as f32)
+        .max(min_y as f32) as u32;
+    [min_x, min_y, max_x - min_x, max_y - min_y]
+}
+
+const UI_SHADER: &str = r#"
+struct UiUniform {
+    screen_size: vec2<f32>,
+    _pad: vec2<f32>,
+};
+
+@group(0) @binding(0) var<uniform> ui: UiUniform;
+@group(1) @binding(0) var font_tex: texture_2d<f32>;
+@group(1) @binding(1) var font_sampler: sampler;
+
+struct VsIn {
+    @location(0) pos: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
+};
+
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
+};
+
+@vertex
+fn vs_main(in: VsIn) -> VsOut {
+    let x = (in.pos.x / max(ui.screen_size.x, 1.0)) * 2.0 - 1.0;
+    let y = 1.0 - (in.pos.y / max(ui.screen_size.y, 1.0)) * 2.0;
+    var out: VsOut;
+    out.pos = vec4<f32>(x, y, 0.0, 1.0);
+    out.uv = in.uv;
+    out.color = in.color;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    return textureSample(font_tex, font_sampler, in.uv) * in.color;
+}
+"#;

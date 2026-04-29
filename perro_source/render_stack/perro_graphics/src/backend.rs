@@ -7,7 +7,7 @@ use crate::{
     three_d::particles::renderer::Particles3DRenderer,
     three_d::renderer::Renderer3D,
     three_d::{gpu::validate_mesh_source, renderer::Draw3DInstance, renderer::Draw3DKind},
-    two_d::renderer::{RectInstanceGpu, RectUploadPlan, Renderer2D},
+    two_d::renderer::{RectInstanceGpu, Renderer2D},
     ui::renderer::UiRenderer,
 };
 use ahash::AHashSet;
@@ -719,9 +719,7 @@ impl GraphicsBackend for PerroGraphics {
         self.frame_rects_cache.clear();
         let retained_rect_count = self.renderer_2d.retained_rects().len();
         let frame_shape_count = self.renderer_2d.frame_shapes().len();
-        let ui_primitives = self.renderer_ui.primitives();
-        let ui_rect_count = ui_primitives.len();
-        let total_rect_count = retained_rect_count + frame_shape_count + ui_rect_count;
+        let total_rect_count = retained_rect_count + frame_shape_count;
         if self.frame_rects_cache.capacity() < total_rect_count {
             self.frame_rects_cache
                 .reserve(total_rect_count - self.frame_rects_cache.capacity());
@@ -730,18 +728,9 @@ impl GraphicsBackend for PerroGraphics {
             .extend_from_slice(self.renderer_2d.retained_rects());
         self.frame_rects_cache
             .extend_from_slice(self.renderer_2d.frame_shapes());
-        self.frame_rects_cache.extend_from_slice(ui_primitives);
-        let combined_upload;
-        let upload = if ui_rect_count > 0 {
-            combined_upload = RectUploadPlan {
-                full_reupload: true,
-                dirty_ranges: Vec::new(),
-                draw_count: total_rect_count,
-            };
-            &combined_upload
-        } else {
-            &upload
-        };
+        let ui_paint =
+            self.renderer_ui
+                .prepare_paint([self.viewport.0 as f32, self.viewport.1 as f32]);
         let sprites_refs_changed = self.used_ref_sprites_revision != sprites_revision;
         if sprites_refs_changed {
             self.used_texture_refs_cache.clear();
@@ -806,8 +795,10 @@ impl GraphicsBackend for PerroGraphics {
                 post_processing_global: self.global_post_processing.as_slice().into(),
                 accessibility: self.accessibility,
                 rects_2d: &self.frame_rects_cache,
-                upload_2d: upload,
+                upload_2d: &upload,
                 sprites_2d: &self.retained_sprites_cache,
+                ui_primitives: ui_paint.primitives,
+                ui_textures_delta: ui_paint.textures_delta,
                 redraw_requested: self.redraw_requested,
                 frame_dirty_bits,
                 static_texture_lookup: self.static_texture_lookup,

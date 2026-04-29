@@ -1,0 +1,399 @@
+@root = ui_root
+
+[ui_root]
+name = "UI Test Root"
+[UiPanel]
+    anchor = "center"
+    position_ratio = (0.5, 0.5)
+    size_ratio = (1.0, 1.0)
+    fill = "#151820"
+    stroke = "#2E3440"
+    stroke_width = 2
+    padding = (24, 24, 24, 24)
+[/UiPanel]
+[/ui_root]
+
+[top_bar]
+parent = @root
+[UiPanel]
+    anchor = "top"
+    position = (0, -16)
+    size_ratio = (0.96, 0.09)
+    min_h = 72
+    max_h = 96
+    fill = "#202838"
+    stroke = "#516071"
+    corner_radius = 6
+    padding = (18, 12, 18, 12)
+[/UiPanel]
+[/top_bar]
+
+[top_bar_row]
+parent = top_bar
+[UiHLayout]
+    anchor = "center"
+    size_ratio = (1.0, 1.0)
+    spacing = 14
+    padding = (10, 8, 10, 8)
+    h_align = "fill"
+    v_align = "center"
+[/UiHLayout]
+[/top_bar_row]
+
+[title_label]
+parent = top_bar_row
+[UiLabel]
+    text = "UiTest: panels / layouts / anchors"
+    font_size = 30
+    color = "#F4F7FB"
+    size = (560, 48)
+    h_align = "left"
+    v_align = "center"
+[/UiLabel]
+[/title_label]
+
+[play_button]
+parent = top_bar_row
+[UiButton]
+    text = "Play"
+    size = (180, 48)
+    fill = "#355C7D"
+    hover_fill = "#3F6F96"
+    pressed_fill = "#2A4862"
+    stroke = "#80A8C8"
+    corner_radius = 5
+[/UiButton]
+[/play_button]
+
+[settings_button]
+parent = top_bar_row
+[UiButton]
+    text = "Settings"
+    size = (220, 48)
+    fill = "#4B6F44"
+    hover_fill = "#5B8352"
+    pressed_fill = "#3D5A38"
+    stroke = "#8EBC86"
+    corner_radius = 5
+[/UiButton]
+[/settings_button]
+
+[left_panel]
+parent = @root
+[UiPanel]
+    anchor = "left"
+    position = (28, -20)
+    size_ratio = (0.23, 0.72)
+    min_w = 300
+    max_w = 440
+    fill = "#1D2531"
+    stroke = "#435066"
+    padding = (14, 14, 14, 14)
+[/UiPanel]
+[/left_panel]
+
+[left_stack]
+parent = left_panel
+[UiVLayout]
+    anchor = "center"
+    size_ratio = (1.0, 1.0)
+    spacing = 12
+    padding = (12, 12, 12, 12)
+    h_align = "fill"
+    v_align = "top"
+[/UiVLayout]
+[/left_stack]
+
+[left_header]
+parent = left_stack
+[UiLabel]
+    text = "VLayout / fill width"
+    font_size = 24
+    color = "#D8DEE9"
+    size = (300, 44)
+    h_align = "center"
+    v_align = "center"
+[/UiLabel]
+[/left_header]
+
+[left_button_a]
+parent = left_stack
+[UiButton]
+    text = "Fixed 260x44"
+    size = (260, 44)
+    fill = "#5E506A"
+    stroke = "#A08DB1"
+[/UiButton]
+[/left_button_a]
+
+[left_button_b]
+parent = left_stack
+[UiButton]
+    text = "Wide 320x52"
+    size = (320, 52)
+    fill = "#6A4E4E"
+    stroke = "#B88B8B"
+[/UiButton]
+[/left_button_b]
+
+[left_note]
+parent = left_stack
+[UiLabel]
+    text = "margin + padding sample"
+    font_size = 18
+    color = "#BFC7D5"
+    size = (300, 36)
+    margin = (4, 8, 4, 8)
+[/UiLabel]
+[/left_note]
+
+[center_panel]
+parent = @root
+[UiPanel]
+    anchor = "center"
+    position = (80, -20)
+    size_ratio = (0.42, 0.58)
+    min_size = (560, 420)
+    fill = "#1B2A2D"
+    stroke = "#4F6E73"
+    corner_radius = 8
+    padding = (18, 18, 18, 18)
+[/UiPanel]
+[/center_panel]
+
+[center_grid]
+parent = center_panel
+[UiGrid]
+    anchor = "center"
+    size_ratio = (1.0, 1.0)
+    columns = 3
+    h_spacing = 16
+    v_spacing = 16
+    padding = (16, 16, 16, 16)
+[/UiGrid]
+[/center_grid]
+
+[grid_a]
+parent = center_grid
+[UiPanel]
+    size = (150, 110)
+    fill = "#27454D"
+    stroke = "#73A6B2"
+[/UiPanel]
+[/grid_a]
+
+[grid_b]
+parent = center_grid
+[UiButton]
+    text = "Grid B"
+    size = (150, 110)
+    fill = "#48603A"
+    stroke = "#9BBE7D"
+[/UiButton]
+[/grid_b]
+
+[grid_c]
+parent = center_grid
+[UiLabel]
+    text = "Grid C"
+    font_size = 22
+    color = "#F0F4C3"
+    size = (150, 110)
+    h_align = "center"
+    v_align = "center"
+[/UiLabel]
+[/grid_c]
+
+[grid_d]
+parent = center_grid
+[UiPanel]
+    size = (150, 110)
+    fill = "#4C3B55"
+    stroke = "#B28AC4"
+    scale = (1.15, 0.85)
+[/UiPanel]
+[/grid_d]
+
+[grid_e]
+parent = center_grid
+[UiButton]
+    text = "Disabled"
+    disabled = true
+    size = (150, 110)
+    fill = "#3E424A"
+    stroke = "#707782"
+[/UiButton]
+[/grid_e]
+
+[grid_f]
+parent = center_grid
+[UiPanel]
+    size = (150, 110)
+    fill = "#604A2A"
+    stroke = "#C69C55"
+[/UiPanel]
+[/grid_f]
+
+[right_panel]
+parent = @root
+[UiPanel]
+    anchor = "right"
+    position = (-28, -20)
+    size_ratio = (0.21, 0.72)
+    min_w = 280
+    max_w = 380
+    fill = "#25202D"
+    stroke = "#6B5A7A"
+    padding = (14, 14, 14, 14)
+[/UiPanel]
+[/right_panel]
+
+[right_layout]
+parent = right_panel
+[UiLayout]
+    mode = "v"
+    anchor = "center"
+    size_ratio = (1.0, 1.0)
+    spacing = 10
+    padding = (10, 10, 10, 10)
+    h_align = "center"
+    v_align = "top"
+[/UiLayout]
+[/right_layout]
+
+[right_title]
+parent = right_layout
+[UiLabel]
+    text = "UiLayout mode=v"
+    font_size = 22
+    color = "#EDE7F6"
+    size = (260, 42)
+    h_align = "center"
+    v_align = "center"
+[/UiLabel]
+[/right_title]
+
+[right_chip_a]
+parent = right_layout
+[UiPanel]
+    size = (220, 46)
+    fill = "#3A3150"
+    stroke = "#8B79B8"
+    corner_radius = 20
+[/UiPanel]
+[/right_chip_a]
+
+[right_chip_label_a]
+parent = right_chip_a
+[UiLabel]
+    text = "nested label"
+    font_size = 18
+    color = "#F6F0FF"
+    size_ratio = (1.0, 1.0)
+    h_align = "center"
+    v_align = "center"
+[/UiLabel]
+[/right_chip_label_a]
+
+[right_button]
+parent = right_layout
+[UiButton]
+    text = "Fit text"
+    size = (220, 48)
+    fill = "#664F31"
+    stroke = "#C59B58"
+[/UiButton]
+[/right_button]
+
+[anchor_tl]
+parent = @root
+[UiPanel]
+    anchor = "tl"
+    position = (24, -128)
+    size = (130, 70)
+    fill = "#643D3D"
+    stroke = "#C07D7D"
+[/UiPanel]
+[/anchor_tl]
+
+[anchor_tr]
+parent = @root
+[UiPanel]
+    anchor = "tr"
+    position = (-24, -128)
+    size = (130, 70)
+    fill = "#3D5F64"
+    stroke = "#81C7D1"
+[/UiPanel]
+[/anchor_tr]
+
+[anchor_bl]
+parent = @root
+[UiPanel]
+    anchor = "bl"
+    position = (24, 24)
+    size = (130, 70)
+    fill = "#4E5A38"
+    stroke = "#A5B970"
+[/UiPanel]
+[/anchor_bl]
+
+[anchor_br]
+parent = @root
+[UiPanel]
+    anchor = "br"
+    position = (-24, 24)
+    size = (130, 70)
+    fill = "#5B4B34"
+    stroke = "#C0A16D"
+[/UiPanel]
+[/anchor_br]
+
+[bottom_bar]
+parent = @root
+[UiHLayout]
+    anchor = "bottom"
+    position = (0, 22)
+    size_ratio = (0.72, 0.08)
+    min_h = 56
+    max_h = 76
+    spacing = 18
+    padding = (14, 8, 14, 8)
+    h_align = "center"
+    v_align = "center"
+[/UiHLayout]
+[/bottom_bar]
+
+[bottom_status]
+parent = bottom_bar
+[UiLabel]
+    text = "bottom anchor + HLayout"
+    font_size = 20
+    color = "#ECEFF4"
+    size = (310, 42)
+    h_align = "center"
+    v_align = "center"
+[/UiLabel]
+[/bottom_status]
+
+[bottom_button_a]
+parent = bottom_bar
+[UiButton]
+    text = "Pass"
+    mouse_filter = "pass"
+    size = (130, 42)
+    fill = "#2F5761"
+    stroke = "#77AEB9"
+[/UiButton]
+[/bottom_button_a]
+
+[bottom_button_b]
+parent = bottom_bar
+[UiButton]
+    text = "Ignore"
+    mouse_filter = "ignore"
+    size = (150, 42)
+    fill = "#5A3D58"
+    stroke = "#B980B5"
+[/UiButton]
+[/bottom_button_b]
