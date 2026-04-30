@@ -1,5 +1,6 @@
 use perro_compiler::{
     ScriptsBuildProfile, compile_dlc_bundle, compile_project_bundle, compile_scripts_with_profile,
+    sync_scripts,
 };
 use perro_project::{create_new_project, default_script_empty_rs};
 use serde_json::Value;
@@ -55,6 +56,7 @@ fn main() {
             "mem-profile" => mem_profile_command(&args, &cwd),
             "flamegraph" => flamegraph_command(&args, &cwd),
             "format" => format_command(&args, &cwd),
+            "clippy" => clippy_command(&args, &cwd),
             _ => {
                 print_usage();
                 Err(format!("unknown command `{command}`"))
@@ -89,6 +91,9 @@ fn print_usage() {
         "  perro_cli flamegraph [--path <project_dir>] [--profile] [--root]    # run cargo flamegraph for dev runner (auto-installs tool if missing)"
     );
     eprintln!("  perro_cli format [--path <project_dir>]   # rustfmt .rs under project res only");
+    eprintln!(
+        "  perro_cli clippy [--path <project_dir>]   # cargo clippy for .rs under project res"
+    );
     eprintln!("  perro_cli clean [--path <project_dir>]    # remove project target/");
     eprintln!(
         "  perro_cli install                          # add `perro` source-mode command in shell profile"
@@ -1704,7 +1709,7 @@ fn format_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
     let base_path = base_path.canonicalize().unwrap_or(base_path);
-    let res_dir = resolve_res_root_for_format(&base_path)?;
+    let res_dir = resolve_project_res_root(&base_path, "format")?;
     let mut script_files = Vec::new();
     collect_rs_files_recursive(&res_dir, &mut script_files)?;
 
@@ -1731,7 +1736,54 @@ fn format_command(args: &[String], cwd: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn resolve_res_root_for_format(path: &Path) -> Result<PathBuf, String> {
+fn clippy_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let project_dir = parse_flag_value(args, "--path")
+        .map(|p| resolve_local_path(&p, cwd))
+        .unwrap_or_else(|| cwd.to_path_buf());
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    let res_dir = resolve_project_res_root(&project_dir, "clippy")?;
+    let mut script_files = Vec::new();
+    collect_rs_files_recursive(&res_dir, &mut script_files)?;
+
+    if script_files.is_empty() {
+        log_note("No .rs files found under res");
+        return Ok(());
+    }
+
+    log_step("Syncing User Scripts");
+    sync_scripts(&project_dir).map_err(|err| format!("failed to sync scripts: {err}"))?;
+    log_done("User Scripts Synced");
+
+    log_step("Running Clippy For User Scripts");
+    let scripts_crate = project_dir.join(".perro").join("scripts");
+    let target_dir = project_dir.join("target");
+    let status = Command::new("cargo")
+        .arg("clippy")
+        .arg("--all-targets")
+        .arg("--")
+        .arg("-A")
+        .arg("clippy::not_unsafe_ptr_arg_deref")
+        .env("CARGO_TARGET_DIR", target_dir)
+        .current_dir(&scripts_crate)
+        .status()
+        .map_err(|err| {
+            format!(
+                "failed to run cargo clippy for {}: {err}",
+                scripts_crate.display()
+            )
+        })?;
+    if !status.success() {
+        return Err(format!(
+            "cargo clippy failed for {} with exit code {:?}",
+            scripts_crate.display(),
+            status.code()
+        ));
+    }
+    log_done("User Scripts Clippy Clean");
+    Ok(())
+}
+
+fn resolve_project_res_root(path: &Path, command: &str) -> Result<PathBuf, String> {
     let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
 
     // `--path` must point at project root.
@@ -1740,7 +1792,7 @@ fn resolve_res_root_for_format(path: &Path) -> Result<PathBuf, String> {
     }
 
     Err(format!(
-        "invalid --path `{}` for format. Use project root (directory containing project.toml).",
+        "invalid --path `{}` for {command}. Use project root (directory containing project.toml).",
         path.display()
     ))
 }

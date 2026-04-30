@@ -20,6 +20,7 @@ struct UiUniformGpu {
 struct UiTextureGpu {
     texture: wgpu::Texture,
     bind_group: wgpu::BindGroup,
+    size: [u32; 2],
 }
 
 struct UiMeshGpu {
@@ -206,6 +207,7 @@ impl GpuUi {
         viewport: [u32; 2],
         primitives: &[ClippedPrimitive],
         textures_delta: &TexturesDelta,
+        texture_size: [u32; 2],
         revision: u64,
     ) {
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
@@ -226,7 +228,7 @@ impl GpuUi {
         );
         for (texture_id, delta) in &textures_delta.set {
             if *texture_id == TextureId::default() {
-                self.apply_font_delta(device, queue, delta);
+                self.apply_font_delta(device, queue, delta, texture_size);
             }
         }
         self.meshes.clear();
@@ -371,19 +373,30 @@ impl GpuUi {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         delta: &epaint::ImageDelta,
+        texture_size: [u32; 2],
     ) {
         let ImageData::Color(image) = &delta.image;
         let size = [image.size[0] as u32, image.size[1] as u32];
+        let origin = delta.pos.unwrap_or([0, 0]);
+        let required_size = font_delta_required_size(size, origin, texture_size);
         let mut rgba = Vec::with_capacity(image.pixels.len() * 4);
         for pixel in &image.pixels {
             rgba.extend_from_slice(&pixel.to_array());
         }
-        if delta.pos.is_none() || self.font_texture.is_none() {
+        let needs_texture = match &self.font_texture {
+            Some(texture) => {
+                delta.pos.is_none()
+                    || texture.size[0] < required_size[0]
+                    || texture.size[1] < required_size[1]
+            }
+            None => true,
+        };
+        if needs_texture {
             let texture = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("perro_ui_font_texture"),
                 size: wgpu::Extent3d {
-                    width: size[0].max(1),
-                    height: size[1].max(1),
+                    width: required_size[0].max(1),
+                    height: required_size[1].max(1),
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: 1,
@@ -411,12 +424,12 @@ impl GpuUi {
             self.font_texture = Some(UiTextureGpu {
                 texture,
                 bind_group,
+                size: required_size,
             });
         }
         let Some(font_texture) = self.font_texture.as_ref() else {
             return;
         };
-        let origin = delta.pos.unwrap_or([0, 0]);
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &font_texture.texture,
@@ -439,6 +452,42 @@ impl GpuUi {
                 height: size[1].max(1),
                 depth_or_array_layers: 1,
             },
+        );
+    }
+}
+
+fn font_delta_required_size(
+    delta_size: [u32; 2],
+    origin: [usize; 2],
+    texture_size: [u32; 2],
+) -> [u32; 2] {
+    let origin_x = origin[0].min(u32::MAX as usize) as u32;
+    let origin_y = origin[1].min(u32::MAX as usize) as u32;
+    let required_width = origin_x.saturating_add(delta_size[0]);
+    let required_height = origin_y.saturating_add(delta_size[1]);
+    [
+        texture_size[0].max(required_width).max(1),
+        texture_size[1].max(required_height).max(1),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn font_delta_required_size_covers_partial_origin() {
+        assert_eq!(
+            font_delta_required_size([55, 12], [90, 4], [55, 16]),
+            [145, 16]
+        );
+    }
+
+    #[test]
+    fn font_delta_required_size_keeps_atlas_size() {
+        assert_eq!(
+            font_delta_required_size([55, 12], [0, 0], [2048, 32]),
+            [2048, 32]
         );
     }
 }

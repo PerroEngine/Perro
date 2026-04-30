@@ -8,6 +8,7 @@ This document covers Perro CLI in command-first style. Commands are shown using 
 - `build`
 - `flamegraph`
 - `format`
+- `clippy`
 - `clean`
 - `new`
 - `new_dlc`
@@ -27,6 +28,7 @@ perro mem-profile [--path <project_dir>] [--release] [--csv [csv_name]]
 perro build [--path <project_dir>]
 perro flamegraph [--path <project_dir>] [--profile] [--root]
 perro format [--path <project_dir>]
+perro clippy [--path <project_dir>]
 perro clean [--path <project_dir>]
 perro new [--path <parent_dir>] [--name <project_name>]
 perro new_dlc --name <dlc_name> [--path <project_dir>] [--no-open]
@@ -257,6 +259,21 @@ What it does:
 1. Resolves your path to that project's `res` root.
 2. Recursively finds all `*.rs` files under `res/**`.
 3. Runs `rustfmt` on those files.
+
+## `clippy`
+
+Command:
+
+```powershell
+perro clippy --path <project_dir>
+```
+
+What it does:
+
+1. Resolves your path to that project's `res` root.
+2. Recursively finds all `*.rs` files under `res/**`.
+3. Syncs those files into `.perro/scripts`.
+4. Runs `cargo clippy --all-targets` for the generated scripts crate.
 
 ## `clean`
 

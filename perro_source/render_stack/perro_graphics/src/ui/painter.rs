@@ -11,6 +11,7 @@ use perro_render_bridge::{UiRectState, UiTextAlignState};
 pub struct UiPaintFrame<'a> {
     pub primitives: &'a [ClippedPrimitive],
     pub textures_delta: &'a TexturesDelta,
+    pub texture_size: [u32; 2],
     pub revision: u64,
 }
 
@@ -126,9 +127,18 @@ impl UiPainter for EpaintUiPainter {
         UiPaintFrame {
             primitives: &self.primitives,
             textures_delta: &self.textures_delta,
+            texture_size: font_texture_size(&self.fonts),
             revision: self.paint_revision,
         }
     }
+}
+
+fn font_texture_size(fonts: &Fonts) -> [u32; 2] {
+    let size = fonts.font_image_size();
+    [
+        size[0].min(u32::MAX as usize) as u32,
+        size[1].min(u32::MAX as usize) as u32,
+    ]
 }
 
 fn ui_rect(draw: &UiDraw) -> UiRectState {

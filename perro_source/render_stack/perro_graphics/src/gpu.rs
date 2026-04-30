@@ -98,6 +98,7 @@ pub struct RenderFrame<'a> {
     pub sprites_2d: &'a [Sprite2DCommand],
     pub ui_primitives: &'a [ClippedPrimitive],
     pub ui_textures_delta: &'a TexturesDelta,
+    pub ui_texture_size: [u32; 2],
     pub ui_revision: u64,
     pub redraw_requested: bool,
     pub frame_dirty_bits: u32,
@@ -422,6 +423,7 @@ impl Gpu {
             static_shader_lookup,
             ui_primitives,
             ui_textures_delta,
+            ui_texture_size,
             ui_revision,
         } = frame;
         let rect_draw_count = upload_2d.draw_count as u32;
@@ -861,6 +863,7 @@ impl Gpu {
                     viewport,
                     ui_primitives,
                     ui_textures_delta,
+                    ui_texture_size,
                     ui_revision,
                 );
                 ui.render_pass(&mut encoder, output_view, viewport);

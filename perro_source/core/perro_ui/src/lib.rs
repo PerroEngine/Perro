@@ -527,6 +527,13 @@ impl UiLabel {
         self.text = text.into();
         self
     }
+
+    pub fn set_text<T>(&mut self, text: T)
+    where
+        T: Into<Cow<'static, str>>,
+    {
+        self.text = text.into();
+    }
 }
 
 impl Default for UiLabel {
@@ -939,6 +946,20 @@ mod tests {
 
         assert_eq!(label.h_align, UiTextAlign::Center);
         assert_eq!(label.v_align, UiTextAlign::Center);
+    }
+
+    #[test]
+    fn label_set_text_accepts_static_str_string_and_cow() {
+        let mut label = UiLabel::new();
+
+        label.set_text("static text");
+        assert!(matches!(label.text, Cow::Borrowed("static text")));
+
+        label.set_text(String::from("owned text"));
+        assert!(matches!(label.text, Cow::Owned(ref text) if text == "owned text"));
+
+        label.set_text(Cow::Borrowed("cow text"));
+        assert!(matches!(label.text, Cow::Borrowed("cow text")));
     }
 
     #[test]
