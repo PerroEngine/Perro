@@ -11,7 +11,7 @@ use crate::{
         gpu::{Gpu2D, Prepare2D},
         renderer::{Camera2DUniform, RectInstanceGpu, RectUploadPlan},
     },
-    ui::gpu::GpuUi,
+    ui::gpu::{GpuUi, UiPrepareInput},
     visual_accessibility::VisualAccessibilityProcessor,
 };
 use epaint::{ClippedPrimitive, textures::TexturesDelta};
@@ -860,11 +860,13 @@ impl Gpu {
                 ui.prepare(
                     &self.device,
                     &self.queue,
-                    viewport,
-                    ui_primitives,
-                    ui_textures_delta,
-                    ui_texture_size,
-                    ui_revision,
+                    UiPrepareInput {
+                        viewport,
+                        primitives: ui_primitives,
+                        textures_delta: ui_textures_delta,
+                        texture_size: ui_texture_size,
+                        revision: ui_revision,
+                    },
                 );
                 ui.render_pass(&mut encoder, output_view, viewport);
             }

@@ -157,13 +157,15 @@ fn push_button_shape(
 ) {
     push_panel_shape(&button.panel, viewport, out);
     push_text_shape(
-        button.panel.rect,
-        viewport,
-        button.text.as_ref(),
-        16.0,
-        button.text_color,
-        UiTextAlignState::Center,
-        UiTextAlignState::Center,
+        TextShapeInput {
+            rect: button.panel.rect,
+            viewport,
+            text: button.text.as_ref(),
+            font_size: 16.0,
+            color: button.text_color,
+            h_align: UiTextAlignState::Center,
+            v_align: UiTextAlignState::Center,
+        },
         fonts,
         out,
     );
@@ -176,13 +178,15 @@ fn push_label_shape(
     out: &mut Vec<ClippedShape>,
 ) {
     push_text_shape(
-        label.rect,
-        viewport,
-        label.text.as_ref(),
-        label.font_size,
-        label.color,
-        label.h_align,
-        label.v_align,
+        TextShapeInput {
+            rect: label.rect,
+            viewport,
+            text: label.text.as_ref(),
+            font_size: label.font_size,
+            color: label.color,
+            h_align: label.h_align,
+            v_align: label.v_align,
+        },
         fonts,
         out,
     );
@@ -216,17 +220,26 @@ fn resolve_corner_radius(panel: &UiPanelDraw) -> f32 {
     .min(u8::MAX as f32)
 }
 
-fn push_text_shape(
+struct TextShapeInput<'a> {
     rect: UiRectState,
     viewport: [f32; 2],
-    text: &str,
+    text: &'a str,
     font_size: f32,
     color: [f32; 4],
     h_align: UiTextAlignState,
     v_align: UiTextAlignState,
-    fonts: &mut Fonts,
-    out: &mut Vec<ClippedShape>,
-) {
+}
+
+fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<ClippedShape>) {
+    let TextShapeInput {
+        rect,
+        viewport,
+        text,
+        font_size,
+        color,
+        h_align,
+        v_align,
+    } = input;
     if text.is_empty()
         || !valid_rect(rect)
         || !valid_color(color)

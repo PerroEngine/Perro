@@ -79,8 +79,8 @@ impl Runtime {
         self.render_ui.removed_nodes = removed_nodes;
 
         let mut computed = std::mem::take(&mut self.render_ui.computed_rects);
-        for node in traversal_ids.iter().copied() {
-            computed.remove(&node);
+        for node in traversal_ids.iter() {
+            computed.remove(node);
         }
         for node in traversal_ids.iter().copied() {
             self.compute_ui_rect(node, root_rect, &mut computed);

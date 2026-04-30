@@ -47,6 +47,14 @@ pub struct GpuUi {
     prepared_viewport: [u32; 2],
 }
 
+pub struct UiPrepareInput<'a> {
+    pub viewport: [u32; 2],
+    pub primitives: &'a [ClippedPrimitive],
+    pub textures_delta: &'a TexturesDelta,
+    pub texture_size: [u32; 2],
+    pub revision: u64,
+}
+
 impl GpuUi {
     pub fn new(device: &wgpu::Device, output_format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -204,12 +212,15 @@ impl GpuUi {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        viewport: [u32; 2],
-        primitives: &[ClippedPrimitive],
-        textures_delta: &TexturesDelta,
-        texture_size: [u32; 2],
-        revision: u64,
+        input: UiPrepareInput<'_>,
     ) {
+        let UiPrepareInput {
+            viewport,
+            primitives,
+            textures_delta,
+            texture_size,
+            revision,
+        } = input;
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
         if self.prepared_revision == revision
             && self.prepared_viewport == viewport
@@ -471,27 +482,6 @@ fn font_delta_required_size(
     ]
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn font_delta_required_size_covers_partial_origin() {
-        assert_eq!(
-            font_delta_required_size([55, 12], [90, 4], [55, 16]),
-            [145, 16]
-        );
-    }
-
-    #[test]
-    fn font_delta_required_size_keeps_atlas_size() {
-        assert_eq!(
-            font_delta_required_size([55, 12], [0, 0], [2048, 32]),
-            [2048, 32]
-        );
-    }
-}
-
 fn clip_rect(primitive: &ClippedPrimitive, viewport: [u32; 2]) -> [u32; 4] {
     let min_x = primitive.clip_rect.min.x.floor().max(0.0) as u32;
     let min_y = primitive.clip_rect.min.y.floor().max(0.0) as u32;
@@ -581,3 +571,24 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     return textureSample(font_tex, font_sampler, in.uv) * in.color;
 }
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn font_delta_required_size_covers_partial_origin() {
+        assert_eq!(
+            font_delta_required_size([55, 12], [90, 4], [55, 16]),
+            [145, 16]
+        );
+    }
+
+    #[test]
+    fn font_delta_required_size_keeps_atlas_size() {
+        assert_eq!(
+            font_delta_required_size([55, 12], [0, 0], [2048, 32]),
+            [2048, 32]
+        );
+    }
+}

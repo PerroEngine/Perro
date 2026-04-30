@@ -12,8 +12,9 @@ use perro_structs::Vector2;
 pub use player::{PlayerBinding, PlayerModule, PlayerState};
 use std::cell::RefCell;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MouseMode {
+    #[default]
     Visible,
     Hidden,
     Captured,
@@ -35,12 +36,6 @@ impl MouseMode {
     #[inline]
     pub fn is_confined(self) -> bool {
         matches!(self, Self::Confined | Self::ConfinedHidden)
-    }
-}
-
-impl Default for MouseMode {
-    fn default() -> Self {
-        Self::Visible
     }
 }
 
