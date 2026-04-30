@@ -39,12 +39,11 @@ pub struct Camera2DUniform {
 pub struct RectInstanceGpu {
     pub center: [f32; 2],
     pub size: [f32; 2],
-    pub color: [f32; 4],
+    pub color: [u8; 4],
     pub z_index: i32,
     pub shape_kind: u32,
     pub thickness: f32,
     pub filled: u32,
-    pub _pad: u32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -163,12 +162,11 @@ impl Renderer2D {
                     RectInstanceGpu {
                         center: rect.center,
                         size: rect.size,
-                        color: rect.color,
+                        color: color_to_unorm8(rect.color),
                         z_index: rect.z_index,
                         shape_kind: 0,
                         thickness: 1.0,
                         filled: 1,
-                        _pad: 0,
                     },
                 );
                 stats.accepted_rects = stats.accepted_rects.saturating_add(1);
@@ -205,12 +203,11 @@ impl Renderer2D {
                     self.frame_shapes.push(RectInstanceGpu {
                         center,
                         size: [radius * 2.0, radius * 2.0],
-                        color,
+                        color: color_to_unorm8(color),
                         z_index: 900,
                         shape_kind: 1,
                         thickness: thickness.max(0.0),
                         filled: u32::from(filled),
-                        _pad: 0,
                     });
                 }
                 DrawShape2D::Rect {
@@ -231,12 +228,11 @@ impl Renderer2D {
                     self.frame_shapes.push(RectInstanceGpu {
                         center,
                         size: [size.x, size.y],
-                        color,
+                        color: color_to_unorm8(color),
                         z_index: 900,
                         shape_kind: if filled { 0 } else { 2 },
                         thickness: thickness.max(0.0),
                         filled: u32::from(filled),
-                        _pad: 0,
                     });
                 }
             }
@@ -446,6 +442,16 @@ fn normalized_screen_to_virtual_centered(pos: [f32; 2], virtual_size: [f32; 2]) 
     // Position is normalized screen-space: (0.5, 0.5) is the center.
     // X grows right, Y grows upward.
     [(pos[0] - 0.5) * vx, (pos[1] - 0.5) * vy]
+}
+
+#[inline]
+fn color_to_unorm8(color: [f32; 4]) -> [u8; 4] {
+    [
+        (color[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (color[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (color[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (color[3].clamp(0.0, 1.0) * 255.0).round() as u8,
+    ]
 }
 
 #[cfg(test)]

@@ -38,7 +38,7 @@ struct SpriteInstanceGpu {
     transform_1: [f32; 3],
     transform_2: [f32; 3],
     z_index: i32,
-    tint: [f32; 4],
+    tint: [u8; 4],
 }
 
 #[derive(Clone)]
@@ -344,7 +344,7 @@ impl Gpu2D {
                 transform_1: sprite.model[1],
                 transform_2: sprite.model[2],
                 z_index: sprite.z_index,
-                tint: sprite.tint,
+                tint: color_to_unorm8(sprite.tint),
             });
             if let Some(batch) = self.sprite_batches.last_mut()
                 && batch.texture == sprite.texture
@@ -718,25 +718,25 @@ fn create_rect_pipeline(
                         wgpu::VertexAttribute {
                             offset: 16,
                             shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Unorm8x4,
                         },
                         wgpu::VertexAttribute {
-                            offset: 32,
+                            offset: 20,
                             shader_location: 4,
                             format: wgpu::VertexFormat::Sint32,
                         },
                         wgpu::VertexAttribute {
-                            offset: 36,
+                            offset: 24,
                             shader_location: 5,
                             format: wgpu::VertexFormat::Uint32,
                         },
                         wgpu::VertexAttribute {
-                            offset: 40,
+                            offset: 28,
                             shader_location: 6,
                             format: wgpu::VertexFormat::Float32,
                         },
                         wgpu::VertexAttribute {
-                            offset: 44,
+                            offset: 32,
                             shader_location: 7,
                             format: wgpu::VertexFormat::Uint32,
                         },
@@ -833,7 +833,7 @@ fn create_sprite_pipeline(
                         wgpu::VertexAttribute {
                             offset: 40,
                             shader_location: 6,
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Unorm8x4,
                         },
                     ],
                 },
@@ -862,4 +862,14 @@ fn create_sprite_pipeline(
         multiview_mask: None,
         cache: None,
     })
+}
+
+#[inline]
+fn color_to_unorm8(color: [f32; 4]) -> [u8; 4] {
+    [
+        (color[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (color[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (color[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (color[3].clamp(0.0, 1.0) * 255.0).round() as u8,
+    ]
 }
