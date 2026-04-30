@@ -397,13 +397,27 @@ fn apply_ui_style_fields(style: &mut perro_ui::UiStyle, fields: &[SceneObjectFie
                 }
             }
             "corner_radius" | "radius" => {
-                if let Some(v) = as_f32(value) {
+                if let Some(v) = as_ui_corner_radius(value) {
                     style.corner_radius = v;
                 }
             }
             _ => {}
         }
     });
+}
+
+fn as_ui_corner_radius(value: &SceneValue) -> Option<f32> {
+    if let Some(v) = as_f32(value) {
+        return Some(v);
+    }
+    match as_str(value)?
+        .to_ascii_lowercase()
+        .replace([' ', '-', '_'], "")
+        .as_str()
+    {
+        "full" | "pill" | "round" | "rounded" => Some(f32::INFINITY),
+        _ => None,
+    }
 }
 
 fn as_ui_mouse_filter(value: &SceneValue) -> Option<UiMouseFilter> {

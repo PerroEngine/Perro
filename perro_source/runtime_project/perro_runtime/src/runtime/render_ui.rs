@@ -350,12 +350,24 @@ impl Runtime {
         auto: UiAutoLayout,
     ) -> Option<ComputedUiRect> {
         let columns = auto.columns.max(1) as usize;
-        let cell_width = ((content.size.x - auto.h_spacing * (columns.saturating_sub(1) as f32))
-            / columns as f32)
-            .max(0.0);
         let mut child_index = None;
-        let mut max_row_height = 0.0_f32;
         let mut ui_index = 0_usize;
+        let ui_count = children
+            .iter()
+            .filter(|&&node| {
+                self.nodes
+                    .get(node)
+                    .and_then(|node| ui_root_from_data(&node.data))
+                    .is_some()
+            })
+            .count();
+        if ui_count == 0 {
+            return None;
+        }
+        let used_columns = columns.min(ui_count);
+        let row_count = ui_count.div_ceil(columns);
+        let mut cell_width = 0.0_f32;
+        let mut cell_height = 0.0_f32;
         for sibling in children.iter().copied() {
             let Some(layout) = self
                 .nodes
@@ -368,36 +380,37 @@ impl Runtime {
             if sibling == child {
                 child_index = Some(ui_index);
             }
-            let fill_size = Vector2::new(ui_fill_width(layout, parent_layout, cell_width), 0.0);
-            let size = self.resolve_ui_size(
-                sibling,
-                Vector2::new(cell_width, content.size.y),
-                Some(fill_size),
-            );
-            max_row_height = max_row_height.max(size.y + layout.margin.vertical());
+            let size = self.resolve_ui_size(sibling, content.size, None);
+            cell_width = cell_width.max(size.x + layout.margin.horizontal());
+            cell_height = cell_height.max(size.y + layout.margin.vertical());
             ui_index += 1;
         }
         let index = child_index?;
+        let used_width =
+            cell_width * used_columns as f32 + auto.h_spacing * (used_columns - 1) as f32;
+        let used_height = cell_height * row_count as f32 + auto.v_spacing * (row_count - 1) as f32;
         let layout = self
             .nodes
             .get(child)
             .and_then(|node| ui_root_from_data(&node.data))
             .map(|ui| &ui.layout)?;
+        let col = index % columns;
+        let row = index / columns;
         let fill_size = Vector2::new(
             ui_fill_width(layout, parent_layout, cell_width),
-            ui_fill_height(layout, parent_layout, max_row_height),
+            ui_fill_height(layout, parent_layout, cell_height),
         );
         let size = self.resolve_ui_size(
             child,
-            Vector2::new(cell_width, content.size.y),
+            Vector2::new(cell_width, cell_height),
             Some(fill_size),
         );
-        let col = index % columns;
-        let row = index / columns;
         let min = content.min();
         let max = content.max();
-        let cell_min_x = min.x + col as f32 * (cell_width + auto.h_spacing);
-        let cell_top_y = max.y - row as f32 * (max_row_height + auto.v_spacing);
+        let grid_min_x = align_h_start(min.x, content.size.x, used_width, parent_layout.h_align);
+        let grid_top_y = align_v_top(max.y, content.size.y, used_height, parent_layout.v_align);
+        let cell_min_x = grid_min_x + col as f32 * (cell_width + auto.h_spacing);
+        let cell_top_y = grid_top_y - row as f32 * (cell_height + auto.v_spacing);
         let center = Vector2::new(
             align_h_center(
                 cell_min_x,
@@ -408,7 +421,7 @@ impl Runtime {
             ),
             align_v_center(
                 cell_top_y,
-                max_row_height,
+                cell_height,
                 size.y,
                 layout.margin,
                 parent_layout.v_align,
@@ -947,7 +960,7 @@ mod tests {
     use super::*;
     use perro_nodes::{SceneNode, SceneNodeData};
     use perro_structs::Color;
-    use perro_ui::{UiPanel, UiVector2};
+    use perro_ui::{UiGrid, UiHLayout, UiPanel, UiVector2};
 
     #[test]
     fn unchanged_ui_skips_redundant_upsert() {
@@ -994,13 +1007,133 @@ mod tests {
         );
     }
 
+    #[test]
+    fn default_hlayout_centers_child_group() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut layout = UiHLayout::new();
+        layout.layout.size = UiVector2::pixels(300.0, 100.0);
+        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+        let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        attach_child(&mut runtime, parent, child);
+
+        runtime.extract_render_ui_commands();
+
+        let child_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&child)
+            .expect("child rect exists");
+        assert_eq!(child_rect.center, Vector2::ZERO);
+    }
+
+    #[test]
+    fn default_grid_centers_rows_in_parent() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut grid = UiGrid::new();
+        grid.layout.size = UiVector2::pixels(300.0, 200.0);
+        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+        let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        attach_child(&mut runtime, parent, child);
+
+        runtime.extract_render_ui_commands();
+
+        let child_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&child)
+            .expect("child rect exists");
+        assert_eq!(child_rect.center, Vector2::ZERO);
+    }
+
+    #[test]
+    fn grid_columns_auto_wrap_into_centered_rows() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut grid = UiGrid::new();
+        grid.layout.size = UiVector2::pixels(300.0, 200.0);
+        grid.columns = 3;
+        grid.h_spacing = 10.0;
+        grid.v_spacing = 10.0;
+        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+
+        let mut children = Vec::new();
+        for _ in 0..6 {
+            let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+            attach_child(&mut runtime, parent, child);
+            children.push(child);
+        }
+
+        runtime.extract_render_ui_commands();
+
+        let first = runtime
+            .render_ui
+            .computed_rects
+            .get(&children[0])
+            .expect("first rect exists");
+        let fourth = runtime
+            .render_ui
+            .computed_rects
+            .get(&children[3])
+            .expect("fourth rect exists");
+        assert_eq!(first.center, Vector2::new(-70.0, 25.0));
+        assert_eq!(fourth.center, Vector2::new(-70.0, -25.0));
+    }
+
+    #[test]
+    fn grid_uses_uniform_cells_for_even_column_spacing() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut grid = UiGrid::new();
+        grid.layout.size = UiVector2::pixels(400.0, 200.0);
+        grid.columns = 3;
+        grid.h_spacing = 10.0;
+        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+
+        let first = insert_panel(&mut runtime, [80.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        let middle = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        let last = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        attach_child(&mut runtime, parent, first);
+        attach_child(&mut runtime, parent, middle);
+        attach_child(&mut runtime, parent, last);
+
+        runtime.extract_render_ui_commands();
+
+        let first = runtime
+            .render_ui
+            .computed_rects
+            .get(&first)
+            .expect("first rect exists");
+        let middle = runtime
+            .render_ui
+            .computed_rects
+            .get(&middle)
+            .expect("middle rect exists");
+        let last = runtime
+            .render_ui
+            .computed_rects
+            .get(&last)
+            .expect("last rect exists");
+        assert_eq!(
+            middle.center.x - first.center.x,
+            last.center.x - middle.center.x
+        );
+    }
+
     fn insert_panel(runtime: &mut Runtime, size: [f32; 2], fill: Color) -> NodeID {
         let mut panel = UiPanel::new();
         panel.layout.size = UiVector2::pixels(size[0], size[1]);
         panel.style.fill = fill;
-        let node = runtime
-            .nodes
-            .insert(SceneNode::new(SceneNodeData::UiPanel(panel)));
+        insert_ui_node(runtime, SceneNodeData::UiPanel(panel))
+    }
+
+    fn insert_ui_node(runtime: &mut Runtime, data: SceneNodeData) -> NodeID {
+        let node = runtime.nodes.insert(SceneNode::new(data));
         runtime
             .nodes
             .get_mut(node)
@@ -1008,5 +1141,16 @@ mod tests {
             .id = node;
         runtime.mark_needs_rerender(node);
         node
+    }
+
+    fn attach_child(runtime: &mut Runtime, parent: NodeID, child: NodeID) {
+        runtime
+            .nodes
+            .get_mut(parent)
+            .expect("parent exists")
+            .add_child(child);
+        runtime.nodes.get_mut(child).expect("child exists").parent = parent;
+        runtime.mark_needs_rerender(parent);
+        runtime.mark_needs_rerender(child);
     }
 }

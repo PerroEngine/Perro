@@ -863,6 +863,7 @@ mod tests {
                 fill = "#101820"
                 hover_fill = "#202830"
                 pressed_fill = "#303840"
+                radius = "full"
                 disabled = true
             [/UiButton]
             [/menu]
@@ -898,6 +899,12 @@ mod tests {
                 mode = "grid"
             [/UiVLayout]
             [/forced_v]
+
+            [defaults]
+            parent = menu
+            [UiPanel]
+            [/UiPanel]
+            [/defaults]
             "##,
         )
         .parse_scene();
@@ -921,6 +928,7 @@ mod tests {
                 assert_eq!(button.text.as_ref(), "Play");
                 assert_eq!(button.text_color, Color::RED);
                 assert!(button.disabled);
+                assert!(button.style.corner_radius.is_infinite());
                 assert_eq!(
                     button.layout.resolved_size(Vector2::new(3000.0, 1200.0)),
                     Vector2::new(1200.0, 96.0)
@@ -1000,6 +1008,21 @@ mod tests {
                 assert_eq!(layout.mode(), perro_ui::UiLayoutMode::V);
             }
             other => panic!("expected UiVLayout forced_v node, got {other:?}"),
+        }
+
+        let defaults = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key == "defaults")
+            .expect("defaults node");
+        match &defaults.node.data {
+            SceneNodeData::UiPanel(panel) => {
+                assert_eq!(panel.layout.anchor, perro_ui::UiAnchor::Center);
+                assert_eq!(panel.layout.position, perro_ui::UiVector2::ratio(0.5, 0.5));
+                assert_eq!(panel.layout.h_align, perro_ui::UiHorizontalAlign::Center);
+                assert_eq!(panel.layout.v_align, perro_ui::UiVerticalAlign::Center);
+            }
+            other => panic!("expected UiPanel defaults node, got {other:?}"),
         }
     }
 

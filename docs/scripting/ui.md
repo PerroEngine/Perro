@@ -112,6 +112,10 @@ br bottom_right
 ```
 
 Default anchor is `center`.
+Default position is `position_ratio = (0.5, 0.5)`.
+Default `h_align` and `v_align` are `center`.
+Default label text align is `center`.
+`corner_radius = "full"` makes the radius half of the shortest side.
 
 ## Coordinate Space
 

@@ -281,12 +281,21 @@ fn push_panel_shape(panel: &UiPanelDraw, viewport: [f32; 2], out: &mut Vec<Clipp
         clip_rect: viewport_rect(viewport),
         shape: Shape::Rect(RectShape::new(
             rect,
-            CornerRadius::same(panel.corner_radius.max(0.0) as u8),
+            CornerRadius::same(resolve_corner_radius(panel) as u8),
             color32(panel.fill),
             Stroke::new(panel.stroke_width.max(0.0), color32(panel.stroke)),
             StrokeKind::Inside,
         )),
     });
+}
+
+fn resolve_corner_radius(panel: &UiPanelDraw) -> f32 {
+    if panel.corner_radius.is_infinite() {
+        panel.rect.size[0].min(panel.rect.size[1]) * 0.5
+    } else {
+        panel.corner_radius.max(0.0)
+    }
+    .min(u8::MAX as f32)
 }
 
 fn push_text_shape(

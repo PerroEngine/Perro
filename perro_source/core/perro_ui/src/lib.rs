@@ -171,8 +171,8 @@ pub enum UiSizeMode {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum UiHorizontalAlign {
-    #[default]
     Left,
+    #[default]
     Center,
     Right,
     Fill,
@@ -180,8 +180,8 @@ pub enum UiHorizontalAlign {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum UiVerticalAlign {
-    #[default]
     Top,
+    #[default]
     Center,
     Bottom,
     Fill,
@@ -189,8 +189,8 @@ pub enum UiVerticalAlign {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum UiTextAlign {
-    #[default]
     Start,
+    #[default]
     Center,
     End,
 }
@@ -311,8 +311,8 @@ impl UiLayoutData {
             padding: UiRect::ZERO,
             h_size: UiSizeMode::Fixed,
             v_size: UiSizeMode::Fixed,
-            h_align: UiHorizontalAlign::Left,
-            v_align: UiVerticalAlign::Top,
+            h_align: UiHorizontalAlign::Center,
+            v_align: UiVerticalAlign::Center,
             z_index: 0,
         }
     }
@@ -515,8 +515,8 @@ impl UiLabel {
             text: Cow::Borrowed(""),
             color: Color::WHITE,
             font_size: 16.0,
-            h_align: UiTextAlign::Start,
-            v_align: UiTextAlign::Start,
+            h_align: UiTextAlign::Center,
+            v_align: UiTextAlign::Center,
         }
     }
 
@@ -921,6 +921,24 @@ mod tests {
             layout.resolved_origin(Vector2::new(800.0, 600.0)),
             Vector2::new(300.0, 250.0)
         );
+    }
+
+    #[test]
+    fn default_layout_aligns_children_to_center() {
+        let layout = UiLayoutData::new();
+
+        assert_eq!(layout.anchor, UiAnchor::Center);
+        assert_eq!(layout.position, UiVector2::ratio(0.5, 0.5));
+        assert_eq!(layout.h_align, UiHorizontalAlign::Center);
+        assert_eq!(layout.v_align, UiVerticalAlign::Center);
+    }
+
+    #[test]
+    fn label_text_align_defaults_to_center() {
+        let label = UiLabel::new();
+
+        assert_eq!(label.h_align, UiTextAlign::Center);
+        assert_eq!(label.v_align, UiTextAlign::Center);
     }
 
     #[test]
