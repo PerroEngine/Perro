@@ -11,7 +11,6 @@ struct UiTestState {
     main_row: NodeID,
     left_stack: NodeID,
     left_button_b: NodeID,
-    left_note: NodeID,
     center_grid: NodeID,
     grid_c: NodeID,
     grid_c_layout: NodeID,
@@ -19,8 +18,9 @@ struct UiTestState {
     grid_c_progress_bg: NodeID,
     grid_c_progress_fill: NodeID,
     grid_d: NodeID,
+    grid_f: NodeID,
+    grid_g_cell_3: NodeID,
     right_layout: NodeID,
-    right_button: NodeID,
 }
 
 const TITLE_A: &str = "UiTest: panels / layouts / anchors";
@@ -95,10 +95,6 @@ lifecycle!({
             .Nodes()
             .get_child_by_name(left_stack, "left_button_b")
             .unwrap_or_default();
-        let left_note = ctx
-            .Nodes()
-            .get_child_by_name(left_stack, "left_note")
-            .unwrap_or_default();
         let grid_c_note = ctx
             .Nodes()
             .get_child_by_name(grid_c_layout, "grid_c_note")
@@ -111,9 +107,25 @@ lifecycle!({
             .Nodes()
             .get_child_by_name(center_grid, "grid_d")
             .unwrap_or_default();
-        let right_button = ctx
+        let grid_f = ctx
             .Nodes()
-            .get_child_by_name(right_layout, "right_button")
+            .get_child_by_name(center_grid, "grid_f")
+            .unwrap_or_default();
+        let grid_g = ctx
+            .Nodes()
+            .get_child_by_name(center_grid, "grid_g")
+            .unwrap_or_default();
+        let grid_g_stack = ctx
+            .Nodes()
+            .get_child_by_name(grid_g, "grid_g_stack")
+            .unwrap_or_default();
+        let grid_g_inner = ctx
+            .Nodes()
+            .get_child_by_name(grid_g_stack, "grid_g_inner")
+            .unwrap_or_default();
+        let grid_g_cell_3 = ctx
+            .Nodes()
+            .get_child_by_name(grid_g_inner, "grid_g_cell_3")
             .unwrap_or_default();
 
         let _ = with_state_mut!(ctx, UiTestState, self_id, |state| {
@@ -122,7 +134,6 @@ lifecycle!({
             state.main_row = main_row;
             state.left_stack = left_stack;
             state.left_button_b = left_button_b;
-            state.left_note = left_note;
             state.center_grid = center_grid;
             state.grid_c = grid_c;
             state.grid_c_layout = grid_c_layout;
@@ -130,8 +141,9 @@ lifecycle!({
             state.grid_c_progress_bg = grid_c_progress_bg;
             state.grid_c_progress_fill = grid_c_progress_fill;
             state.grid_d = grid_d;
+            state.grid_f = grid_f;
+            state.grid_g_cell_3 = grid_g_cell_3;
             state.right_layout = right_layout;
-            state.right_button = right_button;
         });
     }
 
@@ -146,7 +158,9 @@ lifecycle!({
         let size_pulse = ((time * 2.2).sin() * 0.5 + 0.5).max(0.0);
         let slow_pulse = ((time * 0.9).sin() * 0.5 + 0.5).max(0.0);
         let fast_pulse = ((time * 3.1).cos() * 0.5 + 0.5).max(0.0);
-        let show_note = (time * 1.25).sin() >= 0.0;
+        let show_progress = (time * 0.8).sin() >= 0.0;
+        let show_stats = (time * 0.65).sin() >= 0.0;
+        let show_inner_cell = (time * 1.1).cos() >= 0.0;
         let use_alt_text = ((time * 0.7) as i32) % 2 == 0;
         let quest_count = 1 + ((time * 1.4) as i32).rem_euclid(5);
         let ids = with_state!(ctx, UiTestState, self_id, |state| { *state });
@@ -182,12 +196,6 @@ lifecycle!({
             });
         }
 
-        if !ids.left_note.is_nil() {
-            let _ = with_base_node_mut!(ctx, UiBox, ids.left_note, |ui| {
-                ui.visible = show_note;
-            });
-        }
-
         if ids.center_grid.is_nil() {
             return;
         }
@@ -213,6 +221,7 @@ lifecycle!({
                 }
                 if !ids.grid_c_progress_bg.is_nil() {
                     let _ = with_base_node_mut!(ctx, UiBox, ids.grid_c_progress_bg, |ui| {
+                        ui.visible = show_progress;
                         ui.transform.translation.y = (slow_pulse - 0.5) * 22.0;
                         ui.layout.size =
                             UiVector2::pixels(104.0 + fast_pulse * 28.0, 16.0 + slow_pulse * 8.0);
@@ -231,7 +240,18 @@ lifecycle!({
             let _ = with_base_node_mut!(ctx, UiBox, ids.grid_d, |ui| {
                 ui.transform.scale =
                     Vector2::new(0.9 + slow_pulse * 0.35, 0.78 + fast_pulse * 0.38);
-                ui.transform.rotation = (time * 1.2).sin() * 0.28;
+            });
+        }
+
+        if !ids.grid_f.is_nil() {
+            let _ = with_base_node_mut!(ctx, UiBox, ids.grid_f, |ui| {
+                ui.visible = show_stats;
+            });
+        }
+
+        if !ids.grid_g_cell_3.is_nil() {
+            let _ = with_base_node_mut!(ctx, UiBox, ids.grid_g_cell_3, |ui| {
+                ui.visible = show_inner_cell;
             });
         }
 
@@ -242,9 +262,6 @@ lifecycle!({
             let _ = with_base_node_mut!(ctx, UiBox, ids.right_layout, |ui| {
                 ui.transform.translation.y = (fast_pulse - 0.5) * 24.0;
             });
-            if !ids.right_button.is_nil() {
-                let _ = set_ui_rotation!(ctx, ids.right_button, (time * 1.7).cos() * 0.18);
-            }
         }
     }
 

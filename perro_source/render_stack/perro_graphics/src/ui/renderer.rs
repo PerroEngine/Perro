@@ -169,6 +169,7 @@ mod tests {
             rect: UiRectState {
                 center: [10.0, 20.0],
                 size: [100.0, 50.0],
+                pivot: [0.5, 0.5],
                 rotation_radians: 0.0,
                 z_index: 2,
             },
@@ -191,6 +192,7 @@ mod tests {
             rect: UiRectState {
                 center: [0.0, 0.0],
                 size: [200.0, 60.0],
+                pivot: [0.5, 0.5],
                 rotation_radians: 0.0,
                 z_index: 0,
             },
@@ -215,6 +217,7 @@ mod tests {
             rect: UiRectState {
                 center: [0.0, 0.0],
                 size: [100.0, 50.0],
+                pivot: [0.5, 0.5],
                 rotation_radians: std::f32::consts::FRAC_PI_2,
                 z_index: 0,
             },
@@ -242,5 +245,39 @@ mod tests {
         let height = max[1] - min[1];
         assert!(width < 60.0, "width={width}");
         assert!(height > 90.0, "height={height}");
+    }
+
+    #[test]
+    fn panel_rotation_uses_pivot_origin() {
+        let mut renderer = UiRenderer::new();
+        renderer.submit(UiCommand::UpsertPanel {
+            node: NodeID::from_parts(4, 0),
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [100.0, 50.0],
+                pivot: [0.0, 0.5],
+                rotation_radians: std::f32::consts::PI,
+                z_index: 0,
+            },
+            fill: [0.1, 0.2, 0.3, 1.0],
+            stroke: [0.0, 0.0, 0.0, 0.0],
+            stroke_width: 0.0,
+            corner_radius: 0.0,
+        });
+
+        let paint = renderer.prepare_paint([800.0, 600.0]);
+        let mut min_x = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        for primitive in paint.primitives {
+            if let epaint::Primitive::Mesh(mesh) = &primitive.primitive {
+                for vertex in &mesh.vertices {
+                    min_x = min_x.min(vertex.pos.x);
+                    max_x = max_x.max(vertex.pos.x);
+                }
+            }
+        }
+
+        assert!(min_x < 260.0, "min_x={min_x}");
+        assert!(max_x < 360.0, "max_x={max_x}");
     }
 }

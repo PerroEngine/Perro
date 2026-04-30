@@ -429,7 +429,7 @@ impl Runtime {
                 .nodes
                 .get(sibling)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| (&ui.layout, &ui.transform))
+                .and_then(|ui| ui.visible.then_some((&ui.layout, &ui.transform)))
             else {
                 continue;
             };
@@ -477,7 +477,7 @@ impl Runtime {
                 .nodes
                 .get(sibling)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| (&ui.layout, &ui.transform))
+                .and_then(|ui| ui.visible.then_some((&ui.layout, &ui.transform)))
             else {
                 continue;
             };
@@ -522,7 +522,7 @@ impl Runtime {
                 .nodes
                 .get(sibling)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| (&ui.layout, &ui.transform))
+                .and_then(|ui| ui.visible.then_some((&ui.layout, &ui.transform)))
             else {
                 continue;
             };
@@ -570,7 +570,7 @@ impl Runtime {
                 .nodes
                 .get(sibling)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| (&ui.layout, &ui.transform))
+                .and_then(|ui| ui.visible.then_some((&ui.layout, &ui.transform)))
             else {
                 continue;
             };
@@ -614,7 +614,7 @@ impl Runtime {
                 self.nodes
                     .get(node)
                     .and_then(|node| ui_root_from_data(&node.data))
-                    .is_some()
+                    .is_some_and(|ui| ui.visible)
             })
             .count();
         if ui_count == 0 {
@@ -629,7 +629,7 @@ impl Runtime {
                 .nodes
                 .get(sibling)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| &ui.layout)
+                .and_then(|ui| ui.visible.then_some(&ui.layout))
             else {
                 continue;
             };
@@ -649,7 +649,7 @@ impl Runtime {
             .nodes
             .get(child)
             .and_then(|node| ui_root_from_data(&node.data))
-            .map(|ui| (&ui.layout, &ui.transform))?;
+            .and_then(|ui| ui.visible.then_some((&ui.layout, &ui.transform)))?;
         let col = index % columns;
         let row = index / columns;
         let fill_size = Vector2::new(
@@ -703,7 +703,7 @@ impl Runtime {
                 .nodes
                 .get(sibling)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| &ui.layout)
+                .and_then(|ui| ui.visible.then_some(&ui.layout))
             else {
                 continue;
             };
@@ -732,7 +732,7 @@ impl Runtime {
                 .nodes
                 .get(child)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| (&ui.layout, &ui.transform))
+                .and_then(|ui| ui.visible.then_some((&ui.layout, &ui.transform)))
             else {
                 continue;
             };
@@ -782,6 +782,9 @@ impl Runtime {
         let Some(ui) = ui_root_from_data(&scene_node.data) else {
             return Vector2::ZERO;
         };
+        if !ui.visible {
+            return Vector2::ZERO;
+        }
         let mut size = ui.layout.size.resolve(available);
         if ui.layout.h_size == UiSizeMode::FitChildren
             || ui.layout.v_size == UiSizeMode::FitChildren
@@ -841,7 +844,7 @@ impl Runtime {
                         .nodes
                         .get(child)
                         .and_then(|node| ui_root_from_data(&node.data))
-                        .map(|ui| &ui.layout)
+                        .and_then(|ui| ui.visible.then_some(&ui.layout))
                     else {
                         continue;
                     };
@@ -864,7 +867,7 @@ impl Runtime {
                         .nodes
                         .get(child)
                         .and_then(|node| ui_root_from_data(&node.data))
-                        .map(|ui| &ui.layout)
+                        .and_then(|ui| ui.visible.then_some(&ui.layout))
                     else {
                         continue;
                     };
@@ -891,7 +894,7 @@ impl Runtime {
                         .nodes
                         .get(child)
                         .and_then(|node| ui_root_from_data(&node.data))
-                        .map(|ui| &ui.layout)
+                        .and_then(|ui| ui.visible.then_some(&ui.layout))
                     else {
                         continue;
                     };
@@ -931,7 +934,7 @@ impl Runtime {
                 .nodes
                 .get(child)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| &ui.layout)
+                .and_then(|ui| ui.visible.then_some(&ui.layout))
             else {
                 continue;
             };
@@ -951,7 +954,7 @@ impl Runtime {
                 .nodes
                 .get(child)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| &ui.layout)
+                .and_then(|ui| ui.visible.then_some(&ui.layout))
             else {
                 continue;
             };
@@ -989,7 +992,7 @@ impl Runtime {
                 .nodes
                 .get(child)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| &ui.layout)
+                .and_then(|ui| ui.visible.then_some(&ui.layout))
             else {
                 continue;
             };
@@ -1020,7 +1023,7 @@ impl Runtime {
                 .nodes
                 .get(child)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| &ui.layout)
+                .and_then(|ui| ui.visible.then_some(&ui.layout))
             else {
                 continue;
             };
@@ -1058,7 +1061,7 @@ impl Runtime {
                 .nodes
                 .get(child)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| &ui.layout)
+                .and_then(|ui| ui.visible.then_some(&ui.layout))
             else {
                 continue;
             };
@@ -1271,9 +1274,15 @@ fn ui_rect_state_from_node(data: &SceneNodeData, rect: ComputedUiRect) -> Option
     Some(UiRectState {
         center: [rect.center.x, rect.center.y],
         size: [rect.size.x, rect.size.y],
+        pivot: ui_pivot_state(&ui.transform),
         rotation_radians: ui.transform.rotation,
         z_index: ui.layout.z_index,
     })
+}
+
+fn ui_pivot_state(transform: &UiTransform) -> [f32; 2] {
+    let pivot = transform.pivot.resolve(Vector2::new(1.0, 1.0));
+    [pivot.x, pivot.y]
 }
 
 fn ui_command_matches_node(command: &UiCommand, data: &SceneNodeData, rect: UiRectState) -> bool {
@@ -1435,6 +1444,45 @@ mod tests {
     }
 
     #[test]
+    fn hlayout_ignores_invisible_child_space() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut layout = UiHLayout::new();
+        layout.layout.size = UiVector2::pixels(300.0, 100.0);
+        layout.inner.spacing = 10.0;
+        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+        let first = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        let middle = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
+        let last = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.3, 0.4, 0.5, 1.0));
+        attach_child(&mut runtime, parent, first);
+        attach_child(&mut runtime, parent, middle);
+        attach_child(&mut runtime, parent, last);
+
+        set_panel_visible(&mut runtime, middle, false);
+        runtime.mark_ui_dirty(
+            middle,
+            Runtime::UI_DIRTY_LAYOUT_SELF
+                | Runtime::UI_DIRTY_LAYOUT_PARENT
+                | Runtime::UI_DIRTY_COMMANDS,
+        );
+        runtime.extract_render_ui_commands();
+
+        let first_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&first)
+            .expect("first rect exists");
+        let last_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&last)
+            .expect("last rect exists");
+        assert_eq!(first_rect.center.x, -35.0);
+        assert_eq!(last_rect.center.x, 35.0);
+    }
+
+    #[test]
     fn default_grid_centers_rows_in_parent() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);
@@ -1532,6 +1580,56 @@ mod tests {
     }
 
     #[test]
+    fn grid_ignores_invisible_child_index() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut grid = UiGrid::new();
+        grid.layout.size = UiVector2::pixels(300.0, 200.0);
+        grid.columns = 3;
+        grid.h_spacing = 10.0;
+        grid.v_spacing = 10.0;
+        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+
+        let first = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        let hidden = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
+        let third = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.3, 0.4, 0.5, 1.0));
+        let fourth = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.4, 0.5, 0.6, 1.0));
+        attach_child(&mut runtime, parent, first);
+        attach_child(&mut runtime, parent, hidden);
+        attach_child(&mut runtime, parent, third);
+        attach_child(&mut runtime, parent, fourth);
+
+        set_panel_visible(&mut runtime, hidden, false);
+        runtime.mark_ui_dirty(
+            hidden,
+            Runtime::UI_DIRTY_LAYOUT_SELF
+                | Runtime::UI_DIRTY_LAYOUT_PARENT
+                | Runtime::UI_DIRTY_COMMANDS,
+        );
+        runtime.extract_render_ui_commands();
+
+        let first_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&first)
+            .expect("first rect exists");
+        let third_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&third)
+            .expect("third rect exists");
+        let fourth_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&fourth)
+            .expect("fourth rect exists");
+        assert_eq!(first_rect.center, Vector2::new(-70.0, 0.0));
+        assert_eq!(third_rect.center, Vector2::ZERO);
+        assert_eq!(fourth_rect.center, Vector2::new(70.0, 0.0));
+    }
+
+    #[test]
     fn ui_transform_dirty_updates_only_changed_branch() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);
@@ -1616,6 +1714,14 @@ mod tests {
         panel.layout.size = UiVector2::pixels(size[0], size[1]);
         panel.style.fill = fill;
         insert_ui_node(runtime, SceneNodeData::UiPanel(panel))
+    }
+
+    fn set_panel_visible(runtime: &mut Runtime, node: NodeID, visible: bool) {
+        if let Some(scene_node) = runtime.nodes.get_mut(node)
+            && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+        {
+            panel.visible = visible;
+        }
     }
 
     fn insert_ui_node(runtime: &mut Runtime, data: SceneNodeData) -> NodeID {

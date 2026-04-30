@@ -93,7 +93,7 @@ impl EpaintUiPainter {
             }
             let rect = ui_rect(draw);
             let rotation = rect.rotation_radians;
-            let origin = screen_center(rect, viewport);
+            let origin = screen_pivot(rect, viewport);
             self.shape_rotations
                 .extend((shape_start..self.shapes.len()).map(|_| (rotation, origin)));
         }
@@ -237,6 +237,14 @@ fn screen_center(rect: UiRectState, viewport: [f32; 2]) -> epaint::Pos2 {
     pos2(
         viewport[0] * 0.5 + rect.center[0],
         viewport[1] * 0.5 - rect.center[1],
+    )
+}
+
+fn screen_pivot(rect: UiRectState, viewport: [f32; 2]) -> epaint::Pos2 {
+    let center = screen_center(rect, viewport);
+    pos2(
+        center.x + (rect.pivot[0] - 0.5) * rect.size[0],
+        center.y - (rect.pivot[1] - 0.5) * rect.size[1],
     )
 }
 
