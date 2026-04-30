@@ -845,58 +845,46 @@ parent = @root
 [/UiHLayout]
 [/bottom_bar]
 
-[bottom_status]
-parent = bottom_bar
-[UiLabel]
-    text = "bottom anchor + HLayout"
-    font_size = 20
-    color = "#ECEFF4"
-    size = (310, 42)
-[/UiLabel]
-[/bottom_status]
-
-[bottom_button_a]
+[name_button_a]
 parent = bottom_bar
 [UiButton]
-    mouse_filter = "pass"
-    size = (130, 42)
-    fill = "#2F5761"
-    hover_fill = "#3B6D79"
-    pressed_fill = "#24434A"
-    stroke = "#77AEB9"
-    corner_radius = 14
-[/UiButton]
-[/bottom_button_a]
-
-[bottom_button_a_label]
-parent = bottom_button_a
-[UiLabel]
-    text = "Pass"
-    font_size = 18
-    color = "#E9FAFC"
-    size_ratio = (1.0, 1.0)
-[/UiLabel]
-[/bottom_button_a_label]
-
-[bottom_button_b]
-parent = bottom_bar
-[UiButton]
-    mouse_filter = "ignore"
     size = (150, 42)
-    fill = "#5A3D58"
-    hover_fill = "#704C6E"
-    pressed_fill = "#452F44"
-    stroke = "#B980B5"
+    fill = "#3F6048"
+    hover_fill = "#4F795B"
+    pressed_fill = "#304938"
+    stroke = "#91C99D"
     corner_radius = 14
 [/UiButton]
-[/bottom_button_b]
+[/name_button_a]
 
-[bottom_button_b_label]
-parent = bottom_button_b
+[name_button_a_label]
+parent = name_button_a
 [UiLabel]
-    text = "Ignore"
+    text = "Name A"
     font_size = 18
-    color = "#FFEFFF"
+    color = "#EFFFF2"
     size_ratio = (1.0, 1.0)
 [/UiLabel]
-[/bottom_button_b_label]
+[/name_button_a_label]
+
+[name_button_b]
+parent = bottom_bar
+[UiButton]
+    size = (150, 42)
+    fill = "#4B5368"
+    hover_fill = "#5F6A84"
+    pressed_fill = "#384052"
+    stroke = "#9DAAD0"
+    corner_radius = 14
+[/UiButton]
+[/name_button_b]
+
+[name_button_b_label]
+parent = name_button_b
+[UiLabel]
+    text = "Name B"
+    font_size = 18
+    color = "#EEF2FF"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/name_button_b_label]

@@ -54,6 +54,16 @@ impl Runtime {
     }
 
     #[inline]
+    pub fn set_cursor_icon_request(&mut self, icon: perro_ui::CursorIcon) {
+        self.cursor_icon_request = Some(icon);
+    }
+
+    #[inline]
+    pub fn take_cursor_icon_request(&mut self) -> Option<perro_ui::CursorIcon> {
+        self.cursor_icon_request.take()
+    }
+
+    #[inline]
     pub fn set_viewport_size(&mut self, width: u32, height: u32) {
         self.input.set_viewport_size(width, height);
         self.resource_api.set_viewport_size(width, height);

@@ -225,6 +225,11 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn take_cursor_icon_request(&mut self) -> Option<perro_ui::CursorIcon> {
+        self.runtime.take_cursor_icon_request()
+    }
+
+    #[inline]
     pub fn set_viewport_size(&mut self, width: u32, height: u32) {
         self.runtime.set_viewport_size(width, height);
     }

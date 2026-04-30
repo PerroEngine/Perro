@@ -333,6 +333,7 @@ pub(crate) struct RenderUiState {
     pub(crate) retained_rects: AHashMap<NodeID, UiRectState>,
     pub(crate) button_states: AHashMap<NodeID, UiButtonVisualState>,
     pub(crate) last_ui_pointer: Option<(Vector2, bool)>,
+    pub(crate) cursor_icon: perro_ui::CursorIcon,
     pub(crate) removed_nodes: Vec<NodeID>,
 }
 
@@ -359,6 +360,7 @@ impl RenderUiState {
             retained_rects: AHashMap::default(),
             button_states: AHashMap::default(),
             last_ui_pointer: None,
+            cursor_icon: perro_ui::CursorIcon::Default,
             removed_nodes: Vec::new(),
         }
     }

@@ -861,6 +861,7 @@ mod tests {
                 padding = (1, 2, 3, 4)
                 style = { fill = "#101820" stroke = "#A0A8B0" radius = 6 }
                 hover_fill = "#202830"
+                cursor_icon = "grab"
                 pressed_fill = "#303840"
                 hover_signals = ["ui_hover"]
                 pressed_signals = ["ui_down", "ui_press_any"]
@@ -949,6 +950,7 @@ mod tests {
                     Color::from_hex("#C0D0E0").unwrap()
                 );
                 assert_eq!(button.hover_style.corner_radius, 8.0);
+                assert_eq!(button.cursor_icon, perro_ui::CursorIcon::Grab);
                 assert_eq!(
                     button.pressed_style.fill,
                     Color::from_hex("#182028").unwrap()

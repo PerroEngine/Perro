@@ -277,6 +277,11 @@ fn apply_ui_button_fields(node: &mut UiButton, fields: &[SceneObjectField]) {
         "click_signals" | "clicked_signals" => {
             node.click_signals = as_signal_ids(value);
         }
+        "cursor_icon" | "hover_cursor_icon" => {
+            if let Some(v) = as_cursor_icon(value) {
+                node.cursor_icon = v;
+            }
+        }
         _ => {}
     });
     apply_ui_style_fields(&mut node.style, fields, "");
@@ -505,6 +510,52 @@ fn as_ui_mouse_filter(value: &SceneValue) -> Option<UiMouseFilter> {
         "stop" => Some(UiMouseFilter::Stop),
         "pass" => Some(UiMouseFilter::Pass),
         "ignore" => Some(UiMouseFilter::Ignore),
+        _ => None,
+    }
+}
+
+fn as_cursor_icon(value: &SceneValue) -> Option<perro_ui::CursorIcon> {
+    match as_str(value)?
+        .to_ascii_lowercase()
+        .replace([' ', '-', '_'], "")
+        .as_str()
+    {
+        "default" | "arrow" => Some(perro_ui::CursorIcon::Default),
+        "contextmenu" => Some(perro_ui::CursorIcon::ContextMenu),
+        "help" => Some(perro_ui::CursorIcon::Help),
+        "pointer" | "hand" => Some(perro_ui::CursorIcon::Pointer),
+        "progress" => Some(perro_ui::CursorIcon::Progress),
+        "wait" => Some(perro_ui::CursorIcon::Wait),
+        "cell" => Some(perro_ui::CursorIcon::Cell),
+        "crosshair" => Some(perro_ui::CursorIcon::Crosshair),
+        "text" | "ibeam" => Some(perro_ui::CursorIcon::Text),
+        "verticaltext" => Some(perro_ui::CursorIcon::VerticalText),
+        "alias" => Some(perro_ui::CursorIcon::Alias),
+        "copy" => Some(perro_ui::CursorIcon::Copy),
+        "move" => Some(perro_ui::CursorIcon::Move),
+        "nodrop" => Some(perro_ui::CursorIcon::NoDrop),
+        "notallowed" => Some(perro_ui::CursorIcon::NotAllowed),
+        "grab" => Some(perro_ui::CursorIcon::Grab),
+        "grabbing" => Some(perro_ui::CursorIcon::Grabbing),
+        "eresize" => Some(perro_ui::CursorIcon::EResize),
+        "nresize" => Some(perro_ui::CursorIcon::NResize),
+        "neresize" => Some(perro_ui::CursorIcon::NeResize),
+        "nwresize" => Some(perro_ui::CursorIcon::NwResize),
+        "sresize" => Some(perro_ui::CursorIcon::SResize),
+        "seresize" => Some(perro_ui::CursorIcon::SeResize),
+        "swresize" => Some(perro_ui::CursorIcon::SwResize),
+        "wresize" => Some(perro_ui::CursorIcon::WResize),
+        "ewresize" | "horizontalresize" => Some(perro_ui::CursorIcon::EwResize),
+        "nsresize" | "verticalresize" => Some(perro_ui::CursorIcon::NsResize),
+        "neswresize" => Some(perro_ui::CursorIcon::NeswResize),
+        "nwseresize" => Some(perro_ui::CursorIcon::NwseResize),
+        "colresize" => Some(perro_ui::CursorIcon::ColResize),
+        "rowresize" => Some(perro_ui::CursorIcon::RowResize),
+        "allscroll" => Some(perro_ui::CursorIcon::AllScroll),
+        "zoomin" => Some(perro_ui::CursorIcon::ZoomIn),
+        "zoomout" => Some(perro_ui::CursorIcon::ZoomOut),
+        "dndask" => Some(perro_ui::CursorIcon::DndAsk),
+        "allresize" => Some(perro_ui::CursorIcon::AllResize),
         _ => None,
     }
 }

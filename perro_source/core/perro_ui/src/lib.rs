@@ -446,6 +446,47 @@ pub enum UiMouseFilter {
     Ignore,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum CursorIcon {
+    #[default]
+    Default,
+    ContextMenu,
+    Help,
+    Pointer,
+    Progress,
+    Wait,
+    Cell,
+    Crosshair,
+    Text,
+    VerticalText,
+    Alias,
+    Copy,
+    Move,
+    NoDrop,
+    NotAllowed,
+    Grab,
+    Grabbing,
+    EResize,
+    NResize,
+    NeResize,
+    NwResize,
+    SResize,
+    SeResize,
+    SwResize,
+    WResize,
+    EwResize,
+    NsResize,
+    NeswResize,
+    NwseResize,
+    ColResize,
+    RowResize,
+    AllScroll,
+    ZoomIn,
+    ZoomOut,
+    DndAsk,
+    AllResize,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiStyle {
     pub fill: Color,
@@ -599,6 +640,7 @@ pub struct UiButton {
     pub style: UiStyle,
     pub hover_style: UiStyle,
     pub pressed_style: UiStyle,
+    pub cursor_icon: CursorIcon,
     pub hover_base: Option<UiBox>,
     pub pressed_base: Option<UiBox>,
     pub hover_signals: Vec<SignalID>,
@@ -626,6 +668,7 @@ impl UiButton {
                 stroke_width: 1.0,
                 corner_radius: 4.0,
             },
+            cursor_icon: CursorIcon::Pointer,
             hover_base: None,
             pressed_base: None,
             hover_signals: Vec::new(),

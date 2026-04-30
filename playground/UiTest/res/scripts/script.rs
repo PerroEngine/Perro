@@ -146,49 +146,67 @@ lifecycle!({
             state.right_layout = right_layout;
         });
 
-        let button_names = [
-            "left_button_a",
-            "left_button_b",
-            "grid_b_primary",
-            "grid_b_secondary",
-            "grid_g_cell_5",
-            "right_button",
-            "bottom_button_a",
-        ];
-        let event_names = ["hover_enter", "hover_exit", "pressed", "released", "click"];
-        for button_name in button_names {
-            for event_name in event_names {
-                let signal_name = format!("{button_name}_{event_name}");
-                let connected = signal_connect!(
-                    ctx,
-                    self_id,
-                    SignalID::from_string(signal_name.as_str()),
-                    func!("on_button_event")
-                );
-                println!("UiTest signal connect {signal_name} -> {connected}");
-            }
-        }
-        let connected = signal_connect!(
+        signal_connect!(
             ctx,
             self_id,
-            signal!("ui_right_button_pressed"),
-            func!("on_button_event")
+            signal!("name_button_a_hover_enter"),
+            func!("on_name_a_hovered")
         );
-        println!("UiTest signal connect ui_right_button_pressed -> {connected}");
-        let connected = signal_connect!(
+        signal_connect!(
             ctx,
             self_id,
-            signal!("ui_right_button_click"),
-            func!("on_button_event")
+            signal!("name_button_a_pressed"),
+            func!("on_name_a_down")
         );
-        println!("UiTest signal connect ui_right_button_click -> {connected}");
-        let connected = signal_connect!(
+        signal_connect!(
             ctx,
             self_id,
-            signal!("ui_any_button_click"),
-            func!("on_button_event")
+            signal!("name_button_a_released"),
+            func!("on_name_a_released")
         );
-        println!("UiTest signal connect ui_any_button_click -> {connected}");
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("name_button_a_click"),
+            func!("on_name_a_pressed")
+        );
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("name_button_a_hover_exit"),
+            func!("on_name_a_unhovered")
+        );
+
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("name_button_b_hover_enter"),
+            func!("on_name_b_hovered")
+        );
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("name_button_b_pressed"),
+            func!("on_name_b_down")
+        );
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("name_button_b_released"),
+            func!("on_name_b_released")
+        );
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("name_button_b_click"),
+            func!("on_name_b_pressed")
+        );
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("name_button_b_hover_exit"),
+            func!("on_name_b_unhovered")
+        );
     }
 
     fn on_update(
@@ -329,7 +347,7 @@ lifecycle!({
 });
 
 methods!({
-    fn on_button_event(
+    fn on_name_a_hovered(
         &self,
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
@@ -337,7 +355,106 @@ methods!({
         _self_id: NodeID,
         button: NodeID,
     ) {
-        println!("UiTest button signal node={button:?}");
+        println!("ButtonA_Hovered node={button:?}");
+    }
+
+    fn on_name_a_down(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        button: NodeID,
+    ) {
+        println!("ButtonA_Down node={button:?}");
+    }
+
+    fn on_name_a_released(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        button: NodeID,
+    ) {
+        println!("ButtonA_Released node={button:?}");
+    }
+
+    fn on_name_a_pressed(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        button: NodeID,
+    ) {
+        println!("ButtonA_Pressed node={button:?}");
+    }
+
+    fn on_name_a_unhovered(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        button: NodeID,
+    ) {
+        println!("ButtonA_Unhovered node={button:?}");
+    }
+
+    fn on_name_b_hovered(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        button: NodeID,
+    ) {
+        println!("ButtonB_Hovered node={button:?}");
+    }
+
+    fn on_name_b_down(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        button: NodeID,
+    ) {
+        println!("ButtonB_Down node={button:?}");
+    }
+
+    fn on_name_b_released(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        button: NodeID,
+    ) {
+        println!("ButtonB_Released node={button:?}");
+    }
+
+    fn on_name_b_pressed(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        button: NodeID,
+    ) {
+        println!("ButtonB_Pressed node={button:?}");
+    }
+
+    fn on_name_b_unhovered(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        button: NodeID,
+    ) {
+        println!("ButtonB_Unhovered node={button:?}");
     }
 
     fn default_method(

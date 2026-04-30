@@ -17,7 +17,9 @@ use winit::{
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     monitor::MonitorHandle,
-    window::{CursorGrabMode, Fullscreen, Icon, Window, WindowAttributes},
+    window::{
+        CursorGrabMode, CursorIcon as WinitCursorIcon, Fullscreen, Icon, Window, WindowAttributes,
+    },
 };
 
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
@@ -44,6 +46,47 @@ const PTEX_FLAG_FORMAT_MASK: u32 = 0b11;
 const PTEX_FLAG_FORMAT_RGBA8: u32 = 0;
 const PTEX_FLAG_FORMAT_RGB8: u32 = 1;
 const PTEX_FLAG_FORMAT_R8: u32 = 2;
+
+fn map_cursor_icon(icon: perro_ui::CursorIcon) -> WinitCursorIcon {
+    match icon {
+        perro_ui::CursorIcon::Default => WinitCursorIcon::Default,
+        perro_ui::CursorIcon::ContextMenu => WinitCursorIcon::ContextMenu,
+        perro_ui::CursorIcon::Help => WinitCursorIcon::Help,
+        perro_ui::CursorIcon::Pointer => WinitCursorIcon::Pointer,
+        perro_ui::CursorIcon::Progress => WinitCursorIcon::Progress,
+        perro_ui::CursorIcon::Wait => WinitCursorIcon::Wait,
+        perro_ui::CursorIcon::Cell => WinitCursorIcon::Cell,
+        perro_ui::CursorIcon::Crosshair => WinitCursorIcon::Crosshair,
+        perro_ui::CursorIcon::Text => WinitCursorIcon::Text,
+        perro_ui::CursorIcon::VerticalText => WinitCursorIcon::VerticalText,
+        perro_ui::CursorIcon::Alias => WinitCursorIcon::Alias,
+        perro_ui::CursorIcon::Copy => WinitCursorIcon::Copy,
+        perro_ui::CursorIcon::Move => WinitCursorIcon::Move,
+        perro_ui::CursorIcon::NoDrop => WinitCursorIcon::NoDrop,
+        perro_ui::CursorIcon::NotAllowed => WinitCursorIcon::NotAllowed,
+        perro_ui::CursorIcon::Grab => WinitCursorIcon::Grab,
+        perro_ui::CursorIcon::Grabbing => WinitCursorIcon::Grabbing,
+        perro_ui::CursorIcon::EResize => WinitCursorIcon::EResize,
+        perro_ui::CursorIcon::NResize => WinitCursorIcon::NResize,
+        perro_ui::CursorIcon::NeResize => WinitCursorIcon::NeResize,
+        perro_ui::CursorIcon::NwResize => WinitCursorIcon::NwResize,
+        perro_ui::CursorIcon::SResize => WinitCursorIcon::SResize,
+        perro_ui::CursorIcon::SeResize => WinitCursorIcon::SeResize,
+        perro_ui::CursorIcon::SwResize => WinitCursorIcon::SwResize,
+        perro_ui::CursorIcon::WResize => WinitCursorIcon::WResize,
+        perro_ui::CursorIcon::EwResize => WinitCursorIcon::EwResize,
+        perro_ui::CursorIcon::NsResize => WinitCursorIcon::NsResize,
+        perro_ui::CursorIcon::NeswResize => WinitCursorIcon::NeswResize,
+        perro_ui::CursorIcon::NwseResize => WinitCursorIcon::NwseResize,
+        perro_ui::CursorIcon::ColResize => WinitCursorIcon::ColResize,
+        perro_ui::CursorIcon::RowResize => WinitCursorIcon::RowResize,
+        perro_ui::CursorIcon::AllScroll => WinitCursorIcon::AllScroll,
+        perro_ui::CursorIcon::ZoomIn => WinitCursorIcon::ZoomIn,
+        perro_ui::CursorIcon::ZoomOut => WinitCursorIcon::ZoomOut,
+        perro_ui::CursorIcon::DndAsk => WinitCursorIcon::DndAsk,
+        perro_ui::CursorIcon::AllResize => WinitCursorIcon::AllResize,
+    }
+}
 
 struct StartupSplashState {
     active: bool,
@@ -630,6 +673,7 @@ struct RunnerState<B: GraphicsBackend> {
     joycon_input: crate::input::JoyConInput,
     mouse_mode: MouseMode,
     mouse_uses_raw_motion: bool,
+    cursor_icon: perro_ui::CursorIcon,
     cursor_inside_window: bool,
     startup_splash: StartupSplashState,
 }
@@ -827,6 +871,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             joycon_input: crate::input::JoyConInput::new(),
             mouse_mode: MouseMode::Visible,
             mouse_uses_raw_motion: false,
+            cursor_icon: perro_ui::CursorIcon::Default,
             cursor_inside_window: false,
             startup_splash,
         }
@@ -904,6 +949,22 @@ impl<B: GraphicsBackend> RunnerState<B> {
         self.app.apply_input_commands();
         if let Some(mode) = self.app.take_mouse_mode_request() {
             self.set_mouse_mode(mode);
+        }
+    }
+
+    fn set_cursor_icon(&mut self, icon: perro_ui::CursorIcon) {
+        if self.cursor_icon == icon {
+            return;
+        }
+        if let Some(window) = &self.window {
+            window.set_cursor(map_cursor_icon(icon));
+        }
+        self.cursor_icon = icon;
+    }
+
+    fn apply_cursor_icon_request(&mut self) {
+        if let Some(icon) = self.app.take_cursor_icon_request() {
+            self.set_cursor_icon(icon);
         }
     }
 
@@ -1139,6 +1200,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let runtime_timing = self.app.update_runtime(frame_delta.as_secs_f32());
         runtime_update_duration += runtime_timing.total;
         self.apply_mouse_mode_request();
+        self.apply_cursor_icon_request();
         #[cfg(feature = "profile_heavy")]
         let simulation_duration = simulation_start.elapsed();
         #[cfg(not(feature = "profile_heavy"))]
@@ -1165,6 +1227,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.app.present_with_overlay(splash_overlay);
             None
         };
+        self.apply_cursor_icon_request();
         let mut inflight_now = Vec::<RenderRequestID>::new();
         self.app
             .runtime
@@ -1458,6 +1521,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let runtime_timing = self.app.update_runtime(frame_delta.as_secs_f32());
         runtime_update_duration += runtime_timing.total;
         self.apply_mouse_mode_request();
+        self.apply_cursor_icon_request();
         #[cfg(feature = "profile_heavy")]
         let simulation_duration = simulation_start.elapsed();
         #[cfg(not(feature = "profile_heavy"))]
@@ -1482,6 +1546,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.app.present();
             None
         };
+        self.apply_cursor_icon_request();
         #[cfg(feature = "profile_heavy")]
         let work_duration = work_start.elapsed();
         #[cfg(not(feature = "profile_heavy"))]

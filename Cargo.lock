@@ -2520,6 +2520,7 @@ dependencies = [
  "perro_render_bridge",
  "perro_runtime",
  "perro_scripting",
+ "perro_ui",
  "serde",
  "serde_json",
  "tokio",

@@ -430,6 +430,17 @@ impl Runtime {
         }
 
         self.render_ui.button_states = next_states;
+        let cursor_icon = hovered
+            .and_then(|node| self.nodes.get(node))
+            .and_then(|scene_node| match &scene_node.data {
+                SceneNodeData::UiButton(button) => Some(button.cursor_icon),
+                _ => None,
+            })
+            .unwrap_or(perro_ui::CursorIcon::Default);
+        if self.render_ui.cursor_icon != cursor_icon {
+            self.render_ui.cursor_icon = cursor_icon;
+            self.set_cursor_icon_request(cursor_icon);
+        }
         self.render_ui.last_ui_pointer = Some((
             self.input.mouse_position(),
             self.input.is_mouse_down(MouseButton::Left),
@@ -1706,6 +1717,37 @@ mod tests {
             RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
                 if *n == node && *fill == [0.3, 0.4, 0.5, 1.0]
         )));
+    }
+
+    #[test]
+    fn button_hover_requests_cursor_icon_and_unhover_restores_default() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let node = insert_button(&mut runtime, [120.0, 40.0]);
+        if let Some(scene_node) = runtime.nodes.get_mut(node)
+            && let SceneNodeData::UiButton(button) = &mut scene_node.data
+        {
+            button.cursor_icon = perro_ui::CursorIcon::Grab;
+        }
+
+        runtime.extract_render_ui_commands();
+        let _ = runtime.take_cursor_icon_request();
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.extract_render_ui_commands();
+        assert_eq!(
+            runtime.take_cursor_icon_request(),
+            Some(perro_ui::CursorIcon::Grab)
+        );
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(0.0, 0.0);
+        runtime.extract_render_ui_commands();
+        assert_eq!(
+            runtime.take_cursor_icon_request(),
+            Some(perro_ui::CursorIcon::Default)
+        );
     }
 
     #[test]

@@ -65,6 +65,7 @@ pub struct Runtime {
     pub(crate) node_api_scratch: NodeApiScratchState,
     pub(crate) resource_api: Arc<RuntimeResourceApi>,
     pub(crate) input: InputSnapshot,
+    cursor_icon_request: Option<perro_ui::CursorIcon>,
     physics: physics::PhysicsState,
 }
 
@@ -169,6 +170,7 @@ impl Runtime {
             node_api_scratch: NodeApiScratchState::new(),
             resource_api: RuntimeResourceApi::new(None, None, None, None, None, None),
             input: InputSnapshot::new(),
+            cursor_icon_request: None,
             physics: physics::PhysicsState::new(),
         }
     }
