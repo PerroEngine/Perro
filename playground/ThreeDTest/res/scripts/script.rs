@@ -67,11 +67,10 @@ lifecycle!({
             .unwrap_or_default();
         }
 
-        let b = with_node_mut!(ctx, SelfNodeType, self_id, |mesh| {
+        with_node_mut!(ctx, SelfNodeType, self_id, |mesh| {
             mesh.rotation.rotate_y(rot_dt * speed / 2.0);
             mesh.rotation.rotate_z(rot_dt * speed / 10.0);
             mesh.rotation.normalize();
-            mesh.position;
         })
         .unwrap_or_default();
     }

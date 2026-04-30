@@ -1,8 +1,9 @@
 [dependencies]
-perro_api = "0.1.0"
 perro_animation = "0.1.0"
+perro_api = "0.1.0"
 perro_app = "0.1.0"
 perro_render_bridge = "0.1.0"
+perro_runtime = "0.1.0"
 perro_scene = "0.1.0"
 perro_structs = "0.1.0"
 
@@ -10,6 +11,7 @@ perro_structs = "0.1.0"
 path = "../scripts"
 
 [features]
+mem_profile = ["perro_app/mem_profile"]
 profile = ["perro_app/profile"]
 
 [package]
@@ -46,6 +48,7 @@ perro_ids = { path = "../../../../perro_source/core/perro_ids" }
 perro_nodes = { path = "../../../../perro_source/core/perro_nodes" }
 perro_particle_math = { path = "../../../../perro_source/core/perro_particle_math" }
 perro_structs = { path = "../../../../perro_source/core/perro_structs" }
+perro_ui = { path = "../../../../perro_source/core/perro_ui" }
 perro_variant = { path = "../../../../perro_source/core/perro_variant" }
 perro_internal_updates = { path = "../../../../perro_source/runtime_project/perro_internal_updates" }
 perro_project = { path = "../../../../perro_source/runtime_project/perro_project" }

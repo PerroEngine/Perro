@@ -72,7 +72,7 @@ lifecycle!({
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
-        _self: NodeID,
+        _self_id: NodeID,
     ) {
     }
 
@@ -161,7 +161,7 @@ lifecycle!({
             if middle_down {
                 state.yaw -= mouse_dx * state.look_sensitivity;
                 state.pitch -= mouse_dy * state.look_sensitivity;
-                let pitch_limit = deg_to_rad!(89.0);
+                let pitch_limit = deg_to_rad(89.0);
                 state.pitch = state.pitch.clamp(-pitch_limit, pitch_limit);
             }
             (state.move_speed, state.yaw, state.pitch)
@@ -225,7 +225,7 @@ lifecycle!({
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
-        _self: NodeID,
+        _self_id: NodeID,
     ) {
     }
 
@@ -234,7 +234,7 @@ lifecycle!({
         _ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
-        _self: NodeID,
+        _self_id: NodeID,
     ) {
     }
 });

@@ -2,7 +2,7 @@ use perro_compiler::{
     ScriptsBuildProfile, compile_dlc_bundle, compile_project_bundle, compile_scripts_with_profile,
     sync_scripts,
 };
-use perro_project::{create_new_project, default_script_empty_rs};
+use perro_project::{create_new_project, default_script_empty_rs, ensure_source_overrides};
 use serde_json::Value;
 use std::env;
 use std::fs;
@@ -1751,6 +1751,8 @@ fn clippy_command(args: &[String], cwd: &Path) -> Result<(), String> {
     }
 
     log_step("Syncing User Scripts");
+    ensure_source_overrides(&project_dir)
+        .map_err(|err| format!("failed to refresh source overrides: {err}"))?;
     sync_scripts(&project_dir).map_err(|err| format!("failed to sync scripts: {err}"))?;
     log_done("User Scripts Synced");
 
@@ -1761,6 +1763,8 @@ fn clippy_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .arg("clippy")
         .arg("--all-targets")
         .arg("--")
+        .arg("-D")
+        .arg("warnings")
         .arg("-A")
         .arg("clippy::not_unsafe_ptr_arg_deref")
         .env("CARGO_TARGET_DIR", target_dir)

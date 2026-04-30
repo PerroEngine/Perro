@@ -3180,16 +3180,16 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
     out.push_str("}\n\n");
 
     out.push_str(&format!(
-        "fn __perro_set_nested_var(state: &mut {state_ty}, var: ScriptMemberID, value: &Variant) {{\n"
+        "fn __perro_set_nested_var(state: &mut {state_ty}, var: ScriptMemberID, value: &Variant) -> bool {{\n"
     ));
     for field in fields {
         let ty = normalize_type(&field.ty);
         out.push_str(&format!(
-            "    {{\n        let mut nested_root = perro_api::variant::VariantCodec::to_variant(&state.{});\n        if __perro_set_nested_by_hash(\"{}\", &mut nested_root, var, value) {{\n            if let Some(decoded) = <{ty} as perro_api::variant::VariantCodec>::from_variant(&nested_root) {{\n                state.{} = decoded;\n            }}\n            return;\n        }}\n    }}\n",
+            "    {{\n        let mut nested_root = perro_api::variant::VariantCodec::to_variant(&state.{});\n        if __perro_set_nested_by_hash(\"{}\", &mut nested_root, var, value) {{\n            if let Some(decoded) = <{ty} as perro_api::variant::VariantCodec>::from_variant(&nested_root) {{\n                state.{} = decoded;\n            }}\n            return true;\n        }}\n    }}\n",
             field.name, field.name, field.name
         ));
     }
-    out.push_str("}\n");
+    out.push_str("    false\n}\n");
     out
 }
 
