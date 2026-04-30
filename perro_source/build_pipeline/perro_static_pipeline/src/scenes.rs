@@ -4,6 +4,7 @@ use crate::{
 };
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::{Parser, SceneNodeData, SceneNodeDataBase, SceneValue};
+use perro_structs::Color;
 use rayon::prelude::*;
 use std::{borrow::Cow, collections::HashMap, fmt::Write as _, fs, io, path::Path};
 
@@ -202,8 +203,13 @@ fn emit_static_scene_const(
                 let mut nested_consts = String::new();
                 let mut script_var_entries = String::new();
                 for (name, value) in node.script_vars.as_ref() {
-                    let emitted =
-                        emit_value_with_consts(&mut nested_consts, &scene_ident, value, &mut counter);
+                    let emitted = emit_value_with_consts(
+                        &mut nested_consts,
+                        &scene_ident,
+                        value,
+                        &mut counter,
+                        None,
+                    );
                     let _ = writeln!(
                         script_var_entries,
                         "    (Cow::Borrowed(\"{}\"), {}),",
@@ -264,7 +270,13 @@ fn emit_node_data_consts(
         let mut nested_consts = String::new();
         let mut field_entries = String::new();
         for (name, value) in data.fields.as_ref() {
-            let emitted = emit_value_with_consts(&mut nested_consts, scene_ident, value, counter);
+            let emitted = emit_value_with_consts(
+                &mut nested_consts,
+                scene_ident,
+                value,
+                counter,
+                Some(name.as_ref()),
+            );
             let _ = writeln!(
                 field_entries,
                 "    (Cow::Borrowed(\"{}\"), {}),",
@@ -345,6 +357,7 @@ fn emit_value_with_consts(
     scene_ident: &str,
     value: &SceneValue,
     counter: &mut usize,
+    field_name: Option<&str>,
 ) -> String {
     match value {
         SceneValue::Bool(v) => format!("SceneValue::Bool({v})"),
@@ -359,7 +372,7 @@ fn emit_value_with_consts(
         SceneValue::Vec4 { x, y, z, w } => {
             format!("SceneValue::Vec4 {{ x: {x:?}, y: {y:?}, z: {z:?}, w: {w:?} }}")
         }
-        SceneValue::Str(s) => emit_static_scene_value_str(s.as_ref()).to_string(),
+        SceneValue::Str(s) => emit_static_scene_value_str(field_name, s.as_ref()).to_string(),
         SceneValue::Hashed(v) => format!("SceneValue::Hashed({v}u64)"),
         SceneValue::Key(s) => {
             format!(
@@ -374,8 +387,13 @@ fn emit_value_with_consts(
             let mut nested_consts = String::new();
             let mut object_entries = String::new();
             for (name, value) in entries.as_ref() {
-                let nested =
-                    emit_value_with_consts(&mut nested_consts, scene_ident, value, counter);
+                let nested = emit_value_with_consts(
+                    &mut nested_consts,
+                    scene_ident,
+                    value,
+                    counter,
+                    Some(name.as_ref()),
+                );
                 let _ = writeln!(
                     object_entries,
                     "    (Cow::Borrowed(\"{}\"), {}),",
@@ -397,7 +415,7 @@ fn emit_value_with_consts(
             let mut array_entries = String::new();
             for value in items.as_ref() {
                 let nested =
-                    emit_value_with_consts(&mut nested_consts, scene_ident, value, counter);
+                    emit_value_with_consts(&mut nested_consts, scene_ident, value, counter, None);
                 let _ = writeln!(array_entries, "    {},", nested);
             }
             out.push_str(&nested_consts);
@@ -455,12 +473,40 @@ fn opt_static_root_of_hash(v: &Option<Cow<'static, str>>) -> String {
     }
 }
 
-fn emit_static_scene_value_str(s: &str) -> String {
+fn emit_static_scene_value_str(field_name: Option<&str>, s: &str) -> String {
+    if field_name.is_some_and(is_static_color_field)
+        && let Some(color) = Color::from_hex(s)
+    {
+        return emit_static_scene_color(color);
+    }
     if let Some(hash) = static_hashable_path(s) {
         format!("SceneValue::Hashed({hash}u64)")
     } else {
         format!("SceneValue::Str(Cow::Borrowed(\"{}\"))", escape_str(s))
     }
+}
+
+fn is_static_color_field(field_name: &str) -> bool {
+    matches!(
+        field_name,
+        "fill"
+            | "stroke"
+            | "color"
+            | "text_color"
+            | "hover_fill"
+            | "hover_color"
+            | "hover_stroke"
+            | "pressed_fill"
+            | "pressed_color"
+            | "pressed_stroke"
+    )
+}
+
+fn emit_static_scene_color(color: Color) -> String {
+    format!(
+        "SceneValue::Vec4 {{ x: {:?}, y: {:?}, z: {:?}, w: {:?} }}",
+        color.r, color.g, color.b, color.a
+    )
 }
 
 fn static_dlc_mount_name() -> Option<String> {
@@ -612,7 +658,7 @@ fn sanitize_ident(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_scene_dlc_self_paths, static_hashable_path};
+    use super::{emit_static_scene_value_str, resolve_scene_dlc_self_paths, static_hashable_path};
     use perro_scene::Parser;
 
     #[test]
@@ -637,6 +683,22 @@ mod tests {
     fn static_hashable_path_does_not_hash_dlc_paths() {
         let source = "dlc://test/models/hero.glb";
         assert_eq!(static_hashable_path(source), None);
+    }
+
+    #[test]
+    fn static_color_field_hex_emits_vec4() {
+        assert_eq!(
+            emit_static_scene_value_str(Some("fill"), "#4C3B55"),
+            "SceneValue::Vec4 { x: 0.29803923, y: 0.23137255, z: 0.33333334, w: 1.0 }"
+        );
+    }
+
+    #[test]
+    fn static_non_color_field_hex_stays_string() {
+        assert_eq!(
+            emit_static_scene_value_str(Some("text"), "#4C3B55"),
+            "SceneValue::Str(Cow::Borrowed(\"#4C3B55\"))"
+        );
     }
 
     #[test]
