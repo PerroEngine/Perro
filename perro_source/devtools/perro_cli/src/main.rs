@@ -1767,6 +1767,8 @@ fn clippy_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .arg("warnings")
         .arg("-A")
         .arg("clippy::not_unsafe_ptr_arg_deref")
+        .arg("-A")
+        .arg("clippy::too_many_arguments")
         .env("CARGO_TARGET_DIR", target_dir)
         .current_dir(&scripts_crate)
         .status()
