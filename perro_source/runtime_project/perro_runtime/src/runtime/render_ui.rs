@@ -14,6 +14,9 @@ use perro_ui::{
 use perro_variant::Variant;
 use std::borrow::Cow;
 
+const TEXT_EDIT_REPEAT_DELAY: f32 = 0.35;
+const TEXT_EDIT_REPEAT_RATE: f32 = 0.035;
+
 impl Runtime {
     pub fn extract_render_ui_commands(&mut self) {
         self.extract_render_ui_commands_inner(None);
@@ -425,7 +428,7 @@ impl Runtime {
             || self.input.mouse_wheel() != Vector2::ZERO
             || text_edit_keys()
                 .iter()
-                .any(|&key| self.input.is_key_pressed(key))
+                .any(|&key| self.input.is_key_pressed(key) || self.input.is_key_down(key))
     }
 
     fn process_text_edit_input(
@@ -481,6 +484,8 @@ impl Runtime {
         {
             self.render_ui.focused_text_edit = None;
             self.render_ui.pressed_text_edit = None;
+            self.render_ui.text_edit_repeat_key = None;
+            self.render_ui.text_edit_repeat_timer = 0.0;
             return;
         }
 
@@ -491,13 +496,14 @@ impl Runtime {
         let ctrl = self.input.is_key_down(KeyCode::ControlLeft)
             || self.input.is_key_down(KeyCode::ControlRight);
         let wheel = self.input.mouse_wheel();
+        let repeat_key = self.text_edit_repeat_key(ctrl);
         if let Some(scene_node) = self.nodes.get_mut(focused)
             && let Some(edit) = text_edit_mut(&mut scene_node.data)
         {
             for text in text_inputs {
                 changed |= insert_text_input(edit, &text);
             }
-            changed |= apply_text_edit_key_input(edit, shift, ctrl, &self.input);
+            changed |= apply_text_edit_key_input(edit, shift, ctrl, repeat_key, &self.input);
             if edit.multiline && wheel.y != 0.0 {
                 edit.v_scroll = (edit.v_scroll - wheel.y * edit.font_size * 2.0).max(0.0);
                 changed = true;
@@ -510,6 +516,36 @@ impl Runtime {
         if changed {
             self.mark_ui_dirty(focused, Runtime::UI_DIRTY_COMMANDS | Runtime::UI_DIRTY_TEXT);
         }
+    }
+
+    fn text_edit_repeat_key(&mut self, ctrl: bool) -> Option<KeyCode> {
+        if ctrl {
+            self.render_ui.text_edit_repeat_key = None;
+            self.render_ui.text_edit_repeat_timer = 0.0;
+            return None;
+        }
+        let active = repeatable_text_edit_keys()
+            .iter()
+            .copied()
+            .find(|&key| self.input.is_key_down(key));
+        let Some(key) = active else {
+            self.render_ui.text_edit_repeat_key = None;
+            self.render_ui.text_edit_repeat_timer = 0.0;
+            return None;
+        };
+        if self.input.is_key_pressed(key) || self.render_ui.text_edit_repeat_key != Some(key) {
+            self.render_ui.text_edit_repeat_key = Some(key);
+            self.render_ui.text_edit_repeat_timer = TEXT_EDIT_REPEAT_DELAY;
+            return Some(key);
+        }
+        self.render_ui.text_edit_repeat_timer -= self.time.delta.max(0.0);
+        if self.render_ui.text_edit_repeat_timer > 0.0 {
+            return None;
+        }
+        while self.render_ui.text_edit_repeat_timer <= 0.0 {
+            self.render_ui.text_edit_repeat_timer += TEXT_EDIT_REPEAT_RATE;
+        }
+        Some(key)
     }
 
     fn hovered_text_edit(&self, computed: &AHashMap<NodeID, ComputedUiRect>) -> Option<NodeID> {
@@ -1950,6 +1986,19 @@ fn text_edit_keys() -> &'static [KeyCode] {
     ]
 }
 
+fn repeatable_text_edit_keys() -> &'static [KeyCode] {
+    &[
+        KeyCode::Backspace,
+        KeyCode::Delete,
+        KeyCode::ArrowLeft,
+        KeyCode::ArrowRight,
+        KeyCode::ArrowUp,
+        KeyCode::ArrowDown,
+        KeyCode::Home,
+        KeyCode::End,
+    ]
+}
+
 fn insert_text_input(edit: &mut UiTextEdit, text: &str) -> bool {
     if !edit.editable || text.is_empty() {
         return false;
@@ -1966,6 +2015,7 @@ fn apply_text_edit_key_input(
     edit: &mut UiTextEdit,
     shift: bool,
     ctrl: bool,
+    repeat_key: Option<KeyCode>,
     input: &perro_input::InputSnapshot,
 ) -> bool {
     let mut changed = false;
@@ -1994,39 +2044,39 @@ fn apply_text_edit_key_input(
         }
         return false;
     }
-    if input.is_key_pressed(KeyCode::Backspace) && edit.editable {
+    if repeat_key == Some(KeyCode::Backspace) && edit.editable {
         changed |= backspace(edit);
     }
-    if input.is_key_pressed(KeyCode::Delete) && edit.editable {
+    if repeat_key == Some(KeyCode::Delete) && edit.editable {
         changed |= delete(edit);
     }
     if input.is_key_pressed(KeyCode::Enter) && edit.editable && edit.multiline {
         replace_selection(edit, "\n");
         changed = true;
     }
-    if input.is_key_pressed(KeyCode::ArrowLeft) {
+    if repeat_key == Some(KeyCode::ArrowLeft) {
         move_caret(edit, prev_char(edit.text.as_ref(), edit.caret), shift);
         changed = true;
     }
-    if input.is_key_pressed(KeyCode::ArrowRight) {
+    if repeat_key == Some(KeyCode::ArrowRight) {
         move_caret(edit, next_char(edit.text.as_ref(), edit.caret), shift);
         changed = true;
     }
-    if input.is_key_pressed(KeyCode::Home) {
+    if repeat_key == Some(KeyCode::Home) {
         let line = line_for_index(edit.text.as_ref(), edit.caret);
         move_caret(edit, line.start, shift);
         changed = true;
     }
-    if input.is_key_pressed(KeyCode::End) {
+    if repeat_key == Some(KeyCode::End) {
         let line = line_for_index(edit.text.as_ref(), edit.caret);
         move_caret(edit, line.end, shift);
         changed = true;
     }
-    if edit.multiline && input.is_key_pressed(KeyCode::ArrowUp) {
+    if edit.multiline && repeat_key == Some(KeyCode::ArrowUp) {
         move_vertical(edit, -1, shift);
         changed = true;
     }
-    if edit.multiline && input.is_key_pressed(KeyCode::ArrowDown) {
+    if edit.multiline && repeat_key == Some(KeyCode::ArrowDown) {
         move_vertical(edit, 1, shift);
         changed = true;
     }
@@ -2425,6 +2475,45 @@ mod tests {
         runtime.begin_input_frame();
         runtime.set_key_state(KeyCode::Backspace, true);
         runtime.extract_render_ui_commands();
+        let text = runtime.nodes.get(node).and_then(|scene_node| {
+            if let SceneNodeData::UiTextBox(text_box) = &scene_node.data {
+                Some(text_box.inner.text.as_ref())
+            } else {
+                None
+            }
+        });
+        assert_eq!(text, Some("ab"));
+    }
+
+    #[test]
+    fn held_backspace_repeats_in_text_box() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let mut text_box = perro_ui::UiTextBox::new();
+        text_box.inner.base.layout.size = UiVector2::pixels(200.0, 40.0);
+        text_box.inner.text = Cow::Borrowed("abcd");
+        text_box.inner.caret = 4;
+        text_box.inner.anchor = 4;
+        let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(text_box));
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.extract_render_ui_commands();
+        runtime.clear_dirty_flags();
+        runtime.set_mouse_button_state(MouseButton::Left, false);
+        runtime.begin_input_frame();
+
+        runtime.set_key_state(KeyCode::Backspace, true);
+        runtime.extract_render_ui_commands();
+        runtime.clear_dirty_flags();
+        runtime.begin_input_frame();
+        runtime.update(0.36);
+        runtime.extract_render_ui_commands();
+
         let text = runtime.nodes.get(node).and_then(|scene_node| {
             if let SceneNodeData::UiTextBox(text_box) = &scene_node.data {
                 Some(text_box.inner.text.as_ref())
