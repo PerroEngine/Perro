@@ -45,6 +45,7 @@ enum UiDraw {
 pub struct UiPaintFrame<'a> {
     pub primitives: &'a [ClippedPrimitive],
     pub textures_delta: &'a TexturesDelta,
+    pub revision: u64,
 }
 
 pub struct UiRenderer {
@@ -171,6 +172,7 @@ impl UiRenderer {
         UiPaintFrame {
             primitives: &self.primitives,
             textures_delta: &self.textures_delta,
+            revision: self.paint_revision,
         }
     }
 

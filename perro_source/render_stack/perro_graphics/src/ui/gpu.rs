@@ -1,14 +1,13 @@
 use bytemuck::{Pod, Zeroable};
 use epaint::{ClippedPrimitive, ImageData, Primitive, TextureId, textures::TexturesDelta};
 use std::borrow::Cow;
-use wgpu::util::DeviceExt;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
 struct UiVertexGpu {
     pos: [f32; 2],
     uv: [f32; 2],
-    color: [f32; 4],
+    color: [u8; 4],
 }
 
 #[repr(C)]
@@ -24,8 +23,7 @@ struct UiTextureGpu {
 }
 
 struct UiMeshGpu {
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
+    index_start: u32,
     index_count: u32,
     clip_rect: [u32; 4],
 }
@@ -38,8 +36,14 @@ pub struct GpuUi {
     sampler: wgpu::Sampler,
     font_texture: Option<UiTextureGpu>,
     meshes: Vec<UiMeshGpu>,
+    vertex_buffer: Option<wgpu::Buffer>,
+    index_buffer: Option<wgpu::Buffer>,
+    vertex_capacity_bytes: u64,
+    index_capacity_bytes: u64,
     vertices: Vec<UiVertexGpu>,
     indices: Vec<u32>,
+    prepared_revision: u64,
+    prepared_viewport: [u32; 2],
 }
 
 impl GpuUi {
@@ -137,7 +141,7 @@ impl GpuUi {
                             shader_location: 1,
                         },
                         wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Unorm8x4,
                             offset: 16,
                             shader_location: 2,
                         },
@@ -184,8 +188,14 @@ impl GpuUi {
             sampler,
             font_texture: None,
             meshes: Vec::new(),
+            vertex_buffer: None,
+            index_buffer: None,
+            vertex_capacity_bytes: 0,
+            index_capacity_bytes: 0,
             vertices: Vec::new(),
             indices: Vec::new(),
+            prepared_revision: u64::MAX,
+            prepared_viewport: [0, 0],
         }
     }
 
@@ -196,12 +206,21 @@ impl GpuUi {
         viewport: [u32; 2],
         primitives: &[ClippedPrimitive],
         textures_delta: &TexturesDelta,
+        revision: u64,
     ) {
+        let viewport = [viewport[0].max(1), viewport[1].max(1)];
+        if self.prepared_revision == revision
+            && self.prepared_viewport == viewport
+            && textures_delta.set.is_empty()
+            && textures_delta.free.is_empty()
+        {
+            return;
+        }
         queue.write_buffer(
             &self.uniform_buffer,
             0,
             bytemuck::bytes_of(&UiUniformGpu {
-                screen_size: [viewport[0].max(1) as f32, viewport[1].max(1) as f32],
+                screen_size: [viewport[0] as f32, viewport[1] as f32],
                 _pad: [0.0, 0.0],
             }),
         );
@@ -211,6 +230,8 @@ impl GpuUi {
             }
         }
         self.meshes.clear();
+        self.vertices.clear();
+        self.indices.clear();
         for primitive in primitives {
             let Primitive::Mesh(mesh) = &primitive.primitive else {
                 continue;
@@ -221,40 +242,42 @@ impl GpuUi {
             {
                 continue;
             }
-            self.vertices.clear();
-            self.indices.clear();
+            let clip_rect = clip_rect(primitive, viewport);
+            if clip_rect[2] == 0 || clip_rect[3] == 0 {
+                continue;
+            }
+            let vertex_offset = self.vertices.len().min(u32::MAX as usize) as u32;
+            let index_start = self.indices.len().min(u32::MAX as usize) as u32;
             self.vertices.reserve(mesh.vertices.len());
-            self.indices.extend_from_slice(&mesh.indices);
-            self.vertices.extend(mesh.vertices.iter().map(|vertex| {
-                let [r, g, b, a] = vertex.color.to_array();
-                UiVertexGpu {
+            self.indices.reserve(mesh.indices.len());
+            self.indices.extend(
+                mesh.indices
+                    .iter()
+                    .map(|index| index.saturating_add(vertex_offset)),
+            );
+            self.vertices
+                .extend(mesh.vertices.iter().map(|vertex| UiVertexGpu {
                     pos: [vertex.pos.x, vertex.pos.y],
                     uv: [vertex.uv.x, vertex.uv.y],
-                    color: [
-                        r as f32 / 255.0,
-                        g as f32 / 255.0,
-                        b as f32 / 255.0,
-                        a as f32 / 255.0,
-                    ],
-                }
-            }));
-            let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("perro_ui_vertices"),
-                contents: bytemuck::cast_slice(&self.vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-            let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("perro_ui_indices"),
-                contents: bytemuck::cast_slice(&self.indices),
-                usage: wgpu::BufferUsages::INDEX,
-            });
+                    color: vertex.color.to_array(),
+                }));
+            let index_count = mesh.indices.len().min(u32::MAX as usize) as u32;
+            if let Some(last) = self.meshes.last_mut()
+                && last.clip_rect == clip_rect
+                && last.index_start.saturating_add(last.index_count) == index_start
+            {
+                last.index_count = last.index_count.saturating_add(index_count);
+                continue;
+            }
             self.meshes.push(UiMeshGpu {
-                vertex_buffer,
-                index_buffer,
-                index_count: mesh.indices.len().min(u32::MAX as usize) as u32,
-                clip_rect: clip_rect(primitive, viewport),
+                index_start,
+                index_count,
+                clip_rect,
             });
         }
+        self.upload_mesh_buffers(device, queue);
+        self.prepared_revision = revision;
+        self.prepared_viewport = viewport;
     }
 
     pub fn render_pass(
@@ -263,10 +286,16 @@ impl GpuUi {
         output_view: &wgpu::TextureView,
         viewport: [u32; 2],
     ) {
-        if self.meshes.is_empty() || self.font_texture.is_none() {
+        let (Some(vertex_buffer), Some(index_buffer), Some(font_texture)) = (
+            self.vertex_buffer.as_ref(),
+            self.index_buffer.as_ref(),
+            self.font_texture.as_ref(),
+        ) else {
+            return;
+        };
+        if self.meshes.is_empty() {
             return;
         }
-        let font_texture = self.font_texture.as_ref().expect("checked above");
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_ui_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -286,6 +315,8 @@ impl GpuUi {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         pass.set_bind_group(1, &font_texture.bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         for mesh in &self.meshes {
             if mesh.clip_rect[2] == 0 || mesh.clip_rect[3] == 0 {
                 continue;
@@ -296,9 +327,8 @@ impl GpuUi {
                 mesh.clip_rect[2].min(viewport[0]),
                 mesh.clip_rect[3].min(viewport[1]),
             );
-            pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-            pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+            let start = mesh.index_start;
+            pass.draw_indexed(start..start.saturating_add(mesh.index_count), 0, 0..1);
         }
     }
 
@@ -308,6 +338,32 @@ impl GpuUi {
 
     pub fn clear(&mut self) {
         self.meshes.clear();
+        self.vertices.clear();
+        self.indices.clear();
+        self.prepared_revision = u64::MAX;
+    }
+
+    fn upload_mesh_buffers(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let vertex_bytes = bytemuck::cast_slice(&self.vertices);
+        let index_bytes = bytemuck::cast_slice(&self.indices);
+        self.vertex_buffer = upload_or_grow_buffer(
+            device,
+            queue,
+            self.vertex_buffer.take(),
+            &mut self.vertex_capacity_bytes,
+            "perro_ui_vertices",
+            wgpu::BufferUsages::VERTEX,
+            vertex_bytes,
+        );
+        self.index_buffer = upload_or_grow_buffer(
+            device,
+            queue,
+            self.index_buffer.take(),
+            &mut self.index_capacity_bytes,
+            "perro_ui_indices",
+            wgpu::BufferUsages::INDEX,
+            index_bytes,
+        );
     }
 
     fn apply_font_delta(
@@ -405,6 +461,37 @@ fn clip_rect(primitive: &ClippedPrimitive, viewport: [u32; 2]) -> [u32; 4] {
         .min(viewport[1] as f32)
         .max(min_y as f32) as u32;
     [min_x, min_y, max_x - min_x, max_y - min_y]
+}
+
+fn upload_or_grow_buffer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    current: Option<wgpu::Buffer>,
+    capacity_bytes: &mut u64,
+    label: &'static str,
+    usage: wgpu::BufferUsages,
+    bytes: &[u8],
+) -> Option<wgpu::Buffer> {
+    if bytes.is_empty() {
+        return current;
+    }
+    let required = bytes.len() as u64;
+    if let Some(buffer) = current
+        && *capacity_bytes >= required
+    {
+        queue.write_buffer(&buffer, 0, bytes);
+        return Some(buffer);
+    }
+    let capacity = required.next_power_of_two();
+    *capacity_bytes = capacity;
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: capacity,
+        usage: usage | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&buffer, 0, bytes);
+    Some(buffer)
 }
 
 const UI_SHADER: &str = r#"

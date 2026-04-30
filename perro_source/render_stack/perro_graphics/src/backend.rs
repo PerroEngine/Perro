@@ -799,6 +799,7 @@ impl GraphicsBackend for PerroGraphics {
                 sprites_2d: &self.retained_sprites_cache,
                 ui_primitives: ui_paint.primitives,
                 ui_textures_delta: ui_paint.textures_delta,
+                ui_revision: ui_paint.revision,
                 redraw_requested: self.redraw_requested,
                 frame_dirty_bits,
                 static_texture_lookup: self.static_texture_lookup,
