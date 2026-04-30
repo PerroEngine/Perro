@@ -114,6 +114,15 @@ pub struct RuntimeUiTiming {
     pub layout: Duration,
     pub commands: Duration,
     pub total: Duration,
+    pub dirty_nodes: u32,
+    pub affected_nodes: u32,
+    pub recalculated_rects: u32,
+    pub cached_rects: u32,
+    pub auto_layout_batches: u32,
+    pub command_nodes: u32,
+    pub command_emitted: u32,
+    pub command_skipped: u32,
+    pub removed_nodes: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

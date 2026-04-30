@@ -4,6 +4,14 @@ use perro_ids::NodeID;
 use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
 
 impl Runtime {
+    pub(crate) const UI_DIRTY_TRANSFORM: u16 = crate::runtime::state::DirtyState::DIRTY_TRANSFORM;
+    pub(crate) const UI_DIRTY_LAYOUT_SELF: u16 =
+        crate::runtime::state::DirtyState::DIRTY_LAYOUT_SELF;
+    pub(crate) const UI_DIRTY_LAYOUT_PARENT: u16 =
+        crate::runtime::state::DirtyState::DIRTY_LAYOUT_PARENT;
+    pub(crate) const UI_DIRTY_COMMANDS: u16 = crate::runtime::state::DirtyState::DIRTY_COMMANDS;
+    pub(crate) const UI_DIRTY_TEXT: u16 = crate::runtime::state::DirtyState::DIRTY_TEXT;
+
     pub fn queue_render_command(&mut self, command: RenderCommand) {
         self.render.queue_command(command);
     }
@@ -66,6 +74,10 @@ impl Runtime {
 
     pub fn mark_needs_rerender(&mut self, id: NodeID) {
         self.dirty.mark_rerender(id);
+    }
+
+    pub(crate) fn mark_ui_dirty(&mut self, id: NodeID, flags: u16) {
+        self.dirty.mark_ui(id, flags);
     }
 
     pub fn mark_transform_dirty_recursive(&mut self, root: NodeID) {

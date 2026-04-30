@@ -27,6 +27,24 @@ pub struct PresentTiming {
     pub ui_layout: Duration,
     #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
     pub ui_commands: Duration,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    pub ui_dirty_nodes: u32,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    pub ui_affected_nodes: u32,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    pub ui_recalculated_rects: u32,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    pub ui_cached_rects: u32,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    pub ui_auto_layout_batches: u32,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    pub ui_command_nodes: u32,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    pub ui_command_emitted: u32,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    pub ui_command_skipped: u32,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    pub ui_removed_nodes: u32,
     #[cfg(feature = "profile_heavy")]
     pub drain_commands: Duration,
     #[cfg(feature = "profile_heavy")]
@@ -413,6 +431,24 @@ impl<B: GraphicsBackend> App<B> {
             ui_layout: ui_timing.layout,
             #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
             ui_commands: ui_timing.commands,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            ui_dirty_nodes: ui_timing.dirty_nodes,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            ui_affected_nodes: ui_timing.affected_nodes,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            ui_recalculated_rects: ui_timing.recalculated_rects,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            ui_cached_rects: ui_timing.cached_rects,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            ui_auto_layout_batches: ui_timing.auto_layout_batches,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            ui_command_nodes: ui_timing.command_nodes,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            ui_command_emitted: ui_timing.command_emitted,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            ui_command_skipped: ui_timing.command_skipped,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            ui_removed_nodes: ui_timing.removed_nodes,
             #[cfg(feature = "profile_heavy")]
             drain_commands,
             #[cfg(feature = "profile_heavy")]

@@ -304,7 +304,7 @@ impl RenderState {
 
 /// Runtime-side dirty tracking for downstream systems (rendering, transform propagation).
 pub(crate) struct DirtyState {
-    node_flags: Vec<u8>,
+    node_flags: Vec<u16>,
     dirty_indices: Vec<u32>,
     pending_transform_roots: Vec<NodeID>,
     pending_transform_root_flags: Vec<u8>,
@@ -322,9 +322,13 @@ pub(crate) struct Render2DState {
 
 pub(crate) struct RenderUiState {
     pub(crate) traversal_ids: Vec<NodeID>,
+    pub(crate) traversal_seen: AHashSet<NodeID>,
+    pub(crate) command_ids: Vec<NodeID>,
+    pub(crate) command_seen: AHashSet<NodeID>,
     pub(crate) visible_now: AHashSet<NodeID>,
     pub(crate) prev_visible: AHashSet<NodeID>,
     pub(crate) computed_rects: AHashMap<NodeID, ComputedUiRect>,
+    pub(crate) auto_layout_computed: AHashSet<NodeID>,
     pub(crate) retained_commands: AHashMap<NodeID, UiCommand>,
     pub(crate) retained_rects: AHashMap<NodeID, UiRectState>,
     pub(crate) removed_nodes: Vec<NodeID>,
@@ -334,9 +338,13 @@ impl RenderUiState {
     pub(crate) fn new() -> Self {
         Self {
             traversal_ids: Vec::new(),
+            traversal_seen: AHashSet::default(),
+            command_ids: Vec::new(),
+            command_seen: AHashSet::default(),
             visible_now: AHashSet::default(),
             prev_visible: AHashSet::default(),
             computed_rects: AHashMap::default(),
+            auto_layout_computed: AHashSet::default(),
             retained_commands: AHashMap::default(),
             retained_rects: AHashMap::default(),
             removed_nodes: Vec::new(),
@@ -430,9 +438,23 @@ pub(crate) struct CollisionDebugState {
 }
 
 impl DirtyState {
-    pub(crate) const FLAG_RERENDER: u8 = 1 << 0;
-    pub(crate) const FLAG_DIRTY_2D_TRANSFORM: u8 = 1 << 1;
-    pub(crate) const FLAG_DIRTY_3D_TRANSFORM: u8 = 1 << 2;
+    pub(crate) const FLAG_RERENDER: u16 = 1 << 0;
+    pub(crate) const FLAG_DIRTY_2D_TRANSFORM: u16 = 1 << 1;
+    pub(crate) const FLAG_DIRTY_3D_TRANSFORM: u16 = 1 << 2;
+    pub(crate) const DIRTY_TRANSFORM: u16 = 1 << 3;
+    pub(crate) const DIRTY_LAYOUT_SELF: u16 = 1 << 4;
+    pub(crate) const DIRTY_LAYOUT_PARENT: u16 = 1 << 5;
+    pub(crate) const DIRTY_COMMANDS: u16 = 1 << 6;
+    pub(crate) const DIRTY_TEXT: u16 = 1 << 7;
+    pub(crate) const UI_DIRTY_MASK: u16 = Self::DIRTY_TRANSFORM
+        | Self::DIRTY_LAYOUT_SELF
+        | Self::DIRTY_LAYOUT_PARENT
+        | Self::DIRTY_COMMANDS
+        | Self::DIRTY_TEXT;
+    pub(crate) const UI_LAYOUT_MASK: u16 = Self::DIRTY_TRANSFORM
+        | Self::DIRTY_LAYOUT_SELF
+        | Self::DIRTY_LAYOUT_PARENT
+        | Self::DIRTY_TEXT;
 
     pub(crate) fn new() -> Self {
         Self {
@@ -445,6 +467,10 @@ impl DirtyState {
 
     pub(crate) fn mark_rerender(&mut self, id: NodeID) {
         self.mark(id, Self::FLAG_RERENDER);
+    }
+
+    pub(crate) fn mark_ui(&mut self, id: NodeID, flags: u16) {
+        self.mark(id, Self::FLAG_RERENDER | (flags & Self::UI_DIRTY_MASK));
     }
 
     pub(crate) fn mark_transform(&mut self, id: NodeID, spatial: Spatial) {
@@ -460,7 +486,7 @@ impl DirtyState {
     }
 
     #[inline]
-    pub(crate) fn transform_mask(spatial: Spatial) -> u8 {
+    pub(crate) fn transform_mask(spatial: Spatial) -> u16 {
         match spatial {
             Spatial::TwoD => Self::FLAG_DIRTY_2D_TRANSFORM,
             Spatial::ThreeD => Self::FLAG_DIRTY_3D_TRANSFORM,
@@ -494,7 +520,7 @@ impl DirtyState {
     }
 
     #[inline]
-    pub(crate) fn clear_transform_dirty_at_index(&mut self, index: usize, mask: u8) {
+    pub(crate) fn clear_transform_dirty_at_index(&mut self, index: usize, mask: u16) {
         if let Some(flags) = self.node_flags.get_mut(index) {
             *flags &= !mask;
         }
@@ -506,9 +532,14 @@ impl DirtyState {
     }
 
     #[inline]
-    pub(crate) fn transform_flags_at(&self, index: usize) -> u8 {
+    pub(crate) fn transform_flags_at(&self, index: usize) -> u16 {
         self.node_flags.get(index).copied().unwrap_or(0)
             & (Self::FLAG_DIRTY_2D_TRANSFORM | Self::FLAG_DIRTY_3D_TRANSFORM)
+    }
+
+    #[inline]
+    pub(crate) fn ui_flags_at(&self, index: usize) -> u16 {
+        self.node_flags.get(index).copied().unwrap_or(0) & Self::UI_DIRTY_MASK
     }
 
     pub(crate) fn mark_transform_root(&mut self, id: NodeID) {
@@ -546,7 +577,7 @@ impl DirtyState {
     }
 
     #[inline]
-    fn mark(&mut self, id: NodeID, flag: u8) {
+    fn mark(&mut self, id: NodeID, flag: u16) {
         let index = id.index() as usize;
         if self.node_flags.len() <= index {
             self.node_flags.resize(index + 1, 0);

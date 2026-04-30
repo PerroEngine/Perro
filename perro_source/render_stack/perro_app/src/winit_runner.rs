@@ -510,6 +510,24 @@ struct RunnerState<B: GraphicsBackend> {
     batch_ui_layout: Duration,
     #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
     batch_ui_commands: Duration,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    batch_ui_dirty_nodes: u64,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    batch_ui_affected_nodes: u64,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    batch_ui_recalculated_rects: u64,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    batch_ui_cached_rects: u64,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    batch_ui_auto_layout_batches: u64,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    batch_ui_command_nodes: u64,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    batch_ui_command_emitted: u64,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    batch_ui_command_skipped: u64,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    batch_ui_removed_nodes: u64,
     #[cfg(feature = "profile_heavy")]
     batch_present_drain_commands: Duration,
     #[cfg(feature = "profile_heavy")]
@@ -710,6 +728,24 @@ impl<B: GraphicsBackend> RunnerState<B> {
             batch_ui_layout: Duration::ZERO,
             #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
             batch_ui_commands: Duration::ZERO,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            batch_ui_dirty_nodes: 0,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            batch_ui_affected_nodes: 0,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            batch_ui_recalculated_rects: 0,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            batch_ui_cached_rects: 0,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            batch_ui_auto_layout_batches: 0,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            batch_ui_command_nodes: 0,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            batch_ui_command_emitted: 0,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            batch_ui_command_skipped: 0,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            batch_ui_removed_nodes: 0,
             #[cfg(feature = "profile_heavy")]
             batch_present_drain_commands: Duration::ZERO,
             #[cfg(feature = "profile_heavy")]
@@ -1178,6 +1214,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_present_extract_ui += timing.extract_ui;
             self.batch_ui_layout += timing.ui_layout;
             self.batch_ui_commands += timing.ui_commands;
+            self.batch_ui_dirty_nodes += timing.ui_dirty_nodes as u64;
+            self.batch_ui_affected_nodes += timing.ui_affected_nodes as u64;
+            self.batch_ui_recalculated_rects += timing.ui_recalculated_rects as u64;
+            self.batch_ui_cached_rects += timing.ui_cached_rects as u64;
+            self.batch_ui_auto_layout_batches += timing.ui_auto_layout_batches as u64;
+            self.batch_ui_command_nodes += timing.ui_command_nodes as u64;
+            self.batch_ui_command_emitted += timing.ui_command_emitted as u64;
+            self.batch_ui_command_skipped += timing.ui_command_skipped as u64;
+            self.batch_ui_removed_nodes += timing.ui_removed_nodes as u64;
         }
         if let Some(csv) = &mut self.timing_csv {
             csv.write(CsvFrameSample {
@@ -1215,6 +1260,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_present_extract_ui += present_timing.extract_ui;
             self.batch_ui_layout += present_timing.ui_layout;
             self.batch_ui_commands += present_timing.ui_commands;
+            self.batch_ui_dirty_nodes += present_timing.ui_dirty_nodes as u64;
+            self.batch_ui_affected_nodes += present_timing.ui_affected_nodes as u64;
+            self.batch_ui_recalculated_rects += present_timing.ui_recalculated_rects as u64;
+            self.batch_ui_cached_rects += present_timing.ui_cached_rects as u64;
+            self.batch_ui_auto_layout_batches += present_timing.ui_auto_layout_batches as u64;
+            self.batch_ui_command_nodes += present_timing.ui_command_nodes as u64;
+            self.batch_ui_command_emitted += present_timing.ui_command_emitted as u64;
+            self.batch_ui_command_skipped += present_timing.ui_command_skipped as u64;
+            self.batch_ui_removed_nodes += present_timing.ui_removed_nodes as u64;
             self.batch_present_drain_commands += present_timing.drain_commands;
             self.batch_present_submit_commands += present_timing.submit_commands;
             self.batch_present_draw_frame += present_timing.gpu_present;
@@ -1468,6 +1522,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_present_extract_ui += timing.extract_ui;
             self.batch_ui_layout += timing.ui_layout;
             self.batch_ui_commands += timing.ui_commands;
+            self.batch_ui_dirty_nodes += timing.ui_dirty_nodes as u64;
+            self.batch_ui_affected_nodes += timing.ui_affected_nodes as u64;
+            self.batch_ui_recalculated_rects += timing.ui_recalculated_rects as u64;
+            self.batch_ui_cached_rects += timing.ui_cached_rects as u64;
+            self.batch_ui_auto_layout_batches += timing.ui_auto_layout_batches as u64;
+            self.batch_ui_command_nodes += timing.ui_command_nodes as u64;
+            self.batch_ui_command_emitted += timing.ui_command_emitted as u64;
+            self.batch_ui_command_skipped += timing.ui_command_skipped as u64;
+            self.batch_ui_removed_nodes += timing.ui_removed_nodes as u64;
         }
         if let Some(csv) = &mut self.timing_csv {
             csv.write(CsvFrameSample {
@@ -1505,6 +1568,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_present_extract_ui += present_timing.extract_ui;
             self.batch_ui_layout += present_timing.ui_layout;
             self.batch_ui_commands += present_timing.ui_commands;
+            self.batch_ui_dirty_nodes += present_timing.ui_dirty_nodes as u64;
+            self.batch_ui_affected_nodes += present_timing.ui_affected_nodes as u64;
+            self.batch_ui_recalculated_rects += present_timing.ui_recalculated_rects as u64;
+            self.batch_ui_cached_rects += present_timing.ui_cached_rects as u64;
+            self.batch_ui_auto_layout_batches += present_timing.ui_auto_layout_batches as u64;
+            self.batch_ui_command_nodes += present_timing.ui_command_nodes as u64;
+            self.batch_ui_command_emitted += present_timing.ui_command_emitted as u64;
+            self.batch_ui_command_skipped += present_timing.ui_command_skipped as u64;
+            self.batch_ui_removed_nodes += present_timing.ui_removed_nodes as u64;
             self.batch_present_drain_commands += present_timing.drain_commands;
             self.batch_present_submit_commands += present_timing.submit_commands;
             self.batch_present_draw_frame += present_timing.gpu_present;
@@ -1576,8 +1648,23 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     self.batch_ui_layout.as_micros() as f64 / self.batch_frames as f64;
                 let avg_ui_commands_us =
                     self.batch_ui_commands.as_micros() as f64 / self.batch_frames as f64;
+                let avg_ui_dirty = self.batch_ui_dirty_nodes as f64 / self.batch_frames as f64;
+                let avg_ui_affected =
+                    self.batch_ui_affected_nodes as f64 / self.batch_frames as f64;
+                let avg_ui_recalc =
+                    self.batch_ui_recalculated_rects as f64 / self.batch_frames as f64;
+                let avg_ui_cached = self.batch_ui_cached_rects as f64 / self.batch_frames as f64;
+                let avg_ui_batches =
+                    self.batch_ui_auto_layout_batches as f64 / self.batch_frames as f64;
+                let avg_ui_cmd_nodes =
+                    self.batch_ui_command_nodes as f64 / self.batch_frames as f64;
+                let avg_ui_cmd_emit =
+                    self.batch_ui_command_emitted as f64 / self.batch_frames as f64;
+                let avg_ui_cmd_skip =
+                    self.batch_ui_command_skipped as f64 / self.batch_frames as f64;
+                let avg_ui_removed = self.batch_ui_removed_nodes as f64 / self.batch_frames as f64;
                 println!(
-                    "ui profile: total=({avg_present_extract_ui_us:.3}us) layout=({avg_ui_layout_us:.3}us) commands=({avg_ui_commands_us:.3}us)"
+                    "ui profile: total=({avg_present_extract_ui_us:.3}us) layout=({avg_ui_layout_us:.3}us) commands=({avg_ui_commands_us:.3}us) dirty=({avg_ui_dirty:.2}) affected=({avg_ui_affected:.2}) rect_recalc=({avg_ui_recalc:.2}) rect_cache=({avg_ui_cached:.2}) auto_batches=({avg_ui_batches:.2}) cmd_nodes=({avg_ui_cmd_nodes:.2}) cmd_emit=({avg_ui_cmd_emit:.2}) cmd_skip=({avg_ui_cmd_skip:.2}) rm=({avg_ui_removed:.2})"
                 );
             }
             #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
@@ -1657,6 +1744,21 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     self.batch_ui_layout.as_micros() as f64 / self.batch_frames as f64;
                 let avg_ui_commands_us =
                     self.batch_ui_commands.as_micros() as f64 / self.batch_frames as f64;
+                let avg_ui_dirty = self.batch_ui_dirty_nodes as f64 / self.batch_frames as f64;
+                let avg_ui_affected =
+                    self.batch_ui_affected_nodes as f64 / self.batch_frames as f64;
+                let avg_ui_recalc =
+                    self.batch_ui_recalculated_rects as f64 / self.batch_frames as f64;
+                let avg_ui_cached = self.batch_ui_cached_rects as f64 / self.batch_frames as f64;
+                let avg_ui_batches =
+                    self.batch_ui_auto_layout_batches as f64 / self.batch_frames as f64;
+                let avg_ui_cmd_nodes =
+                    self.batch_ui_command_nodes as f64 / self.batch_frames as f64;
+                let avg_ui_cmd_emit =
+                    self.batch_ui_command_emitted as f64 / self.batch_frames as f64;
+                let avg_ui_cmd_skip =
+                    self.batch_ui_command_skipped as f64 / self.batch_frames as f64;
+                let avg_ui_removed = self.batch_ui_removed_nodes as f64 / self.batch_frames as f64;
                 let avg_present_drain_commands_us =
                     self.batch_present_drain_commands.as_micros() as f64 / self.batch_frames as f64;
                 let avg_present_submit_commands_us = self.batch_present_submit_commands.as_micros()
@@ -1797,6 +1899,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     avg_present_apply_events_us
                 );
                 println!(
+                    "ui nodes: dirty=({avg_ui_dirty:.2}) affected=({avg_ui_affected:.2}) rect_recalc=({avg_ui_recalc:.2}) rect_cache=({avg_ui_cached:.2}) auto_batches=({avg_ui_batches:.2}) cmd_nodes=({avg_ui_cmd_nodes:.2}) cmd_emit=({avg_ui_cmd_emit:.2}) cmd_skip=({avg_ui_cmd_skip:.2}) rm=({avg_ui_removed:.2})"
+                );
+                println!(
                     "draw breakdown: process=({:.3}us) prep=({:.3}us) gpu_prepare2d=({:.3}us) gpu_prepare3d=({:.3}us) acquire=({:.3}us) encode=({:.3}us) gpu_submit=({:.3}us) post=({:.3}us) access=({:.3}us) present=({:.3}us) calls2d=({:.2}) calls3d=({:.2}) calls=({:.2})",
                     avg_draw_process_commands_us,
                     avg_draw_prepare_cpu_us,
@@ -1875,6 +1980,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 self.batch_present_extract_ui = Duration::ZERO;
                 self.batch_ui_layout = Duration::ZERO;
                 self.batch_ui_commands = Duration::ZERO;
+                self.batch_ui_dirty_nodes = 0;
+                self.batch_ui_affected_nodes = 0;
+                self.batch_ui_recalculated_rects = 0;
+                self.batch_ui_cached_rects = 0;
+                self.batch_ui_auto_layout_batches = 0;
+                self.batch_ui_command_nodes = 0;
+                self.batch_ui_command_emitted = 0;
+                self.batch_ui_command_skipped = 0;
+                self.batch_ui_removed_nodes = 0;
             }
             #[cfg(feature = "profile_heavy")]
             {
@@ -1904,6 +2018,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 self.batch_present_extract_ui = Duration::ZERO;
                 self.batch_ui_layout = Duration::ZERO;
                 self.batch_ui_commands = Duration::ZERO;
+                self.batch_ui_dirty_nodes = 0;
+                self.batch_ui_affected_nodes = 0;
+                self.batch_ui_recalculated_rects = 0;
+                self.batch_ui_cached_rects = 0;
+                self.batch_ui_auto_layout_batches = 0;
+                self.batch_ui_command_nodes = 0;
+                self.batch_ui_command_emitted = 0;
+                self.batch_ui_command_skipped = 0;
+                self.batch_ui_removed_nodes = 0;
                 self.batch_present_drain_commands = Duration::ZERO;
                 self.batch_present_submit_commands = Duration::ZERO;
                 self.batch_present_draw_frame = Duration::ZERO;
@@ -2007,6 +2130,15 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.batch_present_extract_ui = Duration::ZERO;
                 self.batch_ui_layout = Duration::ZERO;
                 self.batch_ui_commands = Duration::ZERO;
+                self.batch_ui_dirty_nodes = 0;
+                self.batch_ui_affected_nodes = 0;
+                self.batch_ui_recalculated_rects = 0;
+                self.batch_ui_cached_rects = 0;
+                self.batch_ui_auto_layout_batches = 0;
+                self.batch_ui_command_nodes = 0;
+                self.batch_ui_command_emitted = 0;
+                self.batch_ui_command_skipped = 0;
+                self.batch_ui_removed_nodes = 0;
             }
             #[cfg(feature = "profile_heavy")]
             {
@@ -2036,6 +2168,15 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.batch_present_extract_ui = Duration::ZERO;
                 self.batch_ui_layout = Duration::ZERO;
                 self.batch_ui_commands = Duration::ZERO;
+                self.batch_ui_dirty_nodes = 0;
+                self.batch_ui_affected_nodes = 0;
+                self.batch_ui_recalculated_rects = 0;
+                self.batch_ui_cached_rects = 0;
+                self.batch_ui_auto_layout_batches = 0;
+                self.batch_ui_command_nodes = 0;
+                self.batch_ui_command_emitted = 0;
+                self.batch_ui_command_skipped = 0;
+                self.batch_ui_removed_nodes = 0;
                 self.batch_present_drain_commands = Duration::ZERO;
                 self.batch_present_submit_commands = Duration::ZERO;
                 self.batch_present_draw_frame = Duration::ZERO;

@@ -1,3 +1,4 @@
+use super::state::DirtyState;
 use super::{Runtime, RuntimeUiTiming};
 use ahash::AHashMap;
 use perro_ids::NodeID;
@@ -37,6 +38,7 @@ impl Runtime {
             return;
         }
         let mut timing = timing;
+        let dirty_node_count = self.dirty.dirty_indices().len();
 
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
@@ -44,22 +46,30 @@ impl Runtime {
         let viewport = self.input.viewport_size();
         let root_rect = ComputedUiRect::new(Vector2::ZERO, viewport);
         let mut traversal_ids = std::mem::take(&mut self.render_ui.traversal_ids);
+        let mut traversal_seen = std::mem::take(&mut self.render_ui.traversal_seen);
+        let mut command_ids = std::mem::take(&mut self.render_ui.command_ids);
+        let mut command_seen = std::mem::take(&mut self.render_ui.command_seen);
         traversal_ids.clear();
-        traversal_ids.extend(
-            self.dirty
-                .dirty_indices()
-                .iter()
-                .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id)),
-        );
-        if traversal_ids.is_empty() && bootstrap_scan {
-            traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
-        }
-        let mut traversal_seen: ahash::AHashSet<NodeID> = traversal_ids.iter().copied().collect();
-        let mut traversal_cursor = 0usize;
-        while traversal_cursor < traversal_ids.len() {
-            let node = traversal_ids[traversal_cursor];
-            traversal_cursor += 1;
-            if let Some(parent) = self.nodes.get(node).map(|node| node.parent)
+        traversal_seen.clear();
+        command_ids.clear();
+        command_seen.clear();
+        for &raw_index in self.dirty.dirty_indices() {
+            let index = raw_index as usize;
+            let Some((node, _)) = self.nodes.slot_get(index) else {
+                continue;
+            };
+            let mut flags = self.dirty.ui_flags_at(index);
+            if flags == 0 {
+                flags = DirtyState::UI_LAYOUT_MASK | DirtyState::DIRTY_COMMANDS;
+            }
+            if (flags & DirtyState::UI_LAYOUT_MASK) != 0 && traversal_seen.insert(node) {
+                traversal_ids.push(node);
+            }
+            if (flags & DirtyState::DIRTY_COMMANDS) != 0 && command_seen.insert(node) {
+                command_ids.push(node);
+            }
+            if (flags & DirtyState::DIRTY_LAYOUT_PARENT) != 0
+                && let Some(parent) = self.nodes.get(node).map(|node| node.parent)
                 && !parent.is_nil()
                 && let Some(parent_node) = self.nodes.get(parent)
                 && ui_auto_layout_from_data(&parent_node.data).is_some()
@@ -68,8 +78,20 @@ impl Runtime {
                     if traversal_seen.insert(sibling) {
                         traversal_ids.push(sibling);
                     }
+                    if command_seen.insert(sibling) {
+                        command_ids.push(sibling);
+                    }
                 }
             }
+        }
+        if traversal_ids.is_empty() && bootstrap_scan {
+            traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
+        }
+        traversal_seen.extend(traversal_ids.iter().copied());
+        let mut traversal_cursor = 0usize;
+        while traversal_cursor < traversal_ids.len() {
+            let node = traversal_ids[traversal_cursor];
+            traversal_cursor += 1;
             if let Some(node_ref) = self.nodes.get(node) {
                 for &child in node_ref.get_children_ids() {
                     if traversal_seen.insert(child) {
@@ -77,6 +99,17 @@ impl Runtime {
                     }
                 }
             }
+        }
+        for &node in &traversal_ids {
+            if command_seen.insert(node) {
+                command_ids.push(node);
+            }
+        }
+        traversal_seen.clear();
+        self.render_ui.traversal_seen = traversal_seen;
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.dirty_nodes = dirty_node_count.min(u32::MAX as usize) as u32;
+            timing.affected_nodes = traversal_ids.len().min(u32::MAX as usize) as u32;
         }
 
         let mut visible_now = std::mem::take(&mut self.render_ui.visible_now);
@@ -97,10 +130,26 @@ impl Runtime {
         for node in traversal_ids.iter() {
             computed.remove(node);
         }
+        let mut auto_layout_computed = std::mem::take(&mut self.render_ui.auto_layout_computed);
+        auto_layout_computed.clear();
         let layout_start = timing.as_ref().map(|_| std::time::Instant::now());
         for node in traversal_ids.iter().copied() {
-            self.compute_ui_rect(node, root_rect, &mut computed);
+            let was_cached = computed.contains_key(&node);
+            let before_len = computed.len();
+            self.compute_ui_rect(node, root_rect, &mut computed, &mut auto_layout_computed);
+            if let Some(timing) = timing.as_deref_mut() {
+                if was_cached {
+                    timing.cached_rects = timing.cached_rects.saturating_add(1);
+                } else if computed.len() > before_len {
+                    let added = (computed.len() - before_len).min(u32::MAX as usize) as u32;
+                    timing.recalculated_rects = timing.recalculated_rects.saturating_add(added);
+                }
+            }
         }
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.auto_layout_batches = auto_layout_computed.len().min(u32::MAX as usize) as u32;
+        }
+        self.render_ui.auto_layout_computed = auto_layout_computed;
         if let Some(timing) = timing.as_deref_mut() {
             timing.layout += layout_start
                 .expect("ui layout timing start exists")
@@ -108,50 +157,62 @@ impl Runtime {
         }
 
         let commands_start = timing.as_ref().map(|_| std::time::Instant::now());
-        for node in traversal_ids.iter().copied() {
+        for node in command_ids.iter().copied() {
+            if let Some(timing) = timing.as_deref_mut() {
+                timing.command_nodes = timing.command_nodes.saturating_add(1);
+            }
             visible_now.remove(&node);
-            let Some(rect) = computed.get(&node).copied() else {
-                self.remove_retained_ui_node(node);
-                continue;
-            };
             let effective_visible = self.is_effectively_visible(node);
-            let Some(command) = self.nodes.get(node).and_then(|scene_node| {
-                ui_command_from_node(node, &scene_node.data, rect, effective_visible)
-            }) else {
+            let Some(scene_node) = self.nodes.get(node) else {
                 self.remove_retained_ui_node(node);
+                if let Some(timing) = timing.as_deref_mut() {
+                    timing.removed_nodes = timing.removed_nodes.saturating_add(1);
+                }
                 continue;
             };
-            if self.render_ui.retained_commands.get(&node) != Some(&command) {
+            let rect_state = if let Some(rect) = computed.get(&node).copied() {
+                ui_rect_state_from_node(&scene_node.data, rect)
+            } else {
+                self.render_ui.retained_rects.get(&node).copied()
+            };
+            let Some(rect_state) = rect_state else {
+                self.remove_retained_ui_node(node);
+                if let Some(timing) = timing.as_deref_mut() {
+                    timing.removed_nodes = timing.removed_nodes.saturating_add(1);
+                }
+                continue;
+            };
+            if !effective_visible {
+                self.remove_retained_ui_node(node);
+                if let Some(timing) = timing.as_deref_mut() {
+                    timing.removed_nodes = timing.removed_nodes.saturating_add(1);
+                }
+                continue;
+            }
+            let retained_matches =
+                self.render_ui
+                    .retained_commands
+                    .get(&node)
+                    .is_some_and(|command| {
+                        ui_command_matches_node(command, &scene_node.data, rect_state)
+                    });
+            if !retained_matches {
+                let Some(command) = ui_command_from_node(node, &scene_node.data, rect_state) else {
+                    self.remove_retained_ui_node(node);
+                    if let Some(timing) = timing.as_deref_mut() {
+                        timing.removed_nodes = timing.removed_nodes.saturating_add(1);
+                    }
+                    continue;
+                };
                 self.queue_render_command(RenderCommand::Ui(command.clone()));
                 self.render_ui.retained_commands.insert(node, command);
+                if let Some(timing) = timing.as_deref_mut() {
+                    timing.command_emitted = timing.command_emitted.saturating_add(1);
+                }
+            } else if let Some(timing) = timing.as_deref_mut() {
+                timing.command_skipped = timing.command_skipped.saturating_add(1);
             }
-            if let Some(rect) = computed.get(&node).copied() {
-                self.render_ui.retained_rects.insert(
-                    node,
-                    UiRectState {
-                        center: [rect.center.x, rect.center.y],
-                        size: [rect.size.x, rect.size.y],
-                        rotation_radians: ui_root_from_data(
-                            &self
-                                .nodes
-                                .get(node)
-                                .expect("node exists while extracting ui")
-                                .data,
-                        )
-                        .map(|ui| ui.transform.rotation)
-                        .unwrap_or(0.0),
-                        z_index: ui_root_from_data(
-                            &self
-                                .nodes
-                                .get(node)
-                                .expect("node exists while extracting ui")
-                                .data,
-                        )
-                        .map(|ui| ui.layout.z_index)
-                        .unwrap_or(0),
-                    },
-                );
-            }
+            self.render_ui.retained_rects.insert(node, rect_state);
             visible_now.insert(node);
         }
         self.remove_no_longer_visible_ui_nodes(&visible_now);
@@ -168,6 +229,10 @@ impl Runtime {
 
         traversal_ids.clear();
         self.render_ui.traversal_ids = traversal_ids;
+        command_ids.clear();
+        command_seen.clear();
+        self.render_ui.command_ids = command_ids;
+        self.render_ui.command_seen = command_seen;
 
         if let Some(timing) = timing {
             timing.total = total_start.expect("ui timing total start exists").elapsed();
@@ -179,6 +244,7 @@ impl Runtime {
         node: NodeID,
         root_rect: ComputedUiRect,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
+        auto_layout_computed: &mut ahash::AHashSet<NodeID>,
     ) -> Option<ComputedUiRect> {
         if let Some(rect) = computed.get(&node).copied() {
             return Some(rect);
@@ -189,7 +255,7 @@ impl Runtime {
         let parent_rect = if scene_node.parent.is_nil() {
             root_rect
         } else {
-            self.compute_ui_rect(scene_node.parent, root_rect, computed)
+            self.compute_ui_rect(scene_node.parent, root_rect, computed, auto_layout_computed)
                 .unwrap_or(root_rect)
         };
         let rect = if scene_node.parent.is_nil() {
@@ -198,6 +264,19 @@ impl Runtime {
                 .layout
                 .compute_rect_with_size(&ui_root.transform, parent_rect, size)
         } else {
+            if self
+                .nodes
+                .get(scene_node.parent)
+                .and_then(|parent| ui_auto_layout_from_data(&parent.data))
+                .is_some()
+            {
+                if auto_layout_computed.insert(scene_node.parent) {
+                    self.compute_ui_auto_children_rects(scene_node.parent, parent_rect, computed);
+                }
+                if let Some(rect) = computed.get(&node).copied() {
+                    return Some(rect);
+                }
+            }
             self.compute_ui_child_rect(
                 scene_node.parent,
                 node,
@@ -221,6 +300,42 @@ impl Runtime {
         };
         computed.insert(node, rect);
         Some(rect)
+    }
+
+    fn compute_ui_auto_children_rects(
+        &self,
+        parent: NodeID,
+        parent_rect: ComputedUiRect,
+        computed: &mut AHashMap<NodeID, ComputedUiRect>,
+    ) -> Option<()> {
+        let parent_node = self.nodes.get(parent)?;
+        let parent_ui = ui_root_from_data(&parent_node.data)?;
+        let auto_layout = ui_auto_layout_from_data(&parent_node.data)?;
+        let content_rect = parent_rect.inset(parent_ui.layout.padding);
+        match auto_layout.mode {
+            UiLayoutMode::H => self.compute_ui_h_children_rects(
+                &parent_ui.layout,
+                parent_node.get_children_ids(),
+                content_rect,
+                auto_layout.h_spacing,
+                computed,
+            ),
+            UiLayoutMode::V => self.compute_ui_v_children_rects(
+                &parent_ui.layout,
+                parent_node.get_children_ids(),
+                content_rect,
+                auto_layout.v_spacing,
+                computed,
+            ),
+            UiLayoutMode::Grid => self.compute_ui_grid_children_rects(
+                &parent_ui.layout,
+                parent_node.get_children_ids(),
+                content_rect,
+                auto_layout,
+                computed,
+            ),
+        }
+        Some(())
     }
 
     fn remove_retained_ui_node(&mut self, node: NodeID) {
@@ -344,6 +459,51 @@ impl Runtime {
         None
     }
 
+    fn compute_ui_h_children_rects(
+        &self,
+        parent_layout: &UiLayoutData,
+        children: &[NodeID],
+        content: ComputedUiRect,
+        spacing: f32,
+        computed: &mut AHashMap<NodeID, ComputedUiRect>,
+    ) {
+        let fill_width = self.h_fill_width(children, content.size.x, spacing);
+        let used_width = self.h_used_width(children, content.size, spacing, fill_width);
+        let min = content.min();
+        let max = content.max();
+        let mut x = align_h_start(min.x, content.size.x, used_width, parent_layout.h_align);
+        for sibling in children.iter().copied() {
+            let Some((layout, transform)) = self
+                .nodes
+                .get(sibling)
+                .and_then(|node| ui_root_from_data(&node.data))
+                .map(|ui| (&ui.layout, &ui.transform))
+            else {
+                continue;
+            };
+            let fill_size = Vector2::new(
+                if layout.h_size == UiSizeMode::Fill {
+                    fill_width
+                } else {
+                    0.0
+                },
+                ui_fill_height(layout, parent_layout, content.size.y),
+            );
+            let size = self.resolve_ui_size(sibling, content.size, Some(fill_size));
+            let y = align_v_center(
+                max.y,
+                content.size.y,
+                size.y,
+                layout.margin,
+                parent_layout.v_align,
+            );
+            let center =
+                Vector2::new(x + layout.margin.left + size.x * 0.5, y) + transform.translation;
+            computed.insert(sibling, ComputedUiRect::new(center, size));
+            x += size.x + layout.margin.horizontal() + spacing;
+        }
+    }
+
     fn compute_ui_v_child_rect(
         &self,
         parent_layout: &UiLayoutData,
@@ -390,6 +550,51 @@ impl Runtime {
             y -= size.y + layout.margin.vertical() + spacing;
         }
         None
+    }
+
+    fn compute_ui_v_children_rects(
+        &self,
+        parent_layout: &UiLayoutData,
+        children: &[NodeID],
+        content: ComputedUiRect,
+        spacing: f32,
+        computed: &mut AHashMap<NodeID, ComputedUiRect>,
+    ) {
+        let fill_height = self.v_fill_height(children, content.size.y, spacing);
+        let used_height = self.v_used_height(children, content.size, spacing, fill_height);
+        let min = content.min();
+        let max = content.max();
+        let mut y = align_v_top(max.y, content.size.y, used_height, parent_layout.v_align);
+        for sibling in children.iter().copied() {
+            let Some((layout, transform)) = self
+                .nodes
+                .get(sibling)
+                .and_then(|node| ui_root_from_data(&node.data))
+                .map(|ui| (&ui.layout, &ui.transform))
+            else {
+                continue;
+            };
+            let fill_size = Vector2::new(
+                ui_fill_width(layout, parent_layout, content.size.x),
+                if layout.v_size == UiSizeMode::Fill {
+                    fill_height
+                } else {
+                    0.0
+                },
+            );
+            let size = self.resolve_ui_size(sibling, content.size, Some(fill_size));
+            let x = align_h_center(
+                min.x,
+                content.size.x,
+                size.x,
+                layout.margin,
+                parent_layout.h_align,
+            );
+            let center =
+                Vector2::new(x, y - layout.margin.top - size.y * 0.5) + transform.translation;
+            computed.insert(sibling, ComputedUiRect::new(center, size));
+            y -= size.y + layout.margin.vertical() + spacing;
+        }
     }
 
     fn compute_ui_grid_child_rect(
@@ -479,6 +684,90 @@ impl Runtime {
             ),
         ) + transform.translation;
         Some(ComputedUiRect::new(center, size))
+    }
+
+    fn compute_ui_grid_children_rects(
+        &self,
+        parent_layout: &UiLayoutData,
+        children: &[NodeID],
+        content: ComputedUiRect,
+        auto: UiAutoLayout,
+        computed: &mut AHashMap<NodeID, ComputedUiRect>,
+    ) {
+        let columns = auto.columns.max(1) as usize;
+        let mut ui_count = 0_usize;
+        let mut cell_width = 0.0_f32;
+        let mut cell_height = 0.0_f32;
+        for sibling in children.iter().copied() {
+            let Some(layout) = self
+                .nodes
+                .get(sibling)
+                .and_then(|node| ui_root_from_data(&node.data))
+                .map(|ui| &ui.layout)
+            else {
+                continue;
+            };
+            let size = self.resolve_ui_size(sibling, content.size, None);
+            cell_width = cell_width.max(size.x + layout.margin.horizontal());
+            cell_height = cell_height.max(size.y + layout.margin.vertical());
+            ui_count += 1;
+        }
+        if ui_count == 0 {
+            return;
+        }
+
+        let used_columns = columns.min(ui_count);
+        let row_count = ui_count.div_ceil(columns);
+        let used_width =
+            cell_width * used_columns as f32 + auto.h_spacing * (used_columns - 1) as f32;
+        let used_height = cell_height * row_count as f32 + auto.v_spacing * (row_count - 1) as f32;
+        let min = content.min();
+        let max = content.max();
+        let grid_min_x = align_h_start(min.x, content.size.x, used_width, parent_layout.h_align);
+        let grid_top_y = align_v_top(max.y, content.size.y, used_height, parent_layout.v_align);
+
+        let mut index = 0_usize;
+        for child in children.iter().copied() {
+            let Some((layout, transform)) = self
+                .nodes
+                .get(child)
+                .and_then(|node| ui_root_from_data(&node.data))
+                .map(|ui| (&ui.layout, &ui.transform))
+            else {
+                continue;
+            };
+            let col = index % columns;
+            let row = index / columns;
+            let fill_size = Vector2::new(
+                ui_fill_width(layout, parent_layout, cell_width),
+                ui_fill_height(layout, parent_layout, cell_height),
+            );
+            let size = self.resolve_ui_size(
+                child,
+                Vector2::new(cell_width, cell_height),
+                Some(fill_size),
+            );
+            let cell_min_x = grid_min_x + col as f32 * (cell_width + auto.h_spacing);
+            let cell_top_y = grid_top_y - row as f32 * (cell_height + auto.v_spacing);
+            let center = Vector2::new(
+                align_h_center(
+                    cell_min_x,
+                    cell_width,
+                    size.x,
+                    layout.margin,
+                    parent_layout.h_align,
+                ),
+                align_v_center(
+                    cell_top_y,
+                    cell_height,
+                    size.y,
+                    layout.margin,
+                    parent_layout.v_align,
+                ),
+            ) + transform.translation;
+            computed.insert(child, ComputedUiRect::new(center, size));
+            index += 1;
+        }
     }
 
     fn resolve_ui_size(
@@ -946,19 +1235,8 @@ fn align_v_center(
 fn ui_command_from_node(
     node: NodeID,
     data: &SceneNodeData,
-    rect: ComputedUiRect,
-    effective_visible: bool,
+    rect: UiRectState,
 ) -> Option<UiCommand> {
-    if !effective_visible {
-        return None;
-    }
-
-    let rect = UiRectState {
-        center: [rect.center.x, rect.center.y],
-        size: [rect.size.x, rect.size.y],
-        rotation_radians: ui_root_from_data(data)?.transform.rotation,
-        z_index: ui_root_from_data(data)?.layout.z_index,
-    };
     match data {
         SceneNodeData::UiPanel(panel) => Some(panel_command(node, rect, &panel.style)),
         SceneNodeData::UiButton(button) => {
@@ -985,6 +1263,82 @@ fn ui_command_from_node(
             v_align: text_align_state(label.v_align),
         }),
         _ => None,
+    }
+}
+
+fn ui_rect_state_from_node(data: &SceneNodeData, rect: ComputedUiRect) -> Option<UiRectState> {
+    let ui = ui_root_from_data(data)?;
+    Some(UiRectState {
+        center: [rect.center.x, rect.center.y],
+        size: [rect.size.x, rect.size.y],
+        rotation_radians: ui.transform.rotation,
+        z_index: ui.layout.z_index,
+    })
+}
+
+fn ui_command_matches_node(command: &UiCommand, data: &SceneNodeData, rect: UiRectState) -> bool {
+    match (command, data) {
+        (
+            UiCommand::UpsertPanel {
+                rect: command_rect,
+                fill,
+                stroke,
+                stroke_width,
+                corner_radius,
+                ..
+            },
+            SceneNodeData::UiPanel(panel),
+        ) => {
+            *command_rect == rect
+                && *fill == panel.style.fill.to_rgba()
+                && *stroke == panel.style.stroke.to_rgba()
+                && *stroke_width == panel.style.stroke_width
+                && *corner_radius == panel.style.corner_radius
+        }
+        (
+            UiCommand::UpsertButton {
+                rect: command_rect,
+                text,
+                text_color,
+                fill,
+                stroke,
+                stroke_width,
+                corner_radius,
+                disabled,
+                ..
+            },
+            SceneNodeData::UiButton(button),
+        ) => {
+            let style = &button.style;
+            *command_rect == rect
+                && text.as_ref() == button.text.as_ref()
+                && *text_color == button.text_color.to_rgba()
+                && *fill == style.fill.to_rgba()
+                && *stroke == style.stroke.to_rgba()
+                && *stroke_width == style.stroke_width
+                && *corner_radius == style.corner_radius
+                && *disabled == button.disabled
+        }
+        (
+            UiCommand::UpsertLabel {
+                rect: command_rect,
+                text,
+                color,
+                font_size,
+                h_align,
+                v_align,
+                ..
+            },
+            SceneNodeData::UiLabel(label),
+        ) => {
+            *command_rect == rect
+                && text.as_ref() == label.text.as_ref()
+                && *color == label.color.to_rgba()
+                && *font_size == label.font_size
+                && *h_align == text_align_state(label.h_align)
+                && *v_align == text_align_state(label.v_align)
+        }
+        _ => false,
     }
 }
 
@@ -1175,6 +1529,86 @@ mod tests {
             middle.center.x - first.center.x,
             last.center.x - middle.center.x
         );
+    }
+
+    #[test]
+    fn ui_transform_dirty_updates_only_changed_branch() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut layout = UiHLayout::new();
+        layout.layout.size = UiVector2::pixels(300.0, 100.0);
+        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+        let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        let sibling = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
+        attach_child(&mut runtime, parent, child);
+        attach_child(&mut runtime, parent, sibling);
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        runtime.clear_dirty_flags();
+
+        if let Some(scene_node) = runtime.nodes.get_mut(child)
+            && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+        {
+            panel.transform.translation.x = 24.0;
+        }
+        runtime.mark_ui_dirty(
+            child,
+            Runtime::UI_DIRTY_TRANSFORM | Runtime::UI_DIRTY_COMMANDS,
+        );
+        let timing = runtime.extract_render_ui_commands_timed();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+
+        assert_eq!(timing.affected_nodes, 1);
+        assert_eq!(timing.command_nodes, 1);
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|cmd| matches!(cmd, RenderCommand::Ui(UiCommand::UpsertPanel { node, .. }) if *node == child))
+                .count(),
+            1
+        );
+        assert!(
+            !commands
+                .iter()
+                .any(|cmd| matches!(cmd, RenderCommand::Ui(UiCommand::UpsertPanel { node, .. }) if *node == sibling))
+        );
+    }
+
+    #[test]
+    fn ui_layout_parent_dirty_updates_auto_layout_siblings() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut layout = UiHLayout::new();
+        layout.layout.size = UiVector2::pixels(300.0, 100.0);
+        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+        let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        let sibling = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
+        attach_child(&mut runtime, parent, child);
+        attach_child(&mut runtime, parent, sibling);
+
+        runtime.extract_render_ui_commands();
+        runtime.clear_dirty_flags();
+
+        if let Some(scene_node) = runtime.nodes.get_mut(child)
+            && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+        {
+            panel.layout.size = UiVector2::pixels(90.0, 40.0);
+        }
+        runtime.mark_ui_dirty(
+            child,
+            Runtime::UI_DIRTY_LAYOUT_SELF
+                | Runtime::UI_DIRTY_LAYOUT_PARENT
+                | Runtime::UI_DIRTY_COMMANDS,
+        );
+        let timing = runtime.extract_render_ui_commands_timed();
+
+        assert_eq!(timing.affected_nodes, 2);
+        assert_eq!(timing.command_nodes, 2);
     }
 
     fn insert_panel(runtime: &mut Runtime, size: [f32; 2], fill: Color) -> NodeID {

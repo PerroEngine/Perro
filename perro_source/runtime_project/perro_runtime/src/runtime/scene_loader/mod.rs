@@ -295,6 +295,17 @@ impl Runtime {
         self.render_3d.particle_path_cache.clear();
         self.render_3d.particle_path_cache_order.clear();
         self.render_3d.removed_nodes.clear();
+        self.render_ui.traversal_ids.clear();
+        self.render_ui.traversal_seen.clear();
+        self.render_ui.command_ids.clear();
+        self.render_ui.command_seen.clear();
+        self.render_ui.visible_now.clear();
+        self.render_ui.prev_visible.clear();
+        self.render_ui.computed_rects.clear();
+        self.render_ui.auto_layout_computed.clear();
+        self.render_ui.retained_commands.clear();
+        self.render_ui.retained_rects.clear();
+        self.render_ui.removed_nodes.clear();
         if self.provider_mode == ProviderMode::Dynamic {
             self.script_runtime.dynamic_script_registry.clear();
             self.script_runtime.base_scripts_loaded = false;

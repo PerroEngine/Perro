@@ -1,7 +1,7 @@
 use perro_ids::{IntoTagID, MaterialID, TagID};
 use perro_nodes::{
     Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, Renderable, SceneNode,
-    SceneNodeData,
+    SceneNodeData, UiBox,
 };
 use perro_runtime_context::sub_apis::{MeshMaterialRegion3D, MeshSurfaceHit3D, NodeAPI, TagQuery};
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
@@ -48,6 +48,173 @@ fn cached_slot_for(runtime: &mut Runtime, id: perro_ids::NodeID) -> Option<(usiz
     None
 }
 
+impl Runtime {
+    fn mark_ui_base_change(&mut self, id: perro_ids::NodeID, before: &UiBox, after: &UiBox) {
+        let flags = classify_ui_base_change(before, after);
+        if flags != 0 {
+            self.mark_ui_dirty(id, flags);
+        }
+    }
+
+    fn mark_ui_data_change(
+        &mut self,
+        id: perro_ids::NodeID,
+        before: &SceneNodeData,
+        after: &SceneNodeData,
+    ) {
+        let mut flags = match (ui_base_from_data(before), ui_base_from_data(after)) {
+            (Some(before), Some(after)) => classify_ui_base_change(before, after),
+            _ => 0,
+        };
+        flags |= classify_ui_node_payload_change(before, after);
+        if flags != 0 {
+            self.mark_ui_dirty(id, flags);
+        }
+    }
+}
+
+fn classify_ui_base_change(before: &UiBox, after: &UiBox) -> u16 {
+    let mut flags = 0;
+    if before.transform != after.transform {
+        flags |= Runtime::UI_DIRTY_TRANSFORM | Runtime::UI_DIRTY_COMMANDS;
+    }
+    if before.visible != after.visible {
+        flags |= Runtime::UI_DIRTY_LAYOUT_SELF
+            | Runtime::UI_DIRTY_LAYOUT_PARENT
+            | Runtime::UI_DIRTY_COMMANDS;
+    }
+    if before.layout.size != after.layout.size
+        || before.layout.min_size != after.layout.min_size
+        || before.layout.max_size != after.layout.max_size
+        || before.layout.margin != after.layout.margin
+        || before.layout.h_size != after.layout.h_size
+        || before.layout.v_size != after.layout.v_size
+    {
+        flags |= Runtime::UI_DIRTY_LAYOUT_SELF
+            | Runtime::UI_DIRTY_LAYOUT_PARENT
+            | Runtime::UI_DIRTY_COMMANDS;
+    }
+    if before.layout.padding != after.layout.padding
+        || before.layout.h_align != after.layout.h_align
+        || before.layout.v_align != after.layout.v_align
+        || before.layout.anchor != after.layout.anchor
+    {
+        flags |= Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS;
+    }
+    if before.layout.z_index != after.layout.z_index {
+        flags |= Runtime::UI_DIRTY_COMMANDS;
+    }
+    if before.input_enabled != after.input_enabled || before.mouse_filter != after.mouse_filter {
+        flags |= Runtime::UI_DIRTY_COMMANDS;
+    }
+    flags
+}
+
+fn classify_ui_node_payload_change(before: &SceneNodeData, after: &SceneNodeData) -> u16 {
+    match (before, after) {
+        (SceneNodeData::UiPanel(before), SceneNodeData::UiPanel(after)) => {
+            if before.style != after.style {
+                Runtime::UI_DIRTY_COMMANDS
+            } else {
+                0
+            }
+        }
+        (SceneNodeData::UiButton(before), SceneNodeData::UiButton(after)) => {
+            let mut flags = 0;
+            if before.text != after.text {
+                flags |= Runtime::UI_DIRTY_TEXT
+                    | Runtime::UI_DIRTY_LAYOUT_SELF
+                    | Runtime::UI_DIRTY_LAYOUT_PARENT
+                    | Runtime::UI_DIRTY_COMMANDS;
+            }
+            if before.text_color != after.text_color
+                || before.style != after.style
+                || before.pressed_style != after.pressed_style
+                || before.hover_style != after.hover_style
+                || before.disabled != after.disabled
+            {
+                flags |= Runtime::UI_DIRTY_COMMANDS;
+            }
+            flags
+        }
+        (SceneNodeData::UiLabel(before), SceneNodeData::UiLabel(after)) => {
+            let mut flags = 0;
+            if before.text != after.text || before.font_size != after.font_size {
+                flags |= Runtime::UI_DIRTY_TEXT
+                    | Runtime::UI_DIRTY_LAYOUT_SELF
+                    | Runtime::UI_DIRTY_LAYOUT_PARENT
+                    | Runtime::UI_DIRTY_COMMANDS;
+            }
+            if before.color != after.color
+                || before.h_align != after.h_align
+                || before.v_align != after.v_align
+            {
+                flags |= Runtime::UI_DIRTY_COMMANDS;
+            }
+            flags
+        }
+        (SceneNodeData::UiLayout(before), SceneNodeData::UiLayout(after)) => {
+            if before.inner.mode != after.inner.mode
+                || before.inner.spacing != after.inner.spacing
+                || before.inner.h_spacing != after.inner.h_spacing
+                || before.inner.v_spacing != after.inner.v_spacing
+                || before.inner.columns != after.inner.columns
+            {
+                Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
+            } else {
+                0
+            }
+        }
+        (SceneNodeData::UiHLayout(before), SceneNodeData::UiHLayout(after)) => {
+            if before.inner.spacing != after.inner.spacing
+                || before.inner.h_spacing != after.inner.h_spacing
+                || before.inner.v_spacing != after.inner.v_spacing
+                || before.inner.columns != after.inner.columns
+            {
+                Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
+            } else {
+                0
+            }
+        }
+        (SceneNodeData::UiVLayout(before), SceneNodeData::UiVLayout(after)) => {
+            if before.inner.spacing != after.inner.spacing
+                || before.inner.h_spacing != after.inner.h_spacing
+                || before.inner.v_spacing != after.inner.v_spacing
+                || before.inner.columns != after.inner.columns
+            {
+                Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
+            } else {
+                0
+            }
+        }
+        (SceneNodeData::UiGrid(before), SceneNodeData::UiGrid(after)) => {
+            if before.columns != after.columns
+                || before.h_spacing != after.h_spacing
+                || before.v_spacing != after.v_spacing
+            {
+                Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
+            } else {
+                0
+            }
+        }
+        _ => 0,
+    }
+}
+
+fn ui_base_from_data(data: &SceneNodeData) -> Option<&UiBox> {
+    match data {
+        SceneNodeData::UiBox(root) => Some(root),
+        SceneNodeData::UiPanel(node) => Some(&node.base),
+        SceneNodeData::UiButton(node) => Some(&node.base),
+        SceneNodeData::UiLabel(node) => Some(&node.base),
+        SceneNodeData::UiLayout(node) => Some(&node.inner.base),
+        SceneNodeData::UiHLayout(node) => Some(&node.inner.base),
+        SceneNodeData::UiVLayout(node) => Some(&node.inner.base),
+        SceneNodeData::UiGrid(node) => Some(&node.base),
+        _ => None,
+    }
+}
+
 impl NodeAPI for Runtime {
     fn create<T>(&mut self) -> perro_ids::NodeID
     where
@@ -75,13 +242,15 @@ impl NodeAPI for Runtime {
         }
 
         let slot = cached_slot_for(self, id);
-        let (transform_changed, value) = {
+        let (transform_changed, ui_before, ui_after, value) = {
             let node = if let Some((index, generation)) = slot {
                 self.nodes.slot_get_mut_checked(index, generation)?
             } else {
                 self.nodes.get_mut(id)?
             };
 
+            let track_ui = T::NODE_TYPE.is_a(NodeType::UiBox);
+            let ui_before = track_ui.then(|| node.data.clone());
             let mut changed = false;
             let mut value = None;
             let result = node.with_typed_mut::<T, _>(|typed| {
@@ -91,7 +260,8 @@ impl NodeAPI for Runtime {
                 changed = before != after;
             });
             result?;
-            (changed, value)
+            let ui_after = track_ui.then(|| node.data.clone());
+            (changed, ui_before, ui_after, value)
         };
 
         if matches!(T::RENDERABLE, Renderable::True) {
@@ -99,6 +269,9 @@ impl NodeAPI for Runtime {
         }
         if transform_changed {
             self.mark_transform_dirty_recursive(id);
+        }
+        if let (Some(before), Some(after)) = (ui_before.as_ref(), ui_after.as_ref()) {
+            self.mark_ui_data_change(id, before, after);
         }
         value
     }
@@ -169,7 +342,7 @@ impl NodeAPI for Runtime {
             return None;
         }
 
-        let (value, transform_changed) = {
+        let (value, transform_changed, ui_before, ui_after) = {
             let node = if let Some((index, generation)) = slot {
                 self.nodes.slot_get_mut_checked(index, generation)?
             } else {
@@ -177,16 +350,21 @@ impl NodeAPI for Runtime {
             };
             let before_2d = node.with_base_ref::<Node2D, _>(|base| base.transform);
             let before_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
+            let ui_before = node.with_base_ref::<UiBox, _>(Clone::clone);
             let value = node.with_base_mut::<T, _>(f)?;
             let after_2d = node.with_base_ref::<Node2D, _>(|base| base.transform);
             let after_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
+            let ui_after = node.with_base_ref::<UiBox, _>(Clone::clone);
             let changed = before_2d != after_2d || before_3d != after_3d;
-            (value, changed)
+            (value, changed, ui_before, ui_after)
         };
 
         self.mark_needs_rerender(id);
         if transform_changed {
             self.mark_transform_dirty_recursive(id);
+        }
+        if let (Some(before), Some(after)) = (ui_before.as_ref(), ui_after.as_ref()) {
+            self.mark_ui_base_change(id, before, after);
         }
         Some(value)
     }
