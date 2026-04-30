@@ -443,6 +443,7 @@ fn script_macros_typecheck_and_forward() {
     assert!(!set_ui_min_size!(&mut ctx, id, Vector2::new(100.0, 50.0)));
     assert!(!set_ui_max_size!(&mut ctx, id, Vector2::new(1200.0, 96.0)));
     assert!(!set_ui_scale!(&mut ctx, id, Vector2::new(2.0, 0.5)));
+    assert!(!set_ui_rotation!(&mut ctx, id, 0.5));
     assert!(!set_ui_padding!(&mut ctx, id, UiRect::all(8.0)));
     assert!(!set_ui_margin!(&mut ctx, id, UiRect::symmetric(4.0, 2.0)));
     assert!(!set_ui_h_size!(&mut ctx, id, UiSizeMode::Fill));

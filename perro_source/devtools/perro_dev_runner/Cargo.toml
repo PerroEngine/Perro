@@ -9,4 +9,5 @@ perro_project = "0.1.0"
 
 [features]
 profile = ["perro_app/profile"]
+ui_profile = ["perro_app/ui_profile"]
 mem_profile = ["perro_app/mem_profile"]

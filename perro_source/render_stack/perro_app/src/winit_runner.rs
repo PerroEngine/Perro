@@ -24,7 +24,7 @@ const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 2;
 const MAX_FRAME_DELTA_SECONDS: f32 = 0.250;
 const LOG_INTERVAL_SECONDS: f32 = 3.0;
-#[cfg(not(feature = "profile_heavy"))]
+#[cfg(not(any(feature = "profile_heavy", feature = "ui_profile")))]
 const LOG_TIMING_SAMPLE_STRIDE: u32 = 20;
 const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
 const STARTUP_SPLASH_FADE_DURATION: Duration = Duration::from_millis(320);
@@ -250,7 +250,7 @@ impl ProfileCsvWriter {
             .ok()?;
         let _ = writeln!(
             file,
-            "batch_end_frame,frames,sampled_frames,avg_draw_calls_2d,avg_draw_calls_3d,avg_draw_calls_total,avg_draw_instances_3d,avg_instances_per_draw_3d,avg_draw_material_refs_3d,avg_render_commands,avg_dirty_nodes,avg_extract2d_us,avg_extract3d_us,avg_drain_commands_us,avg_submit_commands_us,avg_draw_process_us,avg_draw_prep_us,avg_active_meshes,avg_active_materials,avg_active_textures,avg_present_wait_us,avg_frame_us"
+            "batch_end_frame,frames,sampled_frames,avg_draw_calls_2d,avg_draw_calls_3d,avg_draw_calls_total,avg_draw_instances_3d,avg_instances_per_draw_3d,avg_draw_material_refs_3d,avg_render_commands,avg_dirty_nodes,avg_extract2d_us,avg_extract3d_us,avg_extract_ui_us,avg_drain_commands_us,avg_submit_commands_us,avg_draw_process_us,avg_draw_prep_us,avg_active_meshes,avg_active_materials,avg_active_textures,avg_present_wait_us,avg_frame_us"
         );
         Some(Self { file })
     }
@@ -271,6 +271,7 @@ impl ProfileCsvWriter {
         avg_dirty_nodes: f64,
         avg_extract2d_us: f64,
         avg_extract3d_us: f64,
+        avg_extract_ui_us: f64,
         avg_drain_commands_us: f64,
         avg_submit_commands_us: f64,
         avg_draw_process_us: f64,
@@ -283,7 +284,7 @@ impl ProfileCsvWriter {
     ) {
         let _ = writeln!(
             self.file,
-            "{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}",
+            "{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}",
             batch_end_frame,
             frames,
             sampled_frames,
@@ -297,6 +298,7 @@ impl ProfileCsvWriter {
             avg_dirty_nodes,
             avg_extract2d_us,
             avg_extract3d_us,
+            avg_extract_ui_us,
             avg_drain_commands_us,
             avg_submit_commands_us,
             avg_draw_process_us,
@@ -502,6 +504,12 @@ struct RunnerState<B: GraphicsBackend> {
     batch_present_extract_2d: Duration,
     #[cfg(feature = "profile_heavy")]
     batch_present_extract_3d: Duration,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    batch_present_extract_ui: Duration,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    batch_ui_layout: Duration,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    batch_ui_commands: Duration,
     #[cfg(feature = "profile_heavy")]
     batch_present_drain_commands: Duration,
     #[cfg(feature = "profile_heavy")]
@@ -696,6 +704,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
             batch_present_extract_2d: Duration::ZERO,
             #[cfg(feature = "profile_heavy")]
             batch_present_extract_3d: Duration::ZERO,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            batch_present_extract_ui: Duration::ZERO,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            batch_ui_layout: Duration::ZERO,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            batch_ui_commands: Duration::ZERO,
             #[cfg(feature = "profile_heavy")]
             batch_present_drain_commands: Duration::ZERO,
             #[cfg(feature = "profile_heavy")]
@@ -859,11 +873,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
     #[inline]
     fn should_sample_timing(&self) -> bool {
-        #[cfg(feature = "profile_heavy")]
+        #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
         {
             true
         }
-        #[cfg(not(feature = "profile_heavy"))]
+        #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile")))]
         {
             let next_frame = self.batch_frames.saturating_add(1);
             next_frame == 1 || next_frame.is_multiple_of(LOG_TIMING_SAMPLE_STRIDE)
@@ -1159,6 +1173,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_present_wait += present_wait_duration;
             self.batch_idle += idle_duration + present_wait_duration;
         }
+        #[cfg(all(feature = "ui_profile", not(feature = "profile_heavy")))]
+        if let Some(timing) = present_timing.as_ref() {
+            self.batch_present_extract_ui += timing.extract_ui;
+            self.batch_ui_layout += timing.ui_layout;
+            self.batch_ui_commands += timing.ui_commands;
+        }
         if let Some(csv) = &mut self.timing_csv {
             csv.write(CsvFrameSample {
                 frame_index,
@@ -1192,6 +1212,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
             }
             self.batch_present_extract_2d += present_timing.extract_2d;
             self.batch_present_extract_3d += present_timing.extract_3d;
+            self.batch_present_extract_ui += present_timing.extract_ui;
+            self.batch_ui_layout += present_timing.ui_layout;
+            self.batch_ui_commands += present_timing.ui_commands;
             self.batch_present_drain_commands += present_timing.drain_commands;
             self.batch_present_submit_commands += present_timing.submit_commands;
             self.batch_present_draw_frame += present_timing.gpu_present;
@@ -1440,6 +1463,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_present_wait += present_wait_duration;
             self.batch_idle += idle_duration + present_wait_duration;
         }
+        #[cfg(all(feature = "ui_profile", not(feature = "profile_heavy")))]
+        if let Some(timing) = present_timing.as_ref() {
+            self.batch_present_extract_ui += timing.extract_ui;
+            self.batch_ui_layout += timing.ui_layout;
+            self.batch_ui_commands += timing.ui_commands;
+        }
         if let Some(csv) = &mut self.timing_csv {
             csv.write(CsvFrameSample {
                 frame_index,
@@ -1473,6 +1502,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
             }
             self.batch_present_extract_2d += present_timing.extract_2d;
             self.batch_present_extract_3d += present_timing.extract_3d;
+            self.batch_present_extract_ui += present_timing.extract_ui;
+            self.batch_ui_layout += present_timing.ui_layout;
+            self.batch_ui_commands += present_timing.ui_commands;
             self.batch_present_drain_commands += present_timing.drain_commands;
             self.batch_present_submit_commands += present_timing.submit_commands;
             self.batch_present_draw_frame += present_timing.gpu_present;
@@ -1536,6 +1568,18 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 avg_idle_before_frame_us,
                 avg_present_wait_us,
             );
+            #[cfg(all(feature = "ui_profile", not(feature = "profile_heavy")))]
+            {
+                let avg_present_extract_ui_us =
+                    self.batch_present_extract_ui.as_micros() as f64 / self.batch_frames as f64;
+                let avg_ui_layout_us =
+                    self.batch_ui_layout.as_micros() as f64 / self.batch_frames as f64;
+                let avg_ui_commands_us =
+                    self.batch_ui_commands.as_micros() as f64 / self.batch_frames as f64;
+                println!(
+                    "ui profile: total=({avg_present_extract_ui_us:.3}us) layout=({avg_ui_layout_us:.3}us) commands=({avg_ui_commands_us:.3}us)"
+                );
+            }
             #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
             if self.mem_profile_enabled
                 && let Some(sample) = process_memory_sample()
@@ -1607,6 +1651,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     self.batch_present_extract_2d.as_micros() as f64 / self.batch_frames as f64;
                 let avg_present_extract_3d_us =
                     self.batch_present_extract_3d.as_micros() as f64 / self.batch_frames as f64;
+                let avg_present_extract_ui_us =
+                    self.batch_present_extract_ui.as_micros() as f64 / self.batch_frames as f64;
+                let avg_ui_layout_us =
+                    self.batch_ui_layout.as_micros() as f64 / self.batch_frames as f64;
+                let avg_ui_commands_us =
+                    self.batch_ui_commands.as_micros() as f64 / self.batch_frames as f64;
                 let avg_present_drain_commands_us =
                     self.batch_present_drain_commands.as_micros() as f64 / self.batch_frames as f64;
                 let avg_present_submit_commands_us = self.batch_present_submit_commands.as_micros()
@@ -1734,9 +1784,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     self.batch_runtime_slowest_script.as_micros() as f64
                 );
                 println!(
-                    "present breakdown: extract2d=({:.3}us) extract3d=({:.3}us) drain=({:.3}us) submit=({:.3}us) draw=({:.3}us) events_drain=({:.3}us) events_apply=({:.3}us)",
+                    "present breakdown: extract2d=({:.3}us) extract3d=({:.3}us) extract_ui=({:.3}us) ui_layout=({:.3}us) ui_commands=({:.3}us) drain=({:.3}us) submit=({:.3}us) draw=({:.3}us) events_drain=({:.3}us) events_apply=({:.3}us)",
                     avg_present_extract_2d_us,
                     avg_present_extract_3d_us,
+                    avg_present_extract_ui_us,
+                    avg_ui_layout_us,
+                    avg_ui_commands_us,
                     avg_present_drain_commands_us,
                     avg_present_submit_commands_us,
                     avg_present_draw_frame_us,
@@ -1796,6 +1849,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                         avg_dirty_nodes,
                         avg_present_extract_2d_us,
                         avg_present_extract_3d_us,
+                        avg_present_extract_ui_us,
                         avg_present_drain_commands_us,
                         avg_present_submit_commands_us,
                         avg_draw_process_commands_us,
@@ -1816,6 +1870,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_idle_before_frame = Duration::ZERO;
             self.batch_present_wait = Duration::ZERO;
             self.batch_idle = Duration::ZERO;
+            #[cfg(all(feature = "ui_profile", not(feature = "profile_heavy")))]
+            {
+                self.batch_present_extract_ui = Duration::ZERO;
+                self.batch_ui_layout = Duration::ZERO;
+                self.batch_ui_commands = Duration::ZERO;
+            }
             #[cfg(feature = "profile_heavy")]
             {
                 self.batch_runtime_update = Duration::ZERO;
@@ -1841,6 +1901,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 self.batch_runtime_script_count = 0;
                 self.batch_present_extract_2d = Duration::ZERO;
                 self.batch_present_extract_3d = Duration::ZERO;
+                self.batch_present_extract_ui = Duration::ZERO;
+                self.batch_ui_layout = Duration::ZERO;
+                self.batch_ui_commands = Duration::ZERO;
                 self.batch_present_drain_commands = Duration::ZERO;
                 self.batch_present_submit_commands = Duration::ZERO;
                 self.batch_present_draw_frame = Duration::ZERO;
@@ -1939,6 +2002,12 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             self.batch_idle_before_frame = Duration::ZERO;
             self.batch_present_wait = Duration::ZERO;
             self.batch_idle = Duration::ZERO;
+            #[cfg(all(feature = "ui_profile", not(feature = "profile_heavy")))]
+            {
+                self.batch_present_extract_ui = Duration::ZERO;
+                self.batch_ui_layout = Duration::ZERO;
+                self.batch_ui_commands = Duration::ZERO;
+            }
             #[cfg(feature = "profile_heavy")]
             {
                 self.batch_runtime_update = Duration::ZERO;
@@ -1964,6 +2033,9 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.batch_runtime_script_count = 0;
                 self.batch_present_extract_2d = Duration::ZERO;
                 self.batch_present_extract_3d = Duration::ZERO;
+                self.batch_present_extract_ui = Duration::ZERO;
+                self.batch_ui_layout = Duration::ZERO;
+                self.batch_ui_commands = Duration::ZERO;
                 self.batch_present_drain_commands = Duration::ZERO;
                 self.batch_present_submit_commands = Duration::ZERO;
                 self.batch_present_draw_frame = Duration::ZERO;

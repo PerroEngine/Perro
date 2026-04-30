@@ -276,13 +276,48 @@ impl ComputedUiRect {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiLayoutData {
-    pub anchor: UiAnchor,
+pub struct UiTransform {
     pub position: UiVector2,
-    pub size: UiVector2,
     pub pivot: UiVector2,
     pub translation: Vector2,
     pub scale: Vector2,
+    pub rotation: f32,
+}
+
+impl UiTransform {
+    pub const fn new() -> Self {
+        Self {
+            position: UiVector2::percent(50.0, 50.0),
+            pivot: UiVector2::percent(50.0, 50.0),
+            translation: Vector2::ZERO,
+            scale: Vector2::ONE,
+            rotation: 0.0,
+        }
+    }
+
+    pub fn resolved_position(&self, parent_size: Vector2) -> Vector2 {
+        self.position.resolve(parent_size) + self.translation
+    }
+
+    pub fn scale_size(&self, size: Vector2) -> Vector2 {
+        Vector2::new(size.x * self.scale.x, size.y * self.scale.y)
+    }
+
+    pub fn resolved_pivot_offset(&self, resolved_size: Vector2) -> Vector2 {
+        self.pivot.resolve(resolved_size)
+    }
+}
+
+impl Default for UiTransform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UiLayoutData {
+    pub anchor: UiAnchor,
+    pub size: UiVector2,
     pub min_size: Vector2,
     pub max_size: Vector2,
     pub margin: UiRect,
@@ -300,11 +335,7 @@ impl UiLayoutData {
     pub const fn new() -> Self {
         Self {
             anchor: UiAnchor::Center,
-            position: UiVector2::percent(50.0, 50.0),
             size: UiVector2::ZERO,
-            pivot: UiVector2::percent(50.0, 50.0),
-            translation: Vector2::ZERO,
-            scale: Vector2::ONE,
             min_size: Vector2::ZERO,
             max_size: Self::NO_MAX_SIZE,
             margin: UiRect::ZERO,
@@ -315,10 +346,6 @@ impl UiLayoutData {
             v_align: UiVerticalAlign::Center,
             z_index: 0,
         }
-    }
-
-    pub fn resolved_position(&self, parent_size: Vector2) -> Vector2 {
-        self.position.resolve(parent_size) + self.translation
     }
 
     pub fn resolved_size(&self, parent_size: Vector2) -> Vector2 {
@@ -333,30 +360,27 @@ impl UiLayoutData {
         )
     }
 
-    pub fn resolved_scaled_size(&self, parent_size: Vector2) -> Vector2 {
+    pub fn resolved_scaled_size(&self, transform: &UiTransform, parent_size: Vector2) -> Vector2 {
         let size = self.resolved_size(parent_size);
-        self.scale_size(size)
+        transform.scale_size(size)
     }
 
-    pub fn scale_size(&self, size: Vector2) -> Vector2 {
-        Vector2::new(size.x * self.scale.x, size.y * self.scale.y)
-    }
-
-    pub fn resolved_pivot_offset(&self, resolved_size: Vector2) -> Vector2 {
-        self.pivot.resolve(resolved_size)
-    }
-
-    pub fn resolved_origin(&self, parent_size: Vector2) -> Vector2 {
+    pub fn resolved_origin(&self, transform: &UiTransform, parent_size: Vector2) -> Vector2 {
         let size = self.resolved_size(parent_size);
-        self.resolved_position(parent_size) - self.resolved_pivot_offset(size)
+        transform.resolved_position(parent_size) - transform.resolved_pivot_offset(size)
     }
 
-    pub fn compute_rect(&self, parent: ComputedUiRect) -> ComputedUiRect {
-        let size = self.resolved_scaled_size(parent.size);
-        self.compute_rect_with_size(parent, size)
+    pub fn compute_rect(&self, transform: &UiTransform, parent: ComputedUiRect) -> ComputedUiRect {
+        let size = self.resolved_scaled_size(transform, parent.size);
+        self.compute_rect_with_size(transform, parent, size)
     }
 
-    pub fn compute_rect_with_size(&self, parent: ComputedUiRect, size: Vector2) -> ComputedUiRect {
+    pub fn compute_rect_with_size(
+        &self,
+        transform: &UiTransform,
+        parent: ComputedUiRect,
+        size: Vector2,
+    ) -> ComputedUiRect {
         let anchor = self.anchor.direction();
         let anchor_point = parent.center
             + Vector2::new(
@@ -364,12 +388,12 @@ impl UiLayoutData {
                 parent.size.y * 0.5 * anchor.y,
             );
         let inward_from_edge = Vector2::new(size.x * 0.5 * anchor.x, size.y * 0.5 * anchor.y);
-        let pivot = self.pivot.resolve(Vector2::new(1.0, 1.0));
+        let pivot = transform.pivot.resolve(Vector2::new(1.0, 1.0));
         let pivot_offset = Vector2::new((0.5 - pivot.x) * size.x, (0.5 - pivot.y) * size.y);
-        let position = self.position.resolve_centered(parent.size);
+        let position = transform.position.resolve_centered(parent.size);
 
         ComputedUiRect::new(
-            anchor_point - inward_from_edge + position + self.translation + pivot_offset,
+            anchor_point - inward_from_edge + position + transform.translation + pivot_offset,
             size,
         )
     }
@@ -383,6 +407,7 @@ impl Default for UiLayoutData {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiBox {
+    pub transform: UiTransform,
     pub layout: UiLayoutData,
     pub visible: bool,
     pub input_enabled: bool,
@@ -392,6 +417,7 @@ pub struct UiBox {
 impl UiBox {
     pub const fn new() -> Self {
         Self {
+            transform: UiTransform::new(),
             layout: UiLayoutData::new(),
             visible: true,
             input_enabled: true,
@@ -910,11 +936,11 @@ mod tests {
 
     #[test]
     fn percent_position_resolves_against_viewport() {
-        let mut layout = UiLayoutData::new();
-        layout.position = UiVector2::percent(50.0, 50.0);
+        let mut transform = UiTransform::new();
+        transform.position = UiVector2::percent(50.0, 50.0);
 
         assert_eq!(
-            layout.resolved_position(Vector2::new(1920.0, 1080.0)),
+            transform.resolved_position(Vector2::new(1920.0, 1080.0)),
             Vector2::new(960.0, 540.0)
         );
     }
@@ -922,20 +948,22 @@ mod tests {
     #[test]
     fn default_layout_origin_centers_in_parent() {
         let mut layout = UiLayoutData::new();
+        let transform = UiTransform::new();
         layout.size = UiVector2::pixels(200.0, 100.0);
 
         assert_eq!(
-            layout.resolved_origin(Vector2::new(800.0, 600.0)),
+            layout.resolved_origin(&transform, Vector2::new(800.0, 600.0)),
             Vector2::new(300.0, 250.0)
         );
     }
 
     #[test]
     fn default_layout_aligns_children_to_center() {
+        let transform = UiTransform::new();
         let layout = UiLayoutData::new();
 
         assert_eq!(layout.anchor, UiAnchor::Center);
-        assert_eq!(layout.position, UiVector2::ratio(0.5, 0.5));
+        assert_eq!(transform.position, UiVector2::ratio(0.5, 0.5));
         assert_eq!(layout.h_align, UiHorizontalAlign::Center);
         assert_eq!(layout.v_align, UiVerticalAlign::Center);
     }
@@ -1016,12 +1044,13 @@ mod tests {
     #[test]
     fn scale_applies_after_size_clamp() {
         let mut layout = UiLayoutData::new();
+        let mut transform = UiTransform::new();
         layout.size = UiVector2::ratio(0.5, 0.1);
         layout.max_size = Vector2::new(1200.0, 90.0);
-        layout.scale = Vector2::new(2.0, 0.5);
+        transform.scale = Vector2::new(2.0, 0.5);
 
         let parent = ComputedUiRect::new(Vector2::ZERO, Vector2::new(3000.0, 1000.0));
-        let rect = layout.compute_rect(parent);
+        let rect = layout.compute_rect(&transform, parent);
 
         assert_eq!(rect.size, Vector2::new(2400.0, 45.0));
     }
@@ -1039,13 +1068,14 @@ mod tests {
     #[test]
     fn right_anchor_offsets_size_inward() {
         let mut layout = UiLayoutData::new();
+        let mut transform = UiTransform::new();
         layout.anchor = UiAnchor::Right;
-        layout.position = UiVector2::ZERO;
+        transform.position = UiVector2::ZERO;
         layout.size = UiVector2::pixels(200.0, 100.0);
-        layout.pivot = UiVector2::percent(50.0, 50.0);
+        transform.pivot = UiVector2::percent(50.0, 50.0);
 
         let parent = ComputedUiRect::new(Vector2::ZERO, Vector2::new(800.0, 600.0));
-        let rect = layout.compute_rect(parent);
+        let rect = layout.compute_rect(&transform, parent);
 
         assert_eq!(rect.center, Vector2::new(300.0, 0.0));
         assert_eq!(rect.max().x, 400.0);
@@ -1054,13 +1084,14 @@ mod tests {
     #[test]
     fn top_left_anchor_uses_center_origin_y_up() {
         let mut layout = UiLayoutData::new();
+        let mut transform = UiTransform::new();
         layout.anchor = UiAnchor::TopLeft;
-        layout.position = UiVector2::ZERO;
+        transform.position = UiVector2::ZERO;
         layout.size = UiVector2::pixels(100.0, 50.0);
-        layout.pivot = UiVector2::percent(50.0, 50.0);
+        transform.pivot = UiVector2::percent(50.0, 50.0);
 
         let parent = ComputedUiRect::new(Vector2::ZERO, Vector2::new(800.0, 600.0));
-        let rect = layout.compute_rect(parent);
+        let rect = layout.compute_rect(&transform, parent);
 
         assert_eq!(rect.center, Vector2::new(-350.0, 275.0));
         assert_eq!(rect.min(), Vector2::new(-400.0, 250.0));

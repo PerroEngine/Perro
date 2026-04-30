@@ -1,4 +1,4 @@
-use super::Runtime;
+use super::{Runtime, RuntimeUiTiming};
 use ahash::AHashMap;
 use perro_ids::NodeID;
 use perro_nodes::SceneNodeData;
@@ -6,12 +6,23 @@ use perro_render_bridge::{RenderCommand, UiCommand, UiRectState, UiTextAlignStat
 use perro_structs::Vector2;
 use perro_ui::{
     ComputedUiRect, UiBox, UiHorizontalAlign, UiLayoutData, UiLayoutMode, UiSizeMode, UiStyle,
-    UiVerticalAlign,
+    UiTransform, UiVerticalAlign,
 };
 use std::borrow::Cow;
 
 impl Runtime {
     pub fn extract_render_ui_commands(&mut self) {
+        self.extract_render_ui_commands_inner(None);
+    }
+
+    pub fn extract_render_ui_commands_timed(&mut self) -> RuntimeUiTiming {
+        let mut timing = RuntimeUiTiming::default();
+        self.extract_render_ui_commands_inner(Some(&mut timing));
+        timing
+    }
+
+    fn extract_render_ui_commands_inner(&mut self, timing: Option<&mut RuntimeUiTiming>) {
+        let total_start = timing.as_ref().map(|_| std::time::Instant::now());
         let bootstrap_scan = self.render_ui.prev_visible.is_empty()
             && self.render_ui.retained_commands.is_empty()
             && self.render_ui.computed_rects.is_empty();
@@ -20,8 +31,12 @@ impl Runtime {
             || !self.render_ui.removed_nodes.is_empty()
             || bootstrap_scan;
         if !has_extraction_work {
+            if let Some(timing) = timing {
+                timing.total = total_start.expect("ui timing total start exists").elapsed();
+            }
             return;
         }
+        let mut timing = timing;
 
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
@@ -82,10 +97,17 @@ impl Runtime {
         for node in traversal_ids.iter() {
             computed.remove(node);
         }
+        let layout_start = timing.as_ref().map(|_| std::time::Instant::now());
         for node in traversal_ids.iter().copied() {
             self.compute_ui_rect(node, root_rect, &mut computed);
         }
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.layout += layout_start
+                .expect("ui layout timing start exists")
+                .elapsed();
+        }
 
+        let commands_start = timing.as_ref().map(|_| std::time::Instant::now());
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
             let Some(rect) = computed.get(&node).copied() else {
@@ -109,6 +131,15 @@ impl Runtime {
                     UiRectState {
                         center: [rect.center.x, rect.center.y],
                         size: [rect.size.x, rect.size.y],
+                        rotation_radians: ui_root_from_data(
+                            &self
+                                .nodes
+                                .get(node)
+                                .expect("node exists while extracting ui")
+                                .data,
+                        )
+                        .map(|ui| ui.transform.rotation)
+                        .unwrap_or(0.0),
                         z_index: ui_root_from_data(
                             &self
                                 .nodes
@@ -124,6 +155,11 @@ impl Runtime {
             visible_now.insert(node);
         }
         self.remove_no_longer_visible_ui_nodes(&visible_now);
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.commands += commands_start
+                .expect("ui commands timing start exists")
+                .elapsed();
+        }
 
         self.render_ui.computed_rects = computed;
         std::mem::swap(&mut self.render_ui.prev_visible, &mut visible_now);
@@ -132,6 +168,10 @@ impl Runtime {
 
         traversal_ids.clear();
         self.render_ui.traversal_ids = traversal_ids;
+
+        if let Some(timing) = timing {
+            timing.total = total_start.expect("ui timing total start exists").elapsed();
+        }
     }
 
     fn compute_ui_rect(
@@ -154,20 +194,30 @@ impl Runtime {
         };
         let rect = if scene_node.parent.is_nil() {
             let size = self.resolve_ui_size(node, parent_rect.size, None);
-            ui_root.layout.compute_rect_with_size(parent_rect, size)
+            ui_root
+                .layout
+                .compute_rect_with_size(&ui_root.transform, parent_rect, size)
         } else {
-            self.compute_ui_child_rect(scene_node.parent, node, parent_rect, &ui_root.layout)
-                .unwrap_or_else(|| {
-                    let parent_content = self
-                        .nodes
-                        .get(scene_node.parent)
-                        .and_then(|parent| ui_root_from_data(&parent.data))
-                        .map(|parent| parent_rect.inset(parent.layout.padding))
-                        .unwrap_or(parent_rect);
-                    let parent_content = parent_content.inset(ui_root.layout.margin);
-                    let size = self.resolve_ui_size(node, parent_content.size, None);
-                    ui_root.layout.compute_rect_with_size(parent_content, size)
-                })
+            self.compute_ui_child_rect(
+                scene_node.parent,
+                node,
+                parent_rect,
+                &ui_root.layout,
+                &ui_root.transform,
+            )
+            .unwrap_or_else(|| {
+                let parent_content = self
+                    .nodes
+                    .get(scene_node.parent)
+                    .and_then(|parent| ui_root_from_data(&parent.data))
+                    .map(|parent| parent_rect.inset(parent.layout.padding))
+                    .unwrap_or(parent_rect);
+                let parent_content = parent_content.inset(ui_root.layout.margin);
+                let size = self.resolve_ui_size(node, parent_content.size, None);
+                ui_root
+                    .layout
+                    .compute_rect_with_size(&ui_root.transform, parent_content, size)
+            })
         };
         computed.insert(node, rect);
         Some(rect)
@@ -198,6 +248,7 @@ impl Runtime {
         child: NodeID,
         parent_rect: ComputedUiRect,
         child_layout: &UiLayoutData,
+        child_transform: &UiTransform,
     ) -> Option<ComputedUiRect> {
         let parent_node = self.nodes.get(parent)?;
         let parent_ui = ui_root_from_data(&parent_node.data)?;
@@ -241,7 +292,7 @@ impl Runtime {
                 },
             );
             let size = self.resolve_ui_size(child, child_content.size, Some(fill_size));
-            Some(child_layout.compute_rect_with_size(child_content, size))
+            Some(child_layout.compute_rect_with_size(child_transform, child_content, size))
         })
     }
 
@@ -259,11 +310,11 @@ impl Runtime {
         let max = content.max();
         let mut x = align_h_start(min.x, content.size.x, used_width, parent_layout.h_align);
         for sibling in children.iter().copied() {
-            let Some(layout) = self
+            let Some((layout, transform)) = self
                 .nodes
                 .get(sibling)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| &ui.layout)
+                .map(|ui| (&ui.layout, &ui.transform))
             else {
                 continue;
             };
@@ -285,7 +336,7 @@ impl Runtime {
                     parent_layout.v_align,
                 );
                 let center =
-                    Vector2::new(x + layout.margin.left + size.x * 0.5, y) + layout.translation;
+                    Vector2::new(x + layout.margin.left + size.x * 0.5, y) + transform.translation;
                 return Some(ComputedUiRect::new(center, size));
             }
             x += size.x + layout.margin.horizontal() + spacing;
@@ -307,11 +358,11 @@ impl Runtime {
         let max = content.max();
         let mut y = align_v_top(max.y, content.size.y, used_height, parent_layout.v_align);
         for sibling in children.iter().copied() {
-            let Some(layout) = self
+            let Some((layout, transform)) = self
                 .nodes
                 .get(sibling)
                 .and_then(|node| ui_root_from_data(&node.data))
-                .map(|ui| &ui.layout)
+                .map(|ui| (&ui.layout, &ui.transform))
             else {
                 continue;
             };
@@ -333,7 +384,7 @@ impl Runtime {
                     parent_layout.h_align,
                 );
                 let center =
-                    Vector2::new(x, y - layout.margin.top - size.y * 0.5) + layout.translation;
+                    Vector2::new(x, y - layout.margin.top - size.y * 0.5) + transform.translation;
                 return Some(ComputedUiRect::new(center, size));
             }
             y -= size.y + layout.margin.vertical() + spacing;
@@ -389,11 +440,11 @@ impl Runtime {
         let used_width =
             cell_width * used_columns as f32 + auto.h_spacing * (used_columns - 1) as f32;
         let used_height = cell_height * row_count as f32 + auto.v_spacing * (row_count - 1) as f32;
-        let layout = self
+        let (layout, transform) = self
             .nodes
             .get(child)
             .and_then(|node| ui_root_from_data(&node.data))
-            .map(|ui| &ui.layout)?;
+            .map(|ui| (&ui.layout, &ui.transform))?;
         let col = index % columns;
         let row = index / columns;
         let fill_size = Vector2::new(
@@ -426,7 +477,7 @@ impl Runtime {
                 layout.margin,
                 parent_layout.v_align,
             ),
-        ) + layout.translation;
+        ) + transform.translation;
         Some(ComputedUiRect::new(center, size))
     }
 
@@ -462,7 +513,7 @@ impl Runtime {
                 size.y = fill.y;
             }
         }
-        ui.layout.scale_size(ui.layout.clamp_size(size))
+        ui.transform.scale_size(ui.layout.clamp_size(size))
     }
 
     fn fit_children_size(&self, node: NodeID, available: Vector2) -> Vector2 {
@@ -905,6 +956,7 @@ fn ui_command_from_node(
     let rect = UiRectState {
         center: [rect.center.x, rect.center.y],
         size: [rect.size.x, rect.size.y],
+        rotation_radians: ui_root_from_data(data)?.transform.rotation,
         z_index: ui_root_from_data(data)?.layout.z_index,
     };
     match data {

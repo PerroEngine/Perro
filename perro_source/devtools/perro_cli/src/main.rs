@@ -82,7 +82,7 @@ fn print_usage() {
         "  perro_cli dlc --name <dlc_name> [--path <project_dir>] # build one runtime-loadable DLC package"
     );
     eprintln!(
-        "  perro_cli dev [--path <project_dir>] [--profile] [--release] [--csv-profile [csv_name]]      # build scripts + run dev runner"
+        "  perro_cli dev [--path <project_dir>] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]]      # build scripts + run dev runner"
     );
     eprintln!(
         "  perro_cli mem-profile [--path <project_dir>] [--release] [--csv [csv_name]]    # run dev runner + process memory samples"
@@ -1300,6 +1300,7 @@ fn dlc_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
 fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let profile_requested = args.iter().any(|a| a == "--profile");
+    let ui_profile = args.iter().any(|a| a == "--ui-profile");
     let release = args.iter().any(|a| a == "--release");
     let csv_profile_name = parse_optional_flag_value(args, "--csv-profile")
         .map(|raw| PathBuf::from(raw.unwrap_or_else(|| "profiling.csv".to_string())));
@@ -1349,8 +1350,15 @@ fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         build_cmd.arg("--release");
     }
     build_cmd.current_dir(&dev_runner_dir);
+    let mut features = Vec::new();
     if profile {
-        build_cmd.arg("--features").arg("profile");
+        features.push("profile");
+    }
+    if ui_profile {
+        features.push("ui_profile");
+    }
+    if !features.is_empty() {
+        build_cmd.arg("--features").arg(features.join(","));
     }
     let build_status = build_cmd.status().map_err(|err| {
         format!(

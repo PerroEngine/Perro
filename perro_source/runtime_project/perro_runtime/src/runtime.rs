@@ -110,6 +110,13 @@ pub struct RuntimeFixedUpdateTiming {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+pub struct RuntimeUiTiming {
+    pub layout: Duration,
+    pub commands: Duration,
+    pub total: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct RuntimePhysicsStepTiming {
     pub pre_transforms: Duration,
     pub collect: Duration,

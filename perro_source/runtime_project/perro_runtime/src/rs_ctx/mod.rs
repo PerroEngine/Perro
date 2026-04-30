@@ -6,6 +6,7 @@ mod localization;
 mod material;
 mod mesh;
 mod post_processing;
+mod scene_doc;
 mod skeleton;
 mod state;
 mod texture;

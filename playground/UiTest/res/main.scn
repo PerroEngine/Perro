@@ -2,6 +2,7 @@
 
 [ui_root]
 name = "UI Test Root"
+script = "res://scripts/script.rs"
 [UiPanel]
     size_ratio = (1.0, 1.0)
     fill = "#151820"
@@ -254,6 +255,7 @@ parent = grid_b_row
 [UiButton]
     text = "A"
     size = (44, 44)
+    rotation = 0.18
     fill = "#63804A"
     stroke = "#C7E4A6"
     corner_radius = 12
@@ -341,6 +343,7 @@ parent = center_grid
     stroke = "#B28AC4"
     corner_radius = 14
     scale = (1.15, 0.85)
+    rotation = -0.10
     padding = (10, 10, 10, 10)
 [/UiPanel]
 [/grid_d]

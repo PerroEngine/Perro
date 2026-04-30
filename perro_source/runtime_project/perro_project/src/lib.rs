@@ -1508,6 +1508,7 @@ perro_project = "0.1.0"
 
 [features]
 profile = ["perro_app/profile"]
+ui_profile = ["perro_app/ui_profile"]
 mem_profile = ["perro_app/mem_profile"]
 
 [profile.dev]
@@ -2314,6 +2315,20 @@ fn ensure_dev_runner_manifest_features(path: &Path) -> std::io::Result<()> {
         features_table.insert(
             "profile".to_string(),
             Value::Array(vec![Value::String("perro_app/profile".to_string())]),
+        );
+        changed = true;
+    }
+    if !features_table.contains_key("ui_profile") {
+        features_table.insert(
+            "ui_profile".to_string(),
+            Value::Array(vec![Value::String("perro_app/ui_profile".to_string())]),
+        );
+        changed = true;
+    }
+    if !features_table.contains_key("mem_profile") {
+        features_table.insert(
+            "mem_profile".to_string(),
+            Value::Array(vec![Value::String("perro_app/mem_profile".to_string())]),
         );
         changed = true;
     }

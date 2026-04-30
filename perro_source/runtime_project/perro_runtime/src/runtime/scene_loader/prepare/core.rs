@@ -854,6 +854,7 @@ mod tests {
                 max_w = 1200
                 max_h = 96
                 scale = (2, 0.5)
+                rotation = 0.25
                 h_size = "fill"
                 v_size = "fit_children"
                 pivot_ratio = (0, 0)
@@ -935,22 +936,23 @@ mod tests {
                 );
                 assert_eq!(button.layout.min_size, Vector2::new(120.0, 40.0));
                 assert_eq!(button.layout.max_size, Vector2::new(1200.0, 96.0));
-                assert_eq!(button.layout.scale, Vector2::new(2.0, 0.5));
+                assert_eq!(button.transform.scale, Vector2::new(2.0, 0.5));
+                assert_eq!(button.transform.rotation, 0.25);
                 assert_eq!(button.layout.h_size, perro_ui::UiSizeMode::Fill);
                 assert_eq!(button.layout.v_size, perro_ui::UiSizeMode::FitChildren);
                 assert_eq!(
                     button.layout.padding,
                     perro_ui::UiRect::new(1.0, 2.0, 3.0, 4.0)
                 );
-                match button.layout.position.x {
+                match button.transform.position.x {
                     perro_ui::UiUnit::Percent(v) => assert_eq!(v, 50.0),
                     other => panic!("expected percent x, got {other:?}"),
                 }
-                match button.layout.position.y {
+                match button.transform.position.y {
                     perro_ui::UiUnit::Percent(v) => assert_eq!(v, 25.0),
                     other => panic!("expected percent y, got {other:?}"),
                 }
-                match button.layout.pivot.x {
+                match button.transform.pivot.x {
                     perro_ui::UiUnit::Percent(v) => assert_eq!(v, 0.0),
                     other => panic!("expected percent pivot x, got {other:?}"),
                 }
@@ -1018,7 +1020,7 @@ mod tests {
         match &defaults.node.data {
             SceneNodeData::UiPanel(panel) => {
                 assert_eq!(panel.layout.anchor, perro_ui::UiAnchor::Center);
-                assert_eq!(panel.layout.position, perro_ui::UiVector2::ratio(0.5, 0.5));
+                assert_eq!(panel.transform.position, perro_ui::UiVector2::ratio(0.5, 0.5));
                 assert_eq!(panel.layout.h_align, perro_ui::UiHorizontalAlign::Center);
                 assert_eq!(panel.layout.v_align, perro_ui::UiVerticalAlign::Center);
             }

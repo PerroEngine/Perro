@@ -21,6 +21,12 @@ pub struct PresentTiming {
     pub extract_2d: Duration,
     #[cfg(feature = "profile_heavy")]
     pub extract_3d: Duration,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    pub extract_ui: Duration,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    pub ui_layout: Duration,
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+    pub ui_commands: Duration,
     #[cfg(feature = "profile_heavy")]
     pub drain_commands: Duration,
     #[cfg(feature = "profile_heavy")]
@@ -347,7 +353,12 @@ impl<B: GraphicsBackend> App<B> {
         #[cfg(feature = "profile_heavy")]
         let extract_3d = extract_3d_start.elapsed();
 
+        #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+        let ui_timing = self.runtime.extract_render_ui_commands_timed();
+        #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile")))]
         self.runtime.extract_render_ui_commands();
+        #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+        let extract_ui = ui_timing.total;
 
         #[cfg(feature = "profile_heavy")]
         let drain_commands_start = std::time::Instant::now();
@@ -396,6 +407,12 @@ impl<B: GraphicsBackend> App<B> {
             extract_2d,
             #[cfg(feature = "profile_heavy")]
             extract_3d,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            extract_ui,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            ui_layout: ui_timing.layout,
+            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+            ui_commands: ui_timing.commands,
             #[cfg(feature = "profile_heavy")]
             drain_commands,
             #[cfg(feature = "profile_heavy")]

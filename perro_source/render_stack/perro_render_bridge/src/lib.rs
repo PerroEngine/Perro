@@ -26,6 +26,7 @@ pub struct Camera2DState {
 pub struct UiRectState {
     pub center: [f32; 2],
     pub size: [f32; 2],
+    pub rotation_radians: f32,
     pub z_index: i32,
 }
 
@@ -845,6 +846,7 @@ mod tests {
         let rect = UiRectState {
             center: [300.0, 0.0],
             size: [200.0, 100.0],
+            rotation_radians: 0.0,
             z_index: 0,
         };
 

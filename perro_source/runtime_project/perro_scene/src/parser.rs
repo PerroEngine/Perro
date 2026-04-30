@@ -47,7 +47,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn collect_vars(mut self) -> HashMap<String, SceneValue> {
+    fn collect_vars(self) -> HashMap<String, SceneValue> {
+        self.collect_var_entries().into_iter().collect()
+    }
+
+    pub(crate) fn collect_var_entries(mut self) -> Vec<(String, SceneValue)> {
+        let mut vars = Vec::new();
         while self.current != Token::Eof {
             if self.current == Token::At {
                 self.advance();
@@ -55,13 +60,14 @@ impl<'a> Parser<'a> {
                 if self.current == Token::Equals {
                     self.advance();
                     let value = self.parse_value();
-                    self.vars.insert(name, value);
+                    self.vars.insert(name.clone(), value.clone());
+                    vars.push((name, value));
                 }
                 continue;
             }
             self.advance();
         }
-        self.vars
+        vars
     }
 
     fn parse_value(&mut self) -> SceneValue {
@@ -505,6 +511,10 @@ impl<'a> Parser<'a> {
         let mut parser = Parser::new(self.src);
         parser.vars = vars;
         parser.parse_scene_inner()
+    }
+
+    pub fn parse_scene_doc(self) -> crate::SceneDoc {
+        crate::SceneDoc::parse(self.src)
     }
 
     pub fn parse_value_literal(mut self) -> SceneValue {

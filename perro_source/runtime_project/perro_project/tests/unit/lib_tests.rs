@@ -321,6 +321,29 @@ rand = "0.9"
 }
 
 #[test]
+fn ensure_source_overrides_repairs_dev_runner_features() {
+    let root = unique_temp_dir("perro_dev_runner_features");
+    ensure_project_layout(&root).expect("layout");
+    ensure_project_scaffold(&root, "Dev Runner Features").expect("scaffold");
+
+    let manifest = root.join(".perro").join("dev_runner").join("Cargo.toml");
+    let mut src = fs::read_to_string(&manifest).expect("read dev runner manifest");
+    src = src
+        .replace("ui_profile = [\"perro_app/ui_profile\"]\n", "")
+        .replace("mem_profile = [\"perro_app/mem_profile\"]\n", "");
+    fs::write(&manifest, src).expect("write stale dev runner manifest");
+
+    ensure_source_overrides(&root).expect("overrides");
+
+    let repaired = fs::read_to_string(&manifest).expect("read repaired dev runner manifest");
+    assert!(repaired.contains("profile = [\"perro_app/profile\"]"));
+    assert!(repaired.contains("ui_profile = [\"perro_app/ui_profile\"]"));
+    assert!(repaired.contains("mem_profile = [\"perro_app/mem_profile\"]"));
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
 fn scaffold_project_release_strip_only_targets_project_package() {
     let root = unique_temp_dir("perro_release_strip_project_only");
     ensure_project_layout(&root).expect("layout");

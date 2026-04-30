@@ -1,9 +1,10 @@
 use crate::sub_apis::{
     AnimationAPI, AnimationModule, AudioAPI, AudioModule, Draw2DAPI, Draw2DModule, Locale,
     LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule,
-    PostProcessingAPI, SkeletonAPI, SkeletonModule, TextureAPI, TextureModule,
-    VisualAccessibilityAPI,
+    PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule, TextureAPI,
+    TextureModule, VisualAccessibilityAPI,
 };
+use perro_scene::{SceneDoc, SceneWrite};
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2};
 
 pub trait ResourceAPI:
@@ -17,6 +18,7 @@ pub trait ResourceAPI:
     + AnimationAPI
     + Draw2DAPI
     + LocalizationAPI
+    + SceneDocAPI
     + ViewportAPI
     + Send
     + Sync
@@ -33,6 +35,7 @@ impl<T> ResourceAPI for T where
         + AnimationAPI
         + Draw2DAPI
         + LocalizationAPI
+        + SceneDocAPI
         + ViewportAPI
         + Send
         + Sync
@@ -91,6 +94,26 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceContext<'res, R> {
     #[inline]
     pub fn Localization(&self) -> LocalizationModule<'_, R> {
         LocalizationModule::new(self.api)
+    }
+
+    #[inline]
+    pub fn SceneDocs(&self) -> SceneDocModule<'_, R> {
+        SceneDocModule::new(self.api)
+    }
+
+    #[inline]
+    pub fn scene_load_doc(&self, path: &str) -> Result<SceneDoc, String> {
+        self.api.scene_load_doc(path)
+    }
+
+    #[inline]
+    pub fn scene_save_doc(&self, path: &str, doc: &SceneDoc) -> Result<(), String> {
+        self.api.scene_save_doc(path, doc)
+    }
+
+    #[inline]
+    pub fn scene_write<'a>(&self, doc: &'a SceneDoc) -> SceneWrite<'a> {
+        SceneWrite::new(doc)
     }
 
     #[inline]

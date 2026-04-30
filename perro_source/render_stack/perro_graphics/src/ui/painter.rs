@@ -3,7 +3,7 @@ use ahash::AHashMap;
 use epaint::{
     AlphaFromCoverage, ClippedPrimitive, ClippedShape, Color32, CornerRadius, FontFamily, FontId,
     Fonts, Primitive, Rect, RectShape, Shape, Stroke, StrokeKind, TessellationOptions, Tessellator,
-    pos2, text::FontDefinitions, textures::TexturesDelta, vec2,
+    emath::Rot2, pos2, text::FontDefinitions, textures::TexturesDelta, vec2,
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{UiRectState, UiTextAlignState};
@@ -27,6 +27,7 @@ pub(crate) trait UiPainter {
 pub(crate) struct EpaintUiPainter {
     fonts: Fonts,
     shapes: Vec<ClippedShape>,
+    shape_rotations: Vec<(f32, epaint::Pos2)>,
     primitives: Vec<ClippedPrimitive>,
     textures_delta: TexturesDelta,
     last_viewport: [f32; 2],
@@ -48,6 +49,7 @@ impl EpaintUiPainter {
                 FontDefinitions::default(),
             ),
             shapes: Vec::new(),
+            shape_rotations: Vec::new(),
             primitives: Vec::new(),
             textures_delta: TexturesDelta::default(),
             last_viewport: [0.0, 0.0],
@@ -63,6 +65,7 @@ impl EpaintUiPainter {
     ) {
         self.fonts.begin_pass(2048, AlphaFromCoverage::default());
         self.shapes.clear();
+        self.shape_rotations.clear();
         self.primitives.clear();
         if self.shapes.capacity() < nodes.len() {
             self.shapes.reserve(nodes.len() - self.shapes.capacity());
@@ -78,6 +81,7 @@ impl EpaintUiPainter {
         });
 
         for (_, draw) in ordered {
+            let shape_start = self.shapes.len();
             match draw {
                 UiDraw::Panel(panel) => push_panel_shape(panel, viewport, &mut self.shapes),
                 UiDraw::Button(button) => {
@@ -87,8 +91,12 @@ impl EpaintUiPainter {
                     push_label_shape(label, viewport, &mut self.fonts, &mut self.shapes)
                 }
             }
+            let rect = ui_rect(draw);
+            let rotation = rect.rotation_radians;
+            let origin = screen_center(rect, viewport);
+            self.shape_rotations
+                .extend((shape_start..self.shapes.len()).map(|_| (rotation, origin)));
         }
-
         let mut tessellator = Tessellator::new(
             1.0,
             TessellationOptions::default(),
@@ -96,6 +104,7 @@ impl EpaintUiPainter {
             self.fonts.texture_atlas().prepared_discs(),
         );
         self.primitives = tessellator.tessellate_shapes(std::mem::take(&mut self.shapes));
+        rotate_primitives(&mut self.primitives, &self.shape_rotations);
         self.primitives
             .retain(|primitive| match &primitive.primitive {
                 Primitive::Mesh(mesh) => !mesh.vertices.is_empty() && !mesh.indices.is_empty(),
@@ -209,6 +218,26 @@ fn push_panel_shape(panel: &UiPanelDraw, viewport: [f32; 2], out: &mut Vec<Clipp
             StrokeKind::Inside,
         )),
     });
+}
+
+fn rotate_primitives(primitives: &mut [ClippedPrimitive], rotations: &[(f32, epaint::Pos2)]) {
+    for (primitive, &(rotation, origin)) in primitives.iter_mut().zip(rotations) {
+        if !rotation.is_finite() || rotation == 0.0 {
+            continue;
+        }
+        let rot = Rot2::from_angle(-rotation);
+        primitive.clip_rect = Rect::EVERYTHING;
+        if let Primitive::Mesh(mesh) = &mut primitive.primitive {
+            mesh.rotate(rot, origin);
+        }
+    }
+}
+
+fn screen_center(rect: UiRectState, viewport: [f32; 2]) -> epaint::Pos2 {
+    pos2(
+        viewport[0] * 0.5 + rect.center[0],
+        viewport[1] * 0.5 - rect.center[1],
+    )
 }
 
 fn resolve_corner_radius(panel: &UiPanelDraw) -> f32 {

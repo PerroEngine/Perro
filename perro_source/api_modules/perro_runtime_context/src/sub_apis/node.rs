@@ -353,7 +353,15 @@ pub trait NodeAPI {
     /// Sets UI scale. Works on `UiBox` and descendants.
     fn set_ui_scale(&mut self, node_id: NodeID, scale: Vector2) -> bool {
         self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
-            node.layout.scale = scale;
+            node.transform.scale = scale;
+        })
+        .is_some()
+    }
+
+    /// Sets UI rotation in radians. Works on `UiBox` and descendants.
+    fn set_ui_rotation(&mut self, node_id: NodeID, rotation: f32) -> bool {
+        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
+            node.transform.rotation = rotation;
         })
         .is_some()
     }
@@ -682,6 +690,10 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 
     pub fn set_ui_scale(&mut self, node_id: NodeID, scale: Vector2) -> bool {
         self.rt.set_ui_scale(node_id, scale)
+    }
+
+    pub fn set_ui_rotation(&mut self, node_id: NodeID, rotation: f32) -> bool {
+        self.rt.set_ui_rotation(node_id, rotation)
     }
 
     pub fn set_ui_padding(&mut self, node_id: NodeID, padding: UiRect) -> bool {
@@ -1098,6 +1110,13 @@ macro_rules! set_ui_max_size {
 macro_rules! set_ui_scale {
     ($ctx:expr, $id:expr, $scale:expr) => {
         $ctx.Nodes().set_ui_scale($id, $scale)
+    };
+}
+
+#[macro_export]
+macro_rules! set_ui_rotation {
+    ($ctx:expr, $id:expr, $rotation:expr) => {
+        $ctx.Nodes().set_ui_rotation($id, $rotation)
     };
 }
 

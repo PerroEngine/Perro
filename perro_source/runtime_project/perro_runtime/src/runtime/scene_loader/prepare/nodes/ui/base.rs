@@ -124,17 +124,17 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
         }
         "position" => {
             if let Some(v) = as_vec2(value) {
-                node.layout.position = v.into();
+                node.transform.position = v.into();
             }
         }
         "position_percent" | "position_pct" => {
             if let Some(v) = as_vec2(value) {
-                node.layout.position = perro_ui::UiVector2::percent(v.x, v.y);
+                node.transform.position = perro_ui::UiVector2::percent(v.x, v.y);
             }
         }
         "position_ratio" => {
             if let Some(v) = as_vec2(value) {
-                node.layout.position = perro_ui::UiVector2::ratio(v.x, v.y);
+                node.transform.position = perro_ui::UiVector2::ratio(v.x, v.y);
             }
         }
         "size" => {
@@ -154,27 +154,32 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
         }
         "pivot" => {
             if let Some(v) = as_vec2(value) {
-                node.layout.pivot = v.into();
+                node.transform.pivot = v.into();
             }
         }
         "pivot_percent" | "pivot_pct" => {
             if let Some(v) = as_vec2(value) {
-                node.layout.pivot = perro_ui::UiVector2::percent(v.x, v.y);
+                node.transform.pivot = perro_ui::UiVector2::percent(v.x, v.y);
             }
         }
         "pivot_ratio" => {
             if let Some(v) = as_vec2(value) {
-                node.layout.pivot = perro_ui::UiVector2::ratio(v.x, v.y);
+                node.transform.pivot = perro_ui::UiVector2::ratio(v.x, v.y);
             }
         }
         "translation" => {
             if let Some(v) = as_vec2(value) {
-                node.layout.translation = v;
+                node.transform.translation = v;
             }
         }
         "scale" => {
             if let Some(v) = as_vec2(value) {
-                node.layout.scale = v;
+                node.transform.scale = v;
+            }
+        }
+        "rotation" => {
+            if let Some(v) = as_f32(value) {
+                node.transform.rotation = v;
             }
         }
         "h_size" | "horizontal_size" | "width_mode" => {

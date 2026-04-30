@@ -230,3 +230,72 @@ fn parse_header_only_node_without_type_block_defaults_to_node() {
             .any(|(name, _)| name.as_ref() == "max_character_id")
     );
 }
+
+#[test]
+fn scene_doc_writes_valid_scene_and_syncs_children() {
+    let src = r#"
+    @root = root
+    @shared = { color: (1, 0, 0, 1), roughness: 0.5 }
+
+    [root]
+    [Node]
+    [/Node]
+    [/root]
+
+    [child]
+    parent = root
+    [MeshInstance3D]
+        material = @shared
+    [/MeshInstance3D]
+    [/child]
+    "#;
+
+    let mut doc = Parser::new(src).parse_scene_doc();
+    doc.normalize_links();
+    let root = doc
+        .scene
+        .nodes
+        .iter()
+        .find(|node| node.key.as_ref() == "root")
+        .expect("root node");
+    assert_eq!(root.children.len(), 1);
+    assert_eq!(root.children[0].as_ref(), "child");
+
+    let text = doc.to_text();
+    let reparsed = Parser::new(&text).parse_scene();
+    assert_eq!(reparsed.root.as_ref().map(|key| key.as_ref()), Some("root"));
+    assert!(
+        reparsed
+            .nodes
+            .iter()
+            .any(|node| node.key.as_ref() == "child")
+    );
+}
+
+#[test]
+fn scene_doc_deduplicates_repeated_values() {
+    let src = r#"
+    @root = a
+
+    [a]
+    [MeshInstance3D]
+        material = { roughness: 1.0, metallic: 0.2, color: (1, 1, 1, 1) }
+    [/MeshInstance3D]
+    [/a]
+
+    [b]
+    [MeshInstance3D]
+        material = { roughness: 1.0, metallic: 0.2, color: (1, 1, 1, 1) }
+    [/MeshInstance3D]
+    [/b]
+    "#;
+
+    let doc = Parser::new(src).parse_scene_doc();
+    let text = doc.to_text();
+    assert!(
+        text.contains("@var1 = { roughness: 1.0, metallic: 0.2, color: (1.0, 1.0, 1.0, 1.0) }")
+    );
+    assert_eq!(text.matches("material = @var1").count(), 2);
+    let reparsed = Parser::new(&text).parse_scene();
+    assert_eq!(reparsed.nodes.len(), 2);
+}

@@ -182,6 +182,7 @@ dependencies = [
  "perro_ids",
  "perro_nodes",
  "perro_render_bridge",
+ "perro_scene",
  "perro_structs",
 ]
 
