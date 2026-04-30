@@ -209,6 +209,7 @@ fn emit_static_scene_const(
                         value,
                         &mut counter,
                         None,
+                        None,
                     );
                     let _ = writeln!(
                         script_var_entries,
@@ -275,6 +276,7 @@ fn emit_node_data_consts(
                 scene_ident,
                 value,
                 counter,
+                Some(data.ty.as_ref()),
                 Some(name.as_ref()),
             );
             let _ = writeln!(
@@ -357,6 +359,7 @@ fn emit_value_with_consts(
     scene_ident: &str,
     value: &SceneValue,
     counter: &mut usize,
+    node_type: Option<&str>,
     field_name: Option<&str>,
 ) -> String {
     match value {
@@ -372,7 +375,9 @@ fn emit_value_with_consts(
         SceneValue::Vec4 { x, y, z, w } => {
             format!("SceneValue::Vec4 {{ x: {x:?}, y: {y:?}, z: {z:?}, w: {w:?} }}")
         }
-        SceneValue::Str(s) => emit_static_scene_value_str(field_name, s.as_ref()).to_string(),
+        SceneValue::Str(s) => {
+            emit_static_scene_value_str(node_type, field_name, s.as_ref()).to_string()
+        }
         SceneValue::Hashed(v) => format!("SceneValue::Hashed({v}u64)"),
         SceneValue::Key(s) => {
             format!(
@@ -392,6 +397,7 @@ fn emit_value_with_consts(
                     scene_ident,
                     value,
                     counter,
+                    node_type,
                     Some(name.as_ref()),
                 );
                 let _ = writeln!(
@@ -414,8 +420,14 @@ fn emit_value_with_consts(
             let mut nested_consts = String::new();
             let mut array_entries = String::new();
             for value in items.as_ref() {
-                let nested =
-                    emit_value_with_consts(&mut nested_consts, scene_ident, value, counter, None);
+                let nested = emit_value_with_consts(
+                    &mut nested_consts,
+                    scene_ident,
+                    value,
+                    counter,
+                    node_type,
+                    field_name,
+                );
                 let _ = writeln!(array_entries, "    {},", nested);
             }
             out.push_str(&nested_consts);
@@ -473,11 +485,20 @@ fn opt_static_root_of_hash(v: &Option<Cow<'static, str>>) -> String {
     }
 }
 
-fn emit_static_scene_value_str(field_name: Option<&str>, s: &str) -> String {
-    if field_name.is_some_and(is_static_color_field)
+fn emit_static_scene_value_str(
+    node_type: Option<&str>,
+    field_name: Option<&str>,
+    s: &str,
+) -> String {
+    if field_name.is_some_and(|field_name| is_static_rgba_color_field(node_type, field_name))
         && let Some(color) = Color::from_hex(s)
     {
-        return emit_static_scene_color(color);
+        return emit_static_scene_color4(color);
+    }
+    if field_name.is_some_and(is_static_rgb_color_field)
+        && let Some(color) = Color::from_hex(s)
+    {
+        return emit_static_scene_color3(color);
     }
     if let Some(hash) = static_hashable_path(s) {
         format!("SceneValue::Hashed({hash}u64)")
@@ -486,26 +507,48 @@ fn emit_static_scene_value_str(field_name: Option<&str>, s: &str) -> String {
     }
 }
 
-fn is_static_color_field(field_name: &str) -> bool {
+fn is_static_rgba_color_field(node_type: Option<&str>, field_name: &str) -> bool {
+    match field_name {
+        "fill" | "stroke" | "text_color" | "hover_fill" | "hover_stroke" | "pressed_fill"
+        | "pressed_stroke" | "modulate" | "baseColorFactor" | "base_color_factor" => true,
+        "color" | "hover_color" | "pressed_color" => node_type.is_some_and(is_static_ui_node),
+        _ => false,
+    }
+}
+
+fn is_static_rgb_color_field(field_name: &str) -> bool {
     matches!(
         field_name,
-        "fill"
-            | "stroke"
-            | "color"
-            | "text_color"
-            | "hover_fill"
-            | "hover_color"
-            | "hover_stroke"
-            | "pressed_fill"
-            | "pressed_color"
-            | "pressed_stroke"
+        "emissiveFactor" | "emissive_factor" | "day_colors" | "evening_colors" | "night_colors"
     )
 }
 
-fn emit_static_scene_color(color: Color) -> String {
+fn is_static_ui_node(node_type: &str) -> bool {
+    matches!(
+        node_type,
+        "UiPanel"
+            | "UiButton"
+            | "UiLabel"
+            | "UiControl"
+            | "UiHLayout"
+            | "UiHBox"
+            | "UiVLayout"
+            | "UiVBox"
+            | "UiGrid"
+    )
+}
+
+fn emit_static_scene_color4(color: Color) -> String {
     format!(
         "SceneValue::Vec4 {{ x: {:?}, y: {:?}, z: {:?}, w: {:?} }}",
         color.r, color.g, color.b, color.a
+    )
+}
+
+fn emit_static_scene_color3(color: Color) -> String {
+    format!(
+        "SceneValue::Vec3 {{ x: {:?}, y: {:?}, z: {:?} }}",
+        color.r, color.g, color.b
     )
 }
 
@@ -688,7 +731,7 @@ mod tests {
     #[test]
     fn static_color_field_hex_emits_vec4() {
         assert_eq!(
-            emit_static_scene_value_str(Some("fill"), "#4C3B55"),
+            emit_static_scene_value_str(Some("UiPanel"), Some("fill"), "#4C3B55"),
             "SceneValue::Vec4 { x: 0.29803923, y: 0.23137255, z: 0.33333334, w: 1.0 }"
         );
     }
@@ -696,8 +739,28 @@ mod tests {
     #[test]
     fn static_non_color_field_hex_stays_string() {
         assert_eq!(
-            emit_static_scene_value_str(Some("text"), "#4C3B55"),
+            emit_static_scene_value_str(None, Some("text"), "#4C3B55"),
             "SceneValue::Str(Cow::Borrowed(\"#4C3B55\"))"
+        );
+    }
+
+    #[test]
+    fn static_plain_color_hex_stays_string_without_ui_context() {
+        assert_eq!(
+            emit_static_scene_value_str(Some("RayLight3D"), Some("color"), "#4C3B55"),
+            "SceneValue::Str(Cow::Borrowed(\"#4C3B55\"))"
+        );
+    }
+
+    #[test]
+    fn static_material_hex_fields_emit_color_values() {
+        assert_eq!(
+            emit_static_scene_value_str(None, Some("base_color_factor"), "#4C3B55"),
+            "SceneValue::Vec4 { x: 0.29803923, y: 0.23137255, z: 0.33333334, w: 1.0 }"
+        );
+        assert_eq!(
+            emit_static_scene_value_str(None, Some("emissive_factor"), "#4C3B55"),
+            "SceneValue::Vec3 { x: 0.29803923, y: 0.23137255, z: 0.33333334 }"
         );
     }
 
