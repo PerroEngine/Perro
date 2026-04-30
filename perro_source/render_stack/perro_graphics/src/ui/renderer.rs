@@ -30,10 +30,29 @@ pub(crate) struct UiButtonDraw {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub(crate) struct UiTextEditDraw {
+    pub(crate) panel: UiPanelDraw,
+    pub(crate) text: Cow<'static, str>,
+    pub(crate) placeholder: Cow<'static, str>,
+    pub(crate) color: [f32; 4],
+    pub(crate) placeholder_color: [f32; 4],
+    pub(crate) selection_color: [f32; 4],
+    pub(crate) caret_color: [f32; 4],
+    pub(crate) font_size: f32,
+    pub(crate) padding: [f32; 4],
+    pub(crate) scroll: [f32; 2],
+    pub(crate) caret: usize,
+    pub(crate) anchor: usize,
+    pub(crate) focused: bool,
+    pub(crate) multiline: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum UiDraw {
     Panel(UiPanelDraw),
     Button(UiButtonDraw),
     Label(UiLabelDraw),
+    TextEdit(UiTextEditDraw),
 }
 
 pub struct UiRenderer {
@@ -114,6 +133,51 @@ impl UiRenderer {
                     font_size,
                     h_align,
                     v_align,
+                }),
+            ),
+            UiCommand::UpsertTextEdit {
+                node,
+                rect,
+                fill,
+                stroke,
+                stroke_width,
+                corner_radius,
+                text,
+                placeholder,
+                color,
+                placeholder_color,
+                selection_color,
+                caret_color,
+                font_size,
+                padding,
+                scroll,
+                caret,
+                anchor,
+                focused,
+                multiline,
+            } => self.upsert(
+                node,
+                UiDraw::TextEdit(UiTextEditDraw {
+                    panel: UiPanelDraw {
+                        rect,
+                        fill,
+                        stroke,
+                        stroke_width,
+                        corner_radius,
+                    },
+                    text,
+                    placeholder,
+                    color,
+                    placeholder_color,
+                    selection_color,
+                    caret_color,
+                    font_size,
+                    padding,
+                    scroll,
+                    caret,
+                    anchor,
+                    focused,
+                    multiline,
                 }),
             ),
             UiCommand::RemoveNode { node } => {

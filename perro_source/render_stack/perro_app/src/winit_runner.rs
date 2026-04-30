@@ -2154,6 +2154,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                     .create_window(attrs)
                     .expect("failed to create winit window"),
             );
+            window.set_ime_allowed(true);
             self.app.attach_window(window.clone());
             let initial_size = window.inner_size();
             self.app
@@ -2359,6 +2360,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                     return;
                 }
                 self.kbm_input.handle_window_event(&mut self.app, &event);
+            }
+            ime_event @ WindowEvent::Ime(_) => {
+                if self.startup_splash.blocks_input() {
+                    return;
+                }
+                self.kbm_input
+                    .handle_window_event(&mut self.app, &ime_event);
             }
             WindowEvent::Focused(true) => {
                 if self.startup_splash.blocks_input() {

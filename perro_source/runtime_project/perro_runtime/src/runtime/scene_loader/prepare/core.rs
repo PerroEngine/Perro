@@ -37,7 +37,7 @@ use perro_structs::{
 };
 use perro_ui::{
     UiBox, UiButton, UiGrid, UiHLayout, UiLabel, UiLayout, UiMouseFilter, UiPanel, UiTextAlign,
-    UiVLayout,
+    UiTextBlock, UiTextBox, UiVLayout,
 };
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -633,6 +633,8 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "UiPanel" => Ok(SceneNodeData::UiPanel(build_ui_panel(data))),
         "UiButton" => Ok(SceneNodeData::UiButton(build_ui_button(data))),
         "UiLabel" => Ok(SceneNodeData::UiLabel(build_ui_label(data))),
+        "UiTextBox" => Ok(SceneNodeData::UiTextBox(build_ui_text_box(data))),
+        "UiTextBlock" => Ok(SceneNodeData::UiTextBlock(build_ui_text_block(data))),
         "UiLayout" => Ok(SceneNodeData::UiLayout(build_ui_layout(data))),
         "UiHLayout" | "UiHBox" => Ok(SceneNodeData::UiHLayout(build_ui_hlayout(data))),
         "UiVLayout" | "UiVBox" => Ok(SceneNodeData::UiVLayout(build_ui_vlayout(data))),

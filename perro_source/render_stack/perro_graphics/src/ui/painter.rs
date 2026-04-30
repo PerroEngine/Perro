@@ -1,4 +1,4 @@
-use super::renderer::{UiDraw, UiLabelDraw, UiPanelDraw};
+use super::renderer::{UiDraw, UiLabelDraw, UiPanelDraw, UiTextEditDraw};
 use ahash::AHashMap;
 use epaint::{
     AlphaFromCoverage, ClippedPrimitive, ClippedShape, Color32, CornerRadius, FontFamily, FontId,
@@ -90,6 +90,10 @@ impl EpaintUiPainter {
                 UiDraw::Label(label) => {
                     push_label_shape(label, viewport, &mut self.fonts, &mut self.shapes)
                 }
+                UiDraw::TextEdit(edit) => {
+                    push_panel_shape(&edit.panel, viewport, &mut self.shapes);
+                    push_text_edit_shapes(edit, viewport, &mut self.fonts, &mut self.shapes);
+                }
             }
             let rect = ui_rect(draw);
             let rotation = rect.rotation_radians;
@@ -155,6 +159,7 @@ fn ui_rect(draw: &UiDraw) -> UiRectState {
         UiDraw::Panel(panel) => panel.rect,
         UiDraw::Button(button) => button.panel.rect,
         UiDraw::Label(label) => label.rect,
+        UiDraw::TextEdit(edit) => edit.panel.rect,
     }
 }
 
@@ -194,6 +199,144 @@ fn push_panel_shape(panel: &UiPanelDraw, viewport: [f32; 2], out: &mut Vec<Clipp
             color32(panel.fill),
             Stroke::new(panel.stroke_width.max(0.0), color32(panel.stroke)),
             StrokeKind::Inside,
+        )),
+    });
+}
+
+fn push_text_edit_shapes(
+    edit: &UiTextEditDraw,
+    viewport: [f32; 2],
+    fonts: &mut Fonts,
+    out: &mut Vec<ClippedShape>,
+) {
+    let panel = &edit.panel;
+    if !valid_rect(panel.rect) || !edit.font_size.is_finite() || edit.font_size <= 0.0 {
+        return;
+    }
+
+    let (min, max) = panel.rect.screen_min_max(viewport);
+    let content_min = pos2(min[0] + edit.padding[0], min[1] + edit.padding[1]);
+    let content_max = pos2(max[0] - edit.padding[2], max[1] - edit.padding[3]);
+    if content_max.x <= content_min.x || content_max.y <= content_min.y {
+        return;
+    }
+    let clip_rect = Rect::from_min_max(content_min, content_max);
+    let draw_pos = pos2(
+        content_min.x - edit.scroll[0],
+        content_min.y - edit.scroll[1],
+    );
+    let body = if edit.text.is_empty() {
+        edit.placeholder.as_ref()
+    } else {
+        edit.text.as_ref()
+    };
+    let color = if edit.text.is_empty() {
+        edit.placeholder_color
+    } else {
+        edit.color
+    };
+    let wrap_width = if edit.multiline {
+        (content_max.x - content_min.x).max(1.0)
+    } else {
+        f32::INFINITY
+    };
+    if edit.focused {
+        push_selection_shapes(edit, clip_rect, draw_pos, out);
+    }
+    if !body.is_empty() && valid_color(color) {
+        let galley = fonts.with_pixels_per_point(1.0).layout(
+            body.to_string(),
+            FontId::new(edit.font_size, FontFamily::Monospace),
+            color32(color),
+            wrap_width,
+        );
+        out.push(ClippedShape {
+            clip_rect,
+            shape: Shape::galley_with_override_text_color(draw_pos, galley, color32(color)),
+        });
+    }
+
+    if !edit.focused {
+        return;
+    }
+    push_caret_shape(edit, clip_rect, draw_pos, out);
+}
+
+fn push_selection_shapes(
+    edit: &UiTextEditDraw,
+    clip_rect: Rect,
+    origin: epaint::Pos2,
+    out: &mut Vec<ClippedShape>,
+) {
+    if edit.caret == edit.anchor || edit.text.is_empty() || !valid_color(edit.selection_color) {
+        return;
+    }
+    let (start, end) = if edit.caret < edit.anchor {
+        (edit.caret, edit.anchor)
+    } else {
+        (edit.anchor, edit.caret)
+    };
+    let line_h = (edit.font_size * 1.25).max(1.0);
+    let char_w = text_char_width(edit);
+    for (line_i, line) in text_lines(edit.text.as_ref(), edit.multiline)
+        .iter()
+        .enumerate()
+    {
+        let line_start = line.start;
+        let line_end = line.end;
+        let sel_start = start.max(line_start).min(line_end);
+        let sel_end = end.max(line_start).min(line_end);
+        if sel_start >= sel_end {
+            continue;
+        }
+        let x0 = origin.x + byte_col(&edit.text, line_start, sel_start) as f32 * char_w;
+        let x1 = origin.x + byte_col(&edit.text, line_start, sel_end) as f32 * char_w;
+        let y0 = origin.y + line_i as f32 * line_h;
+        let rect = Rect::from_min_max(pos2(x0, y0), pos2(x1.max(x0 + 1.0), y0 + line_h));
+        out.push(ClippedShape {
+            clip_rect,
+            shape: Shape::Rect(RectShape::filled(
+                rect,
+                CornerRadius::ZERO,
+                color32(edit.selection_color),
+            )),
+        });
+    }
+}
+
+fn push_caret_shape(
+    edit: &UiTextEditDraw,
+    clip_rect: Rect,
+    origin: epaint::Pos2,
+    out: &mut Vec<ClippedShape>,
+) {
+    if !valid_color(edit.caret_color) {
+        return;
+    }
+    let line_h = (edit.font_size * 1.25).max(1.0);
+    let char_w = text_char_width(edit);
+    let caret = clamp_char_boundary(edit.text.as_ref(), edit.caret);
+    let mut line_index = 0usize;
+    let mut line_start = 0usize;
+    for (i, line) in text_lines(edit.text.as_ref(), edit.multiline)
+        .iter()
+        .enumerate()
+    {
+        if caret >= line.start && caret <= line.end {
+            line_index = i;
+            line_start = line.start;
+            break;
+        }
+    }
+    let x = origin.x + byte_col(edit.text.as_ref(), line_start, caret) as f32 * char_w;
+    let y = origin.y + line_index as f32 * line_h;
+    let rect = Rect::from_min_max(pos2(x, y), pos2(x + 1.5, y + line_h));
+    out.push(ClippedShape {
+        clip_rect,
+        shape: Shape::Rect(RectShape::filled(
+            rect,
+            CornerRadius::ZERO,
+            color32(edit.caret_color),
         )),
     });
 }
@@ -310,4 +453,53 @@ fn valid_color(color: [f32; 4]) -> bool {
 
 fn viewport_rect(viewport: [f32; 2]) -> Rect {
     Rect::from_min_size(pos2(0.0, 0.0), vec2(viewport[0], viewport[1]))
+}
+
+#[derive(Clone, Copy)]
+struct TextLine {
+    start: usize,
+    end: usize,
+}
+
+fn text_lines(text: &str, multiline: bool) -> Vec<TextLine> {
+    if text.is_empty() {
+        return vec![TextLine { start: 0, end: 0 }];
+    }
+    if !multiline {
+        return vec![TextLine {
+            start: 0,
+            end: text.len(),
+        }];
+    }
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    for (idx, ch) in text.char_indices() {
+        if ch == '\n' {
+            out.push(TextLine { start, end: idx });
+            start = idx + ch.len_utf8();
+        }
+    }
+    out.push(TextLine {
+        start,
+        end: text.len(),
+    });
+    out
+}
+
+fn byte_col(text: &str, start: usize, end: usize) -> usize {
+    let start = clamp_char_boundary(text, start);
+    let end = clamp_char_boundary(text, end);
+    text[start.min(end)..end].chars().count()
+}
+
+fn clamp_char_boundary(text: &str, mut index: usize) -> usize {
+    index = index.min(text.len());
+    while index > 0 && !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+fn text_char_width(edit: &UiTextEditDraw) -> f32 {
+    (edit.font_size * 0.6).max(1.0)
 }

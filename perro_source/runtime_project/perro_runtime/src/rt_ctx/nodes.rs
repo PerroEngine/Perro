@@ -146,6 +146,12 @@ fn classify_ui_node_payload_change(before: &SceneNodeData, after: &SceneNodeData
             }
             flags
         }
+        (SceneNodeData::UiTextBox(before), SceneNodeData::UiTextBox(after)) => {
+            classify_text_edit_change(&before.inner, &after.inner)
+        }
+        (SceneNodeData::UiTextBlock(before), SceneNodeData::UiTextBlock(after)) => {
+            classify_text_edit_change(&before.inner, &after.inner)
+        }
         (SceneNodeData::UiLayout(before), SceneNodeData::UiLayout(after)) => {
             if before.inner.mode != after.inner.mode
                 || before.inner.spacing != after.inner.spacing
@@ -194,12 +200,41 @@ fn classify_ui_node_payload_change(before: &SceneNodeData, after: &SceneNodeData
     }
 }
 
+fn classify_text_edit_change(before: &perro_ui::UiTextEdit, after: &perro_ui::UiTextEdit) -> u16 {
+    let mut flags = 0;
+    if before.text != after.text || before.font_size != after.font_size {
+        flags |= Runtime::UI_DIRTY_TEXT
+            | Runtime::UI_DIRTY_LAYOUT_SELF
+            | Runtime::UI_DIRTY_LAYOUT_PARENT
+            | Runtime::UI_DIRTY_COMMANDS;
+    }
+    if before.style != after.style
+        || before.focused_style != after.focused_style
+        || before.placeholder != after.placeholder
+        || before.color != after.color
+        || before.placeholder_color != after.placeholder_color
+        || before.selection_color != after.selection_color
+        || before.caret_color != after.caret_color
+        || before.padding != after.padding
+        || before.h_scroll != after.h_scroll
+        || before.v_scroll != after.v_scroll
+        || before.caret != after.caret
+        || before.anchor != after.anchor
+        || before.editable != after.editable
+    {
+        flags |= Runtime::UI_DIRTY_COMMANDS;
+    }
+    flags
+}
+
 fn ui_base_from_data(data: &SceneNodeData) -> Option<&UiBox> {
     match data {
         SceneNodeData::UiBox(root) => Some(root),
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
         SceneNodeData::UiLabel(node) => Some(&node.base),
+        SceneNodeData::UiTextBox(node) => Some(&node.inner.base),
+        SceneNodeData::UiTextBlock(node) => Some(&node.inner.base),
         SceneNodeData::UiLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiHLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiVLayout(node) => Some(&node.inner.base),

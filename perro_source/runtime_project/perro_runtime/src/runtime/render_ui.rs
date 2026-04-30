@@ -2,14 +2,14 @@ use super::state::{DirtyState, UiButtonVisualState};
 use super::{Runtime, RuntimeUiTiming};
 use ahash::AHashMap;
 use perro_ids::{NodeID, SignalID};
-use perro_input::MouseButton;
+use perro_input::{KeyCode, MouseButton};
 use perro_nodes::SceneNodeData;
 use perro_render_bridge::{RenderCommand, UiCommand, UiRectState, UiTextAlignState};
 use perro_runtime_context::sub_apis::SignalAPI;
 use perro_structs::Vector2;
 use perro_ui::{
     ComputedUiRect, UiBox, UiHorizontalAlign, UiLayoutData, UiLayoutMode, UiSizeMode, UiStyle,
-    UiTransform, UiVerticalAlign,
+    UiTextEdit, UiTransform, UiVerticalAlign,
 };
 use perro_variant::Variant;
 use std::borrow::Cow;
@@ -31,11 +31,14 @@ impl Runtime {
             && self.render_ui.retained_commands.is_empty()
             && self.render_ui.computed_rects.is_empty();
         let input_changed = self.ui_pointer_changed();
+        let text_input_changed =
+            self.render_ui.focused_text_edit.is_some() && self.ui_text_input_changed();
         let has_extraction_work = self.dirty.has_any_dirty()
             || self.dirty.has_pending_transform_roots()
             || !self.render_ui.removed_nodes.is_empty()
             || bootstrap_scan
-            || input_changed;
+            || input_changed
+            || text_input_changed;
         if !has_extraction_work {
             if let Some(timing) = timing {
                 timing.total = total_start.expect("ui timing total start exists").elapsed();
@@ -125,6 +128,12 @@ impl Runtime {
         visible_now.extend(self.render_ui.prev_visible.iter().copied());
         let mut removed_nodes = std::mem::take(&mut self.render_ui.removed_nodes);
         for node in removed_nodes.drain(..) {
+            if self.render_ui.focused_text_edit == Some(node) {
+                self.render_ui.focused_text_edit = None;
+            }
+            if self.render_ui.pressed_text_edit == Some(node) {
+                self.render_ui.pressed_text_edit = None;
+            }
             visible_now.remove(&node);
             self.render_ui.computed_rects.remove(&node);
             self.render_ui.retained_rects.remove(&node);
@@ -165,6 +174,7 @@ impl Runtime {
                 .elapsed();
         }
 
+        self.process_text_edit_input(&computed, &mut command_ids, &mut command_seen);
         self.refresh_button_visual_states(&computed, &mut command_ids, &mut command_seen);
 
         let commands_start = timing.as_ref().map(|_| std::time::Instant::now());
@@ -211,11 +221,22 @@ impl Runtime {
                     .retained_commands
                     .get(&node)
                     .is_some_and(|command| {
-                        ui_command_matches_node(command, &scene_node.data, rect_state, state)
+                        ui_command_matches_node(
+                            command,
+                            &scene_node.data,
+                            rect_state,
+                            state,
+                            self.render_ui.focused_text_edit,
+                        )
                     });
             if !retained_matches {
-                let Some(command) = ui_command_from_node(node, &scene_node.data, rect_state, state)
-                else {
+                let Some(command) = ui_command_from_node(
+                    node,
+                    &scene_node.data,
+                    rect_state,
+                    state,
+                    self.render_ui.focused_text_edit,
+                ) else {
                     self.remove_retained_ui_node(node);
                     if let Some(timing) = timing.as_deref_mut() {
                         timing.removed_nodes = timing.removed_nodes.saturating_add(1);
@@ -399,6 +420,154 @@ impl Runtime {
         }
     }
 
+    fn ui_text_input_changed(&self) -> bool {
+        !self.input.text_inputs().is_empty()
+            || self.input.mouse_wheel() != Vector2::ZERO
+            || text_edit_keys()
+                .iter()
+                .any(|&key| self.input.is_key_pressed(key))
+    }
+
+    fn process_text_edit_input(
+        &mut self,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+        command_ids: &mut Vec<NodeID>,
+        command_seen: &mut ahash::AHashSet<NodeID>,
+    ) {
+        let mouse_pos = self.input.mouse_position();
+        let mouse_pressed = self.input.is_mouse_pressed(MouseButton::Left);
+        let mouse_down = self.input.is_mouse_down(MouseButton::Left);
+        if mouse_pressed {
+            let hit = self.hovered_text_edit(computed);
+            if self.render_ui.focused_text_edit != hit {
+                if let Some(prev) = self.render_ui.focused_text_edit
+                    && command_seen.insert(prev)
+                {
+                    command_ids.push(prev);
+                }
+                if let Some(next) = hit
+                    && command_seen.insert(next)
+                {
+                    command_ids.push(next);
+                }
+                self.render_ui.focused_text_edit = hit;
+            }
+            self.render_ui.pressed_text_edit = hit;
+            if let Some(node) = hit {
+                self.seek_text_edit_at_mouse(node, computed, mouse_pos, false);
+                if command_seen.insert(node) {
+                    command_ids.push(node);
+                }
+            }
+        } else if mouse_down
+            && let Some(node) = self.render_ui.pressed_text_edit
+            && self.render_ui.focused_text_edit == Some(node)
+        {
+            self.seek_text_edit_at_mouse(node, computed, mouse_pos, true);
+            if command_seen.insert(node) {
+                command_ids.push(node);
+            }
+        } else if self.input.is_mouse_released(MouseButton::Left) {
+            self.render_ui.pressed_text_edit = None;
+        }
+
+        let Some(focused) = self.render_ui.focused_text_edit else {
+            return;
+        };
+        if !self
+            .nodes
+            .get(focused)
+            .is_some_and(|node| text_edit_ref(&node.data).is_some())
+        {
+            self.render_ui.focused_text_edit = None;
+            self.render_ui.pressed_text_edit = None;
+            return;
+        }
+
+        let mut changed = false;
+        let text_inputs: Vec<String> = self.input.text_inputs().to_vec();
+        let shift = self.input.is_key_down(KeyCode::ShiftLeft)
+            || self.input.is_key_down(KeyCode::ShiftRight);
+        let ctrl = self.input.is_key_down(KeyCode::ControlLeft)
+            || self.input.is_key_down(KeyCode::ControlRight);
+        let wheel = self.input.mouse_wheel();
+        if let Some(scene_node) = self.nodes.get_mut(focused)
+            && let Some(edit) = text_edit_mut(&mut scene_node.data)
+        {
+            for text in text_inputs {
+                changed |= insert_text_input(edit, &text);
+            }
+            changed |= apply_text_edit_key_input(edit, shift, ctrl, &self.input);
+            if edit.multiline && wheel.y != 0.0 {
+                edit.v_scroll = (edit.v_scroll - wheel.y * edit.font_size * 2.0).max(0.0);
+                changed = true;
+            }
+            ensure_caret_visible(edit, computed.get(&focused).copied());
+        }
+        if changed && command_seen.insert(focused) {
+            command_ids.push(focused);
+        }
+        if changed {
+            self.mark_ui_dirty(focused, Runtime::UI_DIRTY_COMMANDS | Runtime::UI_DIRTY_TEXT);
+        }
+    }
+
+    fn hovered_text_edit(&self, computed: &AHashMap<NodeID, ComputedUiRect>) -> Option<NodeID> {
+        let mouse = self.input.mouse_position();
+        let viewport = self.input.viewport_size();
+        let point = Vector2::new((mouse.x - 0.5) * viewport.x, (mouse.y - 0.5) * viewport.y);
+        let mut best = None;
+        let mut best_z = i32::MIN;
+        for (node, scene_node) in self.nodes.iter() {
+            let Some(edit) = text_edit_ref(&scene_node.data) else {
+                continue;
+            };
+            if !edit.base.visible || !edit.base.input_enabled {
+                continue;
+            }
+            let Some(rect) = computed.get(&node).copied() else {
+                continue;
+            };
+            if rect.contains(point) && edit.base.layout.z_index >= best_z {
+                best = Some(node);
+                best_z = edit.base.layout.z_index;
+            }
+        }
+        best
+    }
+
+    fn seek_text_edit_at_mouse(
+        &mut self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+        mouse_pos: Vector2,
+        extend: bool,
+    ) {
+        let viewport = self.input.viewport_size();
+        let Some(rect) = computed.get(&node).copied() else {
+            return;
+        };
+        if let Some(scene_node) = self.nodes.get_mut(node)
+            && let Some(edit) = text_edit_mut(&mut scene_node.data)
+        {
+            let point = Vector2::new(
+                (mouse_pos.x - 0.5) * viewport.x,
+                (mouse_pos.y - 0.5) * viewport.y,
+            );
+            let min = rect.min();
+            let local = Vector2::new(
+                point.x - min.x - edit.padding.left + edit.h_scroll,
+                rect.max().y - point.y - edit.padding.top + edit.v_scroll,
+            );
+            let index = text_index_from_local(edit, local);
+            edit.caret = index;
+            if !extend {
+                edit.anchor = index;
+            }
+            ensure_caret_visible(edit, Some(rect));
+        }
+    }
+
     fn refresh_button_visual_states(
         &mut self,
         computed: &AHashMap<NodeID, ComputedUiRect>,
@@ -430,11 +599,16 @@ impl Runtime {
         }
 
         self.render_ui.button_states = next_states;
-        let cursor_icon = hovered
-            .and_then(|node| self.nodes.get(node))
-            .and_then(|scene_node| match &scene_node.data {
-                SceneNodeData::UiButton(button) => Some(button.cursor_icon),
-                _ => None,
+        let text_hovered = self.hovered_text_edit(computed);
+        let cursor_icon = text_hovered
+            .map(|_| perro_ui::CursorIcon::Text)
+            .or_else(|| {
+                hovered
+                    .and_then(|node| self.nodes.get(node))
+                    .and_then(|scene_node| match &scene_node.data {
+                        SceneNodeData::UiButton(button) => Some(button.cursor_icon),
+                        _ => None,
+                    })
             })
             .unwrap_or(perro_ui::CursorIcon::Default);
         if self.render_ui.cursor_icon != cursor_icon {
@@ -1258,6 +1432,8 @@ fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
         SceneNodeData::UiLabel(node) => Some(&node.base),
+        SceneNodeData::UiTextBox(node) => Some(&node.inner.base),
+        SceneNodeData::UiTextBlock(node) => Some(&node.inner.base),
         SceneNodeData::UiLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiHLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiVLayout(node) => Some(&node.inner.base),
@@ -1327,6 +1503,12 @@ fn ui_fill_height(layout: &UiLayoutData, parent_layout: &UiLayoutData, available
 fn ui_text_measure(data: &SceneNodeData) -> Vector2 {
     match data {
         SceneNodeData::UiLabel(label) => measure_text(label.text.as_ref(), label.font_size),
+        SceneNodeData::UiTextBox(text_box) => {
+            measure_text(text_box.inner.text.as_ref(), text_box.inner.font_size)
+        }
+        SceneNodeData::UiTextBlock(text_block) => {
+            measure_text(text_block.inner.text.as_ref(), text_block.inner.font_size)
+        }
         _ => Vector2::ZERO,
     }
 }
@@ -1396,6 +1578,7 @@ fn ui_command_from_node(
     data: &SceneNodeData,
     rect: UiRectState,
     button_state: UiButtonVisualState,
+    focused_text_edit: Option<NodeID>,
 ) -> Option<UiCommand> {
     match data {
         SceneNodeData::UiPanel(panel) => Some(panel_command(node, rect, &panel.style)),
@@ -1420,6 +1603,20 @@ fn ui_command_from_node(
             h_align: text_align_state(label.h_align),
             v_align: text_align_state(label.v_align),
         }),
+        SceneNodeData::UiTextBox(text_box) => Some(text_edit_command(
+            node,
+            rect,
+            &text_box.inner,
+            false,
+            focused_text_edit == Some(node),
+        )),
+        SceneNodeData::UiTextBlock(text_block) => Some(text_edit_command(
+            node,
+            rect,
+            &text_block.inner,
+            true,
+            focused_text_edit == Some(node),
+        )),
         _ => None,
     }
 }
@@ -1485,6 +1682,7 @@ fn ui_command_matches_node(
     data: &SceneNodeData,
     rect: UiRectState,
     button_state: UiButtonVisualState,
+    focused_text_edit: Option<NodeID>,
 ) -> bool {
     match (command, data) {
         (
@@ -1542,6 +1740,40 @@ fn ui_command_matches_node(
                 && *font_size == label.font_size
                 && *h_align == text_align_state(label.h_align)
                 && *v_align == text_align_state(label.v_align)
+        }
+        (UiCommand::UpsertTextEdit { .. }, SceneNodeData::UiTextBox(text_box)) => {
+            *command
+                == text_edit_command(
+                    match command {
+                        UiCommand::UpsertTextEdit { node, .. } => *node,
+                        _ => NodeID::nil(),
+                    },
+                    rect,
+                    &text_box.inner,
+                    false,
+                    focused_text_edit
+                        == match command {
+                            UiCommand::UpsertTextEdit { node, .. } => Some(*node),
+                            _ => None,
+                        },
+                )
+        }
+        (UiCommand::UpsertTextEdit { .. }, SceneNodeData::UiTextBlock(text_block)) => {
+            *command
+                == text_edit_command(
+                    match command {
+                        UiCommand::UpsertTextEdit { node, .. } => *node,
+                        _ => NodeID::nil(),
+                    },
+                    rect,
+                    &text_block.inner,
+                    true,
+                    focused_text_edit
+                        == match command {
+                            UiCommand::UpsertTextEdit { node, .. } => Some(*node),
+                            _ => None,
+                        },
+                )
         }
         _ => false,
     }
@@ -1618,6 +1850,59 @@ fn text_align_state(align: perro_ui::UiTextAlign) -> UiTextAlignState {
     }
 }
 
+fn text_edit_command(
+    node: NodeID,
+    rect: UiRectState,
+    edit: &UiTextEdit,
+    multiline: bool,
+    focused: bool,
+) -> UiCommand {
+    let focused_style = &edit.focused_style;
+    let style = &edit.style;
+    UiCommand::UpsertTextEdit {
+        node,
+        rect,
+        fill: if focused {
+            focused_style.fill.to_rgba()
+        } else {
+            style.fill.to_rgba()
+        },
+        stroke: if focused {
+            focused_style.stroke.to_rgba()
+        } else {
+            style.stroke.to_rgba()
+        },
+        stroke_width: if focused {
+            focused_style.stroke_width
+        } else {
+            style.stroke_width
+        },
+        corner_radius: if focused {
+            focused_style.corner_radius
+        } else {
+            style.corner_radius
+        },
+        text: Cow::Owned(edit.text.to_string()),
+        placeholder: Cow::Owned(edit.placeholder.to_string()),
+        color: edit.color.to_rgba(),
+        placeholder_color: edit.placeholder_color.to_rgba(),
+        selection_color: edit.selection_color.to_rgba(),
+        caret_color: edit.caret_color.to_rgba(),
+        font_size: edit.font_size,
+        padding: [
+            edit.padding.left,
+            edit.padding.top,
+            edit.padding.right,
+            edit.padding.bottom,
+        ],
+        scroll: [edit.h_scroll, edit.v_scroll],
+        caret: edit.caret,
+        anchor: edit.anchor,
+        focused,
+        multiline,
+    }
+}
+
 fn panel_command(node: NodeID, rect: UiRectState, style: &UiStyle) -> UiCommand {
     UiCommand::UpsertPanel {
         node,
@@ -1627,6 +1912,362 @@ fn panel_command(node: NodeID, rect: UiRectState, style: &UiStyle) -> UiCommand 
         stroke_width: style.stroke_width,
         corner_radius: style.corner_radius,
     }
+}
+
+fn text_edit_ref(data: &SceneNodeData) -> Option<&UiTextEdit> {
+    match data {
+        SceneNodeData::UiTextBox(node) => Some(&node.inner),
+        SceneNodeData::UiTextBlock(node) => Some(&node.inner),
+        _ => None,
+    }
+}
+
+fn text_edit_mut(data: &mut SceneNodeData) -> Option<&mut UiTextEdit> {
+    match data {
+        SceneNodeData::UiTextBox(node) => Some(&mut node.inner),
+        SceneNodeData::UiTextBlock(node) => Some(&mut node.inner),
+        _ => None,
+    }
+}
+
+fn text_edit_keys() -> &'static [KeyCode] {
+    &[
+        KeyCode::Backspace,
+        KeyCode::Delete,
+        KeyCode::Enter,
+        KeyCode::ArrowLeft,
+        KeyCode::ArrowRight,
+        KeyCode::ArrowUp,
+        KeyCode::ArrowDown,
+        KeyCode::Home,
+        KeyCode::End,
+        KeyCode::PageUp,
+        KeyCode::PageDown,
+        KeyCode::KeyA,
+        KeyCode::KeyC,
+        KeyCode::KeyV,
+        KeyCode::KeyX,
+    ]
+}
+
+fn insert_text_input(edit: &mut UiTextEdit, text: &str) -> bool {
+    if !edit.editable || text.is_empty() {
+        return false;
+    }
+    let filtered = normalize_text_input(text, edit.multiline);
+    if filtered.is_empty() {
+        return false;
+    }
+    replace_selection(edit, &filtered);
+    true
+}
+
+fn apply_text_edit_key_input(
+    edit: &mut UiTextEdit,
+    shift: bool,
+    ctrl: bool,
+    input: &perro_input::InputSnapshot,
+) -> bool {
+    let mut changed = false;
+    if ctrl && input.is_key_pressed(KeyCode::KeyA) {
+        edit.anchor = 0;
+        edit.caret = edit.text.len();
+        return true;
+    }
+    if ctrl && input.is_key_pressed(KeyCode::KeyC) {
+        copy_selection_to_clipboard(edit);
+        return false;
+    }
+    if ctrl && input.is_key_pressed(KeyCode::KeyX) {
+        if edit.editable && copy_selection_to_clipboard(edit) {
+            replace_selection(edit, "");
+            return true;
+        }
+        return false;
+    }
+    if ctrl && input.is_key_pressed(KeyCode::KeyV) {
+        if edit.editable
+            && let Some(text) = read_clipboard_text(edit.multiline)
+        {
+            replace_selection(edit, &text);
+            return true;
+        }
+        return false;
+    }
+    if input.is_key_pressed(KeyCode::Backspace) && edit.editable {
+        changed |= backspace(edit);
+    }
+    if input.is_key_pressed(KeyCode::Delete) && edit.editable {
+        changed |= delete(edit);
+    }
+    if input.is_key_pressed(KeyCode::Enter) && edit.editable && edit.multiline {
+        replace_selection(edit, "\n");
+        changed = true;
+    }
+    if input.is_key_pressed(KeyCode::ArrowLeft) {
+        move_caret(edit, prev_char(edit.text.as_ref(), edit.caret), shift);
+        changed = true;
+    }
+    if input.is_key_pressed(KeyCode::ArrowRight) {
+        move_caret(edit, next_char(edit.text.as_ref(), edit.caret), shift);
+        changed = true;
+    }
+    if input.is_key_pressed(KeyCode::Home) {
+        let line = line_for_index(edit.text.as_ref(), edit.caret);
+        move_caret(edit, line.start, shift);
+        changed = true;
+    }
+    if input.is_key_pressed(KeyCode::End) {
+        let line = line_for_index(edit.text.as_ref(), edit.caret);
+        move_caret(edit, line.end, shift);
+        changed = true;
+    }
+    if edit.multiline && input.is_key_pressed(KeyCode::ArrowUp) {
+        move_vertical(edit, -1, shift);
+        changed = true;
+    }
+    if edit.multiline && input.is_key_pressed(KeyCode::ArrowDown) {
+        move_vertical(edit, 1, shift);
+        changed = true;
+    }
+    changed
+}
+
+fn copy_selection_to_clipboard(edit: &UiTextEdit) -> bool {
+    let (start, end) = selection_range(edit);
+    if start == end {
+        return false;
+    }
+    let Ok(mut clipboard) = arboard::Clipboard::new() else {
+        return false;
+    };
+    clipboard
+        .set_text(edit.text[start..end].to_string())
+        .is_ok()
+}
+
+fn read_clipboard_text(multiline: bool) -> Option<String> {
+    let mut clipboard = arboard::Clipboard::new().ok()?;
+    let text = clipboard.get_text().ok()?;
+    let text = normalize_text_input(&text, multiline);
+    (!text.is_empty()).then_some(text)
+}
+
+fn replace_selection(edit: &mut UiTextEdit, replacement: &str) {
+    let mut text = edit.text.to_string();
+    let (start, end) = selection_range(edit);
+    text.replace_range(start..end, replacement);
+    let caret = start + replacement.len();
+    edit.text = Cow::Owned(text);
+    edit.caret = caret;
+    edit.anchor = caret;
+}
+
+fn selection_range(edit: &UiTextEdit) -> (usize, usize) {
+    let text = edit.text.as_ref();
+    let a = clamp_char_boundary(text, edit.anchor);
+    let b = clamp_char_boundary(text, edit.caret);
+    if a <= b { (a, b) } else { (b, a) }
+}
+
+fn backspace(edit: &mut UiTextEdit) -> bool {
+    if edit.caret != edit.anchor {
+        replace_selection(edit, "");
+        return true;
+    }
+    let prev = prev_char(edit.text.as_ref(), edit.caret);
+    if prev == edit.caret {
+        return false;
+    }
+    let mut text = edit.text.to_string();
+    text.replace_range(prev..edit.caret, "");
+    edit.text = Cow::Owned(text);
+    edit.caret = prev;
+    edit.anchor = prev;
+    true
+}
+
+fn delete(edit: &mut UiTextEdit) -> bool {
+    if edit.caret != edit.anchor {
+        replace_selection(edit, "");
+        return true;
+    }
+    let next = next_char(edit.text.as_ref(), edit.caret);
+    if next == edit.caret {
+        return false;
+    }
+    let mut text = edit.text.to_string();
+    text.replace_range(edit.caret..next, "");
+    edit.text = Cow::Owned(text);
+    edit.anchor = edit.caret;
+    true
+}
+
+fn move_caret(edit: &mut UiTextEdit, index: usize, extend: bool) {
+    let index = clamp_char_boundary(edit.text.as_ref(), index);
+    edit.caret = index;
+    if !extend {
+        edit.anchor = index;
+    }
+}
+
+fn move_vertical(edit: &mut UiTextEdit, delta: i32, extend: bool) {
+    let text = edit.text.as_ref();
+    let lines = text_line_ranges(text);
+    let Some(current_line) = lines
+        .iter()
+        .position(|line| edit.caret >= line.start && edit.caret <= line.end)
+    else {
+        return;
+    };
+    let target_line = (current_line as i32 + delta).clamp(0, lines.len() as i32 - 1) as usize;
+    let col = text[lines[current_line].start..edit.caret].chars().count();
+    let target = index_at_col(text, lines[target_line], col);
+    move_caret(edit, target, extend);
+}
+
+fn ensure_caret_visible(edit: &mut UiTextEdit, rect: Option<ComputedUiRect>) {
+    let Some(rect) = rect else {
+        return;
+    };
+    let content_w = (rect.size.x - edit.padding.horizontal()).max(1.0);
+    let content_h = (rect.size.y - edit.padding.vertical()).max(1.0);
+    let caret_pos = caret_text_pos(edit);
+    let line_h = text_line_height(edit);
+    if caret_pos.x < edit.h_scroll {
+        edit.h_scroll = caret_pos.x.max(0.0);
+    } else if caret_pos.x + 2.0 > edit.h_scroll + content_w {
+        edit.h_scroll = (caret_pos.x + 2.0 - content_w).max(0.0);
+    }
+    if edit.multiline {
+        if caret_pos.y < edit.v_scroll {
+            edit.v_scroll = caret_pos.y.max(0.0);
+        } else if caret_pos.y + line_h > edit.v_scroll + content_h {
+            edit.v_scroll = (caret_pos.y + line_h - content_h).max(0.0);
+        }
+    } else {
+        edit.v_scroll = 0.0;
+    }
+}
+
+fn text_index_from_local(edit: &UiTextEdit, local: Vector2) -> usize {
+    let lines = text_line_ranges(edit.text.as_ref());
+    let line_h = text_line_height(edit);
+    let char_w = text_char_width(edit);
+    let line_idx = if edit.multiline {
+        ((local.y / line_h).floor() as isize).clamp(0, lines.len() as isize - 1) as usize
+    } else {
+        0
+    };
+    let col = ((local.x / char_w).round() as isize).max(0) as usize;
+    index_at_col(edit.text.as_ref(), lines[line_idx], col)
+}
+
+fn caret_text_pos(edit: &UiTextEdit) -> Vector2 {
+    let text = edit.text.as_ref();
+    let lines = text_line_ranges(text);
+    let mut line_idx = 0usize;
+    let mut line = lines[0];
+    for (idx, candidate) in lines.iter().copied().enumerate() {
+        if edit.caret >= candidate.start && edit.caret <= candidate.end {
+            line_idx = idx;
+            line = candidate;
+            break;
+        }
+    }
+    let col = text[line.start..edit.caret.min(line.end)].chars().count();
+    Vector2::new(
+        col as f32 * text_char_width(edit),
+        line_idx as f32 * text_line_height(edit),
+    )
+}
+
+#[derive(Clone, Copy)]
+struct TextRange {
+    start: usize,
+    end: usize,
+}
+
+fn line_for_index(text: &str, index: usize) -> TextRange {
+    text_line_ranges(text)
+        .into_iter()
+        .find(|line| index >= line.start && index <= line.end)
+        .unwrap_or(TextRange {
+            start: 0,
+            end: text.len(),
+        })
+}
+
+fn text_line_ranges(text: &str) -> Vec<TextRange> {
+    if text.is_empty() {
+        return vec![TextRange { start: 0, end: 0 }];
+    }
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    for (idx, ch) in text.char_indices() {
+        if ch == '\n' {
+            out.push(TextRange { start, end: idx });
+            start = idx + ch.len_utf8();
+        }
+    }
+    out.push(TextRange {
+        start,
+        end: text.len(),
+    });
+    out
+}
+
+fn normalize_text_input(text: &str, multiline: bool) -> String {
+    if multiline {
+        text.replace("\r\n", "\n").replace('\r', "\n")
+    } else {
+        text.replace(['\r', '\n', '\t'], " ")
+    }
+}
+
+fn index_at_col(text: &str, line: TextRange, col: usize) -> usize {
+    let mut count = 0usize;
+    for (idx, _) in text[line.start..line.end].char_indices() {
+        if count == col {
+            return line.start + idx;
+        }
+        count += 1;
+    }
+    line.end
+}
+
+fn prev_char(text: &str, index: usize) -> usize {
+    let index = clamp_char_boundary(text, index);
+    text[..index]
+        .char_indices()
+        .last()
+        .map(|(idx, _)| idx)
+        .unwrap_or(index)
+}
+
+fn next_char(text: &str, index: usize) -> usize {
+    let index = clamp_char_boundary(text, index);
+    text[index..]
+        .chars()
+        .next()
+        .map(|ch| index + ch.len_utf8())
+        .unwrap_or(index)
+}
+
+fn clamp_char_boundary(text: &str, mut index: usize) -> usize {
+    index = index.min(text.len());
+    while index > 0 && !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+fn text_char_width(edit: &UiTextEdit) -> f32 {
+    (edit.font_size * 0.6).max(1.0)
+}
+
+fn text_line_height(edit: &UiTextEdit) -> f32 {
+    (edit.font_size * 1.25).max(1.0)
 }
 
 #[cfg(test)]
@@ -1748,6 +2389,50 @@ mod tests {
             runtime.take_cursor_icon_request(),
             Some(perro_ui::CursorIcon::Default)
         );
+    }
+
+    #[test]
+    fn text_box_focus_accepts_committed_text_and_backspace() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let mut text_box = perro_ui::UiTextBox::new();
+        text_box.inner.base.layout.size = UiVector2::pixels(200.0, 40.0);
+        let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(text_box));
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.extract_render_ui_commands();
+        runtime.clear_dirty_flags();
+        runtime.set_mouse_button_state(MouseButton::Left, false);
+        runtime.begin_input_frame();
+
+        runtime.push_text_input("abc");
+        runtime.extract_render_ui_commands();
+        let text = runtime.nodes.get(node).and_then(|scene_node| {
+            if let SceneNodeData::UiTextBox(text_box) = &scene_node.data {
+                Some(text_box.inner.text.as_ref())
+            } else {
+                None
+            }
+        });
+        assert_eq!(text, Some("abc"));
+
+        runtime.clear_dirty_flags();
+        runtime.begin_input_frame();
+        runtime.set_key_state(KeyCode::Backspace, true);
+        runtime.extract_render_ui_commands();
+        let text = runtime.nodes.get(node).and_then(|scene_node| {
+            if let SceneNodeData::UiTextBox(text_box) = &scene_node.data {
+                Some(text_box.inner.text.as_ref())
+            } else {
+                None
+            }
+        });
+        assert_eq!(text, Some("ab"));
     }
 
     #[test]

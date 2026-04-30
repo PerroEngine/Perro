@@ -115,6 +115,16 @@ impl InputSnapshot {
     }
 
     #[inline]
+    pub fn push_text_input(&mut self, text: impl Into<String>) {
+        self.keyboard.push_text_input(text);
+    }
+
+    #[inline]
+    pub fn text_inputs(&self) -> &[String] {
+        self.keyboard.text_inputs()
+    }
+
+    #[inline]
     pub fn is_key_down(&self, key: KeyCode) -> bool {
         self.keyboard.is_key_down(key)
     }
@@ -719,6 +729,7 @@ pub struct KeyboardState {
     down: Vec<u64>,
     pressed: Vec<u64>,
     released: Vec<u64>,
+    text_inputs: Vec<String>,
 }
 
 impl KeyboardState {
@@ -728,6 +739,7 @@ impl KeyboardState {
             down: vec![0; words],
             pressed: vec![0; words],
             released: vec![0; words],
+            text_inputs: Vec::new(),
         }
     }
 
@@ -735,6 +747,7 @@ impl KeyboardState {
     pub fn begin_frame(&mut self) {
         self.pressed.fill(0);
         self.released.fill(0);
+        self.text_inputs.clear();
     }
 
     #[inline]
@@ -768,6 +781,19 @@ impl KeyboardState {
     #[inline]
     pub fn is_key_released(&self, key: KeyCode) -> bool {
         self.test(&self.released, key)
+    }
+
+    #[inline]
+    pub fn push_text_input(&mut self, text: impl Into<String>) {
+        let text = text.into();
+        if !text.is_empty() {
+            self.text_inputs.push(text);
+        }
+    }
+
+    #[inline]
+    pub fn text_inputs(&self) -> &[String] {
+        &self.text_inputs
     }
 
     #[inline]

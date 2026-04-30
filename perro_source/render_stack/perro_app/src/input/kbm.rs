@@ -28,6 +28,15 @@ impl KbmInput {
                 {
                     app.set_key_state(key, event.state == ElementState::Pressed);
                 }
+                if event.state == ElementState::Pressed
+                    && let Some(text) = event.text.as_ref()
+                    && text.chars().any(|ch| !ch.is_control())
+                {
+                    app.push_text_input(text.to_string());
+                }
+            }
+            WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
+                app.push_text_input(text.clone());
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 if let Some(mapped) = map_winit_mouse_button(*button) {

@@ -635,6 +635,169 @@ impl UiNodeBase for UiLabel {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct UiTextEdit {
+    pub base: UiBox,
+    pub style: UiStyle,
+    pub focused_style: UiStyle,
+    pub text: Cow<'static, str>,
+    pub placeholder: Cow<'static, str>,
+    pub color: Color,
+    pub placeholder_color: Color,
+    pub selection_color: Color,
+    pub caret_color: Color,
+    pub font_size: f32,
+    pub padding: UiRect,
+    pub h_scroll: f32,
+    pub v_scroll: f32,
+    pub caret: usize,
+    pub anchor: usize,
+    pub editable: bool,
+    pub multiline: bool,
+}
+
+impl UiTextEdit {
+    pub const fn new(multiline: bool) -> Self {
+        Self {
+            base: UiBox::new(),
+            style: UiStyle::panel(),
+            focused_style: UiStyle {
+                fill: Color::new(0.10, 0.11, 0.13, 0.96),
+                stroke: Color::new(0.45, 0.58, 0.85, 1.0),
+                stroke_width: 1.0,
+                corner_radius: 4.0,
+            },
+            text: Cow::Borrowed(""),
+            placeholder: Cow::Borrowed(""),
+            color: Color::WHITE,
+            placeholder_color: Color::new(0.58, 0.62, 0.70, 1.0),
+            selection_color: Color::new(0.25, 0.42, 0.85, 0.55),
+            caret_color: Color::WHITE,
+            font_size: 16.0,
+            padding: UiRect::symmetric(8.0, 6.0),
+            h_scroll: 0.0,
+            v_scroll: 0.0,
+            caret: 0,
+            anchor: 0,
+            editable: true,
+            multiline,
+        }
+    }
+
+    pub fn set_text<T>(&mut self, text: T)
+    where
+        T: Into<Cow<'static, str>>,
+    {
+        self.text = text.into();
+        self.caret = clamp_to_char_boundary(self.text.as_ref(), self.caret.min(self.text.len()));
+        self.anchor = clamp_to_char_boundary(self.text.as_ref(), self.anchor.min(self.text.len()));
+    }
+}
+
+impl UiNodeBase for UiTextEdit {
+    fn ui_base(&self) -> &UiBox {
+        &self.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiBox {
+        &mut self.base
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiTextBox {
+    pub inner: UiTextEdit,
+}
+
+impl UiTextBox {
+    pub const fn new() -> Self {
+        Self {
+            inner: UiTextEdit::new(false),
+        }
+    }
+}
+
+impl Default for UiTextBox {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiTextBox {
+    type Target = UiTextEdit;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for UiTextBox {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl UiNodeBase for UiTextBox {
+    fn ui_base(&self) -> &UiBox {
+        &self.inner.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiBox {
+        &mut self.inner.base
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiTextBlock {
+    pub inner: UiTextEdit,
+}
+
+impl UiTextBlock {
+    pub const fn new() -> Self {
+        Self {
+            inner: UiTextEdit::new(true),
+        }
+    }
+}
+
+impl Default for UiTextBlock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiTextBlock {
+    type Target = UiTextEdit;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for UiTextBlock {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl UiNodeBase for UiTextBlock {
+    fn ui_base(&self) -> &UiBox {
+        &self.inner.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiBox {
+        &mut self.inner.base
+    }
+}
+
+fn clamp_to_char_boundary(text: &str, mut index: usize) -> usize {
+    index = index.min(text.len());
+    while index > 0 && !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct UiButton {
     pub base: UiBox,
     pub style: UiStyle,

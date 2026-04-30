@@ -190,6 +190,11 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn push_text_input(&mut self, text: impl Into<String>) {
+        self.runtime.push_text_input(text);
+    }
+
+    #[inline]
     pub fn set_mouse_button_state(&mut self, button: MouseButton, is_down: bool) {
         self.runtime.set_mouse_button_state(button, is_down);
     }

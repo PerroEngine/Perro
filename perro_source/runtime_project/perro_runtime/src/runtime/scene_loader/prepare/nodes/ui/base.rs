@@ -34,6 +34,28 @@ fn build_ui_label(data: &SceneDefNodeData) -> UiLabel {
     node
 }
 
+fn build_ui_text_box(data: &SceneDefNodeData) -> UiTextBox {
+    let mut node = UiTextBox::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.inner.base, base);
+    }
+    apply_ui_root_fields(&mut node.inner.base, &data.fields);
+    apply_ui_text_edit_fields(&mut node.inner, &data.fields);
+    node.inner.multiline = false;
+    node
+}
+
+fn build_ui_text_block(data: &SceneDefNodeData) -> UiTextBlock {
+    let mut node = UiTextBlock::new();
+    node.inner.multiline = true;
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.inner.base, base);
+    }
+    apply_ui_root_fields(&mut node.inner.base, &data.fields);
+    apply_ui_text_edit_fields(&mut node.inner, &data.fields);
+    node
+}
+
 fn build_ui_layout(data: &SceneDefNodeData) -> UiLayout {
     let mut node = UiLayout::new();
     if let Some(base) = data.base_ref() {
@@ -296,7 +318,7 @@ fn apply_ui_label_fields(node: &mut UiLabel, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "text" => {
             if let Some(v) = as_str(value) {
-                node.text = Cow::Owned(v.to_string());
+                node.text = Cow::Owned(decode_text_escapes(v));
             }
         }
         "color" | "text_color" => {
@@ -321,6 +343,99 @@ fn apply_ui_label_fields(node: &mut UiLabel, fields: &[SceneObjectField]) {
         }
         _ => {}
     });
+}
+
+fn apply_ui_text_edit_fields(node: &mut perro_ui::UiTextEdit, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "text" => {
+            if let Some(v) = as_str(value) {
+                node.text = Cow::Owned(decode_text_edit_escapes(v, node.multiline));
+                node.caret = node.text.len();
+                node.anchor = node.caret;
+            }
+        }
+        "placeholder" | "hint" => {
+            if let Some(v) = as_str(value) {
+                node.placeholder = Cow::Owned(decode_text_edit_escapes(v, node.multiline));
+            }
+        }
+        "color" | "text_color" => {
+            if let Some(v) = as_scene_color(value) {
+                node.color = v;
+            }
+        }
+        "placeholder_color" | "hint_color" => {
+            if let Some(v) = as_scene_color(value) {
+                node.placeholder_color = v;
+            }
+        }
+        "selection_color" => {
+            if let Some(v) = as_scene_color(value) {
+                node.selection_color = v;
+            }
+        }
+        "caret_color" | "cursor_color" => {
+            if let Some(v) = as_scene_color(value) {
+                node.caret_color = v;
+            }
+        }
+        "font_size" => {
+            if let Some(v) = as_f32(value) {
+                node.font_size = v;
+            }
+        }
+        "text_padding" | "content_padding" => {
+            if let Some(v) = as_ui_rect(value) {
+                node.padding = v;
+            }
+        }
+        "editable" => {
+            if let Some(v) = as_bool(value) {
+                node.editable = v;
+            }
+        }
+        _ => {}
+    });
+    apply_ui_style_fields(&mut node.style, fields, "");
+    apply_ui_style_fields(&mut node.focused_style, fields, "focused_");
+    apply_ui_style_object_fields(&mut node.style, fields, "style");
+    apply_ui_style_object_fields(&mut node.focused_style, fields, "focused_style");
+}
+
+fn decode_text_edit_escapes(text: &str, multiline: bool) -> String {
+    let text = decode_text_escapes(text);
+    if multiline {
+        text
+    } else {
+        text.replace(['\r', '\n', '\t'], " ")
+    }
+}
+
+fn decode_text_escapes(text: &str) -> String {
+    if !text.contains('\\') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('t') => out.push('\t'),
+            Some('\\') => out.push('\\'),
+            Some('"') => out.push('"'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
 }
 
 fn apply_ui_container_fields(

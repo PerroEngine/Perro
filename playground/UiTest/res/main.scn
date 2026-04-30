@@ -656,6 +656,39 @@ parent = right_button
 [/UiLabel]
 [/right_button_label]
 
+[right_text_box]
+parent = right_layout
+[UiTextBox]
+    size = (260, 44)
+    text = "edit me"
+    placeholder = "single line"
+    font_size = 18
+    fill = "#2B3443"
+    stroke = "#8CA0BF"
+    focused_fill = "#1F2A39"
+    focused_stroke = "#B4CBF0"
+    text_padding = (10, 8, 10, 8)
+    corner_radius = 10
+[/UiTextBox]
+[/right_text_box]
+
+[right_text_block]
+parent = right_layout
+[UiTextBlock]
+    size = (260, 118)
+    text = "multi line\ntry arrows\ntry scroll"
+    placeholder = "multi line"
+    font_size = 17
+    fill = "#2E2938"
+    stroke = "#A18CC4"
+    focused_fill = "#241F30"
+    focused_stroke = "#C7B3E8"
+    selection_color = "#5E7CE2AA"
+    text_padding = (10, 8, 10, 8)
+    corner_radius = 10
+[/UiTextBlock]
+[/right_text_block]
+
 [anchor_tl]
 parent = @root
 [UiPanel]
