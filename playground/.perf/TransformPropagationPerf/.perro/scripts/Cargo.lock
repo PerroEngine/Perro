@@ -1532,6 +1532,7 @@ dependencies = [
 name = "perro_ui"
 version = "0.1.0"
 dependencies = [
+ "perro_ids",
  "perro_structs",
 ]
 

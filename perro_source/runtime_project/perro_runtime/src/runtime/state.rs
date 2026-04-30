@@ -11,7 +11,7 @@ use perro_render_bridge::{
     PointLight3DState, RayLight3DState, RenderCommand, RenderEvent, RenderRequestID,
     SkeletonPalette, Sky3DState, SpotLight3DState, Sprite2DCommand, UiCommand, UiRectState,
 };
-use perro_structs::{Transform2D, Transform3D};
+use perro_structs::{Transform2D, Transform3D, Vector2};
 use perro_ui::ComputedUiRect;
 use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 
@@ -331,7 +331,17 @@ pub(crate) struct RenderUiState {
     pub(crate) auto_layout_computed: AHashSet<NodeID>,
     pub(crate) retained_commands: AHashMap<NodeID, UiCommand>,
     pub(crate) retained_rects: AHashMap<NodeID, UiRectState>,
+    pub(crate) button_states: AHashMap<NodeID, UiButtonVisualState>,
+    pub(crate) last_ui_pointer: Option<(Vector2, bool)>,
     pub(crate) removed_nodes: Vec<NodeID>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub(crate) enum UiButtonVisualState {
+    #[default]
+    Neutral,
+    Hover,
+    Pressed,
 }
 
 impl RenderUiState {
@@ -347,6 +357,8 @@ impl RenderUiState {
             auto_layout_computed: AHashSet::default(),
             retained_commands: AHashMap::default(),
             retained_rects: AHashMap::default(),
+            button_states: AHashMap::default(),
+            last_ui_pointer: None,
             removed_nodes: Vec::new(),
         }
     }

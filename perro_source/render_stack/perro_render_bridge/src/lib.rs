@@ -59,8 +59,6 @@ pub enum UiCommand {
     UpsertButton {
         node: NodeID,
         rect: UiRectState,
-        text: Cow<'static, str>,
-        text_color: [f32; 4],
         fill: [f32; 4],
         stroke: [f32; 4],
         stroke_width: f32,

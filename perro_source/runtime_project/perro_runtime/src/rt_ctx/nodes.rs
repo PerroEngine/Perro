@@ -121,14 +121,7 @@ fn classify_ui_node_payload_change(before: &SceneNodeData, after: &SceneNodeData
         }
         (SceneNodeData::UiButton(before), SceneNodeData::UiButton(after)) => {
             let mut flags = 0;
-            if before.text != after.text {
-                flags |= Runtime::UI_DIRTY_TEXT
-                    | Runtime::UI_DIRTY_LAYOUT_SELF
-                    | Runtime::UI_DIRTY_LAYOUT_PARENT
-                    | Runtime::UI_DIRTY_COMMANDS;
-            }
-            if before.text_color != after.text_color
-                || before.style != after.style
+            if before.style != after.style
                 || before.pressed_style != after.pressed_style
                 || before.hover_style != after.hover_style
                 || before.disabled != after.disabled

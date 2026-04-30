@@ -1,4 +1,4 @@
-use super::renderer::{UiButtonDraw, UiDraw, UiLabelDraw, UiPanelDraw};
+use super::renderer::{UiDraw, UiLabelDraw, UiPanelDraw};
 use ahash::AHashMap;
 use epaint::{
     AlphaFromCoverage, ClippedPrimitive, ClippedShape, Color32, CornerRadius, FontFamily, FontId,
@@ -85,7 +85,7 @@ impl EpaintUiPainter {
             match draw {
                 UiDraw::Panel(panel) => push_panel_shape(panel, viewport, &mut self.shapes),
                 UiDraw::Button(button) => {
-                    push_button_shape(button, viewport, &mut self.fonts, &mut self.shapes)
+                    push_panel_shape(&button.panel, viewport, &mut self.shapes)
                 }
                 UiDraw::Label(label) => {
                     push_label_shape(label, viewport, &mut self.fonts, &mut self.shapes)
@@ -156,28 +156,6 @@ fn ui_rect(draw: &UiDraw) -> UiRectState {
         UiDraw::Button(button) => button.panel.rect,
         UiDraw::Label(label) => label.rect,
     }
-}
-
-fn push_button_shape(
-    button: &UiButtonDraw,
-    viewport: [f32; 2],
-    fonts: &mut Fonts,
-    out: &mut Vec<ClippedShape>,
-) {
-    push_panel_shape(&button.panel, viewport, out);
-    push_text_shape(
-        TextShapeInput {
-            rect: button.panel.rect,
-            viewport,
-            text: button.text.as_ref(),
-            font_size: 16.0,
-            color: button.text_color,
-            h_align: UiTextAlignState::Center,
-            v_align: UiTextAlignState::Center,
-        },
-        fonts,
-        out,
-    );
 }
 
 fn push_label_shape(

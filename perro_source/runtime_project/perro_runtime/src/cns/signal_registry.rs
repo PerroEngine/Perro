@@ -1,10 +1,12 @@
 use ahash::AHashMap;
 use perro_ids::{NodeID, ScriptMemberID, SignalID};
+use perro_variant::Variant;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct SignalConnection {
     pub(crate) script_id: NodeID,
     pub(crate) method: ScriptMemberID,
+    pub(crate) params: Vec<Variant>,
 }
 
 pub(crate) struct SignalRegistry {
@@ -23,6 +25,7 @@ impl SignalRegistry {
         signal: SignalID,
         script_id: NodeID,
         method: ScriptMemberID,
+        params: &[Variant],
     ) -> bool {
         let connections = self
             .by_signal
@@ -34,7 +37,11 @@ impl SignalRegistry {
         {
             return false;
         }
-        connections.push(SignalConnection { script_id, method });
+        connections.push(SignalConnection {
+            script_id,
+            method,
+            params: params.to_vec(),
+        });
         true
     }
 
@@ -68,13 +75,13 @@ impl SignalRegistry {
         let Some(connections) = self.by_signal.get(&signal) else {
             return;
         };
-        out.extend_from_slice(connections);
+        out.extend(connections.iter().cloned());
     }
 
     #[inline]
     pub(crate) fn single_signal_connection(&self, signal: SignalID) -> Option<SignalConnection> {
         let connections = self.by_signal.get(&signal)?;
-        (connections.len() == 1).then_some(connections[0])
+        (connections.len() == 1).then(|| connections[0].clone())
     }
 
     pub(crate) fn disconnect_script(&mut self, script_id: NodeID) -> usize {

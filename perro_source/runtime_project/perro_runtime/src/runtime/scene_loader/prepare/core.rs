@@ -859,11 +859,24 @@ mod tests {
                 v_size = "fit_children"
                 pivot_ratio = (0, 0)
                 padding = (1, 2, 3, 4)
-                text = "Play"
-                text_color = "#FF0000"
-                fill = "#101820"
+                style = { fill = "#101820" stroke = "#A0A8B0" radius = 6 }
                 hover_fill = "#202830"
                 pressed_fill = "#303840"
+                hover_signals = ["ui_hover"]
+                pressed_signals = ["ui_down", "ui_press_any"]
+                click_signals = ["ui_click"]
+                hover = {
+                    size = (260, 52)
+                    scale = (1.1, 1.2)
+                    rotation = 0.5
+                    style = { fill = "#405060" stroke = "#C0D0E0" radius = 8 }
+                }
+                pressed = {
+                    size = (220, 42)
+                    scale = (0.9, 0.8)
+                    rotation = -0.25
+                    style = { fill = "#182028" stroke = "#8090A0" radius = 4 }
+                }
                 radius = "full"
                 disabled = true
             [/UiButton]
@@ -926,10 +939,40 @@ mod tests {
                 assert!(!button.input_enabled);
                 assert_eq!(button.mouse_filter, UiMouseFilter::Pass);
                 assert_eq!(button.layout.anchor, perro_ui::UiAnchor::TopRight);
-                assert_eq!(button.text.as_ref(), "Play");
-                assert_eq!(button.text_color, Color::RED);
                 assert!(button.disabled);
-                assert!(button.style.corner_radius.is_infinite());
+                assert_eq!(button.style.corner_radius, 6.0);
+                assert_eq!(button.style.fill, Color::from_hex("#101820").unwrap());
+                assert_eq!(button.style.stroke, Color::from_hex("#A0A8B0").unwrap());
+                assert_eq!(button.hover_style.fill, Color::from_hex("#405060").unwrap());
+                assert_eq!(
+                    button.hover_style.stroke,
+                    Color::from_hex("#C0D0E0").unwrap()
+                );
+                assert_eq!(button.hover_style.corner_radius, 8.0);
+                assert_eq!(
+                    button.pressed_style.fill,
+                    Color::from_hex("#182028").unwrap()
+                );
+                assert_eq!(button.hover_signals, vec![perro_ids::SignalID::from_string("ui_hover")]);
+                assert_eq!(
+                    button.pressed_signals,
+                    vec![
+                        perro_ids::SignalID::from_string("ui_down"),
+                        perro_ids::SignalID::from_string("ui_press_any"),
+                    ]
+                );
+                assert_eq!(button.click_signals, vec![perro_ids::SignalID::from_string("ui_click")]);
+                let hover = button.hover_base.as_ref().expect("hover base");
+                assert_eq!(hover.layout.size, perro_ui::UiVector2::pixels(260.0, 52.0));
+                assert_eq!(hover.transform.scale, Vector2::new(1.1, 1.2));
+                assert_eq!(hover.transform.rotation, 0.5);
+                let pressed = button.pressed_base.as_ref().expect("pressed base");
+                assert_eq!(
+                    pressed.layout.size,
+                    perro_ui::UiVector2::pixels(220.0, 42.0)
+                );
+                assert_eq!(pressed.transform.scale, Vector2::new(0.9, 0.8));
+                assert_eq!(pressed.transform.rotation, -0.25);
                 assert_eq!(
                     button.layout.resolved_size(Vector2::new(3000.0, 1200.0)),
                     Vector2::new(1200.0, 96.0)

@@ -33,9 +33,11 @@ UiBox
 
 `UiButton`
 
-- Button rect + text state.
+- Clickable panel.
 - Holds normal, hover, and pressed styles.
-- Can have children.
+- `hover` and `pressed` can override layout / transform / style fields.
+- Add text, image, layouts, grids, or panels as children.
+- Emits `<node_name>_<event>` plus custom event signal lists.
 
 `UiLabel`
 
@@ -144,23 +146,121 @@ Example:
 [/menu]
 ```
 
-## Current Runtime Scope
+Button state example:
 
-Done:
+```text
+[play_button]
+[UiButton]
+    size = (220, 48)
+    pressed_signals = ["play_down"]
+    click_signals = ["play_clicked", "any_button_clicked"]
+    style = { fill = "#344E41" stroke = "#A3B18A" radius = 8 }
+    hover = {
+        size = (236, 52)
+        scale = (1.02, 1.02)
+        rotation = 0.02
+        style = { fill = "#3A5A40" stroke = "#DAD7CD" radius = 10 }
+    }
+    pressed = {
+        size = (208, 44)
+        scale = (0.98, 0.98)
+        rotation = -0.01
+        style = { fill = "#1B4332" stroke = "#95D5B2" radius = 6 }
+    }
+[/UiButton]
+[/play_button]
+```
 
-- anchor / pivot / translation / size resolve through parent chain
-- padding as child content inset
-- margin as child outer inset
-- H/V/Grid child placement
-- H/V/Grid alignment
-- Fill / FitChildren
-- approximate text measure
-- UI render commands are emitted for panel/button/label
-- egui-style screen rect conversion exists in render bridge
-- egui tessellation path draws panel/button/label primitives
-- font atlas upload + mesh draw path exists in graphics backend
+Old flat button color fields still work:
 
-Not done:
+```text
+fill = "#344E41"
+hover_fill = "#3A5A40"
+pressed_fill = "#1B4332"
+```
 
-- exact font/glyph text measure
-- hit test / focus / clicks
+Button events:
+
+```text
+hover_enter
+hover_exit
+pressed
+released
+click
+```
+
+Each event always emits its named signal:
+
+```text
+<button_node_name>_hover_enter
+<button_node_name>_hover_exit
+<button_node_name>_pressed
+<button_node_name>_released
+<button_node_name>_click
+```
+
+Custom signal fields add signals on top of named signals:
+
+```text
+hover_signals = ["play_hover"]
+hover_exit_signals = ["play_unhover"]
+pressed_signals = ["play_down"]
+released_signals = ["play_up"]
+click_signals = ["play_clicked", "any_button_clicked"]
+```
+
+All handlers receive `(button: NodeID)`.
+
+Scene example:
+
+```text
+[play_button]
+[UiButton]
+    size = (220, 48)
+    hover_signals = ["menu_button_hover"]
+    pressed_signals = ["play_down", "any_button_down"]
+    released_signals = ["play_up"]
+    click_signals = ["play_clicked", "any_button_clicked"]
+[/UiButton]
+[/play_button]
+```
+
+Connect to named and custom signals:
+
+```rust
+lifecycle!({
+    fn on_all_init(&self, ctx, res, ipt, self_id) {
+        signal_connect!(ctx, self_id, signal!("play_button_hover_enter"), func!("on_button"));
+        signal_connect!(ctx, self_id, signal!("play_button_hover_exit"), func!("on_button"));
+        signal_connect!(ctx, self_id, signal!("play_button_pressed"), func!("on_button"));
+        signal_connect!(ctx, self_id, signal!("play_button_released"), func!("on_button"));
+        signal_connect!(ctx, self_id, signal!("play_button_click"), func!("on_button"));
+
+        signal_connect!(ctx, self_id, signal!("menu_button_hover"), func!("on_button"));
+        signal_connect!(ctx, self_id, signal!("play_down"), func!("on_button"));
+        signal_connect!(ctx, self_id, signal!("any_button_down"), func!("on_button"));
+        signal_connect!(ctx, self_id, signal!("play_up"), func!("on_button"));
+        signal_connect!(ctx, self_id, signal!("play_clicked"), func!("on_button"));
+        signal_connect!(ctx, self_id, signal!("any_button_clicked"), func!("on_button"));
+    }
+});
+
+methods!({
+    fn on_button(&self, ctx, res, ipt, self_id, button: NodeID) {
+        println!("button={button:?}");
+    }
+});
+```
+
+Runtime add/remove custom emits:
+
+```rust
+let _ = with_node_mut!(ctx, UiButton, play_button, |button| {
+    let sig = signal!("debug_play_click");
+    if !button.click_signals.contains(&sig) {
+        button.click_signals.push(sig);
+    }
+
+    button.pressed_signals.retain(|s| *s != signal!("old_press_signal"));
+});
+```

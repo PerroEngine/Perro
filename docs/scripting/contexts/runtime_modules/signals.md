@@ -9,6 +9,7 @@ Purpose:
 Macros:
 
 - `signal_connect!(ctx, listener_node_id, signal, handler_function) -> bool`
+- `signal_connect!(ctx, listener_node_id, signal, handler_function, params) -> bool`
 - `signal_disconnect!(ctx, listener_node_id, signal, handler_function) -> bool`
 - `signal_emit!(ctx, signal, params) -> usize`
 - `signal_emit!(ctx, signal) -> usize`
@@ -21,6 +22,8 @@ Notes:
 - `signal_emit!` returns the count of listeners that were triggered.
 - 3-arg `signal_emit!` uses `&[Variant]` (commonly `params![...]`).
 - 2-arg `signal_emit!` emits with empty params.
+- 5-arg `signal_connect!` stores extra params on the connection.
+- Connection params are appended after `signal_emit!` params.
 
 ## Example: Simple Broadcast
 
@@ -81,6 +84,61 @@ methods!({
 lifecycle!({
     fn on_init(&self, ctx, res, ipt, self_id) {
         signal_connect!(ctx, self_id, signal!("enemy_defeated"), func!("on_enemy_defeated"));
+    }
+});
+```
+
+## Example: Connection Parameters
+
+Use connection params when one handler needs to know which connection fired.
+
+```rust
+lifecycle!({
+    fn on_init(&self, ctx, res, ipt, self_id) {
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("ui_right_button_pressed"),
+            func!("on_button_event"),
+            params!["right_pressed"]
+        );
+
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("ui_left_button_pressed"),
+            func!("on_button_event"),
+            params!["left_pressed"]
+        );
+    }
+});
+
+methods!({
+    fn on_button_event(&self, ctx, res, ipt, self_id, event_name: String) {
+        match event_name.as_str() {
+            "right_pressed" => log::info!("right"),
+            "left_pressed" => log::info!("left"),
+            _ => {}
+        }
+    }
+});
+```
+
+If the emitter sends params, they come first:
+
+```rust
+signal_emit!(ctx, signal!("ui_button_pressed"), params![button_id]);
+signal_connect!(
+    ctx,
+    self_id,
+    signal!("ui_button_pressed"),
+    func!("on_button_event"),
+    params!["right_pressed"]
+);
+
+methods!({
+    fn on_button_event(&self, ctx, res, ipt, self_id, button_id: NodeID, event_name: String) {
+        log::info!("{:?}: {}", button_id, event_name);
     }
 });
 ```

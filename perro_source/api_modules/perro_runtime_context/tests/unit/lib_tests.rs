@@ -319,6 +319,7 @@ impl SignalAPI for DummyRuntime {
         _script: NodeID,
         _signal: perro_ids::SignalID,
         _function: perro_ids::ScriptMemberID,
+        _params: &[perro_variant::Variant],
     ) -> bool {
         true
     }
@@ -582,6 +583,13 @@ fn script_macros_typecheck_and_forward() {
         id,
         signal!("on_test"),
         method!("handle")
+    ));
+    assert!(signal_connect!(
+        &mut ctx,
+        id,
+        signal!("on_test_with_params"),
+        method!("handle"),
+        params!["button_a"]
     ));
     assert!(signal_disconnect!(
         &mut ctx,

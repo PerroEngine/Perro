@@ -26,8 +26,6 @@ pub(crate) struct UiLabelDraw {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct UiButtonDraw {
     pub(crate) panel: UiPanelDraw,
-    pub(crate) text: Cow<'static, str>,
-    pub(crate) text_color: [f32; 4],
     pub(crate) disabled: bool,
 }
 
@@ -81,8 +79,6 @@ impl UiRenderer {
             UiCommand::UpsertButton {
                 node,
                 rect,
-                text,
-                text_color,
                 fill,
                 stroke,
                 stroke_width,
@@ -98,8 +94,6 @@ impl UiRenderer {
                         stroke_width,
                         corner_radius,
                     },
-                    text,
-                    text_color,
                     disabled,
                 }),
             ),

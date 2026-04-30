@@ -10,14 +10,15 @@ fn connect_dedup_disconnect_emit_snapshot() {
     let f3 = ScriptMemberID::from_string("c");
 
     let mut reg = SignalRegistry::new();
-    assert!(reg.connect(signal, id1, f1));
-    assert!(!reg.connect(signal, id1, f1));
-    assert!(reg.connect(signal, id1, f2));
-    assert!(reg.connect(signal, id2, f3));
+    assert!(reg.connect(signal, id1, f1, &[]));
+    assert!(!reg.connect(signal, id1, f1, &[]));
+    assert!(reg.connect(signal, id1, f2, &[perro_variant::Variant::from("right")]));
+    assert!(reg.connect(signal, id2, f3, &[]));
 
     let mut out = Vec::new();
     reg.copy_signal_connections(signal, &mut out);
     assert_eq!(out.len(), 3);
+    assert_eq!(out[1].params, vec![perro_variant::Variant::from("right")]);
 
     assert!(reg.disconnect(signal, id1, f2));
     assert!(!reg.disconnect(signal, id1, f2));
@@ -36,9 +37,9 @@ fn disconnect_script_removes_all_entries() {
     let f = ScriptMemberID::from_string("h");
 
     let mut reg = SignalRegistry::new();
-    assert!(reg.connect(s1, id1, f));
-    assert!(reg.connect(s1, id2, f));
-    assert!(reg.connect(s2, id1, f));
+    assert!(reg.connect(s1, id1, f, &[]));
+    assert!(reg.connect(s1, id2, f, &[]));
+    assert!(reg.connect(s2, id1, f, &[]));
     assert_eq!(reg.disconnect_script(id1), 2);
 
     let mut out = Vec::new();

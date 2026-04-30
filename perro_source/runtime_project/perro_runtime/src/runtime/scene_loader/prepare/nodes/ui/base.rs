@@ -257,26 +257,34 @@ fn apply_ui_panel_fields(node: &mut UiPanel, fields: &[SceneObjectField]) {
 
 fn apply_ui_button_fields(node: &mut UiButton, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
-        "text" => {
-            if let Some(v) = as_str(value) {
-                node.text = Cow::Owned(v.to_string());
-            }
-        }
-        "text_color" => {
-            if let Some(v) = as_scene_color(value) {
-                node.text_color = v;
-            }
-        }
         "disabled" => {
             if let Some(v) = as_bool(value) {
                 node.disabled = v;
             }
+        }
+        "hover_signals" | "hovered_signals" | "hover_enter_signals" => {
+            node.hover_signals = as_signal_ids(value);
+        }
+        "hover_exit_signals" | "unhover_signals" => {
+            node.hover_exit_signals = as_signal_ids(value);
+        }
+        "pressed_signals" | "press_signals" => {
+            node.pressed_signals = as_signal_ids(value);
+        }
+        "released_signals" | "release_signals" => {
+            node.released_signals = as_signal_ids(value);
+        }
+        "click_signals" | "clicked_signals" => {
+            node.click_signals = as_signal_ids(value);
         }
         _ => {}
     });
     apply_ui_style_fields(&mut node.style, fields, "");
     apply_ui_style_fields(&mut node.hover_style, fields, "hover_");
     apply_ui_style_fields(&mut node.pressed_style, fields, "pressed_");
+    apply_ui_style_object_fields(&mut node.style, fields, "style");
+    apply_ui_button_state_fields(node, fields, "hover");
+    apply_ui_button_state_fields(node, fields, "pressed");
 }
 
 fn apply_ui_label_fields(node: &mut UiLabel, fields: &[SceneObjectField]) {
@@ -411,6 +419,56 @@ fn apply_ui_style_fields(style: &mut perro_ui::UiStyle, fields: &[SceneObjectFie
     });
 }
 
+fn apply_ui_style_object_fields(
+    style: &mut perro_ui::UiStyle,
+    fields: &[SceneObjectField],
+    object_name: &str,
+) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        if name != object_name {
+            return;
+        }
+        let SceneValue::Object(entries) = value else {
+            return;
+        };
+        apply_ui_style_fields(style, entries.as_ref(), "");
+    });
+}
+
+fn apply_ui_button_state_fields(node: &mut UiButton, fields: &[SceneObjectField], state_name: &str) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        if name != state_name {
+            return;
+        }
+        let SceneValue::Object(entries) = value else {
+            return;
+        };
+
+        let mut base = node.base.clone();
+        let mut style = match state_name {
+            "hover" => node.hover_style.clone(),
+            "pressed" => node.pressed_style.clone(),
+            _ => return,
+        };
+
+        apply_ui_root_fields(&mut base, entries.as_ref());
+        apply_ui_style_fields(&mut style, entries.as_ref(), "");
+        apply_ui_style_object_fields(&mut style, entries.as_ref(), "style");
+
+        match state_name {
+            "hover" => {
+                node.hover_base = Some(base);
+                node.hover_style = style;
+            }
+            "pressed" => {
+                node.pressed_base = Some(base);
+                node.pressed_style = style;
+            }
+            _ => {}
+        }
+    });
+}
+
 fn as_ui_corner_radius(value: &SceneValue) -> Option<f32> {
     if let Some(v) = as_f32(value) {
         return Some(v);
@@ -422,6 +480,23 @@ fn as_ui_corner_radius(value: &SceneValue) -> Option<f32> {
     {
         "full" | "pill" | "round" | "rounded" => Some(f32::INFINITY),
         _ => None,
+    }
+}
+
+fn as_signal_id(value: &SceneValue) -> Option<perro_ids::SignalID> {
+    if let Some(v) = as_str(value) {
+        return Some(perro_ids::SignalID::from_string(v));
+    }
+    if let Some(v) = value.as_key() {
+        return Some(perro_ids::SignalID::from_string(v));
+    }
+    value.as_hashed().map(perro_ids::SignalID::from_u64)
+}
+
+fn as_signal_ids(value: &SceneValue) -> Vec<perro_ids::SignalID> {
+    match value {
+        SceneValue::Array(values) => values.iter().filter_map(as_signal_id).collect(),
+        _ => as_signal_id(value).into_iter().collect(),
     }
 }
 

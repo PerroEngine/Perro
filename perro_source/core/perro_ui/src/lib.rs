@@ -1,3 +1,4 @@
+use perro_ids::SignalID;
 use perro_structs::{Color, Vector2};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
@@ -595,11 +596,16 @@ impl UiNodeBase for UiLabel {
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiButton {
     pub base: UiBox,
-    pub text: Cow<'static, str>,
-    pub text_color: Color,
     pub style: UiStyle,
-    pub pressed_style: UiStyle,
     pub hover_style: UiStyle,
+    pub pressed_style: UiStyle,
+    pub hover_base: Option<UiBox>,
+    pub pressed_base: Option<UiBox>,
+    pub hover_signals: Vec<SignalID>,
+    pub hover_exit_signals: Vec<SignalID>,
+    pub pressed_signals: Vec<SignalID>,
+    pub released_signals: Vec<SignalID>,
+    pub click_signals: Vec<SignalID>,
     pub disabled: bool,
 }
 
@@ -607,31 +613,28 @@ impl UiButton {
     pub const fn new() -> Self {
         Self {
             base: UiBox::new(),
-            text: Cow::Borrowed("Button"),
-            text_color: Color::WHITE,
             style: UiStyle::button(),
-            pressed_style: UiStyle {
-                fill: Color::new(0.12, 0.14, 0.18, 1.0),
-                stroke: Color::new(0.42, 0.46, 0.54, 1.0),
-                stroke_width: 1.0,
-                corner_radius: 4.0,
-            },
             hover_style: UiStyle {
                 fill: Color::new(0.24, 0.27, 0.32, 1.0),
                 stroke: Color::new(0.42, 0.46, 0.54, 1.0),
                 stroke_width: 1.0,
                 corner_radius: 4.0,
             },
+            pressed_style: UiStyle {
+                fill: Color::new(0.12, 0.14, 0.18, 1.0),
+                stroke: Color::new(0.42, 0.46, 0.54, 1.0),
+                stroke_width: 1.0,
+                corner_radius: 4.0,
+            },
+            hover_base: None,
+            pressed_base: None,
+            hover_signals: Vec::new(),
+            hover_exit_signals: Vec::new(),
+            pressed_signals: Vec::new(),
+            released_signals: Vec::new(),
+            click_signals: Vec::new(),
             disabled: false,
         }
-    }
-
-    pub fn with_text<T>(mut self, text: T) -> Self
-    where
-        T: Into<Cow<'static, str>>,
-    {
-        self.text = text.into();
-        self
     }
 }
 

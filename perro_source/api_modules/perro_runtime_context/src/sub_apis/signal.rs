@@ -7,6 +7,7 @@ pub trait SignalAPI {
         script_id: NodeID,
         signal: SignalID,
         function: ScriptMemberID,
+        params: &[Variant],
     ) -> bool;
 
     fn signal_disconnect(
@@ -33,8 +34,9 @@ impl<'rt, R: SignalAPI + ?Sized> SignalModule<'rt, R> {
         script_id: NodeID,
         signal: SignalID,
         function: ScriptMemberID,
+        params: &[Variant],
     ) -> bool {
-        self.rt.signal_connect(script_id, signal, function)
+        self.rt.signal_connect(script_id, signal, function, params)
     }
 
     pub fn signal_disconnect(
@@ -58,10 +60,16 @@ impl<'rt, R: SignalAPI + ?Sized> SignalModule<'rt, R> {
 /// - `script`: script `NodeID`
 /// - `signal`: `SignalID` (for example `signal!("on_hit")`)
 /// - `function`: `ScriptMemberID` (for example `method!("handle_hit")`)
+/// - `params` (optional): extra params appended after emitted params
 #[macro_export]
 macro_rules! signal_connect {
+    ($ctx:expr, $script:expr, $signal:expr, $function:expr, $params:expr) => {
+        $ctx.Signals()
+            .signal_connect($script, $signal, $function, $params)
+    };
     ($ctx:expr, $script:expr, $signal:expr, $function:expr) => {
-        $ctx.Signals().signal_connect($script, $signal, $function)
+        $ctx.Signals()
+            .signal_connect($script, $signal, $function, &[])
     };
 }
 

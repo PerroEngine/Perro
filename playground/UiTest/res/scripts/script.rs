@@ -145,6 +145,50 @@ lifecycle!({
             state.grid_g_cell_3 = grid_g_cell_3;
             state.right_layout = right_layout;
         });
+
+        let button_names = [
+            "left_button_a",
+            "left_button_b",
+            "grid_b_primary",
+            "grid_b_secondary",
+            "grid_g_cell_5",
+            "right_button",
+            "bottom_button_a",
+        ];
+        let event_names = ["hover_enter", "hover_exit", "pressed", "released", "click"];
+        for button_name in button_names {
+            for event_name in event_names {
+                let signal_name = format!("{button_name}_{event_name}");
+                let connected = signal_connect!(
+                    ctx,
+                    self_id,
+                    SignalID::from_string(signal_name.as_str()),
+                    func!("on_button_event")
+                );
+                println!("UiTest signal connect {signal_name} -> {connected}");
+            }
+        }
+        let connected = signal_connect!(
+            ctx,
+            self_id,
+            signal!("ui_right_button_pressed"),
+            func!("on_button_event")
+        );
+        println!("UiTest signal connect ui_right_button_pressed -> {connected}");
+        let connected = signal_connect!(
+            ctx,
+            self_id,
+            signal!("ui_right_button_click"),
+            func!("on_button_event")
+        );
+        println!("UiTest signal connect ui_right_button_click -> {connected}");
+        let connected = signal_connect!(
+            ctx,
+            self_id,
+            signal!("ui_any_button_click"),
+            func!("on_button_event")
+        );
+        println!("UiTest signal connect ui_any_button_click -> {connected}");
     }
 
     fn on_update(
@@ -285,6 +329,17 @@ lifecycle!({
 });
 
 methods!({
+    fn on_button_event(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+        button: NodeID,
+    ) {
+        println!("UiTest button signal node={button:?}");
+    }
+
     fn default_method(
         &self,
         _ctx: &mut RuntimeContext<'_, RT>,

@@ -305,6 +305,8 @@ impl Runtime {
         self.render_ui.auto_layout_computed.clear();
         self.render_ui.retained_commands.clear();
         self.render_ui.retained_rects.clear();
+        self.render_ui.button_states.clear();
+        self.render_ui.last_ui_pointer = None;
         self.render_ui.removed_nodes.clear();
         if self.provider_mode == ProviderMode::Dynamic {
             self.script_runtime.dynamic_script_registry.clear();

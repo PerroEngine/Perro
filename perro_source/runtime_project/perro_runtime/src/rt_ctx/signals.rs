@@ -3,6 +3,7 @@ use perro_input::InputContext;
 use perro_resource_context::ResourceContext;
 use perro_runtime_context::{RuntimeContext, sub_apis::SignalAPI};
 use perro_variant::Variant;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::Runtime;
@@ -13,10 +14,11 @@ impl SignalAPI for Runtime {
         script_id: NodeID,
         signal: SignalID,
         function: ScriptMemberID,
+        params: &[Variant],
     ) -> bool {
         self.signal_runtime
             .registry
-            .connect(signal, script_id, function)
+            .connect(signal, script_id, function, params)
     }
 
     fn signal_disconnect(
@@ -61,13 +63,14 @@ impl SignalAPI for Runtime {
                 .active_script_stack
                 .push((instance_index, connection.script_id));
             let mut ctx = RuntimeContext::new(self);
+            let call_params = merged_signal_params(params, &connection.params);
             let _ = behavior.call_method(
                 connection.method,
                 &mut ctx,
                 &res,
                 &ipt,
                 connection.script_id,
-                params,
+                call_params.as_ref(),
             );
             let _ = self.script_runtime.active_script_stack.pop();
             calls = 1;
@@ -88,7 +91,7 @@ impl SignalAPI for Runtime {
         let ipt: InputContext<'_, perro_input::InputSnapshot> =
             unsafe { InputContext::new(&*input_ptr) };
 
-        for connection in pending.iter().copied() {
+        for connection in pending.iter() {
             let instance_index = match self.scripts.instance_index_for_id(connection.script_id) {
                 Some(i) => i,
                 None => continue,
@@ -104,13 +107,14 @@ impl SignalAPI for Runtime {
                 .active_script_stack
                 .push((instance_index, connection.script_id));
             let mut ctx = RuntimeContext::new(self);
+            let call_params = merged_signal_params(params, &connection.params);
             let _ = behavior.call_method(
                 connection.method,
                 &mut ctx,
                 &res,
                 &ipt,
                 connection.script_id,
-                params,
+                call_params.as_ref(),
             );
             let _ = self.script_runtime.active_script_stack.pop();
             calls += 1;
@@ -119,5 +123,36 @@ impl SignalAPI for Runtime {
         pending.clear();
         self.signal_runtime.emit_scratch = pending;
         calls
+    }
+}
+
+fn merged_signal_params<'a>(
+    emit_params: &'a [Variant],
+    connect_params: &'a [Variant],
+) -> Cow<'a, [Variant]> {
+    if connect_params.is_empty() {
+        return Cow::Borrowed(emit_params);
+    }
+    let mut out = Vec::with_capacity(emit_params.len() + connect_params.len());
+    out.extend_from_slice(emit_params);
+    out.extend_from_slice(connect_params);
+    Cow::Owned(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merged_signal_params_appends_connect_params() {
+        let emit_params = [Variant::from(7_i32)];
+        let connect_params = [Variant::from("right_pressed")];
+
+        let merged = merged_signal_params(&emit_params, &connect_params);
+
+        assert_eq!(
+            merged.as_ref(),
+            &[Variant::from(7_i32), Variant::from("right_pressed")]
+        );
     }
 }

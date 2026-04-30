@@ -1,14 +1,17 @@
-use super::state::DirtyState;
+use super::state::{DirtyState, UiButtonVisualState};
 use super::{Runtime, RuntimeUiTiming};
 use ahash::AHashMap;
-use perro_ids::NodeID;
+use perro_ids::{NodeID, SignalID};
+use perro_input::MouseButton;
 use perro_nodes::SceneNodeData;
 use perro_render_bridge::{RenderCommand, UiCommand, UiRectState, UiTextAlignState};
+use perro_runtime_context::sub_apis::SignalAPI;
 use perro_structs::Vector2;
 use perro_ui::{
     ComputedUiRect, UiBox, UiHorizontalAlign, UiLayoutData, UiLayoutMode, UiSizeMode, UiStyle,
     UiTransform, UiVerticalAlign,
 };
+use perro_variant::Variant;
 use std::borrow::Cow;
 
 impl Runtime {
@@ -27,10 +30,12 @@ impl Runtime {
         let bootstrap_scan = self.render_ui.prev_visible.is_empty()
             && self.render_ui.retained_commands.is_empty()
             && self.render_ui.computed_rects.is_empty();
+        let input_changed = self.ui_pointer_changed();
         let has_extraction_work = self.dirty.has_any_dirty()
             || self.dirty.has_pending_transform_roots()
             || !self.render_ui.removed_nodes.is_empty()
-            || bootstrap_scan;
+            || bootstrap_scan
+            || input_changed;
         if !has_extraction_work {
             if let Some(timing) = timing {
                 timing.total = total_start.expect("ui timing total start exists").elapsed();
@@ -105,6 +110,9 @@ impl Runtime {
                 command_ids.push(node);
             }
         }
+        if input_changed || bootstrap_scan {
+            self.collect_retained_button_command_ids(&mut command_ids, &mut command_seen);
+        }
         traversal_seen.clear();
         self.render_ui.traversal_seen = traversal_seen;
         if let Some(timing) = timing.as_deref_mut() {
@@ -120,6 +128,7 @@ impl Runtime {
             visible_now.remove(&node);
             self.render_ui.computed_rects.remove(&node);
             self.render_ui.retained_rects.remove(&node);
+            self.render_ui.button_states.remove(&node);
             if self.render_ui.retained_commands.remove(&node).is_some() {
                 self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
             }
@@ -156,6 +165,8 @@ impl Runtime {
                 .elapsed();
         }
 
+        self.refresh_button_visual_states(&computed, &mut command_ids, &mut command_seen);
+
         let commands_start = timing.as_ref().map(|_| std::time::Instant::now());
         for node in command_ids.iter().copied() {
             if let Some(timing) = timing.as_deref_mut() {
@@ -170,8 +181,14 @@ impl Runtime {
                 }
                 continue;
             };
+            let state = self
+                .render_ui
+                .button_states
+                .get(&node)
+                .copied()
+                .unwrap_or_default();
             let rect_state = if let Some(rect) = computed.get(&node).copied() {
-                ui_rect_state_from_node(&scene_node.data, rect)
+                ui_rect_state_from_node(&scene_node.data, rect, state)
             } else {
                 self.render_ui.retained_rects.get(&node).copied()
             };
@@ -194,10 +211,11 @@ impl Runtime {
                     .retained_commands
                     .get(&node)
                     .is_some_and(|command| {
-                        ui_command_matches_node(command, &scene_node.data, rect_state)
+                        ui_command_matches_node(command, &scene_node.data, rect_state, state)
                     });
             if !retained_matches {
-                let Some(command) = ui_command_from_node(node, &scene_node.data, rect_state) else {
+                let Some(command) = ui_command_from_node(node, &scene_node.data, rect_state, state)
+                else {
                     self.remove_retained_ui_node(node);
                     if let Some(timing) = timing.as_deref_mut() {
                         timing.removed_nodes = timing.removed_nodes.saturating_add(1);
@@ -340,6 +358,7 @@ impl Runtime {
 
     fn remove_retained_ui_node(&mut self, node: NodeID) {
         self.render_ui.retained_rects.remove(&node);
+        self.render_ui.button_states.remove(&node);
         if self.render_ui.retained_commands.remove(&node).is_some() {
             self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
         }
@@ -355,6 +374,136 @@ impl Runtime {
         for node in to_remove {
             self.remove_retained_ui_node(node);
         }
+    }
+
+    fn ui_pointer_changed(&self) -> bool {
+        let pointer = (
+            self.input.mouse_position(),
+            self.input.is_mouse_down(MouseButton::Left),
+        );
+        self.render_ui.last_ui_pointer != Some(pointer)
+    }
+
+    fn collect_retained_button_command_ids(
+        &self,
+        command_ids: &mut Vec<NodeID>,
+        command_seen: &mut ahash::AHashSet<NodeID>,
+    ) {
+        for node in self.render_ui.retained_commands.keys().copied() {
+            let Some(scene_node) = self.nodes.get(node) else {
+                continue;
+            };
+            if matches!(scene_node.data, SceneNodeData::UiButton(_)) && command_seen.insert(node) {
+                command_ids.push(node);
+            }
+        }
+    }
+
+    fn refresh_button_visual_states(
+        &mut self,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+        command_ids: &mut Vec<NodeID>,
+        command_seen: &mut ahash::AHashSet<NodeID>,
+    ) {
+        let hovered = self.hovered_button(computed);
+        let mouse_down = self.input.is_mouse_down(MouseButton::Left);
+        let mut next_states = std::mem::take(&mut self.render_ui.button_states);
+        next_states.retain(|node, _| self.nodes.get(*node).is_some());
+        let mut events = Vec::new();
+
+        for (node, scene_node) in self.nodes.iter() {
+            let SceneNodeData::UiButton(button) = &scene_node.data else {
+                continue;
+            };
+            let next = if button.disabled || Some(node) != hovered {
+                UiButtonVisualState::Neutral
+            } else if mouse_down {
+                UiButtonVisualState::Pressed
+            } else {
+                UiButtonVisualState::Hover
+            };
+            let prev = next_states.insert(node, next).unwrap_or_default();
+            collect_button_events(node, prev, next, &mut events);
+            if prev != next && command_seen.insert(node) {
+                command_ids.push(node);
+            }
+        }
+
+        self.render_ui.button_states = next_states;
+        self.render_ui.last_ui_pointer = Some((
+            self.input.mouse_position(),
+            self.input.is_mouse_down(MouseButton::Left),
+        ));
+        self.emit_button_events(&events);
+    }
+
+    fn emit_button_events(&mut self, events: &[(NodeID, &'static str)]) {
+        for &(node, event) in events {
+            let signals = self.button_event_signals(node, event);
+            let params = [Variant::from(node)];
+            for signal in signals {
+                let _ = SignalAPI::signal_emit(self, signal, &params);
+            }
+        }
+    }
+
+    fn button_event_signals(&self, node: NodeID, event: &str) -> Vec<SignalID> {
+        let Some(scene_node) = self.nodes.get(node) else {
+            return Vec::new();
+        };
+        let SceneNodeData::UiButton(button) = &scene_node.data else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(1 + button_custom_event_signals(button, event).len());
+        let name = scene_node.name.as_ref();
+        if !name.is_empty() {
+            out.push(SignalID::from_string(&format!("{name}_{event}")));
+        }
+        out.extend(button_custom_event_signals(button, event).iter().copied());
+        out
+    }
+
+    fn hovered_button(&self, computed: &AHashMap<NodeID, ComputedUiRect>) -> Option<NodeID> {
+        let viewport = self.input.viewport_size();
+        let mouse = self.input.mouse_position();
+        let point = Vector2::new((mouse.x - 0.5) * viewport.x, (mouse.y - 0.5) * viewport.y);
+
+        let mut best: Option<(NodeID, i32)> = None;
+        for (node, scene_node) in self.nodes.iter() {
+            let SceneNodeData::UiButton(button) = &scene_node.data else {
+                continue;
+            };
+            if button.disabled
+                || !button.input_enabled
+                || !self.is_effectively_visible(node)
+                || !matches!(
+                    button.mouse_filter,
+                    perro_ui::UiMouseFilter::Stop | perro_ui::UiMouseFilter::Pass
+                )
+            {
+                continue;
+            }
+            let rect = computed.get(&node).copied().or_else(|| {
+                self.render_ui
+                    .retained_rects
+                    .get(&node)
+                    .map(computed_rect_from_state)
+            });
+            let Some(rect) = rect else {
+                continue;
+            };
+            if !rect.contains(point) {
+                continue;
+            }
+            match best {
+                Some((best_node, best_z))
+                    if best_z > button.layout.z_index
+                        || (best_z == button.layout.z_index
+                            && best_node.as_u64() > node.as_u64()) => {}
+                _ => best = Some((node, button.layout.z_index)),
+            }
+        }
+        best.map(|(node, _)| node)
     }
 
     fn compute_ui_child_rect(
@@ -1167,10 +1316,6 @@ fn ui_fill_height(layout: &UiLayoutData, parent_layout: &UiLayoutData, available
 fn ui_text_measure(data: &SceneNodeData) -> Vector2 {
     match data {
         SceneNodeData::UiLabel(label) => measure_text(label.text.as_ref(), label.font_size),
-        SceneNodeData::UiButton(button) => {
-            let text = measure_text(button.text.as_ref(), 16.0);
-            Vector2::new(text.x + 24.0, text.y + 12.0)
-        }
         _ => Vector2::ZERO,
     }
 }
@@ -1239,16 +1384,15 @@ fn ui_command_from_node(
     node: NodeID,
     data: &SceneNodeData,
     rect: UiRectState,
+    button_state: UiButtonVisualState,
 ) -> Option<UiCommand> {
     match data {
         SceneNodeData::UiPanel(panel) => Some(panel_command(node, rect, &panel.style)),
         SceneNodeData::UiButton(button) => {
-            let style = &button.style;
+            let style = button_style(button, button_state);
             Some(UiCommand::UpsertButton {
                 node,
                 rect,
-                text: Cow::Owned(button.text.to_string()),
-                text_color: button.text_color.to_rgba(),
                 fill: style.fill.to_rgba(),
                 stroke: style.stroke.to_rgba(),
                 stroke_width: style.stroke_width,
@@ -1269,7 +1413,14 @@ fn ui_command_from_node(
     }
 }
 
-fn ui_rect_state_from_node(data: &SceneNodeData, rect: ComputedUiRect) -> Option<UiRectState> {
+fn ui_rect_state_from_node(
+    data: &SceneNodeData,
+    rect: ComputedUiRect,
+    button_state: UiButtonVisualState,
+) -> Option<UiRectState> {
+    if let SceneNodeData::UiButton(button) = data {
+        return Some(button_rect_state(button, rect, button_state));
+    }
     let ui = ui_root_from_data(data)?;
     Some(UiRectState {
         center: [rect.center.x, rect.center.y],
@@ -1280,12 +1431,50 @@ fn ui_rect_state_from_node(data: &SceneNodeData, rect: ComputedUiRect) -> Option
     })
 }
 
+fn button_rect_state(
+    button: &perro_ui::UiButton,
+    base_rect: ComputedUiRect,
+    state: UiButtonVisualState,
+) -> UiRectState {
+    let ui = button_state_base(button, state).unwrap_or(&button.base);
+    let size = match state {
+        UiButtonVisualState::Neutral => base_rect.size,
+        UiButtonVisualState::Hover | UiButtonVisualState::Pressed => ui
+            .transform
+            .scale_size(ui.layout.clamp_size(ui.layout.size.resolve(base_rect.size))),
+    };
+    let center = if state == UiButtonVisualState::Neutral {
+        base_rect.center
+    } else {
+        base_rect.center + ui.transform.translation
+    };
+    UiRectState {
+        center: [center.x, center.y],
+        size: [size.x, size.y],
+        pivot: ui_pivot_state(&ui.transform),
+        rotation_radians: ui.transform.rotation,
+        z_index: ui.layout.z_index,
+    }
+}
+
+fn computed_rect_from_state(rect: &UiRectState) -> ComputedUiRect {
+    ComputedUiRect::new(
+        Vector2::new(rect.center[0], rect.center[1]),
+        Vector2::new(rect.size[0], rect.size[1]),
+    )
+}
+
 fn ui_pivot_state(transform: &UiTransform) -> [f32; 2] {
     let pivot = transform.pivot.resolve(Vector2::new(1.0, 1.0));
     [pivot.x, pivot.y]
 }
 
-fn ui_command_matches_node(command: &UiCommand, data: &SceneNodeData, rect: UiRectState) -> bool {
+fn ui_command_matches_node(
+    command: &UiCommand,
+    data: &SceneNodeData,
+    rect: UiRectState,
+    button_state: UiButtonVisualState,
+) -> bool {
     match (command, data) {
         (
             UiCommand::UpsertPanel {
@@ -1307,8 +1496,6 @@ fn ui_command_matches_node(command: &UiCommand, data: &SceneNodeData, rect: UiRe
         (
             UiCommand::UpsertButton {
                 rect: command_rect,
-                text,
-                text_color,
                 fill,
                 stroke,
                 stroke_width,
@@ -1318,10 +1505,8 @@ fn ui_command_matches_node(command: &UiCommand, data: &SceneNodeData, rect: UiRe
             },
             SceneNodeData::UiButton(button),
         ) => {
-            let style = &button.style;
+            let style = button_style(button, button_state);
             *command_rect == rect
-                && text.as_ref() == button.text.as_ref()
-                && *text_color == button.text_color.to_rgba()
                 && *fill == style.fill.to_rgba()
                 && *stroke == style.stroke.to_rgba()
                 && *stroke_width == style.stroke_width
@@ -1348,6 +1533,69 @@ fn ui_command_matches_node(command: &UiCommand, data: &SceneNodeData, rect: UiRe
                 && *v_align == text_align_state(label.v_align)
         }
         _ => false,
+    }
+}
+
+fn button_style(button: &perro_ui::UiButton, state: UiButtonVisualState) -> &UiStyle {
+    if button.disabled {
+        return &button.style;
+    }
+    match state {
+        UiButtonVisualState::Neutral => &button.style,
+        UiButtonVisualState::Hover => &button.hover_style,
+        UiButtonVisualState::Pressed => &button.pressed_style,
+    }
+}
+
+fn button_state_base(
+    button: &perro_ui::UiButton,
+    state: UiButtonVisualState,
+) -> Option<&perro_ui::UiBox> {
+    if button.disabled {
+        return None;
+    }
+    match state {
+        UiButtonVisualState::Neutral => None,
+        UiButtonVisualState::Hover => button.hover_base.as_ref(),
+        UiButtonVisualState::Pressed => button.pressed_base.as_ref(),
+    }
+}
+
+fn button_custom_event_signals<'a>(button: &'a perro_ui::UiButton, event: &str) -> &'a [SignalID] {
+    match event {
+        "hover_enter" => &button.hover_signals,
+        "hover_exit" => &button.hover_exit_signals,
+        "pressed" => &button.pressed_signals,
+        "released" => &button.released_signals,
+        "click" => &button.click_signals,
+        _ => &[],
+    }
+}
+
+fn collect_button_events(
+    node: NodeID,
+    prev: UiButtonVisualState,
+    next: UiButtonVisualState,
+    out: &mut Vec<(NodeID, &'static str)>,
+) {
+    if prev == next {
+        return;
+    }
+
+    if prev == UiButtonVisualState::Neutral && next != UiButtonVisualState::Neutral {
+        out.push((node, "hover_enter"));
+    }
+    if prev != UiButtonVisualState::Neutral && next == UiButtonVisualState::Neutral {
+        out.push((node, "hover_exit"));
+    }
+    if prev != UiButtonVisualState::Pressed && next == UiButtonVisualState::Pressed {
+        out.push((node, "pressed"));
+    }
+    if prev == UiButtonVisualState::Pressed && next != UiButtonVisualState::Pressed {
+        out.push((node, "released"));
+    }
+    if prev == UiButtonVisualState::Pressed && next == UiButtonVisualState::Hover {
+        out.push((node, "click"));
     }
 }
 
@@ -1419,6 +1667,107 @@ mod tests {
         assert_eq!(commands.len(), 1);
         assert!(
             matches!(&commands[0], RenderCommand::Ui(UiCommand::UpsertPanel { node: n, fill, .. }) if *n == node && *fill == [0.8, 0.1, 0.1, 1.0])
+        );
+    }
+
+    #[test]
+    fn button_uses_hover_and_pressed_styles_from_mouse_state() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let node = insert_button(&mut runtime, [120.0, 40.0]);
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+                if *n == node && *fill == [0.1, 0.2, 0.3, 1.0]
+        )));
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+                if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+        )));
+
+        runtime.clear_dirty_flags();
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+                if *n == node && *fill == [0.3, 0.4, 0.5, 1.0]
+        )));
+    }
+
+    #[test]
+    fn button_state_base_overrides_rect_transform() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut button = perro_ui::UiButton::new();
+        button.layout.size = UiVector2::pixels(120.0, 40.0);
+        let mut hover_base = button.base.clone();
+        hover_base.layout.size = UiVector2::pixels(150.0, 48.0);
+        hover_base.transform.translation = Vector2::new(6.0, -3.0);
+        hover_base.transform.rotation = 0.25;
+        button.hover_base = Some(hover_base);
+        let node = insert_ui_node(&mut runtime, SceneNodeData::UiButton(button));
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: n, rect, .. })
+                if *n == node
+                    && rect.center == [6.0, -3.0]
+                    && rect.size == [150.0, 48.0]
+                    && rect.rotation_radians == 0.25
+        )));
+    }
+
+    #[test]
+    fn button_event_signals_include_named_and_custom_signals() {
+        let mut runtime = Runtime::new();
+        let named = insert_button(&mut runtime, [120.0, 40.0]);
+        runtime.nodes.get_mut(named).expect("named button").name = Cow::Borrowed("play");
+        assert_eq!(
+            runtime.button_event_signals(named, "click"),
+            vec![SignalID::from_string("play_click")]
+        );
+
+        let mut button = perro_ui::UiButton::new();
+        button
+            .pressed_signals
+            .push(SignalID::from_string("custom_a"));
+        button
+            .pressed_signals
+            .push(SignalID::from_string("custom_b"));
+        let custom = insert_ui_node(&mut runtime, SceneNodeData::UiButton(button));
+        runtime.nodes.get_mut(custom).expect("custom button").name = Cow::Borrowed("fire");
+        assert_eq!(
+            runtime.button_event_signals(custom, "pressed"),
+            vec![
+                SignalID::from_string("fire_pressed"),
+                SignalID::from_string("custom_a"),
+                SignalID::from_string("custom_b"),
+            ]
         );
     }
 
@@ -1714,6 +2063,15 @@ mod tests {
         panel.layout.size = UiVector2::pixels(size[0], size[1]);
         panel.style.fill = fill;
         insert_ui_node(runtime, SceneNodeData::UiPanel(panel))
+    }
+
+    fn insert_button(runtime: &mut Runtime, size: [f32; 2]) -> NodeID {
+        let mut button = perro_ui::UiButton::new();
+        button.layout.size = UiVector2::pixels(size[0], size[1]);
+        button.style.fill = Color::new(0.1, 0.2, 0.3, 1.0);
+        button.hover_style.fill = Color::new(0.2, 0.3, 0.4, 1.0);
+        button.pressed_style.fill = Color::new(0.3, 0.4, 0.5, 1.0);
+        insert_ui_node(runtime, SceneNodeData::UiButton(button))
     }
 
     fn set_panel_visible(runtime: &mut Runtime, node: NodeID, visible: bool) {

@@ -84,22 +84,53 @@ parent = left_stack
 [left_button_a]
 parent = left_stack
 [UiButton]
-    text = "Fixed 260x44"
     size = (260, 44)
-    fill = "#5E506A"
-    stroke = "#A08DB1"
+    style = { fill = "#5E506A" stroke = "#A08DB1" }
+    hover = {
+        size = (270, 48)
+        scale = (1.02, 1.02)
+        rotation = 0.015
+        style = { fill = "#756387" stroke = "#C0A8D0" }
+    }
+    pressed = {
+        size = (250, 40)
+        scale = (0.98, 0.98)
+        rotation = -0.01
+        style = { fill = "#483D52" stroke = "#8E7A9D" }
+    }
 [/UiButton]
 [/left_button_a]
+
+[left_button_a_label]
+parent = left_button_a
+[UiLabel]
+    text = "Fixed 260x44"
+    font_size = 18
+    color = "#F4ECFA"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/left_button_a_label]
 
 [left_button_b]
 parent = left_stack
 [UiButton]
-    text = "Wide 320x52"
     size = (320, 52)
     fill = "#6A4E4E"
+    hover_fill = "#815F5F"
+    pressed_fill = "#503B3B"
     stroke = "#B88B8B"
 [/UiButton]
 [/left_button_b]
+
+[left_button_b_label]
+parent = left_button_b
+[UiLabel]
+    text = "Wide 320x52"
+    font_size = 19
+    color = "#FFF0F0"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/left_button_b_label]
 
 [left_note]
 parent = left_stack
@@ -253,24 +284,46 @@ parent = grid_b_stack
 [grid_b_primary]
 parent = grid_b_row
 [UiButton]
-    text = "A"
     size = (44, 44)
     fill = "#63804A"
+    hover_fill = "#789B5A"
+    pressed_fill = "#4E663A"
     stroke = "#C7E4A6"
     corner_radius = 12
 [/UiButton]
 [/grid_b_primary]
 
+[grid_b_primary_label]
+parent = grid_b_primary
+[UiLabel]
+    text = "A"
+    font_size = 18
+    color = "#F3FFE8"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/grid_b_primary_label]
+
 [grid_b_secondary]
 parent = grid_b_row
 [UiButton]
-    text = "B"
     size = (44, 44)
     fill = "#526842"
+    hover_fill = "#668152"
+    pressed_fill = "#3F5033"
     stroke = "#A9CA87"
     corner_radius = 12
 [/UiButton]
 [/grid_b_secondary]
+
+[grid_b_secondary_label]
+parent = grid_b_secondary
+[UiLabel]
+    text = "B"
+    font_size = 18
+    color = "#F3FFE8"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/grid_b_secondary_label]
 
 [grid_c]
 parent = center_grid
@@ -359,16 +412,24 @@ parent = grid_d
 [grid_e]
 parent = center_grid
 [UiButton]
-    text = "Disabled btn"
     disabled = true
     size = (150, 110)
     fill = "#4B5362"
     stroke = "#A9B3C5"
     stroke_width = 3
     corner_radius = 14
-    text_color = "#E3E8F0"
 [/UiButton]
 [/grid_e]
+
+[grid_e_label]
+parent = grid_e
+[UiLabel]
+    text = "Disabled btn"
+    font_size = 17
+    color = "#E3E8F0"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/grid_e_label]
 
 [grid_f]
 parent = center_grid
@@ -501,13 +562,24 @@ parent = grid_g_inner
 [grid_g_cell_5]
 parent = grid_g_inner
 [UiButton]
-    text = "+"
     size = (26, 26)
     fill = "#3D5145"
+    hover_fill = "#4F6A5A"
+    pressed_fill = "#2E3D34"
     stroke = "#B6E0C7"
     corner_radius = 8
 [/UiButton]
 [/grid_g_cell_5]
+
+[grid_g_cell_5_label]
+parent = grid_g_cell_5
+[UiLabel]
+    text = "+"
+    font_size = 16
+    color = "#E9FFF0"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/grid_g_cell_5_label]
 
 [right_panel]
 parent = main_row
@@ -563,13 +635,26 @@ parent = right_chip_a
 [right_button]
 parent = right_layout
 [UiButton]
-    text = "Fit text"
+    pressed_signals = ["ui_right_button_pressed"]
+    click_signals = ["ui_right_button_click", "ui_any_button_click"]
     size = (220, 48)
     fill = "#664F31"
+    hover_fill = "#80643E"
+    pressed_fill = "#4D3C25"
     stroke = "#C59B58"
     corner_radius = 14
 [/UiButton]
 [/right_button]
+
+[right_button_label]
+parent = right_button
+[UiLabel]
+    text = "Fit text"
+    font_size = 18
+    color = "#FFF1D8"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/right_button_label]
 
 [anchor_tl]
 parent = @root
@@ -773,23 +858,45 @@ parent = bottom_bar
 [bottom_button_a]
 parent = bottom_bar
 [UiButton]
-    text = "Pass"
     mouse_filter = "pass"
     size = (130, 42)
     fill = "#2F5761"
+    hover_fill = "#3B6D79"
+    pressed_fill = "#24434A"
     stroke = "#77AEB9"
     corner_radius = 14
 [/UiButton]
 [/bottom_button_a]
 
+[bottom_button_a_label]
+parent = bottom_button_a
+[UiLabel]
+    text = "Pass"
+    font_size = 18
+    color = "#E9FAFC"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/bottom_button_a_label]
+
 [bottom_button_b]
 parent = bottom_bar
 [UiButton]
-    text = "Ignore"
     mouse_filter = "ignore"
     size = (150, 42)
     fill = "#5A3D58"
+    hover_fill = "#704C6E"
+    pressed_fill = "#452F44"
     stroke = "#B980B5"
     corner_radius = 14
 [/UiButton]
 [/bottom_button_b]
+
+[bottom_button_b_label]
+parent = bottom_button_b
+[UiLabel]
+    text = "Ignore"
+    font_size = 18
+    color = "#FFEFFF"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/bottom_button_b_label]
