@@ -299,8 +299,19 @@ parent = inspector_stack
 
 [inspector_body]
 parent = inspector_stack
+[UiPanel]
+    size_ratio = (1.0, 1.0)
+    fill = "#11161D"
+    stroke = "#2B333F"
+    corner_radius = 5
+    padding = (8, 8, 8, 8)
+[/UiPanel]
+[/inspector_body]
+
+[inspector_body_text]
+parent = inspector_body
 [UiTextBlock]
-    size = (150, 520)
+    size_ratio = (1.0, 1.0)
     text = "Select node"
     font_size = 17
     editable = false
@@ -309,7 +320,7 @@ parent = inspector_stack
     text_padding = (12, 10, 12, 10)
     corner_radius = 5
 [/UiTextBlock]
-[/inspector_body]
+[/inspector_body_text]
 
 [bottom_bar]
 parent = @root

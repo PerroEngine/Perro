@@ -7,7 +7,7 @@ use std::process::Command;
 type SelfNodeType = UiPanel;
 
 const ACTIVE_PROJECT: &str = "user://perro_editor_active_project.txt";
-const LIVE_PREVIEW_SCALE: f32 = 0.62;
+const LIVE_PREVIEW_SCALE: f32 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SceneViewerMode {
@@ -66,7 +66,7 @@ lifecycle!({
         let project_label = child(ctx, top_bar, "project_label");
         let scene_label = child(ctx, top_bar, "scene_label");
         let viewport_status = child(ctx, viewport_panel, "viewport_status");
-        let inspector_body = child(ctx, inspector_stack, "inspector_body");
+        let inspector_body = child(ctx, inspector_stack, "inspector_body_text");
         let status_label = child(ctx, bottom_bar, "status_label");
 
         let project_dir = FileMod::load_string(ACTIVE_PROJECT).unwrap_or_default();
@@ -613,7 +613,7 @@ fn create_scene_rows<RT: RuntimeAPI + ?Sized>(
         return;
     }
     for (index, (label, _)) in rows.iter().enumerate() {
-        create_label_row(ctx, parent, &format!("scene_node_row_{index}"), label);
+        create_scene_button_row(ctx, parent, &format!("scene_node_row_{index}"), label);
     }
 }
 
@@ -646,6 +646,34 @@ fn create_label_row<RT: RuntimeAPI + ?Sized>(
         node.h_align = UiTextAlign::Start;
     });
     label
+}
+
+fn create_scene_button_row<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    parent: NodeID,
+    name: &str,
+    text: &str,
+) -> NodeID {
+    let button = create_node!(ctx, UiButton, name.to_string(), tags![], parent);
+    let _ = with_node_mut!(ctx, UiButton, button, |node| {
+        node.layout.size = UiVector2::pixels(150.0, 34.0);
+        node.style.fill = color("#2C4155");
+        node.hover_style.fill = color("#36506A");
+        node.pressed_style.fill = color("#213343");
+        node.style.stroke = color("#739ABD");
+        node.style.corner_radius = 4.0;
+    });
+    let label_name = format!("{name}_label");
+    let lbl = create_node!(ctx, UiLabel, label_name, tags![], button);
+    let _ = with_node_mut!(ctx, UiLabel, lbl, |node| {
+        node.text = Cow::Owned(text.to_string());
+        node.font_size = 14.0;
+        node.color = color("#EEF6FF");
+        node.layout.size = UiVector2::ratio(1.0, 1.0);
+        node.h_align = UiTextAlign::Start;
+        node.layout.margin.left = 6.0;
+    });
+    button
 }
 
 fn color(hex: &str) -> Color {
@@ -727,10 +755,10 @@ where
 {
     let _ = with_node_mut!(ctx, T, root, |node| {
         let base = node.ui_base_mut();
-        base.layout.anchor = UiAnchor::Center;
+        base.layout.anchor = UiAnchor::TopLeft;
         base.layout.size = UiVector2::ratio(1.0, 1.0);
-        base.transform.position = UiVector2::ratio(0.5, 0.5);
-        base.transform.pivot = UiVector2::ratio(0.5, 0.5);
+        base.transform.position = UiVector2::ratio(0.0, 0.0);
+        base.transform.pivot = UiVector2::ratio(0.0, 0.0);
         base.transform.scale = Vector2::new(LIVE_PREVIEW_SCALE, LIVE_PREVIEW_SCALE);
         base.input_enabled = false;
         base.mouse_filter = UiMouseFilter::Ignore;
