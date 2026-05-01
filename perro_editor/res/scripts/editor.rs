@@ -9,7 +9,7 @@ type SelfNodeType = UiPanel;
 const ACTIVE_PROJECT: &str = "user://perro_editor_active_project.txt";
 const LIVE_VIEWPORT_WIDTH: f32 = 1920.0;
 const LIVE_VIEWPORT_HEIGHT: f32 = 1080.0;
-const LIVE_VIEWPORT_SCALE: f32 = 0.5;
+const LIVE_VIEWPORT_SCALE: f32 = 0.58;
 const LIVE_VIEWPORT_Z_FALLBACK_PARENT: i32 = 29;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

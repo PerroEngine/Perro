@@ -43,10 +43,10 @@ parent = top_bar
 [main_row]
 parent = @root
 [UiHLayout]
-    anchor = "top"
-    position = (0, -150)
+    anchor = "c"
     size_ratio = (0.96, 0.70)
     spacing = 72
+    align_items = "center"
     padding = (12, 12, 12, 12)
 [/UiHLayout]
 [/main_row]
@@ -150,6 +150,7 @@ parent = main_row
     fill = "#1B2A2D"
     stroke = "#4F6E73"
     corner_radius = 18
+    align_items = "center"
     padding = (18, 18, 18, 18)
 [/UiPanel]
 [/center_panel]
@@ -329,6 +330,7 @@ parent = grid_b_secondary
 parent = center_grid
 [UiPanel]
     size = (150, 110)
+    translation = (0, 24)
     fill = "#303E58"
     stroke = "#8BA7E0"
     corner_radius = 14
@@ -391,6 +393,7 @@ parent = grid_c_layout
 parent = center_grid
 [UiPanel]
     size = (150, 110)
+    translation = (0, 24)
     fill = "#4C3B55"
     stroke = "#B28AC4"
     corner_radius = 14
@@ -414,6 +417,7 @@ parent = center_grid
 [UiButton]
     disabled = true
     size = (150, 110)
+    translation = (0, 24)
     fill = "#4B5362"
     stroke = "#A9B3C5"
     stroke_width = 3
