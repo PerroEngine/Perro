@@ -9,7 +9,7 @@ type SelfNodeType = UiPanel;
 const ACTIVE_PROJECT: &str = "user://perro_editor_active_project.txt";
 const LIVE_VIEWPORT_WIDTH: f32 = 1920.0;
 const LIVE_VIEWPORT_HEIGHT: f32 = 1080.0;
-const LIVE_VIEWPORT_MIN_SCALE: f32 = 0.33;
+const LIVE_VIEWPORT_MIN_SCALE: f32 = 0.01;
 const LIVE_VIEWPORT_MAX_SCALE: f32 = 1.5;
 const LIVE_VIEWPORT_Z_FALLBACK_PARENT: i32 = 29;
 const EDITOR_TOP_BAR_HEIGHT: f32 = 40.0;
@@ -74,17 +74,17 @@ lifecycle!({
         let scene_stack = child(ctx, scene_panel, "scene_stack");
         let resource_panel = child(ctx, scene_panel, "resource_panel");
         let resource_stack = child(ctx, resource_panel, "resource_stack");
-        let viewport_panel = child(ctx, workspace, "viewport_panel");
-        let viewport_vlayout = child(ctx, viewport_panel, "viewport_vlayout");
-        let viewport_canvas_wrap = child(ctx, viewport_vlayout, "viewport_canvas_wrap");
-        let viewport_canvas = child(ctx, viewport_canvas_wrap, "viewport_canvas");
+        let viewport_panel = child(ctx, workspace, "preview_panel");
+        let viewport_vlayout = child(ctx, viewport_panel, "preview_vlayout");
+        let viewport_canvas_wrap = child(ctx, viewport_vlayout, "preview_canvas_wrap");
+        let viewport_canvas = child(ctx, viewport_canvas_wrap, "preview_canvas");
         let inspector_panel = child(ctx, workspace, "inspector_panel");
         let inspector_stack = child(ctx, inspector_panel, "inspector_stack");
         let bottom_bar = child(ctx, self_id, "bottom_bar");
 
         let project_label = child(ctx, top_bar_row, "project_label");
         let scene_label = child(ctx, top_bar_row, "scene_label");
-        let viewport_status = child(ctx, viewport_panel, "viewport_status");
+        let viewport_status = child(ctx, viewport_panel, "preview_status");
         let inspector_body = child(ctx, inspector_stack, "inspector_body_text");
         let status_label = child(ctx, bottom_bar, "status_label");
 
@@ -818,10 +818,11 @@ where
     let _ = with_node_mut!(ctx, T, root, |node| {
         let base = node.ui_base_mut();
         base.layout.anchor = UiAnchor::Center;
-        base.layout.size = UiVector2::pixels(LIVE_VIEWPORT_WIDTH, LIVE_VIEWPORT_HEIGHT);
+        // size host to scaled pixel size so parent layout fits preview area
+        base.layout.size = UiVector2::pixels(LIVE_VIEWPORT_WIDTH * scale, LIVE_VIEWPORT_HEIGHT * scale);
         base.transform.position = UiVector2::ratio(0.5, 0.5);
         base.transform.pivot = UiVector2::ratio(0.5, 0.5);
-        base.transform.scale = Vector2::new(scale, scale);
+        base.transform.scale = Vector2::new(1.0, 1.0);
         base.input_enabled = false;
         base.mouse_filter = UiMouseFilter::Ignore;
     });
@@ -889,7 +890,9 @@ where
         base.layout.anchor = UiAnchor::Center;
         base.transform.position = UiVector2::ratio(0.5, 0.5);
         base.transform.pivot = UiVector2::ratio(0.5, 0.5);
-        base.transform.scale = Vector2::new(scale, scale);
+        // set layout size to scaled pixels and keep transform scale 1.0
+        base.layout.size = UiVector2::pixels(LIVE_VIEWPORT_WIDTH * scale, LIVE_VIEWPORT_HEIGHT * scale);
+        base.transform.scale = Vector2::new(1.0, 1.0);
     });
 }
 

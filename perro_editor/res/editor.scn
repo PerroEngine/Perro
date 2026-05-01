@@ -426,13 +426,13 @@ parent = open_script_button
 
 # ── Center viewport ───────────────────────────────────────────────────────────
 
-[viewport_panel]
+[preview_panel]
 parent = workspace
 [UiPanel]
     size = (100, 100)
     h_size = "fill"
     v_size = "fill"
-    min_w = 360
+    # allow small preview sizes; remove hard min width
     fill = @col_surface
     stroke = @col_border
     stroke_width = 1
@@ -440,22 +440,23 @@ parent = workspace
     padding = (0, 0, 0, 0)
     z_index = 10
 [/UiPanel]
-[/viewport_panel]
+[/preview_panel]
 
-[viewport_vlayout]
-parent = viewport_panel
+[preview_vlayout]
+parent = preview_panel
 [UiVLayout]
     size_ratio = (1.0, 1.0)
     spacing = 0
-    padding = (0, 0, 0, 0)
+    # add top padding so preview content stays below tab bar
+    padding = (0, 8, 0, 0)
     h_align = "fill"
     v_align = "fill"
     z_index = 11
 [/UiVLayout]
-[/viewport_vlayout]
+[/preview_vlayout]
 
-[viewport_tab_bar]
-parent = viewport_vlayout
+[preview_tab_bar]
+parent = preview_vlayout
 [UiPanel]
     size = (100, 36)
     h_size = "fill"
@@ -466,10 +467,10 @@ parent = viewport_vlayout
     padding = (8, 0, 8, 0)
     z_index = 12
 [/UiPanel]
-[/viewport_tab_bar]
+[/preview_tab_bar]
 
-[viewport_tab_row]
-parent = viewport_tab_bar
+[preview_tab_row]
+parent = preview_tab_bar
 [UiHLayout]
     size_ratio = (1.0, 1.0)
     spacing = 5
@@ -478,10 +479,10 @@ parent = viewport_tab_bar
     v_align = "center"
     z_index = 13
 [/UiHLayout]
-[/viewport_tab_row]
+[/preview_tab_row]
 
 [tab_btn_ui]
-parent = viewport_tab_row
+parent = preview_tab_row
 [UiButton]
     size = (48, 24)
     h_size = "fixed"
@@ -523,7 +524,7 @@ parent = tab_btn_ui
 [/tab_btn_ui_label]
 
 [tab_btn_2d]
-parent = viewport_tab_row
+parent = preview_tab_row
 [UiButton]
     size = (48, 24)
     h_size = "fixed"
@@ -565,7 +566,7 @@ parent = tab_btn_2d
 [/tab_btn_2d_label]
 
 [tab_btn_3d]
-parent = viewport_tab_row
+parent = preview_tab_row
 [UiButton]
     size = (48, 24)
     h_size = "fixed"
@@ -606,8 +607,8 @@ parent = tab_btn_3d
 [/UiLabel]
 [/tab_btn_3d_label]
 
-[viewport_tab_divider]
-parent = viewport_vlayout
+[preview_tab_divider]
+parent = preview_vlayout
 [UiPanel]
     size = (100, 1)
     h_size = "fill"
@@ -617,10 +618,10 @@ parent = viewport_vlayout
     corner_radius = 0
     z_index = 12
 [/UiPanel]
-[/viewport_tab_divider]
+[/preview_tab_divider]
 
-[viewport_canvas_wrap]
-parent = viewport_vlayout
+[preview_canvas_wrap]
+parent = preview_vlayout
 [UiPanel]
     size = (100, 100)
     h_size = "fill"
@@ -631,10 +632,10 @@ parent = viewport_vlayout
     padding = (6, 6, 6, 6)
     z_index = 12
 [/UiPanel]
-[/viewport_canvas_wrap]
+[/preview_canvas_wrap]
 
-[viewport_canvas]
-parent = viewport_canvas_wrap
+[preview_canvas]
+parent = preview_canvas_wrap
 [UiPanel]
     size_ratio = (1.0, 1.0)
     fill = @col_deep
@@ -644,10 +645,30 @@ parent = viewport_canvas_wrap
     padding = (0, 0, 0, 0)
     z_index = 13
 [/UiPanel]
-[/viewport_canvas]
+[/preview_canvas]
 
-[viewport_no_scene]
-parent = viewport_canvas
+[live_preview_host]
+parent = preview_canvas
+[UiPanel]
+    anchor = "center"
+    position_ratio = (0.5, 0.5)
+    pivot_ratio = (0.5, 0.5)
+    size = (1920, 1080)
+    h_size = "fixed"
+    v_size = "fixed"
+    fill = "#00000000"
+    stroke = "#00000000"
+    stroke_width = 0
+    corner_radius = 0
+    padding = (0, 0, 0, 0)
+    input_enabled = false
+    mouse_filter = "ignore"
+    z_index = 13
+[/UiPanel]
+[/live_preview_host]
+
+[preview_no_scene]
+parent = preview_canvas
 [UiPanel]
     size = (200, 44)
     h_size = "fixed"
@@ -660,10 +681,10 @@ parent = viewport_canvas
     corner_radius = "full"
     z_index = 14
 [/UiPanel]
-[/viewport_no_scene]
+[/preview_no_scene]
 
-[viewport_no_scene_label]
-parent = viewport_no_scene
+[preview_no_scene_label]
+parent = preview_no_scene
 [UiLabel]
     text = "No scene loaded"
     font_size = 13
@@ -673,7 +694,7 @@ parent = viewport_no_scene
     v_align = "center"
     z_index = 15
 [/UiLabel]
-[/viewport_no_scene_label]
+[/preview_no_scene_label]
 
 # ── Right panel: Inspector ────────────────────────────────────────────────────
 
