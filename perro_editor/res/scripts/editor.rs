@@ -7,7 +7,9 @@ use std::process::Command;
 type SelfNodeType = UiPanel;
 
 const ACTIVE_PROJECT: &str = "user://perro_editor_active_project.txt";
-const LIVE_PREVIEW_SCALE: f32 = 1.0;
+const LIVE_VIEWPORT_WIDTH: f32 = 1920.0;
+const LIVE_VIEWPORT_HEIGHT: f32 = 1080.0;
+const LIVE_VIEWPORT_SCALE: f32 = 0.72;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SceneViewerMode {
@@ -732,19 +734,19 @@ fn apply_live_viewport_transform<RT: RuntimeAPI + ?Sized>(
         if id == root {
             continue;
         }
-        apply_ui_node_scale::<RT, UiPanel>(ctx, id, LIVE_PREVIEW_SCALE);
-        apply_ui_node_scale::<RT, UiButton>(ctx, id, LIVE_PREVIEW_SCALE);
-        apply_ui_node_scale::<RT, UiLabel>(ctx, id, LIVE_PREVIEW_SCALE);
-        apply_ui_node_scale::<RT, UiTextBox>(ctx, id, LIVE_PREVIEW_SCALE);
-        apply_ui_node_scale::<RT, UiTextBlock>(ctx, id, LIVE_PREVIEW_SCALE);
-        apply_ui_node_scale::<RT, UiLayout>(ctx, id, LIVE_PREVIEW_SCALE);
-        apply_ui_node_scale::<RT, UiHLayout>(ctx, id, LIVE_PREVIEW_SCALE);
-        apply_ui_node_scale::<RT, UiVLayout>(ctx, id, LIVE_PREVIEW_SCALE);
-        apply_ui_node_scale::<RT, UiGrid>(ctx, id, LIVE_PREVIEW_SCALE);
-        apply_label_scale(ctx, id, LIVE_PREVIEW_SCALE);
-        apply_text_edit_scale::<RT, UiTextBox>(ctx, id, LIVE_PREVIEW_SCALE);
-        apply_text_edit_scale::<RT, UiTextBlock>(ctx, id, LIVE_PREVIEW_SCALE);
-        apply_layout_spacing_scale(ctx, id, LIVE_PREVIEW_SCALE);
+        apply_ui_node_scale::<RT, UiPanel>(ctx, id, LIVE_VIEWPORT_SCALE);
+        apply_ui_node_scale::<RT, UiButton>(ctx, id, LIVE_VIEWPORT_SCALE);
+        apply_ui_node_scale::<RT, UiLabel>(ctx, id, LIVE_VIEWPORT_SCALE);
+        apply_ui_node_scale::<RT, UiTextBox>(ctx, id, LIVE_VIEWPORT_SCALE);
+        apply_ui_node_scale::<RT, UiTextBlock>(ctx, id, LIVE_VIEWPORT_SCALE);
+        apply_ui_node_scale::<RT, UiLayout>(ctx, id, LIVE_VIEWPORT_SCALE);
+        apply_ui_node_scale::<RT, UiHLayout>(ctx, id, LIVE_VIEWPORT_SCALE);
+        apply_ui_node_scale::<RT, UiVLayout>(ctx, id, LIVE_VIEWPORT_SCALE);
+        apply_ui_node_scale::<RT, UiGrid>(ctx, id, LIVE_VIEWPORT_SCALE);
+        apply_label_scale(ctx, id, LIVE_VIEWPORT_SCALE);
+        apply_text_edit_scale::<RT, UiTextBox>(ctx, id, LIVE_VIEWPORT_SCALE);
+        apply_text_edit_scale::<RT, UiTextBlock>(ctx, id, LIVE_VIEWPORT_SCALE);
+        apply_layout_spacing_scale(ctx, id, LIVE_VIEWPORT_SCALE);
     }
 }
 
@@ -755,11 +757,11 @@ where
 {
     let _ = with_node_mut!(ctx, T, root, |node| {
         let base = node.ui_base_mut();
-        base.layout.anchor = UiAnchor::TopLeft;
-        base.layout.size = UiVector2::ratio(1.0, 1.0);
-        base.transform.position = UiVector2::ratio(0.0, 0.0);
-        base.transform.pivot = UiVector2::ratio(0.0, 0.0);
-        base.transform.scale = Vector2::new(LIVE_PREVIEW_SCALE, LIVE_PREVIEW_SCALE);
+        base.layout.anchor = UiAnchor::Center;
+        base.layout.size = UiVector2::pixels(LIVE_VIEWPORT_WIDTH, LIVE_VIEWPORT_HEIGHT);
+        base.transform.position = UiVector2::ratio(0.5, 0.5);
+        base.transform.pivot = UiVector2::ratio(0.5, 0.5);
+        base.transform.scale = Vector2::new(LIVE_VIEWPORT_SCALE, LIVE_VIEWPORT_SCALE);
         base.input_enabled = false;
         base.mouse_filter = UiMouseFilter::Ignore;
     });

@@ -117,8 +117,8 @@ parent = workspace
 [UiPanel]
     anchor = "l"
     position = (0, 0)
-    size_ratio = (0.10, 1.0)
-    min_w = 180
+    size_ratio = (0.14, 1.0)
+    min_w = 220
     fill = "#171C23"
     stroke = "#323D4B"
     corner_radius = 0
@@ -228,7 +228,8 @@ parent = workspace
 [UiPanel]
     anchor = "center"
     position = (0, 0)
-    size_ratio = (0.78, 0.82)
+    size = (1920, 1080)
+    scale = (0.72, 0.72)
     fill = "#0E1116"
     stroke = "#323D4B"
     corner_radius = 6
@@ -269,8 +270,8 @@ parent = workspace
 [UiPanel]
     anchor = "r"
     position = (0, 0)
-    size_ratio = (0.10, 1.0)
-    min_w = 180
+    size_ratio = (0.14, 1.0)
+    min_w = 220
     fill = "#171C23"
     stroke = "#323D4B"
     corner_radius = 0
