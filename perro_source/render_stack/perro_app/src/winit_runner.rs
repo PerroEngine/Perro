@@ -141,7 +141,7 @@ impl StartupSplashState {
 
     #[inline]
     fn blocks_input(&self) -> bool {
-        self.active
+        self.active && !self.first_frame_captured
     }
 
     fn alpha(&self, now: Instant) -> f32 {
@@ -2425,7 +2425,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
 
 #[cfg(test)]
 mod fixed_step_tests {
-    use super::{MAX_FIXED_STEPS_PER_FRAME, plan_fixed_steps};
+    use super::{MAX_FIXED_STEPS_PER_FRAME, StartupSplashState, plan_fixed_steps};
+    use std::time::Instant;
 
     #[test]
     fn fixed_step_plan_caps_large_delta() {
@@ -2453,6 +2454,29 @@ mod fixed_step_tests {
         assert_eq!(plan.steps, MAX_FIXED_STEPS_PER_FRAME);
         assert!(plan.dropped_catchup);
         assert!(plan.accumulator_after < step);
+    }
+
+    #[test]
+    fn startup_splash_blocks_input_only_until_first_frame_capture() {
+        let mut splash = StartupSplashState {
+            active: true,
+            source: None,
+            source_hash: None,
+            image_size: None,
+            texture_requested: false,
+            texture_id: None,
+            ready_streak: 0,
+            shown_at: Instant::now(),
+            fade_started_at: None,
+            first_frame_inflight: Vec::new(),
+            first_frame_captured: false,
+        };
+
+        assert!(splash.blocks_input());
+
+        splash.first_frame_captured = true;
+
+        assert!(!splash.blocks_input());
     }
 }
 

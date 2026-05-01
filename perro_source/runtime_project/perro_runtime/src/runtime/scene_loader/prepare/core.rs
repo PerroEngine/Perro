@@ -922,6 +922,17 @@ mod tests {
             [UiPanel]
             [/UiPanel]
             [/defaults]
+
+            [entry]
+            parent = menu
+            [UiTextBox]
+                hover_signals = ["entry_hover"]
+                hover_exit_signals = ["entry_unhover"]
+                focused_signals = ["entry_focus"]
+                unfocused_signals = ["entry_unfocus"]
+                text_changed_signals = ["entry_text"]
+            [/UiTextBox]
+            [/entry]
             "##,
         )
         .parse_scene();
@@ -1072,6 +1083,37 @@ mod tests {
                 assert_eq!(panel.layout.v_align, perro_ui::UiVerticalAlign::Center);
             }
             other => panic!("expected UiPanel defaults node, got {other:?}"),
+        }
+
+        let entry = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key == "entry")
+            .expect("entry node");
+        match &entry.node.data {
+            SceneNodeData::UiTextBox(text_box) => {
+                assert_eq!(
+                    text_box.inner.hover_signals,
+                    vec![perro_ids::SignalID::from_string("entry_hover")]
+                );
+                assert_eq!(
+                    text_box.inner.hover_exit_signals,
+                    vec![perro_ids::SignalID::from_string("entry_unhover")]
+                );
+                assert_eq!(
+                    text_box.inner.focused_signals,
+                    vec![perro_ids::SignalID::from_string("entry_focus")]
+                );
+                assert_eq!(
+                    text_box.inner.unfocused_signals,
+                    vec![perro_ids::SignalID::from_string("entry_unfocus")]
+                );
+                assert_eq!(
+                    text_box.inner.text_changed_signals,
+                    vec![perro_ids::SignalID::from_string("entry_text")]
+                );
+            }
+            other => panic!("expected UiTextBox entry node, got {other:?}"),
         }
     }
 

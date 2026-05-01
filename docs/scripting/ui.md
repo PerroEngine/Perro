@@ -179,7 +179,7 @@ hover_fill = "#3A5A40"
 pressed_fill = "#1B4332"
 ```
 
-Button events:
+`UiButton` emits these events:
 
 ```text
 hover_enter
@@ -263,4 +263,57 @@ let _ = with_node_mut!(ctx, UiButton, play_button, |button| {
 
     button.pressed_signals.retain(|s| *s != signal!("old_press_signal"));
 });
+```
+
+`UiTextBox` and `UiTextBlock` emit these events:
+
+```text
+hovered
+unhovered
+focused
+unfocused
+text_changed
+```
+
+Each event always emits its named signal:
+
+```text
+<text_node_name>_hovered
+<text_node_name>_unhovered
+<text_node_name>_focused
+<text_node_name>_unfocused
+<text_node_name>_text_changed
+```
+
+Custom signal fields add signals on top of named signals:
+
+```text
+hover_signals = ["name_hover"]
+hover_exit_signals = ["name_unhover"]
+focused_signals = ["name_focus"]
+unfocused_signals = ["name_unfocus"]
+text_changed_signals = ["name_changed"]
+```
+
+Hover/focus handlers receive `(text_edit: NodeID)`.
+Text change handlers receive `(text_edit: NodeID, text: String)`.
+
+Scene example:
+
+```text
+[name_input]
+[UiTextBox]
+    hover_signals = ["name_hover"]
+    hover_exit_signals = ["name_unhover"]
+    focused_signals = ["name_focus"]
+    unfocused_signals = ["name_unfocus"]
+    text_changed_signals = ["name_changed"]
+[/UiTextBox]
+[/name_input]
+
+[bio_input]
+[UiTextBlock]
+    text_changed_signals = ["bio_changed"]
+[/UiTextBlock]
+[/bio_input]
 ```

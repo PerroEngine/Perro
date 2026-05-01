@@ -394,6 +394,21 @@ fn apply_ui_text_edit_fields(node: &mut perro_ui::UiTextEdit, fields: &[SceneObj
                 node.editable = v;
             }
         }
+        "hover_signals" | "hovered_signals" | "hover_enter_signals" => {
+            node.hover_signals = as_signal_ids(value);
+        }
+        "hover_exit_signals" | "unhover_signals" | "unhovered_signals" => {
+            node.hover_exit_signals = as_signal_ids(value);
+        }
+        "focused_signals" | "focus_signals" => {
+            node.focused_signals = as_signal_ids(value);
+        }
+        "unfocused_signals" | "unfocus_signals" => {
+            node.unfocused_signals = as_signal_ids(value);
+        }
+        "text_changed_signals" | "changed_signals" => {
+            node.text_changed_signals = as_signal_ids(value);
+        }
         _ => {}
     });
     apply_ui_style_fields(&mut node.style, fields, "");

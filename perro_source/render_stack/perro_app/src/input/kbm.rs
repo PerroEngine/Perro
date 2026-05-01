@@ -1,18 +1,22 @@
 use crate::App;
 use perro_graphics::GraphicsBackend;
 use winit::{
-    event::{ElementState, MouseButton as WinitMouseButton, MouseScrollDelta, WindowEvent},
-    keyboard::PhysicalKey,
+    event::{
+        ElementState, Modifiers, MouseButton as WinitMouseButton, MouseScrollDelta, WindowEvent,
+    },
+    keyboard::{ModifiersState, PhysicalKey},
 };
 
 pub struct KbmInput {
     last_cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
+    modifiers: ModifiersState,
 }
 
 impl KbmInput {
     pub fn new() -> Self {
         Self {
             last_cursor_position: None,
+            modifiers: ModifiersState::empty(),
         }
     }
 
@@ -29,11 +33,18 @@ impl KbmInput {
                     app.set_key_state(key, event.state == ElementState::Pressed);
                 }
                 if event.state == ElementState::Pressed
+                    && !self.text_input_suppressed()
                     && let Some(text) = event.text.as_ref()
                     && text.chars().any(|ch| !ch.is_control())
                 {
                     app.push_text_input(text.to_string());
                 }
+            }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers.state();
+            }
+            WindowEvent::Focused(false) => {
+                self.modifiers = Modifiers::default().state();
             }
             WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
                 app.push_text_input(text.clone());
@@ -89,6 +100,10 @@ impl KbmInput {
 
     pub fn reset_cursor_position(&mut self) {
         self.last_cursor_position = None;
+    }
+
+    fn text_input_suppressed(&self) -> bool {
+        self.modifiers.control_key() || self.modifiers.alt_key() || self.modifiers.super_key()
     }
 }
 

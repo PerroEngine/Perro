@@ -134,6 +134,9 @@ impl Runtime {
             if self.render_ui.focused_text_edit == Some(node) {
                 self.render_ui.focused_text_edit = None;
             }
+            if self.render_ui.hovered_text_edit == Some(node) {
+                self.render_ui.hovered_text_edit = None;
+            }
             if self.render_ui.pressed_text_edit == Some(node) {
                 self.render_ui.pressed_text_edit = None;
             }
@@ -383,6 +386,15 @@ impl Runtime {
     fn remove_retained_ui_node(&mut self, node: NodeID) {
         self.render_ui.retained_rects.remove(&node);
         self.render_ui.button_states.remove(&node);
+        if self.render_ui.hovered_text_edit == Some(node) {
+            self.render_ui.hovered_text_edit = None;
+        }
+        if self.render_ui.focused_text_edit == Some(node) {
+            self.render_ui.focused_text_edit = None;
+        }
+        if self.render_ui.pressed_text_edit == Some(node) {
+            self.render_ui.pressed_text_edit = None;
+        }
         if self.render_ui.retained_commands.remove(&node).is_some() {
             self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
         }
@@ -440,18 +452,34 @@ impl Runtime {
         let mouse_pos = self.input.mouse_position();
         let mouse_pressed = self.input.is_mouse_pressed(MouseButton::Left);
         let mouse_down = self.input.is_mouse_down(MouseButton::Left);
+        let hovered = self.hovered_text_edit(computed);
+        if self.render_ui.hovered_text_edit != hovered {
+            if let Some(prev) = self.render_ui.hovered_text_edit {
+                self.emit_text_edit_event(prev, "unhovered", None);
+            }
+            if let Some(next) = hovered {
+                self.emit_text_edit_event(next, "hovered", None);
+            }
+            self.render_ui.hovered_text_edit = hovered;
+        }
         if mouse_pressed {
-            let hit = self.hovered_text_edit(computed);
+            let hit = hovered;
             if self.render_ui.focused_text_edit != hit {
                 if let Some(prev) = self.render_ui.focused_text_edit
                     && command_seen.insert(prev)
                 {
                     command_ids.push(prev);
                 }
+                if let Some(prev) = self.render_ui.focused_text_edit {
+                    self.emit_text_edit_event(prev, "unfocused", None);
+                }
                 if let Some(next) = hit
                     && command_seen.insert(next)
                 {
                     command_ids.push(next);
+                }
+                if let Some(next) = hit {
+                    self.emit_text_edit_event(next, "focused", None);
                 }
                 self.render_ui.focused_text_edit = hit;
             }
@@ -490,6 +518,8 @@ impl Runtime {
         }
 
         let mut changed = false;
+        let mut text_changed = false;
+        let mut changed_text = None;
         let text_inputs: Vec<String> = self.input.text_inputs().to_vec();
         let shift = self.input.is_key_down(KeyCode::ShiftLeft)
             || self.input.is_key_down(KeyCode::ShiftRight);
@@ -500,8 +530,11 @@ impl Runtime {
         if let Some(scene_node) = self.nodes.get_mut(focused)
             && let Some(edit) = text_edit_mut(&mut scene_node.data)
         {
-            for text in text_inputs {
-                changed |= insert_text_input(edit, &text);
+            let old_text = edit.text.to_string();
+            if !ctrl {
+                for text in text_inputs {
+                    changed |= insert_text_input(edit, &text);
+                }
             }
             changed |= apply_text_edit_key_input(edit, shift, ctrl, repeat_key, &self.input);
             if edit.multiline && wheel.y != 0.0 {
@@ -509,12 +542,19 @@ impl Runtime {
                 changed = true;
             }
             ensure_caret_visible(edit, computed.get(&focused).copied());
+            if edit.text.as_ref() != old_text {
+                text_changed = true;
+                changed_text = Some(edit.text.to_string());
+            }
         }
         if changed && command_seen.insert(focused) {
             command_ids.push(focused);
         }
         if changed {
             self.mark_ui_dirty(focused, Runtime::UI_DIRTY_COMMANDS | Runtime::UI_DIRTY_TEXT);
+        }
+        if text_changed {
+            self.emit_text_edit_event(focused, "text_changed", changed_text.as_deref());
         }
     }
 
@@ -668,6 +708,24 @@ impl Runtime {
         }
     }
 
+    fn emit_text_edit_event(&mut self, node: NodeID, event: &str, text: Option<&str>) {
+        let signals = self.text_edit_event_signals(node, event);
+        if signals.is_empty() {
+            return;
+        }
+        if let Some(text) = text {
+            let params = [Variant::from(node), Variant::from(text)];
+            for signal in signals {
+                let _ = SignalAPI::signal_emit(self, signal, &params);
+            }
+        } else {
+            let params = [Variant::from(node)];
+            for signal in signals {
+                let _ = SignalAPI::signal_emit(self, signal, &params);
+            }
+        }
+    }
+
     fn button_event_signals(&self, node: NodeID, event: &str) -> Vec<SignalID> {
         let Some(scene_node) = self.nodes.get(node) else {
             return Vec::new();
@@ -681,6 +739,23 @@ impl Runtime {
             out.push(SignalID::from_string(&format!("{name}_{event}")));
         }
         out.extend(button_custom_event_signals(button, event).iter().copied());
+        out
+    }
+
+    fn text_edit_event_signals(&self, node: NodeID, event: &str) -> Vec<SignalID> {
+        let Some(scene_node) = self.nodes.get(node) else {
+            return Vec::new();
+        };
+        let Some(edit) = text_edit_ref(&scene_node.data) else {
+            return Vec::new();
+        };
+        let custom = text_edit_custom_event_signals(edit, event);
+        let mut out = Vec::with_capacity(1 + custom.len());
+        let name = scene_node.name.as_ref();
+        if !name.is_empty() {
+            out.push(SignalID::from_string(&format!("{name}_{event}")));
+        }
+        out.extend(custom.iter().copied());
         out
     }
 
@@ -1851,6 +1926,17 @@ fn button_custom_event_signals<'a>(button: &'a perro_ui::UiButton, event: &str) 
     }
 }
 
+fn text_edit_custom_event_signals<'a>(edit: &'a UiTextEdit, event: &str) -> &'a [SignalID] {
+    match event {
+        "hovered" => &edit.hover_signals,
+        "unhovered" => &edit.hover_exit_signals,
+        "focused" => &edit.focused_signals,
+        "unfocused" => &edit.unfocused_signals,
+        "text_changed" => &edit.text_changed_signals,
+        _ => &[],
+    }
+}
+
 fn collect_button_events(
     node: NodeID,
     prev: UiButtonVisualState,
@@ -2484,6 +2570,40 @@ mod tests {
     }
 
     #[test]
+    fn text_box_ctrl_shortcut_does_not_insert_key_text() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let mut text_box = perro_ui::UiTextBox::new();
+        text_box.inner.base.layout.size = UiVector2::pixels(200.0, 40.0);
+        let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(text_box));
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.extract_render_ui_commands();
+        runtime.clear_dirty_flags();
+        runtime.set_mouse_button_state(MouseButton::Left, false);
+        runtime.begin_input_frame();
+
+        runtime.set_key_state(KeyCode::ControlLeft, true);
+        runtime.set_key_state(KeyCode::KeyA, true);
+        runtime.push_text_input("a");
+        runtime.extract_render_ui_commands();
+
+        let text = runtime.nodes.get(node).and_then(|scene_node| {
+            if let SceneNodeData::UiTextBox(text_box) = &scene_node.data {
+                Some(text_box.inner.text.as_ref())
+            } else {
+                None
+            }
+        });
+        assert_eq!(text, Some(""));
+    }
+
+    #[test]
     fn held_backspace_repeats_in_text_box() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);
@@ -2581,6 +2701,54 @@ mod tests {
                 SignalID::from_string("fire_pressed"),
                 SignalID::from_string("custom_a"),
                 SignalID::from_string("custom_b"),
+            ]
+        );
+    }
+
+    #[test]
+    fn text_edit_event_signals_include_named_and_custom_signals() {
+        let mut runtime = Runtime::new();
+        let named = insert_ui_node(
+            &mut runtime,
+            SceneNodeData::UiTextBox(perro_ui::UiTextBox::new()),
+        );
+        runtime.nodes.get_mut(named).expect("named text box").name = Cow::Borrowed("name");
+        assert_eq!(
+            runtime.text_edit_event_signals(named, "focused"),
+            vec![SignalID::from_string("name_focused")]
+        );
+        assert_eq!(
+            runtime.text_edit_event_signals(named, "text_changed"),
+            vec![SignalID::from_string("name_text_changed")]
+        );
+
+        let mut text_block = perro_ui::UiTextBlock::new();
+        text_block
+            .inner
+            .hover_signals
+            .push(SignalID::from_string("custom_hover"));
+        text_block
+            .inner
+            .text_changed_signals
+            .push(SignalID::from_string("custom_text"));
+        let custom = insert_ui_node(&mut runtime, SceneNodeData::UiTextBlock(text_block));
+        runtime
+            .nodes
+            .get_mut(custom)
+            .expect("custom text block")
+            .name = Cow::Borrowed("bio");
+        assert_eq!(
+            runtime.text_edit_event_signals(custom, "hovered"),
+            vec![
+                SignalID::from_string("bio_hovered"),
+                SignalID::from_string("custom_hover"),
+            ]
+        );
+        assert_eq!(
+            runtime.text_edit_event_signals(custom, "text_changed"),
+            vec![
+                SignalID::from_string("bio_text_changed"),
+                SignalID::from_string("custom_text"),
             ]
         );
     }
