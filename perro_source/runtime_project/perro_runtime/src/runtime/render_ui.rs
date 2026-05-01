@@ -18,6 +18,22 @@ const TEXT_EDIT_REPEAT_DELAY: f32 = 0.35;
 const TEXT_EDIT_REPEAT_RATE: f32 = 0.035;
 
 impl Runtime {
+    pub(crate) fn mark_ui_viewport_dirty(&mut self) {
+        let ids: Vec<NodeID> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| ui_root_from_data(&node.data).is_some().then_some(id))
+            .collect();
+        for id in ids {
+            self.mark_ui_dirty(
+                id,
+                Runtime::UI_DIRTY_LAYOUT_SELF
+                    | Runtime::UI_DIRTY_LAYOUT_PARENT
+                    | Runtime::UI_DIRTY_COMMANDS,
+            );
+        }
+    }
+
     pub fn extract_render_ui_commands(&mut self) {
         self.extract_render_ui_commands_inner(None);
     }
@@ -2409,7 +2425,7 @@ mod tests {
     use super::*;
     use perro_nodes::{SceneNode, SceneNodeData};
     use perro_structs::Color;
-    use perro_ui::{UiGrid, UiHLayout, UiPanel, UiVector2};
+    use perro_ui::{UiAnchor, UiGrid, UiHLayout, UiPanel, UiVector2};
 
     #[test]
     fn unchanged_ui_skips_redundant_upsert() {
@@ -2427,6 +2443,35 @@ mod tests {
         commands.clear();
         runtime.drain_render_commands(&mut commands);
         assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn viewport_resize_recomputes_percent_ui_rects() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut panel = UiPanel::new();
+        panel.layout.anchor = UiAnchor::TopRight;
+        panel.layout.size = UiVector2::ratio(0.5, 0.25);
+        panel.style.fill = Color::new(0.1, 0.2, 0.3, 1.0);
+        let node = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(panel));
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        runtime.set_viewport_size(1200, 900);
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertPanel { node: n, rect, .. })
+                if *n == node
+                    && rect.size == [600.0, 225.0]
+                    && rect.center == [300.0, 337.5]
+        )));
     }
 
     #[test]

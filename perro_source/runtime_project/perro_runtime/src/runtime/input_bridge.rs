@@ -70,8 +70,12 @@ impl Runtime {
 
     #[inline]
     pub fn set_viewport_size(&mut self, width: u32, height: u32) {
+        let old_size = self.input.viewport_size();
         self.input.set_viewport_size(width, height);
         self.resource_api.set_viewport_size(width, height);
+        if self.input.viewport_size() != old_size {
+            self.mark_ui_viewport_dirty();
+        }
     }
 
     #[inline]
