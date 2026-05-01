@@ -1,0 +1,3 @@
+# Optional script crate dependencies.
+[dependencies]
+perro_scene = "0.1.0"

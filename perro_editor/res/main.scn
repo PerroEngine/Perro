@@ -1,0 +1,306 @@
+@root = project_manager
+
+[project_manager]
+name = "ProjectManager"
+script = "res://scripts/project_manager.rs"
+[UiPanel]
+    size_ratio = (1.0, 1.0)
+    fill = "#101318"
+    stroke = "#2B333F"
+    stroke_width = 1
+    padding = (0, 0, 0, 0)
+[/UiPanel]
+[/project_manager]
+
+[top_bar]
+parent = @root
+[UiPanel]
+    anchor = "top"
+    position = (0, -14)
+    size_ratio = (0.96, 0.09)
+    min_h = 72
+    max_h = 86
+    fill = "#191F27"
+    stroke = "#384353"
+    corner_radius = 8
+    padding = (24, 12, 24, 12)
+[/UiPanel]
+[/top_bar]
+
+[title]
+parent = top_bar
+[UiLabel]
+    anchor = "l"
+    position = (270, 0)
+    text = "Perro Editor"
+    font_size = 34
+    color = "#E9EEF6"
+    size = (520, 48)
+[/UiLabel]
+[/title]
+
+[status]
+parent = top_bar
+[UiLabel]
+    anchor = "r"
+    position = (-420, 0)
+    text = "Pick project"
+    font_size = 18
+    color = "#9FAABD"
+    size = (760, 36)
+[/UiLabel]
+[/status]
+
+[content]
+parent = @root
+[UiHLayout]
+    anchor = "top"
+    position = (0, -140)
+    size_ratio = (0.94, 0.76)
+    spacing = 24
+    padding = (0, 0, 0, 0)
+[/UiHLayout]
+[/content]
+
+[left_panel]
+parent = content
+[UiPanel]
+    size = (640, 800)
+    fill = "#171C23"
+    stroke = "#323D4B"
+    corner_radius = 8
+    padding = (22, 22, 22, 22)
+[/UiPanel]
+[/left_panel]
+
+[left_stack]
+parent = left_panel
+[UiVLayout]
+    size_ratio = (1.0, 1.0)
+    spacing = 16
+    padding = (10, 8, 10, 8)
+[/UiVLayout]
+[/left_stack]
+
+[new_title]
+parent = left_stack
+[UiLabel]
+    text = "New project"
+    font_size = 26
+    color = "#E9EEF6"
+    size = (540, 42)
+[/UiLabel]
+[/new_title]
+
+[project_name_input]
+parent = left_stack
+[UiTextBox]
+    size = (540, 48)
+    text = "MyGame"
+    placeholder = "project name"
+    font_size = 18
+    fill = "#202733"
+    stroke = "#4B596B"
+    focused_fill = "#1B222D"
+    focused_stroke = "#8FB3E8"
+    text_padding = (12, 8, 12, 8)
+    corner_radius = 6
+[/UiTextBox]
+[/project_name_input]
+
+[project_root_input]
+parent = left_stack
+[UiTextBox]
+    size = (540, 48)
+    text = "playground"
+    placeholder = "parent folder"
+    font_size = 18
+    fill = "#202733"
+    stroke = "#4B596B"
+    focused_fill = "#1B222D"
+    focused_stroke = "#8FB3E8"
+    text_padding = (12, 8, 12, 8)
+    corner_radius = 6
+[/UiTextBox]
+[/project_root_input]
+
+[create_project_button]
+parent = left_stack
+[UiButton]
+    size = (260, 50)
+    fill = "#2D5A4C"
+    hover_fill = "#377060"
+    pressed_fill = "#22453A"
+    stroke = "#6FB99F"
+    corner_radius = 6
+[/UiButton]
+[/create_project_button]
+
+[create_project_label]
+parent = create_project_button
+[UiLabel]
+    text = "Create"
+    font_size = 20
+    color = "#ECFFF8"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/create_project_label]
+
+[open_title]
+parent = left_stack
+[UiLabel]
+    text = "Open folder"
+    font_size = 26
+    color = "#E9EEF6"
+    size = (540, 42)
+    margin = (0, 18, 0, 0)
+[/UiLabel]
+[/open_title]
+
+[open_path_input]
+parent = left_stack
+[UiTextBox]
+    size = (540, 48)
+    text = "playground/UiTest"
+    placeholder = "project folder path"
+    font_size = 18
+    fill = "#202733"
+    stroke = "#4B596B"
+    focused_fill = "#1B222D"
+    focused_stroke = "#8FB3E8"
+    text_padding = (12, 8, 12, 8)
+    corner_radius = 6
+[/UiTextBox]
+[/open_path_input]
+
+[open_project_button]
+parent = left_stack
+[UiButton]
+    size = (260, 50)
+    fill = "#34506B"
+    hover_fill = "#406383"
+    pressed_fill = "#273D53"
+    stroke = "#7FA4CB"
+    corner_radius = 6
+[/UiButton]
+[/open_project_button]
+
+[open_project_label]
+parent = open_project_button
+[UiLabel]
+    text = "Open"
+    font_size = 20
+    color = "#EEF6FF"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/open_project_label]
+
+[right_panel]
+parent = content
+[UiPanel]
+    size = (1040, 800)
+    fill = "#151A21"
+    stroke = "#323D4B"
+    corner_radius = 8
+    padding = (22, 22, 22, 22)
+[/UiPanel]
+[/right_panel]
+
+[right_stack]
+parent = right_panel
+[UiVLayout]
+    size_ratio = (1.0, 1.0)
+    spacing = 14
+    padding = (10, 8, 10, 8)
+[/UiVLayout]
+[/right_stack]
+
+[recent_title]
+parent = right_stack
+[UiLabel]
+    text = "Recent projects"
+    font_size = 26
+    color = "#E9EEF6"
+    size = (900, 42)
+[/UiLabel]
+[/recent_title]
+
+[recent_0]
+parent = right_stack
+[UiButton]
+    size = (900, 58)
+    fill = "#202733"
+    hover_fill = "#2A3442"
+    pressed_fill = "#171D26"
+    stroke = "#4B596B"
+    corner_radius = 6
+[/UiButton]
+[/recent_0]
+
+[recent_0_label]
+parent = recent_0
+[UiLabel]
+    text = "No recent project"
+    font_size = 18
+    color = "#C9D3E2"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/recent_0_label]
+
+[recent_1]
+parent = right_stack
+[UiButton]
+    size = (900, 58)
+    fill = "#202733"
+    hover_fill = "#2A3442"
+    pressed_fill = "#171D26"
+    stroke = "#4B596B"
+    corner_radius = 6
+[/UiButton]
+[/recent_1]
+
+[recent_1_label]
+parent = recent_1
+[UiLabel]
+    text = "No recent project"
+    font_size = 18
+    color = "#C9D3E2"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/recent_1_label]
+
+[recent_2]
+parent = right_stack
+[UiButton]
+    size = (900, 58)
+    fill = "#202733"
+    hover_fill = "#2A3442"
+    pressed_fill = "#171D26"
+    stroke = "#4B596B"
+    corner_radius = 6
+[/UiButton]
+[/recent_2]
+
+[recent_2_label]
+parent = recent_2
+[UiLabel]
+    text = "No recent project"
+    font_size = 18
+    color = "#C9D3E2"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/recent_2_label]
+
+[hint]
+parent = right_stack
+[UiTextBlock]
+    size = (900, 260)
+    text = "Use path boxes for now.\nCreate calls perro_cli new.\nOpen checks project.toml then loads editor scene.\nEditor reads scene doc + loads live edit scene with runtime scene loader."
+    font_size = 18
+    editable = false
+    fill = "#11161D"
+    stroke = "#2B333F"
+    text_padding = (14, 12, 14, 12)
+    corner_radius = 6
+[/UiTextBlock]
+[/hint]

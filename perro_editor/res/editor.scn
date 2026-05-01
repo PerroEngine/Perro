@@ -1,0 +1,362 @@
+@root = editor_root
+
+[editor_root]
+name = "Editor"
+script = "res://scripts/editor.rs"
+[UiPanel]
+    size_ratio = (1.0, 1.0)
+    fill = "#11151B"
+    stroke = "#2D3642"
+    stroke_width = 1
+    padding = (0, 0, 0, 0)
+[/UiPanel]
+[/editor_root]
+
+[top_bar]
+parent = @root
+[UiPanel]
+    anchor = "top"
+    position = (0, -12)
+    size_ratio = (0.98, 0.075)
+    min_h = 62
+    max_h = 78
+    fill = "#181E26"
+    stroke = "#384353"
+    corner_radius = 6
+    padding = (16, 10, 16, 10)
+[/UiPanel]
+[/top_bar]
+
+[project_label]
+parent = top_bar
+[UiLabel]
+    anchor = "l"
+    position = (430, 0)
+    text = "No project"
+    font_size = 20
+    color = "#E9EEF6"
+    size = (820, 38)
+[/UiLabel]
+[/project_label]
+
+[scene_label]
+parent = top_bar
+[UiLabel]
+    anchor = "r"
+    position = (-430, 0)
+    text = "Scene: n/a"
+    font_size = 18
+    color = "#AEB9C9"
+    size = (820, 34)
+[/UiLabel]
+[/scene_label]
+
+[workspace]
+parent = @root
+[UiHLayout]
+    anchor = "top"
+    position = (0, -112)
+    size_ratio = (0.98, 0.82)
+    spacing = 10
+    padding = (0, 0, 0, 0)
+[/UiHLayout]
+[/workspace]
+
+[scene_panel]
+parent = workspace
+[UiPanel]
+    size = (330, 850)
+    fill = "#171C23"
+    stroke = "#323D4B"
+    corner_radius = 6
+    padding = (14, 14, 14, 14)
+[/UiPanel]
+[/scene_panel]
+
+[scene_stack]
+parent = scene_panel
+[UiVLayout]
+    size_ratio = (1.0, 1.0)
+    spacing = 10
+    padding = (8, 8, 8, 8)
+[/UiVLayout]
+[/scene_stack]
+
+[scene_title]
+parent = scene_stack
+[UiLabel]
+    text = "Scene graph"
+    font_size = 22
+    color = "#E9EEF6"
+    size = (280, 38)
+[/UiLabel]
+[/scene_title]
+
+[node_0]
+parent = scene_stack
+[UiButton]
+    size = (280, 42)
+    fill = "#202733"
+    hover_fill = "#2A3442"
+    pressed_fill = "#171D26"
+    stroke = "#4B596B"
+    corner_radius = 5
+[/UiButton]
+[/node_0]
+
+[node_0_label]
+parent = node_0
+[UiLabel]
+    text = "root"
+    font_size = 17
+    color = "#DDE6F2"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/node_0_label]
+
+[node_1]
+parent = scene_stack
+[UiButton]
+    size = (280, 42)
+    fill = "#202733"
+    hover_fill = "#2A3442"
+    pressed_fill = "#171D26"
+    stroke = "#4B596B"
+    corner_radius = 5
+[/UiButton]
+[/node_1]
+
+[node_1_label]
+parent = node_1
+[UiLabel]
+    text = "node"
+    font_size = 17
+    color = "#DDE6F2"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/node_1_label]
+
+[node_2]
+parent = scene_stack
+[UiButton]
+    size = (280, 42)
+    fill = "#202733"
+    hover_fill = "#2A3442"
+    pressed_fill = "#171D26"
+    stroke = "#4B596B"
+    corner_radius = 5
+[/UiButton]
+[/node_2]
+
+[node_2_label]
+parent = node_2
+[UiLabel]
+    text = "node"
+    font_size = 17
+    color = "#DDE6F2"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/node_2_label]
+
+[node_3]
+parent = scene_stack
+[UiButton]
+    size = (280, 42)
+    fill = "#202733"
+    hover_fill = "#2A3442"
+    pressed_fill = "#171D26"
+    stroke = "#4B596B"
+    corner_radius = 5
+[/UiButton]
+[/node_3]
+
+[node_3_label]
+parent = node_3
+[UiLabel]
+    text = "node"
+    font_size = 17
+    color = "#DDE6F2"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/node_3_label]
+
+[resource_panel]
+parent = workspace
+[UiPanel]
+    size = (330, 850)
+    fill = "#171C23"
+    stroke = "#323D4B"
+    corner_radius = 6
+    padding = (14, 14, 14, 14)
+[/UiPanel]
+[/resource_panel]
+
+[resource_stack]
+parent = resource_panel
+[UiVLayout]
+    size_ratio = (1.0, 1.0)
+    spacing = 10
+    padding = (8, 8, 8, 8)
+[/UiVLayout]
+[/resource_stack]
+
+[resource_title]
+parent = resource_stack
+[UiLabel]
+    text = "Resource tree"
+    font_size = 22
+    color = "#E9EEF6"
+    size = (280, 38)
+[/UiLabel]
+[/resource_title]
+
+[main_scene_button]
+parent = resource_stack
+[UiButton]
+    size = (280, 44)
+    fill = "#2C4155"
+    hover_fill = "#36506A"
+    pressed_fill = "#213343"
+    stroke = "#739ABD"
+    corner_radius = 5
+[/UiButton]
+[/main_scene_button]
+
+[main_scene_button_label]
+parent = main_scene_button
+[UiLabel]
+    text = "main scene"
+    font_size = 17
+    color = "#EEF6FF"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/main_scene_button_label]
+
+[script_button]
+parent = resource_stack
+[UiButton]
+    size = (280, 44)
+    fill = "#334936"
+    hover_fill = "#405B44"
+    pressed_fill = "#263728"
+    stroke = "#80B285"
+    corner_radius = 5
+[/UiButton]
+[/script_button]
+
+[script_button_label]
+parent = script_button
+[UiLabel]
+    text = "open script in VS Code"
+    font_size = 17
+    color = "#F0FFF1"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/script_button_label]
+
+[viewport_panel]
+parent = workspace
+[UiPanel]
+    size = (840, 850)
+    fill = "#0E1116"
+    stroke = "#323D4B"
+    corner_radius = 6
+    padding = (14, 14, 14, 14)
+[/UiPanel]
+[/viewport_panel]
+
+[viewport_label]
+parent = viewport_panel
+[UiLabel]
+    text = "Live edit viewport"
+    font_size = 24
+    color = "#E9EEF6"
+    size = (780, 48)
+    anchor = "top"
+    position = (0, -16)
+[/UiLabel]
+[/viewport_label]
+
+[viewport_status]
+parent = viewport_panel
+[UiTextBlock]
+    size = (780, 650)
+    anchor = "top"
+    position = (0, -92)
+    text = "No scene loaded"
+    font_size = 18
+    editable = false
+    fill = "#131923"
+    stroke = "#26313F"
+    text_padding = (14, 12, 14, 12)
+    corner_radius = 6
+[/UiTextBlock]
+[/viewport_status]
+
+[inspector_panel]
+parent = workspace
+[UiPanel]
+    size = (330, 850)
+    fill = "#171C23"
+    stroke = "#323D4B"
+    corner_radius = 6
+    padding = (14, 14, 14, 14)
+[/UiPanel]
+[/inspector_panel]
+
+[inspector_stack]
+parent = inspector_panel
+[UiVLayout]
+    size_ratio = (1.0, 1.0)
+    spacing = 10
+    padding = (8, 8, 8, 8)
+[/UiVLayout]
+[/inspector_stack]
+
+[inspector_title]
+parent = inspector_stack
+[UiLabel]
+    text = "Inspector"
+    font_size = 22
+    color = "#E9EEF6"
+    size = (280, 38)
+[/UiLabel]
+[/inspector_title]
+
+[inspector_body]
+parent = inspector_stack
+[UiTextBlock]
+    size = (280, 420)
+    text = "Select node"
+    font_size = 17
+    editable = false
+    fill = "#11161D"
+    stroke = "#2B333F"
+    text_padding = (12, 10, 12, 10)
+    corner_radius = 5
+[/UiTextBlock]
+[/inspector_body]
+
+[bottom_bar]
+parent = @root
+[UiPanel]
+    anchor = "bottom"
+    position = (0, 10)
+    size_ratio = (0.98, 0.055)
+    min_h = 44
+    max_h = 58
+    fill = "#181E26"
+    stroke = "#384353"
+    corner_radius = 6
+[/UiPanel]
+[/bottom_bar]
+
+[status_label]
+parent = bottom_bar
+[UiLabel]
+    text = "Editor ready"
+    font_size = 16
+    color = "#AEB9C9"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/status_label]

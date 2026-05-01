@@ -1,0 +1,383 @@
+use perro_api::prelude::*;
+use std::borrow::Cow;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+type SelfNodeType = UiPanel;
+
+const ACTIVE_PROJECT: &str = "user://perro_editor_active_project.txt";
+const RECENT_PROJECTS: &str = "user://perro_editor_recent_projects.txt";
+
+#[State]
+#[derive(Clone)]
+struct ProjectManagerState {
+    status_label: NodeID,
+    project_name_input: NodeID,
+    project_root_input: NodeID,
+    open_path_input: NodeID,
+    recent_labels: Vec<NodeID>,
+    recent: Vec<String>,
+}
+
+lifecycle!({
+    fn on_init(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+    ) {
+    }
+
+    fn on_all_init(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        self_id: NodeID,
+    ) {
+        let top_bar = child(ctx, self_id, "top_bar");
+        let content = child(ctx, self_id, "content");
+        let left_panel = child(ctx, content, "left_panel");
+        let left_stack = child(ctx, left_panel, "left_stack");
+        let right_panel = child(ctx, content, "right_panel");
+        let right_stack = child(ctx, right_panel, "right_stack");
+
+        let status_label = child(ctx, top_bar, "status");
+        let project_name_input = child(ctx, left_stack, "project_name_input");
+        let project_root_input = child(ctx, left_stack, "project_root_input");
+        let open_path_input = child(ctx, left_stack, "open_path_input");
+        let recent = read_recent();
+        let recent_0 = child(ctx, right_stack, "recent_0");
+        let recent_1 = child(ctx, right_stack, "recent_1");
+        let recent_2 = child(ctx, right_stack, "recent_2");
+        let recent_labels = vec![
+            child(ctx, recent_0, "recent_0_label"),
+            child(ctx, recent_1, "recent_1_label"),
+            child(ctx, recent_2, "recent_2_label"),
+        ];
+
+        let _ = with_state_mut!(ctx, ProjectManagerState, self_id, |state| {
+            state.status_label = status_label;
+            state.project_name_input = project_name_input;
+            state.project_root_input = project_root_input;
+            state.open_path_input = open_path_input;
+            state.recent_labels = recent_labels.clone();
+            state.recent = recent.clone();
+        });
+
+        write_recent_labels(ctx, &recent_labels, &recent);
+        set_status(ctx, status_label, "Pick project");
+
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("create_project_button_click"),
+            func!("on_create_project")
+        );
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("open_project_button_click"),
+            func!("on_open_project")
+        );
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("recent_0_click"),
+            func!("on_recent_0")
+        );
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("recent_1_click"),
+            func!("on_recent_1")
+        );
+        signal_connect!(
+            ctx,
+            self_id,
+            signal!("recent_2_click"),
+            func!("on_recent_2")
+        );
+    }
+
+    fn on_update(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+    ) {
+    }
+
+    fn on_fixed_update(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+    ) {
+    }
+
+    fn on_removal(
+        &self,
+        _ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        _self_id: NodeID,
+    ) {
+    }
+});
+
+methods!({
+    fn on_create_project(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        self_id: NodeID,
+        _button: NodeID,
+    ) {
+        let (name_id, root_id, status_id) =
+            with_state!(ctx, ProjectManagerState, self_id, |state| {
+                (
+                    state.project_name_input,
+                    state.project_root_input,
+                    state.status_label,
+                )
+            });
+        let name = text_box_text(ctx, name_id);
+        let root = text_box_text(ctx, root_id);
+        let project_name = clean_name(&name);
+        let parent = resolve_path(root.trim());
+        let project_dir = parent.join(&project_name);
+
+        set_status(ctx, status_id, "Create via perro_cli...");
+        match run_perro_new(&parent, &project_name) {
+            Ok(()) => open_project(ctx, self_id, project_dir),
+            Err(err) => set_status(ctx, status_id, &format!("Create fail: {err}")),
+        }
+    }
+
+    fn on_open_project(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        self_id: NodeID,
+        _button: NodeID,
+    ) {
+        let path_id = with_state!(ctx, ProjectManagerState, self_id, |state| {
+            state.open_path_input
+        });
+        let path = text_box_text(ctx, path_id);
+        open_project(ctx, self_id, resolve_path(path.trim()));
+    }
+
+    fn on_recent_0(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        self_id: NodeID,
+        _button: NodeID,
+    ) {
+        open_recent(ctx, self_id, 0);
+    }
+
+    fn on_recent_1(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        self_id: NodeID,
+        _button: NodeID,
+    ) {
+        open_recent(ctx, self_id, 1);
+    }
+
+    fn on_recent_2(
+        &self,
+        ctx: &mut RuntimeContext<'_, RT>,
+        _res: &ResourceContext<'_, RS>,
+        _ipt: &InputContext<'_, IP>,
+        self_id: NodeID,
+        _button: NodeID,
+    ) {
+        open_recent(ctx, self_id, 2);
+    }
+});
+
+fn child<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    parent: NodeID,
+    name: &str,
+) -> NodeID {
+    if parent.is_nil() {
+        return NodeID::default();
+    }
+    ctx.Nodes()
+        .get_child_by_name(parent, name)
+        .unwrap_or_default()
+}
+
+fn set_status<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    label_id: NodeID,
+    text: &str,
+) {
+    if label_id.is_nil() {
+        return;
+    }
+    let _ = with_node_mut!(ctx, UiLabel, label_id, |label| {
+        label.text = Cow::Owned(text.to_string());
+    });
+}
+
+fn text_box_text<RT: RuntimeAPI + ?Sized>(ctx: &mut RuntimeContext<'_, RT>, id: NodeID) -> String {
+    if id.is_nil() {
+        return String::new();
+    }
+    with_node!(ctx, UiTextBox, id, |input| input.text.to_string())
+}
+
+fn read_recent() -> Vec<String> {
+    FileMod::load_string(RECENT_PROJECTS)
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .take(8)
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn save_recent(path: &Path) -> Vec<String> {
+    let normalized = normalize(path);
+    let mut recent = read_recent();
+    recent.retain(|item| item != &normalized);
+    recent.insert(0, normalized);
+    recent.truncate(8);
+    let _ = FileMod::save_string(RECENT_PROJECTS, &recent.join("\n"));
+    recent
+}
+
+fn write_recent_labels<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    labels: &[NodeID],
+    recent: &[String],
+) {
+    for (index, label_id) in labels.iter().copied().enumerate() {
+        let text = recent
+            .get(index)
+            .map(String::as_str)
+            .unwrap_or("No recent project");
+        set_status(ctx, label_id, text);
+    }
+}
+
+fn open_recent<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    self_id: NodeID,
+    index: usize,
+) {
+    let path = with_state!(ctx, ProjectManagerState, self_id, |state| {
+        state.recent.get(index).cloned()
+    });
+    if let Some(path) = path {
+        open_project(ctx, self_id, PathBuf::from(path));
+    }
+}
+
+fn open_project<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    self_id: NodeID,
+    project_dir: PathBuf,
+) {
+    let status_id = with_state!(ctx, ProjectManagerState, self_id, |state| state
+        .status_label);
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    if !project_dir.join("project.toml").exists() {
+        set_status(ctx, status_id, "Open fail: project.toml missing");
+        return;
+    }
+
+    let recent = save_recent(&project_dir);
+    let labels = with_state!(ctx, ProjectManagerState, self_id, |state| state
+        .recent_labels
+        .clone());
+    write_recent_labels(ctx, &labels, &recent);
+    let _ = with_state_mut!(ctx, ProjectManagerState, self_id, |state| {
+        state.recent = recent;
+    });
+
+    let _ = FileMod::save_string(ACTIVE_PROJECT, &normalize(&project_dir));
+    match scene_load!(ctx, "res://editor.scn") {
+        Ok(_) => {
+            let _ = remove_node!(ctx, self_id);
+        }
+        Err(err) => set_status(ctx, status_id, &format!("Editor load fail: {err}")),
+    }
+}
+
+fn clean_name(raw: &str) -> String {
+    let out: String = raw
+        .trim()
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            _ => c,
+        })
+        .collect();
+    if out.trim().is_empty() {
+        "perro_project".to_string()
+    } else {
+        out.trim_matches('.').to_string()
+    }
+}
+
+fn resolve_path(raw: &str) -> PathBuf {
+    let path = PathBuf::from(raw);
+    if path.is_absolute() {
+        path
+    } else {
+        repo_root().join(path)
+    }
+}
+
+fn run_perro_new(parent: &Path, name: &str) -> Result<(), String> {
+    std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    let status = Command::new("cargo")
+        .arg("run")
+        .arg("--manifest-path")
+        .arg(repo_root().join("Cargo.toml"))
+        .arg("-p")
+        .arg("perro_cli")
+        .arg("--")
+        .arg("new")
+        .arg("--path")
+        .arg(parent)
+        .arg("--name")
+        .arg(name)
+        .status()
+        .map_err(|err| err.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("perro_cli exit {status}"))
+    }
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..")
+}
+
+fn normalize(path: &Path) -> String {
+    path.canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .replace('\\', "/")
+}
