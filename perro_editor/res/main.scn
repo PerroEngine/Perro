@@ -295,7 +295,7 @@ parent = recent_2
 parent = right_stack
 [UiTextBlock]
     size = (900, 260)
-    text = "Use path boxes for now.\nCreate calls perro_cli new.\nOpen checks project.toml then loads editor scene.\nEditor reads scene doc + loads live edit scene with runtime scene loader."
+    text = "Use path boxes for now.\nCreate writes project files in editor.\nOpen checks project.toml then loads editor scene.\nEditor reads scene doc + loads live edit scene with runtime scene loader."
     font_size = 18
     editable = false
     fill = "#11161D"

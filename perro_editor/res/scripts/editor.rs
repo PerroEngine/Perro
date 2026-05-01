@@ -9,7 +9,7 @@ type SelfNodeType = UiPanel;
 const ACTIVE_PROJECT: &str = "user://perro_editor_active_project.txt";
 const LIVE_VIEWPORT_WIDTH: f32 = 1920.0;
 const LIVE_VIEWPORT_HEIGHT: f32 = 1080.0;
-const LIVE_VIEWPORT_SCALE: f32 = 0.72;
+const LIVE_VIEWPORT_SCALE: f32 = 0.5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SceneViewerMode {
@@ -55,6 +55,7 @@ lifecycle!({
         self_id: NodeID,
     ) {
         let top_bar = child(ctx, self_id, "top_bar");
+        let top_bar_row = child(ctx, top_bar, "top_bar_row");
         let workspace = child(ctx, self_id, "workspace");
         let scene_panel = child(ctx, workspace, "scene_panel");
         let scene_stack = child(ctx, scene_panel, "scene_stack");
@@ -65,8 +66,8 @@ lifecycle!({
         let inspector_stack = child(ctx, inspector_panel, "inspector_stack");
         let bottom_bar = child(ctx, self_id, "bottom_bar");
 
-        let project_label = child(ctx, top_bar, "project_label");
-        let scene_label = child(ctx, top_bar, "scene_label");
+        let project_label = child(ctx, top_bar_row, "project_label");
+        let scene_label = child(ctx, top_bar_row, "scene_label");
         let viewport_status = child(ctx, viewport_panel, "viewport_status");
         let inspector_body = child(ctx, inspector_stack, "inspector_body_text");
         let status_label = child(ctx, bottom_bar, "status_label");
@@ -644,8 +645,10 @@ fn create_label_row<RT: RuntimeAPI + ?Sized>(
         node.text = Cow::Owned(text.to_string());
         node.font_size = 16.0;
         node.color = color("#DDE6F2");
-        node.layout.size = UiVector2::pixels(150.0, 24.0);
+        node.layout.size = UiVector2::pixels(100.0, 24.0);
+        node.layout.h_size = UiSizeMode::Fill;
         node.h_align = UiTextAlign::Start;
+        node.layout.z_index = 43;
     });
     label
 }
@@ -658,12 +661,14 @@ fn create_scene_button_row<RT: RuntimeAPI + ?Sized>(
 ) -> NodeID {
     let button = create_node!(ctx, UiButton, name.to_string(), tags![], parent);
     let _ = with_node_mut!(ctx, UiButton, button, |node| {
-        node.layout.size = UiVector2::pixels(150.0, 34.0);
+        node.layout.size = UiVector2::pixels(100.0, 34.0);
+        node.layout.h_size = UiSizeMode::Fill;
         node.style.fill = color("#2C4155");
         node.hover_style.fill = color("#36506A");
         node.pressed_style.fill = color("#213343");
         node.style.stroke = color("#739ABD");
         node.style.corner_radius = 4.0;
+        node.layout.z_index = 43;
     });
     let label_name = format!("{name}_label");
     let lbl = create_node!(ctx, UiLabel, label_name, tags![], button);
@@ -672,8 +677,10 @@ fn create_scene_button_row<RT: RuntimeAPI + ?Sized>(
         node.font_size = 14.0;
         node.color = color("#EEF6FF");
         node.layout.size = UiVector2::ratio(1.0, 1.0);
+        node.layout.h_size = UiSizeMode::Fill;
         node.h_align = UiTextAlign::Start;
         node.layout.margin.left = 6.0;
+        node.layout.z_index = 44;
     });
     button
 }
@@ -762,6 +769,7 @@ where
         base.transform.position = UiVector2::ratio(0.5, 0.5);
         base.transform.pivot = UiVector2::ratio(0.5, 0.5);
         base.transform.scale = Vector2::new(LIVE_VIEWPORT_SCALE, LIVE_VIEWPORT_SCALE);
+        base.layout.z_index = 20;
         base.input_enabled = false;
         base.mouse_filter = UiMouseFilter::Ignore;
     });
@@ -776,6 +784,7 @@ where
         let base = node.ui_base_mut();
         base.input_enabled = false;
         base.mouse_filter = UiMouseFilter::Ignore;
+        base.layout.z_index = 20;
         scale_ui_vector2(&mut base.layout.size, scale);
         base.layout.min_size *= scale;
         base.layout.max_size *= scale;

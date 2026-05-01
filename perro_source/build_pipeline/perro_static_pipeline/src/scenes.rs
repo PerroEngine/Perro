@@ -341,6 +341,8 @@ fn emit_static_node_type(ty: &str) -> Result<&'static str, StaticPipelineError> 
         "UiPanel" => Ok("UiPanel"),
         "UiButton" => Ok("UiButton"),
         "UiLabel" => Ok("UiLabel"),
+        "UiTextBox" => Ok("UiTextBox"),
+        "UiTextBlock" => Ok("UiTextBlock"),
         "UiLayout" => Ok("UiLayout"),
         "UiHLayout" => Ok("UiHLayout"),
         "UiHBox" => Ok("UiHBox"),
@@ -509,9 +511,13 @@ fn emit_static_scene_value_str(
 
 fn is_static_rgba_color_field(node_type: Option<&str>, field_name: &str) -> bool {
     match field_name {
-        "fill" | "stroke" | "text_color" | "hover_fill" | "hover_stroke" | "pressed_fill"
-        | "pressed_stroke" | "modulate" | "baseColorFactor" | "base_color_factor" => true,
-        "color" | "hover_color" | "pressed_color" => node_type.is_some_and(is_static_ui_node),
+        "fill" | "stroke" | "text_color" | "placeholder_color" | "hint_color"
+        | "selection_color" | "caret_color" | "cursor_color" | "hover_fill" | "hover_stroke"
+        | "pressed_fill" | "pressed_stroke" | "focused_fill" | "focused_stroke" | "modulate"
+        | "baseColorFactor" | "base_color_factor" => true,
+        "color" | "hover_color" | "pressed_color" | "focused_color" => {
+            node_type.is_some_and(is_static_ui_node)
+        }
         _ => false,
     }
 }
@@ -526,10 +532,14 @@ fn is_static_rgb_color_field(field_name: &str) -> bool {
 fn is_static_ui_node(node_type: &str) -> bool {
     matches!(
         node_type,
-        "UiPanel"
+        "UiBox"
+            | "UiPanel"
             | "UiButton"
             | "UiLabel"
+            | "UiTextBox"
+            | "UiTextBlock"
             | "UiControl"
+            | "UiLayout"
             | "UiHLayout"
             | "UiHBox"
             | "UiVLayout"
@@ -701,8 +711,57 @@ fn sanitize_ident(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{emit_static_scene_value_str, resolve_scene_dlc_self_paths, static_hashable_path};
+    use super::{
+        emit_static_node_type, emit_static_scene_value_str, resolve_scene_dlc_self_paths,
+        static_hashable_path,
+    };
     use perro_scene::Parser;
+
+    #[test]
+    fn static_node_type_supports_registry_nodes() {
+        let nodes = [
+            "Node",
+            "Node2D",
+            "Camera2D",
+            "Sprite2D",
+            "CollisionShape2D",
+            "StaticBody2D",
+            "Area2D",
+            "RigidBody2D",
+            "Node3D",
+            "Camera3D",
+            "MeshInstance3D",
+            "MultiMeshInstance3D",
+            "CollisionShape3D",
+            "StaticBody3D",
+            "Area3D",
+            "RigidBody3D",
+            "Skeleton3D",
+            "ParticleEmitter3D",
+            "AmbientLight3D",
+            "Sky3D",
+            "RayLight3D",
+            "PointLight3D",
+            "SpotLight3D",
+            "UiBox",
+            "UiPanel",
+            "UiButton",
+            "UiLabel",
+            "UiTextBox",
+            "UiTextBlock",
+            "UiLayout",
+            "UiHLayout",
+            "UiHBox",
+            "UiVLayout",
+            "UiVBox",
+            "UiGrid",
+            "AnimationPlayer",
+        ];
+
+        for node in nodes {
+            assert_eq!(emit_static_node_type(node).unwrap(), node);
+        }
+    }
 
     #[test]
     fn static_hashable_path_hashes_scheme_plus_fragment_paths() {
@@ -732,6 +791,22 @@ mod tests {
     fn static_color_field_hex_emits_vec4() {
         assert_eq!(
             emit_static_scene_value_str(Some("UiPanel"), Some("fill"), "#4C3B55"),
+            "SceneValue::Vec4 { x: 0.29803923, y: 0.23137255, z: 0.33333334, w: 1.0 }"
+        );
+    }
+
+    #[test]
+    fn static_ui_text_edit_hex_fields_emit_vec4() {
+        assert_eq!(
+            emit_static_scene_value_str(Some("UiTextBox"), Some("color"), "#4C3B55"),
+            "SceneValue::Vec4 { x: 0.29803923, y: 0.23137255, z: 0.33333334, w: 1.0 }"
+        );
+        assert_eq!(
+            emit_static_scene_value_str(Some("UiTextBlock"), Some("focused_color"), "#4C3B55"),
+            "SceneValue::Vec4 { x: 0.29803923, y: 0.23137255, z: 0.33333334, w: 1.0 }"
+        );
+        assert_eq!(
+            emit_static_scene_value_str(Some("UiTextBox"), Some("caret_color"), "#4C3B55"),
             "SceneValue::Vec4 { x: 0.29803923, y: 0.23137255, z: 0.33333334, w: 1.0 }"
         );
     }

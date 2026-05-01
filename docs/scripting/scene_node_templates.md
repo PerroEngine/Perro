@@ -324,7 +324,7 @@ script = "res://path/to/script.rs"
 parent = PARENTKEY
 script = "res://path/to/script.rs"
     [CollisionShape3D]
-        shape = { type = cube size = (1, 1, 1) }
+        shape = { type = cube, size = (1, 1, 1) }
         # alt: trimesh = "res://path/to/model.glb:mesh[0]"
         # alt: shape = { type = trimesh source = "res://path/to/model.glb:mesh[0]" }
         debug = false
@@ -425,6 +425,362 @@ script = "res://path/to/script.rs"
         [/Node3D]
     [/ParticleEmitter3D]
 [/particle_emitter_3d]
+```
+
+## UI Templates
+
+`UiHBox` and `UiVBox` also work as aliases for `UiHLayout` and `UiVLayout`.
+`hover` and `pressed` on `UiButton` accept any `UiBox` field plus style fields.
+
+```text
+[ui_box]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [UiBox]
+        visible = true
+        input_enabled = true
+        mouse_filter = "stop"
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size = (0, 0)
+        pivot_ratio = (0.5, 0.5)
+        translation = (0, 0)
+        scale = (1, 1)
+        rotation = 0.0
+        h_size = "fixed"
+        v_size = "fixed"
+        h_align = "center"
+        v_align = "center"
+        min_size = (0, 0)
+        # max_size = (800, 600)
+        padding = 0
+        margin = 0
+        z_index = 0
+    [/UiBox]
+[/ui_box]
+
+[ui_panel]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [UiPanel]
+        fill = (0.11, 0.12, 0.14, 0.92)
+        stroke = (0.22, 0.24, 0.28, 1.0)
+        stroke_width = 1.0
+        radius = 4.0
+        [UiBox]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            anchor = "center"
+            position_ratio = (0.5, 0.5)
+            size = (0, 0)
+            pivot_ratio = (0.5, 0.5)
+            translation = (0, 0)
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size = (0, 0)
+            # max_size = (800, 600)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiBox]
+    [/UiPanel]
+[/ui_panel]
+
+[ui_button]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [UiButton]
+        disabled = false
+        cursor_icon = "pointer"
+        hover_signals = []
+        hover_exit_signals = []
+        pressed_signals = []
+        released_signals = []
+        click_signals = []
+        style = { fill = (0.18, 0.20, 0.24, 1.0) stroke = (0.32, 0.35, 0.40, 1.0) stroke_width = 1.0 radius = 4.0 }
+        hover = {
+            style = { fill = (0.24, 0.27, 0.32, 1.0) stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 4.0 }
+        }
+        pressed = {
+            style = { fill = (0.12, 0.14, 0.18, 1.0) stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 4.0 }
+        }
+        [UiBox]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            anchor = "center"
+            position_ratio = (0.5, 0.5)
+            size = (0, 0)
+            pivot_ratio = (0.5, 0.5)
+            translation = (0, 0)
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size = (0, 0)
+            # max_size = (800, 600)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiBox]
+    [/UiButton]
+[/ui_button]
+
+[ui_label]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [UiLabel]
+        text = ""
+        color = (1, 1, 1, 1)
+        font_size = 16.0
+        text_h_align = "center"
+        text_v_align = "center"
+        [UiBox]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            anchor = "center"
+            position_ratio = (0.5, 0.5)
+            size = (0, 0)
+            pivot_ratio = (0.5, 0.5)
+            translation = (0, 0)
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size = (0, 0)
+            # max_size = (800, 600)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiBox]
+    [/UiLabel]
+[/ui_label]
+
+[ui_text_box]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [UiTextBox]
+        text = ""
+        placeholder = ""
+        color = (1, 1, 1, 1)
+        placeholder_color = (0.58, 0.62, 0.70, 1.0)
+        selection_color = (0.25, 0.42, 0.85, 0.55)
+        caret_color = (1, 1, 1, 1)
+        font_size = 16.0
+        text_padding = { left = 8 top = 6 right = 8 bottom = 6 }
+        editable = true
+        hover_signals = []
+        hover_exit_signals = []
+        focused_signals = []
+        unfocused_signals = []
+        text_changed_signals = []
+        style = { fill = (0.11, 0.12, 0.14, 0.92) stroke = (0.22, 0.24, 0.28, 1.0) stroke_width = 1.0 radius = 4.0 }
+        focused_style = { fill = (0.10, 0.11, 0.13, 0.96) stroke = (0.45, 0.58, 0.85, 1.0) stroke_width = 1.0 radius = 4.0 }
+        [UiBox]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            anchor = "center"
+            position_ratio = (0.5, 0.5)
+            size = (0, 0)
+            pivot_ratio = (0.5, 0.5)
+            translation = (0, 0)
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size = (0, 0)
+            # max_size = (800, 600)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiBox]
+    [/UiTextBox]
+[/ui_text_box]
+
+[ui_text_block]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [UiTextBlock]
+        text = ""
+        placeholder = ""
+        color = (1, 1, 1, 1)
+        placeholder_color = (0.58, 0.62, 0.70, 1.0)
+        selection_color = (0.25, 0.42, 0.85, 0.55)
+        caret_color = (1, 1, 1, 1)
+        font_size = 16.0
+        text_padding = { left = 8 top = 6 right = 8 bottom = 6 }
+        editable = true
+        hover_signals = []
+        hover_exit_signals = []
+        focused_signals = []
+        unfocused_signals = []
+        text_changed_signals = []
+        style = { fill = (0.11, 0.12, 0.14, 0.92) stroke = (0.22, 0.24, 0.28, 1.0) stroke_width = 1.0 radius = 4.0 }
+        focused_style = { fill = (0.10, 0.11, 0.13, 0.96) stroke = (0.45, 0.58, 0.85, 1.0) stroke_width = 1.0 radius = 4.0 }
+        [UiBox]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            anchor = "center"
+            position_ratio = (0.5, 0.5)
+            size = (0, 0)
+            pivot_ratio = (0.5, 0.5)
+            translation = (0, 0)
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size = (0, 0)
+            # max_size = (800, 600)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiBox]
+    [/UiTextBlock]
+[/ui_text_block]
+
+[ui_layout]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [UiLayout]
+        mode = "h"
+        spacing = 0.0
+        h_spacing = 0.0
+        v_spacing = 0.0
+        columns = 1
+        [UiBox]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            anchor = "center"
+            position_ratio = (0.5, 0.5)
+            size = (0, 0)
+            pivot_ratio = (0.5, 0.5)
+            translation = (0, 0)
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size = (0, 0)
+            # max_size = (800, 600)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiBox]
+    [/UiLayout]
+[/ui_layout]
+
+[ui_hlayout]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [UiHLayout]
+        spacing = 0.0
+        h_spacing = 0.0
+        v_spacing = 0.0
+        columns = 1
+        [UiBox]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            anchor = "center"
+            position_ratio = (0.5, 0.5)
+            size = (0, 0)
+            pivot_ratio = (0.5, 0.5)
+            translation = (0, 0)
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size = (0, 0)
+            # max_size = (800, 600)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiBox]
+    [/UiHLayout]
+[/ui_hlayout]
+
+[ui_vlayout]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [UiVLayout]
+        spacing = 0.0
+        h_spacing = 0.0
+        v_spacing = 0.0
+        columns = 1
+        [UiBox]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            anchor = "center"
+            position_ratio = (0.5, 0.5)
+            size = (0, 0)
+            pivot_ratio = (0.5, 0.5)
+            translation = (0, 0)
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size = (0, 0)
+            # max_size = (800, 600)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiBox]
+    [/UiVLayout]
+[/ui_vlayout]
+
+[ui_grid]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [UiGrid]
+        columns = 1
+        h_spacing = 0.0
+        v_spacing = 0.0
+        [UiBox]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            anchor = "center"
+            position_ratio = (0.5, 0.5)
+            size = (0, 0)
+            pivot_ratio = (0.5, 0.5)
+            translation = (0, 0)
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size = (0, 0)
+            # max_size = (800, 600)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiBox]
+    [/UiGrid]
+[/ui_grid]
 ```
 
 ## Lights And Resource Templates

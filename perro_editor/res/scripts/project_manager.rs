@@ -1,7 +1,6 @@
 use perro_api::prelude::*;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 type SelfNodeType = UiPanel;
 
@@ -152,8 +151,8 @@ methods!({
         let parent = resolve_path(root.trim());
         let project_dir = parent.join(&project_name);
 
-        set_status(ctx, status_id, "Create via perro_cli...");
-        match run_perro_new(&parent, &project_name) {
+        set_status(ctx, status_id, "Create project...");
+        match create_editor_project(&project_dir, &project_name) {
             Ok(()) => open_project(ctx, self_id, project_dir),
             Err(err) => set_status(ctx, status_id, &format!("Create fail: {err}")),
         }
@@ -344,27 +343,22 @@ fn resolve_path(raw: &str) -> PathBuf {
     }
 }
 
-fn run_perro_new(parent: &Path, name: &str) -> Result<(), String> {
-    std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    let status = Command::new("cargo")
-        .arg("run")
-        .arg("--manifest-path")
-        .arg(repo_root().join("Cargo.toml"))
-        .arg("-p")
-        .arg("perro_cli")
-        .arg("--")
-        .arg("new")
-        .arg("--path")
-        .arg(parent)
-        .arg("--name")
-        .arg(name)
-        .status()
-        .map_err(|err| err.to_string())?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("perro_cli exit {status}"))
-    }
+fn create_editor_project(project_dir: &Path, name: &str) -> Result<(), String> {
+    create_new_project(project_dir, name).map_err(|err| err.to_string())?;
+    std::fs::write(project_dir.join("res").join("main.scn"), blank_main_scene())
+        .map_err(|err| err.to_string())
+}
+
+fn blank_main_scene() -> &'static str {
+    r#"@root = main
+
+[main]
+
+[Node3D]
+    position = (0, 0, 0)
+[/Node3D]
+[/main]
+"#
 }
 
 fn repo_root() -> PathBuf {
