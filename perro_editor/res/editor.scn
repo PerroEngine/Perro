@@ -24,6 +24,7 @@ parent = @root
     stroke = "#384353"
     corner_radius = 6
     padding = (16, 10, 16, 10)
+    z_index = 10
 [/UiPanel]
 [/top_bar]
 
@@ -31,13 +32,61 @@ parent = @root
 parent = top_bar
 [UiLabel]
     anchor = "l"
-    position = (430, 0)
+    position = (330, 0)
     text = "No project"
     font_size = 20
     color = "#E9EEF6"
-    size = (820, 38)
+    size = (620, 38)
 [/UiLabel]
 [/project_label]
+
+[play_button]
+parent = top_bar
+[UiButton]
+    anchor = "l"
+    position = (700, 0)
+    size = (92, 38)
+    fill = "#2D5A4C"
+    hover_fill = "#377060"
+    pressed_fill = "#22453A"
+    stroke = "#6FB99F"
+    corner_radius = 5
+[/UiButton]
+[/play_button]
+
+[play_button_label]
+parent = play_button
+[UiLabel]
+    text = "Play"
+    font_size = 17
+    color = "#ECFFF8"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/play_button_label]
+
+[stop_button]
+parent = top_bar
+[UiButton]
+    anchor = "l"
+    position = (802, 0)
+    size = (92, 38)
+    fill = "#674044"
+    hover_fill = "#7D4D52"
+    pressed_fill = "#4E3034"
+    stroke = "#C1848B"
+    corner_radius = 5
+[/UiButton]
+[/stop_button]
+
+[stop_button_label]
+parent = stop_button
+[UiLabel]
+    text = "Stop"
+    font_size = 17
+    color = "#FFF0F1"
+    size_ratio = (1.0, 1.0)
+[/UiLabel]
+[/stop_button_label]
 
 [scene_label]
 parent = top_bar
@@ -53,22 +102,26 @@ parent = top_bar
 
 [workspace]
 parent = @root
-[UiHLayout]
-    anchor = "top"
-    position = (0, -112)
-    size_ratio = (0.98, 0.82)
-    spacing = 10
+[UiPanel]
+    anchor = "center"
+    position = (0, 0)
+    size_ratio = (1.0, 1.0)
+    fill = "#00000000"
+    stroke = "#00000000"
     padding = (0, 0, 0, 0)
-[/UiHLayout]
+[/UiPanel]
 [/workspace]
 
 [scene_panel]
 parent = workspace
 [UiPanel]
-    size = (330, 850)
+    anchor = "l"
+    position = (0, 0)
+    size_ratio = (0.10, 1.0)
+    min_w = 180
     fill = "#171C23"
     stroke = "#323D4B"
-    corner_radius = 6
+    corner_radius = 0
     padding = (14, 14, 14, 14)
 [/UiPanel]
 [/scene_panel]
@@ -76,7 +129,9 @@ parent = workspace
 [scene_stack]
 parent = scene_panel
 [UiVLayout]
-    size_ratio = (1.0, 1.0)
+    anchor = "top"
+    position = (0, -44)
+    size_ratio = (1.0, 0.58)
     spacing = 10
     padding = (8, 8, 8, 8)
 [/UiVLayout]
@@ -88,105 +143,19 @@ parent = scene_stack
     text = "Scene graph"
     font_size = 22
     color = "#E9EEF6"
-    size = (280, 38)
+    size = (150, 38)
 [/UiLabel]
 [/scene_title]
 
-[node_0]
-parent = scene_stack
-[UiButton]
-    size = (280, 42)
-    fill = "#202733"
-    hover_fill = "#2A3442"
-    pressed_fill = "#171D26"
-    stroke = "#4B596B"
-    corner_radius = 5
-[/UiButton]
-[/node_0]
-
-[node_0_label]
-parent = node_0
-[UiLabel]
-    text = "root"
-    font_size = 17
-    color = "#DDE6F2"
-    size_ratio = (1.0, 1.0)
-[/UiLabel]
-[/node_0_label]
-
-[node_1]
-parent = scene_stack
-[UiButton]
-    size = (280, 42)
-    fill = "#202733"
-    hover_fill = "#2A3442"
-    pressed_fill = "#171D26"
-    stroke = "#4B596B"
-    corner_radius = 5
-[/UiButton]
-[/node_1]
-
-[node_1_label]
-parent = node_1
-[UiLabel]
-    text = "node"
-    font_size = 17
-    color = "#DDE6F2"
-    size_ratio = (1.0, 1.0)
-[/UiLabel]
-[/node_1_label]
-
-[node_2]
-parent = scene_stack
-[UiButton]
-    size = (280, 42)
-    fill = "#202733"
-    hover_fill = "#2A3442"
-    pressed_fill = "#171D26"
-    stroke = "#4B596B"
-    corner_radius = 5
-[/UiButton]
-[/node_2]
-
-[node_2_label]
-parent = node_2
-[UiLabel]
-    text = "node"
-    font_size = 17
-    color = "#DDE6F2"
-    size_ratio = (1.0, 1.0)
-[/UiLabel]
-[/node_2_label]
-
-[node_3]
-parent = scene_stack
-[UiButton]
-    size = (280, 42)
-    fill = "#202733"
-    hover_fill = "#2A3442"
-    pressed_fill = "#171D26"
-    stroke = "#4B596B"
-    corner_radius = 5
-[/UiButton]
-[/node_3]
-
-[node_3_label]
-parent = node_3
-[UiLabel]
-    text = "node"
-    font_size = 17
-    color = "#DDE6F2"
-    size_ratio = (1.0, 1.0)
-[/UiLabel]
-[/node_3_label]
-
 [resource_panel]
-parent = workspace
+parent = scene_panel
 [UiPanel]
-    size = (330, 850)
+    anchor = "bottom"
+    position = (0, 0)
+    size_ratio = (1.0, 0.36)
     fill = "#171C23"
     stroke = "#323D4B"
-    corner_radius = 6
+    corner_radius = 0
     padding = (14, 14, 14, 14)
 [/UiPanel]
 [/resource_panel]
@@ -206,14 +175,14 @@ parent = resource_stack
     text = "Resource tree"
     font_size = 22
     color = "#E9EEF6"
-    size = (280, 38)
+    size = (150, 38)
 [/UiLabel]
 [/resource_title]
 
 [main_scene_button]
 parent = resource_stack
 [UiButton]
-    size = (280, 44)
+    size = (150, 44)
     fill = "#2C4155"
     hover_fill = "#36506A"
     pressed_fill = "#213343"
@@ -235,7 +204,7 @@ parent = main_scene_button
 [script_button]
 parent = resource_stack
 [UiButton]
-    size = (280, 44)
+    size = (150, 44)
     fill = "#334936"
     hover_fill = "#405B44"
     pressed_fill = "#263728"
@@ -257,7 +226,9 @@ parent = script_button
 [viewport_panel]
 parent = workspace
 [UiPanel]
-    size = (840, 850)
+    anchor = "center"
+    position = (0, 0)
+    size_ratio = (0.78, 0.82)
     fill = "#0E1116"
     stroke = "#323D4B"
     corner_radius = 6
@@ -268,8 +239,8 @@ parent = workspace
 [viewport_label]
 parent = viewport_panel
 [UiLabel]
-    text = "Live edit viewport"
-    font_size = 24
+    text = "Viewport"
+    font_size = 20
     color = "#E9EEF6"
     size = (780, 48)
     anchor = "top"
@@ -280,9 +251,9 @@ parent = viewport_panel
 [viewport_status]
 parent = viewport_panel
 [UiTextBlock]
-    size = (780, 650)
+    size = (420, 112)
     anchor = "top"
-    position = (0, -92)
+    position = (0, -72)
     text = "No scene loaded"
     font_size = 18
     editable = false
@@ -296,10 +267,13 @@ parent = viewport_panel
 [inspector_panel]
 parent = workspace
 [UiPanel]
-    size = (330, 850)
+    anchor = "r"
+    position = (0, 0)
+    size_ratio = (0.10, 1.0)
+    min_w = 180
     fill = "#171C23"
     stroke = "#323D4B"
-    corner_radius = 6
+    corner_radius = 0
     padding = (14, 14, 14, 14)
 [/UiPanel]
 [/inspector_panel]
@@ -319,14 +293,14 @@ parent = inspector_stack
     text = "Inspector"
     font_size = 22
     color = "#E9EEF6"
-    size = (280, 38)
+    size = (150, 38)
 [/UiLabel]
 [/inspector_title]
 
 [inspector_body]
 parent = inspector_stack
 [UiTextBlock]
-    size = (280, 420)
+    size = (150, 520)
     text = "Select node"
     font_size = 17
     editable = false
@@ -348,6 +322,7 @@ parent = @root
     fill = "#181E26"
     stroke = "#384353"
     corner_radius = 6
+    z_index = 10
 [/UiPanel]
 [/bottom_bar]
 

@@ -32,7 +32,7 @@ parent = @root
 parent = top_bar
 [UiLabel]
     anchor = "top"
-    position = (0, -14)
+    position = (0, -8)
     text = "UiTest: panels / layouts / anchors"
     font_size = 30
     color = "#F4F7FB"

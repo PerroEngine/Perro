@@ -245,10 +245,9 @@ fn read_recent() -> Vec<String> {
     FileMod::load_string(RECENT_PROJECTS)
         .unwrap_or_default()
         .lines()
-        .map(str::trim)
+        .map(|line| normalize_display_path(line.trim()))
         .filter(|line| !line.is_empty())
         .take(8)
-        .map(ToOwned::to_owned)
         .collect()
 }
 
@@ -376,8 +375,22 @@ fn repo_root() -> PathBuf {
 }
 
 fn normalize(path: &Path) -> String {
-    path.canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf())
-        .to_string_lossy()
-        .replace('\\', "/")
+    normalize_display_path(
+        &path
+            .canonicalize()
+            .unwrap_or_else(|_| path.to_path_buf())
+            .to_string_lossy()
+            .replace('\\', "/"),
+    )
+}
+
+fn normalize_display_path(raw: &str) -> String {
+    let mut out = raw.replace('\\', "/");
+    if let Some(stripped) = out.strip_prefix("//?/") {
+        out = stripped.to_string();
+    }
+    if let Some(stripped) = out.strip_prefix("//./") {
+        out = stripped.to_string();
+    }
+    out
 }

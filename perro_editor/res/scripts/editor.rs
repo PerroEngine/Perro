@@ -1,11 +1,22 @@
 use perro_api::prelude::*;
 use std::borrow::Cow;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 type SelfNodeType = UiPanel;
 
 const ACTIVE_PROJECT: &str = "user://perro_editor_active_project.txt";
+const LIVE_PREVIEW_SCALE: f32 = 0.62;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SceneViewerMode {
+    Ui,
+    TwoD,
+    ThreeD,
+    Mixed,
+    Empty,
+}
 
 #[State]
 #[derive(Clone)]
@@ -18,8 +29,10 @@ struct EditorState {
     viewport_status: NodeID,
     inspector_body: NodeID,
     status_label: NodeID,
-    node_labels: Vec<NodeID>,
+    node_details: Vec<String>,
+    resource_paths: Vec<String>,
     live_root: NodeID,
+    run_pid: u32,
 }
 
 lifecycle!({
@@ -43,21 +56,12 @@ lifecycle!({
         let workspace = child(ctx, self_id, "workspace");
         let scene_panel = child(ctx, workspace, "scene_panel");
         let scene_stack = child(ctx, scene_panel, "scene_stack");
+        let resource_panel = child(ctx, scene_panel, "resource_panel");
+        let resource_stack = child(ctx, resource_panel, "resource_stack");
         let viewport_panel = child(ctx, workspace, "viewport_panel");
         let inspector_panel = child(ctx, workspace, "inspector_panel");
         let inspector_stack = child(ctx, inspector_panel, "inspector_stack");
         let bottom_bar = child(ctx, self_id, "bottom_bar");
-
-        let node_0 = child(ctx, scene_stack, "node_0");
-        let node_1 = child(ctx, scene_stack, "node_1");
-        let node_2 = child(ctx, scene_stack, "node_2");
-        let node_3 = child(ctx, scene_stack, "node_3");
-        let node_labels = vec![
-            child(ctx, node_0, "node_0_label"),
-            child(ctx, node_1, "node_1_label"),
-            child(ctx, node_2, "node_2_label"),
-            child(ctx, node_3, "node_3_label"),
-        ];
 
         let project_label = child(ctx, top_bar, "project_label");
         let scene_label = child(ctx, top_bar, "scene_label");
@@ -74,65 +78,68 @@ lifecycle!({
         let mut script_path = String::new();
         let mut live_root = NodeID::default();
         let mut live_scene_path = String::new();
+        let mut node_details = Vec::new();
+        let resource_paths = resource_rows(project_dir.trim());
+        let mut viewer_mode = SceneViewerMode::Empty;
 
         set_label(ctx, project_label, project_dir.trim());
         set_label(ctx, scene_label, &format!("Scene: {main_scene}"));
+        create_resource_rows(ctx, self_id, resource_stack, &resource_paths);
 
         match scene_load_doc!(res, main_scene.clone()) {
             Ok(doc) => {
-                let names = doc
-                    .scene
-                    .nodes
-                    .iter()
-                    .take(4)
-                    .map(|node| {
-                        let ty = node.data.ty.as_ref();
-                        let name = node
-                            .name
-                            .as_ref()
-                            .map(|n| n.as_ref())
-                            .unwrap_or(node.key.as_ref());
-                        format!("{name} : {ty}")
-                    })
-                    .collect::<Vec<_>>();
-                write_node_labels(ctx, &node_labels, &names);
+                let rows = scene_graph_rows(&doc);
+                create_scene_rows(ctx, self_id, scene_stack, &rows);
+                node_details = rows.into_iter().map(|(_, detail)| detail).collect();
                 script_path = doc
                     .scene
                     .nodes
                     .iter()
                     .find_map(|node| node.script.as_ref().map(|s| s.to_string()))
                     .unwrap_or_else(|| "res://scripts/script.rs".to_string());
+                viewer_mode = scene_viewer_mode(&doc);
                 let summary = format!(
-                    "Doc loaded\nnodes: {}\nroot: {}\nscript: {}",
+                    "Viewport\nmode: {}\nnodes: {}\nroot: {}\nscript: {}\npreview: {}",
+                    viewer_mode.label(),
                     doc.scene.nodes.len(),
                     doc.scene
                         .root
                         .as_ref()
                         .map(|r| r.as_ref())
                         .unwrap_or("none"),
-                    script_path
+                    script_path,
+                    viewer_mode.preview_status(),
                 );
                 set_text_block(ctx, viewport_status, &summary);
                 set_text_block(ctx, inspector_body, &inspector_summary(&doc));
-                live_scene_path = write_live_scene_doc(&doc).unwrap_or_default();
+                if viewer_mode == SceneViewerMode::Ui {
+                    live_scene_path = write_live_scene_doc(&doc).unwrap_or_default();
+                }
             }
             Err(err) => {
                 set_text_block(ctx, viewport_status, &format!("Doc load fail\n{err}"));
-                write_node_labels(ctx, &node_labels, &[]);
+                create_scene_rows(ctx, self_id, scene_stack, &[]);
             }
         }
 
         if live_scene_path.is_empty() {
-            set_label(ctx, status_label, "Live scene skip: doc missing");
+            set_label(
+                ctx,
+                status_label,
+                &format!("Viewport mode {}", viewer_mode.label()),
+            );
         } else {
             match scene_load!(ctx, live_scene_path.clone()) {
                 Ok(root) => {
                     live_root = root;
+                    let _ = reparent!(ctx, viewport_panel, root);
+                    apply_live_viewport_transform(ctx, root);
+                    hide_viewport_status(ctx, viewport_status);
                     disable_physics(ctx, root);
                     set_label(
                         ctx,
                         status_label,
-                        "Live edit scene loaded; scripts stripped; physics disabled",
+                        "Live edit scene loaded in viewport; scaled; scripts stripped; physics disabled",
                     );
                 }
                 Err(err) => set_label(ctx, status_label, &format!("Live scene load fail: {err}")),
@@ -148,8 +155,10 @@ lifecycle!({
             state.viewport_status = viewport_status;
             state.inspector_body = inspector_body;
             state.status_label = status_label;
-            state.node_labels = node_labels;
+            state.node_details = node_details;
+            state.resource_paths = resource_paths;
             state.live_root = live_root;
+            state.run_pid = 0;
         });
 
         signal_connect!(
@@ -164,10 +173,8 @@ lifecycle!({
             signal!("main_scene_button_click"),
             func!("on_open_main_scene")
         );
-        signal_connect!(ctx, self_id, signal!("node_0_click"), func!("on_node_0"));
-        signal_connect!(ctx, self_id, signal!("node_1_click"), func!("on_node_1"));
-        signal_connect!(ctx, self_id, signal!("node_2_click"), func!("on_node_2"));
-        signal_connect!(ctx, self_id, signal!("node_3_click"), func!("on_node_3"));
+        signal_connect!(ctx, self_id, signal!("play_button_click"), func!("on_play"));
+        signal_connect!(ctx, self_id, signal!("stop_button_click"), func!("on_stop"));
     }
 
     fn on_update(
@@ -245,29 +252,44 @@ methods!({
         }
     }
 
-    fn on_node_0(
+    fn on_scene_node_row(
         &self,
         ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         self_id: NodeID,
         _button: NodeID,
+        index: u64,
     ) {
-        inspect_node(ctx, self_id, 0);
+        inspect_node(ctx, self_id, index as usize);
     }
 
-    fn on_node_1(
+    fn on_resource_row(
         &self,
         ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
         self_id: NodeID,
         _button: NodeID,
+        index: u64,
     ) {
-        inspect_node(ctx, self_id, 1);
+        let (project_dir, status_label, path) = with_state!(ctx, EditorState, self_id, |state| {
+            (
+                state.project_dir.clone(),
+                state.status_label,
+                state.resource_paths.get(index as usize).cloned(),
+            )
+        });
+        if let Some(path) = path {
+            let disk = res_path_to_disk(&project_dir, &path);
+            match open_code(&disk) {
+                Ok(()) => set_label(ctx, status_label, &format!("VS Code open {path}")),
+                Err(err) => set_label(ctx, status_label, &format!("VS Code fail: {err}")),
+            }
+        }
     }
 
-    fn on_node_2(
+    fn on_play(
         &self,
         ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
@@ -275,10 +297,24 @@ methods!({
         self_id: NodeID,
         _button: NodeID,
     ) {
-        inspect_node(ctx, self_id, 2);
+        let (project_dir, status_label, current_pid) =
+            with_state!(ctx, EditorState, self_id, |state| {
+                (state.project_dir.clone(), state.status_label, state.run_pid)
+            });
+        if current_pid != 0 {
+            set_label(ctx, status_label, "Game already running");
+            return;
+        }
+        match spawn_game(&project_dir) {
+            Ok(pid) => {
+                let _ = with_state_mut!(ctx, EditorState, self_id, |state| state.run_pid = pid);
+                set_label(ctx, status_label, &format!("Game run pid {pid}"));
+            }
+            Err(err) => set_label(ctx, status_label, &format!("Game run fail: {err}")),
+        }
     }
 
-    fn on_node_3(
+    fn on_stop(
         &self,
         ctx: &mut RuntimeContext<'_, RT>,
         _res: &ResourceContext<'_, RS>,
@@ -286,7 +322,21 @@ methods!({
         self_id: NodeID,
         _button: NodeID,
     ) {
-        inspect_node(ctx, self_id, 3);
+        let (status_label, pid) = with_state!(ctx, EditorState, self_id, |state| (
+            state.status_label,
+            state.run_pid
+        ));
+        if pid == 0 {
+            set_label(ctx, status_label, "No game process");
+            return;
+        }
+        match stop_game(pid) {
+            Ok(()) => {
+                let _ = with_state_mut!(ctx, EditorState, self_id, |state| state.run_pid = 0);
+                set_label(ctx, status_label, "Game stop");
+            }
+            Err(err) => set_label(ctx, status_label, &format!("Game stop fail: {err}")),
+        }
     }
 });
 
@@ -325,17 +375,6 @@ fn set_text_block<RT: RuntimeAPI + ?Sized>(
     });
 }
 
-fn write_node_labels<RT: RuntimeAPI + ?Sized>(
-    ctx: &mut RuntimeContext<'_, RT>,
-    labels: &[NodeID],
-    names: &[String],
-) {
-    for (index, label) in labels.iter().copied().enumerate() {
-        let text = names.get(index).map(String::as_str).unwrap_or("-");
-        set_label(ctx, label, text);
-    }
-}
-
 fn read_main_scene(project_dir: &str) -> Option<String> {
     let text = std::fs::read_to_string(Path::new(project_dir).join("project.toml")).ok()?;
     for line in text.lines() {
@@ -367,12 +406,264 @@ fn inspector_summary(doc: &perro_scene::SceneDoc) -> String {
     )
 }
 
+impl SceneViewerMode {
+    fn label(self) -> &'static str {
+        match self {
+            SceneViewerMode::Ui => "UI",
+            SceneViewerMode::TwoD => "2D",
+            SceneViewerMode::ThreeD => "3D",
+            SceneViewerMode::Mixed => "Mixed",
+            SceneViewerMode::Empty => "Empty",
+        }
+    }
+
+    fn preview_status(self) -> &'static str {
+        match self {
+            SceneViewerMode::Ui => "live UI in panel",
+            SceneViewerMode::TwoD => "doc preview; scoped 2D target pending",
+            SceneViewerMode::ThreeD => "doc preview; scoped 3D target pending",
+            SceneViewerMode::Mixed => "doc preview; mixed scoped target pending",
+            SceneViewerMode::Empty => "no nodes",
+        }
+    }
+}
+
+fn scene_viewer_mode(doc: &perro_scene::SceneDoc) -> SceneViewerMode {
+    let mut has_ui = false;
+    let mut has_2d = false;
+    let mut has_3d = false;
+
+    for node in doc.scene.nodes.iter() {
+        collect_scene_mode_flags(&node.data, &mut has_ui, &mut has_2d, &mut has_3d);
+    }
+
+    match (has_ui, has_2d, has_3d) {
+        (false, false, false) => SceneViewerMode::Empty,
+        (true, false, false) => SceneViewerMode::Ui,
+        (false, true, false) => SceneViewerMode::TwoD,
+        (false, false, true) => SceneViewerMode::ThreeD,
+        _ => SceneViewerMode::Mixed,
+    }
+}
+
+fn collect_scene_mode_flags(
+    data: &perro_scene::SceneNodeData,
+    has_ui: &mut bool,
+    has_2d: &mut bool,
+    has_3d: &mut bool,
+) {
+    let ty = data.ty.as_ref();
+    if ty.starts_with("Ui") {
+        *has_ui = true;
+    }
+    if ty.ends_with("2D") || ty.contains("2D") {
+        *has_2d = true;
+    }
+    if ty.ends_with("3D") || ty.contains("3D") {
+        *has_3d = true;
+    }
+    if let Some(base) = data.base_ref() {
+        collect_scene_mode_flags(base, has_ui, has_2d, has_3d);
+    }
+}
+
+fn scene_graph_rows(doc: &perro_scene::SceneDoc) -> Vec<(String, String)> {
+    let mut by_parent = BTreeMap::<String, Vec<usize>>::new();
+    let root_key = doc
+        .scene
+        .root
+        .as_ref()
+        .map(|root| root.as_ref().to_string());
+    for (index, node) in doc.scene.nodes.iter().enumerate() {
+        if let Some(parent) = &node.parent {
+            by_parent
+                .entry(parent.as_ref().to_string())
+                .or_default()
+                .push(index);
+        }
+    }
+
+    let mut rows = Vec::<(String, String)>::new();
+    let mut seen = HashSet::new();
+    if let Some(root_key) = root_key {
+        if let Some(index) = doc
+            .scene
+            .nodes
+            .iter()
+            .position(|node| node.key.as_ref() == root_key)
+        {
+            push_scene_row(doc, index, 0, &by_parent, &mut seen, &mut rows);
+        }
+    }
+    for index in 0..doc.scene.nodes.len() {
+        if !seen.contains(&index) {
+            push_scene_row(doc, index, 0, &by_parent, &mut seen, &mut rows);
+        }
+    }
+    rows
+}
+
+fn push_scene_row(
+    doc: &perro_scene::SceneDoc,
+    index: usize,
+    depth: usize,
+    by_parent: &BTreeMap<String, Vec<usize>>,
+    seen: &mut HashSet<usize>,
+    rows: &mut Vec<(String, String)>,
+) {
+    if !seen.insert(index) {
+        return;
+    }
+    let node = &doc.scene.nodes[index];
+    let name = node
+        .name
+        .as_ref()
+        .map(|n| n.as_ref())
+        .unwrap_or(node.key.as_ref());
+    let indent = "  ".repeat(depth.min(4));
+    rows.push((
+        format!("{indent}{name} : {}", node.data.ty),
+        node_detail(node),
+    ));
+    if let Some(children) = by_parent.get(node.key.as_ref()) {
+        for child in children {
+            push_scene_row(doc, *child, depth + 1, by_parent, seen, rows);
+        }
+    }
+}
+
+fn node_detail(node: &perro_scene::SceneNodeEntry) -> String {
+    let name = node
+        .name
+        .as_ref()
+        .map(|n| n.as_ref())
+        .unwrap_or(node.key.as_ref());
+    let parent = node.parent.as_ref().map(|p| p.as_ref()).unwrap_or("none");
+    let script = node.script.as_ref().map(|s| s.as_ref()).unwrap_or("none");
+    let root_of = node.root_of.as_ref().map(|s| s.as_ref()).unwrap_or("none");
+    let fields = node
+        .data
+        .fields
+        .iter()
+        .map(|(name, value)| format!("  {} = {}", name, scene_value_summary(value)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "selected: {name}\ntype: {}\nkey: {}\nparent: {parent}\nscript: {script}\nroot_of: {root_of}\nfields:\n{}",
+        node.data.ty,
+        node.key.as_ref(),
+        if fields.is_empty() { "  -" } else { &fields }
+    )
+}
+
+fn scene_value_summary(value: &perro_scene::SceneValue) -> String {
+    match value {
+        perro_scene::SceneValue::Bool(v) => v.to_string(),
+        perro_scene::SceneValue::I32(v) => v.to_string(),
+        perro_scene::SceneValue::F32(v) => v.to_string(),
+        perro_scene::SceneValue::Vec2 { x, y } => format!("({x}, {y})"),
+        perro_scene::SceneValue::Vec3 { x, y, z } => format!("({x}, {y}, {z})"),
+        perro_scene::SceneValue::Vec4 { x, y, z, w } => format!("({x}, {y}, {z}, {w})"),
+        perro_scene::SceneValue::Str(v) => format!("\"{v}\""),
+        perro_scene::SceneValue::Hashed(v) => v.to_string(),
+        perro_scene::SceneValue::Key(v) => v.to_string(),
+        perro_scene::SceneValue::Object(fields) => format!("{{{} fields}}", fields.len()),
+        perro_scene::SceneValue::Array(items) => format!("[{} items]", items.len()),
+    }
+}
+
+fn resource_rows(project_dir: &str) -> Vec<String> {
+    let res_root = Path::new(project_dir).join("res");
+    let mut rows = vec!["res://".to_string()];
+    collect_resource_rows(&res_root, &res_root, &mut rows);
+    rows
+}
+
+fn collect_resource_rows(root: &Path, dir: &Path, rows: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut entries = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    entries.sort();
+    for path in entries {
+        if path.is_dir() {
+            collect_resource_rows(root, &path, rows);
+            continue;
+        }
+        let Ok(rel) = path.strip_prefix(root) else {
+            continue;
+        };
+        rows.push(format!(
+            "res://{}",
+            rel.to_string_lossy().replace('\\', "/")
+        ));
+    }
+}
+
+fn create_scene_rows<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    _script_id: NodeID,
+    parent: NodeID,
+    rows: &[(String, String)],
+) {
+    if parent.is_nil() {
+        return;
+    }
+    for (index, (label, _)) in rows.iter().enumerate() {
+        create_label_row(ctx, parent, &format!("scene_node_row_{index}"), label);
+    }
+}
+
+fn create_resource_rows<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    _script_id: NodeID,
+    parent: NodeID,
+    rows: &[String],
+) {
+    if parent.is_nil() {
+        return;
+    }
+    for (index, path) in rows.iter().enumerate() {
+        create_label_row(ctx, parent, &format!("resource_row_{index}"), path);
+    }
+}
+
+fn create_label_row<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    parent: NodeID,
+    name: &str,
+    text: &str,
+) -> NodeID {
+    let label = create_node!(ctx, UiLabel, name.to_string(), tags![], parent);
+    let _ = with_node_mut!(ctx, UiLabel, label, |node| {
+        node.text = Cow::Owned(text.to_string());
+        node.font_size = 16.0;
+        node.color = color("#DDE6F2");
+        node.layout.size = UiVector2::pixels(150.0, 24.0);
+        node.h_align = UiTextAlign::Start;
+    });
+    label
+}
+
+fn color(hex: &str) -> Color {
+    Color::from_hex(hex).unwrap_or(Color::WHITE)
+}
+
 fn write_live_scene_doc(doc: &perro_scene::SceneDoc) -> Result<String, String> {
     let mut live_doc = doc.clone();
+    let root_key = live_doc.scene.root.clone();
     for node in live_doc.scene.nodes.to_mut() {
         node.script = None;
         node.script_hash = None;
         node.clear_script = true;
+        if let Some(root_key) = &root_key {
+            if node.parent.is_none() && node.key.as_ref() != root_key.as_ref() {
+                node.parent = Some(root_key.clone());
+            }
+        }
     }
     live_doc.normalize_links();
     let path = std::env::temp_dir().join("perro_editor_live_scene.scn");
@@ -380,31 +671,183 @@ fn write_live_scene_doc(doc: &perro_scene::SceneDoc) -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+fn apply_live_viewport_transform<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    root: NodeID,
+) {
+    apply_ui_root_fit::<RT, UiPanel>(ctx, root);
+    apply_ui_root_fit::<RT, UiButton>(ctx, root);
+    apply_ui_root_fit::<RT, UiLabel>(ctx, root);
+    apply_ui_root_fit::<RT, UiTextBox>(ctx, root);
+    apply_ui_root_fit::<RT, UiTextBlock>(ctx, root);
+    apply_ui_root_fit::<RT, UiLayout>(ctx, root);
+    apply_ui_root_fit::<RT, UiHLayout>(ctx, root);
+    apply_ui_root_fit::<RT, UiVLayout>(ctx, root);
+    apply_ui_root_fit::<RT, UiGrid>(ctx, root);
+
+    let nodes = query!(
+        ctx,
+        any(is[
+            UiPanel,
+            UiButton,
+            UiLabel,
+            UiTextBox,
+            UiTextBlock,
+            UiLayout,
+            UiHLayout,
+            UiVLayout,
+            UiGrid
+        ]),
+        in_subtree(root)
+    );
+    for id in nodes {
+        if id == root {
+            continue;
+        }
+        apply_ui_node_scale::<RT, UiPanel>(ctx, id, LIVE_PREVIEW_SCALE);
+        apply_ui_node_scale::<RT, UiButton>(ctx, id, LIVE_PREVIEW_SCALE);
+        apply_ui_node_scale::<RT, UiLabel>(ctx, id, LIVE_PREVIEW_SCALE);
+        apply_ui_node_scale::<RT, UiTextBox>(ctx, id, LIVE_PREVIEW_SCALE);
+        apply_ui_node_scale::<RT, UiTextBlock>(ctx, id, LIVE_PREVIEW_SCALE);
+        apply_ui_node_scale::<RT, UiLayout>(ctx, id, LIVE_PREVIEW_SCALE);
+        apply_ui_node_scale::<RT, UiHLayout>(ctx, id, LIVE_PREVIEW_SCALE);
+        apply_ui_node_scale::<RT, UiVLayout>(ctx, id, LIVE_PREVIEW_SCALE);
+        apply_ui_node_scale::<RT, UiGrid>(ctx, id, LIVE_PREVIEW_SCALE);
+        apply_label_scale(ctx, id, LIVE_PREVIEW_SCALE);
+        apply_text_edit_scale::<RT, UiTextBox>(ctx, id, LIVE_PREVIEW_SCALE);
+        apply_text_edit_scale::<RT, UiTextBlock>(ctx, id, LIVE_PREVIEW_SCALE);
+        apply_layout_spacing_scale(ctx, id, LIVE_PREVIEW_SCALE);
+    }
+}
+
+fn apply_ui_root_fit<RT, T>(ctx: &mut RuntimeContext<'_, RT>, root: NodeID)
+where
+    RT: RuntimeAPI + ?Sized,
+    T: UiNodeBase + NodeTypeDispatch + 'static,
+{
+    let _ = with_node_mut!(ctx, T, root, |node| {
+        let base = node.ui_base_mut();
+        base.layout.anchor = UiAnchor::Center;
+        base.layout.size = UiVector2::ratio(1.0, 1.0);
+        base.transform.position = UiVector2::ratio(0.5, 0.5);
+        base.transform.pivot = UiVector2::ratio(0.5, 0.5);
+        base.transform.scale = Vector2::new(LIVE_PREVIEW_SCALE, LIVE_PREVIEW_SCALE);
+        base.input_enabled = false;
+        base.mouse_filter = UiMouseFilter::Ignore;
+    });
+}
+
+fn apply_ui_node_scale<RT, T>(ctx: &mut RuntimeContext<'_, RT>, id: NodeID, scale: f32)
+where
+    RT: RuntimeAPI + ?Sized,
+    T: UiNodeBase + NodeTypeDispatch + 'static,
+{
+    let _ = with_node_mut!(ctx, T, id, |node| {
+        let base = node.ui_base_mut();
+        base.input_enabled = false;
+        base.mouse_filter = UiMouseFilter::Ignore;
+        scale_ui_vector2(&mut base.layout.size, scale);
+        base.layout.min_size *= scale;
+        base.layout.max_size *= scale;
+        base.transform.translation *= scale;
+        base.layout.margin.left *= scale;
+        base.layout.margin.top *= scale;
+        base.layout.margin.right *= scale;
+        base.layout.margin.bottom *= scale;
+        base.layout.padding.left *= scale;
+        base.layout.padding.top *= scale;
+        base.layout.padding.right *= scale;
+        base.layout.padding.bottom *= scale;
+    });
+}
+
+fn scale_ui_vector2(value: &mut UiVector2, scale: f32) {
+    scale_ui_unit(&mut value.x, scale);
+    scale_ui_unit(&mut value.y, scale);
+}
+
+fn scale_ui_unit(value: &mut UiUnit, scale: f32) {
+    if let UiUnit::Pixels(px) = value {
+        *px *= scale;
+    }
+}
+
+fn apply_label_scale<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    id: NodeID,
+    scale: f32,
+) {
+    let _ = with_node_mut!(ctx, UiLabel, id, |node| {
+        node.font_size *= scale;
+    });
+}
+
+fn apply_text_edit_scale<RT, T>(ctx: &mut RuntimeContext<'_, RT>, id: NodeID, scale: f32)
+where
+    RT: RuntimeAPI + ?Sized,
+    T: std::ops::DerefMut<Target = UiTextEdit> + NodeTypeDispatch + 'static,
+{
+    let _ = with_node_mut!(ctx, T, id, |node| {
+        node.font_size *= scale;
+        node.padding.left *= scale;
+        node.padding.top *= scale;
+        node.padding.right *= scale;
+        node.padding.bottom *= scale;
+    });
+}
+
+fn apply_layout_spacing_scale<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    id: NodeID,
+    scale: f32,
+) {
+    let _ = with_node_mut!(ctx, UiLayout, id, |node| {
+        node.inner.spacing *= scale;
+        node.inner.h_spacing *= scale;
+        node.inner.v_spacing *= scale;
+    });
+    let _ = with_node_mut!(ctx, UiHLayout, id, |node| {
+        node.inner.spacing *= scale;
+        node.inner.h_spacing *= scale;
+        node.inner.v_spacing *= scale;
+    });
+    let _ = with_node_mut!(ctx, UiVLayout, id, |node| {
+        node.inner.spacing *= scale;
+        node.inner.h_spacing *= scale;
+        node.inner.v_spacing *= scale;
+    });
+    let _ = with_node_mut!(ctx, UiGrid, id, |node| {
+        node.h_spacing *= scale;
+        node.v_spacing *= scale;
+    });
+}
+
+fn hide_viewport_status<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    viewport_status: NodeID,
+) {
+    let _ = with_node_mut!(ctx, UiTextBlock, viewport_status, |node| {
+        node.inner.base.visible = false;
+        node.inner.base.input_enabled = false;
+        node.inner.base.mouse_filter = UiMouseFilter::Ignore;
+    });
+}
+
 fn inspect_node<RT: RuntimeAPI + ?Sized>(
     ctx: &mut RuntimeContext<'_, RT>,
     self_id: NodeID,
     index: usize,
 ) {
-    let (project_dir, main_scene, inspector_body) =
-        with_state!(ctx, EditorState, self_id, |state| {
-            (
-                state.project_dir.clone(),
-                state.main_scene.clone(),
-                state.inspector_body,
-            )
-        });
-    let path = res_path_to_disk(&project_dir, &main_scene);
-    let text = std::fs::read_to_string(path).unwrap_or_default();
-    let lines = text
-        .lines()
-        .filter(|line| line.trim_start().starts_with('[') && !line.trim_start().starts_with("[/"))
-        .skip(index)
-        .take(1)
-        .collect::<Vec<_>>();
-    let detail = lines
-        .first()
-        .map(|line| format!("selected doc row\n{line}"))
-        .unwrap_or_else(|| "No node at slot".to_string());
+    let (inspector_body, detail) = with_state!(ctx, EditorState, self_id, |state| {
+        (
+            state.inspector_body,
+            state
+                .node_details
+                .get(index)
+                .cloned()
+                .unwrap_or_else(|| "No node at slot".to_string()),
+        )
+    });
     set_text_block(ctx, inspector_body, &detail);
 }
 
@@ -441,4 +884,45 @@ fn open_code(path: &Path) -> Result<(), String> {
         .or_else(|_| Command::new("code.cmd").arg(path).spawn())
         .map(|_| ())
         .map_err(|err| err.to_string())
+}
+
+fn spawn_game(project_dir: &str) -> Result<u32, String> {
+    let child = Command::new("cargo")
+        .arg("run")
+        .arg("--manifest-path")
+        .arg(repo_root().join("Cargo.toml"))
+        .arg("-p")
+        .arg("perro_cli")
+        .arg("--")
+        .arg("dev")
+        .arg("--path")
+        .arg(project_dir)
+        .spawn()
+        .map_err(|err| err.to_string())?;
+    Ok(child.id())
+}
+
+fn stop_game(pid: u32) -> Result<(), String> {
+    let mut cmd = if cfg!(target_os = "windows") {
+        let mut cmd = Command::new("taskkill");
+        cmd.arg("/PID").arg(pid.to_string()).arg("/T").arg("/F");
+        cmd
+    } else {
+        let mut cmd = Command::new("kill");
+        cmd.arg(pid.to_string());
+        cmd
+    };
+    let status = cmd.status().map_err(|err| err.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("exit {status}"))
+    }
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..")
 }
