@@ -9,8 +9,19 @@ type SelfNodeType = UiPanel;
 const ACTIVE_PROJECT: &str = "user://perro_editor_active_project.txt";
 const LIVE_VIEWPORT_WIDTH: f32 = 1920.0;
 const LIVE_VIEWPORT_HEIGHT: f32 = 1080.0;
-const LIVE_VIEWPORT_SCALE: f32 = 0.58;
+const LIVE_VIEWPORT_MIN_SCALE: f32 = 0.33;
+const LIVE_VIEWPORT_MAX_SCALE: f32 = 1.5;
 const LIVE_VIEWPORT_Z_FALLBACK_PARENT: i32 = 29;
+const EDITOR_TOP_BAR_HEIGHT: f32 = 40.0;
+const EDITOR_BOTTOM_BAR_HEIGHT: f32 = 26.0;
+const EDITOR_WORKSPACE_PADDING_X: f32 = 8.0;
+const EDITOR_WORKSPACE_PADDING_Y: f32 = 8.0;
+const EDITOR_WORKSPACE_SPACING: f32 = 4.0;
+const EDITOR_SIDE_PANEL_WIDTH: f32 = 240.0;
+const EDITOR_VIEWPORT_TAB_HEIGHT: f32 = 36.0;
+const EDITOR_VIEWPORT_DIVIDER_HEIGHT: f32 = 1.0;
+const EDITOR_VIEWPORT_CANVAS_PADDING_X: f32 = 12.0;
+const EDITOR_VIEWPORT_CANVAS_PADDING_Y: f32 = 12.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SceneViewerMode {
@@ -35,6 +46,7 @@ struct EditorState {
     node_details: Vec<String>,
     resource_paths: Vec<String>,
     live_root: NodeID,
+    live_scale: f32,
     run_pid: u32,
 }
 
@@ -63,6 +75,9 @@ lifecycle!({
         let resource_panel = child(ctx, scene_panel, "resource_panel");
         let resource_stack = child(ctx, resource_panel, "resource_stack");
         let viewport_panel = child(ctx, workspace, "viewport_panel");
+        let viewport_vlayout = child(ctx, viewport_panel, "viewport_vlayout");
+        let viewport_canvas_wrap = child(ctx, viewport_vlayout, "viewport_canvas_wrap");
+        let viewport_canvas = child(ctx, viewport_canvas_wrap, "viewport_canvas");
         let inspector_panel = child(ctx, workspace, "inspector_panel");
         let inspector_stack = child(ctx, inspector_panel, "inspector_stack");
         let bottom_bar = child(ctx, self_id, "bottom_bar");
@@ -136,8 +151,9 @@ lifecycle!({
             match scene_load!(ctx, live_scene_path.clone()) {
                 Ok(root) => {
                     live_root = root;
-                    let _ = reparent!(ctx, viewport_panel, root);
-                    apply_live_viewport_transform(ctx, root);
+                    let _ = reparent!(ctx, viewport_canvas, root);
+                    let live_scale = live_viewport_scale(res.viewport_size());
+                    apply_live_viewport_transform(ctx, root, live_scale);
                     hide_viewport_status(ctx, viewport_status);
                     disable_physics(ctx, root);
                     set_label(
@@ -162,6 +178,7 @@ lifecycle!({
             state.node_details = node_details;
             state.resource_paths = resource_paths;
             state.live_root = live_root;
+            state.live_scale = live_viewport_scale(res.viewport_size());
             state.run_pid = 0;
         });
 
@@ -183,11 +200,22 @@ lifecycle!({
 
     fn on_update(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
+        ctx: &mut RuntimeContext<'_, RT>,
+        res: &ResourceContext<'_, RS>,
         _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        self_id: NodeID,
     ) {
+        let target_scale = live_viewport_scale(res.viewport_size());
+        let mut scale_update = None;
+        let _ = with_state_mut!(ctx, EditorState, self_id, |state| {
+            if !state.live_root.is_nil() && (state.live_scale - target_scale).abs() > 0.001 {
+                scale_update = Some((state.live_root, state.live_scale, target_scale));
+                state.live_scale = target_scale;
+            }
+        });
+        if let Some((root, old_scale, new_scale)) = scale_update {
+            rescale_live_viewport(ctx, root, old_scale, new_scale);
+        }
     }
 
     fn on_fixed_update(
@@ -709,23 +737,41 @@ fn write_live_scene_doc(doc: &perro_scene::SceneDoc) -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+fn live_viewport_scale(viewport_size: Vector2) -> f32 {
+    let canvas_width = viewport_size.x
+        - EDITOR_WORKSPACE_PADDING_X
+        - EDITOR_SIDE_PANEL_WIDTH * 2.0
+        - EDITOR_WORKSPACE_SPACING * 2.0
+        - EDITOR_VIEWPORT_CANVAS_PADDING_X;
+    let canvas_height = viewport_size.y
+        - EDITOR_TOP_BAR_HEIGHT
+        - EDITOR_BOTTOM_BAR_HEIGHT
+        - EDITOR_WORKSPACE_PADDING_Y
+        - EDITOR_VIEWPORT_TAB_HEIGHT
+        - EDITOR_VIEWPORT_DIVIDER_HEIGHT
+        - EDITOR_VIEWPORT_CANVAS_PADDING_Y;
+    let fit_scale = (canvas_width / LIVE_VIEWPORT_WIDTH).min(canvas_height / LIVE_VIEWPORT_HEIGHT);
+    fit_scale.clamp(LIVE_VIEWPORT_MIN_SCALE, LIVE_VIEWPORT_MAX_SCALE)
+}
+
 fn apply_live_viewport_transform<RT: RuntimeAPI + ?Sized>(
     ctx: &mut RuntimeContext<'_, RT>,
     root: NodeID,
+    scale: f32,
 ) {
     let root_parent_z = get_node_parent_id!(ctx, root)
         .and_then(|parent| ui_z_index(ctx, parent))
         .unwrap_or(LIVE_VIEWPORT_Z_FALLBACK_PARENT);
 
-    apply_ui_root_fit::<RT, UiPanel>(ctx, root);
-    apply_ui_root_fit::<RT, UiButton>(ctx, root);
-    apply_ui_root_fit::<RT, UiLabel>(ctx, root);
-    apply_ui_root_fit::<RT, UiTextBox>(ctx, root);
-    apply_ui_root_fit::<RT, UiTextBlock>(ctx, root);
-    apply_ui_root_fit::<RT, UiLayout>(ctx, root);
-    apply_ui_root_fit::<RT, UiHLayout>(ctx, root);
-    apply_ui_root_fit::<RT, UiVLayout>(ctx, root);
-    apply_ui_root_fit::<RT, UiGrid>(ctx, root);
+    apply_ui_root_fit::<RT, UiPanel>(ctx, root, scale);
+    apply_ui_root_fit::<RT, UiButton>(ctx, root, scale);
+    apply_ui_root_fit::<RT, UiLabel>(ctx, root, scale);
+    apply_ui_root_fit::<RT, UiTextBox>(ctx, root, scale);
+    apply_ui_root_fit::<RT, UiTextBlock>(ctx, root, scale);
+    apply_ui_root_fit::<RT, UiLayout>(ctx, root, scale);
+    apply_ui_root_fit::<RT, UiHLayout>(ctx, root, scale);
+    apply_ui_root_fit::<RT, UiVLayout>(ctx, root, scale);
+    apply_ui_root_fit::<RT, UiGrid>(ctx, root, scale);
 
     let nodes = query!(
         ctx,
@@ -746,25 +792,25 @@ fn apply_live_viewport_transform<RT: RuntimeAPI + ?Sized>(
         if id == root {
             continue;
         }
-        apply_ui_node_scale::<RT, UiPanel>(ctx, id, LIVE_VIEWPORT_SCALE);
-        apply_ui_node_scale::<RT, UiButton>(ctx, id, LIVE_VIEWPORT_SCALE);
-        apply_ui_node_scale::<RT, UiLabel>(ctx, id, LIVE_VIEWPORT_SCALE);
-        apply_ui_node_scale::<RT, UiTextBox>(ctx, id, LIVE_VIEWPORT_SCALE);
-        apply_ui_node_scale::<RT, UiTextBlock>(ctx, id, LIVE_VIEWPORT_SCALE);
-        apply_ui_node_scale::<RT, UiLayout>(ctx, id, LIVE_VIEWPORT_SCALE);
-        apply_ui_node_scale::<RT, UiHLayout>(ctx, id, LIVE_VIEWPORT_SCALE);
-        apply_ui_node_scale::<RT, UiVLayout>(ctx, id, LIVE_VIEWPORT_SCALE);
-        apply_ui_node_scale::<RT, UiGrid>(ctx, id, LIVE_VIEWPORT_SCALE);
-        apply_label_scale(ctx, id, LIVE_VIEWPORT_SCALE);
-        apply_text_edit_scale::<RT, UiTextBox>(ctx, id, LIVE_VIEWPORT_SCALE);
-        apply_text_edit_scale::<RT, UiTextBlock>(ctx, id, LIVE_VIEWPORT_SCALE);
-        apply_layout_spacing_scale(ctx, id, LIVE_VIEWPORT_SCALE);
+        apply_ui_node_scale::<RT, UiPanel>(ctx, id, scale);
+        apply_ui_node_scale::<RT, UiButton>(ctx, id, scale);
+        apply_ui_node_scale::<RT, UiLabel>(ctx, id, scale);
+        apply_ui_node_scale::<RT, UiTextBox>(ctx, id, scale);
+        apply_ui_node_scale::<RT, UiTextBlock>(ctx, id, scale);
+        apply_ui_node_scale::<RT, UiLayout>(ctx, id, scale);
+        apply_ui_node_scale::<RT, UiHLayout>(ctx, id, scale);
+        apply_ui_node_scale::<RT, UiVLayout>(ctx, id, scale);
+        apply_ui_node_scale::<RT, UiGrid>(ctx, id, scale);
+        apply_label_scale(ctx, id, scale);
+        apply_text_edit_scale::<RT, UiTextBox>(ctx, id, scale);
+        apply_text_edit_scale::<RT, UiTextBlock>(ctx, id, scale);
+        apply_layout_spacing_scale(ctx, id, scale);
     }
 
     apply_live_viewport_z_tree(ctx, root, root_parent_z);
 }
 
-fn apply_ui_root_fit<RT, T>(ctx: &mut RuntimeContext<'_, RT>, root: NodeID)
+fn apply_ui_root_fit<RT, T>(ctx: &mut RuntimeContext<'_, RT>, root: NodeID, scale: f32)
 where
     RT: RuntimeAPI + ?Sized,
     T: UiNodeBase + NodeTypeDispatch + 'static,
@@ -775,9 +821,75 @@ where
         base.layout.size = UiVector2::pixels(LIVE_VIEWPORT_WIDTH, LIVE_VIEWPORT_HEIGHT);
         base.transform.position = UiVector2::ratio(0.5, 0.5);
         base.transform.pivot = UiVector2::ratio(0.5, 0.5);
-        base.transform.scale = Vector2::new(LIVE_VIEWPORT_SCALE, LIVE_VIEWPORT_SCALE);
+        base.transform.scale = Vector2::new(scale, scale);
         base.input_enabled = false;
         base.mouse_filter = UiMouseFilter::Ignore;
+    });
+}
+
+fn rescale_live_viewport<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    root: NodeID,
+    old_scale: f32,
+    new_scale: f32,
+) {
+    let ratio = new_scale / old_scale.max(0.0001);
+    set_ui_root_scale::<RT, UiPanel>(ctx, root, new_scale);
+    set_ui_root_scale::<RT, UiButton>(ctx, root, new_scale);
+    set_ui_root_scale::<RT, UiLabel>(ctx, root, new_scale);
+    set_ui_root_scale::<RT, UiTextBox>(ctx, root, new_scale);
+    set_ui_root_scale::<RT, UiTextBlock>(ctx, root, new_scale);
+    set_ui_root_scale::<RT, UiLayout>(ctx, root, new_scale);
+    set_ui_root_scale::<RT, UiHLayout>(ctx, root, new_scale);
+    set_ui_root_scale::<RT, UiVLayout>(ctx, root, new_scale);
+    set_ui_root_scale::<RT, UiGrid>(ctx, root, new_scale);
+
+    let nodes = query!(
+        ctx,
+        any(is[
+            UiPanel,
+            UiButton,
+            UiLabel,
+            UiTextBox,
+            UiTextBlock,
+            UiLayout,
+            UiHLayout,
+            UiVLayout,
+            UiGrid
+        ]),
+        in_subtree(root)
+    );
+    for id in nodes {
+        if id == root {
+            continue;
+        }
+        apply_ui_node_scale::<RT, UiPanel>(ctx, id, ratio);
+        apply_ui_node_scale::<RT, UiButton>(ctx, id, ratio);
+        apply_ui_node_scale::<RT, UiLabel>(ctx, id, ratio);
+        apply_ui_node_scale::<RT, UiTextBox>(ctx, id, ratio);
+        apply_ui_node_scale::<RT, UiTextBlock>(ctx, id, ratio);
+        apply_ui_node_scale::<RT, UiLayout>(ctx, id, ratio);
+        apply_ui_node_scale::<RT, UiHLayout>(ctx, id, ratio);
+        apply_ui_node_scale::<RT, UiVLayout>(ctx, id, ratio);
+        apply_ui_node_scale::<RT, UiGrid>(ctx, id, ratio);
+        apply_label_scale(ctx, id, ratio);
+        apply_text_edit_scale::<RT, UiTextBox>(ctx, id, ratio);
+        apply_text_edit_scale::<RT, UiTextBlock>(ctx, id, ratio);
+        apply_layout_spacing_scale(ctx, id, ratio);
+    }
+}
+
+fn set_ui_root_scale<RT, T>(ctx: &mut RuntimeContext<'_, RT>, root: NodeID, scale: f32)
+where
+    RT: RuntimeAPI + ?Sized,
+    T: UiNodeBase + NodeTypeDispatch + 'static,
+{
+    let _ = with_node_mut!(ctx, T, root, |node| {
+        let base = node.ui_base_mut();
+        base.layout.anchor = UiAnchor::Center;
+        base.transform.position = UiVector2::ratio(0.5, 0.5);
+        base.transform.pivot = UiVector2::ratio(0.5, 0.5);
+        base.transform.scale = Vector2::new(scale, scale);
     });
 }
 

@@ -37,7 +37,7 @@ use perro_structs::{
 };
 use perro_ui::{
     UiBox, UiButton, UiGrid, UiHLayout, UiLabel, UiLayout, UiMouseFilter, UiPanel, UiTextAlign,
-    UiTextBlock, UiTextBox, UiVLayout,
+    UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
 };
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -639,6 +639,7 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "UiHLayout" | "UiHBox" => Ok(SceneNodeData::UiHLayout(build_ui_hlayout(data))),
         "UiVLayout" | "UiVBox" => Ok(SceneNodeData::UiVLayout(build_ui_vlayout(data))),
         "UiGrid" => Ok(SceneNodeData::UiGrid(build_ui_grid(data))),
+        "UiTreeList" => Ok(SceneNodeData::UiTreeList(build_ui_tree_list(data))),
         other => Err(format!("unsupported scene node type `{other}`")),
     }
 }

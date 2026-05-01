@@ -115,6 +115,28 @@ fn build_ui_grid(data: &SceneDefNodeData) -> UiGrid {
     node
 }
 
+fn build_ui_tree_list(data: &SceneDefNodeData) -> UiTreeList {
+    let mut node = UiTreeList::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.base, base);
+    }
+    apply_ui_root_fields(&mut node.base, &data.fields);
+    SceneFieldIterRef::new(&data.fields).for_each(|name, value| match name {
+        "indent" => {
+            if let Some(v) = as_f32(value) {
+                node.indent = v.max(0.0);
+            }
+        }
+        "v_spacing" | "vertical_spacing" | "spacing" => {
+            if let Some(v) = as_f32(value) {
+                node.v_spacing = v.max(0.0);
+            }
+        }
+        _ => {}
+    });
+    node
+}
+
 fn apply_ui_root_data(target: &mut UiBox, data: &SceneDefNodeData) {
     if let Some(base) = data.base_ref() {
         apply_ui_root_data(target, base);

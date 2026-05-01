@@ -38,6 +38,7 @@ impl Runtime {
             SceneNodeData::UiHLayout(node) => node.visible,
             SceneNodeData::UiVLayout(node) => node.visible,
             SceneNodeData::UiGrid(node) => node.visible,
+            SceneNodeData::UiTreeList(node) => node.visible,
             SceneNodeData::AnimationPlayer(_) => true,
         }
     }

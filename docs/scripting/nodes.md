@@ -104,6 +104,7 @@ UI nodes inherit from `UiBox` in the node registry:
 - `UiHLayout`
 - `UiVLayout`
 - `UiGrid`
+- `UiTreeList`
 
 UI positions and sizes resolve against the parent UI rect.
 Root UI nodes use the virtual viewport as parent.
@@ -111,6 +112,7 @@ Each axis can be pixels or ratio, so `UiVector2::ratio(0.5, 0.5)` means parent c
 All UI nodes can have children.
 `UiBox` is the invisible generic container.
 `UiLayout`, `UiHLayout`, `UiVLayout`, and `UiGrid` add automatic child placement.
+`UiTreeList` adds hierarchical row placement from referenced UI node ids.
 
 See [UI Nodes](ui.md).
 

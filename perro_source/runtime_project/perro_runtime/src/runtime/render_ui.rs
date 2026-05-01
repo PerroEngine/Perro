@@ -125,6 +125,13 @@ impl Runtime {
                         traversal_ids.push(child);
                     }
                 }
+                if let SceneNodeData::UiTreeList(tree) = &node_ref.data {
+                    for child in ui_tree_all_nodes(tree) {
+                        if traversal_seen.insert(child) {
+                            traversal_ids.push(child);
+                        }
+                    }
+                }
             }
         }
         for &node in &traversal_ids {
@@ -205,7 +212,7 @@ impl Runtime {
                 timing.command_nodes = timing.command_nodes.saturating_add(1);
             }
             visible_now.remove(&node);
-            let effective_visible = self.is_effectively_visible(node);
+            let effective_visible = self.is_effectively_visible_for_ui(node);
             let Some(scene_node) = self.nodes.get(node) else {
                 self.remove_retained_ui_node(node);
                 if let Some(timing) = timing.as_deref_mut() {
@@ -313,6 +320,12 @@ impl Runtime {
 
         let scene_node = self.nodes.get(node)?;
         let ui_root = ui_root_from_data(&scene_node.data)?;
+        if !matches!(scene_node.data, SceneNodeData::UiTreeList(_))
+            && let Some(tree_parent) = self.ui_tree_owner(node)
+        {
+            self.compute_ui_rect(tree_parent, root_rect, computed, auto_layout_computed)?;
+            return computed.get(&node).copied();
+        }
         let parent_rect = if scene_node.parent.is_nil() {
             root_rect
         } else {
@@ -360,6 +373,9 @@ impl Runtime {
             })
         };
         computed.insert(node, rect);
+        if let SceneNodeData::UiTreeList(tree) = &scene_node.data {
+            self.compute_ui_tree_rows(tree, rect, computed);
+        }
         Some(rect)
     }
 
@@ -1231,6 +1247,82 @@ impl Runtime {
         }
     }
 
+    fn compute_ui_tree_rows(
+        &self,
+        tree: &perro_ui::UiTreeList,
+        tree_rect: ComputedUiRect,
+        computed: &mut AHashMap<NodeID, ComputedUiRect>,
+    ) {
+        let content = tree_rect.inset(tree.base.layout.padding);
+        let rows = ui_tree_visible_rows(tree);
+        if rows.is_empty() {
+            return;
+        }
+        let max = content.max();
+        let mut y = max.y;
+        for row in rows {
+            let Some((layout, transform)) = self
+                .nodes
+                .get(row.node)
+                .and_then(|node| ui_root_from_data(&node.data))
+                .and_then(|ui| ui.visible.then_some((&ui.layout, &ui.transform)))
+            else {
+                continue;
+            };
+            let indent = tree.indent * row.depth as f32;
+            let row_content = ComputedUiRect::new(
+                Vector2::new(content.center.x + indent * 0.5, content.center.y),
+                Vector2::new((content.size.x - indent).max(0.0), content.size.y),
+            )
+            .inset(layout.margin);
+            let fill_size = Vector2::new(
+                if layout.h_size == UiSizeMode::Fill {
+                    row_content.size.x
+                } else {
+                    0.0
+                },
+                0.0,
+            );
+            let size = self.resolve_ui_size(row.node, row_content.size, Some(fill_size));
+            let center = Vector2::new(
+                row_content.min().x + size.x * 0.5,
+                y - layout.margin.top - size.y * 0.5,
+            ) + transform.translation;
+            computed.insert(row.node, ComputedUiRect::new(center, size));
+            y -= size.y + layout.margin.vertical() + tree.v_spacing;
+        }
+    }
+
+    fn ui_tree_owner(&self, child: NodeID) -> Option<NodeID> {
+        self.nodes.iter().find_map(|(id, node)| {
+            let SceneNodeData::UiTreeList(tree) = &node.data else {
+                return None;
+            };
+            ui_tree_contains(tree, child).then_some(id)
+        })
+    }
+
+    fn is_effectively_visible_for_ui(&self, node: NodeID) -> bool {
+        if let Some(tree) = self.ui_tree_owner(node) {
+            return self
+                .nodes
+                .get(node)
+                .is_some_and(|scene_node| Self::node_local_visible(&scene_node.data))
+                && self
+                    .nodes
+                    .get(tree)
+                    .and_then(|scene_node| match &scene_node.data {
+                        SceneNodeData::UiTreeList(tree) => {
+                            Some(ui_tree_visible_contains(tree, node))
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or(false)
+                && self.is_effectively_visible(tree);
+        }
+        self.is_effectively_visible(node)
+    }
+
     fn resolve_ui_size(
         &self,
         node: NodeID,
@@ -1278,7 +1370,9 @@ impl Runtime {
         };
         let text = ui_text_measure(&scene_node.data);
         let children = scene_node.get_children_ids();
-        let child_size = if let Some(auto) = ui_auto_layout_from_data(&scene_node.data) {
+        let child_size = if let SceneNodeData::UiTreeList(tree) = &scene_node.data {
+            self.ui_tree_content_size(tree, available)
+        } else if let Some(auto) = ui_auto_layout_from_data(&scene_node.data) {
             self.auto_layout_content_size(children, available, auto)
         } else {
             self.absolute_children_content_size(children, available)
@@ -1404,6 +1498,32 @@ impl Runtime {
             size.y = size.y.max(child_size.y + layout.margin.vertical());
         }
         size
+    }
+
+    fn ui_tree_content_size(&self, tree: &perro_ui::UiTreeList, available: Vector2) -> Vector2 {
+        let mut width = 0.0_f32;
+        let mut height = 0.0_f32;
+        let mut count = 0_u32;
+        for row in ui_tree_visible_rows(tree) {
+            let Some(layout) = self
+                .nodes
+                .get(row.node)
+                .and_then(|node| ui_root_from_data(&node.data))
+                .and_then(|ui| ui.visible.then_some(&ui.layout))
+            else {
+                continue;
+            };
+            let indent = tree.indent * row.depth as f32;
+            let child_available = Vector2::new((available.x - indent).max(0.0), available.y);
+            let child_size = self.resolve_ui_size(row.node, child_available, None);
+            width = width.max(indent + child_size.x + layout.margin.horizontal());
+            height += child_size.y + layout.margin.vertical();
+            count += 1;
+        }
+        if count > 1 {
+            height += tree.v_spacing * (count - 1) as f32;
+        }
+        Vector2::new(width, height)
     }
 
     fn h_fill_width(&self, children: &[NodeID], width: f32, spacing: f32) -> f32 {
@@ -1565,6 +1685,7 @@ fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiHLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiVLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiGrid(node) => Some(&node.base),
+        SceneNodeData::UiTreeList(node) => Some(&node.base),
         _ => None,
     }
 }
@@ -1609,6 +1730,69 @@ fn ui_auto_layout_from_data(data: &SceneNodeData) -> Option<UiAutoLayout> {
         }),
         _ => None,
     }
+}
+
+#[derive(Clone, Copy)]
+struct UiTreeRow {
+    node: NodeID,
+    depth: u32,
+}
+
+fn ui_tree_visible_rows(tree: &perro_ui::UiTreeList) -> Vec<UiTreeRow> {
+    let mut rows = Vec::new();
+    let mut stack = Vec::new();
+    let mut seen = Vec::new();
+    for &root in tree.roots.iter().rev() {
+        stack.push((root, 0_u32));
+    }
+    while let Some((node, depth)) = stack.pop() {
+        if seen.contains(&node) {
+            continue;
+        }
+        seen.push(node);
+        rows.push(UiTreeRow { node, depth });
+        if tree.is_collapsed(node) {
+            continue;
+        }
+        for &child in tree.children_of(node).iter().rev() {
+            stack.push((child, depth.saturating_add(1)));
+        }
+    }
+    rows
+}
+
+fn ui_tree_contains(tree: &perro_ui::UiTreeList, child: NodeID) -> bool {
+    tree.roots.contains(&child)
+        || tree
+            .branches
+            .iter()
+            .any(|branch| branch.children.contains(&child))
+}
+
+fn ui_tree_visible_contains(tree: &perro_ui::UiTreeList, child: NodeID) -> bool {
+    ui_tree_visible_rows(tree)
+        .into_iter()
+        .any(|row| row.node == child)
+}
+
+fn ui_tree_all_nodes(tree: &perro_ui::UiTreeList) -> Vec<NodeID> {
+    let mut nodes = Vec::new();
+    for &root in &tree.roots {
+        if !nodes.contains(&root) {
+            nodes.push(root);
+        }
+    }
+    for branch in &tree.branches {
+        if !nodes.contains(&branch.parent) {
+            nodes.push(branch.parent);
+        }
+        for &child in &branch.children {
+            if !nodes.contains(&child) {
+                nodes.push(child);
+            }
+        }
+    }
+    nodes
 }
 
 fn ui_fill_width(layout: &UiLayoutData, parent_layout: &UiLayoutData, available: f32) -> f32 {
@@ -2426,7 +2610,7 @@ mod tests {
     use perro_nodes::{SceneNode, SceneNodeData};
     use perro_runtime_context::sub_apis::NodeAPI;
     use perro_structs::Color;
-    use perro_ui::{UiAnchor, UiGrid, UiHLayout, UiPanel, UiVLayout, UiVector2};
+    use perro_ui::{UiAnchor, UiGrid, UiHLayout, UiPanel, UiTreeList, UiVLayout, UiVector2};
 
     #[test]
     fn unchanged_ui_skips_redundant_upsert() {
@@ -3149,6 +3333,91 @@ mod tests {
 
         assert_eq!(timing.affected_nodes, 2);
         assert_eq!(timing.command_nodes, 2);
+    }
+
+    #[test]
+    fn tree_list_places_referenced_nodes_without_reparenting() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut tree = UiTreeList::new();
+        tree.layout.size = UiVector2::pixels(300.0, 200.0);
+        tree.indent = 20.0;
+        tree.v_spacing = 4.0;
+        let tree_id = insert_ui_node(&mut runtime, SceneNodeData::UiTreeList(tree));
+
+        let root = insert_panel(&mut runtime, [100.0, 20.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        let child = insert_panel(&mut runtime, [80.0, 20.0], Color::new(0.2, 0.3, 0.4, 1.0));
+
+        let _ = runtime.with_node_mut::<UiTreeList, _, _>(tree_id, |tree| {
+            tree.set_roots(vec![root]);
+            tree.set_branch(root, vec![child]);
+        });
+        runtime.extract_render_ui_commands();
+
+        let root_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&root)
+            .expect("root rect exists");
+        let child_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&child)
+            .expect("child rect exists");
+
+        assert_eq!(root_rect.center, Vector2::new(-100.0, 90.0));
+        assert_eq!(child_rect.center, Vector2::new(-90.0, 66.0));
+        assert!(
+            runtime
+                .nodes
+                .get(root)
+                .expect("root exists")
+                .parent
+                .is_nil()
+        );
+        assert!(
+            runtime
+                .nodes
+                .get(child)
+                .expect("child exists")
+                .parent
+                .is_nil()
+        );
+    }
+
+    #[test]
+    fn tree_list_collapse_removes_hidden_branch_commands() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut tree = UiTreeList::new();
+        tree.layout.size = UiVector2::pixels(300.0, 200.0);
+        let tree_id = insert_ui_node(&mut runtime, SceneNodeData::UiTreeList(tree));
+
+        let root = insert_panel(&mut runtime, [100.0, 20.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        let child = insert_panel(&mut runtime, [80.0, 20.0], Color::new(0.2, 0.3, 0.4, 1.0));
+        let _ = runtime.with_node_mut::<UiTreeList, _, _>(tree_id, |tree| {
+            tree.set_roots(vec![root]);
+            tree.set_branch(root, vec![child]);
+        });
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        let _ = runtime.with_node_mut::<UiTreeList, _, _>(tree_id, |tree| {
+            tree.collapsed.push(root);
+        });
+        runtime.extract_render_ui_commands();
+
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == child
+        )));
+        assert!(!runtime.render_ui.prev_visible.contains(&child));
     }
 
     fn insert_panel(runtime: &mut Runtime, size: [f32; 2], fill: Color) -> NodeID {

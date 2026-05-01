@@ -19,7 +19,7 @@ use perro_ids::{NodeID, TagID};
 use perro_structs::{Transform2D, Transform3D};
 use perro_ui::{
     UiBox, UiButton, UiGrid, UiHLayout, UiLabel, UiLayout, UiNodeBase, UiPanel, UiTextBlock,
-    UiTextBox, UiVLayout,
+    UiTextBox, UiTreeList, UiVLayout,
 };
 use std::borrow::Cow;
 
@@ -840,7 +840,8 @@ define_scene_nodes! {
         UiLayout => (UiBox, UiLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         UiHLayout => (UiBox, UiHLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         UiVLayout => (UiBox, UiVLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiGrid => (UiBox, UiGrid, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False)
+        UiGrid => (UiBox, UiGrid, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiTreeList => (UiBox, UiTreeList, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False)
     }
     resource: {
         AnimationPlayer => (None, AnimationPlayer, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False)

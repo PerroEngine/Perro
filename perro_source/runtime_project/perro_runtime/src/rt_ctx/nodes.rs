@@ -218,6 +218,15 @@ fn classify_ui_node_payload_change(before: &SceneNodeData, after: &SceneNodeData
         {
             Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
         }
+        (SceneNodeData::UiTreeList(before), SceneNodeData::UiTreeList(after))
+            if before.roots != after.roots
+                || before.branches != after.branches
+                || before.collapsed != after.collapsed
+                || before.indent != after.indent
+                || before.v_spacing != after.v_spacing =>
+        {
+            Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
+        }
         _ => 0,
     }
 }
@@ -261,6 +270,7 @@ fn ui_base_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiHLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiVLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiGrid(node) => Some(&node.base),
+        SceneNodeData::UiTreeList(node) => Some(&node.base),
         _ => None,
     }
 }

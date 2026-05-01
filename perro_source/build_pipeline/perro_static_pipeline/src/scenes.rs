@@ -349,6 +349,7 @@ fn emit_static_node_type(ty: &str) -> Result<&'static str, StaticPipelineError> 
         "UiVLayout" => Ok("UiVLayout"),
         "UiVBox" => Ok("UiVBox"),
         "UiGrid" => Ok("UiGrid"),
+        "UiTreeList" => Ok("UiTreeList"),
         "AnimationPlayer" => Ok("AnimationPlayer"),
         _ => Err(StaticPipelineError::SceneParse(format!(
             "unsupported static node type `{ty}`"
@@ -545,6 +546,7 @@ fn is_static_ui_node(node_type: &str) -> bool {
             | "UiVLayout"
             | "UiVBox"
             | "UiGrid"
+            | "UiTreeList"
     )
 }
 
@@ -755,6 +757,7 @@ mod tests {
             "UiVLayout",
             "UiVBox",
             "UiGrid",
+            "UiTreeList",
             "AnimationPlayer",
         ];
 

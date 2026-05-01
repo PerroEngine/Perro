@@ -14,6 +14,7 @@ UiBox
 - UiHLayout
 - UiVLayout
 - UiGrid
+- UiTreeList
 ```
 
 ## Nodes
@@ -65,6 +66,16 @@ UiBox
 
 - Invisible grid layout container.
 - Uses `columns`, `h_spacing`, and `v_spacing`.
+
+`UiTreeList`
+
+- Invisible tree layout container.
+- Places UI nodes by referenced `NodeID`.
+- Referenced rows do not need to be scene children.
+- Uses `roots`, `branches`, `collapsed`, `indent`, and `v_spacing`.
+- `roots` are top-level row ids.
+- `branches` map a row id to child row ids.
+- `collapsed` hides child branches under a row id.
 
 ## Layout Fields
 
