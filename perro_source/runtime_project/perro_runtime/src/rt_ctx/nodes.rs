@@ -112,12 +112,10 @@ fn classify_ui_base_change(before: &UiBox, after: &UiBox) -> u16 {
 
 fn classify_ui_node_payload_change(before: &SceneNodeData, after: &SceneNodeData) -> u16 {
     match (before, after) {
-        (SceneNodeData::UiPanel(before), SceneNodeData::UiPanel(after)) => {
-            if before.style != after.style {
-                Runtime::UI_DIRTY_COMMANDS
-            } else {
-                0
-            }
+        (SceneNodeData::UiPanel(before), SceneNodeData::UiPanel(after))
+            if before.style != after.style =>
+        {
+            Runtime::UI_DIRTY_COMMANDS
         }
         (SceneNodeData::UiButton(before), SceneNodeData::UiButton(after)) => {
             let mut flags = 0;
@@ -152,49 +150,37 @@ fn classify_ui_node_payload_change(before: &SceneNodeData, after: &SceneNodeData
         (SceneNodeData::UiTextBlock(before), SceneNodeData::UiTextBlock(after)) => {
             classify_text_edit_change(&before.inner, &after.inner)
         }
-        (SceneNodeData::UiLayout(before), SceneNodeData::UiLayout(after)) => {
+        (SceneNodeData::UiLayout(before), SceneNodeData::UiLayout(after))
             if before.inner.mode != after.inner.mode
                 || before.inner.spacing != after.inner.spacing
                 || before.inner.h_spacing != after.inner.h_spacing
                 || before.inner.v_spacing != after.inner.v_spacing
-                || before.inner.columns != after.inner.columns
-            {
-                Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
-            } else {
-                0
-            }
+                || before.inner.columns != after.inner.columns =>
+        {
+            Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
         }
-        (SceneNodeData::UiHLayout(before), SceneNodeData::UiHLayout(after)) => {
+        (SceneNodeData::UiHLayout(before), SceneNodeData::UiHLayout(after))
             if before.inner.spacing != after.inner.spacing
                 || before.inner.h_spacing != after.inner.h_spacing
                 || before.inner.v_spacing != after.inner.v_spacing
-                || before.inner.columns != after.inner.columns
-            {
-                Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
-            } else {
-                0
-            }
+                || before.inner.columns != after.inner.columns =>
+        {
+            Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
         }
-        (SceneNodeData::UiVLayout(before), SceneNodeData::UiVLayout(after)) => {
+        (SceneNodeData::UiVLayout(before), SceneNodeData::UiVLayout(after))
             if before.inner.spacing != after.inner.spacing
                 || before.inner.h_spacing != after.inner.h_spacing
                 || before.inner.v_spacing != after.inner.v_spacing
-                || before.inner.columns != after.inner.columns
-            {
-                Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
-            } else {
-                0
-            }
+                || before.inner.columns != after.inner.columns =>
+        {
+            Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
         }
-        (SceneNodeData::UiGrid(before), SceneNodeData::UiGrid(after)) => {
+        (SceneNodeData::UiGrid(before), SceneNodeData::UiGrid(after))
             if before.columns != after.columns
                 || before.h_spacing != after.h_spacing
-                || before.v_spacing != after.v_spacing
-            {
-                Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
-            } else {
-                0
-            }
+                || before.v_spacing != after.v_spacing =>
+        {
+            Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
         }
         _ => 0,
     }

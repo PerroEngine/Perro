@@ -477,10 +477,10 @@ impl Runtime {
         let Some(focused) = self.render_ui.focused_text_edit else {
             return;
         };
-        if !self
+        if self
             .nodes
             .get(focused)
-            .is_some_and(|node| text_edit_ref(&node.data).is_some())
+            .is_none_or(|node| text_edit_ref(&node.data).is_none())
         {
             self.render_ui.focused_text_edit = None;
             self.render_ui.pressed_text_edit = None;
@@ -2276,12 +2276,10 @@ fn normalize_text_input(text: &str, multiline: bool) -> String {
 }
 
 fn index_at_col(text: &str, line: TextRange, col: usize) -> usize {
-    let mut count = 0usize;
-    for (idx, _) in text[line.start..line.end].char_indices() {
+    for (count, (idx, _)) in text[line.start..line.end].char_indices().enumerate() {
         if count == col {
             return line.start + idx;
         }
-        count += 1;
     }
     line.end
 }
