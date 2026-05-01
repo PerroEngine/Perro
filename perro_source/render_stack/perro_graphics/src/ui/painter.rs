@@ -2,8 +2,8 @@ use super::renderer::{UiDraw, UiLabelDraw, UiPanelDraw, UiTextEditDraw};
 use ahash::AHashMap;
 use epaint::{
     AlphaFromCoverage, ClippedPrimitive, ClippedShape, Color32, CornerRadius, FontFamily, FontId,
-    Fonts, Primitive, Rect, RectShape, Shape, Stroke, StrokeKind, TessellationOptions, Tessellator,
-    emath::Rot2, pos2, text::FontDefinitions, textures::TexturesDelta, vec2,
+    Fonts, Galley, Primitive, Rect, RectShape, Shape, Stroke, StrokeKind, TessellationOptions,
+    Tessellator, emath::Rot2, pos2, text::FontDefinitions, textures::TexturesDelta, vec2,
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{UiRectState, UiTextAlignState};
@@ -240,8 +240,20 @@ fn push_text_edit_shapes(
     } else {
         f32::INFINITY
     };
+    let edit_galley = if edit.focused {
+        Some(fonts.with_pixels_per_point(1.0).layout(
+            edit.text.to_string(),
+            FontId::new(edit.font_size, FontFamily::Monospace),
+            color32(edit.color),
+            wrap_width,
+        ))
+    } else {
+        None
+    };
     if edit.focused {
-        push_selection_shapes(edit, clip_rect, draw_pos, out);
+        if let Some(galley) = edit_galley.as_deref() {
+            push_selection_shapes(edit, galley, clip_rect, draw_pos, out);
+        }
     }
     if !body.is_empty() && valid_color(color) {
         let galley = fonts.with_pixels_per_point(1.0).layout(
@@ -259,11 +271,14 @@ fn push_text_edit_shapes(
     if !edit.focused {
         return;
     }
-    push_caret_shape(edit, clip_rect, draw_pos, out);
+    if let Some(galley) = edit_galley.as_deref() {
+        push_caret_shape(edit, galley, clip_rect, draw_pos, out);
+    }
 }
 
 fn push_selection_shapes(
     edit: &UiTextEditDraw,
+    galley: &Galley,
     clip_rect: Rect,
     origin: epaint::Pos2,
     out: &mut Vec<ClippedShape>,
@@ -276,22 +291,21 @@ fn push_selection_shapes(
     } else {
         (edit.anchor, edit.caret)
     };
-    let line_h = (edit.font_size * 1.25).max(1.0);
-    let char_w = text_char_width(edit);
-    for (line_i, line) in text_lines(edit.text.as_ref(), edit.multiline)
-        .iter()
-        .enumerate()
-    {
-        let line_start = line.start;
-        let line_end = line.end;
-        let sel_start = start.max(line_start).min(line_end);
-        let sel_end = end.max(line_start).min(line_end);
+    for row in galley_text_rows(edit.text.as_ref(), galley) {
+        let sel_start = start.max(row.start).min(row.end);
+        let sel_end = end.max(row.start).min(row.end);
         if sel_start >= sel_end {
             continue;
         }
-        let x0 = origin.x + byte_col(&edit.text, line_start, sel_start) as f32 * char_w;
-        let x1 = origin.x + byte_col(&edit.text, line_start, sel_end) as f32 * char_w;
-        let y0 = origin.y + line_i as f32 * line_h;
+        let placed = &galley.rows[row.index];
+        let x0 = origin.x
+            + placed.pos.x
+            + placed.x_offset(byte_col(edit.text.as_ref(), row.start, sel_start));
+        let x1 = origin.x
+            + placed.pos.x
+            + placed.x_offset(byte_col(edit.text.as_ref(), row.start, sel_end));
+        let y0 = origin.y + placed.pos.y;
+        let line_h = placed.height().max(1.0);
         let rect = Rect::from_min_max(pos2(x0, y0), pos2(x1.max(x0 + 1.0), y0 + line_h));
         out.push(ClippedShape {
             clip_rect,
@@ -306,6 +320,7 @@ fn push_selection_shapes(
 
 fn push_caret_shape(
     edit: &UiTextEditDraw,
+    galley: &Galley,
     clip_rect: Rect,
     origin: epaint::Pos2,
     out: &mut Vec<ClippedShape>,
@@ -313,32 +328,27 @@ fn push_caret_shape(
     if !valid_color(edit.caret_color) {
         return;
     }
-    let line_h = (edit.font_size * 1.25).max(1.0);
-    let char_w = text_char_width(edit);
     let caret = clamp_char_boundary(edit.text.as_ref(), edit.caret);
-    let mut line_index = 0usize;
-    let mut line_start = 0usize;
-    for (i, line) in text_lines(edit.text.as_ref(), edit.multiline)
-        .iter()
-        .enumerate()
-    {
-        if caret >= line.start && caret <= line.end {
-            line_index = i;
-            line_start = line.start;
+    for row in galley_text_rows(edit.text.as_ref(), galley) {
+        if caret >= row.start && caret <= row.end {
+            let placed = &galley.rows[row.index];
+            let x = origin.x
+                + placed.pos.x
+                + placed.x_offset(byte_col(edit.text.as_ref(), row.start, caret));
+            let y = origin.y + placed.pos.y;
+            let line_h = placed.height().max(1.0);
+            let rect = Rect::from_min_max(pos2(x, y), pos2(x + 1.5, y + line_h));
+            out.push(ClippedShape {
+                clip_rect,
+                shape: Shape::Rect(RectShape::filled(
+                    rect,
+                    CornerRadius::ZERO,
+                    color32(edit.caret_color),
+                )),
+            });
             break;
         }
     }
-    let x = origin.x + byte_col(edit.text.as_ref(), line_start, caret) as f32 * char_w;
-    let y = origin.y + line_index as f32 * line_h;
-    let rect = Rect::from_min_max(pos2(x, y), pos2(x + 1.5, y + line_h));
-    out.push(ClippedShape {
-        clip_rect,
-        shape: Shape::Rect(RectShape::filled(
-            rect,
-            CornerRadius::ZERO,
-            color32(edit.caret_color),
-        )),
-    });
 }
 
 fn rotate_primitives(primitives: &mut [ClippedPrimitive], rotations: &[(f32, epaint::Pos2)]) {
@@ -456,33 +466,31 @@ fn viewport_rect(viewport: [f32; 2]) -> Rect {
 }
 
 #[derive(Clone, Copy)]
-struct TextLine {
+struct GalleyTextRow {
+    index: usize,
     start: usize,
     end: usize,
 }
 
-fn text_lines(text: &str, multiline: bool) -> Vec<TextLine> {
-    if text.is_empty() {
-        return vec![TextLine { start: 0, end: 0 }];
-    }
-    if !multiline {
-        return vec![TextLine {
-            start: 0,
-            end: text.len(),
-        }];
-    }
-    let mut out = Vec::new();
+fn galley_text_rows(text: &str, galley: &Galley) -> Vec<GalleyTextRow> {
+    let mut out = Vec::with_capacity(galley.rows.len());
     let mut start = 0usize;
-    for (idx, ch) in text.char_indices() {
-        if ch == '\n' {
-            out.push(TextLine { start, end: idx });
-            start = idx + ch.len_utf8();
-        }
+    for (index, row) in galley.rows.iter().enumerate() {
+        let end = advance_chars(text, start, row.char_count_excluding_newline());
+        out.push(GalleyTextRow { index, start, end });
+        start = if row.ends_with_newline {
+            advance_chars(text, end, 1)
+        } else {
+            end
+        };
     }
-    out.push(TextLine {
-        start,
-        end: text.len(),
-    });
+    if out.is_empty() {
+        out.push(GalleyTextRow {
+            index: 0,
+            start: 0,
+            end: 0,
+        });
+    }
     out
 }
 
@@ -492,14 +500,22 @@ fn byte_col(text: &str, start: usize, end: usize) -> usize {
     text[start.min(end)..end].chars().count()
 }
 
+fn advance_chars(text: &str, start: usize, count: usize) -> usize {
+    let start = clamp_char_boundary(text, start);
+    if count == 0 {
+        return start;
+    }
+    text[start..]
+        .char_indices()
+        .nth(count)
+        .map(|(idx, _)| start + idx)
+        .unwrap_or(text.len())
+}
+
 fn clamp_char_boundary(text: &str, mut index: usize) -> usize {
     index = index.min(text.len());
     while index > 0 && !text.is_char_boundary(index) {
         index -= 1;
     }
     index
-}
-
-fn text_char_width(edit: &UiTextEditDraw) -> f32 {
-    (edit.font_size * 0.6).max(1.0)
 }
