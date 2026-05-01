@@ -34,6 +34,7 @@ impl Runtime {
 
     pub(crate) fn run_start_schedule(&mut self) {
         let mut queued = std::mem::take(&mut self.script_runtime.pending_start_scripts);
+        let mut ran_start = false;
         for id in queued.drain(..) {
             let slot = id.index() as usize;
             let still_pending = self
@@ -48,8 +49,12 @@ impl Runtime {
             }
             self.script_runtime.pending_start_flags[slot] = None;
             self.call_start_script(id);
+            ran_start = true;
         }
         self.script_runtime.pending_start_scripts = queued;
+        if ran_start {
+            self.mark_ui_viewport_dirty();
+        }
     }
 
     pub(crate) fn run_update_schedule_timed(&mut self) -> UpdateScheduleTiming {

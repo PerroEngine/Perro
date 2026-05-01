@@ -71,6 +71,42 @@ impl Runtime {
             self.mark_ui_dirty(id, flags);
         }
     }
+
+    fn mark_ui_reparent_dirty(
+        &mut self,
+        child_id: perro_ids::NodeID,
+        old_parent: perro_ids::NodeID,
+        new_parent: perro_ids::NodeID,
+    ) {
+        let child_is_ui = self
+            .nodes
+            .get(child_id)
+            .is_some_and(|node| ui_base_from_data(&node.data).is_some());
+        if child_is_ui {
+            self.mark_ui_dirty(
+                child_id,
+                Self::UI_DIRTY_LAYOUT_SELF | Self::UI_DIRTY_LAYOUT_PARENT | Self::UI_DIRTY_COMMANDS,
+            );
+        }
+
+        for parent_id in [old_parent, new_parent] {
+            if parent_id.is_nil() {
+                continue;
+            }
+            let parent_is_ui = self
+                .nodes
+                .get(parent_id)
+                .is_some_and(|node| ui_base_from_data(&node.data).is_some());
+            if parent_is_ui {
+                self.mark_ui_dirty(
+                    parent_id,
+                    Self::UI_DIRTY_LAYOUT_SELF
+                        | Self::UI_DIRTY_LAYOUT_PARENT
+                        | Self::UI_DIRTY_COMMANDS,
+                );
+            }
+        }
+    }
 }
 
 fn classify_ui_base_change(before: &UiBox, after: &UiBox) -> u16 {
@@ -552,6 +588,7 @@ impl NodeAPI for Runtime {
         }
 
         self.mark_transform_dirty_recursive(child_id);
+        self.mark_ui_reparent_dirty(child_id, old_parent, parent_id);
         true
     }
 

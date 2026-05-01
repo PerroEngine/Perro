@@ -10,6 +10,7 @@ const ACTIVE_PROJECT: &str = "user://perro_editor_active_project.txt";
 const LIVE_VIEWPORT_WIDTH: f32 = 1920.0;
 const LIVE_VIEWPORT_HEIGHT: f32 = 1080.0;
 const LIVE_VIEWPORT_SCALE: f32 = 0.5;
+const LIVE_VIEWPORT_Z_FALLBACK_PARENT: i32 = 29;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SceneViewerMode {
@@ -712,6 +713,10 @@ fn apply_live_viewport_transform<RT: RuntimeAPI + ?Sized>(
     ctx: &mut RuntimeContext<'_, RT>,
     root: NodeID,
 ) {
+    let root_parent_z = get_node_parent_id!(ctx, root)
+        .and_then(|parent| ui_z_index(ctx, parent))
+        .unwrap_or(LIVE_VIEWPORT_Z_FALLBACK_PARENT);
+
     apply_ui_root_fit::<RT, UiPanel>(ctx, root);
     apply_ui_root_fit::<RT, UiButton>(ctx, root);
     apply_ui_root_fit::<RT, UiLabel>(ctx, root);
@@ -755,6 +760,8 @@ fn apply_live_viewport_transform<RT: RuntimeAPI + ?Sized>(
         apply_text_edit_scale::<RT, UiTextBlock>(ctx, id, LIVE_VIEWPORT_SCALE);
         apply_layout_spacing_scale(ctx, id, LIVE_VIEWPORT_SCALE);
     }
+
+    apply_live_viewport_z_tree(ctx, root, root_parent_z);
 }
 
 fn apply_ui_root_fit<RT, T>(ctx: &mut RuntimeContext<'_, RT>, root: NodeID)
@@ -769,7 +776,6 @@ where
         base.transform.position = UiVector2::ratio(0.5, 0.5);
         base.transform.pivot = UiVector2::ratio(0.5, 0.5);
         base.transform.scale = Vector2::new(LIVE_VIEWPORT_SCALE, LIVE_VIEWPORT_SCALE);
-        base.layout.z_index = 20;
         base.input_enabled = false;
         base.mouse_filter = UiMouseFilter::Ignore;
     });
@@ -784,7 +790,6 @@ where
         let base = node.ui_base_mut();
         base.input_enabled = false;
         base.mouse_filter = UiMouseFilter::Ignore;
-        base.layout.z_index = 20;
         scale_ui_vector2(&mut base.layout.size, scale);
         base.layout.min_size *= scale;
         base.layout.max_size *= scale;
@@ -798,6 +803,43 @@ where
         base.layout.padding.right *= scale;
         base.layout.padding.bottom *= scale;
     });
+}
+
+fn apply_live_viewport_z_tree<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    node: NodeID,
+    parent_z: i32,
+) {
+    let own_z = ui_z_index(ctx, node).unwrap_or(0);
+    let z = parent_z.saturating_add(1).saturating_add(own_z);
+    set_ui_z_index(ctx, node, z);
+    for child in get_children!(ctx, node) {
+        apply_live_viewport_z_tree(ctx, child, z);
+    }
+}
+
+fn ui_z_index<RT: RuntimeAPI + ?Sized>(ctx: &mut RuntimeContext<'_, RT>, id: NodeID) -> Option<i32> {
+    with_node!(ctx, UiPanel, id, |node| Some(node.ui_base().layout.z_index))
+        .or_else(|| with_node!(ctx, UiButton, id, |node| Some(node.ui_base().layout.z_index)))
+        .or_else(|| with_node!(ctx, UiLabel, id, |node| Some(node.ui_base().layout.z_index)))
+        .or_else(|| with_node!(ctx, UiTextBox, id, |node| Some(node.ui_base().layout.z_index)))
+        .or_else(|| with_node!(ctx, UiTextBlock, id, |node| Some(node.ui_base().layout.z_index)))
+        .or_else(|| with_node!(ctx, UiLayout, id, |node| Some(node.ui_base().layout.z_index)))
+        .or_else(|| with_node!(ctx, UiHLayout, id, |node| Some(node.ui_base().layout.z_index)))
+        .or_else(|| with_node!(ctx, UiVLayout, id, |node| Some(node.ui_base().layout.z_index)))
+        .or_else(|| with_node!(ctx, UiGrid, id, |node| Some(node.ui_base().layout.z_index)))
+}
+
+fn set_ui_z_index<RT: RuntimeAPI + ?Sized>(ctx: &mut RuntimeContext<'_, RT>, id: NodeID, z: i32) {
+    let _ = with_node_mut!(ctx, UiPanel, id, |node| node.ui_base_mut().layout.z_index = z);
+    let _ = with_node_mut!(ctx, UiButton, id, |node| node.ui_base_mut().layout.z_index = z);
+    let _ = with_node_mut!(ctx, UiLabel, id, |node| node.ui_base_mut().layout.z_index = z);
+    let _ = with_node_mut!(ctx, UiTextBox, id, |node| node.ui_base_mut().layout.z_index = z);
+    let _ = with_node_mut!(ctx, UiTextBlock, id, |node| node.ui_base_mut().layout.z_index = z);
+    let _ = with_node_mut!(ctx, UiLayout, id, |node| node.ui_base_mut().layout.z_index = z);
+    let _ = with_node_mut!(ctx, UiHLayout, id, |node| node.ui_base_mut().layout.z_index = z);
+    let _ = with_node_mut!(ctx, UiVLayout, id, |node| node.ui_base_mut().layout.z_index = z);
+    let _ = with_node_mut!(ctx, UiGrid, id, |node| node.ui_base_mut().layout.z_index = z);
 }
 
 fn scale_ui_vector2(value: &mut UiVector2, scale: f32) {

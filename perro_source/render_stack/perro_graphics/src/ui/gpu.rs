@@ -160,7 +160,11 @@ impl GpuUi {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: Some("fs_main"),
+                entry_point: Some(if output_format.is_srgb() {
+                    "fs_main_linear_framebuffer"
+                } else {
+                    "fs_main_gamma_framebuffer"
+                }),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: output_format,
                     blend: Some(wgpu::BlendState {
@@ -567,8 +571,21 @@ fn vs_main(in: VsIn) -> VsOut {
 }
 
 @fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+fn fs_main_gamma_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
     return textureSample(font_tex, font_sampler, in.uv) * in.color;
+}
+
+fn linear_from_gamma_rgb(srgb: vec3<f32>) -> vec3<f32> {
+    let cutoff = srgb < vec3<f32>(0.04045);
+    let lower = srgb / vec3<f32>(12.92);
+    let higher = pow((srgb + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
+    return select(higher, lower, cutoff);
+}
+
+@fragment
+fn fs_main_linear_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
+    let gamma = textureSample(font_tex, font_sampler, in.uv) * in.color;
+    return vec4<f32>(linear_from_gamma_rgb(gamma.rgb), gamma.a);
 }
 "#;
 

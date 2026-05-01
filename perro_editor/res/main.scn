@@ -1,3 +1,31 @@
+@col_bg            = "#101318"
+@col_root_stroke   = "#2B333F"
+@col_top           = "#191F27"
+@col_top_stroke    = "#384353"
+@col_surface       = "#171C23"
+@col_surface_alt   = "#151A21"
+@col_border        = "#323D4B"
+@col_field         = "#202733"
+@col_field_focus   = "#1B222D"
+@col_field_stroke  = "#4B596B"
+@col_focus         = "#8FB3E8"
+@col_green         = "#2D5A4C"
+@col_green_hover   = "#377060"
+@col_green_press   = "#22453A"
+@col_green_border  = "#6FB99F"
+@col_green_text    = "#ECFFF8"
+@col_blue          = "#34506B"
+@col_blue_hover    = "#406383"
+@col_blue_press    = "#273D53"
+@col_blue_border   = "#7FA4CB"
+@col_blue_text     = "#EEF6FF"
+@col_button_hover  = "#2A3442"
+@col_button_press  = "#171D26"
+@col_text          = "#E9EEF6"
+@col_muted         = "#9FAABD"
+@col_item_text     = "#C9D3E2"
+@col_deep          = "#11161D"
+
 @root = project_manager
 
 [project_manager]
@@ -5,8 +33,8 @@ name = "ProjectManager"
 script = "res://scripts/project_manager.rs"
 [UiPanel]
     size_ratio = (1.0, 1.0)
-    fill = "#101318"
-    stroke = "#2B333F"
+    fill = @col_bg
+    stroke = @col_root_stroke
     stroke_width = 1
     padding = (0, 0, 0, 0)
 [/UiPanel]
@@ -20,8 +48,8 @@ parent = @root
     size_ratio = (0.96, 0.09)
     min_h = 72
     max_h = 86
-    fill = "#191F27"
-    stroke = "#384353"
+    fill = @col_top
+    stroke = @col_top_stroke
     corner_radius = 8
     padding = (24, 12, 24, 12)
 [/UiPanel]
@@ -34,7 +62,7 @@ parent = top_bar
     position = (270, 0)
     text = "Perro Editor"
     font_size = 34
-    color = "#E9EEF6"
+    color = @col_text
     size = (520, 48)
 [/UiLabel]
 [/title]
@@ -46,7 +74,7 @@ parent = top_bar
     position = (-420, 0)
     text = "Pick project"
     font_size = 18
-    color = "#9FAABD"
+    color = @col_muted
     size = (760, 36)
 [/UiLabel]
 [/status]
@@ -66,8 +94,8 @@ parent = @root
 parent = content
 [UiPanel]
     size = (640, 800)
-    fill = "#171C23"
-    stroke = "#323D4B"
+    fill = @col_surface
+    stroke = @col_border
     corner_radius = 8
     padding = (22, 22, 22, 22)
 [/UiPanel]
@@ -87,7 +115,7 @@ parent = left_stack
 [UiLabel]
     text = "New project"
     font_size = 26
-    color = "#E9EEF6"
+    color = @col_text
     size = (540, 42)
 [/UiLabel]
 [/new_title]
@@ -99,10 +127,10 @@ parent = left_stack
     text = "MyGame"
     placeholder = "project name"
     font_size = 18
-    fill = "#202733"
-    stroke = "#4B596B"
-    focused_fill = "#1B222D"
-    focused_stroke = "#8FB3E8"
+    fill = @col_field
+    stroke = @col_field_stroke
+    focused_fill = @col_field_focus
+    focused_stroke = @col_focus
     text_padding = (12, 8, 12, 8)
     corner_radius = 6
 [/UiTextBox]
@@ -115,10 +143,10 @@ parent = left_stack
     text = "playground"
     placeholder = "parent folder"
     font_size = 18
-    fill = "#202733"
-    stroke = "#4B596B"
-    focused_fill = "#1B222D"
-    focused_stroke = "#8FB3E8"
+    fill = @col_field
+    stroke = @col_field_stroke
+    focused_fill = @col_field_focus
+    focused_stroke = @col_focus
     text_padding = (12, 8, 12, 8)
     corner_radius = 6
 [/UiTextBox]
@@ -128,10 +156,10 @@ parent = left_stack
 parent = left_stack
 [UiButton]
     size = (260, 50)
-    fill = "#2D5A4C"
-    hover_fill = "#377060"
-    pressed_fill = "#22453A"
-    stroke = "#6FB99F"
+    fill = @col_green
+    hover_fill = @col_green_hover
+    pressed_fill = @col_green_press
+    stroke = @col_green_border
     corner_radius = 6
 [/UiButton]
 [/create_project_button]
@@ -141,7 +169,7 @@ parent = create_project_button
 [UiLabel]
     text = "Create"
     font_size = 20
-    color = "#ECFFF8"
+    color = @col_green_text
     size_ratio = (1.0, 1.0)
 [/UiLabel]
 [/create_project_label]
@@ -151,7 +179,7 @@ parent = left_stack
 [UiLabel]
     text = "Open folder"
     font_size = 26
-    color = "#E9EEF6"
+    color = @col_text
     size = (540, 42)
     margin = (0, 18, 0, 0)
 [/UiLabel]
@@ -164,10 +192,10 @@ parent = left_stack
     text = "playground/UiTest"
     placeholder = "project folder path"
     font_size = 18
-    fill = "#202733"
-    stroke = "#4B596B"
-    focused_fill = "#1B222D"
-    focused_stroke = "#8FB3E8"
+    fill = @col_field
+    stroke = @col_field_stroke
+    focused_fill = @col_field_focus
+    focused_stroke = @col_focus
     text_padding = (12, 8, 12, 8)
     corner_radius = 6
 [/UiTextBox]
@@ -177,10 +205,10 @@ parent = left_stack
 parent = left_stack
 [UiButton]
     size = (260, 50)
-    fill = "#34506B"
-    hover_fill = "#406383"
-    pressed_fill = "#273D53"
-    stroke = "#7FA4CB"
+    fill = @col_blue
+    hover_fill = @col_blue_hover
+    pressed_fill = @col_blue_press
+    stroke = @col_blue_border
     corner_radius = 6
 [/UiButton]
 [/open_project_button]
@@ -190,7 +218,7 @@ parent = open_project_button
 [UiLabel]
     text = "Open"
     font_size = 20
-    color = "#EEF6FF"
+    color = @col_blue_text
     size_ratio = (1.0, 1.0)
 [/UiLabel]
 [/open_project_label]
@@ -199,8 +227,8 @@ parent = open_project_button
 parent = content
 [UiPanel]
     size = (1040, 800)
-    fill = "#151A21"
-    stroke = "#323D4B"
+    fill = @col_surface_alt
+    stroke = @col_border
     corner_radius = 8
     padding = (22, 22, 22, 22)
 [/UiPanel]
@@ -220,7 +248,7 @@ parent = right_stack
 [UiLabel]
     text = "Recent projects"
     font_size = 26
-    color = "#E9EEF6"
+    color = @col_text
     size = (900, 42)
 [/UiLabel]
 [/recent_title]
@@ -229,10 +257,10 @@ parent = right_stack
 parent = right_stack
 [UiButton]
     size = (900, 58)
-    fill = "#202733"
-    hover_fill = "#2A3442"
-    pressed_fill = "#171D26"
-    stroke = "#4B596B"
+    fill = @col_field
+    hover_fill = @col_button_hover
+    pressed_fill = @col_button_press
+    stroke = @col_field_stroke
     corner_radius = 6
 [/UiButton]
 [/recent_0]
@@ -242,7 +270,7 @@ parent = recent_0
 [UiLabel]
     text = "No recent project"
     font_size = 18
-    color = "#C9D3E2"
+    color = @col_item_text
     size_ratio = (1.0, 1.0)
 [/UiLabel]
 [/recent_0_label]
@@ -251,10 +279,10 @@ parent = recent_0
 parent = right_stack
 [UiButton]
     size = (900, 58)
-    fill = "#202733"
-    hover_fill = "#2A3442"
-    pressed_fill = "#171D26"
-    stroke = "#4B596B"
+    fill = @col_field
+    hover_fill = @col_button_hover
+    pressed_fill = @col_button_press
+    stroke = @col_field_stroke
     corner_radius = 6
 [/UiButton]
 [/recent_1]
@@ -264,7 +292,7 @@ parent = recent_1
 [UiLabel]
     text = "No recent project"
     font_size = 18
-    color = "#C9D3E2"
+    color = @col_item_text
     size_ratio = (1.0, 1.0)
 [/UiLabel]
 [/recent_1_label]
@@ -273,10 +301,10 @@ parent = recent_1
 parent = right_stack
 [UiButton]
     size = (900, 58)
-    fill = "#202733"
-    hover_fill = "#2A3442"
-    pressed_fill = "#171D26"
-    stroke = "#4B596B"
+    fill = @col_field
+    hover_fill = @col_button_hover
+    pressed_fill = @col_button_press
+    stroke = @col_field_stroke
     corner_radius = 6
 [/UiButton]
 [/recent_2]
@@ -286,7 +314,7 @@ parent = recent_2
 [UiLabel]
     text = "No recent project"
     font_size = 18
-    color = "#C9D3E2"
+    color = @col_item_text
     size_ratio = (1.0, 1.0)
 [/UiLabel]
 [/recent_2_label]
@@ -298,8 +326,8 @@ parent = right_stack
     text = "Use path boxes for now.\nCreate writes project files in editor.\nOpen checks project.toml then loads editor scene.\nEditor reads scene doc + loads live edit scene with runtime scene loader."
     font_size = 18
     editable = false
-    fill = "#11161D"
-    stroke = "#2B333F"
+    fill = @col_deep
+    stroke = @col_root_stroke
     text_padding = (14, 12, 14, 12)
     corner_radius = 6
 [/UiTextBlock]

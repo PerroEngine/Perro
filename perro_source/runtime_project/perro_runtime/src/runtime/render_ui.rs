@@ -2424,8 +2424,9 @@ fn text_line_height(edit: &UiTextEdit) -> f32 {
 mod tests {
     use super::*;
     use perro_nodes::{SceneNode, SceneNodeData};
+    use perro_runtime_context::sub_apis::NodeAPI;
     use perro_structs::Color;
-    use perro_ui::{UiAnchor, UiGrid, UiHLayout, UiPanel, UiVector2};
+    use perro_ui::{UiAnchor, UiGrid, UiHLayout, UiPanel, UiVLayout, UiVector2};
 
     #[test]
     fn unchanged_ui_skips_redundant_upsert() {
@@ -2499,6 +2500,71 @@ mod tests {
         assert!(
             matches!(&commands[0], RenderCommand::Ui(UiCommand::UpsertPanel { node: n, fill, .. }) if *n == node && *fill == [0.8, 0.1, 0.1, 1.0])
         );
+    }
+
+    #[test]
+    fn ui_reparent_marks_layout_dirty_without_resize() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut parent_a = UiPanel::new();
+        parent_a.layout.size = UiVector2::pixels(200.0, 200.0);
+        parent_a.transform.translation.x = -100.0;
+        let parent_a = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_a));
+
+        let mut parent_b = UiPanel::new();
+        parent_b.layout.size = UiVector2::pixels(200.0, 200.0);
+        parent_b.transform.translation.x = 100.0;
+        let parent_b = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_b));
+
+        let child = insert_panel(&mut runtime, [40.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        attach_child(&mut runtime, parent_a, child);
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        assert!(runtime.reparent(parent_b, child));
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, .. })
+                if *node == child && rect.center == [100.0, 0.0]
+        )));
+    }
+
+    #[test]
+    fn ui_child_added_to_retained_layout_renders_without_resize() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut layout = UiVLayout::new();
+        layout.layout.size = UiVector2::pixels(300.0, 200.0);
+        let layout = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(layout));
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        let child = runtime.create::<UiPanel>();
+        assert!(runtime.reparent(layout, child));
+        let _ = runtime.with_node_mut::<UiPanel, _, _>(child, |panel| {
+            panel.layout.size = UiVector2::pixels(80.0, 40.0);
+            panel.style.fill = Color::new(0.7, 0.2, 0.1, 1.0);
+        });
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, fill, .. })
+                if *node == child && rect.size == [80.0, 40.0] && *fill == [0.7, 0.2, 0.1, 1.0]
+        )));
     }
 
     #[test]

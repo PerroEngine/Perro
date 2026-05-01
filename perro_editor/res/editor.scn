@@ -1,3 +1,24 @@
+@col_bg            = "#101318"
+@col_surface       = "#171C23"
+@col_raised        = "#191F27"
+@col_border        = "#323D4B"
+@col_panel         = "#202733"
+@col_orange        = "#e87c10"
+@col_orange_bg     = "#1c0e04"
+@col_orange_border = "#5a2808"
+@col_green         = "#4ac980"
+@col_green_bg      = "#0a1c10"
+@col_green_border  = "#1a5830"
+@col_blue          = "#EEF6FF"
+@col_blue_bg       = "#34506B"
+@col_blue_border   = "#7FA4CB"
+@col_red           = "#e05060"
+@col_red_bg        = "#1c0a0c"
+@col_red_border    = "#581820"
+@col_text          = "#E9EEF6"
+@col_muted         = "#9FAABD"
+@col_deep          = "#11161D"
+
 @root = editor_root
 
 [editor_root]
@@ -7,14 +28,13 @@ script = "res://scripts/editor.rs"
     anchor = "center"
     position_ratio = (0.5, 0.5)
     size_ratio = (1.0, 1.0)
-    fill = "#11151B"
-    stroke = "#2D3642"
+    fill = @col_bg
+    stroke = @col_raised
     stroke_width = 1
     padding = (0, 0, 0, 0)
 [/UiPanel]
 [/editor_root]
 
-# Root vertical stack — top bar / workspace / bottom bar
 [root_vlayout]
 parent = @root
 [UiVLayout]
@@ -34,14 +54,14 @@ parent = @root
 [top_bar]
 parent = root_vlayout
 [UiPanel]
-    size = (100, 52)
+    size = (100, 40)
     h_size = "fill"
     v_size = "fixed"
-    fill = "#181E26"
-    stroke = "#384353"
+    fill = @col_raised
+    stroke = @col_border
     stroke_width = 1
     corner_radius = 0
-    padding = (16, 0, 16, 0)
+    padding = (8, 0, 8, 0)
     z_index = 10
 [/UiPanel]
 [/top_bar]
@@ -50,7 +70,7 @@ parent = root_vlayout
 parent = top_bar
 [UiHLayout]
     size_ratio = (1.0, 1.0)
-    spacing = 10
+    spacing = 6
     padding = (0, 0, 0, 0)
     h_align = "fill"
     v_align = "center"
@@ -62,62 +82,110 @@ parent = top_bar
 parent = top_bar_row
 [UiLabel]
     text = "No project"
-    font_size = 18
-    color = "#E9EEF6"
-    size = (220, 36)
+    font_size = 14
+    color = @col_text
+    size = (160, 28)
     h_size = "fill"
     h_align = "start"
     z_index = 12
 [/UiLabel]
 [/project_label]
 
-[play_button]
+[playback_buttons]
 parent = top_bar_row
-[UiButton]
-    size = (80, 34)
+[UiHLayout]
+    size = (152, 28)
     h_size = "fixed"
-    fill = "#2D5A4C"
-    hover_fill = "#377060"
-    pressed_fill = "#22453A"
-    stroke = "#6FB99F"
-    corner_radius = 5
+    v_size = "fixed"
+    spacing = 5
+    padding = (0, 0, 0, 0)
+    h_align = "center"
+    v_align = "center"
     z_index = 12
+[/UiHLayout]
+[/playback_buttons]
+
+[play_button]
+parent = playback_buttons
+[UiButton]
+    size = (72, 26)
+    h_size = "fixed"
+    style = {
+        fill = @col_green_bg
+        stroke = @col_green_border
+        stroke_width = 1
+        radius = "full"
+    }
+    hover = {
+        style = {
+            fill = "#112818"
+            stroke = @col_green_border
+            stroke_width = 1
+            radius = "full"
+        }
+    }
+    pressed = {
+        style = {
+            fill = "#060e08"
+            stroke = @col_green_border
+            stroke_width = 1
+            radius = "full"
+        }
+    }
+    z_index = 13
 [/UiButton]
 [/play_button]
 
 [play_button_label]
 parent = play_button
 [UiLabel]
-    text = "Play"
-    font_size = 15
-    color = "#ECFFF8"
+    text = "▶  Play"
+    font_size = 12
+    color = @col_green
     size_ratio = (1.0, 1.0)
-    z_index = 13
+    z_index = 14
 [/UiLabel]
 [/play_button_label]
 
 [stop_button]
-parent = top_bar_row
+parent = playback_buttons
 [UiButton]
-    size = (80, 34)
+    size = (72, 26)
     h_size = "fixed"
-    fill = "#674044"
-    hover_fill = "#7D4D52"
-    pressed_fill = "#4E3034"
-    stroke = "#C1848B"
-    corner_radius = 5
-    z_index = 12
+    style = {
+        fill = @col_red_bg
+        stroke = @col_red_border
+        stroke_width = 1
+        radius = "full"
+    }
+    hover = {
+        style = {
+            fill = "#280c10"
+            stroke = @col_red_border
+            stroke_width = 1
+            radius = "full"
+        }
+    }
+    pressed = {
+        style = {
+            fill = "#100406"
+            stroke = @col_red_border
+            stroke_width = 1
+            radius = "full"
+        }
+    }
+    z_index = 13
 [/UiButton]
 [/stop_button]
 
 [stop_button_label]
 parent = stop_button
 [UiLabel]
-    text = "Stop"
-    font_size = 15
-    color = "#FFF0F1"
+    text = "■  Stop"
+    font_size = 12
+    color = @col_red
     size_ratio = (1.0, 1.0)
-    z_index = 13
+    z_index = 14
 [/UiLabel]
 [/stop_button_label]
 
@@ -125,9 +193,9 @@ parent = stop_button
 parent = top_bar_row
 [UiLabel]
     text = "Scene: n/a"
-    font_size = 15
-    color = "#AEB9C9"
-    size = (280, 32)
+    font_size = 12
+    color = @col_muted
+    size = (160, 28)
     h_size = "fill"
     h_align = "end"
     z_index = 12
@@ -135,7 +203,6 @@ parent = top_bar_row
 [/scene_label]
 
 # ── Workspace ─────────────────────────────────────────────────────────────────
-# This fills all remaining vertical space between top and bottom bars.
 
 [workspace]
 parent = root_vlayout
@@ -143,8 +210,8 @@ parent = root_vlayout
     size = (100, 100)
     h_size = "fill"
     v_size = "fill"
-    spacing = 6
-    padding = (6, 6, 6, 6)
+    spacing = 4
+    padding = (4, 4, 4, 4)
     h_align = "fill"
     v_align = "fill"
     z_index = 0
@@ -152,20 +219,19 @@ parent = root_vlayout
 [/workspace]
 
 # ── Left panel ────────────────────────────────────────────────────────────────
-# Fixed width, fills height. Contains scene graph (top) and filesystem (bottom).
 
 [left_panel]
 parent = workspace
 [UiPanel]
-    size = (260, 100)
+    size = (240, 100)
     h_size = "fixed"
     v_size = "fill"
-    min_w = 200
-    max_w = 320
-    fill = "#171C23"
-    stroke = "#323D4B"
+    min_w = 180
+    max_w = 300
+    fill = @col_surface
+    stroke = @col_border
     stroke_width = 1
-    corner_radius = 6
+    corner_radius = 7
     padding = (0, 0, 0, 0)
     z_index = 20
 [/UiPanel]
@@ -183,18 +249,16 @@ parent = left_panel
 [/UiVLayout]
 [/left_vlayout]
 
-# Scene graph section — top 58% of left panel
-
 [scene_section]
 parent = left_vlayout
 [UiPanel]
     size = (100, 100)
     h_size = "fill"
     v_size = "fill"
-    fill = "#171C23"
+    fill = @col_surface
     stroke = "#00000000"
     corner_radius = 0
-    padding = (12, 12, 12, 8)
+    padding = (8, 8, 8, 6)
     z_index = 22
 [/UiPanel]
 [/scene_section]
@@ -203,7 +267,7 @@ parent = left_vlayout
 parent = scene_section
 [UiVLayout]
     size_ratio = (1.0, 1.0)
-    spacing = 6
+    spacing = 4
     padding = (0, 0, 0, 0)
     h_align = "fill"
     v_align = "top"
@@ -215,16 +279,14 @@ parent = scene_section
 parent = scene_section_layout
 [UiLabel]
     text = "Scene graph"
-    font_size = 13
-    color = "#7A8A9E"
-    size = (100, 26)
+    font_size = 11
+    color = @col_orange
+    size = (100, 20)
     h_size = "fill"
     h_align = "start"
     z_index = 24
 [/UiLabel]
 [/scene_title]
-
-# Divider between scene graph and filesystem
 
 [left_divider]
 parent = left_vlayout
@@ -232,14 +294,12 @@ parent = left_vlayout
     size = (100, 1)
     h_size = "fill"
     v_size = "fixed"
-    fill = "#323D4B"
+    fill = @col_border
     stroke = "#00000000"
     corner_radius = 0
     z_index = 22
 [/UiPanel]
 [/left_divider]
-
-# Filesystem section — bottom 42% of left panel
 
 [fs_section]
 parent = left_vlayout
@@ -247,10 +307,10 @@ parent = left_vlayout
     size = (100, 100)
     h_size = "fill"
     v_size = "fill"
-    fill = "#13181F"
+    fill = @col_raised
     stroke = "#00000000"
     corner_radius = 0
-    padding = (12, 10, 12, 12)
+    padding = (8, 8, 8, 8)
     z_index = 22
 [/UiPanel]
 [/fs_section]
@@ -259,7 +319,7 @@ parent = left_vlayout
 parent = fs_section
 [UiVLayout]
     size_ratio = (1.0, 1.0)
-    spacing = 6
+    spacing = 4
     padding = (0, 0, 0, 0)
     h_align = "fill"
     v_align = "top"
@@ -271,9 +331,9 @@ parent = fs_section
 parent = fs_section_layout
 [UiLabel]
     text = "FileSystem"
-    font_size = 13
-    color = "#7A8A9E"
-    size = (100, 26)
+    font_size = 11
+    color = @col_orange
+    size = (100, 20)
     h_size = "fill"
     h_align = "start"
     z_index = 24
@@ -283,13 +343,30 @@ parent = fs_section_layout
 [main_scene_button]
 parent = fs_section_layout
 [UiButton]
-    size = (100, 32)
+    size = (100, 28)
     h_size = "fill"
-    fill = "#1E2A38"
-    hover_fill = "#26354A"
-    pressed_fill = "#161F2B"
-    stroke = "#364B64"
-    corner_radius = 4
+    style = {
+        fill = @col_panel
+        stroke = @col_border
+        stroke_width = 1
+        radius = 4
+    }
+    hover = {
+        style = {
+            fill = "#2a2e3e"
+            stroke = @col_border
+            stroke_width = 1
+            radius = 4
+        }
+    }
+    pressed = {
+        style = {
+            fill = @col_raised
+            stroke = @col_border
+            stroke_width = 1
+            radius = 4
+        }
+    }
     z_index = 24
 [/UiButton]
 [/main_scene_button]
@@ -298,41 +375,56 @@ parent = fs_section_layout
 parent = main_scene_button
 [UiLabel]
     text = "main scene"
-    font_size = 14
-    color = "#C8D8EC"
+    font_size = 12
+    color = @col_muted
     size_ratio = (1.0, 1.0)
     z_index = 25
 [/UiLabel]
 [/main_scene_button_label]
 
-[script_button]
+[open_script_button]
 parent = fs_section_layout
 [UiButton]
-    size = (100, 32)
+    size = (100, 28)
     h_size = "fill"
-    fill = "#1E2A38"
-    hover_fill = "#26354A"
-    pressed_fill = "#161F2B"
-    stroke = "#364B64"
-    corner_radius = 4
+    style = {
+        fill = @col_panel
+        stroke = @col_border
+        stroke_width = 1
+        radius = 4
+    }
+    hover = {
+        style = {
+            fill = "#2a2e3e"
+            stroke = @col_border
+            stroke_width = 1
+            radius = 4
+        }
+    }
+    pressed = {
+        style = {
+            fill = @col_raised
+            stroke = @col_border
+            stroke_width = 1
+            radius = 4
+        }
+    }
     z_index = 24
 [/UiButton]
-[/script_button]
+[/open_script_button]
 
-[script_button_label]
-parent = script_button
+[open_script_button_label]
+parent = open_script_button
 [UiLabel]
     text = "open script"
-    font_size = 14
-    color = "#C8D8EC"
+    font_size = 12
+    color = @col_muted
     size_ratio = (1.0, 1.0)
     z_index = 25
 [/UiLabel]
-[/script_button_label]
+[/open_script_button_label]
 
 # ── Center viewport ───────────────────────────────────────────────────────────
-# h_size = "fill" goes here — AFTER left panel, BEFORE inspector.
-# The HLayout resolves fixed-width children first, fill gets the remainder.
 
 [viewport_panel]
 parent = workspace
@@ -341,10 +433,10 @@ parent = workspace
     h_size = "fill"
     v_size = "fill"
     min_w = 360
-    fill = "#0D1117"
-    stroke = "#323D4B"
+    fill = @col_surface
+    stroke = @col_border
     stroke_width = 1
-    corner_radius = 6
+    corner_radius = 7
     padding = (0, 0, 0, 0)
     z_index = 10
 [/UiPanel]
@@ -365,29 +457,154 @@ parent = viewport_panel
 [viewport_tab_bar]
 parent = viewport_vlayout
 [UiPanel]
-    size = (100, 34)
+    size = (100, 36)
     h_size = "fill"
     v_size = "fixed"
-    fill = "#13181F"
+    fill = @col_raised
     stroke = "#00000000"
     corner_radius = 0
-    padding = (14, 0, 14, 0)
+    padding = (8, 0, 8, 0)
     z_index = 12
 [/UiPanel]
 [/viewport_tab_bar]
 
-[viewport_tab_label]
+[viewport_tab_row]
 parent = viewport_tab_bar
-[UiLabel]
-    text = "2D      3D      Script"
-    font_size = 14
-    color = "#8A9AB0"
+[UiHLayout]
     size_ratio = (1.0, 1.0)
+    spacing = 5
+    padding = (0, 0, 0, 0)
     h_align = "center"
     v_align = "center"
     z_index = 13
+[/UiHLayout]
+[/viewport_tab_row]
+
+[tab_btn_ui]
+parent = viewport_tab_row
+[UiButton]
+    size = (48, 24)
+    h_size = "fixed"
+    style = {
+        fill = @col_green_bg
+        stroke = @col_green_border
+        stroke_width = 1
+        radius = "full"
+    }
+    hover = {
+        style = {
+            fill = "#112818"
+            stroke = @col_green_border
+            stroke_width = 1
+            radius = "full"
+        }
+    }
+    pressed = {
+        style = {
+            fill = "#060e08"
+            stroke = @col_green_border
+            stroke_width = 1
+            radius = "full"
+        }
+    }
+    z_index = 14
+[/UiButton]
+[/tab_btn_ui]
+
+[tab_btn_ui_label]
+parent = tab_btn_ui
+[UiLabel]
+    text = "UI"
+    font_size = 12
+    color = @col_green
+    size_ratio = (1.0, 1.0)
+    z_index = 15
 [/UiLabel]
-[/viewport_tab_label]
+[/tab_btn_ui_label]
+
+[tab_btn_2d]
+parent = viewport_tab_row
+[UiButton]
+    size = (48, 24)
+    h_size = "fixed"
+    style = {
+        fill = @col_blue_bg
+        stroke = @col_blue_border
+        stroke_width = 1
+        radius = "full"
+    }
+    hover = {
+        style = {
+            fill = "#0e1830"
+            stroke = @col_blue_border
+            stroke_width = 1
+            radius = "full"
+        }
+    }
+    pressed = {
+        style = {
+            fill = "#060810"
+            stroke = @col_blue_border
+            stroke_width = 1
+            radius = "full"
+        }
+    }
+    z_index = 14
+[/UiButton]
+[/tab_btn_2d]
+
+[tab_btn_2d_label]
+parent = tab_btn_2d
+[UiLabel]
+    text = "2D"
+    font_size = 12
+    color = @col_blue
+    size_ratio = (1.0, 1.0)
+    z_index = 15
+[/UiLabel]
+[/tab_btn_2d_label]
+
+[tab_btn_3d]
+parent = viewport_tab_row
+[UiButton]
+    size = (48, 24)
+    h_size = "fixed"
+    style = {
+        fill = @col_orange_bg
+        stroke = @col_orange_border
+        stroke_width = 1
+        radius = "full"
+    }
+    hover = {
+        style = {
+            fill = "#281408"
+            stroke = @col_orange_border
+            stroke_width = 1
+            radius = "full"
+        }
+    }
+    pressed = {
+        style = {
+            fill = "#0e0602"
+            stroke = @col_orange_border
+            stroke_width = 1
+            radius = "full"
+        }
+    }
+    z_index = 14
+[/UiButton]
+[/tab_btn_3d]
+
+[tab_btn_3d_label]
+parent = tab_btn_3d
+[UiLabel]
+    text = "3D"
+    font_size = 12
+    color = @col_orange
+    size_ratio = (1.0, 1.0)
+    z_index = 15
+[/UiLabel]
+[/tab_btn_3d_label]
 
 [viewport_tab_divider]
 parent = viewport_vlayout
@@ -395,40 +612,53 @@ parent = viewport_vlayout
     size = (100, 1)
     h_size = "fill"
     v_size = "fixed"
-    fill = "#323D4B"
+    fill = @col_border
     stroke = "#00000000"
     corner_radius = 0
     z_index = 12
 [/UiPanel]
 [/viewport_tab_divider]
 
-[viewport_canvas]
+[viewport_canvas_wrap]
 parent = viewport_vlayout
 [UiPanel]
     size = (100, 100)
     h_size = "fill"
     v_size = "fill"
-    fill = "#0D1117"
+    fill = @col_surface
     stroke = "#00000000"
     corner_radius = 0
+    padding = (6, 6, 6, 6)
     z_index = 12
+[/UiPanel]
+[/viewport_canvas_wrap]
+
+[viewport_canvas]
+parent = viewport_canvas_wrap
+[UiPanel]
+    size_ratio = (1.0, 1.0)
+    fill = @col_deep
+    stroke = @col_border
+    stroke_width = 1
+    corner_radius = 7
+    padding = (0, 0, 0, 0)
+    z_index = 13
 [/UiPanel]
 [/viewport_canvas]
 
 [viewport_no_scene]
 parent = viewport_canvas
 [UiPanel]
-    size = (260, 72)
+    size = (200, 44)
     h_size = "fixed"
     v_size = "fixed"
     anchor = "center"
     position_ratio = (0.5, 0.5)
-    fill = "#131923"
-    stroke = "#2D3A4A"
+    fill = @col_raised
+    stroke = @col_border
     stroke_width = 1
-    corner_radius = 6
-    padding = (20, 0, 20, 0)
-    z_index = 13
+    corner_radius = "full"
+    z_index = 14
 [/UiPanel]
 [/viewport_no_scene]
 
@@ -436,30 +666,29 @@ parent = viewport_canvas
 parent = viewport_no_scene
 [UiLabel]
     text = "No scene loaded"
-    font_size = 16
-    color = "#5A6A7E"
+    font_size = 13
+    color = @col_muted
     size_ratio = (1.0, 1.0)
     h_align = "center"
     v_align = "center"
-    z_index = 14
+    z_index = 15
 [/UiLabel]
 [/viewport_no_scene_label]
 
 # ── Right panel: Inspector ────────────────────────────────────────────────────
-# Also fixed width, declared AFTER the fill viewport so layout reserves it.
 
 [inspector_panel]
 parent = workspace
 [UiPanel]
-    size = (260, 100)
+    size = (240, 100)
     h_size = "fixed"
     v_size = "fill"
-    min_w = 200
-    max_w = 320
-    fill = "#171C23"
-    stroke = "#323D4B"
+    min_w = 180
+    max_w = 300
+    fill = @col_surface
+    stroke = @col_border
     stroke_width = 1
-    corner_radius = 6
+    corner_radius = 7
     padding = (0, 0, 0, 0)
     z_index = 20
 [/UiPanel]
@@ -470,7 +699,7 @@ parent = inspector_panel
 [UiVLayout]
     size_ratio = (1.0, 1.0)
     spacing = 0
-    padding = (12, 12, 12, 12)
+    padding = (8, 8, 8, 8)
     h_align = "fill"
     v_align = "top"
     z_index = 21
@@ -481,9 +710,9 @@ parent = inspector_panel
 parent = inspector_vlayout
 [UiLabel]
     text = "Inspector"
-    font_size = 13
-    color = "#7A8A9E"
-    size = (100, 26)
+    font_size = 11
+    color = @col_orange
+    size = (100, 20)
     h_size = "fill"
     h_align = "start"
     z_index = 22
@@ -496,10 +725,10 @@ parent = inspector_vlayout
     size = (100, 1)
     h_size = "fill"
     v_size = "fixed"
-    fill = "#323D4B"
+    fill = @col_border
     stroke = "#00000000"
     corner_radius = 0
-    margin = (0, 4, 0, 8)
+    margin = (0, 3, 0, 6)
     z_index = 22
 [/UiPanel]
 [/inspector_title_divider]
@@ -510,10 +739,11 @@ parent = inspector_vlayout
     size = (100, 100)
     h_size = "fill"
     v_size = "fill"
-    fill = "#11161D"
-    stroke = "#00000000"
-    corner_radius = 4
-    padding = (10, 10, 10, 10)
+    fill = @col_raised
+    stroke = @col_border
+    stroke_width = 1
+    corner_radius = 5
+    padding = (8, 8, 8, 8)
     z_index = 22
 [/UiPanel]
 [/inspector_body]
@@ -521,9 +751,9 @@ parent = inspector_vlayout
 [inspector_empty_label]
 parent = inspector_body
 [UiLabel]
-    text = "Select a node to inspect"
-    font_size = 14
-    color = "#485566"
+    text = "Select a node\nto inspect"
+    font_size = 13
+    color = @col_muted
     size_ratio = (1.0, 1.0)
     h_align = "center"
     v_align = "center"
@@ -536,14 +766,14 @@ parent = inspector_body
 [bottom_bar]
 parent = root_vlayout
 [UiPanel]
-    size = (100, 36)
+    size = (100, 26)
     h_size = "fill"
     v_size = "fixed"
-    fill = "#181E26"
-    stroke = "#384353"
+    fill = @col_raised
+    stroke = @col_border
     stroke_width = 1
     corner_radius = 0
-    padding = (18, 0, 18, 0)
+    padding = (12, 0, 12, 0)
     z_index = 10
 [/UiPanel]
 [/bottom_bar]
@@ -552,8 +782,8 @@ parent = root_vlayout
 parent = bottom_bar
 [UiLabel]
     text = "Editor ready"
-    font_size = 14
-    color = "#AEB9C9"
+    font_size = 11
+    color = @col_muted
     size_ratio = (1.0, 1.0)
     h_align = "start"
     v_align = "center"
