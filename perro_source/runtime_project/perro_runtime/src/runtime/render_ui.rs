@@ -235,8 +235,9 @@ impl Runtime {
                 .get(&node)
                 .copied()
                 .unwrap_or_default();
+            let effective_z = self.ui_effective_z(node);
             let rect_state = if let Some(rect) = computed.get(&node).copied() {
-                ui_rect_state_from_node(&scene_node.data, rect, state)
+                ui_rect_state_from_node(&scene_node.data, rect, state, effective_z)
             } else {
                 self.render_ui.retained_rects.get(&node).copied()
             };
@@ -696,9 +697,10 @@ impl Runtime {
             let Some(rect) = computed.get(&node).copied() else {
                 continue;
             };
-            if rect.contains(point) && edit.base.layout.z_index >= best_z {
+            let z = self.ui_effective_z(node);
+            if rect.contains(point) && z >= best_z {
                 best = Some(node);
-                best_z = edit.base.layout.z_index;
+                best_z = z;
             }
         }
         best
@@ -883,15 +885,33 @@ impl Runtime {
             if !rect.contains(point) {
                 continue;
             }
+            let z = self.ui_effective_z(node);
             match best {
                 Some((best_node, best_z))
-                    if best_z > button.layout.z_index
-                        || (best_z == button.layout.z_index
+                    if best_z > z
+                        || (best_z == z
                             && best_node.as_u64() > node.as_u64()) => {}
-                _ => best = Some((node, button.layout.z_index)),
+                _ => best = Some((node, z)),
             }
         }
         best.map(|(node, _)| node)
+    }
+
+    fn ui_effective_z(&self, node: NodeID) -> i32 {
+        let mut cur = node;
+        let mut out = 0_i32;
+        let mut guard = 0_u32;
+        while !cur.is_nil() && guard < 4096 {
+            guard += 1;
+            let Some(scene_node) = self.nodes.get(cur) else {
+                break;
+            };
+            if let Some(ui) = ui_root_from_data(&scene_node.data) {
+                out = out.saturating_add(ui.layout.z_index);
+            }
+            cur = scene_node.parent;
+        }
+        out
     }
 
     fn compute_ui_child_rect(
@@ -2064,9 +2084,10 @@ fn ui_rect_state_from_node(
     data: &SceneNodeData,
     rect: ComputedUiRect,
     button_state: UiButtonVisualState,
+    effective_z: i32,
 ) -> Option<UiRectState> {
     if let SceneNodeData::UiButton(button) = data {
-        return Some(button_rect_state(button, rect, button_state));
+        return Some(button_rect_state(button, rect, button_state, effective_z));
     }
     let ui = ui_root_from_data(data)?;
     Some(UiRectState {
@@ -2074,7 +2095,7 @@ fn ui_rect_state_from_node(
         size: [rect.size.x, rect.size.y],
         pivot: ui_pivot_state(&ui.transform),
         rotation_radians: ui.transform.rotation,
-        z_index: ui.layout.z_index,
+        z_index: effective_z,
     })
 }
 
@@ -2082,6 +2103,7 @@ fn button_rect_state(
     button: &perro_ui::UiButton,
     base_rect: ComputedUiRect,
     state: UiButtonVisualState,
+    effective_z: i32,
 ) -> UiRectState {
     let ui = button_state_base(button, state).unwrap_or(&button.base);
     let size = match state {
@@ -2100,7 +2122,7 @@ fn button_rect_state(
         size: [size.x, size.y],
         pivot: ui_pivot_state(&ui.transform),
         rotation_radians: ui.transform.rotation,
-        z_index: ui.layout.z_index,
+        z_index: effective_z,
     }
 }
 
