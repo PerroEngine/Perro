@@ -254,6 +254,7 @@ impl Runtime {
                 }
                 continue;
             }
+            let scale = computed_scales.get(&node).copied().unwrap_or(Vector2::ONE);
             let retained_matches =
                 self.render_ui
                     .retained_commands
@@ -263,6 +264,7 @@ impl Runtime {
                             command,
                             &scene_node.data,
                             rect_state,
+                            scale,
                             state,
                             self.render_ui.focused_text_edit,
                         )
@@ -272,6 +274,7 @@ impl Runtime {
                     node,
                     &scene_node.data,
                     rect_state,
+                    scale,
                     state,
                     self.render_ui.focused_text_edit,
                 ) else {
@@ -2009,20 +2012,22 @@ fn ui_command_from_node(
     node: NodeID,
     data: &SceneNodeData,
     rect: UiRectState,
+    scale: Vector2,
     button_state: UiButtonVisualState,
     focused_text_edit: Option<NodeID>,
 ) -> Option<UiCommand> {
     match data {
-        SceneNodeData::UiPanel(panel) => Some(panel_command(node, rect, &panel.style)),
+        SceneNodeData::UiPanel(panel) => Some(panel_command(node, rect, scale, &panel.style)),
         SceneNodeData::UiButton(button) => {
             let style = button_style(button, button_state);
+            let style_scale = ui_style_scale(scale);
             Some(UiCommand::UpsertButton {
                 node,
                 rect,
                 fill: style.fill.to_rgba(),
                 stroke: style.stroke.to_rgba(),
-                stroke_width: style.stroke_width,
-                corner_radius: style.corner_radius,
+                stroke_width: style.stroke_width * style_scale,
+                corner_radius: style.corner_radius * style_scale,
                 disabled: button.disabled,
             })
         }
@@ -2031,13 +2036,14 @@ fn ui_command_from_node(
             rect,
             text: Cow::Owned(label.text.to_string()),
             color: label.color.to_rgba(),
-            font_size: label.font_size,
+            font_size: label.font_size * ui_font_scale(scale),
             h_align: text_align_state(label.h_align),
             v_align: text_align_state(label.v_align),
         }),
         SceneNodeData::UiTextBox(text_box) => Some(text_edit_command(
             node,
             rect,
+            scale,
             &text_box.inner,
             false,
             focused_text_edit == Some(node),
@@ -2045,6 +2051,7 @@ fn ui_command_from_node(
         SceneNodeData::UiTextBlock(text_block) => Some(text_edit_command(
             node,
             rect,
+            scale,
             &text_block.inner,
             true,
             focused_text_edit == Some(node),
@@ -2113,102 +2120,36 @@ fn ui_command_matches_node(
     command: &UiCommand,
     data: &SceneNodeData,
     rect: UiRectState,
+    scale: Vector2,
     button_state: UiButtonVisualState,
     focused_text_edit: Option<NodeID>,
 ) -> bool {
-    match (command, data) {
-        (
-            UiCommand::UpsertPanel {
-                rect: command_rect,
-                fill,
-                stroke,
-                stroke_width,
-                corner_radius,
-                ..
-            },
-            SceneNodeData::UiPanel(panel),
-        ) => {
-            *command_rect == rect
-                && *fill == panel.style.fill.to_rgba()
-                && *stroke == panel.style.stroke.to_rgba()
-                && *stroke_width == panel.style.stroke_width
-                && *corner_radius == panel.style.corner_radius
-        }
-        (
-            UiCommand::UpsertButton {
-                rect: command_rect,
-                fill,
-                stroke,
-                stroke_width,
-                corner_radius,
-                disabled,
-                ..
-            },
-            SceneNodeData::UiButton(button),
-        ) => {
-            let style = button_style(button, button_state);
-            *command_rect == rect
-                && *fill == style.fill.to_rgba()
-                && *stroke == style.stroke.to_rgba()
-                && *stroke_width == style.stroke_width
-                && *corner_radius == style.corner_radius
-                && *disabled == button.disabled
-        }
-        (
-            UiCommand::UpsertLabel {
-                rect: command_rect,
-                text,
-                color,
-                font_size,
-                h_align,
-                v_align,
-                ..
-            },
-            SceneNodeData::UiLabel(label),
-        ) => {
-            *command_rect == rect
-                && text.as_ref() == label.text.as_ref()
-                && *color == label.color.to_rgba()
-                && *font_size == label.font_size
-                && *h_align == text_align_state(label.h_align)
-                && *v_align == text_align_state(label.v_align)
-        }
-        (UiCommand::UpsertTextEdit { .. }, SceneNodeData::UiTextBox(text_box)) => {
-            *command
-                == text_edit_command(
-                    match command {
-                        UiCommand::UpsertTextEdit { node, .. } => *node,
-                        _ => NodeID::nil(),
-                    },
-                    rect,
-                    &text_box.inner,
-                    false,
-                    focused_text_edit
-                        == match command {
-                            UiCommand::UpsertTextEdit { node, .. } => Some(*node),
-                            _ => None,
-                        },
-                )
-        }
-        (UiCommand::UpsertTextEdit { .. }, SceneNodeData::UiTextBlock(text_block)) => {
-            *command
-                == text_edit_command(
-                    match command {
-                        UiCommand::UpsertTextEdit { node, .. } => *node,
-                        _ => NodeID::nil(),
-                    },
-                    rect,
-                    &text_block.inner,
-                    true,
-                    focused_text_edit
-                        == match command {
-                            UiCommand::UpsertTextEdit { node, .. } => Some(*node),
-                            _ => None,
-                        },
-                )
-        }
-        _ => false,
-    }
+    let Some(expected) = ui_command_from_node(
+        match command {
+            UiCommand::UpsertPanel { node, .. }
+            | UiCommand::UpsertButton { node, .. }
+            | UiCommand::UpsertLabel { node, .. }
+            | UiCommand::UpsertTextEdit { node, .. }
+            | UiCommand::RemoveNode { node } => *node,
+            UiCommand::Clear => NodeID::nil(),
+        },
+        data,
+        rect,
+        scale,
+        button_state,
+        focused_text_edit,
+    ) else {
+        return false;
+    };
+    *command == expected
+}
+
+fn ui_font_scale(scale: Vector2) -> f32 {
+    scale.y.abs().max(0.0001)
+}
+
+fn ui_style_scale(scale: Vector2) -> f32 {
+    scale.x.abs().min(scale.y.abs()).max(0.0001)
 }
 
 fn button_style(button: &perro_ui::UiButton, state: UiButtonVisualState) -> &UiStyle {
@@ -2296,12 +2237,15 @@ fn text_align_state(align: perro_ui::UiTextAlign) -> UiTextAlignState {
 fn text_edit_command(
     node: NodeID,
     rect: UiRectState,
+    scale: Vector2,
     edit: &UiTextEdit,
     multiline: bool,
     focused: bool,
 ) -> UiCommand {
     let focused_style = &edit.focused_style;
     let style = &edit.style;
+    let style_scale = ui_style_scale(scale);
+    let font_scale = ui_font_scale(scale);
     UiCommand::UpsertTextEdit {
         node,
         rect,
@@ -2319,24 +2263,24 @@ fn text_edit_command(
             focused_style.stroke_width
         } else {
             style.stroke_width
-        },
+        } * style_scale,
         corner_radius: if focused {
             focused_style.corner_radius
         } else {
             style.corner_radius
-        },
+        } * style_scale,
         text: Cow::Owned(edit.text.to_string()),
         placeholder: Cow::Owned(edit.placeholder.to_string()),
         color: edit.color.to_rgba(),
         placeholder_color: edit.placeholder_color.to_rgba(),
         selection_color: edit.selection_color.to_rgba(),
         caret_color: edit.caret_color.to_rgba(),
-        font_size: edit.font_size,
+        font_size: edit.font_size * font_scale,
         padding: [
-            edit.padding.left,
-            edit.padding.top,
-            edit.padding.right,
-            edit.padding.bottom,
+            edit.padding.left * scale.x.abs().max(0.0001),
+            edit.padding.top * scale.y.abs().max(0.0001),
+            edit.padding.right * scale.x.abs().max(0.0001),
+            edit.padding.bottom * scale.y.abs().max(0.0001),
         ],
         scroll: [edit.h_scroll, edit.v_scroll],
         caret: edit.caret,
@@ -2346,14 +2290,15 @@ fn text_edit_command(
     }
 }
 
-fn panel_command(node: NodeID, rect: UiRectState, style: &UiStyle) -> UiCommand {
+fn panel_command(node: NodeID, rect: UiRectState, scale: Vector2, style: &UiStyle) -> UiCommand {
+    let style_scale = ui_style_scale(scale);
     UiCommand::UpsertPanel {
         node,
         rect,
         fill: style.fill.to_rgba(),
         stroke: style.stroke.to_rgba(),
-        stroke_width: style.stroke_width,
-        corner_radius: style.corner_radius,
+        stroke_width: style.stroke_width * style_scale,
+        corner_radius: style.corner_radius * style_scale,
     }
 }
 
@@ -3407,6 +3352,69 @@ mod tests {
         assert_eq!(first_rect.center, Vector2::new(-70.0, 0.0));
         assert_eq!(third_rect.center, Vector2::ZERO);
         assert_eq!(fourth_rect.center, Vector2::new(70.0, 0.0));
+    }
+
+    #[test]
+    fn parent_ui_scale_scales_child_label_font() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut parent_panel = UiPanel::new();
+        parent_panel.layout.size = UiVector2::pixels(400.0, 200.0);
+        parent_panel.transform.scale = Vector2::new(0.5, 0.5);
+        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_panel));
+
+        let mut label = perro_ui::UiLabel::new().with_text("Scaled");
+        label.layout.size = UiVector2::pixels(200.0, 40.0);
+        label.font_size = 20.0;
+        let child = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+        attach_child(&mut runtime, parent, child);
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertLabel { node, rect, font_size, .. })
+                if *node == child && rect.size == [100.0, 20.0] && *font_size == 10.0
+        )));
+    }
+
+    #[test]
+    fn parent_ui_scale_scales_child_panel_radius() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut parent_panel = UiPanel::new();
+        parent_panel.layout.size = UiVector2::pixels(400.0, 200.0);
+        parent_panel.transform.scale = Vector2::new(0.5, 0.5);
+        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_panel));
+
+        let mut child_panel = UiPanel::new();
+        child_panel.layout.size = UiVector2::pixels(200.0, 40.0);
+        child_panel.style.corner_radius = 8.0;
+        child_panel.style.stroke_width = 2.0;
+        let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child_panel));
+        attach_child(&mut runtime, parent, child);
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertPanel {
+                node,
+                rect,
+                corner_radius,
+                stroke_width,
+                ..
+            }) if *node == child
+                && rect.size == [100.0, 20.0]
+                && *corner_radius == 4.0
+                && *stroke_width == 1.0
+        )));
     }
 
     #[test]

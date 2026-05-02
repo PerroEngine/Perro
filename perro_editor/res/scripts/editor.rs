@@ -9,9 +9,8 @@ type SelfNodeType = UiPanel;
 const ACTIVE_PROJECT: &str = "user://perro_editor_active_project.txt";
 const LIVE_VIEWPORT_WIDTH: f32 = 1920.0;
 const LIVE_VIEWPORT_HEIGHT: f32 = 1080.0;
-const LIVE_VIEWPORT_MIN_SCALE: f32 = 0.5;
+const LIVE_VIEWPORT_MIN_SCALE: f32 = 0.05;
 const LIVE_VIEWPORT_MAX_SCALE: f32 = 1.5;
-const LIVE_VIEWPORT_Z_FALLBACK_PARENT: i32 = 29;
 const EDITOR_TOP_BAR_HEIGHT: f32 = 40.0;
 const EDITOR_BOTTOM_BAR_HEIGHT: f32 = 26.0;
 const EDITOR_WORKSPACE_PADDING_X: f32 = 8.0;
@@ -21,7 +20,7 @@ const EDITOR_SIDE_PANEL_WIDTH: f32 = 240.0;
 const EDITOR_VIEWPORT_TAB_HEIGHT: f32 = 36.0;
 const EDITOR_VIEWPORT_DIVIDER_HEIGHT: f32 = 1.0;
 const EDITOR_VIEWPORT_CANVAS_PADDING_X: f32 = 12.0;
-const EDITOR_VIEWPORT_CANVAS_PADDING_Y: f32 = 12.0;
+const EDITOR_VIEWPORT_CANVAS_PADDING_Y: f32 = 26.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SceneViewerMode {
@@ -67,26 +66,38 @@ lifecycle!({
         _ipt: &InputContext<'_, IP>,
         self_id: NodeID,
     ) {
-        let top_bar = child(ctx, self_id, "top_bar");
-        let top_bar_row = child(ctx, top_bar, "top_bar_row");
-        let workspace = child(ctx, self_id, "workspace");
-        let scene_panel = child(ctx, workspace, "scene_panel");
-        let scene_stack = child(ctx, scene_panel, "scene_stack");
-        let resource_panel = child(ctx, scene_panel, "resource_panel");
-        let resource_stack = child(ctx, resource_panel, "resource_stack");
-        let viewport_panel = child(ctx, workspace, "preview_panel");
-        let viewport_vlayout = child(ctx, viewport_panel, "preview_vlayout");
-        let viewport_canvas_wrap = child(ctx, viewport_vlayout, "preview_canvas_wrap");
-        let viewport_canvas = child(ctx, viewport_canvas_wrap, "preview_canvas");
-        let inspector_panel = child(ctx, workspace, "inspector_panel");
-        let inspector_stack = child(ctx, inspector_panel, "inspector_stack");
-        let bottom_bar = child(ctx, self_id, "bottom_bar");
+        let top_bar = get_child!(ctx, self_id, "top_bar").unwrap_or_default();
+        let top_bar_row = get_child!(ctx, top_bar, "top_bar_row").unwrap_or_default();
+        let workspace = get_child!(ctx, self_id, "workspace").unwrap_or_default();
+        let scene_panel = get_child!(ctx, workspace, "left_panel").unwrap_or_default();
+        let left_stack = get_child!(ctx, scene_panel, "left_vlayout").unwrap_or_default();
+        let scene_section = get_child!(ctx, left_stack, "scene_section").unwrap_or_default();
+        let scene_stack =
+            get_child!(ctx, scene_section, "scene_section_layout").unwrap_or_default();
+        let resource_panel = get_child!(ctx, left_stack, "fs_section").unwrap_or_default();
+        let resource_stack =
+            get_child!(ctx, resource_panel, "fs_section_layout").unwrap_or_default();
+        let viewport_panel = get_child!(ctx, workspace, "preview_panel").unwrap_or_default();
+        let viewport_vlayout =
+            get_child!(ctx, viewport_panel, "preview_vlayout").unwrap_or_default();
+        let viewport_canvas_wrap =
+            get_child!(ctx, viewport_vlayout, "preview_canvas_wrap").unwrap_or_default();
+        let viewport_canvas =
+            get_child!(ctx, viewport_canvas_wrap, "preview_canvas").unwrap_or_default();
+        let inspector_panel = get_child!(ctx, workspace, "inspector_panel").unwrap_or_default();
+        let inspector_stack =
+            get_child!(ctx, inspector_panel, "inspector_vlayout").unwrap_or_default();
+        let inspector_body_panel =
+            get_child!(ctx, inspector_stack, "inspector_body").unwrap_or_default();
+        let bottom_bar = get_child!(ctx, self_id, "bottom_bar").unwrap_or_default();
 
-        let project_label = child(ctx, top_bar_row, "project_label");
-        let scene_label = child(ctx, top_bar_row, "scene_label");
-        let viewport_status = child(ctx, viewport_panel, "preview_status");
-        let inspector_body = child(ctx, inspector_stack, "inspector_body_text");
-        let status_label = child(ctx, bottom_bar, "status_label");
+        let project_label = get_child!(ctx, top_bar_row, "project_label").unwrap_or_default();
+        let scene_label = get_child!(ctx, top_bar_row, "scene_label").unwrap_or_default();
+        let viewport_status =
+            get_child!(ctx, viewport_canvas, "preview_status").unwrap_or_default();
+        let inspector_body =
+            get_child!(ctx, inspector_body_panel, "inspector_body_text").unwrap_or_default();
+        let status_label = get_child!(ctx, bottom_bar, "status_label").unwrap_or_default();
 
         let project_dir = FileMod::load_string(ACTIVE_PROJECT).unwrap_or_default();
         if !project_dir.trim().is_empty() {
@@ -371,19 +382,6 @@ methods!({
         }
     }
 });
-
-fn child<RT: RuntimeAPI + ?Sized>(
-    ctx: &mut RuntimeContext<'_, RT>,
-    parent: NodeID,
-    name: &str,
-) -> NodeID {
-    if parent.is_nil() {
-        return NodeID::default();
-    }
-    ctx.Nodes()
-        .get_child_by_name(parent, name)
-        .unwrap_or_default()
-}
 
 fn set_label<RT: RuntimeAPI + ?Sized>(ctx: &mut RuntimeContext<'_, RT>, id: NodeID, text: &str) {
     if id.is_nil() {
@@ -738,18 +736,20 @@ fn write_live_scene_doc(doc: &perro_scene::SceneDoc) -> Result<String, String> {
 }
 
 fn live_viewport_scale(viewport_size: Vector2) -> f32 {
-    let canvas_width = viewport_size.x
+    let canvas_width = (viewport_size.x
         - EDITOR_WORKSPACE_PADDING_X
         - EDITOR_SIDE_PANEL_WIDTH * 2.0
         - EDITOR_WORKSPACE_SPACING * 2.0
-        - EDITOR_VIEWPORT_CANVAS_PADDING_X;
-    let canvas_height = viewport_size.y
+        - EDITOR_VIEWPORT_CANVAS_PADDING_X)
+        .max(1.0);
+    let canvas_height = (viewport_size.y
         - EDITOR_TOP_BAR_HEIGHT
         - EDITOR_BOTTOM_BAR_HEIGHT
         - EDITOR_WORKSPACE_PADDING_Y
         - EDITOR_VIEWPORT_TAB_HEIGHT
         - EDITOR_VIEWPORT_DIVIDER_HEIGHT
-        - EDITOR_VIEWPORT_CANVAS_PADDING_Y;
+        - EDITOR_VIEWPORT_CANVAS_PADDING_Y)
+        .max(1.0);
     let fit_scale = (canvas_width / LIVE_VIEWPORT_WIDTH).min(canvas_height / LIVE_VIEWPORT_HEIGHT);
     fit_scale.clamp(LIVE_VIEWPORT_MIN_SCALE, LIVE_VIEWPORT_MAX_SCALE)
 }
@@ -759,162 +759,71 @@ fn apply_live_viewport_transform<RT: RuntimeAPI + ?Sized>(
     root: NodeID,
     scale: f32,
 ) {
-    let root_parent_z = get_node_parent_id!(ctx, root)
-        .and_then(|parent| ui_z_index(ctx, parent))
-        .unwrap_or(LIVE_VIEWPORT_Z_FALLBACK_PARENT);
+    apply_ui_root_fit(ctx, root, scale);
 
-    apply_ui_root_fit::<RT, UiPanel>(ctx, root, scale);
-    apply_ui_root_fit::<RT, UiButton>(ctx, root, scale);
-    apply_ui_root_fit::<RT, UiLabel>(ctx, root, scale);
-    apply_ui_root_fit::<RT, UiTextBox>(ctx, root, scale);
-    apply_ui_root_fit::<RT, UiTextBlock>(ctx, root, scale);
-    apply_ui_root_fit::<RT, UiLayout>(ctx, root, scale);
-    apply_ui_root_fit::<RT, UiHLayout>(ctx, root, scale);
-    apply_ui_root_fit::<RT, UiVLayout>(ctx, root, scale);
-    apply_ui_root_fit::<RT, UiGrid>(ctx, root, scale);
-
-    let nodes = query!(
-        ctx,
-        any(is[
-            UiPanel,
-            UiButton,
-            UiLabel,
-            UiTextBox,
-            UiTextBlock,
-            UiLayout,
-            UiHLayout,
-            UiVLayout,
-            UiGrid
-        ]),
-        in_subtree(root)
-    );
+    let nodes = query!(ctx, base[UiBox], in_subtree(root));
     for id in nodes {
-        if id == root {
-            continue;
-        }
-        disable_ui_node_input::<RT, UiPanel>(ctx, id);
-        disable_ui_node_input::<RT, UiButton>(ctx, id);
-        disable_ui_node_input::<RT, UiLabel>(ctx, id);
-        disable_ui_node_input::<RT, UiTextBox>(ctx, id);
-        disable_ui_node_input::<RT, UiTextBlock>(ctx, id);
-        disable_ui_node_input::<RT, UiLayout>(ctx, id);
-        disable_ui_node_input::<RT, UiHLayout>(ctx, id);
-        disable_ui_node_input::<RT, UiVLayout>(ctx, id);
-        disable_ui_node_input::<RT, UiGrid>(ctx, id);
+        disable_ui_node_input(ctx, id);
     }
-
-    apply_live_viewport_z_tree(ctx, root, root_parent_z);
 }
 
-fn apply_ui_root_fit<RT, T>(
+fn apply_ui_root_fit<RT: RuntimeAPI + ?Sized>(
     ctx: &mut RuntimeContext<'_, RT>,
     root: NodeID,
     scale: f32,
-)
-where
-    RT: RuntimeAPI + ?Sized,
-    T: UiNodeBase + NodeTypeDispatch + 'static,
-{
-    let _ = with_node_mut!(ctx, T, root, |node| {
-        let base = node.ui_base_mut();
-        base.layout.anchor = UiAnchor::Center;
-        base.layout.size = UiVector2::pixels(LIVE_VIEWPORT_WIDTH, LIVE_VIEWPORT_HEIGHT);
-        base.transform.position = UiVector2::ratio(0.5, 0.5);
-        base.transform.pivot = UiVector2::ratio(0.5, 0.5);
-        base.transform.scale = Vector2::new(scale, scale);
-        base.input_enabled = false;
-        base.mouse_filter = UiMouseFilter::Ignore;
-    });
-}
-
-fn rescale_live_viewport<RT: RuntimeAPI + ?Sized>(ctx: &mut RuntimeContext<'_, RT>, root: NodeID, new_scale: f32) {
-    set_ui_root_scale::<RT, UiPanel>(ctx, root, new_scale);
-    set_ui_root_scale::<RT, UiButton>(ctx, root, new_scale);
-    set_ui_root_scale::<RT, UiLabel>(ctx, root, new_scale);
-    set_ui_root_scale::<RT, UiTextBox>(ctx, root, new_scale);
-    set_ui_root_scale::<RT, UiTextBlock>(ctx, root, new_scale);
-    set_ui_root_scale::<RT, UiLayout>(ctx, root, new_scale);
-    set_ui_root_scale::<RT, UiHLayout>(ctx, root, new_scale);
-    set_ui_root_scale::<RT, UiVLayout>(ctx, root, new_scale);
-    set_ui_root_scale::<RT, UiGrid>(ctx, root, new_scale);
-}
-
-fn set_ui_root_scale<RT, T>(
-    ctx: &mut RuntimeContext<'_, RT>,
-    root: NodeID,
-    scale: f32,
-)
-where
-    RT: RuntimeAPI + ?Sized,
-    T: UiNodeBase + NodeTypeDispatch + 'static,
-{
-    let _ = with_node_mut!(ctx, T, root, |node| {
-        let base = node.ui_base_mut();
-        base.layout.anchor = UiAnchor::Center;
-        base.transform.position = UiVector2::ratio(0.5, 0.5);
-        base.transform.pivot = UiVector2::ratio(0.5, 0.5);
-        base.layout.size = UiVector2::pixels(LIVE_VIEWPORT_WIDTH, LIVE_VIEWPORT_HEIGHT);
-        base.transform.scale = Vector2::new(scale, scale);
-    });
-}
-
-fn disable_ui_node_input<RT, T>(ctx: &mut RuntimeContext<'_, RT>, id: NodeID)
-where
-    RT: RuntimeAPI + ?Sized,
-    T: UiNodeBase + NodeTypeDispatch + 'static,
-{
-    let _ = with_node_mut!(ctx, T, id, |node| {
-        let base = node.ui_base_mut();
-        base.input_enabled = false;
-        base.mouse_filter = UiMouseFilter::Ignore;
-    });
-}
-
-fn apply_live_viewport_z_tree<RT: RuntimeAPI + ?Sized>(
-    ctx: &mut RuntimeContext<'_, RT>,
-    node: NodeID,
-    parent_z: i32,
 ) {
-    let own_z = ui_z_index(ctx, node).unwrap_or(0);
-    let z = parent_z.saturating_add(1).saturating_add(own_z);
-    set_ui_z_index(ctx, node, z);
-    for child in get_children!(ctx, node) {
-        apply_live_viewport_z_tree(ctx, child, z);
-    }
+    let _ = with_base_node_mut!(ctx, UiBox, root, |node| {
+        node.layout.anchor = UiAnchor::Center;
+        node.layout.size = UiVector2::pixels(LIVE_VIEWPORT_WIDTH, LIVE_VIEWPORT_HEIGHT);
+        node.transform.position = UiVector2::ratio(0.5, 0.5);
+        node.transform.pivot = UiVector2::ratio(0.5, 0.5);
+        node.transform.translation = Vector2::ZERO;
+        node.transform.scale = Vector2::new(scale, scale);
+        node.transform.rotation = 0.0;
+        node.input_enabled = false;
+        node.mouse_filter = UiMouseFilter::Ignore;
+    });
 }
 
-fn ui_z_index<RT: RuntimeAPI + ?Sized>(ctx: &mut RuntimeContext<'_, RT>, id: NodeID) -> Option<i32> {
-    with_node!(ctx, UiPanel, id, |node| Some(node.ui_base().layout.z_index))
-        .or_else(|| with_node!(ctx, UiButton, id, |node| Some(node.ui_base().layout.z_index)))
-        .or_else(|| with_node!(ctx, UiLabel, id, |node| Some(node.ui_base().layout.z_index)))
-        .or_else(|| with_node!(ctx, UiTextBox, id, |node| Some(node.ui_base().layout.z_index)))
-        .or_else(|| with_node!(ctx, UiTextBlock, id, |node| Some(node.ui_base().layout.z_index)))
-        .or_else(|| with_node!(ctx, UiLayout, id, |node| Some(node.ui_base().layout.z_index)))
-        .or_else(|| with_node!(ctx, UiHLayout, id, |node| Some(node.ui_base().layout.z_index)))
-        .or_else(|| with_node!(ctx, UiVLayout, id, |node| Some(node.ui_base().layout.z_index)))
-        .or_else(|| with_node!(ctx, UiGrid, id, |node| Some(node.ui_base().layout.z_index)))
+fn rescale_live_viewport<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    root: NodeID,
+    new_scale: f32,
+) {
+    set_ui_root_scale(ctx, root, new_scale);
 }
 
-fn set_ui_z_index<RT: RuntimeAPI + ?Sized>(ctx: &mut RuntimeContext<'_, RT>, id: NodeID, z: i32) {
-    let _ = with_node_mut!(ctx, UiPanel, id, |node| node.ui_base_mut().layout.z_index = z);
-    let _ = with_node_mut!(ctx, UiButton, id, |node| node.ui_base_mut().layout.z_index = z);
-    let _ = with_node_mut!(ctx, UiLabel, id, |node| node.ui_base_mut().layout.z_index = z);
-    let _ = with_node_mut!(ctx, UiTextBox, id, |node| node.ui_base_mut().layout.z_index = z);
-    let _ = with_node_mut!(ctx, UiTextBlock, id, |node| node.ui_base_mut().layout.z_index = z);
-    let _ = with_node_mut!(ctx, UiLayout, id, |node| node.ui_base_mut().layout.z_index = z);
-    let _ = with_node_mut!(ctx, UiHLayout, id, |node| node.ui_base_mut().layout.z_index = z);
-    let _ = with_node_mut!(ctx, UiVLayout, id, |node| node.ui_base_mut().layout.z_index = z);
-    let _ = with_node_mut!(ctx, UiGrid, id, |node| node.ui_base_mut().layout.z_index = z);
+fn set_ui_root_scale<RT: RuntimeAPI + ?Sized>(
+    ctx: &mut RuntimeContext<'_, RT>,
+    root: NodeID,
+    scale: f32,
+) {
+    let _ = with_base_node_mut!(ctx, UiBox, root, |node| {
+        node.layout.anchor = UiAnchor::Center;
+        node.transform.position = UiVector2::ratio(0.5, 0.5);
+        node.transform.pivot = UiVector2::ratio(0.5, 0.5);
+        node.transform.translation = Vector2::ZERO;
+        node.layout.size = UiVector2::pixels(LIVE_VIEWPORT_WIDTH, LIVE_VIEWPORT_HEIGHT);
+        node.transform.scale = Vector2::new(scale, scale);
+        node.transform.rotation = 0.0;
+    });
+}
+
+fn disable_ui_node_input<RT: RuntimeAPI + ?Sized>(ctx: &mut RuntimeContext<'_, RT>, id: NodeID) {
+    let _ = with_base_node_mut!(ctx, UiBox, id, |node| {
+        node.input_enabled = false;
+        node.mouse_filter = UiMouseFilter::Ignore;
+    });
 }
 
 fn hide_viewport_status<RT: RuntimeAPI + ?Sized>(
     ctx: &mut RuntimeContext<'_, RT>,
     viewport_status: NodeID,
 ) {
-    let _ = with_node_mut!(ctx, UiTextBlock, viewport_status, |node| {
-        node.inner.base.visible = false;
-        node.inner.base.input_enabled = false;
-        node.inner.base.mouse_filter = UiMouseFilter::Ignore;
+    let _ = with_base_node_mut!(ctx, UiBox, viewport_status, |node| {
+        node.visible = false;
+        node.input_enabled = false;
+        node.mouse_filter = UiMouseFilter::Ignore;
     });
 }
 

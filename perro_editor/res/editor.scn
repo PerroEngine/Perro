@@ -432,7 +432,6 @@ parent = workspace
     size = (100, 100)
     h_size = "fill"
     v_size = "fill"
-    min_size = (984, 620)
     fill = @col_surface
     stroke = @col_border
     stroke_width = 1
@@ -447,8 +446,7 @@ parent = preview_panel
 [UiVLayout]
     size_ratio = (1.0, 1.0)
     spacing = 0
-    # add top padding so preview content stays below tab bar
-    padding = (0, 8, 0, 0)
+    padding = (0, 0, 0, 0)
     h_align = "fill"
     v_align = "fill"
     z_index = 11
@@ -629,7 +627,7 @@ parent = preview_vlayout
     fill = @col_surface
     stroke = "#00000000"
     corner_radius = 0
-    padding = (6, 6, 6, 6)
+    padding = (6, 12, 6, 6)
     z_index = 12
 [/UiPanel]
 [/preview_canvas_wrap]
@@ -647,54 +645,24 @@ parent = preview_canvas_wrap
 [/UiPanel]
 [/preview_canvas]
 
-[live_preview_host]
+[preview_status]
 parent = preview_canvas
-[UiPanel]
+[UiTextBlock]
+    size_ratio = (1.0, 1.0)
     anchor = "center"
     position_ratio = (0.5, 0.5)
-    pivot_ratio = (0.5, 0.5)
-    size = (1920, 1080)
-    h_size = "fixed"
-    v_size = "fixed"
-    fill = "#00000000"
-    stroke = "#00000000"
-    stroke_width = 0
-    corner_radius = 0
-    padding = (0, 0, 0, 0)
-    input_enabled = false
-    mouse_filter = "ignore"
-    z_index = 13
-[/UiPanel]
-[/live_preview_host]
-
-[preview_no_scene]
-parent = preview_canvas
-[UiPanel]
-    size = (200, 44)
-    h_size = "fixed"
-    v_size = "fixed"
-    anchor = "center"
-    position_ratio = (0.5, 0.5)
+    text = "No scene loaded"
+    font_size = 13
+    editable = false
+    color = @col_muted
     fill = @col_raised
     stroke = @col_border
     stroke_width = 1
-    corner_radius = "full"
+    text_padding = (12, 12, 12, 12)
+    corner_radius = 6
     z_index = 14
-[/UiPanel]
-[/preview_no_scene]
-
-[preview_no_scene_label]
-parent = preview_no_scene
-[UiLabel]
-    text = "No scene loaded"
-    font_size = 13
-    color = @col_muted
-    size_ratio = (1.0, 1.0)
-    h_align = "center"
-    v_align = "center"
-    z_index = 15
-[/UiLabel]
-[/preview_no_scene_label]
+[/UiTextBlock]
+[/preview_status]
 
 # ── Right panel: Inspector ────────────────────────────────────────────────────
 
@@ -769,18 +737,20 @@ parent = inspector_vlayout
 [/UiPanel]
 [/inspector_body]
 
-[inspector_empty_label]
+[inspector_body_text]
 parent = inspector_body
-[UiLabel]
+[UiTextBlock]
     text = "Select a node\nto inspect"
     font_size = 13
     color = @col_muted
     size_ratio = (1.0, 1.0)
-    h_align = "center"
-    v_align = "center"
+    editable = false
+    fill = "#00000000"
+    stroke = "#00000000"
+    text_padding = (0, 0, 0, 0)
     z_index = 23
-[/UiLabel]
-[/inspector_empty_label]
+[/UiTextBlock]
+[/inspector_body_text]
 
 # ── Bottom bar ────────────────────────────────────────────────────────────────
 
