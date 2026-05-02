@@ -432,7 +432,7 @@ parent = workspace
     size = (100, 100)
     h_size = "fill"
     v_size = "fill"
-    # allow small preview sizes; remove hard min width
+    min_size = (984, 620)
     fill = @col_surface
     stroke = @col_border
     stroke_width = 1

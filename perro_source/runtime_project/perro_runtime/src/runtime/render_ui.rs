@@ -165,6 +165,7 @@ impl Runtime {
             }
             visible_now.remove(&node);
             self.render_ui.computed_rects.remove(&node);
+            self.render_ui.computed_scales.remove(&node);
             self.render_ui.retained_rects.remove(&node);
             self.render_ui.button_states.remove(&node);
             if self.render_ui.retained_commands.remove(&node).is_some() {
@@ -174,8 +175,10 @@ impl Runtime {
         self.render_ui.removed_nodes = removed_nodes;
 
         let mut computed = std::mem::take(&mut self.render_ui.computed_rects);
+        let mut computed_scales = std::mem::take(&mut self.render_ui.computed_scales);
         for node in traversal_ids.iter() {
             computed.remove(node);
+            computed_scales.remove(node);
         }
         let mut auto_layout_computed = std::mem::take(&mut self.render_ui.auto_layout_computed);
         auto_layout_computed.clear();
@@ -183,7 +186,13 @@ impl Runtime {
         for node in traversal_ids.iter().copied() {
             let was_cached = computed.contains_key(&node);
             let before_len = computed.len();
-            self.compute_ui_rect(node, root_rect, &mut computed, &mut auto_layout_computed);
+            self.compute_ui_rect(
+                node,
+                root_rect,
+                &mut computed,
+                &mut computed_scales,
+                &mut auto_layout_computed,
+            );
             if let Some(timing) = timing.as_deref_mut() {
                 if was_cached {
                     timing.cached_rects = timing.cached_rects.saturating_add(1);
@@ -291,6 +300,7 @@ impl Runtime {
         }
 
         self.render_ui.computed_rects = computed;
+        self.render_ui.computed_scales = computed_scales;
         std::mem::swap(&mut self.render_ui.prev_visible, &mut visible_now);
         visible_now.clear();
         self.render_ui.visible_now = visible_now;
@@ -312,6 +322,7 @@ impl Runtime {
         node: NodeID,
         root_rect: ComputedUiRect,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
+        computed_scales: &mut AHashMap<NodeID, Vector2>,
         auto_layout_computed: &mut ahash::AHashSet<NodeID>,
     ) -> Option<ComputedUiRect> {
         if let Some(rect) = computed.get(&node).copied() {
@@ -323,21 +334,43 @@ impl Runtime {
         if !matches!(scene_node.data, SceneNodeData::UiTreeList(_))
             && let Some(tree_parent) = self.ui_tree_owner(node)
         {
-            self.compute_ui_rect(tree_parent, root_rect, computed, auto_layout_computed)?;
+            self.compute_ui_rect(
+                tree_parent,
+                root_rect,
+                computed,
+                computed_scales,
+                auto_layout_computed,
+            )?;
             return computed.get(&node).copied();
         }
         let parent_rect = if scene_node.parent.is_nil() {
             root_rect
         } else {
-            self.compute_ui_rect(scene_node.parent, root_rect, computed, auto_layout_computed)
-                .unwrap_or(root_rect)
+            self.compute_ui_rect(
+                scene_node.parent,
+                root_rect,
+                computed,
+                computed_scales,
+                auto_layout_computed,
+            )
+            .unwrap_or(root_rect)
         };
         let rect = if scene_node.parent.is_nil() {
             let size = self.resolve_ui_size(node, parent_rect.size, None);
-            ui_root
+            let rect = ui_root
                 .layout
-                .compute_rect_with_size(&ui_root.transform, parent_rect, size)
+                .compute_rect_with_size(&ui_root.transform, parent_rect, size);
+            computed_scales.insert(node, ui_root.transform.scale);
+            rect
         } else {
+            let parent_scale = computed_scales
+                .get(&scene_node.parent)
+                .copied()
+                .unwrap_or(Vector2::ONE);
+            let parent_layout_rect = ComputedUiRect::new(
+                parent_rect.center,
+                parent_rect.size / safe_ui_scale(parent_scale),
+            );
             if self
                 .nodes
                 .get(scene_node.parent)
@@ -345,32 +378,44 @@ impl Runtime {
                 .is_some()
             {
                 if auto_layout_computed.insert(scene_node.parent) {
-                    self.compute_ui_auto_children_rects(scene_node.parent, parent_rect, computed);
+                    self.compute_ui_auto_children_rects(
+                        scene_node.parent,
+                        parent_rect,
+                        parent_scale,
+                        parent_layout_rect,
+                        computed,
+                        computed_scales,
+                    );
                 }
                 if let Some(rect) = computed.get(&node).copied() {
                     return Some(rect);
                 }
             }
-            self.compute_ui_child_rect(
-                scene_node.parent,
-                node,
-                parent_rect,
-                &ui_root.layout,
-                &ui_root.transform,
-            )
-            .unwrap_or_else(|| {
-                let parent_content = self
-                    .nodes
-                    .get(scene_node.parent)
-                    .and_then(|parent| ui_root_from_data(&parent.data))
-                    .map(|parent| parent_rect.inset(parent.layout.padding))
-                    .unwrap_or(parent_rect);
-                let parent_content = parent_content.inset(ui_root.layout.margin);
-                let size = self.resolve_ui_size(node, parent_content.size, None);
-                ui_root
-                    .layout
-                    .compute_rect_with_size(&ui_root.transform, parent_content, size)
-            })
+            let child_layout_rect = self
+                .compute_ui_child_rect(
+                    scene_node.parent,
+                    node,
+                    parent_layout_rect,
+                    &ui_root.layout,
+                    &ui_root.transform,
+                )
+                .unwrap_or_else(|| {
+                    let parent_content = self
+                        .nodes
+                        .get(scene_node.parent)
+                        .and_then(|parent| ui_root_from_data(&parent.data))
+                        .map(|parent| parent_layout_rect.inset(parent.layout.padding))
+                        .unwrap_or(parent_layout_rect);
+                    let parent_content = parent_content.inset(ui_root.layout.margin);
+                    let size = self.resolve_ui_size(node, parent_content.size, None);
+                    ui_root
+                        .layout
+                        .compute_rect_with_size(&ui_root.transform, parent_content, size)
+                });
+            let rect =
+                scale_ui_rect_from_parent(child_layout_rect, parent_layout_rect, parent_scale);
+            computed_scales.insert(node, parent_scale * ui_root.transform.scale);
+            rect
         };
         computed.insert(node, rect);
         if let SceneNodeData::UiTreeList(tree) = &scene_node.data {
@@ -382,34 +427,46 @@ impl Runtime {
     fn compute_ui_auto_children_rects(
         &self,
         parent: NodeID,
-        parent_rect: ComputedUiRect,
+        _parent_rect: ComputedUiRect,
+        parent_scale: Vector2,
+        parent_layout_rect: ComputedUiRect,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
+        computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) -> Option<()> {
         let parent_node = self.nodes.get(parent)?;
         let parent_ui = ui_root_from_data(&parent_node.data)?;
         let auto_layout = ui_auto_layout_from_data(&parent_node.data)?;
-        let content_rect = parent_rect.inset(parent_ui.layout.padding);
+        let content_rect = parent_layout_rect.inset(parent_ui.layout.padding);
         match auto_layout.mode {
             UiLayoutMode::H => self.compute_ui_h_children_rects(
                 &parent_ui.layout,
                 parent_node.get_children_ids(),
+                parent_layout_rect,
                 content_rect,
                 auto_layout.h_spacing,
+                parent_scale,
                 computed,
+                computed_scales,
             ),
             UiLayoutMode::V => self.compute_ui_v_children_rects(
                 &parent_ui.layout,
                 parent_node.get_children_ids(),
+                parent_layout_rect,
                 content_rect,
                 auto_layout.v_spacing,
+                parent_scale,
                 computed,
+                computed_scales,
             ),
             UiLayoutMode::Grid => self.compute_ui_grid_children_rects(
                 &parent_ui.layout,
                 parent_node.get_children_ids(),
+                parent_layout_rect,
                 content_rect,
                 auto_layout,
+                parent_scale,
                 computed,
+                computed_scales,
             ),
         }
         Some(())
@@ -940,9 +997,12 @@ impl Runtime {
         &self,
         parent_layout: &UiLayoutData,
         children: &[NodeID],
+        parent_layout_rect: ComputedUiRect,
         content: ComputedUiRect,
         spacing: f32,
+        parent_scale: Vector2,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
+        computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
         let fill_width = self.h_fill_width(children, content.size.x, spacing);
         let used_width = self.h_used_width(children, content.size, spacing, fill_width);
@@ -976,7 +1036,15 @@ impl Runtime {
             );
             let center =
                 Vector2::new(x + layout.margin.left + size.x * 0.5, y) + transform.translation;
-            computed.insert(sibling, ComputedUiRect::new(center, size));
+            insert_scaled_ui_child_rect(
+                computed,
+                computed_scales,
+                parent_layout_rect,
+                parent_scale,
+                sibling,
+                ComputedUiRect::new(center, size),
+                transform.scale,
+            );
             x += size.x + layout.margin.horizontal() + spacing;
         }
     }
@@ -1033,9 +1101,12 @@ impl Runtime {
         &self,
         parent_layout: &UiLayoutData,
         children: &[NodeID],
+        parent_layout_rect: ComputedUiRect,
         content: ComputedUiRect,
         spacing: f32,
+        parent_scale: Vector2,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
+        computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
         let fill_height = self.v_fill_height(children, content.size.y, spacing);
         let used_height = self.v_used_height(children, content.size, spacing, fill_height);
@@ -1069,7 +1140,15 @@ impl Runtime {
             );
             let center =
                 Vector2::new(x, y - layout.margin.top - size.y * 0.5) + transform.translation;
-            computed.insert(sibling, ComputedUiRect::new(center, size));
+            insert_scaled_ui_child_rect(
+                computed,
+                computed_scales,
+                parent_layout_rect,
+                parent_scale,
+                sibling,
+                ComputedUiRect::new(center, size),
+                transform.scale,
+            );
             y -= size.y + layout.margin.vertical() + spacing;
         }
     }
@@ -1167,9 +1246,12 @@ impl Runtime {
         &self,
         parent_layout: &UiLayoutData,
         children: &[NodeID],
+        parent_layout_rect: ComputedUiRect,
         content: ComputedUiRect,
         auto: UiAutoLayout,
+        parent_scale: Vector2,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
+        computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
         let columns = auto.columns.max(1) as usize;
         let mut ui_count = 0_usize;
@@ -1242,7 +1324,15 @@ impl Runtime {
                     parent_layout.v_align,
                 ),
             ) + transform.translation;
-            computed.insert(child, ComputedUiRect::new(center, size));
+            insert_scaled_ui_child_rect(
+                computed,
+                computed_scales,
+                parent_layout_rect,
+                parent_scale,
+                child,
+                ComputedUiRect::new(center, size),
+                transform.scale,
+            );
             index += 1;
         }
     }
@@ -1809,6 +1899,37 @@ fn ui_fill_height(layout: &UiLayoutData, parent_layout: &UiLayoutData, available
     } else {
         0.0
     }
+}
+
+fn safe_ui_scale(scale: Vector2) -> Vector2 {
+    Vector2::new(scale.x.max(0.0001), scale.y.max(0.0001))
+}
+
+fn scale_ui_rect_from_parent(
+    rect: ComputedUiRect,
+    parent_rect: ComputedUiRect,
+    parent_scale: Vector2,
+) -> ComputedUiRect {
+    ComputedUiRect::new(
+        parent_rect.center + (rect.center - parent_rect.center) * parent_scale,
+        rect.size * parent_scale,
+    )
+}
+
+fn insert_scaled_ui_child_rect(
+    computed: &mut AHashMap<NodeID, ComputedUiRect>,
+    computed_scales: &mut AHashMap<NodeID, Vector2>,
+    parent_rect: ComputedUiRect,
+    parent_scale: Vector2,
+    child: NodeID,
+    rect: ComputedUiRect,
+    child_scale: Vector2,
+) {
+    computed.insert(
+        child,
+        scale_ui_rect_from_parent(rect, parent_rect, parent_scale),
+    );
+    computed_scales.insert(child, parent_scale * child_scale);
 }
 
 fn ui_text_measure(data: &SceneNodeData) -> Vector2 {
@@ -2657,6 +2778,39 @@ mod tests {
                     && rect.size == [600.0, 225.0]
                     && rect.center == [300.0, 337.5]
         )));
+    }
+
+    #[test]
+    fn ui_parent_scale_preserves_child_virtual_layout_size() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut parent = UiPanel::new();
+        parent.layout.size = UiVector2::pixels(200.0, 100.0);
+        parent.transform.scale = Vector2::new(0.5, 0.5);
+        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+
+        let mut child = UiPanel::new();
+        child.layout.size = UiVector2::ratio(1.0, 1.0);
+        let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
+        attach_child(&mut runtime, parent, child);
+
+        runtime.extract_render_ui_commands();
+
+        let parent_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&parent)
+            .expect("parent rect exists");
+        let child_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&child)
+            .expect("child rect exists");
+
+        assert_eq!(parent_rect.size, Vector2::new(100.0, 50.0));
+        assert_eq!(child_rect.center, parent_rect.center);
+        assert_eq!(child_rect.size, parent_rect.size);
     }
 
     #[test]

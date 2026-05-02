@@ -302,6 +302,7 @@ impl Runtime {
         self.render_ui.visible_now.clear();
         self.render_ui.prev_visible.clear();
         self.render_ui.computed_rects.clear();
+        self.render_ui.computed_scales.clear();
         self.render_ui.auto_layout_computed.clear();
         self.render_ui.retained_commands.clear();
         self.render_ui.retained_rects.clear();
