@@ -173,6 +173,7 @@ fn push_label_shape(
         TextShapeInput {
             rect: label.rect,
             viewport,
+            clip_rect: clip_rect_from_state(label.clip_rect, viewport),
             text: label.text.as_ref(),
             font_size: label.font_size,
             color: label.color,
@@ -192,7 +193,7 @@ fn push_panel_shape(panel: &UiPanelDraw, viewport: [f32; 2], out: &mut Vec<Clipp
     let (min, max) = panel.rect.screen_min_max(viewport);
     let rect = Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1]));
     out.push(ClippedShape {
-        clip_rect: viewport_rect(viewport),
+        clip_rect: clip_rect_from_state(panel.clip_rect, viewport),
         shape: Shape::Rect(RectShape::new(
             rect,
             CornerRadius::same(resolve_corner_radius(panel) as u8),
@@ -220,7 +221,8 @@ fn push_text_edit_shapes(
     if content_max.x <= content_min.x || content_max.y <= content_min.y {
         return;
     }
-    let clip_rect = Rect::from_min_max(content_min, content_max);
+    let clip_rect = Rect::from_min_max(content_min, content_max)
+        .intersect(clip_rect_from_state(panel.clip_rect, viewport));
     let draw_pos = pos2(
         content_min.x - edit.scroll[0],
         content_min.y - edit.scroll[1],
@@ -391,6 +393,7 @@ fn resolve_corner_radius(panel: &UiPanelDraw) -> f32 {
 struct TextShapeInput<'a> {
     rect: UiRectState,
     viewport: [f32; 2],
+    clip_rect: Rect,
     text: &'a str,
     font_size: f32,
     color: [f32; 4],
@@ -402,6 +405,7 @@ fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<C
     let TextShapeInput {
         rect,
         viewport,
+        clip_rect,
         text,
         font_size,
         color,
@@ -418,7 +422,8 @@ fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<C
     }
 
     let (min, max) = rect.screen_min_max(viewport);
-    let clip_rect = Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1]));
+    let clip_rect = Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1]))
+        .intersect(clip_rect);
     let galley = fonts.with_pixels_per_point(1.0).layout(
         text.to_string(),
         FontId::new(font_size, FontFamily::Proportional),
@@ -440,6 +445,18 @@ fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<C
         clip_rect,
         shape: Shape::galley_with_override_text_color(pos2(x, y), galley, color32(color)),
     });
+}
+
+fn clip_rect_from_state(clip: [f32; 4], viewport: [f32; 2]) -> Rect {
+    let fallback = viewport_rect(viewport);
+    let min_x = clip[0].max(0.0).min(viewport[0]);
+    let min_y = clip[1].max(0.0).min(viewport[1]);
+    let max_x = clip[2].max(min_x).min(viewport[0]);
+    let max_y = clip[3].max(min_y).min(viewport[1]);
+    if !min_x.is_finite() || !min_y.is_finite() || !max_x.is_finite() || !max_y.is_finite() {
+        return fallback;
+    }
+    Rect::from_min_max(pos2(min_x, min_y), pos2(max_x, max_y))
 }
 
 fn color32(color: [f32; 4]) -> Color32 {

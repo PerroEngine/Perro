@@ -7,6 +7,7 @@ use std::borrow::Cow;
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct UiPanelDraw {
     pub(crate) rect: UiRectState,
+    pub(crate) clip_rect: [f32; 4],
     pub(crate) fill: [f32; 4],
     pub(crate) stroke: [f32; 4],
     pub(crate) stroke_width: f32,
@@ -16,6 +17,7 @@ pub(crate) struct UiPanelDraw {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct UiLabelDraw {
     pub(crate) rect: UiRectState,
+    pub(crate) clip_rect: [f32; 4],
     pub(crate) text: Cow<'static, str>,
     pub(crate) color: [f32; 4],
     pub(crate) font_size: f32,
@@ -81,6 +83,7 @@ impl UiRenderer {
             UiCommand::UpsertPanel {
                 node,
                 rect,
+                clip_rect,
                 fill,
                 stroke,
                 stroke_width,
@@ -89,6 +92,7 @@ impl UiRenderer {
                 node,
                 UiDraw::Panel(UiPanelDraw {
                     rect,
+                    clip_rect,
                     fill,
                     stroke,
                     stroke_width,
@@ -98,6 +102,7 @@ impl UiRenderer {
             UiCommand::UpsertButton {
                 node,
                 rect,
+                clip_rect,
                 fill,
                 stroke,
                 stroke_width,
@@ -108,6 +113,7 @@ impl UiRenderer {
                 UiDraw::Button(UiButtonDraw {
                     panel: UiPanelDraw {
                         rect,
+                        clip_rect,
                         fill,
                         stroke,
                         stroke_width,
@@ -119,6 +125,7 @@ impl UiRenderer {
             UiCommand::UpsertLabel {
                 node,
                 rect,
+                clip_rect,
                 text,
                 color,
                 font_size,
@@ -128,6 +135,7 @@ impl UiRenderer {
                 node,
                 UiDraw::Label(UiLabelDraw {
                     rect,
+                    clip_rect,
                     text,
                     color,
                     font_size,
@@ -138,6 +146,7 @@ impl UiRenderer {
             UiCommand::UpsertTextEdit {
                 node,
                 rect,
+                clip_rect,
                 fill,
                 stroke,
                 stroke_width,
@@ -160,6 +169,7 @@ impl UiRenderer {
                 UiDraw::TextEdit(UiTextEditDraw {
                     panel: UiPanelDraw {
                         rect,
+                        clip_rect,
                         fill,
                         stroke,
                         stroke_width,

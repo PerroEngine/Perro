@@ -256,6 +256,15 @@ impl Runtime {
                 continue;
             }
             let scale = computed_scales.get(&node).copied().unwrap_or(Vector2::ONE);
+            let clip_rect = if computed.contains_key(&node) {
+                self.ui_effective_clip_rect_screen(node, &computed, viewport)
+            } else {
+                self.render_ui
+                    .retained_commands
+                    .get(&node)
+                    .map(ui_command_clip_rect)
+                    .unwrap_or_else(|| viewport_clip_rect(viewport))
+            };
             let retained_matches =
                 self.render_ui
                     .retained_commands
@@ -265,6 +274,7 @@ impl Runtime {
                             command,
                             &scene_node.data,
                             rect_state,
+                            clip_rect,
                             scale,
                             state,
                             self.render_ui.focused_text_edit,
@@ -275,6 +285,7 @@ impl Runtime {
                     node,
                     &scene_node.data,
                     rect_state,
+                    clip_rect,
                     scale,
                     state,
                     self.render_ui.focused_text_edit,
@@ -1436,6 +1447,28 @@ impl Runtime {
         self.is_effectively_visible(node)
     }
 
+    fn ui_effective_clip_rect_screen(
+        &self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+        viewport: Vector2,
+    ) -> [f32; 4] {
+        let mut clip = viewport_clip_rect(viewport);
+        let mut current = Some(node);
+        while let Some(id) = current {
+            let Some(scene_node) = self.nodes.get(id) else {
+                break;
+            };
+            if ui_root_from_data(&scene_node.data).is_some()
+                && let Some(rect) = computed.get(&id).copied()
+            {
+                clip = intersect_clip_rect(clip, rect_to_screen_clip(rect, viewport));
+            }
+            current = (!scene_node.parent.is_nil()).then_some(scene_node.parent);
+        }
+        clip
+    }
+
     fn resolve_ui_size(
         &self,
         node: NodeID,
@@ -2032,18 +2065,20 @@ fn ui_command_from_node(
     node: NodeID,
     data: &SceneNodeData,
     rect: UiRectState,
+    clip_rect: [f32; 4],
     scale: Vector2,
     button_state: UiButtonVisualState,
     focused_text_edit: Option<NodeID>,
 ) -> Option<UiCommand> {
     match data {
-        SceneNodeData::UiPanel(panel) => Some(panel_command(node, rect, scale, &panel.style)),
+        SceneNodeData::UiPanel(panel) => Some(panel_command(node, rect, clip_rect, scale, &panel.style)),
         SceneNodeData::UiButton(button) => {
             let style = button_style(button, button_state);
             let style_scale = ui_style_scale(scale);
             Some(UiCommand::UpsertButton {
                 node,
                 rect,
+                clip_rect,
                 fill: style.fill.to_rgba(),
                 stroke: style.stroke.to_rgba(),
                 stroke_width: style.stroke_width * style_scale,
@@ -2054,6 +2089,7 @@ fn ui_command_from_node(
         SceneNodeData::UiLabel(label) => Some(UiCommand::UpsertLabel {
             node,
             rect,
+            clip_rect,
             text: Cow::Owned(label.text.to_string()),
             color: label.color.to_rgba(),
             font_size: label.font_size * ui_font_scale(scale),
@@ -2063,6 +2099,7 @@ fn ui_command_from_node(
         SceneNodeData::UiTextBox(text_box) => Some(text_edit_command(
             node,
             rect,
+            clip_rect,
             scale,
             &text_box.inner,
             false,
@@ -2071,6 +2108,7 @@ fn ui_command_from_node(
         SceneNodeData::UiTextBlock(text_block) => Some(text_edit_command(
             node,
             rect,
+            clip_rect,
             scale,
             &text_block.inner,
             true,
@@ -2142,6 +2180,7 @@ fn ui_command_matches_node(
     command: &UiCommand,
     data: &SceneNodeData,
     rect: UiRectState,
+    clip_rect: [f32; 4],
     scale: Vector2,
     button_state: UiButtonVisualState,
     focused_text_edit: Option<NodeID>,
@@ -2157,6 +2196,7 @@ fn ui_command_matches_node(
         },
         data,
         rect,
+        clip_rect,
         scale,
         button_state,
         focused_text_edit,
@@ -2259,6 +2299,7 @@ fn text_align_state(align: perro_ui::UiTextAlign) -> UiTextAlignState {
 fn text_edit_command(
     node: NodeID,
     rect: UiRectState,
+    clip_rect: [f32; 4],
     scale: Vector2,
     edit: &UiTextEdit,
     multiline: bool,
@@ -2271,6 +2312,7 @@ fn text_edit_command(
     UiCommand::UpsertTextEdit {
         node,
         rect,
+        clip_rect,
         fill: if focused {
             focused_style.fill.to_rgba()
         } else {
@@ -2312,15 +2354,52 @@ fn text_edit_command(
     }
 }
 
-fn panel_command(node: NodeID, rect: UiRectState, scale: Vector2, style: &UiStyle) -> UiCommand {
+fn panel_command(
+    node: NodeID,
+    rect: UiRectState,
+    clip_rect: [f32; 4],
+    scale: Vector2,
+    style: &UiStyle,
+) -> UiCommand {
     let style_scale = ui_style_scale(scale);
     UiCommand::UpsertPanel {
         node,
         rect,
+        clip_rect,
         fill: style.fill.to_rgba(),
         stroke: style.stroke.to_rgba(),
         stroke_width: style.stroke_width * style_scale,
         corner_radius: style.corner_radius * style_scale,
+    }
+}
+
+fn viewport_clip_rect(viewport: Vector2) -> [f32; 4] {
+    [0.0, 0.0, viewport.x.max(1.0), viewport.y.max(1.0)]
+}
+
+fn rect_to_screen_clip(rect: ComputedUiRect, viewport: Vector2) -> [f32; 4] {
+    let cx = viewport.x * 0.5 + rect.center.x;
+    let cy = viewport.y * 0.5 - rect.center.y;
+    let hx = rect.size.x * 0.5;
+    let hy = rect.size.y * 0.5;
+    [cx - hx, cy - hy, cx + hx, cy + hy]
+}
+
+fn intersect_clip_rect(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    let min_x = a[0].max(b[0]);
+    let min_y = a[1].max(b[1]);
+    let max_x = a[2].min(b[2]);
+    let max_y = a[3].min(b[3]);
+    [min_x, min_y, max_x.max(min_x), max_y.max(min_y)]
+}
+
+fn ui_command_clip_rect(command: &UiCommand) -> [f32; 4] {
+    match command {
+        UiCommand::UpsertPanel { clip_rect, .. }
+        | UiCommand::UpsertButton { clip_rect, .. }
+        | UiCommand::UpsertLabel { clip_rect, .. }
+        | UiCommand::UpsertTextEdit { clip_rect, .. } => *clip_rect,
+        UiCommand::RemoveNode { .. } | UiCommand::Clear => [0.0, 0.0, 1.0, 1.0],
     }
 }
 

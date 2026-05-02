@@ -51,6 +51,7 @@ pub enum UiCommand {
     UpsertPanel {
         node: NodeID,
         rect: UiRectState,
+        clip_rect: [f32; 4],
         fill: [f32; 4],
         stroke: [f32; 4],
         stroke_width: f32,
@@ -59,6 +60,7 @@ pub enum UiCommand {
     UpsertButton {
         node: NodeID,
         rect: UiRectState,
+        clip_rect: [f32; 4],
         fill: [f32; 4],
         stroke: [f32; 4],
         stroke_width: f32,
@@ -68,6 +70,7 @@ pub enum UiCommand {
     UpsertLabel {
         node: NodeID,
         rect: UiRectState,
+        clip_rect: [f32; 4],
         text: Cow<'static, str>,
         color: [f32; 4],
         font_size: f32,
@@ -77,6 +80,7 @@ pub enum UiCommand {
     UpsertTextEdit {
         node: NodeID,
         rect: UiRectState,
+        clip_rect: [f32; 4],
         fill: [f32; 4],
         stroke: [f32; 4],
         stroke_width: f32,
