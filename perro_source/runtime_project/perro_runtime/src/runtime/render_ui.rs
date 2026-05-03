@@ -4433,6 +4433,77 @@ mod tests {
         )));
     }
 
+    #[test]
+    fn menu_like_nested_layout_restores_all_buttons_and_labels_after_show() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut root = perro_ui::UiBox::new();
+        root.layout.size = UiVector2::ratio(1.0, 1.0);
+        let root = insert_ui_node(&mut runtime, SceneNodeData::UiBox(root));
+
+        let mut content = UiVLayout::new();
+        content.layout.size = UiVector2::ratio(0.92, 0.92);
+        let content = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(content));
+        attach_child(&mut runtime, root, content);
+
+        let mut grid = UiVLayout::new();
+        grid.layout.size = UiVector2::ratio(1.0, 0.72);
+        let grid = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(grid));
+        attach_child(&mut runtime, content, grid);
+
+        let row_top = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(UiHLayout::new()));
+        let row_bottom = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(UiHLayout::new()));
+        attach_child(&mut runtime, grid, row_top);
+        attach_child(&mut runtime, grid, row_bottom);
+
+        let mut buttons = Vec::new();
+        let mut labels = Vec::new();
+        for row in [row_top, row_top, row_bottom, row_bottom] {
+            let button = insert_button(&mut runtime, [120.0, 40.0]);
+            attach_child(&mut runtime, row, button);
+            buttons.push(button);
+
+            let mut label = perro_ui::UiLabel::new();
+            label.layout.size = UiVector2::ratio(1.0, 1.0);
+            label.text = "Sport".into();
+            let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+            attach_child(&mut runtime, button, label);
+            labels.push(label);
+        }
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        let _ = runtime.with_node_mut::<perro_ui::UiBox, _, _>(root, |ui| {
+            ui.visible = false;
+        });
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        let _ = runtime.with_node_mut::<perro_ui::UiBox, _, _>(root, |ui| {
+            ui.visible = true;
+        });
+        runtime.extract_render_ui_commands();
+
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        for button in buttons {
+            assert!(commands.iter().any(|cmd| matches!(
+                cmd,
+                RenderCommand::Ui(UiCommand::UpsertButton { node: n, .. }) if *n == button
+            )));
+        }
+        for label in labels {
+            assert!(commands.iter().any(|cmd| matches!(
+                cmd,
+                RenderCommand::Ui(UiCommand::UpsertLabel { node: n, .. }) if *n == label
+            )));
+        }
+    }
+
     fn insert_panel(runtime: &mut Runtime, size: [f32; 2], fill: Color) -> NodeID {
         let mut panel = UiPanel::new();
         panel.layout.size = UiVector2::pixels(size[0], size[1]);
