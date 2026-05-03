@@ -166,11 +166,9 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.layout.anchor = v;
             }
         }
-        "position" => {
-            if let Some(v) = as_vec2(value) {
-                node.transform.position = v.into();
-            }
-        }
+        // Absolute UI position unsupported.
+        // Use `position_ratio` or `position_percent`.
+        "position" => {}
         "position_percent" | "position_pct" => {
             if let Some(v) = as_vec2(value) {
                 node.transform.position = perro_ui::UiVector2::percent(v.x, v.y);
@@ -194,11 +192,9 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.layout.size = perro_ui::UiVector2::ratio(v.x, v.y);
             }
         }
-        "pivot" => {
-            if let Some(v) = as_vec2(value) {
-                node.transform.pivot = v.into();
-            }
-        }
+        // Absolute UI pivot unsupported.
+        // Use `pivot_ratio` or `pivot_percent`.
+        "pivot" => {}
         "pivot_percent" | "pivot_pct" => {
             if let Some(v) = as_vec2(value) {
                 node.transform.pivot = perro_ui::UiVector2::percent(v.x, v.y);
@@ -209,11 +205,8 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.transform.pivot = perro_ui::UiVector2::ratio(v.x, v.y);
             }
         }
-        "translation" => {
-            if let Some(v) = as_vec2(value) {
-                node.transform.translation = v;
-            }
-        }
+        // Absolute translation unsupported for UI authoring.
+        "translation" => {}
         "scale" => {
             if let Some(v) = as_vec2(value) {
                 node.transform.scale = v;
@@ -244,10 +237,20 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.layout.v_align = v;
             }
         }
-        // Intentionally ignore absolute UI min/max constraints in scene parsing.
-        // Use ratio/percent layout + parent scale behavior instead.
+        // Absolute min/max size unsupported.
+        // Use `min_size_ratio` / `max_size_ratio`.
         "min_size" | "max_size" | "min_w" | "min_width" | "min_h" | "min_height"
         | "max_w" | "max_width" | "max_h" | "max_height" => {}
+        "min_size_scale" | "min_scale" | "min_size_ratio" => {
+            if let Some(v) = as_vec2(value) {
+                node.layout.min_size_scale = v;
+            }
+        }
+        "max_size_scale" | "max_scale" | "max_size_ratio" => {
+            if let Some(v) = as_vec2(value) {
+                node.layout.max_size_scale = v;
+            }
+        }
         "padding" => {
             if let Some(v) = as_ui_rect(value) {
                 node.layout.padding = v;
@@ -320,9 +323,27 @@ fn apply_ui_label_fields(node: &mut UiLabel, fields: &[SceneObjectField]) {
                 node.color = v;
             }
         }
-        "font_size" => {
+        // Absolute text size unsupported.
+        // Use `text_size_ratio`.
+        "font_size" => {}
+        "text_size_ratio" | "font_size_ratio" => {
             if let Some(v) = as_f32(value) {
-                node.font_size = v;
+                node.text_size_ratio = v;
+            }
+        }
+        "font_relative" | "font_size_relative" | "font_size_relative_to_virtual" => {
+            if let Some(v) = as_bool(value) {
+                node.font_sizing.relative_to_virtual = v;
+            }
+        }
+        "font_min_scale" | "font_size_min_scale" => {
+            if let Some(v) = as_f32(value) {
+                node.font_sizing.min_scale = v;
+            }
+        }
+        "font_max_scale" | "font_size_max_scale" => {
+            if let Some(v) = as_f32(value) {
+                node.font_sizing.max_scale = v;
             }
         }
         "h_align" | "text_h_align" => {
@@ -373,9 +394,27 @@ fn apply_ui_text_edit_fields(node: &mut perro_ui::UiTextEdit, fields: &[SceneObj
                 node.caret_color = v;
             }
         }
-        "font_size" => {
+        // Absolute text size unsupported.
+        // Use `text_size_ratio`.
+        "font_size" => {}
+        "text_size_ratio" | "font_size_ratio" => {
             if let Some(v) = as_f32(value) {
-                node.font_size = v;
+                node.text_size_ratio = v;
+            }
+        }
+        "font_relative" | "font_size_relative" | "font_size_relative_to_virtual" => {
+            if let Some(v) = as_bool(value) {
+                node.font_sizing.relative_to_virtual = v;
+            }
+        }
+        "font_min_scale" | "font_size_min_scale" => {
+            if let Some(v) = as_f32(value) {
+                node.font_sizing.min_scale = v;
+            }
+        }
+        "font_max_scale" | "font_size_max_scale" => {
+            if let Some(v) = as_f32(value) {
+                node.font_sizing.max_scale = v;
             }
         }
         "text_padding" | "content_padding" => {

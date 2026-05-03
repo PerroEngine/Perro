@@ -135,6 +135,10 @@ fn classify_ui_base_change(before: &UiBox, after: &UiBox) -> u16 {
             | Runtime::UI_DIRTY_COMMANDS;
     }
     if before.layout.size != after.layout.size
+        || before.layout.min_size != after.layout.min_size
+        || before.layout.max_size != after.layout.max_size
+        || before.layout.min_size_scale != after.layout.min_size_scale
+        || before.layout.max_size_scale != after.layout.max_size_scale
         || before.layout.margin != after.layout.margin
         || before.layout.h_size != after.layout.h_size
         || before.layout.v_size != after.layout.v_size
@@ -179,7 +183,11 @@ fn classify_ui_node_payload_change(before: &SceneNodeData, after: &SceneNodeData
         }
         (SceneNodeData::UiLabel(before), SceneNodeData::UiLabel(after)) => {
             let mut flags = 0;
-            if before.text != after.text || before.font_size != after.font_size {
+            if before.text != after.text
+                || before.font_size != after.font_size
+                || before.text_size_ratio != after.text_size_ratio
+                || before.font_sizing != after.font_sizing
+            {
                 flags |= Runtime::UI_DIRTY_TEXT
                     | Runtime::UI_DIRTY_LAYOUT_SELF
                     | Runtime::UI_DIRTY_LAYOUT_PARENT
@@ -246,7 +254,11 @@ fn classify_ui_node_payload_change(before: &SceneNodeData, after: &SceneNodeData
 
 fn classify_text_edit_change(before: &perro_ui::UiTextEdit, after: &perro_ui::UiTextEdit) -> u16 {
     let mut flags = 0;
-    if before.text != after.text || before.font_size != after.font_size {
+    if before.text != after.text
+        || before.font_size != after.font_size
+        || before.text_size_ratio != after.text_size_ratio
+        || before.font_sizing != after.font_sizing
+    {
         flags |= Runtime::UI_DIRTY_TEXT
             | Runtime::UI_DIRTY_LAYOUT_SELF
             | Runtime::UI_DIRTY_LAYOUT_PARENT

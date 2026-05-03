@@ -321,6 +321,8 @@ pub struct UiLayoutData {
     pub size: UiVector2,
     pub min_size: Vector2,
     pub max_size: Vector2,
+    pub min_size_scale: Vector2,
+    pub max_size_scale: Vector2,
     pub margin: UiRect,
     pub padding: UiRect,
     pub h_size: UiSizeMode,
@@ -339,6 +341,8 @@ impl UiLayoutData {
             size: UiVector2::ZERO,
             min_size: Vector2::ZERO,
             max_size: Self::NO_MAX_SIZE,
+            min_size_scale: Vector2::ZERO,
+            max_size_scale: Vector2::new(f32::INFINITY, f32::INFINITY),
             margin: UiRect::ZERO,
             padding: UiRect::ZERO,
             h_size: UiSizeMode::Fixed,
@@ -354,7 +358,10 @@ impl UiLayoutData {
     }
 
     pub fn clamp_size(&self, size: Vector2) -> Vector2 {
-        size
+        Vector2::new(
+            size.x.clamp(self.min_size.x, self.max_size.x),
+            size.y.clamp(self.min_size.y, self.max_size.y),
+        )
     }
 
     pub fn resolved_scaled_size(&self, transform: &UiTransform, parent_size: Vector2) -> Vector2 {
@@ -568,6 +575,8 @@ pub struct UiLabel {
     pub text: Cow<'static, str>,
     pub color: Color,
     pub font_size: f32,
+    pub text_size_ratio: f32,
+    pub font_sizing: UiFontSizing,
     pub h_align: UiTextAlign,
     pub v_align: UiTextAlign,
 }
@@ -579,6 +588,8 @@ impl UiLabel {
             text: Cow::Borrowed(""),
             color: Color::WHITE,
             font_size: 16.0,
+            text_size_ratio: 0.5,
+            font_sizing: UiFontSizing::new(),
             h_align: UiTextAlign::Center,
             v_align: UiTextAlign::Center,
         }
@@ -647,6 +658,8 @@ pub struct UiTextEdit {
     pub selection_color: Color,
     pub caret_color: Color,
     pub font_size: f32,
+    pub text_size_ratio: f32,
+    pub font_sizing: UiFontSizing,
     pub padding: UiRect,
     pub h_scroll: f32,
     pub v_scroll: f32,
@@ -679,6 +692,8 @@ impl UiTextEdit {
             selection_color: Color::new(0.25, 0.42, 0.85, 0.55),
             caret_color: Color::WHITE,
             font_size: 16.0,
+            text_size_ratio: 0.5,
+            font_sizing: UiFontSizing::new(),
             padding: UiRect::symmetric(8.0, 6.0),
             h_scroll: 0.0,
             v_scroll: 0.0,
@@ -696,6 +711,47 @@ impl UiTextEdit {
         self.text = text.into();
         self.caret = clamp_to_char_boundary(self.text.as_ref(), self.caret.min(self.text.len()));
         self.anchor = clamp_to_char_boundary(self.text.as_ref(), self.anchor.min(self.text.len()));
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UiFontSizing {
+    pub relative_to_virtual: bool,
+    pub min_scale: f32,
+    pub max_scale: f32,
+}
+
+impl UiFontSizing {
+    pub const fn new() -> Self {
+        Self {
+            relative_to_virtual: false,
+            min_scale: 0.0,
+            max_scale: f32::INFINITY,
+        }
+    }
+
+    pub fn clamp_scale(self, scale: f32) -> f32 {
+        let value = if scale.is_finite() { scale } else { 1.0 };
+        let min = if self.min_scale.is_finite() {
+            self.min_scale.max(0.0)
+        } else {
+            0.0
+        };
+        let mut max = if self.max_scale.is_finite() {
+            self.max_scale.max(0.0)
+        } else {
+            f32::INFINITY
+        };
+        if max < min {
+            max = min;
+        }
+        value.clamp(min, max)
+    }
+}
+
+impl Default for UiFontSizing {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1336,19 +1392,16 @@ mod tests {
     }
 
     #[test]
-    fn size_ignores_min_and_max_size() {
+    fn size_respects_min_and_max_size() {
         let mut layout = UiLayoutData::new();
         layout.size = UiVector2::ratio(0.5, 0.1);
         layout.min_size = Vector2::new(300.0, 80.0);
         layout.max_size = Vector2::new(1200.0, 90.0);
 
-        assert_eq!(
-            layout.resolved_size(Vector2::new(3000.0, 1000.0)).x,
-            1500.0
-        );
-        assert!((layout.resolved_size(Vector2::new(3000.0, 1000.0)).y - 100.0).abs() < 1.0e-3);
-        assert_eq!(layout.resolved_size(Vector2::new(400.0, 400.0)).x, 200.0);
-        assert!((layout.resolved_size(Vector2::new(400.0, 400.0)).y - 40.0).abs() < 1.0e-3);
+        assert_eq!(layout.clamp_size(layout.resolved_size(Vector2::new(3000.0, 1000.0))).x, 1200.0);
+        assert!((layout.clamp_size(layout.resolved_size(Vector2::new(3000.0, 1000.0))).y - 90.0).abs() < 1.0e-3);
+        assert_eq!(layout.clamp_size(layout.resolved_size(Vector2::new(400.0, 400.0))).x, 300.0);
+        assert!((layout.clamp_size(layout.resolved_size(Vector2::new(400.0, 400.0))).y - 80.0).abs() < 1.0e-3);
     }
 
     #[test]

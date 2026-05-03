@@ -43,7 +43,7 @@ UiBox
 `UiLabel`
 
 - Text visual.
-- Holds `text`, `color`, `font_size`, and text alignment.
+- Holds `text`, `color`, `text_size_ratio`, and text alignment.
 - Can have children, but usually should not.
 
 `UiLayout`
@@ -82,27 +82,19 @@ UiBox
 Common fields live on `UiBox` data and all UI nodes inherit them:
 
 - `anchor`
-- `position`
 - `position_percent`
 - `position_ratio`
-- `size`
 - `size_percent`
 - `size_ratio`
-- `pivot`
 - `pivot_percent`
 - `pivot_ratio`
-- `translation`
 - `scale`
 - `h_size`
 - `v_size`
 - `h_align`
 - `v_align`
-- `min_size`
-- `max_size`
-- `min_w`
-- `min_h`
-- `max_w`
-- `max_h`
+- `min_size_ratio`
+- `max_size_ratio`
 - `padding`
 - `margin`
 - `z_index`
@@ -138,12 +130,17 @@ Children use parent UI rect as parent.
 
 `position_ratio = (0.5, 0.5)` means no offset from the anchor.
 `pivot_ratio = (0.5, 0.5)` means pivot at node center.
-`translation` applies after anchor / position / pivot resolve.
 `scale` multiplies final clamped size.
 `h_size` and `v_size` accept `fixed`, `fill`, or `fit_children`.
 `h_align` accepts `start`, `center`, `end`, or `fill`.
 `v_align` accepts `start`, `center`, `end`, or `fill`.
-`min_size`, `max_size`, `min_w`, `min_h`, `max_w`, and `max_h` are pixel clamps after size resolve.
+`min_size_ratio` and `max_size_ratio` clamp against virtual-derived base size.
+Base size = size resolved from `size_ratio` against virtual viewport parent space.
+`min_size_ratio = (1.0, 1.0)` means node never shrink below virtual-derived base size.
+`max_size_ratio = (2.0, 2.0)` means node never grow above 2x virtual-derived base size.
+Absolute UI keys unsupported in scenes:
+`position`, `pivot`, `translation`, `size`, `min_size`, `max_size`, `min_w`, `min_h`, `max_w`, `max_h`, `font_size`.
+Use ratio/percent keys + `text_size_ratio`.
 
 Example:
 
@@ -151,7 +148,7 @@ Example:
 [menu]
 [UiBox]
     anchor = "tr"
-    size = (300, 200)
+    size_ratio = (0.15625, 0.185185)
     padding = 12
 [/UiBox]
 [/menu]
@@ -162,18 +159,16 @@ Button state example:
 ```text
 [play_button]
 [UiButton]
-    size = (220, 48)
+    size_ratio = (0.114583, 0.044444)
     pressed_signals = ["play_down"]
     click_signals = ["play_clicked", "any_button_clicked"]
     style = { fill = "#344E41" stroke = "#A3B18A" radius = 8 }
     hover = {
-        size = (236, 52)
         scale = (1.02, 1.02)
         rotation = 0.02
         style = { fill = "#3A5A40" stroke = "#DAD7CD" radius = 10 }
     }
     pressed = {
-        size = (208, 44)
         scale = (0.98, 0.98)
         rotation = -0.01
         style = { fill = "#1B4332" stroke = "#95D5B2" radius = 6 }
@@ -227,7 +222,7 @@ Scene example:
 ```text
 [play_button]
 [UiButton]
-    size = (220, 48)
+    size_ratio = (0.114583, 0.044444)
     hover_signals = ["menu_button_hover"]
     pressed_signals = ["play_down", "any_button_down"]
     released_signals = ["play_up"]

@@ -432,6 +432,12 @@ script = "res://path/to/script.rs"
 `UiHBox` and `UiVBox` also work as aliases for `UiHLayout` and `UiVLayout`.
 `hover` and `pressed` on `UiButton` accept any `UiBox` field plus style fields.
 
+UI templates use ratio-only sizing.
+- `size_ratio` = size relative to parent.
+- `min_size_ratio` + `max_size_ratio` clamp relative to node base size at creation.
+- Example: `size_ratio = (0.5, 0.5)` => half parent size.
+- Example: `min_size_ratio = (1.0, 1.0)` => never shrink below creation size.
+
 ```text
 [ui_box]
 parent = PARENTKEY
@@ -442,17 +448,17 @@ script = "res://path/to/script.rs"
         mouse_filter = "stop"
         anchor = "center"
         position_ratio = (0.5, 0.5)
-        size = (0, 0)
+        size_ratio = (0.5, 0.5)
         pivot_ratio = (0.5, 0.5)
-        translation = (0, 0)
+
         scale = (1, 1)
         rotation = 0.0
         h_size = "fixed"
         v_size = "fixed"
         h_align = "center"
         v_align = "center"
-        min_size = (0, 0)
-        # max_size = (800, 600)
+        min_size_ratio = (1.0, 1.0)
+        max_size_ratio = (inf, inf)
         padding = 0
         margin = 0
         z_index = 0
@@ -473,17 +479,17 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             anchor = "center"
             position_ratio = (0.5, 0.5)
-            size = (0, 0)
+            size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
-            translation = (0, 0)
+
             scale = (1, 1)
             rotation = 0.0
             h_size = "fixed"
             v_size = "fixed"
             h_align = "center"
             v_align = "center"
-            min_size = (0, 0)
-            # max_size = (800, 600)
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
             padding = 0
             margin = 0
             z_index = 0
@@ -515,17 +521,17 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             anchor = "center"
             position_ratio = (0.5, 0.5)
-            size = (0, 0)
+            size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
-            translation = (0, 0)
+
             scale = (1, 1)
             rotation = 0.0
             h_size = "fixed"
             v_size = "fixed"
             h_align = "center"
             v_align = "center"
-            min_size = (0, 0)
-            # max_size = (800, 600)
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
             padding = 0
             margin = 0
             z_index = 0
@@ -539,7 +545,7 @@ script = "res://path/to/script.rs"
     [UiLabel]
         text = ""
         color = (1, 1, 1, 1)
-        font_size = 16.0
+        text_size_ratio = 0.5
         text_h_align = "center"
         text_v_align = "center"
         [UiBox]
@@ -548,17 +554,17 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             anchor = "center"
             position_ratio = (0.5, 0.5)
-            size = (0, 0)
+            size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
-            translation = (0, 0)
+
             scale = (1, 1)
             rotation = 0.0
             h_size = "fixed"
             v_size = "fixed"
             h_align = "center"
             v_align = "center"
-            min_size = (0, 0)
-            # max_size = (800, 600)
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
             padding = 0
             margin = 0
             z_index = 0
@@ -576,7 +582,7 @@ script = "res://path/to/script.rs"
         placeholder_color = (0.58, 0.62, 0.70, 1.0)
         selection_color = (0.25, 0.42, 0.85, 0.55)
         caret_color = (1, 1, 1, 1)
-        font_size = 16.0
+        text_size_ratio = 0.5
         text_padding = { left = 8 top = 6 right = 8 bottom = 6 }
         editable = true
         hover_signals = []
@@ -592,17 +598,17 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             anchor = "center"
             position_ratio = (0.5, 0.5)
-            size = (0, 0)
+            size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
-            translation = (0, 0)
+
             scale = (1, 1)
             rotation = 0.0
             h_size = "fixed"
             v_size = "fixed"
             h_align = "center"
             v_align = "center"
-            min_size = (0, 0)
-            # max_size = (800, 600)
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
             padding = 0
             margin = 0
             z_index = 0
@@ -620,7 +626,7 @@ script = "res://path/to/script.rs"
         placeholder_color = (0.58, 0.62, 0.70, 1.0)
         selection_color = (0.25, 0.42, 0.85, 0.55)
         caret_color = (1, 1, 1, 1)
-        font_size = 16.0
+        text_size_ratio = 0.5
         text_padding = { left = 8 top = 6 right = 8 bottom = 6 }
         editable = true
         hover_signals = []
@@ -636,17 +642,17 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             anchor = "center"
             position_ratio = (0.5, 0.5)
-            size = (0, 0)
+            size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
-            translation = (0, 0)
+
             scale = (1, 1)
             rotation = 0.0
             h_size = "fixed"
             v_size = "fixed"
             h_align = "center"
             v_align = "center"
-            min_size = (0, 0)
-            # max_size = (800, 600)
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
             padding = 0
             margin = 0
             z_index = 0
@@ -669,17 +675,17 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             anchor = "center"
             position_ratio = (0.5, 0.5)
-            size = (0, 0)
+            size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
-            translation = (0, 0)
+
             scale = (1, 1)
             rotation = 0.0
             h_size = "fixed"
             v_size = "fixed"
             h_align = "center"
             v_align = "center"
-            min_size = (0, 0)
-            # max_size = (800, 600)
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
             padding = 0
             margin = 0
             z_index = 0
@@ -701,17 +707,17 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             anchor = "center"
             position_ratio = (0.5, 0.5)
-            size = (0, 0)
+            size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
-            translation = (0, 0)
+
             scale = (1, 1)
             rotation = 0.0
             h_size = "fixed"
             v_size = "fixed"
             h_align = "center"
             v_align = "center"
-            min_size = (0, 0)
-            # max_size = (800, 600)
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
             padding = 0
             margin = 0
             z_index = 0
@@ -733,17 +739,17 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             anchor = "center"
             position_ratio = (0.5, 0.5)
-            size = (0, 0)
+            size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
-            translation = (0, 0)
+
             scale = (1, 1)
             rotation = 0.0
             h_size = "fixed"
             v_size = "fixed"
             h_align = "center"
             v_align = "center"
-            min_size = (0, 0)
-            # max_size = (800, 600)
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
             padding = 0
             margin = 0
             z_index = 0
@@ -764,17 +770,17 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             anchor = "center"
             position_ratio = (0.5, 0.5)
-            size = (0, 0)
+            size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
-            translation = (0, 0)
+
             scale = (1, 1)
             rotation = 0.0
             h_size = "fixed"
             v_size = "fixed"
             h_align = "center"
             v_align = "center"
-            min_size = (0, 0)
-            # max_size = (800, 600)
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
             padding = 0
             margin = 0
             z_index = 0
@@ -903,3 +909,5 @@ script = "res://path/to/script.rs"
     [/AnimationPlayer]
 [/animation_player]
 ```
+
+
