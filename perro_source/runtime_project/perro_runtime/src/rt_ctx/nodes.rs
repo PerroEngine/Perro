@@ -104,23 +104,34 @@ impl Runtime {
             stack.extend(children);
         }
 
-        for parent_id in [old_parent, new_parent] {
-            if parent_id.is_nil() {
-                continue;
-            }
-            let parent_is_ui = self
-                .nodes
-                .get(parent_id)
-                .is_some_and(|node| ui_base_from_data(&node.data).is_some());
-            if parent_is_ui {
+        let mut seen_ui_parents = std::collections::HashSet::new();
+        for ui_parent_id in [
+            self.closest_ui_ancestor(old_parent),
+            self.closest_ui_ancestor(new_parent),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if seen_ui_parents.insert(ui_parent_id) {
                 self.mark_ui_dirty(
-                    parent_id,
+                    ui_parent_id,
                     Self::UI_DIRTY_LAYOUT_SELF
                         | Self::UI_DIRTY_LAYOUT_PARENT
                         | Self::UI_DIRTY_COMMANDS,
                 );
             }
         }
+    }
+
+    fn closest_ui_ancestor(&self, mut node_id: perro_ids::NodeID) -> Option<perro_ids::NodeID> {
+        while !node_id.is_nil() {
+            let node = self.nodes.get(node_id)?;
+            if ui_base_from_data(&node.data).is_some() {
+                return Some(node_id);
+            }
+            node_id = node.parent;
+        }
+        None
     }
 }
 

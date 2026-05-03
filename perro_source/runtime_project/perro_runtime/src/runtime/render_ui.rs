@@ -98,11 +98,15 @@ impl Runtime {
             }
             if (flags & DirtyState::DIRTY_LAYOUT_PARENT) != 0
                 && let Some(parent) = self.nodes.get(node).map(|node| node.parent)
-                && !parent.is_nil()
-                && let Some(parent_node) = self.nodes.get(parent)
-                && ui_auto_layout_from_data(&parent_node.data).is_some()
+                && let Some(ui_parent) = self.closest_ui_parent(parent)
+                && self
+                    .nodes
+                    .get(ui_parent)
+                    .and_then(|parent_node| ui_auto_layout_from_data(&parent_node.data))
+                    .is_some()
             {
-                for &sibling in parent_node.get_children_ids() {
+                let siblings = self.ui_layout_children(ui_parent);
+                for &sibling in &siblings {
                     if traversal_seen.insert(sibling) {
                         traversal_ids.push(sibling);
                     }
@@ -490,6 +494,36 @@ impl Runtime {
         (None, root_rect)
     }
 
+    fn closest_ui_parent(&self, mut parent: NodeID) -> Option<NodeID> {
+        while !parent.is_nil() {
+            let parent_node = self.nodes.get(parent)?;
+            if ui_root_from_data(&parent_node.data).is_some() {
+                return Some(parent);
+            }
+            parent = parent_node.parent;
+        }
+        None
+    }
+
+    fn ui_layout_children(&self, parent: NodeID) -> Vec<NodeID> {
+        let mut out = Vec::new();
+        let Some(parent_node) = self.nodes.get(parent) else {
+            return out;
+        };
+        let mut stack: Vec<NodeID> = parent_node.get_children_ids().to_vec();
+        while let Some(node_id) = stack.pop() {
+            let Some(node) = self.nodes.get(node_id) else {
+                continue;
+            };
+            if ui_root_from_data(&node.data).is_some() {
+                out.push(node_id);
+                continue;
+            }
+            stack.extend(node.get_children_ids().iter().copied());
+        }
+        out
+    }
+
     fn compute_ui_auto_children_rects(
         &self,
         parent: NodeID,
@@ -502,6 +536,7 @@ impl Runtime {
         let parent_node = self.nodes.get(parent)?;
         let parent_ui = ui_root_from_data(&parent_node.data)?;
         let auto_layout = ui_auto_layout_from_data(&parent_node.data)?;
+        let layout_children = self.ui_layout_children(parent);
         let content_rect = parent_layout_rect.inset(parent_ui.layout.padding);
         let layout_ctx = UiChildrenLayoutCtx {
             parent_layout_rect,
@@ -511,7 +546,7 @@ impl Runtime {
         match auto_layout.mode {
             UiLayoutMode::H => self.compute_ui_h_children_rects(
                 &parent_ui.layout,
-                parent_node.get_children_ids(),
+                &layout_children,
                 layout_ctx,
                 auto_layout.h_spacing,
                 computed,
@@ -519,7 +554,7 @@ impl Runtime {
             ),
             UiLayoutMode::V => self.compute_ui_v_children_rects(
                 &parent_ui.layout,
-                parent_node.get_children_ids(),
+                &layout_children,
                 layout_ctx,
                 auto_layout.v_spacing,
                 computed,
@@ -527,7 +562,7 @@ impl Runtime {
             ),
             UiLayoutMode::Grid => self.compute_ui_grid_children_rects(
                 &parent_ui.layout,
-                parent_node.get_children_ids(),
+                &layout_children,
                 layout_ctx,
                 auto_layout,
                 computed,
@@ -985,26 +1020,27 @@ impl Runtime {
     ) -> Option<ComputedUiRect> {
         let parent_node = self.nodes.get(parent)?;
         let parent_ui = ui_root_from_data(&parent_node.data)?;
+        let layout_children = self.ui_layout_children(parent);
         let content_rect = parent_rect.inset(parent_ui.layout.padding);
         let auto_rect = ui_auto_layout_from_data(&parent_node.data).and_then(|auto_layout| {
             match auto_layout.mode {
                 UiLayoutMode::H => self.compute_ui_h_child_rect(
                     &parent_ui.layout,
-                    parent_node.get_children_ids(),
+                    &layout_children,
                     child,
                     content_rect,
                     auto_layout.h_spacing,
                 ),
                 UiLayoutMode::V => self.compute_ui_v_child_rect(
                     &parent_ui.layout,
-                    parent_node.get_children_ids(),
+                    &layout_children,
                     child,
                     content_rect,
                     auto_layout.v_spacing,
                 ),
                 UiLayoutMode::Grid => self.compute_ui_grid_child_rect(
                     &parent_ui.layout,
-                    parent_node.get_children_ids(),
+                    &layout_children,
                     child,
                     content_rect,
                     auto_layout,
@@ -3135,6 +3171,110 @@ mod tests {
             RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, .. })
                 if *node == ui_root && rect.size == [400.0, 300.0]
         )));
+    }
+
+    #[test]
+    fn ui_descendant_under_node3d_wrapper_resolves_against_closest_ui_parent() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut root = UiPanel::new();
+        root.layout.size = UiVector2::ratio(0.5, 0.5);
+        let root = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(root));
+
+        let wrapper = runtime.create::<perro_nodes::Node3D>();
+        let mut child = UiPanel::new();
+        child.layout.size = UiVector2::ratio(1.0, 1.0);
+        let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
+        attach_child(&mut runtime, wrapper, child);
+        attach_child(&mut runtime, root, wrapper);
+
+        runtime.extract_render_ui_commands();
+
+        let root_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&root)
+            .copied()
+            .expect("root rect exists");
+        let child_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&child)
+            .copied()
+            .expect("child rect exists");
+        assert_eq!(child_rect.size, root_rect.size);
+        assert_eq!(child_rect.center, root_rect.center);
+    }
+
+    #[test]
+    fn ui_descendant_under_animation_player_wrapper_resolves_against_closest_ui_parent() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut root = UiPanel::new();
+        root.layout.size = UiVector2::ratio(0.5, 0.5);
+        let root = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(root));
+
+        let wrapper = runtime.create::<perro_nodes::AnimationPlayer>();
+        let mut child = UiPanel::new();
+        child.layout.size = UiVector2::ratio(1.0, 1.0);
+        let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
+        attach_child(&mut runtime, wrapper, child);
+        attach_child(&mut runtime, root, wrapper);
+
+        runtime.extract_render_ui_commands();
+
+        let root_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&root)
+            .copied()
+            .expect("root rect exists");
+        let child_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&child)
+            .copied()
+            .expect("child rect exists");
+        assert_eq!(child_rect.size, root_rect.size);
+        assert_eq!(child_rect.center, root_rect.center);
+    }
+
+    #[test]
+    fn ui_auto_layout_includes_ui_descendants_through_non_ui_wrappers() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut layout = UiHLayout::new();
+        layout.layout.size = UiVector2::pixels(300.0, 120.0);
+        layout.inner.h_spacing = 20.0;
+        let layout = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+
+        let left = insert_panel(&mut runtime, [80.0, 80.0], Color::new(1.0, 0.0, 0.0, 1.0));
+        attach_child(&mut runtime, layout, left);
+
+        let wrapper = runtime.create::<perro_nodes::Node3D>();
+        let right = insert_panel(&mut runtime, [80.0, 80.0], Color::new(0.0, 1.0, 0.0, 1.0));
+        attach_child(&mut runtime, wrapper, right);
+        attach_child(&mut runtime, layout, wrapper);
+
+        runtime.extract_render_ui_commands();
+
+        let left_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&left)
+            .copied()
+            .expect("left rect exists");
+        let right_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&right)
+            .copied()
+            .expect("right rect exists");
+        let delta = right_rect.center.x - left_rect.center.x;
+        assert!((delta.abs() - 100.0).abs() < 0.001);
     }
 
     #[test]
