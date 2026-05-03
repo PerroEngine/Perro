@@ -245,7 +245,7 @@ impl Default for JoyConState {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_list!(&InputContext<_>) -> &[JoyConState]`
+/// - `joycon_list!(&InputWindow<_>) -> &[JoyConState]`
 ///
 /// Usage:
 /// - `joycon_list!(ipt) -> &[JoyConState]`
@@ -258,7 +258,7 @@ macro_rules! joycon_list {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_get!(&InputContext<_>, JoyConIndex) -> Option<&JoyConState>`
+/// - `joycon_get!(&InputWindow<_>, JoyConIndex) -> Option<&JoyConState>`
 ///
 /// Usage:
 /// - `joycon_get!(ipt, index) -> Option<&JoyConState>`
@@ -273,7 +273,7 @@ macro_rules! joycon_get {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_side!(&InputContext<_>, JoyConIndex) -> Option<JoyConSide>`
+/// - `joycon_side!(&InputWindow<_>, JoyConIndex) -> Option<JoyConSide>`
 ///
 /// Usage:
 /// - `joycon_side!(ipt, index) -> Option<JoyConSide>`
@@ -288,7 +288,7 @@ macro_rules! joycon_side {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_down!(&InputContext<_>, JoyConIndex, JoyConButton) -> bool`
+/// - `joycon_down!(&InputWindow<_>, JoyConIndex, JoyConButton) -> bool`
 ///
 /// Usage:
 /// - `joycon_down!(ipt, index, JoyConButton::Top) -> bool`
@@ -305,7 +305,7 @@ macro_rules! joycon_down {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_pressed!(&InputContext<_>, JoyConIndex, JoyConButton) -> bool`
+/// - `joycon_pressed!(&InputWindow<_>, JoyConIndex, JoyConButton) -> bool`
 ///
 /// Usage:
 /// - `joycon_pressed!(ipt, index, JoyConButton::Top) -> bool`
@@ -320,7 +320,7 @@ macro_rules! joycon_pressed {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_released!(&InputContext<_>, JoyConIndex, JoyConButton) -> bool`
+/// - `joycon_released!(&InputWindow<_>, JoyConIndex, JoyConButton) -> bool`
 ///
 /// Usage:
 /// - `joycon_released!(ipt, index, JoyConButton::Top) -> bool`
@@ -335,7 +335,7 @@ macro_rules! joycon_released {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_stick!(&InputContext<_>, JoyConIndex) -> Vector2`
+/// - `joycon_stick!(&InputWindow<_>, JoyConIndex) -> Vector2`
 ///
 /// Usage:
 /// - `joycon_stick!(ipt, index) -> Vector2`
@@ -350,7 +350,7 @@ macro_rules! joycon_stick {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_gyro!(&InputContext<_>, JoyConIndex) -> Vector3`
+/// - `joycon_gyro!(&InputWindow<_>, JoyConIndex) -> Vector3`
 ///
 /// Usage:
 /// - `joycon_gyro!(ipt, index) -> Vector3`
@@ -365,7 +365,7 @@ macro_rules! joycon_gyro {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_accel!(&InputContext<_>, JoyConIndex) -> Vector3`
+/// - `joycon_accel!(&InputWindow<_>, JoyConIndex) -> Vector3`
 ///
 /// Usage:
 /// - `joycon_accel!(ipt, index) -> Vector3`
@@ -380,7 +380,7 @@ macro_rules! joycon_accel {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_connected!(&InputContext<_>, JoyConIndex) -> bool`
+/// - `joycon_connected!(&InputWindow<_>, JoyConIndex) -> bool`
 macro_rules! joycon_connected {
     ($ipt:expr, $index:expr) => {{
         let jc = $ipt.JoyCons();
@@ -390,7 +390,7 @@ macro_rules! joycon_connected {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_calibrated!(&InputContext<_>, JoyConIndex) -> bool`
+/// - `joycon_calibrated!(&InputWindow<_>, JoyConIndex) -> bool`
 macro_rules! joycon_calibrated {
     ($ipt:expr, $index:expr) => {{
         let jc = $ipt.JoyCons();
@@ -400,7 +400,7 @@ macro_rules! joycon_calibrated {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_calibrating!(&InputContext<_>, JoyConIndex) -> bool`
+/// - `joycon_calibrating!(&InputWindow<_>, JoyConIndex) -> bool`
 macro_rules! joycon_calibrating {
     ($ipt:expr, $index:expr) => {{
         let jc = $ipt.JoyCons();
@@ -412,7 +412,7 @@ macro_rules! joycon_calibrating {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_needs_calibration!(&InputContext<_>, JoyConIndex) -> bool`
+/// - `joycon_needs_calibration!(&InputWindow<_>, JoyConIndex) -> bool`
 macro_rules! joycon_needs_calibration {
     ($ipt:expr, $index:expr) => {{
         let jc = $ipt.JoyCons();
@@ -424,7 +424,7 @@ macro_rules! joycon_needs_calibration {
 
 #[macro_export]
 /// Signature:
-/// - `joycon_calibration_bias!(&InputContext<_>, JoyConIndex) -> Vector3`
+/// - `joycon_calibration_bias!(&InputWindow<_>, JoyConIndex) -> Vector3`
 macro_rules! joycon_calibration_bias {
     ($ipt:expr, $index:expr) => {{
         let jc = $ipt.JoyCons();
@@ -433,3 +433,4 @@ macro_rules! joycon_calibration_bias {
             .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
     }};
 }
+

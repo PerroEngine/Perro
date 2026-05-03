@@ -174,7 +174,7 @@ impl Default for GamepadState {
 
 #[macro_export]
 /// Signature:
-/// - `gamepad_list!(&InputContext<_>) -> &[GamepadState]`
+/// - `gamepad_list!(&InputWindow<_>) -> &[GamepadState]`
 ///
 /// Usage:
 /// - `gamepad_list!(ipt) -> &[GamepadState]`
@@ -187,7 +187,7 @@ macro_rules! gamepad_list {
 
 #[macro_export]
 /// Signature:
-/// - `gamepad_get!(&InputContext<_>, GamepadIndex) -> Option<&GamepadState>`
+/// - `gamepad_get!(&InputWindow<_>, GamepadIndex) -> Option<&GamepadState>`
 ///
 /// Usage:
 /// - `gamepad_get!(ipt, index) -> Option<&GamepadState>`
@@ -202,7 +202,7 @@ macro_rules! gamepad_get {
 
 #[macro_export]
 /// Signature:
-/// - `gamepad_down!(&InputContext<_>, GamepadIndex, GamepadButton) -> bool`
+/// - `gamepad_down!(&InputWindow<_>, GamepadIndex, GamepadButton) -> bool`
 ///
 /// Usage:
 /// - `gamepad_down!(ipt, index, GamepadButton::Bottom) -> bool`
@@ -219,7 +219,7 @@ macro_rules! gamepad_down {
 
 #[macro_export]
 /// Signature:
-/// - `gamepad_pressed!(&InputContext<_>, GamepadIndex, GamepadButton) -> bool`
+/// - `gamepad_pressed!(&InputWindow<_>, GamepadIndex, GamepadButton) -> bool`
 ///
 /// Usage:
 /// - `gamepad_pressed!(ipt, index, GamepadButton::Bottom) -> bool`
@@ -234,7 +234,7 @@ macro_rules! gamepad_pressed {
 
 #[macro_export]
 /// Signature:
-/// - `gamepad_released!(&InputContext<_>, GamepadIndex, GamepadButton) -> bool`
+/// - `gamepad_released!(&InputWindow<_>, GamepadIndex, GamepadButton) -> bool`
 ///
 /// Usage:
 /// - `gamepad_released!(ipt, index, GamepadButton::Bottom) -> bool`
@@ -249,7 +249,7 @@ macro_rules! gamepad_released {
 
 #[macro_export]
 /// Signature:
-/// - `gamepad_left_stick!(&InputContext<_>, GamepadIndex) -> Vector2`
+/// - `gamepad_left_stick!(&InputWindow<_>, GamepadIndex) -> Vector2`
 ///
 /// Usage:
 /// - `gamepad_left_stick!(ipt, index) -> Vector2`
@@ -264,7 +264,7 @@ macro_rules! gamepad_left_stick {
 
 #[macro_export]
 /// Signature:
-/// - `gamepad_right_stick!(&InputContext<_>, GamepadIndex) -> Vector2`
+/// - `gamepad_right_stick!(&InputWindow<_>, GamepadIndex) -> Vector2`
 ///
 /// Usage:
 /// - `gamepad_right_stick!(ipt, index) -> Vector2`
@@ -279,7 +279,7 @@ macro_rules! gamepad_right_stick {
 
 #[macro_export]
 /// Signature:
-/// - `gamepad_gyro!(&InputContext<_>, GamepadIndex) -> Vector3`
+/// - `gamepad_gyro!(&InputWindow<_>, GamepadIndex) -> Vector3`
 ///
 /// Usage:
 /// - `gamepad_gyro!(ipt, index) -> Vector3`
@@ -294,7 +294,7 @@ macro_rules! gamepad_gyro {
 
 #[macro_export]
 /// Signature:
-/// - `gamepad_accel!(&InputContext<_>, GamepadIndex) -> Vector3`
+/// - `gamepad_accel!(&InputWindow<_>, GamepadIndex) -> Vector3`
 ///
 /// Usage:
 /// - `gamepad_accel!(ipt, index) -> Vector3`
@@ -306,3 +306,4 @@ macro_rules! gamepad_accel {
             .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
     }};
 }
+

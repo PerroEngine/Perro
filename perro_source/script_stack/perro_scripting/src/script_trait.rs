@@ -1,56 +1,29 @@
 use perro_ids::{NodeID, ScriptMemberID};
-use perro_input::{InputAPI, InputContext};
-use perro_resource_context::{ResourceContext, api::ResourceAPI};
+use perro_input::{InputAPI, InputWindow};
+use perro_resource_context::{ResourceWindow, api::ResourceAPI};
 use perro_runtime_context::sub_apis::{Attribute, Member};
-use perro_runtime_context::{RuntimeContext, api::RuntimeAPI};
+use perro_runtime_context::{RuntimeWindow, api::RuntimeAPI};
 use perro_variant::Variant;
 use std::any::Any;
 
 #[allow(improper_ctypes_definitions)]
 pub type ScriptConstructor<RT, RS, IP> = extern "C" fn() -> *mut dyn ScriptBehavior<RT, RS, IP>;
 
+pub struct ScriptContext<'a, RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>
+{
+    pub run: &'a mut RuntimeWindow<'a, RT>,
+    pub res: &'a ResourceWindow<'a, RS>,
+    pub ipt: &'a InputWindow<'a, IP>,
+    pub id: NodeID,
+}
+
 pub trait ScriptLifecycle<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>
 {
-    fn on_init(
-        &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
-    ) {
-    }
-    fn on_all_init(
-        &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
-    ) {
-    }
-    fn on_update(
-        &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
-    ) {
-    }
-    fn on_fixed_update(
-        &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
-    ) {
-    }
-    fn on_removal(
-        &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
-    ) {
-    }
+    fn on_init(&self, _ctx: &mut ScriptContext<'_, RT, RS, IP>) {}
+    fn on_all_init(&self, _ctx: &mut ScriptContext<'_, RT, RS, IP>) {}
+    fn on_update(&self, _ctx: &mut ScriptContext<'_, RT, RS, IP>) {}
+    fn on_fixed_update(&self, _ctx: &mut ScriptContext<'_, RT, RS, IP>) {}
+    fn on_removal(&self, _ctx: &mut ScriptContext<'_, RT, RS, IP>) {}
 }
 
 pub trait ScriptBehavior<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>:
@@ -70,10 +43,7 @@ pub trait ScriptBehavior<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: 
     fn call_method(
         &self,
         method: ScriptMemberID,
-        ctx: &mut RuntimeContext<'_, RT>,
-        res: &ResourceContext<'_, RS>,
-        ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         params: &[Variant],
     ) -> Variant;
     fn attributes_of(&self, member: &str) -> &'static [Attribute];
@@ -123,3 +93,4 @@ impl ScriptFlags {
         self.0 & Self::HAS_REMOVAL != 0
     }
 }
+

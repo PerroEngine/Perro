@@ -1,10 +1,10 @@
 use crate::{Runtime, runtime_project::ProviderMode};
 use perro_ids::ScriptMemberID;
-use perro_input::InputContext;
+use perro_input::InputWindow;
 use perro_io::set_dlc_self_context;
-use perro_resource_context::ResourceContext;
-use perro_runtime_context::RuntimeContext;
-use perro_scripting::{ScriptBehavior, ScriptConstructor};
+use perro_resource_context::ResourceWindow;
+use perro_runtime_context::RuntimeWindow;
+use perro_scripting::{ScriptBehavior, ScriptConstructor, ScriptContext};
 use perro_variant::Variant;
 use std::{
     fs,
@@ -117,21 +117,27 @@ impl Runtime {
 
         if flags.has_init() {
             let resource_api = self.resource_api.clone();
-            let res: ResourceContext<'_, crate::RuntimeResourceApi> =
-                ResourceContext::new(resource_api.as_ref());
+            let res: ResourceWindow<'_, crate::RuntimeResourceApi> =
+                ResourceWindow::new(resource_api.as_ref());
             let input_ptr = std::ptr::addr_of!(self.input);
             // SAFETY: During callback dispatch, input is treated as immutable runtime state.
             // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-            let ipt: InputContext<'_, perro_input::InputSnapshot> =
-                unsafe { InputContext::new(&*input_ptr) };
+            let ipt: InputWindow<'_, perro_input::InputSnapshot> =
+                unsafe { InputWindow::new(&*input_ptr) };
             let mount = self
                 .script_runtime
                 .script_instance_dlc_mounts
                 .get(&node)
                 .cloned();
             set_dlc_self_context(mount.as_deref());
-            let mut ctx = RuntimeContext::new(self);
-            behavior.on_init(&mut ctx, &res, &ipt, node);
+            let mut run = RuntimeWindow::new(self);
+            let mut sctx = ScriptContext {
+                run: &mut run,
+                res: &res,
+                ipt: &ipt,
+                id: node,
+            };
+            behavior.on_init(&mut sctx);
             set_dlc_self_context(None);
         }
         if flags.has_all_init() {
@@ -357,3 +363,4 @@ fn scripts_dylib_suffix() -> &'static str {
 fn scripts_dylib_suffix() -> &'static str {
     ".dylib"
 }
+

@@ -20,16 +20,16 @@ use std::sync::Arc;
 type SelfNodeType = AnimationPlayer;
 
 pub fn internal_update<RT, R, IP>(
-    ctx: &mut RuntimeContext<'_, RT>,
-    res: &ResourceContext<'_, R>,
-    _ipt: &InputContext<'_, IP>,
-    self_id: NodeID,
+    ctx: &mut RuntimeWindow<'_, RT>,
+    res: &ResourceWindow<'_, R>,
+    _ipt_w: &InputWindow<'_, IP>,
+    id: NodeID,
 ) where
     RT: RuntimeAPI + ?Sized,
     R: ResourceAPI + ?Sized,
     IP: InputAPI + ?Sized,
 {
-    let animation_id = with_node!(ctx, SelfNodeType, self_id, |player| player.animation);
+    let animation_id = with_node!(ctx, SelfNodeType, id, |player| player.animation);
     if animation_id.is_nil() {
         return;
     }
@@ -42,7 +42,7 @@ pub fn internal_update<RT, R, IP>(
     }
 
     let delta_seconds = delta_time!(ctx).max(0.0);
-    let Some(step) = step_animation_player(ctx, self_id, &clip, delta_seconds) else {
+    let Some(step) = step_animation_player(ctx, id, &clip, delta_seconds) else {
         return;
     };
     if !step.should_apply {
@@ -53,10 +53,10 @@ pub fn internal_update<RT, R, IP>(
 }
 
 pub fn internal_fixed_update<RT, R, IP>(
-    _ctx: &mut RuntimeContext<'_, RT>,
-    _res: &ResourceContext<'_, R>,
-    _ipt: &InputContext<'_, IP>,
-    _self_id: NodeID,
+    _run: &mut RuntimeWindow<'_, RT>,
+    _res_w: &ResourceWindow<'_, R>,
+    _ipt_w: &InputWindow<'_, IP>,
+    _id: NodeID,
 ) where
     RT: RuntimeAPI + ?Sized,
     R: ResourceAPI + ?Sized,
@@ -71,15 +71,15 @@ struct AnimationStep {
 }
 
 fn step_animation_player<RT>(
-    ctx: &mut RuntimeContext<'_, RT>,
-    self_id: NodeID,
+    ctx: &mut RuntimeWindow<'_, RT>,
+    id: NodeID,
     clip: &Arc<perro_animation::AnimationClip>,
     delta_seconds: f32,
 ) -> Option<AnimationStep>
 where
     RT: RuntimeAPI + ?Sized,
 {
-    with_node_mut!(ctx, SelfNodeType, self_id, |player| {
+    with_node_mut!(ctx, SelfNodeType, id, |player| {
         let previous_frame = player.current_frame;
         let frame_count = clip.frame_count();
 
@@ -128,8 +128,8 @@ where
 }
 
 fn apply_clip_frame<RT>(
-    ctx: &mut RuntimeContext<'_, RT>,
-    res: &ResourceContext<'_, impl ResourceAPI + ?Sized>,
+    ctx: &mut RuntimeWindow<'_, RT>,
+    res: &ResourceWindow<'_, impl ResourceAPI + ?Sized>,
     clip: &Arc<perro_animation::AnimationClip>,
     frame: u32,
     bindings: &[AnimationObjectBinding],
@@ -149,7 +149,7 @@ fn apply_clip_frame<RT>(
 }
 
 fn apply_frame_events<RT>(
-    ctx: &mut RuntimeContext<'_, RT>,
+    ctx: &mut RuntimeWindow<'_, RT>,
     clip: &Arc<perro_animation::AnimationClip>,
     frame: u32,
     bindings: &[AnimationObjectBinding],
@@ -210,7 +210,7 @@ fn scope_target_node(
 }
 
 fn resolve_event_params<RT>(
-    ctx: &mut RuntimeContext<'_, RT>,
+    ctx: &mut RuntimeWindow<'_, RT>,
     params: &[AnimationParam],
     binding_map: &HashMap<&str, NodeID>,
     object_type_map: &HashMap<&str, &str>,
@@ -225,7 +225,7 @@ where
 }
 
 fn resolve_animation_param<RT>(
-    ctx: &mut RuntimeContext<'_, RT>,
+    ctx: &mut RuntimeWindow<'_, RT>,
     param: &AnimationParam,
     binding_map: &HashMap<&str, NodeID>,
     object_type_map: &HashMap<&str, &str>,
@@ -269,7 +269,7 @@ where
 }
 
 fn read_node_field_variant<RT>(
-    ctx: &mut RuntimeContext<'_, RT>,
+    ctx: &mut RuntimeWindow<'_, RT>,
     node_id: NodeID,
     field: NodeField,
 ) -> Option<Variant>
@@ -475,8 +475,8 @@ where
 }
 
 fn apply_track<RT>(
-    ctx: &mut RuntimeContext<'_, RT>,
-    res: &ResourceContext<'_, impl ResourceAPI + ?Sized>,
+    ctx: &mut RuntimeWindow<'_, RT>,
+    res: &ResourceWindow<'_, impl ResourceAPI + ?Sized>,
     node_id: NodeID,
     track: &AnimationObjectTrack,
     frame: u32,
@@ -747,7 +747,7 @@ fn apply_track<RT>(
 }
 
 fn apply_skeleton_bone_track<RT>(
-    ctx: &mut RuntimeContext<'_, RT>,
+    ctx: &mut RuntimeWindow<'_, RT>,
     node_id: NodeID,
     bone_target: &perro_animation::AnimationBoneTarget,
     value: &AnimationTrackValue,
@@ -1102,3 +1102,5 @@ mod tests {
         );
     }
 }
+
+

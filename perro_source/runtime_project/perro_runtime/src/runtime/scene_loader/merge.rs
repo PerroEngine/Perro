@@ -3,7 +3,7 @@ use crate::Runtime;
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_nodes::animation_player::AnimationObjectBinding;
 use perro_nodes::{SceneNode, SceneNodeData};
-use perro_resource_context::ResourceContext;
+use perro_resource_context::ResourceWindow;
 use perro_scene::SceneValue;
 use perro_structs::{Vector2, Vector3};
 use perro_variant::Variant;
@@ -66,7 +66,7 @@ pub(super) fn merge_prepared_scene(
             animation_player_bindings.push((node, animation_bindings));
         }
         if let Some(source) = animation_source {
-            let res = ResourceContext::new(resource_api.as_ref());
+            let res = ResourceWindow::new(resource_api.as_ref());
             let animation = res.Animations().load(&source);
             if let Some(node_data) = runtime.nodes.get_mut(node)
                 && let SceneNodeData::AnimationPlayer(player) = &mut node_data.data
@@ -97,7 +97,7 @@ pub(super) fn merge_prepared_scene(
                 .insert(node, overrides);
         }
         if let Some(source) = skeleton_source {
-            let res = ResourceContext::new(resource_api.as_ref());
+            let res = ResourceWindow::new(resource_api.as_ref());
             let bones = res.Skeletons().load_bones(&source);
             if let Some(node_data) = runtime.nodes.get_mut(node)
                 && let SceneNodeData::Skeleton3D(skeleton) = &mut node_data.data
@@ -295,3 +295,4 @@ fn scene_value_to_variant(value: &SceneValue, key_to: &HashMap<String, NodeID>) 
         ),
     }
 }
+

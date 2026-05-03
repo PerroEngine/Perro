@@ -7,7 +7,7 @@ Core pieces:
 - `lifecycle!` for engine entry points
 - `methods!` for callable behavior methods
 - bare Rust modules for shared code (`res/**.rs` with no script behavior)
-- script contexts (`RuntimeContext`, `ResourceContext`, `InputContext`)
+- script contexts (`RuntimeWindow`, `ResourceWindow`, `InputWindow`)
 
 Script dependencies:
 - Add extra crates to `deps.toml` in your project root under `[dependencies]`.
@@ -25,3 +25,4 @@ See:
 - [Script State](state.md)
 - [Script Lifecycle](lifecycle.md)
 - [Script Methods](methods.md)
+

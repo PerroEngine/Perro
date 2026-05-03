@@ -1737,10 +1737,7 @@ impl<RT: RuntimeAPI + ?Sized, RS: perro_api::resource_context::api::ResourceAPI 
     fn call_method(
         &self,
         method: ScriptMemberID,
-        ctx: &mut RuntimeContext<'_, RT>,
-        res: &ResourceContext<'_, RS>,
-        ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         params: &[Variant],
     ) -> Variant {{
 {call_method_body}
@@ -1869,10 +1866,7 @@ fn extract_method_body_from_fn_start(
 fn method_signature_looks_like_lifecycle(source: &str, fn_start: usize, body_start: usize) -> bool {
     let sig = &source[fn_start..body_start];
     sig.contains("&self")
-        && sig.contains("RuntimeContext")
-        && sig.contains("ResourceContext")
-        && sig.contains("InputContext")
-        && sig.contains("NodeID")
+        && sig.contains("ScriptContext")
 }
 
 fn block_has_non_comment_tokens(block: &str) -> bool {
@@ -2163,7 +2157,7 @@ fn generate_member_consts(fields: &[ScriptField], methods: &[ScriptMethod]) -> S
 
 fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
     if methods.is_empty() {
-        return "        let _ = (method, ctx, res, ipt, self_id, params);\n        Variant::Null"
+        return "        let _ = (method, ctx, params);\n        Variant::Null"
             .to_string();
     }
 
@@ -2172,9 +2166,9 @@ fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
     for method in methods {
         let const_name = method_const_name(&method.name);
         let call = if method.takes_raw_params {
-            format!("self.{}(ctx, res, ipt, self_id, params)", method.name)
+            format!("self.{}(ctx, params)", method.name)
         } else if method.params.is_empty() {
-            format!("self.{}(ctx, res, ipt, self_id)", method.name)
+            format!("self.{}(ctx)", method.name)
         } else {
             let args = method
                 .params
@@ -2182,7 +2176,7 @@ fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
                 .map(|p| p.name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("self.{}(ctx, res, ipt, self_id, {args})", method.name)
+            format!("self.{}(ctx, {args})", method.name)
         };
 
         let mut prelude = String::new();
@@ -2202,7 +2196,7 @@ fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
 
         if !supported {
             out.push_str(&format!(
-                "            {const_name} => {{\n                let _ = (ctx, res, ipt, self_id, params);\n                Variant::Null\n            }}\n"
+                "            {const_name} => {{\n                let _ = (ctx, params);\n                Variant::Null\n            }}\n"
             ));
             continue;
         }
@@ -2662,13 +2656,7 @@ fn parse_script_method_signature_detailed(line: &str) -> Result<ScriptMethod, St
         let mut params = Vec::new();
         let mut has_self = false;
         let mut has_ctx = false;
-        let mut has_res = false;
-        let mut has_ipt = false;
-        let mut has_node_id = false;
         let mut consumed_ctx = false;
-        let mut consumed_res = false;
-        let mut consumed_ipt = false;
-        let mut consumed_node_id = false;
 
         for raw in split_top_level_commas(params_sig) {
             let token = raw.trim();
@@ -2689,24 +2677,9 @@ fn parse_script_method_signature_detailed(line: &str) -> Result<ScriptMethod, St
             let param_ty = ty_part.trim();
 
             let normalized = normalize_type(param_ty);
-            if is_runtime_context_type(&normalized) && !consumed_ctx {
+            if is_script_context_type(&normalized) && !consumed_ctx {
                 consumed_ctx = true;
                 has_ctx = true;
-                continue;
-            }
-            if is_resource_context_type(&normalized) && !consumed_res {
-                consumed_res = true;
-                has_res = true;
-                continue;
-            }
-            if is_input_context_type(&normalized) && !consumed_ipt {
-                consumed_ipt = true;
-                has_ipt = true;
-                continue;
-            }
-            if is_node_id_type(&normalized) && !consumed_node_id {
-                consumed_node_id = true;
-                has_node_id = true;
                 continue;
             }
 
@@ -2726,22 +2699,13 @@ fn parse_script_method_signature_detailed(line: &str) -> Result<ScriptMethod, St
         if takes_raw_params && !params.is_empty() {
             return Err("`params: &[Variant]` cannot be mixed with typed params".to_string());
         }
-        if !(has_self && has_ctx && has_res && has_ipt && has_node_id) {
+        if !(has_self && has_ctx) {
             let mut missing = Vec::new();
             if !has_self {
                 missing.push("&self");
             }
             if !has_ctx {
-                missing.push("ctx: &mut RuntimeContext<...>");
-            }
-            if !has_res {
-                missing.push("res: &ResourceContext<...>");
-            }
-            if !has_ipt {
-                missing.push("ipt: &InputContext<...>");
-            }
-            if !has_node_id {
-                missing.push("self_id: NodeID");
+                missing.push("ctx: &mut ScriptContext<...>");
             }
             return Err(format!(
                 "missing required leading parameters: {}",
@@ -2773,29 +2737,15 @@ fn methods_debug_enabled() -> bool {
         )
 }
 
-fn is_runtime_context_type(ty: &str) -> bool {
-    ty.starts_with("&mutRuntimeContext<")
-        || ty == "&mutRuntimeContext"
-        || ty.starts_with("&mutperro_api::runtime_context::RuntimeContext<")
-        || ty == "&mutperro_api::runtime_context::RuntimeContext"
-}
-
-fn is_resource_context_type(ty: &str) -> bool {
-    ty.starts_with("&ResourceContext<")
-        || ty == "&ResourceContext"
-        || ty.starts_with("&perro_api::resource_context::ResourceContext<")
-        || ty == "&perro_api::resource_context::ResourceContext"
-}
-
-fn is_input_context_type(ty: &str) -> bool {
-    ty.starts_with("&InputContext<")
-        || ty == "&InputContext"
-        || ty.starts_with("&perro_api::input::InputContext<")
-        || ty == "&perro_api::input::InputContext"
-}
-
-fn is_node_id_type(ty: &str) -> bool {
-    ty == "NodeID" || ty == "perro_api::ids::NodeID"
+fn is_script_context_type(ty: &str) -> bool {
+    ty.starts_with("&mutScriptContext<")
+        || ty == "&mutScriptContext"
+        || ty.starts_with("&mutperro_api::scripting::ScriptContext<")
+        || ty == "&mutperro_api::scripting::ScriptContext"
+        || ty.starts_with("ScriptContext<")
+        || ty == "ScriptContext"
+        || ty.starts_with("perro_api::scripting::ScriptContext<")
+        || ty == "perro_api::scripting::ScriptContext"
 }
 
 fn parse_transpiler_attr_name(line: &str) -> Option<String> {
@@ -3370,7 +3320,7 @@ mod tests {
             "expected generated call_method match"
         );
         assert!(
-            !transpiled.contains("let _ = (method, ctx, res, ipt, self_id, params);"),
+            !transpiled.contains("let _ = (method, ctx, params);"),
             "unexpected empty call_method stub generated"
         );
         for method_name in expected_method_names {
@@ -3401,38 +3351,26 @@ pub struct ArcherControllerState {
 lifecycle!({
     fn on_init(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {}
 });
 
 methods!({
     fn bind_agent(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         _agent_id: NodeID,
     ) {}
 
     fn set_player_index(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         _player_index: i32,
     ) {}
 
     fn set_turn_enabled(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         _enabled: bool,
     ) {}
 });
@@ -3487,47 +3425,32 @@ pub struct ArcherAiBrainState {
 lifecycle!({
     fn on_init(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {}
 });
 
 methods!({
     fn bind_agent(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         _agent_id: NodeID,
     ) {}
 
     fn set_turn_enabled(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         _enabled: bool,
     ) {}
 
     fn set_ai_skill(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         _skill: f32,
     ) {}
 
     fn reset_plan(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {}
 });
 "#;
@@ -3558,10 +3481,7 @@ pub struct WeirdState {
 lifecycle!({
     fn on_update(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {
         // comment with misleading delimiters: methods!({ fn nope( ) { } });
         let _a = "format-like braces {x} and parens (y) should not affect parser";
@@ -3574,18 +3494,12 @@ lifecycle!({
 methods!({
     fn alpha(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {}
 
     fn beta(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         _enabled: bool,
     ) {}
 });
@@ -3695,3 +3609,7 @@ pub struct NestedState {
         );
     }
 }
+
+
+
+

@@ -14,7 +14,7 @@ Impulse macro:
 
 Arguments:
 
-- `ctx`: `&mut RuntimeContext<_>`
+- `ctx`: `&mut RuntimeWindow<_>`
 - `body_id`: `NodeID` of a `RigidBody2D` or `RigidBody3D`
 - `force`/`impulse`: `Vector2` for 2D bodies, `Vector3` for 3D bodies
 
@@ -58,3 +58,4 @@ Area signals:
 - Signal params:
   - `params[0]`: area `NodeID`
   - `params[1]`: other overlapped body `NodeID`
+

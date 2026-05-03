@@ -7,7 +7,7 @@ pub mod prelude {
     pub use crate::lifecycle;
     pub use crate::methods;
     pub use crate::script_trait::{
-        ScriptBehavior, ScriptConstructor, ScriptFlags, ScriptLifecycle,
+        ScriptBehavior, ScriptConstructor, ScriptContext, ScriptFlags, ScriptLifecycle,
     };
     pub use crate::{State, Variant};
     pub use perro_ids::prelude::*;

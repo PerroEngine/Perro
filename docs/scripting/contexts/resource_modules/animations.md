@@ -42,7 +42,7 @@ let _same = animation_reserve!(res, "res://animations/hero_run.panim");
 let _ = animation_drop!(res, "res://animations/hero_run.panim");
 ```
 
-## Typical Runtime Flow With `AnimationPlayer` (using RuntimeContext)
+## Typical Runtime Flow With `AnimationPlayer` (using RuntimeWindow)
 
 1. `animation_load!(res, source)` to get `AnimationID`
 2. `anim_player_set_clip!(ctx, animation_player_id, animation_id)`
@@ -54,3 +54,4 @@ Binding note:
 - `ClipObjectName` is the object key declared in `.panim [Objects]` (without `@`).
 - Bind each clip object to a runtime node with the expected node type for that track data.
 - scene authoring bindings use map entries: `{ ClipObjectName = SceneKey }` or `{ "ClipObjectName": SceneKey }`.
+

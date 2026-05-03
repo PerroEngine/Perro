@@ -2,9 +2,10 @@
 
 Type:
 
-- `ctx: &mut RuntimeContext<'_, RT>`
+- `ctx: &mut ScriptContext<'_, RT, RS, IP>`
+- runtime window handle: `ctx.run`
 
-Runtime macros take `ctx` as argument 1.
+Runtime macros take `ctx.run` as argument 1.
 
 ## Runtime Modules
 
@@ -21,3 +22,5 @@ Each module page contains:
 - Signature notes
 - Examples
 - Behavioral guidance (ownership, mutability, IDs, and query/inheritance usage)
+
+

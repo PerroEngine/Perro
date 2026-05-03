@@ -3,7 +3,7 @@
 Post-processing can be configured as:
 
 - **Per camera** using `post_processing` on `Camera2D`/`Camera3D`.
-- **Global** using `ResourceContext` post-processing methods/macros.
+- **Global** using `ResourceWindow` post-processing methods/macros.
 
 Each chain is ordered: effects are applied in sequence (stacked) and run after 3D + particles + 2D.
 
@@ -210,3 +210,4 @@ fn post_process(uv: vec2<f32>, color: vec4<f32>, depth: f32) -> vec4<f32> {
     return vec4<f32>(color.rgb + edge * strength, color.a);
 }
 ```
+

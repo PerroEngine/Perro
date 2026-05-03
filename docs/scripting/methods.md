@@ -10,10 +10,7 @@ Use methods for reusable logic that you call from lifecycle hooks or through `ca
 methods!({
     fn my_method(
         &self,
-        ctx: &mut RuntimeContext<'_, RT>,
-        res: &ResourceContext<'_, RS>,
-        ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         value: i32,
     ) {
         // logic
@@ -23,10 +20,7 @@ methods!({
 
 Required leading args:
 - `&self`
-- `ctx: &mut RuntimeContext<'_, RT>`
-- `res: &ResourceContext<'_, RS>`
-- `ipt: &InputContext<'_, IP>`
-- `self_id: NodeID`
+- `ctx: &mut ScriptContext<'_, RT, RS, IP>`
 
 After that, add your own params.
 
@@ -37,13 +31,13 @@ For custom typed params/returns in `methods!`, derive `Variant` on the custom ty
 Internal call:
 
 ```rust
-self.my_method(ctx, res, ipt, self_id, 10);
+self.my_method(ctx, 10);
 ```
 
 Runtime-dispatched call:
 
 ```rust
-let out = call_method!(ctx, self_id, method!("my_method"), params![10_i32]);
+let out = call_method!(ctx.run, ctx.id, method!("my_method"), params![10_i32]);
 ```
 
 ## Guidance
@@ -51,4 +45,7 @@ let out = call_method!(ctx, self_id, method!("my_method"), params![10_i32]);
 - Prefer direct Rust calls (`self.foo(...)`) for local behavior.
 - Use `call_method!` for dynamic/cross-script calls.
 - Keep state mutations explicit with `with_state_mut!`.
+
+
+
 

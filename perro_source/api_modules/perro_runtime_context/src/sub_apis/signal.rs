@@ -56,7 +56,7 @@ impl<'rt, R: SignalAPI + ?Sized> SignalModule<'rt, R> {
 /// Connects a signal to a script function handler.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `script`: script `NodeID`
 /// - `signal`: `SignalID` (for example `signal!("on_hit")`)
 /// - `function`: `ScriptMemberID` (for example `method!("handle_hit")`)
@@ -76,7 +76,7 @@ macro_rules! signal_connect {
 /// Disconnects a signal-function connection.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `script`: script `NodeID`
 /// - `signal`: `SignalID`
 /// - `function`: `ScriptMemberID`
@@ -91,7 +91,7 @@ macro_rules! signal_disconnect {
 /// Emits a signal globally through the runtime signal bus.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `signal`: `SignalID`
 /// - `params` (optional): `&[Variant]`
 #[macro_export]
@@ -103,3 +103,4 @@ macro_rules! signal_emit {
         $ctx.Signals().signal_emit($signal, &[])
     };
 }
+

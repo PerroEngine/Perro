@@ -1,6 +1,0 @@
-type = custom
-shader_path = "res://shaders/test_shader.wgsl"
-base_color_factor = (0.1, 0.1, 0.12, 1.0)
-emissive_factor = (0.2, 0.05, 0.35)
-alpha_mode = OPAQUE
-double_sided = false

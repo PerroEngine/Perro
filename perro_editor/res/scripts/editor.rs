@@ -16,19 +16,13 @@ struct EditorState {
 lifecycle!({
     fn on_init(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        _ctx: &mut ScriptContext<'_, RT, RS, IP>
     ) {
     }
 
     fn on_all_init(
         &self,
-        ctx: &mut RuntimeContext<'_, RT>,
-        res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {
         let project_dir = FileMod::load_string(ACTIVE_PROJECT)
             .unwrap_or_default()
@@ -40,83 +34,72 @@ lifecycle!({
 
         let main_scene = read_main_scene(&project_dir).unwrap_or_else(|| "res://main.scn".to_string());
 
-        let _ = with_state_mut!(ctx, EditorState, self_id, |state| {
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             state.project_dir = project_dir.clone();
             state.main_scene = main_scene.clone();
             state.live_root = NodeID::default();
         });
 
-        load_preview_scene(ctx, res, self_id);
+        load_preview_scene(ctx);
     }
 
     fn on_update(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        _ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {
     }
 
     fn on_fixed_update(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+         _ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {
     }
 
     fn on_removal(
         &self,
-        ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+   ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {
-        let live_root = with_state!(ctx, EditorState, self_id, |state| state.live_root);
+        let live_root = with_state!(ctx.run, EditorState, ctx.id, |state| state.live_root);
         if !live_root.is_nil() {
-            let _ = remove_node!(ctx, live_root);
+            let _ = remove_node!(ctx.run, live_root);
         }
     }
 });
 
-fn load_preview_scene<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized>(
-    ctx: &mut RuntimeContext<'_, RT>,
-    res: &ResourceContext<'_, RS>,
-    self_id: NodeID,
+fn load_preview_scene<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
+   ctx: &mut ScriptContext<'_, RT, RS, IP>,
 ) {
-    let (project_dir, main_scene, prev_root) = with_state!(ctx, EditorState, self_id, |state| {
+    let (project_dir, main_scene, prev_root) = with_state!(ctx.run, EditorState, ctx.id, |state| {
         (state.project_dir.clone(), state.main_scene.clone(), state.live_root)
     });
 
     if !prev_root.is_nil() {
-        let _ = remove_node!(ctx, prev_root);
+        let _ = remove_node!(ctx.run, prev_root);
     }
 
     if project_dir.is_empty() {
         return;
     }
 
-    let Ok(doc) = scene_load_doc!(res, main_scene.clone()) else {
+    let Ok(doc) = scene_load_doc!(ctx.res, main_scene.clone()) else {
         return;
     };
     let Ok(live_scene_path) = write_live_scene_doc(&doc) else {
         return;
     };
-    let Ok(root) = scene_load!(ctx, live_scene_path) else {
+    let Ok(root) = scene_load!(ctx.run, live_scene_path) else {
         return;
     };
 
-    if !reparent!(ctx, self_id, root) {
-        let _ = remove_node!(ctx, root);
+    if !reparent!(ctx.run, ctx.id, root) {
+        let _ = remove_node!(ctx.run, root);
         return;
     }
 
     apply_live_root(ctx, root);
     disable_physics(ctx, root);
 
-    let _ = with_state_mut!(ctx, EditorState, self_id, |state| {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.live_root = root;
     });
 }
@@ -154,8 +137,11 @@ fn write_live_scene_doc(doc: &perro_scene::SceneDoc) -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
-fn apply_live_root<RT: RuntimeAPI + ?Sized>(ctx: &mut RuntimeContext<'_, RT>, root: NodeID) {
-    let _ = with_base_node_mut!(ctx, UiBox, root, |node| {
+fn apply_live_root<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, RT, RS, IP>,
+    root: NodeID
+) {
+    let _ = with_base_node_mut!(ctx.run, UiBox, root, |node| {
         node.layout.anchor = UiAnchor::Center;
         node.layout.size = UiVector2::ratio(1.0, 1.0);
         node.layout.h_size = UiSizeMode::Fill;
@@ -168,32 +154,38 @@ fn apply_live_root<RT: RuntimeAPI + ?Sized>(ctx: &mut RuntimeContext<'_, RT>, ro
     });
 
     disable_ui_node_input(ctx, root);
-    for id in query!(ctx, base[UiBox], in_subtree(root)) {
+    for id in query!(ctx.run, base[UiBox], in_subtree(root)) {
         disable_ui_node_input(ctx, id);
     }
 }
 
-fn disable_ui_node_input<RT: RuntimeAPI + ?Sized>(ctx: &mut RuntimeContext<'_, RT>, id: NodeID) {
-    let _ = with_base_node_mut!(ctx, UiBox, id, |node| {
+fn disable_ui_node_input<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, RT, RS, IP>,
+    id: NodeID
+) {
+    let _ = with_base_node_mut!(ctx.run, UiBox, id, |node| {
         node.input_enabled = false;
         node.mouse_filter = UiMouseFilter::Ignore;
     });
 }
 
-fn disable_physics<RT: RuntimeAPI + ?Sized>(ctx: &mut RuntimeContext<'_, RT>, root: NodeID) {
+fn disable_physics<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, RT, RS, IP>,
+    root: NodeID
+) {
     let ids = query!(
-        ctx,
+        ctx.run,
         any(
             is[StaticBody2D, RigidBody2D, Area2D, StaticBody3D, RigidBody3D, Area3D]
         ),
         in_subtree(root)
     );
     for id in ids {
-        let _ = with_node_mut!(ctx, StaticBody2D, id, |node| node.enabled = false);
-        let _ = with_node_mut!(ctx, RigidBody2D, id, |node| node.enabled = false);
-        let _ = with_node_mut!(ctx, Area2D, id, |node| node.enabled = false);
-        let _ = with_node_mut!(ctx, StaticBody3D, id, |node| node.enabled = false);
-        let _ = with_node_mut!(ctx, RigidBody3D, id, |node| node.enabled = false);
-        let _ = with_node_mut!(ctx, Area3D, id, |node| node.enabled = false);
+        let _ = with_node_mut!(ctx.run, StaticBody2D, id, |node| node.enabled = false);
+        let _ = with_node_mut!(ctx.run, RigidBody2D, id, |node| node.enabled = false);
+        let _ = with_node_mut!(ctx.run, Area2D, id, |node| node.enabled = false);
+        let _ = with_node_mut!(ctx.run, StaticBody3D, id, |node| node.enabled = false);
+        let _ = with_node_mut!(ctx.run, RigidBody3D, id, |node| node.enabled = false);
+        let _ = with_node_mut!(ctx.run, Area3D, id, |node| node.enabled = false);
     }
 }

@@ -2,7 +2,7 @@
 
 Access:
 
-- Direct `ResourceContext` methods/macros (no module accessor).
+- Direct `ResourceWindow` methods/macros (no module accessor).
 
 Macros:
 
@@ -52,3 +52,4 @@ let _ = post_processing_remove!(res, name = "crt");
 let _ = post_processing_remove!(res, index = 0usize);
 post_processing_clear!(res);
 ```
+

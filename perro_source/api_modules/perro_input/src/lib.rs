@@ -451,12 +451,12 @@ impl InputAPI for InputSnapshot {
     }
 }
 
-pub struct InputContext<'ipt, IP: InputAPI + ?Sized> {
+pub struct InputWindow<'ipt, IP: InputAPI + ?Sized> {
     ipt: &'ipt IP,
 }
 
 #[allow(non_snake_case)]
-impl<'ipt, IP: InputAPI + ?Sized> InputContext<'ipt, IP> {
+impl<'ipt, IP: InputAPI + ?Sized> InputWindow<'ipt, IP> {
     pub fn new(ipt: &'ipt IP) -> Self {
         Self { ipt }
     }
@@ -996,13 +996,13 @@ impl<'ipt, IP: InputAPI + ?Sized> JoyConModule<'ipt, IP> {
 
 #[macro_export]
 /// Signature:
-/// - `key_down!(&InputContext<_>, KeyCode) -> bool`
+/// - `key_down!(&InputWindow<_>, KeyCode) -> bool`
 ///
 /// Usage:
 /// - `key_down!(ipt, KeyCode::Space) -> bool`
 ///
 /// `ipt` is usually the input parameter from lifecycle methods:
-/// - `fn on_update(..., ipt: &InputContext<'_, IP>, ...)`
+/// - `fn on_update(..., ctx: &mut ScriptContext<'_, RT, RS, IP>, ...)`
 ///
 /// `KeyCode` is the keyboard-key enum (letters, numbers, arrows, function keys, etc.).
 ///
@@ -1015,7 +1015,7 @@ macro_rules! key_down {
 
 #[macro_export]
 /// Signature:
-/// - `key_pressed!(&InputContext<_>, KeyCode) -> bool`
+/// - `key_pressed!(&InputWindow<_>, KeyCode) -> bool`
 ///
 /// Usage:
 /// - `key_pressed!(ipt, KeyCode::Enter) -> bool`
@@ -1031,7 +1031,7 @@ macro_rules! key_pressed {
 
 #[macro_export]
 /// Signature:
-/// - `key_released!(&InputContext<_>, KeyCode) -> bool`
+/// - `key_released!(&InputWindow<_>, KeyCode) -> bool`
 ///
 /// Usage:
 /// - `key_released!(ipt, KeyCode::Escape) -> bool`
@@ -1047,7 +1047,7 @@ macro_rules! key_released {
 
 #[macro_export]
 /// Signature:
-/// - `mouse_down!(&InputContext<_>, MouseButton) -> bool`
+/// - `mouse_down!(&InputWindow<_>, MouseButton) -> bool`
 ///
 /// Usage:
 /// - `mouse_down!(ipt, MouseButton::Right) -> bool`
@@ -1063,7 +1063,7 @@ macro_rules! mouse_down {
 
 #[macro_export]
 /// Signature:
-/// - `mouse_pressed!(&InputContext<_>, MouseButton) -> bool`
+/// - `mouse_pressed!(&InputWindow<_>, MouseButton) -> bool`
 ///
 /// Usage:
 /// - `mouse_pressed!(ipt, MouseButton::Left) -> bool`
@@ -1079,7 +1079,7 @@ macro_rules! mouse_pressed {
 
 #[macro_export]
 /// Signature:
-/// - `mouse_released!(&InputContext<_>, MouseButton) -> bool`
+/// - `mouse_released!(&InputWindow<_>, MouseButton) -> bool`
 ///
 /// Usage:
 /// - `mouse_released!(ipt, MouseButton::Left) -> bool`
@@ -1095,7 +1095,7 @@ macro_rules! mouse_released {
 
 #[macro_export]
 /// Signature:
-/// - `mouse_delta!(&InputContext<_>) -> Vector2`
+/// - `mouse_delta!(&InputWindow<_>) -> Vector2`
 ///
 /// Usage:
 /// - `mouse_delta!(ipt) -> Vector2`
@@ -1107,7 +1107,7 @@ macro_rules! mouse_delta {
 
 #[macro_export]
 /// Signature:
-/// - `mouse_wheel!(&InputContext<_>) -> Vector2`
+/// - `mouse_wheel!(&InputWindow<_>) -> Vector2`
 ///
 /// Usage:
 /// - `mouse_wheel!(ipt) -> Vector2`
@@ -1119,7 +1119,7 @@ macro_rules! mouse_wheel {
 
 #[macro_export]
 /// Signature:
-/// - `mouse_position!(&InputContext<_>) -> Vector2`
+/// - `mouse_position!(&InputWindow<_>) -> Vector2`
 ///
 /// Usage:
 /// - `mouse_position!(ipt) -> Vector2`
@@ -1131,7 +1131,7 @@ macro_rules! mouse_position {
 
 #[macro_export]
 /// Signature:
-/// - `viewport_size!(&InputContext<_>) -> Vector2`
+/// - `viewport_size!(&InputWindow<_>) -> Vector2`
 ///
 /// Usage:
 /// - `viewport_size!(ipt) -> Vector2`
@@ -1143,7 +1143,7 @@ macro_rules! viewport_size {
 
 #[macro_export]
 /// Signature:
-/// - `mouse_mode!(&InputContext<_>) -> MouseMode`
+/// - `mouse_mode!(&InputWindow<_>) -> MouseMode`
 ///
 /// Usage:
 /// - `mouse_mode!(ipt) -> MouseMode`
@@ -1155,7 +1155,7 @@ macro_rules! mouse_mode {
 
 #[macro_export]
 /// Signature:
-/// - `mouse_set_mode!(&InputContext<_>, MouseMode) -> ()`
+/// - `mouse_set_mode!(&InputWindow<_>, MouseMode) -> ()`
 ///
 /// Usage:
 /// - `mouse_set_mode!(ipt, MouseMode::Captured)`
@@ -1165,49 +1165,49 @@ macro_rules! mouse_set_mode {
 
 #[macro_export]
 /// Signature:
-/// - `mouse_show!(&InputContext<_>) -> ()`
+/// - `mouse_show!(&InputWindow<_>) -> ()`
 macro_rules! mouse_show {
     ($ipt:expr) => {{ $ipt.Mouse().show() }};
 }
 
 #[macro_export]
 /// Signature:
-/// - `mouse_hide!(&InputContext<_>) -> ()`
+/// - `mouse_hide!(&InputWindow<_>) -> ()`
 macro_rules! mouse_hide {
     ($ipt:expr) => {{ $ipt.Mouse().hide() }};
 }
 
 #[macro_export]
 /// Signature:
-/// - `mouse_capture!(&InputContext<_>) -> ()`
+/// - `mouse_capture!(&InputWindow<_>) -> ()`
 macro_rules! mouse_capture {
     ($ipt:expr) => {{ $ipt.Mouse().capture() }};
 }
 
 #[macro_export]
 /// Signature:
-/// - `mouse_confine!(&InputContext<_>) -> ()`
+/// - `mouse_confine!(&InputWindow<_>) -> ()`
 macro_rules! mouse_confine {
     ($ipt:expr) => {{ $ipt.Mouse().confine() }};
 }
 
 #[macro_export]
 /// Signature:
-/// - `mouse_confine_hidden!(&InputContext<_>) -> ()`
+/// - `mouse_confine_hidden!(&InputWindow<_>) -> ()`
 macro_rules! mouse_confine_hidden {
     ($ipt:expr) => {{ $ipt.Mouse().confine_hidden() }};
 }
 
 #[macro_export]
 /// Signature:
-/// - `joycon_request_calibration!(&InputContext<_>, JoyConIndex) -> ()`
+/// - `joycon_request_calibration!(&InputWindow<_>, JoyConIndex) -> ()`
 macro_rules! joycon_request_calibration {
     ($ipt:expr, $index:expr) => {{ $ipt.request_joycon_calibration($index) }};
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{InputContext, InputSnapshot, MouseMode};
+    use super::{InputWindow, InputSnapshot, MouseMode};
 
     #[test]
     fn mouse_mode_defaults_visible() {
@@ -1220,7 +1220,7 @@ mod tests {
     fn mouse_mode_command_sets_state_and_request() {
         let mut input = InputSnapshot::new();
         {
-            let ctx = InputContext::new(&input);
+            let ctx = InputWindow::new(&input);
             ctx.Mouse().capture();
         }
 
@@ -1235,13 +1235,13 @@ mod tests {
     fn mouse_mode_macro_queues_request() {
         let mut input = InputSnapshot::new();
         {
-            let ctx = InputContext::new(&input);
+            let ctx = InputWindow::new(&input);
             mouse_set_mode!(&ctx, MouseMode::Confined);
         }
 
         input.apply_queued_commands();
 
-        assert_eq!(mouse_mode!(InputContext::new(&input)), MouseMode::Confined);
+        assert_eq!(mouse_mode!(InputWindow::new(&input)), MouseMode::Confined);
         assert_eq!(input.take_mouse_mode_request(), Some(MouseMode::Confined));
     }
 }
@@ -1249,7 +1249,7 @@ mod tests {
 pub mod prelude {
     pub use crate::{
         GamepadAxis, GamepadButton, GamepadIndex, GamepadModule, GamepadState, InputAPI,
-        InputContext, InputSnapshot, JoyConButton, JoyConIndex, JoyConModule, JoyConSide,
+        InputWindow, InputSnapshot, JoyConButton, JoyConIndex, JoyConModule, JoyConSide,
         JoyConState, KeyCode, KeyModule, KeyboardModule, KeyboardState, MouseButton, MouseMode,
         MouseModule, MouseState, MouseStateModule, PlayerBinding, PlayerModule, PlayerState,
         gamepad_accel, gamepad_down, gamepad_get, gamepad_gyro, gamepad_left_stick, gamepad_list,
@@ -1263,3 +1263,6 @@ pub mod prelude {
     };
     pub use perro_structs::Vector2;
 }
+
+
+

@@ -1,9 +1,9 @@
 use super::Runtime;
 use perro_ids::NodeID;
-use perro_input::InputContext;
+use perro_input::InputWindow;
 use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType};
-use perro_resource_context::ResourceContext;
-use perro_runtime_context::RuntimeContext;
+use perro_resource_context::ResourceWindow;
+use perro_runtime_context::RuntimeWindow;
 
 const NONE_POS: u32 = u32::MAX;
 
@@ -233,11 +233,11 @@ impl Runtime {
 
     pub(crate) fn run_internal_update_schedule(&mut self) {
         let resource_api = self.resource_api.clone();
-        let res = ResourceContext::new(resource_api.as_ref());
+        let res = ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt = unsafe { InputContext::new(&*input_ptr) };
+        let ipt = unsafe { InputWindow::new(&*input_ptr) };
         let count = self.internal_updates.internal_update_nodes.len();
         for i in 0..count {
             let id = self.internal_updates.internal_update_nodes[i];
@@ -250,11 +250,11 @@ impl Runtime {
 
     pub(crate) fn run_internal_fixed_update_schedule(&mut self) {
         let resource_api = self.resource_api.clone();
-        let res = ResourceContext::new(resource_api.as_ref());
+        let res = ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt = unsafe { InputContext::new(&*input_ptr) };
+        let ipt = unsafe { InputWindow::new(&*input_ptr) };
         let count = self.internal_updates.internal_fixed_update_nodes.len();
         for i in 0..count {
             let id = self.internal_updates.internal_fixed_update_nodes[i];
@@ -268,26 +268,27 @@ impl Runtime {
     fn call_internal_update_node_with_context(
         &mut self,
         id: NodeID,
-        res: &ResourceContext<'_, crate::RuntimeResourceApi>,
-        ipt: &InputContext<'_, perro_input::InputSnapshot>,
+        res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
+        ipt: &InputWindow<'_, perro_input::InputSnapshot>,
     ) {
         if self.nodes.get(id).is_none() {
             return;
         }
-        let mut ctx = RuntimeContext::new(self);
+        let mut ctx = RuntimeWindow::new(self);
         perro_internal_updates::internal_update_node(&mut ctx, res, ipt, id);
     }
 
     fn call_internal_fixed_update_node_with_context(
         &mut self,
         id: NodeID,
-        res: &ResourceContext<'_, crate::RuntimeResourceApi>,
-        ipt: &InputContext<'_, perro_input::InputSnapshot>,
+        res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
+        ipt: &InputWindow<'_, perro_input::InputSnapshot>,
     ) {
         if self.nodes.get(id).is_none() {
             return;
         }
-        let mut ctx = RuntimeContext::new(self);
+        let mut ctx = RuntimeWindow::new(self);
         perro_internal_updates::internal_fixed_update_node(&mut ctx, res, ipt, id);
     }
 }
+

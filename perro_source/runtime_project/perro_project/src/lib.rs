@@ -1084,14 +1084,11 @@ lifecycle!({
     // init is called when the script instance is created. This can be used for one-time setup. State is initialized
     fn on_init(
         &self,
-        ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        node: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {
         // with_state! gives read-only state access and returns data from the closure.
         // with_state_mut! gives mutable state access; it can mutate and optionally return data.
-        let count = with_state!(ctx, ExampleState, node, |state| {
+        let count = with_state!(ctx.run, ExampleState, ctx.id, |state| {
             state.count
         });
         log_info!(count);
@@ -1100,30 +1097,24 @@ lifecycle!({
     // on_all_init is called after all scripts have had on_init called. This can be used for setup that requires other scripts to be initialized.
     fn on_all_init(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {}
 
     // on_update is called every frame. This is where most behavior logic goes.
     fn on_update(
         &self,
-        ctx: &mut RuntimeContext<'_, RT>,
-        res: &ResourceContext<'_, RS>,
-        ipt: &InputContext<'_, IP>,
-        node: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {
-        let dt = delta_time!(ctx);
-        let _is_space_down = ipt.Keys().down(KeyCode::Space);
+        let dt = delta_time!(ctx.run);
+        let _is_space_down = ctx.ipt.Keys().down(KeyCode::Space);
 
         // Regular Rust method calls are for internal methods.
-        self.bump_count(ctx, res, ipt, node);
+        self.bump_count(ctx);
 
         // with_node! gives read-only typed node access and returns data from the closure.
         // with_node_mut! gives mutable typed node access; it can mutate and optionally return data.
         // Here we mutate the attached node via `self`.
-        with_node_mut!(ctx, SelfNodeType, node, |node| {
+        with_node_mut!(ctx.run, SelfNodeType, ctx.id, |node| {
             node.position.x += dt * SPEED;
         });
 
@@ -1176,35 +1167,29 @@ lifecycle!({
     // on_fixed_update is called on a fixed timestep, independent of frame rate. This is useful for physics and other deterministic updates.
     fn on_fixed_update(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {}
 
     // on_removal is called when the script instance is removed from a node or the node is removed from the scene. This can be used for cleanup.
     fn on_removal(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {}
 });
 
 methods!({
     // methods! defines callable behavior methods (local or cross-script via call_method!)...
-    fn bump_count(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _ipt: &InputContext<'_, IP>, node: NodeID) {
+    fn bump_count(&self, ctx: &mut ScriptContext<'_, RT, RS, IP>) {
         //  Use `with_state_mut!` for mutable access to state
-        with_state_mut!(ctx, ExampleState, node, |state| {
+        with_state_mut!(ctx.run, ExampleState, ctx.id, |state| {
             state.count += 1;
         });
     }
 
-    fn test(&self, ctx: &mut RuntimeContext<'_, RT>, res: &ResourceContext<'_, RS>, ipt: &InputContext<'_, IP>, node: NodeID, param1: i32, msg: &str) {
+    fn test(&self, ctx: &mut ScriptContext<'_, RT, RS, IP>, param1: i32, msg: &str) {
         log_info!(param1);
         log_info!(msg);
-        self.bump_count(ctx, res, ipt, node);
+        self.bump_count(ctx);
     }
 });
 "#
@@ -1222,52 +1207,34 @@ struct EmptyState {}
 lifecycle!({
     fn on_init(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {}
 
     fn on_all_init(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {}
 
     fn on_update(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {}
 
     fn on_fixed_update(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {}
 
     fn on_removal(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {}
 });
 
 methods!({
     fn default_method(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {}
 });
 "#
@@ -2729,3 +2696,7 @@ fn crate_group_sort_key(crate_name: &str) -> u8 {
 #[cfg(test)]
 #[path = "../tests/unit/lib_tests.rs"]
 mod tests;
+
+
+
+

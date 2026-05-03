@@ -39,7 +39,7 @@ All macros return `false` when:
 
 Typical flow:
 
-1. load clip via `ResourceContext` (`animation_load!`)
+1. load clip via `ResourceWindow` (`animation_load!`)
 2. set clip on `AnimationPlayer` (`anim_player_set_clip!`)
 3. bind clip objects to scene nodes (`anim_player_bind!`)
 4. play (`anim_player_play!`)
@@ -125,3 +125,4 @@ Example scene-key binding:
 ```
 
 Scripts can override or update these values at runtime.
+

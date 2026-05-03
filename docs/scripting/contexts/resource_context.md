@@ -2,7 +2,8 @@
 
 Type:
 
-- `res: &ResourceContext<'_, RS>`
+- `ctx: &mut ScriptContext<'_, RT, RS, IP>`
+- resource window handle: `ctx.res`
 
 Purpose:
 
@@ -10,14 +11,14 @@ Purpose:
 
 Accessors:
 
-- `res.Animations()`
-- `res.Textures()`
-- `res.Audio()`
-- `res.Meshes()`
-- `res.Materials()`
-- `res.Skeletons()`
-- `res.Draw2D()`
-- `res.Localization()`
+- `ctx.res.Animations()`
+- `ctx.res.Textures()`
+- `ctx.res.Audio()`
+- `ctx.res.Meshes()`
+- `ctx.res.Materials()`
+- `ctx.res.Skeletons()`
+- `ctx.res.Draw2D()`
+- `ctx.res.Localization()`
 - Direct global post-processing methods (no accessor)
 - Direct visual accessibility methods (no accessor)
 - Direct viewport query method (no accessor)
@@ -38,7 +39,7 @@ Accessors:
 Each module page contains:
 
 - Macro reference
-- `res.<Module>()` method reference
+- `ctx.res.<Module>()` method reference
 - Examples
 - Notes on behavior and caveats
 - Exact load/reserve/drop semantics where applicable
@@ -81,21 +82,21 @@ Behavior:
 ## Simple Example
 
 ```rust
-let texture_id = texture_load!(res, "res://textures/smoke.png");
-let mesh_id = mesh_load!(res, "res://meshes/rock.glb");
-let material_id = material_load!(res, "res://materials/smoke.pmat");
-let bones = skeleton_load_bones!(res, "res://models/rig.gltf:skeleton[0]");
-let _reserved = texture_reserve!(res, "res://textures/smoke.png");
-let _ = mesh_drop!(res, "res://meshes/old.glb");
+let texture_id = texture_load!(ctx.res, "res://textures/smoke.png");
+let mesh_id = mesh_load!(ctx.res, "res://meshes/rock.glb");
+let material_id = material_load!(ctx.res, "res://materials/smoke.pmat");
+let bones = skeleton_load_bones!(ctx.res, "res://models/rig.gltf:skeleton[0]");
+let _reserved = texture_reserve!(ctx.res, "res://textures/smoke.png");
+let _ = mesh_drop!(ctx.res, "res://meshes/old.glb");
 
 let music = audio_bus!("music");
-let _ = audio_set_master_volume!(res, 1.0);
-let _ = audio_bus_set_volume!(res, music, 0.7);
-let _ = audio_bus_set_speed!(res, music, 1.0);
-let viewport = get_viewport_size!(res);
+let _ = audio_set_master_volume!(ctx.res, 1.0);
+let _ = audio_bus_set_volume!(ctx.res, music, 0.7);
+let _ = audio_bus_set_speed!(ctx.res, music, 1.0);
+let viewport = get_viewport_size!(ctx.res);
 
 let _ = audio_play!(
-    res,
+    ctx.res,
     Audio {
         source: "res://groantube.mp3",
         bus: music,
@@ -107,3 +108,5 @@ let _ = audio_play!(
     }
 );
 ```
+
+

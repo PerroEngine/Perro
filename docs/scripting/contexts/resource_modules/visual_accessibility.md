@@ -2,7 +2,7 @@
 
 Access:
 
-- Direct `ResourceContext` methods/macros (no module accessor).
+- Direct `ResourceWindow` methods/macros (no module accessor).
 
 Macros:
 
@@ -43,3 +43,4 @@ enable_colorblind_filter!(res, ColorBlindFilter::Protan, 0.9);
 // Disable:
 disable_colorblind_filter!(res);
 ```
+

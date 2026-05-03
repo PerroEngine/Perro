@@ -21,22 +21,16 @@ struct ProjectManagerState {
 lifecycle!({
     fn on_init(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        _ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {
     }
 
     fn on_all_init(
         &self,
-        ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {
-        let top_bar = child(ctx, self_id, "top_bar");
-        let content = child(ctx, self_id, "content");
+        let top_bar = child(ctx, ctx.id, "top_bar");
+        let content = child(ctx, ctx.id, "content");
         let left_panel = child(ctx, content, "left_panel");
         let left_stack = child(ctx, left_panel, "left_stack");
         let right_panel = child(ctx, content, "right_panel");
@@ -56,7 +50,7 @@ lifecycle!({
             child(ctx, recent_2, "recent_2_label"),
         ];
 
-        let _ = with_state_mut!(ctx, ProjectManagerState, self_id, |state| {
+        let _ = with_state_mut!(ctx.run, ProjectManagerState, ctx.id, |state| {
             state.status_label = status_label;
             state.project_name_input = project_name_input;
             state.project_root_input = project_root_input;
@@ -69,32 +63,32 @@ lifecycle!({
         set_status(ctx, status_label, "Pick project");
 
         signal_connect!(
-            ctx,
-            self_id,
+            ctx.run,
+            ctx.id,
             signal!("create_project_button_click"),
             func!("on_create_project")
         );
         signal_connect!(
-            ctx,
-            self_id,
+            ctx.run,
+            ctx.id,
             signal!("open_project_button_click"),
             func!("on_open_project")
         );
         signal_connect!(
-            ctx,
-            self_id,
+            ctx.run,
+            ctx.id,
             signal!("recent_0_click"),
             func!("on_recent_0")
         );
         signal_connect!(
-            ctx,
-            self_id,
+            ctx.run,
+            ctx.id,
             signal!("recent_1_click"),
             func!("on_recent_1")
         );
         signal_connect!(
-            ctx,
-            self_id,
+            ctx.run,
+            ctx.id,
             signal!("recent_2_click"),
             func!("on_recent_2")
         );
@@ -102,28 +96,19 @@ lifecycle!({
 
     fn on_update(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        _ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {
     }
 
     fn on_fixed_update(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        _ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {
     }
 
     fn on_removal(
         &self,
-        _ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        _self_id: NodeID,
+        _ctx: &mut ScriptContext<'_, RT, RS, IP>,
     ) {
     }
 });
@@ -131,14 +116,11 @@ lifecycle!({
 methods!({
     fn on_create_project(
         &self,
-        ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         _button: NodeID,
     ) {
         let (name_id, root_id, status_id) =
-            with_state!(ctx, ProjectManagerState, self_id, |state| {
+            with_state!(ctx.run, ProjectManagerState, ctx.id, |state| {
                 (
                     state.project_name_input,
                     state.project_root_input,
@@ -153,91 +135,82 @@ methods!({
 
         set_status(ctx, status_id, "Create project...");
         match create_editor_project(&project_dir, &project_name) {
-            Ok(()) => open_project(ctx, self_id, project_dir),
+            Ok(()) => open_project(ctx, ctx.id, project_dir),
             Err(err) => set_status(ctx, status_id, &format!("Create fail: {err}")),
         }
     }
 
     fn on_open_project(
         &self,
-        ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         _button: NodeID,
     ) {
-        let path_id = with_state!(ctx, ProjectManagerState, self_id, |state| {
+        let path_id = with_state!(ctx.run, ProjectManagerState, ctx.id, |state| {
             state.open_path_input
         });
         let path = text_box_text(ctx, path_id);
-        open_project(ctx, self_id, resolve_path(path.trim()));
+        open_project(ctx, ctx.id, resolve_path(path.trim()));
     }
 
     fn on_recent_0(
         &self,
-        ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         _button: NodeID,
     ) {
-        open_recent(ctx, self_id, 0);
+        open_recent(ctx, 0);
     }
 
     fn on_recent_1(
         &self,
-        ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         _button: NodeID,
     ) {
-        open_recent(ctx, self_id, 1);
+        open_recent(ctx, 1);
     }
 
     fn on_recent_2(
         &self,
-        ctx: &mut RuntimeContext<'_, RT>,
-        _res: &ResourceContext<'_, RS>,
-        _ipt: &InputContext<'_, IP>,
-        self_id: NodeID,
+        ctx: &mut ScriptContext<'_, RT, RS, IP>,
         _button: NodeID,
     ) {
-        open_recent(ctx, self_id, 2);
+        open_recent(ctx, 2);
     }
 });
 
-fn child<RT: RuntimeAPI + ?Sized>(
-    ctx: &mut RuntimeContext<'_, RT>,
+fn child<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
+           ctx: &mut ScriptContext<'_, RT, RS, IP>,
     parent: NodeID,
     name: &str,
 ) -> NodeID {
     if parent.is_nil() {
         return NodeID::default();
     }
-    ctx.Nodes()
+    ctx.run.Nodes()
         .get_child_by_name(parent, name)
         .unwrap_or_default()
 }
 
-fn set_status<RT: RuntimeAPI + ?Sized>(
-    ctx: &mut RuntimeContext<'_, RT>,
+fn set_status<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, RT, RS, IP>,
     label_id: NodeID,
     text: &str,
 ) {
     if label_id.is_nil() {
         return;
     }
-    let _ = with_node_mut!(ctx, UiLabel, label_id, |label| {
+    let _ = with_node_mut!(ctx.run, UiLabel, label_id, |label| {
         label.text = Cow::Owned(text.to_string());
     });
 }
 
-fn text_box_text<RT: RuntimeAPI + ?Sized>(ctx: &mut RuntimeContext<'_, RT>, id: NodeID) -> String {
+fn text_box_text<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, RT, RS, IP>,
+    id: NodeID,
+) -> String {
     if id.is_nil() {
         return String::new();
     }
-    with_node!(ctx, UiTextBox, id, |input| input.text.to_string())
+    with_node!(ctx.run, UiTextBox, id, |input| input.text.to_string())
 }
 
 fn read_recent() -> Vec<String> {
@@ -260,8 +233,8 @@ fn save_recent(path: &Path) -> Vec<String> {
     recent
 }
 
-fn write_recent_labels<RT: RuntimeAPI + ?Sized>(
-    ctx: &mut RuntimeContext<'_, RT>,
+fn write_recent_labels<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, RT, RS, IP>,
     labels: &[NodeID],
     recent: &[String],
 ) {
@@ -274,25 +247,24 @@ fn write_recent_labels<RT: RuntimeAPI + ?Sized>(
     }
 }
 
-fn open_recent<RT: RuntimeAPI + ?Sized>(
-    ctx: &mut RuntimeContext<'_, RT>,
-    self_id: NodeID,
+fn open_recent<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, RT, RS, IP>,
     index: usize,
 ) {
-    let path = with_state!(ctx, ProjectManagerState, self_id, |state| {
+    let path = with_state!(ctx.run, ProjectManagerState, ctx.id, |state| {
         state.recent.get(index).cloned()
     });
     if let Some(path) = path {
-        open_project(ctx, self_id, PathBuf::from(path));
+        open_project(ctx, ctx.id, PathBuf::from(path));
     }
 }
 
-fn open_project<RT: RuntimeAPI + ?Sized>(
-    ctx: &mut RuntimeContext<'_, RT>,
+fn open_project<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, RT, RS, IP>,
     self_id: NodeID,
     project_dir: PathBuf,
 ) {
-    let status_id = with_state!(ctx, ProjectManagerState, self_id, |state| state
+    let status_id = with_state!(ctx.run, ProjectManagerState, ctx.id, |state| state
         .status_label);
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
     if !project_dir.join("project.toml").exists() {
@@ -301,18 +273,18 @@ fn open_project<RT: RuntimeAPI + ?Sized>(
     }
 
     let recent = save_recent(&project_dir);
-    let labels = with_state!(ctx, ProjectManagerState, self_id, |state| state
+    let labels = with_state!(ctx.run, ProjectManagerState, ctx.id, |state| state
         .recent_labels
         .clone());
     write_recent_labels(ctx, &labels, &recent);
-    let _ = with_state_mut!(ctx, ProjectManagerState, self_id, |state| {
+    let _ = with_state_mut!(ctx.run, ProjectManagerState, ctx.id, |state| {
         state.recent = recent;
     });
 
     let _ = FileMod::save_string(ACTIVE_PROJECT, &normalize(&project_dir));
-    match scene_load!(ctx, "res://editor.scn") {
+    match scene_load!(ctx.run, "res://editor.scn") {
         Ok(_) => {
-            let _ = remove_node!(ctx, self_id);
+            let _ = remove_node!(ctx.run, ctx.id);
         }
         Err(err) => set_status(ctx, status_id, &format!("Editor load fail: {err}")),
     }

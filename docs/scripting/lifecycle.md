@@ -13,11 +13,11 @@ Available hooks:
 
 ```rust
 lifecycle!({
-    fn on_init(&self, _ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _ipt: &InputContext<'_, IP>, _self: NodeID) {}
+    fn on_init(&self, _ctx: &mut ScriptContext<'_, RT, RS, IP>) {}
 
-    fn on_update(&self, ctx: &mut RuntimeContext<'_, RT>, _res: &ResourceContext<'_, RS>, _ipt: &InputContext<'_, IP>, self_id: NodeID) {
-        let dt = delta_time!(ctx);
-        with_node_mut!(ctx, Node2D, self_id, |node| {
+    fn on_update(&self, ctx: &mut ScriptContext<'_, RT, RS, IP>) {
+        let dt = delta_time!(ctx.run);
+        with_node_mut!(ctx.run, Node2D, ctx.id, |node| {
             node.position.x += dt * 5.0;
         });
     }
@@ -32,3 +32,5 @@ Use lifecycle methods for engine-driven entry points.
 Related:
 - [Script Contexts](contexts/README.md) for callback signatures and macro convention.
 - [Script Methods](methods.md) for reusable/callable method bodies.
+
+

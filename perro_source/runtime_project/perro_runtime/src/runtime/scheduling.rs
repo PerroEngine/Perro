@@ -4,11 +4,11 @@ use std::time::Instant;
 impl Runtime {
     pub(crate) fn run_update_schedule(&mut self) {
         let resource_api = self.resource_api.clone();
-        let res = perro_resource_context::ResourceContext::new(resource_api.as_ref());
+        let res = perro_resource_context::ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt = unsafe { perro_input::InputContext::new(&*input_ptr) };
+        let ipt = unsafe { perro_input::InputWindow::new(&*input_ptr) };
         let mut i = 0;
         while i < self.schedules.update_slots.len() {
             let (instance_index, id) = self.schedules.update_slots[i];
@@ -19,11 +19,11 @@ impl Runtime {
 
     pub(crate) fn run_fixed_schedule(&mut self) {
         let resource_api = self.resource_api.clone();
-        let res = perro_resource_context::ResourceContext::new(resource_api.as_ref());
+        let res = perro_resource_context::ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt = unsafe { perro_input::InputContext::new(&*input_ptr) };
+        let ipt = unsafe { perro_input::InputWindow::new(&*input_ptr) };
         let mut i = 0;
         while i < self.schedules.fixed_slots.len() {
             let (instance_index, id) = self.schedules.fixed_slots[i];
@@ -64,11 +64,11 @@ impl Runtime {
         let mut slowest_script = std::time::Duration::ZERO;
         let mut slowest_script_id = None;
         let resource_api = self.resource_api.clone();
-        let res = perro_resource_context::ResourceContext::new(resource_api.as_ref());
+        let res = perro_resource_context::ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt = unsafe { perro_input::InputContext::new(&*input_ptr) };
+        let ipt = unsafe { perro_input::InputWindow::new(&*input_ptr) };
 
         let mut i = 0;
         while i < self.schedules.update_slots.len() {
@@ -94,3 +94,4 @@ impl Runtime {
         }
     }
 }
+

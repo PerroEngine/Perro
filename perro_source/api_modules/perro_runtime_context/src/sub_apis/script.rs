@@ -234,7 +234,7 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
 /// - The state reference is only valid inside the closure, preventing leaked borrows.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `state_ty`: concrete script state type
 /// - `id`: script `NodeID`
 /// - closure arg: `&state_ty`
@@ -252,7 +252,7 @@ macro_rules! with_state {
 /// - Mutable access is scoped to closure execution, keeping aliasing rules enforced.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `state_ty`: concrete script state type
 /// - `id`: script `NodeID`
 /// - closure arg: `&mut state_ty`
@@ -268,7 +268,7 @@ macro_rules! with_state_mut {
 /// Attaches a script resource to a scene node.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `id`: target node `NodeID`
 /// - `path`: script path (for example `"res://scripts/foo.rs"`)
 #[macro_export]
@@ -285,7 +285,7 @@ macro_rules! script_attach {
 /// Detaches the current script from a scene node.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `id`: target node `NodeID`
 #[macro_export]
 macro_rules! script_detach {
@@ -299,7 +299,7 @@ macro_rules! script_detach {
 /// Gets a script variable by member identifier.
 ///
 /// Signature:
-/// - `get_var!(&mut RuntimeContext<_, _>, NodeID, ScriptMemberID) -> Variant`
+/// - `get_var!(&mut RuntimeWindow<_, _>, NodeID, ScriptMemberID) -> Variant`
 ///
 /// Usage:
 /// - `get_var!(ctx, node_id, var!("health")) -> Variant`
@@ -318,7 +318,7 @@ macro_rules! get_var {
 /// Sets a script variable by member identifier.
 ///
 /// Signature:
-/// - `set_var!(&mut RuntimeContext<_, _>, NodeID, ScriptMemberID, Variant) -> ()`
+/// - `set_var!(&mut RuntimeWindow<_, _>, NodeID, ScriptMemberID, Variant) -> ()`
 ///
 /// Usage:
 /// - `set_var!(ctx, node_id, var!("health"), variant!(100_i32)) -> ()`
@@ -337,7 +337,7 @@ macro_rules! set_var {
 /// Calls a script method with params.
 ///
 /// Signature:
-/// - `call_method!(&mut RuntimeContext<_, _>, NodeID, ScriptMemberID, &[Variant]) -> Variant`
+/// - `call_method!(&mut RuntimeWindow<_, _>, NodeID, ScriptMemberID, &[Variant]) -> Variant`
 ///
 /// Usage:
 /// - `call_method!(ctx, node_id, method!("take_damage"), params![10_i32]) -> Variant`
@@ -357,7 +357,7 @@ macro_rules! call_method {
 /// Returns attributes declared on a script member.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `id`: script `NodeID`
 /// - `member`: member name or `Member`
 #[macro_export]
@@ -370,7 +370,7 @@ macro_rules! attributes_of {
 /// Returns all members with a specific attribute.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `id`: script `NodeID`
 /// - `attribute`: attribute name or `Attribute`
 #[macro_export]
@@ -383,7 +383,7 @@ macro_rules! members_with {
 /// Checks whether a member has a specific attribute.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `id`: script `NodeID`
 /// - `member`: member name or `Member`
 /// - `attribute`: attribute name or `Attribute`
@@ -415,3 +415,4 @@ macro_rules! attribute {
         $crate::sub_apis::Attribute::new($value)
     };
 }
+

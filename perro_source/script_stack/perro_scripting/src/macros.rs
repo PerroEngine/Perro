@@ -39,10 +39,7 @@ macro_rules! __methods_internal {
         $(#[$meta:meta])*
         $vis:vis fn $name:ident(
             &$self_ident:ident,
-            $ctx:ident : &mut RuntimeContext<'_, RT>,
-            $res:ident : &ResourceContext<'_, RS>,
-            $ipt:ident : &InputContext<'_, IP>,
-            $self:ident : NodeID
+            $ctx:ident : &mut ScriptContext<'_, RT, RS, IP>
             $(, $arg:ident : $arg_ty:ty )* $(,)?
         ) $(-> $ret:ty)? $body:block
         $($rest:tt)*
@@ -50,10 +47,7 @@ macro_rules! __methods_internal {
         $(#[$meta])*
         $vis fn $name<RT, RS, IP>(
             &$self_ident,
-            $ctx: &mut RuntimeContext<'_, RT>,
-            $res: &ResourceContext<'_, RS>,
-            $ipt: &InputContext<'_, IP>,
-            $self: NodeID
+            $ctx: &mut ScriptContext<'_, RT, RS, IP>
             $(, $arg : $arg_ty )*
         ) $(-> $ret)?
         where
@@ -72,3 +66,4 @@ macro_rules! __methods_internal {
         $crate::__methods_internal! { $($rest)* }
     };
 }
+

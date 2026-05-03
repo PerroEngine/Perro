@@ -1,13 +1,13 @@
 pub mod api;
 pub mod sub_apis;
 
-pub use api::ResourceContext;
+pub use api::ResourceWindow;
 #[doc(hidden)]
 pub use perro_ids::string_to_u64 as __perro_string_to_u64;
 pub use perro_scene::{Scene, SceneDoc, SceneWrite};
 
 pub mod prelude {
-    pub use crate::api::{ResourceAPI, ResourceContext, ViewportAPI};
+    pub use crate::api::{ResourceAPI, ResourceWindow, ViewportAPI};
     pub use crate::sub_apis::{
         AnimationAPI, AnimationModule, Audio, AudioAPI, AudioBusID, AudioModule, Draw2DAPI,
         Draw2DModule, Locale, LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule,
@@ -31,3 +31,4 @@ pub mod prelude {
     };
     pub use perro_scene::{Scene, SceneDoc, SceneWrite};
 }
+

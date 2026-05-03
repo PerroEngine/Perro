@@ -46,12 +46,12 @@ pub trait ViewportAPI {
     fn viewport_size(&self) -> Vector2;
 }
 
-pub struct ResourceContext<'res, R: ResourceAPI + ?Sized> {
+pub struct ResourceWindow<'res, R: ResourceAPI + ?Sized> {
     api: &'res R,
 }
 
 #[allow(non_snake_case)]
-impl<'res, R: ResourceAPI + ?Sized> ResourceContext<'res, R> {
+impl<'res, R: ResourceAPI + ?Sized> ResourceWindow<'res, R> {
     pub fn new(api: &'res R) -> Self {
         Self { api }
     }
@@ -188,3 +188,4 @@ macro_rules! get_viewport_size {
         $res.viewport_size()
     };
 }
+

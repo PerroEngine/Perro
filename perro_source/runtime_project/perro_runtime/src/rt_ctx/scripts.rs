@@ -1,12 +1,13 @@
 use perro_ids::string_to_u64;
 use perro_ids::{NodeID, ScriptMemberID};
-use perro_input::InputContext;
+use perro_input::InputWindow;
 use perro_io::set_dlc_self_context;
-use perro_resource_context::ResourceContext;
+use perro_resource_context::ResourceWindow;
 use perro_runtime_context::{
-    RuntimeContext,
+    RuntimeWindow,
     sub_apis::{Attribute, Member, ScriptAPI},
 };
+use perro_scripting::ScriptContext;
 use perro_variant::Variant;
 use std::sync::Arc;
 
@@ -51,21 +52,27 @@ impl Runtime {
             return;
         }
         let resource_api = self.resource_api.clone();
-        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
-            ResourceContext::new(resource_api.as_ref());
+        let res: ResourceWindow<'_, crate::RuntimeResourceApi> =
+            ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt: InputContext<'_, perro_input::InputSnapshot> =
-            unsafe { InputContext::new(&*input_ptr) };
+        let ipt: InputWindow<'_, perro_input::InputSnapshot> =
+            unsafe { InputWindow::new(&*input_ptr) };
         let mount = self
             .script_runtime
             .script_instance_dlc_mounts
             .get(&id)
             .cloned();
         set_dlc_self_context(mount.as_deref());
-        let mut ctx = RuntimeContext::new(self);
-        behavior.on_all_init(&mut ctx, &res, &ipt, id);
+        let mut run = RuntimeWindow::new(self);
+        let mut sctx = ScriptContext {
+            run: &mut run,
+            res: &res,
+            ipt: &ipt,
+            id,
+        };
+        behavior.on_all_init(&mut sctx);
         set_dlc_self_context(None);
     }
 
@@ -82,21 +89,27 @@ impl Runtime {
             return;
         }
         let resource_api = self.resource_api.clone();
-        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
-            ResourceContext::new(resource_api.as_ref());
+        let res: ResourceWindow<'_, crate::RuntimeResourceApi> =
+            ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt: InputContext<'_, perro_input::InputSnapshot> =
-            unsafe { InputContext::new(&*input_ptr) };
+        let ipt: InputWindow<'_, perro_input::InputSnapshot> =
+            unsafe { InputWindow::new(&*input_ptr) };
         let mount = self
             .script_runtime
             .script_instance_dlc_mounts
             .get(&id)
             .cloned();
         set_dlc_self_context(mount.as_deref());
-        let mut ctx = RuntimeContext::new(self);
-        behavior.on_removal(&mut ctx, &res, &ipt, id);
+        let mut run = RuntimeWindow::new(self);
+        let mut sctx = ScriptContext {
+            run: &mut run,
+            res: &res,
+            ipt: &ipt,
+            id,
+        };
+        behavior.on_removal(&mut sctx);
         set_dlc_self_context(None);
     }
 
@@ -114,8 +127,8 @@ impl Runtime {
         &mut self,
         instance_index: usize,
         id: NodeID,
-        res: &ResourceContext<'_, crate::RuntimeResourceApi>,
-        ipt: &InputContext<'_, perro_input::InputSnapshot>,
+        res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
+        ipt: &InputWindow<'_, perro_input::InputSnapshot>,
     ) {
         let behavior = match self
             .scripts
@@ -133,8 +146,14 @@ impl Runtime {
             .active_script_stack
             .push((instance_index, id));
         set_dlc_self_context(mount.as_deref());
-        let mut ctx = RuntimeContext::new(self);
-        behavior.on_update(&mut ctx, res, ipt, id);
+        let mut run = RuntimeWindow::new(self);
+        let mut sctx = ScriptContext {
+            run: &mut run,
+            res,
+            ipt,
+            id,
+        };
+        behavior.on_update(&mut sctx);
         set_dlc_self_context(None);
         let _ = self.script_runtime.active_script_stack.pop();
     }
@@ -144,8 +163,8 @@ impl Runtime {
         &mut self,
         instance_index: usize,
         id: NodeID,
-        res: &ResourceContext<'_, crate::RuntimeResourceApi>,
-        ipt: &InputContext<'_, perro_input::InputSnapshot>,
+        res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
+        ipt: &InputWindow<'_, perro_input::InputSnapshot>,
     ) {
         let behavior = match self
             .scripts
@@ -163,8 +182,14 @@ impl Runtime {
             .active_script_stack
             .push((instance_index, id));
         set_dlc_self_context(mount.as_deref());
-        let mut ctx = RuntimeContext::new(self);
-        behavior.on_fixed_update(&mut ctx, res, ipt, id);
+        let mut run = RuntimeWindow::new(self);
+        let mut sctx = ScriptContext {
+            run: &mut run,
+            res,
+            ipt,
+            id,
+        };
+        behavior.on_fixed_update(&mut sctx);
         set_dlc_self_context(None);
         let _ = self.script_runtime.active_script_stack.pop();
     }
@@ -277,13 +302,13 @@ impl ScriptAPI for Runtime {
             None => return Variant::Null,
         };
         let resource_api = self.resource_api.clone();
-        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
-            ResourceContext::new(resource_api.as_ref());
+        let res: ResourceWindow<'_, crate::RuntimeResourceApi> =
+            ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt: InputContext<'_, perro_input::InputSnapshot> =
-            unsafe { InputContext::new(&*input_ptr) };
+        let ipt: InputWindow<'_, perro_input::InputSnapshot> =
+            unsafe { InputWindow::new(&*input_ptr) };
         self.script_runtime
             .active_script_stack
             .push((instance_index, script_id));
@@ -293,8 +318,18 @@ impl ScriptAPI for Runtime {
             .get(&script_id)
             .cloned();
         set_dlc_self_context(mount.as_deref());
-        let mut ctx = RuntimeContext::new(self);
-        let out = behavior.call_method(method, &mut ctx, &res, &ipt, script_id, params);
+        let mut run = RuntimeWindow::new(self);
+        let mut sctx = ScriptContext {
+            run: &mut run,
+            res: &res,
+            ipt: &ipt,
+            id: script_id,
+        };
+        let out = behavior.call_method(
+            method,
+            &mut sctx,
+            params,
+        );
         set_dlc_self_context(None);
         let _ = self.script_runtime.active_script_stack.pop();
         out
@@ -324,3 +359,4 @@ impl ScriptAPI for Runtime {
         behavior.has_attribute(member, attribute)
     }
 }
+

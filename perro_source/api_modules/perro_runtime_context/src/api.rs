@@ -12,12 +12,12 @@ impl<T> RuntimeAPI for T where
 {
 }
 
-pub struct RuntimeContext<'rt, RT: RuntimeAPI + ?Sized> {
+pub struct RuntimeWindow<'rt, RT: RuntimeAPI + ?Sized> {
     rt: &'rt mut RT,
 }
 
 #[allow(non_snake_case)]
-impl<'rt, RT: RuntimeAPI + ?Sized> RuntimeContext<'rt, RT> {
+impl<'rt, RT: RuntimeAPI + ?Sized> RuntimeWindow<'rt, RT> {
     pub fn new(rt: &'rt mut RT) -> Self {
         Self { rt }
     }
@@ -62,3 +62,4 @@ impl<'rt, RT: RuntimeAPI + ?Sized> RuntimeContext<'rt, RT> {
         self.rt
     }
 }
+

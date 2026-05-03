@@ -29,7 +29,7 @@ impl<'rt, R: TimeAPI + ?Sized> TimeModule<'rt, R> {
 /// Returns frame delta time (seconds).
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 #[macro_export]
 macro_rules! delta_time {
     ($ctx:expr) => {
@@ -40,7 +40,7 @@ macro_rules! delta_time {
 /// Returns frame delta time clamped to `max` seconds.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `max`: maximum allowed seconds for returned delta
 #[macro_export]
 macro_rules! delta_time_capped {
@@ -53,7 +53,7 @@ macro_rules! delta_time_capped {
 /// Returns frame delta time clamped to `[min, max]` seconds.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `min`: minimum allowed seconds for returned delta
 /// - `max`: maximum allowed seconds for returned delta
 #[macro_export]
@@ -67,7 +67,7 @@ macro_rules! delta_time_clamped {
 /// Returns fixed-step delta time (seconds).
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 #[macro_export]
 macro_rules! fixed_delta_time {
     ($ctx:expr) => {
@@ -78,10 +78,11 @@ macro_rules! fixed_delta_time {
 /// Returns elapsed runtime time (seconds).
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 #[macro_export]
 macro_rules! elapsed_time {
     ($ctx:expr) => {
         $ctx.Time().get_elapsed()
     };
 }
+

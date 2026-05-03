@@ -1,17 +1,18 @@
 # Input Context
 
 Type:
-- `ipt: &InputContext<'_, IP>`
+- `ctx: &mut ScriptContext<'_, RT, RS, IP>`
+- input window handle: `ctx.ipt`
 
 Purpose:
 - Read frame input state for gameplay and interaction logic.
 
 Accessors:
-- `ipt.Keys()`
-- `ipt.Mouse()`
-- `ipt.Gamepads()`
-- `ipt.JoyCons()`
-- `ipt.Players()`
+- `ctx.ipt.Keys()`
+- `ctx.ipt.Mouse()`
+- `ctx.ipt.Gamepads()`
+- `ctx.ipt.JoyCons()`
+- `ctx.ipt.Players()`
 
 ## Input Modules
 
@@ -23,22 +24,24 @@ Accessors:
 
 Each module page contains:
 - Macro reference
-- `ipt.<Module>()` methods
+- `ctx.ipt.<Module>()` methods
 - Examples
 - Binding notes for player and device mappings
 
 ## Simple Example
 
 ```rust
-if key_pressed!(ipt, KeyCode::Space) {
-    signal_emit!(ctx, signal!("jump"));
+if key_pressed!(ctx.ipt, KeyCode::Space) {
+    signal_emit!(ctx.run, signal!("jump"));
 }
 
-if mouse_down!(ipt, MouseButton::Left) {
-    let delta = mouse_delta!(ipt);
-    with_node_mut!(ctx, Node3D, self_id, |node| {
+if mouse_down!(ctx.ipt, MouseButton::Left) {
+    let delta = mouse_delta!(ctx.ipt);
+    with_node_mut!(ctx.run, Node3D, ctx.id, |node| {
         node.rotation.y += delta.x * 0.01;
         node.rotation.x += delta.y * 0.01;
     });
 }
 ```
+
+

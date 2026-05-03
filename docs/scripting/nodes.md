@@ -1,7 +1,7 @@
 # Node Types
 
 This page lists the built-in node types and their purpose. Nodes store **data-only** state.
-Rendering and resource loading are handled by the runtime and `ResourceContext`.
+Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 
 ## 2D Nodes
 
@@ -89,7 +89,7 @@ Physics 3D:
 `Skeleton3D`
 
 - Holds `Vec<Bone3D>` (data-only).
-- Bones are loaded via `ResourceContext::Skeletons().load_bones(source)`.
+- Bones are loaded via `ResourceWindow::Skeletons().load_bones(source)`.
 - Typical flow: scene specifies a `skeleton` path, and scene loader fills `bones`.
 
 ## UI Nodes
@@ -129,7 +129,7 @@ See `docs/resources/postprocess.md` for full details and examples.
 
 ## Visual Accessibility
 
-Visual accessibility is configured globally through `ResourceContext` (not per-camera).
+Visual accessibility is configured globally through `ResourceWindow` (not per-camera).
 It runs after camera and global post-processing as the final pass.
 See [Visual Accessibility](../resources/visual_accessibility.md).
 
@@ -183,3 +183,4 @@ with_node_mut!(ctx, MeshInstance3D, mesh_id, |mesh| {
     mesh.skeleton = new_skeleton_node_id;
 });
 ```
+

@@ -1,7 +1,8 @@
 use perro_ids::{NodeID, ScriptMemberID, SignalID};
-use perro_input::InputContext;
-use perro_resource_context::ResourceContext;
-use perro_runtime_context::{RuntimeContext, sub_apis::SignalAPI};
+use perro_input::InputWindow;
+use perro_resource_context::ResourceWindow;
+use perro_runtime_context::{RuntimeWindow, sub_apis::SignalAPI};
+use perro_scripting::ScriptContext;
 use perro_variant::Variant;
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -52,24 +53,27 @@ impl SignalAPI for Runtime {
             };
             let behavior = Arc::clone(&instance.behavior);
             let resource_api = self.resource_api.clone();
-            let res: ResourceContext<'_, crate::RuntimeResourceApi> =
-                ResourceContext::new(resource_api.as_ref());
+            let res: ResourceWindow<'_, crate::RuntimeResourceApi> =
+                ResourceWindow::new(resource_api.as_ref());
             let input_ptr = std::ptr::addr_of!(self.input);
             // SAFETY: During callback dispatch, input is treated as immutable runtime state.
             // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-            let ipt: InputContext<'_, perro_input::InputSnapshot> =
-                unsafe { InputContext::new(&*input_ptr) };
+            let ipt: InputWindow<'_, perro_input::InputSnapshot> =
+                unsafe { InputWindow::new(&*input_ptr) };
             self.script_runtime
                 .active_script_stack
                 .push((instance_index, connection.script_id));
-            let mut ctx = RuntimeContext::new(self);
+            let mut run = RuntimeWindow::new(self);
             let call_params = merged_signal_params(params, &connection.params);
+            let mut sctx = ScriptContext {
+                run: &mut run,
+                res: &res,
+                ipt: &ipt,
+                id: connection.script_id,
+            };
             let _ = behavior.call_method(
                 connection.method,
-                &mut ctx,
-                &res,
-                &ipt,
-                connection.script_id,
+                &mut sctx,
                 call_params.as_ref(),
             );
             let _ = self.script_runtime.active_script_stack.pop();
@@ -83,13 +87,13 @@ impl SignalAPI for Runtime {
             .registry
             .copy_signal_connections(signal, &mut pending);
         let resource_api = self.resource_api.clone();
-        let res: ResourceContext<'_, crate::RuntimeResourceApi> =
-            ResourceContext::new(resource_api.as_ref());
+        let res: ResourceWindow<'_, crate::RuntimeResourceApi> =
+            ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt: InputContext<'_, perro_input::InputSnapshot> =
-            unsafe { InputContext::new(&*input_ptr) };
+        let ipt: InputWindow<'_, perro_input::InputSnapshot> =
+            unsafe { InputWindow::new(&*input_ptr) };
 
         for connection in pending.iter() {
             let instance_index = match self.scripts.instance_index_for_id(connection.script_id) {
@@ -106,14 +110,17 @@ impl SignalAPI for Runtime {
             self.script_runtime
                 .active_script_stack
                 .push((instance_index, connection.script_id));
-            let mut ctx = RuntimeContext::new(self);
+            let mut run = RuntimeWindow::new(self);
             let call_params = merged_signal_params(params, &connection.params);
+            let mut sctx = ScriptContext {
+                run: &mut run,
+                res: &res,
+                ipt: &ipt,
+                id: connection.script_id,
+            };
             let _ = behavior.call_method(
                 connection.method,
-                &mut ctx,
-                &res,
-                &ipt,
-                connection.script_id,
+                &mut sctx,
                 call_params.as_ref(),
             );
             let _ = self.script_runtime.active_script_stack.pop();
@@ -156,3 +163,4 @@ mod tests {
         );
     }
 }
+

@@ -8,10 +8,10 @@ pub use perro_nodes;
 pub use perro_structs;
 pub use perro_variant;
 
-pub use api::RuntimeContext;
+pub use api::RuntimeWindow;
 
 pub mod prelude {
-    pub use crate::api::{RuntimeAPI, RuntimeContext};
+    pub use crate::api::{RuntimeAPI, RuntimeWindow};
     pub use crate::sub_apis::{
         AnimPlayerAPI, AnimPlayerModule, Attribute, IntoImpulseDirection, IntoNodeTags,
         IntoPreloadedSceneID, IntoPreloadedSceneTarget, IntoSceneLoadSource, IntoScenePath,
@@ -50,3 +50,4 @@ pub mod prelude {
 #[cfg(test)]
 #[path = "../tests/unit/lib_tests.rs"]
 mod tests;
+

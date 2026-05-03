@@ -421,7 +421,7 @@ fn script_macros_typecheck_and_forward() {
     let mut rt = DummyRuntime {
         state: Box::new(5_i32),
     };
-    let mut ctx = RuntimeContext::new(&mut rt);
+    let mut ctx = RuntimeWindow::new(&mut rt);
     let id = NodeID::new(42);
 
     let initial = with_state!(&mut ctx, i32, id, |state| *state);
@@ -633,3 +633,4 @@ fn script_macros_typecheck_and_forward() {
     assert_eq!(fdt, 0.016);
     assert_eq!(elapsed, 1.0);
 }
+

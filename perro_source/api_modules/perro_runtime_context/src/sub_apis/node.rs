@@ -954,7 +954,7 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 /// - The borrow cannot escape the closure, which keeps access compile-time safe.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `ConcreteType`: concrete node struct type (exact match only)
 /// - `node_id`: `NodeID`
 /// - closure arg: `&mut ConcreteType`
@@ -972,7 +972,7 @@ macro_rules! with_node_mut {
 /// - The read borrow is scoped to the closure call and cannot outlive it.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `ConcreteType`: concrete node struct type (exact match only)
 /// - `node_id`: `NodeID`
 /// - closure arg: `&ConcreteType`
@@ -990,7 +990,7 @@ macro_rules! with_node {
 /// - This keeps one runtime check while still giving typed field/method access in the closure body.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `BaseType`: base node struct type (descendants allowed)
 /// - `node_id`: `NodeID`
 /// - closure arg: `&BaseType`
@@ -1008,7 +1008,7 @@ macro_rules! with_base_node {
 /// - Mutable borrow is closure-scoped so references cannot escape.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `BaseType`: base node struct type (descendants allowed)
 /// - `node_id`: `NodeID`
 /// - closure arg: `&mut BaseType`
@@ -1027,7 +1027,7 @@ macro_rules! with_base_node_mut {
 /// - `create_node!(ctx, ConcreteType, name, tags, parent_id) -> NodeID`
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `ConcreteType`: ie Node2D, MeshInstance3D, Sprite2D
 /// - `name` (optional): `&str`, `String`, or `Cow<'static, str>`
 /// - `tags` (optional): usually from `tags![...]`, or `&[TagID]`, `[TagID; N]`, `Vec<TagID>`
@@ -1070,7 +1070,7 @@ macro_rules! create_node {
 /// Usage: `get_node_name!(ctx, node_id) -> Option<Cow<'static, str>>`.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `node_id`: `NodeID`
 #[macro_export]
 macro_rules! get_node_name {
@@ -1082,7 +1082,7 @@ macro_rules! get_node_name {
 /// Sets node display name.
 /// Usage: `set_node_name!(ctx, node_id, name) -> bool`.
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `node_id`: `NodeID`
 /// - `name`: `&str`, `String`, or `Cow<'static, str>`
 #[macro_export]
@@ -1179,7 +1179,7 @@ macro_rules! set_ui_max_h {
 /// Gets node parent id.
 /// Usage: `get_node_parent_id!(ctx, node_id) -> Option<NodeID>`.
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `node_id`: `NodeID`
 #[macro_export]
 macro_rules! get_node_parent_id {
@@ -1191,7 +1191,7 @@ macro_rules! get_node_parent_id {
 /// Gets children ids for a node.
 /// Usage: `get_node_children_ids!(ctx, node_id) -> Option<Vec<NodeID>>`.
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `node_id`: `NodeID`
 #[macro_export]
 macro_rules! get_node_children_ids {
@@ -1227,7 +1227,7 @@ macro_rules! get_child {
 /// Gets concrete runtime node type.
 /// Usage: `get_node_type!(ctx, node_id) -> Option<NodeType>`.
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `node_id`: `NodeID`
 #[macro_export]
 macro_rules! get_node_type {
@@ -1239,7 +1239,7 @@ macro_rules! get_node_type {
 /// Reparents a child under parent (`parent = nil` detaches).
 /// Usage: `reparent!(ctx, parent_id, child_id) -> bool`.
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `parent_id`: `NodeID` (`NodeID::nil()` detaches child)
 /// - `child_id`: `NodeID`
 #[macro_export]
@@ -1252,7 +1252,7 @@ macro_rules! reparent {
 /// Batch reparent.
 /// Usage: `reparent_multi!(ctx, parent_id, child_ids_iter) -> usize`.
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `parent_id`: `NodeID` (`NodeID::nil()` detaches)
 /// - `child_ids_iter`: iterator of `NodeID`
 #[macro_export]
@@ -1411,7 +1411,7 @@ macro_rules! mesh_material_regions_3d {
 /// Gets node tags.
 /// Usage: `get_node_tags!(ctx, node_id) -> Option<Vec<TagID>>`.
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `node_id`: `NodeID`
 #[macro_export]
 macro_rules! get_node_tags {
@@ -1426,7 +1426,7 @@ macro_rules! get_node_tags {
 /// - `tag_set!(ctx, node_id)` clears all tags.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `node_id`: `NodeID`
 /// - `tags`: usually from `tags![...]`, or `&[TagID]`, `[TagID; N]`, `Vec<TagID>`
 #[macro_export]
@@ -1447,7 +1447,7 @@ macro_rules! tag_set {
 /// - `tag_add!(ctx, node_id, ["enemy", "alive"])`
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `node_id`: `NodeID`
 /// - tags: `TagID`, `&str`, `String`, slices/arrays/vectors of those
 #[macro_export]
@@ -1463,7 +1463,7 @@ macro_rules! tag_add {
 /// - `tag_remove!(ctx, node_id)` clears all tags.
 ///
 /// Arguments:
-/// - `ctx`: `&mut RuntimeContext<_>`
+/// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `node_id`: `NodeID`
 /// - `tag` (3-arg form): `TagID`, `&str`, or `String`
 #[macro_export]
@@ -1582,3 +1582,4 @@ macro_rules! query_first {
         $crate::query!($ctx, $kind $args).into_iter().next()
     }};
 }
+

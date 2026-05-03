@@ -4,10 +4,10 @@ use perro_nodes::ParticleEmitter3D;
 type SelfNodeType = ParticleEmitter3D;
 
 pub fn internal_update<RT, R, IP>(
-    ctx: &mut RuntimeContext<'_, RT>,
-    _res: &ResourceContext<'_, R>,
-    _ipt: &InputContext<'_, IP>,
-    self_id: NodeID,
+    ctx: &mut RuntimeWindow<'_, RT>,
+    _res_w: &ResourceWindow<'_, R>,
+    _ipt_w: &InputWindow<'_, IP>,
+    id: NodeID,
 ) where
     RT: RuntimeAPI + ?Sized,
     R: ResourceAPI + ?Sized,
@@ -15,10 +15,10 @@ pub fn internal_update<RT, R, IP>(
 {
     let delta_seconds = delta_time!(ctx);
     let mut emit_finished_signal = false;
-    let _ = with_node_mut!(ctx, SelfNodeType, self_id, |emitter| {
+    let _ = with_node_mut!(ctx, SelfNodeType, id, |emitter| {
         emit_finished_signal = internal_step_update(emitter, delta_seconds);
     });
-    if emit_finished_signal && let Some(node_name) = get_node_name!(ctx, self_id) {
+    if emit_finished_signal && let Some(node_name) = get_node_name!(ctx, id) {
         let signal_name = format!("{}_PARTICLES_FINISHED", node_name);
 
         let signal_id = SignalID::from_string(&signal_name);
@@ -27,17 +27,17 @@ pub fn internal_update<RT, R, IP>(
 }
 
 pub fn internal_fixed_update<RT, R, IP>(
-    ctx: &mut RuntimeContext<'_, RT>,
-    _res: &ResourceContext<'_, R>,
-    _ipt: &InputContext<'_, IP>,
-    self_id: NodeID,
+    ctx: &mut RuntimeWindow<'_, RT>,
+    _res_w: &ResourceWindow<'_, R>,
+    _ipt_w: &InputWindow<'_, IP>,
+    id: NodeID,
 ) where
     RT: RuntimeAPI + ?Sized,
     R: ResourceAPI + ?Sized,
     IP: InputAPI + ?Sized,
 {
     let fixed_delta = fixed_delta_time!(ctx);
-    let _ = with_node_mut!(ctx, SelfNodeType, self_id, |emitter| {
+    let _ = with_node_mut!(ctx, SelfNodeType, id, |emitter| {
         internal_step_fixed_update(emitter, fixed_delta);
     });
 }
@@ -79,3 +79,5 @@ fn non_looping_done_after(emitter: &ParticleEmitter3D, lifetime_max: f32) -> Opt
     let last_spawn_t = (budget.saturating_sub(1) as f32) / emitter.spawn_rate.max(1.0e-6);
     Some(last_spawn_t + lifetime_max)
 }
+
+
