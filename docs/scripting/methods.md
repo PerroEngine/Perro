@@ -10,7 +10,7 @@ Use methods for reusable logic that you call from lifecycle hooks or through `ca
 methods!({
     fn my_method(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
         value: i32,
     ) {
         // logic
@@ -20,7 +20,7 @@ methods!({
 
 Required leading args:
 - `&self`
-- `ctx: &mut ScriptContext<'_, RT, RS, IP>`
+- `ctx: &mut ScriptContext<'_, API>`
 
 After that, add your own params.
 

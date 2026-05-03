@@ -2,11 +2,16 @@
 
 Perro script callbacks receive one script context:
 
-- `ctx: &mut ScriptContext<'_, RT, RS, IP>`
+- `ctx: &mut ScriptContext<'_, API>`
 - runtime window: `ctx.run`
 - resource window: `ctx.res`
 - input window: `ctx.ipt`
 - node id: `ctx.id`
+
+`API` is a script API marker type that implements `ScriptAPI` and binds:
+- `API::RT` => runtime API
+- `API::RS` => resource API
+- `API::IP` => input API
 
 Details:
 - [Runtime Context](runtime_context.md)

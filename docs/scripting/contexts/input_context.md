@@ -1,7 +1,7 @@
 # Input Context
 
 Type:
-- `ctx: &mut ScriptContext<'_, RT, RS, IP>`
+- `ctx: &mut ScriptContext<'_, API>`
 - input window handle: `ctx.ipt`
 
 Purpose:

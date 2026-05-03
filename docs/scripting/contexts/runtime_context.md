@@ -2,7 +2,7 @@
 
 Type:
 
-- `ctx: &mut ScriptContext<'_, RT, RS, IP>`
+- `ctx: &mut ScriptContext<'_, API>`
 - runtime window handle: `ctx.run`
 
 Runtime macros take `ctx.run` as argument 1.

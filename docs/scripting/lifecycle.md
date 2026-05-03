@@ -13,9 +13,9 @@ Available hooks:
 
 ```rust
 lifecycle!({
-    fn on_init(&self, _ctx: &mut ScriptContext<'_, RT, RS, IP>) {}
+    fn on_init(&self, _ctx: &mut ScriptContext<'_, API>) {}
 
-    fn on_update(&self, ctx: &mut ScriptContext<'_, RT, RS, IP>) {
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         let dt = delta_time!(ctx.run);
         with_node_mut!(ctx.run, Node2D, ctx.id, |node| {
             node.position.x += dt * 5.0;

@@ -2,7 +2,7 @@
 
 Type:
 
-- `ctx: &mut ScriptContext<'_, RT, RS, IP>`
+- `ctx: &mut ScriptContext<'_, API>`
 - resource window handle: `ctx.res`
 
 Purpose:
