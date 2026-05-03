@@ -181,11 +181,9 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.transform.position = perro_ui::UiVector2::ratio(v.x, v.y);
             }
         }
-        "size" => {
-            if let Some(v) = as_vec2(value) {
-                node.layout.size = v.into();
-            }
-        }
+        // Intentionally ignore absolute UI `size` in scene parsing.
+        // Use `size_ratio` or `size_percent` instead.
+        "size" => {}
         "size_percent" | "size_pct" => {
             if let Some(v) = as_vec2(value) {
                 node.layout.size = perro_ui::UiVector2::percent(v.x, v.y);
@@ -246,36 +244,10 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.layout.v_align = v;
             }
         }
-        "min_size" => {
-            if let Some(v) = as_vec2(value) {
-                node.layout.min_size = v;
-            }
-        }
-        "max_size" => {
-            if let Some(v) = as_vec2(value) {
-                node.layout.max_size = v;
-            }
-        }
-        "min_w" | "min_width" => {
-            if let Some(v) = as_f32(value) {
-                node.layout.min_size.x = v;
-            }
-        }
-        "min_h" | "min_height" => {
-            if let Some(v) = as_f32(value) {
-                node.layout.min_size.y = v;
-            }
-        }
-        "max_w" | "max_width" => {
-            if let Some(v) = as_f32(value) {
-                node.layout.max_size.x = v;
-            }
-        }
-        "max_h" | "max_height" => {
-            if let Some(v) = as_f32(value) {
-                node.layout.max_size.y = v;
-            }
-        }
+        // Intentionally ignore absolute UI min/max constraints in scene parsing.
+        // Use ratio/percent layout + parent scale behavior instead.
+        "min_size" | "max_size" | "min_w" | "min_width" | "min_h" | "min_height"
+        | "max_w" | "max_width" | "max_h" | "max_height" => {}
         "padding" => {
             if let Some(v) = as_ui_rect(value) {
                 node.layout.padding = v;

@@ -350,15 +350,11 @@ impl UiLayoutData {
     }
 
     pub fn resolved_size(&self, parent_size: Vector2) -> Vector2 {
-        let size = self.size.resolve(parent_size);
-        self.clamp_size(size)
+        self.size.resolve(parent_size)
     }
 
     pub fn clamp_size(&self, size: Vector2) -> Vector2 {
-        Vector2::new(
-            size.x.max(self.min_size.x).min(self.max_size.x),
-            size.y.max(self.min_size.y).min(self.max_size.y),
-        )
+        size
     }
 
     pub fn resolved_scaled_size(&self, transform: &UiTransform, parent_size: Vector2) -> Vector2 {
@@ -1340,24 +1336,23 @@ mod tests {
     }
 
     #[test]
-    fn size_respects_min_and_max_size() {
+    fn size_ignores_min_and_max_size() {
         let mut layout = UiLayoutData::new();
         layout.size = UiVector2::ratio(0.5, 0.1);
         layout.min_size = Vector2::new(300.0, 80.0);
         layout.max_size = Vector2::new(1200.0, 90.0);
 
         assert_eq!(
-            layout.resolved_size(Vector2::new(3000.0, 1000.0)),
-            Vector2::new(1200.0, 90.0)
+            layout.resolved_size(Vector2::new(3000.0, 1000.0)).x,
+            1500.0
         );
-        assert_eq!(
-            layout.resolved_size(Vector2::new(400.0, 400.0)),
-            Vector2::new(300.0, 80.0)
-        );
+        assert!((layout.resolved_size(Vector2::new(3000.0, 1000.0)).y - 100.0).abs() < 1.0e-3);
+        assert_eq!(layout.resolved_size(Vector2::new(400.0, 400.0)).x, 200.0);
+        assert!((layout.resolved_size(Vector2::new(400.0, 400.0)).y - 40.0).abs() < 1.0e-3);
     }
 
     #[test]
-    fn scale_applies_after_size_clamp() {
+    fn scale_applies_after_size_resolve() {
         let mut layout = UiLayoutData::new();
         let mut transform = UiTransform::new();
         layout.size = UiVector2::ratio(0.5, 0.1);
@@ -1367,7 +1362,8 @@ mod tests {
         let parent = ComputedUiRect::new(Vector2::ZERO, Vector2::new(3000.0, 1000.0));
         let rect = layout.compute_rect(&transform, parent);
 
-        assert_eq!(rect.size, Vector2::new(2400.0, 45.0));
+        assert_eq!(rect.size.x, 3000.0);
+        assert!((rect.size.y - 50.0).abs() < 1.0e-3);
     }
 
     #[test]

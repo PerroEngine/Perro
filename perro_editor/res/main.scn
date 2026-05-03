@@ -46,8 +46,6 @@ parent = @root
     anchor = "top"
     position = (0, -14)
     size_ratio = (0.96, 0.09)
-    min_h = 72
-    max_h = 86
     fill = @col_top
     stroke = @col_top_stroke
     corner_radius = 8
@@ -63,7 +61,7 @@ parent = top_bar
     text = "Perro Editor"
     font_size = 34
     color = @col_text
-    size = (520, 48)
+    size_ratio = (0.270833, 0.044444)
 [/UiLabel]
 [/title]
 
@@ -75,7 +73,7 @@ parent = top_bar
     text = "Pick project"
     font_size = 18
     color = @col_muted
-    size = (760, 36)
+    size_ratio = (0.395833, 0.033333)
 [/UiLabel]
 [/status]
 
@@ -93,7 +91,7 @@ parent = @root
 [left_panel]
 parent = content
 [UiPanel]
-    size = (640, 800)
+    size_ratio = (0.333333, 0.740741)
     fill = @col_surface
     stroke = @col_border
     corner_radius = 8
@@ -116,14 +114,14 @@ parent = left_stack
     text = "New project"
     font_size = 26
     color = @col_text
-    size = (540, 42)
+    size_ratio = (0.28125, 0.038889)
 [/UiLabel]
 [/new_title]
 
 [project_name_input]
 parent = left_stack
 [UiTextBox]
-    size = (540, 48)
+    size_ratio = (0.28125, 0.044444)
     text = "MyGame"
     placeholder = "project name"
     font_size = 18
@@ -139,7 +137,7 @@ parent = left_stack
 [project_root_input]
 parent = left_stack
 [UiTextBox]
-    size = (540, 48)
+    size_ratio = (0.28125, 0.044444)
     text = "playground"
     placeholder = "parent folder"
     font_size = 18
@@ -155,7 +153,7 @@ parent = left_stack
 [create_project_button]
 parent = left_stack
 [UiButton]
-    size = (260, 50)
+    size_ratio = (0.135417, 0.046296)
     fill = @col_green
     hover_fill = @col_green_hover
     pressed_fill = @col_green_press
@@ -180,7 +178,7 @@ parent = left_stack
     text = "Open folder"
     font_size = 26
     color = @col_text
-    size = (540, 42)
+    size_ratio = (0.28125, 0.038889)
     margin = (0, 18, 0, 0)
 [/UiLabel]
 [/open_title]
@@ -188,7 +186,7 @@ parent = left_stack
 [open_path_input]
 parent = left_stack
 [UiTextBox]
-    size = (540, 48)
+    size_ratio = (0.28125, 0.044444)
     text = "playground/UiTest"
     placeholder = "project folder path"
     font_size = 18
@@ -204,7 +202,7 @@ parent = left_stack
 [open_project_button]
 parent = left_stack
 [UiButton]
-    size = (260, 50)
+    size_ratio = (0.135417, 0.046296)
     fill = @col_blue
     hover_fill = @col_blue_hover
     pressed_fill = @col_blue_press
@@ -226,7 +224,7 @@ parent = open_project_button
 [right_panel]
 parent = content
 [UiPanel]
-    size = (1040, 800)
+    size_ratio = (0.541667, 0.740741)
     fill = @col_surface_alt
     stroke = @col_border
     corner_radius = 8
@@ -249,14 +247,14 @@ parent = right_stack
     text = "Recent projects"
     font_size = 26
     color = @col_text
-    size = (900, 42)
+    size_ratio = (0.46875, 0.038889)
 [/UiLabel]
 [/recent_title]
 
 [recent_0]
 parent = right_stack
 [UiButton]
-    size = (900, 58)
+    size_ratio = (0.46875, 0.053704)
     fill = @col_field
     hover_fill = @col_button_hover
     pressed_fill = @col_button_press
@@ -278,7 +276,7 @@ parent = recent_0
 [recent_1]
 parent = right_stack
 [UiButton]
-    size = (900, 58)
+    size_ratio = (0.46875, 0.053704)
     fill = @col_field
     hover_fill = @col_button_hover
     pressed_fill = @col_button_press
@@ -300,7 +298,7 @@ parent = recent_1
 [recent_2]
 parent = right_stack
 [UiButton]
-    size = (900, 58)
+    size_ratio = (0.46875, 0.053704)
     fill = @col_field
     hover_fill = @col_button_hover
     pressed_fill = @col_button_press
@@ -322,7 +320,7 @@ parent = recent_2
 [hint]
 parent = right_stack
 [UiTextBlock]
-    size = (900, 260)
+    size_ratio = (0.46875, 0.240741)
     text = "Use path boxes for now.\nCreate writes project files in editor.\nOpen checks project.toml then loads editor scene.\nEditor reads scene doc + loads live edit scene with runtime scene loader."
     font_size = 18
     editable = false

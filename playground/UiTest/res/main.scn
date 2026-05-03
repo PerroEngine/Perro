@@ -19,8 +19,6 @@ parent = @root
     anchor = "top"
     position = (0, -16)
     size_ratio = (0.96, 0.09)
-    min_h = 72
-    max_h = 96
     fill = "#202838"
     stroke = "#516071"
     corner_radius = 16
@@ -36,7 +34,7 @@ parent = top_bar
     text = "UiTest: panels / layouts / anchors"
     font_size = 30
     color = "#F4F7FB"
-    size = (720, 48)
+    size_ratio = (0.375, 0.044444)
 [/UiLabel]
 [/title_label]
 
@@ -54,7 +52,7 @@ parent = @root
 [left_panel]
 parent = main_row
 [UiPanel]
-    size = (380, 720)
+    size_ratio = (0.197917, 0.666667)
     fill = "#1D2531"
     stroke = "#435066"
     corner_radius = 18
@@ -77,23 +75,23 @@ parent = left_stack
     text = "VLayout / fill width"
     font_size = 24
     color = "#D8DEE9"
-    size = (300, 44)
+    size_ratio = (0.15625, 0.040741)
 [/UiLabel]
 [/left_header]
 
 [left_button_a]
 parent = left_stack
 [UiButton]
-    size = (260, 44)
+    size_ratio = (0.135417, 0.040741)
     style = { fill = "#5E506A" stroke = "#A08DB1" }
     hover = {
-        size = (270, 48)
+        size_ratio = (0.140625, 0.044444)
         scale = (1.02, 1.02)
         rotation = 0.015
         style = { fill = "#756387" stroke = "#C0A8D0" }
     }
     pressed = {
-        size = (250, 40)
+        size_ratio = (0.130208, 0.037037)
         scale = (0.98, 0.98)
         rotation = -0.01
         style = { fill = "#483D52" stroke = "#8E7A9D" }
@@ -114,7 +112,7 @@ parent = left_button_a
 [left_button_b]
 parent = left_stack
 [UiButton]
-    size = (320, 52)
+    size_ratio = (0.166667, 0.048148)
     fill = "#6A4E4E"
     hover_fill = "#815F5F"
     pressed_fill = "#503B3B"
@@ -138,7 +136,7 @@ parent = left_stack
     text = "margin + padding sample"
     font_size = 18
     color = "#BFC7D5"
-    size = (300, 36)
+    size_ratio = (0.15625, 0.033333)
     margin = (4, 8, 4, 8)
 [/UiLabel]
 [/left_note]
@@ -146,7 +144,7 @@ parent = left_stack
 [center_panel]
 parent = main_row
 [UiPanel]
-    size = (780, 600)
+    size_ratio = (0.40625, 0.555556)
     fill = "#1B2A2D"
     stroke = "#4F6E73"
     corner_radius = 18
@@ -169,7 +167,7 @@ parent = center_panel
 [grid_a]
 parent = center_grid
 [UiPanel]
-    size = (150, 110)
+    size_ratio = (0.078125, 0.101852)
     fill = "#27454D"
     stroke = "#73A6B2"
     corner_radius = 14
@@ -191,14 +189,14 @@ parent = grid_a_stack
     text = "Inventory"
     font_size = 17
     color = "#E8FAFF"
-    size = (128, 26)
+    size_ratio = (0.066667, 0.024074)
 [/UiLabel]
 [/grid_a_title]
 
 [grid_a_slots]
 parent = grid_a_stack
 [UiGrid]
-    size = (128, 58)
+    size_ratio = (0.066667, 0.053704)
     columns = 4
     h_spacing = 6
     v_spacing = 6
@@ -208,7 +206,7 @@ parent = grid_a_stack
 [grid_a_slot_1]
 parent = grid_a_slots
 [UiPanel]
-    size = (24, 24)
+    size_ratio = (0.0125, 0.022222)
     fill = "#3F6D77"
     stroke = "#91D4E1"
     corner_radius = 7
@@ -218,7 +216,7 @@ parent = grid_a_slots
 [grid_a_slot_2]
 parent = grid_a_slots
 [UiPanel]
-    size = (24, 24)
+    size_ratio = (0.0125, 0.022222)
     fill = "#5A6F35"
     stroke = "#B8DC76"
     corner_radius = 7
@@ -228,7 +226,7 @@ parent = grid_a_slots
 [grid_a_slot_3]
 parent = grid_a_slots
 [UiPanel]
-    size = (24, 24)
+    size_ratio = (0.0125, 0.022222)
     fill = "#604A2A"
     stroke = "#D4A85F"
     corner_radius = 7
@@ -238,7 +236,7 @@ parent = grid_a_slots
 [grid_a_slot_4]
 parent = grid_a_slots
 [UiPanel]
-    size = (24, 24)
+    size_ratio = (0.0125, 0.022222)
     fill = "#4F415D"
     stroke = "#C09EDF"
     corner_radius = 7
@@ -248,7 +246,7 @@ parent = grid_a_slots
 [grid_b]
 parent = center_grid
 [UiPanel]
-    size = (150, 110)
+    size_ratio = (0.078125, 0.101852)
     fill = "#48603A"
     stroke = "#9BBE7D"
     corner_radius = 14
@@ -270,14 +268,14 @@ parent = grid_b_stack
     text = "Loadout"
     font_size = 17
     color = "#F2FFE6"
-    size = (128, 24)
+    size_ratio = (0.066667, 0.022222)
 [/UiLabel]
 [/grid_b_title]
 
 [grid_b_row]
 parent = grid_b_stack
 [UiHLayout]
-    size = (128, 58)
+    size_ratio = (0.066667, 0.053704)
     spacing = 8
 [/UiHLayout]
 [/grid_b_row]
@@ -285,7 +283,7 @@ parent = grid_b_stack
 [grid_b_primary]
 parent = grid_b_row
 [UiButton]
-    size = (44, 44)
+    size_ratio = (0.022917, 0.040741)
     fill = "#63804A"
     hover_fill = "#789B5A"
     pressed_fill = "#4E663A"
@@ -307,7 +305,7 @@ parent = grid_b_primary
 [grid_b_secondary]
 parent = grid_b_row
 [UiButton]
-    size = (44, 44)
+    size_ratio = (0.022917, 0.040741)
     fill = "#526842"
     hover_fill = "#668152"
     pressed_fill = "#3F5033"
@@ -329,7 +327,7 @@ parent = grid_b_secondary
 [grid_c]
 parent = center_grid
 [UiPanel]
-    size = (150, 110)
+    size_ratio = (0.078125, 0.101852)
     translation = (0, 24)
     fill = "#303E58"
     stroke = "#8BA7E0"
@@ -353,14 +351,14 @@ parent = grid_c_layout
     text = "Quest"
     font_size = 17
     color = "#EEF3FF"
-    size = (128, 24)
+    size_ratio = (0.066667, 0.022222)
 [/UiLabel]
 [/grid_c_title]
 
 [grid_c_progress_bg]
 parent = grid_c_layout
 [UiPanel]
-    size = (116, 18)
+    size_ratio = (0.060417, 0.016667)
     fill = "#1E2738"
     stroke = "#61789E"
     corner_radius = "full"
@@ -372,7 +370,7 @@ parent = grid_c_progress_bg
 [UiPanel]
     anchor = "l"
     position = (6, 0)
-    size = (72, 10)
+    size_ratio = (0.0375, 0.009259)
     fill = "#8BA7E0"
     stroke = "#B9CBF0"
     corner_radius = "full"
@@ -385,14 +383,14 @@ parent = grid_c_layout
     text = "3/5"
     font_size = 16
     color = "#C9D7F7"
-    size = (80, 22)
+    size_ratio = (0.041667, 0.02037)
 [/UiLabel]
 [/grid_c_note]
 
 [grid_d]
 parent = center_grid
 [UiPanel]
-    size = (150, 110)
+    size_ratio = (0.078125, 0.101852)
     translation = (0, 24)
     fill = "#4C3B55"
     stroke = "#B28AC4"
@@ -416,7 +414,7 @@ parent = grid_d
 parent = center_grid
 [UiButton]
     disabled = true
-    size = (150, 110)
+    size_ratio = (0.078125, 0.101852)
     translation = (0, 24)
     fill = "#4B5362"
     stroke = "#A9B3C5"
@@ -438,7 +436,7 @@ parent = grid_e
 [grid_f]
 parent = center_grid
 [UiPanel]
-    size = (150, 110)
+    size_ratio = (0.078125, 0.101852)
     fill = "#604A2A"
     stroke = "#C69C55"
     corner_radius = 14
@@ -460,14 +458,14 @@ parent = grid_f_stack
     text = "Stats"
     font_size = 17
     color = "#FFF2DA"
-    size = (128, 24)
+    size_ratio = (0.066667, 0.022222)
 [/UiLabel]
 [/grid_f_title]
 
 [grid_f_hp]
 parent = grid_f_stack
 [UiPanel]
-    size = (118, 16)
+    size_ratio = (0.061458, 0.014815)
     fill = "#7A4B3B"
     stroke = "#E09B7C"
     corner_radius = "full"
@@ -477,7 +475,7 @@ parent = grid_f_stack
 [grid_f_mp]
 parent = grid_f_stack
 [UiPanel]
-    size = (88, 16)
+    size_ratio = (0.045833, 0.014815)
     fill = "#3B5A7A"
     stroke = "#83B7E0"
     corner_radius = "full"
@@ -487,7 +485,7 @@ parent = grid_f_stack
 [grid_g]
 parent = center_grid
 [UiPanel]
-    size = (150, 110)
+    size_ratio = (0.078125, 0.101852)
     fill = "#2E3B34"
     stroke = "#8FC7A4"
     corner_radius = 14
@@ -509,14 +507,14 @@ parent = grid_g_stack
     text = "Grid in grid"
     font_size = 16
     color = "#E9FFF0"
-    size = (128, 24)
+    size_ratio = (0.066667, 0.022222)
 [/UiLabel]
 [/grid_g_title]
 
 [grid_g_inner]
 parent = grid_g_stack
 [UiGrid]
-    size = (100, 62)
+    size_ratio = (0.052083, 0.057407)
     columns = 3
     h_spacing = 5
     v_spacing = 5
@@ -526,7 +524,7 @@ parent = grid_g_stack
 [grid_g_cell_1]
 parent = grid_g_inner
 [UiPanel]
-    size = (26, 26)
+    size_ratio = (0.013542, 0.024074)
     fill = "#476E58"
     stroke = "#A9DDBB"
     corner_radius = 8
@@ -536,7 +534,7 @@ parent = grid_g_inner
 [grid_g_cell_2]
 parent = grid_g_inner
 [UiPanel]
-    size = (26, 26)
+    size_ratio = (0.013542, 0.024074)
     fill = "#5B6241"
     stroke = "#CBD98A"
     corner_radius = 8
@@ -546,7 +544,7 @@ parent = grid_g_inner
 [grid_g_cell_3]
 parent = grid_g_inner
 [UiPanel]
-    size = (26, 26)
+    size_ratio = (0.013542, 0.024074)
     fill = "#365F6A"
     stroke = "#8ED0DD"
     corner_radius = 8
@@ -556,7 +554,7 @@ parent = grid_g_inner
 [grid_g_cell_4]
 parent = grid_g_inner
 [UiPanel]
-    size = (26, 26)
+    size_ratio = (0.013542, 0.024074)
     fill = "#6A4B59"
     stroke = "#DDA6BE"
     corner_radius = 8
@@ -566,7 +564,7 @@ parent = grid_g_inner
 [grid_g_cell_5]
 parent = grid_g_inner
 [UiButton]
-    size = (26, 26)
+    size_ratio = (0.013542, 0.024074)
     fill = "#3D5145"
     hover_fill = "#4F6A5A"
     pressed_fill = "#2E3D34"
@@ -588,7 +586,7 @@ parent = grid_g_cell_5
 [right_panel]
 parent = main_row
 [UiPanel]
-    size = (380, 720)
+    size_ratio = (0.197917, 0.666667)
     fill = "#25202D"
     stroke = "#6B5A7A"
     corner_radius = 18
@@ -612,14 +610,14 @@ parent = right_layout
     text = "VLayout"
     font_size = 22
     color = "#EDE7F6"
-    size = (260, 42)
+    size_ratio = (0.135417, 0.038889)
 [/UiLabel]
 [/right_title]
 
 [right_chip_a]
 parent = right_layout
 [UiPanel]
-    size = (220, 46)
+    size_ratio = (0.114583, 0.042593)
     fill = "#3A3150"
     stroke = "#8B79B8"
     corner_radius = "full"
@@ -641,7 +639,7 @@ parent = right_layout
 [UiButton]
     pressed_signals = ["ui_right_button_pressed"]
     click_signals = ["ui_right_button_click", "ui_any_button_click"]
-    size = (220, 48)
+    size_ratio = (0.114583, 0.044444)
     fill = "#664F31"
     hover_fill = "#80643E"
     pressed_fill = "#4D3C25"
@@ -663,7 +661,7 @@ parent = right_button
 [right_text_box]
 parent = right_layout
 [UiTextBox]
-    size = (260, 44)
+    size_ratio = (0.135417, 0.040741)
     text = "edit me"
     placeholder = "single line"
     font_size = 18
@@ -679,7 +677,7 @@ parent = right_layout
 [right_text_block]
 parent = right_layout
 [UiTextBlock]
-    size = (260, 118)
+    size_ratio = (0.135417, 0.109259)
     text = "multi line\ntry arrows\ntry scroll"
     placeholder = "multi line"
     font_size = 17
@@ -698,7 +696,7 @@ parent = @root
 [UiPanel]
     anchor = "tl"
     position = (0, 0)
-    size = (56, 34)
+    size_ratio = (0.029167, 0.031481)
     fill = "#643D3D"
     stroke = "#C07D7D"
     corner_radius = 10
@@ -720,7 +718,7 @@ parent = @root
 [UiPanel]
     anchor = "top"
     position = (0, 0)
-    size = (56, 34)
+    size_ratio = (0.029167, 0.031481)
     fill = "#4B465F"
     stroke = "#AFA4DD"
     corner_radius = 10
@@ -742,7 +740,7 @@ parent = @root
 [UiPanel]
     anchor = "tr"
     position = (0, 0)
-    size = (56, 34)
+    size_ratio = (0.029167, 0.031481)
     fill = "#3D5F64"
     stroke = "#81C7D1"
     corner_radius = 10
@@ -764,7 +762,7 @@ parent = @root
 [UiPanel]
     anchor = "l"
     position = (0, 0)
-    size = (56, 34)
+    size_ratio = (0.029167, 0.031481)
     fill = "#514665"
     stroke = "#B7A0DD"
     corner_radius = 10
@@ -786,7 +784,7 @@ parent = @root
 [UiPanel]
     anchor = "r"
     position = (0, 0)
-    size = (56, 34)
+    size_ratio = (0.029167, 0.031481)
     fill = "#4B5865"
     stroke = "#9FB7D3"
     corner_radius = 10
@@ -808,7 +806,7 @@ parent = @root
 [UiPanel]
     anchor = "bl"
     position = (0, 0)
-    size = (56, 34)
+    size_ratio = (0.029167, 0.031481)
     fill = "#4E5A38"
     stroke = "#A5B970"
     corner_radius = 10
@@ -830,7 +828,7 @@ parent = @root
 [UiPanel]
     anchor = "bottom"
     position = (0, 0)
-    size = (56, 34)
+    size_ratio = (0.029167, 0.031481)
     fill = "#5C4B37"
     stroke = "#D0AA72"
     corner_radius = 10
@@ -852,7 +850,7 @@ parent = @root
 [UiPanel]
     anchor = "br"
     position = (0, 0)
-    size = (56, 34)
+    size_ratio = (0.029167, 0.031481)
     fill = "#5B4B34"
     stroke = "#C0A16D"
     corner_radius = 10
@@ -875,8 +873,6 @@ parent = @root
     anchor = "bottom"
     position = (0, 22)
     size_ratio = (0.72, 0.08)
-    min_h = 56
-    max_h = 76
     spacing = 18
     padding = (14, 8, 14, 8)
 [/UiHLayout]
@@ -885,7 +881,7 @@ parent = @root
 [name_button_a]
 parent = bottom_bar
 [UiButton]
-    size = (150, 42)
+    size_ratio = (0.078125, 0.038889)
     fill = "#3F6048"
     hover_fill = "#4F795B"
     pressed_fill = "#304938"
@@ -907,7 +903,7 @@ parent = name_button_a
 [name_button_b]
 parent = bottom_bar
 [UiButton]
-    size = (150, 42)
+    size_ratio = (0.078125, 0.038889)
     fill = "#4B5368"
     hover_fill = "#5F6A84"
     pressed_fill = "#384052"

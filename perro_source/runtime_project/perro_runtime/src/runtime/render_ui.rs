@@ -1529,7 +1529,7 @@ impl Runtime {
                 size.y = fill.y;
             }
         }
-        ui.transform.scale_size(ui.layout.clamp_size(size))
+        ui.transform.scale_size(size)
     }
 
     fn fit_children_size(&self, node: NodeID, available: Vector2) -> Vector2 {
@@ -2173,7 +2173,7 @@ fn button_rect_state(
         UiButtonVisualState::Neutral => base_rect.size,
         UiButtonVisualState::Hover | UiButtonVisualState::Pressed => ui
             .transform
-            .scale_size(ui.layout.clamp_size(ui.layout.size.resolve(base_rect.size))),
+            .scale_size(ui.layout.size.resolve(base_rect.size)),
     };
     let center = if state == UiButtonVisualState::Neutral {
         base_rect.center

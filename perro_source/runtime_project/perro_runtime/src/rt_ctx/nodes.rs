@@ -135,8 +135,6 @@ fn classify_ui_base_change(before: &UiBox, after: &UiBox) -> u16 {
             | Runtime::UI_DIRTY_COMMANDS;
     }
     if before.layout.size != after.layout.size
-        || before.layout.min_size != after.layout.min_size
-        || before.layout.max_size != after.layout.max_size
         || before.layout.margin != after.layout.margin
         || before.layout.h_size != after.layout.h_size
         || before.layout.v_size != after.layout.v_size

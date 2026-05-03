@@ -852,10 +852,6 @@ mod tests {
                 anchor = "tr"
                 position_ratio = (0.5, 0.25)
                 size_ratio = (0.5, 0.1)
-                min_w = 120
-                min_h = 40
-                max_w = 1200
-                max_h = 96
                 scale = (2, 0.5)
                 rotation = 0.25
                 h_size = "fill"
@@ -870,13 +866,13 @@ mod tests {
                 pressed_signals = ["ui_down", "ui_press_any"]
                 click_signals = ["ui_click"]
                 hover = {
-                    size = (260, 52)
+                    size_ratio = (0.65, 0.08666667)
                     scale = (1.1, 1.2)
                     rotation = 0.5
                     style = { fill = "#405060" stroke = "#C0D0E0" radius = 8 }
                 }
                 pressed = {
-                    size = (220, 42)
+                    size_ratio = (0.55, 0.07)
                     scale = (0.9, 0.8)
                     rotation = -0.25
                     style = { fill = "#182028" stroke = "#8090A0" radius = 4 }
@@ -979,22 +975,13 @@ mod tests {
                 );
                 assert_eq!(button.click_signals, vec![perro_ids::SignalID::from_string("ui_click")]);
                 let hover = button.hover_base.as_ref().expect("hover base");
-                assert_eq!(hover.layout.size, perro_ui::UiVector2::pixels(260.0, 52.0));
+                assert_eq!(hover.layout.size, perro_ui::UiVector2::ratio(0.65, 0.08666667));
                 assert_eq!(hover.transform.scale, Vector2::new(1.1, 1.2));
                 assert_eq!(hover.transform.rotation, 0.5);
                 let pressed = button.pressed_base.as_ref().expect("pressed base");
-                assert_eq!(
-                    pressed.layout.size,
-                    perro_ui::UiVector2::pixels(220.0, 42.0)
-                );
+                assert_eq!(pressed.layout.size, perro_ui::UiVector2::ratio(0.55, 0.07));
                 assert_eq!(pressed.transform.scale, Vector2::new(0.9, 0.8));
                 assert_eq!(pressed.transform.rotation, -0.25);
-                assert_eq!(
-                    button.layout.resolved_size(Vector2::new(3000.0, 1200.0)),
-                    Vector2::new(1200.0, 96.0)
-                );
-                assert_eq!(button.layout.min_size, Vector2::new(120.0, 40.0));
-                assert_eq!(button.layout.max_size, Vector2::new(1200.0, 96.0));
                 assert_eq!(button.transform.scale, Vector2::new(2.0, 0.5));
                 assert_eq!(button.transform.rotation, 0.25);
                 assert_eq!(button.layout.h_size, perro_ui::UiSizeMode::Fill);
