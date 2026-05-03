@@ -61,7 +61,7 @@ parent = top_bar
     anchor = "l"
     position_ratio = (0.646485, 0.5)
     text = "Perro Editor"
-    text_size_ratio = 0.35
+    text_size_ratio = 1.0
     color = @col_text
     size_ratio = (0.270833, 0.044444)
 [/UiLabel]

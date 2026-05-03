@@ -979,31 +979,32 @@ impl Runtime {
         let parent_node = self.nodes.get(parent)?;
         let parent_ui = ui_root_from_data(&parent_node.data)?;
         let content_rect = parent_rect.inset(parent_ui.layout.padding);
-        let auto_layout = ui_auto_layout_from_data(&parent_node.data)?;
-        match auto_layout.mode {
-            UiLayoutMode::H => self.compute_ui_h_child_rect(
-                &parent_ui.layout,
-                parent_node.get_children_ids(),
-                child,
-                content_rect,
-                auto_layout.h_spacing,
-            ),
-            UiLayoutMode::V => self.compute_ui_v_child_rect(
-                &parent_ui.layout,
-                parent_node.get_children_ids(),
-                child,
-                content_rect,
-                auto_layout.v_spacing,
-            ),
-            UiLayoutMode::Grid => self.compute_ui_grid_child_rect(
-                &parent_ui.layout,
-                parent_node.get_children_ids(),
-                child,
-                content_rect,
-                auto_layout,
-            ),
-        }
-        .or_else(|| {
+        let auto_rect = ui_auto_layout_from_data(&parent_node.data).and_then(|auto_layout| {
+            match auto_layout.mode {
+                UiLayoutMode::H => self.compute_ui_h_child_rect(
+                    &parent_ui.layout,
+                    parent_node.get_children_ids(),
+                    child,
+                    content_rect,
+                    auto_layout.h_spacing,
+                ),
+                UiLayoutMode::V => self.compute_ui_v_child_rect(
+                    &parent_ui.layout,
+                    parent_node.get_children_ids(),
+                    child,
+                    content_rect,
+                    auto_layout.v_spacing,
+                ),
+                UiLayoutMode::Grid => self.compute_ui_grid_child_rect(
+                    &parent_ui.layout,
+                    parent_node.get_children_ids(),
+                    child,
+                    content_rect,
+                    auto_layout,
+                ),
+            }
+        });
+        auto_rect.or_else(|| {
             let child_content = content_rect.inset(child_layout.margin);
             let fill_size = Vector2::new(
                 if child_layout.h_size == UiSizeMode::Fill {
@@ -3937,6 +3938,41 @@ mod tests {
 
         assert!((rect.size.x - 1843.2).abs() < 1.0e-3);
         assert!((rect.size.y - 97.2).abs() < 1.0e-3);
+    }
+
+    #[test]
+    fn label_fill_mode_uses_parent_space_without_auto_layout_parent() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut parent = UiPanel::new();
+        parent.layout.size = UiVector2::ratio(1.0, 1.0);
+        let parent_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+
+        let mut label = perro_ui::UiLabel::new().with_text("HP");
+        label.layout.h_size = UiSizeMode::Fill;
+        label.layout.v_size = UiSizeMode::Fill;
+        label.text_size_ratio = 1.0;
+        let label_id = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+        attach_child(&mut runtime, parent_id, label_id);
+
+        runtime.extract_render_ui_commands();
+
+        let parent_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&parent_id)
+            .copied()
+            .expect("parent rect");
+        let label_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&label_id)
+            .copied()
+            .expect("label rect");
+
+        assert_eq!(label_rect.center, parent_rect.center);
+        assert_eq!(label_rect.size, parent_rect.size);
     }
 
     #[test]
