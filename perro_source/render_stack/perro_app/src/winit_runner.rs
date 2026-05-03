@@ -283,6 +283,33 @@ struct ProfileCsvWriter {
 }
 
 #[cfg(feature = "profile_heavy")]
+struct ProfileCsvRow {
+    batch_end_frame: u64,
+    frames: u32,
+    sampled_frames: u32,
+    avg_draw_calls_2d: f64,
+    avg_draw_calls_3d: f64,
+    avg_draw_calls_total: f64,
+    avg_draw_instances_3d: f64,
+    avg_instances_per_draw_3d: f64,
+    avg_draw_material_refs_3d: f64,
+    avg_render_commands: f64,
+    avg_dirty_nodes: f64,
+    avg_extract2d_us: f64,
+    avg_extract3d_us: f64,
+    avg_extract_ui_us: f64,
+    avg_drain_commands_us: f64,
+    avg_submit_commands_us: f64,
+    avg_draw_process_us: f64,
+    avg_draw_prep_us: f64,
+    avg_active_meshes: f64,
+    avg_active_materials: f64,
+    avg_active_textures: f64,
+    avg_present_wait_us: f64,
+    avg_frame_us: f64,
+}
+
+#[cfg(feature = "profile_heavy")]
 impl ProfileCsvWriter {
     fn from_env() -> Option<Self> {
         let path = std::env::var("PERRO_PROFILE_CSV").ok()?;
@@ -298,59 +325,33 @@ impl ProfileCsvWriter {
         Some(Self { file })
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn write(
-        &mut self,
-        batch_end_frame: u64,
-        frames: u32,
-        sampled_frames: u32,
-        avg_draw_calls_2d: f64,
-        avg_draw_calls_3d: f64,
-        avg_draw_calls_total: f64,
-        avg_draw_instances_3d: f64,
-        avg_instances_per_draw_3d: f64,
-        avg_draw_material_refs_3d: f64,
-        avg_render_commands: f64,
-        avg_dirty_nodes: f64,
-        avg_extract2d_us: f64,
-        avg_extract3d_us: f64,
-        avg_extract_ui_us: f64,
-        avg_drain_commands_us: f64,
-        avg_submit_commands_us: f64,
-        avg_draw_process_us: f64,
-        avg_draw_prep_us: f64,
-        avg_active_meshes: f64,
-        avg_active_materials: f64,
-        avg_active_textures: f64,
-        avg_present_wait_us: f64,
-        avg_frame_us: f64,
-    ) {
+    fn write(&mut self, row: &ProfileCsvRow) {
         let _ = writeln!(
             self.file,
             "{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}",
-            batch_end_frame,
-            frames,
-            sampled_frames,
-            avg_draw_calls_2d,
-            avg_draw_calls_3d,
-            avg_draw_calls_total,
-            avg_draw_instances_3d,
-            avg_instances_per_draw_3d,
-            avg_draw_material_refs_3d,
-            avg_render_commands,
-            avg_dirty_nodes,
-            avg_extract2d_us,
-            avg_extract3d_us,
-            avg_extract_ui_us,
-            avg_drain_commands_us,
-            avg_submit_commands_us,
-            avg_draw_process_us,
-            avg_draw_prep_us,
-            avg_active_meshes,
-            avg_active_materials,
-            avg_active_textures,
-            avg_present_wait_us,
-            avg_frame_us,
+            row.batch_end_frame,
+            row.frames,
+            row.sampled_frames,
+            row.avg_draw_calls_2d,
+            row.avg_draw_calls_3d,
+            row.avg_draw_calls_total,
+            row.avg_draw_instances_3d,
+            row.avg_instances_per_draw_3d,
+            row.avg_draw_material_refs_3d,
+            row.avg_render_commands,
+            row.avg_dirty_nodes,
+            row.avg_extract2d_us,
+            row.avg_extract3d_us,
+            row.avg_extract_ui_us,
+            row.avg_drain_commands_us,
+            row.avg_submit_commands_us,
+            row.avg_draw_process_us,
+            row.avg_draw_prep_us,
+            row.avg_active_meshes,
+            row.avg_active_materials,
+            row.avg_active_textures,
+            row.avg_present_wait_us,
+            row.avg_frame_us,
         );
         let _ = self.file.flush();
     }
@@ -2005,10 +2006,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     pct_skip_prepare_3d_cull_inputs
                 );
                 if let Some(csv) = &mut self.profile_csv {
-                    csv.write(
-                        self.frame_index,
-                        self.batch_frames,
-                        self.batch_timing_samples,
+                    let row = ProfileCsvRow {
+                        batch_end_frame: self.frame_index,
+                        frames: self.batch_frames,
+                        sampled_frames: self.batch_timing_samples,
                         avg_draw_calls_2d,
                         avg_draw_calls_3d,
                         avg_draw_calls_total,
@@ -2017,19 +2018,21 @@ impl<B: GraphicsBackend> RunnerState<B> {
                         avg_draw_material_refs_3d,
                         avg_render_commands,
                         avg_dirty_nodes,
-                        avg_present_extract_2d_us,
-                        avg_present_extract_3d_us,
-                        avg_present_extract_ui_us,
-                        avg_present_drain_commands_us,
-                        avg_present_submit_commands_us,
-                        avg_draw_process_commands_us,
-                        avg_draw_prepare_cpu_us,
+                        avg_extract2d_us: avg_present_extract_2d_us,
+                        avg_extract3d_us: avg_present_extract_3d_us,
+                        avg_extract_ui_us: avg_present_extract_ui_us,
+                        avg_drain_commands_us: avg_present_drain_commands_us,
+                        avg_submit_commands_us: avg_present_submit_commands_us,
+                        avg_draw_process_us: avg_draw_process_commands_us,
+                        avg_draw_prep_us: avg_draw_prepare_cpu_us,
                         avg_active_meshes,
                         avg_active_materials,
                         avg_active_textures,
-                        self.batch_present_wait.as_micros() as f64 / self.batch_frames as f64,
+                        avg_present_wait_us: self.batch_present_wait.as_micros() as f64
+                            / self.batch_frames as f64,
                         avg_frame_us,
-                    );
+                    };
+                    csv.write(&row);
                 }
             }
             self.batch_frames = 0;

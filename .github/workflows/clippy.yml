@@ -1,0 +1,17 @@
+name: Clippy
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  clippy:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cargo clippy (workspace/all-targets)
+        run: cargo clippy --workspace --all-targets -- -D warnings -F clippy::all

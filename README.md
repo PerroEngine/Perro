@@ -22,6 +22,12 @@ Local reference:
 - [Docs Index](docs/index.md)
 - [Perro CLI](docs/perro_cli.md)
 
+## Dev Checks
+
+- `cargo check --workspace --all-targets`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings -F clippy::all`
+
 ## Major Features
 
 - **Behavior Scripts + Per-Node State**: a script is function entry points (lifecycle hooks + methods), not a mutable script object. When a node binds that script, runtime uses that node’s `ctx.id` to run behavior and resolve that node’s own `#[State]` via `with_state!`/`with_state_mut!`.

@@ -12,3 +12,4 @@ include!("nodes/three_d/particles.rs");
 include!("nodes/three_d/lights.rs");
 include!("nodes/three_d/physics.rs");
 include!("nodes/ui/base.rs");
+include!("core_tests.rs");

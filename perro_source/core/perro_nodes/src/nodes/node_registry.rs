@@ -219,7 +219,6 @@ macro_rules! define_scene_nodes {
         }
 
         #[derive(Clone, Debug)]
-        #[allow(clippy::large_enum_variant)]
         pub enum SceneNodeData {
             $(
                 $base_variant$(($base_ty))?,
