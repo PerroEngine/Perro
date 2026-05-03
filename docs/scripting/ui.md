@@ -134,10 +134,12 @@ Children use parent UI rect as parent.
 `h_size` and `v_size` accept `fixed`, `fill`, or `fit_children`.
 `h_align` accepts `start`, `center`, `end`, or `fill`.
 `v_align` accepts `start`, `center`, `end`, or `fill`.
-`min_size_ratio` and `max_size_ratio` clamp against virtual-derived base size.
-Base size = size resolved from `size_ratio` against virtual viewport parent space.
-`min_size_ratio = (1.0, 1.0)` means node never shrink below virtual-derived base size.
-`max_size_ratio = (2.0, 2.0)` means node never grow above 2x virtual-derived base size.
+`size_ratio` always resolves against current parent size (or root viewport size), ensuring no matter the screen size, the game looks the same without thinking of absolute sizing.
+`min_size_ratio` and `max_size_ratio` clamp against node baseline size.
+Baseline size = node resolved size at spawn/creation time.
+If size definition changes later (`size_ratio`, size mode), baseline rebases to new resolved size.
+`min_size_ratio = (1.0, 1.0)` + `max_size_ratio = (1.0, 1.0)` locks node at spawn-relative size, since it can only be 100% of it's creation size.
+`min_size_ratio = (0.8, 0.8)` + `max_size_ratio = (1.2, 1.2)` allows small dynamic scale band up and down for changing window size, but not so unruly that it compresses or enlarges.
 Absolute UI keys unsupported in scenes:
 `position`, `pivot`, `translation`, `size`, `min_size`, `max_size`, `min_w`, `min_h`, `max_w`, `max_h`, `font_size`.
 Use ratio/percent keys + `text_size_ratio`.

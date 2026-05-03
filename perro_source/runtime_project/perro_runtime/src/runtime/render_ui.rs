@@ -166,6 +166,7 @@ impl Runtime {
             }
             visible_now.remove(&node);
             self.render_ui.computed_rects.remove(&node);
+            self.render_ui.size_clamp_baselines.borrow_mut().remove(&node);
             self.render_ui.computed_scales.remove(&node);
             self.render_ui.retained_rects.remove(&node);
             self.render_ui.button_states.remove(&node);
@@ -1528,79 +1529,80 @@ impl Runtime {
         if !ui.visible {
             return Vector2::ZERO;
         }
-        let viewport = self.input.viewport_size();
-        let virtual_scale = self.ui_virtual_viewport_scale(viewport);
-        let virtual_available = Vector2::new(
-            available.x / virtual_scale.x.max(0.0001),
-            available.y / virtual_scale.y.max(0.0001),
-        );
-        let base_size = ui.layout.size.resolve(available);
-        let base_virtual_size = ui.layout.size.resolve(virtual_available);
-        let mut size = base_size;
+        let layout = ui.layout;
+        let transform = ui.transform;
+        let mut size = layout.size.resolve(available);
         if ui.layout.h_size == UiSizeMode::FitChildren
             || ui.layout.v_size == UiSizeMode::FitChildren
         {
             let fit = self.fit_children_size(node, available);
-            if ui.layout.h_size == UiSizeMode::FitChildren {
+            if layout.h_size == UiSizeMode::FitChildren {
                 size.x = fit.x;
             }
-            if ui.layout.v_size == UiSizeMode::FitChildren {
+            if layout.v_size == UiSizeMode::FitChildren {
                 size.y = fit.y;
             }
         }
         if let Some(fill) = fill_size {
-            if ui.layout.h_size == UiSizeMode::Fill {
+            if layout.h_size == UiSizeMode::Fill {
                 size.x = fill.x;
             }
-            if ui.layout.v_size == UiSizeMode::Fill {
+            if layout.v_size == UiSizeMode::Fill {
                 size.y = fill.y;
             }
         }
+        let baseline_size = {
+            let mut baselines = self.render_ui.size_clamp_baselines.borrow_mut();
+            let baseline = baselines
+                .entry(node)
+                .and_modify(|baseline| {
+                    if baseline.size_def != layout.size
+                        || baseline.h_mode != layout.h_size
+                        || baseline.v_mode != layout.v_size
+                    {
+                        baseline.size = size;
+                        baseline.size_def = layout.size;
+                        baseline.h_mode = layout.h_size;
+                        baseline.v_mode = layout.v_size;
+                    }
+                })
+                .or_insert_with(|| super::state::UiSizeClampBaseline {
+                    size,
+                    size_def: layout.size,
+                    h_mode: layout.h_size,
+                    v_mode: layout.v_size,
+                });
+            baseline.size
+        };
         let min_size = Vector2::new(
-            ui.layout
+            layout
                 .min_size
                 .x
-                .max(base_virtual_size.x * ui.layout.min_size_scale.x.max(0.0)),
-            ui.layout
+                .max(baseline_size.x * layout.min_size_scale.x.max(0.0)),
+            layout
                 .min_size
                 .y
-                .max(base_virtual_size.y * ui.layout.min_size_scale.y.max(0.0)),
+                .max(baseline_size.y * layout.min_size_scale.y.max(0.0)),
         );
-        let max_x_scale = if ui.layout.max_size_scale.x.is_finite() {
-            ui.layout.max_size_scale.x.max(0.0)
+        let max_x_scale = if layout.max_size_scale.x.is_finite() {
+            layout.max_size_scale.x.max(0.0)
         } else {
             f32::INFINITY
         };
-        let max_y_scale = if ui.layout.max_size_scale.y.is_finite() {
-            ui.layout.max_size_scale.y.max(0.0)
+        let max_y_scale = if layout.max_size_scale.y.is_finite() {
+            layout.max_size_scale.y.max(0.0)
         } else {
             f32::INFINITY
         };
         let max_size = Vector2::new(
-            ui.layout.max_size.x.min(base_virtual_size.x * max_x_scale),
-            ui.layout.max_size.y.min(base_virtual_size.y * max_y_scale),
+            layout.max_size.x.min(baseline_size.x * max_x_scale),
+            layout.max_size.y.min(baseline_size.y * max_y_scale),
         );
         size = Vector2::new(
             size.x.clamp(min_size.x, max_size.x.max(min_size.x)),
             size.y.clamp(min_size.y, max_size.y.max(min_size.y)),
         );
-        ui.transform.scale_size(size)
-    }
-
-    fn ui_virtual_viewport_scale(&self, viewport: Vector2) -> Vector2 {
-        let (vw, vh) = self
-            .project()
-            .map(|project| {
-                (
-                    project.config.virtual_width.max(1) as f32,
-                    project.config.virtual_height.max(1) as f32,
-                )
-            })
-            .unwrap_or((viewport.x.max(1.0), viewport.y.max(1.0)));
-        Vector2::new(
-            (viewport.x.max(1.0) / vw).max(0.0001),
-            (viewport.y.max(1.0) / vh).max(0.0001),
-        )
+        transform.scale_size(size)
     }
 
     fn fit_children_size(&self, node: NodeID, available: Vector2) -> Vector2 {
@@ -3833,7 +3835,7 @@ mod tests {
     }
 
     #[test]
-    fn child_fit_size_clamps_with_relative_min_max_scale() {
+    fn child_fit_size_uses_spawn_baseline_for_relative_max_scale() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(1920, 1080);
 
@@ -3860,11 +3862,11 @@ mod tests {
             .copied()
             .expect("child rect");
 
-        assert_eq!(rect.size, Vector2::new(960.0, 540.0));
+        assert_eq!(rect.size, Vector2::new(1400.0, 900.0));
     }
 
     #[test]
-    fn relative_min_max_scale_updates_when_base_data_changes() {
+    fn relative_min_max_scale_rebases_when_size_definition_changes() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(1920, 1080);
 
@@ -3889,7 +3891,7 @@ mod tests {
             .get(&child_id)
             .copied()
             .expect("before rect");
-        assert_eq!(before.size, Vector2::new(960.0, 540.0));
+        assert_eq!(before.size, Vector2::new(1400.0, 900.0));
 
         if let Some(scene_node) = runtime.nodes.get_mut(child_id)
             && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
@@ -3910,11 +3912,11 @@ mod tests {
             .copied()
             .expect("after rect");
 
-        assert_eq!(after.size, Vector2::new(1400.0, 810.0));
+        assert_eq!(after.size, Vector2::new(1400.0, 900.0));
     }
 
     #[test]
-    fn min_size_ratio_one_locks_virtual_derived_floor() {
+    fn min_size_ratio_one_locks_spawn_floor() {
         let mut runtime = Runtime::new();
         runtime.project = Some(std::sync::Arc::new(crate::runtime_project::RuntimeProject::new(
             "Test",
@@ -3936,8 +3938,50 @@ mod tests {
             .copied()
             .expect("top rect");
 
-        assert!((rect.size.x - 1843.2).abs() < 1.0e-3);
-        assert!((rect.size.y - 97.2).abs() < 1.0e-3);
+        assert!((rect.size.x - 1228.8).abs() < 1.0e-3);
+        assert!((rect.size.y - 64.8).abs() < 1.0e-3);
+    }
+
+    #[test]
+    fn min_size_ratio_rebases_when_size_ratio_changes() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(1000, 1000);
+
+        let mut panel = UiPanel::new();
+        panel.layout.size = UiVector2::ratio(1.0, 1.0);
+        panel.layout.min_size_scale = Vector2::new(0.5, 0.5);
+        let panel_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(panel));
+
+        runtime.extract_render_ui_commands();
+        runtime.set_viewport_size(400, 400);
+        runtime.extract_render_ui_commands();
+        let clamped_before = runtime
+            .render_ui
+            .computed_rects
+            .get(&panel_id)
+            .copied()
+            .expect("panel rect before ratio change");
+        assert_eq!(clamped_before.size, Vector2::new(500.0, 500.0));
+
+        if let Some(scene_node) = runtime.nodes.get_mut(panel_id)
+            && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+        {
+            panel.layout.size = UiVector2::ratio(0.5, 0.5);
+        }
+        runtime.mark_ui_dirty(
+            panel_id,
+            Runtime::UI_DIRTY_LAYOUT_SELF
+                | Runtime::UI_DIRTY_LAYOUT_PARENT
+                | Runtime::UI_DIRTY_COMMANDS,
+        );
+        runtime.extract_render_ui_commands();
+        let after_ratio_change = runtime
+            .render_ui
+            .computed_rects
+            .get(&panel_id)
+            .copied()
+            .expect("panel rect after ratio change");
+        assert_eq!(after_ratio_change.size, Vector2::new(200.0, 200.0));
     }
 
     #[test]

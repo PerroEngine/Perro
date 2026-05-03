@@ -12,8 +12,8 @@ use perro_render_bridge::{
     SkeletonPalette, Sky3DState, SpotLight3DState, Sprite2DCommand, UiCommand, UiRectState,
 };
 use perro_structs::{Transform2D, Transform3D, Vector2};
-use perro_ui::ComputedUiRect;
-use std::{collections::VecDeque, path::PathBuf, sync::Arc};
+use perro_ui::{ComputedUiRect, UiSizeMode, UiVector2};
+use std::{cell::RefCell, collections::VecDeque, path::PathBuf, sync::Arc};
 
 pub(crate) struct ScriptRuntimeState {
     pub(crate) active_script_stack: Vec<(usize, NodeID)>,
@@ -322,6 +322,7 @@ pub(crate) struct RenderUiState {
     pub(crate) visible_now: AHashSet<NodeID>,
     pub(crate) prev_visible: AHashSet<NodeID>,
     pub(crate) computed_rects: AHashMap<NodeID, ComputedUiRect>,
+    pub(crate) size_clamp_baselines: RefCell<AHashMap<NodeID, UiSizeClampBaseline>>,
     pub(crate) computed_scales: AHashMap<NodeID, Vector2>,
     pub(crate) auto_layout_computed: AHashSet<NodeID>,
     pub(crate) retained_commands: AHashMap<NodeID, UiCommand>,
@@ -345,6 +346,14 @@ pub(crate) enum UiButtonVisualState {
     Pressed,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct UiSizeClampBaseline {
+    pub(crate) size: Vector2,
+    pub(crate) size_def: UiVector2,
+    pub(crate) h_mode: UiSizeMode,
+    pub(crate) v_mode: UiSizeMode,
+}
+
 impl RenderUiState {
     pub(crate) fn new() -> Self {
         Self {
@@ -355,6 +364,7 @@ impl RenderUiState {
             visible_now: AHashSet::default(),
             prev_visible: AHashSet::default(),
             computed_rects: AHashMap::default(),
+            size_clamp_baselines: RefCell::new(AHashMap::default()),
             computed_scales: AHashMap::default(),
             auto_layout_computed: AHashSet::default(),
             retained_commands: AHashMap::default(),

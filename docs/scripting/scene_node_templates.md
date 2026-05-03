@@ -437,6 +437,7 @@ UI templates use ratio-only sizing.
 - `min_size_ratio` + `max_size_ratio` clamp relative to node base size at creation.
 - Example: `size_ratio = (0.5, 0.5)` => half parent size.
 - Example: `min_size_ratio = (1.0, 1.0)` => never shrink below creation size.
+- Example: `min_size_ratio = (0.8, 0.8)` + `max_size_ratio = (1.2, 1.2)` => allow ~20% shrink/grow band.
 
 ```text
 [ui_box]
