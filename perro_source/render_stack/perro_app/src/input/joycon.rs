@@ -14,7 +14,7 @@ mod backend {
     use btleplug::platform::Manager;
     use futures_util::stream::StreamExt;
     use hidapi::HidApi;
-    use perro_input::{JoyConButton, JoyConSide};
+    use perro_input::{JoyConButton, JoyConSide, PlayerBinding};
     use perro_io::{load_asset, save_asset};
     use serde::{Deserialize, Serialize};
     use std::sync::OnceLock;
@@ -51,6 +51,7 @@ mod backend {
     const CALIBRATION_MAX_MAG_DPS: f32 = 12.0;
     const CALIBRATION_MAX_DELTA_DPS: f32 = 5.0;
     const CALIBRATION_FOLDER: &str = "user://calibrations";
+    const JOYCON_SUBCMD_SET_PLAYER_LAMP: u8 = 0x30;
 
     type ButtonBits = u16;
 
@@ -115,8 +116,14 @@ mod backend {
     }
 
     #[derive(Debug)]
+    enum DeviceCommand {
+        SetPlayerLamp { pattern: u8 },
+    }
+
+    #[derive(Debug)]
     struct DeviceHandle {
         stop: Arc<AtomicBool>,
+        tx: Sender<DeviceCommand>,
     }
 
     #[derive(Debug, Clone)]
@@ -142,6 +149,7 @@ mod backend {
         tx: Option<Sender<JoyConEvent>>,
         last_buttons: HashMap<(usize, JoyConSide), ButtonBits>,
         connected: HashMap<(usize, JoyConSide), ConnectedJoyCon>,
+        last_player_lamp: HashMap<usize, u8>,
         last_scan: Option<Instant>,
         ble_started: bool,
         ble_stop: Option<Arc<AtomicBool>>,
@@ -166,6 +174,8 @@ mod backend {
             self.ensure_channel();
             self.scan_if_needed(app);
             self.consume_calibration_requests(app);
+            self.sync_player_binding_lamps(app);
+            self.consume_output_requests(app);
             self.drain_events(app);
         }
 
@@ -259,6 +269,7 @@ mod backend {
                         clear_joycon_index(app, index);
                         self.last_buttons.retain(|(idx, _), _| *idx != index);
                         self.connected.retain(|(idx, _), _| *idx != index);
+                        self.last_player_lamp.remove(&index);
                     }
                 }
                 connected
@@ -276,6 +287,7 @@ mod backend {
             let Some(tx) = self.tx.clone() else {
                 return;
             };
+            let (cmd_tx, cmd_rx) = mpsc::channel();
 
             let stop = Arc::new(AtomicBool::new(false));
             let stop_thread = Arc::clone(&stop);
@@ -294,8 +306,21 @@ mod backend {
                 let mut zero_started_at: Option<Instant> = None;
                 let mut last_enable_retry = Instant::now() - IMU_ENABLE_RETRY_COOLDOWN;
                 let mut buffer = [0u8; REPORT_LEN];
+                let mut packet_number: u8 = 0;
 
                 while !stop_thread.load(Ordering::Relaxed) {
+                    while let Ok(cmd) = cmd_rx.try_recv() {
+                        match cmd {
+                            DeviceCommand::SetPlayerLamp { pattern } => {
+                                let _ = send_hid_subcommand_with_rumble(
+                                    &device,
+                                    &mut packet_number,
+                                    JOYCON_SUBCMD_SET_PLAYER_LAMP,
+                                    pattern,
+                                );
+                            }
+                        }
+                    }
                     match device.read_timeout(&mut buffer, READ_TIMEOUT.as_millis() as i32) {
                         Ok(size) if size > 0 => {
                             let data = &buffer[..size];
@@ -331,7 +356,13 @@ mod backend {
                 let _ = tx.send(JoyConEvent::Disconnected { index });
             });
 
-            self.devices.insert(slot_key, DeviceHandle { stop });
+            self.devices.insert(
+                slot_key,
+                DeviceHandle {
+                    stop,
+                    tx: cmd_tx,
+                },
+            );
         }
 
         fn drain_events<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
@@ -375,6 +406,7 @@ mod backend {
                         clear_joycon_index(app, index);
                         self.last_buttons.retain(|(idx, _), _| *idx != index);
                         self.connected.retain(|(idx, _), _| *idx != index);
+                        self.last_player_lamp.remove(&index);
                     }
                 }
             }
@@ -384,6 +416,57 @@ mod backend {
             let requests = app.take_joycon_calibration_requests();
             for index in requests {
                 self.start_calibration(app, index);
+            }
+        }
+
+        fn consume_output_requests<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+            for req in app.take_joycon_rumble_requests() {
+                self.apply_rumble(req.index, req.rumble.low_frequency, req.rumble.high_frequency);
+            }
+            for req in app.take_joycon_indicator_requests() {
+                self.apply_indicator(req.index, req.indicator.0);
+            }
+        }
+
+        fn apply_rumble(&mut self, _index: usize, _low_frequency: f32, _high_frequency: f32) {
+            // Backend-specific output channel hook.
+            // Joy-Con rumble packet path intentionally deferred.
+        }
+
+        fn apply_indicator(&mut self, index: usize, indicator: u8) {
+            self.last_player_lamp.insert(index, indicator);
+            for controller in self.connected.values() {
+                if controller.index != index {
+                    continue;
+                }
+                if let Some(device) = self.devices.get(&format!("hid:{}", controller.serial)) {
+                    let _ = device.tx.send(DeviceCommand::SetPlayerLamp { pattern: indicator });
+                }
+            }
+        }
+
+        fn sync_player_binding_lamps<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+            let mut desired: HashMap<usize, u8> = HashMap::new();
+            for (player_idx, player) in app.players().iter().enumerate() {
+                let Some(pattern) = player_number_to_lamp_pattern(player_idx + 1) else {
+                    continue;
+                };
+                match player.get_binding() {
+                    PlayerBinding::JoyConSingle { index } => {
+                        desired.insert(index, pattern);
+                    }
+                    PlayerBinding::JoyConPair { left, right } => {
+                        desired.insert(left, pattern);
+                        desired.insert(right, pattern);
+                    }
+                    _ => {}
+                }
+            }
+            for (index, pattern) in desired {
+                if self.last_player_lamp.get(&index).copied() == Some(pattern) {
+                    continue;
+                }
+                self.apply_indicator(index, pattern);
             }
         }
 
@@ -439,6 +522,14 @@ mod backend {
             app.set_joycon_calibration_in_progress(index, false);
             app.set_joycon_calibrated(index, status == CalibrationStatus::Calibrated);
             app.set_joycon_calibration_bias(index, bias.0, bias.1, bias.2);
+            if !is_joycon_bound(app.players(), index)
+                && let Some(player_index) = first_unbound_player_slot(app.players())
+            {
+                app.bind_player(player_index, PlayerBinding::JoyConSingle { index });
+            }
+            if let Some(pattern) = player_number_to_lamp_pattern(index + 1) {
+                self.apply_indicator(index, pattern);
+            }
         }
     }
 
@@ -1185,6 +1276,66 @@ mod backend {
         device.write(&CMD_ENABLE_IMU)?;
         device.write(&CMD_SET_REPORT_30)?;
         Ok(())
+    }
+
+    fn send_hid_subcommand_with_rumble(
+        device: &hidapi::HidDevice,
+        packet_number: &mut u8,
+        subcommand: u8,
+        arg: u8,
+    ) -> Result<(), hidapi::HidError> {
+        let mut report = [0u8; 12];
+        report[0] = 0x01;
+        report[1] = *packet_number;
+        // Neutral rumble frame bytes.
+        report[2..10].copy_from_slice(&[0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40]);
+        report[10] = subcommand;
+        report[11] = arg;
+        *packet_number = packet_number.wrapping_add(1) & 0x0F;
+        device.write(&report)?;
+        Ok(())
+    }
+
+    fn player_number_to_lamp_pattern(player_number: usize) -> Option<u8> {
+        match player_number {
+            1 => Some(0b0001),
+            2 => Some(0b0011),
+            3 => Some(0b0111),
+            4 => Some(0b1111),
+            5 => Some(0b1001),
+            6 => Some(0b1010),
+            7 => Some(0b1011),
+            8 => Some(0b0110),
+            _ => None,
+        }
+    }
+
+    fn is_joycon_bound(players: &[perro_input::PlayerState], joycon_index: usize) -> bool {
+        for player in players {
+            match player.get_binding() {
+                PlayerBinding::JoyConSingle { index } if index == joycon_index => return true,
+                PlayerBinding::JoyConPair { left, right }
+                    if left == joycon_index || right == joycon_index =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn first_unbound_player_slot(players: &[perro_input::PlayerState]) -> Option<usize> {
+        for (idx, player) in players.iter().enumerate() {
+            if matches!(player.get_binding(), PlayerBinding::None) {
+                return Some(idx);
+            }
+        }
+        if players.len() < 8 {
+            Some(players.len())
+        } else {
+            None
+        }
     }
 
     fn calibration_path(serial: &str) -> String {

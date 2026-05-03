@@ -3,6 +3,7 @@ use perro_graphics::GraphicsBackend;
 
 mod backend {
     use super::*;
+    use gilrs::ff::{BaseEffect, BaseEffectType, Effect, EffectBuilder, Replay, Repeat, Ticks};
     use gilrs::{Axis, Button, EventType, GamepadId, Gilrs};
     use perro_input::{GamepadAxis, GamepadButton, GamepadIndex};
     use std::collections::{HashMap, HashSet};
@@ -42,6 +43,7 @@ mod backend {
     const JOYCON_1_RIGHT_PID: u16 = 0x2007;
     const STATE_SYNC_INTERVAL_FRAMES: u32 = 4;
     const IDLE_POLL_INTERVAL_FRAMES: u32 = 8;
+    const RUMBLE_PLAY_FOR_MS: u32 = 120;
 
     #[derive(Default)]
     pub struct GamepadBackend {
@@ -54,6 +56,7 @@ mod backend {
         next_index: usize,
         down_masks: HashMap<GamepadId, u32>,
         uuid_in_use: HashSet<[u8; 16]>,
+        rumble_effects: HashMap<usize, Effect>,
         sync_ids: Vec<GamepadId>,
         state_sync_frame_counter: u32,
         idle_poll_frame_counter: u32,
@@ -61,6 +64,7 @@ mod backend {
 
     impl GamepadBackend {
         pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+            self.consume_output_requests(app);
             self.ensure_gilrs();
             let Some(mut gilrs) = self.gilrs.take() else {
                 return;
@@ -100,6 +104,80 @@ mod backend {
             self.gilrs = Some(gilrs);
         }
 
+        fn consume_output_requests<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+            for req in app.take_gamepad_rumble_requests() {
+                self.apply_rumble(req.index, req.rumble.low_frequency, req.rumble.high_frequency);
+            }
+        }
+
+        fn apply_rumble(&mut self, index: usize, low_frequency: f32, high_frequency: f32) {
+            let low = low_frequency.clamp(0.0, 1.0);
+            let high = high_frequency.clamp(0.0, 1.0);
+
+            if low <= f32::EPSILON && high <= f32::EPSILON {
+                self.stop_rumble(index);
+                return;
+            }
+
+            let Some(id) = self.find_gamepad_id_by_index(index) else {
+                return;
+            };
+            self.stop_rumble(index);
+
+            let Some(gilrs) = self.gilrs.as_mut() else {
+                return;
+            };
+            let gp = gilrs.gamepad(id);
+            if !gp.is_connected() || !gp.is_ff_supported() {
+                return;
+            }
+
+            let duration = Ticks::from_ms(RUMBLE_PLAY_FOR_MS);
+            let weak = magnitude_from_unit(low);
+            let strong = magnitude_from_unit(high);
+            let mut builder = EffectBuilder::new();
+            if strong > 0 {
+                builder.add_effect(BaseEffect {
+                    kind: BaseEffectType::Strong { magnitude: strong },
+                    scheduling: Replay {
+                        play_for: duration,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                });
+            }
+            if weak > 0 {
+                builder.add_effect(BaseEffect {
+                    kind: BaseEffectType::Weak { magnitude: weak },
+                    scheduling: Replay {
+                        play_for: duration,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                });
+            }
+            builder.gamepads(&[id]).repeat(Repeat::Infinitely);
+            if let Ok(effect) = builder.finish(gilrs) {
+                let _ = effect.play();
+                self.rumble_effects.insert(index, effect);
+            }
+        }
+
+        fn stop_rumble(&mut self, index: usize) {
+            if let Some(effect) = self.rumble_effects.remove(&index) {
+                let _ = effect.stop();
+            }
+        }
+
+        fn find_gamepad_id_by_index(&self, index: usize) -> Option<GamepadId> {
+            for (id, uuid) in &self.id_to_uuid {
+                if self.uuid_to_index.get(uuid).copied() == Some(index) {
+                    return Some(*id);
+                }
+            }
+            None
+        }
+
         fn ensure_gilrs(&mut self) {
             if self.gilrs.is_some() {
                 return;
@@ -128,7 +206,13 @@ mod backend {
                     }
                 }
                 EventType::Disconnected => {
+                    let disconnected_index = self.id_to_uuid.get(&id).and_then(|uuid| {
+                        self.uuid_to_index.get(uuid).copied()
+                    });
                     self.handle_disconnect(app, id);
+                    if let Some(index) = disconnected_index {
+                        self.stop_rumble(index);
+                    }
                     self.down_masks.remove(&id);
                     if let Some(uuid) = self.id_to_uuid.remove(&id) {
                         self.uuid_in_use.remove(&uuid);
@@ -521,6 +605,11 @@ mod backend {
                 })
                 .unwrap_or(false)
         })
+    }
+
+    #[inline]
+    fn magnitude_from_unit(v: f32) -> u16 {
+        (v.clamp(0.0, 1.0) * u16::MAX as f32).round() as u16
     }
 }
 

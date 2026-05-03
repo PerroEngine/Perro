@@ -1,5 +1,8 @@
 use super::Runtime;
-use perro_input::{GamepadAxis, GamepadButton, KeyCode, MouseButton, MouseMode};
+use perro_input::{
+    GamepadAxis, GamepadButton, GamepadRumbleRequest, JoyConIndicatorRequest, JoyConRumbleRequest,
+    KeyCode, MouseButton, MouseMode, PlayerBinding, PlayerState,
+};
 
 impl Runtime {
     #[inline]
@@ -152,5 +155,30 @@ impl Runtime {
     #[inline]
     pub fn take_joycon_calibration_requests(&mut self) -> Vec<usize> {
         self.input.take_joycon_calibration_requests()
+    }
+
+    #[inline]
+    pub fn take_gamepad_rumble_requests(&mut self) -> Vec<GamepadRumbleRequest> {
+        self.input.take_gamepad_rumble_requests()
+    }
+
+    #[inline]
+    pub fn take_joycon_rumble_requests(&mut self) -> Vec<JoyConRumbleRequest> {
+        self.input.take_joycon_rumble_requests()
+    }
+
+    #[inline]
+    pub fn take_joycon_indicator_requests(&mut self) -> Vec<JoyConIndicatorRequest> {
+        self.input.take_joycon_indicator_requests()
+    }
+
+    #[inline]
+    pub fn players(&self) -> &[PlayerState] {
+        self.input.players()
+    }
+
+    #[inline]
+    pub fn bind_player(&mut self, index: usize, binding: PlayerBinding) {
+        self.input.bind_player(index, binding);
     }
 }

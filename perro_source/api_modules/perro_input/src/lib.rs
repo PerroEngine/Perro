@@ -69,6 +69,43 @@ impl From<JoyConIndex> for usize {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RumbleIntensity {
+    pub low_frequency: f32,
+    pub high_frequency: f32,
+}
+
+impl RumbleIntensity {
+    #[inline]
+    pub fn new(low_frequency: f32, high_frequency: f32) -> Self {
+        Self {
+            low_frequency,
+            high_frequency,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct PlayerIndicator(pub u8);
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GamepadRumbleRequest {
+    pub index: usize,
+    pub rumble: RumbleIntensity,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct JoyConRumbleRequest {
+    pub index: usize,
+    pub rumble: RumbleIntensity,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct JoyConIndicatorRequest {
+    pub index: usize,
+    pub indicator: PlayerIndicator,
+}
+
 #[derive(Clone, Debug)]
 pub struct InputSnapshot {
     keyboard: KeyboardState,
@@ -78,6 +115,9 @@ pub struct InputSnapshot {
     players: Vec<PlayerState>,
     commands: RefCell<Vec<InputCommand>>,
     pending_mouse_mode: Option<MouseMode>,
+    pending_gamepad_rumble: Vec<GamepadRumbleRequest>,
+    pending_joycon_rumble: Vec<JoyConRumbleRequest>,
+    pending_joycon_indicator: Vec<JoyConIndicatorRequest>,
 }
 
 impl InputSnapshot {
@@ -90,6 +130,9 @@ impl InputSnapshot {
             players: Vec::new(),
             commands: RefCell::new(Vec::new()),
             pending_mouse_mode: None,
+            pending_gamepad_rumble: Vec::new(),
+            pending_joycon_rumble: Vec::new(),
+            pending_joycon_indicator: Vec::new(),
         }
     }
 
@@ -261,6 +304,18 @@ impl InputSnapshot {
                     self.mouse.set_mode(mode);
                     self.pending_mouse_mode = Some(mode);
                 }
+                InputCommand::SetGamepadRumble { index, rumble } => {
+                    self.pending_gamepad_rumble
+                        .push(GamepadRumbleRequest { index, rumble });
+                }
+                InputCommand::SetJoyConRumble { index, rumble } => {
+                    self.pending_joycon_rumble
+                        .push(JoyConRumbleRequest { index, rumble });
+                }
+                InputCommand::SetJoyConIndicator { index, indicator } => {
+                    self.pending_joycon_indicator
+                        .push(JoyConIndicatorRequest { index, indicator });
+                }
             }
         }
     }
@@ -385,6 +440,21 @@ impl InputSnapshot {
         }
         out
     }
+
+    #[inline]
+    pub fn take_gamepad_rumble_requests(&mut self) -> Vec<GamepadRumbleRequest> {
+        std::mem::take(&mut self.pending_gamepad_rumble)
+    }
+
+    #[inline]
+    pub fn take_joycon_rumble_requests(&mut self) -> Vec<JoyConRumbleRequest> {
+        std::mem::take(&mut self.pending_joycon_rumble)
+    }
+
+    #[inline]
+    pub fn take_joycon_indicator_requests(&mut self) -> Vec<JoyConIndicatorRequest> {
+        std::mem::take(&mut self.pending_joycon_indicator)
+    }
 }
 
 impl Default for InputSnapshot {
@@ -404,6 +474,18 @@ pub enum InputCommand {
     },
     SetMouseMode {
         mode: MouseMode,
+    },
+    SetGamepadRumble {
+        index: usize,
+        rumble: RumbleIntensity,
+    },
+    SetJoyConRumble {
+        index: usize,
+        rumble: RumbleIntensity,
+    },
+    SetJoyConIndicator {
+        index: usize,
+        indicator: PlayerIndicator,
     },
 }
 
@@ -528,6 +610,36 @@ impl<'ipt, IP: InputAPI + ?Sized> InputWindow<'ipt, IP> {
     #[inline]
     pub fn mouse_mode(&self) -> MouseMode {
         self.ipt.mouse().mode()
+    }
+
+    #[inline]
+    pub fn set_gamepad_rumble(&self, index: usize, low_frequency: f32, high_frequency: f32) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer.borrow_mut().push(InputCommand::SetGamepadRumble {
+                index,
+                rumble: RumbleIntensity::new(low_frequency, high_frequency),
+            });
+        }
+    }
+
+    #[inline]
+    pub fn set_joycon_rumble(&self, index: usize, low_frequency: f32, high_frequency: f32) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer.borrow_mut().push(InputCommand::SetJoyConRumble {
+                index,
+                rumble: RumbleIntensity::new(low_frequency, high_frequency),
+            });
+        }
+    }
+
+    #[inline]
+    pub fn set_joycon_indicator(&self, index: usize, indicator: u8) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer.borrow_mut().push(InputCommand::SetJoyConIndicator {
+                index,
+                indicator: PlayerIndicator(indicator),
+            });
+        }
     }
 }
 
@@ -969,6 +1081,16 @@ impl<'ipt, IP: InputAPI + ?Sized> GamepadModule<'ipt, IP> {
     pub fn get(&self, index: usize) -> Option<&'ipt GamepadState> {
         self.ipt.gamepads().get(index)
     }
+
+    #[inline(always)]
+    pub fn set_rumble(&self, index: usize, low_frequency: f32, high_frequency: f32) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer.borrow_mut().push(InputCommand::SetGamepadRumble {
+                index,
+                rumble: RumbleIntensity::new(low_frequency, high_frequency),
+            });
+        }
+    }
 }
 
 pub struct JoyConModule<'ipt, IP: InputAPI + ?Sized> {
@@ -992,6 +1114,26 @@ impl<'ipt, IP: InputAPI + ?Sized> JoyConModule<'ipt, IP> {
     /// Returns the Joy-Con at the given index.
     pub fn get(&self, index: usize) -> Option<&'ipt JoyConState> {
         self.ipt.joycons().get(index)
+    }
+
+    #[inline(always)]
+    pub fn set_rumble(&self, index: usize, low_frequency: f32, high_frequency: f32) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer.borrow_mut().push(InputCommand::SetJoyConRumble {
+                index,
+                rumble: RumbleIntensity::new(low_frequency, high_frequency),
+            });
+        }
+    }
+
+    #[inline(always)]
+    pub fn set_indicator(&self, index: usize, indicator: u8) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer.borrow_mut().push(InputCommand::SetJoyConIndicator {
+                index,
+                indicator: PlayerIndicator(indicator),
+            });
+        }
     }
 }
 
@@ -1206,6 +1348,27 @@ macro_rules! joycon_request_calibration {
     ($ipt:expr, $index:expr) => {{ $ipt.request_joycon_calibration($index) }};
 }
 
+#[macro_export]
+macro_rules! gamepad_set_rumble {
+    ($ipt:expr, $index:expr, $low:expr, $high:expr) => {{
+        $ipt.Gamepads().set_rumble($index, $low, $high)
+    }};
+}
+
+#[macro_export]
+macro_rules! joycon_set_rumble {
+    ($ipt:expr, $index:expr, $low:expr, $high:expr) => {{
+        $ipt.JoyCons().set_rumble($index, $low, $high)
+    }};
+}
+
+#[macro_export]
+macro_rules! joycon_set_indicator {
+    ($ipt:expr, $index:expr, $indicator:expr) => {{
+        $ipt.JoyCons().set_indicator($index, $indicator)
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     use super::{InputWindow, InputSnapshot, MouseMode};
@@ -1252,18 +1415,18 @@ pub mod prelude {
         GamepadAxis, GamepadButton, GamepadIndex, GamepadModule, GamepadState, InputAPI,
         InputWindow, InputSnapshot, JoyConButton, JoyConIndex, JoyConModule, JoyConSide,
         JoyConState, KeyCode, KeyModule, KeyboardModule, KeyboardState, MouseButton, MouseMode,
-        MouseModule, MouseState, MouseStateModule, PlayerBinding, PlayerModule, PlayerState,
+        MouseModule, MouseState, MouseStateModule, PlayerBinding, PlayerIndicator, PlayerModule,
+        PlayerState, RumbleIntensity,
         gamepad_accel, gamepad_down, gamepad_get, gamepad_gyro, gamepad_left_stick, gamepad_list,
-        gamepad_pressed, gamepad_released, gamepad_right_stick, joycon_accel, joycon_calibrated,
-        joycon_calibrating, joycon_calibration_bias, joycon_connected, joycon_down, joycon_get,
-        joycon_gyro, joycon_list, joycon_needs_calibration, joycon_pressed, joycon_released,
-        joycon_request_calibration, joycon_side, joycon_stick, key_down, key_pressed, key_released,
-        mouse_capture, mouse_confine, mouse_confine_hidden, mouse_delta, mouse_down, mouse_hide,
-        mouse_mode, mouse_position, mouse_pressed, mouse_released, mouse_set_mode, mouse_show,
-        mouse_wheel, player_bind, player_get, player_list, viewport_size,
+        gamepad_pressed, gamepad_released, gamepad_right_stick, gamepad_set_rumble, joycon_accel,
+        joycon_calibrated, joycon_calibrating,
+        joycon_calibration_bias, joycon_connected, joycon_down, joycon_get, joycon_gyro,
+        joycon_list, joycon_needs_calibration, joycon_pressed, joycon_released,
+        joycon_request_calibration, joycon_set_indicator, joycon_set_rumble, joycon_side,
+        joycon_stick, key_down, key_pressed, key_released, mouse_capture, mouse_confine,
+        mouse_confine_hidden, mouse_delta, mouse_down, mouse_hide, mouse_mode, mouse_position,
+        mouse_pressed, mouse_released, mouse_set_mode, mouse_show, mouse_wheel, player_bind,
+        player_get, player_list, viewport_size,
     };
     pub use perro_structs::Vector2;
 }
-
-
-

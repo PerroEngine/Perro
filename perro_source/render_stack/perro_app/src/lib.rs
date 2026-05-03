@@ -1,5 +1,8 @@
 use perro_graphics::GraphicsBackend;
-use perro_input::{GamepadAxis, GamepadButton, JoyConButton, KeyCode, MouseButton, MouseMode};
+use perro_input::{
+    GamepadAxis, GamepadButton, GamepadRumbleRequest, JoyConButton, JoyConIndicatorRequest,
+    JoyConRumbleRequest, KeyCode, MouseButton, MouseMode, PlayerBinding, PlayerState,
+};
 use perro_render_bridge::RenderEvent;
 use perro_runtime::Runtime;
 use std::sync::Arc;
@@ -309,6 +312,31 @@ impl<B: GraphicsBackend> App<B> {
     #[inline]
     pub fn take_joycon_calibration_requests(&mut self) -> Vec<usize> {
         self.runtime.take_joycon_calibration_requests()
+    }
+
+    #[inline]
+    pub fn take_gamepad_rumble_requests(&mut self) -> Vec<GamepadRumbleRequest> {
+        self.runtime.take_gamepad_rumble_requests()
+    }
+
+    #[inline]
+    pub fn take_joycon_rumble_requests(&mut self) -> Vec<JoyConRumbleRequest> {
+        self.runtime.take_joycon_rumble_requests()
+    }
+
+    #[inline]
+    pub fn take_joycon_indicator_requests(&mut self) -> Vec<JoyConIndicatorRequest> {
+        self.runtime.take_joycon_indicator_requests()
+    }
+
+    #[inline]
+    pub fn players(&self) -> &[PlayerState] {
+        self.runtime.players()
+    }
+
+    #[inline]
+    pub fn bind_player(&mut self, index: usize, binding: PlayerBinding) {
+        self.runtime.bind_player(index, binding);
     }
 
     #[inline]
