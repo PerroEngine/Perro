@@ -21,13 +21,13 @@ struct ProjectManagerState {
 lifecycle!({
     fn on_init(
         &self,
-        _ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        _ctx: &mut ScriptContext<'_, API>,
     ) {
     }
 
     fn on_all_init(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
     ) {
         let top_bar = child(ctx, ctx.id, "top_bar");
         let content = child(ctx, ctx.id, "content");
@@ -96,19 +96,19 @@ lifecycle!({
 
     fn on_update(
         &self,
-        _ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        _ctx: &mut ScriptContext<'_, API>,
     ) {
     }
 
     fn on_fixed_update(
         &self,
-        _ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        _ctx: &mut ScriptContext<'_, API>,
     ) {
     }
 
     fn on_removal(
         &self,
-        _ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        _ctx: &mut ScriptContext<'_, API>,
     ) {
     }
 });
@@ -116,7 +116,7 @@ lifecycle!({
 methods!({
     fn on_create_project(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
         _button: NodeID,
     ) {
         let (name_id, root_id, status_id) =
@@ -142,7 +142,7 @@ methods!({
 
     fn on_open_project(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
         _button: NodeID,
     ) {
         let path_id = with_state!(ctx.run, ProjectManagerState, ctx.id, |state| {
@@ -154,7 +154,7 @@ methods!({
 
     fn on_recent_0(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
         _button: NodeID,
     ) {
         open_recent(ctx, 0);
@@ -162,7 +162,7 @@ methods!({
 
     fn on_recent_1(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
         _button: NodeID,
     ) {
         open_recent(ctx, 1);
@@ -170,15 +170,15 @@ methods!({
 
     fn on_recent_2(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
         _button: NodeID,
     ) {
         open_recent(ctx, 2);
     }
 });
 
-fn child<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
-           ctx: &mut ScriptContext<'_, RT, RS, IP>,
+fn child<API: ScriptAPI + ?Sized>(
+           ctx: &mut ScriptContext<'_, API>,
     parent: NodeID,
     name: &str,
 ) -> NodeID {
@@ -190,8 +190,8 @@ fn child<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Size
         .unwrap_or_default()
 }
 
-fn set_status<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, RT, RS, IP>,
+fn set_status<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
     label_id: NodeID,
     text: &str,
 ) {
@@ -203,8 +203,8 @@ fn set_status<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + 
     });
 }
 
-fn text_box_text<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, RT, RS, IP>,
+fn text_box_text<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
     id: NodeID,
 ) -> String {
     if id.is_nil() {
@@ -233,8 +233,8 @@ fn save_recent(path: &Path) -> Vec<String> {
     recent
 }
 
-fn write_recent_labels<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, RT, RS, IP>,
+fn write_recent_labels<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
     labels: &[NodeID],
     recent: &[String],
 ) {
@@ -247,8 +247,8 @@ fn write_recent_labels<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: In
     }
 }
 
-fn open_recent<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, RT, RS, IP>,
+fn open_recent<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
     index: usize,
 ) {
     let path = with_state!(ctx.run, ProjectManagerState, ctx.id, |state| {
@@ -259,8 +259,8 @@ fn open_recent<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI +
     }
 }
 
-fn open_project<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, RT, RS, IP>,
+fn open_project<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
     self_id: NodeID,
     project_dir: PathBuf,
 ) {
@@ -360,3 +360,5 @@ fn normalize_display_path(raw: &str) -> String {
     }
     out
 }
+
+

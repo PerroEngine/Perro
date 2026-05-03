@@ -7,8 +7,7 @@ script = "res://scripts/editor.rs"
     position_ratio = (0.5, 0.5)
     size_ratio = (1.0, 1.0)
     scale = (0.5, 0.5)
-    h_size = "fixed"
-    v_size = "fixed"
+    min_size_ratio = (1.0, 1.0)
     fill = "#101318"
     stroke = "#00000000"
 [/UiPanel]

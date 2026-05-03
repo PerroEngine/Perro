@@ -46,7 +46,8 @@ parent = @root
     anchor = "top"
     position_ratio = (0.5, 0.487037)
     size_ratio = (0.96, 0.09)
-    max_size_ratio = (1.0, 1.0)
+    min_size_ratio = (0.75, 0.75)
+    
     fill = @col_top
     stroke = @col_top_stroke
     corner_radius = 0.5

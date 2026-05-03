@@ -16,13 +16,13 @@ struct EditorState {
 lifecycle!({
     fn on_init(
         &self,
-        _ctx: &mut ScriptContext<'_, RT, RS, IP>
+        _ctx: &mut ScriptContext<'_, API>
     ) {
     }
 
     fn on_all_init(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
     ) {
         let project_dir = FileMod::load_string(ACTIVE_PROJECT)
             .unwrap_or_default()
@@ -45,19 +45,19 @@ lifecycle!({
 
     fn on_update(
         &self,
-        _ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        _ctx: &mut ScriptContext<'_, API>,
     ) {
     }
 
     fn on_fixed_update(
         &self,
-         _ctx: &mut ScriptContext<'_, RT, RS, IP>,
+         _ctx: &mut ScriptContext<'_, API>,
     ) {
     }
 
     fn on_removal(
         &self,
-   ctx: &mut ScriptContext<'_, RT, RS, IP>,
+   ctx: &mut ScriptContext<'_, API>,
     ) {
         let live_root = with_state!(ctx.run, EditorState, ctx.id, |state| state.live_root);
         if !live_root.is_nil() {
@@ -66,8 +66,8 @@ lifecycle!({
     }
 });
 
-fn load_preview_scene<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
-   ctx: &mut ScriptContext<'_, RT, RS, IP>,
+fn load_preview_scene<API: ScriptAPI + ?Sized>(
+   ctx: &mut ScriptContext<'_, API>,
 ) {
     let (project_dir, main_scene, prev_root) = with_state!(ctx.run, EditorState, ctx.id, |state| {
         (state.project_dir.clone(), state.main_scene.clone(), state.live_root)
@@ -137,8 +137,8 @@ fn write_live_scene_doc(doc: &perro_scene::SceneDoc) -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
-fn apply_live_root<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, RT, RS, IP>,
+fn apply_live_root<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
     root: NodeID
 ) {
     let _ = with_base_node_mut!(ctx.run, UiBox, root, |node| {
@@ -159,8 +159,8 @@ fn apply_live_root<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputA
     }
 }
 
-fn disable_ui_node_input<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, RT, RS, IP>,
+fn disable_ui_node_input<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
     id: NodeID
 ) {
     let _ = with_base_node_mut!(ctx.run, UiBox, id, |node| {
@@ -169,8 +169,8 @@ fn disable_ui_node_input<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: 
     });
 }
 
-fn disable_physics<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, RT, RS, IP>,
+fn disable_physics<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
     root: NodeID
 ) {
     let ids = query!(
@@ -189,3 +189,5 @@ fn disable_physics<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputA
         let _ = with_node_mut!(ctx.run, Area3D, id, |node| node.enabled = false);
     }
 }
+
+

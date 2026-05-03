@@ -8,7 +8,7 @@ use std::path::Path;
 
 type StaticScriptRegistry = &'static [(
     u64,
-    ScriptConstructor<Runtime, perro_runtime::RuntimeResourceApi, perro_runtime::RuntimeInputApi>,
+    ScriptConstructor<perro_runtime::RuntimeScriptApi>,
 )];
 
 pub fn create_runtime_from_project(
