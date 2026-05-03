@@ -374,22 +374,60 @@ impl<B: GraphicsBackend> App<B> {
     where
         I: IntoIterator<Item = perro_render_bridge::RenderCommand>,
     {
+        self.present_with_overlay_internal(overlay_commands, true);
+    }
+
+    pub fn present_with_overlay_no_ui<I>(&mut self, overlay_commands: I)
+    where
+        I: IntoIterator<Item = perro_render_bridge::RenderCommand>,
+    {
+        self.present_with_overlay_internal(overlay_commands, false);
+    }
+
+    fn present_with_overlay_internal<I>(&mut self, overlay_commands: I, extract_ui: bool)
+    where
+        I: IntoIterator<Item = perro_render_bridge::RenderCommand>,
+    {
         self.runtime.extract_render_2d_commands();
         self.runtime.extract_render_3d_commands();
-        self.runtime.extract_render_ui_commands();
+        if extract_ui {
+            self.runtime.extract_render_ui_commands();
+        }
         self.runtime.drain_render_commands(&mut self.command_buffer);
         self.graphics.submit_many(self.command_buffer.drain(..));
         self.graphics.submit_many(overlay_commands);
         self.graphics.draw_frame();
         // Dirty markers are per-frame extraction hints.
-        // Clear extraction work from this frame before ingesting new render events.
-        self.runtime.clear_dirty_flags();
+        // Keep UI dirties when UI extraction is intentionally skipped (startup splash path).
+        if extract_ui {
+            self.runtime.clear_dirty_flags();
+        } else {
+            self.runtime.clear_dirty_flags_keep_ui();
+        }
         self.graphics.drain_events(&mut self.event_buffer);
         self.runtime
             .apply_render_events(self.event_buffer.drain(..));
     }
 
     pub fn present_with_overlay_timed<I>(&mut self, overlay_commands: I) -> PresentTiming
+    where
+        I: IntoIterator<Item = perro_render_bridge::RenderCommand>,
+    {
+        self.present_with_overlay_timed_internal(overlay_commands, true)
+    }
+
+    pub fn present_with_overlay_timed_no_ui<I>(&mut self, overlay_commands: I) -> PresentTiming
+    where
+        I: IntoIterator<Item = perro_render_bridge::RenderCommand>,
+    {
+        self.present_with_overlay_timed_internal(overlay_commands, false)
+    }
+
+    fn present_with_overlay_timed_internal<I>(
+        &mut self,
+        overlay_commands: I,
+        extract_ui: bool,
+    ) -> PresentTiming
     where
         I: IntoIterator<Item = perro_render_bridge::RenderCommand>,
     {
@@ -410,9 +448,15 @@ impl<B: GraphicsBackend> App<B> {
         let extract_3d = extract_3d_start.elapsed();
 
         #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-        let ui_timing = self.runtime.extract_render_ui_commands_timed();
+        let ui_timing = if extract_ui {
+            self.runtime.extract_render_ui_commands_timed()
+        } else {
+            perro_runtime::RuntimeUiTiming::default()
+        };
         #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile")))]
-        self.runtime.extract_render_ui_commands();
+        if extract_ui {
+            self.runtime.extract_render_ui_commands();
+        }
         #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
         let extract_ui = ui_timing.total;
 
@@ -440,8 +484,12 @@ impl<B: GraphicsBackend> App<B> {
         #[cfg(feature = "profile_heavy")]
         let graphics_profile = self.graphics.profile_snapshot();
         // Dirty markers are per-frame extraction hints.
-        // Clear extraction work from this frame before ingesting new render events.
-        self.runtime.clear_dirty_flags();
+        // Keep UI dirties when UI extraction is intentionally skipped (startup splash path).
+        if extract_ui {
+            self.runtime.clear_dirty_flags();
+        } else {
+            self.runtime.clear_dirty_flags_keep_ui();
+        }
 
         #[cfg(feature = "profile_heavy")]
         let drain_events_start = std::time::Instant::now();

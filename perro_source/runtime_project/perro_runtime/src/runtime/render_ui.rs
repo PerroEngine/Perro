@@ -145,7 +145,7 @@ impl Runtime {
             }
         }
         if input_changed || bootstrap_scan {
-            self.collect_retained_button_command_ids(&mut command_ids, &mut command_seen);
+            self.collect_retained_command_ids(&mut command_ids, &mut command_seen);
         }
         traversal_seen.clear();
         self.render_ui.traversal_seen = traversal_seen;
@@ -609,16 +609,13 @@ impl Runtime {
         self.render_ui.last_ui_pointer != Some(pointer)
     }
 
-    fn collect_retained_button_command_ids(
+    fn collect_retained_command_ids(
         &self,
         command_ids: &mut Vec<NodeID>,
         command_seen: &mut ahash::AHashSet<NodeID>,
     ) {
         for node in self.render_ui.retained_commands.keys().copied() {
-            let Some(scene_node) = self.nodes.get(node) else {
-                continue;
-            };
-            if matches!(scene_node.data, SceneNodeData::UiButton(_)) && command_seen.insert(node) {
+            if command_seen.insert(node) {
                 command_ids.push(node);
             }
         }
@@ -787,10 +784,16 @@ impl Runtime {
             let Some(edit) = text_edit_ref(&scene_node.data) else {
                 continue;
             };
-            if !edit.base.visible || !edit.base.input_enabled {
+            if !edit.base.visible || !edit.base.input_enabled || !self.is_effectively_visible_for_ui(node) {
                 continue;
             }
-            let Some(rect) = computed.get(&node).copied() else {
+            let Some(rect) = computed.get(&node).copied().or_else(|| {
+                self.render_ui
+                    .retained_rects
+                    .get(&node)
+                    .copied()
+                    .map(|rect| computed_rect_from_state(&rect))
+            }) else {
                 continue;
             };
             let z = self.ui_effective_z(node);
@@ -961,7 +964,7 @@ impl Runtime {
             };
             if button.disabled
                 || !button.input_enabled
-                || !self.is_effectively_visible(node)
+                || !self.is_effectively_visible_for_ui(node)
                 || !matches!(
                     button.mouse_filter,
                     perro_ui::UiMouseFilter::Stop | perro_ui::UiMouseFilter::Pass
@@ -2324,11 +2327,21 @@ fn button_rect_state(
     effective_z: i32,
 ) -> UiRectState {
     let ui = button_state_base(button, state).unwrap_or(&button.base);
+    let state_has_size_override = match state {
+        UiButtonVisualState::Hover => button.hover_size_override,
+        UiButtonVisualState::Pressed => button.pressed_size_override,
+        UiButtonVisualState::Neutral => false,
+    };
     let size = match state {
         UiButtonVisualState::Neutral => base_rect.size,
-        UiButtonVisualState::Hover | UiButtonVisualState::Pressed => ui
-            .transform
-            .scale_size(ui.layout.size.resolve(base_rect.size)),
+        UiButtonVisualState::Hover | UiButtonVisualState::Pressed => {
+            if state_has_size_override {
+                ui.transform
+                    .scale_size(ui.layout.size.resolve(base_rect.size))
+            } else {
+                base_rect.size
+            }
+        }
     };
     let center = if state == UiButtonVisualState::Neutral {
         base_rect.center
@@ -3506,6 +3519,7 @@ mod tests {
         hover_base.transform.translation = Vector2::new(6.0, -3.0);
         hover_base.transform.rotation = 0.25;
         button.hover_base = Some(hover_base);
+        button.hover_size_override = true;
         let node = insert_ui_node(&mut runtime, SceneNodeData::UiButton(button));
 
         runtime.extract_render_ui_commands();
@@ -3525,6 +3539,35 @@ mod tests {
                     && rect.center == [6.0, -3.0]
                     && rect.size == [150.0, 48.0]
                     && rect.rotation_radians == 0.25
+        )));
+    }
+
+    #[test]
+    fn button_hover_style_without_size_override_keeps_base_size() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let mut button = perro_ui::UiButton::new();
+        button.layout.size = UiVector2::pixels(120.0, 40.0);
+        button.hover_style.fill = Color::new(0.3, 0.4, 0.5, 1.0);
+        let mut hover_base = button.base.clone();
+        hover_base.transform.translation = Vector2::new(8.0, 0.0);
+        button.hover_base = Some(hover_base);
+        let node = insert_ui_node(&mut runtime, SceneNodeData::UiButton(button));
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: id, rect, fill, .. })
+                if *id == node
+                    && rect.size == [120.0, 40.0]
+                    && *fill == [0.3, 0.4, 0.5, 1.0]
         )));
     }
 
@@ -4277,6 +4320,117 @@ mod tests {
             RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == child
         )));
         assert!(!runtime.render_ui.prev_visible.contains(&child));
+    }
+
+    #[test]
+    fn parent_visibility_toggle_restores_button_hover_without_resize() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let parent = insert_panel(&mut runtime, [220.0, 120.0], Color::new(0.2, 0.2, 0.2, 1.0));
+        let button = insert_button(&mut runtime, [120.0, 40.0]);
+        attach_child(&mut runtime, parent, button);
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+            panel.visible = false;
+        });
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+            panel.visible = true;
+        });
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.extract_render_ui_commands();
+
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+                if *n == button && *fill == [0.2, 0.3, 0.4, 1.0]
+        )));
+    }
+
+    #[test]
+    fn input_change_rechecks_retained_label_visibility() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let parent = insert_panel(&mut runtime, [260.0, 120.0], Color::new(0.2, 0.2, 0.2, 1.0));
+        let button = insert_button(&mut runtime, [120.0, 40.0]);
+        let mut label = perro_ui::UiLabel::new();
+        label.layout.size = UiVector2::pixels(120.0, 30.0);
+        label.text = "Play".into();
+        let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+        attach_child(&mut runtime, parent, button);
+        attach_child(&mut runtime, parent, label);
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        set_panel_visible(&mut runtime, parent, false);
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.extract_render_ui_commands();
+
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == label
+        )));
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == button
+        )));
+    }
+
+    #[test]
+    fn parent_visibility_toggle_restores_all_ui_descendants_without_resize() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let parent = insert_panel(&mut runtime, [260.0, 120.0], Color::new(0.2, 0.2, 0.2, 1.0));
+        let button = insert_button(&mut runtime, [120.0, 40.0]);
+        let mut label = perro_ui::UiLabel::new();
+        label.layout.size = UiVector2::pixels(120.0, 30.0);
+        label.text = "Play".into();
+        let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+        attach_child(&mut runtime, parent, button);
+        attach_child(&mut runtime, parent, label);
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+            panel.visible = false;
+        });
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+            panel.visible = true;
+        });
+        runtime.extract_render_ui_commands();
+
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: n, .. }) if *n == button
+        )));
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertLabel { node: n, .. }) if *n == label
+        )));
     }
 
     fn insert_panel(runtime: &mut Runtime, size: [f32; 2], fill: Color) -> NodeID {

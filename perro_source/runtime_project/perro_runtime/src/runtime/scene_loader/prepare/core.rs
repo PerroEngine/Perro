@@ -978,10 +978,12 @@ mod tests {
                 assert_eq!(hover.layout.size, perro_ui::UiVector2::ratio(0.65, 0.08666667));
                 assert_eq!(hover.transform.scale, Vector2::new(1.1, 1.2));
                 assert_eq!(hover.transform.rotation, 0.5);
+                assert!(button.hover_size_override);
                 let pressed = button.pressed_base.as_ref().expect("pressed base");
                 assert_eq!(pressed.layout.size, perro_ui::UiVector2::ratio(0.55, 0.07));
                 assert_eq!(pressed.transform.scale, Vector2::new(0.9, 0.8));
                 assert_eq!(pressed.transform.rotation, -0.25);
+                assert!(button.pressed_size_override);
                 assert_eq!(button.transform.scale, Vector2::new(2.0, 0.5));
                 assert_eq!(button.transform.rotation, 0.25);
                 assert_eq!(button.layout.h_size, perro_ui::UiSizeMode::Fill);

@@ -619,6 +619,7 @@ fn apply_ui_button_state_fields(node: &mut UiButton, fields: &[SceneObjectField]
             _ => return,
         };
 
+        let size_override = ui_state_has_explicit_size_override(entries.as_ref());
         apply_ui_root_fields(&mut base, entries.as_ref());
         apply_ui_style_fields(&mut style, entries.as_ref(), "");
         apply_ui_style_object_fields(&mut style, entries.as_ref(), "style");
@@ -626,15 +627,52 @@ fn apply_ui_button_state_fields(node: &mut UiButton, fields: &[SceneObjectField]
         match state_name {
             "hover" => {
                 node.hover_base = Some(base);
+                node.hover_size_override = size_override;
                 node.hover_style = style;
             }
             "pressed" => {
                 node.pressed_base = Some(base);
+                node.pressed_size_override = size_override;
                 node.pressed_style = style;
             }
             _ => {}
         }
     });
+}
+
+fn ui_state_has_explicit_size_override(fields: &[SceneObjectField]) -> bool {
+    let mut found = false;
+    SceneFieldIterRef::new(fields).for_each(|name, _| {
+        if matches!(
+            name,
+            "size"
+                | "size_percent"
+                | "size_ratio"
+                | "h_size"
+                | "horizontal_size"
+                | "v_size"
+                | "vertical_size"
+                | "min_size"
+                | "max_size"
+                | "min_w"
+                | "min_width"
+                | "min_h"
+                | "min_height"
+                | "max_w"
+                | "max_width"
+                | "max_h"
+                | "max_height"
+                | "min_size_scale"
+                | "min_scale"
+                | "min_size_ratio"
+                | "max_size_scale"
+                | "max_scale"
+                | "max_size_ratio"
+        ) {
+            found = true;
+        }
+    });
+    found
 }
 
 fn as_ui_corner_radius(value: &SceneValue) -> Option<f32> {

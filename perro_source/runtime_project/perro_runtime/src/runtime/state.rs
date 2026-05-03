@@ -635,4 +635,30 @@ impl DirtyState {
             }
         }
     }
+
+    pub(crate) fn clear_keep_ui_dirty(&mut self) {
+        let mut write = 0usize;
+        let dirty_len = self.dirty_indices.len();
+        for read in 0..dirty_len {
+            let index = self.dirty_indices[read];
+            let i = index as usize;
+            if i >= self.node_flags.len() {
+                continue;
+            }
+            let preserved = self.node_flags[i] & Self::UI_DIRTY_MASK;
+            self.node_flags[i] = preserved;
+            if preserved != 0 {
+                self.dirty_indices[write] = index;
+                write += 1;
+            }
+        }
+        self.dirty_indices.truncate(write);
+
+        for id in self.pending_transform_roots.drain(..) {
+            let index = id.index() as usize;
+            if index < self.pending_transform_root_flags.len() {
+                self.pending_transform_root_flags[index] = 0;
+            }
+        }
+    }
 }

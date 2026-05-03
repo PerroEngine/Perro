@@ -1219,12 +1219,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let alpha = self.startup_splash.alpha(frame_start);
         let splash_overlay = self.startup_splash_overlay_commands(alpha);
         #[cfg(feature = "profile_heavy")]
-        let present_timing = self.app.present_with_overlay_timed(splash_overlay);
+        let present_timing = self.app.present_with_overlay_timed_no_ui(splash_overlay);
         #[cfg(not(feature = "profile_heavy"))]
         let present_timing = if should_sample_timing {
-            Some(self.app.present_with_overlay_timed(splash_overlay))
+            Some(self.app.present_with_overlay_timed_no_ui(splash_overlay))
         } else {
-            self.app.present_with_overlay(splash_overlay);
+            self.app.present_with_overlay_no_ui(splash_overlay);
             None
         };
         self.apply_cursor_icon_request();
@@ -2162,7 +2162,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             // Draw once before showing the window to avoid a white first-frame flash.
             if self.startup_splash.active {
                 let splash_overlay = self.startup_splash_overlay_commands(1.0);
-                let _ = self.app.present_with_overlay_timed(splash_overlay);
+                let _ = self.app.present_with_overlay_timed_no_ui(splash_overlay);
             } else {
                 self.app.present();
             }

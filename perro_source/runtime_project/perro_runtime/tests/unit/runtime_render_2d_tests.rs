@@ -193,3 +193,29 @@ fn sprite_under_parent_uses_global_transform() {
                 && sprite.model[2][1] == 0.0
     )));
 }
+
+#[test]
+fn force_rerender_marks_subtree_dirty() {
+    let mut runtime = Runtime::new();
+
+    let parent = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node2D(Node2D::new())));
+
+    let mut sprite = Sprite2D::new();
+    sprite.texture = TextureID::from_parts(14, 0);
+    let child = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Sprite2D(sprite)));
+
+    runtime
+        .nodes
+        .get_mut(parent)
+        .expect("parent exists")
+        .add_child(child);
+    runtime.nodes.get_mut(child).expect("child exists").parent = parent;
+
+    runtime.clear_dirty_flags();
+    runtime.force_rerender(parent);
+    assert_eq!(runtime.dirty_node_count(), 2);
+}

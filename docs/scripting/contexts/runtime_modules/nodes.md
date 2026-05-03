@@ -55,8 +55,15 @@ Metadata/hierarchy macros:
 - `get_node_children_ids!(ctx.run, node_id) -> Option<Vec<NodeID>>`
 - `get_node_type!(ctx.run, node_id) -> Option<NodeType>`
 - `reparent!(ctx.run, parent_id, child_id) -> bool`
+- `force_rerender!(ctx.run, root_id) -> bool`
 - `reparent_multi!(ctx.run, parent_id, child_ids) -> usize`
 - `remove_node!(ctx.run, node_id) -> bool`
+
+`force_rerender!` behavior:
+
+- Marks `root_id` + all descendants dirty for current extraction frame.
+- Use when script-side state changes affect rendering but node fields did not change.
+- Returns `false` if `root_id` is nil or missing.
 
 Global transform macros:
 
@@ -211,6 +218,17 @@ for r in regions {
     // r.surface_index
     // r.center_world
     // r.aabb_min_world / r.aabb_max_world
+}
+```
+
+Force rerender example:
+
+```rust
+// Script updates custom material params outside node fields.
+// Force subtree refresh in same frame.
+let ok = force_rerender!(ctx.run, character_root_id);
+if !ok {
+    // invalid/missing root id
 }
 ```
 

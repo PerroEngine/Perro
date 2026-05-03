@@ -497,6 +497,9 @@ pub trait NodeAPI {
     /// Reparents a child under parent. `parent_id = nil` detaches to root.
     fn reparent(&mut self, parent_id: NodeID, child_id: NodeID) -> bool;
 
+    /// Marks one node + all descendants dirty for render extraction this frame.
+    fn force_rerender(&mut self, root_id: NodeID) -> bool;
+
     /// Batch reparent. Returns count of successful operations.
     fn reparent_multi<I>(&mut self, parent_id: NodeID, child_ids: I) -> usize
     where
@@ -791,6 +794,10 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 
     pub fn reparent(&mut self, parent_id: NodeID, child_id: NodeID) -> bool {
         self.rt.reparent(parent_id, child_id)
+    }
+
+    pub fn force_rerender(&mut self, root_id: NodeID) -> bool {
+        self.rt.force_rerender(root_id)
     }
 
     pub fn reparent_multi<I>(&mut self, parent_id: NodeID, child_ids: I) -> usize
@@ -1246,6 +1253,15 @@ macro_rules! get_node_type {
 macro_rules! reparent {
     ($ctx:expr, $parent:expr, $child:expr) => {
         $ctx.Nodes().reparent($parent, $child)
+    };
+}
+
+/// Marks node subtree dirty for render extraction this frame.
+/// Usage: `force_rerender!(ctx, root_id) -> bool`.
+#[macro_export]
+macro_rules! force_rerender {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().force_rerender($id)
     };
 }
 

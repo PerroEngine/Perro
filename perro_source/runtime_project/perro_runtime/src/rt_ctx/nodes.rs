@@ -54,6 +54,9 @@ impl Runtime {
         if flags != 0 {
             self.mark_ui_dirty(id, flags);
         }
+        if before.visible != after.visible {
+            self.mark_ui_visibility_dirty_subtree(id);
+        }
     }
 
     fn mark_ui_data_change(
@@ -69,6 +72,11 @@ impl Runtime {
         flags |= classify_ui_node_payload_change(before, after);
         if flags != 0 {
             self.mark_ui_dirty(id, flags);
+        }
+        if let (Some(before), Some(after)) = (ui_base_from_data(before), ui_base_from_data(after))
+            && before.visible != after.visible
+        {
+            self.mark_ui_visibility_dirty_subtree(id);
         }
     }
 
@@ -133,6 +141,49 @@ impl Runtime {
         }
         None
     }
+
+    fn mark_ui_visibility_dirty_subtree(&mut self, root: perro_ids::NodeID) {
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            let Some((is_ui, children, tree_refs)) = self.nodes.get(id).map(|node| {
+                let tree_refs = match &node.data {
+                    SceneNodeData::UiTreeList(tree) => ui_tree_all_nodes_flat(tree),
+                    _ => Vec::new(),
+                };
+                (
+                    ui_base_from_data(&node.data).is_some(),
+                    node.get_children_ids().to_vec(),
+                    tree_refs,
+                )
+            }) else {
+                continue;
+            };
+
+            if is_ui {
+                self.mark_ui_dirty(
+                    id,
+                    Self::UI_DIRTY_LAYOUT_SELF
+                        | Self::UI_DIRTY_LAYOUT_PARENT
+                        | Self::UI_DIRTY_TRANSFORM
+                        | Self::UI_DIRTY_COMMANDS,
+                );
+            }
+
+            stack.extend(children);
+            stack.extend(tree_refs);
+        }
+    }
+}
+
+fn ui_tree_all_nodes_flat(tree: &perro_ui::UiTreeList) -> Vec<perro_ids::NodeID> {
+    let mut out = Vec::new();
+    out.extend(tree.roots.iter().copied());
+    for branch in &tree.branches {
+        out.extend(branch.children.iter().copied());
+    }
+    out.sort_unstable_by_key(|id| id.as_u64());
+    out.dedup();
+    out
 }
 
 fn classify_ui_base_change(before: &UiBox, after: &UiBox) -> u16 {
@@ -635,6 +686,14 @@ impl NodeAPI for Runtime {
 
         self.mark_transform_dirty_recursive(child_id);
         self.mark_ui_reparent_dirty(child_id, old_parent, parent_id);
+        true
+    }
+
+    fn force_rerender(&mut self, root_id: perro_ids::NodeID) -> bool {
+        if root_id.is_nil() || self.nodes.get(root_id).is_none() {
+            return false;
+        }
+        Runtime::force_rerender(self, root_id);
         true
     }
 

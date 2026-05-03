@@ -76,6 +76,21 @@ impl Runtime {
         self.dirty.mark_rerender(id);
     }
 
+    pub fn force_rerender(&mut self, root_id: NodeID) {
+        if root_id.is_nil() || self.nodes.get(root_id).is_none() {
+            return;
+        }
+
+        let mut stack = vec![root_id];
+        while let Some(id) = stack.pop() {
+            let Some(node) = self.nodes.get(id) else {
+                continue;
+            };
+            self.dirty.mark_rerender(id);
+            stack.extend(node.children_slice().iter().copied());
+        }
+    }
+
     pub(crate) fn mark_ui_dirty(&mut self, id: NodeID, flags: u16) {
         self.dirty.mark_ui(id, flags);
     }
@@ -86,6 +101,10 @@ impl Runtime {
 
     pub fn clear_dirty_flags(&mut self) {
         self.dirty.clear();
+    }
+
+    pub fn clear_dirty_flags_keep_ui(&mut self) {
+        self.dirty.clear_keep_ui_dirty();
     }
 
     pub fn dirty_node_count(&self) -> usize {
