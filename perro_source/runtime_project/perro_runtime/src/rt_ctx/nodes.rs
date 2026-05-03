@@ -78,15 +78,30 @@ impl Runtime {
         old_parent: perro_ids::NodeID,
         new_parent: perro_ids::NodeID,
     ) {
-        let child_is_ui = self
-            .nodes
-            .get(child_id)
-            .is_some_and(|node| ui_base_from_data(&node.data).is_some());
-        if child_is_ui {
-            self.mark_ui_dirty(
-                child_id,
-                Self::UI_DIRTY_LAYOUT_SELF | Self::UI_DIRTY_LAYOUT_PARENT | Self::UI_DIRTY_COMMANDS,
-            );
+        let mut stack = vec![child_id];
+        while let Some(id) = stack.pop() {
+            let Some((is_ui, children)) = self
+                .nodes
+                .get(id)
+                .map(|node| {
+                    (
+                        ui_base_from_data(&node.data).is_some(),
+                        node.get_children_ids().to_vec(),
+                    )
+                })
+            else {
+                continue;
+            };
+            if is_ui {
+                self.mark_ui_dirty(
+                    id,
+                    Self::UI_DIRTY_LAYOUT_SELF
+                        | Self::UI_DIRTY_LAYOUT_PARENT
+                        | Self::UI_DIRTY_TRANSFORM
+                        | Self::UI_DIRTY_COMMANDS,
+                );
+            }
+            stack.extend(children);
         }
 
         for parent_id in [old_parent, new_parent] {
