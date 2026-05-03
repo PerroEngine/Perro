@@ -14,7 +14,7 @@ mod backend {
     use btleplug::platform::Manager;
     use futures_util::stream::StreamExt;
     use hidapi::HidApi;
-    use perro_input::{JoyConButton, JoyConSide, PlayerBinding};
+    use perro_input::{JoyConButton, JoyConSide, PlayerBinding, PlayerIndicatorSlot};
     use perro_io::{load_asset, save_asset};
     use serde::{Deserialize, Serialize};
     use std::sync::OnceLock;
@@ -424,7 +424,7 @@ mod backend {
                 self.apply_rumble(req.index, req.rumble.low_frequency, req.rumble.high_frequency);
             }
             for req in app.take_joycon_indicator_requests() {
-                self.apply_indicator(req.index, req.indicator.0);
+                self.apply_indicator(req.index, req.indicator.to_lamp_pattern());
             }
         }
 
@@ -448,9 +448,10 @@ mod backend {
         fn sync_player_binding_lamps<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
             let mut desired: HashMap<usize, u8> = HashMap::new();
             for (player_idx, player) in app.players().iter().enumerate() {
-                let Some(pattern) = player_number_to_lamp_pattern(player_idx + 1) else {
+                let Some(indicator) = PlayerIndicatorSlot::from_player_number(player_idx + 1) else {
                     continue;
                 };
+                let pattern = indicator.to_lamp_pattern();
                 match player.get_binding() {
                     PlayerBinding::JoyConSingle { index } => {
                         desired.insert(index, pattern);
@@ -527,8 +528,8 @@ mod backend {
             {
                 app.bind_player(player_index, PlayerBinding::JoyConSingle { index });
             }
-            if let Some(pattern) = player_number_to_lamp_pattern(index + 1) {
-                self.apply_indicator(index, pattern);
+            if let Some(indicator) = PlayerIndicatorSlot::from_player_number(index + 1) {
+                self.apply_indicator(index, indicator.to_lamp_pattern());
             }
         }
     }
@@ -1294,20 +1295,6 @@ mod backend {
         *packet_number = packet_number.wrapping_add(1) & 0x0F;
         device.write(&report)?;
         Ok(())
-    }
-
-    fn player_number_to_lamp_pattern(player_number: usize) -> Option<u8> {
-        match player_number {
-            1 => Some(0b0001),
-            2 => Some(0b0011),
-            3 => Some(0b0111),
-            4 => Some(0b1111),
-            5 => Some(0b1001),
-            6 => Some(0b1010),
-            7 => Some(0b1011),
-            8 => Some(0b0110),
-            _ => None,
-        }
     }
 
     fn is_joycon_bound(players: &[perro_input::PlayerState], joycon_index: usize) -> bool {

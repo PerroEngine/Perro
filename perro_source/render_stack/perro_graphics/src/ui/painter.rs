@@ -252,10 +252,8 @@ fn push_text_edit_shapes(
     } else {
         None
     };
-    if edit.focused {
-        if let Some(galley) = edit_galley.as_deref() {
-            push_selection_shapes(edit, galley, clip_rect, draw_pos, out);
-        }
+    if edit.focused && let Some(galley) = edit_galley.as_deref() {
+        push_selection_shapes(edit, galley, clip_rect, draw_pos, out);
     }
     if !body.is_empty() && valid_color(color) {
         let galley = fonts.with_pixels_per_point(1.0).layout(

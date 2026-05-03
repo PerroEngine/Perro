@@ -1072,6 +1072,7 @@ impl Runtime {
         None
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compute_ui_h_children_rects(
         &self,
         parent_layout: &UiLayoutData,
@@ -1176,6 +1177,7 @@ impl Runtime {
         None
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compute_ui_v_children_rects(
         &self,
         parent_layout: &UiLayoutData,
@@ -1321,6 +1323,7 @@ impl Runtime {
         Some(ComputedUiRect::new(center, size))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compute_ui_grid_children_rects(
         &self,
         parent_layout: &UiLayoutData,
@@ -2159,6 +2162,7 @@ fn align_v_center(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn ui_command_from_node(
     node: NodeID,
     data: &SceneNodeData,
@@ -2286,6 +2290,7 @@ fn ui_pivot_state(transform: &UiTransform) -> [f32; 2] {
     [pivot.x, pivot.y]
 }
 
+#[allow(clippy::too_many_arguments)]
 fn ui_command_matches_node(
     command: &UiCommand,
     data: &SceneNodeData,
@@ -2408,6 +2413,7 @@ fn text_align_state(align: perro_ui::UiTextAlign) -> UiTextAlignState {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn text_edit_command(
     node: NodeID,
     rect: UiRectState,

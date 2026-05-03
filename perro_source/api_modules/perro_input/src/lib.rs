@@ -86,7 +86,51 @@ impl RumbleIntensity {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct PlayerIndicator(pub u8);
+pub struct PlayerIndicatorSlot(pub u8);
+pub type PlayerIndicator = PlayerIndicatorSlot;
+
+impl PlayerIndicatorSlot {
+    pub const COUNT: u8 = 8;
+    pub const LAMP_PATTERNS: [u8; Self::COUNT as usize] = [
+        0b0001, 0b0011, 0b0111, 0b1111, 0b1001, 0b1010, 0b1011, 0b0110,
+    ];
+
+    #[inline]
+    pub fn from_slot(slot: u8) -> Option<Self> {
+        if slot < Self::COUNT {
+            Some(Self(slot))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn from_player_number(player_number: usize) -> Option<Self> {
+        if (1..=(Self::COUNT as usize)).contains(&player_number) {
+            Some(Self((player_number - 1) as u8))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn from_lamp_pattern(pattern: u8) -> Option<Self> {
+        Self::LAMP_PATTERNS
+            .iter()
+            .position(|&candidate| candidate == pattern)
+            .map(|slot| Self(slot as u8))
+    }
+
+    #[inline]
+    pub fn from_slot_or_lamp_pattern(value: u8) -> Option<Self> {
+        Self::from_slot(value).or_else(|| Self::from_lamp_pattern(value))
+    }
+
+    #[inline]
+    pub fn to_lamp_pattern(self) -> u8 {
+        Self::LAMP_PATTERNS[self.0 as usize]
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GamepadRumbleRequest {
@@ -103,7 +147,7 @@ pub struct JoyConRumbleRequest {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct JoyConIndicatorRequest {
     pub index: usize,
-    pub indicator: PlayerIndicator,
+    pub indicator: PlayerIndicatorSlot,
 }
 
 #[derive(Clone, Debug)]
@@ -485,7 +529,7 @@ pub enum InputCommand {
     },
     SetJoyConIndicator {
         index: usize,
-        indicator: PlayerIndicator,
+        indicator: PlayerIndicatorSlot,
     },
 }
 
@@ -634,11 +678,26 @@ impl<'ipt, IP: InputAPI + ?Sized> InputWindow<'ipt, IP> {
 
     #[inline]
     pub fn set_joycon_indicator(&self, index: usize, indicator: u8) {
+        let Some(indicator) = PlayerIndicatorSlot::from_slot_or_lamp_pattern(indicator) else {
+            return;
+        };
         if let Some(buffer) = self.ipt.command_buffer() {
             buffer.borrow_mut().push(InputCommand::SetJoyConIndicator {
                 index,
-                indicator: PlayerIndicator(indicator),
+                indicator,
             });
+        }
+    }
+
+    #[inline]
+    pub fn set_joycon_indicator_slot(&self, index: usize, slot: u8) {
+        let Some(slot) = PlayerIndicatorSlot::from_slot(slot) else {
+            return;
+        };
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer
+                .borrow_mut()
+                .push(InputCommand::SetJoyConIndicator { index, indicator: slot });
         }
     }
 }
@@ -1128,11 +1187,26 @@ impl<'ipt, IP: InputAPI + ?Sized> JoyConModule<'ipt, IP> {
 
     #[inline(always)]
     pub fn set_indicator(&self, index: usize, indicator: u8) {
+        let Some(indicator) = PlayerIndicatorSlot::from_slot_or_lamp_pattern(indicator) else {
+            return;
+        };
         if let Some(buffer) = self.ipt.command_buffer() {
             buffer.borrow_mut().push(InputCommand::SetJoyConIndicator {
                 index,
-                indicator: PlayerIndicator(indicator),
+                indicator,
             });
+        }
+    }
+
+    #[inline(always)]
+    pub fn set_indicator_slot(&self, index: usize, slot: u8) {
+        let Some(slot) = PlayerIndicatorSlot::from_slot(slot) else {
+            return;
+        };
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer
+                .borrow_mut()
+                .push(InputCommand::SetJoyConIndicator { index, indicator: slot });
         }
     }
 }
@@ -1415,7 +1489,7 @@ pub mod prelude {
         GamepadAxis, GamepadButton, GamepadIndex, GamepadModule, GamepadState, InputAPI,
         InputWindow, InputSnapshot, JoyConButton, JoyConIndex, JoyConModule, JoyConSide,
         JoyConState, KeyCode, KeyModule, KeyboardModule, KeyboardState, MouseButton, MouseMode,
-        MouseModule, MouseState, MouseStateModule, PlayerBinding, PlayerIndicator, PlayerModule,
+        MouseModule, MouseState, MouseStateModule, PlayerBinding, PlayerIndicatorSlot, PlayerModule,
         PlayerState, RumbleIntensity,
         gamepad_accel, gamepad_down, gamepad_get, gamepad_gyro, gamepad_left_stick, gamepad_list,
         gamepad_pressed, gamepad_released, gamepad_right_stick, gamepad_set_rumble, joycon_accel,
