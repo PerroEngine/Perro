@@ -1084,7 +1084,7 @@ lifecycle!({
     // init is called when the script instance is created. This can be used for one-time setup. State is initialized
     fn on_init(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
     ) {
         // with_state! gives read-only state access and returns data from the closure.
         // with_state_mut! gives mutable state access; it can mutate and optionally return data.
@@ -1097,13 +1097,13 @@ lifecycle!({
     // on_all_init is called after all scripts have had on_init called. This can be used for setup that requires other scripts to be initialized.
     fn on_all_init(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
     ) {}
 
     // on_update is called every frame. This is where most behavior logic goes.
     fn on_update(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
     ) {
         let dt = delta_time!(ctx.run);
         let _is_space_down = ctx.ipt.Keys().down(KeyCode::Space);
@@ -1167,26 +1167,26 @@ lifecycle!({
     // on_fixed_update is called on a fixed timestep, independent of frame rate. This is useful for physics and other deterministic updates.
     fn on_fixed_update(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
     ) {}
 
     // on_removal is called when the script instance is removed from a node or the node is removed from the scene. This can be used for cleanup.
     fn on_removal(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
     ) {}
 });
 
 methods!({
     // methods! defines callable behavior methods (local or cross-script via call_method!)...
-    fn bump_count(&self, ctx: &mut ScriptContext<'_, RT, RS, IP>) {
+    fn bump_count(&self, ctx: &mut ScriptContext<'_, API>) {
         //  Use `with_state_mut!` for mutable access to state
         with_state_mut!(ctx.run, ExampleState, ctx.id, |state| {
             state.count += 1;
         });
     }
 
-    fn test(&self, ctx: &mut ScriptContext<'_, RT, RS, IP>, param1: i32, msg: &str) {
+    fn test(&self, ctx: &mut ScriptContext<'_, API>, param1: i32, msg: &str) {
         log_info!(param1);
         log_info!(msg);
         self.bump_count(ctx);
@@ -1207,34 +1207,34 @@ struct EmptyState {}
 lifecycle!({
     fn on_init(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
     ) {}
 
     fn on_all_init(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
     ) {}
 
     fn on_update(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
     ) {}
 
     fn on_fixed_update(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
     ) {}
 
     fn on_removal(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
     ) {}
 });
 
 methods!({
     fn default_method(
         &self,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
     ) {}
 });
 "#
@@ -1806,7 +1806,13 @@ fn default_scripts_lib_rs() -> String {
     r#"use perro_runtime::{Runtime, RuntimeInputApi, RuntimeResourceApi};
 use perro_api::scripting::ScriptConstructor;
 
-pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<Runtime, RuntimeResourceApi, RuntimeInputApi>)] = &[];
+pub struct RuntimeScriptApi;
+impl ScriptAPI for RuntimeScriptApi {
+    type RT = Runtime;
+    type RS = RuntimeResourceApi;
+    type IP = RuntimeInputApi;
+}
+pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<RuntimeScriptApi>)] = &[];
 
 #[unsafe(no_mangle)]
 pub extern "C" fn perro_scripts_init() {}
@@ -2696,6 +2702,7 @@ fn crate_group_sort_key(crate_name: &str) -> u8 {
 #[cfg(test)]
 #[path = "../tests/unit/lib_tests.rs"]
 mod tests;
+
 
 
 

@@ -69,9 +69,8 @@ impl Runtime {
                     "script hash `{script_path_hash}` is not present in dynamic script registry"
                 )
             })?;
-        let behavior: Arc<
-            dyn ScriptBehavior<Self, crate::RuntimeResourceApi, perro_input::InputSnapshot>,
-        > = if let Some(cached) = self
+        let behavior: Arc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
+            if let Some(cached) = self
             .script_runtime
             .script_behavior_cache
             .get(&script_path_hash)
@@ -85,12 +84,10 @@ impl Runtime {
                 ));
             }
 
-            let behavior: Box<
-                dyn ScriptBehavior<Self, crate::RuntimeResourceApi, perro_input::InputSnapshot>,
-            > = unsafe { Box::from_raw(raw) };
-            let behavior: Arc<
-                dyn ScriptBehavior<Self, crate::RuntimeResourceApi, perro_input::InputSnapshot>,
-            > = behavior.into();
+            let behavior: Box<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
+                unsafe { Box::from_raw(raw) };
+            let behavior: Arc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
+                behavior.into();
             self.script_runtime
                 .script_behavior_cache
                 .insert(script_path_hash, Arc::clone(&behavior));
@@ -203,11 +200,7 @@ impl Runtime {
             type RegistryGetFn = unsafe extern "C" fn(
                 usize,
                 *mut u64,
-                *mut ScriptConstructor<
-                    Runtime,
-                    crate::RuntimeResourceApi,
-                    perro_input::InputSnapshot,
-                >,
+                *mut ScriptConstructor<crate::runtime::RuntimeScriptApi>,
             ) -> bool;
 
             if let Ok(init) = library.get::<InitFn>(b"perro_scripts_init") {
@@ -245,11 +238,7 @@ impl Runtime {
             for i in 0..registry_len() {
                 let mut path_hash = 0u64;
                 let mut ctor = std::mem::MaybeUninit::<
-                    ScriptConstructor<
-                        Runtime,
-                        crate::RuntimeResourceApi,
-                        perro_input::InputSnapshot,
-                    >,
+                    ScriptConstructor<crate::runtime::RuntimeScriptApi>,
                 >::uninit();
                 let ok = registry_get(i, &mut path_hash, ctor.as_mut_ptr());
                 if !ok {

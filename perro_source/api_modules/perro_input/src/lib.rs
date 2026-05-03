@@ -451,6 +451,7 @@ impl InputAPI for InputSnapshot {
     }
 }
 
+/// InputWindow is a wrapper around the InputAPI that provides access to various input-related sub-APIs. It is designed to be passed to scripts as part of the ScriptContext, allowing them to interact with input in a structured way.
 pub struct InputWindow<'ipt, IP: InputAPI + ?Sized> {
     ipt: &'ipt IP,
 }

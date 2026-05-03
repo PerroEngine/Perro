@@ -168,10 +168,7 @@ impl ScriptSchedules {
         }
     }
 
-    pub(crate) fn snapshot_update<R: perro_runtime_context::api::RuntimeAPI + ?Sized>(
-        &mut self,
-        scripts: &ScriptCollection<R>,
-    ) {
+    pub(crate) fn snapshot_update(&mut self, scripts: &ScriptCollection) {
         let epoch = scripts.schedule_epoch();
         if self.update_epoch == epoch {
             return;
@@ -187,10 +184,7 @@ impl ScriptSchedules {
         self.update_epoch = epoch;
     }
 
-    pub(crate) fn snapshot_fixed<R: perro_runtime_context::api::RuntimeAPI + ?Sized>(
-        &mut self,
-        scripts: &ScriptCollection<R>,
-    ) {
+    pub(crate) fn snapshot_fixed(&mut self, scripts: &ScriptCollection) {
         let epoch = scripts.schedule_epoch();
         if self.fixed_epoch == epoch {
             return;

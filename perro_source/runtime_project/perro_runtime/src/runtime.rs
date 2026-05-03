@@ -8,7 +8,7 @@ use perro_ids::NodeID;
 use perro_input::InputSnapshot;
 use perro_runtime_context::sub_apis::PreloadedSceneID;
 use perro_scene::Scene;
-use perro_scripting::{ScriptBehavior, ScriptConstructor};
+use perro_scripting::{ScriptAPI, ScriptBehavior, ScriptConstructor};
 use std::time::{Duration, Instant};
 use std::{cell::RefCell, sync::Arc};
 
@@ -34,8 +34,14 @@ use state::{
     SignalRuntimeState, TransformRuntimeState,
 };
 
-type RuntimeScriptCtor = ScriptConstructor<Runtime, RuntimeResourceApi, InputSnapshot>;
-type RuntimeScriptBehavior = dyn ScriptBehavior<Runtime, RuntimeResourceApi, InputSnapshot>;
+pub struct RuntimeScriptApi;
+impl ScriptAPI for RuntimeScriptApi {
+    type RT = Runtime;
+    type RS = RuntimeResourceApi;
+    type IP = InputSnapshot;
+}
+type RuntimeScriptCtor = ScriptConstructor<RuntimeScriptApi>;
+type RuntimeScriptBehavior = dyn ScriptBehavior<RuntimeScriptApi>;
 type StaticScriptRegistry = &'static [(u64, RuntimeScriptCtor)];
 
 pub struct Runtime {
@@ -49,7 +55,7 @@ pub struct Runtime {
     pub(crate) next_preloaded_scene_id: u64,
 
     pub nodes: NodeArena,
-    pub(crate) scripts: ScriptCollection<Self>,
+    pub(crate) scripts: ScriptCollection,
     schedules: ScriptSchedules,
     pub(crate) script_runtime: ScriptRuntimeState,
     render: RenderState,

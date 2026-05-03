@@ -8,11 +8,9 @@ macro_rules! lifecycle {
         #[derive(Default)]
         struct $script_name;
 
-        impl<RT, RS, IP> ScriptLifecycle<RT, RS, IP> for $script_name
+        impl<API> ScriptLifecycle<API> for $script_name
         where
-            RT: RuntimeAPI + ?Sized,
-            RS: ResourceAPI + ?Sized,
-            IP: InputAPI + ?Sized,
+            API: ScriptAPI + ?Sized,
         {
             $($methods)*
         }
@@ -39,21 +37,19 @@ macro_rules! __methods_internal {
         $(#[$meta:meta])*
         $vis:vis fn $name:ident(
             &$self_ident:ident,
-            $ctx:ident : &mut ScriptContext<'_, RT, RS, IP>
+            $ctx:ident : &mut ScriptContext<'_, API>
             $(, $arg:ident : $arg_ty:ty )* $(,)?
         ) $(-> $ret:ty)? $body:block
         $($rest:tt)*
     ) => {
         $(#[$meta])*
-        $vis fn $name<RT, RS, IP>(
+        $vis fn $name<API>(
             &$self_ident,
-            $ctx: &mut ScriptContext<'_, RT, RS, IP>
+            $ctx: &mut ScriptContext<'_, API>
             $(, $arg : $arg_ty )*
         ) $(-> $ret)?
         where
-            RT: RuntimeAPI + ?Sized,
-            RS: ResourceAPI + ?Sized,
-            IP: InputAPI + ?Sized,
+            API: ScriptAPI + ?Sized,
         $body
 
         $crate::__methods_internal! { $($rest)* }

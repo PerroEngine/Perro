@@ -7,27 +7,32 @@ use perro_variant::Variant;
 use std::any::Any;
 
 #[allow(improper_ctypes_definitions)]
-pub type ScriptConstructor<RT, RS, IP> = extern "C" fn() -> *mut dyn ScriptBehavior<RT, RS, IP>;
+pub type ScriptConstructor<API> = extern "C" fn() -> *mut dyn ScriptBehavior<API>;
 
-pub struct ScriptContext<'a, RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>
-{
-    pub run: &'a mut RuntimeWindow<'a, RT>,
-    pub res: &'a ResourceWindow<'a, RS>,
-    pub ipt: &'a InputWindow<'a, IP>,
+/// ScriptAPI groups the three API surfaces scripts depend on.
+pub trait ScriptAPI {
+    type RT: RuntimeAPI + ?Sized;
+    type RS: ResourceAPI + ?Sized;
+    type IP: InputAPI + ?Sized;
+}
+
+/// ScriptContext is the context passed to script lifecycle methods, providing access to the runtime, resource, and input APIs, as well as the ID of the node the script is attached to.
+pub struct ScriptContext<'a, API: ScriptAPI + ?Sized> {
+    pub run: &'a mut RuntimeWindow<'a, API::RT>,
+    pub res: &'a ResourceWindow<'a, API::RS>,
+    pub ipt: &'a InputWindow<'a, API::IP>,
     pub id: NodeID,
 }
 
-pub trait ScriptLifecycle<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>
-{
-    fn on_init(&self, _ctx: &mut ScriptContext<'_, RT, RS, IP>) {}
-    fn on_all_init(&self, _ctx: &mut ScriptContext<'_, RT, RS, IP>) {}
-    fn on_update(&self, _ctx: &mut ScriptContext<'_, RT, RS, IP>) {}
-    fn on_fixed_update(&self, _ctx: &mut ScriptContext<'_, RT, RS, IP>) {}
-    fn on_removal(&self, _ctx: &mut ScriptContext<'_, RT, RS, IP>) {}
+pub trait ScriptLifecycle<API: ScriptAPI + ?Sized> {
+    fn on_init(&self, _ctx: &mut ScriptContext<'_, API>) {}
+    fn on_all_init(&self, _ctx: &mut ScriptContext<'_, API>) {}
+    fn on_update(&self, _ctx: &mut ScriptContext<'_, API>) {}
+    fn on_fixed_update(&self, _ctx: &mut ScriptContext<'_, API>) {}
+    fn on_removal(&self, _ctx: &mut ScriptContext<'_, API>) {}
 }
 
-pub trait ScriptBehavior<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: InputAPI + ?Sized>:
-    ScriptLifecycle<RT, RS, IP>
+pub trait ScriptBehavior<API: ScriptAPI + ?Sized>: ScriptLifecycle<API>
 {
     fn script_flags(&self) -> ScriptFlags;
     fn create_state(&self) -> Box<dyn Any> {
@@ -43,7 +48,7 @@ pub trait ScriptBehavior<RT: RuntimeAPI + ?Sized, RS: ResourceAPI + ?Sized, IP: 
     fn call_method(
         &self,
         method: ScriptMemberID,
-        ctx: &mut ScriptContext<'_, RT, RS, IP>,
+        ctx: &mut ScriptContext<'_, API>,
         params: &[Variant],
     ) -> Variant;
     fn attributes_of(&self, member: &str) -> &'static [Attribute];

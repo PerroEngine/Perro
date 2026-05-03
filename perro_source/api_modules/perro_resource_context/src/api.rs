@@ -46,6 +46,7 @@ pub trait ViewportAPI {
     fn viewport_size(&self) -> Vector2;
 }
 
+/// ResourceWindow is a wrapper around the ResourceAPI that provides access to various resource-related sub-APIs. It is designed to be passed to scripts as part of the ScriptContext, allowing them to interact with resources in a structured way.
 pub struct ResourceWindow<'res, R: ResourceAPI + ?Sized> {
     api: &'res R,
 }

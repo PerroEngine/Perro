@@ -1,18 +1,16 @@
 use perro_ids::NodeID;
-use perro_runtime_context::api::RuntimeAPI;
 use perro_scripting::ScriptBehavior;
 use std::any::{Any, TypeId};
 use std::sync::Arc;
 
-pub(crate) struct ScriptInstance<R: RuntimeAPI + ?Sized> {
-    pub(crate) behavior:
-        Arc<dyn ScriptBehavior<R, crate::RuntimeResourceApi, perro_input::InputSnapshot>>,
+pub(crate) struct ScriptInstance {
+    pub(crate) behavior: Arc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>>,
     pub(crate) state_type: TypeId,
     pub(crate) state: Box<dyn Any>,
 }
 
-pub(crate) struct ScriptCollection<R: RuntimeAPI + ?Sized> {
-    instances: Vec<ScriptInstance<R>>,
+pub(crate) struct ScriptCollection {
+    instances: Vec<ScriptInstance>,
     ids: Vec<NodeID>,
     // NodeID.index() -> instance index. Lookup validates full NodeID equality.
     index: Vec<u32>,
@@ -28,7 +26,7 @@ pub(crate) struct ScriptCollection<R: RuntimeAPI + ?Sized> {
 
 const NONE_SLOT: u32 = u32::MAX;
 
-impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
+impl ScriptCollection {
     pub(crate) fn new() -> Self {
         Self {
             instances: Vec::new(),
@@ -42,7 +40,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         }
     }
 
-    pub(crate) fn get_instance(&self, id: NodeID) -> Option<&ScriptInstance<R>> {
+    pub(crate) fn get_instance(&self, id: NodeID) -> Option<&ScriptInstance> {
         let i = self.instance_index_for(id)?;
         self.instances.get(i)
     }
@@ -57,7 +55,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         &self,
         instance_index: usize,
         id: NodeID,
-    ) -> Option<&ScriptInstance<R>> {
+    ) -> Option<&ScriptInstance> {
         if self.ids.get(instance_index).copied() != Some(id) {
             return None;
         }
@@ -67,7 +65,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     #[inline]
     pub(crate) fn with_instance<V, F>(&self, id: NodeID, f: F) -> Option<V>
     where
-        F: FnOnce(&ScriptInstance<R>) -> V,
+        F: FnOnce(&ScriptInstance) -> V,
     {
         let i = self.instance_index_for(id)?;
         Some(f(self.instances.get(i)?))
@@ -76,7 +74,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     #[inline]
     pub(crate) fn with_instance_mut<V, F>(&mut self, id: NodeID, f: F) -> Option<V>
     where
-        F: FnOnce(&mut ScriptInstance<R>) -> V,
+        F: FnOnce(&mut ScriptInstance) -> V,
     {
         let i = self.instance_index_for(id)?;
         Some(f(self.instances.get_mut(i)?))
@@ -85,7 +83,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     pub(crate) fn insert(
         &mut self,
         id: NodeID,
-        behavior: Arc<dyn ScriptBehavior<R, crate::RuntimeResourceApi, perro_input::InputSnapshot>>,
+        behavior: Arc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>>,
         state: Box<dyn Any>,
     ) {
         let flags = behavior.script_flags();
@@ -133,7 +131,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
         self.bump_schedule_epoch();
     }
 
-    pub(crate) fn remove(&mut self, id: NodeID) -> Option<ScriptInstance<R>> {
+    pub(crate) fn remove(&mut self, id: NodeID) -> Option<ScriptInstance> {
         let i = self.instance_index_for(id)?;
         self.set_index_slot(id.index() as usize, None);
         self.remove_from_schedules_by_index(i);
@@ -359,7 +357,7 @@ impl<R: RuntimeAPI + ?Sized> ScriptCollection<R> {
     }
 }
 
-impl<R: RuntimeAPI + ?Sized> Default for ScriptCollection<R> {
+impl Default for ScriptCollection {
     fn default() -> Self {
         Self::new()
     }

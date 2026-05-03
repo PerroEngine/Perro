@@ -12,6 +12,7 @@ impl<T> RuntimeAPI for T where
 {
 }
 
+/// RuntimeWindow is a wrapper around the RuntimeAPI that provides access to various sub-APIs. It is designed to be passed to scripts as part of the ScriptContext, allowing them to interact with the runtime environment in a structured way.
 pub struct RuntimeWindow<'rt, RT: RuntimeAPI + ?Sized> {
     rt: &'rt mut RT,
 }
