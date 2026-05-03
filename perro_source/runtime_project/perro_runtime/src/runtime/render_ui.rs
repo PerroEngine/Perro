@@ -272,25 +272,32 @@ impl Runtime {
                     .retained_commands
                     .get(&node)
                     .is_some_and(|command| {
-                        ui_command_matches_node(
-                            command,
-                            &scene_node.data,
-                            rect_state,
+                        let command_ctx = UiCommandCtx {
+                            node,
+                            rect: rect_state,
                             clip_rect,
                             scale,
                             virtual_font_scale,
+                        };
+                        ui_command_matches_node(
+                            command,
+                            &scene_node.data,
+                            command_ctx,
                             state,
                             self.render_ui.focused_text_edit,
                         )
                     });
             if !retained_matches {
-                let Some(command) = ui_command_from_node(
+                let command_ctx = UiCommandCtx {
                     node,
-                    &scene_node.data,
-                    rect_state,
+                    rect: rect_state,
                     clip_rect,
                     scale,
                     virtual_font_scale,
+                };
+                let Some(command) = ui_command_from_node(
+                    &scene_node.data,
+                    command_ctx,
                     state,
                     self.render_ui.focused_text_edit,
                 ) else {
@@ -496,34 +503,33 @@ impl Runtime {
         let parent_ui = ui_root_from_data(&parent_node.data)?;
         let auto_layout = ui_auto_layout_from_data(&parent_node.data)?;
         let content_rect = parent_layout_rect.inset(parent_ui.layout.padding);
+        let layout_ctx = UiChildrenLayoutCtx {
+            parent_layout_rect,
+            content: content_rect,
+            parent_scale,
+        };
         match auto_layout.mode {
             UiLayoutMode::H => self.compute_ui_h_children_rects(
                 &parent_ui.layout,
                 parent_node.get_children_ids(),
-                parent_layout_rect,
-                content_rect,
+                layout_ctx,
                 auto_layout.h_spacing,
-                parent_scale,
                 computed,
                 computed_scales,
             ),
             UiLayoutMode::V => self.compute_ui_v_children_rects(
                 &parent_ui.layout,
                 parent_node.get_children_ids(),
-                parent_layout_rect,
-                content_rect,
+                layout_ctx,
                 auto_layout.v_spacing,
-                parent_scale,
                 computed,
                 computed_scales,
             ),
             UiLayoutMode::Grid => self.compute_ui_grid_children_rects(
                 &parent_ui.layout,
                 parent_node.get_children_ids(),
-                parent_layout_rect,
-                content_rect,
+                layout_ctx,
                 auto_layout,
-                parent_scale,
                 computed,
                 computed_scales,
             ),
@@ -1072,18 +1078,20 @@ impl Runtime {
         None
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn compute_ui_h_children_rects(
         &self,
         parent_layout: &UiLayoutData,
         children: &[NodeID],
-        parent_layout_rect: ComputedUiRect,
-        content: ComputedUiRect,
+        layout_ctx: UiChildrenLayoutCtx,
         spacing: f32,
-        parent_scale: Vector2,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
         computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
+        let UiChildrenLayoutCtx {
+            parent_layout_rect,
+            content,
+            parent_scale,
+        } = layout_ctx;
         let fill_width = self.h_fill_width(children, content.size.x, spacing);
         let used_width = self.h_used_width(children, content.size, spacing, fill_width);
         let min = content.min();
@@ -1177,18 +1185,20 @@ impl Runtime {
         None
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn compute_ui_v_children_rects(
         &self,
         parent_layout: &UiLayoutData,
         children: &[NodeID],
-        parent_layout_rect: ComputedUiRect,
-        content: ComputedUiRect,
+        layout_ctx: UiChildrenLayoutCtx,
         spacing: f32,
-        parent_scale: Vector2,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
         computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
+        let UiChildrenLayoutCtx {
+            parent_layout_rect,
+            content,
+            parent_scale,
+        } = layout_ctx;
         let fill_height = self.v_fill_height(children, content.size.y, spacing);
         let used_height = self.v_used_height(children, content.size, spacing, fill_height);
         let min = content.min();
@@ -1323,18 +1333,20 @@ impl Runtime {
         Some(ComputedUiRect::new(center, size))
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn compute_ui_grid_children_rects(
         &self,
         parent_layout: &UiLayoutData,
         children: &[NodeID],
-        parent_layout_rect: ComputedUiRect,
-        content: ComputedUiRect,
+        layout_ctx: UiChildrenLayoutCtx,
         auto: UiAutoLayout,
-        parent_scale: Vector2,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
         computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
+        let UiChildrenLayoutCtx {
+            parent_layout_rect,
+            content,
+            parent_scale,
+        } = layout_ctx;
         let columns = auto.columns.max(1) as usize;
         let mut ui_count = 0_usize;
         let mut cell_width = 0.0_f32;
@@ -1920,6 +1932,30 @@ struct UiAutoLayout {
     v_spacing: f32,
 }
 
+#[derive(Clone, Copy)]
+struct UiChildrenLayoutCtx {
+    parent_layout_rect: ComputedUiRect,
+    content: ComputedUiRect,
+    parent_scale: Vector2,
+}
+
+#[derive(Clone, Copy)]
+struct UiCommandCtx {
+    node: NodeID,
+    rect: UiRectState,
+    clip_rect: [f32; 4],
+    scale: Vector2,
+    virtual_font_scale: f32,
+}
+
+#[derive(Clone, Copy)]
+struct TextEditCommandCtx<'a> {
+    command: UiCommandCtx,
+    edit: &'a UiTextEdit,
+    multiline: bool,
+    focused: bool,
+}
+
 fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
     match data {
         SceneNodeData::UiBox(root) => Some(root),
@@ -2162,17 +2198,19 @@ fn align_v_center(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn ui_command_from_node(
-    node: NodeID,
     data: &SceneNodeData,
-    rect: UiRectState,
-    clip_rect: [f32; 4],
-    scale: Vector2,
-    virtual_font_scale: f32,
+    command_ctx: UiCommandCtx,
     button_state: UiButtonVisualState,
     focused_text_edit: Option<NodeID>,
 ) -> Option<UiCommand> {
+    let UiCommandCtx {
+        node,
+        rect,
+        clip_rect,
+        scale,
+        virtual_font_scale,
+    } = command_ctx;
     match data {
         SceneNodeData::UiPanel(panel) => Some(panel_command(node, rect, clip_rect, scale, &panel.style)),
         SceneNodeData::UiButton(button) => {
@@ -2208,26 +2246,18 @@ fn ui_command_from_node(
             h_align: text_align_state(label.h_align),
             v_align: text_align_state(label.v_align),
         }),
-        SceneNodeData::UiTextBox(text_box) => Some(text_edit_command(
-            node,
-            rect,
-            clip_rect,
-            scale,
-            virtual_font_scale,
-            &text_box.inner,
-            false,
-            focused_text_edit == Some(node),
-        )),
-        SceneNodeData::UiTextBlock(text_block) => Some(text_edit_command(
-            node,
-            rect,
-            clip_rect,
-            scale,
-            virtual_font_scale,
-            &text_block.inner,
-            true,
-            focused_text_edit == Some(node),
-        )),
+        SceneNodeData::UiTextBox(text_box) => Some(text_edit_command(TextEditCommandCtx {
+            command: command_ctx,
+            edit: &text_box.inner,
+            multiline: false,
+            focused: focused_text_edit == Some(node),
+        })),
+        SceneNodeData::UiTextBlock(text_block) => Some(text_edit_command(TextEditCommandCtx {
+            command: command_ctx,
+            edit: &text_block.inner,
+            multiline: true,
+            focused: focused_text_edit == Some(node),
+        })),
         _ => None,
     }
 }
@@ -2290,31 +2320,27 @@ fn ui_pivot_state(transform: &UiTransform) -> [f32; 2] {
     [pivot.x, pivot.y]
 }
 
-#[allow(clippy::too_many_arguments)]
 fn ui_command_matches_node(
     command: &UiCommand,
     data: &SceneNodeData,
-    rect: UiRectState,
-    clip_rect: [f32; 4],
-    scale: Vector2,
-    virtual_font_scale: f32,
+    command_ctx: UiCommandCtx,
     button_state: UiButtonVisualState,
     focused_text_edit: Option<NodeID>,
 ) -> bool {
+    let node = match command {
+        UiCommand::UpsertPanel { node, .. }
+        | UiCommand::UpsertButton { node, .. }
+        | UiCommand::UpsertLabel { node, .. }
+        | UiCommand::UpsertTextEdit { node, .. }
+        | UiCommand::RemoveNode { node } => *node,
+        UiCommand::Clear => NodeID::nil(),
+    };
     let Some(expected) = ui_command_from_node(
-        match command {
-            UiCommand::UpsertPanel { node, .. }
-            | UiCommand::UpsertButton { node, .. }
-            | UiCommand::UpsertLabel { node, .. }
-            | UiCommand::UpsertTextEdit { node, .. }
-            | UiCommand::RemoveNode { node } => *node,
-            UiCommand::Clear => NodeID::nil(),
-        },
         data,
-        rect,
-        clip_rect,
-        scale,
-        virtual_font_scale,
+        UiCommandCtx {
+            node,
+            ..command_ctx
+        },
         button_state,
         focused_text_edit,
     ) else {
@@ -2413,17 +2439,20 @@ fn text_align_state(align: perro_ui::UiTextAlign) -> UiTextAlignState {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn text_edit_command(
-    node: NodeID,
-    rect: UiRectState,
-    clip_rect: [f32; 4],
-    scale: Vector2,
-    virtual_font_scale: f32,
-    edit: &UiTextEdit,
-    multiline: bool,
-    focused: bool,
-) -> UiCommand {
+fn text_edit_command(ctx: TextEditCommandCtx<'_>) -> UiCommand {
+    let TextEditCommandCtx {
+        command:
+            UiCommandCtx {
+                node,
+                rect,
+                clip_rect,
+                scale,
+                virtual_font_scale,
+            },
+        edit,
+        multiline,
+        focused,
+    } = ctx;
     let focused_style = &edit.focused_style;
     let style = &edit.style;
     let style_scale = ui_style_scale(scale);
