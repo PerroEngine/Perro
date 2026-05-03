@@ -171,7 +171,7 @@ From script:
 
 ```rust
 let bones = skeleton_load_bones!(res, "res://models/rig.gltf:skeleton[0]");
-with_node_mut!(ctx, Skeleton3D, node_id, |skel| {
+with_node_mut!(ctx.run, Skeleton3D, node_id, |skel| {
     skel.bones = bones;
 });
 ```
@@ -179,8 +179,10 @@ with_node_mut!(ctx, Skeleton3D, node_id, |skel| {
 Swapping a mesh's skeleton at runtime (Mesh must have vertex weights):
 
 ```rust
-with_node_mut!(ctx, MeshInstance3D, mesh_id, |mesh| {
+with_node_mut!(ctx.run, MeshInstance3D, mesh_id, |mesh| {
     mesh.skeleton = new_skeleton_node_id;
 });
 ```
+
+
 

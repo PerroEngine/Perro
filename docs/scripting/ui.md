@@ -263,7 +263,7 @@ methods!({
 Runtime add/remove custom emits:
 
 ```rust
-let _ = with_node_mut!(ctx, UiButton, play_button, |button| {
+let _ = with_node_mut!(ctx.run, UiButton, play_button, |button| {
     let sig = signal!("debug_play_click");
     if !button.click_signals.contains(&sig) {
         button.click_signals.push(sig);
@@ -325,3 +325,5 @@ Scene example:
 [/UiTextBlock]
 [/bio_input]
 ```
+
+

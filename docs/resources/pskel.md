@@ -65,7 +65,9 @@ Script usage:
 
 ```rust
 let bones = skeleton_load_bones!(res, "res://models/rig.pskel");
-with_node_mut!(ctx, Skeleton3D, node_id, |skel| {
+with_node_mut!(ctx.run, Skeleton3D, node_id, |skel| {
     skel.bones = bones;
 });
 ```
+
+

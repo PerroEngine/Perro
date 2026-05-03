@@ -13,8 +13,8 @@ Attach/detach:
 
 Self-state access (your own script):
 
-- `with_state!(ctx, StateType, self_node_id, |state| -> V { ... }) -> V`
-- `with_state_mut!(ctx, StateType, self_node_id, |state| -> V { ... }) -> Option<V>`
+- `with_state!(ctx.run, StateType, self_node_id, |state| -> V { ... }) -> V`
+- `with_state_mut!(ctx.run, StateType, self_node_id, |state| -> V { ... }) -> Option<V>`
 
 `with_state!` returns `V::default()` if the node/state is missing or type-mismatched.
 
@@ -26,9 +26,9 @@ Use this for your own script because:
 
 Cross-script access (other nodes):
 
-- `get_var!(ctx, node_id, member) -> Variant`
-- `set_var!(ctx, node_id, member, value) -> ()`
-- `call_method!(ctx, node_id, method, params) -> Variant`
+- `get_var!(ctx.run, node_id, member) -> Variant`
+- `set_var!(ctx.run, node_id, member, value) -> ()`
+- `call_method!(ctx.run, node_id, method, params) -> Variant`
 - `attributes_of!(ctx, node_id, member) -> &'static [Attribute]`
 - `members_with!(ctx, node_id, attribute) -> &'static [Member]`
 - `has_attribute!(ctx, node_id, member, attribute) -> bool`
@@ -43,12 +43,13 @@ Examples:
 
 ```rust
 // Self: typed state access
-with_state_mut!(ctx, MyState, self_id, |state| {
+with_state_mut!(ctx.run, MyState, self_id, |state| {
     state.hp -= 1;
 });
 
 // Other node: dynamic access through NodeID
-let enemy_id = query_first!(ctx, all(name["Enemy1"])).unwrap();
-set_var!(ctx, enemy_id, var!("alert"), variant!(true));
-call_method!(ctx, enemy_id, method!("on_alert"), params![]);
+let enemy_id = query_first!(ctx.run, all(name["Enemy1"])).unwrap();
+set_var!(ctx.run, enemy_id, var!("alert"), variant!(true));
+call_method!(ctx.run, enemy_id, method!("on_alert"), params![]);
 ```
+

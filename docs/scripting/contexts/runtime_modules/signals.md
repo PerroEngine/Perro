@@ -57,7 +57,7 @@ lifecycle!({
 
 methods!({
     fn on_alert(&self, ctx, res, ipt, self_id) {
-        with_state_mut!(ctx, EnemyState, self_id, |state| {
+        with_state_mut!(ctx.run, EnemyState, self_id, |state| {
             state.alerted = true;
         });
     }
@@ -188,3 +188,4 @@ signal_connect!(ctx, self_id, signal!("TriggerZone_Exited"), func!("on_exit"));
 ```rust
 signal_disconnect!(ctx, self_id, signal!("player_jumped"), func!("on_alert"));
 ```
+

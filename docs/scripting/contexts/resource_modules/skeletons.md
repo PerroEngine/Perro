@@ -36,7 +36,7 @@ Example:
 use perro_api::prelude::*;
 
 let bones = skeleton_load_bones!(res, "res://models/rig.glb:skeleton[0]");
-with_node_mut!(ctx, Skeleton3D, self_id, |skel| {
+with_node_mut!(ctx.run, Skeleton3D, self_id, |skel| {
     skel.bones = bones;
 });
 ```
@@ -50,3 +50,5 @@ Use the `:skeleton[index]` suffix to target a specific skeleton/skin inside a gl
 
 Direct `.pskel` sources:
 - `res://path/to/rig.pskel`
+
+

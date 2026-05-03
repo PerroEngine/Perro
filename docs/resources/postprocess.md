@@ -114,7 +114,7 @@ static FX: &[PostProcessEffect] = &[
     PostProcessEffect::BlackWhite { amount: 1.0 },
 ];
 
-with_node_mut!(ctx, Camera3D, cam_id, |cam| {
+with_node_mut!(ctx.run, Camera3D, cam_id, |cam| {
     cam.post_processing = PostProcessSet::from_effects(FX.to_vec());
 });
 ```
@@ -123,7 +123,7 @@ Owned:
 
 ```rust
 
-with_node_mut!(ctx, Camera3D, cam_id, |cam| {
+with_node_mut!(ctx.run, Camera3D, cam_id, |cam| {
     cam.post_processing.add(
         "warp",
         PostProcessEffect::Warp { waves: 6.0, strength: 2.0 },
@@ -134,7 +134,7 @@ with_node_mut!(ctx, Camera3D, cam_id, |cam| {
 Get or mutate by name (Camera3D or Camera2D):
 
 ```rust
-with_node_mut!(ctx, Camera3D, cam_id, |cam| {
+with_node_mut!(ctx.run, Camera3D, cam_id, |cam| {
     if let Some(PostProcessEffect::Bloom { strength, .. }) =
         cam.post_processing.get_mut("bloom")
     {
@@ -146,7 +146,7 @@ with_node_mut!(ctx, Camera3D, cam_id, |cam| {
 Read-only access with `with_node!`:
 
 ```rust
-let bloom_strength = with_node!(ctx, Camera3D, cam_id, |cam| {
+let bloom_strength = with_node!(ctx.run, Camera3D, cam_id, |cam| {
     cam.post_processing
         .get("bloom")
         .and_then(|fx| match fx {
@@ -159,7 +159,7 @@ let bloom_strength = with_node!(ctx, Camera3D, cam_id, |cam| {
 Enumerate names:
 
 ```rust
-with_node!(ctx, Camera3D, cam_id, |cam| {
+with_node!(ctx.run, Camera3D, cam_id, |cam| {
     for name in cam.post_processing.names() {
         if let Some(name) = name {
             log::info!("post fx: {name}");
@@ -210,4 +210,6 @@ fn post_process(uv: vec2<f32>, color: vec4<f32>, depth: f32) -> vec4<f32> {
     return vec4<f32>(color.rgb + edge * strength, color.a);
 }
 ```
+
+
 
