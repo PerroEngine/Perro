@@ -42,6 +42,7 @@ macro_rules! __methods_internal {
         ) $(-> $ret:ty)? $body:block
         $($rest:tt)*
     ) => {
+        #[allow(clippy::too_many_arguments)]
         $(#[$meta])*
         $vis fn $name<API>(
             &$self_ident,

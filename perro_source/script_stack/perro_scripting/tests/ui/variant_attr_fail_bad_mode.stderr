@@ -1,0 +1,5 @@
+error: `variant(mode = ...)` only supports `"object"` or `"array"`
+  --> tests/ui/variant_attr_fail_bad_mode.rs:10:11
+   |
+10 | #[variant(mode = "bad")]
+   |           ^^^^^^^^^^^^

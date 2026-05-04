@@ -3704,8 +3704,8 @@ mod tests {
             .computed_rects
             .get(&last)
             .expect("last rect exists");
-        assert_eq!(first_rect.center.x, -35.0);
-        assert_eq!(last_rect.center.x, 35.0);
+        assert_eq!(first_rect.center.x, 35.0);
+        assert_eq!(last_rect.center.x, -35.0);
     }
 
     #[test]
@@ -3760,8 +3760,8 @@ mod tests {
             .computed_rects
             .get(&children[3])
             .expect("fourth rect exists");
-        assert_eq!(first.center, Vector2::new(-70.0, 25.0));
-        assert_eq!(fourth.center, Vector2::new(-70.0, -25.0));
+        assert_eq!(first.center, Vector2::new(70.0, -25.0));
+        assert_eq!(fourth.center, Vector2::new(70.0, 25.0));
     }
 
     #[test]
@@ -3850,9 +3850,9 @@ mod tests {
             .computed_rects
             .get(&fourth)
             .expect("fourth rect exists");
-        assert_eq!(first_rect.center, Vector2::new(-70.0, 0.0));
+        assert_eq!(first_rect.center, Vector2::new(70.0, 0.0));
         assert_eq!(third_rect.center, Vector2::ZERO);
-        assert_eq!(fourth_rect.center, Vector2::new(70.0, 0.0));
+        assert_eq!(fourth_rect.center, Vector2::new(-70.0, 0.0));
     }
 
     #[test]

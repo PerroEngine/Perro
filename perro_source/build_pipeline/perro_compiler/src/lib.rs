@@ -1532,7 +1532,10 @@ pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<RuntimeScriptApi>)] = &[\n
     out.push_str("];\n");
     out.push_str(
         "\n#[unsafe(no_mangle)]\n\
-pub extern \"C\" fn perro_scripts_set_project_root(\n\
+/// # Safety\n\
+/// Caller pass valid UTF-8 ptr+len pairs for `root_ptr`/`root_len` + `name_ptr`/`name_len`.\n\
+/// Pointers stay valid for full call + null ptr disallow.\n\
+pub unsafe extern \"C\" fn perro_scripts_set_project_root(\n\
     root_ptr: *const u8,\n\
     root_len: usize,\n\
     name_ptr: *const u8,\n\
@@ -1562,7 +1565,10 @@ pub extern \"C\" fn perro_script_registry_len() -> usize {\n\
     out.push_str(
         "\n#[allow(improper_ctypes_definitions)]\n\
 #[unsafe(no_mangle)]\n\
-pub extern \"C\" fn perro_script_registry_get(\n\
+/// # Safety\n\
+/// Caller pass non-null writable ptrs for `path_hash_out` + `ctor_out`.\n\
+/// Output ptrs stay valid for full call.\n\
+pub unsafe extern \"C\" fn perro_script_registry_get(\n\
     index: usize,\n\
     path_hash_out: *mut u64,\n\
     ctor_out: *mut ScriptConstructor<RuntimeScriptApi>,\n\

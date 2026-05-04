@@ -4,4 +4,5 @@ fn script_context_borrow_matrix() {
     t.pass("tests/ui/script_ctx_pass_prebind.rs");
     t.pass("tests/ui/script_ctx_pass_outside_closure.rs");
     t.compile_fail("tests/ui/script_ctx_fail_capture_ctx_in_run_closure.rs");
+    t.compile_fail("tests/ui/variant_attr_fail_bad_mode.rs");
 }

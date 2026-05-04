@@ -13,3 +13,8 @@ perro_scripting_macros = { path = "../perro_scripting_macros", version = "0.1.0"
 
 [dev-dependencies]
 trybuild = "1.0"
+criterion = "0.5"
+
+[[bench]]
+name = "variant_modes"
+harness = false

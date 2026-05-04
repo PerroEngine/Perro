@@ -47,19 +47,38 @@ struct BrainSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Variant)]
+#[variant(mode = "object")]
 struct DeepLeaf {
     player_count: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Variant)]
+#[variant(mode = "object")]
 struct DeepMid {
     roster: DeepLeaf,
 }
 
 #[derive(Debug, Clone, PartialEq, Variant)]
+#[variant(mode = "object")]
 struct DeepState {
     players: DeepMid,
     top: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Variant)]
+#[variant(mode = "array")]
+struct CompactVec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Variant)]
+#[variant(tag = "u16")]
+enum CompactBotState {
+    Idle,
+    Charging(f32, CompactVec3),
+    Fired { power: f32, direction: CompactVec3 },
 }
 
 fn sample_profile() -> BotProfile {
@@ -166,10 +185,7 @@ fn enum_encoding_shape_contains_variant_tag_and_data() {
     let encoded = <BotState as DeriveVariant>::to_variant(&value);
     let obj = encoded.as_object().expect("enum encodes as object");
 
-    assert_eq!(
-        obj.get("__variant").and_then(|v| v.as_str()),
-        Some("Charging")
-    );
+    assert_eq!(obj.get("__variant").and_then(|v| v.as_u16()), Some(1));
     assert!(obj.get("__data").is_some());
 }
 
@@ -296,4 +312,40 @@ fn generated_match_style_get_set_supports_deep_nested_paths() {
 
     let after = generated_style_get_var(&state, path);
     assert_eq!(after.as_i32(), Some(7));
+}
+
+#[test]
+fn compact_struct_array_mode_roundtrip_and_shape() {
+    let value = CompactVec3 {
+        x: 4.0,
+        y: -2.0,
+        z: 9.0,
+    };
+    let encoded = <CompactVec3 as DeriveVariant>::to_variant(&value);
+    let arr = encoded.as_array().expect("array mode encodes as array");
+    assert_eq!(arr.len(), 3);
+    assert_eq!(arr[0].as_f32(), Some(4.0));
+    assert_eq!(arr[1].as_f32(), Some(-2.0));
+    assert_eq!(arr[2].as_f32(), Some(9.0));
+    let decoded = <CompactVec3 as DeriveVariant>::from_variant(&encoded).expect("decode compact");
+    assert_eq!(decoded, value);
+}
+
+#[test]
+fn compact_enum_u16_tag_roundtrip_and_shape() {
+    let value = CompactBotState::Charging(
+        0.8,
+        CompactVec3 {
+            x: 0.1,
+            y: 0.2,
+            z: -1.0,
+        },
+    );
+    let encoded = <CompactBotState as DeriveVariant>::to_variant(&value);
+    let obj = encoded.as_object().expect("enum object");
+    assert_eq!(obj.get("__variant").and_then(|v| v.as_u16()), Some(1));
+    assert!(obj.get("__data").and_then(|v| v.as_array()).is_some());
+    let decoded =
+        <CompactBotState as DeriveVariant>::from_variant(&encoded).expect("decode compact enum");
+    assert_eq!(decoded, value);
 }

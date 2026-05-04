@@ -1,23 +1,23 @@
 error[E0501]: cannot borrow `*ctx.run` as mutable because previous closure requires unique access
-  --> tests/ui/script_ctx_fail_capture_ctx_in_run_closure.rs:17:5
+  --> tests/ui/script_ctx_fail_capture_ctx_in_run_closure.rs:32:5
    |
-17 |       with_run(ctx.run, || {
+32 |       with_run(ctx.run, || {
    |       ^-------          -- closure construction occurs here
    |       |
    |  _____first borrow later used by call
    | |
-18 | |         let _ = ctx.run.runtime_mut();
+33 | |         let _ = ctx.run.runtime_mut();
    | |                 ------- first borrow occurs due to use of `*ctx.run` in closure
-19 | |     });
+34 | |     });
    | |______^ second borrow occurs here
 
 error[E0500]: closure requires unique access to `*ctx.run` but it is already borrowed
-  --> tests/ui/script_ctx_fail_capture_ctx_in_run_closure.rs:17:23
+  --> tests/ui/script_ctx_fail_capture_ctx_in_run_closure.rs:32:23
    |
-17 |     with_run(ctx.run, || {
+32 |     with_run(ctx.run, || {
    |     -------- -------  ^^ closure construction occurs here
    |     |        |
    |     |        borrow occurs here
    |     first borrow later used by call
-18 |         let _ = ctx.run.runtime_mut();
+33 |         let _ = ctx.run.runtime_mut();
    |                 ------- second borrow occurs due to use of `*ctx.run` in closure
