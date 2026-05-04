@@ -389,7 +389,7 @@ impl NodeAPI for Runtime {
         }
 
         let slot = cached_slot_for(self, id);
-        let (transform_changed, ui_before, ui_after, value) = {
+        let (transform_changed, ui_before, ui_after, camera_active_changed, value) = {
             let node = if let Some((index, generation)) = slot {
                 self.nodes.slot_get_mut_checked(index, generation)?
             } else {
@@ -397,7 +397,16 @@ impl NodeAPI for Runtime {
             };
 
             let track_ui = T::NODE_TYPE.is_a(NodeType::UiBox);
+            let track_camera = T::NODE_TYPE == NodeType::Camera3D;
             let ui_before = track_ui.then(|| node.data.clone());
+            let cam_active_before = if track_camera {
+                match &node.data {
+                    SceneNodeData::Camera3D(cam) => Some(cam.active),
+                    _ => None,
+                }
+            } else {
+                None
+            };
             let mut changed = false;
             let mut value = None;
             let result = node.with_typed_mut::<T, _>(|typed| {
@@ -408,7 +417,21 @@ impl NodeAPI for Runtime {
             });
             result?;
             let ui_after = track_ui.then(|| node.data.clone());
-            (changed, ui_before, ui_after, value)
+            let cam_active_after = if track_camera {
+                match &node.data {
+                    SceneNodeData::Camera3D(cam) => Some(cam.active),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            (
+                changed,
+                ui_before,
+                ui_after,
+                cam_active_before != cam_active_after,
+                value,
+            )
         };
 
         if matches!(T::RENDERABLE, Renderable::True) {
@@ -416,6 +439,9 @@ impl NodeAPI for Runtime {
         }
         if transform_changed {
             self.mark_transform_dirty_recursive(id);
+        }
+        if camera_active_changed {
+            self.request_full_3d_scan_once();
         }
         if let (Some(before), Some(after)) = (ui_before.as_ref(), ui_after.as_ref()) {
             self.mark_ui_data_change(id, before, after);
@@ -489,7 +515,14 @@ impl NodeAPI for Runtime {
             return None;
         }
 
-        let (value, transform_changed, ui_before, ui_after) = {
+        let (
+            value,
+            transform_changed,
+            ui_before,
+            ui_after,
+            vis_2d_changed,
+            vis_3d_changed,
+        ) = {
             let node = if let Some((index, generation)) = slot {
                 self.nodes.slot_get_mut_checked(index, generation)?
             } else {
@@ -497,16 +530,30 @@ impl NodeAPI for Runtime {
             };
             let before_2d = node.with_base_ref::<Node2D, _>(|base| base.transform);
             let before_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
+            let before_vis_2d = node.with_base_ref::<Node2D, _>(|base| base.visible);
+            let before_vis_3d = node.with_base_ref::<Node3D, _>(|base| base.visible);
             let ui_before = node.with_base_ref::<UiBox, _>(Clone::clone);
             let value = node.with_base_mut::<T, _>(f)?;
             let after_2d = node.with_base_ref::<Node2D, _>(|base| base.transform);
             let after_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
+            let after_vis_2d = node.with_base_ref::<Node2D, _>(|base| base.visible);
+            let after_vis_3d = node.with_base_ref::<Node3D, _>(|base| base.visible);
             let ui_after = node.with_base_ref::<UiBox, _>(Clone::clone);
             let changed = before_2d != after_2d || before_3d != after_3d;
-            (value, changed, ui_before, ui_after)
+            (
+                value,
+                changed,
+                ui_before,
+                ui_after,
+                before_vis_2d != after_vis_2d,
+                before_vis_3d != after_vis_3d,
+            )
         };
 
         self.mark_needs_rerender(id);
+        if vis_2d_changed || vis_3d_changed {
+            self.force_rerender(id);
+        }
         if transform_changed {
             self.mark_transform_dirty_recursive(id);
         }
@@ -685,6 +732,7 @@ impl NodeAPI for Runtime {
         }
 
         self.mark_transform_dirty_recursive(child_id);
+        self.force_rerender(child_id);
         self.mark_ui_reparent_dirty(child_id, old_parent, parent_id);
         true
     }

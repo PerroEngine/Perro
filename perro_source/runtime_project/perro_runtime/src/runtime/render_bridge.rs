@@ -76,6 +76,10 @@ impl Runtime {
         self.dirty.mark_rerender(id);
     }
 
+    pub(crate) fn request_full_3d_scan_once(&mut self) {
+        self.render_3d.force_full_scan_once = true;
+    }
+
     pub fn force_rerender(&mut self, root_id: NodeID) {
         if root_id.is_nil() || self.nodes.get(root_id).is_none() {
             return;

@@ -40,6 +40,7 @@ impl Runtime {
         let has_extraction_work = self.dirty.has_any_dirty()
             || self.dirty.has_pending_transform_roots()
             || !self.render_3d.removed_nodes.is_empty()
+            || self.render_3d.force_full_scan_once
             || bootstrap_scan;
         if !has_extraction_work {
             return;
@@ -56,10 +57,16 @@ impl Runtime {
                 .iter()
                 .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id)),
         );
+        if self.render_3d.force_full_scan_once {
+            traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
+            self.render_3d.force_full_scan_once = false;
+        }
         if traversal_ids.is_empty() && bootstrap_scan {
             traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
         }
-        let mut traversal_seen: ahash::AHashSet<NodeID> = traversal_ids.iter().copied().collect();
+        let mut seed_seen: ahash::AHashSet<NodeID> = ahash::AHashSet::default();
+        traversal_ids.retain(|id| seed_seen.insert(*id));
+        let mut traversal_seen = seed_seen;
         let mut traversal_cursor = 0usize;
         while traversal_cursor < traversal_ids.len() {
             let node = traversal_ids[traversal_cursor];

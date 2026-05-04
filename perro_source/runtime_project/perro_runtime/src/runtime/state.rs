@@ -415,6 +415,7 @@ pub(crate) struct Render3DState {
     pub(crate) retained_mesh_draws: AHashMap<NodeID, RetainedMeshDrawState>,
     pub(crate) skeleton_cache_scratch: AHashMap<NodeID, SkeletonPalette>,
     pub(crate) removed_nodes: Vec<NodeID>,
+    pub(crate) force_full_scan_once: bool,
 }
 
 impl Render3DState {
@@ -438,6 +439,7 @@ impl Render3DState {
             retained_mesh_draws: AHashMap::default(),
             skeleton_cache_scratch: AHashMap::default(),
             removed_nodes: Vec::new(),
+            force_full_scan_once: false,
         }
     }
 }
