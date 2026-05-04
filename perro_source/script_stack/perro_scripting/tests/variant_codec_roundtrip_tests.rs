@@ -1,12 +1,12 @@
 extern crate self as perro_api;
 
 pub mod variant {
-    pub use perro_variant::{Variant, VariantCodec, VariantSchema};
+    pub use perro_variant::{Variant, DeriveVariant, VariantSchema};
 }
 
 use perro_ids::ScriptMemberID;
 use perro_scripting::Variant;
-use perro_variant::{VariantCodec, VariantSchema};
+use perro_variant::{DeriveVariant, VariantSchema};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -90,8 +90,8 @@ fn sample_profile() -> BotProfile {
 #[test]
 fn custom_struct_roundtrip_variant_codec() {
     let value = sample_profile();
-    let encoded = <BotProfile as VariantCodec>::to_variant(&value);
-    let decoded = <BotProfile as VariantCodec>::from_variant(&encoded).expect("decode BotProfile");
+    let encoded = <BotProfile as DeriveVariant>::to_variant(&value);
+    let decoded = <BotProfile as DeriveVariant>::from_variant(&encoded).expect("decode BotProfile");
     assert_eq!(value, decoded);
 }
 
@@ -118,8 +118,8 @@ fn custom_enum_roundtrip_variant_codec_all_variants() {
     ];
 
     for value in values {
-        let encoded = <BotState as VariantCodec>::to_variant(&value);
-        let decoded = <BotState as VariantCodec>::from_variant(&encoded).expect("decode BotState");
+        let encoded = <BotState as DeriveVariant>::to_variant(&value);
+        let decoded = <BotState as DeriveVariant>::from_variant(&encoded).expect("decode BotState");
         assert_eq!(value, decoded);
     }
 }
@@ -128,7 +128,7 @@ fn custom_enum_roundtrip_variant_codec_all_variants() {
 fn derived_enum_works_in_params_macro() {
     let params = perro_variant::params![BotState::Idle];
     let encoded = params.first().expect("param");
-    let decoded = <BotState as VariantCodec>::from_variant(encoded).expect("decode BotState");
+    let decoded = <BotState as DeriveVariant>::from_variant(encoded).expect("decode BotState");
 
     assert_eq!(decoded, BotState::Idle);
 }
@@ -147,9 +147,9 @@ fn complex_nested_struct_and_enum_roundtrip_variant_codec() {
         },
     };
 
-    let encoded = <BrainSnapshot as VariantCodec>::to_variant(&value);
+    let encoded = <BrainSnapshot as DeriveVariant>::to_variant(&value);
     let decoded =
-        <BrainSnapshot as VariantCodec>::from_variant(&encoded).expect("decode BrainSnapshot");
+        <BrainSnapshot as DeriveVariant>::from_variant(&encoded).expect("decode BrainSnapshot");
     assert_eq!(value, decoded);
 }
 
@@ -163,7 +163,7 @@ fn enum_encoding_shape_contains_variant_tag_and_data() {
             z: -1.0,
         },
     );
-    let encoded = <BotState as VariantCodec>::to_variant(&value);
+    let encoded = <BotState as DeriveVariant>::to_variant(&value);
     let obj = encoded.as_object().expect("enum encodes as object");
 
     assert_eq!(
@@ -239,10 +239,10 @@ fn generated_style_get_var(state: &DeepState, var: ScriptMemberID) -> perro_vari
     const TOP_PLAYERS: ScriptMemberID = perro_ids::ScriptMemberID::from_string("players");
     const TOP_TOP: ScriptMemberID = perro_ids::ScriptMemberID::from_string("top");
     match var {
-        TOP_PLAYERS => perro_variant::VariantCodec::to_variant(&state.players),
-        TOP_TOP => perro_variant::VariantCodec::to_variant(&state.top),
+        TOP_PLAYERS => perro_variant::DeriveVariant::to_variant(&state.players),
+        TOP_TOP => perro_variant::DeriveVariant::to_variant(&state.top),
         _ => {
-            let nested_root = perro_variant::VariantCodec::to_variant(&state.players);
+            let nested_root = perro_variant::DeriveVariant::to_variant(&state.players);
             nested_get_by_hash("players", &nested_root, var).unwrap_or(perro_variant::Variant::Null)
         }
     }
@@ -257,20 +257,20 @@ fn generated_style_set_var(
     const TOP_TOP: ScriptMemberID = perro_ids::ScriptMemberID::from_string("top");
     match var {
         TOP_PLAYERS => {
-            if let Some(v) = <DeepMid as perro_variant::VariantCodec>::from_variant(value) {
+            if let Some(v) = <DeepMid as perro_variant::DeriveVariant>::from_variant(value) {
                 state.players = v;
             }
         }
         TOP_TOP => {
-            if let Some(v) = <i32 as perro_variant::VariantCodec>::from_variant(value) {
+            if let Some(v) = <i32 as perro_variant::DeriveVariant>::from_variant(value) {
                 state.top = v;
             }
         }
         _ => {
-            let mut nested_root = perro_variant::VariantCodec::to_variant(&state.players);
+            let mut nested_root = perro_variant::DeriveVariant::to_variant(&state.players);
             if nested_set_by_hash("players", &mut nested_root, var, value)
                 && let Some(decoded) =
-                    <DeepMid as perro_variant::VariantCodec>::from_variant(&nested_root)
+                    <DeepMid as perro_variant::DeriveVariant>::from_variant(&nested_root)
             {
                 state.players = decoded;
             }

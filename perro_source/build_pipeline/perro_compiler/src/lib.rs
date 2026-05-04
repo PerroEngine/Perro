@@ -3003,7 +3003,7 @@ fn generate_call_param_binding(index: usize, param: &ScriptMethodParam) -> Optio
             }
             format!(
                 "let {name}: {raw_ty} = match {param_ref} {{ \
-                    Some(v) => match perro_api::variant::VariantCodec::from_variant(v) {{ Some(v) => v, None => return Variant::Null }}, \
+                    Some(v) => match perro_api::variant::DeriveVariant::from_variant(v) {{ Some(v) => v, None => return Variant::Null }}, \
                     None => Default::default() \
                 }};",
                 raw_ty = param.ty.trim()
@@ -3026,7 +3026,7 @@ fn generate_get_var_body(state_ty: &str, fields: &[ScriptField]) -> String {
     for field in fields {
         let const_name = member_const_name(&field.name);
         out.push_str(&format!(
-            "            {const_name} => perro_api::variant::VariantCodec::to_variant(&state.{}),\n",
+            "            {const_name} => perro_api::variant::DeriveVariant::to_variant(&state.{}),\n",
             field.name
         ));
     }
@@ -3079,7 +3079,7 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
         let const_name = member_const_name(&field.name);
         let ty = normalize_type(&field.ty);
         let assign_block = format!(
-            "if let Some(v) = <{ty} as perro_api::variant::VariantCodec>::from_variant(value) {{\n                    state.{} = v;\n                }}",
+            "if let Some(v) = <{ty} as perro_api::variant::DeriveVariant>::from_variant(value) {{\n                    state.{} = v;\n                }}",
             field.name
         );
         out.push_str(&format!(
@@ -3142,7 +3142,7 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
     ));
     for field in fields {
         out.push_str(&format!(
-            "    {{\n        let nested_root = perro_api::variant::VariantCodec::to_variant(&state.{});\n        if let Some(value) = __perro_get_nested_by_hash(\"{}\", &nested_root, var) {{\n            return Some(value);\n        }}\n    }}\n",
+            "    {{\n        let nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{});\n        if let Some(value) = __perro_get_nested_by_hash(\"{}\", &nested_root, var) {{\n            return Some(value);\n        }}\n    }}\n",
             field.name, field.name
         ));
     }
@@ -3155,7 +3155,7 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
     for field in fields {
         let ty = normalize_type(&field.ty);
         out.push_str(&format!(
-            "    {{\n        let mut nested_root = perro_api::variant::VariantCodec::to_variant(&state.{});\n        if __perro_set_nested_by_hash(\"{}\", &mut nested_root, var, value) {{\n            if let Some(decoded) = <{ty} as perro_api::variant::VariantCodec>::from_variant(&nested_root) {{\n                state.{} = decoded;\n            }}\n            return true;\n        }}\n    }}\n",
+            "    {{\n        let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{});\n        if __perro_set_nested_by_hash(\"{}\", &mut nested_root, var, value) {{\n            if let Some(decoded) = <{ty} as perro_api::variant::DeriveVariant>::from_variant(&nested_root) {{\n                state.{} = decoded;\n            }}\n            return true;\n        }}\n    }}\n",
             field.name, field.name, field.name
         ));
     }

@@ -52,6 +52,11 @@ pub fn derive_variant(input: TokenStream) -> TokenStream {
     derive_variant_like(input)
 }
 
+#[proc_macro_derive(DeriveVariant)]
+pub fn derive_variant_codec(input: TokenStream) -> TokenStream {
+    derive_variant_like(input)
+}
+
 fn derive_variant_like(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let ident = input.ident;
@@ -101,6 +106,7 @@ fn derive_state_field_struct(
     let mut from_fields = Vec::new();
     let mut to_fields = Vec::new();
     let mut schema_fields = Vec::new();
+    let mut codec_hints = Vec::new();
 
     for field in fields.named {
         let Some(field_ident) = field.ident else {
@@ -109,18 +115,23 @@ fn derive_state_field_struct(
         let field_ty = field.ty;
         let field_key = field_ident.to_string();
         schema_fields.push(field_key.clone());
+        codec_hints.push(quote! {
+            __perro_hint_use_derive_variant_or_derive_variantcodec::<#field_ty>();
+        });
 
         from_fields.push(quote! {
-            #field_ident: <#field_ty as ::perro_api::variant::VariantCodec>::from_variant(obj.get(#field_key)?)?
+            #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(obj.get(#field_key)?)?
         });
         to_fields.push(quote! {
-            out.insert(::std::sync::Arc::<str>::from(#field_key), ::perro_api::variant::VariantCodec::to_variant(&self.#field_ident));
+            out.insert(::std::sync::Arc::<str>::from(#field_key), ::perro_api::variant::DeriveVariant::to_variant(&self.#field_ident));
         });
     }
 
     let expanded = quote! {
-        impl #impl_generics ::perro_api::variant::VariantCodec for #ident #ty_generics #where_clause {
+        impl #impl_generics ::perro_api::variant::DeriveVariant for #ident #ty_generics #where_clause {
             fn from_variant(value: &::perro_api::variant::Variant) -> ::core::option::Option<Self> {
+                fn __perro_hint_use_derive_variant_or_derive_variantcodec<T: ::perro_api::variant::DeriveVariant>() {}
+                #(#codec_hints)*
                 let obj = value.as_object()?;
                 Some(Self {
                     #(#from_fields,)*
@@ -142,7 +153,7 @@ fn derive_state_field_struct(
 
         impl #impl_generics ::core::convert::From<#ident #ty_generics> for ::perro_api::variant::Variant #where_clause {
             fn from(value: #ident #ty_generics) -> Self {
-                ::perro_api::variant::VariantCodec::to_variant(&value)
+                ::perro_api::variant::DeriveVariant::to_variant(&value)
             }
         }
     };
@@ -159,6 +170,7 @@ fn derive_state_field_enum(
 ) -> TokenStream {
     let mut from_arms = Vec::new();
     let mut to_arms = Vec::new();
+    let mut codec_hints = Vec::new();
 
     for variant in variants {
         let variant_ident = variant.ident;
@@ -185,16 +197,19 @@ fn derive_state_field_enum(
 
                 for (idx, field) in fields.unnamed.into_iter().enumerate() {
                     let field_ty = field.ty;
+                    codec_hints.push(quote! {
+                        __perro_hint_use_derive_variant_or_derive_variantcodec::<#field_ty>();
+                    });
                     let binding = syn::Ident::new(
                         &format!("__perro_v{}", idx),
                         proc_macro2::Span::call_site(),
                     );
                     let index = syn::Index::from(idx);
                     from_values.push(quote! {
-                        <#field_ty as ::perro_api::variant::VariantCodec>::from_variant(data.get(#index)?)?
+                        <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#index)?)?
                     });
                     to_values.push(quote! {
-                        ::perro_api::variant::VariantCodec::to_variant(#binding)
+                        ::perro_api::variant::DeriveVariant::to_variant(#binding)
                     });
                     bindings.push(binding);
                 }
@@ -233,14 +248,17 @@ fn derive_state_field_enum(
                         continue;
                     };
                     let field_ty = field.ty;
+                    codec_hints.push(quote! {
+                        __perro_hint_use_derive_variant_or_derive_variantcodec::<#field_ty>();
+                    });
                     let key = field_ident.to_string();
                     from_fields.push(quote! {
-                        #field_ident: <#field_ty as ::perro_api::variant::VariantCodec>::from_variant(data.get(#key)?)?
+                        #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#key)?)?
                     });
                     to_fields.push(quote! {
                         data.insert(
                             ::std::sync::Arc::<str>::from(#key),
-                            ::perro_api::variant::VariantCodec::to_variant(#field_ident),
+                            ::perro_api::variant::DeriveVariant::to_variant(#field_ident),
                         );
                     });
                     bindings.push(field_ident);
@@ -274,8 +292,10 @@ fn derive_state_field_enum(
     }
 
     let expanded = quote! {
-        impl #impl_generics ::perro_api::variant::VariantCodec for #ident #ty_generics #where_clause {
+        impl #impl_generics ::perro_api::variant::DeriveVariant for #ident #ty_generics #where_clause {
             fn from_variant(value: &::perro_api::variant::Variant) -> ::core::option::Option<Self> {
+                fn __perro_hint_use_derive_variant_or_derive_variantcodec<T: ::perro_api::variant::DeriveVariant>() {}
+                #(#codec_hints)*
                 let obj = value.as_object()?;
                 let tag = obj.get("__variant")?.as_str()?;
                 match tag {
@@ -297,7 +317,7 @@ fn derive_state_field_enum(
 
         impl #impl_generics ::core::convert::From<#ident #ty_generics> for ::perro_api::variant::Variant #where_clause {
             fn from(value: #ident #ty_generics) -> Self {
-                ::perro_api::variant::VariantCodec::to_variant(&value)
+                ::perro_api::variant::DeriveVariant::to_variant(&value)
             }
         }
     };

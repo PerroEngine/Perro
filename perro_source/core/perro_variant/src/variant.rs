@@ -182,7 +182,7 @@ pub enum EngineStruct {
 /// Typed conversion contract used by script state and method parameter conversion.
 ///
 /// Implement this trait for custom structs/enums (typically via `#[derive(Variant)]`).
-pub trait VariantCodec: Sized {
+pub trait DeriveVariant: Sized {
     fn from_variant(value: &Variant) -> Option<Self>;
     fn to_variant(&self) -> Variant;
 }
@@ -264,7 +264,7 @@ impl Variant {
     }
 }
 
-impl VariantCodec for Variant {
+impl DeriveVariant for Variant {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         Some(value.clone())
@@ -276,7 +276,7 @@ impl VariantCodec for Variant {
     }
 }
 
-impl VariantCodec for bool {
+impl DeriveVariant for bool {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_bool()
@@ -290,7 +290,7 @@ impl VariantCodec for bool {
 
 macro_rules! impl_statefield_signed {
     ($ty:ty, $pat:pat => $expr:expr) => {
-        impl VariantCodec for $ty {
+        impl DeriveVariant for $ty {
             #[inline]
             fn from_variant(value: &Variant) -> Option<Self> {
                 match value.as_number() {
@@ -309,7 +309,7 @@ macro_rules! impl_statefield_signed {
 
 macro_rules! impl_statefield_unsigned {
     ($ty:ty, $pat:pat => $expr:expr) => {
-        impl VariantCodec for $ty {
+        impl DeriveVariant for $ty {
             #[inline]
             fn from_variant(value: &Variant) -> Option<Self> {
                 match value.as_number() {
@@ -338,7 +338,7 @@ impl_statefield_unsigned!(u32, Number::U32(v) => v);
 impl_statefield_unsigned!(u64, Number::U64(v) => v);
 impl_statefield_unsigned!(u128, Number::U128(v) => v);
 
-impl VariantCodec for isize {
+impl DeriveVariant for isize {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         match value.as_number() {
@@ -355,7 +355,7 @@ impl VariantCodec for isize {
     }
 }
 
-impl VariantCodec for usize {
+impl DeriveVariant for usize {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         match value.as_number() {
@@ -372,7 +372,7 @@ impl VariantCodec for usize {
     }
 }
 
-impl VariantCodec for f32 {
+impl DeriveVariant for f32 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_f32()
@@ -384,7 +384,7 @@ impl VariantCodec for f32 {
     }
 }
 
-impl VariantCodec for f64 {
+impl DeriveVariant for f64 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_f64()
@@ -396,7 +396,7 @@ impl VariantCodec for f64 {
     }
 }
 
-impl VariantCodec for String {
+impl DeriveVariant for String {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_str().map(ToString::to_string)
@@ -408,7 +408,7 @@ impl VariantCodec for String {
     }
 }
 
-impl VariantCodec for Arc<str> {
+impl DeriveVariant for Arc<str> {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_str().map(Arc::<str>::from)
@@ -420,7 +420,7 @@ impl VariantCodec for Arc<str> {
     }
 }
 
-impl VariantCodec for NodeID {
+impl DeriveVariant for NodeID {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value
@@ -441,7 +441,7 @@ impl VariantCodec for NodeID {
     }
 }
 
-impl VariantCodec for TextureID {
+impl DeriveVariant for TextureID {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value
@@ -464,7 +464,7 @@ impl VariantCodec for TextureID {
 
 macro_rules! impl_statefield_plain_id {
     ($id_ty:ty) => {
-        impl VariantCodec for $id_ty {
+        impl DeriveVariant for $id_ty {
             #[inline]
             fn from_variant(value: &Variant) -> Option<Self> {
                 value
@@ -499,7 +499,7 @@ impl_statefield_plain_id!(AudioBusID);
 impl_statefield_plain_id!(TagID);
 impl_statefield_plain_id!(PreloadedSceneID);
 
-impl VariantCodec for Vector2 {
+impl DeriveVariant for Vector2 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         if let Some(v) = value.as_vec2() {
@@ -517,7 +517,7 @@ impl VariantCodec for Vector2 {
     }
 }
 
-impl VariantCodec for Vector3 {
+impl DeriveVariant for Vector3 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         if let Some(v) = value.as_vec3() {
@@ -536,7 +536,7 @@ impl VariantCodec for Vector3 {
     }
 }
 
-impl VariantCodec for Quaternion {
+impl DeriveVariant for Quaternion {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         if let Some(v) = value.as_quat() {
@@ -556,7 +556,7 @@ impl VariantCodec for Quaternion {
     }
 }
 
-impl VariantCodec for Transform2D {
+impl DeriveVariant for Transform2D {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         if let Some(v) = value.as_transform2d() {
@@ -575,7 +575,7 @@ impl VariantCodec for Transform2D {
     }
 }
 
-impl VariantCodec for Transform3D {
+impl DeriveVariant for Transform3D {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         if let Some(v) = value.as_transform3d() {
@@ -594,7 +594,7 @@ impl VariantCodec for Transform3D {
     }
 }
 
-impl VariantCodec for PostProcessSet {
+impl DeriveVariant for PostProcessSet {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_post_process_set().cloned()
@@ -606,7 +606,7 @@ impl VariantCodec for PostProcessSet {
     }
 }
 
-impl VariantCodec for VisualAccessibilitySettings {
+impl DeriveVariant for VisualAccessibilitySettings {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         value.as_visual_accessibility_settings()
@@ -618,9 +618,9 @@ impl VariantCodec for VisualAccessibilitySettings {
     }
 }
 
-impl<T> VariantCodec for Option<T>
+impl<T> DeriveVariant for Option<T>
 where
-    T: VariantCodec,
+    T: DeriveVariant,
 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
@@ -640,9 +640,9 @@ where
     }
 }
 
-impl<T> VariantCodec for Vec<T>
+impl<T> DeriveVariant for Vec<T>
 where
-    T: VariantCodec,
+    T: DeriveVariant,
 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
@@ -656,13 +656,13 @@ where
 
     #[inline]
     fn to_variant(&self) -> Variant {
-        Variant::Array(self.iter().map(VariantCodec::to_variant).collect())
+        Variant::Array(self.iter().map(DeriveVariant::to_variant).collect())
     }
 }
 
-impl<T> VariantCodec for BTreeMap<Arc<str>, T>
+impl<T> DeriveVariant for BTreeMap<Arc<str>, T>
 where
-    T: VariantCodec,
+    T: DeriveVariant,
 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
