@@ -151,6 +151,10 @@ pub enum ResolvedPath {
     DlcPerroAssets { dlc: String, virtual_path: String },
 }
 
+fn normalize_user_app_name(name: &str) -> String {
+    name.replace(' ', "_")
+}
+
 /// Resolve virtual path (res://foo/bar.png or user://save.dat) to actual location
 pub fn resolve_path(path: &str) -> ResolvedPath {
     let project_root_opt = PROJECT_ROOT.read().unwrap().clone();
@@ -164,6 +168,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
                 ProjectRoot::PerroAssets { name, .. } => name.as_str(),
             })
             .expect("Project root not set");
+        let app_name = normalize_user_app_name(app_name);
 
         let base = data_local_dir()
             .unwrap_or_else(std::env::temp_dir)
@@ -291,5 +296,26 @@ pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
         ResolvedPath::PerroAssets(_) | ResolvedPath::DlcPerroAssets { .. } => {
             Err(io::Error::other("Cannot save to packed archive"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_user_path_normalizes_game_name_spaces() {
+        set_project_root(ProjectRoot::Disk {
+            root: PathBuf::from("C:/tmp/perro-test-root"),
+            name: "My Cool Game".to_string(),
+        });
+        let resolved = resolve_path("user://save.dat");
+        let disk_path = match resolved {
+            ResolvedPath::Disk(path) => path,
+            _ => panic!("expected disk path"),
+        };
+        let as_text = disk_path.to_string_lossy();
+        assert!(as_text.contains("My_Cool_Game"));
+        assert!(!as_text.contains("My Cool Game"));
     }
 }
