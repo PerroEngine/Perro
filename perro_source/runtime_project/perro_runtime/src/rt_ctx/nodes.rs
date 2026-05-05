@@ -1087,30 +1087,61 @@ impl NodeAPI for Runtime {
         Some(Transform3D::from_mat4(local))
     }
 
-    fn mesh_surface_at_world_point(
+    fn mesh_instance_surface_at_world_point(
         &mut self,
         node_id: perro_ids::NodeID,
         world_point: Vector3,
     ) -> Option<MeshSurfaceHit3D> {
-        self.query_mesh_surface_at_world_point(node_id, world_point)
+        self.query_mesh_instance_surface_at_world_point(node_id, world_point)
     }
 
-    fn mesh_surface_on_world_ray(
+    fn mesh_instance_surface_on_world_ray(
         &mut self,
         node_id: perro_ids::NodeID,
         ray_origin: Vector3,
         ray_direction: Vector3,
         max_distance: f32,
     ) -> Option<MeshSurfaceHit3D> {
-        self.query_mesh_surface_on_world_ray(node_id, ray_origin, ray_direction, max_distance)
+        self.query_mesh_instance_surface_on_world_ray(
+            node_id,
+            ray_origin,
+            ray_direction,
+            max_distance,
+        )
     }
 
-    fn mesh_material_regions(
+    fn mesh_instance_material_regions(
         &mut self,
         node_id: perro_ids::NodeID,
         material: MaterialID,
     ) -> Vec<MeshMaterialRegion3D> {
-        self.query_mesh_material_regions(node_id, material)
+        self.query_mesh_instance_material_regions(node_id, material)
+    }
+
+    fn mesh_data_surface_at_world_point(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        world_point: Vector3,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.query_mesh_data_surface_at_world_point(node_id, world_point)
+    }
+
+    fn mesh_data_surface_on_world_ray(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        ray_origin: Vector3,
+        ray_direction: Vector3,
+        max_distance: f32,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.query_mesh_data_surface_on_world_ray(node_id, ray_origin, ray_direction, max_distance)
+    }
+
+    fn mesh_data_surface_regions(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        surface_index: u32,
+    ) -> Vec<MeshMaterialRegion3D> {
+        self.query_mesh_data_surface_regions(node_id, surface_index)
     }
 }
 

@@ -583,13 +583,13 @@ pub trait NodeAPI {
         global: Transform3D,
     ) -> Option<Transform3D>;
 
-    /// Finds the mesh surface nearest to a world-space point for a 3D mesh node.
+    /// Finds mesh-instance surface nearest to world-space point for a 3D mesh node.
     ///
     /// Returns `None` when:
     /// - node does not exist
     /// - node is not a mesh-bearing 3D node
     /// - mesh source cannot be resolved/decoded
-    fn mesh_surface_at_world_point(
+    fn mesh_instance_surface_at_world_point(
         &mut self,
         node_id: NodeID,
         world_point: Vector3,
@@ -603,7 +603,7 @@ pub trait NodeAPI {
     /// - node is not a mesh-bearing 3D node
     /// - mesh source cannot be resolved/decoded
     /// - ray misses all triangles within `max_distance`
-    fn mesh_surface_on_world_ray(
+    fn mesh_instance_surface_on_world_ray(
         &mut self,
         node_id: NodeID,
         ray_origin: Vector3,
@@ -614,11 +614,69 @@ pub trait NodeAPI {
     /// Returns regions (one per matching surface) where `material` exists on a mesh node.
     ///
     /// Region bounds/centers are coarse geometric summaries for gameplay queries.
-    fn mesh_material_regions(
+    fn mesh_instance_material_regions(
         &mut self,
         node_id: NodeID,
         material: MaterialID,
     ) -> Vec<MeshMaterialRegion3D>;
+
+    /// Finds raw mesh-data surface nearest to world-space point.
+    ///
+    /// Same geometry as instance query, but no runtime material resolve.
+    fn mesh_data_surface_at_world_point(
+        &mut self,
+        node_id: NodeID,
+        world_point: Vector3,
+    ) -> Option<MeshSurfaceHit3D>;
+
+    /// Finds raw mesh-data surface hit on world-space ray.
+    ///
+    /// Same geometry as instance query, but no runtime material resolve.
+    fn mesh_data_surface_on_world_ray(
+        &mut self,
+        node_id: NodeID,
+        ray_origin: Vector3,
+        ray_direction: Vector3,
+        max_distance: f32,
+    ) -> Option<MeshSurfaceHit3D>;
+
+    /// Returns regions for one raw mesh-data surface index.
+    ///
+    /// `material` in return entries is always `None`.
+    fn mesh_data_surface_regions(
+        &mut self,
+        node_id: NodeID,
+        surface_index: u32,
+    ) -> Vec<MeshMaterialRegion3D>;
+
+    /// Back-compat alias: same as `mesh_instance_surface_at_world_point`.
+    fn mesh_surface_at_world_point(
+        &mut self,
+        node_id: NodeID,
+        world_point: Vector3,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.mesh_instance_surface_at_world_point(node_id, world_point)
+    }
+
+    /// Back-compat alias: same as `mesh_instance_surface_on_world_ray`.
+    fn mesh_surface_on_world_ray(
+        &mut self,
+        node_id: NodeID,
+        ray_origin: Vector3,
+        ray_direction: Vector3,
+        max_distance: f32,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.mesh_instance_surface_on_world_ray(node_id, ray_origin, ray_direction, max_distance)
+    }
+
+    /// Back-compat alias: same as `mesh_instance_material_regions`.
+    fn mesh_material_regions(
+        &mut self,
+        node_id: NodeID,
+        material: MaterialID,
+    ) -> Vec<MeshMaterialRegion3D> {
+        self.mesh_instance_material_regions(node_id, material)
+    }
 }
 
 pub struct NodeModule<'rt, R: NodeAPI + ?Sized> {
@@ -921,12 +979,71 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.to_local_transform_3d(node_id, global)
     }
 
+    pub fn mesh_instance_surface_at_world_point(
+        &mut self,
+        node_id: NodeID,
+        world_point: Vector3,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.rt
+            .mesh_instance_surface_at_world_point(node_id, world_point)
+    }
+
+    pub fn mesh_instance_surface_on_world_ray(
+        &mut self,
+        node_id: NodeID,
+        ray_origin: Vector3,
+        ray_direction: Vector3,
+        max_distance: f32,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.rt.mesh_instance_surface_on_world_ray(
+            node_id,
+            ray_origin,
+            ray_direction,
+            max_distance,
+        )
+    }
+
+    pub fn mesh_instance_material_regions(
+        &mut self,
+        node_id: NodeID,
+        material: MaterialID,
+    ) -> Vec<MeshMaterialRegion3D> {
+        self.rt.mesh_instance_material_regions(node_id, material)
+    }
+
+    pub fn mesh_data_surface_at_world_point(
+        &mut self,
+        node_id: NodeID,
+        world_point: Vector3,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.rt.mesh_data_surface_at_world_point(node_id, world_point)
+    }
+
+    pub fn mesh_data_surface_on_world_ray(
+        &mut self,
+        node_id: NodeID,
+        ray_origin: Vector3,
+        ray_direction: Vector3,
+        max_distance: f32,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.rt
+            .mesh_data_surface_on_world_ray(node_id, ray_origin, ray_direction, max_distance)
+    }
+
+    pub fn mesh_data_surface_regions(
+        &mut self,
+        node_id: NodeID,
+        surface_index: u32,
+    ) -> Vec<MeshMaterialRegion3D> {
+        self.rt.mesh_data_surface_regions(node_id, surface_index)
+    }
+
     pub fn mesh_surface_at_world_point(
         &mut self,
         node_id: NodeID,
         world_point: Vector3,
     ) -> Option<MeshSurfaceHit3D> {
-        self.rt.mesh_surface_at_world_point(node_id, world_point)
+        self.mesh_instance_surface_at_world_point(node_id, world_point)
     }
 
     pub fn mesh_surface_on_world_ray(
@@ -936,8 +1053,7 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         ray_direction: Vector3,
         max_distance: f32,
     ) -> Option<MeshSurfaceHit3D> {
-        self.rt
-            .mesh_surface_on_world_ray(node_id, ray_origin, ray_direction, max_distance)
+        self.mesh_instance_surface_on_world_ray(node_id, ray_origin, ray_direction, max_distance)
     }
 
     pub fn mesh_material_regions(
@@ -945,7 +1061,7 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         node_id: NodeID,
         material: MaterialID,
     ) -> Vec<MeshMaterialRegion3D> {
-        self.rt.mesh_material_regions(node_id, material)
+        self.mesh_instance_material_regions(node_id, material)
     }
 }
 
@@ -1400,7 +1516,7 @@ macro_rules! to_local_transform_3d {
 #[macro_export]
 macro_rules! mesh_surface_at_world_point_3d {
     ($ctx:expr, $id:expr, $point:expr) => {
-        $ctx.Nodes().mesh_surface_at_world_point($id, $point)
+        $ctx.Nodes().mesh_instance_surface_at_world_point($id, $point)
     };
 }
 
@@ -1411,7 +1527,7 @@ macro_rules! mesh_surface_at_world_point_3d {
 macro_rules! mesh_surface_on_world_ray_3d {
     ($ctx:expr, $id:expr, $origin:expr, $direction:expr, $max_distance:expr) => {
         $ctx.Nodes()
-            .mesh_surface_on_world_ray($id, $origin, $direction, $max_distance)
+            .mesh_instance_surface_on_world_ray($id, $origin, $direction, $max_distance)
     };
 }
 
@@ -1420,7 +1536,32 @@ macro_rules! mesh_surface_on_world_ray_3d {
 #[macro_export]
 macro_rules! mesh_material_regions_3d {
     ($ctx:expr, $id:expr, $material:expr) => {
-        $ctx.Nodes().mesh_material_regions($id, $material)
+        $ctx.Nodes().mesh_instance_material_regions($id, $material)
+    };
+}
+
+/// Finds nearest raw mesh-data surface at a world-space point.
+#[macro_export]
+macro_rules! mesh_data_surface_at_world_point_3d {
+    ($ctx:expr, $id:expr, $point:expr) => {
+        $ctx.Nodes().mesh_data_surface_at_world_point($id, $point)
+    };
+}
+
+/// Finds raw mesh-data surface hit on world-space ray.
+#[macro_export]
+macro_rules! mesh_data_surface_on_world_ray_3d {
+    ($ctx:expr, $id:expr, $origin:expr, $direction:expr, $max_distance:expr) => {
+        $ctx.Nodes()
+            .mesh_data_surface_on_world_ray($id, $origin, $direction, $max_distance)
+    };
+}
+
+/// Returns raw mesh-data regions for one surface index.
+#[macro_export]
+macro_rules! mesh_data_surface_regions_3d {
+    ($ctx:expr, $id:expr, $surface_index:expr) => {
+        $ctx.Nodes().mesh_data_surface_regions($id, $surface_index)
     };
 }
 

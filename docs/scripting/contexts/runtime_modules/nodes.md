@@ -93,11 +93,24 @@ Tag/query macros:
 - `query_first!(ctx.run, expr) -> Option<NodeID>`
 - `query_first!(ctx.run, expr, in_subtree(parent_id)) -> Option<NodeID>`
 
-Mesh surface/material query macros:
+Mesh query macros:
 
+- Instance-aware queries (runtime surface binding aware):
 - `mesh_surface_at_world_point_3d!(ctx.run, node_id, world_point) -> Option<MeshSurfaceHit3D>`
 - `mesh_surface_on_world_ray_3d!(ctx.run, node_id, ray_origin, ray_direction, max_distance) -> Option<MeshSurfaceHit3D>`
 - `mesh_material_regions_3d!(ctx.run, node_id, material_id) -> Vec<MeshMaterialRegion3D>`
+- Raw mesh-data queries (surface-index/file-data oriented):
+- `mesh_data_surface_at_world_point_3d!(ctx.run, node_id, world_point) -> Option<MeshSurfaceHit3D>`
+- `mesh_data_surface_on_world_ray_3d!(ctx.run, node_id, ray_origin, ray_direction, max_distance) -> Option<MeshSurfaceHit3D>`
+- `mesh_data_surface_regions_3d!(ctx.run, node_id, surface_index) -> Vec<MeshMaterialRegion3D>`
+
+Why split API:
+
+- Instance queries answer gameplay/render binding questions.
+- Data queries answer mesh file topology questions.
+- Instance lane resolves runtime material binds per surface.
+- Data lane intentionally does not resolve runtime material (`material = None`).
+- This avoids mixing "what slot in file?" with "what material bound right now?".
 
 `MeshSurfaceHit3D` fields:
 
@@ -117,6 +130,13 @@ Mesh surface/material query macros:
 - `center_world`, `center_local`
 - `aabb_min_world`, `aabb_max_world`
 - `aabb_min_local`, `aabb_max_local`
+
+Pick correct lane:
+
+- Need "where is material X on this mesh instance now?" -> use instance lane.
+- Need "where is surface slot N from mesh data?" -> use data lane.
+- Need inverse hit "point/ray -> surface + runtime material" -> use instance lane.
+- Need inverse hit "point/ray -> raw surface index only" -> use data lane.
 
 What queries are:
 
@@ -218,6 +238,30 @@ for r in regions {
     // r.surface_index
     // r.center_world
     // r.aabb_min_world / r.aabb_max_world
+}
+```
+
+```rust
+// Raw mesh-data lane: query fixed surface index from mesh topology.
+let data_regions = mesh_data_surface_regions_3d!(ctx.run, mesh_node_id, 2);
+for r in data_regions {
+    // r.surface_index == 2
+    // r.material == None
+    // r.center_world
+}
+```
+
+```rust
+// Raw mesh-data inverse hit: gets surface index, no runtime material bind.
+if let Some(hit) = mesh_data_surface_on_world_ray_3d!(
+    ctx.run,
+    mesh_node_id,
+    ray_origin,
+    ray_dir,
+    100.0
+) {
+    // hit.surface_index
+    // hit.material == None
 }
 ```
 

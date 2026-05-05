@@ -221,7 +221,7 @@ impl NodeAPI for DummyRuntime {
         None
     }
 
-    fn mesh_surface_at_world_point(
+    fn mesh_instance_surface_at_world_point(
         &mut self,
         _node_id: NodeID,
         _world_point: perro_structs::Vector3,
@@ -229,7 +229,7 @@ impl NodeAPI for DummyRuntime {
         None
     }
 
-    fn mesh_surface_on_world_ray(
+    fn mesh_instance_surface_on_world_ray(
         &mut self,
         _node_id: NodeID,
         _ray_origin: perro_structs::Vector3,
@@ -239,10 +239,36 @@ impl NodeAPI for DummyRuntime {
         None
     }
 
-    fn mesh_material_regions(
+    fn mesh_instance_material_regions(
         &mut self,
         _node_id: NodeID,
         _material: perro_ids::MaterialID,
+    ) -> Vec<MeshMaterialRegion3D> {
+        Vec::new()
+    }
+
+    fn mesh_data_surface_at_world_point(
+        &mut self,
+        _node_id: NodeID,
+        _world_point: perro_structs::Vector3,
+    ) -> Option<MeshSurfaceHit3D> {
+        None
+    }
+
+    fn mesh_data_surface_on_world_ray(
+        &mut self,
+        _node_id: NodeID,
+        _ray_origin: perro_structs::Vector3,
+        _ray_direction: perro_structs::Vector3,
+        _max_distance: f32,
+    ) -> Option<MeshSurfaceHit3D> {
+        None
+    }
+
+    fn mesh_data_surface_regions(
+        &mut self,
+        _node_id: NodeID,
+        _surface_index: u32,
     ) -> Vec<MeshMaterialRegion3D> {
         Vec::new()
     }
