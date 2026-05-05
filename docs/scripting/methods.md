@@ -26,6 +26,16 @@ After that, add your own params.
 
 For custom typed params/returns in `methods!`, derive `Variant` on the custom type.
 
+Manual decode path also exists via `Variant::parse::<T>()`.
+This equals `<T as DeriveVariant>::from_variant(&value)`.
+
+```rust
+let control_mode = params
+    .first()
+    .and_then(|v| v.parse::<ArcheryControlMode>())
+    .unwrap_or_default();
+```
+
 ## Calling Methods
 
 Internal call:

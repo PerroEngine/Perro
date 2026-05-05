@@ -262,6 +262,26 @@ impl Variant {
     pub fn array() -> Self {
         Variant::Array(Vec::new())
     }
+
+    /// Decode this [`Variant`] into typed value via [`DeriveVariant`].
+    ///
+    /// Returns `None` when shape/type does not match `T`.
+    ///
+    /// # Example
+    /// ```rust
+    /// use perro_variant::Variant;
+    ///
+    /// let value = Variant::from(42_i32);
+    /// let parsed = value.parse::<i32>();
+    /// assert_eq!(parsed, Some(42));
+    /// ```
+    #[inline]
+    pub fn parse<T>(&self) -> Option<T>
+    where
+        T: DeriveVariant,
+    {
+        T::from_variant(self)
+    }
 }
 
 impl DeriveVariant for Variant {

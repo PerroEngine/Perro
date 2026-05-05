@@ -85,6 +85,16 @@ fn test_variant_array() {
     assert_eq!(v.as_array().unwrap().len(), 0);
 }
 
+#[test]
+fn test_variant_parse_helper() {
+    let num = Variant::from(42_i32);
+    assert_eq!(num.parse::<i32>(), Some(42));
+    assert_eq!(num.parse::<u32>(), None);
+
+    let list = Variant::Array(vec![Variant::from(1_i32), Variant::from(2_i32)]);
+    assert_eq!(list.parse::<Vec<i32>>(), Some(vec![1, 2]));
+}
+
 // -------------------- Variant Accessors --------------------
 
 #[test]
