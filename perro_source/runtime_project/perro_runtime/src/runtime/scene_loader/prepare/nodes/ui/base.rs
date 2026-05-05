@@ -161,6 +161,11 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.mouse_filter = v;
             }
         }
+        "clip_children" => {
+            if let Some(v) = as_bool(value) {
+                node.clip_children = v;
+            }
+        }
         "anchor" => {
             if let Some(v) = as_ui_anchor(value) {
                 node.layout.anchor = v;

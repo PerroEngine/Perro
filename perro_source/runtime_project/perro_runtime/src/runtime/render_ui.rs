@@ -1566,7 +1566,7 @@ impl Runtime {
             let Some(scene_node) = self.nodes.get(id) else {
                 break;
             };
-            if ui_root_from_data(&scene_node.data).is_some()
+            if ui_root_from_data(&scene_node.data).is_some_and(|ui| ui.clip_children)
                 && let Some(rect) = computed.get(&id).copied()
             {
                 clip = intersect_clip_rect(clip, rect_to_screen_clip(rect, viewport));

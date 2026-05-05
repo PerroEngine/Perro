@@ -423,6 +423,7 @@ pub struct UiBox {
     pub visible: bool,
     pub input_enabled: bool,
     pub mouse_filter: UiMouseFilter,
+    pub clip_children: bool,
 }
 
 impl UiBox {
@@ -433,6 +434,7 @@ impl UiBox {
             visible: true,
             input_enabled: true,
             mouse_filter: UiMouseFilter::Stop,
+            clip_children: false,
         }
     }
 }
@@ -1344,6 +1346,12 @@ mod tests {
         assert_eq!(transform.position, UiVector2::ratio(0.5, 0.5));
         assert_eq!(layout.h_align, UiHorizontalAlign::Center);
         assert_eq!(layout.v_align, UiVerticalAlign::Center);
+    }
+
+    #[test]
+    fn ui_box_defaults_to_no_child_clipping() {
+        let base = UiBox::new();
+        assert!(!base.clip_children);
     }
 
     #[test]

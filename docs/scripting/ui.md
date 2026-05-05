@@ -103,6 +103,7 @@ Common fields live on `UiBox` data and all UI nodes inherit them:
 - `visible`
 - `input_enabled`
 - `mouse_filter`
+- `clip_children`
 
 Anchors:
 
@@ -122,6 +123,8 @@ Default anchor is `center`.
 Default position is `position_ratio = (0.5, 0.5)`.
 Default `h_align` and `v_align` are `center`.
 Default label text align is `center`.
+Default `clip_children` is `false` (children may render outside parent bounds).
+Set `clip_children = true` to clip descendants to that node rect.
 `corner_radius = "full"` makes the radius half of the shortest side.
 
 ## Coordinate Space

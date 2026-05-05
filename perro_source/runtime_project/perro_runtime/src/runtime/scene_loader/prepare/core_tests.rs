@@ -202,6 +202,7 @@ mod tests {
                 visible = false
                 input_enabled = false
                 mouse_filter = "pass"
+                clip_children = true
                 anchor = "tr"
                 position_ratio = (0.5, 0.25)
                 size_ratio = (0.5, 0.1)
@@ -302,6 +303,7 @@ mod tests {
                 assert!(!button.visible);
                 assert!(!button.input_enabled);
                 assert_eq!(button.mouse_filter, UiMouseFilter::Pass);
+                assert!(button.clip_children);
                 assert_eq!(button.layout.anchor, perro_ui::UiAnchor::TopRight);
                 assert!(button.disabled);
                 assert_eq!(button.style.corner_radius, 6.0);
