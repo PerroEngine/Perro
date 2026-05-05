@@ -1077,6 +1077,7 @@ impl Runtime {
         content: ComputedUiRect,
         spacing: f32,
     ) -> Option<ComputedUiRect> {
+        let spacing = ui_h_spacing_amount(spacing, content.size.x);
         let fill_width = self.h_fill_width(children, content.size.x, spacing);
         let used_width = self.h_used_width(children, content.size, spacing, fill_width);
         let min = content.min();
@@ -1108,8 +1109,8 @@ impl Runtime {
                     layout.margin,
                     parent_layout.v_align,
                 );
-                let center =
-                    Vector2::new(x + layout.margin.left + size.x * 0.5, y) + transform.translation;
+                let center = Vector2::new(x + layout.margin.left + size.x * 0.5, y)
+                    + ui_translation_offset(transform, size);
                 return Some(ComputedUiRect::new(center, size));
             }
             x += size.x + layout.margin.horizontal() + spacing;
@@ -1131,6 +1132,7 @@ impl Runtime {
             content,
             parent_scale,
         } = layout_ctx;
+        let spacing = ui_h_spacing_amount(spacing, content.size.x);
         let fill_width = self.h_fill_width(children, content.size.x, spacing);
         let used_width = self.h_used_width(children, content.size, spacing, fill_width);
         let min = content.min();
@@ -1161,8 +1163,8 @@ impl Runtime {
                 layout.margin,
                 parent_layout.v_align,
             );
-            let center =
-                Vector2::new(x + layout.margin.left + size.x * 0.5, y) + transform.translation;
+            let center = Vector2::new(x + layout.margin.left + size.x * 0.5, y)
+                + ui_translation_offset(transform, size);
             insert_scaled_ui_child_rect(
                 computed,
                 computed_scales,
@@ -1184,6 +1186,7 @@ impl Runtime {
         content: ComputedUiRect,
         spacing: f32,
     ) -> Option<ComputedUiRect> {
+        let spacing = ui_v_spacing_amount(spacing, content.size.y);
         let fill_height = self.v_fill_height(children, content.size.y, spacing);
         let used_height = self.v_used_height(children, content.size, spacing, fill_height);
         let min = content.min();
@@ -1215,8 +1218,8 @@ impl Runtime {
                     layout.margin,
                     parent_layout.h_align,
                 );
-                let center =
-                    Vector2::new(x, y - layout.margin.top - size.y * 0.5) + transform.translation;
+                let center = Vector2::new(x, y - layout.margin.top - size.y * 0.5)
+                    + ui_translation_offset(transform, size);
                 return Some(ComputedUiRect::new(center, size));
             }
             y -= size.y + layout.margin.vertical() + spacing;
@@ -1238,6 +1241,7 @@ impl Runtime {
             content,
             parent_scale,
         } = layout_ctx;
+        let spacing = ui_v_spacing_amount(spacing, content.size.y);
         let fill_height = self.v_fill_height(children, content.size.y, spacing);
         let used_height = self.v_used_height(children, content.size, spacing, fill_height);
         let min = content.min();
@@ -1268,8 +1272,8 @@ impl Runtime {
                 layout.margin,
                 parent_layout.h_align,
             );
-            let center =
-                Vector2::new(x, y - layout.margin.top - size.y * 0.5) + transform.translation;
+            let center = Vector2::new(x, y - layout.margin.top - size.y * 0.5)
+                + ui_translation_offset(transform, size);
             insert_scaled_ui_child_rect(
                 computed,
                 computed_scales,
@@ -1328,9 +1332,11 @@ impl Runtime {
             ui_index += 1;
         }
         let index = child_index?;
+        let h_spacing = ui_h_spacing_amount(auto.h_spacing, content.size.x);
+        let v_spacing = ui_v_spacing_amount(auto.v_spacing, content.size.y);
         let used_width =
-            cell_width * used_columns as f32 + auto.h_spacing * (used_columns - 1) as f32;
-        let used_height = cell_height * row_count as f32 + auto.v_spacing * (row_count - 1) as f32;
+            cell_width * used_columns as f32 + h_spacing * (used_columns - 1) as f32;
+        let used_height = cell_height * row_count as f32 + v_spacing * (row_count - 1) as f32;
         let (layout, transform) = self
             .nodes
             .get(child)
@@ -1351,8 +1357,8 @@ impl Runtime {
         let max = content.max();
         let grid_min_x = align_h_start(min.x, content.size.x, used_width, parent_layout.h_align);
         let grid_top_y = align_v_top(max.y, content.size.y, used_height, parent_layout.v_align);
-        let cell_min_x = grid_min_x + col as f32 * (cell_width + auto.h_spacing);
-        let cell_top_y = grid_top_y - row as f32 * (cell_height + auto.v_spacing);
+        let cell_min_x = grid_min_x + col as f32 * (cell_width + h_spacing);
+        let cell_top_y = grid_top_y - row as f32 * (cell_height + v_spacing);
         let center = Vector2::new(
             align_h_center(
                 cell_min_x,
@@ -1368,7 +1374,7 @@ impl Runtime {
                 layout.margin,
                 parent_layout.v_align,
             ),
-        ) + transform.translation;
+        ) + ui_translation_offset(transform, size);
         Some(ComputedUiRect::new(center, size))
     }
 
@@ -1410,9 +1416,11 @@ impl Runtime {
 
         let used_columns = columns.min(ui_count);
         let row_count = ui_count.div_ceil(columns);
+        let h_spacing = ui_h_spacing_amount(auto.h_spacing, content.size.x);
+        let v_spacing = ui_v_spacing_amount(auto.v_spacing, content.size.y);
         let used_width =
-            cell_width * used_columns as f32 + auto.h_spacing * (used_columns - 1) as f32;
-        let used_height = cell_height * row_count as f32 + auto.v_spacing * (row_count - 1) as f32;
+            cell_width * used_columns as f32 + h_spacing * (used_columns - 1) as f32;
+        let used_height = cell_height * row_count as f32 + v_spacing * (row_count - 1) as f32;
         let min = content.min();
         let max = content.max();
         let grid_min_x = align_h_start(min.x, content.size.x, used_width, parent_layout.h_align);
@@ -1439,8 +1447,8 @@ impl Runtime {
                 Vector2::new(cell_width, cell_height),
                 Some(fill_size),
             );
-            let cell_min_x = grid_min_x + col as f32 * (cell_width + auto.h_spacing);
-            let cell_top_y = grid_top_y - row as f32 * (cell_height + auto.v_spacing);
+            let cell_min_x = grid_min_x + col as f32 * (cell_width + h_spacing);
+            let cell_top_y = grid_top_y - row as f32 * (cell_height + v_spacing);
             let center = Vector2::new(
                 align_h_center(
                     cell_min_x,
@@ -1456,7 +1464,7 @@ impl Runtime {
                     layout.margin,
                     parent_layout.v_align,
                 ),
-            ) + transform.translation;
+            ) + ui_translation_offset(transform, size);
             insert_scaled_ui_child_rect(
                 computed,
                 computed_scales,
@@ -1510,9 +1518,9 @@ impl Runtime {
             let center = Vector2::new(
                 row_content.min().x + size.x * 0.5,
                 y - layout.margin.top - size.y * 0.5,
-            ) + transform.translation;
+            ) + ui_translation_offset(transform, size);
             computed.insert(row.node, ComputedUiRect::new(center, size));
-            y -= size.y + layout.margin.vertical() + tree.v_spacing;
+            y -= size.y + layout.margin.vertical() + ui_v_spacing_amount(tree.v_spacing, content.size.y);
         }
     }
 
@@ -1689,6 +1697,7 @@ impl Runtime {
     ) -> Vector2 {
         match auto.mode {
             UiLayoutMode::H => {
+                let h_spacing = ui_h_spacing_amount(auto.h_spacing, available.x);
                 let mut width = 0.0_f32;
                 let mut height = 0.0_f32;
                 let mut count = 0_u32;
@@ -1707,11 +1716,12 @@ impl Runtime {
                     count += 1;
                 }
                 if count > 1 {
-                    width += auto.h_spacing * (count - 1) as f32;
+                    width += h_spacing * (count - 1) as f32;
                 }
                 Vector2::new(width, height)
             }
             UiLayoutMode::V => {
+                let v_spacing = ui_v_spacing_amount(auto.v_spacing, available.y);
                 let mut width = 0.0_f32;
                 let mut height = 0.0_f32;
                 let mut count = 0_u32;
@@ -1730,12 +1740,14 @@ impl Runtime {
                     count += 1;
                 }
                 if count > 1 {
-                    height += auto.v_spacing * (count - 1) as f32;
+                    height += v_spacing * (count - 1) as f32;
                 }
                 Vector2::new(width, height)
             }
             UiLayoutMode::Grid => {
                 let columns = auto.columns.max(1);
+                let h_spacing = ui_h_spacing_amount(auto.h_spacing, available.x);
+                let v_spacing = ui_v_spacing_amount(auto.v_spacing, available.y);
                 let mut width = 0.0_f32;
                 let mut row_width = 0.0_f32;
                 let mut row_height = 0.0_f32;
@@ -1753,7 +1765,7 @@ impl Runtime {
                     };
                     let size = self.resolve_ui_size(child, available, None);
                     if col > 0 {
-                        row_width += auto.h_spacing;
+                        row_width += h_spacing;
                     }
                     row_width += size.x + layout.margin.horizontal();
                     row_height = row_height.max(size.y + layout.margin.vertical());
@@ -1773,7 +1785,7 @@ impl Runtime {
                     rows += 1;
                 }
                 if rows > 1 {
-                    total_height += auto.v_spacing * (rows - 1) as f32;
+                    total_height += v_spacing * (rows - 1) as f32;
                 }
                 Vector2::new(width, total_height)
             }
@@ -1819,7 +1831,7 @@ impl Runtime {
             count += 1;
         }
         if count > 1 {
-            height += tree.v_spacing * (count - 1) as f32;
+            height += ui_v_spacing_amount(tree.v_spacing, available.y) * (count - 1) as f32;
         }
         Vector2::new(width, height)
     }
@@ -2131,6 +2143,18 @@ fn ui_fill_height(layout: &UiLayoutData, parent_layout: &UiLayoutData, available
     } else {
         0.0
     }
+}
+
+fn ui_h_spacing_amount(spacing_ratio: f32, container_width: f32) -> f32 {
+    spacing_ratio.max(0.0) * container_width.max(0.0)
+}
+
+fn ui_v_spacing_amount(spacing_ratio: f32, container_height: f32) -> f32 {
+    spacing_ratio.max(0.0) * container_height.max(0.0)
+}
+
+fn ui_translation_offset(transform: &UiTransform, size: Vector2) -> Vector2 {
+    transform.translation_offset(size)
 }
 
 fn safe_ui_scale(scale: Vector2) -> Vector2 {
@@ -3127,12 +3151,12 @@ mod tests {
 
         let mut parent_a = UiPanel::new();
         parent_a.layout.size = UiVector2::pixels(200.0, 200.0);
-        parent_a.transform.translation.x = -100.0;
+        parent_a.transform.translation.x = -0.5;
         let parent_a = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_a));
 
         let mut parent_b = UiPanel::new();
         parent_b.layout.size = UiVector2::pixels(200.0, 200.0);
-        parent_b.transform.translation.x = 100.0;
+        parent_b.transform.translation.x = 0.5;
         let parent_b = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_b));
 
         let child = insert_panel(&mut runtime, [40.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
@@ -3261,7 +3285,7 @@ mod tests {
 
         let mut layout = UiHLayout::new();
         layout.layout.size = UiVector2::pixels(300.0, 120.0);
-        layout.inner.h_spacing = 20.0;
+        layout.inner.h_spacing = 20.0 / 300.0;
         let layout = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
 
         let left = insert_panel(&mut runtime, [80.0, 80.0], Color::new(1.0, 0.0, 0.0, 1.0));
@@ -3676,7 +3700,7 @@ mod tests {
 
         let mut layout = UiHLayout::new();
         layout.layout.size = UiVector2::pixels(300.0, 100.0);
-        layout.inner.spacing = 10.0;
+        layout.inner.spacing = 10.0 / 300.0;
         let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
         let first = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
         let middle = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
@@ -3737,8 +3761,8 @@ mod tests {
         let mut grid = UiGrid::new();
         grid.layout.size = UiVector2::pixels(300.0, 200.0);
         grid.columns = 3;
-        grid.h_spacing = 10.0;
-        grid.v_spacing = 10.0;
+        grid.h_spacing = 10.0 / 300.0;
+        grid.v_spacing = 10.0 / 200.0;
         let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
 
         let mut children = Vec::new();
@@ -3772,7 +3796,7 @@ mod tests {
         let mut grid = UiGrid::new();
         grid.layout.size = UiVector2::pixels(400.0, 200.0);
         grid.columns = 3;
-        grid.h_spacing = 10.0;
+        grid.h_spacing = 10.0 / 400.0;
         let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
 
         let first = insert_panel(&mut runtime, [80.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
@@ -3813,8 +3837,8 @@ mod tests {
         let mut grid = UiGrid::new();
         grid.layout.size = UiVector2::pixels(300.0, 200.0);
         grid.columns = 3;
-        grid.h_spacing = 10.0;
-        grid.v_spacing = 10.0;
+        grid.h_spacing = 10.0 / 300.0;
+        grid.v_spacing = 10.0 / 200.0;
         let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
 
         let first = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
@@ -4245,7 +4269,7 @@ mod tests {
         let mut tree = UiTreeList::new();
         tree.layout.size = UiVector2::pixels(300.0, 200.0);
         tree.indent = 20.0;
-        tree.v_spacing = 4.0;
+        tree.v_spacing = 4.0 / 200.0;
         let tree_id = insert_ui_node(&mut runtime, SceneNodeData::UiTreeList(tree));
 
         let root = insert_panel(&mut runtime, [100.0, 20.0], Color::new(0.1, 0.2, 0.3, 1.0));

@@ -206,7 +206,18 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
             }
         }
         // Absolute translation unsupported for UI authoring.
+        // Use `translation_ratio` or `translation_percent`.
         "translation" => {}
+        "translation_percent" | "translation_pct" => {
+            if let Some(v) = as_vec2(value) {
+                node.transform.translation = perro_structs::Vector2::new(v.x * 0.01, v.y * 0.01);
+            }
+        }
+        "translation_ratio" => {
+            if let Some(v) = as_vec2(value) {
+                node.transform.translation = v;
+            }
+        }
         "scale" => {
             if let Some(v) = as_vec2(value) {
                 node.transform.scale = v;

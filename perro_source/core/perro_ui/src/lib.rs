@@ -300,6 +300,13 @@ impl UiTransform {
         self.position.resolve(parent_size) + self.translation
     }
 
+    pub fn translation_offset(&self, resolved_size: Vector2) -> Vector2 {
+        Vector2::new(
+            self.translation.x * resolved_size.x,
+            self.translation.y * resolved_size.y,
+        )
+    }
+
     pub fn scale_size(&self, size: Vector2) -> Vector2 {
         Vector2::new(size.x * self.scale.x, size.y * self.scale.y)
     }
@@ -397,7 +404,7 @@ impl UiLayoutData {
         let position = transform.position.resolve_centered(parent.size);
 
         ComputedUiRect::new(
-            anchor_point - inward_from_edge + position + transform.translation + pivot_offset,
+            anchor_point - inward_from_edge + position + transform.translation_offset(size) + pivot_offset,
             size,
         )
     }

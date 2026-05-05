@@ -88,6 +88,8 @@ Common fields live on `UiBox` data and all UI nodes inherit them:
 - `size_ratio`
 - `pivot_percent`
 - `pivot_ratio`
+- `translation_percent`
+- `translation_ratio`
 - `scale`
 - `h_size`
 - `v_size`
@@ -130,6 +132,8 @@ Children use parent UI rect as parent.
 
 `position_ratio = (0.5, 0.5)` means no offset from the anchor.
 `pivot_ratio = (0.5, 0.5)` means pivot at node center.
+`translation_ratio = (x, y)` offsets by own resolved size.
+Example: `translation_ratio = (0.0, 0.5)` moves node by half own height on Y.
 `scale` multiplies final clamped size.
 `h_size` and `v_size` accept `fixed`, `fill`, or `fit_children`.
 `h_align` accepts `start`, `center`, `end`, or `fill`.
@@ -140,6 +144,10 @@ Baseline size = node resolved size at spawn/creation time.
 If size definition changes later (`size_ratio`, size mode), baseline rebases to new resolved size.
 `min_size_ratio = (1.0, 1.0)` + `max_size_ratio = (1.0, 1.0)` locks node at spawn-relative size, since it can only be 100% of it's creation size.
 `min_size_ratio = (0.8, 0.8)` + `max_size_ratio = (1.2, 1.2)` allows small dynamic scale band up and down for changing window size, but not so unruly that it compresses or enlarges.
+Layout spacing keys are ratio-based:
+`spacing`, `h_spacing` resolve against parent content width.
+`v_spacing` resolves against parent content height.
+Example: grid `size_ratio = (1, 1)` + `h_spacing = 0.25` => horizontal gap = 25% of container width.
 Absolute UI keys unsupported in scenes:
 `position`, `pivot`, `translation`, `size`, `min_size`, `max_size`, `min_w`, `min_h`, `max_w`, `max_h`, `font_size`.
 Use ratio/percent keys + `text_size_ratio`.
