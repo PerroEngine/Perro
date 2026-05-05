@@ -22,11 +22,13 @@ use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;
+use perro_ids::MeshID;
 use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::pack_meshlets_from_positions;
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, Material3D, MaterialParamOverride3D,
-    MaterialParamOverrideValue3D, MeshSurfaceBinding3D, RuntimeMeshData, StandardMaterial3D,
+    MaterialParamOverrideValue3D, Mesh3D, MeshSurfaceBinding3D, MeshSurfaceRange, RuntimeMeshData,
+    RuntimeMeshVertex, StandardMaterial3D,
 };
 use std::{
     borrow::Cow,
@@ -394,7 +396,7 @@ pub struct Gpu3D {
     builtin_mesh_ranges: AHashMap<&'static str, MeshRange>,
     builtin_mesh_bounds: AHashMap<&'static str, ([f32; 3], f32)>,
     builtin_meshlets: AHashMap<&'static str, Arc<[MeshletRange]>>,
-    custom_mesh_ranges: AHashMap<String, MeshAssetRange>,
+    custom_mesh_ranges: AHashMap<MeshID, (u64, MeshAssetRange)>,
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
     depth_prepass_texture: wgpu::Texture,
@@ -2509,7 +2511,7 @@ impl Gpu3D {
             static_shader_lookup,
         } = frame;
         self.custom_mesh_ranges
-            .retain(|source, _| resources.has_mesh_source(source));
+            .retain(|mesh_id, _| resources.has_mesh(*mesh_id));
         self.resize(device, width, height);
         self.ensure_material_fallback_texture(device, queue);
         self.frustum_cull_enabled = self.frustum_cull_supported;
@@ -2967,8 +2969,15 @@ impl Gpu3D {
                 Draw3DKind::DebugEdgeCylinder => "__cylinder__",
             };
             let mesh_asset = match draw.kind {
-                Draw3DKind::Mesh(_) => self
-                    .resolve_mesh_range(device, queue, resources, mesh_source, static_mesh_lookup)
+                Draw3DKind::Mesh(mesh_id) => self
+                    .resolve_mesh_range(
+                        device,
+                        queue,
+                        resources,
+                        mesh_id,
+                        mesh_source,
+                        static_mesh_lookup,
+                    )
                     .unwrap_or_else(|| default_mesh.clone()),
                 Draw3DKind::DebugPointCube => self
                     .resolve_builtin_mesh_asset("__cube__")
@@ -5086,6 +5095,7 @@ impl Gpu3D {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         resources: &ResourceStore,
+        mesh_id: MeshID,
         source: &str,
         static_mesh_lookup: Option<StaticMeshLookup>,
     ) -> Option<MeshAssetRange> {
@@ -5107,18 +5117,30 @@ impl Gpu3D {
                 bounds_radius,
             });
         }
-        if let Some(range) = self.custom_mesh_ranges.get(source).cloned() {
+        let revision = resources.mesh_revision(mesh_id);
+        if let Some((cached_revision, range)) = self.custom_mesh_ranges.get(&mesh_id).cloned()
+            && cached_revision == revision
+        {
             return Some(range);
         }
-        let decoded = load_mesh_from_source(
-            source,
-            static_mesh_lookup,
-            resources.runtime_mesh_data(source),
-            self.meshlets_enabled && self.dev_meshlets,
-        )?;
+        let decoded = if let Some(mesh) = resources.runtime_mesh_data_by_id(mesh_id) {
+            load_mesh_from_source(
+                source,
+                static_mesh_lookup,
+                Some(mesh),
+                self.meshlets_enabled && self.dev_meshlets,
+            )?
+        } else {
+            load_mesh_from_source(
+                source,
+                static_mesh_lookup,
+                resources.runtime_mesh_data(source),
+                self.meshlets_enabled && self.dev_meshlets,
+            )?
+        };
         let range = self.append_mesh_data(device, queue, source, decoded)?;
         self.custom_mesh_ranges
-            .insert(source.to_string(), range.clone());
+            .insert(mesh_id, (revision, range.clone()));
         Some(range)
     }
 
@@ -5467,6 +5489,35 @@ pub(crate) fn validate_mesh_source(
     Err(format!("mesh source failed to decode: {}", source))
 }
 
+pub(crate) fn load_mesh3d_from_source(
+    source: &str,
+    static_mesh_lookup: Option<StaticMeshLookup>,
+) -> Option<Mesh3D> {
+    let decoded = load_mesh_from_source(source, static_mesh_lookup, None, false)?;
+    Some(Mesh3D {
+        vertices: decoded
+            .vertices
+            .into_iter()
+            .map(|v| RuntimeMeshVertex {
+                position: v.pos,
+                normal: v.normal,
+                uv: v.uv,
+                joints: v.joints,
+                weights: v.weights,
+            })
+            .collect(),
+        indices: decoded.indices,
+        surface_ranges: decoded
+            .surface_ranges
+            .into_iter()
+            .map(|range| MeshSurfaceRange {
+                index_start: range.index_start,
+                index_count: range.index_count,
+            })
+            .collect(),
+    })
+}
+
 fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
     if mesh.vertices.is_empty() || mesh.indices.is_empty() {
         return None;
@@ -5507,10 +5558,33 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
     {
         return None;
     }
+    let mut surface_ranges = Vec::new();
+    if mesh.surface_ranges.is_empty() {
+        surface_ranges.push(MeshRange {
+            index_start: 0,
+            index_count: mesh.indices.len() as u32,
+            base_vertex: 0,
+        });
+    } else {
+        for range in &mesh.surface_ranges {
+            let end = range.index_start.checked_add(range.index_count)?;
+            if end > mesh.indices.len() as u32 {
+                return None;
+            }
+            if !range.index_count.is_multiple_of(3) {
+                return None;
+            }
+            surface_ranges.push(MeshRange {
+                index_start: range.index_start,
+                index_count: range.index_count,
+                base_vertex: 0,
+            });
+        }
+    }
     Some(DecodedMesh {
         vertices,
         indices: mesh.indices.clone(),
-        surface_ranges: Vec::new(),
+        surface_ranges,
         meshlets: Vec::new(),
     })
 }

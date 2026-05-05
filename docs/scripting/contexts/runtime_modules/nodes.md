@@ -141,6 +141,7 @@ Pick correct lane:
 What queries are:
 
 - For deeper query docs (mental model, patterns, perf), see [Query System](../../query_system.md).
+- For mesh query perf snapshot + budget table, see [Mesh Query Perf Snapshot](../../mesh_query_perf.md).
 - Query is a runtime filter that returns `NodeID` of nodes that match the values.
 - You can combine boolean expressions and type/name/tag predicates.
 - `in_subtree(parent_id)` restricts matches to descendants of that node's children, by default the entire tree is queried.

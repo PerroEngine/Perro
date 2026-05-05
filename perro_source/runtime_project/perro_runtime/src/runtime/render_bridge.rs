@@ -30,7 +30,7 @@ impl Runtime {
     }
 
     pub fn apply_render_event(&mut self, event: RenderEvent) {
-        if let RenderEvent::MeshCreated { request, id } = &event
+        if let RenderEvent::MeshCreated { request, id, .. } = &event
             && let Some(node) = decode_3d_mesh_request_node(*request)
             && let Some(source) = self.render_3d.mesh_sources.get(&node).cloned()
         {

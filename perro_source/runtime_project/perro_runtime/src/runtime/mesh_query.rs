@@ -1504,7 +1504,7 @@ fn closest_point_on_triangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Vec3 {
 mod tests {
     use super::*;
     use std::hint::black_box;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     fn tri_workload(tri_count: usize, surface_count: usize) -> f32 {
         let mut out = 0.0_f32;
@@ -1517,6 +1517,111 @@ mod tests {
             out += closest_point_on_triangle(p, a, b, c).length_squared();
         }
         out
+    }
+
+    fn build_synth_query_mesh(tri_count: usize, surface_count: usize) -> QueryMeshData {
+        let surface_count = surface_count.max(1);
+        let mut vertices = Vec::with_capacity(tri_count.saturating_mul(3));
+        let mut triangles = Vec::with_capacity(tri_count);
+        for tri_index in 0..tri_count {
+            let base = (tri_index * 3) as u32;
+            let s = (tri_index % surface_count) as f32;
+            let x = tri_index as f32 * 0.0003;
+            vertices.push(Vec3::new(x, s * 0.0002, 0.0));
+            vertices.push(Vec3::new(x + 0.0001, 0.001 + s * 0.0001, 0.0));
+            vertices.push(Vec3::new(x, 0.0002 + s * 0.0001, 0.001));
+            triangles.push(QueryTri {
+                a: base,
+                b: base + 1,
+                c: base + 2,
+                surface_index: (tri_index % surface_count) as u32,
+            });
+        }
+        build_query_mesh_data(vertices, triangles).expect("synth query mesh")
+    }
+
+    fn point_query_workload(mesh: &QueryMeshData, p_local: Vec3) -> f32 {
+        if mesh.bvh_nodes.is_empty() {
+            return 0.0;
+        }
+        let mut best_metric = f32::INFINITY;
+        let mut best_surface = 0_u32;
+        let mut stack = vec![0_u32];
+        while let Some(node_idx) = stack.pop() {
+            let Some(bvh) = mesh.bvh_nodes.get(node_idx as usize).copied() else {
+                continue;
+            };
+            let node_d2 = aabb_distance2(p_local, bvh.aabb_min, bvh.aabb_max);
+            if node_d2 >= best_metric {
+                continue;
+            }
+            if bvh.left == u32::MAX || bvh.right == u32::MAX {
+                let start = bvh.tri_start as usize;
+                let end = start + bvh.tri_count as usize;
+                for &tri_idx in &mesh.bvh_tri_indices[start..end] {
+                    let tri_idx = tri_idx as usize;
+                    let tri = mesh.triangles[tri_idx];
+                    let acc = mesh.tri_accel[tri_idx];
+                    let tri_d2 = aabb_distance2(p_local, acc.aabb_min, acc.aabb_max);
+                    if tri_d2 >= best_metric {
+                        continue;
+                    }
+                    let a = mesh.vertices[tri.a as usize];
+                    let b = mesh.vertices[tri.b as usize];
+                    let c = mesh.vertices[tri.c as usize];
+                    let nearest_local = closest_point_on_triangle(p_local, a, b, c);
+                    let d2 = nearest_local.distance_squared(p_local);
+                    if d2 < best_metric {
+                        best_metric = d2;
+                        best_surface = tri.surface_index;
+                    }
+                }
+            } else {
+                let left = mesh.bvh_nodes[bvh.left as usize];
+                let right = mesh.bvh_nodes[bvh.right as usize];
+                let ld2 = aabb_distance2(p_local, left.aabb_min, left.aabb_max);
+                let rd2 = aabb_distance2(p_local, right.aabb_min, right.aabb_max);
+                if ld2 < rd2 {
+                    stack.push(bvh.right);
+                    stack.push(bvh.left);
+                } else {
+                    stack.push(bvh.left);
+                    stack.push(bvh.right);
+                }
+            }
+        }
+        if best_metric.is_finite() {
+            best_metric + best_surface as f32 * 1e-6
+        } else {
+            0.0
+        }
+    }
+
+    fn measure_us_per_query(mesh: &QueryMeshData) -> f64 {
+        let points = [
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.2, 0.1, -0.1),
+            Vec3::new(-0.1, 0.3, 0.2),
+            Vec3::new(0.4, -0.2, 0.15),
+            Vec3::new(0.05, 0.07, -0.11),
+            Vec3::new(-0.33, 0.44, 0.12),
+            Vec3::new(0.6, -0.1, 0.05),
+            Vec3::new(-0.25, -0.15, 0.4),
+        ];
+        let mut iters = 64usize;
+        loop {
+            let start = Instant::now();
+            let mut acc = 0.0_f32;
+            for i in 0..iters {
+                acc += point_query_workload(mesh, points[i % points.len()]);
+            }
+            let elapsed = start.elapsed();
+            black_box(acc);
+            if elapsed >= Duration::from_millis(25) || iters >= (1 << 22) {
+                return elapsed.as_secs_f64() * 1_000_000.0 / iters as f64;
+            }
+            iters *= 2;
+        }
     }
 
     #[test]
@@ -1556,6 +1661,30 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn bench_mesh_query_fixed_vertex_count_latency() {
+        const TARGET_VERTICES: usize = 1_000_000;
+        let surface_counts = [1usize, 4, 16, 64, 256];
+        let tri_count = (TARGET_VERTICES / 3).max(1);
+        let vertex_count = tri_count.saturating_mul(3);
+        println!("running tests w/ vertices={vertex_count}, triangles={tri_count}");
+        println!("surfaces,vertices,triangles,time_to_query_us");
+        for &surface_count in &surface_counts {
+            let mesh = build_synth_query_mesh(tri_count, surface_count);
+            let mut samples = [
+                measure_us_per_query(&mesh),
+                measure_us_per_query(&mesh),
+                measure_us_per_query(&mesh),
+            ];
+            samples.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let time_to_query_us = samples[1];
+            println!(
+                "{surface_count},{vertex_count},{tri_count},{time_to_query_us:.6}"
+            );
         }
     }
 }

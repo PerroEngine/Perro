@@ -8,6 +8,7 @@ Type:
 Purpose:
 
 - Accesing resource state at runtime
+- Mesh/material data types used by resource APIs are available from Perro prelude.
 
 Accessors:
 
@@ -43,11 +44,19 @@ Each module page contains:
 - Examples
 - Notes on behavior and caveats
 - Exact load/reserve/drop semantics where applicable
+- Copy snapshot read/write/create data APIs for runtime resources where supported
 
 Reserve convention:
 
 - `load` implies `reserved: false` (auto-evict when no references remain).
 - `reserve` implies `reserved: true` (keep cached until explicit drop).
+
+Copy data workflow:
+
+- Read snapshot copy (`mesh_get_data!` / `material_get_data!`)
+- Edit in script code
+- Commit once (`mesh_write!` / `material_write!`)
+- Prefer load-screen/batched edits, not per-frame writes
 
 ## Localization Setup
 

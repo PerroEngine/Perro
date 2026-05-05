@@ -11,6 +11,7 @@
 - [Math Types](scripting/math_types.md)
 - [Node Types](scripting/nodes.md)
 - [Query System](scripting/query_system.md)
+- [Mesh Query Perf Snapshot](scripting/mesh_query_perf.md)
 - [UI Nodes](scripting/ui.md)
 - [Scene Node Templates](scripting/scene_node_templates.md)
 - [Script State](scripting/state.md)

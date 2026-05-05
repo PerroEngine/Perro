@@ -1,8 +1,12 @@
 use perro_ids::MeshID;
+use perro_render_bridge::Mesh3D;
 
 pub trait MeshAPI {
     fn load_mesh_hashed(&self, source_hash: u64, source: Option<&str>) -> MeshID;
     fn reserve_mesh_hashed(&self, source_hash: u64, source: Option<&str>) -> MeshID;
+    fn create_mesh_data(&self, data: Mesh3D) -> MeshID;
+    fn get_mesh_data(&self, id: MeshID) -> Option<Mesh3D>;
+    fn write_mesh_data(&self, id: MeshID, data: Mesh3D) -> bool;
     fn load_mesh(&self, source: &str) -> MeshID {
         self.load_mesh_hashed(perro_ids::string_to_u64(source), Some(source))
     }
@@ -55,6 +59,21 @@ impl<'res, R: MeshAPI + ?Sized> MeshModule<'res, R> {
     pub fn drop(&self, id: MeshID) -> bool {
         self.api.drop_mesh(id)
     }
+
+    #[inline]
+    pub fn create(&self, data: Mesh3D) -> MeshID {
+        self.api.create_mesh_data(data)
+    }
+
+    #[inline]
+    pub fn get_data(&self, id: MeshID) -> Option<Mesh3D> {
+        self.api.get_mesh_data(id)
+    }
+
+    #[inline]
+    pub fn write(&self, id: MeshID, data: Mesh3D) -> bool {
+        self.api.write_mesh_data(id, data)
+    }
 }
 
 #[macro_export]
@@ -83,5 +102,26 @@ macro_rules! mesh_reserve {
 macro_rules! mesh_drop {
     ($res:expr, $id:expr) => {
         $res.Meshes().drop($id)
+    };
+}
+
+#[macro_export]
+macro_rules! mesh_create {
+    ($res:expr, $data:expr) => {
+        $res.Meshes().create($data)
+    };
+}
+
+#[macro_export]
+macro_rules! mesh_get_data {
+    ($res:expr, $id:expr) => {
+        $res.Meshes().get_data($id)
+    };
+}
+
+#[macro_export]
+macro_rules! mesh_write {
+    ($res:expr, $id:expr, $data:expr) => {
+        $res.Meshes().write($id, $data)
     };
 }

@@ -243,7 +243,7 @@ impl RenderState {
 
     pub(crate) fn apply_event(&mut self, event: RenderEvent) {
         match event {
-            RenderEvent::MeshCreated { request, id } => {
+            RenderEvent::MeshCreated { request, id, .. } => {
                 self.inflight_requests.remove(&request);
                 self.resolved_requests
                     .insert(request, RuntimeRenderResult::Mesh(id));

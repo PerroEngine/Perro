@@ -6,7 +6,11 @@ use crate::{
     resources::ResourceStore,
     three_d::particles::renderer::Particles3DRenderer,
     three_d::renderer::Renderer3D,
-    three_d::{gpu::validate_mesh_source, renderer::Draw3DInstance, renderer::Draw3DKind},
+    three_d::{
+        gpu::{load_mesh3d_from_source, validate_mesh_source},
+        renderer::Draw3DInstance,
+        renderer::Draw3DKind,
+    },
     two_d::renderer::{RectInstanceGpu, Renderer2D},
     ui::renderer::UiRenderer,
 };
@@ -287,9 +291,17 @@ impl PerroGraphics {
                             self.resources
                                 .create_mesh_with_id(id, source.as_str(), reserved)
                         };
+                        let mesh_data = load_mesh3d_from_source(source.as_str(), self.static_mesh_lookup);
+                        if let Some(mesh) =
+                            mesh_data.clone()
+                        {
+                            self.resources.set_runtime_mesh_data(source.as_str(), mesh.clone());
+                            let _ = self.resources.set_runtime_mesh_data_by_id(out_id, mesh);
+                        }
                         self.events.push(RenderEvent::MeshCreated {
                             request,
                             id: out_id,
+                            mesh: mesh_data,
                         });
                     }
                     ResourceCommand::CreateRuntimeMesh {
@@ -305,11 +317,16 @@ impl PerroGraphics {
                             self.resources
                                 .create_mesh_with_id(id, source.as_str(), reserved)
                         };
-                        self.resources.set_runtime_mesh_data(source.as_str(), mesh);
+                        self.resources.set_runtime_mesh_data(source.as_str(), mesh.clone());
+                        let _ = self.resources.set_runtime_mesh_data_by_id(out_id, mesh.clone());
                         self.events.push(RenderEvent::MeshCreated {
                             request,
                             id: out_id,
+                            mesh: Some(mesh),
                         });
+                    }
+                    ResourceCommand::WriteMeshData { id, mesh } => {
+                        let _ = self.resources.set_runtime_mesh_data_by_id(id, mesh);
                     }
                     ResourceCommand::CreateTexture {
                         request,
@@ -346,6 +363,9 @@ impl PerroGraphics {
                         };
                         self.events
                             .push(RenderEvent::MaterialCreated { request, id });
+                    }
+                    ResourceCommand::WriteMaterialData { id, material } => {
+                        let _ = self.resources.set_material_data(id, material);
                     }
                     ResourceCommand::SetMeshReserved { id, reserved } => {
                         self.resources.set_mesh_reserved(id, reserved);

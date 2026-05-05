@@ -93,7 +93,7 @@ impl RuntimeResourceApi {
                     }
                 }
             }
-            RenderEvent::MeshCreated { request, id } => {
+            RenderEvent::MeshCreated { request, id, mesh } => {
                 if id.is_nil() {
                     if let Some(source) = state.mesh_pending_source_by_request.remove(request) {
                         let source_hash = string_to_u64(&source);
@@ -108,6 +108,9 @@ impl RuntimeResourceApi {
                     return;
                 }
                 let _ = state.occupy_mesh_id(*id);
+                if let Some(mesh) = mesh {
+                    state.mesh_data_by_id.insert(*id, mesh.clone());
+                }
                 if let Some(source) = state.mesh_pending_source_by_request.remove(request) {
                     let source_hash = string_to_u64(&source);
                     state.mesh_pending_by_source.remove(&source_hash);
@@ -143,10 +146,10 @@ impl RuntimeResourceApi {
             }
             RenderEvent::MaterialCreated { request, id } => {
                 let _ = state.occupy_material_id(*id);
+                let pending_id = state.material_pending_id_by_request.remove(request);
                 if let Some(source) = state.material_pending_source_by_request.remove(request) {
                     let source_hash = string_to_u64(&source);
                     state.material_pending_by_source.remove(&source_hash);
-                    let pending_id = state.material_pending_id_by_request.remove(request);
                     if state.material_drop_pending.remove(&source_hash) {
                         state.queued_commands.push(RenderCommand::Resource(
                             perro_render_bridge::ResourceCommand::DropMaterial { id: *id },
@@ -167,6 +170,14 @@ impl RuntimeResourceApi {
                         }
                     }
                 }
+                if let Some(pending_id) = pending_id
+                    && pending_id != *id
+                {
+                    if let Some(data) = state.material_data_by_id.remove(&pending_id) {
+                        state.material_data_by_id.insert(*id, data);
+                    }
+                    let _ = state.free_material_id(pending_id);
+                }
             }
             RenderEvent::Failed { request, .. } => {
                 if let Some(source) = state.texture_pending_source_by_request.remove(request) {
@@ -184,6 +195,7 @@ impl RuntimeResourceApi {
                     state.mesh_pending_by_source.remove(&source_hash);
                     if let Some(pending_id) = state.mesh_pending_id_by_request.remove(request) {
                         let _ = state.free_mesh_id(pending_id);
+                        state.mesh_data_by_id.remove(&pending_id);
                     }
                     state.mesh_by_source.remove(&source_hash);
                     state.mesh_reserve_pending.remove(&source_hash);
@@ -194,10 +206,15 @@ impl RuntimeResourceApi {
                     state.material_pending_by_source.remove(&source_hash);
                     if let Some(pending_id) = state.material_pending_id_by_request.remove(request) {
                         let _ = state.free_material_id(pending_id);
+                        state.material_data_by_id.remove(&pending_id);
                     }
                     state.material_by_source.remove(&source_hash);
                     state.material_reserve_pending.remove(&source_hash);
                     state.material_drop_pending.remove(&source_hash);
+                }
+                if let Some(pending_id) = state.material_pending_id_by_request.remove(request) {
+                    let _ = state.free_material_id(pending_id);
+                    state.material_data_by_id.remove(&pending_id);
                 }
             }
         }

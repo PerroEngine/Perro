@@ -4,6 +4,9 @@ pub mod sub_apis;
 pub use api::ResourceWindow;
 #[doc(hidden)]
 pub use perro_ids::string_to_u64 as __perro_string_to_u64;
+pub use perro_render_bridge::{
+    Material3D, Mesh3D, MeshSurfaceRange, RuntimeMeshVertex,
+};
 pub use perro_scene::{Scene, SceneDoc, SceneWrite};
 
 pub mod prelude {
@@ -20,14 +23,18 @@ pub mod prelude {
         audio_length_millis, audio_length_seconds, audio_load, audio_play, audio_reserve,
         audio_set_master_volume, audio_stop, audio_stop_all, audio_stop_source,
         disable_colorblind_filter, draw, enable_colorblind_filter, get_viewport_size, locale,
-        locale_get_current, locale_in, locale_set, material_create, material_drop, material_load,
-        material_reserve, mesh_drop, mesh_load, mesh_reserve, post_processing_add,
+        locale_get_current, locale_in, locale_set, material_create, material_drop,
+        material_get_data, material_load, material_reserve, material_write, mesh_create,
+        mesh_drop, mesh_get_data, mesh_load, mesh_reserve, mesh_write, post_processing_add,
         post_processing_clear, post_processing_remove, post_processing_set, scene_load_doc,
         scene_save_doc, skeleton_load_bones, texture_drop, texture_load, texture_reserve,
     };
     pub use perro_ids::prelude::{
         AnimationID, LightID, MaterialID, MeshID, NodeID, ScriptMemberID, SignalID, TagID,
         TextureID, UIElementID,
+    };
+    pub use perro_render_bridge::{
+        Material3D, Mesh3D, MeshSurfaceRange, RuntimeMeshVertex,
     };
     pub use perro_scene::{Scene, SceneDoc, SceneWrite};
 }

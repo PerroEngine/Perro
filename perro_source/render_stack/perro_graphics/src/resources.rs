@@ -1,6 +1,6 @@
 use ahash::AHashMap;
 use perro_ids::{MaterialID, MeshID, TextureID};
-use perro_render_bridge::{Material3D, RuntimeMeshData};
+use perro_render_bridge::{Material3D, Mesh3D};
 
 #[derive(Default)]
 struct SlotArena {
@@ -94,7 +94,9 @@ pub struct ResourceStore {
     mesh_by_source: AHashMap<String, MeshID>,
     mesh_source_by: AHashMap<MeshID, String>,
     mesh_source_by_slot: Vec<Option<String>>,
-    runtime_mesh_by_source: AHashMap<String, RuntimeMeshData>,
+    runtime_mesh_by_source: AHashMap<String, Mesh3D>,
+    runtime_mesh_by_id: AHashMap<MeshID, Mesh3D>,
+    mesh_revision_by_id: AHashMap<MeshID, u64>,
     texture_by_source: AHashMap<String, TextureID>,
     texture_source_by: AHashMap<TextureID, String>,
     texture_source_by_slot: Vec<Option<String>>,
@@ -195,6 +197,7 @@ impl ResourceStore {
                 ..ResourceMeta::default()
             },
         );
+        self.mesh_revision_by_id.insert(id, 0);
         self.log_resource_created("mesh", index, generation, source, reserved);
         id
     }
@@ -229,6 +232,7 @@ impl ResourceStore {
                 ..ResourceMeta::default()
             },
         );
+        self.mesh_revision_by_id.insert(id, 0);
         self.log_resource_created("mesh", id.index(), id.generation(), source, reserved);
         id
     }
@@ -426,13 +430,46 @@ impl ResourceStore {
     }
 
     #[inline]
-    pub fn set_runtime_mesh_data(&mut self, source: &str, mesh: RuntimeMeshData) {
+    pub fn set_runtime_mesh_data(&mut self, source: &str, mesh: Mesh3D) {
         self.runtime_mesh_by_source.insert(source.to_string(), mesh);
     }
 
     #[inline]
-    pub fn runtime_mesh_data(&self, source: &str) -> Option<&RuntimeMeshData> {
+    pub fn runtime_mesh_data(&self, source: &str) -> Option<&Mesh3D> {
         self.runtime_mesh_by_source.get(source)
+    }
+
+    #[inline]
+    pub fn set_runtime_mesh_data_by_id(&mut self, id: MeshID, mesh: Mesh3D) -> bool {
+        if !self.has_mesh(id) {
+            return false;
+        }
+        self.runtime_mesh_by_id.insert(id, mesh.clone());
+        let entry = self.mesh_revision_by_id.entry(id).or_insert(0);
+        *entry = entry.wrapping_add(1);
+        if let Some(source) = self.mesh_source(id).map(str::to_string) {
+            self.runtime_mesh_by_source.insert(source, mesh);
+        }
+        true
+    }
+
+    #[inline]
+    pub fn runtime_mesh_data_by_id(&self, id: MeshID) -> Option<&Mesh3D> {
+        self.runtime_mesh_by_id.get(&id)
+    }
+
+    #[inline]
+    pub fn mesh_revision(&self, id: MeshID) -> u64 {
+        self.mesh_revision_by_id.get(&id).copied().unwrap_or(0)
+    }
+
+    #[inline]
+    pub fn set_material_data(&mut self, id: MaterialID, material: Material3D) -> bool {
+        if !self.has_material(id) {
+            return false;
+        }
+        self.material_by.insert(id, material);
+        true
     }
 
     #[inline]
@@ -658,6 +695,8 @@ impl ResourceStore {
             self.mesh_by_source.remove(&source);
             self.runtime_mesh_by_source.remove(&source);
         }
+        self.runtime_mesh_by_id.remove(&id);
+        self.mesh_revision_by_id.remove(&id);
         self.clear_mesh_source_slot(id.index());
         self.mesh_meta_by.remove(&id);
         true

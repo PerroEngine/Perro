@@ -621,10 +621,20 @@ pub struct RuntimeMeshVertex {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct RuntimeMeshData {
+pub struct MeshSurfaceRange {
+    pub index_start: u32,
+    pub index_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Mesh3D {
     pub vertices: Vec<RuntimeMeshVertex>,
     pub indices: Vec<u32>,
+    pub surface_ranges: Vec<MeshSurfaceRange>,
 }
+
+pub type RuntimeMeshDataSnapshot = Mesh3D;
+pub type RuntimeMeshData = Mesh3D;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SkeletonPalette {
@@ -659,7 +669,11 @@ pub enum ResourceCommand {
         id: MeshID,
         source: String,
         reserved: bool,
-        mesh: RuntimeMeshData,
+        mesh: Mesh3D,
+    },
+    WriteMeshData {
+        id: MeshID,
+        mesh: Mesh3D,
     },
     CreateTexture {
         request: RenderRequestID,
@@ -673,6 +687,10 @@ pub enum ResourceCommand {
         material: Material3D,
         source: Option<String>,
         reserved: bool,
+    },
+    WriteMaterialData {
+        id: MaterialID,
+        material: Material3D,
     },
     SetMeshReserved {
         id: MeshID,
@@ -831,6 +849,7 @@ pub enum RenderEvent {
     MeshCreated {
         request: RenderRequestID,
         id: MeshID,
+        mesh: Option<Mesh3D>,
     },
     TextureCreated {
         request: RenderRequestID,

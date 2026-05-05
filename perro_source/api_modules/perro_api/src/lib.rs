@@ -18,6 +18,7 @@ pub mod prelude {
     pub use perro_modules::prelude::*;
     pub use perro_nodes::prelude::*;
     pub use perro_project::create_new_project;
+    pub use perro_resource_context::prelude::*;
     pub use perro_scene;
     pub use perro_scripting::prelude::*;
     pub use perro_structs::prelude::*;

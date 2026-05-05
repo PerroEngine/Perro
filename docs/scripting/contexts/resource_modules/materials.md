@@ -10,6 +10,15 @@ Macros:
 - `material_reserve!(res, source) -> MaterialID`
 - `material_drop!(res, source) -> bool`
 - `material_create!(res, material) -> MaterialID`
+- `material_get_data!(res, material_id) -> Option<Material3D>`
+- `material_write!(res, material_id, material) -> bool`
+
+When to use each:
+
+- `material_load!` / `material_reserve!`: default path for preauthored material sources (`.pmat`, glTF `:mat[index]`).
+- `material_create!`: create a material directly from runtime data.
+- `material_get_data!` + `material_write!`: runtime mutation path for an existing material id.
+- Typical `get/write` use-cases: dynamic param edits (roughness/metallic/emissive/tint) and runtime material variants.
 
 Methods:
 
@@ -17,6 +26,8 @@ Methods:
 - `res.Materials().reserve(source) -> MaterialID`
 - `res.Materials().drop(source) -> bool`
 - `res.Materials().create(material) -> MaterialID`
+- `res.Materials().get_data(material_id) -> Option<Material3D>`
+- `res.Materials().write(material_id, material) -> bool`
 
 What `load` does:
 
@@ -48,6 +59,9 @@ Important behavior:
 
 - `load/reserve/drop` are source-cache operations.
 - `create_material` is data-driven and bypasses source cache lookup.
+- Data APIs are copy-based; `material_get_data!` returns a cloned material value.
+- `material_write!` replaces material data for that id in one write operation.
+- Most projects mainly load authored materials and assign ids in scenes; `material_get_data!/material_write!` are for deliberate runtime updates.
 - Reserved policy:
 - `reserved: false` (from `load`) means the material can be automatically evicted from cache when no references remain.
 - `reserved: true` (from `reserve`) means it will not be auto-evicted; only explicit `material_drop!` removes it.
@@ -58,6 +72,13 @@ Example:
 let src_id = material_load!(res, "res://models/rig.glb:mat[0]");
 let _same_id = material_reserve!(res, "res://models/rig.glb:mat[0]");
 let _ = material_drop!(res, "res://models/rig.glb:mat[0]");
+
+if let Some(mut mat) = material_get_data!(res, src_id) {
+    if let Material3D::Standard(params) = &mut mat {
+        params.roughness_factor = 0.2;
+    }
+    let _ = material_write!(res, src_id, mat);
+}
 ```
 
 ## Material3D Presets
@@ -76,10 +97,7 @@ See also: `docs/resources/shaders.md` for WGSL authoring notes and current limit
 ## Programmatic Examples
 
 ```rust
-use perro_render_bridge::{
-    CustomMaterial3D, CustomMaterialParam3D, CustomMaterialParamValue3D, Material3D,
-    StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D,
-};
+// Material types come from Perro prelude.
 
 // Standard (PBR-ish)
 let standard_id = material_create!(

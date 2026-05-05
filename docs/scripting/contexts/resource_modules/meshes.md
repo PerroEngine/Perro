@@ -9,12 +9,32 @@ Macros:
 - `mesh_load!(res, source) -> MeshID`
 - `mesh_reserve!(res, source) -> MeshID`
 - `mesh_drop!(res, source) -> bool`
+- `mesh_get_data!(res, mesh_id) -> Option<Mesh3D>`
+- `mesh_create!(res, data) -> MeshID`
+- `mesh_write!(res, mesh_id, data) -> bool`
+
+When to use each:
+
+- `mesh_load!` / `mesh_reserve!`: default path for preauthored meshes (`.gltf/.glb/.pmesh`) used by scene/runtime nodes.
+- `mesh_create!`: create a mesh fully from runtime data (no source file).
+- `mesh_get_data!` + `mesh_write!`: runtime mutation path for an existing mesh id.
+- Typical `get/write` use-cases: procedural edits, deformation, slicing, patching surfaces, generating variants at runtime.
 
 Methods:
 
 - `res.Meshes().load(source) -> MeshID`
 - `res.Meshes().reserve(source) -> MeshID`
 - `res.Meshes().drop(source) -> bool`
+- `res.Meshes().get_data(mesh_id) -> Option<Mesh3D>`
+- `res.Meshes().create(data) -> MeshID`
+- `res.Meshes().write(mesh_id, data) -> bool`
+
+Runtime mesh data shape:
+
+- `Mesh3D { vertices, indices, surface_ranges }`
+- `MeshSurfaceRange { index_start, index_count }`
+- `surface_ranges` partitions triangle index buffer into surfaces.
+- If `surface_ranges` is empty, runtime treats mesh as one full surface.
 
 What `load` does:
 
@@ -44,6 +64,11 @@ Important behavior:
 - Reserved policy:
 - `reserved: false` (from `load`) means the mesh can be automatically evicted from cache when no references remain.
 - `reserved: true` (from `reserve`) means it will not be auto-evicted; only explicit `mesh_drop!` removes it.
+- Data APIs are copy-based. `mesh_get_data!` returns a copy snapshot.
+- `mesh_write!` atomically replaces runtime mesh snapshot for that id.
+- Mesh payload does not store material ids. Surface->material assignment stays in `MeshInstance3D.surfaces`.
+- Prefer batched edits + one `mesh_write!`; avoid per-frame writes.
+- Most projects primarily use authored assets via `mesh_load!`; `mesh_get_data!/mesh_write!` are for explicit runtime geometry updates.
 
 Practical tip:
 
@@ -52,9 +77,24 @@ Practical tip:
 Example:
 
 ```rust
+// `MeshSurfaceRange` comes from Perro prelude.
 let id = mesh_load!(res, "res://meshes/rock.glb:mesh[0]");
 let _same_id = mesh_reserve!(res, "res://meshes/rock.glb:mesh[0]");
 let _ = mesh_drop!(res, "res://meshes/rock.glb:mesh[0]");
+
+if let Some(mut data) = mesh_get_data!(res, id) {
+    data.surface_ranges = vec![
+        MeshSurfaceRange {
+            index_start: 0,
+            index_count: (data.indices.len() as u32) / 2,
+        },
+        MeshSurfaceRange {
+            index_start: (data.indices.len() as u32) / 2,
+            index_count: (data.indices.len() as u32) - ((data.indices.len() as u32) / 2),
+        },
+    ];
+    let _ = mesh_write!(res, id, data);
+}
 ```
 
 glTF sub-asset access:

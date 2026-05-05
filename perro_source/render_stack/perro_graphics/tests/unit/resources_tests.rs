@@ -1,5 +1,7 @@
 use super::ResourceStore;
-use perro_render_bridge::{Material3D, RuntimeMeshData, RuntimeMeshVertex, StandardMaterial3D};
+use perro_render_bridge::{
+    Material3D, RuntimeMeshData, RuntimeMeshVertex, StandardMaterial3D,
+};
 
 fn simple_runtime_mesh(scale: f32) -> RuntimeMeshData {
     RuntimeMeshData {
@@ -27,6 +29,7 @@ fn simple_runtime_mesh(scale: f32) -> RuntimeMeshData {
             },
         ],
         indices: vec![0, 1, 2],
+        surface_ranges: vec![],
     }
 }
 

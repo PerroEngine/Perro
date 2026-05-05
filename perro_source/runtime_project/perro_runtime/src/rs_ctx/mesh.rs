@@ -1,6 +1,6 @@
 use super::core::RuntimeResourceApi;
 use perro_ids::{MeshID, string_to_u64};
-use perro_render_bridge::{RenderCommand, ResourceCommand};
+use perro_render_bridge::{Mesh3D, RenderCommand, ResourceCommand};
 use perro_resource_context::sub_apis::MeshAPI;
 
 impl MeshAPI for RuntimeResourceApi {
@@ -18,6 +18,44 @@ impl MeshAPI for RuntimeResourceApi {
         } else {
             self.reserve_mesh_hashed(perro_ids::string_to_u64(source), Some(source))
         }
+    }
+
+    fn create_mesh_data(&self, data: Mesh3D) -> MeshID {
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        let request = state.allocate_request();
+        let id = state.allocate_mesh_id();
+        let source = format!("runtime://mesh/{}:{}", id.index(), id.generation());
+        state.mesh_data_by_id.insert(id, data.clone());
+        state
+            .queued_commands
+            .push(RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh {
+                request,
+                id,
+                source,
+                reserved: false,
+                mesh: data,
+            }));
+        id
+    }
+
+    fn get_mesh_data(&self, id: MeshID) -> Option<Mesh3D> {
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state.mesh_data_by_id.get(&id).cloned()
+    }
+
+    fn write_mesh_data(&self, id: MeshID, data: Mesh3D) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        state.mesh_data_by_id.insert(id, data.clone());
+        state
+            .queued_commands
+            .push(RenderCommand::Resource(ResourceCommand::WriteMeshData {
+                id,
+                mesh: data,
+            }));
+        true
     }
 
     fn load_mesh_hashed(&self, source_hash: u64, source: Option<&str>) -> MeshID {
@@ -110,6 +148,7 @@ impl MeshAPI for RuntimeResourceApi {
 
     fn drop_mesh(&self, id: MeshID) -> bool {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
+        state.mesh_data_by_id.remove(&id);
         let source = state
             .mesh_by_source
             .iter()

@@ -98,6 +98,7 @@ fn mesh_instance_emits_draw_after_mesh_and_material_created() {
     runtime.apply_render_event(RenderEvent::MeshCreated {
         request: mesh_request,
         id: expected_mesh,
+        mesh: None,
     });
     runtime.extract_render_3d_commands();
     let second = collect_commands(&mut runtime);
@@ -157,6 +158,7 @@ fn mesh_instance_can_request_mesh_and_material_in_separate_frames() {
     runtime.apply_render_event(RenderEvent::MeshCreated {
         request: mesh_request,
         id: MeshID::from_parts(10, 0),
+        mesh: None,
     });
     runtime.extract_render_3d_commands();
     let second = collect_commands(&mut runtime);

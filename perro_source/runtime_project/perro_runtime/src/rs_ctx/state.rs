@@ -1,6 +1,7 @@
 use perro_animation::AnimationClip;
 use perro_ids::{AnimationID, MaterialID, MeshID, TextureID};
 use perro_project::LocalizationConfig;
+use perro_render_bridge::{Material3D, Mesh3D};
 use perro_render_bridge::{RenderCommand, RenderRequestID};
 use perro_resource_context::sub_apis::Locale;
 use std::collections::{HashMap, HashSet};
@@ -165,12 +166,14 @@ pub(super) struct RuntimeResourceState {
     pub(super) mesh_pending_id_by_request: HashMap<RenderRequestID, MeshID>,
     pub(super) mesh_reserve_pending: HashSet<u64>,
     pub(super) mesh_drop_pending: HashSet<u64>,
+    pub(super) mesh_data_by_id: HashMap<MeshID, Mesh3D>,
     pub(super) material_by_source: HashMap<u64, MaterialID>,
     pub(super) material_pending_by_source: HashMap<u64, RenderRequestID>,
     pub(super) material_pending_source_by_request: HashMap<RenderRequestID, String>,
     pub(super) material_pending_id_by_request: HashMap<RenderRequestID, MaterialID>,
     pub(super) material_reserve_pending: HashSet<u64>,
     pub(super) material_drop_pending: HashSet<u64>,
+    pub(super) material_data_by_id: HashMap<MaterialID, Material3D>,
     pub(super) animation_by_source: HashMap<u64, AnimationID>,
     pub(super) animation_data_by_id: HashMap<AnimationID, Arc<AnimationClip>>,
 }

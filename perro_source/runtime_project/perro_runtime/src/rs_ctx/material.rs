@@ -34,6 +34,7 @@ impl MaterialAPI for RuntimeResourceApi {
         };
         let request = state.allocate_request();
         let id = state.allocate_material_id();
+        state.material_data_by_id.insert(id, material.clone());
         state.material_by_source.insert(source_hash, id);
         state
             .material_pending_by_source
@@ -57,16 +58,39 @@ impl MaterialAPI for RuntimeResourceApi {
     fn create_material(&self, material: Material3D) -> MaterialID {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         let request = state.allocate_request();
+        let id = state.allocate_material_id();
+        state.material_pending_id_by_request.insert(request, id);
+        state.material_data_by_id.insert(id, material.clone());
         state
             .queued_commands
             .push(RenderCommand::Resource(ResourceCommand::CreateMaterial {
                 request,
-                id: MaterialID::nil(),
+                id,
                 material,
                 source: None,
                 reserved: false,
             }));
-        MaterialID::nil()
+        id
+    }
+
+    fn get_material_data(&self, id: MaterialID) -> Option<Material3D> {
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state.material_data_by_id.get(&id).cloned()
+    }
+
+    fn write_material_data(&self, id: MaterialID, material: Material3D) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        state.material_data_by_id.insert(id, material.clone());
+        state
+            .queued_commands
+            .push(RenderCommand::Resource(ResourceCommand::WriteMaterialData {
+                id,
+                material,
+            }));
+        true
     }
 
     fn reserve_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID {
@@ -91,6 +115,7 @@ impl MaterialAPI for RuntimeResourceApi {
         state.material_reserve_pending.insert(source_hash);
         let request = state.allocate_request();
         let id = state.allocate_material_id();
+        state.material_data_by_id.insert(id, material.clone());
         state.material_by_source.insert(source_hash, id);
         state
             .material_pending_by_source
@@ -113,6 +138,7 @@ impl MaterialAPI for RuntimeResourceApi {
 
     fn drop_material_source(&self, id: MaterialID) -> bool {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
+        state.material_data_by_id.remove(&id);
         let source = state
             .material_by_source
             .iter()

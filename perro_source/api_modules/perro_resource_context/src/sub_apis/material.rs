@@ -4,6 +4,8 @@ use perro_render_bridge::Material3D;
 pub trait MaterialAPI {
     fn load_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID;
     fn create_material(&self, material: Material3D) -> MaterialID;
+    fn get_material_data(&self, id: MaterialID) -> Option<Material3D>;
+    fn write_material_data(&self, id: MaterialID, material: Material3D) -> bool;
     fn reserve_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID;
     fn load_material_source(&self, source: &str) -> MaterialID {
         self.load_material_source_hashed(perro_ids::string_to_u64(source), Some(source))
@@ -42,6 +44,16 @@ impl<'res, R: MaterialAPI + ?Sized> MaterialModule<'res, R> {
     #[inline]
     pub fn create(&self, material: Material3D) -> MaterialID {
         self.api.create_material(material)
+    }
+
+    #[inline]
+    pub fn get_data(&self, id: MaterialID) -> Option<Material3D> {
+        self.api.get_material_data(id)
+    }
+
+    #[inline]
+    pub fn write(&self, id: MaterialID, material: Material3D) -> bool {
+        self.api.write_material_data(id, material)
     }
 
     #[inline]
@@ -99,5 +111,19 @@ macro_rules! material_drop {
 macro_rules! material_create {
     ($res:expr, $material:expr) => {
         $res.Materials().create($material)
+    };
+}
+
+#[macro_export]
+macro_rules! material_get_data {
+    ($res:expr, $id:expr) => {
+        $res.Materials().get_data($id)
+    };
+}
+
+#[macro_export]
+macro_rules! material_write {
+    ($res:expr, $id:expr, $material:expr) => {
+        $res.Materials().write($id, $material)
     };
 }
