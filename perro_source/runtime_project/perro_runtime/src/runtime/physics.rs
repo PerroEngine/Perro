@@ -169,6 +169,7 @@ struct PendingForce3D {
 }
 
 pub(crate) struct PhysicsState {
+    paused: bool,
     world_2d: Option<PhysicsWorld2D>,
     world_3d: Option<PhysicsWorld3D>,
     active_collision_pairs_2d: AHashSet<BodyPair>,
@@ -220,6 +221,7 @@ struct PhysicsWorld3D {
 impl PhysicsState {
     pub(crate) fn new() -> Self {
         Self {
+            paused: false,
             world_2d: None,
             world_3d: None,
             active_collision_pairs_2d: AHashSet::default(),
@@ -316,6 +318,14 @@ impl PhysicsWorld3D {
 }
 
 impl Runtime {
+    pub fn set_physics_paused(&mut self, paused: bool) {
+        self.physics.paused = paused;
+    }
+
+    pub fn physics_paused(&self) -> bool {
+        self.physics.paused
+    }
+
     pub(crate) fn physics_fixed_step_timed(&mut self) -> RuntimePhysicsStepTiming {
         let total_start = std::time::Instant::now();
 
@@ -333,6 +343,20 @@ impl Runtime {
         self.sync_world_2d(&bodies_2d);
         self.sync_world_3d(&bodies_3d);
         let sync_world = sync_world_start.elapsed();
+
+        if self.physics.paused {
+            return RuntimePhysicsStepTiming {
+                pre_transforms,
+                collect,
+                sync_world,
+                apply_forces_impulses: std::time::Duration::ZERO,
+                step: std::time::Duration::ZERO,
+                sync_nodes: std::time::Duration::ZERO,
+                post_transforms: std::time::Duration::ZERO,
+                signals: std::time::Duration::ZERO,
+                total: total_start.elapsed(),
+            };
+        }
 
         let apply_forces_impulses_start = std::time::Instant::now();
         self.apply_pending_forces_2d();

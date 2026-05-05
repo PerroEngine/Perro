@@ -197,6 +197,22 @@ pub trait VariantSchema {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VariantParseError {
+    pub target: &'static str,
+    pub actual: &'static str,
+}
+
+impl fmt::Display for VariantParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "variant parse mismatch: target={}, actual={}",
+            self.target, self.actual
+        )
+    }
+}
+
 impl fmt::Display for Variant {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -265,7 +281,7 @@ impl Variant {
 
     /// Decode this [`Variant`] into typed value via [`DeriveVariant`].
     ///
-    /// Returns `None` when shape/type does not match `T`.
+    /// Returns `Err` when shape/type does not match `T`.
     ///
     /// # Example
     /// ```rust
@@ -273,14 +289,17 @@ impl Variant {
     ///
     /// let value = Variant::from(42_i32);
     /// let parsed = value.parse::<i32>();
-    /// assert_eq!(parsed, Some(42));
+    /// assert_eq!(parsed, Ok(42));
     /// ```
     #[inline]
-    pub fn parse<T>(&self) -> Option<T>
+    pub fn parse<T>(&self) -> Result<T, VariantParseError>
     where
         T: DeriveVariant,
     {
-        T::from_variant(self)
+        T::from_variant(self).ok_or(VariantParseError {
+            target: std::any::type_name::<T>(),
+            actual: self.kind_name(),
+        })
     }
 }
 
@@ -707,6 +726,21 @@ where
 // -------------------- Accessors (extensible pattern) --------------------
 
 impl Variant {
+    #[inline]
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            Variant::Null => "Null",
+            Variant::Bool(_) => "Bool",
+            Variant::Number(_) => "Number",
+            Variant::String(_) => "String",
+            Variant::Bytes(_) => "Bytes",
+            Variant::ID(_) => "ID",
+            Variant::EngineStruct(_) => "EngineStruct",
+            Variant::Array(_) => "Array",
+            Variant::Object(_) => "Object",
+        }
+    }
+
     #[inline]
     pub fn as_bool(&self) -> Option<bool> {
         match *self {

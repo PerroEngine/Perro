@@ -49,4 +49,12 @@ impl PhysicsAPI for Runtime {
         self.queue_impulse_3d(body_id, impulse);
         true
     }
+
+    fn physics_pause(&mut self, paused: bool) {
+        self.set_physics_paused(paused);
+    }
+
+    fn physics_is_paused(&mut self) -> bool {
+        self.physics_paused()
+    }
 }

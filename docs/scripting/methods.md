@@ -32,7 +32,7 @@ This equals `<T as DeriveVariant>::from_variant(&value)`.
 ```rust
 let control_mode = params
     .first()
-    .and_then(|v| v.parse::<ArcheryControlMode>())
+    .and_then(|v| v.parse::<ArcheryControlMode>().ok())
     .unwrap_or_default();
 ```
 

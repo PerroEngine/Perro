@@ -388,6 +388,12 @@ impl PhysicsAPI for DummyRuntime {
     fn apply_impulse_3d(&mut self, _body_id: NodeID, _impulse: Vector3) -> bool {
         true
     }
+
+    fn physics_pause(&mut self, _paused: bool) {}
+
+    fn physics_is_paused(&mut self) -> bool {
+        false
+    }
 }
 
 impl AnimPlayerAPI for DummyRuntime {
@@ -587,6 +593,8 @@ fn script_macros_typecheck_and_forward() {
     assert!(apply_force!(&mut ctx, id, Vector3::new(0.0, 3.5, 0.0)));
     assert!(apply_impulse!(&mut ctx, id, Vector2::new(0.0, 1.25)));
     assert!(apply_impulse!(&mut ctx, id, Vector3::new(2.75, 0.0, 0.0)));
+    physics_pause!(&mut ctx, true);
+    assert!(!physics_is_paused!(&mut ctx));
     assert!(!script_attach!(&mut ctx, id, "res://scripts/a.rs"));
     assert!(!script_detach!(&mut ctx, id));
     let member = var!("x");

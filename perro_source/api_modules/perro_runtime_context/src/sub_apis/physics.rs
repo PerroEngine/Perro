@@ -6,6 +6,8 @@ pub trait PhysicsAPI {
     fn apply_force_3d(&mut self, body_id: NodeID, force: Vector3) -> bool;
     fn apply_impulse_2d(&mut self, body_id: NodeID, impulse: Vector2) -> bool;
     fn apply_impulse_3d(&mut self, body_id: NodeID, impulse: Vector3) -> bool;
+    fn physics_pause(&mut self, paused: bool);
+    fn physics_is_paused(&mut self) -> bool;
 }
 
 pub trait IntoImpulseDirection {
@@ -96,6 +98,14 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
     {
         impulse.apply_impulse(self, body_id)
     }
+
+    pub fn pause(&mut self, paused: bool) {
+        self.rt.physics_pause(paused);
+    }
+
+    pub fn is_paused(&mut self) -> bool {
+        self.rt.physics_is_paused()
+    }
 }
 
 /// Applies a force vector to a rigidbody.
@@ -119,5 +129,19 @@ macro_rules! apply_force {
 macro_rules! apply_impulse {
     ($ctx:expr, $body_id:expr, $impulse:expr) => {
         $ctx.Physics().apply_impulse($body_id, $impulse)
+    };
+}
+
+#[macro_export]
+macro_rules! physics_pause {
+    ($ctx:expr, $paused:expr) => {
+        $ctx.Physics().pause($paused)
+    };
+}
+
+#[macro_export]
+macro_rules! physics_is_paused {
+    ($ctx:expr) => {
+        $ctx.Physics().is_paused()
     };
 }

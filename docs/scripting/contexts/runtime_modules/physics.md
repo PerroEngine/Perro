@@ -12,6 +12,11 @@ Impulse macro:
 
 - `apply_impulse!(ctx, body_id, impulse) -> bool`
 
+Pause macros:
+
+- `physics_pause!(ctx, paused)`
+- `physics_is_paused!(ctx) -> bool`
+
 Arguments:
 
 - `ctx`: `&mut RuntimeWindow<_>`
@@ -26,6 +31,10 @@ Behavior:
 - Calls are queued and applied in fixed-step physics before the world simulation step.
 - Use `apply_impulse!` for one-shot burst/knockback.
 - Use repeated `apply_force!` calls (for example every fixed-update) for sustained acceleration.
+- `physics_pause!(ctx, true)` pauses physics simulation step.
+- While paused, gravity/velocity integration + collision/area signal propagation do not advance.
+- `physics_pause!(ctx, false)` resumes from current physics world state.
+- Queued force/impulse calls made during pause stay queued and apply after resume.
 
 Example:
 
@@ -36,6 +45,13 @@ if ipt.Keys().is_pressed(KeyCode::W) {
 
 if take_hit {
     apply_impulse!(ctx, player_body_id, Vector3::new(2.0, 0.0, 0.0));
+}
+
+if menu_open {
+    physics_pause!(ctx, true);
+}
+if menu_closed {
+    physics_pause!(ctx, false);
 }
 ```
 

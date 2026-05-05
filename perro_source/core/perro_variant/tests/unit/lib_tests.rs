@@ -88,11 +88,11 @@ fn test_variant_array() {
 #[test]
 fn test_variant_parse_helper() {
     let num = Variant::from(42_i32);
-    assert_eq!(num.parse::<i32>(), Some(42));
-    assert_eq!(num.parse::<u32>(), None);
+    assert_eq!(num.parse::<i32>(), Ok(42));
+    assert!(num.parse::<u32>().is_err());
 
     let list = Variant::Array(vec![Variant::from(1_i32), Variant::from(2_i32)]);
-    assert_eq!(list.parse::<Vec<i32>>(), Some(vec![1, 2]));
+    assert_eq!(list.parse::<Vec<i32>>(), Ok(vec![1, 2]));
 }
 
 // -------------------- Variant Accessors --------------------
