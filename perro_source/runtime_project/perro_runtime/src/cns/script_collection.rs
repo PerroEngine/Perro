@@ -207,20 +207,17 @@ impl ScriptCollection {
         self.schedule_epoch
     }
 
+    #[inline(always)]
     pub(crate) fn with_state<T: 'static, V, F>(&self, id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&T) -> V,
     {
         let i = self.instance_index_for(id)?;
         let instance = self.instances.get(i)?;
-        if instance.state_type != TypeId::of::<T>() {
-            return None;
-        }
-
-        let state = unsafe { &*(instance.state.as_ref() as *const dyn Any as *const T) };
-        Some(f(state))
+        Some(f(Self::typed_state_ref::<T>(instance)?))
     }
 
+    #[inline(always)]
     pub(crate) fn with_state_scheduled<T: 'static, V, F>(
         &self,
         instance_index: usize,
@@ -234,28 +231,20 @@ impl ScriptCollection {
             return None;
         }
         let instance = self.instances.get(instance_index)?;
-        if instance.state_type != TypeId::of::<T>() {
-            return None;
-        }
-
-        let state = unsafe { &*(instance.state.as_ref() as *const dyn Any as *const T) };
-        Some(f(state))
+        Some(f(Self::typed_state_ref::<T>(instance)?))
     }
 
+    #[inline(always)]
     pub(crate) fn with_state_mut<T: 'static, V, F>(&mut self, id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&mut T) -> V,
     {
         let i = self.instance_index_for(id)?;
         let instance = self.instances.get_mut(i)?;
-        if instance.state_type != TypeId::of::<T>() {
-            return None;
-        }
-
-        let state = unsafe { &mut *(instance.state.as_mut() as *mut dyn Any as *mut T) };
-        Some(f(state))
+        Some(f(Self::typed_state_mut::<T>(instance)?))
     }
 
+    #[inline(always)]
     pub(crate) fn with_state_mut_scheduled<T: 'static, V, F>(
         &mut self,
         instance_index: usize,
@@ -269,12 +258,36 @@ impl ScriptCollection {
             return None;
         }
         let instance = self.instances.get_mut(instance_index)?;
+        Some(f(Self::typed_state_mut::<T>(instance)?))
+    }
+
+    #[inline(always)]
+    fn typed_state_ref<T: 'static>(instance: &ScriptInstance) -> Option<&T> {
         if instance.state_type != TypeId::of::<T>() {
             return None;
         }
+        Some(unsafe { &*(instance.state.as_ref() as *const dyn Any as *const T) })
+    }
 
-        let state = unsafe { &mut *(instance.state.as_mut() as *mut dyn Any as *mut T) };
-        Some(f(state))
+    #[inline(always)]
+    fn typed_state_mut<T: 'static>(instance: &mut ScriptInstance) -> Option<&mut T> {
+        if instance.state_type != TypeId::of::<T>() {
+            return None;
+        }
+        Some(unsafe { &mut *(instance.state.as_mut() as *mut dyn Any as *mut T) })
+    }
+
+    #[inline(always)]
+    fn with_state_legacy_double_typecheck<T: 'static, V, F>(&self, id: NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&T) -> V,
+    {
+        let i = self.instance_index_for(id)?;
+        let instance = self.instances.get(i)?;
+        if instance.state_type != TypeId::of::<T>() {
+            return None;
+        }
+        Some(f(Self::typed_state_ref::<T>(instance)?))
     }
 
     #[inline]
@@ -384,6 +397,8 @@ mod tests {
     use perro_runtime_context::sub_apis::{Attribute, Member};
     use perro_scripting::{ScriptContext, ScriptFlags, ScriptLifecycle};
     use perro_variant::Variant;
+    use std::hint::black_box;
+    use std::time::Instant;
 
     struct DummyBehavior;
 
@@ -440,5 +455,56 @@ mod tests {
 
         assert!(scripts.reset_state(id));
         assert_eq!(scripts.with_state::<i32, _, _>(id, |state| *state), Some(5));
+    }
+
+    #[test]
+    #[ignore = "microbenchmark"]
+    fn bench_state_lookup_paths() {
+        let mut scripts = ScriptCollection::new();
+        let id = NodeID::new(42);
+        scripts.insert(id, Arc::new(DummyBehavior), Box::new(7_i32));
+        let instance_index = scripts.instance_index_for_id(id).unwrap();
+
+        let iterations = 2_000_000;
+
+        let start_legacy = Instant::now();
+        let mut sum_legacy = 0_i64;
+        for _ in 0..iterations {
+            let v = scripts
+                .with_state_legacy_double_typecheck::<i32, _, _>(id, |state| *state as i64)
+                .unwrap();
+            sum_legacy = black_box(sum_legacy + v);
+        }
+        let legacy_elapsed = start_legacy.elapsed();
+
+        let start_direct = Instant::now();
+        let mut sum_direct = 0_i64;
+        for _ in 0..iterations {
+            let v = scripts
+                .with_state::<i32, _, _>(id, |state| *state as i64)
+                .unwrap();
+            sum_direct = black_box(sum_direct + v);
+        }
+        let direct_elapsed = start_direct.elapsed();
+
+        let start_scheduled = Instant::now();
+        let mut sum_scheduled = 0_i64;
+        for _ in 0..iterations {
+            let v = scripts
+                .with_state_scheduled::<i32, _, _>(instance_index, id, |state| *state as i64)
+                .unwrap();
+            sum_scheduled = black_box(sum_scheduled + v);
+        }
+        let scheduled_elapsed = start_scheduled.elapsed();
+
+        eprintln!(
+            "legacy(double type-check): {:?}, direct: {:?}, scheduled: {:?}, sums: {} {} {}",
+            legacy_elapsed,
+            direct_elapsed,
+            scheduled_elapsed,
+            sum_legacy,
+            sum_direct,
+            sum_scheduled
+        );
     }
 }
