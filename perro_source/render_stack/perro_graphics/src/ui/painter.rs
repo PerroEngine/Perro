@@ -6,7 +6,7 @@ use epaint::{
     Tessellator, emath::Rot2, pos2, text::FontDefinitions, textures::TexturesDelta, vec2,
 };
 use perro_ids::NodeID;
-use perro_render_bridge::{UiRectState, UiTextAlignState};
+use perro_render_bridge::{UiDepthEffectState, UiRectState, UiTextAlignState};
 
 pub struct UiPaintFrame<'a> {
     pub primitives: &'a [ClippedPrimitive],
@@ -192,16 +192,93 @@ fn push_panel_shape(panel: &UiPanelDraw, viewport: [f32; 2], out: &mut Vec<Clipp
 
     let (min, max) = panel.rect.screen_min_max(viewport);
     let rect = Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1]));
+    let clip_rect = clip_rect_from_state(panel.clip_rect, viewport);
+    let radius = CornerRadius::same(resolve_corner_radius(panel) as u8);
+    push_shadow_shapes(panel, rect, radius, clip_rect, out);
     out.push(ClippedShape {
-        clip_rect: clip_rect_from_state(panel.clip_rect, viewport),
+        clip_rect,
         shape: Shape::Rect(RectShape::new(
             rect,
-            CornerRadius::same(resolve_corner_radius(panel) as u8),
+            radius,
             color32(panel.fill),
             Stroke::new(panel.stroke_width.max(0.0), color32(panel.stroke)),
             StrokeKind::Inside,
         )),
     });
+    push_highlight_shapes(panel, rect, radius, clip_rect, out);
+}
+
+fn push_shadow_shapes(
+    panel: &UiPanelDraw,
+    rect: Rect,
+    radius: CornerRadius,
+    clip_rect: Rect,
+    out: &mut Vec<ClippedShape>,
+) {
+    let effect = panel.shadow;
+    if !valid_effect(effect) {
+        return;
+    }
+    let offset = effect_offset(effect);
+    let steps = effect.falloff.max(0.0).ceil().clamp(1.0, 24.0) as usize;
+    for step in (0..steps).rev() {
+        let t = (step + 1) as f32 / steps as f32;
+        let expand = effect_size_expand(rect, effect) + effect.falloff.max(0.0) * t;
+        let alpha = effect.color[3] * (1.0 - t * 0.82);
+        let color = with_alpha(effect.color, alpha);
+        if !valid_color(color) || alpha <= 0.0 {
+            continue;
+        }
+        let rect = rect.translate(offset).expand(expand);
+        if rect.width() <= 0.0 || rect.height() <= 0.0 {
+            continue;
+        }
+        out.push(ClippedShape {
+            clip_rect,
+            shape: Shape::Rect(RectShape::filled(rect, radius, color32(color))),
+        });
+    }
+}
+
+fn push_highlight_shapes(
+    panel: &UiPanelDraw,
+    rect: Rect,
+    radius: CornerRadius,
+    clip_rect: Rect,
+    out: &mut Vec<ClippedShape>,
+) {
+    let effect = panel.highlight;
+    if !valid_effect(effect) {
+        return;
+    }
+    let offset = effect_offset(effect);
+    let steps = effect.falloff.max(1.0).ceil().clamp(1.0, 24.0) as usize;
+    let size_expand = effect_size_expand(rect, effect);
+    let stroke_base = (rect.width().min(rect.height()).max(1.0) * 0.035).max(1.0);
+    for step in 0..steps {
+        let t = step as f32 / steps as f32;
+        let inset = effect.distance.max(0.0) + effect.falloff.max(0.0) * t;
+        let stroke_width = (stroke_base * (1.0 - t * 0.65)).max(0.5);
+        let alpha = effect.color[3] * (1.0 - t);
+        let color = with_alpha(effect.color, alpha);
+        if !valid_color(color) || alpha <= 0.0 {
+            continue;
+        }
+        let rect = rect.translate(-offset).expand(size_expand).shrink(inset);
+        if rect.width() <= 0.0 || rect.height() <= 0.0 {
+            break;
+        }
+        out.push(ClippedShape {
+            clip_rect,
+            shape: Shape::Rect(RectShape::new(
+                rect,
+                radius,
+                Color32::TRANSPARENT,
+                Stroke::new(stroke_width, color32(color)),
+                StrokeKind::Inside,
+            )),
+        });
+    }
 }
 
 fn push_text_edit_shapes(
@@ -478,6 +555,36 @@ fn valid_color(color: [f32; 4]) -> bool {
     color.iter().all(|v| v.is_finite())
 }
 
+fn valid_effect(effect: UiDepthEffectState) -> bool {
+    valid_color(effect.color)
+        && effect.color[3] > 0.0
+        && effect.distance.is_finite()
+        && effect.falloff.is_finite()
+        && effect.vector.iter().all(|v| v.is_finite())
+        && effect.size.is_finite()
+        && (effect.distance > 0.0 || effect.falloff > 0.0 || effect.size > 0.0)
+}
+
+fn effect_offset(effect: UiDepthEffectState) -> epaint::Vec2 {
+    let len = (effect.vector[0] * effect.vector[0] + effect.vector[1] * effect.vector[1]).sqrt();
+    if !len.is_finite() || len <= 0.0001 {
+        return vec2(0.0, 0.0);
+    }
+    vec2(
+        effect.vector[0] / len * effect.distance.max(0.0),
+        -effect.vector[1] / len * effect.distance.max(0.0),
+    )
+}
+
+fn with_alpha(mut color: [f32; 4], alpha: f32) -> [f32; 4] {
+    color[3] = alpha.clamp(0.0, 1.0);
+    color
+}
+
+fn effect_size_expand(rect: Rect, effect: UiDepthEffectState) -> f32 {
+    rect.width().min(rect.height()).max(0.0) * 0.5 * (effect.size.max(0.0) - 1.0)
+}
+
 fn viewport_rect(viewport: [f32; 2]) -> Rect {
     Rect::from_min_size(pos2(0.0, 0.0), vec2(viewport[0], viewport[1]))
 }
@@ -556,6 +663,8 @@ mod tests {
             stroke: [0.0, 0.0, 0.0, 0.0],
             stroke_width: 0.0,
             corner_radius: 0.5,
+            shadow: UiDepthEffectState::none(),
+            highlight: UiDepthEffectState::none(),
         };
 
         assert_eq!(resolve_corner_radius(&panel), 12.5);
@@ -576,8 +685,25 @@ mod tests {
             stroke: [0.0, 0.0, 0.0, 0.0],
             stroke_width: 0.0,
             corner_radius: 2.0,
+            shadow: UiDepthEffectState::none(),
+            highlight: UiDepthEffectState::none(),
         };
 
         assert_eq!(resolve_corner_radius(&panel), 25.0);
+    }
+
+    #[test]
+    fn effect_size_is_rect_relative_multiplier() {
+        let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(100.0, 50.0));
+        let mut effect = UiDepthEffectState::none();
+
+        effect.size = 1.0;
+        assert_eq!(effect_size_expand(rect, effect), 0.0);
+
+        effect.size = 2.0;
+        assert_eq!(effect_size_expand(rect, effect), 25.0);
+
+        effect.size = 0.5;
+        assert_eq!(effect_size_expand(rect, effect), -12.5);
     }
 }

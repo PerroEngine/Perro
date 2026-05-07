@@ -199,7 +199,13 @@ mod tests {
             @root = button
             [button]
             [UiButton]
-                style = { fill = "#101820" stroke = "#A0A8B0" radius = 1.0 }
+                style = {
+                    fill = "#101820"
+                    stroke = "#A0A8B0"
+                    radius = 1.0
+                    shadow = { color = "#00000066" distance = 8 falloff = 12 vector = (1, -1) size = 1.5 }
+                    highlight = { color = "#FFFFFF55" distance = 2 falloff = 4 vector = (-1, 1) size = 1.0 }
+                }
                 hover_fill = "#202830"
                 pressed = {
                     style = { fill = "#303840" }
@@ -223,6 +229,16 @@ mod tests {
         match &node.node.data {
             SceneNodeData::UiButton(button) => {
                 assert_eq!(button.style.corner_radius, 1.0);
+                assert_eq!(button.style.shadow.color, Color::from_hex("#00000066").unwrap());
+                assert_eq!(button.style.shadow.distance, 8.0);
+                assert_eq!(button.style.shadow.falloff, 12.0);
+                assert_eq!(button.style.shadow.vector, Vector2::new(1.0, -1.0));
+                assert_eq!(button.style.shadow.size, 1.5);
+                assert_eq!(button.style.highlight.color, Color::from_hex("#FFFFFF55").unwrap());
+                assert_eq!(button.style.highlight.distance, 2.0);
+                assert_eq!(button.style.highlight.falloff, 4.0);
+                assert_eq!(button.style.highlight.vector, Vector2::new(-1.0, 1.0));
+                assert_eq!(button.style.highlight.size, 1.0);
                 assert_eq!(button.hover_style.fill, Color::from_hex("#202830").unwrap());
                 assert_eq!(button.hover_style.stroke, button.style.stroke);
                 assert_eq!(button.hover_style.corner_radius, 1.0);

@@ -559,7 +559,7 @@ impl UiDepthEffect {
             distance: 0.0,
             falloff: 0.0,
             vector: Vector2::new(0.0, -1.0),
-            size: 0.0,
+            size: 1.0,
         }
     }
 }
@@ -725,6 +725,8 @@ impl UiTextEdit {
                 stroke: Color::new(0.45, 0.58, 0.85, 1.0),
                 stroke_width: 1.0,
                 corner_radius: 0.2,
+                shadow: UiDepthEffect::none(),
+                highlight: UiDepthEffect::none(),
             },
             hover_signals: Vec::new(),
             hover_exit_signals: Vec::new(),
@@ -934,12 +936,16 @@ impl UiButton {
                 stroke: Color::new(0.42, 0.46, 0.54, 1.0),
                 stroke_width: 1.0,
                 corner_radius: 0.2,
+                shadow: UiDepthEffect::none(),
+                highlight: UiDepthEffect::none(),
             },
             pressed_style: UiStyle {
                 fill: Color::new(0.12, 0.14, 0.18, 1.0),
                 stroke: Color::new(0.42, 0.46, 0.54, 1.0),
                 stroke_width: 1.0,
                 corner_radius: 0.2,
+                shadow: UiDepthEffect::none(),
+                highlight: UiDepthEffect::none(),
             },
             cursor_icon: CursorIcon::Pointer,
             hover_base: None,

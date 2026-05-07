@@ -46,6 +46,33 @@ impl UiRectState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UiDepthEffectState {
+    pub color: [f32; 4],
+    pub distance: f32,
+    pub falloff: f32,
+    pub vector: [f32; 2],
+    pub size: f32,
+}
+
+impl UiDepthEffectState {
+    pub const fn none() -> Self {
+        Self {
+            color: [0.0, 0.0, 0.0, 0.0],
+            distance: 0.0,
+            falloff: 0.0,
+            vector: [0.0, -1.0],
+            size: 1.0,
+        }
+    }
+}
+
+impl Default for UiDepthEffectState {
+    fn default() -> Self {
+        Self::none()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum UiCommand {
     UpsertPanel {
@@ -56,6 +83,8 @@ pub enum UiCommand {
         stroke: [f32; 4],
         stroke_width: f32,
         corner_radius: f32,
+        shadow: UiDepthEffectState,
+        highlight: UiDepthEffectState,
     },
     UpsertButton {
         node: NodeID,
@@ -65,6 +94,8 @@ pub enum UiCommand {
         stroke: [f32; 4],
         stroke_width: f32,
         corner_radius: f32,
+        shadow: UiDepthEffectState,
+        highlight: UiDepthEffectState,
         disabled: bool,
     },
     UpsertLabel {
@@ -85,6 +116,8 @@ pub enum UiCommand {
         stroke: [f32; 4],
         stroke_width: f32,
         corner_radius: f32,
+        shadow: UiDepthEffectState,
+        highlight: UiDepthEffectState,
         text: Cow<'static, str>,
         placeholder: Cow<'static, str>,
         color: [f32; 4],

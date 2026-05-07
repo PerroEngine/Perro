@@ -1,7 +1,7 @@
 use super::painter::{EpaintUiPainter, UiPaintFrame, UiPainter};
 use ahash::AHashMap;
 use perro_ids::NodeID;
-use perro_render_bridge::{UiCommand, UiRectState, UiTextAlignState};
+use perro_render_bridge::{UiCommand, UiDepthEffectState, UiRectState, UiTextAlignState};
 use std::borrow::Cow;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -12,6 +12,8 @@ pub(crate) struct UiPanelDraw {
     pub(crate) stroke: [f32; 4],
     pub(crate) stroke_width: f32,
     pub(crate) corner_radius: f32,
+    pub(crate) shadow: UiDepthEffectState,
+    pub(crate) highlight: UiDepthEffectState,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -88,6 +90,8 @@ impl UiRenderer {
                 stroke,
                 stroke_width,
                 corner_radius,
+                shadow,
+                highlight,
             } => self.upsert(
                 node,
                 UiDraw::Panel(UiPanelDraw {
@@ -97,6 +101,8 @@ impl UiRenderer {
                     stroke,
                     stroke_width,
                     corner_radius,
+                    shadow,
+                    highlight,
                 }),
             ),
             UiCommand::UpsertButton {
@@ -107,6 +113,8 @@ impl UiRenderer {
                 stroke,
                 stroke_width,
                 corner_radius,
+                shadow,
+                highlight,
                 disabled,
             } => self.upsert(
                 node,
@@ -118,6 +126,8 @@ impl UiRenderer {
                         stroke,
                         stroke_width,
                         corner_radius,
+                        shadow,
+                        highlight,
                     },
                     disabled,
                 }),
@@ -151,6 +161,8 @@ impl UiRenderer {
                 stroke,
                 stroke_width,
                 corner_radius,
+                shadow,
+                highlight,
                 text,
                 placeholder,
                 color,
@@ -174,6 +186,8 @@ impl UiRenderer {
                         stroke,
                         stroke_width,
                         corner_radius,
+                        shadow,
+                        highlight,
                     },
                     text,
                     placeholder,
@@ -246,6 +260,8 @@ mod tests {
             stroke: [1.0, 1.0, 1.0, 1.0],
             stroke_width: 2.0,
             corner_radius: 0.2,
+            shadow: UiDepthEffectState::none(),
+            highlight: UiDepthEffectState::none(),
         });
 
         let paint = renderer.prepare_paint([800.0, 600.0]);
@@ -296,6 +312,8 @@ mod tests {
             stroke: [0.0, 0.0, 0.0, 0.0],
             stroke_width: 0.0,
             corner_radius: 0.0,
+            shadow: UiDepthEffectState::none(),
+            highlight: UiDepthEffectState::none(),
         });
 
         let paint = renderer.prepare_paint([800.0, 600.0]);
@@ -335,6 +353,8 @@ mod tests {
             stroke: [0.0, 0.0, 0.0, 0.0],
             stroke_width: 0.0,
             corner_radius: 0.0,
+            shadow: UiDepthEffectState::none(),
+            highlight: UiDepthEffectState::none(),
         });
 
         let paint = renderer.prepare_paint([800.0, 600.0]);

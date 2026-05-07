@@ -600,6 +600,66 @@ fn apply_ui_style_fields(style: &mut perro_ui::UiStyle, fields: &[SceneObjectFie
                     style.corner_radius = v;
                 }
             }
+            "shadow" => {
+                if let Some(v) = as_ui_depth_effect(value) {
+                    style.shadow = v;
+                }
+            }
+            "highlight" | "inner_highlight" => {
+                if let Some(v) = as_ui_depth_effect(value) {
+                    style.highlight = v;
+                }
+            }
+            "shadow_color" => {
+                if let Some(v) = as_scene_color(value) {
+                    style.shadow.color = v;
+                }
+            }
+            "shadow_distance" => {
+                if let Some(v) = as_f32(value) {
+                    style.shadow.distance = v.max(0.0);
+                }
+            }
+            "shadow_falloff" => {
+                if let Some(v) = as_f32(value) {
+                    style.shadow.falloff = v.max(0.0);
+                }
+            }
+            "shadow_vector" => {
+                if let Some(v) = as_vec2(value) {
+                    style.shadow.vector = v;
+                }
+            }
+            "shadow_size" => {
+                if let Some(v) = as_f32(value) {
+                    style.shadow.size = v.max(0.0);
+                }
+            }
+            "highlight_color" | "inner_highlight_color" => {
+                if let Some(v) = as_scene_color(value) {
+                    style.highlight.color = v;
+                }
+            }
+            "highlight_distance" | "inner_highlight_distance" => {
+                if let Some(v) = as_f32(value) {
+                    style.highlight.distance = v.max(0.0);
+                }
+            }
+            "highlight_falloff" | "inner_highlight_falloff" => {
+                if let Some(v) = as_f32(value) {
+                    style.highlight.falloff = v.max(0.0);
+                }
+            }
+            "highlight_vector" | "inner_highlight_vector" => {
+                if let Some(v) = as_vec2(value) {
+                    style.highlight.vector = v;
+                }
+            }
+            "highlight_size" | "inner_highlight_size" => {
+                if let Some(v) = as_f32(value) {
+                    style.highlight.size = v.max(0.0);
+                }
+            }
             _ => {}
         }
     });
@@ -705,6 +765,42 @@ fn as_ui_corner_radius(value: &SceneValue) -> Option<f32> {
         "full" | "pill" | "round" | "rounded" => Some(1.0),
         _ => None,
     }
+}
+
+fn as_ui_depth_effect(value: &SceneValue) -> Option<perro_ui::UiDepthEffect> {
+    let SceneValue::Object(fields) = value else {
+        return None;
+    };
+    let mut effect = perro_ui::UiDepthEffect::none();
+    SceneFieldIterRef::new(fields.as_ref()).for_each(|name, value| match name {
+        "color" => {
+            if let Some(v) = as_scene_color(value) {
+                effect.color = v;
+            }
+        }
+        "distance" | "dist" => {
+            if let Some(v) = as_f32(value) {
+                effect.distance = v.max(0.0);
+            }
+        }
+        "falloff" | "blur" => {
+            if let Some(v) = as_f32(value) {
+                effect.falloff = v.max(0.0);
+            }
+        }
+        "vector" | "direction" | "dir" => {
+            if let Some(v) = as_vec2(value) {
+                effect.vector = v;
+            }
+        }
+        "size" => {
+            if let Some(v) = as_f32(value) {
+                effect.size = v.max(0.0);
+            }
+        }
+        _ => {}
+    });
+    Some(effect)
 }
 
 fn as_signal_id(value: &SceneValue) -> Option<perro_ids::SignalID> {

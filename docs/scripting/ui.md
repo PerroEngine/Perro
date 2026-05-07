@@ -129,6 +129,16 @@ Set `clip_children = true` to clip descendants to that node rect.
 `0.0` means square corners.
 `1.0` means half of the shortest side.
 `"full"` also means `1.0`.
+`shadow` and `highlight` add depth to `UiPanel`, `UiButton`, `UiTextBox`, and `UiTextBlock`.
+Both accept `color`, `distance`, `falloff`, `vector`, and `size`.
+`shadow` draws outside the panel.
+`highlight` draws an inner bevel-like stroke.
+`vector` is the light/shadow direction in UI space.
+`falloff` approximates blur with layered alpha.
+`size` is relative to the panel/button size.
+`size = 1` matches the panel/button.
+`size = 2` doubles it.
+`size = 0.5` halves it.
 
 ## Coordinate Space
 
@@ -174,11 +184,17 @@ Button state example:
 
 ```text
 [play_button]
-[UiButton]
-    size_ratio = (0.114583, 0.044444)
-    pressed_signals = ["play_down"]
-    click_signals = ["play_clicked", "any_button_clicked"]
-    style = { fill = "#344E41" stroke = "#A3B18A" radius = 0.3 }
+    [UiButton]
+        size_ratio = (0.114583, 0.044444)
+        pressed_signals = ["play_down"]
+        click_signals = ["play_clicked", "any_button_clicked"]
+        style = {
+            fill = "#344E41"
+            stroke = "#A3B18A"
+            radius = 0.3
+            shadow = { color = "#00000066" distance = 10 falloff = 12 vector = (1, -1) size = 2 }
+            highlight = { color = "#FFFFFF55" distance = 2 falloff = 3 vector = (-1, 1) size = 2 }
+        }
     hover = {
         scale = (1.02, 1.02)
         rotation = 0.02

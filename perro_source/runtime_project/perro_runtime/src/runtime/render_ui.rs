@@ -4,7 +4,9 @@ use ahash::AHashMap;
 use perro_ids::{NodeID, SignalID};
 use perro_input::{KeyCode, MouseButton};
 use perro_nodes::SceneNodeData;
-use perro_render_bridge::{RenderCommand, UiCommand, UiRectState, UiTextAlignState};
+use perro_render_bridge::{
+    RenderCommand, UiCommand, UiDepthEffectState, UiRectState, UiTextAlignState,
+};
 use perro_runtime_context::sub_apis::SignalAPI;
 use perro_structs::Vector2;
 use perro_ui::{
@@ -2303,6 +2305,8 @@ fn ui_command_from_node(
                 stroke: style.stroke.to_rgba(),
                 stroke_width: style.stroke_width * style_scale,
                 corner_radius: style.corner_radius,
+                shadow: ui_depth_effect_state(style.shadow, style_scale),
+                highlight: ui_depth_effect_state(style.highlight, style_scale),
                 disabled: button.disabled,
             })
         }
@@ -2573,6 +2577,22 @@ fn text_edit_command(ctx: TextEditCommandCtx<'_>) -> UiCommand {
         } else {
             style.corner_radius
         },
+        shadow: ui_depth_effect_state(
+            if focused {
+                focused_style.shadow
+            } else {
+                style.shadow
+            },
+            style_scale,
+        ),
+        highlight: ui_depth_effect_state(
+            if focused {
+                focused_style.highlight
+            } else {
+                style.highlight
+            },
+            style_scale,
+        ),
         text: Cow::Owned(edit.text.to_string()),
         placeholder: Cow::Owned(edit.placeholder.to_string()),
         color: edit.color.to_rgba(),
@@ -2647,6 +2667,18 @@ fn panel_command(
         stroke: style.stroke.to_rgba(),
         stroke_width: style.stroke_width * style_scale,
         corner_radius: style.corner_radius,
+        shadow: ui_depth_effect_state(style.shadow, style_scale),
+        highlight: ui_depth_effect_state(style.highlight, style_scale),
+    }
+}
+
+fn ui_depth_effect_state(effect: perro_ui::UiDepthEffect, scale: f32) -> UiDepthEffectState {
+    UiDepthEffectState {
+        color: effect.color.to_rgba(),
+        distance: effect.distance * scale,
+        falloff: effect.falloff * scale,
+        vector: [effect.vector.x, effect.vector.y],
+        size: effect.size,
     }
 }
 
