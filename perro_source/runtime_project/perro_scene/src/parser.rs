@@ -389,10 +389,8 @@ impl<'a> Parser<'a> {
                     let mut tags = Vec::new();
                     let mut parent = None;
                     let mut script = None;
-                    let mut script_hash = None;
                     let mut clear_script = false;
                     let mut root_of = None;
-                    let mut root_of_hash = None;
                     let mut script_vars: Vec<SceneObjectField> = Vec::new();
 
                     while matches!(self.current, Token::Ident(_)) {
@@ -418,13 +416,11 @@ impl<'a> Parser<'a> {
                             }
                             "script" => match v {
                                 SceneValue::Str(s) => {
-                                    script_hash = parse_source_hash_literal_or_dlc_path(s.as_ref());
                                     script = Some(s.to_string());
                                     clear_script = false;
                                 }
                                 SceneValue::Key(k) if k.as_ref() == "null" => {
                                     script = None;
-                                    script_hash = None;
                                     clear_script = true;
                                 }
                                 _ => panic!("script must be a string or null"),
@@ -437,11 +433,7 @@ impl<'a> Parser<'a> {
                             }
                             "root_of" => {
                                 root_of = Some(match v {
-                                    SceneValue::Str(s) => {
-                                        root_of_hash =
-                                            parse_source_hash_literal_or_dlc_path(s.as_ref());
-                                        s.to_string()
-                                    }
+                                    SceneValue::Str(s) => s.to_string(),
                                     _ => panic!("root_of must be a string"),
                                 })
                             }
@@ -503,10 +495,8 @@ impl<'a> Parser<'a> {
                         children: Cow::Owned(Vec::new()),
                         parent: None,
                         script: script.map(Cow::Owned),
-                        script_hash,
                         clear_script,
                         root_of: root_of.map(Cow::Owned),
-                        root_of_hash,
                         script_vars: Cow::Owned(script_vars),
                         data,
                     });
@@ -618,40 +608,23 @@ fn euler_xyz_radians_to_quat_value(x: f32, y: f32, z: f32) -> SceneValue {
     }
 }
 
-fn parse_source_hash_literal_or_dlc_path(s: &str) -> Option<u64> {
-    perro_ids::parse_hashed_source_uri(s).or_else(|| {
-        if s.starts_with("dlc://") {
-            Some(perro_ids::string_to_u64(s))
-        } else {
-            None
-        }
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::Parser;
-    use perro_ids::string_to_u64;
 
     #[test]
-    fn parser_sets_script_hash_for_dlc_paths() {
+    fn parser_keeps_script_path_string() {
         let src = "@root = main\n\n[main]\nscript = \"dlc://test/scripts/script.rs\"\n[/main]\n";
         let scene = Parser::new(src).parse_scene();
         let node = &scene.nodes[0];
-        assert_eq!(
-            node.script_hash,
-            Some(string_to_u64("dlc://test/scripts/script.rs"))
-        );
+        assert_eq!(node.script.as_deref(), Some("dlc://test/scripts/script.rs"));
     }
 
     #[test]
-    fn parser_sets_root_of_hash_for_dlc_paths() {
+    fn parser_keeps_root_of_path_string() {
         let src = "@root = main\n\n[main]\nroot_of = \"dlc://test/scenes/main.scn\"\n[/main]\n";
         let scene = Parser::new(src).parse_scene();
         let node = &scene.nodes[0];
-        assert_eq!(
-            node.root_of_hash,
-            Some(string_to_u64("dlc://test/scenes/main.scn"))
-        );
+        assert_eq!(node.root_of.as_deref(), Some("dlc://test/scenes/main.scn"));
     }
 }

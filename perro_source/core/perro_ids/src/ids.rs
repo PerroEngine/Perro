@@ -4,20 +4,52 @@
 
 use std::fmt;
 
+const STRING_HASH_SEED: u64 = 0xA0761D6478BD642F;
+const STRING_HASH_PRIME: u64 = 0xE7037ED1A0B428DB;
+const EMPTY_STRING_HASH: u64 = mix64(STRING_HASH_SEED.wrapping_mul(STRING_HASH_SEED));
+
+#[inline]
 pub const fn string_to_u64(s: &str) -> u64 {
-    let mut hash: u64 = 0xA0761D6478BD642F;
     let bytes = s.as_bytes();
+    let len = bytes.len();
+    if len == 0 {
+        return EMPTY_STRING_HASH;
+    }
+
+    let mut hash = STRING_HASH_SEED ^ (len as u64).wrapping_mul(STRING_HASH_PRIME);
     let mut i = 0usize;
 
-    while i < bytes.len() {
-        hash ^= bytes[i] as u64;
-        hash = hash.wrapping_mul(0xE7037ED1A0B428DB);
-        hash = mix64(hash);
+    while i + 8 <= len {
+        hash ^= read_u64_le(bytes, i);
+        hash = hash.wrapping_mul(STRING_HASH_PRIME);
+        hash ^= hash >> 32;
+        i += 8;
+    }
+
+    let mut tail = 0u64;
+    let mut shift = 0u32;
+    while i < len {
+        tail |= (bytes[i] as u64) << shift;
+        shift += 8;
         i += 1;
     }
 
-    mix64(hash ^ (bytes.len() as u64))
+    hash ^= tail;
+    hash = hash.wrapping_mul(STRING_HASH_SEED);
+    mix64(hash)
 }
+
+const fn read_u64_le(bytes: &[u8], offset: usize) -> u64 {
+    (bytes[offset] as u64)
+        | ((bytes[offset + 1] as u64) << 8)
+        | ((bytes[offset + 2] as u64) << 16)
+        | ((bytes[offset + 3] as u64) << 24)
+        | ((bytes[offset + 4] as u64) << 32)
+        | ((bytes[offset + 5] as u64) << 40)
+        | ((bytes[offset + 6] as u64) << 48)
+        | ((bytes[offset + 7] as u64) << 56)
+}
+
 
 pub fn parse_hashed_source_uri(s: &str) -> Option<u64> {
     if s.as_bytes().iter().all(|b| b.is_ascii_digit()) {
@@ -294,7 +326,8 @@ impl ScriptMemberID {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_hashed_source_uri;
+    use super::{parse_hashed_source_uri, string_to_u64};
+    use std::{hint::black_box, time::Instant};
 
     #[test]
     fn parse_hashed_source_uri_accepts_decimal() {
@@ -305,5 +338,52 @@ mod tests {
     fn parse_hashed_source_uri_rejects_raw_dlc_path() {
         let dlc_path = "dlc://test/scripts/script.rs";
         assert_eq!(parse_hashed_source_uri(dlc_path), None);
+    }
+
+    #[test]
+    #[ignore = "bench-style timing test; run with --ignored --nocapture"]
+    fn bench_string_to_u64_by_length() {
+        const LENGTHS: &[usize] = &[0, 1, 4, 8, 15, 16, 32, 64, 128, 256, 512, 1024, 4096, 16_384];
+        const TARGET_BYTES: usize = 64 * 1024 * 1024;
+
+        println!("len,iters,total_ms,ns_per_hash,ns_per_byte,hash_xor");
+        for &len in LENGTHS {
+            let input = make_bench_string(len);
+            let bytes_per_iter = len.max(1);
+            let iters = (TARGET_BYTES / bytes_per_iter).max(1_000);
+            let mut hash_xor = 0u64;
+
+            let start = Instant::now();
+            for _ in 0..iters {
+                hash_xor ^= string_to_u64(black_box(input.as_str()));
+            }
+            let elapsed = start.elapsed();
+
+            let total_ns = elapsed.as_nanos() as f64;
+            let ns_per_hash = total_ns / iters as f64;
+            let ns_per_byte = if len == 0 {
+                0.0
+            } else {
+                total_ns / (iters as f64 * len as f64)
+            };
+
+            println!(
+                "{len},{iters},{:.3},{:.3},{:.3},{hash_xor}",
+                elapsed.as_secs_f64() * 1000.0,
+                ns_per_hash,
+                ns_per_byte
+            );
+        }
+    }
+
+    fn make_bench_string(len: usize) -> String {
+        const PATTERN: &[u8] =
+            b"res://Sports/Golf/holes/hole_01.scn:material[0123456789]/abcdefghijklmnopqrstuvwxyz";
+        let mut out = String::with_capacity(len);
+        while out.len() < len {
+            let take = (len - out.len()).min(PATTERN.len());
+            out.push_str(std::str::from_utf8(&PATTERN[..take]).unwrap());
+        }
+        out
     }
 }

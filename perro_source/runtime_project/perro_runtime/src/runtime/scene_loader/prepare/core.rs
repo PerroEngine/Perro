@@ -1,5 +1,5 @@
 use crate::material_schema;
-use perro_ids::{IntoTagID, parse_hashed_source_uri, string_to_u64};
+use perro_ids::{IntoTagID, string_to_u64};
 use perro_io::load_asset;
 use perro_nodes::{
     ambient_light_3d::AmbientLight3D,
@@ -145,15 +145,13 @@ fn resolve_scene_dlc_self_paths(scene: &mut Scene, mount_name: &str) {
             && script.starts_with(prefix)
         {
             let resolved = script.replacen(prefix, replacement_ref, 1);
-            node.script = Some(Cow::Owned(resolved.clone()));
-            node.script_hash = Some(string_to_u64(&resolved));
+            node.script = Some(Cow::Owned(resolved));
         }
         if let Some(root_of) = node.root_of.as_ref()
             && root_of.starts_with(prefix)
         {
             let resolved = root_of.replacen(prefix, replacement_ref, 1);
-            node.root_of = Some(Cow::Owned(resolved.clone()));
-            node.root_of_hash = Some(string_to_u64(&resolved));
+            node.root_of = Some(Cow::Owned(resolved));
         }
         resolve_scene_value_fields_dlc_self(node.script_vars.to_mut(), prefix, replacement_ref);
         resolve_scene_node_data_dlc_self(&mut node.data, prefix, replacement_ref);
@@ -253,11 +251,7 @@ fn push_entry_prepared(
     let parent_key = entry.parent.map(|p| remap_key(p, key_map));
     let mut merged_root_entry = None;
 
-    let root_of_source = entry
-        .root_of
-        .as_ref()
-        .map(|v| v.as_ref().to_string())
-        .or_else(|| entry.root_of_hash.map(|hash| hash.to_string()));
+    let root_of_source = entry.root_of.as_ref().map(|v| v.as_ref().to_string());
     if let Some(root_of_path) = root_of_source.as_ref() {
         if ctx.include_stack.contains(root_of_path) {
             return Err(format!(
@@ -331,15 +325,8 @@ fn push_entry_prepared(
             .collect(),
     });
 
-    let script_path_hash = entry
-        .script_hash
-        .or_else(|| {
-            entry.script.as_ref().and_then(|script| {
-                parse_hashed_source_uri(script.as_ref())
-                    .or_else(|| Some(string_to_u64(script.as_ref())))
-            })
-        });
-    if let Some(script_path_hash) = script_path_hash {
+    if let Some(script) = entry.script.as_ref() {
+        let script_path_hash = string_to_u64(script.as_ref());
         let script_mount = entry
             .script
             .as_ref()
@@ -418,17 +405,10 @@ fn merge_root_host_entry(host: &SceneDefNodeEntry, base_root: &SceneDefNodeEntry
     merged.parent = host.parent.or(base_root.parent);
     if host.clear_script {
         merged.script = None;
-        merged.script_hash = None;
-    } else if host.script.is_some() || host.script_hash.is_some() {
+    } else if host.script.is_some() {
         merged.script = host.script.clone();
-        merged.script_hash = host
-            .script_hash
-            .or_else(|| host.script.as_ref().map(|path| string_to_u64(path.as_ref())));
     } else {
         merged.script = base_root.script.clone();
-        merged.script_hash = base_root
-            .script_hash
-            .or_else(|| base_root.script.as_ref().map(|path| string_to_u64(path.as_ref())));
     }
     merged.clear_script = false;
     merged.script_vars = merge_scene_object_fields(&base_root.script_vars, &host.script_vars);

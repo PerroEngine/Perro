@@ -180,7 +180,7 @@ fn emit_static_scene_const(
             tags_name
         };
         node_entries.push_str(&format!(
-            "    SceneNodeEntry {{ data: {data}, has_data_override: {has_data_override}, key: SceneKey({key}u32), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, script_hash: {script_hash}, clear_script: {clear_script}, root_of: {root_of}, root_of_hash: {root_of_hash}, script_vars: Cow::Borrowed({script_vars}) }},\n",
+            "    SceneNodeEntry {{ data: {data}, has_data_override: {has_data_override}, key: SceneKey({key}u32), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, clear_script: {clear_script}, root_of: {root_of}, script_vars: Cow::Borrowed({script_vars}) }},\n",
             data = data_const,
             has_data_override = node.has_data_override,
             key = node.key.as_u32(),
@@ -192,10 +192,8 @@ fn emit_static_scene_const(
                 None => "None".to_string(),
             },
             script = opt_static_script_str(&node.script),
-            script_hash = opt_static_script_hash(&node.script),
             clear_script = node.clear_script,
             root_of = opt_static_root_of_str(&node.root_of),
-            root_of_hash = opt_static_root_of_hash(&node.root_of),
             script_vars = if node.script_vars.is_empty() {
                 uses_empty_fields = true;
                 "EMPTY_SCENE_FIELDS".to_string()
@@ -453,38 +451,11 @@ fn opt_static_str(v: &Option<Cow<'static, str>>) -> String {
 }
 
 fn opt_static_script_str(v: &Option<Cow<'static, str>>) -> String {
-    match v {
-        Some(s) if static_hashable_path(s.as_ref()).is_some() => "None".to_string(),
-        Some(s) => format!("Some(Cow::Borrowed(\"{}\"))", escape_str(s.as_ref())),
-        None => "None".to_string(),
-    }
-}
-
-fn opt_static_script_hash(v: &Option<Cow<'static, str>>) -> String {
-    match v {
-        Some(s) => static_hashable_path(s.as_ref())
-            .map(|hash| format!("Some({hash}u64)"))
-            .unwrap_or_else(|| "None".to_string()),
-        None => "None".to_string(),
-    }
+    opt_static_str(v)
 }
 
 fn opt_static_root_of_str(v: &Option<Cow<'static, str>>) -> String {
-    match v {
-        Some(s) if static_hashable_scene_path(s.as_ref()) => "None".to_string(),
-        Some(s) => format!("Some(Cow::Borrowed(\"{}\"))", escape_str(s.as_ref())),
-        None => "None".to_string(),
-    }
-}
-
-fn opt_static_root_of_hash(v: &Option<Cow<'static, str>>) -> String {
-    match v {
-        Some(s) if static_hashable_scene_path(s.as_ref()) => {
-            format!("Some({}u64)", perro_ids::string_to_u64(s.as_ref()))
-        }
-        None => "None".to_string(),
-        _ => "None".to_string(),
-    }
+    opt_static_str(v)
 }
 
 fn emit_static_scene_value_str(
@@ -502,11 +473,7 @@ fn emit_static_scene_value_str(
     {
         return emit_static_scene_color3(color);
     }
-    if let Some(hash) = static_hashable_path(s) {
-        format!("SceneValue::Hashed({hash}u64)")
-    } else {
-        format!("SceneValue::Str(Cow::Borrowed(\"{}\"))", escape_str(s))
-    }
+    format!("SceneValue::Str(Cow::Borrowed(\"{}\"))", escape_str(s))
 }
 
 fn is_static_rgba_color_field(node_type: Option<&str>, field_name: &str) -> bool {
@@ -631,73 +598,6 @@ fn resolve_scene_value_dlc_self(value: &mut SceneValue, prefix: &str, replacemen
     }
 }
 
-fn static_hashable_scene_path(s: &str) -> bool {
-    if !is_res_uri(s) {
-        return false;
-    }
-    let (path_part, _) = split_source_fragment(s);
-    Path::new(path_part)
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("scn"))
-}
-
-fn static_hashable_path(s: &str) -> Option<u64> {
-    if !is_res_uri(s) {
-        return None;
-    }
-    let path_part = split_source_fragment(s).0;
-    let ext = Path::new(path_part)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase())?;
-    let hashable = matches!(
-        ext.as_str(),
-        "rs" | "scn"
-            | "pmat"
-            | "panim"
-            | "pmesh"
-            | "pskel"
-            | "pparticle"
-            | "png"
-            | "jpg"
-            | "jpeg"
-            | "bmp"
-            | "gif"
-            | "ico"
-            | "tga"
-            | "webp"
-            | "rgba"
-            | "wgsl"
-            | "mp3"
-            | "wav"
-            | "ogg"
-            | "flac"
-            | "aac"
-            | "m4a"
-            | "glb"
-            | "gltf"
-    );
-    hashable.then(|| perro_ids::string_to_u64(s))
-}
-
-fn is_res_uri(path: &str) -> bool {
-    path.starts_with("res://")
-}
-
-fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
-    let Some((path, selector)) = source.rsplit_once(':') else {
-        return (source, None);
-    };
-    if path.is_empty() || selector.contains('/') || selector.contains('\\') {
-        return (source, None);
-    }
-    if selector.contains('[') && selector.ends_with(']') {
-        return (path, Some(selector));
-    }
-    (source, None)
-}
-
 fn sanitize_ident(path: &str) -> String {
     let mut out = String::new();
     for c in path.chars() {
@@ -712,10 +612,7 @@ fn sanitize_ident(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        emit_static_node_type, emit_static_scene_value_str, resolve_scene_dlc_self_paths,
-        static_hashable_path,
-    };
+    use super::{emit_static_node_type, emit_static_scene_value_str, resolve_scene_dlc_self_paths};
     use perro_scene::Parser;
 
     #[test]
@@ -763,30 +660,6 @@ mod tests {
         for node in nodes {
             assert_eq!(emit_static_node_type(node).unwrap(), node);
         }
-    }
-
-    #[test]
-    fn static_hashable_path_hashes_scheme_plus_fragment_paths() {
-        let source = "res://terrain.glb:mesh[0]";
-        assert_eq!(
-            static_hashable_path(source),
-            Some(perro_ids::string_to_u64(source))
-        );
-    }
-
-    #[test]
-    fn static_hashable_path_hashes_script_paths() {
-        let source = "res://scripts/game_manager.rs";
-        assert_eq!(
-            static_hashable_path(source),
-            Some(perro_ids::string_to_u64(source))
-        );
-    }
-
-    #[test]
-    fn static_hashable_path_does_not_hash_dlc_paths() {
-        let source = "dlc://test/models/hero.glb";
-        assert_eq!(static_hashable_path(source), None);
     }
 
     #[test]
@@ -838,6 +711,26 @@ mod tests {
         assert_eq!(
             emit_static_scene_value_str(None, Some("emissive_factor"), "#4C3B55"),
             "SceneValue::Vec3 { x: 0.29803923, y: 0.23137255, z: 0.33333334 }"
+        );
+    }
+
+    #[test]
+    fn static_resource_paths_stay_strings() {
+        assert_eq!(
+            emit_static_scene_value_str(
+                Some("MeshInstance3D"),
+                Some("material"),
+                "res://materials/grass.pmat"
+            ),
+            "SceneValue::Str(Cow::Borrowed(\"res://materials/grass.pmat\"))"
+        );
+        assert_eq!(
+            emit_static_scene_value_str(
+                Some("MeshInstance3D"),
+                Some("mesh"),
+                "res://models/course.glb:mesh[0]"
+            ),
+            "SceneValue::Str(Cow::Borrowed(\"res://models/course.glb:mesh[0]\"))"
         );
     }
 

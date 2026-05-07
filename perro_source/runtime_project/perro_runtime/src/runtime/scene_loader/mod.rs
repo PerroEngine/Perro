@@ -690,10 +690,8 @@ mod tests {
         children: Cow::Borrowed(EMPTY_KEYS),
         parent: None,
         script: None,
-        script_hash: None,
         clear_script: false,
         root_of: Some(Cow::Borrowed("dlc://test/scenes/main.scn")),
-        root_of_hash: None,
         script_vars: Cow::Borrowed(EMPTY_FIELDS),
     }];
     static HOST_SCENE: Scene = Scene {
