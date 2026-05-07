@@ -846,6 +846,7 @@ pub struct DenseInstancePose3D {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum RenderCommand {
     Resource(ResourceCommand),
     TwoD(Command2D),
