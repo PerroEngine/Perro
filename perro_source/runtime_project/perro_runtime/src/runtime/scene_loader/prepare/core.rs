@@ -222,18 +222,16 @@ fn prepare_scene_with_stack(
         .saturating_add(1);
     let key_map = HashMap::new();
 
+    let mut ctx = PrepareSceneCtx {
+        prepared_nodes: &mut prepared_nodes,
+        scripts: &mut scripts,
+        next_key: &mut next_key,
+        include_stack,
+        load_scene,
+    };
+
     for entry in scene.nodes.as_ref() {
-        push_entry_prepared(
-            scene,
-            entry,
-            None,
-            &key_map,
-            &mut prepared_nodes,
-            &mut scripts,
-            &mut next_key,
-            include_stack,
-            load_scene,
-        )?;
+        push_entry_prepared(scene, entry, None, &key_map, &mut ctx)?;
     }
 
     Ok(PreparedScene {
@@ -248,11 +246,7 @@ fn push_entry_prepared(
     entry: &SceneDefNodeEntry,
     key_override: Option<u32>,
     key_map: &HashMap<SceneKey, u32>,
-    prepared_nodes: &mut Vec<PendingNode>,
-    scripts: &mut Vec<PendingScript>,
-    next_key: &mut u32,
-    include_stack: &mut HashSet<String>,
-    load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
+    ctx: &mut PrepareSceneCtx<'_>,
 ) -> Result<(), String> {
     let key = key_override.unwrap_or_else(|| remap_key(entry.key, key_map));
     let key_name = scene.key_name_or_id(entry.key).into_owned();
@@ -265,15 +259,15 @@ fn push_entry_prepared(
         .map(|v| v.as_ref().to_string())
         .or_else(|| entry.root_of_hash.map(|hash| hash.to_string()));
     if let Some(root_of_path) = root_of_source.as_ref() {
-        if include_stack.contains(root_of_path) {
+        if ctx.include_stack.contains(root_of_path) {
             return Err(format!(
                 "root_of cycle detected while loading `{}` for host `{}`",
                 root_of_path, key_name
             ));
         }
-        include_stack.insert(root_of_path.clone());
+        ctx.include_stack.insert(root_of_path.clone());
         let root_merge_result = (|| {
-            let import_scene = load_scene(root_of_path.as_str())?;
+            let import_scene = (ctx.load_scene)(root_of_path.as_str())?;
             let import_root = import_scene
                 .root
                 .ok_or_else(|| format!("root_of scene `{}` has no @root", root_of_path))?;
@@ -294,17 +288,11 @@ fn push_entry_prepared(
                 root_of_path.as_str(),
                 import_scene.as_ref(),
                 &import_root,
-                ImportExpandCtx {
-                    prepared_nodes,
-                    scripts,
-                    next_key,
-                    include_stack,
-                    load_scene,
-                },
+                ctx,
             )?;
             Ok::<SceneDefNodeEntry, String>(merged)
         })();
-        include_stack.remove(root_of_path);
+        ctx.include_stack.remove(root_of_path);
         merged_root_entry = Some(root_merge_result?);
     }
 
@@ -321,7 +309,7 @@ fn push_entry_prepared(
         animation_bindings,
     ) = scene_node_from_entry(entry)?;
 
-    prepared_nodes.push(PendingNode {
+    ctx.prepared_nodes.push(PendingNode {
         key,
         key_name: key_name.clone(),
         parent_key,
@@ -356,7 +344,7 @@ fn push_entry_prepared(
             .script
             .as_ref()
             .and_then(|path| parse_dlc_mount_name(path.as_ref()));
-        scripts.push(PendingScript {
+        ctx.scripts.push(PendingScript {
             node_key: key,
             #[cfg(test)]
             node_key_name: key_name.clone(),
@@ -373,7 +361,7 @@ fn push_entry_prepared(
     Ok(())
 }
 
-struct ImportExpandCtx<'a> {
+struct PrepareSceneCtx<'a> {
     prepared_nodes: &'a mut Vec<PendingNode>,
     scripts: &'a mut Vec<PendingScript>,
     next_key: &'a mut u32,
@@ -386,7 +374,7 @@ fn expand_import_children_into_host(
     path: &str,
     import_scene: &Scene,
     import_root: &SceneKey,
-    ctx: ImportExpandCtx<'_>,
+    ctx: &mut PrepareSceneCtx<'_>,
 ) -> Result<(), String> {
     let mut map = HashMap::<SceneKey, u32>::new();
     map.insert(*import_root, host_key);
@@ -412,11 +400,7 @@ fn expand_import_children_into_host(
             node,
             Some(remapped_key),
             &map,
-            ctx.prepared_nodes,
-            ctx.scripts,
-            ctx.next_key,
-            ctx.include_stack,
-            ctx.load_scene,
+            ctx,
         )?;
     }
     Ok(())
@@ -431,7 +415,7 @@ fn merge_root_host_entry(host: &SceneDefNodeEntry, base_root: &SceneDefNodeEntry
     if host.children.is_empty() {
         merged.children = base_root.children.clone();
     }
-    merged.parent = host.parent.clone().or_else(|| base_root.parent.clone());
+    merged.parent = host.parent.or(base_root.parent);
     if host.clear_script {
         merged.script = None;
         merged.script_hash = None;

@@ -1805,15 +1805,9 @@ pub const fn lookup_audio(_path_hash: u64) -> &'static [u8] {
 }
 
 fn default_scripts_lib_rs() -> String {
-    r#"use perro_runtime::{Runtime, RuntimeInputApi, RuntimeResourceApi};
+    r#"use perro_runtime::RuntimeScriptApi;
 use perro_api::scripting::ScriptConstructor;
 
-pub struct RuntimeScriptApi;
-impl ScriptAPI for RuntimeScriptApi {
-    type RT = Runtime;
-    type RS = RuntimeResourceApi;
-    type IP = RuntimeInputApi;
-}
 pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<RuntimeScriptApi>)] = &[];
 
 #[unsafe(no_mangle)]
