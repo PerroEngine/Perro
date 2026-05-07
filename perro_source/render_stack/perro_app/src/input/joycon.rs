@@ -143,6 +143,7 @@ mod backend {
 
     #[derive(Default)]
     pub struct JoyConBackend {
+        hid_api: Option<HidApi>,
         devices: HashMap<String, DeviceHandle>,
         slots: Arc<Mutex<SlotAllocator>>,
         rx: Option<Receiver<JoyConEvent>>,
@@ -214,7 +215,16 @@ mod backend {
             }
             self.last_scan = Some(now);
 
-            let Ok(api) = HidApi::new() else {
+            if self.hid_api.is_none() {
+                self.hid_api = HidApi::new().ok();
+            }
+            let Some(api) = self.hid_api.as_mut() else {
+                return;
+            };
+            if api.refresh_devices().is_err() {
+                self.hid_api = HidApi::new().ok();
+            }
+            let Some(api) = self.hid_api.as_ref() else {
                 return;
             };
 

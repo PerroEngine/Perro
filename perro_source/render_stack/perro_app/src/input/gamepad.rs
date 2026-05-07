@@ -49,6 +49,7 @@ mod backend {
     pub struct GamepadBackend {
         gilrs: Option<Gilrs>,
         id_to_uuid: HashMap<GamepadId, [u8; 16]>,
+        index_to_id: HashMap<usize, GamepadId>,
         uuid_to_index: HashMap<[u8; 16], usize>,
         index_to_uuid: Vec<Option<[u8; 16]>>,
         free_indices: Vec<usize>,
@@ -174,12 +175,7 @@ mod backend {
         }
 
         fn find_gamepad_id_by_index(&self, index: usize) -> Option<GamepadId> {
-            for (id, uuid) in &self.id_to_uuid {
-                if self.uuid_to_index.get(uuid).copied() == Some(index) {
-                    return Some(*id);
-                }
-            }
-            None
+            self.index_to_id.get(&index).copied()
         }
 
         fn ensure_gilrs(&mut self) {
@@ -364,6 +360,7 @@ mod backend {
             }
             self.uuid_in_use.insert(uuid);
             self.id_to_uuid.insert(id, uuid);
+            self.index_to_id.insert(index, id);
             Some(index)
         }
 
@@ -374,6 +371,7 @@ mod backend {
             let Some(index) = self.uuid_to_index.get(&uuid).copied() else {
                 return;
             };
+            self.index_to_id.remove(&index);
             if self.free_index_set.insert(index) {
                 self.free_indices.push(index);
             }
