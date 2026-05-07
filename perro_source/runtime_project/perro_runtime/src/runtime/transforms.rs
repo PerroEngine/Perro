@@ -68,15 +68,10 @@ impl Runtime {
                 .global_transform_2d
                 .resize(index + 1, Transform2D::IDENTITY);
         }
-        if self.transforms.global_transform_2d_valid.len() <= index {
-            self.transforms
-                .global_transform_2d_valid
-                .resize(index + 1, 0);
-        }
         if self.transforms.global_transform_2d_generation.len() <= index {
             self.transforms
                 .global_transform_2d_generation
-                .resize(index + 1, 0);
+                .resize(index + 1, u32::MAX);
         }
     }
 
@@ -87,41 +82,21 @@ impl Runtime {
                 .global_transform_3d
                 .resize(index + 1, Transform3D::IDENTITY);
         }
-        if self.transforms.global_transform_3d_valid.len() <= index {
-            self.transforms
-                .global_transform_3d_valid
-                .resize(index + 1, 0);
-        }
         if self.transforms.global_transform_3d_generation.len() <= index {
             self.transforms
                 .global_transform_3d_generation
-                .resize(index + 1, 0);
+                .resize(index + 1, u32::MAX);
         }
     }
 
     fn is_global_2d_cache_valid_for_id(&self, id: NodeID) -> bool {
         let index = id.index() as usize;
-        if self
-            .transforms
-            .global_transform_2d_valid
-            .get(index)
-            .copied()
-            .unwrap_or(0)
-            == 0
-        {
-            return false;
-        }
-        if self
-            .transforms
+        self.transforms
             .global_transform_2d_generation
             .get(index)
             .copied()
             .unwrap_or(u32::MAX)
-            != id.generation()
-        {
-            return false;
-        }
-        true
+            == id.generation()
     }
 
     #[inline]
@@ -132,27 +107,12 @@ impl Runtime {
 
     fn is_global_3d_cache_valid_for_id(&self, id: NodeID) -> bool {
         let index = id.index() as usize;
-        if self
-            .transforms
-            .global_transform_3d_valid
-            .get(index)
-            .copied()
-            .unwrap_or(0)
-            == 0
-        {
-            return false;
-        }
-        if self
-            .transforms
+        self.transforms
             .global_transform_3d_generation
             .get(index)
             .copied()
             .unwrap_or(u32::MAX)
-            != id.generation()
-        {
-            return false;
-        }
-        true
+            == id.generation()
     }
 
     #[inline]
@@ -231,7 +191,6 @@ impl Runtime {
             };
             let index = chain_id.index() as usize;
             self.transforms.global_transform_2d[index] = global;
-            self.transforms.global_transform_2d_valid[index] = 1;
             self.transforms.global_transform_2d_generation[index] = chain_id.generation();
             self.dirty.clear_transform_dirty(chain_id, Spatial::TwoD);
             parent_world = world;
@@ -317,7 +276,6 @@ impl Runtime {
             };
             let index = chain_id.index() as usize;
             self.transforms.global_transform_3d[index] = global;
-            self.transforms.global_transform_3d_valid[index] = 1;
             self.transforms.global_transform_3d_generation[index] = chain_id.generation();
             self.dirty.clear_transform_dirty(chain_id, Spatial::ThreeD);
             parent_world = world;

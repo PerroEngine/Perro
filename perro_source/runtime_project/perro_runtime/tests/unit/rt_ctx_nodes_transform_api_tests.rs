@@ -216,3 +216,108 @@ fn remove_node_removes_entire_subtree() {
     assert!(runtime.nodes.get(grandchild_id).is_none());
     assert!(!runtime.remove_node(root_id));
 }
+
+#[test]
+fn removed_node_cache_does_not_leak_to_reused_slot_3d() {
+    let mut runtime = Runtime::new();
+
+    let mut original = Node3D::new();
+    original.transform.position = Vector3::new(3.0, 4.0, 5.0);
+    let original_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(original)));
+    runtime.mark_transform_dirty_recursive(original_id);
+    let original_global = runtime
+        .get_global_transform_3d(original_id)
+        .expect("original global must exist");
+    assert!(approx(original_global.position.x, 3.0));
+    assert!(runtime.remove_node(original_id));
+
+    let mut reused = None;
+    for i in 0..2048 {
+        let mut node = Node3D::new();
+        node.transform.position = Vector3::new(-11.0, i as f32, 7.0);
+        let id = runtime
+            .nodes
+            .insert(SceneNode::new(SceneNodeData::Node3D(node)));
+        if id.index() == original_id.index() && id.generation() != original_id.generation() {
+            reused = Some((id, i as f32));
+            break;
+        }
+    }
+
+    let (reused_id, expected_y) = reused.expect("slot must be reused with new generation");
+    runtime.mark_transform_dirty_recursive(reused_id);
+    let reused_global = runtime
+        .get_global_transform_3d(reused_id)
+        .expect("reused global must exist");
+    assert!(approx(reused_global.position.x, -11.0));
+    assert!(approx(reused_global.position.y, expected_y));
+    assert!(approx(reused_global.position.z, 7.0));
+}
+
+#[test]
+fn removed_node_cache_does_not_leak_to_reused_slot_2d() {
+    let mut runtime = Runtime::new();
+
+    let mut original = Node2D::new();
+    original.transform.position = Vector2::new(8.0, 9.0);
+    let original_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node2D(original)));
+    runtime.mark_transform_dirty_recursive(original_id);
+    let original_global = runtime
+        .get_global_transform_2d(original_id)
+        .expect("original global must exist");
+    assert!(approx(original_global.position.x, 8.0));
+    assert!(runtime.remove_node(original_id));
+
+    let mut reused = None;
+    for i in 0..2048 {
+        let mut node = Node2D::new();
+        node.transform.position = Vector2::new(-2.0, i as f32 * 2.0);
+        let id = runtime
+            .nodes
+            .insert(SceneNode::new(SceneNodeData::Node2D(node)));
+        if id.index() == original_id.index() && id.generation() != original_id.generation() {
+            reused = Some((id, i as f32 * 2.0));
+            break;
+        }
+    }
+
+    let (reused_id, expected_y) = reused.expect("slot must be reused with new generation");
+    runtime.mark_transform_dirty_recursive(reused_id);
+    let reused_global = runtime
+        .get_global_transform_2d(reused_id)
+        .expect("reused global must exist");
+    assert!(approx(reused_global.position.x, -2.0));
+    assert!(approx(reused_global.position.y, expected_y));
+}
+
+#[test]
+fn recompute_overwrites_old_cached_global_transform_3d() {
+    let mut runtime = Runtime::new();
+    let mut node = Node3D::new();
+    node.transform.position = Vector3::new(1.0, 2.0, 3.0);
+    let id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(node)));
+
+    runtime.mark_transform_dirty_recursive(id);
+    let first = runtime
+        .get_global_transform_3d(id)
+        .expect("first global must exist");
+    assert!(approx(first.position.x, 1.0));
+
+    let _ = runtime.with_base_node_mut::<Node3D, _, _>(id, |node| {
+        node.transform.position = Vector3::new(9.0, 8.0, 7.0);
+    });
+    runtime.mark_transform_dirty_recursive(id);
+
+    let second = runtime
+        .get_global_transform_3d(id)
+        .expect("second global must exist");
+    assert!(approx(second.position.x, 9.0));
+    assert!(approx(second.position.y, 8.0));
+    assert!(approx(second.position.z, 7.0));
+}
