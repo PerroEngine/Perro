@@ -215,8 +215,6 @@ icon = "res://icon.png"
 virtual_resolution = "1920x1080"
 
 [localization]
-source = "res://loc/game.csv"
-key = "key"
 default_locale = "JA"
 "#;
 
@@ -225,9 +223,138 @@ default_locale = "JA"
         .localization
         .as_ref()
         .expect("localization should be present");
-    assert_eq!(localization.source_csv, "res://loc/game.csv");
+    assert_eq!(localization.source_csv, "");
     assert_eq!(localization.key_column, "key");
     assert_eq!(localization.default_locale, "ja");
+}
+
+#[test]
+fn load_project_toml_detects_sibling_localization_csv() {
+    let root = unique_temp_dir("perro_localization_sibling");
+    ensure_project_layout(&root).expect("layout");
+    fs::write(
+        root.join("project.toml"),
+        r#"[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+
+[localization]
+default_locale = "ES"
+"#,
+    )
+    .expect("write project.toml");
+    fs::write(
+        root.join("locale.csv"),
+        "key,en,es\nmenu.start,Start,Iniciar\n",
+    )
+    .expect("write locale.csv");
+
+    let parsed = load_project_toml(&root).expect("failed to load project.toml");
+    let localization = parsed
+        .localization
+        .as_ref()
+        .expect("localization should be present");
+    assert_eq!(localization.source_csv, "locale.csv");
+    assert_eq!(localization.key_column, "key");
+    assert_eq!(localization.default_locale, "es");
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
+fn load_project_toml_uses_en_when_sibling_csv_has_no_localization_table() {
+    let root = unique_temp_dir("perro_localization_implicit_default");
+    ensure_project_layout(&root).expect("layout");
+    fs::write(
+        root.join("project.toml"),
+        r#"[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+"#,
+    )
+    .expect("write project.toml");
+    fs::write(
+        root.join("translations.csv"),
+        "key,en,es\nmenu.start,Start,Iniciar\n",
+    )
+    .expect("write translations.csv");
+
+    let parsed = load_project_toml(&root).expect("failed to load project.toml");
+    let localization = parsed
+        .localization
+        .as_ref()
+        .expect("localization should be present");
+    assert_eq!(localization.source_csv, "translations.csv");
+    assert_eq!(localization.default_locale, "en");
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
+fn load_project_toml_rejects_localization_table_without_sibling_csv() {
+    let root = unique_temp_dir("perro_localization_missing_sibling");
+    ensure_project_layout(&root).expect("layout");
+    fs::write(
+        root.join("project.toml"),
+        r#"[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+
+[localization]
+default_locale = "en"
+"#,
+    )
+    .expect("write project.toml");
+
+    let err = load_project_toml(&root).expect_err("expected missing csv failure");
+    assert!(matches!(err, ProjectError::InvalidField("localization", _)));
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
+fn parse_project_toml_reads_export_metadata() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[metadata]
+description = "Arcade test game"
+company = "Perro Lab"
+version = "1.2.3"
+copyright = "Copyright (c) 2026 Perro Lab"
+trademark = "Perro Lab"
+
+[graphics]
+virtual_resolution = "1920x1080"
+"#;
+
+    let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
+    assert_eq!(
+        parsed.metadata.description.as_deref(),
+        Some("Arcade test game")
+    );
+    assert_eq!(parsed.metadata.company.as_deref(), Some("Perro Lab"));
+    assert_eq!(parsed.metadata.version.as_deref(), Some("1.2.3"));
+    assert_eq!(
+        parsed.metadata.copyright.as_deref(),
+        Some("Copyright (c) 2026 Perro Lab")
+    );
+    assert_eq!(parsed.metadata.trademark.as_deref(), Some("Perro Lab"));
 }
 
 fn unique_temp_dir(prefix: &str) -> PathBuf {

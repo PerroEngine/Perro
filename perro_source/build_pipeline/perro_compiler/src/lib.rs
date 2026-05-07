@@ -1082,26 +1082,17 @@ pub fn compile_project_bundle(
     perro_static_pipeline::write_static_mod_rs(project_root)
         .map_err(|err| CompilerError::SceneParse(format!("static mod generation failed: {err}")))?;
     generate_embedded_main(project_root)?;
-    generate_perro_assets(project_root, &cfg)?;
+    generate_perro_assets(project_root)?;
     build_project_crate(project_root, options)?;
     Ok(())
 }
 
-fn generate_perro_assets(
-    project_root: &Path,
-    cfg: &perro_project::ProjectConfig,
-) -> Result<(), CompilerError> {
+fn generate_perro_assets(project_root: &Path) -> Result<(), CompilerError> {
     let embedded_dir = project_root.join(".perro").join("project").join("embedded");
     fs::create_dir_all(&embedded_dir)?;
     let output = embedded_dir.join("assets.perro");
     let res_dir = project_root.join("res");
-    let mut skip_rel_paths = Vec::<String>::new();
-    if let Some(localization) = cfg.localization.as_ref()
-        && let Some(rel) = localization.source_csv.strip_prefix("res://")
-    {
-        skip_rel_paths.push(rel.replace('\\', "/"));
-    }
-    build_perro_assets_archive(&output, &res_dir, project_root, &skip_rel_paths)?;
+    build_perro_assets_archive(&output, &res_dir, project_root, &[])?;
     Ok(())
 }
 
@@ -1447,6 +1438,9 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
 #[path = \"static/mod.rs\"]\n\
   mod static_assets;\n\n\
 static PERRO_ASSETS: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n\
+#[used]\n\
+static PERRO_ENGINE_MARKER: &[u8] =\n\
+    b\"PERRO_ENGINE_DETECT:v1;engine=Perro Engine;format=.perro;site=https://www.perroengine.com\";\n\n\
 fn lookup_static_binary(path_hash: u64) -> &'static [u8] {{\n\
     let bytes = static_assets::textures::lookup_texture(path_hash);\n\
     if !bytes.is_empty() {{\n\
@@ -1492,6 +1486,7 @@ fn project_root() -> std::path::PathBuf {{\n\
     std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(\".\"))\n\
   }}\n\n\
   fn main() {{\n\
+    std::hint::black_box(PERRO_ENGINE_MARKER);\n\
 {embedded_block}\n\
   }}\n",
         embedded_block = embedded_block,

@@ -245,7 +245,7 @@ mod tests {
             fill: [0.1, 0.2, 0.3, 1.0],
             stroke: [1.0, 1.0, 1.0, 1.0],
             stroke_width: 2.0,
-            corner_radius: 4.0,
+            corner_radius: 0.2,
         });
 
         let paint = renderer.prepare_paint([800.0, 600.0]);

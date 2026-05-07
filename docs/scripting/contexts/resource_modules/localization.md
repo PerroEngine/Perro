@@ -46,6 +46,21 @@ Module methods:
 - `res.Localization().get_for_locale(Locale::ES, "camera.init") -> Option<&'static str>`
 - `res.Localization().get_for_locale_by_hash(Locale::ES, key_hash) -> Option<&'static str>`
 
+Setup:
+
+- Put `localization.csv`, `locale.csv`, or `translations.csv` next to `project.toml`.
+- Do not put localization CSV in `res/`.
+- First CSV column must be `key`.
+- Other columns use language codes.
+- `project.toml` may set default locale:
+
+```toml
+[localization]
+default_locale = "en"
+```
+
+- If unset, default locale is `en`.
+
 How lookup works:
 
 - `locale!(res, "literal.key")` uses a compile-time key hash and queries current locale.

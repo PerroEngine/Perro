@@ -507,6 +507,7 @@ pub struct UiStyle {
     pub fill: Color,
     pub stroke: Color,
     pub stroke_width: f32,
+    /// 0.0 = square corners, 1.0 = half of the shortest side.
     pub corner_radius: f32,
 }
 
@@ -516,7 +517,7 @@ impl UiStyle {
             fill: Color::new(0.11, 0.12, 0.14, 0.92),
             stroke: Color::new(0.22, 0.24, 0.28, 1.0),
             stroke_width: 1.0,
-            corner_radius: 4.0,
+            corner_radius: 0.2,
         }
     }
 
@@ -525,7 +526,7 @@ impl UiStyle {
             fill: Color::new(0.18, 0.20, 0.24, 1.0),
             stroke: Color::new(0.32, 0.35, 0.40, 1.0),
             stroke_width: 1.0,
-            corner_radius: 4.0,
+            corner_radius: 0.2,
         }
     }
 }
@@ -690,7 +691,7 @@ impl UiTextEdit {
                 fill: Color::new(0.10, 0.11, 0.13, 0.96),
                 stroke: Color::new(0.45, 0.58, 0.85, 1.0),
                 stroke_width: 1.0,
-                corner_radius: 4.0,
+                corner_radius: 0.2,
             },
             hover_signals: Vec::new(),
             hover_exit_signals: Vec::new(),
@@ -899,13 +900,13 @@ impl UiButton {
                 fill: Color::new(0.24, 0.27, 0.32, 1.0),
                 stroke: Color::new(0.42, 0.46, 0.54, 1.0),
                 stroke_width: 1.0,
-                corner_radius: 4.0,
+                corner_radius: 0.2,
             },
             pressed_style: UiStyle {
                 fill: Color::new(0.12, 0.14, 0.18, 1.0),
                 stroke: Color::new(0.42, 0.46, 0.54, 1.0),
                 stroke_width: 1.0,
-                corner_radius: 4.0,
+                corner_radius: 0.2,
             },
             cursor_icon: CursorIcon::Pointer,
             hover_base: None,

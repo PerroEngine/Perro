@@ -193,6 +193,48 @@ mod tests {
     }
 
     #[test]
+    fn scene_loader_button_state_style_inherits_base_fields() {
+        let scene = Parser::new(
+            r##"
+            @root = button
+            [button]
+            [UiButton]
+                style = { fill = "#101820" stroke = "#A0A8B0" radius = 1.0 }
+                hover_fill = "#202830"
+                pressed = {
+                    style = { fill = "#303840" }
+                }
+            [/UiButton]
+            [/button]
+            "##,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        })
+        .expect("prepare scene");
+
+        let node = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "button")
+            .expect("button node");
+        match &node.node.data {
+            SceneNodeData::UiButton(button) => {
+                assert_eq!(button.style.corner_radius, 1.0);
+                assert_eq!(button.hover_style.fill, Color::from_hex("#202830").unwrap());
+                assert_eq!(button.hover_style.stroke, button.style.stroke);
+                assert_eq!(button.hover_style.corner_radius, 1.0);
+                assert_eq!(button.pressed_style.fill, Color::from_hex("#303840").unwrap());
+                assert_eq!(button.pressed_style.stroke, button.style.stroke);
+                assert_eq!(button.pressed_style.corner_radius, 1.0);
+            }
+            other => panic!("expected UiButton node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn scene_loader_builds_ui_nodes_from_scene_blocks() {
         let scene = Parser::new(
             r##"
@@ -212,7 +254,7 @@ mod tests {
                 v_size = "fit_children"
                 pivot_ratio = (0, 0)
                 padding = (1, 2, 3, 4)
-                style = { fill = "#101820" stroke = "#A0A8B0" radius = 6 }
+                style = { fill = "#101820" stroke = "#A0A8B0" radius = 0.3 }
                 hover_fill = "#202830"
                 cursor_icon = "grab"
                 pressed_fill = "#303840"
@@ -223,13 +265,13 @@ mod tests {
                     size_ratio = (0.65, 0.08666667)
                     scale = (1.1, 1.2)
                     rotation = 0.5
-                    style = { fill = "#405060" stroke = "#C0D0E0" radius = 8 }
+                    style = { fill = "#405060" stroke = "#C0D0E0" radius = 0.4 }
                 }
                 pressed = {
                     size_ratio = (0.55, 0.07)
                     scale = (0.9, 0.8)
                     rotation = -0.25
-                    style = { fill = "#182028" stroke = "#8090A0" radius = 4 }
+                    style = { fill = "#182028" stroke = "#8090A0" radius = 0.2 }
                 }
                 radius = "full"
                 disabled = true
@@ -306,7 +348,7 @@ mod tests {
                 assert!(button.clip_children);
                 assert_eq!(button.layout.anchor, perro_ui::UiAnchor::TopRight);
                 assert!(button.disabled);
-                assert_eq!(button.style.corner_radius, 6.0);
+                assert_eq!(button.style.corner_radius, 0.3);
                 assert_eq!(button.style.fill, Color::from_hex("#101820").unwrap());
                 assert_eq!(button.style.stroke, Color::from_hex("#A0A8B0").unwrap());
                 assert_eq!(button.hover_style.fill, Color::from_hex("#405060").unwrap());
@@ -314,7 +356,7 @@ mod tests {
                     button.hover_style.stroke,
                     Color::from_hex("#C0D0E0").unwrap()
                 );
-                assert_eq!(button.hover_style.corner_radius, 8.0);
+                assert_eq!(button.hover_style.corner_radius, 0.4);
                 assert_eq!(button.cursor_icon, perro_ui::CursorIcon::Grab);
                 assert_eq!(
                     button.pressed_style.fill,

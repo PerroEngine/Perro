@@ -165,9 +165,8 @@ fn read_localization_csv(
         .map_err(|err| format!("failed to parse csv headers in `{source}`: {err}"))?
         .clone();
 
-    let key_idx = find_header_index(&headers, key_column).ok_or_else(|| {
-        format!("csv `{source}` is missing key column `{key_column}` in header row")
-    })?;
+    let key_idx = find_key_header_index(&headers, key_column)
+        .ok_or_else(|| format!("csv `{source}` must use `{key_column}` as first column"))?;
     let locale_idx = find_header_index(&headers, locale_code).ok_or_else(|| {
         format!("csv `{source}` is missing locale column `{locale_code}` in header row")
     })?;
@@ -215,11 +214,17 @@ fn intern_localization_str(value: &str) -> &'static str {
     leaked
 }
 
+fn find_key_header_index(headers: &StringRecord, expected: &str) -> Option<usize> {
+    headers
+        .get(0)
+        .is_some_and(|header| header.trim().eq_ignore_ascii_case(expected))
+        .then_some(0)
+}
+
 fn find_header_index(headers: &StringRecord, expected: &str) -> Option<usize> {
-    let expected = expected.trim().to_ascii_lowercase();
     headers
         .iter()
-        .position(|header| header.trim().eq_ignore_ascii_case(&expected))
+        .position(|header| header.trim().eq_ignore_ascii_case(expected))
 }
 
 fn locale_from_code(code: &'static str) -> Locale {
@@ -267,10 +272,9 @@ mod tests {
 
     fn setup_csv_project() -> PathBuf {
         let root = unique_temp_dir("localization");
-        let res = root.join("res");
-        std::fs::create_dir_all(&res).expect("failed to create test res dir");
+        std::fs::create_dir_all(&root).expect("failed to create test root dir");
         std::fs::write(
-            res.join("localization.csv"),
+            root.join("localization.csv"),
             "key,en,es,fr,ja,zh\nhello,Hello,Hola,Bonjour,こんにちは,你好\nbye,Bye,Adios,Au revoir,さようなら,再见\n",
         )
         .expect("failed to write localization csv");
@@ -291,7 +295,7 @@ mod tests {
             None,
             None,
             Some(LocalizationConfig {
-                source_csv: "res://localization.csv".to_string(),
+                source_csv: "localization.csv".to_string(),
                 source_csv_hash: None,
                 key_column: "key".to_string(),
                 default_locale: "en".to_string(),
@@ -357,7 +361,7 @@ mod tests {
             None,
             Some(static_lookup),
             Some(LocalizationConfig {
-                source_csv: "res://localization.csv".to_string(),
+                source_csv: "localization.csv".to_string(),
                 source_csv_hash: None,
                 key_column: "key".to_string(),
                 default_locale: "en".to_string(),

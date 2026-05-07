@@ -60,20 +60,30 @@ Copy data workflow:
 
 ## Localization Setup
 
-Localization source is configured in `project.toml`:
+Localization source is a sibling CSV next to `project.toml`.
+
+Use one filename:
+
+- `localization.csv`
+- `locale.csv`
+- `translations.csv`
+
+Do not put this file in `res/`.
+
+`project.toml` only sets the default locale:
 
 ```toml
 [localization]
-source = "res://localization.csv"
-key = "key"
 default_locale = "en"
 ```
 
+If `[localization]` or `default_locale` is unset, Perro uses `en`.
+
 CSV format:
 
-- Header must contain key column plus locale columns.
-- `key` column stores lookup keys.
-- Locale columns are language codes (`en`, `es`, `fr`, `ja`, `zh`, or custom codes).
+- First column must be `key`.
+- Other columns are language codes (`en`, `es`, `fr`, `ja`, `zh`, or custom codes).
+- `key` stores lookup keys.
 
 Example:
 
@@ -85,8 +95,9 @@ menu.quit,Quit,Salir
 
 Behavior:
 
-- Dev mode loads the configured CSV from disk/asset path and keeps only the active locale column in memory.
-- Static mode compiles per-locale hashed lookup tables; the configured localization CSV is excluded from `assets.perro` to avoid duplication.
+- Dev mode loads the sibling CSV from disk and keeps only the active locale column in memory.
+- Static mode compiles per-locale hashed lookup tables.
+- `assets.perro` only packs files from `res/`, so sibling localization CSV files are never packed.
 
 ## Simple Example
 

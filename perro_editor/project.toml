@@ -28,6 +28,4 @@ coef = 1.0
 
 
 # [localization]
-# source = "res://localization.csv"
-# key = "key"
 # default_locale = "en"

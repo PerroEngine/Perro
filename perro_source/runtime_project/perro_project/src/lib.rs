@@ -6,6 +6,9 @@ use std::{
 };
 use toml::Value;
 
+const LOCALIZATION_CSV_CANDIDATES: &[&str] =
+    &["localization.csv", "locale.csv", "translations.csv"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OcclusionCulling {
     Cpu,
@@ -46,6 +49,15 @@ pub struct LocalizationConfig {
     pub source_csv_hash: Option<u64>,
     pub key_column: String,
     pub default_locale: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ProjectMetadata {
+    pub description: Option<String>,
+    pub company: Option<String>,
+    pub version: Option<String>,
+    pub copyright: Option<String>,
+    pub trademark: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -175,6 +187,7 @@ impl StaticProjectConfig {
     pub fn to_runtime(self) -> ProjectConfig {
         ProjectConfig {
             name: self.name.to_string(),
+            metadata: ProjectMetadata::default(),
             main_scene: self.main_scene_hash.to_string(),
             main_scene_hash: Some(self.main_scene_hash),
             icon: self.icon_hash.to_string(),
@@ -209,6 +222,7 @@ impl StaticProjectConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProjectConfig {
     pub name: String,
+    pub metadata: ProjectMetadata,
     pub main_scene: String,
     pub main_scene_hash: Option<u64>,
     pub icon: String,
@@ -235,6 +249,7 @@ impl ProjectConfig {
     pub fn default_for_name(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
+            metadata: ProjectMetadata::default(),
             main_scene: "res://main.scn".to_string(),
             main_scene_hash: None,
             icon: "res://icon.png".to_string(),
@@ -479,6 +494,16 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 startup_splash = "res://icon.png"
 
+# Optional export metadata.
+# Used for Windows executable version info + engine detection strings.
+#
+# [metadata]
+# description = "{name}"
+# company = "Studio Name"
+# version = "0.1.0"
+# copyright = "Copyright (c) 2026 Studio Name"
+# trademark = ""
+
 [graphics]
 virtual_resolution = "1920x1080"
 vsync = false
@@ -501,12 +526,11 @@ target_fixed_update = 60
 gravity = -9.81
 coef = 1.0
 
-# Optional CSV localization table.
-# Columns example: key,en,es,fr,ja,zh
+# Optional localization table.
+# Put localization.csv, locale.csv, or translations.csv next to project.toml.
+# First column must be key. Other columns use language codes.
 #
 # [localization]
-# source = "res://localization.csv"
-# key = "key"
 # default_locale = "en"
 "#
     )
@@ -514,7 +538,9 @@ coef = 1.0
 
 pub fn load_project_toml(root: &Path) -> Result<ProjectConfig, ProjectError> {
     let project_toml = fs::read_to_string(root.join("project.toml"))?;
-    parse_project_toml(&project_toml)
+    let mut config = parse_project_toml(&project_toml)?;
+    apply_sibling_localization(root, &mut config)?;
+    Ok(config)
 }
 
 pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError> {
@@ -531,6 +557,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let runtime_table = value.get("runtime").and_then(Value::as_table);
     let physics_table = value.get("physics").and_then(Value::as_table);
     let localization_table = value.get("localization").and_then(Value::as_table);
+    let metadata_table = value.get("metadata").and_then(Value::as_table);
 
     let name = project_table
         .get("name")
@@ -617,9 +644,11 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         ParticleSimDefault::Cpu,
     )?;
     let localization = parse_localization(localization_table)?;
+    let metadata = parse_metadata(metadata_table)?;
 
     Ok(ProjectConfig {
         name,
+        metadata,
         main_scene,
         main_scene_hash: None,
         icon,
@@ -817,27 +846,6 @@ fn parse_localization(
         return Ok(None);
     };
 
-    let source_csv = table
-        .get("source")
-        .and_then(Value::as_str)
-        .ok_or(ProjectError::MissingField("localization.source"))?
-        .trim()
-        .to_string();
-    validate_res_path("localization.source", &source_csv)?;
-
-    let key_column = table
-        .get("key")
-        .and_then(Value::as_str)
-        .unwrap_or("key")
-        .trim()
-        .to_string();
-    if key_column.is_empty() {
-        return Err(ProjectError::InvalidField(
-            "localization.key",
-            "must not be empty".to_string(),
-        ));
-    }
-
     let default_locale = table
         .get("default_locale")
         .and_then(Value::as_str)
@@ -852,11 +860,90 @@ fn parse_localization(
     }
 
     Ok(Some(LocalizationConfig {
-        source_csv,
+        source_csv: String::new(),
         source_csv_hash: None,
-        key_column,
+        key_column: "key".to_string(),
         default_locale,
     }))
+}
+
+fn apply_sibling_localization(root: &Path, config: &mut ProjectConfig) -> Result<(), ProjectError> {
+    let source_csv = find_sibling_localization_csv(root);
+    match (&mut config.localization, source_csv) {
+        (Some(localization), Some(source_csv)) => {
+            localization.source_csv = source_csv;
+            localization.key_column = "key".to_string();
+        }
+        (Some(_), None) => {
+            return Err(ProjectError::InvalidField(
+                "localization",
+                "expected localization.csv, locale.csv, or translations.csv next to project.toml"
+                    .to_string(),
+            ));
+        }
+        (None, Some(source_csv)) => {
+            config.localization = Some(LocalizationConfig {
+                source_csv,
+                source_csv_hash: None,
+                key_column: "key".to_string(),
+                default_locale: "en".to_string(),
+            });
+        }
+        (None, None) => {}
+    }
+    Ok(())
+}
+
+fn find_sibling_localization_csv(root: &Path) -> Option<String> {
+    LOCALIZATION_CSV_CANDIDATES
+        .iter()
+        .copied()
+        .find(|name| root.join(name).is_file())
+        .map(str::to_string)
+}
+
+fn parse_metadata(
+    table: Option<&toml::map::Map<String, Value>>,
+) -> Result<ProjectMetadata, ProjectError> {
+    let Some(table) = table else {
+        return Ok(ProjectMetadata::default());
+    };
+
+    Ok(ProjectMetadata {
+        description: parse_optional_metadata_str(table, "description")?,
+        company: parse_optional_metadata_str(table, "company")?,
+        version: parse_optional_metadata_str(table, "version")?,
+        copyright: parse_optional_metadata_str(table, "copyright")?,
+        trademark: parse_optional_metadata_str(table, "trademark")?,
+    })
+}
+
+fn parse_optional_metadata_str(
+    table: &toml::map::Map<String, Value>,
+    key: &'static str,
+) -> Result<Option<String>, ProjectError> {
+    let Some(value) = table.get(key) else {
+        return Ok(None);
+    };
+    let Some(raw) = value.as_str() else {
+        return Err(ProjectError::InvalidField(
+            match key {
+                "description" => "metadata.description",
+                "company" => "metadata.company",
+                "version" => "metadata.version",
+                "copyright" => "metadata.copyright",
+                "trademark" => "metadata.trademark",
+                _ => "metadata",
+            },
+            "must be a string".to_string(),
+        ));
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(trimmed.to_string()))
+    }
 }
 
 fn validate_res_path(field: &'static str, path: &str) -> Result<(), ProjectError> {
@@ -1367,6 +1454,62 @@ fn embed_windows_icon() -> Result<(), String> {
         Ok(out)
     }
 
+    fn metadata_str(value: &Value, key: &str) -> Option<String> {
+        value
+            .get("metadata")
+            .and_then(Value::as_table)
+            .and_then(|metadata| metadata.get(key))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    }
+
+    fn project_name(value: &Value) -> String {
+        value
+            .get("project")
+            .and_then(Value::as_table)
+            .and_then(|project| project.get("name"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .unwrap_or("Perro Project")
+            .to_string()
+    }
+
+    fn apply_windows_metadata(
+        res: &mut winresource::WindowsResource,
+        project_toml: &Path,
+    ) -> Result<(), String> {
+        let src = fs::read_to_string(project_toml)
+            .map_err(|e| format!("failed to read {}: {e}", project_toml.display()))?;
+        let value: Value = src
+            .parse::<Value>()
+            .map_err(|e| format!("failed to parse {}: {e}", project_toml.display()))?;
+        let name = project_name(&value);
+        let description = metadata_str(&value, "description").unwrap_or_else(|| name.clone());
+        let version = metadata_str(&value, "version").unwrap_or_else(|| "0.1.0".to_string());
+
+        res.set("FileDescription", &description);
+        res.set("ProductName", &name);
+        res.set("ProductVersion", &version);
+        res.set("FileVersion", &version);
+        res.set("OriginalFilename", &format!("{name}.exe"));
+        res.set("Comments", "Made with Perro Engine");
+        res.set("InternalName", &name);
+        res.set("PerroEngine", "Perro Engine");
+        if let Some(company) = metadata_str(&value, "company") {
+            res.set("CompanyName", &company);
+        }
+        if let Some(copyright) = metadata_str(&value, "copyright") {
+            res.set("LegalCopyright", &copyright);
+        }
+        if let Some(trademark) = metadata_str(&value, "trademark") {
+            res.set("LegalTrademarks", &trademark);
+        }
+        Ok(())
+    }
+
     let manifest_dir = PathBuf::from(
         env::var("CARGO_MANIFEST_DIR").map_err(|e| format!("CARGO_MANIFEST_DIR missing: {e}"))?,
     );
@@ -1403,6 +1546,7 @@ fn embed_windows_icon() -> Result<(), String> {
 
     let mut res = winresource::WindowsResource::new();
     res.set_icon(icon_for_resource.to_string_lossy().as_ref());
+    apply_windows_metadata(&mut res, &project_toml)?;
     res.compile()
         .map_err(|e| format!("failed to compile windows resource icon: {e}"))?;
     Ok(())
@@ -1582,6 +1726,10 @@ mod static_assets;
 
 static PERRO_ASSETS: &[u8] = include_bytes!("../embedded/assets.perro");
 
+#[used]
+static PERRO_ENGINE_MARKER: &[u8] =
+    b"PERRO_ENGINE_DETECT:v1;engine=Perro Engine;format=.perro;site=https://www.perroengine.com";
+
 fn lookup_static_binary(path_hash: u64) -> &'static [u8] {
     let bytes = static_assets::textures::lookup_texture(path_hash);
     if !bytes.is_empty() {
@@ -1629,6 +1777,7 @@ fn project_root() -> std::path::PathBuf {
 }
 
   fn main() {
+      std::hint::black_box(PERRO_ENGINE_MARKER);
       let root = project_root();
       perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedProject {
           project: perro_app::entry::StaticEmbeddedProjectInfo {

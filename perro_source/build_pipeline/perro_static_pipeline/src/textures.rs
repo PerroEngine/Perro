@@ -66,8 +66,7 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
             ptex.extend_from_slice(&width.to_le_bytes());
             ptex.extend_from_slice(&height.to_le_bytes());
             ptex.extend_from_slice(
-                &((flags & PTEX_FLAG_FORMAT_MASK) | (flags & PTEX_FLAG_PAYLOAD_RAW))
-                    .to_le_bytes(),
+                &((flags & PTEX_FLAG_FORMAT_MASK) | (flags & PTEX_FLAG_PAYLOAD_RAW)).to_le_bytes(),
             );
             ptex.extend_from_slice(&(packed_raw.len() as u32).to_le_bytes());
             ptex.extend_from_slice(&payload);

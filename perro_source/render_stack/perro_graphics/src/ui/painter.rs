@@ -382,12 +382,12 @@ fn screen_pivot(rect: UiRectState, viewport: [f32; 2]) -> epaint::Pos2 {
 }
 
 fn resolve_corner_radius(panel: &UiPanelDraw) -> f32 {
-    if panel.corner_radius.is_infinite() {
-        panel.rect.size[0].min(panel.rect.size[1]) * 0.5
+    let ratio = if panel.corner_radius.is_finite() {
+        panel.corner_radius.clamp(0.0, 1.0)
     } else {
-        panel.corner_radius.max(0.0)
-    }
-    .min(u8::MAX as f32)
+        1.0
+    };
+    (panel.rect.size[0].min(panel.rect.size[1]).max(0.0) * 0.5 * ratio).min(u8::MAX as f32)
 }
 
 struct TextShapeInput<'a> {
@@ -535,4 +535,49 @@ fn clamp_char_boundary(text: &str, mut index: usize) -> usize {
         index -= 1;
     }
     index
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panel_corner_radius_is_size_ratio() {
+        let panel = UiPanelDraw {
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [100.0, 50.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            fill: [0.0, 0.0, 0.0, 1.0],
+            stroke: [0.0, 0.0, 0.0, 0.0],
+            stroke_width: 0.0,
+            corner_radius: 0.5,
+        };
+
+        assert_eq!(resolve_corner_radius(&panel), 12.5);
+    }
+
+    #[test]
+    fn panel_corner_radius_clamps_to_full_round() {
+        let panel = UiPanelDraw {
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [100.0, 50.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            fill: [0.0, 0.0, 0.0, 1.0],
+            stroke: [0.0, 0.0, 0.0, 0.0],
+            stroke_width: 0.0,
+            corner_radius: 2.0,
+        };
+
+        assert_eq!(resolve_corner_radius(&panel), 25.0);
+    }
 }

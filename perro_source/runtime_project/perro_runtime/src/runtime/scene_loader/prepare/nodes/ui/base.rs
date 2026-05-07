@@ -320,9 +320,11 @@ fn apply_ui_button_fields(node: &mut UiButton, fields: &[SceneObjectField]) {
         _ => {}
     });
     apply_ui_style_fields(&mut node.style, fields, "");
+    apply_ui_style_object_fields(&mut node.style, fields, "style");
+    node.hover_style = node.style.clone();
+    node.pressed_style = node.style.clone();
     apply_ui_style_fields(&mut node.hover_style, fields, "hover_");
     apply_ui_style_fields(&mut node.pressed_style, fields, "pressed_");
-    apply_ui_style_object_fields(&mut node.style, fields, "style");
     apply_ui_button_state_fields(node, fields, "hover");
     apply_ui_button_state_fields(node, fields, "pressed");
 }
@@ -693,14 +695,14 @@ fn ui_state_has_explicit_size_override(fields: &[SceneObjectField]) -> bool {
 
 fn as_ui_corner_radius(value: &SceneValue) -> Option<f32> {
     if let Some(v) = as_f32(value) {
-        return Some(v);
+        return Some(v.clamp(0.0, 1.0));
     }
     match as_str(value)?
         .to_ascii_lowercase()
         .replace([' ', '-', '_'], "")
         .as_str()
     {
-        "full" | "pill" | "round" | "rounded" => Some(f32::INFINITY),
+        "full" | "pill" | "round" | "rounded" => Some(1.0),
         _ => None,
     }
 }

@@ -125,7 +125,10 @@ Default `h_align` and `v_align` are `center`.
 Default label text align is `center`.
 Default `clip_children` is `false` (children may render outside parent bounds).
 Set `clip_children = true` to clip descendants to that node rect.
-`corner_radius = "full"` makes the radius half of the shortest side.
+`corner_radius` and `radius` use `0.0..1.0`.
+`0.0` means square corners.
+`1.0` means half of the shortest side.
+`"full"` also means `1.0`.
 
 ## Coordinate Space
 
@@ -175,16 +178,16 @@ Button state example:
     size_ratio = (0.114583, 0.044444)
     pressed_signals = ["play_down"]
     click_signals = ["play_clicked", "any_button_clicked"]
-    style = { fill = "#344E41" stroke = "#A3B18A" radius = 8 }
+    style = { fill = "#344E41" stroke = "#A3B18A" radius = 0.3 }
     hover = {
         scale = (1.02, 1.02)
         rotation = 0.02
-        style = { fill = "#3A5A40" stroke = "#DAD7CD" radius = 10 }
+        style = { fill = "#3A5A40" stroke = "#DAD7CD" radius = 0.35 }
     }
     pressed = {
         scale = (0.98, 0.98)
         rotation = -0.01
-        style = { fill = "#1B4332" stroke = "#95D5B2" radius = 6 }
+        style = { fill = "#1B4332" stroke = "#95D5B2" radius = 0.25 }
     }
 [/UiButton]
 [/play_button]

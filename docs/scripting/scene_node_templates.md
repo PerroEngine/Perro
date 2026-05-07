@@ -473,7 +473,7 @@ script = "res://path/to/script.rs"
         fill = (0.11, 0.12, 0.14, 0.92)
         stroke = (0.22, 0.24, 0.28, 1.0)
         stroke_width = 1.0
-        radius = 4.0
+        radius = 0.2
         [UiBox]
             visible = true
             input_enabled = true
@@ -509,12 +509,12 @@ script = "res://path/to/script.rs"
         pressed_signals = []
         released_signals = []
         click_signals = []
-        style = { fill = (0.18, 0.20, 0.24, 1.0) stroke = (0.32, 0.35, 0.40, 1.0) stroke_width = 1.0 radius = 4.0 }
+        style = { fill = (0.18, 0.20, 0.24, 1.0) stroke = (0.32, 0.35, 0.40, 1.0) stroke_width = 1.0 radius = 0.2 }
         hover = {
-            style = { fill = (0.24, 0.27, 0.32, 1.0) stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 4.0 }
+            style = { fill = (0.24, 0.27, 0.32, 1.0) stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 0.2 }
         }
         pressed = {
-            style = { fill = (0.12, 0.14, 0.18, 1.0) stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 4.0 }
+            style = { fill = (0.12, 0.14, 0.18, 1.0) stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 0.2 }
         }
         [UiBox]
             visible = true
@@ -591,8 +591,8 @@ script = "res://path/to/script.rs"
         focused_signals = []
         unfocused_signals = []
         text_changed_signals = []
-        style = { fill = (0.11, 0.12, 0.14, 0.92) stroke = (0.22, 0.24, 0.28, 1.0) stroke_width = 1.0 radius = 4.0 }
-        focused_style = { fill = (0.10, 0.11, 0.13, 0.96) stroke = (0.45, 0.58, 0.85, 1.0) stroke_width = 1.0 radius = 4.0 }
+        style = { fill = (0.11, 0.12, 0.14, 0.92) stroke = (0.22, 0.24, 0.28, 1.0) stroke_width = 1.0 radius = 0.2 }
+        focused_style = { fill = (0.10, 0.11, 0.13, 0.96) stroke = (0.45, 0.58, 0.85, 1.0) stroke_width = 1.0 radius = 0.2 }
         [UiBox]
             visible = true
             input_enabled = true
@@ -635,8 +635,8 @@ script = "res://path/to/script.rs"
         focused_signals = []
         unfocused_signals = []
         text_changed_signals = []
-        style = { fill = (0.11, 0.12, 0.14, 0.92) stroke = (0.22, 0.24, 0.28, 1.0) stroke_width = 1.0 radius = 4.0 }
-        focused_style = { fill = (0.10, 0.11, 0.13, 0.96) stroke = (0.45, 0.58, 0.85, 1.0) stroke_width = 1.0 radius = 4.0 }
+        style = { fill = (0.11, 0.12, 0.14, 0.92) stroke = (0.22, 0.24, 0.28, 1.0) stroke_width = 1.0 radius = 0.2 }
+        focused_style = { fill = (0.10, 0.11, 0.13, 0.96) stroke = (0.45, 0.58, 0.85, 1.0) stroke_width = 1.0 radius = 0.2 }
         [UiBox]
             visible = true
             input_enabled = true

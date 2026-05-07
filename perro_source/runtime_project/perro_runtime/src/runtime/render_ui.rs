@@ -2296,7 +2296,7 @@ fn ui_command_from_node(
                 fill: style.fill.to_rgba(),
                 stroke: style.stroke.to_rgba(),
                 stroke_width: style.stroke_width * style_scale,
-                corner_radius: style.corner_radius * style_scale,
+                corner_radius: style.corner_radius,
                 disabled: button.disabled,
             })
         }
@@ -2562,7 +2562,7 @@ fn text_edit_command(ctx: TextEditCommandCtx<'_>) -> UiCommand {
             focused_style.corner_radius
         } else {
             style.corner_radius
-        } * style_scale,
+        },
         text: Cow::Owned(edit.text.to_string()),
         placeholder: Cow::Owned(edit.placeholder.to_string()),
         color: edit.color.to_rgba(),
@@ -2636,7 +2636,7 @@ fn panel_command(
         fill: style.fill.to_rgba(),
         stroke: style.stroke.to_rgba(),
         stroke_width: style.stroke_width * style_scale,
-        corner_radius: style.corner_radius * style_scale,
+        corner_radius: style.corner_radius,
     }
 }
 
@@ -3968,7 +3968,7 @@ mod tests {
     }
 
     #[test]
-    fn parent_ui_scale_scales_child_panel_radius() {
+    fn parent_ui_scale_keeps_child_panel_radius_ratio() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);
 
@@ -3979,7 +3979,7 @@ mod tests {
 
         let mut child_panel = UiPanel::new();
         child_panel.layout.size = UiVector2::pixels(200.0, 40.0);
-        child_panel.style.corner_radius = 8.0;
+        child_panel.style.corner_radius = 0.4;
         child_panel.style.stroke_width = 2.0;
         let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child_panel));
         attach_child(&mut runtime, parent, child);
@@ -3998,7 +3998,7 @@ mod tests {
                 ..
             }) if *node == child
                 && rect.size == [100.0, 20.0]
-                && *corner_radius == 4.0
+                && *corner_radius == 0.4
                 && *stroke_width == 1.0
         )));
     }

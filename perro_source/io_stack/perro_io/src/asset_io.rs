@@ -11,8 +11,7 @@ use crate::data_local_dir;
 use perro_assets::archive::{PerroAssetsArchive, PerroAssetsFile};
 
 pub type StaticBinaryLookup = fn(u64) -> &'static [u8];
-pub type DlcStaticBinaryLookup =
-    unsafe extern "C" fn(u64, *mut *const u8, *mut usize) -> bool;
+pub type DlcStaticBinaryLookup = unsafe extern "C" fn(u64, *mut *const u8, *mut usize) -> bool;
 
 /// Trait alias for Read + Seek
 pub trait ReadSeek: Read + Seek {}
@@ -20,7 +19,10 @@ impl<T: Read + Seek> ReadSeek for T {}
 
 #[derive(Clone)]
 pub enum ProjectRoot {
-    Disk { root: PathBuf, name: String },
+    Disk {
+        root: PathBuf,
+        name: String,
+    },
     PerroAssets {
         data: &'static [u8],
         name: String,
@@ -497,10 +499,8 @@ mod tests {
     #[test]
     fn resolve_dev_res_path_stays_disk_even_for_static_ext() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "perro_io_dev_static_ext_{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("perro_io_dev_static_ext_{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("res").join("textures")).unwrap();
         fs::write(root.join("res").join("textures").join("player.png"), b"raw").unwrap();
@@ -520,10 +520,8 @@ mod tests {
     #[test]
     fn load_asset_reads_dlc_static_binary_lookup() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "perro_io_dlc_static_ext_{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("perro_io_dlc_static_ext_{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         let archive = root.join("Expansion.dlc");

@@ -575,8 +575,7 @@ impl Runtime {
                 })?;
                 if let Ok(lib) = unsafe { libloading::Library::new(&pack_path) } {
                     unsafe {
-                        type Lookup =
-                            unsafe extern "C" fn(u64, *mut *const u8, *mut usize) -> bool;
+                        type Lookup = unsafe extern "C" fn(u64, *mut *const u8, *mut usize) -> bool;
                         if let Ok(symbol) = lib.get::<Lookup>(b"perro_dlc_pack_lookup") {
                             register_dlc_static_binary_lookup(stem, *symbol);
                         }

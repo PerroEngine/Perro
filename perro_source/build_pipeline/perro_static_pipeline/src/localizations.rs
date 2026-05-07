@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, res_dir, static_dir};
+use crate::{StaticPipelineError, static_dir};
 use csv::StringRecord;
 use perro_ids::string_to_u64;
 use perro_project::ProjectConfig;
@@ -17,17 +17,7 @@ pub fn generate_static_localizations(
         return write_empty_localizations(&static_dir);
     };
 
-    let source_rel = localization
-        .source_csv
-        .strip_prefix("res://")
-        .ok_or_else(|| {
-            StaticPipelineError::SceneParse(format!(
-                "localization source must start with `res://`: {}",
-                localization.source_csv
-            ))
-        })?
-        .replace('\\', "/");
-    let source_path = res_dir(project_root).join(&source_rel);
+    let source_path = project_root.join(&localization.source_csv);
     let bytes = fs::read(&source_path).map_err(|err| {
         StaticPipelineError::SceneParse(format!(
             "failed to read localization source `{}`: {err}",
@@ -45,9 +35,9 @@ pub fn generate_static_localizations(
         ))
     })?;
 
-    let key_idx = find_header_index(headers, &localization.key_column).ok_or_else(|| {
+    let key_idx = find_key_header_index(headers, &localization.key_column).ok_or_else(|| {
         StaticPipelineError::SceneParse(format!(
-            "localization csv `{}` missing key column `{}`",
+            "localization csv `{}` must use `{}` as first column",
             localization.source_csv, localization.key_column
         ))
     })?;
@@ -341,10 +331,11 @@ pub const fn lookup_localized_string(_locale: perro_api::resource_context::sub_a
     Ok(())
 }
 
-fn find_header_index(headers: &StringRecord, expected: &str) -> Option<usize> {
+fn find_key_header_index(headers: &StringRecord, expected: &str) -> Option<usize> {
     headers
-        .iter()
-        .position(|header| header.trim().eq_ignore_ascii_case(expected))
+        .get(0)
+        .is_some_and(|header| header.trim().eq_ignore_ascii_case(expected))
+        .then_some(0)
 }
 
 fn escape_str(input: &str) -> String {
