@@ -1072,16 +1072,14 @@ impl<B: GraphicsBackend> RunnerState<B> {
     }
 
     fn end_startup_splash(&mut self) {
-        self.app
-            .graphics
-            .submit(RenderCommand::TwoD(Command2D::RemoveNode {
+        self.app.graphics.submit_late_overlay_many([
+            RenderCommand::TwoD(Command2D::RemoveNode {
                 node: STARTUP_SPLASH_BG_NODE,
-            }));
-        self.app
-            .graphics
-            .submit(RenderCommand::TwoD(Command2D::RemoveNode {
+            }),
+            RenderCommand::TwoD(Command2D::RemoveNode {
                 node: STARTUP_SPLASH_IMAGE_NODE,
-            }));
+            }),
+        ]);
         self.startup_splash.active = false;
     }
 

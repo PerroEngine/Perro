@@ -65,6 +65,7 @@ pub struct Gpu {
     present_scene_bind_group: wgpu::BindGroup,
     present_intermediate_bind_group: wgpu::BindGroup,
     two_d: Option<Gpu2D>,
+    late_overlay_2d: Option<Gpu2D>,
     ui: Option<GpuUi>,
     three_d: Option<Gpu3D>,
     point_particles_3d: Option<GpuPointParticles3D>,
@@ -96,6 +97,10 @@ pub struct RenderFrame<'a> {
     pub rects_2d: &'a [RectInstanceGpu],
     pub upload_2d: &'a RectUploadPlan,
     pub sprites_2d: &'a [Sprite2DCommand],
+    pub late_overlay_camera_2d: Camera2DUniform,
+    pub late_overlay_rects_2d: &'a [RectInstanceGpu],
+    pub late_overlay_upload_2d: &'a RectUploadPlan,
+    pub late_overlay_sprites_2d: &'a [Sprite2DCommand],
     pub ui_primitives: &'a [ClippedPrimitive],
     pub ui_textures_delta: &'a TexturesDelta,
     pub ui_texture_size: [u32; 2],
@@ -273,6 +278,7 @@ impl Gpu {
             max_supported_sample_count,
         );
         let two_d = Gpu2D::new(&device, render_format, sample_count);
+        let late_overlay_2d = Gpu2D::new(&device, surface_format, 1);
         let ui = Some(GpuUi::new(&device, surface_format));
         let three_d = Gpu3D::new(
             &device,
@@ -315,6 +321,7 @@ impl Gpu {
             present_scene_bind_group,
             present_intermediate_bind_group,
             two_d: Some(two_d),
+            late_overlay_2d: Some(late_overlay_2d),
             ui,
             three_d: Some(three_d),
             point_particles_3d: Some(point_particles_3d),
@@ -416,6 +423,10 @@ impl Gpu {
             rects_2d,
             upload_2d,
             sprites_2d,
+            late_overlay_camera_2d,
+            late_overlay_rects_2d,
+            late_overlay_upload_2d,
+            late_overlay_sprites_2d,
             redraw_requested,
             frame_dirty_bits,
             static_texture_lookup,
@@ -869,6 +880,33 @@ impl Gpu {
                     },
                 );
                 ui.render_pass(&mut encoder, output_view, viewport);
+            }
+        }
+        if late_overlay_upload_2d.draw_count > 0 || !late_overlay_sprites_2d.is_empty() {
+            if self.late_overlay_2d.is_none() {
+                self.late_overlay_2d = Some(Gpu2D::new(&self.device, self.config.format, 1));
+            }
+            if let (Some(late_overlay_2d), Some(output_view)) =
+                (self.late_overlay_2d.as_mut(), swap_view.as_ref())
+            {
+                late_overlay_2d.prepare(
+                    &self.device,
+                    &self.queue,
+                    Prepare2D {
+                        resources,
+                        camera: late_overlay_camera_2d,
+                        rects: late_overlay_rects_2d,
+                        upload: late_overlay_upload_2d,
+                        sprites: late_overlay_sprites_2d,
+                        static_texture_lookup,
+                    },
+                );
+                late_overlay_2d.render_pass(
+                    &mut encoder,
+                    output_view,
+                    None,
+                    late_overlay_upload_2d.draw_count as u32,
+                );
             }
         }
         let submit_start = Instant::now();

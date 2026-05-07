@@ -1,353 +1,45 @@
-@col_bg            = "#101318"
-@col_root_stroke   = "#2B333F"
-@col_top           = "#191F27"
-@col_top_stroke    = "#384353"
-@col_surface       = "#171C23"
-@col_surface_alt   = "#151A21"
-@col_border        = "#323D4B"
-@col_field         = "#202733"
-@col_field_focus   = "#1B222D"
-@col_field_stroke  = "#4B596B"
-@col_focus         = "#8FB3E8"
-@col_green         = "#2D5A4C"
-@col_green_hover   = "#377060"
-@col_green_press   = "#22453A"
-@col_green_border  = "#6FB99F"
-@col_green_text    = "#ECFFF8"
-@col_blue          = "#34506B"
-@col_blue_hover    = "#406383"
-@col_blue_press    = "#273D53"
-@col_blue_border   = "#7FA4CB"
-@col_blue_text     = "#EEF6FF"
-@col_button_hover  = "#2A3442"
-@col_button_press  = "#171D26"
-@col_text          = "#E9EEF6"
-@col_muted         = "#9FAABD"
-@col_item_text     = "#C9D3E2"
-@col_deep          = "#11161D"
+@col_bg      = "#101318"
+@col_panel   = "#202733"
+@col_stroke  = "#8FB3E8"
+@col_text    = "#E9EEF6"
 
 @root = project_manager
 
 [project_manager]
 name = "ProjectManager"
-script = "res://scripts/project_manager.rs"
 [UiPanel]
+    anchor = "center"
+    position_ratio = (0.5, 0.5)
+    pivot_ratio = (0.5, 0.5)
     size_ratio = (1.0, 1.0)
     fill = @col_bg
-    stroke = @col_root_stroke
-    stroke_width = 1
-    padding = (0, 0, 0, 0)
+    stroke = @col_bg
+    stroke_width = 0
 [/UiPanel]
 [/project_manager]
 
-[top_bar]
+[test_panel]
 parent = @root
 [UiPanel]
-    anchor = "top"
-    position_ratio = (0.5, 0.487037)
-    size_ratio = (0.96, 0.09)
-    min_size_ratio = (0.75, 1.0)
-    max_size_ratio = (1.0, 1.0)
-    
-    fill = @col_top
-    stroke = @col_top_stroke
-    corner_radius = 0.5
-    padding = (24, 12, 24, 12)
+    anchor = "center"
+    position_ratio = (0.5, 0.5)
+    pivot_ratio = (0.5, 0.5)
+    size_ratio = (0.35, 0.25)
+    fill = @col_panel
+    stroke = @col_stroke
+    stroke_width = 1
 [/UiPanel]
-[/top_bar]
+[/test_panel]
 
-[title]
-parent = top_bar
+[test_label]
+parent = test_panel
 [UiLabel]
-    anchor = "l"
-    position_ratio = (0.646485, 0.5)
-    text = "Perro Editor"
-    text_size_ratio = 1.0
+    anchor = "center"
+    position_ratio = (0.5, 0.5)
+    pivot_ratio = (0.5, 0.5)
+    size_ratio = (1.0, 1.0)
+    text = "CENTER UI TEST"
+    text_size_ratio = 0.22
     color = @col_text
-    size_ratio = (0.270833, 0.044444)
 [/UiLabel]
-[/title]
-
-[status]
-parent = top_bar
-[UiLabel]
-    anchor = "r"
-    position_ratio = (0.272135, 0.5)
-    text = "Pick project"
-    text_size_ratio = 0.36
-    color = @col_muted
-    size_ratio = (0.395833, 0.033333)
-[/UiLabel]
-[/status]
-
-[content]
-parent = @root
-[UiHLayout]
-    anchor = "top"
-    position_ratio = (0.5, 0.37037)
-    size_ratio = (0.94, 0.76)
-    spacing = 24
-    padding = (0, 0, 0, 0)
-[/UiHLayout]
-[/content]
-
-[left_panel]
-parent = content
-[UiPanel]
-    size_ratio = (0.333333, 0.740741)
-    fill = @col_surface
-    stroke = @col_border
-    corner_radius = 0.5
-    padding = (22, 22, 22, 22)
-[/UiPanel]
-[/left_panel]
-
-[left_stack]
-parent = left_panel
-[UiVLayout]
-    size_ratio = (1.0, 1.0)
-    spacing = 16
-    padding = (10, 8, 10, 8)
-[/UiVLayout]
-[/left_stack]
-
-[new_title]
-parent = left_stack
-[UiLabel]
-    text = "New project"
-    text_size_ratio = 0.42
-    color = @col_text
-    size_ratio = (0.28125, 0.038889)
-[/UiLabel]
-[/new_title]
-
-[project_name_input]
-parent = left_stack
-[UiTextBox]
-    size_ratio = (0.28125, 0.044444)
-    min_size_ratio = (1.0, 1.0)
-    max_size_scale = (1.5, 1.5)
-    text = "MyGame"
-    placeholder = "project name"
-    text_size_ratio = 0.5
-    fill = @col_field
-    stroke = @col_field_stroke
-    focused_fill = @col_field_focus
-    focused_stroke = @col_focus
-    text_padding = (12, 8, 12, 8)
-    corner_radius = 0.5
-[/UiTextBox]
-[/project_name_input]
-
-[project_root_input]
-parent = left_stack
-[UiTextBox]
-    size_ratio = (0.28125, 0.044444)
-    min_size_ratio = (1.0, 1.0)
-    max_size_scale = (1.5, 1.5)
-    text = "playground"
-    placeholder = "parent folder"
-    text_size_ratio = 0.5
-    fill = @col_field
-    stroke = @col_field_stroke
-    focused_fill = @col_field_focus
-    focused_stroke = @col_focus
-    text_padding = (12, 8, 12, 8)
-    corner_radius = 0.5
-[/UiTextBox]
-[/project_root_input]
-
-[create_project_button]
-parent = left_stack
-[UiButton]
-    size_ratio = (0.135417, 0.046296)
-    min_size_ratio = (1.0, 1.0)
-    max_size_scale = (1.5, 1.5)
-    fill = @col_green
-    hover_fill = @col_green_hover
-    pressed_fill = @col_green_press
-    stroke = @col_green_border
-    corner_radius = 0.5
-[/UiButton]
-[/create_project_button]
-
-[create_project_label]
-parent = create_project_button
-[UiLabel]
-    text = "Create"
-    text_size_ratio = 0.55
-    color = @col_green_text
-    size_ratio = (1.0, 1.0)
-[/UiLabel]
-[/create_project_label]
-
-[open_title]
-parent = left_stack
-[UiLabel]
-    text = "Open folder"
-    text_size_ratio = 0.42
-    color = @col_text
-    size_ratio = (0.28125, 0.038889)
-    margin = (0, 18, 0, 0)
-[/UiLabel]
-[/open_title]
-
-[open_path_input]
-parent = left_stack
-[UiTextBox]
-    size_ratio = (0.28125, 0.044444)
-    min_size_ratio = (1.0, 1.0)
-    max_size_scale = (1.5, 1.5)
-    text = "playground/UiTest"
-    placeholder = "project folder path"
-    text_size_ratio = 0.5
-    fill = @col_field
-    stroke = @col_field_stroke
-    focused_fill = @col_field_focus
-    focused_stroke = @col_focus
-    text_padding = (12, 8, 12, 8)
-    corner_radius = 0.5
-[/UiTextBox]
-[/open_path_input]
-
-[open_project_button]
-parent = left_stack
-[UiButton]
-    size_ratio = (0.135417, 0.046296)
-    min_size_ratio = (1.0, 1.0)
-    max_size_scale = (1.5, 1.5)
-    fill = @col_blue
-    hover_fill = @col_blue_hover
-    pressed_fill = @col_blue_press
-    stroke = @col_blue_border
-    corner_radius = 0.5
-[/UiButton]
-[/open_project_button]
-
-[open_project_label]
-parent = open_project_button
-[UiLabel]
-    text = "Open"
-    text_size_ratio = 0.55
-    color = @col_blue_text
-    size_ratio = (1.0, 1.0)
-[/UiLabel]
-[/open_project_label]
-
-[right_panel]
-parent = content
-[UiPanel]
-    size_ratio = (0.541667, 0.740741)
-    fill = @col_surface_alt
-    stroke = @col_border
-    corner_radius = 0.5
-    padding = (22, 22, 22, 22)
-[/UiPanel]
-[/right_panel]
-
-[right_stack]
-parent = right_panel
-[UiVLayout]
-    size_ratio = (1.0, 1.0)
-    spacing = 14
-    padding = (10, 8, 10, 8)
-[/UiVLayout]
-[/right_stack]
-
-[recent_title]
-parent = right_stack
-[UiLabel]
-    text = "Recent projects"
-    text_size_ratio = 0.42
-    color = @col_text
-    size_ratio = (0.46875, 0.038889)
-[/UiLabel]
-[/recent_title]
-
-[recent_0]
-parent = right_stack
-[UiButton]
-    size_ratio = (0.46875, 0.053704)
-    min_size_ratio = (1.0, 1.0)
-    max_size_scale = (1.35, 1.35)
-    fill = @col_field
-    hover_fill = @col_button_hover
-    pressed_fill = @col_button_press
-    stroke = @col_field_stroke
-    corner_radius = 0.5
-[/UiButton]
-[/recent_0]
-
-[recent_0_label]
-parent = recent_0
-[UiLabel]
-    text = "No recent project"
-    text_size_ratio = 0.5
-    color = @col_item_text
-    size_ratio = (1.0, 1.0)
-[/UiLabel]
-[/recent_0_label]
-
-[recent_1]
-parent = right_stack
-[UiButton]
-    size_ratio = (0.46875, 0.053704)
-    min_size_ratio = (1.0, 1.0)
-    max_size_scale = (1.35, 1.35)
-    fill = @col_field
-    hover_fill = @col_button_hover
-    pressed_fill = @col_button_press
-    stroke = @col_field_stroke
-    corner_radius = 0.5
-[/UiButton]
-[/recent_1]
-
-[recent_1_label]
-parent = recent_1
-[UiLabel]
-    text = "No recent project"
-    text_size_ratio = 0.5
-    color = @col_item_text
-    size_ratio = (1.0, 1.0)
-[/UiLabel]
-[/recent_1_label]
-
-[recent_2]
-parent = right_stack
-[UiButton]
-    size_ratio = (0.46875, 0.053704)
-    min_size_ratio = (1.0, 1.0)
-    max_size_scale = (1.35, 1.35)
-    fill = @col_field
-    hover_fill = @col_button_hover
-    pressed_fill = @col_button_press
-    stroke = @col_field_stroke
-    corner_radius = 0.5
-[/UiButton]
-[/recent_2]
-
-[recent_2_label]
-parent = recent_2
-[UiLabel]
-    text = "No recent project"
-    text_size_ratio = 0.5
-    color = @col_item_text
-    size_ratio = (1.0, 1.0)
-[/UiLabel]
-[/recent_2_label]
-
-[hint]
-parent = right_stack
-[UiTextBlock]
-    size_ratio = (0.46875, 0.240741)
-    min_size_ratio = (1.0, 1.0)
-    max_size_scale = (1.35, 1.35)
-    text = "Use path boxes for now.\nCreate writes project files in editor.\nOpen checks project.toml then loads editor scene.\nEditor reads scene doc + loads live edit scene with runtime scene loader."
-    text_size_ratio = 0.15
-    editable = false
-    fill = @col_deep
-    stroke = @col_root_stroke
-    text_padding = (14, 12, 14, 12)
-    corner_radius = 0.5
-[/UiTextBlock]
-[/hint]
+[/test_label]

@@ -356,13 +356,8 @@ mod backend {
                 let _ = tx.send(JoyConEvent::Disconnected { index });
             });
 
-            self.devices.insert(
-                slot_key,
-                DeviceHandle {
-                    stop,
-                    tx: cmd_tx,
-                },
-            );
+            self.devices
+                .insert(slot_key, DeviceHandle { stop, tx: cmd_tx });
         }
 
         fn drain_events<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
@@ -421,7 +416,11 @@ mod backend {
 
         fn consume_output_requests<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
             for req in app.take_joycon_rumble_requests() {
-                self.apply_rumble(req.index, req.rumble.low_frequency, req.rumble.high_frequency);
+                self.apply_rumble(
+                    req.index,
+                    req.rumble.low_frequency,
+                    req.rumble.high_frequency,
+                );
             }
             for req in app.take_joycon_indicator_requests() {
                 self.apply_indicator(req.index, req.indicator.to_lamp_pattern());
@@ -440,7 +439,9 @@ mod backend {
                     continue;
                 }
                 if let Some(device) = self.devices.get(&format!("hid:{}", controller.serial)) {
-                    let _ = device.tx.send(DeviceCommand::SetPlayerLamp { pattern: indicator });
+                    let _ = device
+                        .tx
+                        .send(DeviceCommand::SetPlayerLamp { pattern: indicator });
                 }
             }
         }
@@ -448,7 +449,8 @@ mod backend {
         fn sync_player_binding_lamps<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
             let mut desired: HashMap<usize, u8> = HashMap::new();
             for (player_idx, player) in app.players().iter().enumerate() {
-                let Some(indicator) = PlayerIndicatorSlot::from_player_number(player_idx + 1) else {
+                let Some(indicator) = PlayerIndicatorSlot::from_player_number(player_idx + 1)
+                else {
                     continue;
                 };
                 let pattern = indicator.to_lamp_pattern();

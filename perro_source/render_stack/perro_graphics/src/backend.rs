@@ -59,6 +59,29 @@ pub trait GraphicsBackend: RenderBridge {
         self.draw_frame();
         None
     }
+    fn draw_frame_with_late_overlay<I>(&mut self, overlay_commands: I)
+    where
+        I: IntoIterator<Item = RenderCommand>,
+    {
+        self.submit_many(overlay_commands);
+        self.draw_frame();
+    }
+    fn draw_frame_with_late_overlay_timed<I>(
+        &mut self,
+        overlay_commands: I,
+    ) -> Option<DrawFrameTiming>
+    where
+        I: IntoIterator<Item = RenderCommand>,
+    {
+        self.submit_many(overlay_commands);
+        self.draw_frame_timed()
+    }
+    fn submit_late_overlay_many<I>(&mut self, commands: I)
+    where
+        I: IntoIterator<Item = RenderCommand>,
+    {
+        self.submit_many(commands);
+    }
 
     fn profile_snapshot(&self) -> GraphicsProfileSnapshot {
         GraphicsProfileSnapshot::default()
@@ -139,6 +162,7 @@ pub struct PerroGraphics {
     frame: FrameState,
     resources: ResourceStore,
     renderer_2d: Renderer2D,
+    late_overlay_2d: Renderer2D,
     renderer_3d: Renderer3D,
     particles_3d: Particles3DRenderer,
     renderer_ui: UiRenderer,
@@ -163,6 +187,8 @@ pub struct PerroGraphics {
     retained_sprites_cache: Vec<Sprite2DCommand>,
     retained_sprites_cache_revision: u64,
     frame_rects_cache: Vec<RectInstanceGpu>,
+    late_overlay_sprites_cache: Vec<Sprite2DCommand>,
+    late_overlay_rects_cache: Vec<RectInstanceGpu>,
     used_texture_refs_cache: AHashSet<TextureID>,
     used_mesh_refs_cache: AHashSet<MeshID>,
     used_material_refs_cache: AHashSet<MaterialID>,
@@ -180,6 +206,7 @@ impl PerroGraphics {
             frame: FrameState::default(),
             resources: ResourceStore::new(),
             renderer_2d: Renderer2D::new(),
+            late_overlay_2d: Renderer2D::new(),
             renderer_3d: Renderer3D::new(),
             particles_3d: Particles3DRenderer::new(),
             renderer_ui: UiRenderer::new(),
@@ -204,6 +231,8 @@ impl PerroGraphics {
             retained_sprites_cache: Vec::new(),
             retained_sprites_cache_revision: u64::MAX,
             frame_rects_cache: Vec::new(),
+            late_overlay_sprites_cache: Vec::new(),
+            late_overlay_rects_cache: Vec::new(),
             used_texture_refs_cache: AHashSet::new(),
             used_mesh_refs_cache: AHashSet::new(),
             used_material_refs_cache: AHashSet::new(),
@@ -291,11 +320,11 @@ impl PerroGraphics {
                             self.resources
                                 .create_mesh_with_id(id, source.as_str(), reserved)
                         };
-                        let mesh_data = load_mesh3d_from_source(source.as_str(), self.static_mesh_lookup);
-                        if let Some(mesh) =
-                            mesh_data.clone()
-                        {
-                            self.resources.set_runtime_mesh_data(source.as_str(), mesh.clone());
+                        let mesh_data =
+                            load_mesh3d_from_source(source.as_str(), self.static_mesh_lookup);
+                        if let Some(mesh) = mesh_data.clone() {
+                            self.resources
+                                .set_runtime_mesh_data(source.as_str(), mesh.clone());
                             let _ = self.resources.set_runtime_mesh_data_by_id(out_id, mesh);
                         }
                         self.events.push(RenderEvent::MeshCreated {
@@ -317,8 +346,11 @@ impl PerroGraphics {
                             self.resources
                                 .create_mesh_with_id(id, source.as_str(), reserved)
                         };
-                        self.resources.set_runtime_mesh_data(source.as_str(), mesh.clone());
-                        let _ = self.resources.set_runtime_mesh_data_by_id(out_id, mesh.clone());
+                        self.resources
+                            .set_runtime_mesh_data(source.as_str(), mesh.clone());
+                        let _ = self
+                            .resources
+                            .set_runtime_mesh_data_by_id(out_id, mesh.clone());
                         self.events.push(RenderEvent::MeshCreated {
                             request,
                             id: out_id,
@@ -535,6 +567,37 @@ impl PerroGraphics {
             }
         }
     }
+
+    fn process_late_overlay_commands<I>(&mut self, commands: I)
+    where
+        I: IntoIterator<Item = RenderCommand>,
+    {
+        for command in commands {
+            match command {
+                RenderCommand::Resource(resource_cmd) => {
+                    self.process_commands(std::iter::once(RenderCommand::Resource(resource_cmd)));
+                }
+                RenderCommand::TwoD(cmd_2d) => match cmd_2d {
+                    Command2D::UpsertSprite { node, sprite } => {
+                        self.late_overlay_2d.queue_sprite(node, sprite);
+                    }
+                    Command2D::UpsertRect { node, rect } => {
+                        self.late_overlay_2d.queue_rect(node, rect);
+                    }
+                    Command2D::RemoveNode { node } => {
+                        self.late_overlay_2d.remove_node(node);
+                    }
+                    Command2D::SetCamera { camera } => {
+                        self.late_overlay_2d.set_camera(camera);
+                    }
+                    Command2D::DrawShape { draw } => {
+                        self.late_overlay_2d.queue_shape(draw);
+                    }
+                },
+                _ => self.process_commands(std::iter::once(command)),
+            }
+        }
+    }
 }
 
 impl RenderBridge for PerroGraphics {
@@ -571,6 +634,7 @@ impl GraphicsBackend for PerroGraphics {
             if let Some(gpu_ref) = gpu.as_mut() {
                 let [vw, vh] = Gpu::virtual_size();
                 self.renderer_2d.set_virtual_viewport(vw, vh);
+                self.late_overlay_2d.set_virtual_viewport(vw, vh);
                 gpu_ref.resize(self.viewport.0.max(1), self.viewport.1.max(1));
             }
             self.gpu = gpu;
@@ -581,6 +645,7 @@ impl GraphicsBackend for PerroGraphics {
     fn resize(&mut self, width: u32, height: u32) {
         self.viewport = (width, height);
         self.renderer_2d.set_viewport(width, height);
+        self.late_overlay_2d.set_viewport(width, height);
         if let Some(gpu) = &mut self.gpu {
             gpu.resize(width.max(1), height.max(1));
         }
@@ -626,11 +691,50 @@ impl GraphicsBackend for PerroGraphics {
     }
 
     fn draw_frame_timed(&mut self) -> Option<DrawFrameTiming> {
+        self.draw_frame_timed_internal(std::iter::empty::<RenderCommand>())
+    }
+
+    fn draw_frame_with_late_overlay<I>(&mut self, overlay_commands: I)
+    where
+        I: IntoIterator<Item = RenderCommand>,
+    {
+        let _ = self.draw_frame_timed_internal(overlay_commands);
+    }
+
+    fn draw_frame_with_late_overlay_timed<I>(
+        &mut self,
+        overlay_commands: I,
+    ) -> Option<DrawFrameTiming>
+    where
+        I: IntoIterator<Item = RenderCommand>,
+    {
+        self.draw_frame_timed_internal(overlay_commands)
+    }
+
+    fn submit_late_overlay_many<I>(&mut self, commands: I)
+    where
+        I: IntoIterator<Item = RenderCommand>,
+    {
+        self.process_late_overlay_commands(commands);
+        self.redraw_requested = true;
+    }
+}
+
+impl PerroGraphics {
+    fn draw_frame_timed_internal<I>(&mut self, late_overlay_commands: I) -> Option<DrawFrameTiming>
+    where
+        I: IntoIterator<Item = RenderCommand>,
+    {
         let total_start = Instant::now();
+        let late_overlay_commands: Vec<RenderCommand> = late_overlay_commands.into_iter().collect();
         let has_pending = !self.frame.pending_commands.is_empty();
+        let has_late_overlay = !late_overlay_commands.is_empty()
+            || self.late_overlay_2d.retained_sprite_count() > 0
+            || !self.late_overlay_2d.retained_rects().is_empty();
         let has_continuous_updates = self.renderer_3d.has_active_sky_animation();
         let has_retained_scene = self.renderer_2d.retained_sprite_count() > 0
             || !self.renderer_2d.retained_rects().is_empty()
+            || has_late_overlay
             || self.renderer_ui.retained_count() > 0
             || self.renderer_3d.retained_draw_count() > 0
             || self.renderer_3d.has_retained_non_draw_state()
@@ -691,10 +795,13 @@ impl GraphicsBackend for PerroGraphics {
         }
         let process_start = Instant::now();
         self.process_commands(pending.drain(..));
+        self.process_late_overlay_commands(late_overlay_commands);
         let process_commands = process_start.elapsed();
         let prepare_start = Instant::now();
         let (camera_2d, _stats, upload) = self.renderer_2d.prepare_frame(&self.resources);
         let camera_2d_state = self.renderer_2d.camera();
+        let (late_overlay_camera_2d, _late_overlay_stats, late_overlay_upload) =
+            self.late_overlay_2d.prepare_frame(&self.resources);
         let (camera_3d, _stats_3d, lighting_3d) = self.renderer_3d.prepare_frame(&self.resources);
         self.particles_3d.prepare_frame();
         let draws_revision = self.renderer_3d.draw_revision();
@@ -748,6 +855,14 @@ impl GraphicsBackend for PerroGraphics {
             .extend_from_slice(self.renderer_2d.retained_rects());
         self.frame_rects_cache
             .extend_from_slice(self.renderer_2d.frame_shapes());
+        self.late_overlay_rects_cache.clear();
+        self.late_overlay_rects_cache
+            .extend_from_slice(self.late_overlay_2d.retained_rects());
+        self.late_overlay_rects_cache
+            .extend_from_slice(self.late_overlay_2d.frame_shapes());
+        self.late_overlay_sprites_cache.clear();
+        self.late_overlay_sprites_cache
+            .extend(self.late_overlay_2d.retained_sprites());
         let ui_paint = self
             .renderer_ui
             .prepare_paint([self.viewport.0 as f32, self.viewport.1 as f32]);
@@ -817,6 +932,10 @@ impl GraphicsBackend for PerroGraphics {
                 rects_2d: &self.frame_rects_cache,
                 upload_2d: &upload,
                 sprites_2d: &self.retained_sprites_cache,
+                late_overlay_camera_2d,
+                late_overlay_rects_2d: &self.late_overlay_rects_cache,
+                late_overlay_upload_2d: &late_overlay_upload,
+                late_overlay_sprites_2d: &self.late_overlay_sprites_cache,
                 ui_primitives: ui_paint.primitives,
                 ui_textures_delta: ui_paint.textures_delta,
                 ui_texture_size: ui_paint.texture_size,
