@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_assets = "0.1.0"
-perro_ids = "0.1.0"
+perro_assets = { path = "../perro_assets" }
+perro_ids = { path = "../../core/perro_ids" }
 flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }

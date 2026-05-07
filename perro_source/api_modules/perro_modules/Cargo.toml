@@ -6,5 +6,5 @@ build = "build.rs"
 
 [dependencies]
 serde_json = "1.0.149"
-perro_variant = "0.1.0"
-perro_io = "0.1.0"
+perro_variant = { path = "../../core/perro_variant" }
+perro_io = { path = "../../io_stack/perro_io" }

@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_assets = "0.1.0"
-perro_ids = "0.1.0"
-perro_io = "0.1.0"
-perro_project = "0.1.0"
-perro_scene = "0.1.0"
+perro_assets = { path = "../../io_stack/perro_assets" }
+perro_ids = { path = "../../core/perro_ids" }
+perro_io = { path = "../../io_stack/perro_io" }
+perro_project = { path = "../../runtime_project/perro_project" }
+perro_scene = { path = "../../runtime_project/perro_scene" }
 perro_static_pipeline = { path = "../perro_static_pipeline" }
 toml = "0.8.23"

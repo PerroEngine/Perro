@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 perro_app = { path = "../../render_stack/perro_app" }
-perro_project = "0.1.0"
+perro_project = { path = "../../runtime_project/perro_project" }
 
 [features]
 profile = ["perro_app/profile"]

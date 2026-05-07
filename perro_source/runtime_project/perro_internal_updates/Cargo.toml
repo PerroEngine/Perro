@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_ids = "0.1.0"
-perro_nodes = "0.1.0"
-perro_runtime_context = "0.1.0"
-perro_resource_context = "0.1.0"
-perro_input = "0.1.0"
-perro_animation = "0.1.0"
-perro_scene = "0.1.0"
+perro_ids = { path = "../../core/perro_ids" }
+perro_nodes = { path = "../../core/perro_nodes" }
+perro_runtime_context = { path = "../../api_modules/perro_runtime_context" }
+perro_resource_context = { path = "../../api_modules/perro_resource_context" }
+perro_input = { path = "../../api_modules/perro_input" }
+perro_animation = { path = "../../core/perro_animation" }
+perro_scene = { path = "../perro_scene" }

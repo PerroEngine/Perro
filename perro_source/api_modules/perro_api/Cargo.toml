@@ -4,14 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_ids = "0.1.0"
-perro_input = "0.1.0"
-perro_project = "0.1.0"
-perro_resource_context = "0.1.0"
-perro_runtime_context = "0.1.0"
-perro_scene = "0.1.0"
-perro_scripting = "0.1.0"
-perro_nodes = "0.1.0"
-perro_structs = "0.1.0"
-perro_modules = "0.1.0"
-perro_variant = "0.1.0"
+perro_ids = { path = "../../core/perro_ids" }
+perro_input = { path = "../perro_input" }
+perro_project = { path = "../../runtime_project/perro_project" }
+perro_resource_context = { path = "../perro_resource_context" }
+perro_runtime_context = { path = "../perro_runtime_context" }
+perro_scene = { path = "../../runtime_project/perro_scene" }
+perro_scripting = { path = "../../script_stack/perro_scripting" }
+perro_nodes = { path = "../../core/perro_nodes" }
+perro_structs = { path = "../../core/perro_structs" }
+perro_modules = { path = "../perro_modules" }
+perro_variant = { path = "../../core/perro_variant" }

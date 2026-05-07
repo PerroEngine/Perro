@@ -10,12 +10,12 @@ glam = "0.31.0"
 ahash = "0.8.12"
 epaint = "0.33.0"
 
-perro_ids = "0.1.0"
+perro_ids = { path = "../../core/perro_ids" }
 perro_meshlets = { path = "../perro_meshlets" }
-perro_render_bridge = "0.1.0"
-perro_particle_math = "0.1.0"
-perro_io = "0.1.0"
-perro_structs = "0.1.0"
+perro_render_bridge = { path = "../perro_render_bridge" }
+perro_particle_math = { path = "../../core/perro_particle_math" }
+perro_io = { path = "../../io_stack/perro_io" }
+perro_structs = { path = "../../core/perro_structs" }
 perro_macros = { path = "../perro_macros" }
 image = { version = "0.25.8", default-features = true }
 gltf = "1.4.1"

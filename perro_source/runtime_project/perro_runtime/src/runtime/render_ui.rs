@@ -859,7 +859,8 @@ impl Runtime {
             let SceneNodeData::UiButton(button) = &scene_node.data else {
                 continue;
             };
-            let next = if button.disabled || Some(node) != hovered {
+            let inactive = button_inactive(button);
+            let next = if inactive || Some(node) != hovered {
                 UiButtonVisualState::Neutral
             } else if mouse_down {
                 UiButtonVisualState::Pressed
@@ -867,7 +868,9 @@ impl Runtime {
                 UiButtonVisualState::Hover
             };
             let prev = next_states.insert(node, next).unwrap_or_default();
-            collect_button_events(node, prev, next, &mut events);
+            if !inactive {
+                collect_button_events(node, prev, next, &mut events);
+            }
             if prev != next && command_seen.insert(node) {
                 command_ids.push(node);
             }
@@ -932,6 +935,9 @@ impl Runtime {
         let SceneNodeData::UiButton(button) = &scene_node.data else {
             return Vec::new();
         };
+        if button_inactive(button) {
+            return Vec::new();
+        }
         let mut out = Vec::with_capacity(1 + button_custom_event_signals(button, event).len());
         let name = scene_node.name.as_ref();
         if !name.is_empty() {
@@ -2440,7 +2446,7 @@ fn ui_style_scale(scale: Vector2) -> f32 {
 }
 
 fn button_style(button: &perro_ui::UiButton, state: UiButtonVisualState) -> &UiStyle {
-    if button.disabled {
+    if button_inactive(button) {
         return &button.style;
     }
     match state {
@@ -2454,7 +2460,7 @@ fn button_state_base(
     button: &perro_ui::UiButton,
     state: UiButtonVisualState,
 ) -> Option<&perro_ui::UiBox> {
-    if button.disabled {
+    if button_inactive(button) {
         return None;
     }
     match state {
@@ -2462,6 +2468,10 @@ fn button_state_base(
         UiButtonVisualState::Hover => button.hover_base.as_ref(),
         UiButtonVisualState::Pressed => button.pressed_base.as_ref(),
     }
+}
+
+fn button_inactive(button: &perro_ui::UiButton) -> bool {
+    button.disabled || !button.input_enabled
 }
 
 fn button_custom_event_signals<'a>(button: &'a perro_ui::UiButton, event: &str) -> &'a [SignalID] {
@@ -3393,6 +3403,166 @@ mod tests {
     }
 
     #[test]
+    fn disabled_button_ignores_hover_and_pressed_mouse_state() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let node = insert_button(&mut runtime, [120.0, 40.0]);
+        if let Some(scene_node) = runtime.nodes.get_mut(node)
+            && let SceneNodeData::UiButton(button) = &mut scene_node.data
+        {
+            button.disabled = true;
+        }
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(!commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+                if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+        )));
+        assert_eq!(runtime.take_cursor_icon_request(), None);
+
+        runtime.clear_dirty_flags();
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        assert!(!commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+                if *n == node && *fill == [0.3, 0.4, 0.5, 1.0]
+        )));
+        assert_eq!(runtime.take_cursor_icon_request(), None);
+    }
+
+    #[test]
+    fn input_disabled_button_ignores_hover_and_pressed_mouse_state() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let node = insert_button(&mut runtime, [120.0, 40.0]);
+        if let Some(scene_node) = runtime.nodes.get_mut(node)
+            && let SceneNodeData::UiButton(button) = &mut scene_node.data
+        {
+            button.input_enabled = false;
+        }
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(!commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+                if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+        )));
+        assert_eq!(runtime.take_cursor_icon_request(), None);
+
+        runtime.clear_dirty_flags();
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        assert!(!commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+                if *n == node && *fill == [0.3, 0.4, 0.5, 1.0]
+        )));
+        assert_eq!(runtime.take_cursor_icon_request(), None);
+    }
+
+    #[test]
+    fn disabling_hovered_button_restores_neutral_visual_state() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let node = insert_button(&mut runtime, [120.0, 40.0]);
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        if let Some(scene_node) = runtime.nodes.get_mut(node)
+            && let SceneNodeData::UiButton(button) = &mut scene_node.data
+        {
+            button.disabled = true;
+        }
+        runtime.mark_ui_dirty(node, Runtime::UI_DIRTY_COMMANDS);
+        runtime.extract_render_ui_commands();
+
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton {
+                node: n,
+                fill,
+                disabled,
+                ..
+            }) if *n == node && *fill == [0.1, 0.2, 0.3, 1.0] && *disabled
+        )));
+        assert_eq!(
+            runtime.render_ui.button_states.get(&node).copied(),
+            Some(UiButtonVisualState::Neutral)
+        );
+    }
+
+    #[test]
+    fn input_disabling_hovered_button_restores_neutral_visual_state() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let node = insert_button(&mut runtime, [120.0, 40.0]);
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        if let Some(scene_node) = runtime.nodes.get_mut(node)
+            && let SceneNodeData::UiButton(button) = &mut scene_node.data
+        {
+            button.input_enabled = false;
+        }
+        runtime.mark_ui_dirty(node, Runtime::UI_DIRTY_COMMANDS);
+        runtime.extract_render_ui_commands();
+
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton {
+                node: n,
+                fill,
+                disabled,
+                ..
+            }) if *n == node && *fill == [0.1, 0.2, 0.3, 1.0] && !*disabled
+        )));
+        assert_eq!(
+            runtime.render_ui.button_states.get(&node).copied(),
+            Some(UiButtonVisualState::Neutral)
+        );
+    }
+
+    #[test]
     fn button_hover_requests_cursor_icon_and_unhover_restores_default() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);
@@ -3631,6 +3801,56 @@ mod tests {
                 SignalID::from_string("custom_b"),
             ]
         );
+    }
+
+    #[test]
+    fn disabled_button_event_signals_empty() {
+        let mut runtime = Runtime::new();
+        let node = insert_button(&mut runtime, [120.0, 40.0]);
+        if let Some(scene_node) = runtime.nodes.get_mut(node)
+            && let SceneNodeData::UiButton(button) = &mut scene_node.data
+        {
+            button.disabled = true;
+            button
+                .hover_signals
+                .push(SignalID::from_string("custom_hover"));
+            button
+                .pressed_signals
+                .push(SignalID::from_string("custom_press"));
+            button
+                .click_signals
+                .push(SignalID::from_string("custom_click"));
+        }
+        runtime.nodes.get_mut(node).expect("named button").name = Cow::Borrowed("play");
+
+        assert!(runtime.button_event_signals(node, "hover_enter").is_empty());
+        assert!(runtime.button_event_signals(node, "pressed").is_empty());
+        assert!(runtime.button_event_signals(node, "click").is_empty());
+    }
+
+    #[test]
+    fn input_disabled_button_event_signals_empty() {
+        let mut runtime = Runtime::new();
+        let node = insert_button(&mut runtime, [120.0, 40.0]);
+        if let Some(scene_node) = runtime.nodes.get_mut(node)
+            && let SceneNodeData::UiButton(button) = &mut scene_node.data
+        {
+            button.input_enabled = false;
+            button
+                .hover_signals
+                .push(SignalID::from_string("custom_hover"));
+            button
+                .pressed_signals
+                .push(SignalID::from_string("custom_press"));
+            button
+                .click_signals
+                .push(SignalID::from_string("custom_click"));
+        }
+        runtime.nodes.get_mut(node).expect("named button").name = Cow::Borrowed("play");
+
+        assert!(runtime.button_event_signals(node, "hover_enter").is_empty());
+        assert!(runtime.button_event_signals(node, "pressed").is_empty());
+        assert!(runtime.button_event_signals(node, "click").is_empty());
     }
 
     #[test]
