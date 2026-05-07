@@ -174,6 +174,7 @@ pub struct GpuPointParticles3D {
     compute_spawn_rings: AHashMap<NodeID, SpawnRingState>,
     compute_spawn_origin_dirty_slots: Vec<u32>,
     compute_spawn_rotation_dirty_slots: Vec<u32>,
+    emitter_order: Vec<usize>,
     spawn_origin_cache: AHashMap<NodeID, AHashMap<u32, SpawnOriginEntry>>,
     spawn_origin_generation: u64,
     hybrid_map_fingerprint: u64,
@@ -987,6 +988,7 @@ impl GpuPointParticles3D {
             compute_spawn_rings: AHashMap::new(),
             compute_spawn_origin_dirty_slots: Vec::new(),
             compute_spawn_rotation_dirty_slots: Vec::new(),
+            emitter_order: Vec::new(),
             spawn_origin_cache: AHashMap::new(),
             spawn_origin_generation: 0,
             hybrid_map_fingerprint: 0,
@@ -1041,9 +1043,16 @@ impl GpuPointParticles3D {
         if self.spawn_origin_generation == 0 {
             self.spawn_origin_generation = 1;
         }
-        let mut emitter_order = (0..frame.emitters.len()).collect::<Vec<_>>();
-        emitter_order.sort_unstable_by_key(|&i| frame.emitters[i].0.as_u64());
-        for idx in emitter_order {
+        self.emitter_order.clear();
+        if self.emitter_order.capacity() < frame.emitters.len() {
+            self.emitter_order
+                .reserve(frame.emitters.len() - self.emitter_order.capacity());
+        }
+        self.emitter_order.extend(0..frame.emitters.len());
+        self.emitter_order
+            .sort_unstable_by_key(|&i| frame.emitters[i].0.as_u64());
+        for pos in 0..self.emitter_order.len() {
+            let idx = self.emitter_order[pos];
             let (node, emitter) = &frame.emitters[idx];
             match emitter.sim_mode {
                 ParticleSimulationMode3D::Cpu => self.push_emitter_particles(*node, emitter),
