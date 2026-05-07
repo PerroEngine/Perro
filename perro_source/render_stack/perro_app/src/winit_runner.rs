@@ -46,6 +46,7 @@ const PTEX_FLAG_FORMAT_MASK: u32 = 0b11;
 const PTEX_FLAG_FORMAT_RGBA8: u32 = 0;
 const PTEX_FLAG_FORMAT_RGB8: u32 = 1;
 const PTEX_FLAG_FORMAT_R8: u32 = 2;
+const PTEX_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 
 fn map_cursor_icon(icon: perro_ui::CursorIcon) -> WinitCursorIcon {
     match icon {
@@ -433,6 +434,7 @@ fn bytes_to_mib(bytes: usize) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)
 }
 
+#[cfg(not(perro_no_console))]
 #[inline]
 fn log_avg_sampled(
     update_us: u128,
@@ -452,6 +454,17 @@ fn log_avg_sampled(
         fps_x100 / 100,
         fps_x100 % 100
     );
+}
+
+#[cfg(perro_no_console)]
+#[inline]
+fn log_avg_sampled(
+    _update_us: u128,
+    _render_us: u128,
+    _total_us: u128,
+    _idle_before_frame_us: u128,
+    _present_wait_us: u128,
+) {
 }
 
 pub struct WinitRunner;
@@ -1704,7 +1717,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 avg_idle_before_frame_us,
                 avg_present_wait_us,
             );
-            #[cfg(all(feature = "ui_profile", not(feature = "profile_heavy")))]
+            #[cfg(all(
+                feature = "ui_profile",
+                not(feature = "profile_heavy"),
+                not(perro_no_console)
+            ))]
             {
                 let avg_present_extract_ui_us =
                     self.batch_present_extract_ui.as_micros() as f64 / self.batch_frames as f64;
@@ -1731,7 +1748,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     "ui profile: total=({avg_present_extract_ui_us:.3}us) layout=({avg_ui_layout_us:.3}us) commands=({avg_ui_commands_us:.3}us) dirty=({avg_ui_dirty:.2}) affected=({avg_ui_affected:.2}) rect_recalc=({avg_ui_recalc:.2}) rect_cache=({avg_ui_cached:.2}) auto_batches=({avg_ui_batches:.2}) cmd_nodes=({avg_ui_cmd_nodes:.2}) cmd_emit=({avg_ui_cmd_emit:.2}) cmd_skip=({avg_ui_cmd_skip:.2}) rm=({avg_ui_removed:.2})"
                 );
             }
-            #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
+            #[cfg(all(
+                any(feature = "profile_heavy", feature = "mem_profile"),
+                not(perro_no_console)
+            ))]
             if self.mem_profile_enabled
                 && let Some(sample) = process_memory_sample()
             {
@@ -1756,7 +1776,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     });
                 }
             }
-            #[cfg(feature = "profile_heavy")]
+            #[cfg(all(feature = "profile_heavy", not(perro_no_console)))]
             {
                 let avg_runtime_update_us =
                     self.batch_runtime_update.as_micros() as f64 / self.batch_frames as f64;
@@ -2632,7 +2652,7 @@ fn decode_ptex_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
         return None;
     }
     let flags = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
-    if flags & !PTEX_FLAG_FORMAT_MASK != 0 {
+    if flags & !(PTEX_FLAG_FORMAT_MASK | PTEX_FLAG_PAYLOAD_RAW) != 0 {
         return None;
     }
     let raw_len = u32::from_le_bytes(bytes[20..24].try_into().ok()?);
@@ -2646,7 +2666,7 @@ fn decode_ptex_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     if raw_len as usize != expected_raw_len {
         return None;
     }
-    let raw = decompress_zlib(&bytes[24..]).ok()?;
+    let raw = decode_ptex_payload(flags, &bytes[24..])?;
     if raw.len() != expected_raw_len {
         return None;
     }
@@ -2670,6 +2690,14 @@ fn decode_ptex_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
         _ => return None,
     };
     Some((rgba, width, height))
+}
+
+fn decode_ptex_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
+    if (flags & PTEX_FLAG_PAYLOAD_RAW) != 0 {
+        Some(payload.to_vec())
+    } else {
+        decompress_zlib(payload).ok()
+    }
 }
 
 fn resolve_project_asset_path(

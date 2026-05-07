@@ -73,6 +73,8 @@ const PTEX_FLAG_FORMAT_MASK: u32 = 0b11;
 const PTEX_FLAG_FORMAT_RGBA8: u32 = 0;
 const PTEX_FLAG_FORMAT_RGB8: u32 = 1;
 const PTEX_FLAG_FORMAT_R8: u32 = 2;
+const PTEX_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
+const PMESH_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 const SHADOW_MAP_SIZE: u32 = 4096;
 const SHADOW_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const SHADOW_MAP_DEPTH_BIAS_CONST: i32 = 2;
@@ -5926,7 +5928,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     let surface_count = u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize;
     let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
     let raw_len = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
-    let raw = decompress_zlib(&bytes[33..]).ok()?;
+    let raw = decode_static_payload(flags, &bytes[33..])?;
     if raw.len() != raw_len {
         return None;
     }
@@ -6476,7 +6478,7 @@ fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     }
     let flags = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
     let raw_len = u32::from_le_bytes(bytes[20..24].try_into().ok()?);
-    if flags & !PTEX_FLAG_FORMAT_MASK != 0 {
+    if flags & !(PTEX_FLAG_FORMAT_MASK | PTEX_FLAG_PAYLOAD_RAW) != 0 {
         return None;
     }
     let pixel_count = width.checked_mul(height)? as usize;
@@ -6489,7 +6491,7 @@ fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     if raw_len as usize != expected_raw_len {
         return None;
     }
-    let raw = decompress_zlib(&bytes[24..]).ok()?;
+    let raw = decode_static_payload(flags, &bytes[24..])?;
     if raw.len() != expected_raw_len {
         return None;
     }
@@ -6513,6 +6515,14 @@ fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
         _ => return None,
     };
     Some((rgba, width, height))
+}
+
+fn decode_static_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
+    if (flags & PMESH_FLAG_PAYLOAD_RAW) != 0 {
+        Some(payload.to_vec())
+    } else {
+        decompress_zlib(payload).ok()
+    }
 }
 
 fn create_sky_pipeline(

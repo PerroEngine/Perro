@@ -1,6 +1,6 @@
 use perro_compiler::{
-    ScriptsBuildProfile, compile_dlc_bundle, compile_project_bundle, compile_scripts_with_profile,
-    sync_scripts,
+    ProjectBuildOptions, ScriptsBuildProfile, compile_dlc_bundle, compile_project_bundle,
+    compile_scripts_with_profile, sync_scripts,
 };
 use perro_project::{create_new_project, default_script_empty_rs, ensure_source_overrides};
 use serde_json::Value;
@@ -76,7 +76,7 @@ fn print_usage() {
         "  perro_cli check [--path <project_dir>]    # scripts-only compile (.perro/scripts)"
     );
     eprintln!(
-        "  perro_cli build [--path <project_dir>] [--profile]    # full static project bundle + build"
+        "  perro_cli build [--path <project_dir>] [--profile] [--console]    # full static project bundle + build"
     );
     eprintln!(
         "  perro_cli dlc --name <dlc_name> [--path <project_dir>] # build one runtime-loadable DLC package"
@@ -1828,6 +1828,7 @@ fn collect_rs_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
 
 fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let profile = args.iter().any(|a| a == "--profile");
+    let console = args.iter().any(|a| a == "--console");
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
@@ -1835,7 +1836,7 @@ fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
     log_step("Building Project Bundle");
-    compile_project_bundle(&project_dir, profile)
+    compile_project_bundle(&project_dir, ProjectBuildOptions::new(profile, console))
         .map(|_| {
             log_done("Project Bundle Built");
         })

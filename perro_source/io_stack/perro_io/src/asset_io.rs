@@ -10,6 +10,10 @@ use std::{
 use crate::data_local_dir;
 use perro_assets::archive::{PerroAssetsArchive, PerroAssetsFile};
 
+pub type StaticBinaryLookup = fn(u64) -> &'static [u8];
+pub type DlcStaticBinaryLookup =
+    unsafe extern "C" fn(u64, *mut *const u8, *mut usize) -> bool;
+
 /// Trait alias for Read + Seek
 pub trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek> ReadSeek for T {}
@@ -17,7 +21,11 @@ impl<T: Read + Seek> ReadSeek for T {}
 #[derive(Clone)]
 pub enum ProjectRoot {
     Disk { root: PathBuf, name: String },
-    PerroAssets { data: &'static [u8], name: String },
+    PerroAssets {
+        data: &'static [u8],
+        name: String,
+        static_binary_lookup: Option<StaticBinaryLookup>,
+    },
 }
 
 static PROJECT_ROOT: RwLock<Option<ProjectRoot>> = RwLock::new(None);
@@ -25,6 +33,8 @@ static PERRO_ASSETS_ARCHIVE: RwLock<Option<PerroAssetsArchive>> = RwLock::new(No
 static DLC_MOUNTS: LazyLock<RwLock<HashMap<String, DlcMount>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 static DLC_ARCHIVES: LazyLock<RwLock<HashMap<String, Arc<PerroAssetsArchive>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+static DLC_STATIC_BINARY_LOOKUPS: LazyLock<RwLock<HashMap<String, DlcStaticBinaryLookup>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
 thread_local! {
@@ -68,6 +78,7 @@ pub fn set_project_root(root: ProjectRoot) {
 pub fn clear_dlc_mounts() {
     DLC_MOUNTS.write().unwrap().clear();
     DLC_ARCHIVES.write().unwrap().clear();
+    DLC_STATIC_BINARY_LOOKUPS.write().unwrap().clear();
 }
 
 pub fn mounted_dlc_names() -> Vec<String> {
@@ -138,6 +149,13 @@ pub fn mount_dlc_archive(name: &str, archive_path: impl AsRef<Path>) -> io::Resu
     Ok(())
 }
 
+pub fn register_dlc_static_binary_lookup(name: &str, lookup: DlcStaticBinaryLookup) {
+    DLC_STATIC_BINARY_LOOKUPS
+        .write()
+        .unwrap()
+        .insert(name.to_ascii_lowercase(), lookup);
+}
+
 pub fn set_dlc_self_context(name: Option<&str>) {
     DLC_SELF_CONTEXT.with(|ctx| {
         *ctx.borrow_mut() = name.map(|v| v.to_ascii_lowercase());
@@ -148,6 +166,8 @@ pub fn set_dlc_self_context(name: Option<&str>) {
 pub enum ResolvedPath {
     Disk(PathBuf),
     PerroAssets(String),
+    StaticBinary(String),
+    DlcStaticBinary { dlc: String, path: String },
     DlcPerroAssets { dlc: String, virtual_path: String },
 }
 
@@ -190,10 +210,19 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
         {
             return match &mount.source {
                 DlcMountSource::Disk(root) => ResolvedPath::Disk(root.join(rel)),
-                DlcMountSource::Archive(_) => ResolvedPath::DlcPerroAssets {
-                    dlc: name,
-                    virtual_path: format!("res/{rel}"),
-                },
+                DlcMountSource::Archive(_) => {
+                    if is_static_binary_path(rel) {
+                        ResolvedPath::DlcStaticBinary {
+                            dlc: name,
+                            path: format!("dlc://{}/{rel}", mount.name),
+                        }
+                    } else {
+                        ResolvedPath::DlcPerroAssets {
+                            dlc: name,
+                            virtual_path: format!("res/{rel}"),
+                        }
+                    }
+                }
             };
         }
         return ResolvedPath::Disk(PathBuf::from(path));
@@ -221,7 +250,11 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
         }
         Some(ProjectRoot::PerroAssets { .. }) => {
             if let Some(stripped) = path.strip_prefix("res://") {
-                ResolvedPath::PerroAssets(format!("res/{}", stripped))
+                if is_static_binary_path(stripped) {
+                    ResolvedPath::StaticBinary(format!("res://{}", stripped))
+                } else {
+                    ResolvedPath::PerroAssets(format!("res/{}", stripped))
+                }
             } else {
                 ResolvedPath::PerroAssets(path.to_string())
             }
@@ -241,6 +274,8 @@ pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
                 Err(io::Error::other("PerroAssets archive not loaded"))
             }
         }
+        ResolvedPath::StaticBinary(path) => load_static_binary(&path),
+        ResolvedPath::DlcStaticBinary { dlc, path } => load_dlc_static_binary(&dlc, &path),
         ResolvedPath::DlcPerroAssets { dlc, virtual_path } => {
             if let Some(archive) = DLC_ARCHIVES.read().unwrap().get(&dlc) {
                 archive.read_file(&virtual_path)
@@ -269,6 +304,10 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
                 Err(io::Error::other("PerroAssets archive not loaded"))
             }
         }
+        ResolvedPath::StaticBinary(_) => Err(io::Error::other("Cannot stream static binary")),
+        ResolvedPath::DlcStaticBinary { .. } => {
+            Err(io::Error::other("Cannot stream static binary"))
+        }
         ResolvedPath::DlcPerroAssets { dlc, virtual_path } => {
             if let Some(archive) = DLC_ARCHIVES.read().unwrap().get(&dlc) {
                 let file: PerroAssetsFile = archive.stream_file(&virtual_path)?;
@@ -293,18 +332,97 @@ pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
             let mut file = File::create(pb)?;
             file.write_all(data)
         }
-        ResolvedPath::PerroAssets(_) | ResolvedPath::DlcPerroAssets { .. } => {
+        ResolvedPath::PerroAssets(_)
+        | ResolvedPath::StaticBinary(_)
+        | ResolvedPath::DlcStaticBinary { .. }
+        | ResolvedPath::DlcPerroAssets { .. } => {
             Err(io::Error::other("Cannot save to packed archive"))
         }
     }
+}
+
+fn load_dlc_static_binary(dlc: &str, path: &str) -> io::Result<Vec<u8>> {
+    let lookup = DLC_STATIC_BINARY_LOOKUPS
+        .read()
+        .unwrap()
+        .get(dlc)
+        .copied()
+        .ok_or_else(|| io::Error::other(format!("dlc static binary lookup not loaded: {dlc}")))?;
+    let mut ptr = std::ptr::null();
+    let mut len = 0usize;
+    let found = unsafe { lookup(perro_ids::string_to_u64(path), &mut ptr, &mut len) };
+    if !found || ptr.is_null() || len == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("dlc static binary not found: {path}"),
+        ));
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    Ok(bytes.to_vec())
+}
+
+fn load_static_binary(path: &str) -> io::Result<Vec<u8>> {
+    let lookup = match PROJECT_ROOT.read().unwrap().as_ref() {
+        Some(ProjectRoot::PerroAssets {
+            static_binary_lookup: Some(lookup),
+            ..
+        }) => *lookup,
+        _ => {
+            return Err(io::Error::other("Static binary lookup not loaded"));
+        }
+    };
+    let bytes = lookup(perro_ids::string_to_u64(path));
+    if bytes.is_empty() {
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("static binary not found: {path}"),
+        ))
+    } else {
+        Ok(bytes.to_vec())
+    }
+}
+
+fn is_static_binary_path(path: &str) -> bool {
+    let Some(ext) = Path::new(path).extension().and_then(|e| e.to_str()) else {
+        return false;
+    };
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "bmp"
+            | "gif"
+            | "ico"
+            | "tga"
+            | "webp"
+            | "rgba"
+            | "glb"
+            | "gltf"
+            | "pmesh"
+            | "pskel"
+            | "wgsl"
+            | "mp3"
+            | "wav"
+            | "ogg"
+            | "flac"
+            | "aac"
+            | "m4a"
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    static EMPTY_ARCHIVE: &[u8] = &[
+        b'P', b'R', b'A', b'1', 1, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    static TEST_LOCK: LazyLock<std::sync::Mutex<()>> = LazyLock::new(|| std::sync::Mutex::new(()));
+
     #[test]
     fn resolve_user_path_normalizes_game_name_spaces() {
+        let _guard = TEST_LOCK.lock().unwrap();
         set_project_root(ProjectRoot::Disk {
             root: PathBuf::from("C:/tmp/perro-test-root"),
             name: "My Cool Game".to_string(),
@@ -317,5 +435,117 @@ mod tests {
         let as_text = disk_path.to_string_lossy();
         assert!(as_text.contains("My_Cool_Game"));
         assert!(!as_text.contains("My Cool Game"));
+    }
+
+    fn static_lookup(path_hash: u64) -> &'static [u8] {
+        if path_hash == perro_ids::string_to_u64("res://textures/player.png") {
+            b"static-ptex"
+        } else {
+            b""
+        }
+    }
+
+    unsafe extern "C" fn dlc_static_lookup(
+        path_hash: u64,
+        data_out: *mut *const u8,
+        len_out: *mut usize,
+    ) -> bool {
+        if path_hash != perro_ids::string_to_u64("dlc://Expansion/textures/player.png") {
+            return false;
+        }
+        if data_out.is_null() || len_out.is_null() {
+            return false;
+        }
+        unsafe {
+            *data_out = b"dlc-static-ptex".as_ptr();
+            *len_out = b"dlc-static-ptex".len();
+        }
+        true
+    }
+
+    #[test]
+    fn resolve_static_binary_path_in_perro_assets_mode() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_project_root(ProjectRoot::PerroAssets {
+            data: EMPTY_ARCHIVE,
+            name: "Static Test".to_string(),
+            static_binary_lookup: Some(static_lookup),
+        });
+
+        match resolve_path("res://textures/player.png") {
+            ResolvedPath::StaticBinary(path) => assert_eq!(path, "res://textures/player.png"),
+            other => panic!("expected static binary path, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_asset_reads_static_binary_lookup() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_project_root(ProjectRoot::PerroAssets {
+            data: EMPTY_ARCHIVE,
+            name: "Static Test".to_string(),
+            static_binary_lookup: Some(static_lookup),
+        });
+
+        assert_eq!(
+            load_asset("res://textures/player.png").unwrap(),
+            b"static-ptex"
+        );
+        assert!(load_asset("res://textures/missing.png").is_err());
+    }
+
+    #[test]
+    fn resolve_dev_res_path_stays_disk_even_for_static_ext() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "perro_io_dev_static_ext_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("res").join("textures")).unwrap();
+        fs::write(root.join("res").join("textures").join("player.png"), b"raw").unwrap();
+        set_project_root(ProjectRoot::Disk {
+            root: root.clone(),
+            name: "Dev Test".to_string(),
+        });
+
+        match resolve_path("res://textures/player.png") {
+            ResolvedPath::Disk(path) => assert_eq!(path, root.join("res/textures/player.png")),
+            other => panic!("expected disk path, got {other:?}"),
+        }
+        assert_eq!(load_asset("res://textures/player.png").unwrap(), b"raw");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn load_asset_reads_dlc_static_binary_lookup() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "perro_io_dlc_static_ext_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let archive = root.join("Expansion.dlc");
+        fs::write(&archive, EMPTY_ARCHIVE).unwrap();
+
+        clear_dlc_mounts();
+        mount_dlc_archive("Expansion", &archive).unwrap();
+        register_dlc_static_binary_lookup("Expansion", dlc_static_lookup);
+
+        match resolve_path("dlc://Expansion/textures/player.png") {
+            ResolvedPath::DlcStaticBinary { dlc, path } => {
+                assert_eq!(dlc, "expansion");
+                assert_eq!(path, "dlc://Expansion/textures/player.png");
+            }
+            other => panic!("expected dlc static binary path, got {other:?}"),
+        }
+        assert_eq!(
+            load_asset("dlc://Expansion/textures/player.png").unwrap(),
+            b"dlc-static-ptex"
+        );
+
+        clear_dlc_mounts();
+        let _ = fs::remove_dir_all(&root);
     }
 }

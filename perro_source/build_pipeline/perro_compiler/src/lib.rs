@@ -3,6 +3,7 @@ use perro_io::walkdir::walk_dir;
 use perro_project::{ensure_source_overrides, load_project_toml};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    env,
     fmt::{Display, Formatter},
     fs,
     path::{Path, PathBuf},
@@ -583,9 +584,14 @@ fn write_dlc_pack_lib(
     src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_shader(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_str_out(static_assets::shaders::lookup_shader(path_hash), data_out, len_out)\n}\n\n",
     );
-    src.push_str(
-        "pub fn perro_dlc_pack_lookup_typed(_path_hash: u64) -> Option<&'static [u8]> {\n    None\n}\n\n",
-    );
+    src.push_str("pub fn perro_dlc_pack_lookup_typed(path_hash: u64) -> Option<&'static [u8]> {\n");
+    src.push_str("    let bytes = static_assets::textures::lookup_texture(path_hash);\n    if !bytes.is_empty() {\n        return Some(bytes);\n    }\n");
+    src.push_str("    let bytes = static_assets::meshes::lookup_mesh(path_hash);\n    if !bytes.is_empty() {\n        return Some(bytes);\n    }\n");
+    src.push_str("    let bytes = static_assets::collision_trimeshes::lookup_collision_trimesh(path_hash);\n    if !bytes.is_empty() {\n        return Some(bytes);\n    }\n");
+    src.push_str("    let bytes = static_assets::skeletons::lookup_skeleton(path_hash);\n    if !bytes.is_empty() {\n        return Some(bytes);\n    }\n");
+    src.push_str("    let bytes = static_assets::audios::lookup_audio(path_hash);\n    if !bytes.is_empty() {\n        return Some(bytes);\n    }\n");
+    src.push_str("    let shader = static_assets::shaders::lookup_shader(path_hash);\n    if !shader.is_empty() {\n        return Some(shader.as_bytes());\n    }\n");
+    src.push_str("    None\n}\n\n");
     src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
     );
@@ -1051,7 +1057,22 @@ fn generate_dlc_static_modules(
     })
 }
 
-pub fn compile_project_bundle(project_root: &Path, profile: bool) -> Result<(), CompilerError> {
+#[derive(Clone, Copy, Debug)]
+pub struct ProjectBuildOptions {
+    pub profile: bool,
+    pub console: bool,
+}
+
+impl ProjectBuildOptions {
+    pub fn new(profile: bool, console: bool) -> Self {
+        Self { profile, console }
+    }
+}
+
+pub fn compile_project_bundle(
+    project_root: &Path,
+    options: ProjectBuildOptions,
+) -> Result<(), CompilerError> {
     ensure_source_overrides(project_root)?;
     let cfg = load_project_toml(project_root)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
@@ -1062,7 +1083,7 @@ pub fn compile_project_bundle(project_root: &Path, profile: bool) -> Result<(), 
         .map_err(|err| CompilerError::SceneParse(format!("static mod generation failed: {err}")))?;
     generate_embedded_main(project_root)?;
     generate_perro_assets(project_root, &cfg)?;
-    build_project_crate(project_root, profile)?;
+    build_project_crate(project_root, options)?;
     Ok(())
 }
 
@@ -1093,7 +1114,10 @@ fn reset_embedded_dir(project_root: &Path) -> Result<(), CompilerError> {
     Ok(())
 }
 
-fn build_project_crate(project_root: &Path, profile: bool) -> Result<(), CompilerError> {
+fn build_project_crate(
+    project_root: &Path,
+    options: ProjectBuildOptions,
+) -> Result<(), CompilerError> {
     let project_crate = project_root.join(".perro").join("project");
     let target_dir = project_root.join("target");
     let mut cmd = Command::new("cargo");
@@ -1101,7 +1125,13 @@ fn build_project_crate(project_root: &Path, profile: bool) -> Result<(), Compile
         .arg("--release")
         .env("CARGO_TARGET_DIR", &target_dir)
         .current_dir(project_crate);
-    if profile {
+    if !options.console {
+        cmd.env(
+            "RUSTFLAGS",
+            append_rustflag(env::var_os("RUSTFLAGS"), "--cfg perro_no_console"),
+        );
+    }
+    if options.profile {
         cmd.arg("--features").arg("profile");
     }
     let status = cmd.status()?;
@@ -1111,6 +1141,15 @@ fn build_project_crate(project_root: &Path, profile: bool) -> Result<(), Compile
     }
     export_project_binary(project_root, &target_dir)?;
     Ok(())
+}
+
+fn append_rustflag(existing: Option<std::ffi::OsString>, flag: &str) -> std::ffi::OsString {
+    let mut out = existing.unwrap_or_default();
+    if !out.is_empty() {
+        out.push(" ");
+    }
+    out.push(flag);
+    out
 }
 
 fn export_project_binary(project_root: &Path, target_dir: &Path) -> Result<(), CompilerError> {
@@ -1361,6 +1400,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         texture_lookup: static_assets::textures::lookup_texture,\n\
         shader_lookup: static_assets::shaders::lookup_shader,\n\
         audio_lookup: static_assets::audios::lookup_audio,\n\
+        binary_lookup: lookup_static_binary,\n\
         static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\
   }},\n\
 }})\n\
@@ -1403,9 +1443,37 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
     let embedded_block = indent_block(&embedded_block, 2);
 
     let main_src = format!(
-        "#[path = \"static/mod.rs\"]\n\
+        "#![cfg_attr(all(perro_no_console, target_os = \"windows\"), windows_subsystem = \"windows\")]\n\n\
+#[path = \"static/mod.rs\"]\n\
   mod static_assets;\n\n\
 static PERRO_ASSETS: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n\
+fn lookup_static_binary(path_hash: u64) -> &'static [u8] {{\n\
+    let bytes = static_assets::textures::lookup_texture(path_hash);\n\
+    if !bytes.is_empty() {{\n\
+        return bytes;\n\
+    }}\n\
+    let bytes = static_assets::meshes::lookup_mesh(path_hash);\n\
+    if !bytes.is_empty() {{\n\
+        return bytes;\n\
+    }}\n\
+    let bytes = static_assets::collision_trimeshes::lookup_collision_trimesh(path_hash);\n\
+    if !bytes.is_empty() {{\n\
+        return bytes;\n\
+    }}\n\
+    let bytes = static_assets::skeletons::lookup_skeleton(path_hash);\n\
+    if !bytes.is_empty() {{\n\
+        return bytes;\n\
+    }}\n\
+    let bytes = static_assets::audios::lookup_audio(path_hash);\n\
+    if !bytes.is_empty() {{\n\
+        return bytes;\n\
+    }}\n\
+    let shader = static_assets::shaders::lookup_shader(path_hash);\n\
+    if !shader.is_empty() {{\n\
+        return shader.as_bytes();\n\
+    }}\n\
+    b\"\"\n\
+}}\n\n\
 fn project_root() -> std::path::PathBuf {{\n\
     if let Ok(exe) = std::env::current_exe() {{\n\
         if let Some(exe_dir) = exe.parent() {{\n\

@@ -1307,13 +1307,16 @@ strip = "symbols"
 fn default_project_build_rs() -> String {
     r#"#[cfg(target_os = "windows")]
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(perro_no_console)");
     if let Err(err) = embed_windows_icon() {
         println!("cargo:warning=perro icon embedding skipped: {err}");
     }
 }
 
 #[cfg(not(target_os = "windows"))]
-fn main() {}
+fn main() {
+    println!("cargo:rustc-check-cfg=cfg(perro_no_console)");
+}
 
 #[cfg(target_os = "windows")]
 fn embed_windows_icon() -> Result<(), String> {
@@ -1579,6 +1582,34 @@ mod static_assets;
 
 static PERRO_ASSETS: &[u8] = include_bytes!("../embedded/assets.perro");
 
+fn lookup_static_binary(path_hash: u64) -> &'static [u8] {
+    let bytes = static_assets::textures::lookup_texture(path_hash);
+    if !bytes.is_empty() {
+        return bytes;
+    }
+    let bytes = static_assets::meshes::lookup_mesh(path_hash);
+    if !bytes.is_empty() {
+        return bytes;
+    }
+    let bytes = static_assets::collision_trimeshes::lookup_collision_trimesh(path_hash);
+    if !bytes.is_empty() {
+        return bytes;
+    }
+    let bytes = static_assets::skeletons::lookup_skeleton(path_hash);
+    if !bytes.is_empty() {
+        return bytes;
+    }
+    let bytes = static_assets::audios::lookup_audio(path_hash);
+    if !bytes.is_empty() {
+        return bytes;
+    }
+    let shader = static_assets::shaders::lookup_shader(path_hash);
+    if !shader.is_empty() {
+        return shader.as_bytes();
+    }
+    b""
+}
+
 fn project_root() -> std::path::PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
@@ -1642,6 +1673,7 @@ fn project_root() -> std::path::PathBuf {
               texture_lookup: static_assets::textures::lookup_texture,
               shader_lookup: static_assets::shaders::lookup_shader,
               audio_lookup: static_assets::audios::lookup_audio,
+              binary_lookup: lookup_static_binary,
               static_script_registry: Some(scripts::SCRIPT_REGISTRY),
           },
       })
@@ -1906,6 +1938,14 @@ fn ensure_project_build_script(path: &Path) -> std::io::Result<()> {
     }"#;
         if src.contains(old) {
             fs::write(path, src.replace(old, new))?;
+        }
+        let src = fs::read_to_string(path)?;
+        if !src.contains("cargo:rustc-check-cfg=cfg(perro_no_console)") {
+            let updated = src.replace(
+                "fn main() {\n",
+                "fn main() {\n    println!(\"cargo:rustc-check-cfg=cfg(perro_no_console)\");\n",
+            );
+            fs::write(path, updated)?;
         }
         return Ok(());
     }

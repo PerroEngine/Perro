@@ -2832,6 +2832,7 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "perro_assets",
+ "perro_ids",
 ]
 
 [[package]]

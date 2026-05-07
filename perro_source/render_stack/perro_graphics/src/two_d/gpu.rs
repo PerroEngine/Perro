@@ -17,6 +17,7 @@ const PTEX_FLAG_FORMAT_MASK: u32 = 0b11;
 const PTEX_FLAG_FORMAT_RGBA8: u32 = 0;
 const PTEX_FLAG_FORMAT_RGB8: u32 = 1;
 const PTEX_FLAG_FORMAT_R8: u32 = 2;
+const PTEX_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -632,7 +633,7 @@ fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
 
     let flags = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
     let raw_len = u32::from_le_bytes(bytes[20..24].try_into().ok()?);
-    if flags & !PTEX_FLAG_FORMAT_MASK != 0 {
+    if flags & !(PTEX_FLAG_FORMAT_MASK | PTEX_FLAG_PAYLOAD_RAW) != 0 {
         return None;
     }
     let pixel_count = width.checked_mul(height)? as usize;
@@ -645,9 +646,7 @@ fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     if raw_len as usize != expected_raw_len {
         return None;
     }
-    let Ok(raw) = decompress_zlib(&bytes[24..]) else {
-        return None;
-    };
+    let raw = decode_ptex_payload(flags, &bytes[24..])?;
     if raw.len() != expected_raw_len {
         return None;
     }
@@ -670,6 +669,14 @@ fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
         _ => return None,
     };
     Some((rgba, width, height))
+}
+
+fn decode_ptex_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
+    if (flags & PTEX_FLAG_PAYLOAD_RAW) != 0 {
+        Some(payload.to_vec())
+    } else {
+        decompress_zlib(payload).ok()
+    }
 }
 
 fn create_rect_pipeline(

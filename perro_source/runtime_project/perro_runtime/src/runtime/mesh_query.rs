@@ -10,6 +10,8 @@ use rayon::prelude::*;
 use std::cell::RefCell;
 use std::sync::{Arc, OnceLock, RwLock};
 
+const PMESH_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
+
 #[derive(Clone, Copy)]
 struct QueryTri {
     a: u32,
@@ -1380,7 +1382,7 @@ fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
     let raw_len = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
     let payload_start = 33usize;
 
-    let raw = decompress_zlib(&bytes[payload_start..]).ok()?;
+    let raw = decode_pmesh_payload(flags, &bytes[payload_start..])?;
     if raw.len() != raw_len {
         return None;
     }
@@ -1457,6 +1459,14 @@ fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
     }
 
     build_query_mesh_data(vertices, triangles)
+}
+
+fn decode_pmesh_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
+    if (flags & PMESH_FLAG_PAYLOAD_RAW) != 0 {
+        Some(payload.to_vec())
+    } else {
+        decompress_zlib(payload).ok()
+    }
 }
 
 fn ray_intersect_triangle(origin: Vec3, direction: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Option<f32> {

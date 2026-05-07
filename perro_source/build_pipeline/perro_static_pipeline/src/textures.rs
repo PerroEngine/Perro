@@ -17,6 +17,7 @@ const PTEX_FLAG_FORMAT_MASK: u32 = 0b11;
 const PTEX_FLAG_FORMAT_RGBA8: u32 = 0;
 const PTEX_FLAG_FORMAT_RGB8: u32 = 1;
 const PTEX_FLAG_FORMAT_R8: u32 = 2;
+const PTEX_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 
 pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
@@ -50,17 +51,26 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
             let rgba = image.to_rgba8();
             let (width, height) = rgba.dimensions();
             let raw_rgba = rgba.into_raw();
-            let (flags, packed_raw) = pack_texture_payload(&raw_rgba);
+            let (mut flags, packed_raw) = pack_texture_payload(&raw_rgba);
             let compressed = compress_zlib_best(&packed_raw)?;
+            let payload = if compressed.len() < packed_raw.len() {
+                compressed
+            } else {
+                flags |= PTEX_FLAG_PAYLOAD_RAW;
+                packed_raw.clone()
+            };
 
-            let mut ptex = Vec::with_capacity(24 + compressed.len());
+            let mut ptex = Vec::with_capacity(24 + payload.len());
             ptex.extend_from_slice(b"PTEX");
             ptex.extend_from_slice(&PTEX_VERSION.to_le_bytes());
             ptex.extend_from_slice(&width.to_le_bytes());
             ptex.extend_from_slice(&height.to_le_bytes());
-            ptex.extend_from_slice(&(flags & PTEX_FLAG_FORMAT_MASK).to_le_bytes());
+            ptex.extend_from_slice(
+                &((flags & PTEX_FLAG_FORMAT_MASK) | (flags & PTEX_FLAG_PAYLOAD_RAW))
+                    .to_le_bytes(),
+            );
             ptex.extend_from_slice(&(packed_raw.len() as u32).to_le_bytes());
-            ptex.extend_from_slice(&compressed);
+            ptex.extend_from_slice(&payload);
             Ok((res_path, ptex))
         })
         .collect::<io::Result<Vec<_>>>()?;

@@ -16,6 +16,7 @@ const PMESH_FLAG_HAS_NORMAL: u32 = 1 << 0;
 const PMESH_FLAG_HAS_UV0: u32 = 1 << 1;
 const PMESH_FLAG_HAS_JOINTS: u32 = 1 << 2;
 const PMESH_FLAG_HAS_WEIGHTS: u32 = 1 << 3;
+const PMESH_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 const MESHLET_TRIANGLES: usize = 64;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -473,10 +474,6 @@ fn encode_pmesh(
         write_f32(&mut raw, meshlet.radius);
     }
 
-    let compressed = compress_zlib_best(&raw)?;
-    let mut out = Vec::with_capacity(5 + 7 * std::mem::size_of::<u32>() + compressed.len());
-    out.extend_from_slice(PMESH_MAGIC);
-    out.extend_from_slice(&PMESH_VERSION.to_le_bytes());
     let mut flags = 0u32;
     if has_normals {
         flags |= PMESH_FLAG_HAS_NORMAL;
@@ -490,13 +487,23 @@ fn encode_pmesh(
     if has_weights {
         flags |= PMESH_FLAG_HAS_WEIGHTS;
     }
+    let compressed = compress_zlib_best(&raw)?;
+    let payload = if compressed.len() < raw.len() {
+        compressed
+    } else {
+        flags |= PMESH_FLAG_PAYLOAD_RAW;
+        raw.clone()
+    };
+    let mut out = Vec::with_capacity(5 + 7 * std::mem::size_of::<u32>() + payload.len());
+    out.extend_from_slice(PMESH_MAGIC);
+    out.extend_from_slice(&PMESH_VERSION.to_le_bytes());
     out.extend_from_slice(&flags.to_le_bytes());
     out.extend_from_slice(&(vertices.len() as u32).to_le_bytes());
     out.extend_from_slice(&(indices.len() as u32).to_le_bytes());
     out.extend_from_slice(&(surface_ranges.len() as u32).to_le_bytes());
     out.extend_from_slice(&(meshlets.len() as u32).to_le_bytes());
     out.extend_from_slice(&(raw.len() as u32).to_le_bytes());
-    out.extend_from_slice(&compressed);
+    out.extend_from_slice(&payload);
     Ok(out)
 }
 

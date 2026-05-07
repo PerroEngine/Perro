@@ -11,7 +11,9 @@ use std::{
 };
 
 const PSKEL_MAGIC: &[u8; 5] = b"PSKEL";
-const PSKEL_VERSION: u32 = 2;
+const PSKEL_VERSION: u32 = 3;
+const PSKEL_VERSION_ZLIB_ONLY: u32 = 2;
+const PSKEL_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 const PSKEL_BONE_FLAG_HAS_PARENT: u32 = 1 << 0;
 const PSKEL_BONE_FLAG_HAS_REST_POS: u32 = 1 << 1;
 const PSKEL_BONE_FLAG_HAS_REST_SCALE: u32 = 1 << 2;
@@ -348,10 +350,10 @@ fn quat_from_basis(x: Vector3, y: Vector3, z: Vector3) -> Quaternion {
 }
 
 fn encode_pskel_tightest(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
-    encode_pskel_v2(bones)
+    encode_pskel_v3(bones)
 }
 
-fn encode_pskel_v2(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
+fn encode_pskel_v3(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
     let mut raw = Vec::<u8>::new();
     for bone in bones {
         let name_bytes = bone.name.as_bytes();
@@ -409,12 +411,22 @@ fn encode_pskel_v2(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
 
 fn encode_pskel_blob(version: u32, bone_count: usize, raw: &[u8]) -> io::Result<Vec<u8>> {
     let compressed = compress_zlib_best(raw)?;
-    let mut out = Vec::with_capacity(5 + 4 * std::mem::size_of::<u32>() + compressed.len());
+    let mut flags = 0u32;
+    let payload = if compressed.len() < raw.len() {
+        compressed
+    } else {
+        flags |= PSKEL_FLAG_PAYLOAD_RAW;
+        raw.to_vec()
+    };
+    let mut out = Vec::with_capacity(5 + 4 * std::mem::size_of::<u32>() + payload.len());
     out.extend_from_slice(PSKEL_MAGIC);
     out.extend_from_slice(&version.to_le_bytes());
     out.extend_from_slice(&(bone_count as u32).to_le_bytes());
     out.extend_from_slice(&(raw.len() as u32).to_le_bytes());
-    out.extend_from_slice(&compressed);
+    if version != PSKEL_VERSION_ZLIB_ONLY {
+        out.extend_from_slice(&flags.to_le_bytes());
+    }
+    out.extend_from_slice(&payload);
     Ok(out)
 }
 
@@ -632,7 +644,7 @@ fn escape_str(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{BoneLiteral, PSKEL_VERSION, encode_pskel_tightest, encode_pskel_v2};
+    use super::{BoneLiteral, PSKEL_VERSION, encode_pskel_tightest, encode_pskel_v3};
     use perro_structs::{Quaternion, Transform3D, Vector3};
 
     fn dense_bone() -> BoneLiteral {
@@ -662,13 +674,18 @@ mod tests {
     }
 
     fn decode_pskel_for_test(bytes: &[u8]) -> Vec<BoneLiteral> {
-        assert!(bytes.len() >= 17);
+        assert!(bytes.len() >= 21);
         assert_eq!(&bytes[0..5], b"PSKEL");
         let version = u32::from_le_bytes(bytes[5..9].try_into().expect("version"));
         assert_eq!(version, PSKEL_VERSION);
         let bone_count = u32::from_le_bytes(bytes[9..13].try_into().expect("count")) as usize;
         let raw_len = u32::from_le_bytes(bytes[13..17].try_into().expect("raw_len")) as usize;
-        let raw = perro_io::decompress_zlib(&bytes[17..]).expect("decompress");
+        let flags = u32::from_le_bytes(bytes[17..21].try_into().expect("flags"));
+        let raw = if (flags & (1 << 31)) != 0 {
+            bytes[21..].to_vec()
+        } else {
+            perro_io::decompress_zlib(&bytes[21..]).expect("decompress")
+        };
         assert_eq!(raw.len(), raw_len);
 
         let mut cursor = 0usize;
@@ -745,14 +762,14 @@ mod tests {
     }
 
     #[test]
-    fn encode_pskel_tightest_emits_v2() {
+    fn encode_pskel_tightest_emits_current_version() {
         let bones = vec![sparse_bone(); 64];
-        let v2 = encode_pskel_v2(&bones).expect("encode v2");
+        let v3 = encode_pskel_v3(&bones).expect("encode v3");
         let selected = encode_pskel_tightest(&bones).expect("encode tightest");
-        assert_eq!(selected, v2);
+        assert_eq!(selected, v3);
         assert_eq!(
             u32::from_le_bytes(selected[5..9].try_into().expect("version")),
-            2
+            PSKEL_VERSION
         );
     }
 

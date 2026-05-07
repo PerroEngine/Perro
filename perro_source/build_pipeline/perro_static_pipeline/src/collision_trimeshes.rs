@@ -15,6 +15,7 @@ const PMESH_MAGIC: &[u8; 5] = b"PMESH";
 const PMESH_VERSION_V6: u32 = 6;
 const PMESH_VERSION_V7: u32 = 7;
 const PMESH_FLAG_INDEX_U16: u32 = 1 << 4;
+const PMESH_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 
 pub fn generate_static_collision_trimeshes(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_root = res_dir(project_root);
@@ -247,7 +248,7 @@ fn decode_pmesh_trimesh_v6(bytes: &[u8]) -> Option<TriMeshData> {
     let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
     let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
     let raw_len = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
-    let raw = decompress_zlib(&bytes[33..]).ok()?;
+    let raw = decode_pmesh_payload(flags, &bytes[33..])?;
     if raw.len() != raw_len {
         return None;
     }
@@ -278,7 +279,7 @@ fn decode_pmesh_trimesh_v7(bytes: &[u8]) -> Option<TriMeshData> {
     let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
     let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
     let raw_len = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
-    let raw = decompress_zlib(&bytes[33..]).ok()?;
+    let raw = decode_pmesh_payload(flags, &bytes[33..])?;
     if raw.len() != raw_len {
         return None;
     }
@@ -428,21 +429,35 @@ fn encode_collision_pmesh(
     let compressed = compress_zlib_best(&raw).map_err(|e| {
         StaticPipelineError::SceneParse(format!("collision trimesh compress fail: {e}"))
     })?;
-    let mut out = Vec::<u8>::with_capacity(33 + compressed.len());
-    out.extend_from_slice(PMESH_MAGIC);
-    out.extend_from_slice(&PMESH_VERSION_V7.to_le_bytes());
     let mut flags = 0u32;
     if use_u16_indices {
         flags |= PMESH_FLAG_INDEX_U16;
     }
+    let payload = if compressed.len() < raw.len() {
+        compressed
+    } else {
+        flags |= PMESH_FLAG_PAYLOAD_RAW;
+        raw.clone()
+    };
+    let mut out = Vec::<u8>::with_capacity(33 + payload.len());
+    out.extend_from_slice(PMESH_MAGIC);
+    out.extend_from_slice(&PMESH_VERSION_V7.to_le_bytes());
     out.extend_from_slice(&flags.to_le_bytes());
     out.extend_from_slice(&(vertices.len() as u32).to_le_bytes());
     out.extend_from_slice(&((triangles.len() * 3) as u32).to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&(raw.len() as u32).to_le_bytes());
-    out.extend_from_slice(&compressed);
+    out.extend_from_slice(&payload);
     Ok(out)
+}
+
+fn decode_pmesh_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
+    if (flags & PMESH_FLAG_PAYLOAD_RAW) != 0 {
+        Some(payload.to_vec())
+    } else {
+        decompress_zlib(payload).ok()
+    }
 }
 
 fn simplify_trimesh_data(vertices: Vec<[f32; 3]>, triangles: Vec<[u32; 3]>) -> Option<TriMeshData> {

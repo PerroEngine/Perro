@@ -5,7 +5,7 @@ use perro_ids::parse_hashed_source_uri;
 use perro_ids::string_to_u64;
 use perro_io::{
     ProjectRoot, clear_dlc_mounts, data_local_dir, is_reserved_dlc_name, mount_dlc_archive,
-    mount_dlc_disk, read_mounted_dlc_file, set_project_root,
+    mount_dlc_disk, read_mounted_dlc_file, register_dlc_static_binary_lookup, set_project_root,
 };
 use perro_runtime_context::sub_apis::PreloadedSceneID;
 use perro_scene::Scene;
@@ -228,6 +228,7 @@ impl Runtime {
             main_scene_path,
             main_scene_hash,
             static_lookup,
+            static_binary_lookup,
             perro_assets_bytes,
         ) = {
             let project = self
@@ -242,6 +243,7 @@ impl Runtime {
                     .main_scene_hash
                     .unwrap_or_else(|| string_to_u64(&project.config.main_scene)),
                 project.static_scene_lookup,
+                project.static_binary_lookup,
                 project.perro_assets_bytes,
             )
         };
@@ -251,6 +253,7 @@ impl Runtime {
                 set_project_root(ProjectRoot::PerroAssets {
                     data,
                     name: project_name,
+                    static_binary_lookup,
                 });
             } else {
                 set_project_root(ProjectRoot::Disk {
@@ -571,6 +574,13 @@ impl Runtime {
                     )
                 })?;
                 if let Ok(lib) = unsafe { libloading::Library::new(&pack_path) } {
+                    unsafe {
+                        type Lookup =
+                            unsafe extern "C" fn(u64, *mut *const u8, *mut usize) -> bool;
+                        if let Ok(symbol) = lib.get::<Lookup>(b"perro_dlc_pack_lookup") {
+                            register_dlc_static_binary_lookup(stem, *symbol);
+                        }
+                    }
                     self.script_runtime.script_libraries.push(lib);
                 }
             }

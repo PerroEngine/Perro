@@ -13,6 +13,7 @@ use rapier2d::{na as na2, prelude as r2};
 use rapier3d::{na as na3, prelude as r3};
 
 const MAX_CCD_SUBSTEPS: usize = 1;
+const PMESH_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 const MAX_RIGID_SPEED_2D: f32 = 80.0;
 const MAX_RIGID_SPEED_3D: f32 = 80.0;
 const CCD_MIN_SPEED_RATIO_OF_MAX: f32 = 0.5;
@@ -2007,7 +2008,7 @@ fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMe
     let raw_len = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
     let payload_start = 33usize;
 
-    let raw = decompress_zlib(&bytes[payload_start..]).ok()?;
+    let raw = decode_pmesh_payload(flags, &bytes[payload_start..])?;
     if raw.len() != raw_len {
         return None;
     }
@@ -2065,6 +2066,14 @@ fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMe
         return None;
     }
     Some((vertices, triangles))
+}
+
+fn decode_pmesh_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
+    if (flags & PMESH_FLAG_PAYLOAD_RAW) != 0 {
+        Some(payload.to_vec())
+    } else {
+        decompress_zlib(payload).ok()
+    }
 }
 
 fn read_trimesh_index(
