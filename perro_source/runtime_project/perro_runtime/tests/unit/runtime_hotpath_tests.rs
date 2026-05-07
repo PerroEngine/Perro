@@ -224,6 +224,39 @@ fn bench_transform_dirty_propagate_and_refresh() {
 
 #[test]
 #[ignore]
+fn bench_render_traversal_seen_reuse() {
+    use ahash::AHashSet;
+    let count = 80_000usize;
+    let rounds = 1_500usize;
+    let ids: Vec<NodeID> = (1..=count as u32).map(|i| NodeID::from_parts(i, 0)).collect();
+
+    let start_fresh = std::time::Instant::now();
+    let mut fresh_acc = 0usize;
+    for _ in 0..rounds {
+        let mut seen: AHashSet<NodeID> = ids.iter().copied().collect();
+        fresh_acc = fresh_acc.wrapping_add(seen.len());
+        seen.clear();
+    }
+    let fresh_us = start_fresh.elapsed().as_micros();
+
+    let mut scratch: AHashSet<NodeID> = AHashSet::default();
+    let start_reuse = std::time::Instant::now();
+    let mut reuse_acc = 0usize;
+    for _ in 0..rounds {
+        scratch.clear();
+        scratch.extend(ids.iter().copied());
+        reuse_acc = reuse_acc.wrapping_add(scratch.len());
+    }
+    let reuse_us = start_reuse.elapsed().as_micros();
+    let speedup = fresh_us as f64 / reuse_us.max(1) as f64;
+    println!(
+        "bench_render_traversal_seen_reuse: count={} rounds={} fresh_us={} reuse_us={} speedup={:.3}x fresh_acc={} reuse_acc={}",
+        count, rounds, fresh_us, reuse_us, speedup, fresh_acc, reuse_acc
+    );
+}
+
+#[test]
+#[ignore]
 fn bench_render_command_drain_hotloop() {
     let mut runtime = Runtime::new();
     let rounds = 80_000usize;
