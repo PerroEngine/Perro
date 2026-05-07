@@ -305,12 +305,17 @@ pub(crate) struct DirtyState {
 
 pub(crate) struct Render2DState {
     pub(crate) traversal_ids: Vec<NodeID>,
+    pub(crate) traversal_seen: AHashSet<NodeID>,
     pub(crate) visible_now: AHashSet<NodeID>,
     pub(crate) prev_visible: AHashSet<NodeID>,
     pub(crate) retained_sprites: AHashMap<NodeID, Sprite2DCommand>,
     pub(crate) texture_sources: AHashMap<NodeID, String>,
     pub(crate) last_camera: Option<perro_render_bridge::Camera2DState>,
     pub(crate) removed_nodes: Vec<NodeID>,
+    #[cfg(feature = "profile")]
+    pub(crate) profile_last_seed_nodes: u32,
+    #[cfg(feature = "profile")]
+    pub(crate) profile_last_affected_nodes: u32,
 }
 
 pub(crate) struct RenderUiState {
@@ -385,18 +390,24 @@ impl Render2DState {
     pub(crate) fn new() -> Self {
         Self {
             traversal_ids: Vec::new(),
+            traversal_seen: AHashSet::default(),
             visible_now: AHashSet::default(),
             prev_visible: AHashSet::default(),
             retained_sprites: AHashMap::default(),
             texture_sources: AHashMap::default(),
             last_camera: None,
             removed_nodes: Vec::new(),
+            #[cfg(feature = "profile")]
+            profile_last_seed_nodes: 0,
+            #[cfg(feature = "profile")]
+            profile_last_affected_nodes: 0,
         }
     }
 }
 
 pub(crate) struct Render3DState {
     pub(crate) traversal_ids: Vec<NodeID>,
+    pub(crate) traversal_seen: AHashSet<NodeID>,
     pub(crate) visible_now: AHashSet<NodeID>,
     pub(crate) prev_visible: AHashSet<NodeID>,
     pub(crate) mesh_sources: AHashMap<NodeID, String>,
@@ -415,12 +426,17 @@ pub(crate) struct Render3DState {
     pub(crate) skeleton_cache_scratch: AHashMap<NodeID, SkeletonPalette>,
     pub(crate) removed_nodes: Vec<NodeID>,
     pub(crate) force_full_scan_once: bool,
+    #[cfg(feature = "profile")]
+    pub(crate) profile_last_seed_nodes: u32,
+    #[cfg(feature = "profile")]
+    pub(crate) profile_last_affected_nodes: u32,
 }
 
 impl Render3DState {
     pub(crate) fn new() -> Self {
         Self {
             traversal_ids: Vec::new(),
+            traversal_seen: AHashSet::default(),
             visible_now: AHashSet::default(),
             prev_visible: AHashSet::default(),
             mesh_sources: AHashMap::default(),
@@ -439,6 +455,10 @@ impl Render3DState {
             skeleton_cache_scratch: AHashMap::default(),
             removed_nodes: Vec::new(),
             force_full_scan_once: false,
+            #[cfg(feature = "profile")]
+            profile_last_seed_nodes: 0,
+            #[cfg(feature = "profile")]
+            profile_last_affected_nodes: 0,
         }
     }
 }

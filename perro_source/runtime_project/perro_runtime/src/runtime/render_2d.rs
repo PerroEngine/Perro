@@ -38,7 +38,14 @@ impl Runtime {
         if traversal_ids.is_empty() && bootstrap_scan {
             traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
         }
-        let mut traversal_seen: AHashSet<NodeID> = traversal_ids.iter().copied().collect();
+        #[cfg(feature = "profile")]
+        {
+            self.render_2d.profile_last_seed_nodes =
+                traversal_ids.len().min(u32::MAX as usize) as u32;
+        }
+        let mut traversal_seen = std::mem::take(&mut self.render_2d.traversal_seen);
+        traversal_seen.clear();
+        traversal_seen.extend(traversal_ids.iter().copied());
         let mut traversal_cursor = 0usize;
         while traversal_cursor < traversal_ids.len() {
             let node = traversal_ids[traversal_cursor];
@@ -116,8 +123,15 @@ impl Runtime {
         visible_now.clear();
         self.render_2d.visible_now = visible_now;
 
+        #[cfg(feature = "profile")]
+        {
+            self.render_2d.profile_last_affected_nodes =
+                traversal_ids.len().min(u32::MAX as usize) as u32;
+        }
         traversal_ids.clear();
         self.render_2d.traversal_ids = traversal_ids;
+        traversal_seen.clear();
+        self.render_2d.traversal_seen = traversal_seen;
     }
 
     fn emit_sprite_2d(

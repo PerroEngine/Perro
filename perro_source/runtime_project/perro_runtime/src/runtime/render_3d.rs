@@ -64,9 +64,14 @@ impl Runtime {
         if traversal_ids.is_empty() && bootstrap_scan {
             traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
         }
-        let mut seed_seen: ahash::AHashSet<NodeID> = ahash::AHashSet::default();
-        traversal_ids.retain(|id| seed_seen.insert(*id));
-        let mut traversal_seen = seed_seen;
+        let mut traversal_seen = std::mem::take(&mut self.render_3d.traversal_seen);
+        traversal_seen.clear();
+        traversal_ids.retain(|id| traversal_seen.insert(*id));
+        #[cfg(feature = "profile")]
+        {
+            self.render_3d.profile_last_seed_nodes =
+                traversal_ids.len().min(u32::MAX as usize) as u32;
+        }
         let mut traversal_cursor = 0usize;
         while traversal_cursor < traversal_ids.len() {
             let node = traversal_ids[traversal_cursor];
@@ -78,6 +83,11 @@ impl Runtime {
                     }
                 }
             }
+        }
+        #[cfg(feature = "profile")]
+        {
+            self.render_3d.profile_last_affected_nodes =
+                traversal_ids.len().min(u32::MAX as usize) as u32;
         }
         let mut visible_now = std::mem::take(&mut self.render_3d.visible_now);
         visible_now.clear();
@@ -643,6 +653,8 @@ impl Runtime {
 
         traversal_ids.clear();
         self.render_3d.traversal_ids = traversal_ids;
+        traversal_seen.clear();
+        self.render_3d.traversal_seen = traversal_seen;
         skeleton_cache.clear();
         self.render_3d.skeleton_cache_scratch = skeleton_cache;
     }

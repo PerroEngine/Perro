@@ -132,6 +132,13 @@ pub struct RuntimeUiTiming {
     pub removed_nodes: u32,
 }
 
+#[cfg(feature = "profile")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RuntimeRenderExtractProfile {
+    pub seed_nodes: u32,
+    pub affected_nodes: u32,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct RuntimePhysicsStepTiming {
     pub pre_transforms: Duration,
@@ -146,6 +153,22 @@ pub(crate) struct RuntimePhysicsStepTiming {
 }
 
 impl Runtime {
+    #[cfg(feature = "profile")]
+    pub fn last_render_2d_extract_profile(&self) -> RuntimeRenderExtractProfile {
+        RuntimeRenderExtractProfile {
+            seed_nodes: self.render_2d.profile_last_seed_nodes,
+            affected_nodes: self.render_2d.profile_last_affected_nodes,
+        }
+    }
+
+    #[cfg(feature = "profile")]
+    pub fn last_render_3d_extract_profile(&self) -> RuntimeRenderExtractProfile {
+        RuntimeRenderExtractProfile {
+            seed_nodes: self.render_3d.profile_last_seed_nodes,
+            affected_nodes: self.render_3d.profile_last_affected_nodes,
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             time: Timing {
