@@ -103,7 +103,10 @@ impl QueryRegionAcc {
     }
 }
 
-fn nearer_hit(a: Option<QueryHitCandidate>, b: Option<QueryHitCandidate>) -> Option<QueryHitCandidate> {
+fn nearer_hit(
+    a: Option<QueryHitCandidate>,
+    b: Option<QueryHitCandidate>,
+) -> Option<QueryHitCandidate> {
     match (a, b) {
         (Some(left), Some(right)) => {
             if right.metric < left.metric {
@@ -155,7 +158,10 @@ fn should_parallel_regions(instance_count: usize, tri_count: usize, surface_coun
     let surface_gate = surface_count >= QUERY_REGION_SURFACE_PAR_THRESHOLD;
     surface_gate
         && tri_count >= QUERY_TRI_PAR_THRESHOLD
-        && instance_count.saturating_mul(tri_count).saturating_mul(surface_count) >= QUERY_PAR_WORK_THRESHOLD
+        && instance_count
+            .saturating_mul(tri_count)
+            .saturating_mul(surface_count)
+            >= QUERY_PAR_WORK_THRESHOLD
 }
 
 #[inline]
@@ -186,9 +192,21 @@ fn aabb_distance2(p: Vec3, min: Vec3, max: Vec3) -> f32 {
 
 #[inline]
 fn ray_aabb_tmin(origin: Vec3, dir: Vec3, min: Vec3, max: Vec3, max_t: f32) -> Option<f32> {
-    let inv_x = if dir.x.abs() > 1e-8 { 1.0 / dir.x } else { f32::INFINITY };
-    let inv_y = if dir.y.abs() > 1e-8 { 1.0 / dir.y } else { f32::INFINITY };
-    let inv_z = if dir.z.abs() > 1e-8 { 1.0 / dir.z } else { f32::INFINITY };
+    let inv_x = if dir.x.abs() > 1e-8 {
+        1.0 / dir.x
+    } else {
+        f32::INFINITY
+    };
+    let inv_y = if dir.y.abs() > 1e-8 {
+        1.0 / dir.y
+    } else {
+        f32::INFINITY
+    };
+    let inv_z = if dir.z.abs() > 1e-8 {
+        1.0 / dir.z
+    } else {
+        f32::INFINITY
+    };
 
     let mut t1 = (min.x - origin.x) * inv_x;
     let mut t2 = (max.x - origin.x) * inv_x;
@@ -242,7 +260,13 @@ fn build_query_mesh_data(vertices: Vec<Vec3>, triangles: Vec<QueryTri>) -> Optio
     }
     let mut bvh_tri_indices: Vec<u32> = (0..triangles.len() as u32).collect();
     let mut bvh_nodes = Vec::new();
-    build_bvh_recursive(&tri_accel, &mut bvh_tri_indices, &mut bvh_nodes, 0, triangles.len());
+    build_bvh_recursive(
+        &tri_accel,
+        &mut bvh_tri_indices,
+        &mut bvh_nodes,
+        0,
+        triangles.len(),
+    );
     Some(QueryMeshData {
         vertices,
         triangles,
@@ -295,8 +319,20 @@ fn build_bvh_recursive(
     tri_indices[start..start + count].sort_unstable_by(|a, b| {
         let ca = tri_accel[*a as usize].centroid;
         let cb = tri_accel[*b as usize].centroid;
-        let va = if axis == 0 { ca.x } else if axis == 1 { ca.y } else { ca.z };
-        let vb = if axis == 0 { cb.x } else if axis == 1 { cb.y } else { cb.z };
+        let va = if axis == 0 {
+            ca.x
+        } else if axis == 1 {
+            ca.y
+        } else {
+            ca.z
+        };
+        let vb = if axis == 0 {
+            cb.x
+        } else if axis == 1 {
+            cb.y
+        } else {
+            cb.z
+        };
         va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
     });
     let left_count = count / 2;
@@ -515,7 +551,9 @@ impl Runtime {
             let mesh_from_world = world_from_mesh.inverse();
             let world_normal_basis = Mat3::from_mat4(world_from_mesh).inverse().transpose();
             let ray_origin_local = mesh_from_world.transform_point3(ray_origin_world);
-            let ray_dir_local = mesh_from_world.transform_vector3(ray_dir_world).normalize_or_zero();
+            let ray_dir_local = mesh_from_world
+                .transform_vector3(ray_dir_world)
+                .normalize_or_zero();
             if ray_dir_local.length_squared() <= 1e-10 {
                 return None;
             }
@@ -670,84 +708,83 @@ impl Runtime {
         );
         let tri_parallel = should_parallel_triangles(instance_parallel, triangles.len());
         let regions_for_instance = |(instance_index, local): (usize, &Mat4)| {
-                let world_from_mesh = node_world * *local;
-                node.surfaces
-                    .iter()
-                    .enumerate()
-                    .filter(move |(_, surface)| surface.material == Some(material))
-                    .filter_map(move |(surface_index, surface)| {
-                        let tri_map = |tri: QueryTri| {
-                            let Some(a) = vertices.get(tri.a as usize).copied() else {
-                                return QueryRegionAcc::empty();
-                            };
-                            let Some(b) = vertices.get(tri.b as usize).copied() else {
-                                return QueryRegionAcc::empty();
-                            };
-                            let Some(c) = vertices.get(tri.c as usize).copied() else {
-                                return QueryRegionAcc::empty();
-                            };
-
-                            let tri_local_center = (a + b + c) / 3.0;
-                            let tri_world_center =
-                                world_from_mesh.transform_point3(tri_local_center);
-                            let mut local_min = Vec3::splat(f32::INFINITY);
-                            let mut local_max = Vec3::splat(f32::NEG_INFINITY);
-                            let mut world_min = Vec3::splat(f32::INFINITY);
-                            let mut world_max = Vec3::splat(f32::NEG_INFINITY);
-
-                            for p in [a, b, c] {
-                                local_min = local_min.min(p);
-                                local_max = local_max.max(p);
-                                let pw = world_from_mesh.transform_point3(p);
-                                world_min = world_min.min(pw);
-                                world_max = world_max.max(pw);
-                            }
-
-                            QueryRegionAcc {
-                                tri_count: 1,
-                                sum_local: tri_local_center,
-                                sum_world: tri_world_center,
-                                local_min,
-                                local_max,
-                                world_min,
-                                world_max,
-                            }
+            let world_from_mesh = node_world * *local;
+            node.surfaces
+                .iter()
+                .enumerate()
+                .filter(move |(_, surface)| surface.material == Some(material))
+                .filter_map(move |(surface_index, surface)| {
+                    let tri_map = |tri: QueryTri| {
+                        let Some(a) = vertices.get(tri.a as usize).copied() else {
+                            return QueryRegionAcc::empty();
                         };
-                        let acc = if tri_parallel {
-                            triangles
-                                .par_iter()
-                                .copied()
-                                .filter(|tri| tri.surface_index as usize == surface_index)
-                                .map(tri_map)
-                                .reduce(QueryRegionAcc::empty, merge_region_acc)
-                        } else {
-                            triangles
-                                .iter()
-                                .copied()
-                                .filter(|tri| tri.surface_index as usize == surface_index)
-                                .map(tri_map)
-                                .fold(QueryRegionAcc::empty(), merge_region_acc)
+                        let Some(b) = vertices.get(tri.b as usize).copied() else {
+                            return QueryRegionAcc::empty();
+                        };
+                        let Some(c) = vertices.get(tri.c as usize).copied() else {
+                            return QueryRegionAcc::empty();
                         };
 
-                        if acc.tri_count == 0 {
-                            return None;
+                        let tri_local_center = (a + b + c) / 3.0;
+                        let tri_world_center = world_from_mesh.transform_point3(tri_local_center);
+                        let mut local_min = Vec3::splat(f32::INFINITY);
+                        let mut local_max = Vec3::splat(f32::NEG_INFINITY);
+                        let mut world_min = Vec3::splat(f32::INFINITY);
+                        let mut world_max = Vec3::splat(f32::NEG_INFINITY);
+
+                        for p in [a, b, c] {
+                            local_min = local_min.min(p);
+                            local_max = local_max.max(p);
+                            let pw = world_from_mesh.transform_point3(p);
+                            world_min = world_min.min(pw);
+                            world_max = world_max.max(pw);
                         }
-                        let inv = 1.0 / acc.tri_count as f32;
-                        Some(MeshMaterialRegion3D {
-                            instance_index: instance_index as u32,
-                            surface_index: surface_index as u32,
-                            material: surface.material,
-                            triangle_count: acc.tri_count,
-                            center_world: (acc.sum_world * inv).into(),
-                            center_local: (acc.sum_local * inv).into(),
-                            aabb_min_world: acc.world_min.into(),
-                            aabb_max_world: acc.world_max.into(),
-                            aabb_min_local: acc.local_min.into(),
-                            aabb_max_local: acc.local_max.into(),
-                        })
+
+                        QueryRegionAcc {
+                            tri_count: 1,
+                            sum_local: tri_local_center,
+                            sum_world: tri_world_center,
+                            local_min,
+                            local_max,
+                            world_min,
+                            world_max,
+                        }
+                    };
+                    let acc = if tri_parallel {
+                        triangles
+                            .par_iter()
+                            .copied()
+                            .filter(|tri| tri.surface_index as usize == surface_index)
+                            .map(tri_map)
+                            .reduce(QueryRegionAcc::empty, merge_region_acc)
+                    } else {
+                        triangles
+                            .iter()
+                            .copied()
+                            .filter(|tri| tri.surface_index as usize == surface_index)
+                            .map(tri_map)
+                            .fold(QueryRegionAcc::empty(), merge_region_acc)
+                    };
+
+                    if acc.tri_count == 0 {
+                        return None;
+                    }
+                    let inv = 1.0 / acc.tri_count as f32;
+                    Some(MeshMaterialRegion3D {
+                        instance_index: instance_index as u32,
+                        surface_index: surface_index as u32,
+                        material: surface.material,
+                        triangle_count: acc.tri_count,
+                        center_world: (acc.sum_world * inv).into(),
+                        center_local: (acc.sum_local * inv).into(),
+                        aabb_min_world: acc.world_min.into(),
+                        aabb_max_world: acc.world_max.into(),
+                        aabb_min_local: acc.local_min.into(),
+                        aabb_max_local: acc.local_max.into(),
                     })
-                    .collect::<Vec<_>>()
-            };
+                })
+                .collect::<Vec<_>>()
+        };
         if instance_parallel {
             node.instance_local
                 .par_iter()
@@ -790,76 +827,76 @@ impl Runtime {
             should_parallel_instances(node.instance_local.len(), triangles.len());
         let tri_parallel = should_parallel_triangles(instance_parallel, triangles.len());
         let region_for_instance = |(instance_index, local): (usize, &Mat4)| {
-                let world_from_mesh = node_world * *local;
-                let tri_map = |tri: QueryTri| {
-                    let Some(a) = vertices.get(tri.a as usize).copied() else {
-                        return QueryRegionAcc::empty();
-                    };
-                    let Some(b) = vertices.get(tri.b as usize).copied() else {
-                        return QueryRegionAcc::empty();
-                    };
-                    let Some(c) = vertices.get(tri.c as usize).copied() else {
-                        return QueryRegionAcc::empty();
-                    };
-
-                    let tri_local_center = (a + b + c) / 3.0;
-                    let tri_world_center = world_from_mesh.transform_point3(tri_local_center);
-                    let mut local_min = Vec3::splat(f32::INFINITY);
-                    let mut local_max = Vec3::splat(f32::NEG_INFINITY);
-                    let mut world_min = Vec3::splat(f32::INFINITY);
-                    let mut world_max = Vec3::splat(f32::NEG_INFINITY);
-
-                    for p in [a, b, c] {
-                        local_min = local_min.min(p);
-                        local_max = local_max.max(p);
-                        let pw = world_from_mesh.transform_point3(p);
-                        world_min = world_min.min(pw);
-                        world_max = world_max.max(pw);
-                    }
-
-                    QueryRegionAcc {
-                        tri_count: 1,
-                        sum_local: tri_local_center,
-                        sum_world: tri_world_center,
-                        local_min,
-                        local_max,
-                        world_min,
-                        world_max,
-                    }
+            let world_from_mesh = node_world * *local;
+            let tri_map = |tri: QueryTri| {
+                let Some(a) = vertices.get(tri.a as usize).copied() else {
+                    return QueryRegionAcc::empty();
                 };
-                let acc = if tri_parallel {
-                    triangles
-                        .par_iter()
-                        .copied()
-                        .filter(|tri| tri.surface_index == surface_index)
-                        .map(tri_map)
-                        .reduce(QueryRegionAcc::empty, merge_region_acc)
-                } else {
-                    triangles
-                        .iter()
-                        .copied()
-                        .filter(|tri| tri.surface_index == surface_index)
-                        .map(tri_map)
-                        .fold(QueryRegionAcc::empty(), merge_region_acc)
+                let Some(b) = vertices.get(tri.b as usize).copied() else {
+                    return QueryRegionAcc::empty();
+                };
+                let Some(c) = vertices.get(tri.c as usize).copied() else {
+                    return QueryRegionAcc::empty();
                 };
 
-                if acc.tri_count == 0 {
-                    return None;
+                let tri_local_center = (a + b + c) / 3.0;
+                let tri_world_center = world_from_mesh.transform_point3(tri_local_center);
+                let mut local_min = Vec3::splat(f32::INFINITY);
+                let mut local_max = Vec3::splat(f32::NEG_INFINITY);
+                let mut world_min = Vec3::splat(f32::INFINITY);
+                let mut world_max = Vec3::splat(f32::NEG_INFINITY);
+
+                for p in [a, b, c] {
+                    local_min = local_min.min(p);
+                    local_max = local_max.max(p);
+                    let pw = world_from_mesh.transform_point3(p);
+                    world_min = world_min.min(pw);
+                    world_max = world_max.max(pw);
                 }
-                let inv = 1.0 / acc.tri_count as f32;
-                Some(MeshMaterialRegion3D {
-                    instance_index: instance_index as u32,
-                    surface_index,
-                    material: None,
-                    triangle_count: acc.tri_count,
-                    center_world: (acc.sum_world * inv).into(),
-                    center_local: (acc.sum_local * inv).into(),
-                    aabb_min_world: acc.world_min.into(),
-                    aabb_max_world: acc.world_max.into(),
-                    aabb_min_local: acc.local_min.into(),
-                    aabb_max_local: acc.local_max.into(),
-                })
+
+                QueryRegionAcc {
+                    tri_count: 1,
+                    sum_local: tri_local_center,
+                    sum_world: tri_world_center,
+                    local_min,
+                    local_max,
+                    world_min,
+                    world_max,
+                }
             };
+            let acc = if tri_parallel {
+                triangles
+                    .par_iter()
+                    .copied()
+                    .filter(|tri| tri.surface_index == surface_index)
+                    .map(tri_map)
+                    .reduce(QueryRegionAcc::empty, merge_region_acc)
+            } else {
+                triangles
+                    .iter()
+                    .copied()
+                    .filter(|tri| tri.surface_index == surface_index)
+                    .map(tri_map)
+                    .fold(QueryRegionAcc::empty(), merge_region_acc)
+            };
+
+            if acc.tri_count == 0 {
+                return None;
+            }
+            let inv = 1.0 / acc.tri_count as f32;
+            Some(MeshMaterialRegion3D {
+                instance_index: instance_index as u32,
+                surface_index,
+                material: None,
+                triangle_count: acc.tri_count,
+                center_world: (acc.sum_world * inv).into(),
+                center_local: (acc.sum_local * inv).into(),
+                aabb_min_world: acc.world_min.into(),
+                aabb_max_world: acc.world_max.into(),
+                aabb_min_local: acc.local_min.into(),
+                aabb_max_local: acc.local_max.into(),
+            })
+        };
         if instance_parallel {
             node.instance_local
                 .par_iter()
@@ -1217,7 +1254,8 @@ fn decode_gltf_query_mesh(bytes: &[u8], mesh_index: usize) -> Option<QueryMeshDa
     for (surface_index, primitive) in mesh.primitives().enumerate() {
         let reader = primitive.reader(|buffer| buffers.get(buffer.index()).map(|d| d.0.as_slice()));
         let positions = reader.read_positions()?;
-        let mut local_positions = GLTF_POS_SCRATCH.with(|scratch| std::mem::take(&mut *scratch.borrow_mut()));
+        let mut local_positions =
+            GLTF_POS_SCRATCH.with(|scratch| std::mem::take(&mut *scratch.borrow_mut()));
         local_positions.clear();
         local_positions.extend(positions);
         if local_positions.len() < 3 {
@@ -1234,8 +1272,8 @@ fn decode_gltf_query_mesh(bytes: &[u8], mesh_index: usize) -> Option<QueryMeshDa
         }
 
         if let Some(indices_reader) = reader.read_indices() {
-            let mut flat = GLTF_INDEX_SCRATCH
-                .with(|scratch| std::mem::take(&mut *scratch.borrow_mut()));
+            let mut flat =
+                GLTF_INDEX_SCRATCH.with(|scratch| std::mem::take(&mut *scratch.borrow_mut()));
             flat.clear();
             flat.extend(indices_reader.into_u32());
             for tri in flat.chunks_exact(3) {
@@ -1656,9 +1694,7 @@ mod tests {
                     black_box(serial_acc);
                     black_box(par_acc);
                     let speedup = serial_us as f64 / parallel_us.max(1) as f64;
-                    println!(
-                        "{inst},{tri},{surface},{serial_us},{parallel_us},{speedup:.3}"
-                    );
+                    println!("{inst},{tri},{surface},{serial_us},{parallel_us},{speedup:.3}");
                 }
             }
         }
@@ -1682,9 +1718,7 @@ mod tests {
             ];
             samples.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let time_to_query_us = samples[1];
-            println!(
-                "{surface_count},{vertex_count},{tri_count},{time_to_query_us:.6}"
-            );
+            println!("{surface_count},{vertex_count},{tri_count},{time_to_query_us:.6}");
         }
     }
 }

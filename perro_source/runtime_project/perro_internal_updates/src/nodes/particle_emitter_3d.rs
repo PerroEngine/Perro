@@ -79,5 +79,3 @@ fn non_looping_done_after(emitter: &ParticleEmitter3D, lifetime_max: f32) -> Opt
     let last_spawn_t = (budget.saturating_sub(1) as f32) / emitter.spawn_rate.max(1.0e-6);
     Some(last_spawn_t + lifetime_max)
 }
-
-

@@ -269,6 +269,10 @@ impl ScriptAPI for Runtime {
         self.remove_script_instance(script_id)
     }
 
+    fn reset_state(&mut self, script_id: NodeID) -> bool {
+        self.scripts.reset_state(script_id)
+    }
+
     fn get_var(&mut self, script_id: NodeID, member: ScriptMemberID) -> Variant {
         self.scripts
             .with_instance(script_id, |instance| {
@@ -325,11 +329,7 @@ impl ScriptAPI for Runtime {
             ipt: &ipt,
             id: script_id,
         };
-        let out = behavior.call_method(
-            method,
-            &mut sctx,
-            params,
-        );
+        let out = behavior.call_method(method, &mut sctx, params);
         set_dlc_self_context(None);
         let _ = self.script_runtime.active_script_stack.pop();
         out
@@ -359,4 +359,3 @@ impl ScriptAPI for Runtime {
         behavior.has_attribute(member, attribute)
     }
 }
-

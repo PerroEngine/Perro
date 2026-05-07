@@ -123,6 +123,7 @@ pub trait ScriptAPI {
     fn script_attach_hashed(&mut self, node_id: NodeID, script_path_hash: u64) -> bool;
     fn script_detach(&mut self, node_id: NodeID) -> bool;
     fn remove_script(&mut self, script_id: NodeID) -> bool;
+    fn reset_state(&mut self, script_id: NodeID) -> bool;
     fn get_var(&mut self, script_id: NodeID, member: ScriptMemberID) -> Variant;
     fn set_var(&mut self, script_id: NodeID, member: ScriptMemberID, value: Variant);
 
@@ -174,6 +175,10 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
 
     pub fn remove(&mut self, script_id: NodeID) -> bool {
         self.rt.remove_script(script_id)
+    }
+
+    pub fn reset_state(&mut self, script_id: NodeID) -> bool {
+        self.rt.reset_state(script_id)
     }
 
     pub fn get_var<M: IntoScriptMemberID>(&mut self, script_id: NodeID, member: M) -> Variant {
@@ -291,6 +296,18 @@ macro_rules! script_attach {
 macro_rules! script_detach {
     ($ctx:expr, $id:expr) => {
         $ctx.Scripts().script_detach($id)
+    };
+}
+
+/// Resets a script instance state back to its default values.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeWindow<_>`
+/// - `id`: script `NodeID`
+#[macro_export]
+macro_rules! reset_state {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Scripts().reset_state($id)
     };
 }
 
@@ -415,4 +432,3 @@ macro_rules! attribute {
         $crate::sub_apis::Attribute::new($value)
     };
 }
-

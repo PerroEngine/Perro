@@ -8,8 +8,8 @@ use perro_render_bridge::{RenderCommand, UiCommand, UiRectState, UiTextAlignStat
 use perro_runtime_context::sub_apis::SignalAPI;
 use perro_structs::Vector2;
 use perro_ui::{
-    ComputedUiRect, UiBox, UiHorizontalAlign, UiLayoutData, UiLayoutMode, UiSizeMode, UiStyle,
-    UiTextEdit, UiTransform, UiVerticalAlign, UiFontSizing,
+    ComputedUiRect, UiBox, UiFontSizing, UiHorizontalAlign, UiLayoutData, UiLayoutMode, UiSizeMode,
+    UiStyle, UiTextEdit, UiTransform, UiVerticalAlign,
 };
 use perro_variant::Variant;
 use std::borrow::Cow;
@@ -170,7 +170,10 @@ impl Runtime {
             }
             visible_now.remove(&node);
             self.render_ui.computed_rects.remove(&node);
-            self.render_ui.size_clamp_baselines.borrow_mut().remove(&node);
+            self.render_ui
+                .size_clamp_baselines
+                .borrow_mut()
+                .remove(&node);
             self.render_ui.computed_scales.remove(&node);
             self.render_ui.retained_rects.remove(&node);
             self.render_ui.button_states.remove(&node);
@@ -784,7 +787,10 @@ impl Runtime {
             let Some(edit) = text_edit_ref(&scene_node.data) else {
                 continue;
             };
-            if !edit.base.visible || !edit.base.input_enabled || !self.is_effectively_visible_for_ui(node) {
+            if !edit.base.visible
+                || !edit.base.input_enabled
+                || !self.is_effectively_visible_for_ui(node)
+            {
                 continue;
             }
             let Some(rect) = computed.get(&node).copied().or_else(|| {
@@ -987,9 +993,7 @@ impl Runtime {
             let z = self.ui_effective_z(node);
             match best {
                 Some((best_node, best_z))
-                    if best_z > z
-                        || (best_z == z
-                            && best_node.as_u64() > node.as_u64()) => {}
+                    if best_z > z || (best_z == z && best_node.as_u64() > node.as_u64()) => {}
                 _ => best = Some((node, z)),
             }
         }
@@ -1334,8 +1338,7 @@ impl Runtime {
         let index = child_index?;
         let h_spacing = ui_h_spacing_amount(auto.h_spacing, content.size.x);
         let v_spacing = ui_v_spacing_amount(auto.v_spacing, content.size.y);
-        let used_width =
-            cell_width * used_columns as f32 + h_spacing * (used_columns - 1) as f32;
+        let used_width = cell_width * used_columns as f32 + h_spacing * (used_columns - 1) as f32;
         let used_height = cell_height * row_count as f32 + v_spacing * (row_count - 1) as f32;
         let (layout, transform) = self
             .nodes
@@ -1418,8 +1421,7 @@ impl Runtime {
         let row_count = ui_count.div_ceil(columns);
         let h_spacing = ui_h_spacing_amount(auto.h_spacing, content.size.x);
         let v_spacing = ui_v_spacing_amount(auto.v_spacing, content.size.y);
-        let used_width =
-            cell_width * used_columns as f32 + h_spacing * (used_columns - 1) as f32;
+        let used_width = cell_width * used_columns as f32 + h_spacing * (used_columns - 1) as f32;
         let used_height = cell_height * row_count as f32 + v_spacing * (row_count - 1) as f32;
         let min = content.min();
         let max = content.max();
@@ -1520,7 +1522,9 @@ impl Runtime {
                 y - layout.margin.top - size.y * 0.5,
             ) + ui_translation_offset(transform, size);
             computed.insert(row.node, ComputedUiRect::new(center, size));
-            y -= size.y + layout.margin.vertical() + ui_v_spacing_amount(tree.v_spacing, content.size.y);
+            y -= size.y
+                + layout.margin.vertical()
+                + ui_v_spacing_amount(tree.v_spacing, content.size.y);
         }
     }
 
@@ -2190,13 +2194,17 @@ fn insert_scaled_ui_child_rect(
 
 fn ui_text_measure(data: &SceneNodeData) -> Vector2 {
     match data {
-        SceneNodeData::UiLabel(label) => measure_text(label.text.as_ref(), fallback_text_size(label.font_size)),
-        SceneNodeData::UiTextBox(text_box) => {
-            measure_text(text_box.inner.text.as_ref(), fallback_text_size(text_box.inner.font_size))
+        SceneNodeData::UiLabel(label) => {
+            measure_text(label.text.as_ref(), fallback_text_size(label.font_size))
         }
-        SceneNodeData::UiTextBlock(text_block) => {
-            measure_text(text_block.inner.text.as_ref(), fallback_text_size(text_block.inner.font_size))
-        }
+        SceneNodeData::UiTextBox(text_box) => measure_text(
+            text_box.inner.text.as_ref(),
+            fallback_text_size(text_box.inner.font_size),
+        ),
+        SceneNodeData::UiTextBlock(text_block) => measure_text(
+            text_block.inner.text.as_ref(),
+            fallback_text_size(text_block.inner.font_size),
+        ),
         _ => Vector2::ZERO,
     }
 }
@@ -2275,7 +2283,9 @@ fn ui_command_from_node(
         virtual_font_scale,
     } = command_ctx;
     match data {
-        SceneNodeData::UiPanel(panel) => Some(panel_command(node, rect, clip_rect, scale, &panel.style)),
+        SceneNodeData::UiPanel(panel) => {
+            Some(panel_command(node, rect, clip_rect, scale, &panel.style))
+        }
         SceneNodeData::UiButton(button) => {
             let style = button_style(button, button_state);
             let style_scale = ui_style_scale(scale);
@@ -2297,13 +2307,12 @@ fn ui_command_from_node(
             text: Cow::Owned(label.text.to_string()),
             color: label.color.to_rgba(),
             font_size: {
-                let (base, node_scale) = if let Some(px) =
-                    text_size_from_rect_ratio(rect.size, label.text_size_ratio)
-                {
-                    (px, 1.0)
-                } else {
-                    (fallback_text_size(label.font_size), ui_font_scale(scale))
-                };
+                let (base, node_scale) =
+                    if let Some(px) = text_size_from_rect_ratio(rect.size, label.text_size_ratio) {
+                        (px, 1.0)
+                    } else {
+                        (fallback_text_size(label.font_size), ui_font_scale(scale))
+                    };
                 resolve_font_size(base, node_scale, virtual_font_scale, label.font_sizing)
             },
             h_align: text_align_state(label.h_align),
@@ -3909,10 +3918,9 @@ mod tests {
     #[test]
     fn label_relative_font_size_scales_with_virtual_resolution() {
         let mut runtime = Runtime::new();
-        runtime.project = Some(std::sync::Arc::new(crate::runtime_project::RuntimeProject::new(
-            "Test",
-            ".",
-        )));
+        runtime.project = Some(std::sync::Arc::new(
+            crate::runtime_project::RuntimeProject::new("Test", "."),
+        ));
         runtime.set_viewport_size(960, 540);
 
         let mut label = perro_ui::UiLabel::new().with_text("Scaled");
@@ -3935,10 +3943,9 @@ mod tests {
     #[test]
     fn text_box_relative_font_size_uses_min_and_max_scale_clamp() {
         let mut runtime = Runtime::new();
-        runtime.project = Some(std::sync::Arc::new(crate::runtime_project::RuntimeProject::new(
-            "Test",
-            ".",
-        )));
+        runtime.project = Some(std::sync::Arc::new(
+            crate::runtime_project::RuntimeProject::new("Test", "."),
+        ));
         runtime.set_viewport_size(3840, 2160);
 
         let mut text_box = perro_ui::UiTextBox::new();
@@ -4093,7 +4100,11 @@ mod tests {
         let child_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
         attach_child(&mut runtime, parent_id, child_id);
 
-        let oversized = insert_panel(&mut runtime, [1400.0, 900.0], Color::new(0.2, 0.3, 0.4, 1.0));
+        let oversized = insert_panel(
+            &mut runtime,
+            [1400.0, 900.0],
+            Color::new(0.2, 0.3, 0.4, 1.0),
+        );
         attach_child(&mut runtime, child_id, oversized);
 
         runtime.extract_render_ui_commands();
@@ -4123,7 +4134,11 @@ mod tests {
         child.layout.max_size_scale = Vector2::new(2.0, 2.0);
         let child_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
         attach_child(&mut runtime, parent_id, child_id);
-        let oversized = insert_panel(&mut runtime, [1400.0, 900.0], Color::new(0.2, 0.3, 0.4, 1.0));
+        let oversized = insert_panel(
+            &mut runtime,
+            [1400.0, 900.0],
+            Color::new(0.2, 0.3, 0.4, 1.0),
+        );
         attach_child(&mut runtime, child_id, oversized);
 
         runtime.extract_render_ui_commands();
@@ -4160,10 +4175,9 @@ mod tests {
     #[test]
     fn min_size_ratio_one_locks_spawn_floor() {
         let mut runtime = Runtime::new();
-        runtime.project = Some(std::sync::Arc::new(crate::runtime_project::RuntimeProject::new(
-            "Test",
-            ".",
-        )));
+        runtime.project = Some(std::sync::Arc::new(
+            crate::runtime_project::RuntimeProject::new("Test", "."),
+        ));
         runtime.set_viewport_size(1280, 720);
 
         let mut top = UiPanel::new();

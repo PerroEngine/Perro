@@ -1,8 +1,8 @@
 pub use perro_ids as ids;
 pub use perro_input as input;
 pub use perro_modules as modules;
-pub use perro_project as project;
 pub use perro_nodes as nodes;
+pub use perro_project as project;
 pub use perro_resource_context as resource_context;
 pub use perro_runtime_context as runtime_context;
 pub use perro_scene as scene;

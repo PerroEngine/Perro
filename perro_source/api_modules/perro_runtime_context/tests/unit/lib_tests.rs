@@ -305,6 +305,11 @@ impl ScriptAPI for DummyRuntime {
         false
     }
 
+    fn reset_state(&mut self, _script: NodeID) -> bool {
+        self.state = Box::new(0_i32);
+        true
+    }
+
     fn get_var(
         &mut self,
         _script: NodeID,
@@ -468,6 +473,9 @@ fn script_macros_typecheck_and_forward() {
     });
     let updated = with_state!(&mut ctx, i32, id, |state| *state);
     assert_eq!(updated, 12);
+    assert!(reset_state!(&mut ctx, id));
+    let reset = with_state!(&mut ctx, i32, id, |state| *state);
+    assert_eq!(reset, 0);
 
     let _new_node = create_node!(&mut ctx, Node2D);
     with_node_mut!(&mut ctx, Node2D, id, |_node| {});
@@ -671,4 +679,3 @@ fn script_macros_typecheck_and_forward() {
     assert_eq!(fdt, 0.016);
     assert_eq!(elapsed, 1.0);
 }
-

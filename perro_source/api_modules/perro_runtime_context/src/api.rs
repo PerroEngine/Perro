@@ -63,4 +63,3 @@ impl<'rt, RT: RuntimeAPI + ?Sized> RuntimeWindow<'rt, RT> {
         self.rt
     }
 }
-

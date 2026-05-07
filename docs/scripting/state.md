@@ -32,6 +32,17 @@ pub struct PlayerState {
 
 If you need cross-script/runtime member access, put that value in `#[State]`.
 
+## Reset State
+
+Use `reset_state!` to replace a script instance state with fresh defaults from its `#[State]` type.
+
+```rust
+reset_state!(ctx.run, ctx.id);
+```
+
+This resets only script state.
+It does not detach the script, remove the node, or call lifecycle methods.
+
 ## Custom Types And Variant Conversion
 
 Custom structs/enums used by script APIs must support Variant conversion.

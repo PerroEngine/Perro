@@ -6,10 +6,7 @@ use perro_runtime::{ProjectLoadError, ProviderMode, Runtime, RuntimeProject};
 use perro_scripting::ScriptConstructor;
 use std::path::Path;
 
-type StaticScriptRegistry = &'static [(
-    u64,
-    ScriptConstructor<perro_runtime::RuntimeScriptApi>,
-)];
+type StaticScriptRegistry = &'static [(u64, ScriptConstructor<perro_runtime::RuntimeScriptApi>)];
 
 pub fn create_runtime_from_project(
     project: RuntimeProject,

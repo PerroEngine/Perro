@@ -162,6 +162,20 @@ impl ScriptCollection {
         Some(removed)
     }
 
+    pub(crate) fn reset_state(&mut self, id: NodeID) -> bool {
+        let Some(i) = self.instance_index_for(id) else {
+            return false;
+        };
+        let Some(instance) = self.instances.get_mut(i) else {
+            return false;
+        };
+
+        let state = instance.behavior.create_state();
+        instance.state_type = state.as_ref().type_id();
+        instance.state = state;
+        true
+    }
+
     pub(crate) fn append_update_slots(&self, out: &mut Vec<(usize, NodeID)>) {
         for &i in &self.update {
             out.push((i, self.ids[i]));
@@ -360,5 +374,71 @@ impl ScriptCollection {
 impl Default for ScriptCollection {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use perro_ids::ScriptMemberID;
+    use perro_runtime_context::sub_apis::{Attribute, Member};
+    use perro_scripting::{ScriptContext, ScriptFlags, ScriptLifecycle};
+    use perro_variant::Variant;
+
+    struct DummyBehavior;
+
+    impl ScriptLifecycle<crate::runtime::RuntimeScriptApi> for DummyBehavior {}
+
+    impl perro_scripting::ScriptBehavior<crate::runtime::RuntimeScriptApi> for DummyBehavior {
+        fn script_flags(&self) -> ScriptFlags {
+            ScriptFlags::new(ScriptFlags::NONE)
+        }
+
+        fn create_state(&self) -> Box<dyn Any> {
+            Box::new(5_i32)
+        }
+
+        fn get_var(&self, _state: &dyn Any, _var: ScriptMemberID) -> Variant {
+            Variant::Null
+        }
+
+        fn set_var(&self, _state: &mut dyn Any, _var: ScriptMemberID, _value: &Variant) {}
+
+        fn call_method(
+            &self,
+            _method: ScriptMemberID,
+            _ctx: &mut ScriptContext<'_, crate::runtime::RuntimeScriptApi>,
+            _params: &[Variant],
+        ) -> Variant {
+            Variant::Null
+        }
+
+        fn attributes_of(&self, _member: &str) -> &'static [Attribute] {
+            &[]
+        }
+
+        fn members_with(&self, _attribute: &str) -> &'static [Member] {
+            &[]
+        }
+
+        fn has_attribute(&self, _member: &str, _attribute: &str) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn reset_state_replaces_mutated_state_with_default() {
+        let mut scripts = ScriptCollection::new();
+        let id = NodeID::new(42);
+        scripts.insert(id, Arc::new(DummyBehavior), Box::new(99_i32));
+
+        let _ = scripts.with_state_mut::<i32, _, _>(id, |state| *state = 123);
+        assert_eq!(
+            scripts.with_state::<i32, _, _>(id, |state| *state),
+            Some(123)
+        );
+
+        assert!(scripts.reset_state(id));
+        assert_eq!(scripts.with_state::<i32, _, _>(id, |state| *state), Some(5));
     }
 }

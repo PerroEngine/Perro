@@ -29,5 +29,3 @@ pub fn internal_fixed_update_node<RT, RS, IP>(
     nodes::animation_player::internal_fixed_update(ctx, res, ipt, id);
     nodes::particle_emitter_3d::internal_fixed_update(ctx, res, ipt, id);
 }
-
-

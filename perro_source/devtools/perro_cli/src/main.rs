@@ -50,6 +50,7 @@ fn main() {
             "clean" => clean_command(&args, &cwd),
             "install" => install_command(&args),
             "check" => scripts_command(&args, &cwd),
+            "test" => test_command(&args, &cwd),
             "build" => project_command(&args, &cwd),
             "dlc" => dlc_command(&args, &cwd),
             "dev" => dev_command(&args, &cwd),
@@ -74,6 +75,9 @@ fn print_usage() {
     eprintln!("Usage:");
     eprintln!(
         "  perro_cli check [--path <project_dir>]    # scripts-only compile (.perro/scripts)"
+    );
+    eprintln!(
+        "  perro_cli test [--path <project_dir>] [cargo test args...]    # check scripts + run user script tests"
     );
     eprintln!(
         "  perro_cli build [--path <project_dir>] [--profile]    # full static project bundle + build"
@@ -1272,6 +1276,127 @@ fn scripts_command(args: &[String], cwd: &Path) -> Result<(), String> {
                 project_dir.display()
             )
         })
+}
+
+fn test_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let project_dir = parse_flag_value(args, "--path")
+        .map(|p| resolve_local_path(&p, cwd))
+        .unwrap_or_else(|| cwd.to_path_buf());
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
+
+    log_step("Building Scripts");
+    compile_scripts_with_profile(&project_dir, ScriptsBuildProfile::Debug).map_err(|err| {
+        format!(
+            "scripts pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })?;
+    log_done("Scripts Built");
+
+    let cargo_test_args = cargo_test_args(args);
+    let scripts_crate = project_dir.join(".perro").join("scripts");
+    run_cargo_test_for_scripts_crate(
+        &project_dir,
+        &scripts_crate,
+        &cargo_test_args,
+        "User Scripts",
+    )?;
+
+    for (name, scripts_crate) in dlc_scripts_crates(&project_dir)? {
+        run_cargo_test_for_scripts_crate(
+            &project_dir,
+            &scripts_crate,
+            &cargo_test_args,
+            &format!("DLC `{name}` Scripts"),
+        )?;
+    }
+
+    log_done("Tests Passed");
+    Ok(())
+}
+
+fn cargo_test_args(args: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut idx = 2;
+    while idx < args.len() {
+        if args[idx] == "--path" {
+            idx += 2;
+            continue;
+        }
+        out.push(args[idx].clone());
+        idx += 1;
+    }
+    out
+}
+
+fn dlc_scripts_crates(project_dir: &Path) -> Result<Vec<(String, PathBuf)>, String> {
+    let dlcs_root = project_dir.join("dlcs");
+    if !dlcs_root.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut out = Vec::new();
+    let entries = fs::read_dir(&dlcs_root)
+        .map_err(|err| format!("failed to read {}: {err}", dlcs_root.display()))?;
+    for entry in entries {
+        let entry = entry
+            .map_err(|err| format!("failed to read entry in {}: {err}", dlcs_root.display()))?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
+            continue;
+        };
+        out.push((
+            name.to_string(),
+            project_dir
+                .join(".perro")
+                .join("dlc")
+                .join(name)
+                .join("scripts"),
+        ));
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(out)
+}
+
+fn run_cargo_test_for_scripts_crate(
+    project_dir: &Path,
+    scripts_crate: &Path,
+    cargo_test_args: &[String],
+    label: &str,
+) -> Result<(), String> {
+    if !scripts_crate.join("Cargo.toml").exists() {
+        return Err(format!(
+            "scripts crate missing at {}",
+            scripts_crate.display()
+        ));
+    }
+
+    let target_dir = project_dir.join("target");
+    log_step(&format!("Testing {label}"));
+    let status = Command::new("cargo")
+        .arg("test")
+        .args(cargo_test_args)
+        .env("CARGO_TARGET_DIR", &target_dir)
+        .env("PERRO_PROJECT_DIR", project_dir)
+        .env("PERRO_TEST_MODE", "1")
+        .current_dir(scripts_crate)
+        .status()
+        .map_err(|err| format!("failed to run cargo test for {label}: {err}"))?;
+
+    if !status.success() {
+        return Err(format!(
+            "cargo test failed for {label} with exit code {:?}",
+            status.code()
+        ));
+    }
+
+    log_done(&format!("{label} Tests Passed"));
+    Ok(())
 }
 
 fn dlc_command(args: &[String], cwd: &Path) -> Result<(), String> {

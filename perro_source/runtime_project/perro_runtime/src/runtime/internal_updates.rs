@@ -291,4 +291,3 @@ impl Runtime {
         perro_internal_updates::internal_fixed_update_node(&mut ctx, res, ipt, id);
     }
 }
-

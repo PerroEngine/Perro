@@ -84,12 +84,9 @@ impl MaterialAPI for RuntimeResourceApi {
         }
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         state.material_data_by_id.insert(id, material.clone());
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::WriteMaterialData {
-                id,
-                material,
-            }));
+        state.queued_commands.push(RenderCommand::Resource(
+            ResourceCommand::WriteMaterialData { id, material },
+        ));
         true
     }
 

@@ -252,7 +252,9 @@ fn push_text_edit_shapes(
     } else {
         None
     };
-    if edit.focused && let Some(galley) = edit_galley.as_deref() {
+    if edit.focused
+        && let Some(galley) = edit_galley.as_deref()
+    {
         push_selection_shapes(edit, galley, clip_rect, draw_pos, out);
     }
     if !body.is_empty() && valid_color(color) {
@@ -420,8 +422,8 @@ fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<C
     }
 
     let (min, max) = rect.screen_min_max(viewport);
-    let clip_rect = Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1]))
-        .intersect(clip_rect);
+    let clip_rect =
+        Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1])).intersect(clip_rect);
     let galley = fonts.with_pixels_per_point(1.0).layout(
         text.to_string(),
         FontId::new(font_size, FontFamily::Proportional),

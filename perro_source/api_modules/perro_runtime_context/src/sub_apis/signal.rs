@@ -103,4 +103,3 @@ macro_rules! signal_emit {
         $ctx.Signals().signal_emit($signal, &[])
     };
 }
-

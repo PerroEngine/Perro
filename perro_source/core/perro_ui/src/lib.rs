@@ -404,7 +404,10 @@ impl UiLayoutData {
         let position = transform.position.resolve_centered(parent.size);
 
         ComputedUiRect::new(
-            anchor_point - inward_from_edge + position + transform.translation_offset(size) + pivot_offset,
+            anchor_point - inward_from_edge
+                + position
+                + transform.translation_offset(size)
+                + pivot_offset,
             size,
         )
     }
@@ -1417,10 +1420,34 @@ mod tests {
         layout.min_size = Vector2::new(300.0, 80.0);
         layout.max_size = Vector2::new(1200.0, 90.0);
 
-        assert_eq!(layout.clamp_size(layout.resolved_size(Vector2::new(3000.0, 1000.0))).x, 1200.0);
-        assert!((layout.clamp_size(layout.resolved_size(Vector2::new(3000.0, 1000.0))).y - 90.0).abs() < 1.0e-3);
-        assert_eq!(layout.clamp_size(layout.resolved_size(Vector2::new(400.0, 400.0))).x, 300.0);
-        assert!((layout.clamp_size(layout.resolved_size(Vector2::new(400.0, 400.0))).y - 80.0).abs() < 1.0e-3);
+        assert_eq!(
+            layout
+                .clamp_size(layout.resolved_size(Vector2::new(3000.0, 1000.0)))
+                .x,
+            1200.0
+        );
+        assert!(
+            (layout
+                .clamp_size(layout.resolved_size(Vector2::new(3000.0, 1000.0)))
+                .y
+                - 90.0)
+                .abs()
+                < 1.0e-3
+        );
+        assert_eq!(
+            layout
+                .clamp_size(layout.resolved_size(Vector2::new(400.0, 400.0)))
+                .x,
+            300.0
+        );
+        assert!(
+            (layout
+                .clamp_size(layout.resolved_size(Vector2::new(400.0, 400.0)))
+                .y
+                - 80.0)
+                .abs()
+                < 1.0e-3
+        );
     }
 
     #[test]

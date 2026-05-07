@@ -32,8 +32,7 @@ pub trait ScriptLifecycle<API: ScriptAPI + ?Sized> {
     fn on_removal(&self, _ctx: &mut ScriptContext<'_, API>) {}
 }
 
-pub trait ScriptBehavior<API: ScriptAPI + ?Sized>: ScriptLifecycle<API>
-{
+pub trait ScriptBehavior<API: ScriptAPI + ?Sized>: ScriptLifecycle<API> {
     fn script_flags(&self) -> ScriptFlags;
     fn create_state(&self) -> Box<dyn Any> {
         Box::new(())
@@ -98,4 +97,3 @@ impl ScriptFlags {
         self.0 & Self::HAS_REMOVAL != 0
     }
 }
-

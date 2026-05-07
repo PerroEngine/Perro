@@ -306,4 +306,3 @@ macro_rules! gamepad_accel {
             .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
     }};
 }
-

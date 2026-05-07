@@ -3,7 +3,7 @@ use perro_graphics::GraphicsBackend;
 
 mod backend {
     use super::*;
-    use gilrs::ff::{BaseEffect, BaseEffectType, Effect, EffectBuilder, Replay, Repeat, Ticks};
+    use gilrs::ff::{BaseEffect, BaseEffectType, Effect, EffectBuilder, Repeat, Replay, Ticks};
     use gilrs::{Axis, Button, EventType, GamepadId, Gilrs};
     use perro_input::{GamepadAxis, GamepadButton, GamepadIndex};
     use std::collections::{HashMap, HashSet};
@@ -106,7 +106,11 @@ mod backend {
 
         fn consume_output_requests<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
             for req in app.take_gamepad_rumble_requests() {
-                self.apply_rumble(req.index, req.rumble.low_frequency, req.rumble.high_frequency);
+                self.apply_rumble(
+                    req.index,
+                    req.rumble.low_frequency,
+                    req.rumble.high_frequency,
+                );
             }
         }
 
@@ -206,9 +210,10 @@ mod backend {
                     }
                 }
                 EventType::Disconnected => {
-                    let disconnected_index = self.id_to_uuid.get(&id).and_then(|uuid| {
-                        self.uuid_to_index.get(uuid).copied()
-                    });
+                    let disconnected_index = self
+                        .id_to_uuid
+                        .get(&id)
+                        .and_then(|uuid| self.uuid_to_index.get(uuid).copied());
                     self.handle_disconnect(app, id);
                     if let Some(index) = disconnected_index {
                         self.stop_rumble(index);

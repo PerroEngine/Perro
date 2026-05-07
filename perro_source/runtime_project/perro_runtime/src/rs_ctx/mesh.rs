@@ -26,15 +26,15 @@ impl MeshAPI for RuntimeResourceApi {
         let id = state.allocate_mesh_id();
         let source = format!("runtime://mesh/{}:{}", id.index(), id.generation());
         state.mesh_data_by_id.insert(id, data.clone());
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh {
+        state.queued_commands.push(RenderCommand::Resource(
+            ResourceCommand::CreateRuntimeMesh {
                 request,
                 id,
                 source,
                 reserved: false,
                 mesh: data,
-            }));
+            },
+        ));
         id
     }
 

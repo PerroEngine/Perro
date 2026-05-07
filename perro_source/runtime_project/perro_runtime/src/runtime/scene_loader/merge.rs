@@ -295,4 +295,3 @@ fn scene_value_to_variant(value: &SceneValue, key_to: &HashMap<String, NodeID>) 
         ),
     }
 }
-

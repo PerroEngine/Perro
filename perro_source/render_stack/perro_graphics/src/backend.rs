@@ -291,11 +291,11 @@ impl PerroGraphics {
                             self.resources
                                 .create_mesh_with_id(id, source.as_str(), reserved)
                         };
-                        let mesh_data = load_mesh3d_from_source(source.as_str(), self.static_mesh_lookup);
-                        if let Some(mesh) =
-                            mesh_data.clone()
-                        {
-                            self.resources.set_runtime_mesh_data(source.as_str(), mesh.clone());
+                        let mesh_data =
+                            load_mesh3d_from_source(source.as_str(), self.static_mesh_lookup);
+                        if let Some(mesh) = mesh_data.clone() {
+                            self.resources
+                                .set_runtime_mesh_data(source.as_str(), mesh.clone());
                             let _ = self.resources.set_runtime_mesh_data_by_id(out_id, mesh);
                         }
                         self.events.push(RenderEvent::MeshCreated {
@@ -317,8 +317,11 @@ impl PerroGraphics {
                             self.resources
                                 .create_mesh_with_id(id, source.as_str(), reserved)
                         };
-                        self.resources.set_runtime_mesh_data(source.as_str(), mesh.clone());
-                        let _ = self.resources.set_runtime_mesh_data_by_id(out_id, mesh.clone());
+                        self.resources
+                            .set_runtime_mesh_data(source.as_str(), mesh.clone());
+                        let _ = self
+                            .resources
+                            .set_runtime_mesh_data_by_id(out_id, mesh.clone());
                         self.events.push(RenderEvent::MeshCreated {
                             request,
                             id: out_id,

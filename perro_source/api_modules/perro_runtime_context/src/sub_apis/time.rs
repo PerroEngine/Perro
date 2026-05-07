@@ -85,4 +85,3 @@ macro_rules! elapsed_time {
         $ctx.Time().get_elapsed()
     };
 }
-

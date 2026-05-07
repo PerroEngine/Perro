@@ -682,10 +682,9 @@ impl<'ipt, IP: InputAPI + ?Sized> InputWindow<'ipt, IP> {
             return;
         };
         if let Some(buffer) = self.ipt.command_buffer() {
-            buffer.borrow_mut().push(InputCommand::SetJoyConIndicator {
-                index,
-                indicator,
-            });
+            buffer
+                .borrow_mut()
+                .push(InputCommand::SetJoyConIndicator { index, indicator });
         }
     }
 
@@ -695,9 +694,10 @@ impl<'ipt, IP: InputAPI + ?Sized> InputWindow<'ipt, IP> {
             return;
         };
         if let Some(buffer) = self.ipt.command_buffer() {
-            buffer
-                .borrow_mut()
-                .push(InputCommand::SetJoyConIndicator { index, indicator: slot });
+            buffer.borrow_mut().push(InputCommand::SetJoyConIndicator {
+                index,
+                indicator: slot,
+            });
         }
     }
 }
@@ -1191,10 +1191,9 @@ impl<'ipt, IP: InputAPI + ?Sized> JoyConModule<'ipt, IP> {
             return;
         };
         if let Some(buffer) = self.ipt.command_buffer() {
-            buffer.borrow_mut().push(InputCommand::SetJoyConIndicator {
-                index,
-                indicator,
-            });
+            buffer
+                .borrow_mut()
+                .push(InputCommand::SetJoyConIndicator { index, indicator });
         }
     }
 
@@ -1204,9 +1203,10 @@ impl<'ipt, IP: InputAPI + ?Sized> JoyConModule<'ipt, IP> {
             return;
         };
         if let Some(buffer) = self.ipt.command_buffer() {
-            buffer
-                .borrow_mut()
-                .push(InputCommand::SetJoyConIndicator { index, indicator: slot });
+            buffer.borrow_mut().push(InputCommand::SetJoyConIndicator {
+                index,
+                indicator: slot,
+            });
         }
     }
 }
@@ -1424,28 +1424,22 @@ macro_rules! joycon_request_calibration {
 
 #[macro_export]
 macro_rules! gamepad_set_rumble {
-    ($ipt:expr, $index:expr, $low:expr, $high:expr) => {{
-        $ipt.Gamepads().set_rumble($index, $low, $high)
-    }};
+    ($ipt:expr, $index:expr, $low:expr, $high:expr) => {{ $ipt.Gamepads().set_rumble($index, $low, $high) }};
 }
 
 #[macro_export]
 macro_rules! joycon_set_rumble {
-    ($ipt:expr, $index:expr, $low:expr, $high:expr) => {{
-        $ipt.JoyCons().set_rumble($index, $low, $high)
-    }};
+    ($ipt:expr, $index:expr, $low:expr, $high:expr) => {{ $ipt.JoyCons().set_rumble($index, $low, $high) }};
 }
 
 #[macro_export]
 macro_rules! joycon_set_indicator {
-    ($ipt:expr, $index:expr, $indicator:expr) => {{
-        $ipt.JoyCons().set_indicator($index, $indicator)
-    }};
+    ($ipt:expr, $index:expr, $indicator:expr) => {{ $ipt.JoyCons().set_indicator($index, $indicator) }};
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{InputWindow, InputSnapshot, MouseMode};
+    use super::{InputSnapshot, InputWindow, MouseMode};
 
     #[test]
     fn mouse_mode_defaults_visible() {
@@ -1487,15 +1481,14 @@ mod tests {
 pub mod prelude {
     pub use crate::{
         GamepadAxis, GamepadButton, GamepadIndex, GamepadModule, GamepadState, InputAPI,
-        InputWindow, InputSnapshot, JoyConButton, JoyConIndex, JoyConModule, JoyConSide,
+        InputSnapshot, InputWindow, JoyConButton, JoyConIndex, JoyConModule, JoyConSide,
         JoyConState, KeyCode, KeyModule, KeyboardModule, KeyboardState, MouseButton, MouseMode,
-        MouseModule, MouseState, MouseStateModule, PlayerBinding, PlayerIndicatorSlot, PlayerModule,
-        PlayerState, RumbleIntensity,
-        gamepad_accel, gamepad_down, gamepad_get, gamepad_gyro, gamepad_left_stick, gamepad_list,
-        gamepad_pressed, gamepad_released, gamepad_right_stick, gamepad_set_rumble, joycon_accel,
-        joycon_calibrated, joycon_calibrating,
-        joycon_calibration_bias, joycon_connected, joycon_down, joycon_get, joycon_gyro,
-        joycon_list, joycon_needs_calibration, joycon_pressed, joycon_released,
+        MouseModule, MouseState, MouseStateModule, PlayerBinding, PlayerIndicatorSlot,
+        PlayerModule, PlayerState, RumbleIntensity, gamepad_accel, gamepad_down, gamepad_get,
+        gamepad_gyro, gamepad_left_stick, gamepad_list, gamepad_pressed, gamepad_released,
+        gamepad_right_stick, gamepad_set_rumble, joycon_accel, joycon_calibrated,
+        joycon_calibrating, joycon_calibration_bias, joycon_connected, joycon_down, joycon_get,
+        joycon_gyro, joycon_list, joycon_needs_calibration, joycon_pressed, joycon_released,
         joycon_request_calibration, joycon_set_indicator, joycon_set_rumble, joycon_side,
         joycon_stick, key_down, key_pressed, key_released, mouse_capture, mouse_confine,
         mouse_confine_hidden, mouse_delta, mouse_down, mouse_hide, mouse_mode, mouse_position,

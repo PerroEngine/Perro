@@ -995,12 +995,8 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         ray_direction: Vector3,
         max_distance: f32,
     ) -> Option<MeshSurfaceHit3D> {
-        self.rt.mesh_instance_surface_on_world_ray(
-            node_id,
-            ray_origin,
-            ray_direction,
-            max_distance,
-        )
+        self.rt
+            .mesh_instance_surface_on_world_ray(node_id, ray_origin, ray_direction, max_distance)
     }
 
     pub fn mesh_instance_material_regions(
@@ -1016,7 +1012,8 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         node_id: NodeID,
         world_point: Vector3,
     ) -> Option<MeshSurfaceHit3D> {
-        self.rt.mesh_data_surface_at_world_point(node_id, world_point)
+        self.rt
+            .mesh_data_surface_at_world_point(node_id, world_point)
     }
 
     pub fn mesh_data_surface_on_world_ray(
@@ -1516,7 +1513,8 @@ macro_rules! to_local_transform_3d {
 #[macro_export]
 macro_rules! mesh_surface_at_world_point_3d {
     ($ctx:expr, $id:expr, $point:expr) => {
-        $ctx.Nodes().mesh_instance_surface_at_world_point($id, $point)
+        $ctx.Nodes()
+            .mesh_instance_surface_at_world_point($id, $point)
     };
 }
 
@@ -1739,4 +1737,3 @@ macro_rules! query_first {
         $crate::query!($ctx, $kind $args).into_iter().next()
     }};
 }
-

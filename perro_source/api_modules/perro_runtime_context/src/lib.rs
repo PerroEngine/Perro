@@ -24,14 +24,13 @@ pub mod prelude {
         anim_player_bind, anim_player_clear_bindings, anim_player_pause, anim_player_play,
         anim_player_seek_frame, anim_player_set_clip, anim_player_set_speed, apply_force,
         apply_impulse, attribute, attributes_of, call_method, create_node, delta_time,
-        delta_time_capped, delta_time_clamped, elapsed_time, fixed_delta_time, get_child,
-        get_children, get_global_transform_2d, get_global_transform_3d, get_node_children_ids,
-        get_node_name, get_node_parent_id, get_node_tags, get_node_type, get_var, has_attribute,
-        force_rerender, member, members_with, mesh_data_surface_at_world_point_3d,
-        mesh_data_surface_on_world_ray_3d, mesh_data_surface_regions_3d,
-        mesh_material_regions_3d, mesh_surface_at_world_point_3d, mesh_surface_on_world_ray_3d,
-        physics_is_paused, physics_pause,
-        query, query_first, remove_node, reparent, reparent_multi,
+        delta_time_capped, delta_time_clamped, elapsed_time, fixed_delta_time, force_rerender,
+        get_child, get_children, get_global_transform_2d, get_global_transform_3d,
+        get_node_children_ids, get_node_name, get_node_parent_id, get_node_tags, get_node_type,
+        get_var, has_attribute, member, members_with, mesh_data_surface_at_world_point_3d,
+        mesh_data_surface_on_world_ray_3d, mesh_data_surface_regions_3d, mesh_material_regions_3d,
+        mesh_surface_at_world_point_3d, mesh_surface_on_world_ray_3d, physics_is_paused,
+        physics_pause, query, query_first, remove_node, reparent, reparent_multi, reset_state,
         scene_drop_preloaded, scene_free_preloaded, scene_load, scene_preload, script_attach,
         script_detach, set_global_transform_2d, set_global_transform_3d, set_node_name,
         set_ui_h_size, set_ui_margin, set_ui_max_h, set_ui_max_size, set_ui_max_w, set_ui_min_h,
@@ -53,4 +52,3 @@ pub mod prelude {
 #[cfg(test)]
 #[path = "../tests/unit/lib_tests.rs"]
 mod tests;
-
