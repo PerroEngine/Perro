@@ -229,6 +229,9 @@ impl RenderState {
     }
 
     pub(crate) fn drain_commands(&mut self, out: &mut Vec<RenderCommand>) {
+        if out.capacity() - out.len() < self.pending_commands.len() {
+            out.reserve(self.pending_commands.len() - (out.capacity() - out.len()));
+        }
         out.append(&mut self.pending_commands);
     }
 
@@ -587,6 +590,9 @@ impl DirtyState {
 
     pub(crate) fn take_pending_transform_roots(&mut self, out: &mut Vec<NodeID>) {
         out.clear();
+        if out.capacity() < self.pending_transform_roots.len() {
+            out.reserve(self.pending_transform_roots.len() - out.capacity());
+        }
         out.append(&mut self.pending_transform_roots);
         for id in out.iter().copied() {
             let index = id.index() as usize;

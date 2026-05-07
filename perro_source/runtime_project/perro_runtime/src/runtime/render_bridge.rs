@@ -18,7 +18,6 @@ impl Runtime {
 
     pub fn drain_render_commands(&mut self, out: &mut Vec<RenderCommand>) {
         let mut queued_resource_commands = self.render.take_resource_queue_scratch();
-        queued_resource_commands.clear();
         self.resource_api
             .drain_commands(&mut queued_resource_commands);
         if !queued_resource_commands.is_empty() {
