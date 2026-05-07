@@ -325,11 +325,7 @@ impl ScriptAPI for Runtime {
             ipt: &ipt,
             id: script_id,
         };
-        let out = behavior.call_method(
-            method,
-            &mut sctx,
-            params,
-        );
+        let out = behavior.call_method(method, &mut sctx, params);
         set_dlc_self_context(None);
         let _ = self.script_runtime.active_script_stack.pop();
         out
@@ -359,4 +355,3 @@ impl ScriptAPI for Runtime {
         behavior.has_attribute(member, attribute)
     }
 }
-

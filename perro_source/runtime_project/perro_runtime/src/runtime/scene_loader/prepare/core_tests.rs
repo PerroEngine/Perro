@@ -66,7 +66,7 @@ mod tests {
         let host_script = prepared
             .scripts
             .iter()
-            .find(|pending| pending.node_key == "host")
+            .find(|pending| pending.node_key_name == "host")
             .expect("host script");
         assert_eq!(
             host_script.script_path_hash,
@@ -95,7 +95,7 @@ mod tests {
         let host_node = prepared
             .nodes
             .iter()
-            .find(|pending| pending.key == "host")
+            .find(|pending| pending.key_name == "host")
             .expect("host node");
         match &host_node.node.data {
             SceneNodeData::Node2D(node_2d) => {
@@ -106,8 +106,8 @@ mod tests {
             other => panic!("expected Node2D host node, got {other:?}"),
         }
 
-        assert!(prepared.nodes.iter().any(|pending| pending.key == "host::base_child"));
-        assert!(prepared.nodes.iter().any(|pending| pending.key == "local_child"));
+        assert!(prepared.nodes.iter().any(|pending| pending.key_name == "base_child"));
+        assert!(prepared.nodes.iter().any(|pending| pending.key_name == "local_child"));
     }
 
     #[test]
@@ -143,7 +143,7 @@ mod tests {
         })
         .expect("prepare scene");
 
-        assert!(!prepared.scripts.iter().any(|pending| pending.node_key == "host"));
+        assert!(!prepared.scripts.iter().any(|pending| pending.node_key_name == "host"));
     }
 
     #[test]
@@ -180,7 +180,7 @@ mod tests {
         let host_node = prepared
             .nodes
             .iter()
-            .find(|pending| pending.key == "host")
+            .find(|pending| pending.key_name == "host")
             .expect("host node");
         match &host_node.node.data {
             SceneNodeData::Node2D(node_2d) => {
@@ -296,7 +296,7 @@ mod tests {
         let menu = prepared
             .nodes
             .iter()
-            .find(|pending| pending.key == "menu")
+            .find(|pending| pending.key_name == "menu")
             .expect("menu node");
         match &menu.node.data {
             SceneNodeData::UiButton(button) => {
@@ -366,7 +366,7 @@ mod tests {
         let items = prepared
             .nodes
             .iter()
-            .find(|pending| pending.key == "items")
+            .find(|pending| pending.key_name == "items")
             .expect("items node");
         match &items.node.data {
             SceneNodeData::UiGrid(grid) => {
@@ -380,7 +380,7 @@ mod tests {
         let generic = prepared
             .nodes
             .iter()
-            .find(|pending| pending.key == "generic")
+            .find(|pending| pending.key_name == "generic")
             .expect("generic node");
         match &generic.node.data {
             SceneNodeData::UiLayout(layout) => {
@@ -394,7 +394,7 @@ mod tests {
         let forced_h = prepared
             .nodes
             .iter()
-            .find(|pending| pending.key == "forced_h")
+            .find(|pending| pending.key_name == "forced_h")
             .expect("forced_h node");
         match &forced_h.node.data {
             SceneNodeData::UiHLayout(layout) => {
@@ -406,7 +406,7 @@ mod tests {
         let forced_v = prepared
             .nodes
             .iter()
-            .find(|pending| pending.key == "forced_v")
+            .find(|pending| pending.key_name == "forced_v")
             .expect("forced_v node");
         match &forced_v.node.data {
             SceneNodeData::UiVLayout(layout) => {
@@ -418,7 +418,7 @@ mod tests {
         let defaults = prepared
             .nodes
             .iter()
-            .find(|pending| pending.key == "defaults")
+            .find(|pending| pending.key_name == "defaults")
             .expect("defaults node");
         match &defaults.node.data {
             SceneNodeData::UiPanel(panel) => {
@@ -433,7 +433,7 @@ mod tests {
         let entry = prepared
             .nodes
             .iter()
-            .find(|pending| pending.key == "entry")
+            .find(|pending| pending.key_name == "entry")
             .expect("entry node");
         match &entry.node.data {
             SceneNodeData::UiTextBox(text_box) => {

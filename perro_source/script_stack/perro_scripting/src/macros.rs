@@ -63,4 +63,3 @@ macro_rules! __methods_internal {
         $crate::__methods_internal! { $($rest)* }
     };
 }
-

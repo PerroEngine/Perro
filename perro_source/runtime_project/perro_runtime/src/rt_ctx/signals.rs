@@ -71,11 +71,7 @@ impl SignalAPI for Runtime {
                 ipt: &ipt,
                 id: connection.script_id,
             };
-            let _ = behavior.call_method(
-                connection.method,
-                &mut sctx,
-                call_params.as_ref(),
-            );
+            let _ = behavior.call_method(connection.method, &mut sctx, call_params.as_ref());
             let _ = self.script_runtime.active_script_stack.pop();
             calls = 1;
             return calls;
@@ -118,11 +114,7 @@ impl SignalAPI for Runtime {
                 ipt: &ipt,
                 id: connection.script_id,
             };
-            let _ = behavior.call_method(
-                connection.method,
-                &mut sctx,
-                call_params.as_ref(),
-            );
+            let _ = behavior.call_method(connection.method, &mut sctx, call_params.as_ref());
             let _ = self.script_runtime.active_script_stack.pop();
             calls += 1;
         }
@@ -163,4 +155,3 @@ mod tests {
         );
     }
 }
-

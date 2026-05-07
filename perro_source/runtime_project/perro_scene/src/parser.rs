@@ -5,7 +5,7 @@ use crate::{
 };
 use perro_structs::Quaternion;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct Parser<'a> {
     src: &'a str,
@@ -337,7 +337,11 @@ impl<'a> Parser<'a> {
 
     fn parse_scene_inner(mut self) -> Scene {
         let mut nodes = Vec::new();
-        let mut root = None;
+        let mut root_name = None::<String>;
+        let mut key_names = Vec::<Cow<'static, str>>::new();
+        let mut key_ids = HashMap::<String, SceneKey>::new();
+        let mut defined_keys = HashSet::<String>::new();
+        let mut pending_parents = Vec::<(usize, String)>::new();
 
         while self.current != Token::Eof {
             match self.current {
@@ -351,7 +355,7 @@ impl<'a> Parser<'a> {
                             Token::Ident(key) => {
                                 let k = key.clone();
                                 self.advance();
-                                root = Some(SceneKey::from(k.clone()));
+                                root_name = Some(k.clone());
                                 self.vars.insert(
                                     "root".to_string(),
                                     SceneValue::Key(SceneValueKey::from(k)),
@@ -369,6 +373,17 @@ impl<'a> Parser<'a> {
                     self.advance();
                     let key = self.expect_ident();
                     self.expect(Token::RBracket);
+                    if !defined_keys.insert(key.clone()) {
+                        panic!("duplicate scene key `{key}`");
+                    }
+                    let key_id = if let Some(key_id) = key_ids.get(key.as_str()) {
+                        *key_id
+                    } else {
+                        let key_id = SceneKey::new(key_names.len() as u32);
+                        key_ids.insert(key.clone(), key_id);
+                        key_names.push(Cow::Owned(key.clone()));
+                        key_id
+                    };
 
                     let mut name = None;
                     let mut tags = Vec::new();
@@ -478,14 +493,15 @@ impl<'a> Parser<'a> {
                     }
 
                     let name = name.or_else(|| Some(key.clone()));
+                    let parent_name = parent;
 
                     nodes.push(SceneNodeEntry {
                         has_data_override,
-                        key: SceneKey::from(key),
+                        key: key_id,
                         name: name.map(Cow::Owned),
                         tags: Cow::Owned(tags.into_iter().map(Cow::Owned).collect()),
                         children: Cow::Owned(Vec::new()),
-                        parent: parent.map(SceneKey::from),
+                        parent: None,
                         script: script.map(Cow::Owned),
                         script_hash,
                         clear_script,
@@ -494,15 +510,41 @@ impl<'a> Parser<'a> {
                         script_vars: Cow::Owned(script_vars),
                         data,
                     });
+                    if let Some(parent_name) = parent_name {
+                        pending_parents.push((nodes.len() - 1, parent_name));
+                    }
                 }
 
                 _ => self.advance(),
             }
         }
 
+        for (idx, parent_name) in pending_parents {
+            let parent = if let Some(parent) = key_ids.get(parent_name.as_str()) {
+                *parent
+            } else {
+                let parent = SceneKey::new(key_names.len() as u32);
+                key_ids.insert(parent_name.clone(), parent);
+                key_names.push(Cow::Owned(parent_name));
+                parent
+            };
+            nodes[idx].parent = Some(parent);
+        }
+        let root = root_name.map(|name| {
+            if let Some(root) = key_ids.get(name.as_str()) {
+                *root
+            } else {
+                let root = SceneKey::new(key_names.len() as u32);
+                key_ids.insert(name.clone(), root);
+                key_names.push(Cow::Owned(name));
+                root
+            }
+        });
+
         Scene {
             nodes: Cow::Owned(nodes),
             root,
+            key_names: Cow::Owned(key_names),
         }
     }
 

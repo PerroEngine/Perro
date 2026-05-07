@@ -118,16 +118,16 @@ fn read_main_scene(project_dir: &str) -> Option<String> {
 
 fn write_live_scene_doc(doc: &perro_scene::SceneDoc) -> Result<String, String> {
     let mut live_doc = doc.clone();
-    let root_key = live_doc.scene.root.clone();
+    let root_key = live_doc.scene.root;
     for node in live_doc.scene.nodes.to_mut() {
         node.script = None;
         node.script_hash = None;
         node.clear_script = true;
         node.root_of = None;
         node.root_of_hash = None;
-        if let Some(root_key) = &root_key {
-            if node.parent.is_none() && node.key.as_ref() != root_key.as_ref() {
-                node.parent = Some(root_key.clone());
+        if let Some(root_key) = root_key {
+            if node.parent.is_none() && node.key != root_key {
+                node.parent = Some(root_key);
             }
         }
     }
@@ -189,5 +189,4 @@ fn disable_physics<API: ScriptAPI + ?Sized>(
         let _ = with_node_mut!(ctx.run, Area3D, id, |node| node.enabled = false);
     }
 }
-
 

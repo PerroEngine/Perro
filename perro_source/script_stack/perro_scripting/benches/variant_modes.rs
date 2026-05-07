@@ -53,7 +53,11 @@ fn bench_variant_modes(c: &mut Criterion) {
     let st_u16 = U16TagState::Move(array.clone());
 
     c.bench_function("struct_object_encode", |b| {
-        b.iter(|| black_box(<ObjectVec3 as DeriveVariant>::to_variant(black_box(&object))))
+        b.iter(|| {
+            black_box(<ObjectVec3 as DeriveVariant>::to_variant(black_box(
+                &object,
+            )))
+        })
     });
     c.bench_function("struct_array_encode", |b| {
         b.iter(|| black_box(<ArrayVec3 as DeriveVariant>::to_variant(black_box(&array))))
@@ -62,17 +66,33 @@ fn bench_variant_modes(c: &mut Criterion) {
     let object_encoded = <ObjectVec3 as DeriveVariant>::to_variant(&object);
     let array_encoded = <ArrayVec3 as DeriveVariant>::to_variant(&array);
     c.bench_function("struct_object_decode", |b| {
-        b.iter(|| black_box(<ObjectVec3 as DeriveVariant>::from_variant(black_box(&object_encoded))))
+        b.iter(|| {
+            black_box(<ObjectVec3 as DeriveVariant>::from_variant(black_box(
+                &object_encoded,
+            )))
+        })
     });
     c.bench_function("struct_array_decode", |b| {
-        b.iter(|| black_box(<ArrayVec3 as DeriveVariant>::from_variant(black_box(&array_encoded))))
+        b.iter(|| {
+            black_box(<ArrayVec3 as DeriveVariant>::from_variant(black_box(
+                &array_encoded,
+            )))
+        })
     });
 
     c.bench_function("enum_string_tag_encode", |b| {
-        b.iter(|| black_box(<StringTagState as DeriveVariant>::to_variant(black_box(&st_string))))
+        b.iter(|| {
+            black_box(<StringTagState as DeriveVariant>::to_variant(black_box(
+                &st_string,
+            )))
+        })
     });
     c.bench_function("enum_u16_tag_encode", |b| {
-        b.iter(|| black_box(<U16TagState as DeriveVariant>::to_variant(black_box(&st_u16))))
+        b.iter(|| {
+            black_box(<U16TagState as DeriveVariant>::to_variant(black_box(
+                &st_u16,
+            )))
+        })
     });
 }
 

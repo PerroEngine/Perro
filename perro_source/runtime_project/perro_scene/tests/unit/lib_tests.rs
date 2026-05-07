@@ -1,5 +1,13 @@
 use super::*;
 
+fn find_node<'a>(scene: &'a Scene, key: &str) -> &'a SceneNodeEntry {
+    scene
+        .nodes
+        .iter()
+        .find(|node| scene.key_name(node.key) == Some(key))
+        .expect("node")
+}
+
 #[test]
 fn parse_basic_scene() {
     let src = r#"
@@ -21,22 +29,14 @@ fn parse_basic_scene() {
     "#;
 
     let scene = Parser::new(src).parse_scene();
-    assert_eq!(scene.root.as_ref().map(|k| k.as_ref()), Some("main"));
+    assert_eq!(scene.root.and_then(|k| scene.key_name(k)), Some("main"));
     assert_eq!(scene.nodes.len(), 2);
 
-    let main = scene
-        .nodes
-        .iter()
-        .find(|n| n.key.as_ref() == "main")
-        .expect("main node");
+    let main = find_node(&scene, "main");
     assert_eq!(main.name.as_ref().map(|s| s.as_ref()), Some("Root Node"));
 
-    let player = scene
-        .nodes
-        .iter()
-        .find(|n| n.key.as_ref() == "player")
-        .expect("player node");
-    assert_eq!(player.parent.as_ref().map(|k| k.as_ref()), Some("main"));
+    let player = find_node(&scene, "player");
+    assert_eq!(player.parent.and_then(|k| scene.key_name(k)), Some("main"));
     assert_eq!(player.data.ty.as_ref(), "Sprite2D");
 }
 
@@ -54,11 +54,7 @@ fn parse_object_literal() {
     "#;
 
     let scene = Parser::new(src).parse_scene();
-    let main = scene
-        .nodes
-        .iter()
-        .find(|n| n.key.as_ref() == "main")
-        .expect("main node");
+    let main = find_node(&scene, "main");
 
     let material = main
         .data
@@ -78,9 +74,9 @@ fn parse_object_literal() {
 
 #[test]
 fn scene_key_and_value_key_as_ref() {
-    let key = SceneKey::from("player");
+    let key = SceneKey::new(7);
     let value_key = SceneValueKey::from("root");
-    assert_eq!(key.as_ref(), "player");
+    assert_eq!(key.as_u32(), 7);
     assert_eq!(value_key.as_ref(), "root");
 }
 
@@ -101,11 +97,7 @@ fn parse_script_vars_object() {
     "#;
 
     let scene = Parser::new(src).parse_scene();
-    let main = scene
-        .nodes
-        .iter()
-        .find(|n| n.key.as_ref() == "main")
-        .expect("main node");
+    let main = find_node(&scene, "main");
 
     assert_eq!(main.script_vars.len(), 3);
     assert!(
@@ -136,11 +128,7 @@ fn parse_root_of_header() {
     "#;
 
     let scene = Parser::new(src).parse_scene();
-    let main = scene
-        .nodes
-        .iter()
-        .find(|n| n.key.as_ref() == "main")
-        .expect("main node");
+    let main = find_node(&scene, "main");
     assert_eq!(main.root_of.as_deref(), Some("res://child.scn"));
 }
 
@@ -161,19 +149,11 @@ fn parse_script_clear_options() {
     "#;
 
     let scene = Parser::new(src).parse_scene();
-    let main = scene
-        .nodes
-        .iter()
-        .find(|n| n.key.as_ref() == "main")
-        .expect("main node");
+    let main = find_node(&scene, "main");
     assert!(main.script.is_none());
     assert!(main.clear_script);
 
-    let child = scene
-        .nodes
-        .iter()
-        .find(|n| n.key.as_ref() == "child")
-        .expect("child node");
+    let child = find_node(&scene, "child");
     assert!(child.script.is_none());
     assert!(child.clear_script);
 }
@@ -188,11 +168,7 @@ fn parse_root_of_without_type_block() {
     "#;
 
     let scene = Parser::new(src).parse_scene();
-    let main = scene
-        .nodes
-        .iter()
-        .find(|n| n.key.as_ref() == "main")
-        .expect("main node");
+    let main = find_node(&scene, "main");
     assert_eq!(main.root_of.as_deref(), Some("res://base.scn"));
     assert!(!main.has_data_override);
 }
@@ -211,15 +187,11 @@ fn parse_header_only_node_without_type_block_defaults_to_node() {
     "#;
 
     let scene = Parser::new(src).parse_scene();
-    let node = scene
-        .nodes
-        .iter()
-        .find(|n| n.key.as_ref() == "relationship_manager")
-        .expect("relationship_manager node");
+    let node = find_node(&scene, "relationship_manager");
 
     assert_eq!(node.data.ty.as_ref(), "Node");
     assert!(!node.has_data_override);
-    assert_eq!(node.parent.as_ref().map(|k| k.as_ref()), Some("root"));
+    assert_eq!(node.parent.and_then(|k| scene.key_name(k)), Some("root"));
     assert_eq!(
         node.script.as_ref().map(|s| s.as_ref()),
         Some("res://scripts/relationship_manager.rs")
@@ -252,23 +224,21 @@ fn scene_doc_writes_valid_scene_and_syncs_children() {
 
     let mut doc = Parser::new(src).parse_scene_doc();
     doc.normalize_links();
-    let root = doc
-        .scene
-        .nodes
-        .iter()
-        .find(|node| node.key.as_ref() == "root")
-        .expect("root node");
+    let root = find_node(&doc.scene, "root");
     assert_eq!(root.children.len(), 1);
-    assert_eq!(root.children[0].as_ref(), "child");
+    assert_eq!(doc.scene.key_name(root.children[0]), Some("child"));
 
     let text = doc.to_text();
     let reparsed = Parser::new(&text).parse_scene();
-    assert_eq!(reparsed.root.as_ref().map(|key| key.as_ref()), Some("root"));
+    assert_eq!(
+        reparsed.root.and_then(|key| reparsed.key_name(key)),
+        Some("root")
+    );
     assert!(
         reparsed
             .nodes
             .iter()
-            .any(|node| node.key.as_ref() == "child")
+            .any(|node| reparsed.key_name(node.key) == Some("child"))
     );
 }
 

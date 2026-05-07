@@ -14,7 +14,9 @@ impl SceneDoc {
     pub fn parse(src: &str) -> Self {
         let vars = Parser::new(src).collect_var_entries();
         let scene = Parser::new(src).parse_scene();
-        let root_name = scene.root.as_ref().map(|root| root.as_ref().to_string());
+        let root_name = scene
+            .root
+            .map(|root| scene.key_name_or_id(root).to_string());
         let vars = vars
             .into_iter()
             .filter(|(name, _)| Some(name.as_str()) != root_name.as_deref())
@@ -97,7 +99,7 @@ impl<'a> SceneDocWriter<'a> {
         let mut out = String::new();
         if let Some(root) = &self.doc.scene.root {
             out.push_str("@root = ");
-            out.push_str(root.as_ref());
+            out.push_str(self.doc.scene.key_name_or_id(*root).as_ref());
             out.push('\n');
         }
 
@@ -140,12 +142,13 @@ impl<'a> SceneDocWriter<'a> {
 
     fn write_node(&self, node: &SceneNodeEntry, out: &mut String) {
         out.push('[');
-        out.push_str(node.key.as_ref());
+        let node_key = self.doc.scene.key_name_or_id(node.key);
+        out.push_str(node_key.as_ref());
         out.push_str("]\n");
         if node
             .name
             .as_ref()
-            .is_some_and(|name| name.as_ref() != node.key.as_ref())
+            .is_some_and(|name| name.as_ref() != node_key.as_ref())
         {
             out.push_str("name = ");
             write_str(node.name.as_ref().expect("checked"), out);
@@ -163,7 +166,7 @@ impl<'a> SceneDocWriter<'a> {
         }
         if let Some(parent) = &node.parent {
             out.push_str("parent = ");
-            out.push_str(parent.as_ref());
+            out.push_str(self.doc.scene.key_name_or_id(*parent).as_ref());
             out.push('\n');
         }
         if let Some(script) = &node.script {
@@ -187,11 +190,11 @@ impl<'a> SceneDocWriter<'a> {
         if node.has_data_override {
             self.write_data(&node.data, out, 0);
             out.push_str("[/");
-            out.push_str(node.key.as_ref());
+            out.push_str(node_key.as_ref());
             out.push_str("]\n");
         } else {
             out.push_str("[/");
-            out.push_str(node.key.as_ref());
+            out.push_str(node_key.as_ref());
             out.push_str("]\n");
         }
     }
@@ -317,13 +320,23 @@ fn sync_children_from_parents(scene: &mut Scene) {
     for node in scene.nodes.iter() {
         if let Some(parent) = &node.parent {
             children
-                .entry(parent.as_ref().to_string())
+                .entry(scene.key_name_or_id(*parent).to_string())
                 .or_default()
-                .push(node.key.clone());
+                .push(node.key);
         }
     }
+    let key_names = scene
+        .nodes
+        .iter()
+        .map(|node| (node.key, scene.key_name_or_id(node.key).to_string()))
+        .collect::<Vec<_>>();
     for node in scene.nodes.to_mut() {
-        let next = children.remove(node.key.as_ref()).unwrap_or_default();
+        let node_key = key_names
+            .iter()
+            .find(|(key, _)| *key == node.key)
+            .map(|(_, name)| name.as_str())
+            .unwrap_or_default();
+        let next = children.remove(node_key).unwrap_or_default();
         node.children = Cow::Owned(next);
     }
 }

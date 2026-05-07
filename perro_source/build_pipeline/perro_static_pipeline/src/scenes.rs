@@ -85,7 +85,8 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
         shared_consts.push_str("const EMPTY_SCENE_FIELDS: &[SceneObjectField] = &[];\n");
     }
     shared_consts.push_str("const EMPTY_SCENE_NODES: &[SceneNodeEntry] = &[];\n");
-    shared_consts.push_str("const EMPTY_SCENE: Scene = Scene { nodes: Cow::Borrowed(EMPTY_SCENE_NODES), root: None };\n");
+    shared_consts.push_str("const EMPTY_SCENE_KEY_NAMES: &[Cow<'static, str>] = &[];\n");
+    shared_consts.push_str("const EMPTY_SCENE: Scene = Scene { nodes: Cow::Borrowed(EMPTY_SCENE_NODES), root: None, key_names: Cow::Borrowed(EMPTY_SCENE_KEY_NAMES) };\n");
     if !shared_consts.is_empty() {
         shared_consts.push('\n');
     }
@@ -122,18 +123,25 @@ fn emit_static_scene_const(
     let mut uses_empty_keys = false;
     let mut uses_empty_tags = false;
     let mut uses_empty_fields = false;
-    let mut children_by_parent: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut children_by_parent: HashMap<perro_scene::SceneKey, Vec<usize>> = HashMap::new();
     for (child_index, node) in scene.nodes.iter().enumerate() {
         if let Some(parent) = &node.parent {
             children_by_parent
-                .entry(parent.as_ref().to_string())
+                .entry(*parent)
                 .or_default()
                 .push(child_index);
         }
     }
 
+    let key_names_name = format!("KEY_NAMES_{}", scene_ident);
+    let _ = writeln!(out, "const {key_names_name}: &[Cow<'static, str>] = &[");
+    for name in scene.key_names.as_ref() {
+        let _ = writeln!(out, "    Cow::Borrowed(\"{}\"),", escape_str(name.as_ref()));
+    }
+    out.push_str("];\n");
+
     for (index, node) in scene.nodes.iter().enumerate() {
-        let children_ref = if let Some(children) = children_by_parent.get(node.key.as_ref()) {
+        let children_ref = if let Some(children) = children_by_parent.get(&node.key) {
             if children.is_empty() {
                 uses_empty_keys = true;
                 "EMPTY_SCENE_KEYS".to_string()
@@ -142,11 +150,7 @@ fn emit_static_scene_const(
                 let _ = writeln!(out, "const {children_name}: &[SceneKey] = &[");
                 for &child_index in children {
                     let child_key = &scene.nodes[child_index].key;
-                    let _ = writeln!(
-                        out,
-                        "    SceneKey(Cow::Borrowed(\"{}\")),",
-                        escape_str(child_key.as_ref())
-                    );
+                    let _ = writeln!(out, "    SceneKey({}u32),", child_key.as_u32());
                 }
                 out.push_str("];\n");
                 children_name
@@ -176,18 +180,15 @@ fn emit_static_scene_const(
             tags_name
         };
         node_entries.push_str(&format!(
-            "    SceneNodeEntry {{ data: {data}, has_data_override: {has_data_override}, key: SceneKey(Cow::Borrowed(\"{key}\")), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, script_hash: {script_hash}, clear_script: {clear_script}, root_of: {root_of}, root_of_hash: {root_of_hash}, script_vars: Cow::Borrowed({script_vars}) }},\n",
+            "    SceneNodeEntry {{ data: {data}, has_data_override: {has_data_override}, key: SceneKey({key}u32), name: {name}, tags: Cow::Borrowed({tags}), children: Cow::Borrowed({children}), parent: {parent}, script: {script}, script_hash: {script_hash}, clear_script: {clear_script}, root_of: {root_of}, root_of_hash: {root_of_hash}, script_vars: Cow::Borrowed({script_vars}) }},\n",
             data = data_const,
             has_data_override = node.has_data_override,
-            key = escape_str(node.key.as_ref()),
+            key = node.key.as_u32(),
             name = opt_static_str(&node.name),
             tags = tags_ref,
             children = children_ref,
             parent = match &node.parent {
-                Some(p) => format!(
-                    "Some(SceneKey(Cow::Borrowed(\"{}\")))",
-                    escape_str(p.as_ref())
-                ),
+                Some(p) => format!("Some(SceneKey({}u32))", p.as_u32()),
                 None => "None".to_string(),
             },
             script = opt_static_script_str(&node.script),
@@ -233,13 +234,11 @@ fn emit_static_scene_const(
         entries = node_entries
     ));
     out.push_str(&format!(
-        "pub static SCENE_{id}: Scene = Scene {{ nodes: Cow::Borrowed(NODES_{id}), root: {root} }};\n\n",
+        "pub static SCENE_{id}: Scene = Scene {{ nodes: Cow::Borrowed(NODES_{id}), root: {root}, key_names: Cow::Borrowed({key_names}) }};\n\n",
         id = scene_ident,
+        key_names = key_names_name,
         root = match &scene.root {
-            Some(r) => format!(
-                "Some(SceneKey(Cow::Borrowed(\"{}\")))",
-                escape_str(r.as_ref())
-            ),
+            Some(r) => format!("Some(SceneKey({}u32))", r.as_u32()),
             None => "None".to_string(),
         }
     ));

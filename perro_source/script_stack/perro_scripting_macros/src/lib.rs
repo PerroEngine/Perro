@@ -3,8 +3,7 @@ use quote::ToTokens;
 use quote::quote;
 use syn::{
     Data, DeriveInput, Expr, Field, Fields, ItemStruct, LitStr, Meta, Result, Variant,
-    parse::Parse,
-    parse_macro_input, parse_quote,
+    parse::Parse, parse_macro_input, parse_quote,
 };
 
 struct EmptyAttrArgs;

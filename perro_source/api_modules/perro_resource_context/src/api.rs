@@ -189,4 +189,3 @@ macro_rules! get_viewport_size {
         $res.viewport_size()
     };
 }
-

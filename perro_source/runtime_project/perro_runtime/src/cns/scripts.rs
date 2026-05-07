@@ -71,28 +71,28 @@ impl Runtime {
             })?;
         let behavior: Arc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
             if let Some(cached) = self
-            .script_runtime
-            .script_behavior_cache
-            .get(&script_path_hash)
-        {
-            Arc::clone(cached)
-        } else {
-            let raw = ctor();
-            if raw.is_null() {
-                return Err(format!(
-                    "script constructor returned null for hash `{script_path_hash}`"
-                ));
-            }
-
-            let behavior: Box<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
-                unsafe { Box::from_raw(raw) };
-            let behavior: Arc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
-                behavior.into();
-            self.script_runtime
+                .script_runtime
                 .script_behavior_cache
-                .insert(script_path_hash, Arc::clone(&behavior));
-            behavior
-        };
+                .get(&script_path_hash)
+            {
+                Arc::clone(cached)
+            } else {
+                let raw = ctor();
+                if raw.is_null() {
+                    return Err(format!(
+                        "script constructor returned null for hash `{script_path_hash}`"
+                    ));
+                }
+
+                let behavior: Box<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
+                    unsafe { Box::from_raw(raw) };
+                let behavior: Arc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
+                    behavior.into();
+                self.script_runtime
+                    .script_behavior_cache
+                    .insert(script_path_hash, Arc::clone(&behavior));
+                behavior
+            };
         let state = behavior.create_state();
         let flags = behavior.script_flags();
         if self.scripts.get_instance(node).is_some() {
@@ -352,4 +352,3 @@ fn scripts_dylib_suffix() -> &'static str {
 fn scripts_dylib_suffix() -> &'static str {
     ".dylib"
 }
-

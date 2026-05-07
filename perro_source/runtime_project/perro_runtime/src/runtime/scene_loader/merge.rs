@@ -32,16 +32,18 @@ pub(super) fn merge_prepared_scene(
         runtime.register_internal_node_schedules(engine_root, node.node_type());
     }
 
-    let mut key_to: HashMap<String, NodeID> = HashMap::with_capacity(nodes.len());
-    let mut key_order: Vec<String> = Vec::with_capacity(nodes.len());
+    let mut key_to: HashMap<u32, NodeID> = HashMap::with_capacity(nodes.len());
+    let mut key_name_to: HashMap<String, NodeID> = HashMap::with_capacity(nodes.len());
+    let mut key_order: Vec<u32> = Vec::with_capacity(nodes.len());
     let mut parent_pairs = Vec::with_capacity(nodes.len());
-    let mut animation_player_bindings: Vec<(NodeID, Vec<(String, String)>)> = Vec::new();
-    let mut mesh_skeleton_links: Vec<(NodeID, String)> = Vec::new();
+    let mut animation_player_bindings: Vec<(NodeID, Vec<(String, u32)>)> = Vec::new();
+    let mut mesh_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
     let resource_api = runtime.resource_api.clone();
 
     for pending in nodes {
         let super::prepare::PendingNode {
             key,
+            key_name,
             parent_key,
             node,
             animation_source,
@@ -108,16 +110,16 @@ pub(super) fn merge_prepared_scene(
         if let Some(target) = mesh_skeleton_target {
             mesh_skeleton_links.push((node, target));
         }
-        let key_for_map = key.clone();
         if let Some(parent_key) = parent_key {
-            parent_pairs.push((key.clone(), parent_key));
+            parent_pairs.push((key, parent_key));
         }
         key_order.push(key);
-        key_to.insert(key_for_map, node);
+        key_to.insert(key, node);
+        key_name_to.insert(key_name, node);
     }
 
-    if let Some(root_key) = root_key.as_deref()
-        && !key_to.contains_key(root_key)
+    if let Some(root_key) = root_key
+        && !key_to.contains_key(&root_key)
     {
         return Err(format!("scene root `{root_key}` not found in node list"));
     }
@@ -163,7 +165,7 @@ pub(super) fn merge_prepared_scene(
         };
         let mut resolved = Vec::with_capacity(scene_bindings.len());
         for (object, node_key) in scene_bindings {
-            let Some(target_id) = key_to.get(node_key.as_str()).copied() else {
+            let Some(target_id) = key_to.get(&node_key).copied() else {
                 continue;
             };
             resolved.push(AnimationObjectBinding {
@@ -191,9 +193,9 @@ pub(super) fn merge_prepared_scene(
         return Err("boot scene produced no top-level root nodes".to_string());
     }
 
-    let primary_root = if let Some(root_key) = root_key.as_deref() {
+    let primary_root = if let Some(root_key) = root_key {
         *key_to
-            .get(root_key)
+            .get(&root_key)
             .ok_or_else(|| format!("scene root `{root_key}` not found in node list"))?
     } else {
         top_level_roots[0]
@@ -237,7 +239,7 @@ pub(super) fn merge_prepared_scene(
             .map(|(name, value)| {
                 Ok((
                     ScriptMemberID::from_string(name.as_str()),
-                    scene_value_to_variant(value, &key_to),
+                    scene_value_to_variant(value, &key_to, &key_name_to),
                 ))
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -255,7 +257,11 @@ pub(super) fn merge_prepared_scene(
     })
 }
 
-fn scene_value_to_variant(value: &SceneValue, key_to: &HashMap<String, NodeID>) -> Variant {
+fn scene_value_to_variant(
+    value: &SceneValue,
+    key_to: &HashMap<u32, NodeID>,
+    key_name_to: &HashMap<String, NodeID>,
+) -> Variant {
     match value {
         SceneValue::Bool(v) => Variant::from(*v),
         SceneValue::I32(v) => Variant::from(*v),
@@ -271,7 +277,12 @@ fn scene_value_to_variant(value: &SceneValue, key_to: &HashMap<String, NodeID>) 
         SceneValue::Str(v) => Variant::from(v.to_string()),
         SceneValue::Hashed(v) => Variant::from(*v),
         SceneValue::Key(v) => {
-            if let Some(id) = key_to.get(v.as_ref()) {
+            if let Some(raw) = v.as_ref().strip_prefix('#')
+                && let Ok(key) = raw.parse::<u32>()
+                && let Some(id) = key_to.get(&key)
+            {
+                Variant::from(*id)
+            } else if let Some(id) = key_name_to.get(v.as_ref()) {
                 Variant::from(*id)
             } else {
                 Variant::from(v.to_string())
@@ -282,7 +293,7 @@ fn scene_value_to_variant(value: &SceneValue, key_to: &HashMap<String, NodeID>) 
             for (k, v) in entries.iter() {
                 out.insert(
                     Arc::<str>::from(k.as_ref()),
-                    scene_value_to_variant(v, key_to),
+                    scene_value_to_variant(v, key_to, key_name_to),
                 );
             }
             Variant::Object(out)
@@ -290,9 +301,8 @@ fn scene_value_to_variant(value: &SceneValue, key_to: &HashMap<String, NodeID>) 
         SceneValue::Array(items) => Variant::Array(
             items
                 .iter()
-                .map(|v| scene_value_to_variant(v, key_to))
+                .map(|v| scene_value_to_variant(v, key_to, key_name_to))
                 .collect(),
         ),
     }
 }
-

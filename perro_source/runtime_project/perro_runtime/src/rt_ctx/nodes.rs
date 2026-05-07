@@ -88,16 +88,12 @@ impl Runtime {
     ) {
         let mut stack = vec![child_id];
         while let Some(id) = stack.pop() {
-            let Some((is_ui, children)) = self
-                .nodes
-                .get(id)
-                .map(|node| {
-                    (
-                        ui_base_from_data(&node.data).is_some(),
-                        node.get_children_ids().to_vec(),
-                    )
-                })
-            else {
+            let Some((is_ui, children)) = self.nodes.get(id).map(|node| {
+                (
+                    ui_base_from_data(&node.data).is_some(),
+                    node.get_children_ids().to_vec(),
+                )
+            }) else {
                 continue;
             };
             if is_ui {
@@ -515,14 +511,7 @@ impl NodeAPI for Runtime {
             return None;
         }
 
-        let (
-            value,
-            transform_changed,
-            ui_before,
-            ui_after,
-            vis_2d_changed,
-            vis_3d_changed,
-        ) = {
+        let (value, transform_changed, ui_before, ui_after, vis_2d_changed, vis_3d_changed) = {
             let node = if let Some((index, generation)) = slot {
                 self.nodes.slot_get_mut_checked(index, generation)?
             } else {

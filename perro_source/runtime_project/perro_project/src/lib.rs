@@ -1661,9 +1661,11 @@ fn default_static_scenes_rs() -> String {
 use perro_scene::Scene;
 
 const EMPTY_SCENE_NODES: &[perro_scene::SceneNodeEntry] = &[];
+const EMPTY_SCENE_KEY_NAMES: &[std::borrow::Cow<'static, str>] = &[];
 const EMPTY_SCENE: Scene = Scene {
     nodes: std::borrow::Cow::Borrowed(EMPTY_SCENE_NODES),
     root: None,
+    key_names: std::borrow::Cow::Borrowed(EMPTY_SCENE_KEY_NAMES),
 };
 
 pub const fn lookup_scene(_path_hash: u64) -> &'static Scene {
@@ -2702,8 +2704,3 @@ fn crate_group_sort_key(crate_name: &str) -> u8 {
 #[cfg(test)]
 #[path = "../tests/unit/lib_tests.rs"]
 mod tests;
-
-
-
-
-

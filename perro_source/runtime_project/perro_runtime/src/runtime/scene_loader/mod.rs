@@ -674,6 +674,8 @@ mod tests {
     const EMPTY_FIELDS: &[perro_scene::SceneObjectField] = &[];
     const EMPTY_KEYS: &[SceneKey] = &[];
     const EMPTY_TAGS: &[Cow<'static, str>] = &[];
+    const HOST_KEY_NAMES: &[Cow<'static, str>] = &[Cow::Borrowed("wi")];
+    const EMPTY_KEY_NAMES: &[Cow<'static, str>] = &[];
     const HOST_DATA: SceneNodeData = SceneNodeData {
         ty: Cow::Borrowed("Node"),
         fields: Cow::Borrowed(EMPTY_FIELDS),
@@ -682,7 +684,7 @@ mod tests {
     const HOST_NODES: &[SceneNodeEntry] = &[SceneNodeEntry {
         data: HOST_DATA,
         has_data_override: true,
-        key: SceneKey(Cow::Borrowed("wi")),
+        key: SceneKey(0),
         name: Some(Cow::Borrowed("wi")),
         tags: Cow::Borrowed(EMPTY_TAGS),
         children: Cow::Borrowed(EMPTY_KEYS),
@@ -696,11 +698,13 @@ mod tests {
     }];
     static HOST_SCENE: Scene = Scene {
         nodes: Cow::Borrowed(HOST_NODES),
-        root: Some(SceneKey(Cow::Borrowed("wi"))),
+        root: Some(SceneKey(0)),
+        key_names: Cow::Borrowed(HOST_KEY_NAMES),
     };
     static EMPTY_SCENE: Scene = Scene {
         nodes: Cow::Borrowed(&[]),
         root: None,
+        key_names: Cow::Borrowed(EMPTY_KEY_NAMES),
     };
 
     fn test_lookup(path_hash: u64) -> &'static Scene {

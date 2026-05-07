@@ -1883,8 +1883,7 @@ fn extract_method_body_from_fn_start(
 
 fn method_signature_looks_like_lifecycle(source: &str, fn_start: usize, body_start: usize) -> bool {
     let sig = &source[fn_start..body_start];
-    sig.contains("&self")
-        && sig.contains("ScriptContext")
+    sig.contains("&self") && sig.contains("ScriptContext")
 }
 
 fn block_has_non_comment_tokens(block: &str) -> bool {
@@ -2175,8 +2174,7 @@ fn generate_member_consts(fields: &[ScriptField], methods: &[ScriptMethod]) -> S
 
 fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
     if methods.is_empty() {
-        return "        let _ = (method, ctx, params);\n        Variant::Null"
-            .to_string();
+        return "        let _ = (method, ctx, params);\n        Variant::Null".to_string();
     }
 
     let mut out = String::new();
@@ -3635,8 +3633,3 @@ pub struct NestedState {
         );
     }
 }
-
-
-
-
-

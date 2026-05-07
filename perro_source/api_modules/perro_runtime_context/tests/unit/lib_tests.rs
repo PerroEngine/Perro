@@ -671,4 +671,3 @@ fn script_macros_typecheck_and_forward() {
     assert_eq!(fdt, 0.016);
     assert_eq!(elapsed, 1.0);
 }
-

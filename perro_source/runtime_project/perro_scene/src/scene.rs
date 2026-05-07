@@ -175,6 +175,19 @@ impl<'a> SceneFieldIterRef<'a> {
 pub struct Scene {
     pub nodes: Cow<'static, [SceneNodeEntry]>,
     pub root: Option<SceneKey>,
+    pub key_names: Cow<'static, [Cow<'static, str>]>,
+}
+
+impl Scene {
+    pub fn key_name(&self, key: SceneKey) -> Option<&str> {
+        self.key_names.get(key.as_usize()).map(|v| v.as_ref())
+    }
+
+    pub fn key_name_or_id(&self, key: SceneKey) -> Cow<'_, str> {
+        self.key_name(key)
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Cow::Owned(key.as_u32().to_string()))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -217,23 +230,19 @@ impl SceneNodeData {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct SceneKey(pub Cow<'static, str>);
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SceneKey(pub u32);
 
-impl AsRef<str> for SceneKey {
-    fn as_ref(&self) -> &str {
-        self.0.as_ref()
+impl SceneKey {
+    pub const fn new(value: u32) -> Self {
+        Self(value)
     }
-}
 
-impl From<&'static str> for SceneKey {
-    fn from(value: &'static str) -> Self {
-        Self(Cow::Borrowed(value))
+    pub const fn as_u32(self) -> u32 {
+        self.0
     }
-}
 
-impl From<String> for SceneKey {
-    fn from(value: String) -> Self {
-        Self(Cow::Owned(value))
+    pub const fn as_usize(self) -> usize {
+        self.0 as usize
     }
 }

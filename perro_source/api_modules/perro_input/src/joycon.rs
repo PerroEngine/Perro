@@ -433,4 +433,3 @@ macro_rules! joycon_calibration_bias {
             .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
     }};
 }
-
