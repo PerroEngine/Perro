@@ -50,7 +50,6 @@ const fn read_u64_le(bytes: &[u8], offset: usize) -> u64 {
         | ((bytes[offset + 7] as u64) << 56)
 }
 
-
 pub fn parse_hashed_source_uri(s: &str) -> Option<u64> {
     if s.as_bytes().iter().all(|b| b.is_ascii_digit()) {
         return s.parse::<u64>().ok();
@@ -343,7 +342,9 @@ mod tests {
     #[test]
     #[ignore = "bench-style timing test; run with --ignored --nocapture"]
     fn bench_string_to_u64_by_length() {
-        const LENGTHS: &[usize] = &[0, 1, 4, 8, 15, 16, 32, 64, 128, 256, 512, 1024, 4096, 16_384];
+        const LENGTHS: &[usize] = &[
+            0, 1, 4, 8, 15, 16, 32, 64, 128, 256, 512, 1024, 4096, 16_384,
+        ];
         const TARGET_BYTES: usize = 64 * 1024 * 1024;
 
         println!("len,iters,total_ms,ns_per_hash,ns_per_byte,hash_xor");

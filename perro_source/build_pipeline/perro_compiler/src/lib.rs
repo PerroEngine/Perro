@@ -7,6 +7,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    thread,
 };
 
 #[derive(Debug)]
@@ -768,28 +769,7 @@ fn generate_dlc_static_assets(
     let bake_result = (|| -> Result<(), CompilerError> {
         let cfg = load_project_toml(project_root)
             .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
-        perro_static_pipeline::generate_static_collision_trimeshes(project_root)
-            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
-        perro_static_pipeline::generate_static_scenes(project_root)
-            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
-        perro_static_pipeline::generate_static_materials(project_root)
-            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
-        perro_static_pipeline::generate_static_particles(project_root)
-            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
-        perro_static_pipeline::generate_static_animations(project_root)
-            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
-        perro_static_pipeline::generate_static_meshes(project_root, cfg.meshlets)
-            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
-        perro_static_pipeline::generate_static_skeletons(project_root)
-            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
-        perro_static_pipeline::generate_static_textures(project_root)
-            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
-        perro_static_pipeline::generate_static_shaders(project_root)
-            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
-        perro_static_pipeline::generate_static_audios(project_root)
-            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
-        perro_static_pipeline::generate_empty_localizations(project_root)
-            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        generate_dlc_static_modules(project_root, cfg.meshlets)?;
         perro_static_pipeline::write_static_mod_rs(project_root)
             .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
         build_perro_assets_archive(
@@ -915,47 +895,169 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
     Ok(package_file)
 }
 
+fn static_generation_error(
+    kind: &str,
+    err: perro_static_pipeline::StaticPipelineError,
+) -> CompilerError {
+    CompilerError::SceneParse(format!("{kind} static generation failed: {err}"))
+}
+
+fn join_static_generation(
+    kind: &str,
+    handle: thread::ScopedJoinHandle<'_, Result<(), perro_static_pipeline::StaticPipelineError>>,
+    first_error: &mut Option<CompilerError>,
+) {
+    let result = match handle.join() {
+        Ok(result) => result.map_err(|err| static_generation_error(kind, err)),
+        Err(_) => Err(CompilerError::SceneParse(format!(
+            "{kind} static generation panicked"
+        ))),
+    };
+    if let Err(err) = result
+        && first_error.is_none()
+    {
+        *first_error = Some(err);
+    }
+}
+
+fn generate_project_static_modules(
+    project_root: &Path,
+    cfg: &perro_project::ProjectConfig,
+) -> Result<(), CompilerError> {
+    thread::scope(|scope| {
+        let tasks = [
+            (
+                "collision trimesh",
+                scope.spawn(|| {
+                    perro_static_pipeline::generate_static_collision_trimeshes(project_root)
+                }),
+            ),
+            (
+                "scene",
+                scope.spawn(|| perro_static_pipeline::generate_static_scenes(project_root)),
+            ),
+            (
+                "material",
+                scope.spawn(|| perro_static_pipeline::generate_static_materials(project_root)),
+            ),
+            (
+                "particle",
+                scope.spawn(|| perro_static_pipeline::generate_static_particles(project_root)),
+            ),
+            (
+                "animation",
+                scope.spawn(|| perro_static_pipeline::generate_static_animations(project_root)),
+            ),
+            (
+                "mesh",
+                scope.spawn(|| {
+                    perro_static_pipeline::generate_static_meshes(
+                        project_root,
+                        cfg.meshlets && cfg.release_meshlets,
+                    )
+                }),
+            ),
+            (
+                "skeleton",
+                scope.spawn(|| perro_static_pipeline::generate_static_skeletons(project_root)),
+            ),
+            (
+                "texture",
+                scope.spawn(|| perro_static_pipeline::generate_static_textures(project_root)),
+            ),
+            (
+                "shader",
+                scope.spawn(|| perro_static_pipeline::generate_static_shaders(project_root)),
+            ),
+            (
+                "audio",
+                scope.spawn(|| perro_static_pipeline::generate_static_audios(project_root)),
+            ),
+            (
+                "localization",
+                scope.spawn(|| {
+                    perro_static_pipeline::generate_static_localizations(project_root, cfg)
+                }),
+            ),
+        ];
+        let mut first_error = None;
+        for (kind, handle) in tasks {
+            join_static_generation(kind, handle, &mut first_error);
+        }
+        first_error.map_or(Ok(()), Err)
+    })
+}
+
+fn generate_dlc_static_modules(
+    project_root: &Path,
+    bake_meshlets: bool,
+) -> Result<(), CompilerError> {
+    thread::scope(|scope| {
+        let tasks = [
+            (
+                "collision trimesh",
+                scope.spawn(|| {
+                    perro_static_pipeline::generate_static_collision_trimeshes(project_root)
+                }),
+            ),
+            (
+                "scene",
+                scope.spawn(|| perro_static_pipeline::generate_static_scenes(project_root)),
+            ),
+            (
+                "material",
+                scope.spawn(|| perro_static_pipeline::generate_static_materials(project_root)),
+            ),
+            (
+                "particle",
+                scope.spawn(|| perro_static_pipeline::generate_static_particles(project_root)),
+            ),
+            (
+                "animation",
+                scope.spawn(|| perro_static_pipeline::generate_static_animations(project_root)),
+            ),
+            (
+                "mesh",
+                scope.spawn(|| {
+                    perro_static_pipeline::generate_static_meshes(project_root, bake_meshlets)
+                }),
+            ),
+            (
+                "skeleton",
+                scope.spawn(|| perro_static_pipeline::generate_static_skeletons(project_root)),
+            ),
+            (
+                "texture",
+                scope.spawn(|| perro_static_pipeline::generate_static_textures(project_root)),
+            ),
+            (
+                "shader",
+                scope.spawn(|| perro_static_pipeline::generate_static_shaders(project_root)),
+            ),
+            (
+                "audio",
+                scope.spawn(|| perro_static_pipeline::generate_static_audios(project_root)),
+            ),
+            (
+                "localization",
+                scope.spawn(|| perro_static_pipeline::generate_empty_localizations(project_root)),
+            ),
+        ];
+        let mut first_error = None;
+        for (kind, handle) in tasks {
+            join_static_generation(kind, handle, &mut first_error);
+        }
+        first_error.map_or(Ok(()), Err)
+    })
+}
+
 pub fn compile_project_bundle(project_root: &Path, profile: bool) -> Result<(), CompilerError> {
     ensure_source_overrides(project_root)?;
     let cfg = load_project_toml(project_root)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     reset_embedded_dir(project_root)?;
     let _ = sync_scripts(project_root)?;
-    perro_static_pipeline::generate_static_collision_trimeshes(project_root).map_err(|err| {
-        CompilerError::SceneParse(format!("collision trimesh static generation failed: {err}"))
-    })?;
-    perro_static_pipeline::generate_static_scenes(project_root).map_err(|err| {
-        CompilerError::SceneParse(format!("scene static generation failed: {err}"))
-    })?;
-    perro_static_pipeline::generate_static_materials(project_root).map_err(|err| {
-        CompilerError::SceneParse(format!("material static generation failed: {err}"))
-    })?;
-    perro_static_pipeline::generate_static_particles(project_root).map_err(|err| {
-        CompilerError::SceneParse(format!("particle static generation failed: {err}"))
-    })?;
-    perro_static_pipeline::generate_static_animations(project_root).map_err(|err| {
-        CompilerError::SceneParse(format!("animation static generation failed: {err}"))
-    })?;
-    perro_static_pipeline::generate_static_meshes(
-        project_root,
-        cfg.meshlets && cfg.release_meshlets,
-    )
-    .map_err(|err| CompilerError::SceneParse(format!("mesh static generation failed: {err}")))?;
-    perro_static_pipeline::generate_static_skeletons(project_root).map_err(|err| {
-        CompilerError::SceneParse(format!("skeleton static generation failed: {err}"))
-    })?;
-    perro_static_pipeline::generate_static_textures(project_root).map_err(|err| {
-        CompilerError::SceneParse(format!("texture static generation failed: {err}"))
-    })?;
-    perro_static_pipeline::generate_static_shaders(project_root).map_err(|err| {
-        CompilerError::SceneParse(format!("shader static generation failed: {err}"))
-    })?;
-    perro_static_pipeline::generate_static_audios(project_root).map_err(|err| {
-        CompilerError::SceneParse(format!("audio static generation failed: {err}"))
-    })?;
-    perro_static_pipeline::generate_static_localizations(project_root, &cfg).map_err(|err| {
-        CompilerError::SceneParse(format!("localization static generation failed: {err}"))
-    })?;
+    generate_project_static_modules(project_root, &cfg)?;
     perro_static_pipeline::write_static_mod_rs(project_root)
         .map_err(|err| CompilerError::SceneParse(format!("static mod generation failed: {err}")))?;
     generate_embedded_main(project_root)?;
