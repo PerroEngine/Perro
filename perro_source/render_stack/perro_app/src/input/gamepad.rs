@@ -64,8 +64,8 @@ mod backend {
 
     impl GamepadBackend {
         pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
-            self.consume_output_requests(app);
             self.ensure_gilrs();
+            self.consume_output_requests(app);
             let Some(mut gilrs) = self.gilrs.take() else {
                 return;
             };

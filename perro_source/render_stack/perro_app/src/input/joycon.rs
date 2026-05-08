@@ -52,6 +52,7 @@ mod backend {
     const CALIBRATION_MAX_DELTA_DPS: f32 = 5.0;
     const CALIBRATION_FOLDER: &str = "user://calibrations";
     const JOYCON_SUBCMD_SET_PLAYER_LAMP: u8 = 0x30;
+    const MAX_JOYCON_EVENTS_PER_FRAME: usize = 256;
 
     type ButtonBits = u16;
 
@@ -108,11 +109,51 @@ mod backend {
             index: usize,
             side: JoyConSide,
             data: JoyConInputData,
-            raw_report: Option<Vec<u8>>,
+            source: JoyConReportSource,
+            raw_report: Option<RawJoyConReport>,
         },
         Disconnected {
             index: usize,
         },
+    }
+
+    #[derive(Clone, Copy)]
+    enum JoyConReportSource {
+        Hid,
+        Ble,
+    }
+
+    impl JoyConReportSource {
+        fn as_str(self) -> &'static str {
+            match self {
+                JoyConReportSource::Hid => "hid",
+                JoyConReportSource::Ble => "ble",
+            }
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct RawJoyConReport {
+        bytes: [u8; REPORT_LEN],
+        len: usize,
+    }
+
+    impl RawJoyConReport {
+        fn new(data: &[u8]) -> Option<Self> {
+            if data.len() > REPORT_LEN {
+                return None;
+            }
+            let mut bytes = [0u8; REPORT_LEN];
+            bytes[..data.len()].copy_from_slice(data);
+            Some(Self {
+                bytes,
+                len: data.len(),
+            })
+        }
+
+        fn as_slice(&self) -> &[u8] {
+            &self.bytes[..self.len]
+        }
     }
 
     #[derive(Debug)]
@@ -345,7 +386,10 @@ mod backend {
                                     index,
                                     side,
                                     data: payload,
-                                    raw_report: raw_dump_enabled().then(|| data.to_vec()),
+                                    source: JoyConReportSource::Hid,
+                                    raw_report: raw_dump_enabled()
+                                        .then(|| RawJoyConReport::new(data))
+                                        .flatten(),
                                 });
                             }
                         }
@@ -361,48 +405,59 @@ mod backend {
         }
 
         fn drain_events<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
-            let Some(rx) = self.rx.as_ref() else {
+            let Some(rx) = self.rx.take() else {
                 return;
             };
 
-            let mut pending = Vec::new();
-            while let Ok(event) = rx.try_recv() {
-                pending.push(event);
+            for _ in 0..MAX_JOYCON_EVENTS_PER_FRAME {
+                let Ok(event) = rx.try_recv() else {
+                    break;
+                };
+                self.handle_event(app, event);
             }
 
-            for event in pending {
-                match event {
-                    JoyConEvent::Connected {
-                        index,
-                        side,
-                        serial,
-                    } => {
-                        self.on_connected(app, index, side, &serial);
+            self.rx = Some(rx);
+        }
+
+        fn handle_event<B: GraphicsBackend>(&mut self, app: &mut App<B>, event: JoyConEvent) {
+            match event {
+                JoyConEvent::Connected {
+                    index,
+                    side,
+                    serial,
+                } => {
+                    self.on_connected(app, index, side, &serial);
+                }
+                JoyConEvent::Report {
+                    index,
+                    side,
+                    data,
+                    source,
+                    raw_report,
+                } => {
+                    if let Some(raw_report) = raw_report.as_ref() {
+                        log_raw_joycon_report(
+                            index,
+                            side,
+                            raw_report.as_slice(),
+                            &data,
+                            source.as_str(),
+                        );
                     }
-                    JoyConEvent::Report {
+                    apply_report(
+                        app,
                         index,
                         side,
                         data,
-                        raw_report,
-                    } => {
-                        if let Some(raw_report) = raw_report.as_deref() {
-                            log_raw_joycon_report(index, side, raw_report, &data, "hid");
-                        }
-                        apply_report(
-                            app,
-                            index,
-                            side,
-                            data,
-                            &mut self.last_buttons,
-                            &mut self.connected,
-                        );
-                    }
-                    JoyConEvent::Disconnected { index } => {
-                        clear_joycon_index(app, index);
-                        self.last_buttons.retain(|(idx, _), _| *idx != index);
-                        self.connected.retain(|(idx, _), _| *idx != index);
-                        self.last_player_lamp.remove(&index);
-                    }
+                        &mut self.last_buttons,
+                        &mut self.connected,
+                    );
+                }
+                JoyConEvent::Disconnected { index } => {
+                    clear_joycon_index(app, index);
+                    self.last_buttons.retain(|(idx, _), _| *idx != index);
+                    self.connected.retain(|(idx, _), _| *idx != index);
+                    self.last_player_lamp.remove(&index);
                 }
             }
         }
@@ -595,7 +650,7 @@ mod backend {
 
                 let _ = adapter.start_scan(ScanFilter::default()).await;
                 while !stop.load(Ordering::Relaxed) {
-                    if let Ok(sl) = slots.lock() {
+                    if let Ok(sl) = slots.try_lock() {
                         known.retain(|k| sl.assigned.contains_key(k));
                     }
                     time::sleep(BLE_DISCOVERY_POLL).await;
@@ -777,39 +832,17 @@ mod backend {
                                                     last_enable_retry = TokioInstant::now();
                                                 }
                                             }
-                                            if raw_dump_enabled() {
-                                                log_raw_joycon_report(
-                                                    index,
-                                                    side,
-                                                    &packet.value,
-                                                    &data,
-                                                    "ble",
-                                                );
-                                            }
-                                            eprintln!(
-                                                "[joycon2][stream] id={} side={:?} report=0x{:02X} len={} buttons=0x{:04X} stick=({:.3},{:.3}) gyro=({:.1},{:.1},{:.1}) accel=({:.1},{:.1},{:.1})",
-                                                key_clone,
-                                                side,
-                                                rid,
-                                                packet.value.len(),
-                                                data.buttons,
-                                                data.stick.0,
-                                                data.stick.1,
-                                                data.gyro.0,
-                                                data.gyro.1,
-                                                data.gyro.2,
-                                                data.accel.0,
-                                                data.accel.1,
-                                                data.accel.2
-                                            );
+                                            let dump_raw = raw_dump_enabled();
                                             let _ = tx_clone.send(JoyConEvent::Report {
                                                 index,
                                                 side,
                                                 data,
-                                                raw_report: raw_dump_enabled()
-                                                    .then(|| packet.value.clone()),
+                                                source: JoyConReportSource::Ble,
+                                                raw_report: dump_raw
+                                                    .then(|| RawJoyConReport::new(&packet.value))
+                                                    .flatten(),
                                             });
-                                        } else {
+                                        } else if raw_dump_enabled() {
                                             eprintln!(
                                                 "[joycon2][stream] undecoded id={} side={:?} report=0x{:02X} len={}",
                                                 key_clone,
