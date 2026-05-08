@@ -23,6 +23,8 @@ jobs:
     name: Test
     needs: fmt
     runs-on: windows-latest
+    env:
+      RUST_TEST_THREADS: 1
     steps:
       - uses: actions/checkout@v4
       - name: Install stable toolchain
