@@ -1,8 +1,8 @@
 use crate::{StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir};
 use perro_animation::{
     AnimationBoneSelector, AnimationEase, AnimationEvent, AnimationEventScope,
-    AnimationInterpolation, AnimationKeyMode, AnimationObjectKey, AnimationObjectTrack, AnimationParam,
-    AnimationTrackValue,
+    AnimationInterpolation, AnimationKeyMode, AnimationObjectKey, AnimationObjectTrack,
+    AnimationParam, AnimationTrackValue,
 };
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::NodeField;
@@ -106,7 +106,11 @@ fn optimize_animation_track_keys(track: &mut AnimationObjectTrack) {
     if track.keys.len() < 3 {
         return;
     }
-    if !track.keys.iter().all(|k| k.mode == AnimationKeyMode::Closed) {
+    if !track
+        .keys
+        .iter()
+        .all(|k| k.mode == AnimationKeyMode::Closed)
+    {
         return;
     }
 
