@@ -1,9 +1,9 @@
-@col_bg      = "#101318"
-@col_panel   = "#202733"
-@col_stroke  = "#8FB3E8"
-@col_text    = "#E9EEF6"
+$col_bg      = "#101318"
+$col_panel   = "#202733"
+$col_stroke  = "#8FB3E8"
+$col_text    = "#E9EEF6"
 
-@root = project_manager
+$root = @project_manager
 
 [project_manager]
 name = "ProjectManager"
@@ -12,27 +12,27 @@ name = "ProjectManager"
     position_ratio = (0.5, 0.5)
     pivot_ratio = (0.5, 0.5)
     size_ratio = (1.0, 1.0)
-    fill = @col_bg
-    stroke = @col_bg
+    fill = $col_bg
+    stroke = $col_bg
     stroke_width = 0
 [/UiPanel]
 [/project_manager]
 
 [test_panel]
-parent = @root
+parent = @project_manager
 [UiPanel]
     anchor = "center"
     position_ratio = (0.5, 0.5)
     pivot_ratio = (0.5, 0.5)
     size_ratio = (0.35, 0.25)
-    fill = @col_panel
-    stroke = @col_stroke
+    fill = $col_panel
+    stroke = $col_stroke
     stroke_width = 1
 [/UiPanel]
 [/test_panel]
 
 [test_label]
-parent = test_panel
+parent = @test_panel
 [UiLabel]
     anchor = "center"
     position_ratio = (0.5, 0.5)
@@ -40,6 +40,6 @@ parent = test_panel
     size_ratio = (1.0, 1.0)
     text = "CENTER UI TEST"
     text_size_ratio = 0.22
-    color = @col_text
+    color = $col_text
 [/UiLabel]
 [/test_label]

@@ -253,14 +253,14 @@ Example: sword in hand.
 [/Character]
 
 [CharacterSkeleton]
-parent = Character
+parent = @Character
     [Skeleton3D]
         skeleton = "res://characters/knight.glb:skeleton[0]"
     [/Skeleton3D]
 [/CharacterSkeleton]
 
 [CharacterMesh]
-parent = Character
+parent = @Character
     [MeshInstance3D]
         mesh = "res://characters/knight.glb:mesh[0]"
         skeleton = "CharacterSkeleton"
@@ -268,7 +268,7 @@ parent = Character
 [/CharacterMesh]
 
 [RightHandSocket]
-parent = Character
+parent = @Character
     [BoneAttachment3D]
         skeleton = "CharacterSkeleton"
         bone = 15
@@ -282,7 +282,7 @@ parent = Character
 [/RightHandSocket]
 
 [Sword]
-parent = RightHandSocket
+parent = @RightHandSocket
     [MeshInstance3D]
         mesh = "res://weapons/sword.glb:mesh[0]"
         material = "res://weapons/sword.pmat"

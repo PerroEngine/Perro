@@ -288,7 +288,7 @@ fn push_entry_prepared(
             let import_scene = (ctx.load_scene)(root_of_path.as_str())?;
             let import_root = import_scene
                 .root
-                .ok_or_else(|| format!("root_of scene `{}` has no @root", root_of_path))?;
+                .ok_or_else(|| format!("root_of scene `{}` has no $root", root_of_path))?;
             let import_root_node = import_scene
                 .nodes
                 .iter()
