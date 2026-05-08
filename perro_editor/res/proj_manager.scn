@@ -3,7 +3,7 @@ $col_panel   = "#202733"
 $col_stroke  = "#8FB3E8"
 $col_text    = "#E9EEF6"
 
-$root = project_manager
+$root = @project_manager
 
 [project_manager]
 name = "ProjectManager"

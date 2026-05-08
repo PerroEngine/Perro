@@ -5,7 +5,7 @@ Every node template lists the fields it exposes, including fields that default t
 
 Conventions used below:
 
-- `parent = PARENTKEY` is a placeholder parent node key (for example `@root` or another node name).
+- `parent = @PARENTKEY` is a placeholder parent node key (for example `@root` or another node name).
 - `script = "res://path/to/script.rs"` is an example script path.
 - `res://path/to/...` placeholders show expected path shape.
 
@@ -13,7 +13,7 @@ General wrapper (it might look like this):
 
 ```text
 [name]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
 
     [Type]
@@ -29,7 +29,7 @@ script = "res://path/to/script.rs"
 
 ```text
 [node]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [Node]
     [/Node]
@@ -48,7 +48,7 @@ Think of it as:
 ### Example
 
 ```text
-@root = Main
+$root = @Main
 
 [Main]
 root_of = "res://shared/player_base.scn"
@@ -63,7 +63,7 @@ script_vars = {
 [/Main]
 
 [ExtraHat]
-parent = Main
+parent = @Main
     [Sprite2D]
         texture = "res://cosmetics/hat.png"
         [Node2D]
@@ -109,7 +109,7 @@ root_of = "res://shared/player_base.scn"
 
 ```text
 [node2d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [Node2D]
         position = (0, 0)
@@ -121,7 +121,7 @@ script = "res://path/to/script.rs"
 [/node2d]
 
 [sprite2d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [Sprite2D]
         texture = "res://path/to/texture.png"
@@ -136,7 +136,7 @@ script = "res://path/to/script.rs"
 [/sprite2d]
 
 [camera2d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [Camera2D]
         zoom = 0.0
@@ -153,7 +153,7 @@ script = "res://path/to/script.rs"
 [/camera2d]
 
 [collision_shape_2d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [CollisionShape2D]
         shape = { type = quad width = 1.0 height = 1.0 }
@@ -168,7 +168,7 @@ script = "res://path/to/script.rs"
 [/collision_shape_2d]
 
 [static_body_2d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [StaticBody2D]
         enabled = true
@@ -186,7 +186,7 @@ script = "res://path/to/script.rs"
 [/static_body_2d]
 
 [rigid_body_2d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [RigidBody2D]
         enabled = true
@@ -212,7 +212,7 @@ script = "res://path/to/script.rs"
 [/rigid_body_2d]
 
 [area2d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [Area2D]
         enabled = true
@@ -231,7 +231,7 @@ script = "res://path/to/script.rs"
 
 ```text
 [node3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [Node3D]
         position = (0, 0, 0)
@@ -242,7 +242,7 @@ script = "res://path/to/script.rs"
 [/node3d]
 
 [mesh_instance_3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [MeshInstance3D]
         mesh = "res://path/to/model.glb:mesh[0]"
@@ -272,7 +272,7 @@ script = "res://path/to/script.rs"
 [/mesh_instance_3d]
 
 [multi_mesh_instance_3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [MultiMeshInstance3D]
         mesh = "res://path/to/model.glb:mesh[0]"
@@ -311,7 +311,7 @@ script = "res://path/to/script.rs"
 [/multi_mesh_instance_3d]
 
 [camera3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [Camera3D]
         zoom = 0.0
@@ -340,7 +340,7 @@ script = "res://path/to/script.rs"
 [/camera3d]
 
 [collision_shape_3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [CollisionShape3D]
         shape = { type = cube, size = (1, 1, 1) }
@@ -357,7 +357,7 @@ script = "res://path/to/script.rs"
 [/collision_shape_3d]
 
 [static_body_3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [StaticBody3D]
         enabled = true
@@ -374,7 +374,7 @@ script = "res://path/to/script.rs"
 [/static_body_3d]
 
 [rigid_body_3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [RigidBody3D]
         enabled = true
@@ -399,7 +399,7 @@ script = "res://path/to/script.rs"
 [/rigid_body_3d]
 
 [area3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [Area3D]
         enabled = true
@@ -413,7 +413,7 @@ script = "res://path/to/script.rs"
 [/area3d]
 
 [skeleton3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [Skeleton3D]
         skeleton = "res://path/to/model.glb:skeleton[0]"
@@ -427,7 +427,7 @@ script = "res://path/to/script.rs"
 [/skeleton3d]
 
 [bone_attachment_3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [BoneAttachment3D]
         skeleton = "SkeletonNodeName"
@@ -443,7 +443,7 @@ script = "res://path/to/script.rs"
 [/bone_attachment_3d]
 
 [particle_emitter_3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [ParticleEmitter3D]
         active = true
@@ -479,7 +479,7 @@ UI templates use ratio-only sizing.
 
 ```text
 [ui_box]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [UiBox]
         visible = true
@@ -506,7 +506,7 @@ script = "res://path/to/script.rs"
 [/ui_box]
 
 [ui_panel]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [UiPanel]
         fill = (0.11, 0.12, 0.14, 0.92)
@@ -539,7 +539,7 @@ script = "res://path/to/script.rs"
 [/ui_panel]
 
 [ui_button]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [UiButton]
         disabled = false
@@ -582,7 +582,7 @@ script = "res://path/to/script.rs"
 [/ui_button]
 
 [ui_label]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [UiLabel]
         text = ""
@@ -620,7 +620,7 @@ script = "res://path/to/script.rs"
 [/ui_label]
 
 [ui_text_box]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [UiTextBox]
         text = ""
@@ -669,7 +669,7 @@ script = "res://path/to/script.rs"
 [/ui_text_box]
 
 [ui_text_block]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [UiTextBlock]
         text = ""
@@ -718,7 +718,7 @@ script = "res://path/to/script.rs"
 [/ui_text_block]
 
 [ui_layout]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [UiLayout]
         mode = "h"
@@ -752,7 +752,7 @@ script = "res://path/to/script.rs"
 [/ui_layout]
 
 [ui_hlayout]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [UiHLayout]
         spacing = 0.0
@@ -785,7 +785,7 @@ script = "res://path/to/script.rs"
 [/ui_hlayout]
 
 [ui_vlayout]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [UiVLayout]
         spacing = 0.0
@@ -818,7 +818,7 @@ script = "res://path/to/script.rs"
 [/ui_vlayout]
 
 [ui_grid]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [UiGrid]
         columns = 1
@@ -850,7 +850,7 @@ script = "res://path/to/script.rs"
 [/ui_grid]
 
 [ui_tree_list]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [UiTreeList]
         # roots, branches, and collapsed are usually set from script with NodeID values.
@@ -890,14 +890,14 @@ Use it for socket nodes, like a sword in a hand.
 
 ```text
 [CharacterSkeleton]
-parent = Character
+parent = @Character
     [Skeleton3D]
         skeleton = "res://characters/hero.glb:skeleton[0]"
     [/Skeleton3D]
 [/CharacterSkeleton]
 
 [RightHandSocket]
-parent = Character
+parent = @Character
     [BoneAttachment3D]
         skeleton = "CharacterSkeleton"
         bone = 15
@@ -905,7 +905,7 @@ parent = Character
 [/RightHandSocket]
 
 [Sword]
-parent = RightHandSocket
+parent = @RightHandSocket
     [MeshInstance3D]
         mesh = "res://weapons/sword.glb:mesh[0]"
         material = "res://weapons/sword.pmat"
@@ -923,7 +923,7 @@ parent = RightHandSocket
 
 ```text
 [ambient_light_3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [AmbientLight3D]
         color = (1, 1, 1)
@@ -934,7 +934,7 @@ script = "res://path/to/script.rs"
 [/ambient_light_3d]
 
 [sky3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [Sky3D]
         day_colors = [
@@ -972,7 +972,7 @@ script = "res://path/to/script.rs"
 [/sky3d]
 
 [ray_light_3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [RayLight3D]
         color = (1, 1, 1)
@@ -990,7 +990,7 @@ script = "res://path/to/script.rs"
 [/ray_light_3d]
 
 [point_light_3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [PointLight3D]
         color = (1, 1, 1)
@@ -1008,7 +1008,7 @@ script = "res://path/to/script.rs"
 [/point_light_3d]
 
 [spot_light_3d]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [SpotLight3D]
         color = (1, 1, 1)
@@ -1028,7 +1028,7 @@ script = "res://path/to/script.rs"
 [/spot_light_3d]
 
 [animation_player]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [AnimationPlayer]
         animation = "res://path/to/clip.panim"
@@ -1040,14 +1040,14 @@ script = "res://path/to/script.rs"
 [/animation_player]
 
 [animation_tree]
-parent = PARENTKEY
+parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [AnimationTree]
         tree = "res://path/to/tree.panimtree"
         animations = [
-            { animation = "res://path/to/idle.panim", bindings = { Hero = PlayerRoot }, playback = loop, speed = 1.0, paused = false },
-            { animation = "res://path/to/run.panim", bindings = { Hero = PlayerRoot }, playback = loop, speed = 1.0, paused = false },
-            { animation = "res://path/to/aim.panim", bindings = { Hero = PlayerRoot }, playback = boomerang, speed = 1.0, paused = false },
+            { animation = "res://path/to/idle.panim", bindings = { Hero = @PlayerRoot }, playback = loop, speed = 1.0, paused = false },
+            { animation = "res://path/to/run.panim", bindings = { Hero = @PlayerRoot }, playback = loop, speed = 1.0, paused = false },
+            { animation = "res://path/to/aim.panim", bindings = { Hero = @PlayerRoot }, playback = boomerang, speed = 1.0, paused = false },
         ]
         speed = 1.0
         paused = false

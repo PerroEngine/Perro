@@ -53,5 +53,5 @@ Binding note:
 
 - `ClipObjectName` is the object key declared in `.panim [Objects]` (without `@`).
 - Bind each clip object to a runtime node with the expected node type for that track data.
-- scene authoring bindings use map entries: `{ ClipObjectName = SceneKey }` or `{ "ClipObjectName": SceneKey }`.
+- scene authoring bindings use map entries: `{ ClipObjectName = @SceneKey }` or `{ "ClipObjectName": @SceneKey }`.
 

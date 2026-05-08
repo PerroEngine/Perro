@@ -7,6 +7,10 @@ The `.panimtree` owns slot names and graph connections.
 The scene `AnimationTree` node owns runtime clip IDs and per-slot bindings.
 Slot bindings connect `.panim` object names to scene node keys.
 
+Sigils in scene-side bindings:
+- `$` => value vars.
+- `@` => node refs (`NodeID` targets), same as scene parent/root refs.
+
 ## Example
 
 ```ini
@@ -195,9 +199,9 @@ Scene node template:
         speed = 1.0
         paused = false
         animations = [
-            { animation = "res://animations/idle.panim", bindings = { Hero = PlayerRoot }, playback = loop, speed = 1.0, paused = false },
-            { animation = "res://animations/run.panim", bindings = { Hero = PlayerRoot }, playback = loop, speed = 1.0, paused = false },
-            { animation = "res://animations/aim.panim", bindings = { Hero = PlayerRoot }, playback = boomerang, speed = 1.0, paused = false },
+            { animation = "res://animations/idle.panim", bindings = { Hero = @PlayerRoot }, playback = loop, speed = 1.0, paused = false },
+            { animation = "res://animations/run.panim", bindings = { Hero = @PlayerRoot }, playback = loop, speed = 1.0, paused = false },
+            { animation = "res://animations/aim.panim", bindings = { Hero = @PlayerRoot }, playback = boomerang, speed = 1.0, paused = false },
         ]
     [/AnimationTree]
 [/AnimTree]
@@ -251,9 +255,9 @@ Bind it to a real scene node in `animations`:
     [AnimationTree]
         tree = "res://animations/player.panimtree"
         animations = [
-            { animation = "res://animations/idle.panim", bindings = { Hero = PlayerRoot }, playback = loop },
-            { animation = "res://animations/run.panim", bindings = { Hero = PlayerRoot }, playback = loop },
-            { animation = "res://animations/aim.panim", bindings = { Hero = PlayerRoot }, playback = boomerang },
+            { animation = "res://animations/idle.panim", bindings = { Hero = @PlayerRoot }, playback = loop },
+            { animation = "res://animations/run.panim", bindings = { Hero = @PlayerRoot }, playback = loop },
+            { animation = "res://animations/aim.panim", bindings = { Hero = @PlayerRoot }, playback = boomerang },
         ]
     [/AnimationTree]
 [/anim_tree]
@@ -362,9 +366,9 @@ Scene:
     [AnimationTree]
         tree = "res://animations/player.panimtree"
         animations = [
-            { animation = "res://animations/idle.panim", bindings = { Hero = PlayerRoot }, playback = loop, speed = 1.0 },
-            { animation = "res://animations/run.panim", bindings = { Hero = PlayerRoot }, playback = loop, speed = 1.0 },
-            { animation = "res://animations/aim.panim", bindings = { Hero = PlayerRoot }, playback = boomerang, speed = 0.8 },
+            { animation = "res://animations/idle.panim", bindings = { Hero = @PlayerRoot }, playback = loop, speed = 1.0 },
+            { animation = "res://animations/run.panim", bindings = { Hero = @PlayerRoot }, playback = loop, speed = 1.0 },
+            { animation = "res://animations/aim.panim", bindings = { Hero = @PlayerRoot }, playback = boomerang, speed = 0.8 },
         ]
     [/AnimationTree]
 [/AnimTree]

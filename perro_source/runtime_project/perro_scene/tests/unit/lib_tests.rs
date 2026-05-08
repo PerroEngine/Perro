@@ -11,7 +11,7 @@ fn find_node<'a>(scene: &'a Scene, key: &str) -> &'a SceneNodeEntry {
 #[test]
 fn parse_basic_scene() {
     let src = r#"
-    $root = main
+    $root = @main
 
     [main]
     name = "Root Node"
@@ -43,7 +43,7 @@ fn parse_basic_scene() {
 #[test]
 fn parse_object_literal() {
     let src = r#"
-    $root = main
+    $root = @main
     $mat = { roughness: 1.0, metallic: 0.2 }
 
     [main]
@@ -161,7 +161,7 @@ fn parse_script_clear_options() {
 #[test]
 fn parse_root_of_without_type_block() {
     let src = r#"
-    $root = main
+    $root = @main
     [main]
     root_of = "res://base.scn"
     [/main]
@@ -176,7 +176,7 @@ fn parse_root_of_without_type_block() {
 #[test]
 fn parse_header_only_node_without_type_block_defaults_to_node() {
     let src = r#"
-    $root = root
+    $root = @root
     [relationship_manager]
     parent = @root
     script = "res://scripts/relationship_manager.rs"
@@ -206,7 +206,7 @@ fn parse_header_only_node_without_type_block_defaults_to_node() {
 #[test]
 fn scene_doc_writes_valid_scene_and_syncs_children() {
     let src = r#"
-    $root = root
+    $root = @root
     $shared = { color: (1, 0, 0, 1), roughness: 0.5 }
 
     [root]
@@ -215,7 +215,7 @@ fn scene_doc_writes_valid_scene_and_syncs_children() {
     [/root]
 
     [child]
-    parent = root
+    parent = @root
     [MeshInstance3D]
         material = $shared
     [/MeshInstance3D]
@@ -245,7 +245,7 @@ fn scene_doc_writes_valid_scene_and_syncs_children() {
 #[test]
 fn scene_doc_deduplicates_repeated_values() {
     let src = r#"
-    $root = a
+    $root = @a
 
     [a]
     [MeshInstance3D]

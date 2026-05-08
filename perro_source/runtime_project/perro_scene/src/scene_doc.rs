@@ -99,6 +99,7 @@ impl<'a> SceneDocWriter<'a> {
         let mut out = String::new();
         if let Some(root) = &self.doc.scene.root {
             out.push_str("$root = ");
+            out.push('@');
             out.push_str(self.doc.scene.key_name_or_id(*root).as_ref());
             out.push('\n');
         }

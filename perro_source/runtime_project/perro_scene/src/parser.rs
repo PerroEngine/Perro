@@ -357,17 +357,13 @@ impl<'a> Parser<'a> {
                     self.expect(Token::Equals);
 
                     if name == "root" {
-                        match &self.current {
-                            Token::Ident(key) => {
-                                let k = key.clone();
-                                self.advance();
-                                root_name = Some(k.clone());
-                                self.vars.insert(
-                                    "root".to_string(),
-                                    SceneValue::Key(SceneValueKey::from(k)),
-                                );
+                        match self.parse_value() {
+                            SceneValue::Key(k) => {
+                                let key = k.to_string();
+                                root_name = Some(key.clone());
+                                self.vars.insert("root".to_string(), SceneValue::Key(k));
                             }
-                            _ => panic!("root must be a scene key"),
+                            _ => panic!("root must be a node ref like @Main"),
                         }
                     } else {
                         let value = self.parse_value();
@@ -417,7 +413,7 @@ impl<'a> Parser<'a> {
                             "parent" => {
                                 parent = Some(match v {
                                     SceneValue::Key(k) => k.to_string(),
-                                    _ => panic!("parent must be a key"),
+                                    _ => panic!("parent must be a node ref like @Parent"),
                                 })
                             }
                             "script" => match v {

@@ -2,6 +2,10 @@
 
 Perro animation has two resource files and two scene nodes.
 
+Sigils:
+- `$` => value var define/use.
+- `@` => node ref (scene key / NodeID target), in scenes + animation bindings.
+
 - `.panim`: one animation clip.
 - `.panimtree`: one animation graph.
 - `AnimationPlayer`: plays one `.panim`.
@@ -53,7 +57,7 @@ Use `AnimationPlayer` when one clip drives one set of bindings.
 [IdlePlayer]
     [AnimationPlayer]
         animation = "res://animations/idle.panim"
-        bindings = { Hero = Hero }
+        bindings = { Hero = @Hero }
         speed = 1.0
         paused = false
         playback = loop
@@ -204,9 +208,9 @@ The scene node supplies:
     [AnimationTree]
         tree = "res://animations/player.panimtree"
         animations = [
-            { animation = "res://animations/idle.panim", bindings = { Hero = Hero }, playback = loop, speed = 1.0, paused = false },
-            { animation = "res://animations/run.panim", bindings = { Hero = Hero }, playback = loop, speed = 1.0, paused = false },
-            { animation = "res://animations/aim.panim", bindings = { Hero = Hero }, playback = boomerang, speed = 1.0, paused = false },
+            { animation = "res://animations/idle.panim", bindings = { Hero = @Hero }, playback = loop, speed = 1.0, paused = false },
+            { animation = "res://animations/run.panim", bindings = { Hero = @Hero }, playback = loop, speed = 1.0, paused = false },
+            { animation = "res://animations/aim.panim", bindings = { Hero = @Hero }, playback = boomerang, speed = 1.0, paused = false },
         ]
         speed = 1.0
         paused = false
