@@ -78,6 +78,16 @@ pub struct AnimationObjectKey {
     pub value: AnimationTrackValue,
 }
 
+impl AnimationObjectKey {
+    #[inline]
+    pub fn sampled_value(&self) -> Option<&AnimationTrackValue> {
+        match self.mode {
+            AnimationKeyMode::Closed => Some(&self.value),
+            AnimationKeyMode::Open => None,
+        }
+    }
+}
+
 impl Default for AnimationObjectKey {
     fn default() -> Self {
         Self {

@@ -743,4 +743,5 @@ fps = 30
         .find(|t| matches!(t.field, NodeField::Node2D(Node2DField::Position)))
         .expect("position track");
     assert_eq!(track.keys[0].mode, AnimationKeyMode::Open);
+    assert!(track.keys[0].sampled_value().is_none());
 }
