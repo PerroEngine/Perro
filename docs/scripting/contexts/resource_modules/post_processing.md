@@ -27,6 +27,7 @@ Behavior:
 - Global post-processing is applied to the full composed frame.
 - Order is: camera post-processing chain, then global post-processing chain, then visual accessibility.
 - Effects use the same `PostProcessEffect` / `PostProcessSet` types as camera post-processing.
+- `PostProcessSet` stores `Vec<PostProcessEntry>`; each entry has `name` + `effect`.
 
 Example:
 

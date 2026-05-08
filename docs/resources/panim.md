@@ -111,7 +111,7 @@ Inside `[FrameN?]`:
 
 Open key behavior:
 
-- open keys should preserve continuity (no forced snap to authored start value)
+- open keys preserve continuity (no forced snap to authored value)
 - interpolation segment starts from the runtime value at playback time
 - open keys are runtime-dependent and not deterministic pose samples by themselves
 - open keys may still carry interpolation/easing metadata (`.interp`, `.ease`)
@@ -258,7 +258,6 @@ Object-scoped events:
 ```
 
 Event notes:
-
 
 - params/value support direct object references:
 - `@Object` resolves to that object's bound runtime `NodeID`.

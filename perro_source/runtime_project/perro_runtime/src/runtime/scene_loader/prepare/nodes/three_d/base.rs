@@ -34,6 +34,16 @@ fn build_skeleton_3d(data: &SceneDefNodeData) -> Skeleton3D {
     node
 }
 
+fn build_bone_attachment_3d(data: &SceneDefNodeData) -> BoneAttachment3D {
+    let mut node = BoneAttachment3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_bone_attachment_3d_fields(&mut node, &data.fields);
+    node
+}
+
 fn apply_node_3d_data(target: &mut Node3D, data: &SceneDefNodeData) {
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(target, base);
@@ -119,6 +129,17 @@ fn apply_multi_mesh_instance_3d_fields(
 }
 
 fn apply_skeleton_3d_fields(_node: &mut Skeleton3D, _fields: &[SceneObjectField]) {}
+
+fn apply_bone_attachment_3d_fields(node: &mut BoneAttachment3D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "bone" | "bone_index" => {
+            if let Some(v) = as_i32(value) {
+                node.bone_index = v;
+            }
+        }
+        _ => {}
+    });
+}
 
 fn extract_mesh_source(data: &SceneDefNodeData) -> Option<String> {
     if data.ty != "MeshInstance3D" && data.ty != "MultiMeshInstance3D" {
@@ -370,5 +391,19 @@ fn extract_mesh_skeleton_target(data: &SceneDefNodeData) -> Option<String> {
             == Some(NodeField::MeshInstance3D(MeshInstance3DField::Skeleton)))
             .then(|| as_asset_source(value))
             .flatten()
+    })
+}
+
+fn extract_bone_attachment_skeleton_target(data: &SceneDefNodeData) -> Option<String> {
+    if data.ty != "BoneAttachment3D" {
+        return None;
+    }
+    data.fields.iter().find_map(|(name, value)| {
+        (resolve_node_field("BoneAttachment3D", name)
+            == Some(NodeField::BoneAttachment3D(
+                BoneAttachment3DField::Skeleton,
+            )))
+        .then(|| as_asset_source(value))
+        .flatten()
     })
 }

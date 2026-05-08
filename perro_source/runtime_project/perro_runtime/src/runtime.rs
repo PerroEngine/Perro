@@ -236,6 +236,7 @@ impl Runtime {
         self.schedules.snapshot_update(&self.scripts);
         self.run_update_schedule();
         self.run_internal_update_schedule();
+        self.propagate_pending_transform_dirty();
     }
 
     #[inline]
@@ -256,6 +257,7 @@ impl Runtime {
         let internal_start = std::time::Instant::now();
         self.run_internal_update_schedule();
         let internal_update = internal_start.elapsed();
+        self.propagate_pending_transform_dirty();
 
         RuntimeUpdateTiming {
             start_schedule,
@@ -273,6 +275,7 @@ impl Runtime {
         self.run_fixed_schedule();
         self.physics_fixed_step();
         self.run_internal_fixed_update_schedule();
+        self.propagate_pending_transform_dirty();
     }
 
     #[inline]
@@ -293,6 +296,7 @@ impl Runtime {
         let internal_fixed_start = Instant::now();
         self.run_internal_fixed_update_schedule();
         let internal_fixed_update = internal_fixed_start.elapsed();
+        self.propagate_pending_transform_dirty();
 
         RuntimeFixedUpdateTiming {
             snapshot_update,

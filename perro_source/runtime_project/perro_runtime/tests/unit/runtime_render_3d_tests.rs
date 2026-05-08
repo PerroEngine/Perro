@@ -397,9 +397,9 @@ fn active_ambient_light_3d_emits_set_ambient_light_command() {
 fn active_sky_3d_emits_set_sky_command() {
     let mut runtime = Runtime::new();
     let mut sky = Sky3D::new();
-    sky.day_colors = std::borrow::Cow::Owned(vec![[0.4, 0.6, 0.9], [0.9, 0.95, 1.0]]);
-    sky.evening_colors = std::borrow::Cow::Owned(vec![[0.95, 0.45, 0.22], [0.7, 0.2, 0.35]]);
-    sky.night_colors = std::borrow::Cow::Owned(vec![[0.01, 0.02, 0.05], [0.04, 0.08, 0.18]]);
+    sky.day_colors = vec![[0.4, 0.6, 0.9], [0.9, 0.95, 1.0]];
+    sky.evening_colors = vec![[0.95, 0.45, 0.22], [0.7, 0.2, 0.35]];
+    sky.night_colors = vec![[0.01, 0.02, 0.05], [0.04, 0.08, 0.18]];
     sky.time.time_of_day = 0.67;
     sky.time.paused = true;
     sky.time.scale = 0.25;

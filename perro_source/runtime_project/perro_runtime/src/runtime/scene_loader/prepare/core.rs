@@ -4,6 +4,7 @@ use perro_io::load_asset;
 use perro_nodes::{
     ambient_light_3d::AmbientLight3D,
     animation_player::AnimationPlayer,
+    bone_attachment_3d::BoneAttachment3D,
     camera_2d::Camera2D,
     camera_3d::{Camera3D, CameraProjection},
     mesh_instance_3d::{MaterialParamOverride, MaterialParamOverrideValue, MeshInstance3D, MeshSurfaceBinding},
@@ -23,13 +24,14 @@ use perro_nodes::{
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
-    AnimationPlayerField, Area2DField, Area3DField, Camera2DField, Camera3DField,
-    CollisionShape2DField, CollisionShape3DField, Light3DField, MeshInstance3DField, Node2DField,
-    Node3DField, NodeField, Parser, ParticleEmitter3DField, PointLight3DField,
-    RayLight3DField, RigidBody2DField, RigidBody3DField, Scene, SceneFieldIterRef,
-    SceneKey, SceneNodeData as SceneDefNodeData, SceneNodeEntry as SceneDefNodeEntry,
-    SceneObjectField, SceneValue, Skeleton3DField, Sky3DField, SpotLight3DField, Sprite2DField,
-    StaticBody2DField, StaticBody3DField, resolve_node_field,
+    AnimationPlayerField, Area2DField, Area3DField, BoneAttachment3DField, Camera2DField,
+    Camera3DField, CollisionShape2DField, CollisionShape3DField, Light3DField,
+    MeshInstance3DField, Node2DField, Node3DField, NodeField, Parser, ParticleEmitter3DField,
+    PointLight3DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
+    SceneFieldIterRef, SceneKey, SceneNodeData as SceneDefNodeData,
+    SceneNodeEntry as SceneDefNodeEntry, SceneObjectField, SceneValue, Skeleton3DField,
+    Sky3DField, SpotLight3DField, Sprite2DField, StaticBody2DField, StaticBody3DField,
+    resolve_node_field,
 };
 use perro_structs::{
     Color, CustomPostParam, CustomPostParamValue, PostProcessEffect, PostProcessSet, Quaternion,
@@ -82,6 +84,7 @@ pub(super) struct PendingNode {
     pub(super) material_surfaces: Vec<PendingSurfaceMaterial>,
     pub(super) skeleton_source: Option<String>,
     pub(super) mesh_skeleton_target: Option<u32>,
+    pub(super) bone_attachment_skeleton_target: Option<u32>,
     pub(super) animation_bindings: Vec<(String, u32)>,
 }
 
@@ -96,6 +99,7 @@ type SceneNodeExtraction = (
     Option<String>,
     Option<String>,
     Vec<PendingSurfaceMaterial>,
+    Option<String>,
     Option<String>,
     Option<String>,
     Vec<(String, String)>,
@@ -300,6 +304,7 @@ fn push_entry_prepared(
         material_surfaces,
         skeleton_source,
         mesh_skeleton_target,
+        bone_attachment_skeleton_target,
         animation_bindings,
     ) = scene_node_from_entry(entry)?;
 
@@ -314,6 +319,9 @@ fn push_entry_prepared(
         material_surfaces,
         skeleton_source,
         mesh_skeleton_target: mesh_skeleton_target
+            .and_then(|v| scene_key_by_name(scene, v.as_str()))
+            .map(|target| remap_key(target, key_map)),
+        bone_attachment_skeleton_target: bone_attachment_skeleton_target
             .and_then(|v| scene_key_by_name(scene, v.as_str()))
             .map(|target| remap_key(target, key_map)),
         animation_bindings: animation_bindings
@@ -562,6 +570,7 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
     let material_surfaces_explicit = extract_material_surfaces(&entry.data);
     let skeleton_source = extract_skeleton_source(&entry.data);
     let mesh_skeleton_target = extract_mesh_skeleton_target(&entry.data);
+    let bone_attachment_skeleton_target = extract_bone_attachment_skeleton_target(&entry.data);
     let animation_bindings = extract_animation_scene_bindings(&entry.data);
     let model_source = extract_model_source(&entry.data);
     let (mesh_source, material_surfaces) = if let Some(model) = model_source.as_ref() {
@@ -583,6 +592,7 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
         material_surfaces,
         skeleton_source,
         mesh_skeleton_target,
+        bone_attachment_skeleton_target,
         animation_bindings,
     ))
 }
@@ -611,6 +621,9 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "Area3D" => Ok(SceneNodeData::Area3D(build_area_3d(data))),
         "RigidBody3D" => Ok(SceneNodeData::RigidBody3D(build_rigid_body_3d(data))),
         "Skeleton3D" => Ok(SceneNodeData::Skeleton3D(build_skeleton_3d(data))),
+        "BoneAttachment3D" => Ok(SceneNodeData::BoneAttachment3D(
+            build_bone_attachment_3d(data),
+        )),
         "Camera3D" => Ok(SceneNodeData::Camera3D(build_camera_3d(data))),
         "ParticleEmitter3D" => Ok(SceneNodeData::ParticleEmitter3D(build_particle_emitter_3d(
             data,

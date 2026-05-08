@@ -121,10 +121,8 @@ fn write_live_scene_doc(doc: &perro_scene::SceneDoc) -> Result<String, String> {
     let root_key = live_doc.scene.root;
     for node in live_doc.scene.nodes.to_mut() {
         node.script = None;
-        node.script_hash = None;
         node.clear_script = true;
         node.root_of = None;
-        node.root_of_hash = None;
         if let Some(root_key) = root_key {
             if node.parent.is_none() && node.key != root_key {
                 node.parent = Some(root_key);

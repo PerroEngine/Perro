@@ -46,7 +46,7 @@ pub enum PostProcessEffect {
     },
     Custom {
         shader_path: Cow<'static, str>,
-        params: Cow<'static, [CustomPostParam]>,
+        params: Vec<CustomPostParam>,
     },
 }
 
@@ -73,17 +73,36 @@ impl CustomPostParam {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct PostProcessEntry {
+    pub name: Option<Cow<'static, str>>,
+    pub effect: PostProcessEffect,
+}
+
+impl PostProcessEntry {
+    #[inline]
+    pub fn named(name: impl Into<Cow<'static, str>>, effect: PostProcessEffect) -> Self {
+        Self {
+            name: Some(name.into()),
+            effect,
+        }
+    }
+
+    #[inline]
+    pub fn unnamed(effect: PostProcessEffect) -> Self {
+        Self { name: None, effect }
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub struct PostProcessSet {
-    effects: Cow<'static, [PostProcessEffect]>,
-    names: Cow<'static, [Option<Cow<'static, str>>]>,
+    entries: Vec<PostProcessEntry>,
 }
 
 impl fmt::Debug for PostProcessSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PostProcessSet")
-            .field("effects", &self.effects)
-            .field("names", &self.names)
+            .field("entries", &self.entries)
             .finish()
     }
 }
@@ -95,19 +114,20 @@ impl Default for PostProcessSet {
 }
 
 impl PostProcessSet {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            effects: Cow::Borrowed(&[]),
-            names: Cow::Borrowed(&[]),
+            entries: Vec::new(),
         }
     }
 
     pub fn from_effects(effects: Vec<PostProcessEffect>) -> Self {
-        let len = effects.len();
         Self {
-            effects: Cow::Owned(effects),
-            names: Cow::Owned(vec![None; len]),
+            entries: effects.into_iter().map(PostProcessEntry::unnamed).collect(),
         }
+    }
+
+    pub fn from_entries(entries: Vec<PostProcessEntry>) -> Self {
+        Self { entries }
     }
 
     pub fn from_pairs(
@@ -120,113 +140,109 @@ impl PostProcessSet {
             names.truncate(effects.len());
         }
         Self {
-            effects: Cow::Owned(effects),
-            names: Cow::Owned(names),
+            entries: effects
+                .into_iter()
+                .zip(names)
+                .map(|(effect, name)| PostProcessEntry { name, effect })
+                .collect(),
         }
     }
 
-    pub fn as_slice(&self) -> &[PostProcessEffect] {
-        self.effects.as_ref()
+    pub fn entries(&self) -> &[PostProcessEntry] {
+        &self.entries
     }
 
-    pub fn as_slice_mut(&mut self) -> &mut [PostProcessEffect] {
-        self.effects.to_mut().as_mut_slice()
+    pub fn entries_mut(&mut self) -> &mut [PostProcessEntry] {
+        &mut self.entries
+    }
+
+    pub fn effects(&self) -> impl Iterator<Item = &PostProcessEffect> {
+        self.entries.iter().map(|entry| &entry.effect)
+    }
+
+    pub fn effects_mut(&mut self) -> impl Iterator<Item = &mut PostProcessEffect> {
+        self.entries.iter_mut().map(|entry| &mut entry.effect)
+    }
+
+    pub fn to_effects_vec(&self) -> Vec<PostProcessEffect> {
+        self.effects().cloned().collect()
     }
 
     pub fn len(&self) -> usize {
-        self.effects.len()
+        self.entries.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.effects.is_empty()
+        self.entries.is_empty()
     }
 
     pub fn names(&self) -> impl Iterator<Item = Option<&str>> {
-        self.names.iter().map(|n| n.as_deref())
+        self.entries.iter().map(|entry| entry.name.as_deref())
     }
 
     pub fn get(&self, name: &str) -> Option<&PostProcessEffect> {
-        let idx = self.names.iter().position(|n| n.as_deref() == Some(name))?;
-        self.effects.get(idx)
+        self.entries
+            .iter()
+            .find(|entry| entry.name.as_deref() == Some(name))
+            .map(|entry| &entry.effect)
     }
 
     pub fn get_mut(&mut self, name: &str) -> Option<&mut PostProcessEffect> {
-        let idx = self.names.iter().position(|n| n.as_deref() == Some(name))?;
-        self.effects.to_mut().get_mut(idx)
+        self.entries
+            .iter_mut()
+            .find(|entry| entry.name.as_deref() == Some(name))
+            .map(|entry| &mut entry.effect)
     }
 
     pub fn add(&mut self, name: impl Into<Cow<'static, str>>, effect: PostProcessEffect) {
         let name = name.into();
-        self.sync_lengths();
         if let Some(idx) = self
-            .names
+            .entries
             .iter()
-            .position(|n| n.as_deref() == Some(name.as_ref()))
+            .position(|entry| entry.name.as_deref() == Some(name.as_ref()))
         {
-            self.effects.to_mut()[idx] = effect;
+            self.entries[idx].effect = effect;
         } else {
-            self.effects.to_mut().push(effect);
-            self.names.to_mut().push(Some(name));
+            self.entries.push(PostProcessEntry::named(name, effect));
         }
     }
 
     pub fn add_unnamed(&mut self, effect: PostProcessEffect) {
-        self.sync_lengths();
-        self.effects.to_mut().push(effect);
-        self.names.to_mut().push(None);
+        self.entries.push(PostProcessEntry::unnamed(effect));
     }
 
     pub fn remove(&mut self, name: &str) -> Option<PostProcessEffect> {
-        let idx = self.names.iter().position(|n| n.as_deref() == Some(name))?;
+        let idx = self
+            .entries
+            .iter()
+            .position(|entry| entry.name.as_deref() == Some(name))?;
         self.remove_index(idx)
     }
 
     pub fn remove_index(&mut self, index: usize) -> Option<PostProcessEffect> {
-        self.sync_lengths();
-        if index >= self.effects.len() {
+        if index >= self.entries.len() {
             return None;
         }
-        self.names.to_mut().remove(index);
-        Some(self.effects.to_mut().remove(index))
+        Some(self.entries.remove(index).effect)
     }
 
     pub fn rename(&mut self, old: &str, new: impl Into<Cow<'static, str>>) -> bool {
-        let idx = self.names.iter().position(|n| n.as_deref() == Some(old));
+        let idx = self
+            .entries
+            .iter()
+            .position(|entry| entry.name.as_deref() == Some(old));
         let Some(idx) = idx else { return false };
-        self.names.to_mut()[idx] = Some(new.into());
+        self.entries[idx].name = Some(new.into());
         true
     }
 
     pub fn clear(&mut self) {
-        self.effects = Cow::Borrowed(&[]);
-        self.names = Cow::Borrowed(&[]);
-    }
-
-    fn sync_lengths(&mut self) {
-        let effect_len = self.effects.len();
-        let names = self.names.to_mut();
-        if names.len() < effect_len {
-            names.resize_with(effect_len, || None);
-        } else if names.len() > effect_len {
-            names.truncate(effect_len);
-        }
+        self.entries.clear();
     }
 }
 
 impl From<Vec<PostProcessEffect>> for PostProcessSet {
     fn from(effects: Vec<PostProcessEffect>) -> Self {
         Self::from_effects(effects)
-    }
-}
-
-impl AsRef<[PostProcessEffect]> for PostProcessSet {
-    fn as_ref(&self) -> &[PostProcessEffect] {
-        self.as_slice()
-    }
-}
-
-impl AsMut<[PostProcessEffect]> for PostProcessSet {
-    fn as_mut(&mut self) -> &mut [PostProcessEffect] {
-        self.as_slice_mut()
     }
 }

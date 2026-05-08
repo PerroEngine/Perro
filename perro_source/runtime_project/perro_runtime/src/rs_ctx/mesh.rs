@@ -26,6 +26,7 @@ impl MeshAPI for RuntimeResourceApi {
         let id = state.allocate_mesh_id();
         let source = format!("runtime://mesh/{}:{}", id.index(), id.generation());
         state.mesh_data_by_id.insert(id, data.clone());
+        state.mesh_source_by_id.insert(id, source.clone());
         state.queued_commands.push(RenderCommand::Resource(
             ResourceCommand::CreateRuntimeMesh {
                 request,
@@ -75,6 +76,7 @@ impl MeshAPI for RuntimeResourceApi {
         let request = state.allocate_request();
         let id = state.allocate_mesh_id();
         state.mesh_by_source.insert(source_hash, id);
+        state.mesh_source_by_id.insert(id, source.to_string());
         state.mesh_pending_by_source.insert(source_hash, request);
         state
             .mesh_pending_source_by_request
@@ -130,6 +132,7 @@ impl MeshAPI for RuntimeResourceApi {
         let request = state.allocate_request();
         let id = state.allocate_mesh_id();
         state.mesh_by_source.insert(source_hash, id);
+        state.mesh_source_by_id.insert(id, source.to_string());
         state.mesh_pending_by_source.insert(source_hash, request);
         state
             .mesh_pending_source_by_request
@@ -161,6 +164,7 @@ impl MeshAPI for RuntimeResourceApi {
             }
             state.mesh_by_source.remove(&source_hash);
         }
+        state.mesh_source_by_id.remove(&id);
         let _ = state.free_mesh_id(id);
         state
             .queued_commands
@@ -192,6 +196,18 @@ impl RuntimeResourceApi {
             })
     }
 
+    pub(crate) fn mesh_data(&self, mesh: MeshID) -> Option<Mesh3D> {
+        let canonical = self.canonical_mesh_id(mesh);
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state.mesh_data_by_id.get(&canonical).cloned()
+    }
+
+    pub(crate) fn mesh_source(&self, mesh: MeshID) -> Option<String> {
+        let canonical = self.canonical_mesh_id(mesh);
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state.mesh_source_by_id.get(&canonical).cloned()
+    }
+
     pub(crate) fn register_loaded_mesh_source(&self, source: &str, id: MeshID) {
         let normalized = normalize_source_slashes(source);
         let source = normalized.as_ref();
@@ -201,6 +217,7 @@ impl RuntimeResourceApi {
             return;
         }
         state.mesh_by_source.insert(source_hash, id);
+        state.mesh_source_by_id.insert(id, source.to_string());
         if let Some(request) = state.mesh_pending_by_source.remove(&source_hash) {
             state.mesh_pending_source_by_request.remove(&request);
             state.mesh_pending_id_by_request.remove(&request);

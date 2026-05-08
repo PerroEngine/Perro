@@ -1,5 +1,6 @@
 use crate::ambient_light_3d::AmbientLight3D;
 use crate::animation_player::AnimationPlayer;
+use crate::bone_attachment_3d::BoneAttachment3D;
 use crate::camera_2d::Camera2D;
 use crate::camera_3d::Camera3D;
 use crate::mesh_instance_3d::MeshInstance3D;
@@ -214,8 +215,8 @@ macro_rules! define_scene_nodes {
             pub id: NodeID,
             pub name: Cow<'static, str>,
             pub parent: NodeID,
-            pub children: Option<Cow<'static, [NodeID]>>,
-            pub tags: Option<Cow<'static, [TagID]>>,
+            pub children: Vec<NodeID>,
+            pub tags: Vec<TagID>,
         }
 
         #[derive(Clone, Debug)]
@@ -241,13 +242,13 @@ macro_rules! define_scene_nodes {
         }
 
         impl SceneNode {
-            pub const fn new(data: SceneNodeData) -> Self {
+            pub fn new(data: SceneNodeData) -> Self {
                 Self {
                     id: NodeID::nil(),
                     name: Cow::Borrowed("Node"),
                     parent: NodeID::nil(),
-                    children: None,
-                    tags: None,
+                    children: Vec::new(),
+                    tags: Vec::new(),
                     data,
                 }
             }
@@ -272,31 +273,25 @@ macro_rules! define_scene_nodes {
             }
 
             pub fn get_children_ids(&self) -> &[NodeID] {
-                self.children
-                    .as_ref()
-                    .map(|cow| cow.as_ref())
-                    .unwrap_or(&[])
+                &self.children
             }
 
             pub fn set_children_ids<C>(&mut self, children: Option<C>)
             where
-                C: Into<Cow<'static, [NodeID]>>,
+                C: Into<Vec<NodeID>>,
             {
-                self.children = children.map(Into::into);
+                self.children = children.map(Into::into).unwrap_or_default();
             }
 
             pub fn get_tag_ids(&self) -> &[TagID] {
-                self.tags
-                    .as_ref()
-                    .map(|cow| cow.as_ref())
-                    .unwrap_or(&[])
+                &self.tags
             }
 
             pub fn set_tag_ids<T>(&mut self, tags: Option<T>)
             where
-                T: Into<Cow<'static, [TagID]>>,
+                T: Into<Vec<TagID>>,
             {
-                self.tags = tags.map(Into::into);
+                self.tags = tags.map(Into::into).unwrap_or_default();
             }
 
             pub const fn node_type(&self) -> NodeType {
@@ -349,20 +344,15 @@ macro_rules! define_scene_nodes {
             }
 
             pub fn add_child(&mut self, child: NodeID) {
-                self.children
-                    .get_or_insert_with(|| Cow::Owned(Vec::new()))
-                    .to_mut()
-                    .push(child);
+                self.children.push(child);
             }
 
             pub fn remove_child(&mut self, child: NodeID) {
-                if let Some(children) = &mut self.children {
-                    children.to_mut().retain(|&c| c != child);
-                }
+                self.children.retain(|&c| c != child);
             }
 
             pub fn clear_children(&mut self) {
-                self.children = None;
+                self.children.clear();
             }
 
             pub fn children_slice(&self) -> &[NodeID] {
@@ -370,20 +360,15 @@ macro_rules! define_scene_nodes {
             }
 
             pub fn add_tag(&mut self, tag: TagID) {
-                self.tags
-                    .get_or_insert_with(|| Cow::Owned(Vec::new()))
-                    .to_mut()
-                    .push(tag);
+                self.tags.push(tag);
             }
 
             pub fn remove_tag(&mut self, tag: TagID) {
-                if let Some(tags) = &mut self.tags {
-                    tags.to_mut().retain(|&t| t != tag);
-                }
+                self.tags.retain(|&t| t != tag);
             }
 
             pub fn clear_tags(&mut self) {
-                self.tags = None;
+                self.tags.clear();
             }
 
             pub fn has_tag(&self, tag: TagID) -> bool {
@@ -822,6 +807,7 @@ define_scene_nodes! {
         Area3D => (Node3D, Area3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         RigidBody3D => (Node3D, RigidBody3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         Skeleton3D => (Node3D, Skeleton3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        BoneAttachment3D => (Node3D, BoneAttachment3D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
         ParticleEmitter3D => (Node3D, ParticleEmitter3D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         //Lights
         AmbientLight3D => (None, AmbientLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

@@ -25,7 +25,7 @@ pub struct Camera2D {
 }
 
 impl Camera2D {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             base: Node2D::new(),
             zoom: 0f32,

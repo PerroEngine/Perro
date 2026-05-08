@@ -92,14 +92,14 @@ post_processing = {
 
 ## Programmatic (Scripts)
 
-`post_processing` is a `PostProcessSet` that stores an ordered list of effects with optional
-names. You can add, remove, rename, and query by name. Rendering still uses the underlying slice.
+`post_processing` is a `PostProcessSet` that stores a `Vec<PostProcessEntry>`.
+Each entry ties one optional name to one effect. You can add, remove, rename, and query by name.
 
-Borrowed (static slice):
+Build from owned effects:
 
 ```rust
 
-static FX: &[PostProcessEffect] = &[
+let fx = vec![
     PostProcessEffect::Blur { strength: 2.0 },
     PostProcessEffect::Pixelate { size: 5.0 },
     PostProcessEffect::Vignette {
@@ -115,11 +115,11 @@ static FX: &[PostProcessEffect] = &[
 ];
 
 with_node_mut!(ctx.run, Camera3D, cam_id, |cam| {
-    cam.post_processing = PostProcessSet::from_effects(FX.to_vec());
+    cam.post_processing = PostProcessSet::from_effects(fx);
 });
 ```
 
-Owned:
+Add a named effect:
 
 ```rust
 
@@ -168,6 +168,17 @@ with_node!(ctx.run, Camera3D, cam_id, |cam| {
 });
 ```
 
+Read entries:
+
+```rust
+with_node!(ctx.run, Camera3D, cam_id, |cam| {
+    for entry in cam.post_processing.entries() {
+        let name = entry.name.as_deref().unwrap_or("<unnamed>");
+        log::info!("post fx: {name}");
+    }
+});
+```
+
 ## Custom Post Shaders (`.wgsl`)
 
 Custom post effects mirror the custom material workflow and are defined by a `.wgsl` file. Your
@@ -185,7 +196,7 @@ The engine provides a prelude with:
 - `custom_params` (optional `vec4<f32>` array from `params`)
 
 Use `type = "custom"` with `shader = "res://path/to/shader.wgsl"` in scenes, or
-`PostProcessEffect::Custom { shader_path, params }` in code.
+`PostProcessEffect::Custom { shader_path, params }` in code. `params` is a `Vec<CustomPostParam>`.
 
 Performance notes:
 - Post uniforms are written with per-pass dynamic offsets (aligned uniform slots), so each pass

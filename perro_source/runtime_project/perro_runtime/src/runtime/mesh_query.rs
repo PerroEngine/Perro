@@ -1,10 +1,13 @@
 use super::Runtime;
 use ahash::AHashMap;
 use glam::{Mat3, Mat4, Vec3};
-use perro_ids::{MaterialID, NodeID, parse_hashed_source_uri, string_to_u64};
+use perro_ids::{MaterialID, MeshID, NodeID, parse_hashed_source_uri, string_to_u64};
 use perro_io::decompress_zlib;
 use perro_nodes::{MeshSurfaceBinding, SceneNodeData};
-use perro_runtime_context::sub_apis::{MeshMaterialRegion3D, MeshSurfaceHit3D};
+use perro_render_bridge::Mesh3D;
+use perro_runtime_context::sub_apis::{
+    MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D, MeshSurfaceHit3D,
+};
 use perro_structs::Vector3;
 use rayon::prelude::*;
 use std::cell::RefCell;
@@ -73,9 +76,9 @@ struct QueryNodeData {
 struct QueryHitCandidate {
     instance_index: u32,
     surface_index: u32,
-    world_point: Vec3,
+    global_point: Vec3,
     local_point: Vec3,
-    world_normal: Vec3,
+    global_normal: Vec3,
     local_normal: Vec3,
     metric: f32,
 }
@@ -84,11 +87,11 @@ struct QueryHitCandidate {
 struct QueryRegionAcc {
     tri_count: u32,
     sum_local: Vec3,
-    sum_world: Vec3,
+    sum_global: Vec3,
     local_min: Vec3,
     local_max: Vec3,
-    world_min: Vec3,
-    world_max: Vec3,
+    global_min: Vec3,
+    global_max: Vec3,
 }
 
 impl QueryRegionAcc {
@@ -96,11 +99,11 @@ impl QueryRegionAcc {
         Self {
             tri_count: 0,
             sum_local: Vec3::ZERO,
-            sum_world: Vec3::ZERO,
+            sum_global: Vec3::ZERO,
             local_min: Vec3::splat(f32::INFINITY),
             local_max: Vec3::splat(f32::NEG_INFINITY),
-            world_min: Vec3::splat(f32::INFINITY),
-            world_max: Vec3::splat(f32::NEG_INFINITY),
+            global_min: Vec3::splat(f32::INFINITY),
+            global_max: Vec3::splat(f32::NEG_INFINITY),
         }
     }
 }
@@ -132,11 +135,11 @@ fn merge_region_acc(a: QueryRegionAcc, b: QueryRegionAcc) -> QueryRegionAcc {
     QueryRegionAcc {
         tri_count: a.tri_count.saturating_add(b.tri_count),
         sum_local: a.sum_local + b.sum_local,
-        sum_world: a.sum_world + b.sum_world,
+        sum_global: a.sum_global + b.sum_global,
         local_min: a.local_min.min(b.local_min),
         local_max: a.local_max.max(b.local_max),
-        world_min: a.world_min.min(b.world_min),
-        world_max: a.world_max.max(b.world_max),
+        global_min: a.global_min.min(b.global_min),
+        global_max: a.global_max.max(b.global_max),
     }
 }
 
@@ -359,26 +362,94 @@ fn build_bvh_recursive(
 }
 
 impl Runtime {
-    pub(crate) fn query_mesh_instance_surface_at_world_point(
+    pub(crate) fn query_mesh_instance_surface_at_global_point(
         &mut self,
         node_id: NodeID,
-        world_point: Vector3,
+        global_point: Vector3,
     ) -> Option<MeshSurfaceHit3D> {
-        self.query_mesh_surface_at_world_point_impl(node_id, world_point, true)
+        self.query_mesh_surface_at_global_point_impl(node_id, global_point, true)
     }
 
-    pub(crate) fn query_mesh_data_surface_at_world_point(
+    pub(crate) fn query_mesh_data_surface_at_local_point(
         &mut self,
-        node_id: NodeID,
-        world_point: Vector3,
-    ) -> Option<MeshSurfaceHit3D> {
-        self.query_mesh_surface_at_world_point_impl(node_id, world_point, false)
+        mesh_id: MeshID,
+        local_point: Vector3,
+    ) -> Option<MeshDataSurfaceHit3D> {
+        let mesh = self.load_query_mesh_data_by_id(mesh_id)?;
+        if mesh.vertices.is_empty() || mesh.triangles.is_empty() {
+            return None;
+        }
+
+        let p_local: Vec3 = local_point.into();
+        let mut best: Option<QueryHitCandidate> = None;
+        let mut stack = vec![0_u32];
+        while let Some(node_idx) = stack.pop() {
+            let bvh = *mesh.bvh_nodes.get(node_idx as usize)?;
+            let node_d2 = aabb_distance2(p_local, bvh.aabb_min, bvh.aabb_max);
+            if let Some(hit) = best
+                && node_d2 >= hit.metric
+            {
+                continue;
+            }
+            if bvh.left == u32::MAX || bvh.right == u32::MAX {
+                let start = bvh.tri_start as usize;
+                let end = start + bvh.tri_count as usize;
+                for &tri_idx in &mesh.bvh_tri_indices[start..end] {
+                    let tri = *mesh.triangles.get(tri_idx as usize)?;
+                    let acc = *mesh.tri_accel.get(tri_idx as usize)?;
+                    let tri_d2 = aabb_distance2(p_local, acc.aabb_min, acc.aabb_max);
+                    if let Some(hit) = best
+                        && tri_d2 >= hit.metric
+                    {
+                        continue;
+                    }
+                    let a = mesh.vertices[tri.a as usize];
+                    let b = mesh.vertices[tri.b as usize];
+                    let c = mesh.vertices[tri.c as usize];
+                    let nearest_local = closest_point_on_triangle(p_local, a, b, c);
+                    let d2 = nearest_local.distance_squared(p_local);
+                    if let Some(hit) = best
+                        && d2 >= hit.metric
+                    {
+                        continue;
+                    }
+                    best = Some(QueryHitCandidate {
+                        instance_index: 0,
+                        surface_index: tri.surface_index,
+                        global_point: nearest_local,
+                        local_point: nearest_local,
+                        global_normal: acc.normal,
+                        local_normal: acc.normal,
+                        metric: d2,
+                    });
+                }
+            } else {
+                let left = *mesh.bvh_nodes.get(bvh.left as usize)?;
+                let right = *mesh.bvh_nodes.get(bvh.right as usize)?;
+                let ld2 = aabb_distance2(p_local, left.aabb_min, left.aabb_max);
+                let rd2 = aabb_distance2(p_local, right.aabb_min, right.aabb_max);
+                if ld2 < rd2 {
+                    stack.push(bvh.right);
+                    stack.push(bvh.left);
+                } else {
+                    stack.push(bvh.left);
+                    stack.push(bvh.right);
+                }
+            }
+        }
+        let best = best?;
+        Some(MeshDataSurfaceHit3D {
+            surface_index: best.surface_index,
+            local_point: best.local_point.into(),
+            local_normal: best.local_normal.into(),
+            distance: best.metric.sqrt(),
+        })
     }
 
-    fn query_mesh_surface_at_world_point_impl(
+    fn query_mesh_surface_at_global_point_impl(
         &mut self,
         node_id: NodeID,
-        world_point: Vector3,
+        global_point: Vector3,
         resolve_material: bool,
     ) -> Option<MeshSurfaceHit3D> {
         let node = self.query_node_mesh_data(node_id)?;
@@ -387,15 +458,15 @@ impl Runtime {
             return None;
         }
 
-        let node_world = self.get_global_transform_3d(node_id)?.to_mat4();
-        let p_world: Vec3 = world_point.into();
+        let node_global = self.get_global_transform_3d(node_id)?.to_mat4();
+        let p_global: Vec3 = global_point.into();
         let instance_parallel =
             should_parallel_instances(node.instance_local.len(), mesh.triangles.len());
         let best_for_instance = |(instance_index, local): (usize, &Mat4)| {
-            let world_from_mesh = node_world * *local;
-            let mesh_from_world = world_from_mesh.inverse();
-            let world_normal_basis = Mat3::from_mat4(world_from_mesh).inverse().transpose();
-            let p_local = mesh_from_world.transform_point3(p_world);
+            let global_from_mesh = node_global * *local;
+            let mesh_from_global = global_from_mesh.inverse();
+            let global_normal_basis = Mat3::from_mat4(global_from_mesh).inverse().transpose();
+            let p_local = mesh_from_global.transform_point3(p_global);
             let mut best: Option<QueryHitCandidate> = None;
             let mut stack = vec![0_u32];
             while let Some(node_idx) = stack.pop() {
@@ -428,14 +499,14 @@ impl Runtime {
                         {
                             continue;
                         }
-                        let nearest_world = world_from_mesh.transform_point3(nearest_local);
-                        let world_normal = (world_normal_basis * acc.normal).normalize_or_zero();
+                        let nearest_global = global_from_mesh.transform_point3(nearest_local);
+                        let global_normal = (global_normal_basis * acc.normal).normalize_or_zero();
                         best = Some(QueryHitCandidate {
                             instance_index: instance_index as u32,
                             surface_index: tri.surface_index,
-                            world_point: nearest_world,
+                            global_point: nearest_global,
                             local_point: nearest_local,
-                            world_normal,
+                            global_normal,
                             local_normal: acc.normal,
                             metric: d2,
                         });
@@ -478,22 +549,22 @@ impl Runtime {
             instance_index: best.instance_index,
             surface_index: best.surface_index,
             material,
-            world_point: best.world_point.into(),
+            global_point: best.global_point.into(),
             local_point: best.local_point.into(),
-            world_normal: best.world_normal.into(),
+            global_normal: best.global_normal.into(),
             local_normal: best.local_normal.into(),
             distance: best.metric.sqrt(),
         })
     }
 
-    pub(crate) fn query_mesh_instance_surface_on_world_ray(
+    pub(crate) fn query_mesh_instance_surface_on_global_ray(
         &mut self,
         node_id: NodeID,
         ray_origin: Vector3,
         ray_direction: Vector3,
         max_distance: f32,
     ) -> Option<MeshSurfaceHit3D> {
-        self.query_mesh_surface_on_world_ray_impl(
+        self.query_mesh_surface_on_global_ray_impl(
             node_id,
             ray_origin,
             ray_direction,
@@ -502,23 +573,124 @@ impl Runtime {
         )
     }
 
-    pub(crate) fn query_mesh_data_surface_on_world_ray(
+    pub(crate) fn query_mesh_data_surface_on_local_ray(
         &mut self,
-        node_id: NodeID,
-        ray_origin: Vector3,
-        ray_direction: Vector3,
+        mesh_id: MeshID,
+        ray_origin_local: Vector3,
+        ray_direction_local: Vector3,
         max_distance: f32,
-    ) -> Option<MeshSurfaceHit3D> {
-        self.query_mesh_surface_on_world_ray_impl(
-            node_id,
-            ray_origin,
-            ray_direction,
-            max_distance,
-            false,
-        )
+    ) -> Option<MeshDataSurfaceHit3D> {
+        let mesh = self.load_query_mesh_data_by_id(mesh_id)?;
+        if mesh.vertices.is_empty() || mesh.triangles.is_empty() {
+            return None;
+        }
+
+        let ray_origin_local: Vec3 = ray_origin_local.into();
+        let ray_dir_raw: Vec3 = ray_direction_local.into();
+        let ray_dir_len = ray_dir_raw.length();
+        if ray_dir_len <= 0.000001 {
+            return None;
+        }
+        let ray_dir_local = ray_dir_raw / ray_dir_len;
+        let max_t = if max_distance.is_finite() && max_distance > 0.0 {
+            max_distance
+        } else {
+            f32::INFINITY
+        };
+
+        let mut best: Option<QueryHitCandidate> = None;
+        let mut stack = vec![0_u32];
+        while let Some(node_idx) = stack.pop() {
+            let bvh = *mesh.bvh_nodes.get(node_idx as usize)?;
+            if ray_aabb_tmin(
+                ray_origin_local,
+                ray_dir_local,
+                bvh.aabb_min,
+                bvh.aabb_max,
+                best.map_or(max_t, |h| h.metric.min(max_t)),
+            )
+            .is_none()
+            {
+                continue;
+            }
+            if bvh.left == u32::MAX || bvh.right == u32::MAX {
+                let start = bvh.tri_start as usize;
+                let end = start + bvh.tri_count as usize;
+                for &tri_idx in &mesh.bvh_tri_indices[start..end] {
+                    let tri = *mesh.triangles.get(tri_idx as usize)?;
+                    let acc = *mesh.tri_accel.get(tri_idx as usize)?;
+                    if ray_aabb_tmin(
+                        ray_origin_local,
+                        ray_dir_local,
+                        acc.aabb_min,
+                        acc.aabb_max,
+                        best.map_or(max_t, |h| h.metric.min(max_t)),
+                    )
+                    .is_none()
+                    {
+                        continue;
+                    }
+                    let a = mesh.vertices[tri.a as usize];
+                    let b = mesh.vertices[tri.b as usize];
+                    let c = mesh.vertices[tri.c as usize];
+                    let t = ray_intersect_triangle(ray_origin_local, ray_dir_local, a, b, c)?;
+                    if t > max_t {
+                        continue;
+                    }
+                    if let Some(hit) = best
+                        && t >= hit.metric
+                    {
+                        continue;
+                    }
+                    let hit_local = ray_origin_local + ray_dir_local * t;
+                    best = Some(QueryHitCandidate {
+                        instance_index: 0,
+                        surface_index: tri.surface_index,
+                        global_point: hit_local,
+                        local_point: hit_local,
+                        global_normal: acc.normal,
+                        local_normal: acc.normal,
+                        metric: t,
+                    });
+                }
+            } else {
+                let left = *mesh.bvh_nodes.get(bvh.left as usize)?;
+                let right = *mesh.bvh_nodes.get(bvh.right as usize)?;
+                let lt = ray_aabb_tmin(
+                    ray_origin_local,
+                    ray_dir_local,
+                    left.aabb_min,
+                    left.aabb_max,
+                    best.map_or(max_t, |h| h.metric.min(max_t)),
+                )
+                .unwrap_or(f32::INFINITY);
+                let rt = ray_aabb_tmin(
+                    ray_origin_local,
+                    ray_dir_local,
+                    right.aabb_min,
+                    right.aabb_max,
+                    best.map_or(max_t, |h| h.metric.min(max_t)),
+                )
+                .unwrap_or(f32::INFINITY);
+                if lt < rt {
+                    stack.push(bvh.right);
+                    stack.push(bvh.left);
+                } else {
+                    stack.push(bvh.left);
+                    stack.push(bvh.right);
+                }
+            }
+        }
+        let best = best?;
+        Some(MeshDataSurfaceHit3D {
+            surface_index: best.surface_index,
+            local_point: best.local_point.into(),
+            local_normal: best.local_normal.into(),
+            distance: best.metric,
+        })
     }
 
-    fn query_mesh_surface_on_world_ray_impl(
+    fn query_mesh_surface_on_global_ray_impl(
         &mut self,
         node_id: NodeID,
         ray_origin: Vector3,
@@ -532,29 +704,29 @@ impl Runtime {
             return None;
         }
 
-        let ray_origin_world: Vec3 = ray_origin.into();
-        let ray_dir_world_raw: Vec3 = ray_direction.into();
-        let ray_dir_len = ray_dir_world_raw.length();
+        let ray_origin_global: Vec3 = ray_origin.into();
+        let ray_dir_global_raw: Vec3 = ray_direction.into();
+        let ray_dir_len = ray_dir_global_raw.length();
         if ray_dir_len <= 0.000001 {
             return None;
         }
-        let ray_dir_world = ray_dir_world_raw / ray_dir_len;
+        let ray_dir_global = ray_dir_global_raw / ray_dir_len;
         let max_t = if max_distance.is_finite() && max_distance > 0.0 {
             max_distance
         } else {
             f32::INFINITY
         };
 
-        let node_world = self.get_global_transform_3d(node_id)?.to_mat4();
+        let node_global = self.get_global_transform_3d(node_id)?.to_mat4();
         let instance_parallel =
             should_parallel_instances(node.instance_local.len(), mesh.triangles.len());
         let best_for_instance = |(instance_index, local): (usize, &Mat4)| {
-            let world_from_mesh = node_world * *local;
-            let mesh_from_world = world_from_mesh.inverse();
-            let world_normal_basis = Mat3::from_mat4(world_from_mesh).inverse().transpose();
-            let ray_origin_local = mesh_from_world.transform_point3(ray_origin_world);
-            let ray_dir_local = mesh_from_world
-                .transform_vector3(ray_dir_world)
+            let global_from_mesh = node_global * *local;
+            let mesh_from_global = global_from_mesh.inverse();
+            let global_normal_basis = Mat3::from_mat4(global_from_mesh).inverse().transpose();
+            let ray_origin_local = mesh_from_global.transform_point3(ray_origin_global);
+            let ray_dir_local = mesh_from_global
+                .transform_vector3(ray_dir_global)
                 .normalize_or_zero();
             if ray_dir_local.length_squared() <= 1e-10 {
                 return None;
@@ -604,20 +776,20 @@ impl Runtime {
                             continue;
                         }
                         let hit_local = ray_origin_local + ray_dir_local * t;
-                        let hit_world = world_from_mesh.transform_point3(hit_local);
-                        let world_t = (hit_world - ray_origin_world).length();
-                        if world_t > max_t {
+                        let hit_global = global_from_mesh.transform_point3(hit_local);
+                        let global_t = (hit_global - ray_origin_global).length();
+                        if global_t > max_t {
                             continue;
                         }
-                        let world_normal = (world_normal_basis * acc.normal).normalize_or_zero();
+                        let global_normal = (global_normal_basis * acc.normal).normalize_or_zero();
                         best = Some(QueryHitCandidate {
                             instance_index: instance_index as u32,
                             surface_index: tri.surface_index,
-                            world_point: hit_world,
+                            global_point: hit_global,
                             local_point: hit_local,
-                            world_normal,
+                            global_normal,
                             local_normal: acc.normal,
-                            metric: world_t,
+                            metric: global_t,
                         });
                     }
                 } else {
@@ -672,9 +844,9 @@ impl Runtime {
             instance_index: best.instance_index,
             surface_index: best.surface_index,
             material,
-            world_point: best.world_point.into(),
+            global_point: best.global_point.into(),
             local_point: best.local_point.into(),
-            world_normal: best.world_normal.into(),
+            global_normal: best.global_normal.into(),
             local_normal: best.local_normal.into(),
             distance: best.metric,
         })
@@ -695,7 +867,7 @@ impl Runtime {
             return Vec::new();
         }
 
-        let node_world = match self.get_global_transform_3d(node_id) {
+        let node_global = match self.get_global_transform_3d(node_id) {
             Some(transform) => transform.to_mat4(),
             None => return Vec::new(),
         };
@@ -710,7 +882,7 @@ impl Runtime {
         );
         let tri_parallel = should_parallel_triangles(instance_parallel, triangles.len());
         let regions_for_instance = |(instance_index, local): (usize, &Mat4)| {
-            let world_from_mesh = node_world * *local;
+            let global_from_mesh = node_global * *local;
             node.surfaces
                 .iter()
                 .enumerate()
@@ -728,28 +900,28 @@ impl Runtime {
                         };
 
                         let tri_local_center = (a + b + c) / 3.0;
-                        let tri_world_center = world_from_mesh.transform_point3(tri_local_center);
+                        let tri_global_center = global_from_mesh.transform_point3(tri_local_center);
                         let mut local_min = Vec3::splat(f32::INFINITY);
                         let mut local_max = Vec3::splat(f32::NEG_INFINITY);
-                        let mut world_min = Vec3::splat(f32::INFINITY);
-                        let mut world_max = Vec3::splat(f32::NEG_INFINITY);
+                        let mut global_min = Vec3::splat(f32::INFINITY);
+                        let mut global_max = Vec3::splat(f32::NEG_INFINITY);
 
                         for p in [a, b, c] {
                             local_min = local_min.min(p);
                             local_max = local_max.max(p);
-                            let pw = world_from_mesh.transform_point3(p);
-                            world_min = world_min.min(pw);
-                            world_max = world_max.max(pw);
+                            let pw = global_from_mesh.transform_point3(p);
+                            global_min = global_min.min(pw);
+                            global_max = global_max.max(pw);
                         }
 
                         QueryRegionAcc {
                             tri_count: 1,
                             sum_local: tri_local_center,
-                            sum_world: tri_world_center,
+                            sum_global: tri_global_center,
                             local_min,
                             local_max,
-                            world_min,
-                            world_max,
+                            global_min,
+                            global_max,
                         }
                     };
                     let acc = if tri_parallel {
@@ -777,10 +949,10 @@ impl Runtime {
                         surface_index: surface_index as u32,
                         material: surface.material,
                         triangle_count: acc.tri_count,
-                        center_world: (acc.sum_world * inv).into(),
+                        center_global: (acc.sum_global * inv).into(),
                         center_local: (acc.sum_local * inv).into(),
-                        aabb_min_world: acc.world_min.into(),
-                        aabb_max_world: acc.world_max.into(),
+                        aabb_min_global: acc.global_min.into(),
+                        aabb_max_global: acc.global_max.into(),
                         aabb_min_local: acc.local_min.into(),
                         aabb_max_local: acc.local_max.into(),
                     })
@@ -804,114 +976,77 @@ impl Runtime {
 
     pub(crate) fn query_mesh_data_surface_regions(
         &mut self,
-        node_id: NodeID,
+        mesh_id: MeshID,
         surface_index: u32,
-    ) -> Vec<MeshMaterialRegion3D> {
-        let Some(node) = self.query_node_mesh_data(node_id) else {
-            return Vec::new();
-        };
-        let Some(mesh) = self.load_query_mesh_data(node.source.as_str()) else {
+    ) -> Vec<MeshDataSurfaceRegion3D> {
+        let Some(mesh) = self.load_query_mesh_data_by_id(mesh_id) else {
             return Vec::new();
         };
         if mesh.vertices.is_empty() || mesh.triangles.is_empty() {
             return Vec::new();
         }
 
-        let node_world = match self.get_global_transform_3d(node_id) {
-            Some(transform) => transform.to_mat4(),
-            None => return Vec::new(),
-        };
-
         let vertices = &mesh.vertices;
         let triangles = &mesh.triangles;
 
-        let instance_parallel =
-            should_parallel_instances(node.instance_local.len(), triangles.len());
-        let tri_parallel = should_parallel_triangles(instance_parallel, triangles.len());
-        let region_for_instance = |(instance_index, local): (usize, &Mat4)| {
-            let world_from_mesh = node_world * *local;
-            let tri_map = |tri: QueryTri| {
-                let Some(a) = vertices.get(tri.a as usize).copied() else {
-                    return QueryRegionAcc::empty();
-                };
-                let Some(b) = vertices.get(tri.b as usize).copied() else {
-                    return QueryRegionAcc::empty();
-                };
-                let Some(c) = vertices.get(tri.c as usize).copied() else {
-                    return QueryRegionAcc::empty();
-                };
-
-                let tri_local_center = (a + b + c) / 3.0;
-                let tri_world_center = world_from_mesh.transform_point3(tri_local_center);
-                let mut local_min = Vec3::splat(f32::INFINITY);
-                let mut local_max = Vec3::splat(f32::NEG_INFINITY);
-                let mut world_min = Vec3::splat(f32::INFINITY);
-                let mut world_max = Vec3::splat(f32::NEG_INFINITY);
-
-                for p in [a, b, c] {
-                    local_min = local_min.min(p);
-                    local_max = local_max.max(p);
-                    let pw = world_from_mesh.transform_point3(p);
-                    world_min = world_min.min(pw);
-                    world_max = world_max.max(pw);
-                }
-
-                QueryRegionAcc {
-                    tri_count: 1,
-                    sum_local: tri_local_center,
-                    sum_world: tri_world_center,
-                    local_min,
-                    local_max,
-                    world_min,
-                    world_max,
-                }
+        let tri_map = |tri: QueryTri| {
+            let Some(a) = vertices.get(tri.a as usize).copied() else {
+                return QueryRegionAcc::empty();
             };
-            let acc = if tri_parallel {
-                triangles
-                    .par_iter()
-                    .copied()
-                    .filter(|tri| tri.surface_index == surface_index)
-                    .map(tri_map)
-                    .reduce(QueryRegionAcc::empty, merge_region_acc)
-            } else {
-                triangles
-                    .iter()
-                    .copied()
-                    .filter(|tri| tri.surface_index == surface_index)
-                    .map(tri_map)
-                    .fold(QueryRegionAcc::empty(), merge_region_acc)
+            let Some(b) = vertices.get(tri.b as usize).copied() else {
+                return QueryRegionAcc::empty();
+            };
+            let Some(c) = vertices.get(tri.c as usize).copied() else {
+                return QueryRegionAcc::empty();
             };
 
-            if acc.tri_count == 0 {
-                return None;
+            let tri_local_center = (a + b + c) / 3.0;
+            let mut local_min = Vec3::splat(f32::INFINITY);
+            let mut local_max = Vec3::splat(f32::NEG_INFINITY);
+
+            for p in [a, b, c] {
+                local_min = local_min.min(p);
+                local_max = local_max.max(p);
             }
-            let inv = 1.0 / acc.tri_count as f32;
-            Some(MeshMaterialRegion3D {
-                instance_index: instance_index as u32,
-                surface_index,
-                material: None,
-                triangle_count: acc.tri_count,
-                center_world: (acc.sum_world * inv).into(),
-                center_local: (acc.sum_local * inv).into(),
-                aabb_min_world: acc.world_min.into(),
-                aabb_max_world: acc.world_max.into(),
-                aabb_min_local: acc.local_min.into(),
-                aabb_max_local: acc.local_max.into(),
-            })
+
+            QueryRegionAcc {
+                tri_count: 1,
+                sum_local: tri_local_center,
+                sum_global: tri_local_center,
+                local_min,
+                local_max,
+                global_min: local_min,
+                global_max: local_max,
+            }
         };
-        if instance_parallel {
-            node.instance_local
+
+        let acc = if should_parallel_triangles(false, triangles.len()) {
+            triangles
                 .par_iter()
-                .enumerate()
-                .filter_map(region_for_instance)
-                .collect()
+                .copied()
+                .filter(|tri| tri.surface_index == surface_index)
+                .map(tri_map)
+                .reduce(QueryRegionAcc::empty, merge_region_acc)
         } else {
-            node.instance_local
+            triangles
                 .iter()
-                .enumerate()
-                .filter_map(region_for_instance)
-                .collect()
+                .copied()
+                .filter(|tri| tri.surface_index == surface_index)
+                .map(tri_map)
+                .fold(QueryRegionAcc::empty(), merge_region_acc)
+        };
+
+        if acc.tri_count == 0 {
+            return Vec::new();
         }
+        let inv = 1.0 / acc.tri_count as f32;
+        vec![MeshDataSurfaceRegion3D {
+            surface_index,
+            triangle_count: acc.tri_count,
+            center_local: (acc.sum_local * inv).into(),
+            aabb_min_local: acc.local_min.into(),
+            aabb_max_local: acc.local_max.into(),
+        }]
     }
 
     fn query_node_mesh_data(&self, node_id: NodeID) -> Option<QueryNodeData> {
@@ -1053,6 +1188,54 @@ impl Runtime {
         }
         Some(mesh)
     }
+
+    fn load_query_mesh_data_by_id(&self, mesh_id: MeshID) -> Option<Arc<QueryMeshData>> {
+        if mesh_id.is_nil() {
+            return None;
+        }
+        let mesh_id = self.resource_api.canonical_mesh_id(mesh_id);
+        if let Some(data) = self.resource_api.mesh_data(mesh_id) {
+            return build_query_mesh_from_runtime_mesh(&data).map(Arc::new);
+        }
+        self.resource_api
+            .mesh_source(mesh_id)
+            .and_then(|source| self.load_query_mesh_data(source.as_str()))
+    }
+}
+
+fn build_query_mesh_from_runtime_mesh(mesh: &Mesh3D) -> Option<QueryMeshData> {
+    let vertices: Vec<Vec3> = mesh
+        .vertices
+        .iter()
+        .map(|vertex| Vec3::from_array(vertex.position))
+        .collect();
+    let mut triangles = Vec::new();
+    for (surface_index, range) in mesh.surface_ranges.iter().enumerate() {
+        let start = range.index_start as usize;
+        let end = start.saturating_add(range.index_count as usize);
+        let Some(indices) = mesh.indices.get(start..end) else {
+            continue;
+        };
+        for tri in indices.chunks_exact(3) {
+            triangles.push(QueryTri {
+                a: tri[0],
+                b: tri[1],
+                c: tri[2],
+                surface_index: surface_index as u32,
+            });
+        }
+    }
+    if mesh.surface_ranges.is_empty() {
+        for tri in mesh.indices.chunks_exact(3) {
+            triangles.push(QueryTri {
+                a: tri[0],
+                b: tri[1],
+                c: tri[2],
+                surface_index: 0,
+            });
+        }
+    }
+    build_query_mesh_data(vertices, triangles)
 }
 
 fn decode_builtin_query_mesh(source: &str) -> Option<QueryMeshData> {
@@ -1586,6 +1769,42 @@ mod tests {
             });
         }
         build_query_mesh_data(vertices, triangles).expect("synth query mesh")
+    }
+
+    #[test]
+    fn runtime_mesh_data_builds_query_surfaces() {
+        let vertex = |position| perro_render_bridge::RuntimeMeshVertex {
+            position,
+            normal: [0.0, 1.0, 0.0],
+            uv: [0.0, 0.0],
+            joints: [0; 4],
+            weights: [0.0; 4],
+        };
+        let mesh = Mesh3D {
+            vertices: vec![
+                vertex([0.0, 0.0, 0.0]),
+                vertex([1.0, 0.0, 0.0]),
+                vertex([0.0, 1.0, 0.0]),
+                vertex([0.0, 0.0, 1.0]),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+            surface_ranges: vec![
+                perro_render_bridge::MeshSurfaceRange {
+                    index_start: 0,
+                    index_count: 3,
+                },
+                perro_render_bridge::MeshSurfaceRange {
+                    index_start: 3,
+                    index_count: 3,
+                },
+            ],
+        };
+
+        let query = build_query_mesh_from_runtime_mesh(&mesh).expect("query mesh");
+
+        assert_eq!(query.triangles.len(), 2);
+        assert_eq!(query.triangles[0].surface_index, 0);
+        assert_eq!(query.triangles[1].surface_index, 1);
     }
 
     fn point_query_workload(mesh: &QueryMeshData, p_local: Vec3) -> f32 {

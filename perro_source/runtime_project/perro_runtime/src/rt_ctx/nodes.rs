@@ -3,7 +3,10 @@ use perro_nodes::{
     Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, Renderable, SceneNode,
     SceneNodeData, UiBox,
 };
-use perro_runtime_context::sub_apis::{MeshMaterialRegion3D, MeshSurfaceHit3D, NodeAPI, TagQuery};
+use perro_runtime_context::sub_apis::{
+    MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D, MeshSurfaceHit3D, NodeAPI,
+    TagQuery,
+};
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
 
@@ -826,7 +829,7 @@ impl NodeAPI for Runtime {
 
     fn tag_set<T>(&mut self, node_id: perro_ids::NodeID, tags: Option<T>) -> bool
     where
-        T: Into<Cow<'static, [TagID]>>,
+        T: Into<Vec<TagID>>,
     {
         let old_tags = match self.nodes.get(node_id) {
             Some(node) => node.tags_slice().to_vec(),
@@ -1038,8 +1041,8 @@ impl NodeAPI for Runtime {
         local: Transform2D,
     ) -> Option<Transform2D> {
         let global_basis = Runtime::get_global_transform_2d(self, node_id)?.to_mat3();
-        let world = global_basis * local.to_mat3();
-        Some(Transform2D::from_mat3(world))
+        let global = global_basis * local.to_mat3();
+        Some(Transform2D::from_mat3(global))
     }
 
     fn to_local_transform_2d(
@@ -1060,8 +1063,8 @@ impl NodeAPI for Runtime {
         local: Transform3D,
     ) -> Option<Transform3D> {
         let global_basis = Runtime::get_global_transform_3d(self, node_id)?.to_mat4();
-        let world = global_basis * local.to_mat4();
-        Some(Transform3D::from_mat4(world))
+        let global = global_basis * local.to_mat4();
+        Some(Transform3D::from_mat4(global))
     }
 
     fn to_local_transform_3d(
@@ -1076,22 +1079,22 @@ impl NodeAPI for Runtime {
         Some(Transform3D::from_mat4(local))
     }
 
-    fn mesh_instance_surface_at_world_point(
+    fn mesh_instance_surface_at_global_point(
         &mut self,
         node_id: perro_ids::NodeID,
-        world_point: Vector3,
+        global_point: Vector3,
     ) -> Option<MeshSurfaceHit3D> {
-        self.query_mesh_instance_surface_at_world_point(node_id, world_point)
+        self.query_mesh_instance_surface_at_global_point(node_id, global_point)
     }
 
-    fn mesh_instance_surface_on_world_ray(
+    fn mesh_instance_surface_on_global_ray(
         &mut self,
         node_id: perro_ids::NodeID,
         ray_origin: Vector3,
         ray_direction: Vector3,
         max_distance: f32,
     ) -> Option<MeshSurfaceHit3D> {
-        self.query_mesh_instance_surface_on_world_ray(
+        self.query_mesh_instance_surface_on_global_ray(
             node_id,
             ray_origin,
             ray_direction,
@@ -1107,30 +1110,35 @@ impl NodeAPI for Runtime {
         self.query_mesh_instance_material_regions(node_id, material)
     }
 
-    fn mesh_data_surface_at_world_point(
+    fn mesh_data_surface_at_local_point(
         &mut self,
-        node_id: perro_ids::NodeID,
-        world_point: Vector3,
-    ) -> Option<MeshSurfaceHit3D> {
-        self.query_mesh_data_surface_at_world_point(node_id, world_point)
+        mesh_id: perro_ids::MeshID,
+        local_point: Vector3,
+    ) -> Option<MeshDataSurfaceHit3D> {
+        self.query_mesh_data_surface_at_local_point(mesh_id, local_point)
     }
 
-    fn mesh_data_surface_on_world_ray(
+    fn mesh_data_surface_on_local_ray(
         &mut self,
-        node_id: perro_ids::NodeID,
-        ray_origin: Vector3,
-        ray_direction: Vector3,
+        mesh_id: perro_ids::MeshID,
+        ray_origin_local: Vector3,
+        ray_direction_local: Vector3,
         max_distance: f32,
-    ) -> Option<MeshSurfaceHit3D> {
-        self.query_mesh_data_surface_on_world_ray(node_id, ray_origin, ray_direction, max_distance)
+    ) -> Option<MeshDataSurfaceHit3D> {
+        self.query_mesh_data_surface_on_local_ray(
+            mesh_id,
+            ray_origin_local,
+            ray_direction_local,
+            max_distance,
+        )
     }
 
     fn mesh_data_surface_regions(
         &mut self,
-        node_id: perro_ids::NodeID,
+        mesh_id: perro_ids::MeshID,
         surface_index: u32,
-    ) -> Vec<MeshMaterialRegion3D> {
-        self.query_mesh_data_surface_regions(node_id, surface_index)
+    ) -> Vec<MeshDataSurfaceRegion3D> {
+        self.query_mesh_data_surface_regions(mesh_id, surface_index)
     }
 }
 

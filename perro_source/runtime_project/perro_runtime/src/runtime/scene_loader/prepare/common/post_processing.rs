@@ -194,7 +194,7 @@ fn post_effect_from(
                 name,
                 PostProcessEffect::Custom {
                     shader_path: Cow::Owned(shader_path),
-                    params: Cow::Owned(params),
+                    params,
                 },
             ))
         }

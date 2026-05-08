@@ -13,6 +13,7 @@ pub enum NodeField {
     Area2D(Area2DField),
     MeshInstance3D(MeshInstance3DField),
     Skeleton3D(Skeleton3DField),
+    BoneAttachment3D(BoneAttachment3DField),
     Camera3D(Camera3DField),
     ParticleEmitter3D(ParticleEmitter3DField),
     AnimationPlayer(AnimationPlayerField),
@@ -103,6 +104,12 @@ pub enum MeshInstance3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Skeleton3DField {
     Skeleton,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoneAttachment3DField {
+    Skeleton,
+    BoneIndex,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -307,6 +314,13 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::Skeleton3D => match field {
             "skeleton" => Some(NodeField::Skeleton3D(Skeleton3DField::Skeleton)),
+            _ => None,
+        },
+        NodeType::BoneAttachment3D => match field {
+            "skeleton" => Some(NodeField::BoneAttachment3D(BoneAttachment3DField::Skeleton)),
+            "bone" | "bone_index" => Some(NodeField::BoneAttachment3D(
+                BoneAttachment3DField::BoneIndex,
+            )),
             _ => None,
         },
         NodeType::Camera3D => match field {

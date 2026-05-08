@@ -138,7 +138,7 @@ impl Runtime {
                             far: *far,
                         },
                     },
-                    Arc::from(camera.post_processing.as_slice()),
+                    Arc::from(camera.post_processing.to_effects_vec()),
                 )),
                 _ => None,
             });

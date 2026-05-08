@@ -42,10 +42,21 @@ pub struct Skeleton3D {
 }
 
 impl Skeleton3D {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             base: Node3D::new(),
             bones: Vec::new(),
         }
+    }
+
+    pub fn bone_name(&self, index: usize) -> Option<&str> {
+        self.bones.get(index).map(|bone| bone.name.as_ref())
+    }
+
+    pub fn bone_index<S: AsRef<str>>(&self, name: S) -> Option<usize> {
+        let name = name.as_ref();
+        self.bones
+            .iter()
+            .position(|bone| bone.name.as_ref() == name)
     }
 }

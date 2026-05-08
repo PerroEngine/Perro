@@ -2,8 +2,8 @@ use crate::{
     prelude::*,
     sub_apis::{AnimPlayerAPI, SceneAPI},
 };
-use perro_ids::{AnimationID, IntoTagID, NodeID, TagID};
-use perro_nodes::prelude::{Node2D, UiRect, UiSizeMode};
+use perro_ids::{AnimationID, IntoTagID, MeshID, NodeID, TagID};
+use perro_nodes::prelude::Node2D;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::any::Any;
 
@@ -110,7 +110,7 @@ impl NodeAPI for DummyRuntime {
 
     fn tag_set<T>(&mut self, _node_id: NodeID, _tags: Option<T>) -> bool
     where
-        T: Into<std::borrow::Cow<'static, [TagID]>>,
+        T: Into<Vec<TagID>>,
     {
         false
     }
@@ -221,15 +221,15 @@ impl NodeAPI for DummyRuntime {
         None
     }
 
-    fn mesh_instance_surface_at_world_point(
+    fn mesh_instance_surface_at_global_point(
         &mut self,
         _node_id: NodeID,
-        _world_point: perro_structs::Vector3,
+        _global_point: perro_structs::Vector3,
     ) -> Option<MeshSurfaceHit3D> {
         None
     }
 
-    fn mesh_instance_surface_on_world_ray(
+    fn mesh_instance_surface_on_global_ray(
         &mut self,
         _node_id: NodeID,
         _ray_origin: perro_structs::Vector3,
@@ -247,29 +247,29 @@ impl NodeAPI for DummyRuntime {
         Vec::new()
     }
 
-    fn mesh_data_surface_at_world_point(
+    fn mesh_data_surface_at_local_point(
         &mut self,
-        _node_id: NodeID,
-        _world_point: perro_structs::Vector3,
-    ) -> Option<MeshSurfaceHit3D> {
+        _mesh_id: MeshID,
+        _local_point: perro_structs::Vector3,
+    ) -> Option<MeshDataSurfaceHit3D> {
         None
     }
 
-    fn mesh_data_surface_on_world_ray(
+    fn mesh_data_surface_on_local_ray(
         &mut self,
-        _node_id: NodeID,
-        _ray_origin: perro_structs::Vector3,
-        _ray_direction: perro_structs::Vector3,
+        _mesh_id: MeshID,
+        _ray_origin_local: perro_structs::Vector3,
+        _ray_direction_local: perro_structs::Vector3,
         _max_distance: f32,
-    ) -> Option<MeshSurfaceHit3D> {
+    ) -> Option<MeshDataSurfaceHit3D> {
         None
     }
 
     fn mesh_data_surface_regions(
         &mut self,
-        _node_id: NodeID,
+        _mesh_id: MeshID,
         _surface_index: u32,
-    ) -> Vec<MeshMaterialRegion3D> {
+    ) -> Vec<MeshDataSurfaceRegion3D> {
         Vec::new()
     }
 }
@@ -477,18 +477,7 @@ fn script_macros_typecheck_and_forward() {
     let _ = with_base_node_mut!(&mut ctx, Node2D, id, |_node| 2_i32);
     assert_eq!(get_node_name!(&mut ctx, id), None);
     assert!(!set_node_name!(&mut ctx, id, "player"));
-    assert!(!set_ui_min_size!(&mut ctx, id, Vector2::new(100.0, 50.0)));
-    assert!(!set_ui_max_size!(&mut ctx, id, Vector2::new(1200.0, 96.0)));
-    assert!(!set_ui_scale!(&mut ctx, id, Vector2::new(2.0, 0.5)));
     assert!(!set_ui_rotation!(&mut ctx, id, 0.5));
-    assert!(!set_ui_padding!(&mut ctx, id, UiRect::all(8.0)));
-    assert!(!set_ui_margin!(&mut ctx, id, UiRect::symmetric(4.0, 2.0)));
-    assert!(!set_ui_h_size!(&mut ctx, id, UiSizeMode::Fill));
-    assert!(!set_ui_v_size!(&mut ctx, id, UiSizeMode::FitChildren));
-    assert!(!set_ui_min_w!(&mut ctx, id, 100.0));
-    assert!(!set_ui_min_h!(&mut ctx, id, 50.0));
-    assert!(!set_ui_max_w!(&mut ctx, id, 1200.0));
-    assert!(!set_ui_max_h!(&mut ctx, id, 96.0));
     assert_eq!(get_node_parent_id!(&mut ctx, id), None);
     assert_eq!(get_node_children_ids!(&mut ctx, id), None);
     assert_eq!(get_node_type!(&mut ctx, id), None);
@@ -504,6 +493,8 @@ fn script_macros_typecheck_and_forward() {
     assert!(!remove_node!(&mut ctx, id));
     assert_eq!(get_global_transform_2d!(&mut ctx, id), None);
     assert_eq!(get_global_transform_3d!(&mut ctx, id), None);
+    assert_eq!(get_local_transform_2d!(&mut ctx, id), None);
+    assert_eq!(get_local_transform_3d!(&mut ctx, id), None);
     assert!(!set_global_transform_2d!(
         &mut ctx,
         id,
@@ -518,6 +509,52 @@ fn script_macros_typecheck_and_forward() {
             Vector3::ONE
         )
     ));
+    assert!(!set_local_transform_2d!(
+        &mut ctx,
+        id,
+        Transform2D::new(Vector2::new(1.0, 2.0), 0.5, Vector2::ONE)
+    ));
+    assert!(!set_local_transform_3d!(
+        &mut ctx,
+        id,
+        Transform3D::new(
+            Vector3::new(1.0, 2.0, 3.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        )
+    ));
+    assert_eq!(get_local_pos_2d!(&mut ctx, id), None);
+    assert_eq!(get_local_pos_3d!(&mut ctx, id), None);
+    assert!(!set_local_pos_2d!(&mut ctx, id, Vector2::new(1.0, 2.0)));
+    assert!(!set_local_pos_3d!(
+        &mut ctx,
+        id,
+        Vector3::new(1.0, 2.0, 3.0)
+    ));
+    assert_eq!(get_global_pos_2d!(&mut ctx, id), None);
+    assert_eq!(get_global_pos_3d!(&mut ctx, id), None);
+    assert!(!set_global_pos_2d!(&mut ctx, id, Vector2::new(1.0, 2.0)));
+    assert!(!set_global_pos_3d!(
+        &mut ctx,
+        id,
+        Vector3::new(1.0, 2.0, 3.0)
+    ));
+    assert_eq!(get_local_rot_2d!(&mut ctx, id), None);
+    assert_eq!(get_local_rot_3d!(&mut ctx, id), None);
+    assert!(!set_local_rot_2d!(&mut ctx, id, 0.5));
+    assert!(!set_local_rot_3d!(&mut ctx, id, Quaternion::IDENTITY));
+    assert_eq!(get_global_rot_2d!(&mut ctx, id), None);
+    assert_eq!(get_global_rot_3d!(&mut ctx, id), None);
+    assert!(!set_global_rot_2d!(&mut ctx, id, 0.5));
+    assert!(!set_global_rot_3d!(&mut ctx, id, Quaternion::IDENTITY));
+    assert_eq!(get_local_scale_2d!(&mut ctx, id), None);
+    assert_eq!(get_local_scale_3d!(&mut ctx, id), None);
+    assert!(!set_local_scale_2d!(&mut ctx, id, Vector2::ONE));
+    assert!(!set_local_scale_3d!(&mut ctx, id, Vector3::ONE));
+    assert_eq!(get_global_scale_2d!(&mut ctx, id), None);
+    assert_eq!(get_global_scale_3d!(&mut ctx, id), None);
+    assert!(!set_global_scale_2d!(&mut ctx, id, Vector2::ONE));
+    assert!(!set_global_scale_3d!(&mut ctx, id, Vector3::ONE));
     assert_eq!(
         to_global_point_2d!(&mut ctx, id, Vector2::new(1.0, 0.0)),
         None
@@ -575,11 +612,11 @@ fn script_macros_typecheck_and_forward() {
         None
     );
     assert_eq!(
-        mesh_surface_at_world_point_3d!(&mut ctx, id, Vector3::new(0.0, 0.0, 0.0)),
+        mesh_instance_surface_at_global_point_3d!(&mut ctx, id, Vector3::new(0.0, 0.0, 0.0)),
         None
     );
     assert_eq!(
-        mesh_surface_on_world_ray_3d!(
+        mesh_instance_surface_on_global_ray_3d!(
             &mut ctx,
             id,
             Vector3::new(0.0, 1.0, 0.0),
@@ -588,7 +625,9 @@ fn script_macros_typecheck_and_forward() {
         ),
         None
     );
-    assert!(mesh_material_regions_3d!(&mut ctx, id, perro_ids::MaterialID::new(1)).is_empty());
+    assert!(
+        mesh_instance_material_regions_3d!(&mut ctx, id, perro_ids::MaterialID::new(1)).is_empty()
+    );
     assert!(apply_force!(&mut ctx, id, Vector2::new(8.0, 0.0)));
     assert!(apply_force!(&mut ctx, id, Vector3::new(0.0, 3.5, 0.0)));
     assert!(apply_impulse!(&mut ctx, id, Vector2::new(0.0, 1.25)));

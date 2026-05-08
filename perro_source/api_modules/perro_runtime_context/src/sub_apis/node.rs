@@ -1,8 +1,8 @@
-use perro_ids::{IntoTagID, MaterialID, NodeID, TagID};
+use perro_ids::{IntoTagID, MaterialID, MeshID, NodeID, TagID};
 use perro_nodes::{
-    NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData, UiBox, UiRect, UiSizeMode,
+    Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData, Skeleton3D, UiBox,
 };
-use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
+use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -51,12 +51,12 @@ pub struct MeshSurfaceHit3D {
     pub surface_index: u32,
     /// Material bound on the resolved surface.
     pub material: Option<MaterialID>,
-    /// Nearest point on the surface in world space.
-    pub world_point: Vector3,
+    /// Nearest point on the surface in global space.
+    pub global_point: Vector3,
     /// Nearest point on the surface in mesh-local space.
     pub local_point: Vector3,
-    /// Surface normal at the hit in world space.
-    pub world_normal: Vector3,
+    /// Surface normal at the hit in global space.
+    pub global_normal: Vector3,
     /// Surface normal at the hit in mesh-local space.
     pub local_normal: Vector3,
     /// Distance from query point to nearest surface point.
@@ -69,10 +69,27 @@ pub struct MeshMaterialRegion3D {
     pub surface_index: u32,
     pub material: Option<MaterialID>,
     pub triangle_count: u32,
-    pub center_world: Vector3,
+    pub center_global: Vector3,
     pub center_local: Vector3,
-    pub aabb_min_world: Vector3,
-    pub aabb_max_world: Vector3,
+    pub aabb_min_global: Vector3,
+    pub aabb_max_global: Vector3,
+    pub aabb_min_local: Vector3,
+    pub aabb_max_local: Vector3,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MeshDataSurfaceHit3D {
+    pub surface_index: u32,
+    pub local_point: Vector3,
+    pub local_normal: Vector3,
+    pub distance: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MeshDataSurfaceRegion3D {
+    pub surface_index: u32,
+    pub triangle_count: u32,
+    pub center_local: Vector3,
     pub aabb_min_local: Vector3,
     pub aabb_max_local: Vector3,
 }
@@ -334,98 +351,33 @@ pub trait NodeAPI {
     where
         S: Into<Cow<'static, str>>;
 
-    /// Sets UI minimum size in pixels. Works on `UiBox` and descendants.
-    fn set_ui_min_size(&mut self, node_id: NodeID, size: Vector2) -> bool {
-        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
-            node.layout.min_size = size;
+    /// Returns skeleton bone name by index.
+    fn get_skeleton_bone_name(
+        &mut self,
+        skeleton_id: NodeID,
+        bone_index: usize,
+    ) -> Option<Cow<'static, str>> {
+        self.with_node::<Skeleton3D, _>(skeleton_id, |skeleton| {
+            skeleton
+                .bone_name(bone_index)
+                .map(|name| Cow::Owned(name.to_string()))
         })
-        .is_some()
     }
 
-    /// Sets UI maximum size in pixels. Works on `UiBox` and descendants.
-    fn set_ui_max_size(&mut self, node_id: NodeID, size: Vector2) -> bool {
-        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
-            node.layout.max_size = size;
+    /// Returns first skeleton bone index matching name.
+    fn get_skeleton_bone_index<S>(&mut self, skeleton_id: NodeID, bone_name: S) -> Option<usize>
+    where
+        S: AsRef<str>,
+    {
+        self.with_node::<Skeleton3D, _>(skeleton_id, |skeleton| {
+            skeleton.bone_index(bone_name.as_ref())
         })
-        .is_some()
-    }
-
-    /// Sets UI scale. Works on `UiBox` and descendants.
-    fn set_ui_scale(&mut self, node_id: NodeID, scale: Vector2) -> bool {
-        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
-            node.transform.scale = scale;
-        })
-        .is_some()
     }
 
     /// Sets UI rotation in radians. Works on `UiBox` and descendants.
     fn set_ui_rotation(&mut self, node_id: NodeID, rotation: f32) -> bool {
         self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
             node.transform.rotation = rotation;
-        })
-        .is_some()
-    }
-
-    /// Sets UI padding in pixels. Works on `UiBox` and descendants.
-    fn set_ui_padding(&mut self, node_id: NodeID, padding: UiRect) -> bool {
-        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
-            node.layout.padding = padding;
-        })
-        .is_some()
-    }
-
-    /// Sets UI margin in pixels. Works on `UiBox` and descendants.
-    fn set_ui_margin(&mut self, node_id: NodeID, margin: UiRect) -> bool {
-        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
-            node.layout.margin = margin;
-        })
-        .is_some()
-    }
-
-    /// Sets UI horizontal size mode. Works on `UiBox` and descendants.
-    fn set_ui_h_size(&mut self, node_id: NodeID, mode: UiSizeMode) -> bool {
-        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
-            node.layout.h_size = mode;
-        })
-        .is_some()
-    }
-
-    /// Sets UI vertical size mode. Works on `UiBox` and descendants.
-    fn set_ui_v_size(&mut self, node_id: NodeID, mode: UiSizeMode) -> bool {
-        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
-            node.layout.v_size = mode;
-        })
-        .is_some()
-    }
-
-    /// Sets UI minimum width in pixels. Works on `UiBox` and descendants.
-    fn set_ui_min_w(&mut self, node_id: NodeID, value: f32) -> bool {
-        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
-            node.layout.min_size.x = value;
-        })
-        .is_some()
-    }
-
-    /// Sets UI minimum height in pixels. Works on `UiBox` and descendants.
-    fn set_ui_min_h(&mut self, node_id: NodeID, value: f32) -> bool {
-        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
-            node.layout.min_size.y = value;
-        })
-        .is_some()
-    }
-
-    /// Sets UI maximum width in pixels. Works on `UiBox` and descendants.
-    fn set_ui_max_w(&mut self, node_id: NodeID, value: f32) -> bool {
-        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
-            node.layout.max_size.x = value;
-        })
-        .is_some()
-    }
-
-    /// Sets UI maximum height in pixels. Works on `UiBox` and descendants.
-    fn set_ui_max_h(&mut self, node_id: NodeID, value: f32) -> bool {
-        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
-            node.layout.max_size.y = value;
         })
         .is_some()
     }
@@ -512,11 +464,9 @@ pub trait NodeAPI {
     fn get_node_tags(&mut self, node_id: NodeID) -> Option<Vec<TagID>>;
 
     /// Sets node tags (`Some`) or clears all tags (`None`).
-    ///
-    /// `T` supports borrowed static slices or owned vectors through `Cow`.
     fn tag_set<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool
     where
-        T: Into<Cow<'static, [TagID]>>;
+        T: Into<Vec<TagID>>;
 
     /// Adds one tag to node (idempotent).
     fn add_node_tag<T>(&mut self, node_id: NodeID, tag: T) -> bool
@@ -531,10 +481,10 @@ pub trait NodeAPI {
     /// Executes a node query and returns matching node IDs.
     fn query_nodes(&mut self, query: TagQuery) -> Vec<NodeID>;
 
-    /// Returns the current global/world transform for a 2D spatial node.
+    /// Returns the current global transform for a 2D spatial node.
     fn get_global_transform_2d(&mut self, node_id: NodeID) -> Option<Transform2D>;
 
-    /// Returns the current global/world transform for a 3D spatial node.
+    /// Returns the current global transform for a 3D spatial node.
     fn get_global_transform_3d(&mut self, node_id: NodeID) -> Option<Transform3D>;
 
     /// Sets a 2D node's local transform so its resulting global transform matches `global`.
@@ -543,59 +493,59 @@ pub trait NodeAPI {
     /// Sets a 3D node's local transform so its resulting global transform matches `global`.
     fn set_global_transform_3d(&mut self, node_id: NodeID, global: Transform3D) -> bool;
 
-    /// Converts a point from node-local 2D space to global/world 2D space.
+    /// Converts a point from node-local 2D space to global 2D space.
     fn to_global_point_2d(&mut self, node_id: NodeID, local: Vector2) -> Option<Vector2>;
 
-    /// Converts a point from global/world 2D space to node-local 2D space.
+    /// Converts a point from global 2D space to node-local 2D space.
     fn to_local_point_2d(&mut self, node_id: NodeID, global: Vector2) -> Option<Vector2>;
 
-    /// Converts a point from node-local 3D space to global/world 3D space.
+    /// Converts a point from node-local 3D space to global 3D space.
     fn to_global_point_3d(&mut self, node_id: NodeID, local: Vector3) -> Option<Vector3>;
 
-    /// Converts a point from global/world 3D space to node-local 3D space.
+    /// Converts a point from global 3D space to node-local 3D space.
     fn to_local_point_3d(&mut self, node_id: NodeID, global: Vector3) -> Option<Vector3>;
 
-    /// Converts a local 2D transform (relative to `node_id`) into global/world space.
+    /// Converts a local 2D transform (relative to `node_id`) into global space.
     fn to_global_transform_2d(
         &mut self,
         node_id: NodeID,
         local: Transform2D,
     ) -> Option<Transform2D>;
 
-    /// Converts a global/world 2D transform into local space relative to `node_id`.
+    /// Converts a global 2D transform into local space relative to `node_id`.
     fn to_local_transform_2d(
         &mut self,
         node_id: NodeID,
         global: Transform2D,
     ) -> Option<Transform2D>;
 
-    /// Converts a local 3D transform (relative to `node_id`) into global/world space.
+    /// Converts a local 3D transform (relative to `node_id`) into global space.
     fn to_global_transform_3d(
         &mut self,
         node_id: NodeID,
         local: Transform3D,
     ) -> Option<Transform3D>;
 
-    /// Converts a global/world 3D transform into local space relative to `node_id`.
+    /// Converts a global 3D transform into local space relative to `node_id`.
     fn to_local_transform_3d(
         &mut self,
         node_id: NodeID,
         global: Transform3D,
     ) -> Option<Transform3D>;
 
-    /// Finds mesh-instance surface nearest to world-space point for a 3D mesh node.
+    /// Finds mesh-instance surface nearest to global-space point for a 3D mesh node.
     ///
     /// Returns `None` when:
     /// - node does not exist
     /// - node is not a mesh-bearing 3D node
     /// - mesh source cannot be resolved/decoded
-    fn mesh_instance_surface_at_world_point(
+    fn mesh_instance_surface_at_global_point(
         &mut self,
         node_id: NodeID,
-        world_point: Vector3,
+        global_point: Vector3,
     ) -> Option<MeshSurfaceHit3D>;
 
-    /// Finds the first mesh surface hit along a world-space ray for a 3D mesh node.
+    /// Finds the first mesh surface hit along a global-space ray for a 3D mesh node.
     ///
     /// `ray_direction` does not need to be normalized.
     /// Returns `None` when:
@@ -603,7 +553,7 @@ pub trait NodeAPI {
     /// - node is not a mesh-bearing 3D node
     /// - mesh source cannot be resolved/decoded
     /// - ray misses all triangles within `max_distance`
-    fn mesh_instance_surface_on_world_ray(
+    fn mesh_instance_surface_on_global_ray(
         &mut self,
         node_id: NodeID,
         ray_origin: Vector3,
@@ -620,63 +570,32 @@ pub trait NodeAPI {
         material: MaterialID,
     ) -> Vec<MeshMaterialRegion3D>;
 
-    /// Finds raw mesh-data surface nearest to world-space point.
+    /// Finds raw mesh-data surface nearest to mesh-local point.
     ///
-    /// Same geometry as instance query, but no runtime material resolve.
-    fn mesh_data_surface_at_world_point(
+    /// Uses mesh data directly, with no node transform, instances, global values, or material resolve.
+    fn mesh_data_surface_at_local_point(
         &mut self,
-        node_id: NodeID,
-        world_point: Vector3,
-    ) -> Option<MeshSurfaceHit3D>;
+        mesh_id: MeshID,
+        local_point: Vector3,
+    ) -> Option<MeshDataSurfaceHit3D>;
 
-    /// Finds raw mesh-data surface hit on world-space ray.
+    /// Finds raw mesh-data surface hit on mesh-local ray.
     ///
-    /// Same geometry as instance query, but no runtime material resolve.
-    fn mesh_data_surface_on_world_ray(
+    /// Uses mesh data directly, with no node transform, instances, global values, or material resolve.
+    fn mesh_data_surface_on_local_ray(
         &mut self,
-        node_id: NodeID,
-        ray_origin: Vector3,
-        ray_direction: Vector3,
+        mesh_id: MeshID,
+        ray_origin_local: Vector3,
+        ray_direction_local: Vector3,
         max_distance: f32,
-    ) -> Option<MeshSurfaceHit3D>;
+    ) -> Option<MeshDataSurfaceHit3D>;
 
     /// Returns regions for one raw mesh-data surface index.
-    ///
-    /// `material` in return entries is always `None`.
     fn mesh_data_surface_regions(
         &mut self,
-        node_id: NodeID,
+        mesh_id: MeshID,
         surface_index: u32,
-    ) -> Vec<MeshMaterialRegion3D>;
-
-    /// Back-compat alias: same as `mesh_instance_surface_at_world_point`.
-    fn mesh_surface_at_world_point(
-        &mut self,
-        node_id: NodeID,
-        world_point: Vector3,
-    ) -> Option<MeshSurfaceHit3D> {
-        self.mesh_instance_surface_at_world_point(node_id, world_point)
-    }
-
-    /// Back-compat alias: same as `mesh_instance_surface_on_world_ray`.
-    fn mesh_surface_on_world_ray(
-        &mut self,
-        node_id: NodeID,
-        ray_origin: Vector3,
-        ray_direction: Vector3,
-        max_distance: f32,
-    ) -> Option<MeshSurfaceHit3D> {
-        self.mesh_instance_surface_on_world_ray(node_id, ray_origin, ray_direction, max_distance)
-    }
-
-    /// Back-compat alias: same as `mesh_instance_material_regions`.
-    fn mesh_material_regions(
-        &mut self,
-        node_id: NodeID,
-        material: MaterialID,
-    ) -> Vec<MeshMaterialRegion3D> {
-        self.mesh_instance_material_regions(node_id, material)
-    }
+    ) -> Vec<MeshDataSurfaceRegion3D>;
 }
 
 pub struct NodeModule<'rt, R: NodeAPI + ?Sized> {
@@ -741,52 +660,23 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.set_node_name(node_id, name)
     }
 
-    pub fn set_ui_min_size(&mut self, node_id: NodeID, size: Vector2) -> bool {
-        self.rt.set_ui_min_size(node_id, size)
+    pub fn get_skeleton_bone_name(
+        &mut self,
+        skeleton_id: NodeID,
+        bone_index: usize,
+    ) -> Option<Cow<'static, str>> {
+        self.rt.get_skeleton_bone_name(skeleton_id, bone_index)
     }
 
-    pub fn set_ui_max_size(&mut self, node_id: NodeID, size: Vector2) -> bool {
-        self.rt.set_ui_max_size(node_id, size)
-    }
-
-    pub fn set_ui_scale(&mut self, node_id: NodeID, scale: Vector2) -> bool {
-        self.rt.set_ui_scale(node_id, scale)
+    pub fn get_skeleton_bone_index<S>(&mut self, skeleton_id: NodeID, bone_name: S) -> Option<usize>
+    where
+        S: AsRef<str>,
+    {
+        self.rt.get_skeleton_bone_index(skeleton_id, bone_name)
     }
 
     pub fn set_ui_rotation(&mut self, node_id: NodeID, rotation: f32) -> bool {
         self.rt.set_ui_rotation(node_id, rotation)
-    }
-
-    pub fn set_ui_padding(&mut self, node_id: NodeID, padding: UiRect) -> bool {
-        self.rt.set_ui_padding(node_id, padding)
-    }
-
-    pub fn set_ui_margin(&mut self, node_id: NodeID, margin: UiRect) -> bool {
-        self.rt.set_ui_margin(node_id, margin)
-    }
-
-    pub fn set_ui_h_size(&mut self, node_id: NodeID, mode: UiSizeMode) -> bool {
-        self.rt.set_ui_h_size(node_id, mode)
-    }
-
-    pub fn set_ui_v_size(&mut self, node_id: NodeID, mode: UiSizeMode) -> bool {
-        self.rt.set_ui_v_size(node_id, mode)
-    }
-
-    pub fn set_ui_min_w(&mut self, node_id: NodeID, value: f32) -> bool {
-        self.rt.set_ui_min_w(node_id, value)
-    }
-
-    pub fn set_ui_min_h(&mut self, node_id: NodeID, value: f32) -> bool {
-        self.rt.set_ui_min_h(node_id, value)
-    }
-
-    pub fn set_ui_max_w(&mut self, node_id: NodeID, value: f32) -> bool {
-        self.rt.set_ui_max_w(node_id, value)
-    }
-
-    pub fn set_ui_max_h(&mut self, node_id: NodeID, value: f32) -> bool {
-        self.rt.set_ui_max_h(node_id, value)
     }
 
     pub fn get_node_parent_id(&mut self, node_id: NodeID) -> Option<NodeID> {
@@ -875,7 +765,7 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 
     pub fn tag_set<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool
     where
-        T: Into<Cow<'static, [TagID]>>,
+        T: Into<Vec<TagID>>,
     {
         self.rt.tag_set(node_id, tags)
     }
@@ -923,12 +813,184 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.get_global_transform_3d(node_id)
     }
 
+    pub fn get_local_transform_2d(&mut self, node_id: NodeID) -> Option<Transform2D> {
+        self.with_base_node::<Node2D, _, _>(node_id, |node| node.transform)
+    }
+
+    pub fn get_local_transform_3d(&mut self, node_id: NodeID) -> Option<Transform3D> {
+        self.with_base_node::<Node3D, _, _>(node_id, |node| node.transform)
+    }
+
+    pub fn set_local_transform_2d(&mut self, node_id: NodeID, transform: Transform2D) -> bool {
+        self.with_base_node_mut::<Node2D, _, _>(node_id, |node| {
+            node.transform = transform;
+        })
+        .is_some()
+    }
+
+    pub fn set_local_transform_3d(&mut self, node_id: NodeID, transform: Transform3D) -> bool {
+        self.with_base_node_mut::<Node3D, _, _>(node_id, |node| {
+            node.transform = transform;
+        })
+        .is_some()
+    }
+
     pub fn set_global_transform_2d(&mut self, node_id: NodeID, global: Transform2D) -> bool {
         self.rt.set_global_transform_2d(node_id, global)
     }
 
     pub fn set_global_transform_3d(&mut self, node_id: NodeID, global: Transform3D) -> bool {
         self.rt.set_global_transform_3d(node_id, global)
+    }
+
+    pub fn get_local_pos_2d(&mut self, node_id: NodeID) -> Option<Vector2> {
+        self.get_local_transform_2d(node_id)
+            .map(|transform| transform.position)
+    }
+
+    pub fn get_local_pos_3d(&mut self, node_id: NodeID) -> Option<Vector3> {
+        self.get_local_transform_3d(node_id)
+            .map(|transform| transform.position)
+    }
+
+    pub fn set_local_pos_2d(&mut self, node_id: NodeID, pos: Vector2) -> bool {
+        self.with_base_node_mut::<Node2D, _, _>(node_id, |node| {
+            node.transform.position = pos;
+        })
+        .is_some()
+    }
+
+    pub fn set_local_pos_3d(&mut self, node_id: NodeID, pos: Vector3) -> bool {
+        self.with_base_node_mut::<Node3D, _, _>(node_id, |node| {
+            node.transform.position = pos;
+        })
+        .is_some()
+    }
+
+    pub fn get_global_pos_2d(&mut self, node_id: NodeID) -> Option<Vector2> {
+        self.get_global_transform_2d(node_id)
+            .map(|transform| transform.position)
+    }
+
+    pub fn get_global_pos_3d(&mut self, node_id: NodeID) -> Option<Vector3> {
+        self.get_global_transform_3d(node_id)
+            .map(|transform| transform.position)
+    }
+
+    pub fn set_global_pos_2d(&mut self, node_id: NodeID, pos: Vector2) -> bool {
+        let Some(mut transform) = self.get_global_transform_2d(node_id) else {
+            return false;
+        };
+        transform.position = pos;
+        self.set_global_transform_2d(node_id, transform)
+    }
+
+    pub fn set_global_pos_3d(&mut self, node_id: NodeID, pos: Vector3) -> bool {
+        let Some(mut transform) = self.get_global_transform_3d(node_id) else {
+            return false;
+        };
+        transform.position = pos;
+        self.set_global_transform_3d(node_id, transform)
+    }
+
+    pub fn get_local_rot_2d(&mut self, node_id: NodeID) -> Option<f32> {
+        self.get_local_transform_2d(node_id)
+            .map(|transform| transform.rotation)
+    }
+
+    pub fn get_local_rot_3d(&mut self, node_id: NodeID) -> Option<Quaternion> {
+        self.get_local_transform_3d(node_id)
+            .map(|transform| transform.rotation)
+    }
+
+    pub fn set_local_rot_2d(&mut self, node_id: NodeID, rot: f32) -> bool {
+        self.with_base_node_mut::<Node2D, _, _>(node_id, |node| {
+            node.transform.rotation = rot;
+        })
+        .is_some()
+    }
+
+    pub fn set_local_rot_3d(&mut self, node_id: NodeID, rot: Quaternion) -> bool {
+        self.with_base_node_mut::<Node3D, _, _>(node_id, |node| {
+            node.transform.rotation = rot;
+        })
+        .is_some()
+    }
+
+    pub fn get_global_rot_2d(&mut self, node_id: NodeID) -> Option<f32> {
+        self.get_global_transform_2d(node_id)
+            .map(|transform| transform.rotation)
+    }
+
+    pub fn get_global_rot_3d(&mut self, node_id: NodeID) -> Option<Quaternion> {
+        self.get_global_transform_3d(node_id)
+            .map(|transform| transform.rotation)
+    }
+
+    pub fn set_global_rot_2d(&mut self, node_id: NodeID, rot: f32) -> bool {
+        let Some(mut transform) = self.get_global_transform_2d(node_id) else {
+            return false;
+        };
+        transform.rotation = rot;
+        self.set_global_transform_2d(node_id, transform)
+    }
+
+    pub fn set_global_rot_3d(&mut self, node_id: NodeID, rot: Quaternion) -> bool {
+        let Some(mut transform) = self.get_global_transform_3d(node_id) else {
+            return false;
+        };
+        transform.rotation = rot;
+        self.set_global_transform_3d(node_id, transform)
+    }
+
+    pub fn get_local_scale_2d(&mut self, node_id: NodeID) -> Option<Vector2> {
+        self.get_local_transform_2d(node_id)
+            .map(|transform| transform.scale)
+    }
+
+    pub fn get_local_scale_3d(&mut self, node_id: NodeID) -> Option<Vector3> {
+        self.get_local_transform_3d(node_id)
+            .map(|transform| transform.scale)
+    }
+
+    pub fn set_local_scale_2d(&mut self, node_id: NodeID, scale: Vector2) -> bool {
+        self.with_base_node_mut::<Node2D, _, _>(node_id, |node| {
+            node.transform.scale = scale;
+        })
+        .is_some()
+    }
+
+    pub fn set_local_scale_3d(&mut self, node_id: NodeID, scale: Vector3) -> bool {
+        self.with_base_node_mut::<Node3D, _, _>(node_id, |node| {
+            node.transform.scale = scale;
+        })
+        .is_some()
+    }
+
+    pub fn get_global_scale_2d(&mut self, node_id: NodeID) -> Option<Vector2> {
+        self.get_global_transform_2d(node_id)
+            .map(|transform| transform.scale)
+    }
+
+    pub fn get_global_scale_3d(&mut self, node_id: NodeID) -> Option<Vector3> {
+        self.get_global_transform_3d(node_id)
+            .map(|transform| transform.scale)
+    }
+
+    pub fn set_global_scale_2d(&mut self, node_id: NodeID, scale: Vector2) -> bool {
+        let Some(mut transform) = self.get_global_transform_2d(node_id) else {
+            return false;
+        };
+        transform.scale = scale;
+        self.set_global_transform_2d(node_id, transform)
+    }
+
+    pub fn set_global_scale_3d(&mut self, node_id: NodeID, scale: Vector3) -> bool {
+        let Some(mut transform) = self.get_global_transform_3d(node_id) else {
+            return false;
+        };
+        transform.scale = scale;
+        self.set_global_transform_3d(node_id, transform)
     }
 
     pub fn to_global_point_2d(&mut self, node_id: NodeID, local: Vector2) -> Option<Vector2> {
@@ -979,24 +1041,28 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.to_local_transform_3d(node_id, global)
     }
 
-    pub fn mesh_instance_surface_at_world_point(
+    pub fn mesh_instance_surface_at_global_point(
         &mut self,
         node_id: NodeID,
-        world_point: Vector3,
+        global_point: Vector3,
     ) -> Option<MeshSurfaceHit3D> {
         self.rt
-            .mesh_instance_surface_at_world_point(node_id, world_point)
+            .mesh_instance_surface_at_global_point(node_id, global_point)
     }
 
-    pub fn mesh_instance_surface_on_world_ray(
+    pub fn mesh_instance_surface_on_global_ray(
         &mut self,
         node_id: NodeID,
         ray_origin: Vector3,
         ray_direction: Vector3,
         max_distance: f32,
     ) -> Option<MeshSurfaceHit3D> {
-        self.rt
-            .mesh_instance_surface_on_world_ray(node_id, ray_origin, ray_direction, max_distance)
+        self.rt.mesh_instance_surface_on_global_ray(
+            node_id,
+            ray_origin,
+            ray_direction,
+            max_distance,
+        )
     }
 
     pub fn mesh_instance_material_regions(
@@ -1007,58 +1073,36 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.mesh_instance_material_regions(node_id, material)
     }
 
-    pub fn mesh_data_surface_at_world_point(
+    pub fn mesh_data_surface_at_local_point(
         &mut self,
-        node_id: NodeID,
-        world_point: Vector3,
-    ) -> Option<MeshSurfaceHit3D> {
+        mesh_id: MeshID,
+        local_point: Vector3,
+    ) -> Option<MeshDataSurfaceHit3D> {
         self.rt
-            .mesh_data_surface_at_world_point(node_id, world_point)
+            .mesh_data_surface_at_local_point(mesh_id, local_point)
     }
 
-    pub fn mesh_data_surface_on_world_ray(
+    pub fn mesh_data_surface_on_local_ray(
         &mut self,
-        node_id: NodeID,
-        ray_origin: Vector3,
-        ray_direction: Vector3,
+        mesh_id: MeshID,
+        ray_origin_local: Vector3,
+        ray_direction_local: Vector3,
         max_distance: f32,
-    ) -> Option<MeshSurfaceHit3D> {
-        self.rt
-            .mesh_data_surface_on_world_ray(node_id, ray_origin, ray_direction, max_distance)
+    ) -> Option<MeshDataSurfaceHit3D> {
+        self.rt.mesh_data_surface_on_local_ray(
+            mesh_id,
+            ray_origin_local,
+            ray_direction_local,
+            max_distance,
+        )
     }
 
     pub fn mesh_data_surface_regions(
         &mut self,
-        node_id: NodeID,
+        mesh_id: MeshID,
         surface_index: u32,
-    ) -> Vec<MeshMaterialRegion3D> {
-        self.rt.mesh_data_surface_regions(node_id, surface_index)
-    }
-
-    pub fn mesh_surface_at_world_point(
-        &mut self,
-        node_id: NodeID,
-        world_point: Vector3,
-    ) -> Option<MeshSurfaceHit3D> {
-        self.mesh_instance_surface_at_world_point(node_id, world_point)
-    }
-
-    pub fn mesh_surface_on_world_ray(
-        &mut self,
-        node_id: NodeID,
-        ray_origin: Vector3,
-        ray_direction: Vector3,
-        max_distance: f32,
-    ) -> Option<MeshSurfaceHit3D> {
-        self.mesh_instance_surface_on_world_ray(node_id, ray_origin, ray_direction, max_distance)
-    }
-
-    pub fn mesh_material_regions(
-        &mut self,
-        node_id: NodeID,
-        material: MaterialID,
-    ) -> Vec<MeshMaterialRegion3D> {
-        self.mesh_instance_material_regions(node_id, material)
+    ) -> Vec<MeshDataSurfaceRegion3D> {
+        self.rt.mesh_data_surface_regions(mesh_id, surface_index)
     }
 }
 
@@ -1212,24 +1256,21 @@ macro_rules! set_node_name {
     };
 }
 
+/// Gets skeleton bone name by index.
+/// Usage: `get_skeleton_bone_name!(ctx, skeleton_id, bone_index) -> Option<Cow<'static, str>>`.
 #[macro_export]
-macro_rules! set_ui_min_size {
-    ($ctx:expr, $id:expr, $size:expr) => {
-        $ctx.Nodes().set_ui_min_size($id, $size)
+macro_rules! get_skeleton_bone_name {
+    ($ctx:expr, $id:expr, $index:expr) => {
+        $ctx.Nodes().get_skeleton_bone_name($id, $index)
     };
 }
 
+/// Gets first skeleton bone index by name.
+/// Usage: `get_skeleton_bone_index!(ctx, skeleton_id, bone_name) -> Option<usize>`.
 #[macro_export]
-macro_rules! set_ui_max_size {
-    ($ctx:expr, $id:expr, $size:expr) => {
-        $ctx.Nodes().set_ui_max_size($id, $size)
-    };
-}
-
-#[macro_export]
-macro_rules! set_ui_scale {
-    ($ctx:expr, $id:expr, $scale:expr) => {
-        $ctx.Nodes().set_ui_scale($id, $scale)
+macro_rules! get_skeleton_bone_index {
+    ($ctx:expr, $id:expr, $name:expr) => {
+        $ctx.Nodes().get_skeleton_bone_index($id, $name)
     };
 }
 
@@ -1237,62 +1278,6 @@ macro_rules! set_ui_scale {
 macro_rules! set_ui_rotation {
     ($ctx:expr, $id:expr, $rotation:expr) => {
         $ctx.Nodes().set_ui_rotation($id, $rotation)
-    };
-}
-
-#[macro_export]
-macro_rules! set_ui_padding {
-    ($ctx:expr, $id:expr, $padding:expr) => {
-        $ctx.Nodes().set_ui_padding($id, $padding)
-    };
-}
-
-#[macro_export]
-macro_rules! set_ui_margin {
-    ($ctx:expr, $id:expr, $margin:expr) => {
-        $ctx.Nodes().set_ui_margin($id, $margin)
-    };
-}
-
-#[macro_export]
-macro_rules! set_ui_h_size {
-    ($ctx:expr, $id:expr, $mode:expr) => {
-        $ctx.Nodes().set_ui_h_size($id, $mode)
-    };
-}
-
-#[macro_export]
-macro_rules! set_ui_v_size {
-    ($ctx:expr, $id:expr, $mode:expr) => {
-        $ctx.Nodes().set_ui_v_size($id, $mode)
-    };
-}
-
-#[macro_export]
-macro_rules! set_ui_min_w {
-    ($ctx:expr, $id:expr, $value:expr) => {
-        $ctx.Nodes().set_ui_min_w($id, $value)
-    };
-}
-
-#[macro_export]
-macro_rules! set_ui_min_h {
-    ($ctx:expr, $id:expr, $value:expr) => {
-        $ctx.Nodes().set_ui_min_h($id, $value)
-    };
-}
-
-#[macro_export]
-macro_rules! set_ui_max_w {
-    ($ctx:expr, $id:expr, $value:expr) => {
-        $ctx.Nodes().set_ui_max_w($id, $value)
-    };
-}
-
-#[macro_export]
-macro_rules! set_ui_max_h {
-    ($ctx:expr, $id:expr, $value:expr) => {
-        $ctx.Nodes().set_ui_max_h($id, $value)
     };
 }
 
@@ -1400,7 +1385,7 @@ macro_rules! remove_node {
     };
 }
 
-/// Gets global/world transform for a 2D spatial node.
+/// Gets global transform for a 2D spatial node.
 /// Usage: `get_global_transform_2d!(ctx, node_id) -> Option<Transform2D>`.
 #[macro_export]
 macro_rules! get_global_transform_2d {
@@ -1409,7 +1394,7 @@ macro_rules! get_global_transform_2d {
     };
 }
 
-/// Gets global/world transform for a 3D spatial node.
+/// Gets global transform for a 3D spatial node.
 /// Usage: `get_global_transform_3d!(ctx, node_id) -> Option<Transform3D>`.
 #[macro_export]
 macro_rules! get_global_transform_3d {
@@ -1418,7 +1403,25 @@ macro_rules! get_global_transform_3d {
     };
 }
 
-/// Sets global/world transform for a 2D spatial node.
+/// Gets local transform for a 2D spatial node.
+/// Usage: `get_local_transform_2d!(ctx, node_id) -> Option<Transform2D>`.
+#[macro_export]
+macro_rules! get_local_transform_2d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_local_transform_2d($id)
+    };
+}
+
+/// Gets local transform for a 3D spatial node.
+/// Usage: `get_local_transform_3d!(ctx, node_id) -> Option<Transform3D>`.
+#[macro_export]
+macro_rules! get_local_transform_3d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_local_transform_3d($id)
+    };
+}
+
+/// Sets global transform for a 2D spatial node.
 /// Usage: `set_global_transform_2d!(ctx, node_id, transform) -> bool`.
 #[macro_export]
 macro_rules! set_global_transform_2d {
@@ -1427,7 +1430,7 @@ macro_rules! set_global_transform_2d {
     };
 }
 
-/// Sets global/world transform for a 3D spatial node.
+/// Sets global transform for a 3D spatial node.
 /// Usage: `set_global_transform_3d!(ctx, node_id, transform) -> bool`.
 #[macro_export]
 macro_rules! set_global_transform_3d {
@@ -1436,7 +1439,241 @@ macro_rules! set_global_transform_3d {
     };
 }
 
-/// Converts local 2D point to global/world point.
+/// Sets local transform for a 2D spatial node.
+/// Usage: `set_local_transform_2d!(ctx, node_id, transform) -> bool`.
+#[macro_export]
+macro_rules! set_local_transform_2d {
+    ($ctx:expr, $id:expr, $transform:expr) => {
+        $ctx.Nodes().set_local_transform_2d($id, $transform)
+    };
+}
+
+/// Sets local transform for a 3D spatial node.
+/// Usage: `set_local_transform_3d!(ctx, node_id, transform) -> bool`.
+#[macro_export]
+macro_rules! set_local_transform_3d {
+    ($ctx:expr, $id:expr, $transform:expr) => {
+        $ctx.Nodes().set_local_transform_3d($id, $transform)
+    };
+}
+
+/// Gets local position for a 2D spatial node.
+/// Usage: `get_local_pos_2d!(ctx, node_id) -> Option<Vector2>`.
+#[macro_export]
+macro_rules! get_local_pos_2d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_local_pos_2d($id)
+    };
+}
+
+/// Gets local position for a 3D spatial node.
+/// Usage: `get_local_pos_3d!(ctx, node_id) -> Option<Vector3>`.
+#[macro_export]
+macro_rules! get_local_pos_3d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_local_pos_3d($id)
+    };
+}
+
+/// Sets local position for a 2D spatial node.
+/// Usage: `set_local_pos_2d!(ctx, node_id, pos) -> bool`.
+#[macro_export]
+macro_rules! set_local_pos_2d {
+    ($ctx:expr, $id:expr, $pos:expr) => {
+        $ctx.Nodes().set_local_pos_2d($id, $pos)
+    };
+}
+
+/// Sets local position for a 3D spatial node.
+/// Usage: `set_local_pos_3d!(ctx, node_id, pos) -> bool`.
+#[macro_export]
+macro_rules! set_local_pos_3d {
+    ($ctx:expr, $id:expr, $pos:expr) => {
+        $ctx.Nodes().set_local_pos_3d($id, $pos)
+    };
+}
+
+/// Gets global position for a 2D spatial node.
+/// Usage: `get_global_pos_2d!(ctx, node_id) -> Option<Vector2>`.
+#[macro_export]
+macro_rules! get_global_pos_2d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_global_pos_2d($id)
+    };
+}
+
+/// Gets global position for a 3D spatial node.
+/// Usage: `get_global_pos_3d!(ctx, node_id) -> Option<Vector3>`.
+#[macro_export]
+macro_rules! get_global_pos_3d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_global_pos_3d($id)
+    };
+}
+
+/// Sets global position for a 2D spatial node.
+/// Usage: `set_global_pos_2d!(ctx, node_id, pos) -> bool`.
+#[macro_export]
+macro_rules! set_global_pos_2d {
+    ($ctx:expr, $id:expr, $pos:expr) => {
+        $ctx.Nodes().set_global_pos_2d($id, $pos)
+    };
+}
+
+/// Sets global position for a 3D spatial node.
+/// Usage: `set_global_pos_3d!(ctx, node_id, pos) -> bool`.
+#[macro_export]
+macro_rules! set_global_pos_3d {
+    ($ctx:expr, $id:expr, $pos:expr) => {
+        $ctx.Nodes().set_global_pos_3d($id, $pos)
+    };
+}
+
+/// Gets local rotation for a 2D spatial node.
+/// Usage: `get_local_rot_2d!(ctx, node_id) -> Option<f32>`.
+#[macro_export]
+macro_rules! get_local_rot_2d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_local_rot_2d($id)
+    };
+}
+
+/// Gets local rotation for a 3D spatial node.
+/// Usage: `get_local_rot_3d!(ctx, node_id) -> Option<Quaternion>`.
+#[macro_export]
+macro_rules! get_local_rot_3d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_local_rot_3d($id)
+    };
+}
+
+/// Sets local rotation for a 2D spatial node.
+/// Usage: `set_local_rot_2d!(ctx, node_id, rot) -> bool`.
+#[macro_export]
+macro_rules! set_local_rot_2d {
+    ($ctx:expr, $id:expr, $rot:expr) => {
+        $ctx.Nodes().set_local_rot_2d($id, $rot)
+    };
+}
+
+/// Sets local rotation for a 3D spatial node.
+/// Usage: `set_local_rot_3d!(ctx, node_id, rot) -> bool`.
+#[macro_export]
+macro_rules! set_local_rot_3d {
+    ($ctx:expr, $id:expr, $rot:expr) => {
+        $ctx.Nodes().set_local_rot_3d($id, $rot)
+    };
+}
+
+/// Gets global rotation for a 2D spatial node.
+/// Usage: `get_global_rot_2d!(ctx, node_id) -> Option<f32>`.
+#[macro_export]
+macro_rules! get_global_rot_2d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_global_rot_2d($id)
+    };
+}
+
+/// Gets global rotation for a 3D spatial node.
+/// Usage: `get_global_rot_3d!(ctx, node_id) -> Option<Quaternion>`.
+#[macro_export]
+macro_rules! get_global_rot_3d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_global_rot_3d($id)
+    };
+}
+
+/// Sets global rotation for a 2D spatial node.
+/// Usage: `set_global_rot_2d!(ctx, node_id, rot) -> bool`.
+#[macro_export]
+macro_rules! set_global_rot_2d {
+    ($ctx:expr, $id:expr, $rot:expr) => {
+        $ctx.Nodes().set_global_rot_2d($id, $rot)
+    };
+}
+
+/// Sets global rotation for a 3D spatial node.
+/// Usage: `set_global_rot_3d!(ctx, node_id, rot) -> bool`.
+#[macro_export]
+macro_rules! set_global_rot_3d {
+    ($ctx:expr, $id:expr, $rot:expr) => {
+        $ctx.Nodes().set_global_rot_3d($id, $rot)
+    };
+}
+
+/// Gets local scale for a 2D spatial node.
+/// Usage: `get_local_scale_2d!(ctx, node_id) -> Option<Vector2>`.
+#[macro_export]
+macro_rules! get_local_scale_2d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_local_scale_2d($id)
+    };
+}
+
+/// Gets local scale for a 3D spatial node.
+/// Usage: `get_local_scale_3d!(ctx, node_id) -> Option<Vector3>`.
+#[macro_export]
+macro_rules! get_local_scale_3d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_local_scale_3d($id)
+    };
+}
+
+/// Sets local scale for a 2D spatial node.
+/// Usage: `set_local_scale_2d!(ctx, node_id, scale) -> bool`.
+#[macro_export]
+macro_rules! set_local_scale_2d {
+    ($ctx:expr, $id:expr, $scale:expr) => {
+        $ctx.Nodes().set_local_scale_2d($id, $scale)
+    };
+}
+
+/// Sets local scale for a 3D spatial node.
+/// Usage: `set_local_scale_3d!(ctx, node_id, scale) -> bool`.
+#[macro_export]
+macro_rules! set_local_scale_3d {
+    ($ctx:expr, $id:expr, $scale:expr) => {
+        $ctx.Nodes().set_local_scale_3d($id, $scale)
+    };
+}
+
+/// Gets global scale for a 2D spatial node.
+/// Usage: `get_global_scale_2d!(ctx, node_id) -> Option<Vector2>`.
+#[macro_export]
+macro_rules! get_global_scale_2d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_global_scale_2d($id)
+    };
+}
+
+/// Gets global scale for a 3D spatial node.
+/// Usage: `get_global_scale_3d!(ctx, node_id) -> Option<Vector3>`.
+#[macro_export]
+macro_rules! get_global_scale_3d {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().get_global_scale_3d($id)
+    };
+}
+
+/// Sets global scale for a 2D spatial node.
+/// Usage: `set_global_scale_2d!(ctx, node_id, scale) -> bool`.
+#[macro_export]
+macro_rules! set_global_scale_2d {
+    ($ctx:expr, $id:expr, $scale:expr) => {
+        $ctx.Nodes().set_global_scale_2d($id, $scale)
+    };
+}
+
+/// Sets global scale for a 3D spatial node.
+/// Usage: `set_global_scale_3d!(ctx, node_id, scale) -> bool`.
+#[macro_export]
+macro_rules! set_global_scale_3d {
+    ($ctx:expr, $id:expr, $scale:expr) => {
+        $ctx.Nodes().set_global_scale_3d($id, $scale)
+    };
+}
+
+/// Converts local 2D point to global point.
 /// Usage: `to_global_point_2d!(ctx, node_id, local_point) -> Option<Vector2>`.
 #[macro_export]
 macro_rules! to_global_point_2d {
@@ -1445,7 +1682,7 @@ macro_rules! to_global_point_2d {
     };
 }
 
-/// Converts global/world 2D point to local point.
+/// Converts global 2D point to local point.
 /// Usage: `to_local_point_2d!(ctx, node_id, global_point) -> Option<Vector2>`.
 #[macro_export]
 macro_rules! to_local_point_2d {
@@ -1454,7 +1691,7 @@ macro_rules! to_local_point_2d {
     };
 }
 
-/// Converts local 3D point to global/world point.
+/// Converts local 3D point to global point.
 /// Usage: `to_global_point_3d!(ctx, node_id, local_point) -> Option<Vector3>`.
 #[macro_export]
 macro_rules! to_global_point_3d {
@@ -1463,7 +1700,7 @@ macro_rules! to_global_point_3d {
     };
 }
 
-/// Converts global/world 3D point to local point.
+/// Converts global 3D point to local point.
 /// Usage: `to_local_point_3d!(ctx, node_id, global_point) -> Option<Vector3>`.
 #[macro_export]
 macro_rules! to_local_point_3d {
@@ -1472,7 +1709,7 @@ macro_rules! to_local_point_3d {
     };
 }
 
-/// Converts local 2D transform to global/world transform.
+/// Converts local 2D transform to global transform.
 /// Usage: `to_global_transform_2d!(ctx, node_id, local_transform) -> Option<Transform2D>`.
 #[macro_export]
 macro_rules! to_global_transform_2d {
@@ -1481,7 +1718,7 @@ macro_rules! to_global_transform_2d {
     };
 }
 
-/// Converts global/world 2D transform to local transform.
+/// Converts global 2D transform to local transform.
 /// Usage: `to_local_transform_2d!(ctx, node_id, global_transform) -> Option<Transform2D>`.
 #[macro_export]
 macro_rules! to_local_transform_2d {
@@ -1490,7 +1727,7 @@ macro_rules! to_local_transform_2d {
     };
 }
 
-/// Converts local 3D transform to global/world transform.
+/// Converts local 3D transform to global transform.
 /// Usage: `to_global_transform_3d!(ctx, node_id, local_transform) -> Option<Transform3D>`.
 #[macro_export]
 macro_rules! to_global_transform_3d {
@@ -1499,7 +1736,7 @@ macro_rules! to_global_transform_3d {
     };
 }
 
-/// Converts global/world 3D transform to local transform.
+/// Converts global 3D transform to local transform.
 /// Usage: `to_local_transform_3d!(ctx, node_id, global_transform) -> Option<Transform3D>`.
 #[macro_export]
 macro_rules! to_local_transform_3d {
@@ -1508,58 +1745,64 @@ macro_rules! to_local_transform_3d {
     };
 }
 
-/// Finds nearest mesh surface at a world-space point for a mesh node.
-/// Usage: `mesh_surface_at_world_point_3d!(ctx, node_id, world_point) -> Option<MeshSurfaceHit3D>`.
+/// Finds nearest mesh surface at a global-space point for a mesh instance node.
+/// Usage: `mesh_instance_surface_at_global_point_3d!(ctx, node_id, global_point) -> Option<MeshSurfaceHit3D>`.
 #[macro_export]
-macro_rules! mesh_surface_at_world_point_3d {
+macro_rules! mesh_instance_surface_at_global_point_3d {
     ($ctx:expr, $id:expr, $point:expr) => {
         $ctx.Nodes()
-            .mesh_instance_surface_at_world_point($id, $point)
+            .mesh_instance_surface_at_global_point($id, $point)
     };
 }
 
-/// Finds first mesh surface hit along a world-space ray for a mesh node.
+/// Finds first mesh surface hit along a global-space ray for a mesh instance node.
 /// Usage:
-/// `mesh_surface_on_world_ray_3d!(ctx, node_id, ray_origin, ray_direction, max_distance) -> Option<MeshSurfaceHit3D>`.
+/// `mesh_instance_surface_on_global_ray_3d!(ctx, node_id, ray_origin, ray_direction, max_distance) -> Option<MeshSurfaceHit3D>`.
 #[macro_export]
-macro_rules! mesh_surface_on_world_ray_3d {
+macro_rules! mesh_instance_surface_on_global_ray_3d {
     ($ctx:expr, $id:expr, $origin:expr, $direction:expr, $max_distance:expr) => {
         $ctx.Nodes()
-            .mesh_instance_surface_on_world_ray($id, $origin, $direction, $max_distance)
+            .mesh_instance_surface_on_global_ray($id, $origin, $direction, $max_distance)
     };
 }
 
-/// Returns mesh regions that use the target material.
-/// Usage: `mesh_material_regions_3d!(ctx, node_id, material_id) -> Vec<MeshMaterialRegion3D>`.
+/// Returns mesh instance regions that use the target material.
+/// Usage: `mesh_instance_material_regions_3d!(ctx, node_id, material_id) -> Vec<MeshMaterialRegion3D>`.
 #[macro_export]
-macro_rules! mesh_material_regions_3d {
+macro_rules! mesh_instance_material_regions_3d {
     ($ctx:expr, $id:expr, $material:expr) => {
         $ctx.Nodes().mesh_instance_material_regions($id, $material)
     };
 }
 
-/// Finds nearest raw mesh-data surface at a world-space point.
+/// Finds nearest raw mesh-data surface at a mesh-local point.
 #[macro_export]
-macro_rules! mesh_data_surface_at_world_point_3d {
-    ($ctx:expr, $id:expr, $point:expr) => {
-        $ctx.Nodes().mesh_data_surface_at_world_point($id, $point)
+macro_rules! mesh_data_surface_at_local_point_3d {
+    ($ctx:expr, $mesh_id:expr, $point_local:expr) => {
+        $ctx.Nodes()
+            .mesh_data_surface_at_local_point($mesh_id, $point_local)
     };
 }
 
-/// Finds raw mesh-data surface hit on world-space ray.
+/// Finds raw mesh-data surface hit on a mesh-local ray.
 #[macro_export]
-macro_rules! mesh_data_surface_on_world_ray_3d {
-    ($ctx:expr, $id:expr, $origin:expr, $direction:expr, $max_distance:expr) => {
-        $ctx.Nodes()
-            .mesh_data_surface_on_world_ray($id, $origin, $direction, $max_distance)
+macro_rules! mesh_data_surface_on_local_ray_3d {
+    ($ctx:expr, $mesh_id:expr, $origin_local:expr, $direction_local:expr, $max_distance:expr) => {
+        $ctx.Nodes().mesh_data_surface_on_local_ray(
+            $mesh_id,
+            $origin_local,
+            $direction_local,
+            $max_distance,
+        )
     };
 }
 
 /// Returns raw mesh-data regions for one surface index.
 #[macro_export]
 macro_rules! mesh_data_surface_regions_3d {
-    ($ctx:expr, $id:expr, $surface_index:expr) => {
-        $ctx.Nodes().mesh_data_surface_regions($id, $surface_index)
+    ($ctx:expr, $mesh_id:expr, $surface_index:expr) => {
+        $ctx.Nodes()
+            .mesh_data_surface_regions($mesh_id, $surface_index)
     };
 }
 
@@ -1577,7 +1820,7 @@ macro_rules! get_node_tags {
 
 /// Sets or clears node tags.
 /// Usage:
-/// - `tag_set!(ctx, node_id, tags)` where `tags` is `Cow<'static, [TagID]>` compatible.
+/// - `tag_set!(ctx, node_id, tags)` where `tags` converts into `Vec<TagID>`.
 /// - `tag_set!(ctx, node_id)` clears all tags.
 ///
 /// Arguments:

@@ -1351,12 +1351,9 @@ impl Variant {
                 map.insert("w".to_string(), float_to_json(v.w as f64));
                 JsonValue::Object(map)
             }
-            Variant::EngineStruct(EngineStruct::PostProcessSet(v)) => JsonValue::Array(
-                v.as_slice()
-                    .iter()
-                    .map(post_process_effect_to_json)
-                    .collect(),
-            ),
+            Variant::EngineStruct(EngineStruct::PostProcessSet(v)) => {
+                JsonValue::Array(v.entries().iter().map(post_process_entry_to_json).collect())
+            }
             Variant::EngineStruct(EngineStruct::VisualAccessibilitySettings(v)) => {
                 let mut map = JsonMap::new();
                 let color_blind = match v.color_blind {
@@ -1448,6 +1445,21 @@ fn custom_post_param_value_to_json(value: &CustomPostParamValue) -> JsonValue {
             float_to_json(v[3] as f64),
         ]),
     }
+}
+
+fn post_process_entry_to_json(entry: &PostProcessEntry) -> JsonValue {
+    let mut value = post_process_effect_to_json(&entry.effect);
+    if let JsonValue::Object(map) = &mut value {
+        match &entry.name {
+            Some(name) => {
+                map.insert("name".to_string(), JsonValue::String(name.to_string()));
+            }
+            None => {
+                map.insert("name".to_string(), JsonValue::Null);
+            }
+        }
+    }
+    value
 }
 
 fn post_process_effect_to_json(effect: &PostProcessEffect) -> JsonValue {

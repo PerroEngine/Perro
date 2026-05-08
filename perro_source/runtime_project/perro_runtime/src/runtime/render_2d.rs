@@ -98,7 +98,7 @@ impl Runtime {
                     position: [global.position.x, global.position.y],
                     rotation_radians: global.rotation,
                     zoom,
-                    post_processing: Arc::from(post_processing.as_slice()),
+                    post_processing: Arc::from(post_processing.to_effects_vec()),
                 }
             });
             if let Some(camera) = camera_data

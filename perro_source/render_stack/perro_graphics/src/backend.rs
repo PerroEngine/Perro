@@ -934,7 +934,7 @@ impl PerroGraphics {
                 point_particles_3d_revision: self.retained_point_particles_cache_revision,
                 camera_2d,
                 post_processing_2d: camera_2d_state.post_processing.clone(),
-                post_processing_global: self.global_post_processing.as_slice().into(),
+                post_processing_global: Arc::from(self.global_post_processing.to_effects_vec()),
                 accessibility: self.accessibility,
                 rects_2d: &self.frame_rects_cache,
                 upload_2d: &upload,

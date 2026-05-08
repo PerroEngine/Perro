@@ -1,10 +1,46 @@
 use crate::Runtime;
-use perro_nodes::{Node2D, Node3D, SceneNode, SceneNodeData};
+use perro_nodes::{Bone3D, BoneAttachment3D, Node2D, Node3D, SceneNode, SceneNodeData, Skeleton3D};
 use perro_runtime_context::sub_apis::NodeAPI;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 
 fn approx(a: f32, b: f32) -> bool {
     (a - b).abs() <= 1e-4
+}
+
+#[test]
+fn skeleton_bone_lookup_helpers_return_name_and_index() {
+    let mut runtime = Runtime::new();
+
+    let mut skeleton = Skeleton3D::new();
+    skeleton.bones = vec![
+        Bone3D {
+            name: "Root".into(),
+            ..Bone3D::new()
+        },
+        Bone3D {
+            name: "Spine".into(),
+            ..Bone3D::new()
+        },
+    ];
+    let skeleton_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Skeleton3D(skeleton)));
+    let node_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    let name = runtime.get_skeleton_bone_name(skeleton_id, 1);
+    assert_eq!(name.as_deref(), Some("Spine"));
+    assert_eq!(
+        runtime.get_skeleton_bone_index(skeleton_id, "Root"),
+        Some(0)
+    );
+    assert_eq!(runtime.get_skeleton_bone_name(skeleton_id, 99), None);
+    assert_eq!(
+        runtime.get_skeleton_bone_index(skeleton_id, "Missing"),
+        None
+    );
+    assert_eq!(runtime.get_skeleton_bone_name(node_id, 0), None);
 }
 
 #[test]
@@ -50,6 +86,131 @@ fn get_set_global_transform_3d_works_under_scaled_parent() {
     assert!(approx(child_local.position.x, 0.0));
     assert!(approx(child_local.position.y, -1.0 / 15.0));
     assert!(approx(child_local.position.z, 0.0));
+}
+
+#[test]
+fn bone_attachment_3d_follows_skeleton_bone_global_transform() {
+    let mut runtime = Runtime::new();
+
+    let mut skeleton = Skeleton3D::new();
+    skeleton.transform.position = Vector3::new(10.0, 0.0, 0.0);
+    skeleton.bones = vec![
+        Bone3D {
+            rest: Transform3D::new(
+                Vector3::new(0.0, 2.0, 0.0),
+                Quaternion::IDENTITY,
+                Vector3::ONE,
+            ),
+            ..Bone3D::new()
+        },
+        Bone3D {
+            parent: 0,
+            rest: Transform3D::new(
+                Vector3::new(0.0, 0.0, 3.0),
+                Quaternion::IDENTITY,
+                Vector3::ONE,
+            ),
+            ..Bone3D::new()
+        },
+    ];
+    let skeleton_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Skeleton3D(skeleton)));
+    runtime.register_internal_node_schedules(
+        skeleton_id,
+        runtime.nodes.get(skeleton_id).unwrap().node_type(),
+    );
+
+    let mut attachment = BoneAttachment3D::new();
+    attachment.skeleton = skeleton_id;
+    attachment.bone_index = 1;
+    let attachment_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::BoneAttachment3D(attachment)));
+    runtime.register_internal_node_schedules(
+        attachment_id,
+        runtime.nodes.get(attachment_id).unwrap().node_type(),
+    );
+    runtime.mark_transform_dirty_recursive(skeleton_id);
+    runtime.mark_transform_dirty_recursive(attachment_id);
+
+    runtime.update(1.0 / 60.0);
+
+    let global = runtime
+        .get_global_transform_3d(attachment_id)
+        .expect("attachment global must exist");
+    assert!(approx(global.position.x, 10.0));
+    assert!(approx(global.position.y, 2.0));
+    assert!(approx(global.position.z, 3.0));
+}
+
+#[test]
+fn bone_attachment_3d_child_follows_bone_global_transform() {
+    let mut runtime = Runtime::new();
+
+    let mut skeleton = Skeleton3D::new();
+    skeleton.transform.position = Vector3::new(10.0, 0.0, 0.0);
+    skeleton.bones = vec![Bone3D {
+        rest: Transform3D::new(
+            Vector3::new(0.0, 2.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        ),
+        ..Bone3D::new()
+    }];
+    let skeleton_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Skeleton3D(skeleton)));
+    runtime.register_internal_node_schedules(
+        skeleton_id,
+        runtime.nodes.get(skeleton_id).unwrap().node_type(),
+    );
+
+    let mut attachment = BoneAttachment3D::new();
+    attachment.skeleton = skeleton_id;
+    attachment.bone_index = 0;
+    let attachment_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::BoneAttachment3D(attachment)));
+    runtime.register_internal_node_schedules(
+        attachment_id,
+        runtime.nodes.get(attachment_id).unwrap().node_type(),
+    );
+
+    let mut child = Node3D::new();
+    child.transform.position = Vector3::new(0.0, 0.0, 5.0);
+    let child_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(child)));
+    if let Some(attachment_node) = runtime.nodes.get_mut(attachment_id) {
+        attachment_node.add_child(child_id);
+    }
+    if let Some(child_node) = runtime.nodes.get_mut(child_id) {
+        child_node.parent = attachment_id;
+    }
+    runtime.mark_transform_dirty_recursive(skeleton_id);
+    runtime.mark_transform_dirty_recursive(attachment_id);
+
+    runtime.update(1.0 / 60.0);
+
+    let child_global = runtime
+        .get_global_transform_3d(child_id)
+        .expect("child global must exist");
+    assert!(approx(child_global.position.x, 10.0));
+    assert!(approx(child_global.position.y, 2.0));
+    assert!(approx(child_global.position.z, 5.0));
+
+    let _ = runtime.with_base_node_mut::<Skeleton3D, _, _>(skeleton_id, |skeleton| {
+        skeleton.bones[0].rest.position = Vector3::new(0.0, 4.0, 0.0);
+    });
+    runtime.update(1.0 / 60.0);
+
+    let child_global = runtime
+        .get_global_transform_3d(child_id)
+        .expect("child global must exist after bone move");
+    assert!(approx(child_global.position.x, 10.0));
+    assert!(approx(child_global.position.y, 4.0));
+    assert!(approx(child_global.position.z, 5.0));
 }
 
 #[test]

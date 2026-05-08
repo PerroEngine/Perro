@@ -31,19 +31,19 @@ pub struct AnimationPlayer {
     pub speed: f32,
     pub paused: bool,
     pub playback_type: AnimationPlaybackType,
-    pub bindings: Cow<'static, [AnimationObjectBinding]>,
+    pub bindings: Vec<AnimationObjectBinding>,
     pub internal: InternalAnimationData,
 }
 
 impl AnimationPlayer {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             animation: AnimationID::nil(),
             current_frame: 0,
             speed: 1.0,
             paused: false,
             playback_type: AnimationPlaybackType::Loop,
-            bindings: Cow::Borrowed(&[]),
+            bindings: Vec::new(),
             internal: InternalAnimationData {
                 last_applied_animation: AnimationID::nil(),
                 last_applied_frame: 0,
@@ -92,11 +92,14 @@ impl AnimationPlayer {
 
     #[inline]
     pub fn set_binding(&mut self, object: &str, node: perro_ids::NodeID) {
-        let bindings = self.bindings.to_mut();
-        if let Some(binding) = bindings.iter_mut().find(|b| b.object.as_ref() == object) {
+        if let Some(binding) = self
+            .bindings
+            .iter_mut()
+            .find(|b| b.object.as_ref() == object)
+        {
             binding.node = node;
         } else {
-            bindings.push(AnimationObjectBinding {
+            self.bindings.push(AnimationObjectBinding {
                 object: object.to_string().into(),
                 node,
             });
@@ -105,6 +108,6 @@ impl AnimationPlayer {
 
     #[inline]
     pub fn clear_bindings(&mut self) {
-        self.bindings.to_mut().clear();
+        self.bindings.clear();
     }
 }

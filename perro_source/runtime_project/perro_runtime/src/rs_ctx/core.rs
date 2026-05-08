@@ -100,6 +100,7 @@ impl RuntimeResourceApi {
                         state.mesh_pending_by_source.remove(&source_hash);
                         if let Some(pending_id) = state.mesh_pending_id_by_request.remove(request) {
                             let _ = state.free_mesh_id(pending_id);
+                            state.mesh_source_by_id.remove(&pending_id);
                         }
                         state.mesh_by_source.remove(&source_hash);
                         state.mesh_reserve_pending.remove(&source_hash);
@@ -122,17 +123,20 @@ impl RuntimeResourceApi {
                         // Free the temporary pending slot to avoid mesh-id leaks/churn.
                         let _ = state.free_mesh_id(pending_id);
                         state.mesh_id_alias.insert(pending_id, *id);
+                        state.mesh_source_by_id.remove(&pending_id);
                     }
                     if state.mesh_drop_pending.remove(&source_hash) {
                         state.queued_commands.push(RenderCommand::Resource(
                             perro_render_bridge::ResourceCommand::DropMesh { id: *id },
                         ));
                         state.mesh_by_source.remove(&source_hash);
+                        state.mesh_source_by_id.remove(id);
                         if let Some(pending_id) = pending_id {
                             let _ = state.free_mesh_id(pending_id);
                         }
                     } else {
                         state.mesh_by_source.insert(source_hash, *id);
+                        state.mesh_source_by_id.insert(*id, source);
                         if state.mesh_reserve_pending.remove(&source_hash) {
                             state.queued_commands.push(RenderCommand::Resource(
                                 perro_render_bridge::ResourceCommand::SetMeshReserved {
@@ -196,6 +200,7 @@ impl RuntimeResourceApi {
                     if let Some(pending_id) = state.mesh_pending_id_by_request.remove(request) {
                         let _ = state.free_mesh_id(pending_id);
                         state.mesh_data_by_id.remove(&pending_id);
+                        state.mesh_source_by_id.remove(&pending_id);
                     }
                     state.mesh_by_source.remove(&source_hash);
                     state.mesh_reserve_pending.remove(&source_hash);

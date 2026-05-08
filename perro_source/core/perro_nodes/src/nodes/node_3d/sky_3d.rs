@@ -127,9 +127,9 @@ pub struct Sky3D {
     pub transform: Transform3D,
     pub visible: bool,
     pub active: bool,
-    pub day_colors: Cow<'static, [[f32; 3]]>,
-    pub evening_colors: Cow<'static, [[f32; 3]]>,
-    pub night_colors: Cow<'static, [[f32; 3]]>,
+    pub day_colors: Vec<[f32; 3]>,
+    pub evening_colors: Vec<[f32; 3]>,
+    pub night_colors: Vec<[f32; 3]>,
     pub sky_angle: f32,
     pub time: SkyTime,
     pub clouds: SkyClouds,
@@ -141,22 +141,14 @@ pub struct Sky3D {
 }
 
 impl Sky3D {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             transform: Transform3D::IDENTITY,
             visible: true,
             active: true,
-            day_colors: Cow::Borrowed(&[[0.06, 0.12, 0.25], [0.35, 0.55, 0.9], [0.8, 0.9, 1.0]]),
-            evening_colors: Cow::Borrowed(&[
-                [1.00, 0.62, 0.40],
-                [0.95, 0.42, 0.58],
-                [0.42, 0.20, 0.42],
-            ]),
-            night_colors: Cow::Borrowed(&[
-                [0.01, 0.02, 0.06],
-                [0.04, 0.06, 0.15],
-                [0.09, 0.12, 0.25],
-            ]),
+            day_colors: vec![[0.06, 0.12, 0.25], [0.35, 0.55, 0.9], [0.8, 0.9, 1.0]],
+            evening_colors: vec![[1.00, 0.62, 0.40], [0.95, 0.42, 0.58], [0.42, 0.20, 0.42]],
+            night_colors: vec![[0.01, 0.02, 0.06], [0.04, 0.06, 0.15], [0.09, 0.12, 0.25]],
             sky_angle: 0.0,
             time: SkyTime::new(),
             clouds: SkyClouds::new(),

@@ -40,17 +40,6 @@ Metadata/hierarchy macros:
 
 - `get_node_name!(ctx.run, node_id) -> Option<Cow<'static, str>>`
 - `set_node_name!(ctx.run, node_id, name) -> bool`
-- `set_ui_min_size!(ctx.run, node_id, Vector2) -> bool`
-- `set_ui_max_size!(ctx.run, node_id, Vector2) -> bool`
-- `set_ui_scale!(ctx.run, node_id, Vector2) -> bool`
-- `set_ui_padding!(ctx.run, node_id, UiRect) -> bool`
-- `set_ui_margin!(ctx.run, node_id, UiRect) -> bool`
-- `set_ui_h_size!(ctx.run, node_id, UiSizeMode) -> bool`
-- `set_ui_v_size!(ctx.run, node_id, UiSizeMode) -> bool`
-- `set_ui_min_w!(ctx.run, node_id, pixels) -> bool`
-- `set_ui_min_h!(ctx.run, node_id, pixels) -> bool`
-- `set_ui_max_w!(ctx.run, node_id, pixels) -> bool`
-- `set_ui_max_h!(ctx.run, node_id, pixels) -> bool`
 - `get_node_parent_id!(ctx.run, node_id) -> Option<NodeID>`
 - `get_node_children_ids!(ctx.run, node_id) -> Option<Vec<NodeID>>`
 - `get_node_type!(ctx.run, node_id) -> Option<NodeType>`
@@ -59,24 +48,86 @@ Metadata/hierarchy macros:
 - `reparent_multi!(ctx.run, parent_id, child_ids) -> usize`
 - `remove_node!(ctx.run, node_id) -> bool`
 
+Runtime node base data:
+
+- `SceneNode.name` stores `Cow<'static, str>`.
+- `SceneNode.parent` stores `NodeID`.
+- `SceneNode.children` stores `Vec<NodeID>`.
+- `SceneNode.tags` stores `Vec<TagID>`.
+- `node.get_children_ids()` / `node.children_slice()` -> `&[NodeID]`.
+- `node.get_tag_ids()` / `node.tags_slice()` -> `&[TagID]`.
+- `node.set_children_ids(Some(children))` replaces children from any `Into<Vec<NodeID>>`.
+- `node.set_children_ids(None)` clears children.
+- `node.set_tag_ids(Some(tags))` replaces tags from any `Into<Vec<TagID>>`.
+- `node.set_tag_ids(None)` clears tags.
+- `get_node_children_ids!(...)` and `get_node_tags!(...)` return owned `Vec` copies through runtime context.
+- `tag_set!(ctx.run, node_id, tags)` uploads tags back through runtime context.
+
 `force_rerender!` behavior:
 
 - Marks `root_id` + all descendants dirty for current extraction frame.
-- Use when script-side state changes affect rendering but node fields did not change.
+- Use if you want to force rerender instead of the engine deciding.
 - Returns `false` if `root_id` is nil or missing.
 
 Global transform macros:
 
 - `get_global_transform_2d!(ctx.run, node_id) -> Option<Transform2D>`
 - `get_global_transform_3d!(ctx.run, node_id) -> Option<Transform3D>`
+
+- `get_local_transform_2d!(ctx.run, node_id) -> Option<Transform2D>`
+- `get_local_transform_3d!(ctx.run, node_id) -> Option<Transform3D>`
+
 - `set_global_transform_2d!(ctx.run, node_id, global_transform) -> bool`
 - `set_global_transform_3d!(ctx.run, node_id, global_transform) -> bool`
+
+- `set_local_transform_2d!(ctx.run, node_id, local_transform) -> bool`
+- `set_local_transform_3d!(ctx.run, node_id, local_transform) -> bool`
+
+- `get_local_pos_2d!(ctx.run, node_id) -> Option<Vector2>`
+- `get_local_pos_3d!(ctx.run, node_id) -> Option<Vector3>`
+
+- `set_local_pos_2d!(ctx.run, node_id, pos) -> bool`
+- `set_local_pos_3d!(ctx.run, node_id, pos) -> bool`
+
+- `get_global_pos_2d!(ctx.run, node_id) -> Option<Vector2>`
+- `get_global_pos_3d!(ctx.run, node_id) -> Option<Vector3>`
+
+- `set_global_pos_2d!(ctx.run, node_id, pos) -> bool`
+- `set_global_pos_3d!(ctx.run, node_id, pos) -> bool`
+
+- `get_local_rot_2d!(ctx.run, node_id) -> Option<f32>`
+- `get_local_rot_3d!(ctx.run, node_id) -> Option<Quaternion>`
+
+- `set_local_rot_2d!(ctx.run, node_id, rot) -> bool`
+- `set_local_rot_3d!(ctx.run, node_id, rot) -> bool`
+
+- `get_global_rot_2d!(ctx.run, node_id) -> Option<f32>`
+- `get_global_rot_3d!(ctx.run, node_id) -> Option<Quaternion>`
+
+- `set_global_rot_2d!(ctx.run, node_id, rot) -> bool`
+- `set_global_rot_3d!(ctx.run, node_id, rot) -> bool`
+
+- `get_local_scale_2d!(ctx.run, node_id) -> Option<Vector2>`
+- `get_local_scale_3d!(ctx.run, node_id) -> Option<Vector3>`
+
+- `set_local_scale_2d!(ctx.run, node_id, scale) -> bool`
+- `set_local_scale_3d!(ctx.run, node_id, scale) -> bool`
+
+- `get_global_scale_2d!(ctx.run, node_id) -> Option<Vector2>`
+- `get_global_scale_3d!(ctx.run, node_id) -> Option<Vector3>`
+
+- `set_global_scale_2d!(ctx.run, node_id, scale) -> bool`
+- `set_global_scale_3d!(ctx.run, node_id, scale) -> bool`
+
 - `to_global_point_2d!(ctx.run, node_id, local_point) -> Option<Vector2>`
 - `to_local_point_2d!(ctx.run, node_id, global_point) -> Option<Vector2>`
+
 - `to_global_point_3d!(ctx.run, node_id, local_point) -> Option<Vector3>`
 - `to_local_point_3d!(ctx.run, node_id, global_point) -> Option<Vector3>`
+
 - `to_global_transform_2d!(ctx.run, node_id, local_transform) -> Option<Transform2D>`
 - `to_local_transform_2d!(ctx.run, node_id, global_transform) -> Option<Transform2D>`
+
 - `to_global_transform_3d!(ctx.run, node_id, local_transform) -> Option<Transform3D>`
 - `to_local_transform_3d!(ctx.run, node_id, global_transform) -> Option<Transform3D>`
 
@@ -96,30 +147,22 @@ Tag/query macros:
 Mesh query macros:
 
 - Instance-aware queries (runtime surface binding aware):
-- `mesh_surface_at_world_point_3d!(ctx.run, node_id, world_point) -> Option<MeshSurfaceHit3D>`
-- `mesh_surface_on_world_ray_3d!(ctx.run, node_id, ray_origin, ray_direction, max_distance) -> Option<MeshSurfaceHit3D>`
-- `mesh_material_regions_3d!(ctx.run, node_id, material_id) -> Vec<MeshMaterialRegion3D>`
+- `mesh_instance_surface_at_global_point_3d!(ctx.run, node_id, global_point) -> Option<MeshSurfaceHit3D>`
+- `mesh_instance_surface_on_global_ray_3d!(ctx.run, node_id, ray_origin, ray_direction, max_distance) -> Option<MeshSurfaceHit3D>`
+- `mesh_instance_material_regions_3d!(ctx.run, node_id, material_id) -> Vec<MeshMaterialRegion3D>`
 - Raw mesh-data queries (surface-index/file-data oriented):
-- `mesh_data_surface_at_world_point_3d!(ctx.run, node_id, world_point) -> Option<MeshSurfaceHit3D>`
-- `mesh_data_surface_on_world_ray_3d!(ctx.run, node_id, ray_origin, ray_direction, max_distance) -> Option<MeshSurfaceHit3D>`
-- `mesh_data_surface_regions_3d!(ctx.run, node_id, surface_index) -> Vec<MeshMaterialRegion3D>`
-
-Why split API:
-
-- Instance queries answer gameplay/render binding questions.
-- Data queries answer mesh file topology questions.
-- Instance lane resolves runtime material binds per surface.
-- Data lane intentionally does not resolve runtime material (`material = None`).
-- This avoids mixing "what slot in file?" with "what material bound right now?".
+- `mesh_data_surface_at_local_point_3d!(ctx.run, mesh_id, local_point) -> Option<MeshDataSurfaceHit3D>`
+- `mesh_data_surface_on_local_ray_3d!(ctx.run, mesh_id, ray_origin_local, ray_direction_local, max_distance) -> Option<MeshDataSurfaceHit3D>`
+- `mesh_data_surface_regions_3d!(ctx.run, mesh_id, surface_index) -> Vec<MeshDataSurfaceRegion3D>`
 
 `MeshSurfaceHit3D` fields:
 
 - `instance_index`: instance id for `MultiMeshInstance3D` (0 for regular mesh)
 - `surface_index`: matched mesh surface
 - `material`: material bound on that surface (`Option<MaterialID>`)
-- `world_point`: nearest point on mesh in world space
+- `global_point`: nearest point on mesh in global space
 - `local_point`: nearest point in mesh local space
-- `world_normal`: surface normal in world space at nearest point
+- `global_normal`: surface normal in global space at nearest point
 - `local_normal`: surface normal in mesh local space at nearest point
 - `distance`: distance from query point to nearest point
 
@@ -127,16 +170,30 @@ Why split API:
 
 - `instance_index`, `surface_index`, `material`
 - `triangle_count`
-- `center_world`, `center_local`
-- `aabb_min_world`, `aabb_max_world`
+- `center_global`, `center_local`
+- `aabb_min_global`, `aabb_max_global`
+- `aabb_min_local`, `aabb_max_local`
+
+`MeshDataSurfaceHit3D` fields:
+
+- `surface_index`: matched mesh surface
+- `local_point`: nearest point in mesh local space
+- `local_normal`: surface normal in mesh local space at nearest point
+- `distance`: distance from query point to nearest point in mesh local space
+
+`MeshDataSurfaceRegion3D` fields:
+
+- `surface_index`
+- `triangle_count`
+- `center_local`
 - `aabb_min_local`, `aabb_max_local`
 
 Pick correct lane:
 
 - Need "where is material X on this mesh instance now?" -> use instance lane.
-- Need "where is surface slot N from mesh data?" -> use data lane.
+- Need "where is surface slot N from mesh data?" -> use data lane with `MeshID`.
 - Need inverse hit "point/ray -> surface + runtime material" -> use instance lane.
-- Need inverse hit "point/ray -> raw surface index only" -> use data lane.
+- Need inverse hit "local point/ray -> raw surface index only" -> use data lane with `MeshID`.
 
 What queries are:
 
@@ -169,6 +226,7 @@ Predicates:
 ## Node Types
 
 See the full list and per-node notes here:
+
 - [Node Types](../../nodes.md)
 
 Composition examples:
@@ -206,18 +264,18 @@ for id in ids {
 Global transform example:
 
 ```rust
-// Read world transform
-if let Some(world) = get_global_transform_3d!(ctx.run, self_id) {
-    // Move 1 meter up in world space while keeping parent relation
-    let mut target = world;
+// Read global transform
+if let Some(global) = get_global_transform_3d!(ctx.run, self_id) {
+    // Move 1 meter up in global space while keeping parent relation
+    let mut target = global;
     target.position.y += 1.0;
     let _ = set_global_transform_3d!(ctx.run, self_id, target);
 }
 
-// Convert a local offset to world point
+// Convert a local offset to global point
 let muzzle_local = Vector3::new(0.0, 0.0, -1.0);
-if let Some(muzzle_world) = to_global_point_3d!(ctx.run, self_id, muzzle_local) {
-    // Use world-space point for spawning/projectiles/etc.
+if let Some(muzzle_global) = to_global_point_3d!(ctx.run, self_id, muzzle_local) {
+    // Use global-space point for spawning/projectiles/etc.
 }
 ```
 
@@ -225,44 +283,44 @@ Mesh query examples:
 
 ```rust
 let p = Vector3::new(2.0, 1.0, -5.0);
-if let Some(hit) = mesh_surface_at_world_point_3d!(ctx.run, mesh_node_id, p) {
+if let Some(hit) = mesh_instance_surface_at_global_point_3d!(ctx.run, mesh_node_id, p) {
     // hit.surface_index
     // hit.material
-    // hit.world_point
-    // hit.world_normal
+    // hit.global_point
+    // hit.global_normal
 }
 ```
 
 ```rust
-let regions = mesh_material_regions_3d!(ctx.run, mesh_node_id, material_id);
+let regions = mesh_instance_material_regions_3d!(ctx.run, mesh_node_id, material_id);
 for r in regions {
     // r.surface_index
-    // r.center_world
-    // r.aabb_min_world / r.aabb_max_world
+    // r.center_global
+    // r.aabb_min_global / r.aabb_max_global
 }
 ```
 
 ```rust
 // Raw mesh-data lane: query fixed surface index from mesh topology.
-let data_regions = mesh_data_surface_regions_3d!(ctx.run, mesh_node_id, 2);
+let data_regions = mesh_data_surface_regions_3d!(ctx.run, mesh_id, 2);
 for r in data_regions {
     // r.surface_index == 2
-    // r.material == None
-    // r.center_world
+    // r.center_local
+    // r.aabb_min_local / r.aabb_max_local
 }
 ```
 
 ```rust
 // Raw mesh-data inverse hit: gets surface index, no runtime material bind.
-if let Some(hit) = mesh_data_surface_on_world_ray_3d!(
+if let Some(hit) = mesh_data_surface_on_local_ray_3d!(
     ctx.run,
-    mesh_node_id,
-    ray_origin,
-    ray_dir,
+    mesh_id,
+    ray_origin_local,
+    ray_dir_local,
     100.0
 ) {
     // hit.surface_index
-    // hit.material == None
+    // hit.local_point
 }
 ```
 
@@ -276,4 +334,3 @@ if !ok {
     // invalid/missing root id
 }
 ```
-

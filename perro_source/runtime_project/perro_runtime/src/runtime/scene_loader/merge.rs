@@ -38,6 +38,7 @@ pub(super) fn merge_prepared_scene(
     let mut parent_pairs = Vec::with_capacity(nodes.len());
     let mut animation_player_bindings: Vec<(NodeID, Vec<(String, u32)>)> = Vec::new();
     let mut mesh_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
+    let mut bone_attachment_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
     let resource_api = runtime.resource_api.clone();
 
     for pending in nodes {
@@ -52,6 +53,7 @@ pub(super) fn merge_prepared_scene(
             material_surfaces,
             skeleton_source,
             mesh_skeleton_target,
+            bone_attachment_skeleton_target,
             animation_bindings,
         } = pending;
 
@@ -110,6 +112,9 @@ pub(super) fn merge_prepared_scene(
         if let Some(target) = mesh_skeleton_target {
             mesh_skeleton_links.push((node, target));
         }
+        if let Some(target) = bone_attachment_skeleton_target {
+            bone_attachment_skeleton_links.push((node, target));
+        }
         if let Some(parent_key) = parent_key {
             parent_pairs.push((key, parent_key));
         }
@@ -156,6 +161,17 @@ pub(super) fn merge_prepared_scene(
         }
     }
 
+    for (attachment_node, target_key) in bone_attachment_skeleton_links {
+        let target = *key_to
+            .get(&target_key)
+            .ok_or_else(|| format!("bone attachment skeleton target `{target_key}` not found"))?;
+        if let Some(node_data) = runtime.nodes.get_mut(attachment_node)
+            && let SceneNodeData::BoneAttachment3D(attachment) = &mut node_data.data
+        {
+            attachment.skeleton = target;
+        }
+    }
+
     for (player_id, scene_bindings) in animation_player_bindings {
         let Some(node_data) = runtime.nodes.get_mut(player_id) else {
             continue;
@@ -173,7 +189,7 @@ pub(super) fn merge_prepared_scene(
                 node: target_id,
             });
         }
-        player.bindings = Cow::Owned(resolved);
+        player.bindings = resolved;
     }
 
     let mut top_level_roots: Vec<NodeID> = Vec::new();

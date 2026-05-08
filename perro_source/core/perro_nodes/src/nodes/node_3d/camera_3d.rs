@@ -91,7 +91,7 @@ impl CameraProjection {
 }
 
 impl Camera3D {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             base: Node3D::new(),
             active: false,

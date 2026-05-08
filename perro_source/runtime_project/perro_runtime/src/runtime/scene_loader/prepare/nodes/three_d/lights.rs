@@ -139,17 +139,17 @@ fn apply_sky_3d_fields(node: &mut Sky3D, fields: &[SceneObjectField]) {
         match resolve_node_field("Sky3D", name) {
             Some(NodeField::Sky3D(Sky3DField::DayColors)) => {
                 if let Some(colors) = as_color_array(value) {
-                    node.day_colors = Cow::Owned(colors);
+                    node.day_colors = colors;
                 }
             }
             Some(NodeField::Sky3D(Sky3DField::EveningColors)) => {
                 if let Some(colors) = as_color_array(value) {
-                    node.evening_colors = Cow::Owned(colors);
+                    node.evening_colors = colors;
                 }
             }
             Some(NodeField::Sky3D(Sky3DField::NightColors)) => {
                 if let Some(colors) = as_color_array(value) {
-                    node.night_colors = Cow::Owned(colors);
+                    node.night_colors = colors;
                 }
             }
             Some(NodeField::Sky3D(Sky3DField::SkyAngle)) => {
