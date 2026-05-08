@@ -46,6 +46,7 @@ emit_signal = { name="step", params=[0] }
 - `[Animation] ... [/Animation]`
 - `[Objects] ... [/Objects]`
 - `[FrameN] ... [/FrameN]` where `N` is a frame index (`u32`)
+- `[FrameN?] ... [/FrameN]` where `N` is a frame index (`u32`) and `?` marks an **open frame**
 
 `total_frames` is derived from the largest frame index: `max_frame + 1`.
 
@@ -96,6 +97,42 @@ Inside object blocks:
 - field keyframes (`position`, `visible`, `mesh`, ...)
 - object-scoped event authoring keys (`emit_signal`, `set_var`, `call_method`)
 - track controls (`field.interp`, `field.ease`)
+
+Inside `[FrameN?]`:
+
+- same authoring syntax as `[FrameN]`
+- all keys authored in that frame are marked **Open** mode
+- open mode means the key is a runtime continuity marker, not an authoritative sampled pose
+
+### Open vs Closed Keyframes
+
+- **Closed keyframe** (`[FrameN]`): authoritative authored value
+- **Open keyframe** (`[FrameN?]`): interpolation-origin policy from runtime/current value
+
+Open key behavior:
+
+- open keys should preserve continuity (no forced snap to authored start value)
+- interpolation segment starts from the runtime value at playback time
+- open keys are runtime-dependent and not deterministic pose samples by themselves
+- open keys may still carry interpolation/easing metadata (`.interp`, `.ease`)
+
+Example:
+
+```ini
+[Frame0?]
+@Hand {
+    rotation = 0 // not authoritative if open; runtime start is used
+}
+[/Frame0]
+
+[Frame20]
+@Hand {
+    rotation = 90
+}
+[/Frame20]
+```
+
+If runtime rotation at frame 0 is `13`, playback interpolates `13 -> 90` over 20 frames.
 
 Authoring model:
 
@@ -258,3 +295,7 @@ Top-level variables are supported:
 - `.panim` is loaded into an `AnimationClip`.
 - Numeric/vector/transform tracks interpolate with easing when `interp = interpolate`.
 - bool/asset-like values behave as step values.
+- open keys are treated as runtime-originated continuity points:
+  - `AnimationObjectKey.mode = Open` marks the key
+  - open keys are not directly deterministic sampled values (`sampled_value()` returns `None`)
+  - deterministic optimization/simplification should only run on fully closed tracks.
