@@ -1437,8 +1437,17 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
   mod static_assets;\n\n\
 static PERRO_ASSETS: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n\
 #[used]\n\
-static PERRO_ENGINE_MARKER: &[u8] =\n\
-    b\"PERRO_ENGINE_DETECT:v1;engine=Perro Engine;format=.perro;site=https://www.perroengine.com\";\n\n\
+#[unsafe(no_mangle)]\n\
+pub static PERRO_ENGINE_DETECT: [u8; 89] =\n\
+    *b\"PERRO_ENGINE_DETECT:v1;engine=Perro Engine;format=.perro;site=https://www.perroengine.com\";\n\n\
+fn keep_perro_engine_marker() {{\n\
+    unsafe {{\n\
+        std::hint::black_box(std::ptr::read_volatile(PERRO_ENGINE_DETECT.as_ptr()));\n\
+        std::hint::black_box(std::ptr::read_volatile(\n\
+            PERRO_ENGINE_DETECT.as_ptr().add(PERRO_ENGINE_DETECT.len() - 1),\n\
+        ));\n\
+    }}\n\
+}}\n\n\
 fn project_root() -> std::path::PathBuf {{\n\
     if let Ok(exe) = std::env::current_exe() {{\n\
         if let Some(exe_dir) = exe.parent() {{\n\
@@ -1457,7 +1466,7 @@ fn project_root() -> std::path::PathBuf {{\n\
     std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(\".\"))\n\
   }}\n\n\
   fn main() {{\n\
-    std::hint::black_box(PERRO_ENGINE_MARKER);\n\
+    keep_perro_engine_marker();\n\
 {embedded_block}\n\
   }}\n",
         embedded_block = embedded_block,

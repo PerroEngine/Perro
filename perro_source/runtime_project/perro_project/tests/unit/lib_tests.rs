@@ -392,7 +392,7 @@ serde = { version = "1", features = ["derive"] }
 }
 
 #[test]
-fn ensure_source_overrides_rebuilds_stale_project_build_script_metadata() {
+fn ensure_source_overrides_regenerates_project_build_script() {
     let root = unique_temp_dir("perro_stale_build_metadata");
     ensure_project_layout(&root).expect("layout");
     ensure_project_scaffold(&root, "Metadata Repair").expect("scaffold");
@@ -401,6 +401,7 @@ fn ensure_source_overrides_rebuilds_stale_project_build_script_metadata() {
     fs::write(
         &build_script,
         r#"fn main() {
+    println!("stale build script");
     println!("cargo:rustc-check-cfg=cfg(perro_no_console)");
 }
 "#,
@@ -410,6 +411,7 @@ fn ensure_source_overrides_rebuilds_stale_project_build_script_metadata() {
     ensure_source_overrides(&root).expect("overrides");
 
     let repaired = fs::read_to_string(&build_script).expect("read repaired build script");
+    assert!(!repaired.contains("stale build script"));
     assert!(repaired.contains("apply_windows_metadata"));
     assert!(repaired.contains("FileDescription"));
     assert!(repaired.contains("ProductName"));

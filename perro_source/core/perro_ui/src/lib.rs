@@ -268,6 +268,31 @@ impl ComputedUiRect {
         point.x >= min.x && point.x <= max.x && point.y >= min.y && point.y <= max.y
     }
 
+    pub fn contains_rounded(self, point: Vector2, corner_radius: f32) -> bool {
+        if !self.contains(point) {
+            return false;
+        }
+
+        let ratio = if corner_radius.is_finite() {
+            corner_radius.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let radius = self.size.x.min(self.size.y).max(0.0) * 0.5 * ratio;
+        if radius <= 0.0 {
+            return true;
+        }
+
+        let half = self.size * 0.5;
+        let local = Vector2::new(
+            (point.x - self.center.x).abs(),
+            (point.y - self.center.y).abs(),
+        );
+        let inner = Vector2::new((half.x - radius).max(0.0), (half.y - radius).max(0.0));
+        let q = Vector2::new((local.x - inner.x).max(0.0), (local.y - inner.y).max(0.0));
+        q.x * q.x + q.y * q.y <= radius * radius
+    }
+
     pub fn inset(self, inset: UiRect) -> Self {
         let min = self.min() + Vector2::new(inset.left, inset.bottom);
         let max = self.max() - Vector2::new(inset.right, inset.top);
@@ -1513,6 +1538,21 @@ mod tests {
             rect.inset(UiRect::new(10.0, 20.0, 30.0, 5.0)),
             ComputedUiRect::new(Vector2::new(-10.0, -7.5), Vector2::new(60.0, 55.0))
         );
+    }
+
+    #[test]
+    fn rounded_contains_rejects_trimmed_corner() {
+        let rect = ComputedUiRect::new(Vector2::ZERO, Vector2::new(120.0, 40.0));
+
+        assert!(!rect.contains_rounded(Vector2::new(-59.0, 19.0), 1.0));
+    }
+
+    #[test]
+    fn rounded_contains_keeps_center_and_edge_band() {
+        let rect = ComputedUiRect::new(Vector2::ZERO, Vector2::new(120.0, 40.0));
+
+        assert!(rect.contains_rounded(Vector2::ZERO, 1.0));
+        assert!(rect.contains_rounded(Vector2::new(-59.0, 0.0), 1.0));
     }
 
     #[test]

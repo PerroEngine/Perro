@@ -986,19 +986,30 @@ impl Runtime {
             {
                 continue;
             }
-            let rect = computed.get(&node).copied().or_else(|| {
+            let base_rect = computed.get(&node).copied().or_else(|| {
                 self.render_ui
                     .retained_rects
                     .get(&node)
                     .map(computed_rect_from_state)
             });
-            let Some(rect) = rect else {
+            let Some(base_rect) = base_rect else {
                 continue;
             };
-            if !rect.contains(point) {
+            let state = self
+                .render_ui
+                .button_states
+                .get(&node)
+                .copied()
+                .unwrap_or_default();
+            let z = self.ui_effective_z(node);
+            let hit_rect = if computed.contains_key(&node) {
+                computed_rect_from_state(&button_rect_state(button, base_rect, state, z))
+            } else {
+                base_rect
+            };
+            if !hit_rect.contains_rounded(point, button_style(button, state).corner_radius) {
                 continue;
             }
-            let z = self.ui_effective_z(node);
             match best {
                 Some((best_node, best_z))
                     if best_z > z || (best_z == z && best_node.as_u64() > node.as_u64()) => {}
@@ -3623,6 +3634,45 @@ mod tests {
             runtime.take_cursor_icon_request(),
             Some(perro_ui::CursorIcon::Default)
         );
+    }
+
+    #[test]
+    fn button_hover_respects_rounded_visible_shape() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let node = insert_button(&mut runtime, [120.0, 40.0]);
+        if let Some(scene_node) = runtime.nodes.get_mut(node)
+            && let SceneNodeData::UiButton(button) = &mut scene_node.data
+        {
+            button.style.corner_radius = 1.0;
+            button.hover_style.corner_radius = 1.0;
+        }
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(341.0, 281.0);
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(!commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+                if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+        )));
+        assert_eq!(runtime.take_cursor_icon_request(), None);
+
+        runtime.clear_dirty_flags();
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+                if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+        )));
     }
 
     #[test]

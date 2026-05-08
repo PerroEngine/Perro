@@ -1742,8 +1742,18 @@ mod static_assets;
 static PERRO_ASSETS: &[u8] = include_bytes!("../embedded/assets.perro");
 
 #[used]
-static PERRO_ENGINE_MARKER: &[u8] =
-    b"PERRO_ENGINE_DETECT:v1;engine=Perro Engine;format=.perro;site=https://www.perroengine.com";
+#[unsafe(no_mangle)]
+pub static PERRO_ENGINE_DETECT: [u8; 89] =
+    *b"PERRO_ENGINE_DETECT:v1;engine=Perro Engine;format=.perro;site=https://www.perroengine.com";
+
+fn keep_perro_engine_marker() {
+    unsafe {
+        std::hint::black_box(std::ptr::read_volatile(PERRO_ENGINE_DETECT.as_ptr()));
+        std::hint::black_box(std::ptr::read_volatile(
+            PERRO_ENGINE_DETECT.as_ptr().add(PERRO_ENGINE_DETECT.len() - 1),
+        ));
+    }
+}
 
 fn project_root() -> std::path::PathBuf {
     if let Ok(exe) = std::env::current_exe() {
@@ -1764,7 +1774,7 @@ fn project_root() -> std::path::PathBuf {
 }
 
   fn main() {
-      std::hint::black_box(PERRO_ENGINE_MARKER);
+      keep_perro_engine_marker();
       let root = project_root();
       perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedProject {
           project: perro_app::entry::StaticEmbeddedProjectInfo {
@@ -2049,54 +2059,10 @@ fn ensure_dev_runner_source_sync(manifest_path: &Path, main_rs_path: &Path) -> s
 }
 
 fn ensure_project_build_script(path: &Path) -> std::io::Result<()> {
-    if path.exists() {
-        let src = match fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(_) => return Ok(()),
-        };
-        if !src.contains("apply_windows_metadata") || !src.contains("ProductName") {
-            fs::write(path, default_project_build_rs())?;
-            return Ok(());
-        }
-        let old = r#"    fn convert_icon_to_ico(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
-        let image = image::open(source)
-            .map_err(|e| format!("failed to decode icon image `{}`: {e}", source.display()))?;
-        let out = out_dir.join("perro_project_icon.ico");
-        image
-            .save_with_format(&out, image::ImageFormat::Ico)
-            .map_err(|e| format!("failed to convert `{}` to ico: {e}", source.display()))?;
-        Ok(out)
-    }"#;
-        let new = r#"    fn convert_icon_to_ico(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
-        let mut image = image::open(source)
-            .map_err(|e| format!("failed to decode icon image `{}`: {e}", source.display()))?;
-        let (w, h) = (image.width(), image.height());
-        if w > 256 || h > 256 {
-            image = image.resize(256, 256, image::imageops::FilterType::Lanczos3);
-        }
-        let out = out_dir.join("perro_project_icon.ico");
-        image
-            .save_with_format(&out, image::ImageFormat::Ico)
-            .map_err(|e| format!("failed to convert `{}` to ico: {e}", source.display()))?;
-        Ok(out)
-    }"#;
-        if src.contains(old) {
-            fs::write(path, src.replace(old, new))?;
-        }
-        let src = fs::read_to_string(path)?;
-        if !src.contains("cargo:rustc-check-cfg=cfg(perro_no_console)") {
-            let updated = src.replace(
-                "fn main() {\n",
-                "fn main() {\n    println!(\"cargo:rustc-check-cfg=cfg(perro_no_console)\");\n",
-            );
-            fs::write(path, updated)?;
-        }
-        return Ok(());
-    }
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(path, default_project_build_rs())
+    write_if_changed(path, &default_project_build_rs())
 }
 
 fn ensure_scripts_manifest_user_deps(
