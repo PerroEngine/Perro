@@ -46,6 +46,11 @@ impl AudioAPI for RuntimeResourceApi {
             looped: audio.looped,
             volume: audio.volume,
             speed: audio.speed,
+            pan: perro_bark::AudioPan {
+                x: audio.pan.x,
+                y: audio.pan.y,
+                z: audio.pan.z,
+            },
             from_start: audio.from_start,
             from_end: audio.from_end,
         })
@@ -64,6 +69,11 @@ impl AudioAPI for RuntimeResourceApi {
             looped: audio.looped,
             volume: audio.volume,
             speed: audio.speed,
+            pan: perro_bark::AudioPan {
+                x: audio.pan.x,
+                y: audio.pan.y,
+                z: audio.pan.z,
+            },
             from_start: audio.from_start,
             from_end: audio.from_end,
         })

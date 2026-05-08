@@ -11,7 +11,7 @@ mod texture;
 mod visual_accessibility;
 
 pub use animation::{AnimationAPI, AnimationModule};
-pub use audio::{Audio, AudioAPI, AudioModule, bus_id};
+pub use audio::{Audio, AudioAPI, AudioModule, AudioPan, bus_id};
 pub use draw_2d::{Draw2DAPI, Draw2DModule};
 pub use localization::{Locale, LocalizationAPI, LocalizationModule};
 pub use material::{MaterialAPI, MaterialModule};

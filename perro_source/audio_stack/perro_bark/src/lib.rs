@@ -1,5 +1,5 @@
 use perro_ids::AudioBusID;
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Source, SpatialSink};
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor};
 use std::sync::mpsc::{self, Sender};
@@ -19,9 +19,10 @@ struct Playback {
     looped: bool,
     base_volume: f32,
     speed: f32,
+    pan: AudioPan,
     from_start: f32,
     from_end: f32,
-    sink: Sink,
+    sink: SpatialSink,
 }
 
 #[derive(Clone, Copy)]
@@ -40,12 +41,46 @@ struct AudioState {
 }
 
 #[derive(Clone, Copy)]
+pub struct AudioPan {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+impl AudioPan {
+    pub const CENTER: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+
+    pub const fn new(x: f32, y: f32, z: f32) -> Self {
+        Self { x, y, z }
+    }
+
+    fn clamped(self) -> Self {
+        Self {
+            x: self.x.clamp(-1.0, 1.0),
+            y: self.y.clamp(-1.0, 1.0),
+            z: self.z.clamp(-1.0, 1.0),
+        }
+    }
+}
+
+impl Default for AudioPan {
+    fn default() -> Self {
+        Self::CENTER
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct AudioPlaybackRequest<'a> {
     pub source: &'a str,
     pub bus_id: AudioBusID,
     pub looped: bool,
     pub volume: f32,
     pub speed: f32,
+    pub pan: AudioPan,
     pub from_start: f32,
     pub from_end: f32,
 }
@@ -57,6 +92,7 @@ struct OwnedAudioPlaybackRequest {
     looped: bool,
     volume: f32,
     speed: f32,
+    pan: AudioPan,
     from_start: f32,
     from_end: f32,
 }
@@ -69,6 +105,7 @@ impl From<AudioPlaybackRequest<'_>> for OwnedAudioPlaybackRequest {
             looped: value.looped,
             volume: value.volume,
             speed: value.speed,
+            pan: value.pan,
             from_start: value.from_start,
             from_end: value.from_end,
         }
@@ -222,6 +259,7 @@ impl BarkPlayer {
             looped,
             volume,
             speed,
+            pan,
             from_start,
             from_end,
         } = request;
@@ -274,8 +312,14 @@ impl BarkPlayer {
 
         #[cfg(feature = "profile")]
         let sink_setup_begin = Instant::now();
-        let sink =
-            Sink::try_new(&self.handle).map_err(|err| format!("failed to create sink: {err}"))?;
+        let pan = pan.clamped();
+        let sink = SpatialSink::try_new(
+            &self.handle,
+            Self::pan_emitter_position(pan),
+            [-1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+        )
+        .map_err(|err| format!("failed to create sink: {err}"))?;
         sink.set_speed(speed.max(0.01));
         #[cfg(feature = "profile")]
         let sink_setup_elapsed = sink_setup_begin.elapsed();
@@ -349,6 +393,7 @@ impl BarkPlayer {
             looped,
             base_volume: requested_volume,
             speed: speed.max(0.01),
+            pan,
             from_start: from_start.max(0.0),
             from_end: from_end.max(0.0),
             sink,
@@ -481,6 +526,7 @@ impl BarkPlayer {
             looped,
             volume,
             speed,
+            pan,
             from_start,
             from_end,
         } = request;
@@ -491,6 +537,7 @@ impl BarkPlayer {
         Self::prune_finished_playbacks_locked(&mut state, now);
         let target_volume = volume.max(0.0);
         let target_speed = speed.max(0.01);
+        let target_pan = pan.clamped();
         let target_from_start = from_start.max(0.0);
         let target_from_end = from_end.max(0.0);
         let mut i = 0usize;
@@ -501,6 +548,9 @@ impl BarkPlayer {
                 && p.looped == looped
                 && (p.base_volume - target_volume).abs() < f32::EPSILON
                 && (p.speed - target_speed).abs() < f32::EPSILON
+                && (p.pan.x - target_pan.x).abs() < f32::EPSILON
+                && (p.pan.y - target_pan.y).abs() < f32::EPSILON
+                && (p.pan.z - target_pan.z).abs() < f32::EPSILON
                 && (p.from_start - target_from_start).abs() < f32::EPSILON
                 && (p.from_end - target_from_end).abs() < f32::EPSILON
             {
@@ -802,6 +852,10 @@ impl BarkPlayer {
                 .set_speed(playback.speed.max(0.01) * bus_speed);
         }
     }
+
+    fn pan_emitter_position(pan: AudioPan) -> [f32; 3] {
+        [pan.x, pan.y, pan.z]
+    }
 }
 
 fn decode_static_pawdio(blob: &[u8]) -> Result<(Vec<u8>, Duration), String> {
@@ -876,6 +930,7 @@ impl AudioController {
                                 looped: request.looped,
                                 volume: request.volume,
                                 speed: request.speed,
+                                pan: request.pan,
                                 from_start: request.from_start,
                                 from_end: request.from_end,
                             });
@@ -890,6 +945,7 @@ impl AudioController {
                                 looped: request.looped,
                                 volume: request.volume,
                                 speed: request.speed,
+                                pan: request.pan,
                                 from_start: request.from_start,
                                 from_end: request.from_end,
                             });

@@ -18,14 +18,55 @@ pub trait AudioAPI {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct AudioPan {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+impl AudioPan {
+    pub const CENTER: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+
+    pub const fn new(x: f32, y: f32, z: f32) -> Self {
+        Self { x, y, z }
+    }
+}
+
+impl Default for AudioPan {
+    fn default() -> Self {
+        Self::CENTER
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Audio<'a> {
     pub source: &'a str,
     pub bus: AudioBusID,
     pub looped: bool,
     pub volume: f32,
     pub speed: f32,
+    pub pan: AudioPan,
     pub from_start: f32,
     pub from_end: f32,
+}
+
+impl<'a> Audio<'a> {
+    pub const fn new(source: &'a str, bus: AudioBusID) -> Self {
+        Self {
+            source,
+            bus,
+            looped: false,
+            volume: 1.0,
+            speed: 1.0,
+            pan: AudioPan::CENTER,
+            from_start: 0.0,
+            from_end: 0.0,
+        }
+    }
 }
 
 pub struct AudioModule<'res, R: AudioAPI + ?Sized> {

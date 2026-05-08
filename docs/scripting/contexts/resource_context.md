@@ -123,6 +123,7 @@ let _ = audio_play!(
         looped: true,
         volume: 1.0,
         speed: 1.0,
+        pan: AudioPan::default(),
         from_start: 0.0,
         from_end: 0.0,
     }

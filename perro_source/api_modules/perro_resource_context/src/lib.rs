@@ -10,10 +10,10 @@ pub use perro_scene::{Scene, SceneDoc, SceneWrite};
 pub mod prelude {
     pub use crate::api::{ResourceAPI, ResourceWindow, ViewportAPI};
     pub use crate::sub_apis::{
-        AnimationAPI, AnimationModule, Audio, AudioAPI, AudioBusID, AudioModule, Draw2DAPI,
-        Draw2DModule, Locale, LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule,
-        MeshAPI, MeshModule, PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI,
-        SkeletonModule, TextureAPI, TextureModule, VisualAccessibilityAPI,
+        AnimationAPI, AnimationModule, Audio, AudioAPI, AudioBusID, AudioModule, AudioPan,
+        Draw2DAPI, Draw2DModule, Locale, LocalizationAPI, LocalizationModule, MaterialAPI,
+        MaterialModule, MeshAPI, MeshModule, PostProcessingAPI, SceneDocAPI, SceneDocModule,
+        SkeletonAPI, SkeletonModule, TextureAPI, TextureModule, VisualAccessibilityAPI,
     };
     pub use crate::{
         animation_drop, animation_load, animation_reserve, audio_bus, audio_bus_pause,
