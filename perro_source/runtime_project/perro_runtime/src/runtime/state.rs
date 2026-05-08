@@ -415,6 +415,8 @@ pub(crate) struct Render3DState {
     pub(crate) retained_point_lights: AHashMap<NodeID, PointLight3DState>,
     pub(crate) retained_spot_lights: AHashMap<NodeID, SpotLight3DState>,
     pub(crate) retained_mesh_draws: AHashMap<NodeID, RetainedMeshDrawState>,
+    pub(crate) dense_instance_pose_cache: AHashMap<NodeID, DenseInstancePoseCache>,
+    pub(crate) traversal_seen: AHashSet<NodeID>,
     pub(crate) skeleton_cache_scratch: AHashMap<NodeID, SkeletonPalette>,
     pub(crate) skeleton_global_scratch: Vec<glam::Mat4>,
     pub(crate) skeleton_palette_scratch: Vec<[[f32; 4]; 4]>,
@@ -442,6 +444,8 @@ impl Render3DState {
             retained_point_lights: AHashMap::default(),
             retained_spot_lights: AHashMap::default(),
             retained_mesh_draws: AHashMap::default(),
+            dense_instance_pose_cache: AHashMap::default(),
+            traversal_seen: AHashSet::default(),
             skeleton_cache_scratch: AHashMap::default(),
             skeleton_global_scratch: Vec::new(),
             skeleton_palette_scratch: Vec::new(),
@@ -450,6 +454,12 @@ impl Render3DState {
             force_full_scan_once: false,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DenseInstancePoseCache {
+    pub(crate) signature: u64,
+    pub(crate) poses: std::sync::Arc<[DenseInstancePose3D]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

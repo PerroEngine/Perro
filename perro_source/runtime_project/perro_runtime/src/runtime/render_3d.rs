@@ -64,9 +64,9 @@ impl Runtime {
         if traversal_ids.is_empty() && bootstrap_scan {
             traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
         }
-        let mut seed_seen: ahash::AHashSet<NodeID> = ahash::AHashSet::default();
-        traversal_ids.retain(|id| seed_seen.insert(*id));
-        let mut traversal_seen = seed_seen;
+        let mut traversal_seen = std::mem::take(&mut self.render_3d.traversal_seen);
+        traversal_seen.clear();
+        traversal_ids.retain(|id| traversal_seen.insert(*id));
         let mut traversal_cursor = 0usize;
         while traversal_cursor < traversal_ids.len() {
             let node = traversal_ids[traversal_cursor];
@@ -356,50 +356,95 @@ impl Runtime {
                 Option<bool>,
                 LocalMeshInstanceData,
             );
-            let mesh_data: Option<LocalMeshData> = if effective_visible {
-                self.nodes.get(node).and_then(|node| match &node.data {
-                    SceneNodeData::MeshInstance3D(mesh) => Some((
-                        mesh.mesh,
-                        mesh.surfaces.clone(),
-                        Some(mesh.skeleton),
-                        mesh.meshlet_override,
-                        LocalMeshInstanceData::Single,
-                    )),
-                    SceneNodeData::MultiMeshInstance3D(mesh) => Some((
-                        mesh.mesh,
-                        mesh.surfaces.clone(),
-                        None,
-                        mesh.meshlet_override,
-                        LocalMeshInstanceData::Dense {
-                            instance_scale: mesh.instance_scale.max(0.0001),
-                            poses: {
-                                dense_instance_pose_scratch.clear();
-                                if dense_instance_pose_scratch.capacity() < mesh.instances.len() {
-                                    dense_instance_pose_scratch.reserve(
-                                        mesh.instances.len()
-                                            - dense_instance_pose_scratch.capacity(),
-                                    );
-                                }
-                                dense_instance_pose_scratch.extend(mesh.instances.iter().map(
-                                    |instance| DenseInstancePose3D {
-                                        position: [instance.0.x, instance.0.y, instance.0.z],
-                                        rotation: [
-                                            instance.1.x,
-                                            instance.1.y,
-                                            instance.1.z,
-                                            instance.1.w,
-                                        ],
-                                    },
-                                ));
-                                Arc::from(dense_instance_pose_scratch.as_slice())
-                            },
-                        },
-                    )),
-                    _ => None,
-                })
+            let mesh_header = if effective_visible {
+                self.nodes
+                    .get(node)
+                    .and_then(|scene_node| match &scene_node.data {
+                        SceneNodeData::MeshInstance3D(mesh) => {
+                            Some((mesh.mesh, Some(mesh.skeleton), mesh.meshlet_override))
+                        }
+                        SceneNodeData::MultiMeshInstance3D(mesh) => {
+                            Some((mesh.mesh, None, mesh.meshlet_override))
+                        }
+                        _ => None,
+                    })
             } else {
                 None
             };
+            let mesh_header = mesh_header.and_then(|(mesh, skeleton, meshlet_override)| {
+                self.resolve_render_mesh_id(node, mesh)
+                    .map(|mesh| (mesh, skeleton, meshlet_override))
+            });
+            let mesh_data: Option<LocalMeshData> =
+                mesh_header.and_then(|(resolved_mesh, skeleton, meshlet_override)| {
+                    self.nodes
+                        .get(node)
+                        .and_then(|scene_node| match &scene_node.data {
+                            SceneNodeData::MeshInstance3D(mesh) => Some((
+                                resolved_mesh,
+                                mesh.surfaces.clone(),
+                                skeleton,
+                                meshlet_override,
+                                LocalMeshInstanceData::Single,
+                            )),
+                            SceneNodeData::MultiMeshInstance3D(mesh) => Some((
+                                resolved_mesh,
+                                mesh.surfaces.clone(),
+                                skeleton,
+                                meshlet_override,
+                                LocalMeshInstanceData::Dense {
+                                    instance_scale: mesh.instance_scale.max(0.0001),
+                                    poses: {
+                                        let signature = dense_instance_signature(&mesh.instances);
+                                        if let Some(cached) =
+                                            self.render_3d.dense_instance_pose_cache.get(&node)
+                                            && cached.signature == signature
+                                        {
+                                            cached.poses.clone()
+                                        } else {
+                                            dense_instance_pose_scratch.clear();
+                                            if dense_instance_pose_scratch.capacity()
+                                                < mesh.instances.len()
+                                            {
+                                                dense_instance_pose_scratch.reserve(
+                                                    mesh.instances.len()
+                                                        - dense_instance_pose_scratch.capacity(),
+                                                );
+                                            }
+                                            dense_instance_pose_scratch.extend(
+                                                mesh.instances.iter().map(|instance| {
+                                                    DenseInstancePose3D {
+                                                        position: [
+                                                            instance.0.x,
+                                                            instance.0.y,
+                                                            instance.0.z,
+                                                        ],
+                                                        rotation: [
+                                                            instance.1.x,
+                                                            instance.1.y,
+                                                            instance.1.z,
+                                                            instance.1.w,
+                                                        ],
+                                                    }
+                                                }),
+                                            );
+                                            let poses: Arc<[DenseInstancePose3D]> =
+                                                Arc::from(dense_instance_pose_scratch.as_slice());
+                                            self.render_3d.dense_instance_pose_cache.insert(
+                                                node,
+                                                crate::runtime::state::DenseInstancePoseCache {
+                                                    signature,
+                                                    poses: poses.clone(),
+                                                },
+                                            );
+                                            poses
+                                        }
+                                    },
+                                },
+                            )),
+                            _ => None,
+                        })
+                });
             if let Some((mesh, surfaces, skeleton, meshlet_override, local_instances)) = mesh_data
                 && effective_visible
                 && let Some((mesh, resolved_surfaces)) =
@@ -666,6 +711,8 @@ impl Runtime {
         visible_now.clear();
         self.render_3d.visible_now = visible_now;
 
+        traversal_seen.clear();
+        self.render_3d.traversal_seen = traversal_seen;
         traversal_ids.clear();
         self.render_3d.traversal_ids = traversal_ids;
         skeleton_cache.clear();
@@ -685,6 +732,7 @@ impl Runtime {
             }
         }
         while let Some(node) = self.render_3d.removed_nodes.pop() {
+            self.render_3d.dense_instance_pose_cache.remove(&node);
             if let Some(prev) = self.render_3d.collision_debug_state.remove(&node) {
                 Self::queue_remove_collision_debug_nodes(self, node, 0, prev.edge_count);
             }
@@ -743,75 +791,7 @@ impl Runtime {
         mut mesh: MeshID,
         mut surfaces: Vec<MeshSurfaceBinding>,
     ) -> Option<(MeshID, std::sync::Arc<[MeshSurfaceBinding3D]>)> {
-        let canonical = self.resource_api.canonical_mesh_id(mesh);
-        if canonical != mesh {
-            mesh = canonical;
-            if let Some(node) = self.nodes.get_mut(node) {
-                match &mut node.data {
-                    SceneNodeData::MeshInstance3D(mesh_instance) => {
-                        mesh_instance.mesh = mesh;
-                    }
-                    SceneNodeData::MultiMeshInstance3D(mesh_instance) => {
-                        mesh_instance.mesh = mesh;
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        if !mesh.is_nil() && self.resource_api.is_mesh_id_pending(mesh) {
-            // Runtime script/resource paths can assign a non-nil MeshID before the
-            // render backend finishes CreateMesh; defer draw until ready.
-            return None;
-        }
-
-        if mesh.is_nil() {
-            let request = Self::mesh_request(node);
-            if let Some(result) = self.take_render_result(request) {
-                match result {
-                    crate::RuntimeRenderResult::Mesh(id) => {
-                        mesh = id;
-                        if let Some(node) = self.nodes.get_mut(node) {
-                            match &mut node.data {
-                                SceneNodeData::MeshInstance3D(mesh_instance) => {
-                                    mesh_instance.mesh = id;
-                                }
-                                SceneNodeData::MultiMeshInstance3D(mesh_instance) => {
-                                    mesh_instance.mesh = id;
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                    crate::RuntimeRenderResult::Failed(_)
-                    | crate::RuntimeRenderResult::Texture(_)
-                    | crate::RuntimeRenderResult::Material(_) => {}
-                }
-            }
-            if mesh.is_nil() {
-                let source = self
-                    .render_3d
-                    .mesh_sources
-                    .get(&node)
-                    .map(|source| source.trim().to_string())
-                    .filter(|source| !source.is_empty())?;
-                if source.is_empty() {
-                    return None;
-                }
-                if !self.render.is_inflight(request) {
-                    self.render.mark_inflight(request);
-                    self.queue_render_command(RenderCommand::Resource(
-                        ResourceCommand::CreateMesh {
-                            request,
-                            id: MeshID::nil(),
-                            source,
-                            reserved: false,
-                        },
-                    ));
-                }
-                return None;
-            }
-        }
+        mesh = self.resolve_render_mesh_id(node, mesh)?;
 
         for surface_index in 0..surfaces.len().max(1) {
             if surfaces.len() <= surface_index {
@@ -901,6 +881,79 @@ impl Runtime {
             })
             .collect();
         Some((mesh, std::sync::Arc::from(converted)))
+    }
+
+    fn resolve_render_mesh_id(&mut self, node: NodeID, mut mesh: MeshID) -> Option<MeshID> {
+        let canonical = self.resource_api.canonical_mesh_id(mesh);
+        if canonical != mesh {
+            mesh = canonical;
+            if let Some(node) = self.nodes.get_mut(node) {
+                match &mut node.data {
+                    SceneNodeData::MeshInstance3D(mesh_instance) => {
+                        mesh_instance.mesh = mesh;
+                    }
+                    SceneNodeData::MultiMeshInstance3D(mesh_instance) => {
+                        mesh_instance.mesh = mesh;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if !mesh.is_nil() && self.resource_api.is_mesh_id_pending(mesh) {
+            // Runtime script/resource paths can assign a non-nil MeshID before the
+            // render backend finishes CreateMesh; defer draw until ready.
+            return None;
+        }
+
+        if mesh.is_nil() {
+            let request = Self::mesh_request(node);
+            if let Some(result) = self.take_render_result(request) {
+                match result {
+                    crate::RuntimeRenderResult::Mesh(id) => {
+                        mesh = id;
+                        if let Some(node) = self.nodes.get_mut(node) {
+                            match &mut node.data {
+                                SceneNodeData::MeshInstance3D(mesh_instance) => {
+                                    mesh_instance.mesh = id;
+                                }
+                                SceneNodeData::MultiMeshInstance3D(mesh_instance) => {
+                                    mesh_instance.mesh = id;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    crate::RuntimeRenderResult::Failed(_)
+                    | crate::RuntimeRenderResult::Texture(_)
+                    | crate::RuntimeRenderResult::Material(_) => {}
+                }
+            }
+            if mesh.is_nil() {
+                let source = self
+                    .render_3d
+                    .mesh_sources
+                    .get(&node)
+                    .map(|source| source.trim().to_string())
+                    .filter(|source| !source.is_empty())?;
+                if source.is_empty() {
+                    return None;
+                }
+                if !self.render.is_inflight(request) {
+                    self.render.mark_inflight(request);
+                    self.queue_render_command(RenderCommand::Resource(
+                        ResourceCommand::CreateMesh {
+                            request,
+                            id: MeshID::nil(),
+                            source,
+                            reserved: false,
+                        },
+                    ));
+                }
+                return None;
+            }
+        }
+        Some(mesh)
     }
 }
 fn build_skeleton_palette(
@@ -1387,6 +1440,27 @@ fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {
     }
     let budget = (spawn_rate * lifetime_max).ceil() as u32 + 2;
     budget.clamp(1, 1_000_000)
+}
+
+fn dense_instance_signature(
+    instances: &[(perro_structs::Vector3, perro_structs::Quaternion)],
+) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64 ^ instances.len() as u64;
+    for (position, rotation) in instances {
+        hash = fnv_mix_u32(hash, position.x.to_bits());
+        hash = fnv_mix_u32(hash, position.y.to_bits());
+        hash = fnv_mix_u32(hash, position.z.to_bits());
+        hash = fnv_mix_u32(hash, rotation.x.to_bits());
+        hash = fnv_mix_u32(hash, rotation.y.to_bits());
+        hash = fnv_mix_u32(hash, rotation.z.to_bits());
+        hash = fnv_mix_u32(hash, rotation.w.to_bits());
+    }
+    hash
+}
+
+#[inline]
+fn fnv_mix_u32(hash: u64, value: u32) -> u64 {
+    (hash ^ value as u64).wrapping_mul(0x100000001b3)
 }
 
 fn resolve_particle_sim_mode(

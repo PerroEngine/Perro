@@ -492,13 +492,12 @@ impl Runtime {
                 .map(|state| state.shape_signature != shape_signature)
                 .unwrap_or(true);
 
-            let child_count = self
-                .nodes
-                .get(id)
-                .map(|node| node.children_slice().len())
-                .unwrap_or(0);
-            let mut shapes = Vec::with_capacity(child_count);
+            let mut shapes = Vec::new();
             if needs_shape_rebuild && let Some(node) = self.nodes.get(id) {
+                let child_count = node.children_slice().len();
+                if shapes.capacity() < child_count {
+                    shapes.reserve(child_count - shapes.capacity());
+                }
                 for &child_id in node.children_slice() {
                     let Some(child) = self.nodes.get(child_id) else {
                         continue;
@@ -589,13 +588,12 @@ impl Runtime {
                 .map(|state| state.shape_signature != shape_signature)
                 .unwrap_or(true);
 
-            let child_count = self
-                .nodes
-                .get(id)
-                .map(|node| node.children_slice().len())
-                .unwrap_or(0);
-            let mut shapes = Vec::with_capacity(child_count);
+            let mut shapes = Vec::new();
             if needs_shape_rebuild && let Some(node) = self.nodes.get(id) {
+                let child_count = node.children_slice().len();
+                if shapes.capacity() < child_count {
+                    shapes.reserve(child_count - shapes.capacity());
+                }
                 for &child_id in node.children_slice() {
                     let Some(child) = self.nodes.get(child_id) else {
                         continue;
