@@ -17,6 +17,7 @@ struct TrackAccumulator {
 
 #[derive(Clone, Debug)]
 struct TrackKey {
+    mode: AnimationKeyMode,
     value: AnimationTrackValue,
     interpolation: AnimationInterpolation,
     ease: AnimationEase,
@@ -40,7 +41,7 @@ fn build_tracks_and_events(
 ) -> Result<(Vec<AnimationObjectTrack>, Vec<AnimationFrameEvent>), String> {
     let mut frame_events = Vec::<AnimationFrameEvent>::new();
 
-    let mut fields = Vec::<(u32, usize, String, ObjectFieldAction)>::new();
+    let mut fields = Vec::<(u32, usize, AnimationKeyMode, String, ObjectFieldAction)>::new();
     let mut controls = Vec::<(
         u32,
         usize,
@@ -55,9 +56,10 @@ fn build_tracks_and_events(
         match action {
             FrameAction::Field {
                 frame,
+                key_mode,
                 object,
                 field,
-            } => fields.push((frame, sequence, object, field)),
+            } => fields.push((frame, sequence, key_mode, object, field)),
             FrameAction::TrackControl {
                 frame,
                 object,
@@ -97,7 +99,8 @@ fn build_tracks_and_events(
     let mut tracks_map = BTreeMap::<(String, String), TrackAccumulator>::new();
     let mut control_index = 0usize;
 
-    for (frame, sequence, object, field) in fields {
+    for (frame, sequence, key_mode, object, field) in fields {
+        let object_for_mode = object.clone();
         while control_index < controls.len() {
             let (c_frame, c_seq, c_object, channel_key, c_field, c_bone_target, interp, ease) =
                 &controls[control_index];
@@ -213,6 +216,11 @@ fn build_tracks_and_events(
                 );
             }
         }
+        for ((track_object, _), track) in tracks_map.iter_mut() {
+            if track_object == &object_for_mode && let Some(key) = track.keys.get_mut(&frame) {
+                key.mode = key_mode;
+            }
+        }
     }
 
     while control_index < controls.len() {
@@ -240,6 +248,7 @@ fn build_tracks_and_events(
         for (frame, key) in track.keys {
             keys.push(AnimationObjectKey {
                 frame,
+                mode: key.mode,
                 interpolation: key.interpolation,
                 ease: key.ease,
                 value: key.value,
@@ -960,6 +969,7 @@ fn insert_track_key_with_bone_target(
         });
     if let Some(existing) = entry.keys.get_mut(&frame) {
         existing.value = value;
+        existing.mode = AnimationKeyMode::Closed;
         existing.interpolation = entry.interpolation;
         existing.ease = entry.ease;
         existing.transform2d_mask |= transform2d_mask;
@@ -968,6 +978,7 @@ fn insert_track_key_with_bone_target(
         entry.keys.insert(
             frame,
             TrackKey {
+                mode: AnimationKeyMode::Closed,
                 value,
                 interpolation: entry.interpolation,
                 ease: entry.ease,

@@ -1,5 +1,6 @@
 fn parse_object_field_action(
     frame: u32,
+    key_mode: AnimationKeyMode,
     object: &str,
     node_type: &str,
     key: &str,
@@ -9,6 +10,7 @@ fn parse_object_field_action(
     if let Some(skeleton_action) = parse_skeleton_bone_action(node_type, key, value, line_no)? {
         return Ok(FrameAction::Field {
             frame,
+            key_mode,
             object: object.to_string(),
             field: ObjectFieldAction::SkeletonBone(skeleton_action),
         });
@@ -84,6 +86,7 @@ fn parse_object_field_action(
 
     Ok(FrameAction::Field {
         frame,
+        key_mode,
         object: object.to_string(),
         field: object_field,
     })
@@ -751,6 +754,7 @@ enum SpotLight3DAction {
 enum FrameAction {
     Field {
         frame: u32,
+        key_mode: AnimationKeyMode,
         object: String,
         field: ObjectFieldAction,
     },

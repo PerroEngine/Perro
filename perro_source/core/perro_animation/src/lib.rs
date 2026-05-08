@@ -72,6 +72,7 @@ pub enum AnimationBoneSelector {
 #[derive(Clone, Debug)]
 pub struct AnimationObjectKey {
     pub frame: u32,
+    pub mode: AnimationKeyMode,
     pub interpolation: AnimationInterpolation,
     pub ease: AnimationEase,
     pub value: AnimationTrackValue,
@@ -81,11 +82,20 @@ impl Default for AnimationObjectKey {
     fn default() -> Self {
         Self {
             frame: 0,
+            mode: AnimationKeyMode::Closed,
             interpolation: AnimationInterpolation::Linear,
             ease: AnimationEase::Linear,
             value: AnimationTrackValue::F32(0.0),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum AnimationKeyMode {
+    Open,
+    #[default]
+    Closed,
 }
 
 #[derive(Clone, Debug, Default)]
