@@ -4,6 +4,26 @@ fn build_animation_player(data: &SceneDefNodeData) -> AnimationPlayer {
     node
 }
 
+fn build_animation_tree(data: &SceneDefNodeData) -> AnimationTree {
+    let mut node = AnimationTree::new();
+    SceneFieldIterRef::new(&data.fields).for_each(|name, value| {
+        match resolve_node_field("AnimationTree", name) {
+            Some(NodeField::AnimationTree(AnimationTreeField::Speed)) => {
+                if let Some(v) = as_f32(value) {
+                    node.speed = v;
+                }
+            }
+            Some(NodeField::AnimationTree(AnimationTreeField::Paused)) => {
+                if let Some(v) = as_bool(value) {
+                    node.paused = v;
+                }
+            }
+            _ => {}
+        }
+    });
+    node
+}
+
 fn apply_animation_player_fields(node: &mut AnimationPlayer, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         match resolve_node_field("AnimationPlayer", name) {
@@ -68,28 +88,119 @@ fn extract_animation_scene_bindings(data: &SceneDefNodeData) -> Vec<(String, Str
     out
 }
 
-fn parse_animation_bindings(value: &SceneValue) -> Option<Vec<(String, String)>> {
+fn extract_animation_tree_source(data: &SceneDefNodeData) -> Option<String> {
+    if data.ty != "AnimationTree" {
+        return None;
+    }
+    data.fields.iter().find_map(|(name, value)| {
+        (resolve_node_field("AnimationTree", name)
+            == Some(NodeField::AnimationTree(AnimationTreeField::Tree)))
+            .then(|| as_asset_source(value))
+            .flatten()
+    })
+}
+
+fn extract_animation_tree_animations(data: &SceneDefNodeData) -> AnimationTreeAnimationEntries {
+    if data.ty != "AnimationTree" {
+        return Vec::new();
+    }
+    data.fields
+        .iter()
+        .find_map(|(name, value)| {
+            (resolve_node_field("AnimationTree", name)
+                == Some(NodeField::AnimationTree(AnimationTreeField::Animations)))
+                .then(|| parse_animation_tree_animation_list(value))
+                .flatten()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_animation_tree_animation_list(
+    value: &SceneValue,
+) -> Option<AnimationTreeAnimationEntries> {
     let SceneValue::Array(items) = value else {
         return None;
     };
-
     let mut out = Vec::new();
-    for item in items.as_ref() {
+    for item in items.iter() {
+        if let Some(source) = as_asset_source(item) {
+            out.push((
+                source,
+                Vec::new(),
+                1.0,
+                false,
+                perro_nodes::AnimationPlaybackType::Loop,
+            ));
+            continue;
+        }
         let SceneValue::Object(entries) = item else {
             continue;
         };
-
-        for (name, value) in entries.as_ref() {
-            // Map-only binding form: { Hero = bob } / { "Hero": bob }.
-            // Legacy object/node form is intentionally ignored.
-            if matches!(name.as_ref(), "object" | "track" | "node") {
-                continue;
-            }
-            if let Some(v) = as_str(value) {
-                out.push((name.to_string(), v.to_string()));
+        let mut source = None;
+        let mut bindings = Vec::new();
+        let mut speed = 1.0;
+        let mut paused = false;
+        let mut playback_type = perro_nodes::AnimationPlaybackType::Loop;
+        for (name, value) in entries.iter() {
+            match name.as_ref() {
+                "animation" | "clip" | "source" => source = as_asset_source(value),
+                "bindings" => {
+                    if let Some(v) = parse_animation_bindings(value) {
+                        bindings = v;
+                    }
+                }
+                "speed" => {
+                    if let Some(v) = as_f32(value) {
+                        speed = v;
+                    }
+                }
+                "paused" => {
+                    if let Some(v) = as_bool(value) {
+                        paused = v;
+                    }
+                }
+                "playback" | "playback_type" => {
+                    if let Some(v) = parse_animation_playback_type(value) {
+                        playback_type = v;
+                    }
+                }
+                _ => {}
             }
         }
+        if let Some(source) = source {
+            out.push((source, bindings, speed, paused, playback_type));
+        }
+    }
+    Some(out)
+}
+
+fn parse_animation_bindings(value: &SceneValue) -> Option<Vec<(String, String)>> {
+    let mut out = Vec::new();
+    if let SceneValue::Object(entries) = value {
+        for (name, value) in entries.as_ref() {
+            if let Some(v) = as_str(value).or_else(|| value.as_key()) {
+                out.push((name.to_string(), v.trim_start_matches('%').to_string()));
+            }
+        }
+        return Some(out);
     }
 
-    Some(out)
+    if let SceneValue::Array(items) = value {
+        for item in items.as_ref() {
+            let SceneValue::Object(entries) = item else {
+                continue;
+            };
+            for (name, value) in entries.as_ref() {
+                if matches!(name.as_ref(), "object" | "track" | "node") {
+                    continue;
+                }
+                if let Some(v) = as_str(value).or_else(|| value.as_key()) {
+                    out.push((name.to_string(), v.trim_start_matches('%').to_string()));
+                }
+            }
+        }
+        return Some(out);
+    }
+
+    None
 }

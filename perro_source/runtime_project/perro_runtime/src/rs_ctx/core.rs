@@ -1,7 +1,7 @@
 use super::state::{RuntimeLocalizationState, RuntimeResourceState};
 use crate::runtime_project::{
-    StaticAnimationLookup, StaticAudioLookup, StaticLocalizationLookup, StaticMaterialLookup,
-    StaticSkeletonLookup,
+    StaticAnimationLookup, StaticAnimationTreeLookup, StaticAudioLookup, StaticLocalizationLookup,
+    StaticMaterialLookup, StaticSkeletonLookup,
 };
 use perro_bark::AudioController;
 use perro_ids::string_to_u64;
@@ -19,6 +19,7 @@ pub struct RuntimeResourceApi {
     pub(super) static_material_lookup: Option<StaticMaterialLookup>,
     pub(super) static_skeleton_lookup: Option<StaticSkeletonLookup>,
     pub(super) static_animation_lookup: Option<StaticAnimationLookup>,
+    pub(super) static_animation_tree_lookup: Option<StaticAnimationTreeLookup>,
     pub(super) static_localization_lookup: Option<StaticLocalizationLookup>,
     pub(super) skeleton_bones_cache: Mutex<HashMap<String, Vec<perro_nodes::skeleton_3d::Bone3D>>>,
     pub(super) viewport_size: Mutex<(u32, u32)>,
@@ -30,6 +31,7 @@ impl RuntimeResourceApi {
         static_audio_lookup: Option<StaticAudioLookup>,
         static_skeleton_lookup: Option<StaticSkeletonLookup>,
         static_animation_lookup: Option<StaticAnimationLookup>,
+        static_animation_tree_lookup: Option<StaticAnimationTreeLookup>,
         static_localization_lookup: Option<StaticLocalizationLookup>,
         localization_config: Option<LocalizationConfig>,
     ) -> Arc<Self> {
@@ -42,6 +44,7 @@ impl RuntimeResourceApi {
             static_material_lookup,
             static_skeleton_lookup,
             static_animation_lookup,
+            static_animation_tree_lookup,
             static_localization_lookup,
             skeleton_bones_cache: Mutex::new(HashMap::new()),
             viewport_size: Mutex::new((1, 1)),

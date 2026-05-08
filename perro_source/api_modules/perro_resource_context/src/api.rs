@@ -1,8 +1,8 @@
 use crate::sub_apis::{
-    AnimationAPI, AnimationModule, AudioAPI, AudioModule, Draw2DAPI, Draw2DModule, Locale,
-    LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule,
-    PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule, TextureAPI,
-    TextureModule, VisualAccessibilityAPI,
+    AnimationAPI, AnimationModule, AnimationTreeAPI, AnimationTreeModule, AudioAPI, AudioModule,
+    Draw2DAPI, Draw2DModule, Locale, LocalizationAPI, LocalizationModule, MaterialAPI,
+    MaterialModule, MeshAPI, MeshModule, PostProcessingAPI, SceneDocAPI, SceneDocModule,
+    SkeletonAPI, SkeletonModule, TextureAPI, TextureModule, VisualAccessibilityAPI,
 };
 use perro_scene::{SceneDoc, SceneWrite};
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2};
@@ -16,6 +16,7 @@ pub trait ResourceAPI:
     + MaterialAPI
     + SkeletonAPI
     + AnimationAPI
+    + AnimationTreeAPI
     + Draw2DAPI
     + LocalizationAPI
     + SceneDocAPI
@@ -33,6 +34,7 @@ impl<T> ResourceAPI for T where
         + MaterialAPI
         + SkeletonAPI
         + AnimationAPI
+        + AnimationTreeAPI
         + Draw2DAPI
         + LocalizationAPI
         + SceneDocAPI
@@ -85,6 +87,11 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceWindow<'res, R> {
     #[inline]
     pub fn Animations(&self) -> AnimationModule<'_, R> {
         AnimationModule::new(self.api)
+    }
+
+    #[inline]
+    pub fn AnimationTrees(&self) -> AnimationTreeModule<'_, R> {
+        AnimationTreeModule::new(self.api)
     }
 
     #[inline]

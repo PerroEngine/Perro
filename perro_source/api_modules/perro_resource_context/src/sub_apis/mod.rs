@@ -1,4 +1,5 @@
 mod animation;
+mod animation_tree;
 mod audio;
 mod draw_2d;
 mod localization;
@@ -11,6 +12,7 @@ mod texture;
 mod visual_accessibility;
 
 pub use animation::{AnimationAPI, AnimationModule};
+pub use animation_tree::{AnimationTreeAPI, AnimationTreeModule};
 pub use audio::{Audio, AudioAPI, AudioModule, AudioPan, bus_id};
 pub use draw_2d::{Draw2DAPI, Draw2DModule};
 pub use localization::{Locale, LocalizationAPI, LocalizationModule};

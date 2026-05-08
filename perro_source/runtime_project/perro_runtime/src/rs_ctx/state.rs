@@ -1,5 +1,5 @@
-use perro_animation::AnimationClip;
-use perro_ids::{AnimationID, MaterialID, MeshID, TextureID};
+use perro_animation::{AnimationClip, AnimationTreeAsset};
+use perro_ids::{AnimationID, AnimationTreeID, MaterialID, MeshID, TextureID};
 use perro_project::LocalizationConfig;
 use perro_render_bridge::{Material3D, Mesh3D};
 use perro_render_bridge::{RenderCommand, RenderRequestID};
@@ -152,6 +152,7 @@ pub(super) struct RuntimeResourceState {
     mesh_slots: LocalSlotArena,
     material_slots: LocalSlotArena,
     animation_slots: LocalSlotArena,
+    animation_tree_slots: LocalSlotArena,
     pub(super) queued_commands: Vec<RenderCommand>,
     pub(super) texture_by_source: HashMap<u64, TextureID>,
     pub(super) texture_pending_by_source: HashMap<u64, RenderRequestID>,
@@ -177,6 +178,8 @@ pub(super) struct RuntimeResourceState {
     pub(super) material_data_by_id: HashMap<MaterialID, Material3D>,
     pub(super) animation_by_source: HashMap<u64, AnimationID>,
     pub(super) animation_data_by_id: HashMap<AnimationID, Arc<AnimationClip>>,
+    pub(super) animation_tree_by_source: HashMap<u64, AnimationTreeID>,
+    pub(super) animation_tree_data_by_id: HashMap<AnimationTreeID, Arc<AnimationTreeAsset>>,
 }
 
 impl RuntimeResourceState {
@@ -245,5 +248,10 @@ impl RuntimeResourceState {
 
     pub(super) fn free_animation_id(&mut self, id: AnimationID) -> bool {
         self.animation_slots.free_parts(id.index(), id.generation())
+    }
+
+    pub(super) fn allocate_animation_tree_id(&mut self) -> AnimationTreeID {
+        let (index, generation) = self.animation_tree_slots.allocate_parts();
+        AnimationTreeID::from_parts(index, generation)
     }
 }

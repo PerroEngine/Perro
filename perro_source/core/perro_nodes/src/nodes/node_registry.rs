@@ -1,5 +1,6 @@
 use crate::ambient_light_3d::AmbientLight3D;
 use crate::animation_player::AnimationPlayer;
+use crate::animation_tree::AnimationTree;
 use crate::bone_attachment_3d::BoneAttachment3D;
 use crate::camera_2d::Camera2D;
 use crate::camera_3d::Camera3D;
@@ -830,6 +831,7 @@ define_scene_nodes! {
         UiTreeList => (UiBox, UiTreeList, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False)
     }
     resource: {
-        AnimationPlayer => (None, AnimationPlayer, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False)
+        AnimationPlayer => (None, AnimationPlayer, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
+        AnimationTree => (None, AnimationTree, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False)
     }
 }

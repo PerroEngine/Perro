@@ -41,6 +41,7 @@ impl Runtime {
             SceneNodeData::UiGrid(node) => node.visible,
             SceneNodeData::UiTreeList(node) => node.visible,
             SceneNodeData::AnimationPlayer(_) => true,
+            SceneNodeData::AnimationTree(_) => true,
         }
     }
 

@@ -1,4 +1,5 @@
 mod animation;
+mod animation_tree;
 mod audio;
 mod core;
 mod draw_2d;

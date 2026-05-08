@@ -1038,6 +1038,21 @@ script = "res://path/to/script.rs"
         playback = loop
     [/AnimationPlayer]
 [/animation_player]
+
+[animation_tree]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [AnimationTree]
+        tree = "res://path/to/tree.panimtree"
+        animations = [
+            { animation = "res://path/to/idle.panim", bindings = { Hero = PlayerRoot }, playback = loop, speed = 1.0, paused = false },
+            { animation = "res://path/to/run.panim", bindings = { Hero = PlayerRoot }, playback = loop, speed = 1.0, paused = false },
+            { animation = "res://path/to/aim.panim", bindings = { Hero = PlayerRoot }, playback = boomerang, speed = 1.0, paused = false },
+        ]
+        speed = 1.0
+        paused = false
+    [/AnimationTree]
+[/animation_tree]
 ```
 
 

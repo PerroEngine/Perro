@@ -174,7 +174,7 @@ impl Runtime {
             signal_runtime: SignalRuntimeState::new(),
             node_index: NodeIndexState::new(),
             node_api_scratch: NodeApiScratchState::new(),
-            resource_api: RuntimeResourceApi::new(None, None, None, None, None, None),
+            resource_api: RuntimeResourceApi::new(None, None, None, None, None, None, None),
             input: InputSnapshot::new(),
             cursor_icon_request: None,
             physics: physics::PhysicsState::new(),
@@ -195,6 +195,7 @@ impl Runtime {
         let static_audio_lookup = project.static_audio_lookup;
         let static_skeleton_lookup = project.static_skeleton_lookup;
         let static_animation_lookup = project.static_animation_lookup;
+        let static_animation_tree_lookup = project.static_animation_tree_lookup;
         let static_localization_lookup = project.static_localization_lookup;
         let localization_config = project.config.localization.clone();
         runtime.project = Some(Arc::new(project));
@@ -204,6 +205,7 @@ impl Runtime {
             static_audio_lookup,
             static_skeleton_lookup,
             static_animation_lookup,
+            static_animation_tree_lookup,
             static_localization_lookup,
             localization_config,
         );

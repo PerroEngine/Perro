@@ -294,6 +294,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some(LocalizationConfig {
                 source_csv: "localization.csv".to_string(),
                 key_column: "key".to_string(),
@@ -354,6 +355,7 @@ mod tests {
         }
 
         let api = RuntimeResourceApi::new(
+            None,
             None,
             None,
             None,

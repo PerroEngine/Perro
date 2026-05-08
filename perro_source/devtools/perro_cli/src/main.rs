@@ -47,6 +47,7 @@ fn main() {
             "new_script" => new_script_command(&args, &cwd),
             "new_scene" => new_scene_command(&args, &cwd),
             "new_animation" => new_animation_command(&args, &cwd),
+            "new_panimtree" => new_panimtree_command(&args, &cwd),
             "clean" => clean_command(&args, &cwd),
             "install" => install_command(&args),
             "check" => scripts_command(&args, &cwd),
@@ -108,6 +109,9 @@ fn print_usage() {
     );
     eprintln!(
         "  perro_cli new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>]"
+    );
+    eprintln!(
+        "  perro_cli new_panimtree --name <tree_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>]"
     );
 }
 
@@ -235,6 +239,33 @@ fn sanitize_animation_file_name(name: &str) -> Result<String, String> {
     }
     if !rendered.ends_with(".panim") {
         rendered.push_str(".panim");
+    }
+    Ok(rendered)
+}
+
+fn sanitize_panimtree_file_name(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("animation tree name cannot be empty".to_string());
+    }
+    if trimmed.contains('/') || trimmed.contains('\\') {
+        return Err("animation tree name must not include path separators".to_string());
+    }
+    let mut out = String::with_capacity(trimmed.len() + 10);
+    for c in trimmed.chars() {
+        let invalid = matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*');
+        if invalid {
+            out.push('_');
+        } else {
+            out.push(c);
+        }
+    }
+    let mut rendered = out.trim_matches('.').to_string();
+    if rendered.is_empty() {
+        return Err("animation tree name must include at least one valid character".to_string());
+    }
+    if !rendered.ends_with(".panimtree") {
+        rendered.push_str(".panimtree");
     }
     Ok(rendered)
 }
@@ -813,6 +844,42 @@ default_ease = "linear"
     .replace("__ANIMATION_NAME__", animation_name)
 }
 
+fn default_panimtree(tree_name: &str) -> String {
+    r#"[AnimationTree]
+name = "__TREE_NAME__"
+[/AnimationTree]
+
+[Slots]
+Idle
+Run
+[/Slots]
+
+[IdleSrc]
+    [Slot]
+        slot = Idle
+    [/Slot]
+[/IdleSrc]
+
+[RunSrc]
+    [Slot]
+        slot = Run
+    [/Slot]
+[/RunSrc]
+
+[MoveBlend]
+    [Blend]
+        inputs = [@IdleSrc, @RunSrc]
+        weights = [1.0, 0.0]
+    [/Blend]
+[/MoveBlend]
+
+[Output]
+    input = @MoveBlend
+[/Output]
+"#
+    .replace("__TREE_NAME__", tree_name)
+}
+
 fn new_animation_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let Some(raw_name) = parse_flag_value(args, "--name") else {
         return Err("missing required flag `--name`".to_string());
@@ -845,6 +912,44 @@ fn new_animation_command(args: &[String], cwd: &Path) -> Result<(), String> {
     write_new_file(&target_path, &default_animation_panim(animation_name))?;
     println!(
         "created animation at {}",
+        normalize_powershell_path(&target_path)
+    );
+    maybe_open_file_in_editor(args, &target_path)?;
+    Ok(())
+}
+
+fn new_panimtree_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let Some(raw_name) = parse_flag_value(args, "--name") else {
+        return Err("missing required flag `--name`".to_string());
+    };
+    let file_name = sanitize_panimtree_file_name(&raw_name)?;
+
+    let project_dir = if let Some(raw_project) = parse_flag_value(args, "--path") {
+        resolve_local_path(&raw_project, cwd)
+    } else {
+        find_project_root(cwd).ok_or_else(|| {
+            "could not find project.toml. Run from a project directory or pass --path <project_dir>."
+                .to_string()
+        })?
+    };
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    let content_root = resolve_content_root(&project_dir, args)?;
+    let content_prefix = resolve_content_prefix(args)?;
+
+    let target_dir = if let Some(raw_path) = parse_flag_value(args, "--res") {
+        resolve_res_subdir(&raw_path, &content_root, &content_prefix)?
+    } else {
+        content_root.join("animations")
+    };
+
+    let target_path = target_dir.join(file_name);
+    let tree_name = target_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("NewAnimationTree");
+    write_new_file(&target_path, &default_panimtree(tree_name))?;
+    println!(
+        "created animation tree at {}",
         normalize_powershell_path(&target_path)
     );
     maybe_open_file_in_editor(args, &target_path)?;

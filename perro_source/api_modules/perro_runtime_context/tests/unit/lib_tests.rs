@@ -1,6 +1,6 @@
 use crate::{
     prelude::*,
-    sub_apis::{AnimPlayerAPI, SceneAPI},
+    sub_apis::{AnimPlayerAPI, AnimTreeAPI, SceneAPI},
 };
 use perro_ids::{AnimationID, IntoTagID, MeshID, NodeID, TagID};
 use perro_nodes::prelude::Node2D;
@@ -422,6 +422,69 @@ impl AnimPlayerAPI for DummyRuntime {
     }
 
     fn animation_clear_bindings(&mut self, _player: NodeID) -> bool {
+        true
+    }
+}
+
+impl AnimTreeAPI for DummyRuntime {
+    fn animation_tree_set_clip_by_name(
+        &mut self,
+        _tree: NodeID,
+        _slot: &str,
+        _animation: AnimationID,
+    ) -> bool {
+        true
+    }
+
+    fn animation_tree_set_clip_by_index(
+        &mut self,
+        _tree: NodeID,
+        _slot: usize,
+        _animation: AnimationID,
+    ) -> bool {
+        true
+    }
+
+    fn animation_tree_play_slot(&mut self, _tree: NodeID, _slot: &str) -> bool {
+        true
+    }
+
+    fn animation_tree_pause_slot(&mut self, _tree: NodeID, _slot: &str, _paused: bool) -> bool {
+        true
+    }
+
+    fn animation_tree_seek_slot_frame(&mut self, _tree: NodeID, _slot: &str, _frame: u32) -> bool {
+        true
+    }
+
+    fn animation_tree_set_slot_speed(&mut self, _tree: NodeID, _slot: &str, _speed: f32) -> bool {
+        true
+    }
+
+    fn animation_tree_set_slot_playback(
+        &mut self,
+        _tree: NodeID,
+        _slot: &str,
+        _playback_type: perro_nodes::animation_player::AnimationPlaybackType,
+    ) -> bool {
+        true
+    }
+
+    fn animation_tree_seek_node_time(&mut self, _tree: NodeID, _node: &str, _seconds: f32) -> bool {
+        true
+    }
+
+    fn animation_tree_set_weight(
+        &mut self,
+        _tree: NodeID,
+        _node: &str,
+        _input: &str,
+        _weight: f32,
+    ) -> bool {
+        true
+    }
+
+    fn animation_tree_pause(&mut self, _tree: NodeID, _paused: bool) -> bool {
         true
     }
 }

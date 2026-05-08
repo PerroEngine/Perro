@@ -4,6 +4,7 @@ use perro_io::load_asset;
 use perro_nodes::{
     ambient_light_3d::AmbientLight3D,
     animation_player::AnimationPlayer,
+    animation_tree::AnimationTree,
     bone_attachment_3d::BoneAttachment3D,
     camera_2d::Camera2D,
     camera_3d::{Camera3D, CameraProjection},
@@ -24,8 +25,8 @@ use perro_nodes::{
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
-    AnimationPlayerField, Area2DField, Area3DField, BoneAttachment3DField, Camera2DField,
-    Camera3DField, CollisionShape2DField, CollisionShape3DField, Light3DField,
+    AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField, BoneAttachment3DField,
+    Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField, Light3DField,
     MeshInstance3DField, Node2DField, Node3DField, NodeField, Parser, ParticleEmitter3DField,
     PointLight3DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
     SceneFieldIterRef, SceneKey, SceneNodeData as SceneDefNodeData,
@@ -79,6 +80,8 @@ pub(super) struct PendingNode {
     pub(super) parent_key: Option<u32>,
     pub(super) node: SceneNode,
     pub(super) animation_source: Option<String>,
+    pub(super) animation_tree_source: Option<String>,
+    pub(super) animation_tree_animations: Vec<PendingAnimationTreeAnimation>,
     pub(super) texture_source: Option<String>,
     pub(super) mesh_source: Option<String>,
     pub(super) material_surfaces: Vec<PendingSurfaceMaterial>,
@@ -88,14 +91,28 @@ pub(super) struct PendingNode {
     pub(super) animation_bindings: Vec<(String, u32)>,
 }
 
+pub(super) struct PendingAnimationTreeAnimation {
+    pub(super) source: String,
+    pub(super) bindings: Vec<(String, u32)>,
+    pub(super) speed: f32,
+    pub(super) paused: bool,
+    pub(super) playback_type: perro_nodes::AnimationPlaybackType,
+}
+
 pub(super) struct PendingSurfaceMaterial {
     pub(super) source: Option<String>,
     pub(super) inline: Option<Material3D>,
 }
 
+type AnimationSceneBindings = Vec<(String, String)>;
+type AnimationTreeAnimationEntry = (String, AnimationSceneBindings, f32, bool, perro_nodes::AnimationPlaybackType);
+type AnimationTreeAnimationEntries = Vec<AnimationTreeAnimationEntry>;
+
 type SceneNodeExtraction = (
     SceneNode,
     Option<String>,
+    Option<String>,
+    AnimationTreeAnimationEntries,
     Option<String>,
     Option<String>,
     Vec<PendingSurfaceMaterial>,
@@ -299,6 +316,8 @@ fn push_entry_prepared(
     let (
         node,
         animation_source,
+        animation_tree_source,
+        animation_tree_animations,
         texture_source,
         mesh_source,
         material_surfaces,
@@ -314,6 +333,23 @@ fn push_entry_prepared(
         parent_key,
         node,
         animation_source,
+        animation_tree_source,
+        animation_tree_animations: animation_tree_animations
+            .into_iter()
+            .map(|(source, bindings, speed, paused, playback_type)| PendingAnimationTreeAnimation {
+                source,
+                bindings: bindings
+                    .into_iter()
+                    .filter_map(|(object, target)| {
+                        scene_key_by_name(scene, target.as_str())
+                            .map(|target| (object, remap_key(target, key_map)))
+                    })
+                    .collect(),
+                speed,
+                paused,
+                playback_type,
+            })
+            .collect(),
         texture_source,
         mesh_source,
         material_surfaces,
@@ -566,6 +602,8 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
     }
     let texture_source = extract_texture_source(&entry.data);
     let animation_source = extract_animation_source(&entry.data);
+    let animation_tree_source = extract_animation_tree_source(&entry.data);
+    let animation_tree_animations = extract_animation_tree_animations(&entry.data);
     let mesh_source_explicit = extract_mesh_source(&entry.data);
     let material_surfaces_explicit = extract_material_surfaces(&entry.data);
     let skeleton_source = extract_skeleton_source(&entry.data);
@@ -587,6 +625,8 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
     Ok((
         node,
         animation_source,
+        animation_tree_source,
+        animation_tree_animations,
         texture_source,
         mesh_source,
         material_surfaces,
@@ -629,6 +669,7 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
             data,
         ))),
         "AnimationPlayer" => Ok(SceneNodeData::AnimationPlayer(build_animation_player(data))),
+        "AnimationTree" => Ok(SceneNodeData::AnimationTree(build_animation_tree(data))),
         "AmbientLight3D" => Ok(SceneNodeData::AmbientLight3D(build_ambient_light_3d(data))),
         "Sky3D" => Ok(SceneNodeData::Sky3D(build_sky_3d(data))),
         "RayLight3D" => Ok(SceneNodeData::RayLight3D(build_ray_light_3d(data))),

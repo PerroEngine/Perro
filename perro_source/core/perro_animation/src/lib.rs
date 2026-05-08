@@ -1,6 +1,8 @@
 use perro_scene::{Node3DField, NodeField};
 use std::borrow::Cow;
+mod anim_tree;
 mod panim;
+pub use anim_tree::*;
 pub use panim::parse_panim;
 
 #[derive(Clone, Debug, Default)]

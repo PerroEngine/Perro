@@ -3,6 +3,9 @@
 ## Particles
 - [Particle System Guide](particles.md)
 
+## Animation
+- [Animation Overview](Animation.md)
+
 ## Scripting
 - [Scripting Overview](scripting/README.md)
 - [Project Script Modules](scripting/project_modules.md)
@@ -20,6 +23,7 @@
 
 ## Resources
 - [`.panim` Format](resources/panim.md)
+- [`.panimtree` Format](resources/panimtree.md)
 - [`.pmat` Format](resources/pmat.md)
 - [`.ppart` Format](resources/ppart.md)
 - [`.pskel` Format](resources/pskel.md)

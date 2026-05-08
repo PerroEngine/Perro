@@ -2,6 +2,7 @@ use super::{PendingScriptAttach, prepare::PreparedScene};
 use crate::Runtime;
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_nodes::animation_player::AnimationObjectBinding;
+use perro_nodes::animation_tree::AnimationTreeAnimation;
 use perro_nodes::{SceneNode, SceneNodeData};
 use perro_resource_context::ResourceWindow;
 use perro_scene::SceneValue;
@@ -14,6 +15,10 @@ pub(super) struct MergePreparedSceneResult {
     pub(super) scene_root: NodeID,
     pub(super) script_nodes: Vec<PendingScriptAttach>,
 }
+
+type AnimationPlayerSceneBindings = Vec<(String, u32)>;
+type AnimationTreeSlotSceneBinding = (usize, String, u32);
+type AnimationTreeSceneBindings = Vec<AnimationTreeSlotSceneBinding>;
 
 pub(super) fn merge_prepared_scene(
     runtime: &mut Runtime,
@@ -36,7 +41,9 @@ pub(super) fn merge_prepared_scene(
     let mut key_name_to: HashMap<String, NodeID> = HashMap::with_capacity(nodes.len());
     let mut key_order: Vec<u32> = Vec::with_capacity(nodes.len());
     let mut parent_pairs = Vec::with_capacity(nodes.len());
-    let mut animation_player_bindings: Vec<(NodeID, Vec<(String, u32)>)> = Vec::new();
+    let mut animation_player_bindings: Vec<(NodeID, AnimationPlayerSceneBindings)> = Vec::new();
+    let mut animation_tree_animation_bindings: Vec<(NodeID, AnimationTreeSceneBindings)> =
+        Vec::new();
     let mut mesh_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
     let mut bone_attachment_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
     let resource_api = runtime.resource_api.clone();
@@ -48,6 +55,8 @@ pub(super) fn merge_prepared_scene(
             parent_key,
             node,
             animation_source,
+            animation_tree_source,
+            animation_tree_animations,
             texture_source,
             mesh_source,
             material_surfaces,
@@ -76,6 +85,46 @@ pub(super) fn merge_prepared_scene(
                 && let SceneNodeData::AnimationPlayer(player) = &mut node_data.data
             {
                 player.set_animation(animation);
+            }
+        }
+        if let Some(source) = animation_tree_source {
+            let res = ResourceWindow::new(resource_api.as_ref());
+            let tree = res.AnimationTrees().load(&source);
+            if let Some(node_data) = runtime.nodes.get_mut(node)
+                && let SceneNodeData::AnimationTree(anim_tree) = &mut node_data.data
+            {
+                anim_tree.set_tree(tree);
+            }
+        }
+        if !animation_tree_animations.is_empty() {
+            let res = ResourceWindow::new(resource_api.as_ref());
+            let animations = animation_tree_animations
+                .iter()
+                .map(|entry| AnimationTreeAnimation {
+                    animation: res.Animations().load(&entry.source),
+                    bindings: Vec::new(),
+                    speed: entry.speed,
+                    paused: entry.paused,
+                    playback_type: entry.playback_type,
+                })
+                .collect::<Vec<_>>();
+            let pending_bindings = animation_tree_animations
+                .iter()
+                .enumerate()
+                .flat_map(|(slot, entry)| {
+                    entry
+                        .bindings
+                        .iter()
+                        .map(move |(object, node_key)| (slot, object.clone(), *node_key))
+                })
+                .collect::<Vec<_>>();
+            if !pending_bindings.is_empty() {
+                animation_tree_animation_bindings.push((node, pending_bindings));
+            }
+            if let Some(node_data) = runtime.nodes.get_mut(node)
+                && let SceneNodeData::AnimationTree(anim_tree) = &mut node_data.data
+            {
+                anim_tree.animations = animations;
             }
         }
         if let Some(source) = texture_source {
@@ -190,6 +239,21 @@ pub(super) fn merge_prepared_scene(
             });
         }
         player.bindings = resolved;
+    }
+
+    for (tree_id, scene_bindings) in animation_tree_animation_bindings {
+        let Some(node_data) = runtime.nodes.get_mut(tree_id) else {
+            continue;
+        };
+        let SceneNodeData::AnimationTree(tree) = &mut node_data.data else {
+            continue;
+        };
+        for (slot, object, node_key) in scene_bindings {
+            let Some(target_id) = key_to.get(&node_key).copied() else {
+                continue;
+            };
+            tree.set_slot_binding(slot, &object, target_id);
+        }
     }
 
     let mut top_level_roots: Vec<NodeID> = Vec::new();

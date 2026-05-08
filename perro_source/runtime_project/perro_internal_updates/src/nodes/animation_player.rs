@@ -148,7 +148,7 @@ fn apply_clip_frame<RT>(
     apply_frame_events(ctx, clip, frame, bindings);
 }
 
-fn apply_frame_events<RT>(
+pub(super) fn apply_frame_events<RT>(
     ctx: &mut RuntimeWindow<'_, RT>,
     clip: &Arc<perro_animation::AnimationClip>,
     frame: u32,
@@ -474,7 +474,7 @@ where
     }
 }
 
-fn apply_track<RT>(
+pub(super) fn apply_track<RT>(
     ctx: &mut RuntimeWindow<'_, RT>,
     res: &ResourceWindow<'_, impl ResourceAPI + ?Sized>,
     node_id: NodeID,
@@ -818,7 +818,10 @@ fn apply_camera_zoom(camera: &mut Camera3D, zoom: f32) {
     }
 }
 
-fn sample_track_value(track: &AnimationObjectTrack, frame: u32) -> Option<AnimationTrackValue> {
+pub(super) fn sample_track_value(
+    track: &AnimationObjectTrack,
+    frame: u32,
+) -> Option<AnimationTrackValue> {
     if track.keys.is_empty() {
         return None;
     }
@@ -939,7 +942,7 @@ fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
-fn advance_playback_frame(
+pub(super) fn advance_playback_frame(
     current_frame: f32,
     delta_frames: f32,
     frame_count: u32,
@@ -998,7 +1001,7 @@ fn advance_boomerang_frame(
     next
 }
 
-fn playback_frame_to_frame(
+pub(super) fn playback_frame_to_frame(
     frame: f32,
     frame_count: u32,
     playback_type: AnimationPlaybackType,

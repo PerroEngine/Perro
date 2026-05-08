@@ -955,6 +955,11 @@ fn generate_project_static_modules(
                 scope.spawn(|| perro_static_pipeline::generate_static_animations(project_root)),
             ),
             (
+                "animation tree",
+                scope
+                    .spawn(|| perro_static_pipeline::generate_static_animation_trees(project_root)),
+            ),
+            (
                 "mesh",
                 scope.spawn(|| {
                     perro_static_pipeline::generate_static_meshes(
@@ -1021,6 +1026,11 @@ fn generate_dlc_static_modules(
             (
                 "animation",
                 scope.spawn(|| perro_static_pipeline::generate_static_animations(project_root)),
+            ),
+            (
+                "animation tree",
+                scope
+                    .spawn(|| perro_static_pipeline::generate_static_animation_trees(project_root)),
             ),
             (
                 "mesh",
@@ -1390,6 +1400,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         material_lookup: static_assets::materials::lookup_material,\n\
         particle_lookup: static_assets::particles::lookup_particle,\n\
         animation_lookup: static_assets::animations::lookup_animation,\n\
+        animation_tree_lookup: static_assets::animation_trees::lookup_animation_tree,\n\
         mesh_lookup: static_assets::meshes::lookup_mesh,\n\
         collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,\n\
         skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\
