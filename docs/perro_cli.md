@@ -368,6 +368,7 @@ What it does:
 Notes:
 
 - `--template` defaults to `2D`.
+- Generated scenes use `$root = @main`. `$root` marks the scene root and can be reused as a node ref, for example `parent = $root`.
 - Base game mode:
   - `--res` accepts `res://` or `/`-style paths, for example `res://scenes` or `/scenes`.
 - DLC mode (`--dlc <name>`):

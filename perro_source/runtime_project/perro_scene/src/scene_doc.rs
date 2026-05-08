@@ -265,7 +265,7 @@ impl<'a> SceneDocWriter<'a> {
             }
             SceneValue::Str(v) => write_str(v, out),
             SceneValue::Hashed(v) => out.push_str(&v.to_string()),
-            SceneValue::Key(v) => out.push_str(v.as_ref()),
+            SceneValue::Key(v) => write_key_value(v.as_ref(), out),
             SceneValue::Object(fields) => self.write_object(fields.as_ref(), out, depth, false),
             SceneValue::Array(items) => {
                 out.push('[');
@@ -441,7 +441,7 @@ fn write_value_plain(value: &SceneValue, out: &mut String) {
         }
         SceneValue::Str(v) => write_str(v, out),
         SceneValue::Hashed(v) => out.push_str(&v.to_string()),
-        SceneValue::Key(v) => out.push_str(v.as_ref()),
+        SceneValue::Key(v) => write_key_value(v.as_ref(), out),
         SceneValue::Object(fields) => {
             out.push_str("{ ");
             for (idx, (name, value)) in fields.iter().enumerate() {
@@ -480,6 +480,13 @@ fn write_str(value: &str, out: &mut String) {
         }
     }
     out.push('"');
+}
+
+fn write_key_value(value: &str, out: &mut String) {
+    if value.starts_with('@') {
+        out.push('@');
+    }
+    out.push_str(value);
 }
 
 fn fmt_f32(value: f32) -> String {

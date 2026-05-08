@@ -15,8 +15,8 @@ default_ease = "linear"
 [/Animation]
 
 [Objects]
-@Hero = Node3D
-@MainCam = Camera3D
+Hero = Node3D
+MainCam = Camera3D
 [/Objects]
 
 [Frame0]
@@ -78,12 +78,14 @@ Declare animation clip objects and their node type:
 
 ```ini
 [Objects]
-@Hero = Node3D
-@Weapon = MeshInstance3D
+Hero = Node3D
+Weapon = MeshInstance3D
 [/Objects]
 ```
 
-Object names (`@Hero`) are the track keys used for `AnimationPlayer` bindings.
+Object names (`Hero`) are the track keys used for `AnimationPlayer` bindings.
+Scene bindings map object name `Hero` to a scene node ref like `@PlayerRoot`.
+Use `@Hero` only when referring to the declared object in frame blocks or event params.
 
 ## Frame Entries
 

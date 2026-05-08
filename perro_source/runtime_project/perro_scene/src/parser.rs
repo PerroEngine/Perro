@@ -47,6 +47,26 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn expect_scene_key(&mut self) -> String {
+        let mut key = String::new();
+        while self.current == Token::At {
+            self.advance();
+            key.push('@');
+        }
+        key.push_str(&self.expect_ident());
+        key
+    }
+
+    fn expect_node_ref_key(&mut self) -> String {
+        let mut key = String::new();
+        while self.current == Token::At {
+            self.advance();
+            key.push('@');
+        }
+        key.push_str(&self.expect_ident());
+        key
+    }
+
     fn collect_vars(self) -> HashMap<String, SceneValue> {
         self.collect_var_entries().into_iter().collect()
     }
@@ -62,6 +82,20 @@ impl<'a> Parser<'a> {
                     let value = self.parse_value();
                     self.vars.insert(name.clone(), value.clone());
                     vars.push((name, value));
+                }
+                continue;
+            }
+            if self.current == Token::At {
+                self.advance();
+                if self.current == Token::At {
+                    continue;
+                }
+                let name = self.expect_ident();
+                if name == "root" && self.current == Token::Equals {
+                    self.advance();
+                    let value = self.parse_value();
+                    self.vars.insert("root".to_string(), value.clone());
+                    vars.push(("root".to_string(), value));
                 }
                 continue;
             }
@@ -95,7 +129,7 @@ impl<'a> Parser<'a> {
 
             Token::At => {
                 self.advance();
-                let key = self.expect_ident();
+                let key = self.expect_node_ref_key();
                 SceneValue::Key(SceneValueKey::from(key))
             }
 
@@ -371,9 +405,28 @@ impl<'a> Parser<'a> {
                     }
                 }
 
+                Token::At => {
+                    self.advance();
+                    let name = self.expect_ident();
+                    self.expect(Token::Equals);
+
+                    if name == "root" {
+                        match self.parse_value() {
+                            SceneValue::Key(k) => {
+                                let key = k.to_string();
+                                root_name = Some(key.clone());
+                                self.vars.insert("root".to_string(), SceneValue::Key(k));
+                            }
+                            _ => panic!("root must be a node ref like @Main"),
+                        }
+                    } else {
+                        let _ = self.parse_value();
+                    }
+                }
+
                 Token::LBracket => {
                     self.advance();
-                    let key = self.expect_ident();
+                    let key = self.expect_scene_key();
                     self.expect(Token::RBracket);
                     if !defined_keys.insert(key.clone()) {
                         panic!("duplicate scene key `{key}`");
@@ -476,12 +529,12 @@ impl<'a> Parser<'a> {
                     if has_data_override {
                         self.expect(Token::LBracket);
                         self.expect(Token::Slash);
-                        let end = self.expect_ident();
+                        let end = self.expect_scene_key();
                         self.expect(Token::RBracket);
                         assert_eq!(end, key);
                     } else {
                         self.expect(Token::Slash);
-                        let end = self.expect_ident();
+                        let end = self.expect_scene_key();
                         self.expect(Token::RBracket);
                         assert_eq!(end, key);
                     }

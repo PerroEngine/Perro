@@ -649,7 +649,7 @@ fn new_dlc_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
     let scene_path = dlc_root.join("scenes").join("main.scn");
     let scene = format!(
-        "@root = main\n\n[main]\nscript = \"dlc://{dlc_name}/scripts/script.rs\"\n[Node2D]\n    position = (0, 0)\n[/Node2D]\n[/main]\n"
+        "$root = @main\n\n[main]\nscript = \"dlc://{dlc_name}/scripts/script.rs\"\n[Node2D]\n    position = (0, 0)\n[/Node2D]\n[/main]\n"
     );
     write_new_file(&scene_path, &scene)?;
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
@@ -733,7 +733,7 @@ enum SceneTemplate {
 }
 
 fn default_scene_2d() -> String {
-    r#"@root = main
+    r#"$root = @main
 
 [main]
 
@@ -746,7 +746,7 @@ fn default_scene_2d() -> String {
 }
 
 fn default_scene_3d() -> String {
-    r#"@root = main
+    r#"$root = @main
 
 [main]
 
@@ -756,7 +756,7 @@ fn default_scene_3d() -> String {
 [/main]
 
 [camera]
-parent = @root
+parent = $root
 
 [Camera3D]
     active = true
@@ -767,7 +767,7 @@ parent = @root
 [/camera]
 
 [ambient]
-parent = @root
+parent = $root
 
 [AmbientLight3D]
     color = (1.0, 1.0, 1.0)
@@ -826,7 +826,7 @@ default_ease = "linear"
 [/Animation]
 
 [Objects]
-@Target = Node3D
+Target = Node3D
 [/Objects]
 
 [Frame0]

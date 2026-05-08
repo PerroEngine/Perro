@@ -5,6 +5,34 @@ use perro_animation::{
 use perro_scene::{MeshInstance3DField, Node2DField, Node3DField, NodeField, Sprite2DField};
 
 #[test]
+fn parses_bare_object_declarations_and_at_object_refs() {
+    let src = r#"
+[Animation]
+name = "BareObjects"
+fps = 30
+[/Animation]
+
+[Objects]
+Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    position = (1, 2, 3)
+}
+[/Frame0]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+
+    assert_eq!(clip.objects.len(), 1);
+    assert_eq!(clip.objects[0].name.as_ref(), "Hero");
+    assert_eq!(clip.objects[0].node_type.as_ref(), "Node3D");
+    assert_eq!(clip.object_tracks.len(), 1);
+    assert_eq!(clip.object_tracks[0].object.as_ref(), "Hero");
+}
+
+#[test]
 fn parses_sparse_keyframes_and_events() {
     let src = r#"
 [Animation]
@@ -13,7 +41,7 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Player = MeshInstance3D
+Player = MeshInstance3D
 [/Objects]
 
 [Frame0]
@@ -51,7 +79,7 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Hero = Node3D
+Hero = Node3D
 [/Objects]
 
 [Frame0]
@@ -114,7 +142,7 @@ default_ease = "linear"
 [/Animation]
 
 [Objects]
-@Target = MeshInstance3D
+Target = MeshInstance3D
 [/Objects]
 
 [Frame0]
@@ -185,8 +213,8 @@ fps = 24
 [/Animation]
 
 [Objects]
-@HeroMesh = MeshInstance3D
-@HeroSprite = Sprite2D
+HeroMesh = MeshInstance3D
+HeroSprite = Sprite2D
 [/Objects]
 
 [Frame0]
@@ -246,7 +274,7 @@ default_ease = "ease_in_out"
 [/Animation]
 
 [Objects]
-@Hero = Node3D
+Hero = Node3D
 [/Objects]
 
 [Frame0]
@@ -288,7 +316,7 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Hud = Node2D
+Hud = Node2D
 [/Objects]
 
 [Frame0]
@@ -348,7 +376,7 @@ default_ease = "{ease_token}"
 [/Animation]
 
 [Objects]
-@Hero = Node3D
+Hero = Node3D
 [/Objects]
 
 [Frame0]
@@ -402,7 +430,7 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Hero = Node3D
+Hero = Node3D
 [/Objects]
 
 [Frame0]
@@ -453,7 +481,7 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Hero = Node3D
+Hero = Node3D
 [/Objects]
 
 [Frame0]
@@ -494,7 +522,7 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Hero = Node3D
+Hero = Node3D
 [/Objects]
 
 [Frame0]
@@ -514,7 +542,7 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Hero = Node3D
+Hero = Node3D
 [/Objects]
 
 [Frame0]
@@ -537,8 +565,8 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Hero = Node3D
-@Target = Node3D
+Hero = Node3D
+Target = Node3D
 [/Objects]
 
 [Frame0]
@@ -600,7 +628,7 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Hero = Node3D
+Hero = Node3D
 [/Objects]
 
 [Frame0]
@@ -623,7 +651,7 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Rig = Skeleton3D
+Rig = Skeleton3D
 [/Objects]
 
 [Frame0]
@@ -681,7 +709,7 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Rig = Skeleton3D
+Rig = Skeleton3D
 [/Objects]
 
 [Frame0]
@@ -727,7 +755,7 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Player = Node2D
+Player = Node2D
 [/Objects]
 
 [Frame0?]

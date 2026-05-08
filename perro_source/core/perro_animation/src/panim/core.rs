@@ -155,18 +155,19 @@ impl<'a> PanimParser<'a> {
                 return Ok(objects);
             }
 
-            let Some(rest) = line.strip_prefix('@') else {
-                return Err(format!(
-                    "line {}: object definition must start with `@`",
-                    line_no
-                ));
-            };
+            let rest = line.strip_prefix('@').unwrap_or(line);
             let Some((name, ty)) = rest.split_once('=') else {
-                return Err(format!("line {}: expected `@Name = NodeType`", line_no));
+                return Err(format!("line {}: expected `Name = NodeType`", line_no));
             };
             let name = name.trim();
             if name.is_empty() {
                 return Err(format!("line {}: object name cannot be empty", line_no));
+            }
+            if name.starts_with('@') {
+                return Err(format!(
+                    "line {}: object declarations use `Name = NodeType`; refs use `@Name`",
+                    line_no
+                ));
             }
 
             let ty_value = self.parse_value_with_vars(ty.trim(), line_no)?;

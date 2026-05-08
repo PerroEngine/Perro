@@ -184,16 +184,12 @@ fn is_ident(value: &str) -> bool {
 }
 
 fn parse_scene_value_with_refs(value: &str, line_no: usize) -> Result<SceneValue, String> {
-    match parse_scene_value(value, line_no) {
-        Ok(parsed) => Ok(parsed),
-        Err(_) => {
-            if !value.contains('@') {
-                return parse_scene_value(value, line_no);
-            }
-            let rewritten = rewrite_reference_tokens(value);
-            parse_scene_value(&rewritten, line_no)
-        }
+    if !value.contains('@') {
+        return parse_scene_value(value, line_no);
     }
+
+    let rewritten = rewrite_reference_tokens(value);
+    parse_scene_value(&rewritten, line_no)
 }
 
 fn rewrite_reference_tokens(src: &str) -> String {

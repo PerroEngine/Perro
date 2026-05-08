@@ -5,9 +5,65 @@ Every node template lists the fields it exposes, including fields that default t
 
 Conventions used below:
 
-- `parent = @PARENTKEY` is a placeholder parent node key (for example `@root` or another node name).
+- `$root = @NODEKEY` is required. It marks the scene root and defines `$root` as a reusable node ref.
+- `parent = @PARENTKEY` is a placeholder parent node key. Use `$root` for the scene root, or `@OtherNode` for a direct node ref.
+- Use `@NodeKey` whenever a scene value needs a node ref, including `script_vars` and animation bindings.
+- A node ref is `@` plus the full scene key. Examples: `[Name]` -> `@Name`, `[@Name]` -> `@@Name`, `[@@Name]` -> `@@@Name`.
+- In `.panim` and `.panimtree`, `@Name` marks animation object refs or graph refs, then scene bindings map object names to `@NodeKey`.
 - `script = "res://path/to/script.rs"` is an example script path.
 - `res://path/to/...` placeholders show expected path shape.
+
+Root example:
+
+```text
+$root = @Main
+
+[Main]
+    [Node2D]
+    [/Node2D]
+[/Main]
+
+[Child]
+parent = $root
+    [Node2D]
+    [/Node2D]
+[/Child]
+```
+
+`$root` is a special scene variable. It must be assigned to a node ref with `@`.
+Use `$root` later anywhere a node ref is accepted, such as `parent = $root`.
+
+Escaped `@` key example:
+
+```text
+$root = @@@Main
+
+[@@Main]
+    [Node2D]
+    [/Node2D]
+[/@@Main]
+
+[Child]
+parent = @@@Main
+    [Node2D]
+    [/Node2D]
+[/Child]
+```
+
+Node ref examples:
+
+```text
+script_vars = {
+    target = @Enemy
+}
+
+[Anim]
+    [AnimationPlayer]
+        animation = "res://animations/idle.panim"
+        bindings = { Hero = @PlayerRoot }
+    [/AnimationPlayer]
+[/Anim]
+```
 
 General wrapper (it might look like this):
 
@@ -63,7 +119,7 @@ script_vars = {
 [/Main]
 
 [ExtraHat]
-parent = @Main
+parent = $root
     [Sprite2D]
         texture = "res://cosmetics/hat.png"
         [Node2D]

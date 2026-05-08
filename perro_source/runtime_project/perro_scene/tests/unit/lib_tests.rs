@@ -118,6 +118,85 @@ fn parse_script_vars_object() {
 }
 
 #[test]
+fn node_refs_use_at_before_bare_scene_key() {
+    let src = r#"
+    $root = @Root
+
+    [Root]
+    [Node]
+    [/Node]
+    [/Root]
+
+    [Child]
+    parent = @Root
+    script_vars = { target = @Root }
+    [Node]
+    [/Node]
+    [/Child]
+    "#;
+
+    let scene = Parser::new(src).parse_scene();
+    let child = find_node(&scene, "Child");
+
+    assert_eq!(scene.root.and_then(|k| scene.key_name(k)), Some("Root"));
+    assert_eq!(child.parent.and_then(|k| scene.key_name(k)), Some("Root"));
+    assert!(
+        child
+            .script_vars
+            .iter()
+            .any(|(name, value)| name.as_ref() == "target" && value.as_key() == Some("Root"))
+    );
+}
+
+#[test]
+fn scene_keys_can_start_with_at_and_refs_escape_at() {
+    let src = r#"
+    $root = @@@Root
+
+    [@@Root]
+    [Node]
+    [/Node]
+    [/@@Root]
+
+    [Child]
+    parent = @@@Root
+    script_vars = { target = @@@Root }
+    [Node]
+    [/Node]
+    [/Child]
+    "#;
+
+    let scene = Parser::new(src).parse_scene();
+    let child = find_node(&scene, "Child");
+
+    assert_eq!(scene.root.and_then(|k| scene.key_name(k)), Some("@@Root"));
+    assert_eq!(child.parent.and_then(|k| scene.key_name(k)), Some("@@Root"));
+    assert!(
+        child
+            .script_vars
+            .iter()
+            .any(|(name, value)| name.as_ref() == "target" && value.as_key() == Some("@@Root"))
+    );
+
+    let text = Parser::new(src).parse_scene_doc().to_text();
+    assert!(text.contains("$root = @@@Root"));
+    assert!(text.contains("[@@Root]"));
+    assert!(text.contains("parent = @@@Root"));
+    assert!(text.contains("target = @@@Root"));
+
+    let reparsed = Parser::new(&text).parse_scene();
+    let child = find_node(&reparsed, "Child");
+    assert_eq!(
+        reparsed.root.and_then(|k| reparsed.key_name(k)),
+        Some("@@Root")
+    );
+    assert_eq!(
+        child.parent.and_then(|k| reparsed.key_name(k)),
+        Some("@@Root")
+    );
+}
+
+#[test]
 fn parse_root_of_header() {
     let src = r#"
     [main]

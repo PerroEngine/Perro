@@ -3,8 +3,12 @@
 Perro animation has two resource files and two scene nodes.
 
 Sigils:
+
 - `$` => value var define/use.
-- `@` => node ref (scene key / NodeID target), in scenes + animation bindings.
+- scenes: `@NodeKey` => scene node ref.
+- `.panim`: `[Objects]` declares bare names (`Hero = Node3D`), frame blocks ref them as `@Hero`.
+- `.panimtree`: graph blocks declare bare names (`[MoveBlend]`), graph inputs ref them as `@MoveBlend`.
+- scene `AnimationPlayer` / `AnimationTree` bindings map object names to scene node refs with `@NodeKey`.
 
 - `.panim`: one animation clip.
 - `.panimtree`: one animation graph.
@@ -28,7 +32,7 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Hero = Node3D
+Hero = Node3D
 [/Objects]
 
 [Frame0]
@@ -49,15 +53,15 @@ Full format: [`.panim` Format](resources/panim.md).
 Use `AnimationPlayer` when one clip drives one set of bindings.
 
 ```ini
-[Hero]
+[PlayerRoot]
     [Node3D]
     [/Node3D]
-[/Hero]
+[/PlayerRoot]
 
 [IdlePlayer]
     [AnimationPlayer]
         animation = "res://animations/idle.panim"
-        bindings = { Hero = @Hero }
+        bindings = { Hero = @PlayerRoot }
         speed = 1.0
         paused = false
         playback = loop
@@ -68,6 +72,8 @@ Use `AnimationPlayer` when one clip drives one set of bindings.
 `animation` loads one `.panim`.
 
 `bindings` maps `.panim [Objects]` names to scene nodes.
+
+Binding values must use `@NodeKey` (or a var such as `$root` that resolves to one).
 
 Runtime API:
 
@@ -208,9 +214,9 @@ The scene node supplies:
     [AnimationTree]
         tree = "res://animations/player.panimtree"
         animations = [
-            { animation = "res://animations/idle.panim", bindings = { Hero = @Hero }, playback = loop, speed = 1.0, paused = false },
-            { animation = "res://animations/run.panim", bindings = { Hero = @Hero }, playback = loop, speed = 1.0, paused = false },
-            { animation = "res://animations/aim.panim", bindings = { Hero = @Hero }, playback = boomerang, speed = 1.0, paused = false },
+            { animation = "res://animations/idle.panim", bindings = { Hero = @PlayerRoot }, playback = loop, speed = 1.0, paused = false },
+            { animation = "res://animations/run.panim", bindings = { Hero = @PlayerRoot }, playback = loop, speed = 1.0, paused = false },
+            { animation = "res://animations/aim.panim", bindings = { Hero = @PlayerRoot }, playback = boomerang, speed = 1.0, paused = false },
         ]
         speed = 1.0
         paused = false

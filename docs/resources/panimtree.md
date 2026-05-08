@@ -7,9 +7,10 @@ The `.panimtree` owns slot names and graph connections.
 The scene `AnimationTree` node owns runtime clip IDs and per-slot bindings.
 Slot bindings connect `.panim` object names to scene node keys.
 
-Sigils in scene-side bindings:
-- `$` => value vars.
-- `@` => node refs (`NodeID` targets), same as scene parent/root refs.
+Sigils:
+- graph blocks declare bare names: `[MoveBlend]`, `[AimAdd]`
+- graph refs use `@Name`: `input = @AimAdd`, `inputs = [@IdleSrc, @RunSrc]`
+- scene-side binding values use `@SceneNodeKey` (or a var like `$root` that resolves to one)
 
 ## Example
 
@@ -229,7 +230,7 @@ If `res://anim/idle.panim` declares this:
 
 ```ini
 [Objects]
-@Hero = Node3D
+Hero = Node3D
 [/Objects]
 
 [Frame0]
@@ -344,7 +345,7 @@ fps = 30
 [/Animation]
 
 [Objects]
-@Hero = Node3D
+Hero = Node3D
 [/Objects]
 
 [Frame0]
