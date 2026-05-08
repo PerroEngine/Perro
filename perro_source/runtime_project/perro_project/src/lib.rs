@@ -46,7 +46,6 @@ impl ParticleSimDefault {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalizationConfig {
     pub source_csv: String,
-    pub source_csv_hash: Option<u64>,
     pub key_column: String,
     pub default_locale: String,
 }
@@ -63,6 +62,11 @@ pub struct ProjectMetadata {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StaticProjectConfig {
     pub name: &'static str,
+    pub metadata_description: Option<&'static str>,
+    pub metadata_company: Option<&'static str>,
+    pub metadata_version: Option<&'static str>,
+    pub metadata_copyright: Option<&'static str>,
+    pub metadata_trademark: Option<&'static str>,
     pub main_scene_hash: u64,
     pub icon_hash: u64,
     pub startup_splash_hash: u64,
@@ -79,8 +83,6 @@ pub struct StaticProjectConfig {
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
-    pub localization_source_csv_hash: Option<u64>,
-    pub localization_key_column: &'static str,
     pub localization_default_locale: &'static str,
 }
 
@@ -95,6 +97,11 @@ impl StaticProjectConfig {
     ) -> Self {
         Self {
             name,
+            metadata_description: None,
+            metadata_company: None,
+            metadata_version: None,
+            metadata_copyright: None,
+            metadata_trademark: None,
             main_scene_hash,
             icon_hash,
             startup_splash_hash,
@@ -111,8 +118,6 @@ impl StaticProjectConfig {
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
-            localization_source_csv_hash: None,
-            localization_key_column: "key",
             localization_default_locale: "en",
         }
     }
@@ -172,14 +177,23 @@ impl StaticProjectConfig {
         self
     }
 
-    pub const fn with_localization_hashed(
+    pub const fn with_metadata(
         mut self,
-        source_csv_hash: u64,
-        key_column: &'static str,
-        default_locale: &'static str,
+        description: Option<&'static str>,
+        company: Option<&'static str>,
+        version: Option<&'static str>,
+        copyright: Option<&'static str>,
+        trademark: Option<&'static str>,
     ) -> Self {
-        self.localization_source_csv_hash = Some(source_csv_hash);
-        self.localization_key_column = key_column;
+        self.metadata_description = description;
+        self.metadata_company = company;
+        self.metadata_version = version;
+        self.metadata_copyright = copyright;
+        self.metadata_trademark = trademark;
+        self
+    }
+
+    pub const fn with_localization(mut self, default_locale: &'static str) -> Self {
         self.localization_default_locale = default_locale;
         self
     }
@@ -187,7 +201,13 @@ impl StaticProjectConfig {
     pub fn to_runtime(self) -> ProjectConfig {
         ProjectConfig {
             name: self.name.to_string(),
-            metadata: ProjectMetadata::default(),
+            metadata: ProjectMetadata {
+                description: self.metadata_description.map(str::to_string),
+                company: self.metadata_company.map(str::to_string),
+                version: self.metadata_version.map(str::to_string),
+                copyright: self.metadata_copyright.map(str::to_string),
+                trademark: self.metadata_trademark.map(str::to_string),
+            },
             main_scene: self.main_scene_hash.to_string(),
             main_scene_hash: Some(self.main_scene_hash),
             icon: self.icon_hash.to_string(),
@@ -207,13 +227,10 @@ impl StaticProjectConfig {
             meshlet_debug_view: self.meshlet_debug_view,
             occlusion_culling: self.occlusion_culling,
             particle_sim_default: self.particle_sim_default,
-            localization: self.localization_source_csv_hash.map(|source_csv_hash| {
-                LocalizationConfig {
-                    source_csv: source_csv_hash.to_string(),
-                    source_csv_hash: Some(source_csv_hash),
-                    key_column: self.localization_key_column.to_string(),
-                    default_locale: self.localization_default_locale.to_string(),
-                }
+            localization: Some(LocalizationConfig {
+                source_csv: String::new(),
+                key_column: "key".to_string(),
+                default_locale: self.localization_default_locale.to_string(),
             }),
         }
     }
@@ -861,7 +878,6 @@ fn parse_localization(
 
     Ok(Some(LocalizationConfig {
         source_csv: String::new(),
-        source_csv_hash: None,
         key_column: "key".to_string(),
         default_locale,
     }))
@@ -884,7 +900,6 @@ fn apply_sibling_localization(root: &Path, config: &mut ProjectConfig) -> Result
         (None, Some(source_csv)) => {
             config.localization = Some(LocalizationConfig {
                 source_csv,
-                source_csv_hash: None,
                 key_column: "key".to_string(),
                 default_locale: "en".to_string(),
             });
@@ -1730,34 +1745,6 @@ static PERRO_ASSETS: &[u8] = include_bytes!("../embedded/assets.perro");
 static PERRO_ENGINE_MARKER: &[u8] =
     b"PERRO_ENGINE_DETECT:v1;engine=Perro Engine;format=.perro;site=https://www.perroengine.com";
 
-fn lookup_static_binary(path_hash: u64) -> &'static [u8] {
-    let bytes = static_assets::textures::lookup_texture(path_hash);
-    if !bytes.is_empty() {
-        return bytes;
-    }
-    let bytes = static_assets::meshes::lookup_mesh(path_hash);
-    if !bytes.is_empty() {
-        return bytes;
-    }
-    let bytes = static_assets::collision_trimeshes::lookup_collision_trimesh(path_hash);
-    if !bytes.is_empty() {
-        return bytes;
-    }
-    let bytes = static_assets::skeletons::lookup_skeleton(path_hash);
-    if !bytes.is_empty() {
-        return bytes;
-    }
-    let bytes = static_assets::audios::lookup_audio(path_hash);
-    if !bytes.is_empty() {
-        return bytes;
-    }
-    let shader = static_assets::shaders::lookup_shader(path_hash);
-    if !shader.is_empty() {
-        return shader.as_bytes();
-    }
-    b""
-}
-
 fn project_root() -> std::path::PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
@@ -1804,9 +1791,14 @@ fn project_root() -> std::path::PathBuf {
               physics_gravity: -9.81,
               physics_coef: 1.0,
           },
+          metadata: perro_app::entry::StaticEmbeddedMetadataConfig {
+              description: None,
+              company: None,
+              version: None,
+              copyright: None,
+              trademark: None,
+          },
           localization: perro_app::entry::StaticEmbeddedLocalizationConfig {
-              source_csv_hash: None,
-              key_column: "key",
               default_locale: "en",
           },
           assets: perro_app::entry::StaticEmbeddedAssetsConfig {
@@ -1822,7 +1814,6 @@ fn project_root() -> std::path::PathBuf {
               texture_lookup: static_assets::textures::lookup_texture,
               shader_lookup: static_assets::shaders::lookup_shader,
               audio_lookup: static_assets::audios::lookup_audio,
-              binary_lookup: lookup_static_binary,
               static_script_registry: Some(scripts::SCRIPT_REGISTRY),
           },
       })
@@ -2063,6 +2054,10 @@ fn ensure_project_build_script(path: &Path) -> std::io::Result<()> {
             Ok(s) => s,
             Err(_) => return Ok(()),
         };
+        if !src.contains("apply_windows_metadata") || !src.contains("ProductName") {
+            fs::write(path, default_project_build_rs())?;
+            return Ok(());
+        }
         let old = r#"    fn convert_icon_to_ico(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
         let image = image::open(source)
             .map_err(|e| format!("failed to decode icon image `{}`: {e}", source.display()))?;

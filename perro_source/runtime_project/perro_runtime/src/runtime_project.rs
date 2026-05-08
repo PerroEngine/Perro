@@ -6,9 +6,9 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 pub use perro_project::{
     LocalizationConfig, OcclusionCulling, ParticleSimDefault,
-    ProjectConfig as RuntimeProjectConfig, ProjectError as ProjectLoadError, StaticProjectConfig,
-    default_project_toml, ensure_project_layout, ensure_project_toml, load_project_toml,
-    parse_project_toml,
+    ProjectConfig as RuntimeProjectConfig, ProjectError as ProjectLoadError, ProjectMetadata,
+    StaticProjectConfig, default_project_toml, ensure_project_layout, ensure_project_toml,
+    load_project_toml, parse_project_toml,
 };
 
 /// Script/provider loading mode used when constructing the runtime.
@@ -27,7 +27,7 @@ pub type StaticAnimationLookup = fn(u64) -> &'static AnimationClip;
 pub type StaticSkeletonLookup = fn(u64) -> &'static [u8];
 pub type StaticAudioLookup = fn(u64) -> &'static [u8];
 pub type StaticBytesLookup = fn(u64) -> &'static [u8];
-pub type StaticBinaryLookup = fn(u64) -> &'static [u8];
+pub type StaticShaderLookup = fn(u64) -> &'static str;
 
 /// Immutable project boot data owned by the runtime.
 #[derive(Debug, Clone)]
@@ -46,7 +46,7 @@ pub struct RuntimeProject {
     pub static_skeleton_lookup: Option<StaticSkeletonLookup>,
     pub static_audio_lookup: Option<StaticAudioLookup>,
     pub static_icon_lookup: Option<StaticBytesLookup>,
-    pub static_binary_lookup: Option<StaticBinaryLookup>,
+    pub static_resource_lookups: perro_io::asset_io::StaticResourceLookups,
     pub perro_assets_bytes: Option<&'static [u8]>,
 }
 
@@ -68,7 +68,7 @@ impl RuntimeProject {
             static_skeleton_lookup: None,
             static_audio_lookup: None,
             static_icon_lookup: None,
-            static_binary_lookup: None,
+            static_resource_lookups: perro_io::asset_io::StaticResourceLookups::default(),
             perro_assets_bytes: None,
         }
     }
@@ -90,7 +90,7 @@ impl RuntimeProject {
             static_skeleton_lookup: None,
             static_audio_lookup: None,
             static_icon_lookup: None,
-            static_binary_lookup: None,
+            static_resource_lookups: perro_io::asset_io::StaticResourceLookups::default(),
             perro_assets_bytes: None,
         }
     }
@@ -121,7 +121,7 @@ impl RuntimeProject {
             static_skeleton_lookup: None,
             static_audio_lookup: None,
             static_icon_lookup: None,
-            static_binary_lookup: None,
+            static_resource_lookups: perro_io::asset_io::StaticResourceLookups::default(),
             perro_assets_bytes: None,
         })
     }
@@ -158,31 +158,41 @@ impl RuntimeProject {
 
     pub fn with_static_mesh_lookup(mut self, lookup: StaticBytesLookup) -> Self {
         self.static_mesh_lookup = Some(lookup);
+        self.static_resource_lookups.mesh_lookup = Some(lookup);
         self
     }
 
     pub fn with_static_collision_trimesh_lookup(mut self, lookup: StaticBytesLookup) -> Self {
         self.static_collision_trimesh_lookup = Some(lookup);
+        self.static_resource_lookups.collision_trimesh_lookup = Some(lookup);
         self
     }
 
     pub fn with_static_skeleton_lookup(mut self, lookup: StaticSkeletonLookup) -> Self {
         self.static_skeleton_lookup = Some(lookup);
+        self.static_resource_lookups.skeleton_lookup = Some(lookup);
         self
     }
 
     pub fn with_static_audio_lookup(mut self, lookup: StaticAudioLookup) -> Self {
         self.static_audio_lookup = Some(lookup);
+        self.static_resource_lookups.audio_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_static_texture_lookup(mut self, lookup: StaticBytesLookup) -> Self {
+        self.static_resource_lookups.texture_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_static_shader_lookup(mut self, lookup: StaticShaderLookup) -> Self {
+        self.static_resource_lookups.shader_lookup = Some(lookup);
         self
     }
 
     pub fn with_static_icon_lookup(mut self, lookup: StaticBytesLookup) -> Self {
         self.static_icon_lookup = Some(lookup);
-        self
-    }
-
-    pub fn with_static_binary_lookup(mut self, lookup: StaticBinaryLookup) -> Self {
-        self.static_binary_lookup = Some(lookup);
+        self.static_resource_lookups.texture_lookup = Some(lookup);
         self
     }
 

@@ -228,7 +228,7 @@ impl Runtime {
             main_scene_path,
             main_scene_hash,
             static_lookup,
-            static_binary_lookup,
+            static_resource_lookups,
             perro_assets_bytes,
         ) = {
             let project = self
@@ -243,7 +243,7 @@ impl Runtime {
                     .main_scene_hash
                     .unwrap_or_else(|| string_to_u64(&project.config.main_scene)),
                 project.static_scene_lookup,
-                project.static_binary_lookup,
+                project.static_resource_lookups,
                 project.perro_assets_bytes,
             )
         };
@@ -253,7 +253,7 @@ impl Runtime {
                 set_project_root(ProjectRoot::PerroAssets {
                     data,
                     name: project_name,
-                    static_binary_lookup,
+                    static_resource_lookups,
                 });
             } else {
                 set_project_root(ProjectRoot::Disk {

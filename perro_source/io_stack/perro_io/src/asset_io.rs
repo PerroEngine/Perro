@@ -10,8 +10,19 @@ use std::{
 use crate::data_local_dir;
 use perro_assets::archive::{PerroAssetsArchive, PerroAssetsFile};
 
-pub type StaticBinaryLookup = fn(u64) -> &'static [u8];
+pub type StaticBytesLookup = fn(u64) -> &'static [u8];
+pub type StaticShaderLookup = fn(u64) -> &'static str;
 pub type DlcStaticBinaryLookup = unsafe extern "C" fn(u64, *mut *const u8, *mut usize) -> bool;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StaticResourceLookups {
+    pub texture_lookup: Option<StaticBytesLookup>,
+    pub mesh_lookup: Option<StaticBytesLookup>,
+    pub collision_trimesh_lookup: Option<StaticBytesLookup>,
+    pub skeleton_lookup: Option<StaticBytesLookup>,
+    pub shader_lookup: Option<StaticShaderLookup>,
+    pub audio_lookup: Option<StaticBytesLookup>,
+}
 
 /// Trait alias for Read + Seek
 pub trait ReadSeek: Read + Seek {}
@@ -26,7 +37,7 @@ pub enum ProjectRoot {
     PerroAssets {
         data: &'static [u8],
         name: String,
-        static_binary_lookup: Option<StaticBinaryLookup>,
+        static_resource_lookups: StaticResourceLookups,
     },
 }
 
@@ -364,24 +375,53 @@ fn load_dlc_static_binary(dlc: &str, path: &str) -> io::Result<Vec<u8>> {
 }
 
 fn load_static_binary(path: &str) -> io::Result<Vec<u8>> {
-    let lookup = match PROJECT_ROOT.read().unwrap().as_ref() {
+    match PROJECT_ROOT.read().unwrap().as_ref() {
         Some(ProjectRoot::PerroAssets {
-            static_binary_lookup: Some(lookup),
+            static_resource_lookups,
             ..
-        }) => *lookup,
-        _ => {
-            return Err(io::Error::other("Static binary lookup not loaded"));
-        }
-    };
-    let bytes = lookup(perro_ids::string_to_u64(path));
-    if bytes.is_empty() {
-        Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("static binary not found: {path}"),
-        ))
-    } else {
-        Ok(bytes.to_vec())
+        }) => load_static_resource_binary(*static_resource_lookups, path),
+        _ => Err(io::Error::other("Static resource lookups not loaded")),
     }
+}
+
+fn load_static_resource_binary(lookups: StaticResourceLookups, path: &str) -> io::Result<Vec<u8>> {
+    let hash = perro_ids::string_to_u64(path);
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+
+    let bytes = match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "bmp" | "gif" | "ico" | "tga" | "webp" | "rgba" => {
+            lookups.texture_lookup.map(|lookup| lookup(hash))
+        }
+        "glb" | "gltf" => lookups.mesh_lookup.map(|lookup| lookup(hash)),
+        "pmesh" => {
+            let mesh = lookups
+                .mesh_lookup
+                .map(|lookup| lookup(hash))
+                .unwrap_or(b"");
+            if mesh.is_empty() {
+                lookups.collision_trimesh_lookup.map(|lookup| lookup(hash))
+            } else {
+                Some(mesh)
+            }
+        }
+        "pskel" => lookups.skeleton_lookup.map(|lookup| lookup(hash)),
+        "wgsl" => lookups.shader_lookup.map(|lookup| lookup(hash).as_bytes()),
+        "mp3" | "wav" | "ogg" | "flac" => lookups.audio_lookup.map(|lookup| lookup(hash)),
+        _ => None,
+    }
+    .unwrap_or(b"");
+
+    if bytes.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("static resource not found: {path}"),
+        ));
+    }
+    Ok(bytes.to_vec())
 }
 
 fn is_static_binary_path(path: &str) -> bool {
@@ -471,7 +511,10 @@ mod tests {
         set_project_root(ProjectRoot::PerroAssets {
             data: EMPTY_ARCHIVE,
             name: "Static Test".to_string(),
-            static_binary_lookup: Some(static_lookup),
+            static_resource_lookups: StaticResourceLookups {
+                texture_lookup: Some(static_lookup),
+                ..StaticResourceLookups::default()
+            },
         });
 
         match resolve_path("res://textures/player.png") {
@@ -481,12 +524,15 @@ mod tests {
     }
 
     #[test]
-    fn load_asset_reads_static_binary_lookup() {
+    fn load_asset_reads_static_resource_lookup() {
         let _guard = TEST_LOCK.lock().unwrap();
         set_project_root(ProjectRoot::PerroAssets {
             data: EMPTY_ARCHIVE,
             name: "Static Test".to_string(),
-            static_binary_lookup: Some(static_lookup),
+            static_resource_lookups: StaticResourceLookups {
+                texture_lookup: Some(static_lookup),
+                ..StaticResourceLookups::default()
+            },
         });
 
         assert_eq!(

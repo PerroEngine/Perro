@@ -2830,6 +2830,7 @@ dependencies = [
 name = "perro_io"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "flate2",
  "perro_assets",
  "perro_ids",

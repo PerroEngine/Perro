@@ -95,6 +95,7 @@ pub struct StaticEmbeddedProject<'a> {
     pub project: StaticEmbeddedProjectInfo<'a>,
     pub graphics: StaticEmbeddedGraphicsConfig,
     pub runtime: StaticEmbeddedRuntimeConfig,
+    pub metadata: StaticEmbeddedMetadataConfig,
     pub localization: StaticEmbeddedLocalizationConfig,
     pub assets: StaticEmbeddedAssetsConfig,
 }
@@ -126,9 +127,15 @@ pub struct StaticEmbeddedRuntimeConfig {
     pub physics_coef: f32,
 }
 
+pub struct StaticEmbeddedMetadataConfig {
+    pub description: Option<&'static str>,
+    pub company: Option<&'static str>,
+    pub version: Option<&'static str>,
+    pub copyright: Option<&'static str>,
+    pub trademark: Option<&'static str>,
+}
+
 pub struct StaticEmbeddedLocalizationConfig {
-    pub source_csv_hash: Option<u64>,
-    pub key_column: &'static str,
     pub default_locale: &'static str,
 }
 
@@ -145,7 +152,6 @@ pub struct StaticEmbeddedAssetsConfig {
     pub texture_lookup: perro_graphics::StaticTextureLookup,
     pub shader_lookup: perro_graphics::StaticShaderLookup,
     pub audio_lookup: perro_runtime::StaticAudioLookup,
-    pub binary_lookup: perro_runtime::StaticBinaryLookup,
     pub static_script_registry: Option<StaticScriptRegistry>,
 }
 
@@ -170,14 +176,15 @@ pub fn run_static_embedded_project(
     .with_release_meshlets(input.graphics.release_meshlets)
     .with_meshlet_debug_view(input.graphics.meshlet_debug_view)
     .with_occlusion_culling(input.graphics.occlusion_culling)
-    .with_particle_sim_default(input.graphics.particle_sim_default);
-    if let Some(source_csv_hash) = input.localization.source_csv_hash {
-        static_config = static_config.with_localization_hashed(
-            source_csv_hash,
-            input.localization.key_column,
-            input.localization.default_locale,
-        );
-    }
+    .with_particle_sim_default(input.graphics.particle_sim_default)
+    .with_metadata(
+        input.metadata.description,
+        input.metadata.company,
+        input.metadata.version,
+        input.metadata.copyright,
+        input.metadata.trademark,
+    );
+    static_config = static_config.with_localization(input.localization.default_locale);
     let mut project =
         RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf());
 
@@ -191,8 +198,9 @@ pub fn run_static_embedded_project(
         .with_static_collision_trimesh_lookup(input.assets.collision_trimesh_lookup)
         .with_static_skeleton_lookup(input.assets.skeleton_lookup)
         .with_static_audio_lookup(input.assets.audio_lookup)
+        .with_static_texture_lookup(input.assets.texture_lookup)
+        .with_static_shader_lookup(input.assets.shader_lookup)
         .with_static_icon_lookup(input.assets.texture_lookup)
-        .with_static_binary_lookup(input.assets.binary_lookup)
         .with_perro_assets_bytes(input.assets.perro_assets);
 
     let window_title = project.config.name.clone();

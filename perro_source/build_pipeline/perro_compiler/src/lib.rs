@@ -1373,9 +1373,14 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         physics_gravity: {physics_gravity},\n\
         physics_coef: {physics_coef},\n\
   }},\n\
+  metadata: perro_app::entry::StaticEmbeddedMetadataConfig {{\n\
+        description: {metadata_description},\n\
+        company: {metadata_company},\n\
+        version: {metadata_version},\n\
+        copyright: {metadata_copyright},\n\
+        trademark: {metadata_trademark},\n\
+  }},\n\
   localization: perro_app::entry::StaticEmbeddedLocalizationConfig {{\n\
-        source_csv_hash: {localization_source_csv_hash},\n\
-        key_column: {localization_key_column},\n\
         default_locale: {localization_default_locale},\n\
   }},\n\
   assets: perro_app::entry::StaticEmbeddedAssetsConfig {{\n\
@@ -1391,7 +1396,6 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         texture_lookup: static_assets::textures::lookup_texture,\n\
         shader_lookup: static_assets::shaders::lookup_shader,\n\
         audio_lookup: static_assets::audios::lookup_audio,\n\
-        binary_lookup: lookup_static_binary,\n\
         static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\
   }},\n\
 }})\n\
@@ -1413,17 +1417,11 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
         physics_gravity = emit_f32(cfg.physics_gravity),
         physics_coef = emit_f32(cfg.physics_coef),
-        localization_source_csv_hash = emit_optional_u64(
-            cfg.localization
-                .as_ref()
-                .map(|loc| perro_ids::string_to_u64(&loc.source_csv)),
-        ),
-        localization_key_column = emit_static_str(
-            cfg.localization
-                .as_ref()
-                .map(|loc| loc.key_column.as_str())
-                .unwrap_or("key"),
-        ),
+        metadata_description = emit_optional_static_str(cfg.metadata.description.as_deref()),
+        metadata_company = emit_optional_static_str(cfg.metadata.company.as_deref()),
+        metadata_version = emit_optional_static_str(cfg.metadata.version.as_deref()),
+        metadata_copyright = emit_optional_static_str(cfg.metadata.copyright.as_deref()),
+        metadata_trademark = emit_optional_static_str(cfg.metadata.trademark.as_deref()),
         localization_default_locale = emit_static_str(
             cfg.localization
                 .as_ref()
@@ -1441,33 +1439,6 @@ static PERRO_ASSETS: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n\
 #[used]\n\
 static PERRO_ENGINE_MARKER: &[u8] =\n\
     b\"PERRO_ENGINE_DETECT:v1;engine=Perro Engine;format=.perro;site=https://www.perroengine.com\";\n\n\
-fn lookup_static_binary(path_hash: u64) -> &'static [u8] {{\n\
-    let bytes = static_assets::textures::lookup_texture(path_hash);\n\
-    if !bytes.is_empty() {{\n\
-        return bytes;\n\
-    }}\n\
-    let bytes = static_assets::meshes::lookup_mesh(path_hash);\n\
-    if !bytes.is_empty() {{\n\
-        return bytes;\n\
-    }}\n\
-    let bytes = static_assets::collision_trimeshes::lookup_collision_trimesh(path_hash);\n\
-    if !bytes.is_empty() {{\n\
-        return bytes;\n\
-    }}\n\
-    let bytes = static_assets::skeletons::lookup_skeleton(path_hash);\n\
-    if !bytes.is_empty() {{\n\
-        return bytes;\n\
-    }}\n\
-    let bytes = static_assets::audios::lookup_audio(path_hash);\n\
-    if !bytes.is_empty() {{\n\
-        return bytes;\n\
-    }}\n\
-    let shader = static_assets::shaders::lookup_shader(path_hash);\n\
-    if !shader.is_empty() {{\n\
-        return shader.as_bytes();\n\
-    }}\n\
-    b\"\"\n\
-}}\n\n\
 fn project_root() -> std::path::PathBuf {{\n\
     if let Ok(exe) = std::env::current_exe() {{\n\
         if let Some(exe_dir) = exe.parent() {{\n\
@@ -1578,9 +1549,9 @@ fn emit_f32(value: f32) -> String {
     }
 }
 
-fn emit_optional_u64(value: Option<u64>) -> String {
+fn emit_optional_static_str(value: Option<&str>) -> String {
     match value {
-        Some(v) => format!("Some({v}u64)"),
+        Some(v) => format!("Some({})", emit_static_str(v)),
         None => "None".to_string(),
     }
 }
