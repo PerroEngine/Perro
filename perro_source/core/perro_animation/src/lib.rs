@@ -1,7 +1,9 @@
 use perro_scene::{Node3DField, NodeField};
 use std::borrow::Cow;
 mod panim;
+mod panim_tree;
 pub use panim::parse_panim;
+pub use panim_tree::{AnimationBlendTreeDef, parse_panimtree};
 
 #[derive(Clone, Debug, Default)]
 pub struct AnimationClip {

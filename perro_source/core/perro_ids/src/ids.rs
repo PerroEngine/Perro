@@ -172,6 +172,10 @@ define_generational!(
     "Animation ID - allocated by animation system. Index + generation."
 );
 define_generational!(
+    AnimationBlendTreeID,
+    "Animation blend tree ID - allocated by animation blend tree system. Index + generation."
+);
+define_generational!(
     LightID,
     "Light ID — allocated by light system. Index + generation."
 );
