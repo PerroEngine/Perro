@@ -733,7 +733,7 @@ mod tests {
         fs::create_dir_all(&dlc_scene_dir).unwrap();
         fs::write(
             dlc_scene_dir.join("main.scn"),
-            "@root = main\n\n[main]\n[Node]\n[/Node]\n[/main]\n",
+            "$root = @main\n\n[main]\n[Node]\n[/Node]\n[/main]\n",
         )
         .unwrap();
 

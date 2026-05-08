@@ -101,7 +101,7 @@ let _ = anim_player_play!(ctx, animation_player_id);
 - `animation = "res://animations/clip.panim"`
 - `bindings = [{ Hero = HeroNode }, { Weapon = WeaponNode }]`
 - `bindings = [{ "Hero": HeroNode }, { "Weapon": WeaponNode }]`
-- bindings are map entries: `AnimationObject -> SceneKey`
+- bindings are map entries: `AnimationObject -> @SceneKey`
 - scene key (`HeroNode`) is resolved to runtime `NodeID` during scene merge
 - `speed = 1.0`
 - `paused = true|false`
@@ -125,4 +125,3 @@ Example scene-key binding:
 ```
 
 Scripts can override or update these values at runtime.
-

@@ -98,13 +98,14 @@ impl<'a> SceneDocWriter<'a> {
     fn write(&self) -> String {
         let mut out = String::new();
         if let Some(root) = &self.doc.scene.root {
-            out.push_str("@root = ");
+            out.push_str("$root = ");
+            out.push('@');
             out.push_str(self.doc.scene.key_name_or_id(*root).as_ref());
             out.push('\n');
         }
 
         for (name, value) in self.doc.vars.iter() {
-            out.push('@');
+            out.push('$');
             out.push_str(name.as_ref());
             out.push_str(" = ");
             self.write_value(value, &mut out, 0, false);
@@ -121,7 +122,7 @@ impl<'a> SceneDocWriter<'a> {
             if self.doc.vars.iter().any(|(var, _)| var.as_ref() == name) {
                 continue;
             }
-            out.push('@');
+            out.push('$');
             out.push_str(name);
             out.push_str(" = ");
             out.push_str(value);
@@ -166,6 +167,7 @@ impl<'a> SceneDocWriter<'a> {
         }
         if let Some(parent) = &node.parent {
             out.push_str("parent = ");
+            out.push('@');
             out.push_str(self.doc.scene.key_name_or_id(*parent).as_ref());
             out.push('\n');
         }
@@ -224,7 +226,7 @@ impl<'a> SceneDocWriter<'a> {
         if dedupe {
             let key = value_key(value);
             if let Some(var) = self.value_vars.get(&key) {
-                out.push('@');
+                out.push('$');
                 out.push_str(var);
                 return;
             }

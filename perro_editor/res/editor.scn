@@ -1,4 +1,4 @@
-@root = preview_canvas
+$root = @preview_canvas
 
 [preview_canvas]
 script = "res://scripts/editor.rs"

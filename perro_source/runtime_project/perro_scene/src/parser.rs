@@ -54,7 +54,7 @@ impl<'a> Parser<'a> {
     pub(crate) fn collect_var_entries(mut self) -> Vec<(String, SceneValue)> {
         let mut vars = Vec::new();
         while self.current != Token::Eof {
-            if self.current == Token::At {
+            if self.current == Token::Dollar {
                 self.advance();
                 let name = self.expect_ident();
                 if self.current == Token::Equals {
@@ -84,13 +84,19 @@ impl<'a> Parser<'a> {
                 SceneValue::Str(Cow::Owned(v))
             }
 
-            Token::At => {
+            Token::Dollar => {
                 self.advance();
                 let name = self.expect_ident();
                 self.vars
                     .get(&name)
                     .cloned()
-                    .unwrap_or_else(|| panic!("Unknown variable @{name}"))
+                    .unwrap_or_else(|| panic!("Unknown variable ${name}"))
+            }
+
+            Token::At => {
+                self.advance();
+                let key = self.expect_ident();
+                SceneValue::Key(SceneValueKey::from(key))
             }
 
             Token::Ident(name) => {
@@ -302,22 +308,22 @@ impl<'a> Parser<'a> {
                     tags.push(s.clone());
                     self.advance();
                 }
-                Token::At => {
+                Token::Dollar => {
                     self.advance();
                     let name = self.expect_ident();
                     let resolved = self
                         .vars
                         .get(&name)
                         .cloned()
-                        .unwrap_or_else(|| panic!("Unknown variable @{name}"));
+                        .unwrap_or_else(|| panic!("Unknown variable ${name}"));
                     match resolved {
                         SceneValue::Str(tag) => tags.push(tag.to_string()),
                         SceneValue::Key(key) => tags.push(key.to_string()),
-                        _ => panic!("tags variable @{name} must resolve to a string or key"),
+                        _ => panic!("tags variable ${name} must resolve to a string or key"),
                     }
                 }
                 other => {
-                    panic!("tags entries must be strings, identifiers, or @vars; got {other:?}")
+                    panic!("tags entries must be strings, identifiers, or $vars; got {other:?}")
                 }
             }
 
@@ -345,23 +351,19 @@ impl<'a> Parser<'a> {
 
         while self.current != Token::Eof {
             match self.current {
-                Token::At => {
+                Token::Dollar => {
                     self.advance();
                     let name = self.expect_ident();
                     self.expect(Token::Equals);
 
                     if name == "root" {
-                        match &self.current {
-                            Token::Ident(key) => {
-                                let k = key.clone();
-                                self.advance();
-                                root_name = Some(k.clone());
-                                self.vars.insert(
-                                    "root".to_string(),
-                                    SceneValue::Key(SceneValueKey::from(k)),
-                                );
+                        match self.parse_value() {
+                            SceneValue::Key(k) => {
+                                let key = k.to_string();
+                                root_name = Some(key.clone());
+                                self.vars.insert("root".to_string(), SceneValue::Key(k));
                             }
-                            _ => panic!("root must be a scene key"),
+                            _ => panic!("root must be a node ref like @Main"),
                         }
                     } else {
                         let value = self.parse_value();
@@ -411,7 +413,7 @@ impl<'a> Parser<'a> {
                             "parent" => {
                                 parent = Some(match v {
                                     SceneValue::Key(k) => k.to_string(),
-                                    _ => panic!("parent must be a key"),
+                                    _ => panic!("parent must be a node ref like @Parent"),
                                 })
                             }
                             "script" => match v {
@@ -614,7 +616,7 @@ mod tests {
 
     #[test]
     fn parser_keeps_script_path_string() {
-        let src = "@root = main\n\n[main]\nscript = \"dlc://test/scripts/script.rs\"\n[/main]\n";
+        let src = "$root = main\n\n[main]\nscript = \"dlc://test/scripts/script.rs\"\n[/main]\n";
         let scene = Parser::new(src).parse_scene();
         let node = &scene.nodes[0];
         assert_eq!(node.script.as_deref(), Some("dlc://test/scripts/script.rs"));
@@ -622,7 +624,7 @@ mod tests {
 
     #[test]
     fn parser_keeps_root_of_path_string() {
-        let src = "@root = main\n\n[main]\nroot_of = \"dlc://test/scenes/main.scn\"\n[/main]\n";
+        let src = "$root = main\n\n[main]\nroot_of = \"dlc://test/scenes/main.scn\"\n[/main]\n";
         let scene = Parser::new(src).parse_scene();
         let node = &scene.nodes[0];
         assert_eq!(node.root_of.as_deref(), Some("dlc://test/scenes/main.scn"));

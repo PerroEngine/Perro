@@ -5,6 +5,7 @@ pub enum Token {
     String(String),
 
     At,     // @
+    Dollar, // $
     Equals, // =
     Comma,  // ,
     LParen, // (
@@ -67,6 +68,7 @@ impl<'a> Lexer<'a> {
 
         match c {
             '@' => Token::At,
+            '$' => Token::Dollar,
             '=' => Token::Equals,
             ',' => Token::Comma,
             '(' => Token::LParen,
