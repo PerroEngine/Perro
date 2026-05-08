@@ -1,5 +1,6 @@
 use crate::ambient_light_3d::AmbientLight3D;
 use crate::animation_player::AnimationPlayer;
+use crate::bone_attachment_3d::BoneAttachment3D;
 use crate::camera_2d::Camera2D;
 use crate::camera_3d::Camera3D;
 use crate::mesh_instance_3d::MeshInstance3D;
@@ -822,6 +823,7 @@ define_scene_nodes! {
         Area3D => (Node3D, Area3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         RigidBody3D => (Node3D, RigidBody3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         Skeleton3D => (Node3D, Skeleton3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        BoneAttachment3D => (Node3D, BoneAttachment3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         ParticleEmitter3D => (Node3D, ParticleEmitter3D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         //Lights
         AmbientLight3D => (None, AmbientLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

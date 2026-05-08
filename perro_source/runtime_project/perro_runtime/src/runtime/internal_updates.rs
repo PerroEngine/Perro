@@ -1,7 +1,7 @@
 use super::Runtime;
 use perro_ids::NodeID;
 use perro_input::InputWindow;
-use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType};
+use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType, SceneNodeData};
 use perro_resource_context::ResourceWindow;
 use perro_runtime_context::RuntimeWindow;
 
@@ -289,5 +289,41 @@ impl Runtime {
         }
         let mut ctx = RuntimeWindow::new(self);
         perro_internal_updates::internal_fixed_update_node(&mut ctx, res, ipt, id);
+    }
+
+    pub(crate) fn update_bone_attachments(&mut self) {
+        let mut updates = Vec::new();
+        for (id, node) in self.nodes.iter() {
+            let SceneNodeData::BoneAttachment3D(attachment) = &node.data else {
+                continue;
+            };
+            if !attachment.enabled {
+                continue;
+            }
+            let Some(skeleton_id) = attachment.skeleton else {
+                continue;
+            };
+            let Some(skeleton_node) = self.nodes.get(skeleton_id) else {
+                continue;
+            };
+            let SceneNodeData::Skeleton3D(skeleton) = &skeleton_node.data else {
+                continue;
+            };
+            let Ok(bone_index) = usize::try_from(attachment.bone_index) else {
+                continue;
+            };
+            let Some(bone) = skeleton.bones.get(bone_index) else {
+                continue;
+            };
+            // TODO: apply local/user offsets once attachment offset support lands.
+            updates.push((id, bone.rest));
+        }
+
+        for (id, transform) in updates {
+            let _ = self.with_base_node_mut::<perro_nodes::Node3D, _, _>(id, |node| {
+                node.transform = transform;
+            });
+            self.mark_global_transform_dirty(id);
+        }
     }
 }

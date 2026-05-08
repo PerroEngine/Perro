@@ -5,6 +5,7 @@ use perro_nodes::{
     ambient_light_3d::AmbientLight3D,
     animation_player::AnimationPlayer,
     camera_2d::Camera2D,
+    bone_attachment_3d::BoneAttachment3D,
     camera_3d::{Camera3D, CameraProjection},
     mesh_instance_3d::{MaterialParamOverride, MaterialParamOverrideValue, MeshInstance3D, MeshSurfaceBinding},
     multi_mesh_instance_3d::MultiMeshInstance3D,
@@ -29,6 +30,7 @@ use perro_scene::{
     RayLight3DField, RigidBody2DField, RigidBody3DField, Scene, SceneFieldIterRef,
     SceneKey, SceneNodeData as SceneDefNodeData, SceneNodeEntry as SceneDefNodeEntry,
     SceneObjectField, SceneValue, Skeleton3DField, Sky3DField, SpotLight3DField, Sprite2DField,
+    BoneAttachment3DField,
     StaticBody2DField, StaticBody3DField, resolve_node_field,
 };
 use perro_structs::{
@@ -611,6 +613,7 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "Area3D" => Ok(SceneNodeData::Area3D(build_area_3d(data))),
         "RigidBody3D" => Ok(SceneNodeData::RigidBody3D(build_rigid_body_3d(data))),
         "Skeleton3D" => Ok(SceneNodeData::Skeleton3D(build_skeleton_3d(data))),
+        "BoneAttachment3D" => Ok(SceneNodeData::BoneAttachment3D(build_bone_attachment_3d(data))),
         "Camera3D" => Ok(SceneNodeData::Camera3D(build_camera_3d(data))),
         "ParticleEmitter3D" => Ok(SceneNodeData::ParticleEmitter3D(build_particle_emitter_3d(
             data,

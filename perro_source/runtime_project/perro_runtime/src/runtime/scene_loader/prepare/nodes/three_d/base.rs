@@ -24,6 +24,17 @@ fn build_multi_mesh_instance_3d(data: &SceneDefNodeData) -> MultiMeshInstance3D 
     node
 }
 
+
+fn build_bone_attachment_3d(data: &SceneDefNodeData) -> BoneAttachment3D {
+    let mut node = BoneAttachment3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_bone_attachment_3d_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_skeleton_3d(data: &SceneDefNodeData) -> Skeleton3D {
     let mut node = Skeleton3D::new();
     if let Some(base) = data.base_ref() {
@@ -119,6 +130,21 @@ fn apply_multi_mesh_instance_3d_fields(
 }
 
 fn apply_skeleton_3d_fields(_node: &mut Skeleton3D, _fields: &[SceneObjectField]) {}
+
+fn apply_bone_attachment_3d_fields(node: &mut BoneAttachment3D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match resolve_node_field("BoneAttachment3D", name) {
+        Some(NodeField::BoneAttachment3D(BoneAttachment3DField::Skeleton)) => {
+            node.skeleton = as_node_id(value);
+        }
+        Some(NodeField::BoneAttachment3D(BoneAttachment3DField::BoneIndex)) => {
+            if let Some(v) = as_i32(value) { node.bone_index = v; }
+        }
+        Some(NodeField::BoneAttachment3D(BoneAttachment3DField::Enabled)) => {
+            if let Some(v) = as_bool(value) { node.enabled = v; }
+        }
+        _ => {}
+    });
+}
 
 fn extract_mesh_source(data: &SceneDefNodeData) -> Option<String> {
     if data.ty != "MeshInstance3D" && data.ty != "MultiMeshInstance3D" {

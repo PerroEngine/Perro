@@ -236,6 +236,7 @@ impl Runtime {
         self.schedules.snapshot_update(&self.scripts);
         self.run_update_schedule();
         self.run_internal_update_schedule();
+        self.update_bone_attachments();
     }
 
     #[inline]
@@ -255,6 +256,7 @@ impl Runtime {
 
         let internal_start = std::time::Instant::now();
         self.run_internal_update_schedule();
+        self.update_bone_attachments();
         let internal_update = internal_start.elapsed();
 
         RuntimeUpdateTiming {
