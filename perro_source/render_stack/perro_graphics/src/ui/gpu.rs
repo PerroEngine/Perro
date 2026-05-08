@@ -2,6 +2,9 @@ use bytemuck::{Pod, Zeroable};
 use epaint::{ClippedPrimitive, ImageData, Primitive, TextureId, textures::TexturesDelta};
 use std::borrow::Cow;
 
+const UI_SUPERSAMPLE_SCALE: u32 = 2;
+const UI_SUPERSAMPLE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
 struct UiVertexGpu {
@@ -23,6 +26,13 @@ struct UiTextureGpu {
     size: [u32; 2],
 }
 
+struct UiSupersampleTarget {
+    _texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+    size: [u32; 2],
+}
+
 struct UiMeshGpu {
     index_start: u32,
     index_count: u32,
@@ -31,11 +41,14 @@ struct UiMeshGpu {
 
 pub struct GpuUi {
     pipeline: wgpu::RenderPipeline,
+    composite_pipeline: wgpu::RenderPipeline,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
     texture_bind_group_layout: wgpu::BindGroupLayout,
+    composite_bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     font_texture: Option<UiTextureGpu>,
+    supersample_target: Option<UiSupersampleTarget>,
     meshes: Vec<UiMeshGpu>,
     vertex_buffer: Option<wgpu::Buffer>,
     index_buffer: Option<wgpu::Buffer>,
@@ -60,6 +73,10 @@ impl GpuUi {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("perro_ui_epaint_shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(UI_SHADER)),
+        });
+        let composite_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("perro_ui_composite_shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(UI_COMPOSITE_SHADER)),
         });
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_ui_uniform"),
@@ -111,6 +128,28 @@ impl GpuUi {
                     },
                 ],
             });
+        let composite_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("perro_ui_composite_bgl"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("perro_ui_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -129,6 +168,12 @@ impl GpuUi {
             ],
             immediate_size: 0,
         });
+        let composite_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_ui_composite_pipeline_layout"),
+                bind_group_layouts: &[Some(&composite_bind_group_layout)],
+                immediate_size: 0,
+            });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("perro_ui_pipeline"),
             layout: Some(&pipeline_layout),
@@ -160,10 +205,50 @@ impl GpuUi {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
+                entry_point: Some("fs_main_gamma_framebuffer"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: UI_SUPERSAMPLE_FORMAT,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+        let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("perro_ui_composite_pipeline"),
+            layout: Some(&composite_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &composite_shader,
+                entry_point: Some("vs_composite"),
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &composite_shader,
                 entry_point: Some(if output_format.is_srgb() {
-                    "fs_main_linear_framebuffer"
+                    "fs_composite_linear_framebuffer"
                 } else {
-                    "fs_main_gamma_framebuffer"
+                    "fs_composite_gamma_framebuffer"
                 }),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: output_format,
@@ -195,11 +280,14 @@ impl GpuUi {
         });
         Self {
             pipeline,
+            composite_pipeline,
             uniform_buffer,
             uniform_bind_group,
             texture_bind_group_layout,
+            composite_bind_group_layout,
             sampler,
             font_texture: None,
+            supersample_target: None,
             meshes: Vec::new(),
             vertex_buffer: None,
             index_buffer: None,
@@ -226,6 +314,7 @@ impl GpuUi {
             revision,
         } = input;
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
+        let render_viewport = supersampled_size(viewport);
         if self.prepared_revision == revision
             && self.prepared_viewport == viewport
             && textures_delta.set.is_empty()
@@ -237,7 +326,7 @@ impl GpuUi {
             &self.uniform_buffer,
             0,
             bytemuck::bytes_of(&UiUniformGpu {
-                screen_size: [viewport[0] as f32, viewport[1] as f32],
+                screen_size: [render_viewport[0] as f32, render_viewport[1] as f32],
                 _pad: [0.0, 0.0],
             }),
         );
@@ -259,7 +348,7 @@ impl GpuUi {
             {
                 continue;
             }
-            let clip_rect = clip_rect(primitive, viewport);
+            let clip_rect = clip_rect_scaled(primitive, render_viewport, UI_SUPERSAMPLE_SCALE);
             if clip_rect[2] == 0 || clip_rect[3] == 0 {
                 continue;
             }
@@ -274,7 +363,10 @@ impl GpuUi {
             );
             self.vertices
                 .extend(mesh.vertices.iter().map(|vertex| UiVertexGpu {
-                    pos: [vertex.pos.x, vertex.pos.y],
+                    pos: [
+                        vertex.pos.x * UI_SUPERSAMPLE_SCALE as f32,
+                        vertex.pos.y * UI_SUPERSAMPLE_SCALE as f32,
+                    ],
                     uv: [vertex.uv.x, vertex.uv.y],
                     color: vertex.color.to_array(),
                 }));
@@ -298,11 +390,17 @@ impl GpuUi {
     }
 
     pub fn render_pass(
-        &self,
+        &mut self,
+        device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         output_view: &wgpu::TextureView,
         viewport: [u32; 2],
     ) {
+        if self.meshes.is_empty() {
+            return;
+        }
+        let render_viewport = supersampled_size(viewport);
+        self.ensure_supersample_target(device, render_viewport);
         let (Some(vertex_buffer), Some(index_buffer), Some(font_texture)) = (
             self.vertex_buffer.as_ref(),
             self.index_buffer.as_ref(),
@@ -310,16 +408,16 @@ impl GpuUi {
         ) else {
             return;
         };
-        if self.meshes.is_empty() {
+        let Some(target) = self.supersample_target.as_ref() else {
             return;
-        }
+        };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_ui_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: output_view,
+                view: &target.view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                     store: wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
@@ -341,12 +439,33 @@ impl GpuUi {
             pass.set_scissor_rect(
                 mesh.clip_rect[0],
                 mesh.clip_rect[1],
-                mesh.clip_rect[2].min(viewport[0]),
-                mesh.clip_rect[3].min(viewport[1]),
+                mesh.clip_rect[2].min(render_viewport[0]),
+                mesh.clip_rect[3].min(render_viewport[1]),
             );
             let start = mesh.index_start;
             pass.draw_indexed(start..start.saturating_add(mesh.index_count), 0, 0..1);
         }
+        drop(pass);
+
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("perro_ui_composite_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: output_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.composite_pipeline);
+        pass.set_bind_group(0, &target.bind_group, &[]);
+        pass.draw(0..3, 0..1);
     }
 
     pub fn draw_call_count(&self) -> u32 {
@@ -381,6 +500,52 @@ impl GpuUi {
             wgpu::BufferUsages::INDEX,
             index_bytes,
         );
+    }
+
+    fn ensure_supersample_target(&mut self, device: &wgpu::Device, size: [u32; 2]) {
+        let size = [size[0].max(1), size[1].max(1)];
+        if self
+            .supersample_target
+            .as_ref()
+            .is_some_and(|target| target.size == size)
+        {
+            return;
+        }
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("perro_ui_supersample_texture"),
+            size: wgpu::Extent3d {
+                width: size[0],
+                height: size[1],
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: UI_SUPERSAMPLE_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_ui_supersample_bg"),
+            layout: &self.composite_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+        self.supersample_target = Some(UiSupersampleTarget {
+            _texture: texture,
+            view,
+            bind_group,
+            size,
+        });
     }
 
     fn apply_font_delta(
@@ -486,24 +651,26 @@ fn font_delta_required_size(
     ]
 }
 
-fn clip_rect(primitive: &ClippedPrimitive, viewport: [u32; 2]) -> [u32; 4] {
-    let min_x = primitive.clip_rect.min.x.floor().max(0.0) as u32;
-    let min_y = primitive.clip_rect.min.y.floor().max(0.0) as u32;
-    let max_x = primitive
-        .clip_rect
-        .max
-        .x
+fn clip_rect_scaled(primitive: &ClippedPrimitive, viewport: [u32; 2], scale: u32) -> [u32; 4] {
+    let scale = scale.max(1) as f32;
+    let min_x = (primitive.clip_rect.min.x * scale).floor().max(0.0) as u32;
+    let min_y = (primitive.clip_rect.min.y * scale).floor().max(0.0) as u32;
+    let max_x = (primitive.clip_rect.max.x * scale)
         .ceil()
         .min(viewport[0] as f32)
         .max(min_x as f32) as u32;
-    let max_y = primitive
-        .clip_rect
-        .max
-        .y
+    let max_y = (primitive.clip_rect.max.y * scale)
         .ceil()
         .min(viewport[1] as f32)
         .max(min_y as f32) as u32;
     [min_x, min_y, max_x - min_x, max_y - min_y]
+}
+
+fn supersampled_size(viewport: [u32; 2]) -> [u32; 2] {
+    [
+        viewport[0].max(1).saturating_mul(UI_SUPERSAMPLE_SCALE),
+        viewport[1].max(1).saturating_mul(UI_SUPERSAMPLE_SCALE),
+    ]
 }
 
 fn upload_or_grow_buffer(
@@ -585,6 +752,52 @@ fn linear_from_gamma_rgb(srgb: vec3<f32>) -> vec3<f32> {
 @fragment
 fn fs_main_linear_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
     let gamma = textureSample(font_tex, font_sampler, in.uv) * in.color;
+    return vec4<f32>(linear_from_gamma_rgb(gamma.rgb), gamma.a);
+}
+"#;
+
+const UI_COMPOSITE_SHADER: &str = r#"
+@group(0) @binding(0) var composite_tex: texture_2d<f32>;
+@group(0) @binding(1) var composite_sampler: sampler;
+
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_composite(@builtin(vertex_index) vertex_index: u32) -> VsOut {
+    let pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>(3.0, -1.0),
+        vec2<f32>(-1.0, 3.0),
+    );
+    let uv = array<vec2<f32>, 3>(
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(2.0, 1.0),
+        vec2<f32>(0.0, -1.0),
+    );
+    var out: VsOut;
+    out.pos = vec4<f32>(pos[vertex_index], 0.0, 1.0);
+    out.uv = uv[vertex_index];
+    return out;
+}
+
+@fragment
+fn fs_composite_gamma_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
+    return textureSample(composite_tex, composite_sampler, in.uv);
+}
+
+fn linear_from_gamma_rgb(srgb: vec3<f32>) -> vec3<f32> {
+    let cutoff = srgb < vec3<f32>(0.04045);
+    let lower = srgb / vec3<f32>(12.92);
+    let higher = pow((srgb + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
+    return select(higher, lower, cutoff);
+}
+
+@fragment
+fn fs_composite_linear_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
+    let gamma = textureSample(composite_tex, composite_sampler, in.uv);
     return vec4<f32>(linear_from_gamma_rgb(gamma.rgb), gamma.a);
 }
 "#;

@@ -8,6 +8,9 @@ use epaint::{
 use perro_ids::NodeID;
 use perro_render_bridge::{UiDepthEffectState, UiRectState, UiTextAlignState};
 
+const UI_RASTER_SCALE: f32 = 2.0;
+const UI_FONT_ATLAS_SIZE: usize = 4096;
+
 pub struct UiPaintFrame<'a> {
     pub primitives: &'a [ClippedPrimitive],
     pub textures_delta: &'a TexturesDelta,
@@ -44,7 +47,7 @@ impl EpaintUiPainter {
     pub fn new() -> Self {
         Self {
             fonts: Fonts::new(
-                2048,
+                UI_FONT_ATLAS_SIZE,
                 AlphaFromCoverage::default(),
                 FontDefinitions::default(),
             ),
@@ -63,7 +66,8 @@ impl EpaintUiPainter {
         revision: u64,
         viewport: [f32; 2],
     ) {
-        self.fonts.begin_pass(2048, AlphaFromCoverage::default());
+        self.fonts
+            .begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
         self.shapes.clear();
         self.shape_rotations.clear();
         self.primitives.clear();
@@ -102,7 +106,7 @@ impl EpaintUiPainter {
                 .extend((shape_start..self.shapes.len()).map(|_| (rotation, origin)));
         }
         let mut tessellator = Tessellator::new(
-            1.0,
+            UI_RASTER_SCALE,
             TessellationOptions::default(),
             self.fonts.font_image_size(),
             self.fonts.texture_atlas().prepared_discs(),
@@ -320,7 +324,7 @@ fn push_text_edit_shapes(
         f32::INFINITY
     };
     let edit_galley = if edit.focused {
-        Some(fonts.with_pixels_per_point(1.0).layout(
+        Some(fonts.with_pixels_per_point(UI_RASTER_SCALE).layout(
             edit.text.to_string(),
             FontId::new(edit.font_size, FontFamily::Monospace),
             color32(edit.color),
@@ -335,7 +339,7 @@ fn push_text_edit_shapes(
         push_selection_shapes(edit, galley, clip_rect, draw_pos, out);
     }
     if !body.is_empty() && valid_color(color) {
-        let galley = fonts.with_pixels_per_point(1.0).layout(
+        let galley = fonts.with_pixels_per_point(UI_RASTER_SCALE).layout(
             body.to_string(),
             FontId::new(edit.font_size, FontFamily::Monospace),
             color32(color),
@@ -501,7 +505,7 @@ fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<C
     let (min, max) = rect.screen_min_max(viewport);
     let clip_rect =
         Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1])).intersect(clip_rect);
-    let galley = fonts.with_pixels_per_point(1.0).layout(
+    let galley = fonts.with_pixels_per_point(UI_RASTER_SCALE).layout(
         text.to_string(),
         FontId::new(font_size, FontFamily::Proportional),
         color32(color),

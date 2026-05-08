@@ -879,7 +879,7 @@ impl Gpu {
                         revision: ui_revision,
                     },
                 );
-                ui.render_pass(&mut encoder, output_view, viewport);
+                ui.render_pass(&self.device, &mut encoder, output_view, viewport);
             }
         }
         if late_overlay_upload_2d.draw_count > 0 || !late_overlay_sprites_2d.is_empty() {
