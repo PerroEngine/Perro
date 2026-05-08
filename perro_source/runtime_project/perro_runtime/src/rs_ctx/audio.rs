@@ -33,7 +33,7 @@ impl AudioAPI for RuntimeResourceApi {
         player.drop_source(source)
     }
 
-    fn play_audio(&self, audio: Audio<'_>) -> bool {
+    fn play_audio(&self, bus_id: Option<AudioBusID>, audio: Audio<'_>) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
         };
@@ -42,7 +42,7 @@ impl AudioAPI for RuntimeResourceApi {
         };
         player.play_source(perro_bark::AudioPlaybackRequest {
             source: audio.source,
-            bus_id: audio.bus,
+            bus_id,
             looped: audio.looped,
             volume: audio.volume,
             speed: audio.speed,
@@ -56,7 +56,7 @@ impl AudioAPI for RuntimeResourceApi {
         })
     }
 
-    fn stop_audio(&self, audio: Audio<'_>) -> bool {
+    fn stop_audio(&self, bus_id: Option<AudioBusID>, audio: Audio<'_>) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
         };
@@ -65,7 +65,7 @@ impl AudioAPI for RuntimeResourceApi {
         };
         player.stop_match(perro_bark::AudioPlaybackRequest {
             source: audio.source,
-            bus_id: audio.bus,
+            bus_id,
             looped: audio.looped,
             volume: audio.volume,
             speed: audio.speed,

@@ -117,9 +117,9 @@ let viewport = get_viewport_size!(ctx.res);
 
 let _ = audio_play!(
     ctx.res,
+    music,
     Audio {
         source: "res://groantube.mp3",
-        bus: music,
         looped: true,
         volume: 1.0,
         speed: 1.0,
@@ -129,5 +129,3 @@ let _ = audio_play!(
     }
 );
 ```
-
-

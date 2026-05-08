@@ -15,7 +15,7 @@ pub struct BarkPlayer {
 
 struct Playback {
     source: String,
-    bus_id: AudioBusID,
+    bus_id: Option<AudioBusID>,
     looped: bool,
     base_volume: f32,
     speed: f32,
@@ -76,7 +76,7 @@ impl Default for AudioPan {
 #[derive(Clone, Copy)]
 pub struct AudioPlaybackRequest<'a> {
     pub source: &'a str,
-    pub bus_id: AudioBusID,
+    pub bus_id: Option<AudioBusID>,
     pub looped: bool,
     pub volume: f32,
     pub speed: f32,
@@ -88,7 +88,7 @@ pub struct AudioPlaybackRequest<'a> {
 #[derive(Clone)]
 struct OwnedAudioPlaybackRequest {
     source: String,
-    bus_id: AudioBusID,
+    bus_id: Option<AudioBusID>,
     looped: bool,
     volume: f32,
     speed: f32,
@@ -366,14 +366,24 @@ impl BarkPlayer {
             .map_err(|_| "audio mutex poisoned".to_string())?;
         let requested_volume = volume.max(0.0);
         let master_volume = state.master_volume.max(0.0);
-        let bus_state = state.buses.entry(bus_id).or_insert(BusState {
-            volume: 1.0,
-            speed: 1.0,
-            paused: false,
-        });
-        sink.set_speed(speed.max(0.01) * bus_state.speed.max(0.01));
-        sink.set_volume(requested_volume * master_volume * bus_state.volume.max(0.0));
-        if bus_state.paused {
+        let (bus_volume, bus_speed, bus_paused) = match bus_id {
+            Some(bus_id) => {
+                let bus_state = state.buses.entry(bus_id).or_insert(BusState {
+                    volume: 1.0,
+                    speed: 1.0,
+                    paused: false,
+                });
+                (
+                    bus_state.volume.max(0.0),
+                    bus_state.speed.max(0.01),
+                    bus_state.paused,
+                )
+            }
+            None => (1.0, 1.0, false),
+        };
+        sink.set_speed(speed.max(0.01) * bus_speed);
+        sink.set_volume(requested_volume * master_volume * bus_volume);
+        if bus_paused {
             sink.pause();
         } else {
             sink.play();
@@ -623,7 +633,7 @@ impl BarkPlayer {
         });
         bus.paused = true;
         for playback in &state.playbacks {
-            if playback.bus_id == bus_id {
+            if playback.bus_id == Some(bus_id) {
                 playback.sink.pause();
             }
         }
@@ -640,7 +650,7 @@ impl BarkPlayer {
         });
         bus.paused = false;
         for playback in &state.playbacks {
-            if playback.bus_id == bus_id {
+            if playback.bus_id == Some(bus_id) {
                 playback.sink.play();
             }
         }
@@ -653,7 +663,7 @@ impl BarkPlayer {
         let mut removed_any = false;
         let mut i = 0usize;
         while i < state.playbacks.len() {
-            if state.playbacks[i].bus_id == bus_id {
+            if state.playbacks[i].bus_id == Some(bus_id) {
                 let removed = state.playbacks.remove(i);
                 removed.sink.stop();
                 Self::mark_source_touched_now(&mut state, &removed.source, Instant::now());
@@ -829,9 +839,9 @@ impl BarkPlayer {
 
     fn refresh_volumes(state: &mut AudioState) {
         for playback in &state.playbacks {
-            let bus_volume = state
-                .buses
-                .get(&playback.bus_id)
+            let bus_volume = playback
+                .bus_id
+                .and_then(|bus_id| state.buses.get(&bus_id))
                 .map(|bus| bus.volume.max(0.0))
                 .unwrap_or(1.0);
             playback
@@ -842,9 +852,9 @@ impl BarkPlayer {
 
     fn refresh_speeds(state: &mut AudioState) {
         for playback in &state.playbacks {
-            let bus_speed = state
-                .buses
-                .get(&playback.bus_id)
+            let bus_speed = playback
+                .bus_id
+                .and_then(|bus_id| state.buses.get(&bus_id))
                 .map(|bus| bus.speed.max(0.01))
                 .unwrap_or(1.0);
             playback

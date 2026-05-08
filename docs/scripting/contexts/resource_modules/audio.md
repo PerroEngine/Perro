@@ -10,8 +10,10 @@ Macros:
 - `audio_load!(res, source) -> bool`
 - `audio_reserve!(res, source) -> bool`
 - `audio_drop!(res, source) -> bool`
-- `audio_play!(res, Audio { source, bus, looped, volume, speed, pan, from_start, from_end }) -> bool`
-- `audio_stop!(res, Audio { source, bus, looped, volume, speed, pan, from_start, from_end }) -> bool`
+- `audio_play!(res, bus_id, Audio { source, looped, volume, speed, pan, from_start, from_end }) -> bool`
+- `audio_play!(res, Audio { source, looped, volume, speed, pan, from_start, from_end }) -> bool`
+- `audio_stop!(res, bus_id, Audio { source, looped, volume, speed, pan, from_start, from_end }) -> bool`
+- `audio_stop!(res, Audio { source, looped, volume, speed, pan, from_start, from_end }) -> bool`
 - `audio_stop_source!(res, source) -> bool`
 - `audio_length_seconds!(res, source) -> Option<f32>`
 - `audio_length_millis!(res, source) -> Option<u64>`
@@ -28,7 +30,6 @@ Type:
 ```rust
 Audio {
     source: &str, // res://...
-    bus: AudioBusID,   // e.g. audio_bus!("music")
     looped: bool,
     volume: f32,  // 1.0 normal, 0.0 silent, >1 amplified
     speed: f32,   // 1.0 normal playback speed (also changes pitch)
@@ -43,8 +44,10 @@ Module methods:
 - `res.Audio().load_source(source) -> bool`
 - `res.Audio().reserve_source(source) -> bool`
 - `res.Audio().drop_source(source) -> bool`
-- `res.Audio().play(Audio { source, bus, looped, volume, speed, pan, from_start, from_end }) -> bool`
-- `res.Audio().stop_audio(Audio { source, bus, looped, volume, speed, pan, from_start, from_end }) -> bool`
+- `res.Audio().play(bus_id, Audio { source, looped, volume, speed, pan, from_start, from_end }) -> bool`
+- `res.Audio().play_master(Audio { source, looped, volume, speed, pan, from_start, from_end }) -> bool`
+- `res.Audio().stop_audio(bus_id, Audio { source, looped, volume, speed, pan, from_start, from_end }) -> bool`
+- `res.Audio().stop_master_audio(Audio { source, looped, volume, speed, pan, from_start, from_end }) -> bool`
 - `res.Audio().stop_source(source) -> bool`
 - `res.Audio().source_length_seconds(source) -> Option<f32>`
 - `res.Audio().source_length_millis(source) -> Option<u64>`
@@ -61,8 +64,10 @@ Macro/method parity:
 - `audio_load!(res, source)` is equivalent to `res.Audio().load_source(source)`.
 - `audio_reserve!(res, source)` is equivalent to `res.Audio().reserve_source(source)`.
 - `audio_drop!(res, source)` is equivalent to `res.Audio().drop_source(source)`.
-- `audio_play!(res, cfg)` is equivalent to `res.Audio().play(cfg)`.
-- `audio_stop!(res, cfg)` is equivalent to `res.Audio().stop_audio(cfg)`.
+- `audio_play!(res, bus_id, cfg)` is equivalent to `res.Audio().play(bus_id, cfg)`.
+- `audio_play!(res, cfg)` is equivalent to `res.Audio().play_master(cfg)`.
+- `audio_stop!(res, bus_id, cfg)` is equivalent to `res.Audio().stop_audio(bus_id, cfg)`.
+- `audio_stop!(res, cfg)` is equivalent to `res.Audio().stop_master_audio(cfg)`.
 - Other audio macros map directly to same-named `res.Audio()` methods.
 
 How it maps to `perro_bark`:
@@ -75,11 +80,13 @@ How it maps to `perro_bark`:
 - Unreserved cached audio is evicted after idle time with `ttl = max(2.0 * audio_length, 250ms)`, and idle timer starts when playback ends/stops.
 - Playback uses one sink per source path; replaying same source replaces previous playback.
 - Final loudness is multiplicative:
-  - `final_volume = master_volume * bus_volume * Audio.volume`
+  - `final_volume = master_volume * bus_volume * Audio.volume` when bus is provided
+  - `final_volume = master_volume * Audio.volume` when no bus is provided
 - Final playback rate is multiplicative:
-  - `final_speed = bus_speed * Audio.speed`
+  - `final_speed = bus_speed * Audio.speed` when bus is provided
+  - `final_speed = Audio.speed` when no bus is provided
 - `speed` controls playback speed multiplier and also affects pitch.
-- `Audio.pan` defaults to center when using `Audio::new(source, bus)`.
+- `Audio.pan` defaults to center when using `Audio::new(source)`.
 - `Audio.pan.x` is clamped to `-1.0..1.0` for left/right.
 - `Audio.pan.y` is clamped to `-1.0..1.0` for down/up.
 - `Audio.pan.z` is clamped to `-1.0..1.0` for back/front spatial flavor.
@@ -98,7 +105,6 @@ let _ = audio_bus_set_speed!(res, music, 1.0);
 
 let cfg = Audio {
     source: "res://groantube.mp3",
-    bus: music,
     looped: true,
     volume: 1.0,
     speed: 1.0,
@@ -107,16 +113,16 @@ let cfg = Audio {
     from_end: 0.0,
 };
 
+let _ = audio_play!(res, music, cfg);
+let _ = res.Audio().play(music, cfg);
+let _ = audio_stop!(res, music, cfg);
 let _ = audio_play!(res, cfg);
-let _ = res.Audio().play(cfg);
-let _ = audio_stop!(res, cfg);
 let _ = audio_stop_source!(res, "res://groantube.mp3");
 
 // play first half of the clip using queried duration
 if let Some(length) = audio_length_seconds!(res, "res://groantube.mp3") {
     let half = Audio {
         source: "res://groantube.mp3",
-        bus: music,
         looped: false,
         volume: 1.0,
         speed: 1.0,
@@ -124,6 +130,6 @@ if let Some(length) = audio_length_seconds!(res, "res://groantube.mp3") {
         from_start: 0.0,
         from_end: length * 0.5,
     };
-    let _ = audio_play!(res, half);
+    let _ = audio_play!(res, music, half);
 }
 ```

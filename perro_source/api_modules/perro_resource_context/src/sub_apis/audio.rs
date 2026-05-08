@@ -4,8 +4,8 @@ pub trait AudioAPI {
     fn load_audio_source(&self, source: &str) -> bool;
     fn reserve_audio_source(&self, source: &str) -> bool;
     fn drop_audio_source(&self, source: &str) -> bool;
-    fn play_audio(&self, audio: Audio<'_>) -> bool;
-    fn stop_audio(&self, audio: Audio<'_>) -> bool;
+    fn play_audio(&self, bus_id: Option<AudioBusID>, audio: Audio<'_>) -> bool;
+    fn stop_audio(&self, bus_id: Option<AudioBusID>, audio: Audio<'_>) -> bool;
     fn stop_audio_source(&self, source: &str) -> bool;
     fn audio_length_seconds(&self, source: &str) -> Option<f32>;
     fn stop_all_audio(&self);
@@ -45,7 +45,6 @@ impl Default for AudioPan {
 #[derive(Clone, Copy, Debug)]
 pub struct Audio<'a> {
     pub source: &'a str,
-    pub bus: AudioBusID,
     pub looped: bool,
     pub volume: f32,
     pub speed: f32,
@@ -55,10 +54,9 @@ pub struct Audio<'a> {
 }
 
 impl<'a> Audio<'a> {
-    pub const fn new(source: &'a str, bus: AudioBusID) -> Self {
+    pub const fn new(source: &'a str) -> Self {
         Self {
             source,
-            bus,
             looped: false,
             volume: 1.0,
             speed: 1.0,
@@ -94,13 +92,23 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
     }
 
     #[inline]
-    pub fn play(&self, audio: Audio<'_>) -> bool {
-        self.api.play_audio(audio)
+    pub fn play(&self, bus_id: AudioBusID, audio: Audio<'_>) -> bool {
+        self.api.play_audio(Some(bus_id), audio)
     }
 
     #[inline]
-    pub fn stop_audio(&self, audio: Audio<'_>) -> bool {
-        self.api.stop_audio(audio)
+    pub fn play_master(&self, audio: Audio<'_>) -> bool {
+        self.api.play_audio(None, audio)
+    }
+
+    #[inline]
+    pub fn stop_audio(&self, bus_id: AudioBusID, audio: Audio<'_>) -> bool {
+        self.api.stop_audio(Some(bus_id), audio)
+    }
+
+    #[inline]
+    pub fn stop_master_audio(&self, audio: Audio<'_>) -> bool {
+        self.api.stop_audio(None, audio)
     }
 
     #[inline]
@@ -178,15 +186,21 @@ macro_rules! audio_drop {
 
 #[macro_export]
 macro_rules! audio_play {
+    ($res:expr, $bus_id:expr, $audio:expr) => {
+        $res.Audio().play($bus_id, $audio)
+    };
     ($res:expr, $audio:expr) => {
-        $res.Audio().play($audio)
+        $res.Audio().play_master($audio)
     };
 }
 
 #[macro_export]
 macro_rules! audio_stop {
+    ($res:expr, $bus_id:expr, $audio:expr) => {
+        $res.Audio().stop_audio($bus_id, $audio)
+    };
     ($res:expr, $audio:expr) => {
-        $res.Audio().stop_audio($audio)
+        $res.Audio().stop_master_audio($audio)
     };
 }
 
