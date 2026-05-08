@@ -28,6 +28,7 @@ const MAX_FRAME_DELTA_SECONDS: f32 = 0.250;
 const LOG_INTERVAL_SECONDS: f32 = 3.0;
 #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile")))]
 const LOG_TIMING_SAMPLE_STRIDE: u32 = 20;
+const TIMING_WARMUP_FRAMES: u32 = 8;
 const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
 const STARTUP_SPLASH_FADE_DURATION: Duration = Duration::from_millis(320);
 const STARTUP_SPLASH_HOLD_DURATION: Duration = Duration::from_millis(2000);
@@ -223,6 +224,8 @@ fn plan_fixed_steps(
 #[derive(Clone, Copy, Debug, Default)]
 struct CsvFrameSample {
     frame_index: u64,
+    phase: &'static str,
+    warmup: bool,
     sampled: bool,
     frame_delta_us: u128,
     idle_before_frame_us: u128,
@@ -251,7 +254,7 @@ impl TimingCsvWriter {
             .ok()?;
         let _ = writeln!(
             file,
-            "frame,sampled,frame_delta_us,idle_before_frame_us,simulation_us,render_active_us,work_active_us,present_wait_us,fixed_steps,fixed_step_us,fixed_accum_before_us,fixed_accum_after_us,fixed_catchup_dropped"
+            "frame,phase,warmup,sampled,frame_delta_us,idle_before_frame_us,simulation_us,render_active_us,work_active_us,present_wait_us,fixed_steps,fixed_step_us,fixed_accum_before_us,fixed_accum_after_us,fixed_catchup_dropped"
         );
         Some(Self { file })
     }
@@ -259,8 +262,10 @@ impl TimingCsvWriter {
     fn write(&mut self, sample: CsvFrameSample) {
         let _ = writeln!(
             self.file,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             sample.frame_index,
+            sample.phase,
+            if sample.warmup { 1 } else { 0 },
             if sample.sampled { 1 } else { 0 },
             sample.frame_delta_us,
             sample.idle_before_frame_us,
@@ -672,6 +677,7 @@ struct RunnerState<B: GraphicsBackend> {
     mem_profile_csv: Option<MemProfileCsvWriter>,
     batch_frames: u32,
     batch_timing_samples: u32,
+    timing_warmup_frames_left: u32,
     #[cfg(feature = "profile_heavy")]
     batch_render_command_count: u64,
     #[cfg(feature = "profile_heavy")]
@@ -718,6 +724,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             mem_profile_csv: MemProfileCsvWriter::from_env(),
             batch_frames: 0,
             batch_timing_samples: 0,
+            timing_warmup_frames_left: TIMING_WARMUP_FRAMES,
             #[cfg(feature = "profile_heavy")]
             batch_render_command_count: 0,
             #[cfg(feature = "profile_heavy")]
@@ -990,8 +997,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
         }
         #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile")))]
         {
-            let next_frame = self.batch_frames.saturating_add(1);
-            next_frame == 1 || next_frame.is_multiple_of(LOG_TIMING_SAMPLE_STRIDE)
+            self.frame_index == 1
+                || self
+                    .frame_index
+                    .is_multiple_of(LOG_TIMING_SAMPLE_STRIDE as u64)
         }
     }
 
@@ -1094,6 +1103,16 @@ impl<B: GraphicsBackend> RunnerState<B> {
             }),
         ]);
         self.startup_splash.active = false;
+        self.timing_warmup_frames_left = TIMING_WARMUP_FRAMES;
+        self.batch_start = Instant::now();
+        self.batch_frames = 0;
+        self.batch_timing_samples = 0;
+        self.batch_work = Duration::ZERO;
+        self.batch_simulation = Duration::ZERO;
+        self.batch_present = Duration::ZERO;
+        self.batch_idle_before_frame = Duration::ZERO;
+        self.batch_present_wait = Duration::ZERO;
+        self.batch_idle = Duration::ZERO;
     }
 
     fn step_startup_frame(
@@ -1274,18 +1293,21 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
 
-        self.batch_frames = self.batch_frames.saturating_add(1);
-        if should_sample_timing {
-            self.batch_timing_samples = self.batch_timing_samples.saturating_add(1);
-            self.batch_work += active_work_duration;
-            self.batch_simulation += simulation_duration;
-            self.batch_present += present_active_duration;
-            self.batch_idle_before_frame += idle_duration;
-            self.batch_present_wait += present_wait_duration;
-            self.batch_idle += idle_duration + present_wait_duration;
+        let warmup_frame = self.timing_warmup_frames_left > 0;
+        if !warmup_frame {
+            self.batch_frames = self.batch_frames.saturating_add(1);
+            if should_sample_timing {
+                self.batch_timing_samples = self.batch_timing_samples.saturating_add(1);
+                self.batch_work += active_work_duration;
+                self.batch_simulation += simulation_duration;
+                self.batch_present += present_active_duration;
+                self.batch_idle_before_frame += idle_duration;
+                self.batch_present_wait += present_wait_duration;
+                self.batch_idle += idle_duration + present_wait_duration;
+            }
         }
         #[cfg(all(feature = "ui_profile", not(feature = "profile_heavy")))]
-        if let Some(timing) = present_timing.as_ref() {
+        if !warmup_frame && let Some(timing) = present_timing.as_ref() {
             self.batch_present_extract_ui += timing.extract_ui;
             self.batch_ui_layout += timing.ui_layout;
             self.batch_ui_commands += timing.ui_commands;
@@ -1299,9 +1321,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_ui_command_skipped += timing.ui_command_skipped as u64;
             self.batch_ui_removed_nodes += timing.ui_removed_nodes as u64;
         }
-        if let Some(csv) = &mut self.timing_csv {
+        if frame_index != 1
+            && let Some(csv) = &mut self.timing_csv
+        {
             csv.write(CsvFrameSample {
                 frame_index,
+                phase: "startup",
+                warmup: true,
                 sampled: should_sample_timing,
                 frame_delta_us: frame_delta.as_micros(),
                 idle_before_frame_us: idle_duration.as_micros(),
@@ -1318,7 +1344,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             });
         }
         #[cfg(feature = "profile_heavy")]
-        {
+        if !warmup_frame {
             self.batch_runtime_update += runtime_update_duration;
             self.batch_input_poll += input_poll_duration;
             self.batch_fixed_update += fixed_duration;
@@ -1584,18 +1610,21 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
 
-        self.batch_frames = self.batch_frames.saturating_add(1);
-        if should_sample_timing {
-            self.batch_timing_samples = self.batch_timing_samples.saturating_add(1);
-            self.batch_work += active_work_duration;
-            self.batch_simulation += simulation_duration;
-            self.batch_present += present_active_duration;
-            self.batch_idle_before_frame += idle_duration;
-            self.batch_present_wait += present_wait_duration;
-            self.batch_idle += idle_duration + present_wait_duration;
+        let warmup_frame = self.timing_warmup_frames_left > 0;
+        if !warmup_frame {
+            self.batch_frames = self.batch_frames.saturating_add(1);
+            if should_sample_timing {
+                self.batch_timing_samples = self.batch_timing_samples.saturating_add(1);
+                self.batch_work += active_work_duration;
+                self.batch_simulation += simulation_duration;
+                self.batch_present += present_active_duration;
+                self.batch_idle_before_frame += idle_duration;
+                self.batch_present_wait += present_wait_duration;
+                self.batch_idle += idle_duration + present_wait_duration;
+            }
         }
         #[cfg(all(feature = "ui_profile", not(feature = "profile_heavy")))]
-        if let Some(timing) = present_timing.as_ref() {
+        if !warmup_frame && let Some(timing) = present_timing.as_ref() {
             self.batch_present_extract_ui += timing.extract_ui;
             self.batch_ui_layout += timing.ui_layout;
             self.batch_ui_commands += timing.ui_commands;
@@ -1612,6 +1641,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
         if let Some(csv) = &mut self.timing_csv {
             csv.write(CsvFrameSample {
                 frame_index,
+                phase: "steady",
+                warmup: warmup_frame,
                 sampled: should_sample_timing,
                 frame_delta_us: frame_delta.as_micros(),
                 idle_before_frame_us: idle_duration.as_micros(),
@@ -1626,6 +1657,14 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 fixed_accum_after_us: Duration::from_secs_f32(self.fixed_accumulator).as_micros(),
                 fixed_catchup_dropped,
             });
+        }
+        if warmup_frame {
+            self.timing_warmup_frames_left = self.timing_warmup_frames_left.saturating_sub(1);
+            if self.timing_warmup_frames_left == 0 {
+                self.batch_start = frame_end;
+            }
+            self.app.begin_input_frame();
+            return;
         }
         #[cfg(feature = "profile_heavy")]
         {
@@ -2206,6 +2245,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             self.batch_start = now;
             self.batch_frames = 0;
             self.batch_timing_samples = 0;
+            self.timing_warmup_frames_left = TIMING_WARMUP_FRAMES;
             self.batch_work = Duration::ZERO;
             self.batch_simulation = Duration::ZERO;
             self.batch_present = Duration::ZERO;

@@ -291,7 +291,7 @@ fn eval_expr(expr: &QueryExpr, node: &SceneNode) -> bool {
             .any(|child| eval_expr_in_context(child, node, TagClauseContext::Any)),
         QueryExpr::Not(inner) => eval_not_expr(inner, node),
         QueryExpr::Name(names) => names.iter().any(|name| node.get_name() == name),
-        QueryExpr::Tags(tags) => tags.iter().any(|tag| node.tags_slice().contains(tag)),
+        QueryExpr::Tags(tags) => tags.iter().any(|tag| node.has_tag(*tag)),
         QueryExpr::IsType(types) => types.contains(&node.node_type()),
         QueryExpr::BaseType(base_types) => base_types
             .iter()
@@ -308,8 +308,8 @@ enum TagClauseContext {
 fn eval_expr_in_context(expr: &QueryExpr, node: &SceneNode, tag_ctx: TagClauseContext) -> bool {
     match expr {
         QueryExpr::Tags(tags) => match tag_ctx {
-            TagClauseContext::Any => tags.iter().any(|tag| node.tags_slice().contains(tag)),
-            TagClauseContext::All => tags.iter().all(|tag| node.tags_slice().contains(tag)),
+            TagClauseContext::Any => tags.iter().any(|tag| node.has_tag(*tag)),
+            TagClauseContext::All => tags.iter().all(|tag| node.has_tag(*tag)),
         },
         _ => eval_expr(expr, node),
     }
@@ -317,7 +317,7 @@ fn eval_expr_in_context(expr: &QueryExpr, node: &SceneNode, tag_ctx: TagClauseCo
 
 fn eval_not_expr(expr: &QueryExpr, node: &SceneNode) -> bool {
     match expr {
-        QueryExpr::Tags(tags) => !tags.iter().any(|tag| node.tags_slice().contains(tag)),
+        QueryExpr::Tags(tags) => !tags.iter().any(|tag| node.has_tag(*tag)),
         _ => !eval_expr(expr, node),
     }
 }

@@ -1,16 +1,41 @@
-use perro_ids::{IntoTagID, MaterialID, TagID};
+use perro_ids::{IntoTagID, MaterialID, NodeID, TagID};
 use perro_nodes::{
     Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, Renderable, SceneNode,
     SceneNodeData, UiBox,
 };
 use perro_runtime_context::sub_apis::{
-    MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D, MeshSurfaceHit3D, NodeAPI,
-    TagQuery,
+    IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,
+    MeshSurfaceHit3D, NodeAPI, NodeCreationTemplate, TagQuery,
 };
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
+use rayon::prelude::*;
 use std::borrow::Cow;
 
 use crate::Runtime;
+
+const CREATE_NODES_PARALLEL_MIN: usize = 4_096;
+
+struct PreparedNode {
+    node: SceneNode,
+    node_type: NodeType,
+    tag_ids: Vec<TagID>,
+}
+
+fn prepare_created_node(request: &NodeCreationTemplate, parent_id: NodeID) -> PreparedNode {
+    let mut node = SceneNode::new(request.scene_node_data());
+    if let Some(name) = request.name.clone() {
+        node.set_name(name);
+    }
+    node.set_tags(Some(request.tags.clone()));
+    node.parent = parent_id;
+    let tag_ids = request.tags.iter().map(|tag| tag.id()).collect();
+
+    PreparedNode {
+        node,
+        node_type: request.node_type,
+        tag_ids,
+    }
+}
 
 #[inline]
 fn cached_slot_for(runtime: &mut Runtime, id: perro_ids::NodeID) -> Option<(usize, u32)> {
@@ -376,6 +401,71 @@ impl NodeAPI for Runtime {
         self.mark_needs_rerender(id);
         self.mark_transform_dirty_recursive(id);
         id
+    }
+
+    fn create_nodes(
+        &mut self,
+        requests: &[NodeCreationTemplate],
+        parent_id: perro_ids::NodeID,
+    ) -> Vec<perro_ids::NodeID> {
+        if !parent_id.is_nil() && self.nodes.get(parent_id).is_none() {
+            return Vec::new();
+        }
+
+        self.nodes.reserve(requests.len());
+
+        let mut ids = Vec::with_capacity(requests.len());
+        if requests.len() >= CREATE_NODES_PARALLEL_MIN {
+            let prepared: Vec<PreparedNode> = requests
+                .par_iter()
+                .map(|request| prepare_created_node(request, parent_id))
+                .collect();
+
+            for prepared in prepared {
+                let id = self.nodes.insert(prepared.node);
+                ids.push(id);
+
+                self.register_internal_node_schedules(id, prepared.node_type);
+                self.mark_needs_rerender(id);
+                self.mark_transform_dirty_recursive(id);
+                for tag in prepared.tag_ids {
+                    self.node_index
+                        .node_tag_index
+                        .entry(tag)
+                        .or_default()
+                        .insert(id);
+                }
+            }
+        } else {
+            for request in requests {
+                let prepared = prepare_created_node(request, parent_id);
+                let id = self.nodes.insert(prepared.node);
+                ids.push(id);
+
+                self.register_internal_node_schedules(id, prepared.node_type);
+                self.mark_needs_rerender(id);
+                self.mark_transform_dirty_recursive(id);
+                for tag in prepared.tag_ids {
+                    self.node_index
+                        .node_tag_index
+                        .entry(tag)
+                        .or_default()
+                        .insert(id);
+                }
+            }
+        }
+
+        if !parent_id.is_nil() {
+            if let Some(parent) = self.nodes.get_mut(parent_id) {
+                parent.children.reserve(ids.len());
+                parent.children.extend(ids.iter().copied());
+            }
+            for &id in &ids {
+                self.mark_ui_reparent_dirty(id, perro_ids::NodeID::nil(), parent_id);
+            }
+        }
+
+        ids
     }
 
     fn with_node_mut<T, V, F>(&mut self, id: perro_ids::NodeID, f: F) -> Option<V>
@@ -786,7 +876,7 @@ impl NodeAPI for Runtime {
 
             let parent_id = match self.nodes.get(current) {
                 Some(node) => {
-                    for &tag in node.tags_slice() {
+                    for tag in node.get_tag_ids() {
                         let mut remove_entry = false;
                         if let Some(set) = self.node_index.node_tag_index.get_mut(&tag) {
                             set.remove(&current);
@@ -821,18 +911,21 @@ impl NodeAPI for Runtime {
         true
     }
 
-    fn get_node_tags(&mut self, node_id: perro_ids::NodeID) -> Option<Vec<TagID>> {
-        self.nodes
-            .get(node_id)
-            .map(|node| node.tags_slice().to_vec())
+    fn get_node_tags(&mut self, node_id: perro_ids::NodeID) -> Option<Vec<Cow<'static, str>>> {
+        self.nodes.get(node_id).map(|node| {
+            node.tags_slice()
+                .iter()
+                .map(|tag| tag.name.clone())
+                .collect()
+        })
     }
 
     fn tag_set<T>(&mut self, node_id: perro_ids::NodeID, tags: Option<T>) -> bool
     where
-        T: Into<Vec<TagID>>,
+        T: IntoNodeTags,
     {
         let old_tags = match self.nodes.get(node_id) {
-            Some(node) => node.tags_slice().to_vec(),
+            Some(node) => node.get_tag_ids(),
             None => return false,
         };
 
@@ -840,11 +933,11 @@ impl NodeAPI for Runtime {
             return false;
         };
         if let Some(tags) = tags {
-            node.set_tag_ids(Some(tags));
+            node.set_tags(Some(tags.into_node_tags()));
         } else {
             node.clear_tags();
         }
-        let new_tags = node.tags_slice().to_vec();
+        let new_tags = node.get_tag_ids();
 
         for tag in old_tags {
             if !new_tags.contains(&tag)
@@ -869,21 +962,22 @@ impl NodeAPI for Runtime {
 
     fn add_node_tag<T>(&mut self, node_id: perro_ids::NodeID, tag: T) -> bool
     where
-        T: IntoTagID,
+        T: IntoNodeTag,
     {
         let Some(node) = self.nodes.get_mut(node_id) else {
             return false;
         };
-        let tag = tag.into_tag_id();
+        let tag = tag.into_node_tag();
+        let tag_id = tag.id;
         let mut added = false;
-        if !node.has_tag(tag) {
+        if !node.has_tag(tag_id) {
             node.add_tag(tag);
             added = true;
         }
         if added {
             self.node_index
                 .node_tag_index
-                .entry(tag)
+                .entry(tag_id)
                 .or_default()
                 .insert(node_id);
         }

@@ -221,7 +221,7 @@ impl Runtime {
     pub(crate) fn rebuild_node_tag_index(&mut self) {
         self.node_index.node_tag_index.clear();
         for (id, node) in self.nodes.iter() {
-            for &tag in node.tags_slice() {
+            for tag in node.get_tag_ids() {
                 self.node_index
                     .node_tag_index
                     .entry(tag)

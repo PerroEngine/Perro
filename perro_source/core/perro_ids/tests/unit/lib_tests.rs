@@ -105,6 +105,8 @@ fn tag_id_from_string_deterministic() {
 fn tags_macro_builds_slice() {
     let built = tags!["enemy", "boss"];
     assert_eq!(built.len(), 2);
-    assert_eq!(built[0], TagID::from_string("enemy"));
-    assert_eq!(built[1], TagID::from_string("boss"));
+    assert_eq!(built[0].id(), TagID::from_string("enemy"));
+    assert_eq!(built[0].name(), "enemy");
+    assert_eq!(built[1].id(), TagID::from_string("boss"));
+    assert_eq!(built[1].name(), "boss");
 }

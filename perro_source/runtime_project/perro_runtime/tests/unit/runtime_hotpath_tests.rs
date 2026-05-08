@@ -1,8 +1,9 @@
 use super::*;
 use ahash::AHashMap;
-use perro_ids::NodeID;
-use perro_nodes::{Node3D, SceneNode, SceneNodeData};
+use perro_ids::{NodeID, TextureID};
+use perro_nodes::{Node2D, Node3D, SceneNode, SceneNodeData, Sprite2D};
 use perro_render_bridge::{Command2D, RenderCommand};
+use perro_runtime_context::sub_apis::{NodeAPI, NodeCreationTemplate};
 use std::hint::black_box;
 use std::sync::Arc;
 
@@ -220,6 +221,88 @@ fn bench_transform_dirty_propagate_and_refresh() {
         "bench_transform_dirty_propagate_and_refresh: nodes={} rounds={} total_us={} per_round_us={:.3} acc={}",
         count, rounds, elapsed_us, per_round_us, acc
     );
+}
+
+#[test]
+#[ignore]
+fn bench_create_nodes_10k_batch_transform_and_render() {
+    let count = 10_000usize;
+    let templates_2d = vec![NodeCreationTemplate::new::<Node2D>(); count];
+    let templates_sprite = vec![NodeCreationTemplate::new::<Sprite2D>(); count];
+
+    let mut runtime = Runtime::new();
+    let parent = runtime.create::<Node2D>();
+    runtime
+        .with_node_mut::<Node2D, _, _>(parent, |node| {
+            node.transform.position.x = 10.0;
+            node.transform.position.y = 20.0;
+        })
+        .expect("parent exists");
+
+    let create_start = std::time::Instant::now();
+    let ids = runtime.create_nodes(&templates_2d, parent);
+    let create_us = create_start.elapsed().as_micros();
+
+    let transform_start = std::time::Instant::now();
+    runtime.propagate_pending_transform_dirty();
+    runtime.refresh_dirty_global_transforms();
+    let transform_us = transform_start.elapsed().as_micros();
+    let first_global = runtime.get_global_transform_2d(ids[0]).unwrap();
+    let last_global = runtime.get_global_transform_2d(ids[count - 1]).unwrap();
+
+    let mut render_runtime = Runtime::new();
+    let render_create_start = std::time::Instant::now();
+    let sprite_ids = render_runtime.create_nodes(&templates_sprite, NodeID::nil());
+    let render_create_us = render_create_start.elapsed().as_micros();
+
+    let texture = TextureID::from_parts(77, 0);
+    let mutate_start = std::time::Instant::now();
+    for &id in &sprite_ids {
+        render_runtime
+            .with_node_mut::<Sprite2D, _, _>(id, |sprite| {
+                sprite.texture = texture;
+            })
+            .expect("sprite exists");
+    }
+    let mutate_us = mutate_start.elapsed().as_micros();
+
+    let extract_start = std::time::Instant::now();
+    render_runtime.extract_render_2d_commands();
+    let extract_us = extract_start.elapsed().as_micros();
+
+    let mut commands = Vec::with_capacity(count);
+    render_runtime.drain_render_commands(&mut commands);
+    let upserts = commands
+        .iter()
+        .filter(|command| {
+            matches!(
+                command,
+                RenderCommand::TwoD(Command2D::UpsertSprite { sprite, .. })
+                    if sprite.texture == texture
+            )
+        })
+        .count();
+
+    println!(
+        "bench_create_nodes_10k_batch_transform_and_render: count={} create_node2d_us={} transform_us={} create_sprite_us={} mutate_sprite_us={} extract_render_us={} commands={} upserts={} first=({}, {}) last=({}, {})",
+        count,
+        create_us,
+        transform_us,
+        render_create_us,
+        mutate_us,
+        extract_us,
+        commands.len(),
+        upserts,
+        first_global.position.x,
+        first_global.position.y,
+        last_global.position.x,
+        last_global.position.y
+    );
+
+    assert_eq!(ids.len(), count);
+    assert_eq!(sprite_ids.len(), count);
+    assert_eq!(upserts, count);
+    black_box(commands);
 }
 
 #[test]

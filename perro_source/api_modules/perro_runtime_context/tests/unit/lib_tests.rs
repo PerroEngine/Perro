@@ -2,10 +2,10 @@ use crate::{
     prelude::*,
     sub_apis::{AnimPlayerAPI, AnimTreeAPI, SceneAPI},
 };
-use perro_ids::{AnimationID, IntoTagID, MeshID, NodeID, TagID};
+use perro_ids::{AnimationID, IntoTagID, MeshID, NodeID};
 use perro_nodes::prelude::Node2D;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
-use std::any::Any;
+use std::{any::Any, borrow::Cow};
 
 struct DummyRuntime {
     state: Box<dyn Any>,
@@ -29,6 +29,14 @@ impl NodeAPI for DummyRuntime {
         T: Default + Into<perro_nodes::SceneNodeData>,
     {
         NodeID::nil()
+    }
+
+    fn create_nodes(
+        &mut self,
+        requests: &[NodeCreationTemplate],
+        _parent_id: NodeID,
+    ) -> Vec<NodeID> {
+        requests.iter().map(|_| NodeID::nil()).collect()
     }
 
     fn with_node_mut<T, V, F>(&mut self, _id: NodeID, _f: F) -> Option<V>
@@ -104,20 +112,20 @@ impl NodeAPI for DummyRuntime {
         false
     }
 
-    fn get_node_tags(&mut self, _node_id: NodeID) -> Option<Vec<TagID>> {
+    fn get_node_tags(&mut self, _node_id: NodeID) -> Option<Vec<Cow<'static, str>>> {
         None
     }
 
     fn tag_set<T>(&mut self, _node_id: NodeID, _tags: Option<T>) -> bool
     where
-        T: Into<Vec<TagID>>,
+        T: IntoNodeTags,
     {
         false
     }
 
     fn add_node_tag<T>(&mut self, _node_id: NodeID, _tag: T) -> bool
     where
-        T: IntoTagID,
+        T: IntoNodeTag,
     {
         false
     }
@@ -533,6 +541,15 @@ fn script_macros_typecheck_and_forward() {
     assert_eq!(updated, 12);
 
     let _new_node = create_node!(&mut ctx, Node2D);
+    let _root_nodes = create_nodes!(
+        &mut ctx,
+        [node_template!(Node2D), node_template!(Node2D, "root")]
+    );
+    let _new_nodes = create_nodes!(
+        &mut ctx,
+        vec![node_template!(Node2D, "child", tags!["spawned"])],
+        id
+    );
     with_node_mut!(&mut ctx, Node2D, id, |_node| {});
     let value = with_node!(&mut ctx, Node2D, id, |_node| 99_i32);
     assert_eq!(value, 0_i32);

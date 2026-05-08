@@ -11,6 +11,26 @@ Creation macros:
 - `create_node!(ctx.run, NodeType, name) -> NodeID`
 - `create_node!(ctx.run, NodeType, name, tags) -> NodeID`
 - `create_node!(ctx.run, NodeType, name, tags, parent_id) -> NodeID`
+- `create_nodes!(ctx.run, &[NodeCreationTemplate]) -> Vec<NodeID>`
+- `create_nodes!(ctx.run, &[NodeCreationTemplate], parent_id) -> Vec<NodeID>`
+- `node_template!(NodeType) -> NodeCreationTemplate`
+- `node_template!(NodeType, name) -> NodeCreationTemplate`
+- `node_template!(NodeType, name, tags) -> NodeCreationTemplate`
+
+Batch creation example:
+
+```rust
+let ids = create_nodes!(
+    ctx.run,
+    [
+        node_template!(Node2D, "EnemyA", tags!["enemy"]),
+        node_template!(Node2D, "EnemyB", tags!["enemy"]),
+        node_template!(Node2D, "EnemyC", tags!["enemy"]),
+        node_template!(Node2D, "EnemyD", tags!["enemy"]),
+    ],
+    parent_id
+);
+```
 
 Access macros:
 
@@ -53,14 +73,16 @@ Runtime node base data:
 - `SceneNode.name` stores `Cow<'static, str>`.
 - `SceneNode.parent` stores `NodeID`.
 - `SceneNode.children` stores `Vec<NodeID>`.
-- `SceneNode.tags` stores `Vec<TagID>`.
+- `SceneNode.tags` stores `Vec<NodeTag>`.
 - `node.get_children_ids()` / `node.children_slice()` -> `&[NodeID]`.
-- `node.get_tag_ids()` / `node.tags_slice()` -> `&[TagID]`.
+- `node.get_tag_ids()` returns ids for internal query/index use.
+- `node.tags_slice()` -> `&[NodeTag]`.
 - `node.set_children_ids(Some(children))` replaces children from any `Into<Vec<NodeID>>`.
 - `node.set_children_ids(None)` clears children.
-- `node.set_tag_ids(Some(tags))` replaces tags from any `Into<Vec<TagID>>`.
+- `node.set_tags(Some(tags))` replaces tags from `Vec<NodeTag>`.
 - `node.set_tag_ids(None)` clears tags.
 - `get_node_children_ids!(...)` and `get_node_tags!(...)` return owned `Vec` copies through runtime context.
+- `get_node_tags!(...)` returns tag names; ids stay under hood.
 - `tag_set!(ctx.run, node_id, tags)` uploads tags back through runtime context.
 
 `force_rerender!` behavior:
@@ -133,7 +155,7 @@ Global transform macros:
 
 Tag/query macros:
 
-- `get_node_tags!(ctx.run, node_id) -> Option<Vec<TagID>>`
+- `get_node_tags!(ctx.run, node_id) -> Option<Vec<Cow<'static, str>>>`
 - `tag_set!(ctx.run, node_id, tags) -> bool`
 - `tag_set!(ctx.run, node_id) -> bool`
 - `tag_add!(ctx.run, node_id, tags) -> bool`
@@ -334,3 +356,5 @@ if !ok {
     // invalid/missing root id
 }
 ```
+
+

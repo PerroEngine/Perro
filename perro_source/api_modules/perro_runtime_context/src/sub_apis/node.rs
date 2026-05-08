@@ -1,9 +1,16 @@
-use perro_ids::{IntoTagID, MaterialID, MeshID, NodeID, TagID};
+use perro_ids::{IntoTagID, MaterialID, MeshID, NodeID, NodeTag, TagID};
 use perro_nodes::{
     Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData, Skeleton3D, UiBox,
 };
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
+
+fn default_node_data<T>() -> SceneNodeData
+where
+    T: Default + Into<SceneNodeData>,
+{
+    T::default().into()
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum QueryScope {
@@ -30,11 +37,63 @@ pub struct TagQuery {
     pub scope: QueryScope,
 }
 
-/// Converts a single tag or tag collection into `Vec<TagID>`.
+/// Converts a single tag into stored node tag data.
+pub trait IntoNodeTag {
+    fn into_node_tag(self) -> NodeTag;
+}
+
+/// Converts a single tag or tag collection into stored node tag data.
 ///
 /// Used by [`tag_add!`](macro@crate::tag_add) to support one-or-many inputs.
 pub trait IntoNodeTags {
-    fn into_tag_ids(self) -> Vec<TagID>;
+    fn into_node_tags(self) -> Vec<NodeTag>;
+}
+
+/// Data used by [`create_nodes!`](macro@crate::create_nodes) for batch node creation.
+#[derive(Clone, Debug)]
+pub struct NodeCreationTemplate {
+    pub node_type: NodeType,
+    pub name: Option<Cow<'static, str>>,
+    pub tags: Vec<NodeTag>,
+    factory: fn() -> SceneNodeData,
+}
+
+impl NodeCreationTemplate {
+    /// Creates a request for a default node of `T`.
+    pub fn new<T>() -> Self
+    where
+        T: Default + Into<SceneNodeData> + NodeTypeDispatch,
+    {
+        Self {
+            node_type: T::NODE_TYPE,
+            name: None,
+            tags: Vec::new(),
+            factory: default_node_data::<T>,
+        }
+    }
+
+    /// Sets display name.
+    pub fn name<S>(mut self, name: S) -> Self
+    where
+        S: Into<Cow<'static, str>>,
+    {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Sets tags.
+    pub fn tags<T>(mut self, tags: T) -> Self
+    where
+        T: IntoNodeTags,
+    {
+        self.tags = tags.into_node_tags();
+        self
+    }
+
+    /// Builds node payload.
+    pub fn scene_node_data(&self) -> SceneNodeData {
+        (self.factory)()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -134,108 +193,195 @@ impl IntoChildSelector for &Cow<'static, str> {
     }
 }
 
-impl IntoNodeTags for TagID {
-    fn into_tag_ids(self) -> Vec<TagID> {
+impl IntoNodeTag for NodeTag {
+    fn into_node_tag(self) -> NodeTag {
+        self
+    }
+}
+
+impl IntoNodeTag for &NodeTag {
+    fn into_node_tag(self) -> NodeTag {
+        self.clone()
+    }
+}
+
+impl IntoNodeTag for TagID {
+    fn into_node_tag(self) -> NodeTag {
+        NodeTag {
+            id: self,
+            name: Cow::Borrowed(""),
+        }
+    }
+}
+
+impl IntoNodeTag for &TagID {
+    fn into_node_tag(self) -> NodeTag {
+        (*self).into_node_tag()
+    }
+}
+
+impl IntoNodeTag for &str {
+    fn into_node_tag(self) -> NodeTag {
+        NodeTag::new(self.to_string())
+    }
+}
+
+impl IntoNodeTag for String {
+    fn into_node_tag(self) -> NodeTag {
+        NodeTag::new(self)
+    }
+}
+
+impl IntoNodeTag for &String {
+    fn into_node_tag(self) -> NodeTag {
+        NodeTag::new(self.clone())
+    }
+}
+
+impl IntoNodeTags for NodeTag {
+    fn into_node_tags(self) -> Vec<NodeTag> {
         vec![self]
     }
 }
 
+impl IntoNodeTags for &NodeTag {
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        vec![self.clone()]
+    }
+}
+
+impl IntoNodeTags for TagID {
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        vec![self.into_node_tag()]
+    }
+}
+
 impl IntoNodeTags for &TagID {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        vec![*self]
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        vec![self.into_node_tag()]
     }
 }
 
 impl IntoNodeTags for &str {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        vec![self.into_tag_id()]
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        vec![self.into_node_tag()]
     }
 }
 
 impl IntoNodeTags for String {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        vec![self.into_tag_id()]
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        vec![self.into_node_tag()]
     }
 }
 
 impl IntoNodeTags for &String {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        vec![self.into_tag_id()]
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        vec![self.into_node_tag()]
     }
 }
 
 impl IntoNodeTags for &[TagID] {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        self.to_vec()
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.iter().map(IntoNodeTag::into_node_tag).collect()
     }
 }
 
 impl<const N: usize> IntoNodeTags for [TagID; N] {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        self.into_iter().collect()
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.into_iter().map(IntoNodeTag::into_node_tag).collect()
     }
 }
 
 impl<const N: usize> IntoNodeTags for &[TagID; N] {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        self.as_slice().to_vec()
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.as_slice()
+            .iter()
+            .map(IntoNodeTag::into_node_tag)
+            .collect()
     }
 }
 
 impl IntoNodeTags for Vec<TagID> {
-    fn into_tag_ids(self) -> Vec<TagID> {
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.into_iter().map(IntoNodeTag::into_node_tag).collect()
+    }
+}
+
+impl IntoNodeTags for &[NodeTag] {
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.to_vec()
+    }
+}
+
+impl<const N: usize> IntoNodeTags for [NodeTag; N] {
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.into_iter().collect()
+    }
+}
+
+impl<const N: usize> IntoNodeTags for &[NodeTag; N] {
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.as_slice().to_vec()
+    }
+}
+
+impl IntoNodeTags for Vec<NodeTag> {
+    fn into_node_tags(self) -> Vec<NodeTag> {
         self
     }
 }
 
 impl IntoNodeTags for &[&str] {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        self.iter().map(|tag| (*tag).into_tag_id()).collect()
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.iter().map(|tag| (*tag).into_node_tag()).collect()
     }
 }
 
 impl<const N: usize> IntoNodeTags for [&str; N] {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        self.into_iter().map(IntoTagID::into_tag_id).collect()
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.into_iter().map(IntoNodeTag::into_node_tag).collect()
     }
 }
 
 impl<const N: usize> IntoNodeTags for &[&str; N] {
-    fn into_tag_ids(self) -> Vec<TagID> {
+    fn into_node_tags(self) -> Vec<NodeTag> {
         self.as_slice()
             .iter()
-            .map(|tag| (*tag).into_tag_id())
+            .map(|tag| (*tag).into_node_tag())
             .collect()
     }
 }
 
 impl IntoNodeTags for Vec<&str> {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        self.into_iter().map(IntoTagID::into_tag_id).collect()
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.into_iter().map(IntoNodeTag::into_node_tag).collect()
     }
 }
 
 impl IntoNodeTags for &[String] {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        self.iter().map(IntoTagID::into_tag_id).collect()
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.iter().map(IntoNodeTag::into_node_tag).collect()
     }
 }
 
 impl<const N: usize> IntoNodeTags for [String; N] {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        self.into_iter().map(IntoTagID::into_tag_id).collect()
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.into_iter().map(IntoNodeTag::into_node_tag).collect()
     }
 }
 
 impl<const N: usize> IntoNodeTags for &[String; N] {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        self.as_slice().iter().map(IntoTagID::into_tag_id).collect()
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.as_slice()
+            .iter()
+            .map(IntoNodeTag::into_node_tag)
+            .collect()
     }
 }
 
 impl IntoNodeTags for Vec<String> {
-    fn into_tag_ids(self) -> Vec<TagID> {
-        self.into_iter().map(IntoTagID::into_tag_id).collect()
+    fn into_node_tags(self) -> Vec<NodeTag> {
+        self.into_iter().map(IntoNodeTag::into_node_tag).collect()
     }
 }
 
@@ -313,6 +459,12 @@ pub trait NodeAPI {
     fn create<T>(&mut self) -> NodeID
     where
         T: Default + Into<SceneNodeData>;
+
+    /// Creates many nodes and optionally attaches them under one parent.
+    ///
+    /// Returns created IDs in request order.
+    fn create_nodes(&mut self, requests: &[NodeCreationTemplate], parent_id: NodeID)
+    -> Vec<NodeID>;
 
     /// Runs closure against an exact concrete node type.
     ///
@@ -460,18 +612,18 @@ pub trait NodeAPI {
     /// Removes a node from the scene graph.
     fn remove_node(&mut self, node_id: NodeID) -> bool;
 
-    /// Returns node tags if node exists.
-    fn get_node_tags(&mut self, node_id: NodeID) -> Option<Vec<TagID>>;
+    /// Returns node tag names if node exists.
+    fn get_node_tags(&mut self, node_id: NodeID) -> Option<Vec<Cow<'static, str>>>;
 
     /// Sets node tags (`Some`) or clears all tags (`None`).
     fn tag_set<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool
     where
-        T: Into<Vec<TagID>>;
+        T: IntoNodeTags;
 
     /// Adds one tag to node (idempotent).
     fn add_node_tag<T>(&mut self, node_id: NodeID, tag: T) -> bool
     where
-        T: IntoTagID;
+        T: IntoNodeTag;
 
     /// Removes one tag from node.
     fn remove_node_tag<T>(&mut self, node_id: NodeID, tag: T) -> bool
@@ -612,6 +764,14 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         T: Default + Into<SceneNodeData>,
     {
         self.rt.create::<T>()
+    }
+
+    pub fn create_nodes(
+        &mut self,
+        requests: &[NodeCreationTemplate],
+        parent_id: NodeID,
+    ) -> Vec<NodeID> {
+        self.rt.create_nodes(requests, parent_id)
     }
 
     pub fn with_node_mut<T, V, F>(&mut self, id: NodeID, f: F) -> Option<V>
@@ -759,20 +919,20 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.remove_node(node_id)
     }
 
-    pub fn get_node_tags(&mut self, node_id: NodeID) -> Option<Vec<TagID>> {
+    pub fn get_node_tags(&mut self, node_id: NodeID) -> Option<Vec<Cow<'static, str>>> {
         self.rt.get_node_tags(node_id)
     }
 
     pub fn tag_set<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool
     where
-        T: Into<Vec<TagID>>,
+        T: IntoNodeTags,
     {
         self.rt.tag_set(node_id, tags)
     }
 
     pub fn add_node_tag<T>(&mut self, node_id: NodeID, tag: T) -> bool
     where
-        T: IntoTagID,
+        T: IntoNodeTag,
     {
         self.rt.add_node_tag(node_id, tag)
     }
@@ -781,12 +941,12 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
     where
         T: IntoNodeTags,
     {
-        let tag_ids = tags.into_tag_ids();
-        if tag_ids.is_empty() {
+        let node_tags = tags.into_node_tags();
+        if node_tags.is_empty() {
             return true;
         }
 
-        for tag in tag_ids {
+        for tag in node_tags {
             if !self.rt.add_node_tag(node_id, tag) {
                 return false;
             }
@@ -1189,12 +1349,13 @@ macro_rules! with_base_node_mut {
 /// - `create_node!(ctx, ConcreteType, name) -> NodeID`
 /// - `create_node!(ctx, ConcreteType, name, tags) -> NodeID`
 /// - `create_node!(ctx, ConcreteType, name, tags, parent_id) -> NodeID`
+/// - `create_nodes!(ctx, requests, parent_id) -> Vec<NodeID>`
 ///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `ConcreteType`: ie Node2D, MeshInstance3D, Sprite2D
 /// - `name` (optional): `&str`, `String`, or `Cow<'static, str>`
-/// - `tags` (optional): usually from `tags![...]`, or `&[TagID]`, `[TagID; N]`, `Vec<TagID>`
+/// - `tags` (optional): usually from `tags![...]`, or string/id tag collections
 /// - `parent_id` (optional): `NodeID`
 #[macro_export]
 macro_rules! create_node {
@@ -1219,6 +1380,41 @@ macro_rules! create_node {
         let _ = $ctx.Nodes().reparent($parent, __id);
         __id
     }};
+}
+
+/// Creates a batch request for [`create_nodes!`](macro@crate::create_nodes).
+/// Usage:
+/// - `node_template!(ConcreteType)`
+/// - `node_template!(ConcreteType, name)`
+/// - `node_template!(ConcreteType, name, tags)`
+#[macro_export]
+macro_rules! node_template {
+    ($node_ty:ty) => {
+        $crate::sub_apis::NodeCreationTemplate::new::<$node_ty>()
+    };
+    ($node_ty:ty, $name:expr) => {
+        $crate::sub_apis::NodeCreationTemplate::new::<$node_ty>().name($name)
+    };
+    ($node_ty:ty, $name:expr, $tags:expr) => {
+        $crate::sub_apis::NodeCreationTemplate::new::<$node_ty>()
+            .name($name)
+            .tags($tags)
+    };
+}
+
+/// Creates many nodes from [`NodeCreationTemplate`](crate::sub_apis::NodeCreationTemplate).
+/// Usage:
+/// - `create_nodes!(ctx, requests) -> Vec<NodeID>`
+/// - `create_nodes!(ctx, requests, parent_id) -> Vec<NodeID>`
+#[macro_export]
+macro_rules! create_nodes {
+    ($ctx:expr, $requests:expr) => {
+        $ctx.Nodes()
+            .create_nodes(&$requests, $crate::perro_ids::NodeID::nil())
+    };
+    ($ctx:expr, $requests:expr, $parent:expr) => {
+        $ctx.Nodes().create_nodes(&$requests, $parent)
+    };
 }
 
 /// SceneNode metadata macros.
@@ -1807,7 +2003,7 @@ macro_rules! mesh_data_surface_regions_3d {
 }
 
 /// Gets node tags.
-/// Usage: `get_node_tags!(ctx, node_id) -> Option<Vec<TagID>>`.
+/// Usage: `get_node_tags!(ctx, node_id) -> Option<Vec<Cow<'static, str>>>`.
 /// Arguments:
 /// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `node_id`: `NodeID`
@@ -1820,13 +2016,13 @@ macro_rules! get_node_tags {
 
 /// Sets or clears node tags.
 /// Usage:
-/// - `tag_set!(ctx, node_id, tags)` where `tags` converts into `Vec<TagID>`.
+/// - `tag_set!(ctx, node_id, tags)` where `tags` converts into node tag data.
 /// - `tag_set!(ctx, node_id)` clears all tags.
 ///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `node_id`: `NodeID`
-/// - `tags`: usually from `tags![...]`, or `&[TagID]`, `[TagID; N]`, `Vec<TagID>`
+/// - `tags`: usually from `tags![...]`, or string/id tag collections
 #[macro_export]
 macro_rules! tag_set {
     ($ctx:expr, $id:expr, $tags:expr) => {

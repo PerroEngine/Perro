@@ -288,7 +288,7 @@ fn bench_tag_indexed_candidates() {
 
     let mut tag_index: AHashMap<TagID, AHashSet<perro_ids::NodeID>> = AHashMap::default();
     for (id, node) in arena.iter() {
-        for &tag in node.tags_slice() {
+        for tag in node.get_tag_ids() {
             tag_index.entry(tag).or_default().insert(id);
         }
     }

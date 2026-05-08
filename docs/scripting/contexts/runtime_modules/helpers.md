@@ -7,6 +7,6 @@ Helper macros:
 - `func!("name") -> ScriptMemberID`
 - `signal!("name") -> SignalID`
 - `tag!("name") -> TagID`
-- `tags!["a", "b"] -> Vec<TagID>`
+- `tags!["a", "b"] -> &[NodeTag]`
 - `variant!(value) -> Variant`
 - `params![a, b, c] -> Vec<Variant>`

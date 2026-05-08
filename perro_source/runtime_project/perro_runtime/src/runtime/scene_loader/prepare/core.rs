@@ -1,5 +1,5 @@
 use crate::material_schema;
-use perro_ids::{IntoTagID, string_to_u64};
+use perro_ids::string_to_u64;
 use perro_io::load_asset;
 use perro_nodes::{
     ambient_light_3d::AmbientLight3D,
@@ -596,9 +596,9 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
         let tags = entry
             .tags
             .iter()
-            .map(|tag| tag.as_ref().into_tag_id())
+            .map(|tag| perro_ids::NodeTag::new(tag.clone()))
             .collect::<Vec<_>>();
-        node.set_tag_ids(Some(tags));
+        node.set_tags(Some(tags));
     }
     let texture_source = extract_texture_source(&entry.data);
     let animation_source = extract_animation_source(&entry.data);

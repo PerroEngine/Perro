@@ -17,7 +17,7 @@ use crate::skeleton_3d::Skeleton3D;
 use crate::sky_3d::Sky3D;
 use crate::spot_light_3d::SpotLight3D;
 use crate::sprite_2d::Sprite2D;
-use perro_ids::{NodeID, TagID};
+use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
 use perro_ui::{
     UiBox, UiButton, UiGrid, UiHLayout, UiLabel, UiLayout, UiNodeBase, UiPanel, UiTextBlock,
@@ -217,7 +217,7 @@ macro_rules! define_scene_nodes {
             pub name: Cow<'static, str>,
             pub parent: NodeID,
             pub children: Vec<NodeID>,
-            pub tags: Vec<TagID>,
+            pub tags: Vec<NodeTag>,
         }
 
         #[derive(Clone, Debug)]
@@ -284,13 +284,29 @@ macro_rules! define_scene_nodes {
                 self.children = children.map(Into::into).unwrap_or_default();
             }
 
-            pub fn get_tag_ids(&self) -> &[TagID] {
+            pub fn get_tags(&self) -> &[NodeTag] {
                 &self.tags
+            }
+
+            pub fn get_tag_ids(&self) -> Vec<TagID> {
+                self.tags.iter().map(NodeTag::id).collect()
             }
 
             pub fn set_tag_ids<T>(&mut self, tags: Option<T>)
             where
                 T: Into<Vec<TagID>>,
+            {
+                self.tags = tags
+                    .map(Into::into)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(NodeTag::from)
+                    .collect();
+            }
+
+            pub fn set_tags<T>(&mut self, tags: Option<T>)
+            where
+                T: Into<Vec<NodeTag>>,
             {
                 self.tags = tags.map(Into::into).unwrap_or_default();
             }
@@ -360,12 +376,15 @@ macro_rules! define_scene_nodes {
                 self.get_children_ids()
             }
 
-            pub fn add_tag(&mut self, tag: TagID) {
-                self.tags.push(tag);
+            pub fn add_tag<T>(&mut self, tag: T)
+            where
+                T: Into<NodeTag>,
+            {
+                self.tags.push(tag.into());
             }
 
             pub fn remove_tag(&mut self, tag: TagID) {
-                self.tags.retain(|&t| t != tag);
+                self.tags.retain(|t| t.id != tag);
             }
 
             pub fn clear_tags(&mut self) {
@@ -373,11 +392,11 @@ macro_rules! define_scene_nodes {
             }
 
             pub fn has_tag(&self, tag: TagID) -> bool {
-                self.get_tag_ids().contains(&tag)
+                self.tags.iter().any(|node_tag| node_tag.id == tag)
             }
 
-            pub fn tags_slice(&self) -> &[TagID] {
-                self.get_tag_ids()
+            pub fn tags_slice(&self) -> &[NodeTag] {
+                self.get_tags()
             }
 
             pub fn with_typed_ref<T: NodeTypeDispatch, R>(

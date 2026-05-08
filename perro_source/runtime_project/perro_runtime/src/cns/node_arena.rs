@@ -43,6 +43,12 @@ impl NodeArena {
         }
     }
 
+    /// Reserve slots for additional node inserts.
+    pub fn reserve(&mut self, additional: usize) {
+        self.nodes.reserve(additional);
+        self.generations.reserve(additional);
+    }
+
     /// Insert a node, returns NodeID with index and generation
     pub fn insert(&mut self, node: SceneNode) -> NodeID {
         // Reuse a previously freed slot in O(1).

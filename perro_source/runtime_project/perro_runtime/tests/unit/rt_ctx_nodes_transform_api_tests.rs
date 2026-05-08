@@ -1,10 +1,91 @@
 use crate::Runtime;
+use perro_ids::tags;
 use perro_nodes::{Bone3D, BoneAttachment3D, Node2D, Node3D, SceneNode, SceneNodeData, Skeleton3D};
-use perro_runtime_context::sub_apis::NodeAPI;
+use perro_runtime_context::sub_apis::{NodeAPI, NodeCreationTemplate};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 
 fn approx(a: f32, b: f32) -> bool {
     (a - b).abs() <= 1e-4
+}
+
+#[test]
+fn create_nodes_batches_parent_names_and_tags() {
+    let mut runtime = Runtime::new();
+    let parent_id = runtime.create::<Node2D>();
+    let requests = [
+        NodeCreationTemplate::new::<Node2D>()
+            .name("EnemyA")
+            .tags(tags!["enemy"]),
+        NodeCreationTemplate::new::<Node2D>()
+            .name("EnemyB")
+            .tags(tags!["enemy"]),
+    ];
+    let ids = runtime.create_nodes(&requests, parent_id);
+
+    assert_eq!(ids.len(), 2);
+    assert_eq!(runtime.get_node_children_ids(parent_id), Some(ids.clone()));
+    assert_eq!(runtime.get_node_parent_id(ids[0]), Some(parent_id));
+    assert_eq!(runtime.get_node_name(ids[0]).as_deref(), Some("EnemyA"));
+    assert_eq!(
+        runtime.get_node_tags(ids[1]).as_deref(),
+        Some([std::borrow::Cow::Borrowed("enemy")].as_slice())
+    );
+}
+
+#[test]
+fn create_nodes_supports_root_requests_without_metadata() {
+    let mut runtime = Runtime::new();
+    let ids = runtime.create_nodes(
+        &[
+            NodeCreationTemplate::new::<Node2D>(),
+            NodeCreationTemplate::new::<Node2D>().name("RootOnly"),
+        ],
+        perro_ids::NodeID::nil(),
+    );
+
+    assert_eq!(ids.len(), 2);
+    assert_eq!(
+        runtime.get_node_parent_id(ids[0]),
+        Some(perro_ids::NodeID::nil())
+    );
+    assert_eq!(runtime.get_node_name(ids[0]).as_deref(), Some("Node"));
+    assert_eq!(runtime.get_node_name(ids[1]).as_deref(), Some("RootOnly"));
+    assert_eq!(runtime.get_node_tags(ids[0]), Some(Vec::new()));
+}
+
+#[test]
+fn create_nodes_handles_10k_children_and_transform_propagation() {
+    let mut runtime = Runtime::new();
+    let parent_id = runtime.create::<Node2D>();
+    runtime
+        .with_node_mut::<Node2D, _, _>(parent_id, |parent| {
+            parent.transform.position = Vector2::new(12.0, 34.0);
+        })
+        .expect("parent exists");
+
+    let templates = vec![NodeCreationTemplate::new::<Node2D>(); 10_000];
+    let ids = runtime.create_nodes(&templates, parent_id);
+
+    assert_eq!(ids.len(), 10_000);
+    assert_eq!(runtime.nodes.len(), 10_001);
+    assert_eq!(
+        runtime
+            .get_node_children_ids(parent_id)
+            .map(|ids| ids.len()),
+        Some(10_000)
+    );
+
+    runtime.propagate_pending_transform_dirty();
+    runtime.refresh_dirty_global_transforms();
+
+    let first_global = runtime
+        .get_global_transform_2d(ids[0])
+        .expect("first child global");
+    let last_global = runtime
+        .get_global_transform_2d(ids[9_999])
+        .expect("last child global");
+    assert_eq!(first_global.position, Vector2::new(12.0, 34.0));
+    assert_eq!(last_global.position, Vector2::new(12.0, 34.0));
 }
 
 #[test]

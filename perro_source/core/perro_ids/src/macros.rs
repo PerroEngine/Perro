@@ -71,10 +71,10 @@ macro_rules! tag {
 #[macro_export]
 macro_rules! tags {
     ($($name:literal),* $(,)?) => {{
-        const __TAGS: &[$crate::TagID] = &[$($crate::TagID::from_string($name)),*];
+        const __TAGS: &[$crate::NodeTag] = &[$($crate::NodeTag::borrowed($name)),*];
         __TAGS
     }};
     ($($name:expr),* $(,)?) => {
-        &[$($crate::IntoTagID::into_tag_id($name)),*]
+        &[$($crate::NodeTag::new($name)),*]
     };
 }

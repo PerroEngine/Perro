@@ -2,7 +2,7 @@
 //! All IDs use u64 = index (low 32 bits) | generation (high 32 bits). Index 0 = nil.
 //! IDs are created by their owning arena/manager; slot reuse bumps generation so stale IDs are invalid.
 
-use std::fmt;
+use std::{borrow::Cow, fmt};
 
 const STRING_HASH_SEED: u64 = 0xA0761D6478BD642F;
 const STRING_HASH_PRIME: u64 = 0xE7037ED1A0B428DB;
@@ -279,6 +279,73 @@ impl TagID {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct NodeTag {
+    pub id: TagID,
+    pub name: Cow<'static, str>,
+}
+
+impl NodeTag {
+    pub const fn borrowed(name: &'static str) -> Self {
+        Self {
+            id: TagID::from_string(name),
+            name: Cow::Borrowed(name),
+        }
+    }
+
+    pub fn new<S>(name: S) -> Self
+    where
+        S: Into<Cow<'static, str>>,
+    {
+        let name = name.into();
+        Self {
+            id: TagID::from_string(name.as_ref()),
+            name,
+        }
+    }
+
+    pub const fn id(&self) -> TagID {
+        self.id
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+}
+
+impl From<TagID> for NodeTag {
+    fn from(id: TagID) -> Self {
+        Self {
+            id,
+            name: Cow::Borrowed(""),
+        }
+    }
+}
+
+impl From<&TagID> for NodeTag {
+    fn from(id: &TagID) -> Self {
+        (*id).into()
+    }
+}
+
+impl From<&str> for NodeTag {
+    fn from(name: &str) -> Self {
+        Self::new(name.to_string())
+    }
+}
+
+impl From<String> for NodeTag {
+    fn from(name: String) -> Self {
+        Self::new(name)
+    }
+}
+
+impl From<&String> for NodeTag {
+    fn from(name: &String) -> Self {
+        Self::new(name.clone())
+    }
+}
+
 pub trait IntoTagID {
     fn into_tag_id(self) -> TagID;
 }
@@ -294,6 +361,20 @@ impl IntoTagID for &TagID {
     #[inline]
     fn into_tag_id(self) -> TagID {
         *self
+    }
+}
+
+impl IntoTagID for NodeTag {
+    #[inline]
+    fn into_tag_id(self) -> TagID {
+        self.id
+    }
+}
+
+impl IntoTagID for &NodeTag {
+    #[inline]
+    fn into_tag_id(self) -> TagID {
+        self.id
     }
 }
 

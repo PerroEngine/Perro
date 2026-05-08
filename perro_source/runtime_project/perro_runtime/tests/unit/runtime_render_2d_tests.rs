@@ -4,6 +4,7 @@ use perro_nodes::{
     SceneNode, SceneNodeData, camera_2d::Camera2D, node_2d::Node2D, sprite_2d::Sprite2D,
 };
 use perro_render_bridge::{Command2D, RenderCommand, RenderEvent, ResourceCommand};
+use perro_runtime_context::sub_apis::{NodeAPI, NodeCreationTemplate};
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
@@ -52,6 +53,38 @@ fn sprite_requests_texture_once_until_created() {
         RenderCommand::TwoD(Command2D::UpsertSprite { node, sprite })
         if node == expected_node && sprite.texture == texture
     ));
+}
+
+#[test]
+fn create_nodes_10k_sprites_emit_render_commands() {
+    let mut runtime = Runtime::new();
+    let templates = vec![NodeCreationTemplate::new::<Sprite2D>(); 10_000];
+    let ids = runtime.create_nodes(&templates, perro_ids::NodeID::nil());
+    let texture = TextureID::from_parts(77, 0);
+
+    for &id in &ids {
+        runtime
+            .with_node_mut::<Sprite2D, _, _>(id, |sprite| {
+                sprite.texture = texture;
+            })
+            .expect("sprite exists");
+    }
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+    let upserts = commands
+        .iter()
+        .filter(|command| {
+            matches!(
+                command,
+                RenderCommand::TwoD(Command2D::UpsertSprite { sprite, .. })
+                    if sprite.texture == texture
+            )
+        })
+        .count();
+
+    assert_eq!(ids.len(), 10_000);
+    assert_eq!(upserts, 10_000);
 }
 
 #[test]
