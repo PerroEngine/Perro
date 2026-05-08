@@ -139,6 +139,7 @@ fn load_bones_from_gltf(bytes: &[u8], skin_index: usize) -> Result<Vec<Bone3D>, 
             name: name.into(),
             parent,
             rest,
+            pose: rest,
             inv_bind,
         });
     }
@@ -319,6 +320,7 @@ fn decode_pskel(bytes: &[u8]) -> Result<Vec<Bone3D>, String> {
             name: name.into(),
             parent,
             rest,
+            pose: rest,
             inv_bind,
         });
     }
@@ -395,12 +397,14 @@ fn parse_pskel_text(source: &str) -> Result<Vec<Bone3D>, String> {
                 name: name.into(),
                 parent: -1,
                 rest: Transform3D::IDENTITY,
+                pose: Transform3D::IDENTITY,
                 inv_bind: Transform3D::IDENTITY,
             });
             continue;
         }
         if line.eq_ignore_ascii_case("[/bone]") {
-            if let Some(bone) = current.take() {
+            if let Some(mut bone) = current.take() {
+                bone.pose = bone.rest;
                 bones.push(bone);
                 continue;
             }

@@ -8,7 +8,7 @@ use perro_nodes::{
     AmbientLight3D, AnimationPlayer, Camera3D, MeshInstance3D, Node2D, Node3D, PointLight3D,
     RayLight3D, Skeleton3D, SpotLight3D, Sprite2D,
 };
-use perro_runtime_context::perro_structs::{Quaternion, Vector2, Vector3};
+use perro_runtime_context::perro_structs::{Quaternion, Transform3D, Vector2, Vector3};
 use perro_runtime_context::perro_variant::Variant;
 use perro_scene::{
     Camera3DField, Light3DField, MeshInstance3DField, Node2DField, Node3DField, NodeField,
@@ -754,22 +754,35 @@ fn apply_skeleton_bone_track<RT>(
 ) where
     RT: RuntimeAPI + ?Sized,
 {
-    let AnimationTrackValue::Transform3D(rest) = value else {
+    let AnimationTrackValue::Transform3D(pose) = value else {
         return;
     };
-    let rest = *rest;
-    let _ = with_base_node_mut!(ctx, Skeleton3D, node_id, |skeleton| {
-        let bone = match &bone_target.selector {
-            AnimationBoneSelector::Index(index) => skeleton.bones.get_mut(*index as usize),
-            AnimationBoneSelector::Name(name) => skeleton
-                .bones
-                .iter_mut()
-                .find(|bone| bone.name.as_ref() == name.as_ref()),
-        };
-        if let Some(bone) = bone {
-            bone.rest = rest;
-        }
+    let pose = *pose;
+    let applied = with_base_node_mut!(ctx, Skeleton3D, node_id, |skeleton| {
+        apply_bone_pose(skeleton, bone_target, pose);
     });
+    if applied.is_some() {
+        let _ = ctx.Nodes().force_rerender(node_id);
+    }
+}
+
+fn apply_bone_pose(
+    skeleton: &mut Skeleton3D,
+    bone_target: &perro_animation::AnimationBoneTarget,
+    pose: Transform3D,
+) -> bool {
+    let bone = match &bone_target.selector {
+        AnimationBoneSelector::Index(index) => skeleton.bones.get_mut(*index as usize),
+        AnimationBoneSelector::Name(name) => skeleton
+            .bones
+            .iter_mut()
+            .find(|bone| bone.name.as_ref() == name.as_ref()),
+    };
+    if let Some(bone) = bone {
+        bone.pose = pose;
+        return true;
+    }
+    false
 }
 
 #[inline]
@@ -1076,6 +1089,7 @@ fn hash_bindings(bindings: &[AnimationObjectBinding]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use perro_nodes::Bone3D;
 
     #[test]
     fn boomerang_keeps_moving_after_turnaround() {
@@ -1103,5 +1117,32 @@ mod tests {
             sampled,
             vec![1, 2, 3, 4, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0]
         );
+    }
+
+    #[test]
+    fn bone_track_writes_pose_not_rest() {
+        let rest = Transform3D::new(
+            Vector3::new(1.0, 2.0, 3.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        );
+        let pose = Transform3D::new(
+            Vector3::new(4.0, 5.0, 6.0),
+            Quaternion::new(0.0, 0.0, 0.70710677, 0.70710677),
+            Vector3::ONE,
+        );
+        let mut skeleton = Skeleton3D::new();
+        skeleton.bones.push(Bone3D {
+            rest,
+            pose: rest,
+            ..Bone3D::new()
+        });
+        let target = perro_animation::AnimationBoneTarget {
+            selector: AnimationBoneSelector::Index(0),
+        };
+
+        assert!(apply_bone_pose(&mut skeleton, &target, pose));
+        assert_eq!(skeleton.bones[0].rest, rest);
+        assert_eq!(skeleton.bones[0].pose, pose);
     }
 }

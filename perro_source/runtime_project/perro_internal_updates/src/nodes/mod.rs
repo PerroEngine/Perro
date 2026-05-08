@@ -1,4 +1,5 @@
 pub mod animation_player;
 pub mod animation_tree;
 pub mod bone_attachment_3d;
+pub mod ik_target_3d;
 pub mod particle_emitter_3d;

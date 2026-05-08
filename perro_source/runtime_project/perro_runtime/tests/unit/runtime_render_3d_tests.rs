@@ -1,14 +1,22 @@
 use super::Runtime;
 use perro_ids::{MaterialID, MeshID};
 use perro_nodes::{
-    CameraProjection, SceneNode, SceneNodeData, ambient_light_3d::AmbientLight3D,
-    camera_3d::Camera3D, mesh_instance_3d::MeshInstance3D, mesh_instance_3d::MeshSurfaceBinding,
-    multi_mesh_instance_3d::MultiMeshInstance3D, node_3d::Node3D, physics_3d::Shape3D,
-    ray_light_3d::RayLight3D, sky_3d::Sky3D,
+    CameraProjection, SceneNode, SceneNodeData,
+    ambient_light_3d::AmbientLight3D,
+    camera_3d::Camera3D,
+    mesh_instance_3d::MeshInstance3D,
+    mesh_instance_3d::MeshSurfaceBinding,
+    multi_mesh_instance_3d::MultiMeshInstance3D,
+    node_3d::Node3D,
+    physics_3d::Shape3D,
+    ray_light_3d::RayLight3D,
+    skeleton_3d::{Bone3D, Skeleton3D},
+    sky_3d::Sky3D,
 };
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
 };
+use perro_structs::Transform3D;
 use perro_structs::{Quaternion, Vector3};
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
@@ -303,6 +311,96 @@ fn multi_mesh_instance_emits_draw_multi_with_instance_mats() {
 fn multi_mesh_instance_default_scale_is_one() {
     let multi = MultiMeshInstance3D::default();
     assert_eq!(multi.instance_scale, 1.0);
+}
+
+#[test]
+fn skinned_mesh_palette_uses_bone_pose_not_rest() {
+    let mut runtime = Runtime::new();
+
+    let mut skeleton = Skeleton3D::new();
+    skeleton.bones = vec![Bone3D {
+        rest: Transform3D::IDENTITY,
+        pose: Transform3D::new(
+            Vector3::new(2.0, 0.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        ),
+        inv_bind: Transform3D::IDENTITY,
+        ..Bone3D::new()
+    }];
+    let skeleton_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Skeleton3D(skeleton)));
+
+    let mut mesh = MeshInstance3D::new();
+    mesh.mesh = MeshID::from_parts(340, 0);
+    mesh.skeleton = skeleton_id;
+    set_primary_material(&mut mesh, MaterialID::from_parts(341, 0));
+    runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(
+                command_3d.as_ref(),
+                Command3D::Draw {
+                    skeleton: Some(palette),
+                    ..
+                } if palette.matrices.first().is_some_and(|m| m[3][0] == 2.0)
+            )
+    )));
+}
+
+#[test]
+fn dirty_skeleton_refreshes_sibling_skinned_mesh_draw() {
+    let mut runtime = Runtime::new();
+
+    let mut skeleton = Skeleton3D::new();
+    skeleton.bones = vec![Bone3D {
+        pose: Transform3D::IDENTITY,
+        ..Bone3D::new()
+    }];
+    let skeleton_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Skeleton3D(skeleton)));
+
+    let mut mesh = MeshInstance3D::new();
+    mesh.mesh = MeshID::from_parts(350, 0);
+    mesh.skeleton = skeleton_id;
+    set_primary_material(&mut mesh, MaterialID::from_parts(351, 0));
+    let mesh_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+
+    runtime.extract_render_3d_commands();
+    let _ = collect_commands(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(skeleton_id)
+        && let SceneNodeData::Skeleton3D(skeleton) = &mut node.data
+    {
+        skeleton.bones[0].pose.position.x = 3.0;
+    }
+    runtime.mark_needs_rerender(skeleton_id);
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(
+                command_3d.as_ref(),
+                Command3D::Draw {
+                    node,
+                    skeleton: Some(palette),
+                    ..
+                } if *node == mesh_id
+                    && palette.matrices.first().is_some_and(|m| m[3][0] == 3.0)
+            )
+    )));
 }
 
 #[test]

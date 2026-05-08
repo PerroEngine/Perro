@@ -547,7 +547,7 @@ fn script_macros_typecheck_and_forward() {
     );
     let _new_nodes = create_nodes!(
         &mut ctx,
-        vec![node_template!(Node2D, "child", tags!["spawned"])],
+        [node_template!(Node2D, "child", tags!["spawned"])],
         id
     );
     with_node_mut!(&mut ctx, Node2D, id, |_node| {});

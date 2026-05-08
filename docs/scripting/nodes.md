@@ -113,10 +113,23 @@ Physics 3D:
   - `skeleton`: scene node name of the `Skeleton3D`.
   - `bone` or `bone_index`: zero-based index into `Skeleton3D.bones`.
 - Runtime resolves `skeleton = "NodeName"` to a `NodeID` at load time.
-- Each internal update computes skeleton global transform + bone rest chain transform.
+- Each internal update computes skeleton global transform + bone pose chain transform.
 - Attachment's global 3D transform is set to that bone transform.
 - Children of the attachment inherit that transform.
 - Use it for held gear, muzzle flashes, hit markers, socketed VFX, or any node that should follow a bone.
+
+`IKTarget3D`
+
+- Solves a CCD IK chain on one `Skeleton3D`.
+- Fields:
+  - `skeleton`: scene node name of the `Skeleton3D`.
+  - `bone` or `bone_index`: zero-based end bone index.
+  - `chain_length`: parent chain length to solve.
+  - `iterations`: CCD pass count.
+  - `tolerance`: stop distance in skeleton-local units.
+  - `weight`: solve blend `0..1`.
+  - `match_rotation`: match target rotation on end bone.
+- Writes solved transforms into bone `pose`; keeps bone `rest` unchanged.
 
 ## UI Nodes
 

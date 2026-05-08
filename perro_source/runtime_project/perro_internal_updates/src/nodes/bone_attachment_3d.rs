@@ -25,14 +25,14 @@ where
         return;
     };
 
-    let mut bone_global = bone.rest.to_mat4();
+    let mut bone_global = bone.pose.to_mat4();
     let mut parent = bone.parent;
     let mut hops = 0usize;
     while parent >= 0 && hops < bones.len() {
         let Some(parent_bone) = bones.get(parent as usize) else {
             break;
         };
-        bone_global = parent_bone.rest.to_mat4() * bone_global;
+        bone_global = parent_bone.pose.to_mat4() * bone_global;
         parent = parent_bone.parent;
         hops += 1;
     }

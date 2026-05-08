@@ -4,6 +4,7 @@ use crate::animation_tree::AnimationTree;
 use crate::bone_attachment_3d::BoneAttachment3D;
 use crate::camera_2d::Camera2D;
 use crate::camera_3d::Camera3D;
+use crate::ik_target_3d::IKTarget3D;
 use crate::mesh_instance_3d::MeshInstance3D;
 use crate::multi_mesh_instance_3d::MultiMeshInstance3D;
 use crate::node_2d::Node2D;
@@ -828,6 +829,7 @@ define_scene_nodes! {
         RigidBody3D => (Node3D, RigidBody3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         Skeleton3D => (Node3D, Skeleton3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         BoneAttachment3D => (Node3D, BoneAttachment3D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
+        IKTarget3D => (Node3D, IKTarget3D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
         ParticleEmitter3D => (Node3D, ParticleEmitter3D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         //Lights
         AmbientLight3D => (None, AmbientLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

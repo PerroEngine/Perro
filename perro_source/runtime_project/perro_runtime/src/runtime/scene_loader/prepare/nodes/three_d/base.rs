@@ -44,6 +44,16 @@ fn build_bone_attachment_3d(data: &SceneDefNodeData) -> BoneAttachment3D {
     node
 }
 
+fn build_ik_target_3d(data: &SceneDefNodeData) -> IKTarget3D {
+    let mut node = IKTarget3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_ik_target_3d_fields(&mut node, &data.fields);
+    node
+}
+
 fn apply_node_3d_data(target: &mut Node3D, data: &SceneDefNodeData) {
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(target, base);
@@ -138,6 +148,44 @@ fn apply_bone_attachment_3d_fields(node: &mut BoneAttachment3D, fields: &[SceneO
             }
         }
         _ => {}
+    });
+}
+
+fn apply_ik_target_3d_fields(node: &mut IKTarget3D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("IKTarget3D", name) {
+            Some(NodeField::IKTarget3D(IKTarget3DField::BoneIndex)) => {
+                if let Some(v) = as_i32(value) {
+                    node.bone_index = v;
+                }
+            }
+            Some(NodeField::IKTarget3D(IKTarget3DField::ChainLength)) => {
+                if let Some(v) = as_i32(value) {
+                    node.chain_length = v.max(0) as u32;
+                }
+            }
+            Some(NodeField::IKTarget3D(IKTarget3DField::Iterations)) => {
+                if let Some(v) = as_i32(value) {
+                    node.iterations = v.max(0) as u32;
+                }
+            }
+            Some(NodeField::IKTarget3D(IKTarget3DField::Tolerance)) => {
+                if let Some(v) = as_f32(value) {
+                    node.tolerance = v.max(0.0);
+                }
+            }
+            Some(NodeField::IKTarget3D(IKTarget3DField::Weight)) => {
+                if let Some(v) = as_f32(value) {
+                    node.weight = v.clamp(0.0, 1.0);
+                }
+            }
+            Some(NodeField::IKTarget3D(IKTarget3DField::MatchRotation)) => {
+                if let Some(v) = as_bool(value) {
+                    node.match_rotation = v;
+                }
+            }
+            _ => {}
+        }
     });
 }
 
@@ -403,6 +451,18 @@ fn extract_bone_attachment_skeleton_target(data: &SceneDefNodeData) -> Option<St
             == Some(NodeField::BoneAttachment3D(
                 BoneAttachment3DField::Skeleton,
             )))
+        .then(|| as_asset_source(value))
+        .flatten()
+    })
+}
+
+fn extract_ik_target_skeleton_target(data: &SceneDefNodeData) -> Option<String> {
+    if data.ty != "IKTarget3D" {
+        return None;
+    }
+    data.fields.iter().find_map(|(name, value)| {
+        (resolve_node_field("IKTarget3D", name)
+            == Some(NodeField::IKTarget3D(IKTarget3DField::Skeleton)))
         .then(|| as_asset_source(value))
         .flatten()
     })

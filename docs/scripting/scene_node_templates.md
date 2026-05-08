@@ -442,6 +442,27 @@ script = "res://path/to/script.rs"
     [/BoneAttachment3D]
 [/bone_attachment_3d]
 
+[ik_target_3d]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [IKTarget3D]
+        skeleton = "SkeletonNodeName"
+        bone = 0
+        # alt: bone_index = 0
+        chain_length = 2
+        iterations = 8
+        tolerance = 0.01
+        weight = 1.0
+        match_rotation = true
+        [Node3D]
+            position = (0, 0, 0)
+            rotation = (0, 0, 0, 1)
+            scale = (1, 1, 1)
+            visible = true
+        [/Node3D]
+    [/IKTarget3D]
+[/ik_target_3d]
+
 [particle_emitter_3d]
 parent = PARENTKEY
 script = "res://path/to/script.rs"

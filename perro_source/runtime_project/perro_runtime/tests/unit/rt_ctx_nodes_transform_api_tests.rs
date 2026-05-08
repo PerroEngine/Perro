@@ -182,11 +182,21 @@ fn bone_attachment_3d_follows_skeleton_bone_global_transform() {
                 Quaternion::IDENTITY,
                 Vector3::ONE,
             ),
+            pose: Transform3D::new(
+                Vector3::new(0.0, 2.0, 0.0),
+                Quaternion::IDENTITY,
+                Vector3::ONE,
+            ),
             ..Bone3D::new()
         },
         Bone3D {
             parent: 0,
             rest: Transform3D::new(
+                Vector3::new(0.0, 0.0, 3.0),
+                Quaternion::IDENTITY,
+                Vector3::ONE,
+            ),
+            pose: Transform3D::new(
                 Vector3::new(0.0, 0.0, 3.0),
                 Quaternion::IDENTITY,
                 Vector3::ONE,
@@ -237,6 +247,11 @@ fn bone_attachment_3d_child_follows_bone_global_transform() {
             Quaternion::IDENTITY,
             Vector3::ONE,
         ),
+        pose: Transform3D::new(
+            Vector3::new(0.0, 2.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        ),
         ..Bone3D::new()
     }];
     let skeleton_id = runtime
@@ -282,7 +297,7 @@ fn bone_attachment_3d_child_follows_bone_global_transform() {
     assert!(approx(child_global.position.z, 5.0));
 
     let _ = runtime.with_base_node_mut::<Skeleton3D, _, _>(skeleton_id, |skeleton| {
-        skeleton.bones[0].rest.position = Vector3::new(0.0, 4.0, 0.0);
+        skeleton.bones[0].pose.position = Vector3::new(0.0, 4.0, 0.0);
     });
     runtime.update(1.0 / 60.0);
 

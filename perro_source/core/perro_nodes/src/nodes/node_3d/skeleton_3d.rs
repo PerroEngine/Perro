@@ -8,6 +8,7 @@ pub struct Bone3D {
     pub name: Cow<'static, str>,
     pub parent: i32,
     pub rest: Transform3D,
+    pub pose: Transform3D,
     pub inv_bind: Transform3D,
 }
 
@@ -17,6 +18,7 @@ impl Bone3D {
             name: Cow::Borrowed("Bone"),
             parent: -1,
             rest: Transform3D::IDENTITY,
+            pose: Transform3D::IDENTITY,
             inv_bind: Transform3D::IDENTITY,
         }
     }

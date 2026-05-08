@@ -2817,6 +2817,7 @@ dependencies = [
 name = "perro_internal_updates"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "perro_animation",
  "perro_ids",
  "perro_input",

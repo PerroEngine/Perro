@@ -79,6 +79,25 @@ impl Runtime {
                 }
             }
         }
+        let dirty_skeletons = traversal_ids
+            .iter()
+            .copied()
+            .filter(|id| {
+                self.nodes
+                    .get(*id)
+                    .is_some_and(|node| matches!(node.data, SceneNodeData::Skeleton3D(_)))
+            })
+            .collect::<Vec<_>>();
+        if !dirty_skeletons.is_empty() {
+            for (id, node) in self.nodes.iter() {
+                let SceneNodeData::MeshInstance3D(mesh) = &node.data else {
+                    continue;
+                };
+                if dirty_skeletons.contains(&mesh.skeleton) && traversal_seen.insert(id) {
+                    traversal_ids.push(id);
+                }
+            }
+        }
         let mut visible_now = std::mem::take(&mut self.render_3d.visible_now);
         visible_now.clear();
         visible_now.extend(self.render_3d.prev_visible.iter().copied());
@@ -974,7 +993,7 @@ fn build_skeleton_palette(
     global.clear();
     global.resize(skeleton.bones.len(), Mat4::IDENTITY);
     for (i, bone) in skeleton.bones.iter().enumerate() {
-        let local = bone.rest.to_mat4();
+        let local = bone.pose.to_mat4();
         if bone.parent >= 0 {
             let parent = bone.parent as usize;
             if parent < global.len() {

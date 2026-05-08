@@ -2,6 +2,7 @@
 pub mod ambient_light_3d;
 pub mod bone_attachment_3d;
 pub mod camera_3d;
+pub mod ik_target_3d;
 pub mod mesh_instance_3d;
 pub mod multi_mesh_instance_3d;
 pub mod node_3d_base;
@@ -20,6 +21,7 @@ pub mod spot_light_3d;
 pub use ambient_light_3d::*;
 pub use bone_attachment_3d::*;
 pub use camera_3d::*;
+pub use ik_target_3d::*;
 pub use mesh_instance_3d::*;
 pub use multi_mesh_instance_3d::*;
 pub use node_3d_base::*;

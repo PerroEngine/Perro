@@ -14,6 +14,7 @@ pub enum NodeField {
     MeshInstance3D(MeshInstance3DField),
     Skeleton3D(Skeleton3DField),
     BoneAttachment3D(BoneAttachment3DField),
+    IKTarget3D(IKTarget3DField),
     Camera3D(Camera3DField),
     ParticleEmitter3D(ParticleEmitter3DField),
     AnimationPlayer(AnimationPlayerField),
@@ -111,6 +112,17 @@ pub enum Skeleton3DField {
 pub enum BoneAttachment3DField {
     Skeleton,
     BoneIndex,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IKTarget3DField {
+    Skeleton,
+    BoneIndex,
+    ChainLength,
+    Iterations,
+    Tolerance,
+    Weight,
+    MatchRotation,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -331,6 +343,16 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "bone" | "bone_index" => Some(NodeField::BoneAttachment3D(
                 BoneAttachment3DField::BoneIndex,
             )),
+            _ => None,
+        },
+        NodeType::IKTarget3D => match field {
+            "skeleton" => Some(NodeField::IKTarget3D(IKTarget3DField::Skeleton)),
+            "bone" | "bone_index" => Some(NodeField::IKTarget3D(IKTarget3DField::BoneIndex)),
+            "chain_length" => Some(NodeField::IKTarget3D(IKTarget3DField::ChainLength)),
+            "iterations" => Some(NodeField::IKTarget3D(IKTarget3DField::Iterations)),
+            "tolerance" => Some(NodeField::IKTarget3D(IKTarget3DField::Tolerance)),
+            "weight" => Some(NodeField::IKTarget3D(IKTarget3DField::Weight)),
+            "match_rotation" => Some(NodeField::IKTarget3D(IKTarget3DField::MatchRotation)),
             _ => None,
         },
         NodeType::Camera3D => match field {

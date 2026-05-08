@@ -11,3 +11,4 @@ perro_resource_context = { path = "../../api_modules/perro_resource_context" }
 perro_input = { path = "../../api_modules/perro_input" }
 perro_animation = { path = "../../core/perro_animation" }
 perro_scene = { path = "../perro_scene" }
+glam = "0.31.0"

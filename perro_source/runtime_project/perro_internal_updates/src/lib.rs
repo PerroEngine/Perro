@@ -14,6 +14,7 @@ pub fn internal_update_node<RT, RS, IP>(
 {
     nodes::animation_player::internal_update(ctx, res, ipt, id);
     nodes::animation_tree::internal_update(ctx, res, ipt, id);
+    nodes::ik_target_3d::internal_update(ctx, id);
     nodes::bone_attachment_3d::internal_update(ctx, id);
     nodes::particle_emitter_3d::internal_update(ctx, res, ipt, id);
 }

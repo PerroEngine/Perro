@@ -520,4 +520,54 @@ mod tests {
         }
     }
 
+    #[test]
+    fn scene_loader_builds_ik_target_3d_fields_and_skeleton_link() {
+        let scene = Parser::new(
+            r#"
+            @root = Rig
+            [Rig]
+            [Skeleton3D]
+                skeleton = "res://rig.pskel"
+            [/Skeleton3D]
+            [/Rig]
+
+            [HandTarget]
+            [IKTarget3D]
+                skeleton = "Rig"
+                bone = 5
+                chain_length = 3
+                iterations = 12
+                tolerance = 0.05
+                weight = 0.75
+                match_rotation = false
+            [/IKTarget3D]
+            [/HandTarget]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        })
+        .expect("prepare scene");
+
+        let target = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "HandTarget")
+            .expect("ik target node");
+        match &target.node.data {
+            SceneNodeData::IKTarget3D(ik) => {
+                assert_eq!(ik.bone_index, 5);
+                assert_eq!(ik.chain_length, 3);
+                assert_eq!(ik.iterations, 12);
+                assert_eq!(ik.tolerance, 0.05);
+                assert_eq!(ik.weight, 0.75);
+                assert!(!ik.match_rotation);
+            }
+            other => panic!("expected IKTarget3D node, got {other:?}"),
+        }
+        assert!(target.ik_target_skeleton_target.is_some());
+    }
+
 }
