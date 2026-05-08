@@ -18,9 +18,13 @@ fn as_object(value: &SceneValue) -> Option<&[(Cow<'static, str>, SceneValue)]> {
     }
 }
 
-fn parse_frame_header(line: &str) -> Option<u32> {
+fn parse_frame_header(line: &str) -> Option<(u32, AnimationKeyMode)> {
     let inner = line.strip_prefix("[Frame")?.strip_suffix(']')?;
-    inner.trim().parse::<u32>().ok()
+    let inner = inner.trim();
+    if let Some(frame) = inner.strip_suffix('?') {
+        return frame.trim().parse::<u32>().ok().map(|f| (f, AnimationKeyMode::Open));
+    }
+    inner.parse::<u32>().ok().map(|f| (f, AnimationKeyMode::Closed))
 }
 
 fn is_frame_footer(line: &str) -> bool {
@@ -42,4 +46,3 @@ fn strip_comment(line: &str) -> &str {
     }
     &line[..cut]
 }
-

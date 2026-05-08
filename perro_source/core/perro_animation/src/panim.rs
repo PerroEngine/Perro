@@ -1,7 +1,7 @@
 use crate::{
     AnimationBoneSelector, AnimationBoneTarget, AnimationClip, AnimationEase, AnimationEvent,
-    AnimationEventScope, AnimationFrameEvent, AnimationInterpolation, AnimationObject,
-    AnimationObjectKey, AnimationObjectTrack, AnimationParam, AnimationTrackValue,
+    AnimationEventScope, AnimationFrameEvent, AnimationInterpolation, AnimationKeyMode,
+    AnimationObject, AnimationObjectKey, AnimationObjectTrack, AnimationParam, AnimationTrackValue,
 };
 use perro_scene::{
     Camera3DField, Light3DField, MeshInstance3DField, Node2DField, Node3DField, NodeField,

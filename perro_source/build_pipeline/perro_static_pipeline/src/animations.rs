@@ -1,8 +1,8 @@
 use crate::{StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir};
 use perro_animation::{
     AnimationBoneSelector, AnimationEase, AnimationEvent, AnimationEventScope,
-    AnimationInterpolation, AnimationObjectKey, AnimationObjectTrack, AnimationParam,
-    AnimationTrackValue,
+    AnimationInterpolation, AnimationKeyMode, AnimationObjectKey, AnimationObjectTrack,
+    AnimationParam, AnimationTrackValue,
 };
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::NodeField;
@@ -106,6 +106,13 @@ fn optimize_animation_track_keys(track: &mut AnimationObjectTrack) {
     if track.keys.len() < 3 {
         return;
     }
+    if !track
+        .keys
+        .iter()
+        .all(|k| k.mode == AnimationKeyMode::Closed)
+    {
+        return;
+    }
 
     let mut keys = track.keys.to_vec();
     let mut index = 1usize;
@@ -170,6 +177,9 @@ fn sample_track_value_from_keys(
     let prev_index = prev_index.or(Some(0))?;
     let prev_key = &keys[prev_index];
     let prev = &prev_key.value;
+    if prev_key.mode == AnimationKeyMode::Open && frame != prev_key.frame {
+        return None;
+    }
     match prev_key.interpolation {
         AnimationInterpolation::Step => Some(prev.clone()),
         AnimationInterpolation::Linear => {
@@ -338,8 +348,9 @@ fn emit_static_animation_const(
         for key in track.keys.as_ref() {
             let _ = writeln!(
                 tracks_buf,
-                "    AnimationObjectKey {{ frame: {}, interpolation: {}, ease: {}, value: {} }},",
+                "    AnimationObjectKey {{ frame: {}, mode: {}, interpolation: {}, ease: {}, value: {} }},",
                 key.frame,
+                emit_key_mode(key.mode),
                 emit_interpolation(key.interpolation),
                 emit_ease(key.ease),
                 emit_track_value(&key.value)
@@ -618,6 +629,10 @@ fn emit_interpolation(value: perro_animation::AnimationInterpolation) -> String 
     format!("AnimationInterpolation::{value:?}")
 }
 
+fn emit_key_mode(value: perro_animation::AnimationKeyMode) -> String {
+    format!("AnimationKeyMode::{value:?}")
+}
+
 fn emit_ease(value: perro_animation::AnimationEase) -> String {
     format!("AnimationEase::{value:?}")
 }
@@ -667,7 +682,8 @@ fn escape_str(input: &str) -> String {
 mod tests {
     use super::*;
     use perro_animation::{
-        AnimationEase, AnimationInterpolation, AnimationObjectTrack, AnimationTrackValue,
+        AnimationEase, AnimationInterpolation, AnimationKeyMode, AnimationObjectTrack,
+        AnimationTrackValue,
     };
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -705,6 +721,7 @@ fps = 24
     ) -> AnimationObjectKey {
         AnimationObjectKey {
             frame,
+            mode: AnimationKeyMode::Closed,
             interpolation,
             ease,
             value,
@@ -853,6 +870,57 @@ fps = 24
         track.keys = Cow::Owned(original.clone());
         optimize_animation_track_keys(&mut track);
         assert_track_sampling_equal(&original, &track.keys);
+    }
+
+    #[test]
+    fn optimize_track_keys_does_not_optimize_tracks_with_open_keys() {
+        let mut track = AnimationObjectTrack::default();
+        let mut original = vec![
+            key(
+                0,
+                AnimationInterpolation::Linear,
+                AnimationEase::Linear,
+                AnimationTrackValue::F32(0.0),
+            ),
+            key(
+                50,
+                AnimationInterpolation::Linear,
+                AnimationEase::Linear,
+                AnimationTrackValue::F32(5.0),
+            ),
+            key(
+                100,
+                AnimationInterpolation::Linear,
+                AnimationEase::Linear,
+                AnimationTrackValue::F32(10.0),
+            ),
+        ];
+        original[0].mode = AnimationKeyMode::Open;
+        track.keys = Cow::Owned(original.clone());
+        optimize_animation_track_keys(&mut track);
+        assert_eq!(track.keys.len(), 3);
+        assert_eq!(track.keys[0].mode, AnimationKeyMode::Open);
+    }
+
+    #[test]
+    fn sample_track_value_returns_none_after_open_key_segment_start() {
+        let mut keys = vec![
+            key(
+                0,
+                AnimationInterpolation::Linear,
+                AnimationEase::Linear,
+                AnimationTrackValue::F32(0.0),
+            ),
+            key(
+                10,
+                AnimationInterpolation::Linear,
+                AnimationEase::Linear,
+                AnimationTrackValue::F32(3.0),
+            ),
+        ];
+        keys[0].mode = AnimationKeyMode::Open;
+        assert!(sample_track_value_from_keys(&keys, 0).is_some());
+        assert!(sample_track_value_from_keys(&keys, 5).is_none());
     }
 
     #[test]

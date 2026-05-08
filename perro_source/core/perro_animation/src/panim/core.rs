@@ -56,9 +56,9 @@ impl<'a> PanimParser<'a> {
                 objects = parsed_objects;
                 continue;
             }
-            if let Some(frame) = parse_frame_header(line) {
+            if let Some((frame, key_mode)) = parse_frame_header(line) {
                 max_frame = max_frame.max(frame);
-                frame_actions.extend(self.parse_frame_block(line_no, frame, &object_types)?);
+                frame_actions.extend(self.parse_frame_block(line_no, frame, key_mode, &object_types)?);
                 continue;
             }
 
@@ -188,6 +188,7 @@ impl<'a> PanimParser<'a> {
         &mut self,
         start_line: usize,
         frame: u32,
+        key_mode: AnimationKeyMode,
         object_types: &HashMap<String, String>,
     ) -> Result<Vec<FrameAction>, String> {
         let mut actions = Vec::new();
@@ -202,7 +203,7 @@ impl<'a> PanimParser<'a> {
             }
 
             if line.starts_with('@') && line.ends_with('{') {
-                actions.extend(self.parse_object_block(line_no, frame, line, object_types)?);
+                actions.extend(self.parse_object_block(line_no, frame, key_mode, line, object_types)?);
                 continue;
             }
 
@@ -227,6 +228,7 @@ impl<'a> PanimParser<'a> {
         &mut self,
         start_line: usize,
         frame: u32,
+        key_mode: AnimationKeyMode,
         header: &str,
         object_types: &HashMap<String, String>,
     ) -> Result<Vec<FrameAction>, String> {
@@ -283,7 +285,7 @@ impl<'a> PanimParser<'a> {
                         continue;
                     }
                     actions.push(parse_object_field_action(
-                        frame, &object, node_type, k, &value, line_no,
+                        frame, key_mode, &object, node_type, k, &value, line_no,
                     )?);
                 }
             }
@@ -339,4 +341,3 @@ fn parse_top_level_var_assign(line: &str) -> Option<(&str, &str)> {
     }
     Some((name, value))
 }
-

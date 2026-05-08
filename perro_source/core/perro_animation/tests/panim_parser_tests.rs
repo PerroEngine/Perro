@@ -1,5 +1,5 @@
 use perro_animation::{
-    AnimationBoneSelector, AnimationEase, AnimationInterpolation, AnimationParam,
+    AnimationBoneSelector, AnimationEase, AnimationInterpolation, AnimationKeyMode, AnimationParam,
     AnimationTrackValue, parse_panim,
 };
 use perro_scene::{MeshInstance3DField, Node2DField, Node3DField, NodeField, Sprite2DField};
@@ -255,6 +255,7 @@ default_ease = "ease_in_out"
     position.ease = "ease_in"
     position = (0,0,0)
 }
+
 [/Frame0]
 
 [Frame10]
@@ -715,4 +716,32 @@ fps = 30
     assert_eq!(track.keys[1].interpolation, AnimationInterpolation::Step);
     assert_eq!(track.keys[0].ease, AnimationEase::EaseIn);
     assert_eq!(track.keys[1].ease, AnimationEase::EaseIn);
+}
+
+#[test]
+fn parses_open_frame_header_shorthand() {
+    let src = r#"
+[Animation]
+name = "OpenFrame"
+fps = 30
+[/Animation]
+
+[Objects]
+@Player = Node2D
+[/Objects]
+
+[Frame0?]
+@Player {
+    position = (2, 3)
+}
+[/Frame0]
+"#;
+    let clip = parse_panim(src).expect("expected valid panim");
+    let track = clip
+        .object_tracks
+        .iter()
+        .find(|t| matches!(t.field, NodeField::Node2D(Node2DField::Position)))
+        .expect("position track");
+    assert_eq!(track.keys[0].mode, AnimationKeyMode::Open);
+    assert!(track.keys[0].sampled_value().is_none());
 }
