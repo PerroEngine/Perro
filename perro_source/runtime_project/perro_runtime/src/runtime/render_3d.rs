@@ -89,6 +89,15 @@ impl Runtime {
         self.render_3d.removed_nodes = removed_nodes;
         let mut skeleton_cache = std::mem::take(&mut self.render_3d.skeleton_cache_scratch);
         skeleton_cache.clear();
+        let mut skeleton_global_scratch =
+            std::mem::take(&mut self.render_3d.skeleton_global_scratch);
+        skeleton_global_scratch.clear();
+        let mut skeleton_palette_scratch =
+            std::mem::take(&mut self.render_3d.skeleton_palette_scratch);
+        skeleton_palette_scratch.clear();
+        let mut dense_instance_pose_scratch =
+            std::mem::take(&mut self.render_3d.dense_instance_pose_scratch);
+        dense_instance_pose_scratch.clear();
 
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
@@ -347,7 +356,7 @@ impl Runtime {
                 Option<bool>,
                 LocalMeshInstanceData,
             );
-            let mesh_data: Option<LocalMeshData> =
+            let mesh_data: Option<LocalMeshData> = if effective_visible {
                 self.nodes.get(node).and_then(|node| match &node.data {
                     SceneNodeData::MeshInstance3D(mesh) => Some((
                         mesh.mesh,
@@ -363,10 +372,16 @@ impl Runtime {
                         mesh.meshlet_override,
                         LocalMeshInstanceData::Dense {
                             instance_scale: mesh.instance_scale.max(0.0001),
-                            poses: Arc::from(
-                                mesh.instances
-                                    .iter()
-                                    .map(|instance| DenseInstancePose3D {
+                            poses: {
+                                dense_instance_pose_scratch.clear();
+                                if dense_instance_pose_scratch.capacity() < mesh.instances.len() {
+                                    dense_instance_pose_scratch.reserve(
+                                        mesh.instances.len()
+                                            - dense_instance_pose_scratch.capacity(),
+                                    );
+                                }
+                                dense_instance_pose_scratch.extend(mesh.instances.iter().map(
+                                    |instance| DenseInstancePose3D {
                                         position: [instance.0.x, instance.0.y, instance.0.z],
                                         rotation: [
                                             instance.1.x,
@@ -374,14 +389,17 @@ impl Runtime {
                                             instance.1.z,
                                             instance.1.w,
                                         ],
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .into_boxed_slice(),
-                            ),
+                                    },
+                                ));
+                                Arc::from(dense_instance_pose_scratch.as_slice())
+                            },
                         },
                     )),
                     _ => None,
-                });
+                })
+            } else {
+                None
+            };
             if let Some((mesh, surfaces, skeleton, meshlet_override, local_instances)) = mesh_data
                 && effective_visible
                 && let Some((mesh, resolved_surfaces)) =
@@ -423,9 +441,16 @@ impl Runtime {
                 {
                     if let Some(cached) = skeleton_cache.get(&skeleton) {
                         Some(cached.clone())
-                    } else if let Some(palette) = build_skeleton_palette(&self.nodes, skeleton) {
+                    } else if build_skeleton_palette(
+                        &self.nodes,
+                        skeleton,
+                        &mut skeleton_global_scratch,
+                        &mut skeleton_palette_scratch,
+                    )
+                    .is_some()
+                    {
                         let palette = SkeletonPalette {
-                            matrices: Arc::from(palette.into_boxed_slice()),
+                            matrices: Arc::from(skeleton_palette_scratch.as_slice()),
                         };
                         skeleton_cache.insert(skeleton, palette.clone());
                         Some(palette)
@@ -645,6 +670,12 @@ impl Runtime {
         self.render_3d.traversal_ids = traversal_ids;
         skeleton_cache.clear();
         self.render_3d.skeleton_cache_scratch = skeleton_cache;
+        skeleton_global_scratch.clear();
+        self.render_3d.skeleton_global_scratch = skeleton_global_scratch;
+        skeleton_palette_scratch.clear();
+        self.render_3d.skeleton_palette_scratch = skeleton_palette_scratch;
+        dense_instance_pose_scratch.clear();
+        self.render_3d.dense_instance_pose_scratch = dense_instance_pose_scratch;
     }
 
     fn remove_no_longer_visible_render_3d_nodes(&mut self, visible_now: &ahash::AHashSet<NodeID>) {
@@ -875,7 +906,9 @@ impl Runtime {
 fn build_skeleton_palette(
     nodes: &crate::cns::NodeArena,
     skeleton_id: NodeID,
-) -> Option<Vec<[[f32; 4]; 4]>> {
+    global: &mut Vec<Mat4>,
+    out: &mut Vec<[[f32; 4]; 4]>,
+) -> Option<()> {
     let skeleton_node = nodes.get(skeleton_id)?;
     let skeleton = match &skeleton_node.data {
         SceneNodeData::Skeleton3D(skeleton) => skeleton,
@@ -885,7 +918,8 @@ fn build_skeleton_palette(
         return None;
     }
 
-    let mut global = vec![Mat4::IDENTITY; skeleton.bones.len()];
+    global.clear();
+    global.resize(skeleton.bones.len(), Mat4::IDENTITY);
     for (i, bone) in skeleton.bones.iter().enumerate() {
         let local = bone.rest.to_mat4();
         if bone.parent >= 0 {
@@ -900,12 +934,15 @@ fn build_skeleton_palette(
         }
     }
 
-    let mut out = Vec::with_capacity(skeleton.bones.len());
+    out.clear();
+    if out.capacity() < skeleton.bones.len() {
+        out.reserve(skeleton.bones.len() - out.capacity());
+    }
     for (i, bone) in skeleton.bones.iter().enumerate() {
         let joint = global[i] * bone.inv_bind.to_mat4();
         out.push(joint.to_cols_array_2d());
     }
-    Some(out)
+    Some(())
 }
 
 fn collision_debug_edge_node(node: NodeID, index: u32) -> NodeID {

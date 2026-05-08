@@ -136,6 +136,7 @@ pub struct DrawFrameTiming {
 struct FrameState {
     pending_commands: Vec<RenderCommand>,
     scratch_commands: Vec<RenderCommand>,
+    scratch_late_overlay_commands: Vec<RenderCommand>,
 }
 
 impl FrameState {
@@ -726,9 +727,12 @@ impl PerroGraphics {
         I: IntoIterator<Item = RenderCommand>,
     {
         let total_start = Instant::now();
-        let late_overlay_commands: Vec<RenderCommand> = late_overlay_commands.into_iter().collect();
+        let mut late_overlay_pending =
+            std::mem::take(&mut self.frame.scratch_late_overlay_commands);
+        late_overlay_pending.clear();
+        late_overlay_pending.extend(late_overlay_commands);
         let has_pending = !self.frame.pending_commands.is_empty();
-        let has_late_overlay = !late_overlay_commands.is_empty()
+        let has_late_overlay = !late_overlay_pending.is_empty()
             || self.late_overlay_2d.retained_sprite_count() > 0
             || !self.late_overlay_2d.retained_rects().is_empty();
         let has_continuous_updates = self.renderer_3d.has_active_sky_animation();
@@ -745,6 +749,7 @@ impl PerroGraphics {
             {
                 self.redraw_requested = !gpu.render_idle_clear();
             }
+            self.frame.scratch_late_overlay_commands = late_overlay_pending;
             return Some(DrawFrameTiming {
                 total: total_start.elapsed(),
                 idle_clear: true,
@@ -752,6 +757,7 @@ impl PerroGraphics {
             });
         }
         if !has_pending && !has_continuous_updates && !self.redraw_requested {
+            self.frame.scratch_late_overlay_commands = late_overlay_pending;
             return Some(DrawFrameTiming {
                 total: total_start.elapsed(),
                 idle_clear: true,
@@ -795,7 +801,8 @@ impl PerroGraphics {
         }
         let process_start = Instant::now();
         self.process_commands(pending.drain(..));
-        self.process_late_overlay_commands(late_overlay_commands);
+        self.process_late_overlay_commands(late_overlay_pending.drain(..));
+        self.frame.scratch_late_overlay_commands = late_overlay_pending;
         let process_commands = process_start.elapsed();
         let prepare_start = Instant::now();
         let (camera_2d, _stats, upload) = self.renderer_2d.prepare_frame(&self.resources);

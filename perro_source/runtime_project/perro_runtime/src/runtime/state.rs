@@ -416,6 +416,9 @@ pub(crate) struct Render3DState {
     pub(crate) retained_spot_lights: AHashMap<NodeID, SpotLight3DState>,
     pub(crate) retained_mesh_draws: AHashMap<NodeID, RetainedMeshDrawState>,
     pub(crate) skeleton_cache_scratch: AHashMap<NodeID, SkeletonPalette>,
+    pub(crate) skeleton_global_scratch: Vec<glam::Mat4>,
+    pub(crate) skeleton_palette_scratch: Vec<[[f32; 4]; 4]>,
+    pub(crate) dense_instance_pose_scratch: Vec<DenseInstancePose3D>,
     pub(crate) removed_nodes: Vec<NodeID>,
     pub(crate) force_full_scan_once: bool,
 }
@@ -440,6 +443,9 @@ impl Render3DState {
             retained_spot_lights: AHashMap::default(),
             retained_mesh_draws: AHashMap::default(),
             skeleton_cache_scratch: AHashMap::default(),
+            skeleton_global_scratch: Vec::new(),
+            skeleton_palette_scratch: Vec::new(),
+            dense_instance_pose_scratch: Vec::new(),
             removed_nodes: Vec::new(),
             force_full_scan_once: false,
         }
