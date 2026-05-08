@@ -1,7 +1,7 @@
 use crate::prelude::*;
-use perro_nodes::{AnimationTree, AnimationTreeSlotState};
+use perro_nodes::{AnimationMixer, AnimationMixerSlotState};
 
-type SelfNodeType = AnimationTree;
+type SelfNodeType = AnimationMixer;
 
 pub fn internal_update<RT, R, IP>(
     ctx: &mut RuntimeWindow<'_, RT>,
@@ -16,7 +16,7 @@ pub fn internal_update<RT, R, IP>(
     let delta = delta_time!(ctx).max(0.0);
     with_node_mut!(ctx, SelfNodeType, id, |tree| {
         for slot in &mut tree.slots {
-            if slot.state == AnimationTreeSlotState::Playing {
+            if slot.state == AnimationMixerSlotState::Playing {
                 slot.time_seconds += delta * slot.speed;
             }
         }

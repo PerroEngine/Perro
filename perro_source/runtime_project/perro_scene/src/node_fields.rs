@@ -16,6 +16,7 @@ pub enum NodeField {
     Camera3D(Camera3DField),
     ParticleEmitter3D(ParticleEmitter3DField),
     AnimationPlayer(AnimationPlayerField),
+    AnimationMixer(AnimationMixerField),
     Light3D(Light3DField),
     Sky3D(Sky3DField),
     RayLight3D(RayLight3DField),
@@ -145,6 +146,11 @@ pub enum AnimationPlayerField {
     Speed,
     Paused,
     Playback,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnimationMixerField {
+    Mixer,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -360,6 +366,10 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "speed" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Speed)),
             "paused" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Paused)),
             "playback" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Playback)),
+            _ => None,
+        },
+        NodeType::AnimationMixer => match field {
+            "mixer" => Some(NodeField::AnimationMixer(AnimationMixerField::Mixer)),
             _ => None,
         },
         NodeType::AmbientLight3D => resolve_light3d_common(field).map(NodeField::Light3D),

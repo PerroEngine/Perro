@@ -93,3 +93,22 @@ fn parse_animation_bindings(value: &SceneValue) -> Option<Vec<(String, String)>>
 
     Some(out)
 }
+
+
+fn build_animation_mixer(data: &SceneDefNodeData) -> AnimationMixer {
+    let mut node = AnimationMixer::new(0);
+    if let Some(source) = extract_animation_mixer_source(data) {
+        node.set_mix_clip(perro_ids::AnimationMixClipID::from_u64(perro_ids::string_to_u64(&source)));
+    }
+    node
+}
+
+fn extract_animation_mixer_source(data: &SceneDefNodeData) -> Option<String> {
+    if data.ty != "AnimationMixer" { return None; }
+    data.fields.iter().find_map(|(name, value)| {
+        (resolve_node_field("AnimationMixer", name)
+            == Some(NodeField::AnimationMixer(AnimationMixerField::Mixer)))
+            .then(|| as_asset_source(value))
+            .flatten()
+    })
+}

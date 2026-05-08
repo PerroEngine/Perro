@@ -1,8 +1,8 @@
-use perro_ids::{AnimationBlendTreeID, AnimationID};
+use perro_ids::{AnimationID, AnimationMixClipID};
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum AnimationTreeSlotState {
+pub enum AnimationMixerSlotState {
     Playing,
     Paused,
     #[default]
@@ -10,28 +10,28 @@ pub enum AnimationTreeSlotState {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct AnimationTreeSlot {
+pub struct AnimationMixerSlot {
     pub animation: AnimationID,
     pub time_seconds: f32,
     pub speed: f32,
-    pub state: AnimationTreeSlotState,
+    pub state: AnimationMixerSlotState,
     pub looping: bool,
     pub weight: f32,
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct AnimationTreeGraph {
-    pub nodes: Vec<AnimationTreeNode>,
+pub struct AnimationMixerGraph {
+    pub nodes: Vec<AnimationMixerNode>,
     pub output: Option<usize>,
 }
 
 #[derive(Clone, Debug)]
-pub struct AnimationTreeNode {
-    pub kind: AnimationTreeNodeKind,
+pub struct AnimationMixerNode {
+    pub kind: AnimationMixerNodeKind,
 }
 
 #[derive(Clone, Debug)]
-pub enum AnimationTreeNodeKind {
+pub enum AnimationMixerNodeKind {
     SlotRef {
         slot_index: usize,
     },
@@ -52,55 +52,55 @@ pub enum AnimationTreeNodeKind {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct AnimationTreeInternalData {
+pub struct AnimationMixerInternalData {
     pub last_resolved_animation: AnimationID,
 }
 
 #[derive(Clone, Debug)]
-pub struct AnimationTree {
-    pub slots: Vec<AnimationTreeSlot>,
-    pub graph: AnimationTreeGraph,
-    pub blend_tree: AnimationBlendTreeID,
+pub struct AnimationMixer {
+    pub slots: Vec<AnimationMixerSlot>,
+    pub graph: AnimationMixerGraph,
+    pub blend_tree: AnimationMixClipID,
     pub reverse_slot_lookup: HashMap<AnimationID, Vec<usize>>,
-    pub internal: AnimationTreeInternalData,
+    pub internal: AnimationMixerInternalData,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AnimationTreeError {
+pub enum AnimationMixerError {
     InvalidSlot(usize),
     InvalidNode(usize),
     InvalidNodeInput { node_id: usize, input_index: usize },
 }
 
-impl AnimationTree {
+impl AnimationMixer {
     pub fn new(slot_count: usize) -> Self {
         Self {
             slots: (0..slot_count)
-                .map(|_| AnimationTreeSlot {
+                .map(|_| AnimationMixerSlot {
                     speed: 1.0,
                     looping: true,
                     weight: 1.0,
-                    ..AnimationTreeSlot::default()
+                    ..AnimationMixerSlot::default()
                 })
                 .collect(),
-            graph: AnimationTreeGraph::default(),
-            blend_tree: AnimationBlendTreeID::nil(),
+            graph: AnimationMixerGraph::default(),
+            blend_tree: AnimationMixClipID::nil(),
             reverse_slot_lookup: HashMap::new(),
-            internal: AnimationTreeInternalData::default(),
+            internal: AnimationMixerInternalData::default(),
         }
     }
 
-    pub fn set_blend_tree(&mut self, blend_tree: AnimationBlendTreeID) {
-        self.blend_tree = blend_tree;
+    pub fn set_mix_clip(&mut self, mix_clip: AnimationMixClipID) {
+        self.blend_tree = mix_clip;
     }
 
     pub fn set_slot_animation(
         &mut self,
         slot_index: usize,
         animation: AnimationID,
-    ) -> Result<(), AnimationTreeError> {
+    ) -> Result<(), AnimationMixerError> {
         let Some(slot) = self.slots.get_mut(slot_index) else {
-            return Err(AnimationTreeError::InvalidSlot(slot_index));
+            return Err(AnimationMixerError::InvalidSlot(slot_index));
         };
         if !slot.animation.is_nil() {
             if let Some(v) = self.reverse_slot_lookup.get_mut(&slot.animation) {
@@ -121,23 +121,23 @@ impl AnimationTree {
             .map_or(&[], |v| v.as_slice())
     }
 
-    pub fn play_slot(&mut self, slot_index: usize) -> Result<(), AnimationTreeError> {
-        self.set_slot_state(slot_index, AnimationTreeSlotState::Playing)
+    pub fn play_slot(&mut self, slot_index: usize) -> Result<(), AnimationMixerError> {
+        self.set_slot_state(slot_index, AnimationMixerSlotState::Playing)
     }
-    pub fn pause_slot(&mut self, slot_index: usize) -> Result<(), AnimationTreeError> {
-        self.set_slot_state(slot_index, AnimationTreeSlotState::Paused)
+    pub fn pause_slot(&mut self, slot_index: usize) -> Result<(), AnimationMixerError> {
+        self.set_slot_state(slot_index, AnimationMixerSlotState::Paused)
     }
-    pub fn stop_slot(&mut self, slot_index: usize) -> Result<(), AnimationTreeError> {
-        self.set_slot_state(slot_index, AnimationTreeSlotState::Stopped)?;
+    pub fn stop_slot(&mut self, slot_index: usize) -> Result<(), AnimationMixerError> {
+        self.set_slot_state(slot_index, AnimationMixerSlotState::Stopped)?;
         self.seek_slot(slot_index, 0.0)
     }
     pub fn seek_slot(
         &mut self,
         slot_index: usize,
         time_seconds: f32,
-    ) -> Result<(), AnimationTreeError> {
+    ) -> Result<(), AnimationMixerError> {
         let Some(slot) = self.slots.get_mut(slot_index) else {
-            return Err(AnimationTreeError::InvalidSlot(slot_index));
+            return Err(AnimationMixerError::InvalidSlot(slot_index));
         };
         slot.time_seconds = time_seconds.max(0.0);
         Ok(())
@@ -145,17 +145,17 @@ impl AnimationTree {
 
     pub fn play_all(&mut self) {
         for slot in &mut self.slots {
-            slot.state = AnimationTreeSlotState::Playing;
+            slot.state = AnimationMixerSlotState::Playing;
         }
     }
     pub fn pause_all(&mut self) {
         for slot in &mut self.slots {
-            slot.state = AnimationTreeSlotState::Paused;
+            slot.state = AnimationMixerSlotState::Paused;
         }
     }
     pub fn stop_all(&mut self) {
         for slot in &mut self.slots {
-            slot.state = AnimationTreeSlotState::Stopped;
+            slot.state = AnimationMixerSlotState::Stopped;
             slot.time_seconds = 0.0;
         }
     }
@@ -181,15 +181,15 @@ impl AnimationTree {
         node_id: usize,
         input_index: usize,
         weight: f32,
-    ) -> Result<(), AnimationTreeError> {
+    ) -> Result<(), AnimationMixerError> {
         let Some(node) = self.graph.nodes.get_mut(node_id) else {
-            return Err(AnimationTreeError::InvalidNode(node_id));
+            return Err(AnimationMixerError::InvalidNode(node_id));
         };
         match &mut node.kind {
-            AnimationTreeNodeKind::BlendN { weights, .. }
-            | AnimationTreeNodeKind::AddN { weights, .. } => {
+            AnimationMixerNodeKind::BlendN { weights, .. }
+            | AnimationMixerNodeKind::AddN { weights, .. } => {
                 let Some(input) = weights.get_mut(input_index) else {
-                    return Err(AnimationTreeError::InvalidNodeInput {
+                    return Err(AnimationMixerError::InvalidNodeInput {
                         node_id,
                         input_index,
                     });
@@ -197,32 +197,32 @@ impl AnimationTree {
                 *input = weight;
                 Ok(())
             }
-            _ => Err(AnimationTreeError::InvalidNodeInput {
+            _ => Err(AnimationMixerError::InvalidNodeInput {
                 node_id,
                 input_index,
             }),
         }
     }
 
-    pub fn evaluate_output_animation(&self) -> Result<Option<AnimationID>, AnimationTreeError> {
+    pub fn evaluate_output_animation(&self) -> Result<Option<AnimationID>, AnimationMixerError> {
         let Some(output) = self.graph.output else {
             return Ok(None);
         };
         self.eval_node(output)
     }
 
-    fn eval_node(&self, node_id: usize) -> Result<Option<AnimationID>, AnimationTreeError> {
+    fn eval_node(&self, node_id: usize) -> Result<Option<AnimationID>, AnimationMixerError> {
         let Some(node) = self.graph.nodes.get(node_id) else {
-            return Err(AnimationTreeError::InvalidNode(node_id));
+            return Err(AnimationMixerError::InvalidNode(node_id));
         };
         match &node.kind {
-            AnimationTreeNodeKind::SlotRef { slot_index } => Ok(self
+            AnimationMixerNodeKind::SlotRef { slot_index } => Ok(self
                 .slots
                 .get(*slot_index)
                 .map(|s| s.animation)
                 .filter(|id| !id.is_nil())),
-            AnimationTreeNodeKind::BlendN { inputs, weights }
-            | AnimationTreeNodeKind::AddN { inputs, weights } => {
+            AnimationMixerNodeKind::BlendN { inputs, weights }
+            | AnimationMixerNodeKind::AddN { inputs, weights } => {
                 if inputs.is_empty() {
                     return Ok(None);
                 }
@@ -238,7 +238,7 @@ impl AnimationTree {
                 }
                 Ok(best.map(|v| v.0))
             }
-            AnimationTreeNodeKind::Invert { input } | AnimationTreeNodeKind::Output { input } => {
+            AnimationMixerNodeKind::Invert { input } | AnimationMixerNodeKind::Output { input } => {
                 self.eval_node(*input)
             }
         }
@@ -247,10 +247,10 @@ impl AnimationTree {
     fn set_slot_state(
         &mut self,
         slot_index: usize,
-        state: AnimationTreeSlotState,
-    ) -> Result<(), AnimationTreeError> {
+        state: AnimationMixerSlotState,
+    ) -> Result<(), AnimationMixerError> {
         let Some(slot) = self.slots.get_mut(slot_index) else {
-            return Err(AnimationTreeError::InvalidSlot(slot_index));
+            return Err(AnimationMixerError::InvalidSlot(slot_index));
         };
         slot.state = state;
         Ok(())
@@ -263,7 +263,7 @@ mod tests {
 
     #[test]
     fn animation_tree_core_api() {
-        let mut tree = AnimationTree::new(3);
+        let mut tree = AnimationMixer::new(3);
         assert_eq!(tree.slots.len(), 3);
         tree.set_slot_animation(0, AnimationID::from_u32(10))
             .unwrap();
@@ -282,4 +282,4 @@ mod tests {
     }
 }
 
-pub type AnimationMixer = AnimationTree;
+pub type AnimationTree = AnimationMixer;

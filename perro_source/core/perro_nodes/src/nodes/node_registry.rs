@@ -1,6 +1,6 @@
 use crate::ambient_light_3d::AmbientLight3D;
 use crate::animation_player::AnimationPlayer;
-use crate::animation_tree::AnimationTree;
+use crate::animation_tree::AnimationMixer;
 use crate::camera_2d::Camera2D;
 use crate::camera_3d::Camera3D;
 use crate::mesh_instance_3d::MeshInstance3D;
@@ -846,6 +846,6 @@ define_scene_nodes! {
     }
     resource: {
         AnimationPlayer => (None, AnimationPlayer, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
-        AnimationTree => (None, AnimationTree, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False)
+        AnimationMixer => (None, AnimationMixer, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False)
     }
 }
