@@ -25,6 +25,17 @@ script = "res://path/to/script.rs"
 [/name]
 ```
 
+## Base Template
+
+```text
+[node]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [Node]
+    [/Node]
+[/node]
+```
+
 ## Scenes Inside Scenes (`root_of`)
 
 `root_of` lets a node act like an **Imported Scene Instance** layered on top of a **Base Scene Template** root.
@@ -161,6 +172,9 @@ parent = PARENTKEY
 script = "res://path/to/script.rs"
     [StaticBody2D]
         enabled = true
+        friction = 0.7
+        restitution = 0.0
+        density = 1.0
         [Node2D]
             position = (0, 0)
             rotation = 0.0
@@ -184,6 +198,9 @@ script = "res://path/to/script.rs"
         angular_damping = 0.0
         can_sleep = true
         lock_rotation = false
+        friction = 0.7
+        restitution = 0.0
+        density = 1.0
         [Node2D]
             position = (0, 0)
             rotation = 0.0
@@ -244,6 +261,7 @@ script = "res://path/to/script.rs"
         ]
         model = "res://path/to/model.glb"
         skeleton = "SkeletonNodeName"
+        meshlets = true
         [Node3D]
             position = (0, 0, 0)
             rotation = (0, 0, 0, 1)
@@ -272,6 +290,7 @@ script = "res://path/to/script.rs"
         ]
         # instance count = instances.len()
         instance_scale = 1.0
+        meshlets = true
         instances = [
             {
                 position = (6, 0, 0)
@@ -342,6 +361,9 @@ parent = PARENTKEY
 script = "res://path/to/script.rs"
     [StaticBody3D]
         enabled = true
+        friction = 0.7
+        restitution = 0.0
+        density = 1.0
         [Node3D]
             position = (0, 0, 0)
             rotation = (0, 0, 0, 1)
@@ -404,6 +426,22 @@ script = "res://path/to/script.rs"
     [/Skeleton3D]
 [/skeleton3d]
 
+[bone_attachment_3d]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [BoneAttachment3D]
+        skeleton = "SkeletonNodeName"
+        bone = 0
+        # alt: bone_index = 0
+        [Node3D]
+            position = (0, 0, 0)
+            rotation = (0, 0, 0, 1)
+            scale = (1, 1, 1)
+            visible = true
+        [/Node3D]
+    [/BoneAttachment3D]
+[/bone_attachment_3d]
+
 [particle_emitter_3d]
 parent = PARENTKEY
 script = "res://path/to/script.rs"
@@ -447,6 +485,7 @@ script = "res://path/to/script.rs"
         visible = true
         input_enabled = true
         mouse_filter = "stop"
+        clip_children = false
         anchor = "center"
         position_ratio = (0.5, 0.5)
         size_ratio = (0.5, 0.5)
@@ -478,6 +517,7 @@ script = "res://path/to/script.rs"
             visible = true
             input_enabled = true
             mouse_filter = "stop"
+            clip_children = false
             anchor = "center"
             position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
@@ -520,6 +560,7 @@ script = "res://path/to/script.rs"
             visible = true
             input_enabled = true
             mouse_filter = "stop"
+            clip_children = false
             anchor = "center"
             position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
@@ -546,13 +587,18 @@ script = "res://path/to/script.rs"
     [UiLabel]
         text = ""
         color = (1, 1, 1, 1)
+        font_size = 16.0
         text_size_ratio = 0.5
+        font_relative = false
+        font_min_scale = 0.0
+        font_max_scale = inf
         text_h_align = "center"
         text_v_align = "center"
         [UiBox]
             visible = true
             input_enabled = true
             mouse_filter = "stop"
+            clip_children = false
             anchor = "center"
             position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
@@ -583,7 +629,11 @@ script = "res://path/to/script.rs"
         placeholder_color = (0.58, 0.62, 0.70, 1.0)
         selection_color = (0.25, 0.42, 0.85, 0.55)
         caret_color = (1, 1, 1, 1)
+        font_size = 16.0
         text_size_ratio = 0.5
+        font_relative = false
+        font_min_scale = 0.0
+        font_max_scale = inf
         text_padding = { left = 8 top = 6 right = 8 bottom = 6 }
         editable = true
         hover_signals = []
@@ -597,6 +647,7 @@ script = "res://path/to/script.rs"
             visible = true
             input_enabled = true
             mouse_filter = "stop"
+            clip_children = false
             anchor = "center"
             position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
@@ -627,7 +678,11 @@ script = "res://path/to/script.rs"
         placeholder_color = (0.58, 0.62, 0.70, 1.0)
         selection_color = (0.25, 0.42, 0.85, 0.55)
         caret_color = (1, 1, 1, 1)
+        font_size = 16.0
         text_size_ratio = 0.5
+        font_relative = false
+        font_min_scale = 0.0
+        font_max_scale = inf
         text_padding = { left = 8 top = 6 right = 8 bottom = 6 }
         editable = true
         hover_signals = []
@@ -641,6 +696,7 @@ script = "res://path/to/script.rs"
             visible = true
             input_enabled = true
             mouse_filter = "stop"
+            clip_children = false
             anchor = "center"
             position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
@@ -674,6 +730,7 @@ script = "res://path/to/script.rs"
             visible = true
             input_enabled = true
             mouse_filter = "stop"
+            clip_children = false
             anchor = "center"
             position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
@@ -706,6 +763,7 @@ script = "res://path/to/script.rs"
             visible = true
             input_enabled = true
             mouse_filter = "stop"
+            clip_children = false
             anchor = "center"
             position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
@@ -738,6 +796,7 @@ script = "res://path/to/script.rs"
             visible = true
             input_enabled = true
             mouse_filter = "stop"
+            clip_children = false
             anchor = "center"
             position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
@@ -769,6 +828,7 @@ script = "res://path/to/script.rs"
             visible = true
             input_enabled = true
             mouse_filter = "stop"
+            clip_children = false
             anchor = "center"
             position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
@@ -788,6 +848,75 @@ script = "res://path/to/script.rs"
         [/UiBox]
     [/UiGrid]
 [/ui_grid]
+
+[ui_tree_list]
+parent = PARENTKEY
+script = "res://path/to/script.rs"
+    [UiTreeList]
+        # roots, branches, and collapsed are usually set from script with NodeID values.
+        indent = 16.0
+        v_spacing = 0.0
+        [UiBox]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            clip_children = false
+            anchor = "center"
+            position_ratio = (0.5, 0.5)
+            size_ratio = (0.5, 0.5)
+            pivot_ratio = (0.5, 0.5)
+
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "left"
+            v_align = "top"
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiBox]
+    [/UiTreeList]
+[/ui_tree_list]
+```
+
+## Bone Attachment Example
+
+`BoneAttachment3D` binds to a `Skeleton3D` node plus bone index.
+Children then inherit that bone transform.
+Use it for socket nodes, like a sword in a hand.
+
+```text
+[CharacterSkeleton]
+parent = Character
+    [Skeleton3D]
+        skeleton = "res://characters/hero.glb:skeleton[0]"
+    [/Skeleton3D]
+[/CharacterSkeleton]
+
+[RightHandSocket]
+parent = Character
+    [BoneAttachment3D]
+        skeleton = "CharacterSkeleton"
+        bone = 15
+    [/BoneAttachment3D]
+[/RightHandSocket]
+
+[Sword]
+parent = RightHandSocket
+    [MeshInstance3D]
+        mesh = "res://weapons/sword.glb:mesh[0]"
+        material = "res://weapons/sword.pmat"
+        [Node3D]
+            position = (0.05, 0.0, 0.0)
+            rotation = (0, 0, 0, 1)
+            scale = (1, 1, 1)
+            visible = true
+        [/Node3D]
+    [/MeshInstance3D]
+[/Sword]
 ```
 
 ## Lights And Resource Templates

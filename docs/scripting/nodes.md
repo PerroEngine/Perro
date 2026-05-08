@@ -3,6 +3,13 @@
 This page lists the built-in node types and their purpose. Nodes store **data-only** state.
 Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 
+## Base Node
+
+`Node`
+
+- Generic non-spatial scene node.
+- Use it as a script/root grouping node when no 2D, 3D, UI, or resource data is needed.
+
 ## 2D Nodes
 
 `Node2D`
@@ -52,6 +59,13 @@ Physics 2D:
 - Scene authoring: `skeleton = "NodeName"` uses the **scene node name** and is resolved to a `NodeID` at load time.
 - Skinning only works if the mesh has proper vertex weights (`JOINTS_0/WEIGHTS_0`).
 
+`MultiMeshInstance3D`
+
+- Renders many copies of one mesh.
+- Uses shared mesh/material surface bindings.
+- `instances` stores per-instance position and rotation.
+- Use it for repeated static props, foliage, debris, or crowd-like non-skinned copies.
+
 `Camera3D`
 
 - Active 3D camera with projection settings.
@@ -92,6 +106,18 @@ Physics 3D:
 - Bones are loaded via `ResourceWindow::Skeletons().load_bones(source)`.
 - Typical flow: scene specifies a `skeleton` path, and scene loader fills `bones`.
 
+`BoneAttachment3D`
+
+- Follows one bone on a `Skeleton3D`.
+- Fields:
+  - `skeleton`: scene node name of the `Skeleton3D`.
+  - `bone` or `bone_index`: zero-based index into `Skeleton3D.bones`.
+- Runtime resolves `skeleton = "NodeName"` to a `NodeID` at load time.
+- Each internal update computes skeleton global transform + bone rest chain transform.
+- Attachment's global 3D transform is set to that bone transform.
+- Children of the attachment inherit that transform.
+- Use it for held gear, muzzle flashes, hit markers, socketed VFX, or any node that should follow a bone.
+
 ## UI Nodes
 
 UI nodes inherit from `UiBox` in the node registry:
@@ -100,6 +126,8 @@ UI nodes inherit from `UiBox` in the node registry:
 - `UiPanel`
 - `UiButton`
 - `UiLabel`
+- `UiTextBox`
+- `UiTextBlock`
 - `UiLayout`
 - `UiHLayout`
 - `UiVLayout`
@@ -111,6 +139,11 @@ Root UI nodes use the virtual viewport as parent.
 Each axis can be pixels or ratio, so `UiVector2::ratio(0.5, 0.5)` means parent center.
 All UI nodes can have children.
 `UiBox` is the invisible generic container.
+`UiPanel` draws a styled box.
+`UiButton` draws an interactive styled box and emits configured signals.
+`UiLabel` draws text.
+`UiTextBox` edits one line of text.
+`UiTextBlock` edits multi-line text.
 `UiLayout`, `UiHLayout`, `UiVLayout`, and `UiGrid` add automatic child placement.
 `UiTreeList` adds hierarchical row placement from referenced UI node ids.
 
@@ -183,6 +216,79 @@ with_node_mut!(ctx.run, MeshInstance3D, mesh_id, |mesh| {
     mesh.skeleton = new_skeleton_node_id;
 });
 ```
+
+## Bone Attachment Pattern
+
+Use `BoneAttachment3D` when a normal child transform is not enough.
+A normal child follows a scene node.
+`BoneAttachment3D` follows a bone inside a `Skeleton3D`.
+
+The binding is two-part:
+
+- `skeleton = "CharacterSkeleton"` binds to the skeleton scene node.
+- `bone = 15` binds to bone index `15` inside `Skeleton3D.bones`.
+
+Then parent child nodes under the attachment.
+The child can still have local offset/rotation/scale.
+Example: sword in hand.
+
+```text
+[Character]
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/Character]
+
+[CharacterSkeleton]
+parent = Character
+    [Skeleton3D]
+        skeleton = "res://characters/knight.glb:skeleton[0]"
+    [/Skeleton3D]
+[/CharacterSkeleton]
+
+[CharacterMesh]
+parent = Character
+    [MeshInstance3D]
+        mesh = "res://characters/knight.glb:mesh[0]"
+        skeleton = "CharacterSkeleton"
+    [/MeshInstance3D]
+[/CharacterMesh]
+
+[RightHandSocket]
+parent = Character
+    [BoneAttachment3D]
+        skeleton = "CharacterSkeleton"
+        bone = 15
+        [Node3D]
+            position = (0, 0, 0)
+            rotation = (0, 0, 0, 1)
+            scale = (1, 1, 1)
+            visible = true
+        [/Node3D]
+    [/BoneAttachment3D]
+[/RightHandSocket]
+
+[Sword]
+parent = RightHandSocket
+    [MeshInstance3D]
+        mesh = "res://weapons/sword.glb:mesh[0]"
+        material = "res://weapons/sword.pmat"
+        [Node3D]
+            position = (0.05, 0.0, 0.0)
+            rotation = (0, 0, 0, 1)
+            scale = (1, 1, 1)
+            visible = true
+        [/Node3D]
+    [/MeshInstance3D]
+[/Sword]
+```
+
+Notes:
+
+- Bone index comes from imported skeleton order.
+- `bone = -1` or missing `skeleton` disables attachment update.
+- If index is out of range, attachment keeps its current transform.
+- Child nodes render/use physics from attachment transform like any other parented node.
 
 
 
