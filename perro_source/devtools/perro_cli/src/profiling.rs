@@ -1,3 +1,4 @@
+#[cfg(target_os = "windows")]
 use crate::project::prompt_yes_no;
 use crate::vscode::{
     update_project_vscode_linked_projects, update_workspace_vscode_linked_projects,
@@ -7,11 +8,14 @@ use crate::{
     workspace_root,
 };
 use perro_compiler::{ScriptsBuildProfile, compile_scripts_with_profile};
-use std::env;
 use std::fs;
-use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(target_os = "windows")]
+use std::{
+    env,
+    io::{self, IsTerminal},
+};
 
 pub(crate) fn mem_profile_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let release = args.iter().any(|a| a == "--release");
