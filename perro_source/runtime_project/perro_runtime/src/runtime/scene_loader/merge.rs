@@ -20,6 +20,58 @@ type AnimationPlayerSceneBindings = Vec<(String, u32)>;
 type AnimationTreeSlotSceneBinding = (usize, String, u32);
 type AnimationTreeSceneBindings = Vec<AnimationTreeSlotSceneBinding>;
 
+fn set_joint_body(
+    node: &mut SceneNode,
+    field: super::prepare::PendingJointBodyField,
+    target: NodeID,
+) {
+    match &mut node.data {
+        SceneNodeData::PinJoint2D(joint) => {
+            set_joint_body_2d(&mut joint.body_a, &mut joint.body_b, field, target)
+        }
+        SceneNodeData::DistanceJoint2D(joint) => {
+            set_joint_body_2d(&mut joint.body_a, &mut joint.body_b, field, target)
+        }
+        SceneNodeData::FixedJoint2D(joint) => {
+            set_joint_body_2d(&mut joint.body_a, &mut joint.body_b, field, target)
+        }
+        SceneNodeData::BallJoint3D(joint) => {
+            set_joint_body_3d(&mut joint.body_a, &mut joint.body_b, field, target)
+        }
+        SceneNodeData::HingeJoint3D(joint) => {
+            set_joint_body_3d(&mut joint.body_a, &mut joint.body_b, field, target)
+        }
+        SceneNodeData::FixedJoint3D(joint) => {
+            set_joint_body_3d(&mut joint.body_a, &mut joint.body_b, field, target)
+        }
+        _ => {}
+    }
+}
+
+fn set_joint_body_2d(
+    body_a: &mut NodeID,
+    body_b: &mut NodeID,
+    field: super::prepare::PendingJointBodyField,
+    target: NodeID,
+) {
+    match field {
+        super::prepare::PendingJointBodyField::BodyA => *body_a = target,
+        super::prepare::PendingJointBodyField::BodyB => *body_b = target,
+    }
+}
+
+fn set_joint_body_3d(
+    body_a: &mut NodeID,
+    body_b: &mut NodeID,
+    field: super::prepare::PendingJointBodyField,
+    target: NodeID,
+) {
+    match field {
+        super::prepare::PendingJointBodyField::BodyA => *body_a = target,
+        super::prepare::PendingJointBodyField::BodyB => *body_b = target,
+    }
+}
+
 pub(super) fn merge_prepared_scene(
     runtime: &mut Runtime,
     prepared: PreparedScene,
@@ -48,6 +100,8 @@ pub(super) fn merge_prepared_scene(
     let mut bone_attachment_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
     let mut ik_target_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
     let mut physics_bone_chain_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
+    let mut joint_body_links: Vec<(NodeID, super::prepare::PendingJointBodyField, u32)> =
+        Vec::new();
     let resource_api = runtime.resource_api.clone();
 
     for pending in nodes {
@@ -67,6 +121,7 @@ pub(super) fn merge_prepared_scene(
             bone_attachment_skeleton_target,
             ik_target_skeleton_target,
             physics_bone_chain_skeleton_target,
+            joint_body_links: pending_joint_body_links,
             animation_bindings,
             locale_text_bindings,
         } = pending;
@@ -178,6 +233,9 @@ pub(super) fn merge_prepared_scene(
         if let Some(target) = physics_bone_chain_skeleton_target {
             physics_bone_chain_skeleton_links.push((node, target));
         }
+        for link in pending_joint_body_links {
+            joint_body_links.push((node, link.field, link.target_key));
+        }
         if let Some(parent_key) = parent_key {
             parent_pairs.push((key, parent_key));
         }
@@ -254,6 +312,15 @@ pub(super) fn merge_prepared_scene(
             && let SceneNodeData::PhysicsBoneChain3D(chain) = &mut node_data.data
         {
             chain.skeleton = target;
+        }
+    }
+
+    for (joint_node, field, target_key) in joint_body_links {
+        let target = *key_to
+            .get(&target_key)
+            .ok_or_else(|| format!("joint body target `{target_key}` not found"))?;
+        if let Some(node_data) = runtime.nodes.get_mut(joint_node) {
+            set_joint_body(node_data, field, target);
         }
     }
 

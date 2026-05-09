@@ -20,7 +20,7 @@ mod merge;
 mod prepare;
 
 use merge::merge_prepared_scene;
-use prepare::{load_runtime_scene_from_disk, prepare_scene_with_loader};
+use prepare::{load_runtime_scene_from_disk, prepare_scene_with_loader_and_styles};
 
 pub(crate) struct PendingScriptAttach {
     pub(crate) node_id: NodeID,
@@ -85,6 +85,17 @@ impl Runtime {
 
     fn resolve_scene_by_path(&self, path: &str) -> Result<Arc<Scene>, String> {
         self.resolve_scene_by_hash_and_path(Self::source_hash(path), path)
+    }
+
+    fn prepare_scene_with_project_styles(
+        &self,
+        scene: &Scene,
+        load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
+    ) -> Result<prepare::PreparedScene, String> {
+        let static_ui_style_lookup = self
+            .project()
+            .and_then(|project| project.static_ui_style_lookup);
+        prepare_scene_with_loader_and_styles(scene, load_scene, static_ui_style_lookup)
     }
 
     pub(crate) fn preload_scene_at_runtime(
@@ -156,7 +167,7 @@ impl Runtime {
             .get(&id)
             .cloned()
             .ok_or_else(|| format!("preloaded scene id `{}` is not valid", id.as_u64()))?;
-        let prepared = prepare_scene_with_loader(scene.as_ref(), &|import_path| {
+        let prepared = self.prepare_scene_with_project_styles(scene.as_ref(), &|import_path| {
             self.resolve_scene_by_path(import_path)
         })?;
         let merged = merge_prepared_scene(self, prepared)?;
@@ -181,31 +192,33 @@ impl Runtime {
         let merged = match self.provider_mode {
             ProviderMode::Dynamic => {
                 let runtime_scene = self.get_or_load_dynamic_scene_cached(path)?;
-                let prepared = prepare_scene_with_loader(runtime_scene.as_ref(), &|import_path| {
-                    self.resolve_scene_by_path(import_path)
-                })?;
+                let prepared = self
+                    .prepare_scene_with_project_styles(runtime_scene.as_ref(), &|import_path| {
+                        self.resolve_scene_by_path(import_path)
+                    })?;
                 merge_prepared_scene(self, prepared)?
             }
             ProviderMode::Static => {
                 if path.starts_with("dlc://") {
                     let runtime_scene = self.get_or_load_dynamic_scene_cached(path)?;
-                    let prepared =
-                        prepare_scene_with_loader(runtime_scene.as_ref(), &|import_path| {
-                            self.resolve_scene_by_path(import_path)
-                        })?;
+                    let prepared = self.prepare_scene_with_project_styles(
+                        runtime_scene.as_ref(),
+                        &|import_path| self.resolve_scene_by_path(import_path),
+                    )?;
                     merge_prepared_scene(self, prepared)?
                 } else if let Some(lookup) = static_lookup {
                     let scene = lookup(path_hash);
-                    let prepared = prepare_scene_with_loader(scene, &|import_path| {
-                        self.resolve_scene_by_path(import_path)
-                    })?;
+                    let prepared = self
+                        .prepare_scene_with_project_styles(scene, &|import_path| {
+                            self.resolve_scene_by_path(import_path)
+                        })?;
                     merge_prepared_scene(self, prepared)?
                 } else {
                     let runtime_scene = self.get_or_load_dynamic_scene_cached(path)?;
-                    let prepared =
-                        prepare_scene_with_loader(runtime_scene.as_ref(), &|import_path| {
-                            self.resolve_scene_by_path(import_path)
-                        })?;
+                    let prepared = self.prepare_scene_with_project_styles(
+                        runtime_scene.as_ref(),
+                        &|import_path| self.resolve_scene_by_path(import_path),
+                    )?;
                     merge_prepared_scene(self, prepared)?
                 }
             }
@@ -286,6 +299,7 @@ impl Runtime {
         self.render_2d.visible_now.clear();
         self.render_2d.prev_visible.clear();
         self.render_2d.retained_sprites.clear();
+        self.render_2d.tileset_cache.clear();
         self.render_2d.texture_sources.clear();
         self.render_2d.last_camera = None;
         self.render_2d.removed_nodes.clear();
@@ -341,7 +355,7 @@ impl Runtime {
                     source_load = Some(load_stats.source_load);
                     parse = Some(load_stats.parse);
                 }
-                let prepared = prepare_scene_with_loader(&runtime_scene, &|path| {
+                let prepared = self.prepare_scene_with_project_styles(&runtime_scene, &|path| {
                     let (scene, _) = load_runtime_scene_from_disk(path)?;
                     Ok(Arc::new(scene))
                 })?;
@@ -361,8 +375,9 @@ impl Runtime {
                 if let Some(lookup) = static_lookup {
                     let scene = lookup(main_scene_hash);
                     mode_label = "static";
-                    let prepared =
-                        prepare_scene_with_loader(scene, &|path| self.resolve_scene_by_path(path))?;
+                    let prepared = self.prepare_scene_with_project_styles(scene, &|path| {
+                        self.resolve_scene_by_path(path)
+                    })?;
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
                     merged = merge_prepared_scene(self, prepared)?;
@@ -379,10 +394,11 @@ impl Runtime {
                         source_load = Some(load_stats.source_load);
                         parse = Some(load_stats.parse);
                     }
-                    let prepared = prepare_scene_with_loader(&runtime_scene, &|path| {
-                        let (scene, _) = load_runtime_scene_from_disk(path)?;
-                        Ok(Arc::new(scene))
-                    })?;
+                    let prepared =
+                        self.prepare_scene_with_project_styles(&runtime_scene, &|path| {
+                            let (scene, _) = load_runtime_scene_from_disk(path)?;
+                            Ok(Arc::new(scene))
+                        })?;
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
                     merged = merge_prepared_scene(self, prepared)?;

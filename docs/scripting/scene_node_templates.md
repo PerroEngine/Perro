@@ -176,6 +176,37 @@ script = "res://path/to/script.rs"
     [/Node2D]
 [/node2d]
 
+[skeleton2d]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [Skeleton2D]
+        [Node2D]
+            position = (0, 0)
+            rotation = 0.0
+            scale = (1, 1)
+            z_index = 0
+            visible = true
+        [/Node2D]
+    [/Skeleton2D]
+[/skeleton2d]
+
+[bone2d]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [Bone2D]
+        rest = { position = (0, 0), rotation = 0.0, scale = (1, 1) }
+        pose = { position = (0, 0), rotation = 0.0, scale = (1, 1) }
+        inv_bind = { position = (0, 0), rotation = 0.0, scale = (1, 1) }
+        [Node2D]
+            position = (0, 0)
+            rotation = 0.0
+            scale = (1, 1)
+            z_index = 0
+            visible = true
+        [/Node2D]
+    [/Bone2D]
+[/bone2d]
+
 [sprite2d]
 parent = @PARENTKEY
 script = "res://path/to/script.rs"
@@ -617,6 +648,7 @@ script = "res://path/to/script.rs"
 
 `UiHBox` and `UiVBox` also work as aliases for `UiHLayout` and `UiVLayout`.
 `hover` and `pressed` on `UiButton` accept any `UiBox` field plus style fields.
+Planned 1.0 `.uistyle` resources let `style`, `hover.style`, `pressed.style`, and `focused_style` use `res://path/to/style.uistyle`.
 
 UI templates use ratio-only sizing.
 
@@ -699,11 +731,17 @@ script = "res://path/to/script.rs"
         released_signals = []
         click_signals = []
         style = { fill = (0.18, 0.20, 0.24, 1.0) stroke = (0.32, 0.35, 0.40, 1.0) stroke_width = 1.0 radius = 0.2 shadow = { color = (0, 0, 0, 0) distance = 0 falloff = 0 vector = (0, -1) size = 1 } highlight = { color = (0, 0, 0, 0) distance = 0 falloff = 0 vector = (0, -1) size = 1 } }
+        # Planned 1.0 alternative:
+        # style = "res://ui/button.uistyle"
         hover = {
             style = { fill = (0.24, 0.27, 0.32, 1.0) stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 0.2 }
+            # Planned 1.0 alternative:
+            # style = "res://ui/button_hover.uistyle"
         }
         pressed = {
             style = { fill = (0.12, 0.14, 0.18, 1.0) stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 0.2 }
+            # Planned 1.0 alternative:
+            # style = "res://ui/button_down.uistyle"
         }
         [UiBox]
             visible = true
@@ -792,6 +830,9 @@ script = "res://path/to/script.rs"
         text_changed_signals = []
         style = { fill = (0.11, 0.12, 0.14, 0.92) stroke = (0.22, 0.24, 0.28, 1.0) stroke_width = 1.0 radius = 0.2 }
         focused_style = { fill = (0.10, 0.11, 0.13, 0.96) stroke = (0.45, 0.58, 0.85, 1.0) stroke_width = 1.0 radius = 0.2 }
+        # Planned 1.0 alternatives:
+        # style = "res://ui/text_box.uistyle"
+        # focused_style = "res://ui/text_box_focus.uistyle"
         [UiBox]
             visible = true
             input_enabled = true
@@ -1202,4 +1243,119 @@ script = "res://path/to/script.rs"
         paused = false
     [/AnimationTree]
 [/animation_tree]
+```
+
+## Physics Parity Templates
+
+Current body layer/mask fields:
+
+```text
+[body]
+    [RigidBody2D]
+        collision_layer = 1
+        collision_mask = 4294967295
+        [CollisionShape2D]
+            shape = { type = "quad" width = 1 height = 1 }
+        [/CollisionShape2D]
+    [/RigidBody2D]
+[/body]
+```
+
+2D joints:
+
+```text
+[rope_pin]
+    [PinJoint2D]
+        body_a = @AnchorBody
+        body_b = @SwingBody
+        anchor_a = (0, 0)
+        anchor_b = (0, 0.5)
+        enabled = true
+        collide_connected = false
+    [/PinJoint2D]
+[/rope_pin]
+
+[distance_link]
+    [DistanceJoint2D]
+        body_a = @AnchorBody
+        body_b = @SwingBody
+        anchor_a = (0, 0)
+        anchor_b = (0, 0)
+        min_distance = 0
+        max_distance = 2
+        enabled = true
+        collide_connected = false
+    [/DistanceJoint2D]
+[/distance_link]
+
+[fixed_link_2d]
+    [FixedJoint2D]
+        body_a = @AnchorBody
+        body_b = @SwingBody
+        anchor_a = (0, 0)
+        anchor_b = (0, 0)
+        enabled = true
+        collide_connected = false
+    [/FixedJoint2D]
+[/fixed_link_2d]
+```
+
+3D joints:
+
+```text
+[ball_socket]
+    [BallJoint3D]
+        body_a = @FrameBody
+        body_b = @DoorBody
+        anchor_a = (0, 1, 0)
+        anchor_b = (-0.5, 1, 0)
+        enabled = true
+        collide_connected = false
+    [/BallJoint3D]
+[/ball_socket]
+
+[door_hinge]
+    [HingeJoint3D]
+        body_a = @FrameBody
+        body_b = @DoorBody
+        anchor_a = (0, 1, 0)
+        anchor_b = (-0.5, 1, 0)
+        axis = (0, 1, 0)
+        enabled = true
+        collide_connected = false
+    [/HingeJoint3D]
+[/door_hinge]
+
+[fixed_link_3d]
+    [FixedJoint3D]
+        body_a = @FrameBody
+        body_b = @DoorBody
+        anchor_a = (0, 0, 0)
+        anchor_b = (0, 0, 0)
+        enabled = true
+        collide_connected = false
+    [/FixedJoint3D]
+[/fixed_link_3d]
+```
+
+## Planned 1.0 TileMap2D Template
+
+```text
+[level]
+    [TileMap2D]
+        tileset = "res://tiles/world.ptileset"
+        width = 8
+        height = 4
+        empty_tile = -1
+        tiles = [
+            1, 1, 1, 1, 1, 1, 1, 1,
+            1, -1, -1, -1, -1, -1, -1, 1,
+            1, -1, -1, -1, -1, -1, -1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1,
+        ]
+        collision_enabled = true
+        collision_layer = 1
+        collision_mask = 4294967295
+    [/TileMap2D]
+[/level]
 ```

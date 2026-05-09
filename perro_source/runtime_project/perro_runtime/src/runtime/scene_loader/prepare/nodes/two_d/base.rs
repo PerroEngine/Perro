@@ -34,11 +34,59 @@ fn build_particle_emitter_2d(data: &SceneDefNodeData) -> ParticleEmitter2D {
     node
 }
 
+fn build_tilemap_2d(data: &SceneDefNodeData) -> TileMap2D {
+    let mut node = TileMap2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_tilemap_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_skeleton_2d(data: &SceneDefNodeData) -> Skeleton2D {
+    let mut node = Skeleton2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_skeleton_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_bone_2d(data: &SceneDefNodeData) -> Bone2D {
+    let mut node = Bone2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    node.rest = node.transform;
+    apply_bone_2d_fields(&mut node, &data.fields);
+    node
+}
+
 fn apply_node_2d_data(target: &mut Node2D, data: &SceneDefNodeData) {
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(target, base);
     }
     apply_node_2d_fields(target, &data.fields);
+}
+
+fn apply_skeleton_2d_fields(_node: &mut Skeleton2D, _fields: &[SceneObjectField]) {}
+
+fn apply_bone_2d_fields(node: &mut Bone2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        let Some((position, rotation, scale)) = as_transform_2d(value) else {
+            return;
+        };
+        let transform = perro_structs::Transform2D::new(position, rotation, scale);
+        match resolve_node_field("Bone2D", name) {
+            Some(NodeField::Bone2D(Bone2DField::Rest)) => node.rest = transform,
+            Some(NodeField::Bone2D(Bone2DField::Pose)) => node.pose = transform,
+            Some(NodeField::Bone2D(Bone2DField::InvBind)) => node.inv_bind = transform,
+            _ => {}
+        }
+    });
 }
 
 fn apply_node_2d_fields(node: &mut Node2D, fields: &[SceneObjectField]) {
@@ -117,6 +165,54 @@ fn apply_particle_emitter_2d_fields(node: &mut ParticleEmitter2D, fields: &[Scen
             Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::SimMode)) => {
                 if let Some(v) = as_particle_sim_mode_2d(value) {
                     node.sim_mode = v;
+                }
+            }
+            _ => {}
+        }
+    });
+}
+
+fn apply_tilemap_2d_fields(node: &mut TileMap2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("TileMap2D", name) {
+            Some(NodeField::TileMap2D(TileMap2DField::Tileset)) => {
+                if let Some(v) = as_str(value) {
+                    node.tileset = v.to_string();
+                }
+            }
+            Some(NodeField::TileMap2D(TileMap2DField::Width)) => {
+                if let Some(v) = as_u32(value) {
+                    node.width = v;
+                }
+            }
+            Some(NodeField::TileMap2D(TileMap2DField::Height)) => {
+                if let Some(v) = as_u32(value) {
+                    node.height = v;
+                }
+            }
+            Some(NodeField::TileMap2D(TileMap2DField::EmptyTile)) => {
+                if let Some(v) = as_i32(value) {
+                    node.empty_tile = v;
+                }
+            }
+            Some(NodeField::TileMap2D(TileMap2DField::Tiles)) => {
+                if let SceneValue::Array(items) = value {
+                    node.tiles = items.iter().filter_map(as_i32).collect();
+                }
+            }
+            Some(NodeField::TileMap2D(TileMap2DField::CollisionEnabled)) => {
+                if let Some(v) = as_bool(value) {
+                    node.collision_enabled = v;
+                }
+            }
+            Some(NodeField::TileMap2D(TileMap2DField::CollisionLayer)) => {
+                if let Some(v) = as_u32(value) {
+                    node.collision_layer = v;
+                }
+            }
+            Some(NodeField::TileMap2D(TileMap2DField::CollisionMask)) => {
+                if let Some(v) = as_u32(value) {
+                    node.collision_mask = v;
                 }
             }
             _ => {}

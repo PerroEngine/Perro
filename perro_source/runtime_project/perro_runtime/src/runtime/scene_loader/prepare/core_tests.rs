@@ -251,6 +251,109 @@ mod tests {
     }
 
     #[test]
+    fn scene_loader_ui_style_resource_applies_base_state_and_focus() {
+        static BASE: perro_ui::UiStyle = perro_ui::UiStyle {
+            fill: Color::new(0.10, 0.20, 0.30, 1.0),
+            stroke: Color::new(0.40, 0.50, 0.60, 1.0),
+            stroke_width: 2.0,
+            corner_radius: 0.4,
+            shadow: perro_ui::UiDepthEffect::none(),
+            highlight: perro_ui::UiDepthEffect::none(),
+        };
+        static HOVER: perro_ui::UiStyle = perro_ui::UiStyle {
+            fill: Color::new(0.20, 0.30, 0.40, 1.0),
+            stroke: Color::new(0.50, 0.60, 0.70, 1.0),
+            stroke_width: 3.0,
+            corner_radius: 0.5,
+            shadow: perro_ui::UiDepthEffect::none(),
+            highlight: perro_ui::UiDepthEffect::none(),
+        };
+        static PRESSED: perro_ui::UiStyle = perro_ui::UiStyle {
+            fill: Color::new(0.05, 0.10, 0.15, 1.0),
+            stroke: Color::new(0.30, 0.40, 0.50, 1.0),
+            stroke_width: 4.0,
+            corner_radius: 0.6,
+            shadow: perro_ui::UiDepthEffect::none(),
+            highlight: perro_ui::UiDepthEffect::none(),
+        };
+        static FOCUS: perro_ui::UiStyle = perro_ui::UiStyle {
+            fill: Color::new(0.70, 0.80, 0.90, 1.0),
+            stroke: Color::new(0.10, 0.20, 0.30, 1.0),
+            stroke_width: 5.0,
+            corner_radius: 0.7,
+            shadow: perro_ui::UiDepthEffect::none(),
+            highlight: perro_ui::UiDepthEffect::none(),
+        };
+        static EMPTY: perro_ui::UiStyle = perro_ui::UiStyle::panel();
+
+        fn lookup(path_hash: u64) -> &'static perro_ui::UiStyle {
+            match path_hash {
+                hash if hash == perro_ids::string_to_u64("res://ui/base.uistyle") => &BASE,
+                hash if hash == perro_ids::string_to_u64("res://ui/hover.uistyle") => &HOVER,
+                hash if hash == perro_ids::string_to_u64("res://ui/pressed.uistyle") => &PRESSED,
+                hash if hash == perro_ids::string_to_u64("res://ui/focus.uistyle") => &FOCUS,
+                _ => &EMPTY,
+            }
+        }
+
+        let scene = Parser::new(
+            r#"
+            @root = button
+            [button]
+            [UiButton]
+                style = "res://ui/base.uistyle"
+                hover = { style = "res://ui/hover.uistyle" }
+                pressed = { style = "res://ui/pressed.uistyle" }
+            [/UiButton]
+            [/button]
+
+            [input]
+            parent = button
+            [UiTextBox]
+                style = "res://ui/base.uistyle"
+                focused_style = "res://ui/focus.uistyle"
+            [/UiTextBox]
+            [/input]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader_and_styles(
+            &scene,
+            &|path| Err(format!("unknown scene path `{path}`")),
+            Some(lookup),
+        )
+        .expect("prepare scene");
+
+        let button = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "button")
+            .expect("button node");
+        match &button.node.data {
+            SceneNodeData::UiButton(button) => {
+                assert_eq!(button.style.fill, BASE.fill);
+                assert_eq!(button.hover_style.fill, HOVER.fill);
+                assert_eq!(button.pressed_style.fill, PRESSED.fill);
+            }
+            other => panic!("expected UiButton node, got {other:?}"),
+        }
+
+        let input = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "input")
+            .expect("input node");
+        match &input.node.data {
+            SceneNodeData::UiTextBox(text_box) => {
+                assert_eq!(text_box.style.fill, BASE.fill);
+                assert_eq!(text_box.focused_style.fill, FOCUS.fill);
+            }
+            other => panic!("expected UiTextBox node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn scene_loader_builds_ui_nodes_from_scene_blocks() {
         let scene = Parser::new(
             r##"
@@ -591,6 +694,58 @@ mod tests {
     }
 
     #[test]
+    fn scene_loader_builds_skeleton_2d_with_bone_2d_child() {
+        let scene = Parser::new(
+            r#"
+            @root = Rig2D
+            [Rig2D]
+            [Skeleton2D]
+                position = (10, 20)
+            [/Skeleton2D]
+            [/Rig2D]
+
+            [UpperArm]
+            parent = @Rig2D
+            [Bone2D]
+                position = (4, 5)
+                rotation = 0.25
+                scale = (1, 1)
+                rest = { position = (4, 5), rotation = 0.25, scale = (1, 1) }
+                pose = { position = (6, 7), rotation = 0.5, scale = (1, 1) }
+            [/Bone2D]
+            [/UpperArm]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        })
+        .expect("prepare scene");
+
+        let rig = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Rig2D")
+            .expect("rig node");
+        assert!(matches!(rig.node.data, SceneNodeData::Skeleton2D(_)));
+
+        let bone = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "UpperArm")
+            .expect("bone node");
+        match &bone.node.data {
+            SceneNodeData::Bone2D(bone) => {
+                assert_eq!(bone.transform.position, Vector2::new(4.0, 5.0));
+                assert_eq!(bone.rest.position, Vector2::new(4.0, 5.0));
+                assert_eq!(bone.pose.position, Vector2::new(6.0, 7.0));
+            }
+            other => panic!("expected Bone2D node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn scene_loader_parses_locale_text_markers() {
         let scene = Parser::new(
             r#"
@@ -730,5 +885,49 @@ mod tests {
             }
             other => panic!("expected AnimatedSprite2D node, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn scene_loader_builds_joint_body_links() {
+        let scene = Parser::new(
+            r#"
+            [AnchorBody]
+                [RigidBody2D]
+                [/RigidBody2D]
+            [/AnchorBody]
+
+            [SwingBody]
+                [RigidBody2D]
+                [/RigidBody2D]
+            [/SwingBody]
+
+            [Link]
+                [FixedJoint2D]
+                    body_a = @AnchorBody
+                    body_b = @SwingBody
+                    anchor_a = (0, 0)
+                    anchor_b = (0, 1)
+                [/FixedJoint2D]
+            [/Link]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&scene, &|_| unreachable!()).unwrap();
+        let link = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Link")
+            .expect("joint node");
+
+        assert_eq!(link.joint_body_links.len(), 2);
+        assert!(link.joint_body_links.iter().any(|body| {
+            body.field == PendingJointBodyField::BodyA
+                && scene.key_name(SceneKey::new(body.target_key)) == Some("AnchorBody")
+        }));
+        assert!(link.joint_body_links.iter().any(|body| {
+            body.field == PendingJointBodyField::BodyB
+                && scene.key_name(SceneKey::new(body.target_key)) == Some("SwingBody")
+        }));
     }
 }

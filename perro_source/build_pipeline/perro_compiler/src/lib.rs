@@ -947,6 +947,10 @@ fn generate_project_static_modules(
                 scope.spawn(|| perro_static_pipeline::generate_static_materials(project_root)),
             ),
             (
+                "ui style",
+                scope.spawn(|| perro_static_pipeline::generate_static_ui_styles(project_root)),
+            ),
+            (
                 "particle",
                 scope.spawn(|| perro_static_pipeline::generate_static_particles(project_root)),
             ),
@@ -1018,6 +1022,10 @@ fn generate_dlc_static_modules(
             (
                 "material",
                 scope.spawn(|| perro_static_pipeline::generate_static_materials(project_root)),
+            ),
+            (
+                "ui style",
+                scope.spawn(|| perro_static_pipeline::generate_static_ui_styles(project_root)),
             ),
             (
                 "particle",
@@ -1398,6 +1406,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         scene_lookup: static_assets::scenes::lookup_scene,\n\
         localization_lookup: static_assets::localizations::lookup_localized_string,\n\
         material_lookup: static_assets::materials::lookup_material,\n\
+        ui_style_lookup: static_assets::ui_styles::lookup_ui_style,\n\
         particle_lookup: static_assets::particles::lookup_particle,\n\
         animation_lookup: static_assets::animations::lookup_animation,\n\
         animation_tree_lookup: static_assets::animation_trees::lookup_animation_tree,\n\

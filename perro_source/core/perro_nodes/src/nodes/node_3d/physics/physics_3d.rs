@@ -1,4 +1,5 @@
 use crate::node_3d::Node3D;
+use perro_ids::NodeID;
 use perro_structs::Vector3;
 use std::ops::{Deref, DerefMut};
 
@@ -63,6 +64,8 @@ pub struct StaticBody3D {
     pub base: Node3D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
+    pub collision_layer: u32,
+    pub collision_mask: u32,
     pub friction: f32,
     pub restitution: f32,
     pub density: f32,
@@ -80,6 +83,8 @@ impl StaticBody3D {
             base: Node3D::new(),
             enabled: true,
             physics_handle: None,
+            collision_layer: 1,
+            collision_mask: u32::MAX,
             friction: 0.7,
             restitution: 0.0,
             density: 1.0,
@@ -106,6 +111,8 @@ pub struct Area3D {
     pub base: Node3D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
+    pub collision_layer: u32,
+    pub collision_mask: u32,
 }
 
 impl Default for Area3D {
@@ -120,6 +127,8 @@ impl Area3D {
             base: Node3D::new(),
             enabled: true,
             physics_handle: None,
+            collision_layer: 1,
+            collision_mask: u32::MAX,
         }
     }
 }
@@ -143,6 +152,8 @@ pub struct RigidBody3D {
     pub base: Node3D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
+    pub collision_layer: u32,
+    pub collision_mask: u32,
     pub continuous_collision_detection: bool,
     pub mass: f32,
     pub linear_velocity: Vector3,
@@ -168,6 +179,8 @@ impl RigidBody3D {
             base: Node3D::new(),
             enabled: true,
             physics_handle: None,
+            collision_layer: 1,
+            collision_mask: u32::MAX,
             continuous_collision_detection: true,
             mass: 1.0,
             linear_velocity: Vector3::ZERO,
@@ -192,6 +205,143 @@ impl Deref for RigidBody3D {
 }
 
 impl DerefMut for RigidBody3D {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct BallJoint3D {
+    pub base: Node3D,
+    pub body_a: NodeID,
+    pub body_b: NodeID,
+    pub anchor_a: Vector3,
+    pub anchor_b: Vector3,
+    pub enabled: bool,
+    pub collide_connected: bool,
+}
+
+impl Default for BallJoint3D {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BallJoint3D {
+    pub const fn new() -> Self {
+        Self {
+            base: Node3D::new(),
+            body_a: NodeID::nil(),
+            body_b: NodeID::nil(),
+            anchor_a: Vector3::ZERO,
+            anchor_b: Vector3::ZERO,
+            enabled: true,
+            collide_connected: false,
+        }
+    }
+}
+
+impl Deref for BallJoint3D {
+    type Target = Node3D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for BallJoint3D {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct HingeJoint3D {
+    pub base: Node3D,
+    pub body_a: NodeID,
+    pub body_b: NodeID,
+    pub anchor_a: Vector3,
+    pub anchor_b: Vector3,
+    pub axis: Vector3,
+    pub enabled: bool,
+    pub collide_connected: bool,
+}
+
+impl Default for HingeJoint3D {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl HingeJoint3D {
+    pub const fn new() -> Self {
+        Self {
+            base: Node3D::new(),
+            body_a: NodeID::nil(),
+            body_b: NodeID::nil(),
+            anchor_a: Vector3::ZERO,
+            anchor_b: Vector3::ZERO,
+            axis: Vector3::new(0.0, 1.0, 0.0),
+            enabled: true,
+            collide_connected: false,
+        }
+    }
+}
+
+impl Deref for HingeJoint3D {
+    type Target = Node3D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for HingeJoint3D {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FixedJoint3D {
+    pub base: Node3D,
+    pub body_a: NodeID,
+    pub body_b: NodeID,
+    pub anchor_a: Vector3,
+    pub anchor_b: Vector3,
+    pub enabled: bool,
+    pub collide_connected: bool,
+}
+
+impl Default for FixedJoint3D {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FixedJoint3D {
+    pub const fn new() -> Self {
+        Self {
+            base: Node3D::new(),
+            body_a: NodeID::nil(),
+            body_b: NodeID::nil(),
+            anchor_a: Vector3::ZERO,
+            anchor_b: Vector3::ZERO,
+            enabled: true,
+            collide_connected: false,
+        }
+    }
+}
+
+impl Deref for FixedJoint3D {
+    type Target = Node3D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for FixedJoint3D {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.base
     }

@@ -423,6 +423,9 @@ impl PerroGraphics {
                     Command2D::UpsertSprite { node, sprite } => {
                         self.renderer_2d.queue_sprite(node, sprite);
                     }
+                    Command2D::UpsertTileMap { node, tilemap } => {
+                        self.renderer_2d.upsert_tilemap(node, tilemap);
+                    }
                     Command2D::UpsertRect { node, rect } => {
                         self.renderer_2d.queue_rect(node, rect);
                     }
@@ -584,6 +587,9 @@ impl PerroGraphics {
                 RenderCommand::TwoD(cmd_2d) => match cmd_2d {
                     Command2D::UpsertSprite { node, sprite } => {
                         self.late_overlay_2d.queue_sprite(node, sprite);
+                    }
+                    Command2D::UpsertTileMap { node, tilemap } => {
+                        self.late_overlay_2d.upsert_tilemap(node, tilemap);
                     }
                     Command2D::UpsertRect { node, rect } => {
                         self.late_overlay_2d.queue_rect(node, rect);

@@ -1,5 +1,5 @@
-use crate::material_schema;
-use perro_ids::string_to_u64;
+use crate::{material_schema, runtime_project::StaticUiStyleLookup};
+use perro_ids::{NodeID, string_to_u64};
 use perro_io::load_asset;
 use perro_nodes::{
     ambient_light_3d::AmbientLight3D,
@@ -16,24 +16,27 @@ use perro_nodes::{
     node_3d::Node3D,
     particle_emitter_2d::ParticleEmitter2D,
     particle_emitter_2d::ParticleEmitterSimMode2D,
+    tilemap_2d::TileMap2D,
     particle_emitter_3d::ParticleEmitter3D,
     particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
     physics_bone_chain_3d::PhysicsBoneChain3D,
     point_light_3d::PointLight3D,
     ray_light_3d::RayLight3D,
+    skeleton_2d::{Bone2D, Skeleton2D},
     skeleton_3d::Skeleton3D,
     sky_3d::{Sky3D, SkyStyle},
     spot_light_3d::SpotLight3D,
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
-    Area2D, Area3D, CollisionShape2D, CollisionShape3D, RigidBody2D, RigidBody3D, SceneNode,
-    SceneNodeData, Shape2D, Shape3D, StaticBody2D, StaticBody3D, Triangle2DKind,
+    Area2D, Area3D, BallJoint3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D,
+    FixedJoint2D, FixedJoint3D, HingeJoint3D, PinJoint2D, RigidBody2D, RigidBody3D,
+    SceneNode, SceneNodeData, Shape2D, Shape3D, StaticBody2D, StaticBody3D, Triangle2DKind,
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
-    AnimatedSprite2DField, AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField, BoneAttachment3DField,
-    BoneCollider3DField, Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField, IKTarget3DField, Light3DField,
+    AnimatedSprite2DField, AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField, Bone2DField, BoneAttachment3DField,
+    BoneCollider3DField, Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField, DistanceJoint2DField, HingeJoint3DField, IKTarget3DField, Joint2DField, Joint3DField, Light3DField,
     MeshInstance3DField, Node2DField, Node3DField, NodeField, Parser, ParticleEmitter2DField,
-    ParticleEmitter3DField,
+    ParticleEmitter3DField, TileMap2DField,
     PhysicsBoneChain3DField, PointLight3DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
     SceneFieldIterRef, SceneKey, SceneNodeData as SceneDefNodeData,
     SceneNodeEntry as SceneDefNodeEntry, SceneObjectField, SceneValue, Skeleton3DField,
@@ -97,8 +100,20 @@ pub(super) struct PendingNode {
     pub(super) bone_attachment_skeleton_target: Option<u32>,
     pub(super) ik_target_skeleton_target: Option<u32>,
     pub(super) physics_bone_chain_skeleton_target: Option<u32>,
+    pub(super) joint_body_links: Vec<PendingJointBodyLink>,
     pub(super) animation_bindings: Vec<(String, u32)>,
     pub(super) locale_text_bindings: Vec<PendingLocaleTextBinding>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PendingJointBodyField {
+    BodyA,
+    BodyB,
+}
+
+pub(super) struct PendingJointBodyLink {
+    pub(super) field: PendingJointBodyField,
+    pub(super) target_key: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -138,6 +153,7 @@ type SceneNodeExtraction = (
     Option<String>,
     Option<String>,
     Option<String>,
+    Vec<(PendingJointBodyField, String)>,
     Vec<(String, String)>,
     Vec<PendingLocaleTextBinding>,
 );
@@ -237,18 +253,28 @@ fn resolve_scene_value_dlc_self(value: &mut SceneValue, prefix: &str, replacemen
     }
 }
 
+#[cfg(test)]
 pub(super) fn prepare_scene_with_loader(
     scene: &Scene,
     load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
 ) -> Result<PreparedScene, String> {
+    prepare_scene_with_loader_and_styles(scene, load_scene, None)
+}
+
+pub(super) fn prepare_scene_with_loader_and_styles(
+    scene: &Scene,
+    load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) -> Result<PreparedScene, String> {
     let mut include_stack = HashSet::new();
-    prepare_scene_with_stack(scene, &mut include_stack, load_scene)
+    prepare_scene_with_stack(scene, &mut include_stack, load_scene, static_ui_style_lookup)
 }
 
 fn prepare_scene_with_stack(
     scene: &Scene,
     include_stack: &mut HashSet<String>,
     load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
 ) -> Result<PreparedScene, String> {
     let mut prepared_nodes = Vec::with_capacity(scene.nodes.len());
     let mut scripts = Vec::new();
@@ -267,6 +293,7 @@ fn prepare_scene_with_stack(
         next_key: &mut next_key,
         include_stack,
         load_scene,
+        static_ui_style_lookup,
     };
 
     for entry in scene.nodes.as_ref() {
@@ -346,9 +373,10 @@ fn push_entry_prepared(
         bone_attachment_skeleton_target,
         ik_target_skeleton_target,
         physics_bone_chain_skeleton_target,
+        joint_body_targets,
         animation_bindings,
         locale_text_bindings,
-    ) = scene_node_from_entry(entry)?;
+    ) = scene_node_from_entry(entry, ctx.static_ui_style_lookup)?;
 
     ctx.prepared_nodes.push(PendingNode {
         key,
@@ -389,6 +417,15 @@ fn push_entry_prepared(
         physics_bone_chain_skeleton_target: physics_bone_chain_skeleton_target
             .and_then(|v| scene_key_by_name(scene, v.as_str()))
             .map(|target| remap_key(target, key_map)),
+        joint_body_links: joint_body_targets
+            .into_iter()
+            .filter_map(|(field, target)| {
+                scene_key_by_name(scene, target.as_str()).map(|target| PendingJointBodyLink {
+                    field,
+                    target_key: remap_key(target, key_map),
+                })
+            })
+            .collect(),
         animation_bindings: animation_bindings
             .into_iter()
             .filter_map(|(object, target)| {
@@ -428,6 +465,7 @@ struct PrepareSceneCtx<'a> {
     next_key: &'a mut u32,
     include_stack: &'a mut HashSet<String>,
     load_scene: &'a dyn Fn(&str) -> Result<Arc<Scene>, String>,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
 }
 
 fn expand_import_children_into_host(
@@ -617,8 +655,11 @@ fn remap_scene_value_keys(
         )),
     }
 }
-fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtraction, String> {
-    let mut node = SceneNode::new(scene_node_data_from(&entry.data)?);
+fn scene_node_from_entry(
+    entry: &SceneDefNodeEntry,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) -> Result<SceneNodeExtraction, String> {
+    let mut node = SceneNode::new(scene_node_data_from(&entry.data, static_ui_style_lookup)?);
     if let Some(name) = &entry.name {
         node.name = name.clone();
     }
@@ -642,6 +683,7 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
     let ik_target_skeleton_target = extract_ik_target_skeleton_target(&entry.data);
     let physics_bone_chain_skeleton_target =
         extract_physics_bone_chain_skeleton_target(&entry.data);
+    let joint_body_targets = extract_joint_body_targets(&entry.data);
     let animation_bindings = extract_animation_scene_bindings(&entry.data);
     let locale_text_bindings = extract_locale_text_bindings(&entry.data);
     let model_source = extract_model_source(&entry.data);
@@ -669,6 +711,7 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
         bone_attachment_skeleton_target,
         ik_target_skeleton_target,
         physics_bone_chain_skeleton_target,
+        joint_body_targets,
         animation_bindings,
         locale_text_bindings,
     ))
@@ -736,7 +779,64 @@ fn push_locale_text_binding(
     }
 }
 
-fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String> {
+fn extract_joint_body_targets(data: &SceneDefNodeData) -> Vec<(PendingJointBodyField, String)> {
+    let fields = flatten_scene_node_fields(data);
+    let mut out = Vec::new();
+    let Some((body_a_field, body_b_field)) = joint_body_fields_for(data.ty.as_ref()) else {
+        return out;
+    };
+    for (name, value) in fields {
+        let resolved = resolve_node_field(data.ty.as_ref(), name.as_ref());
+        let field = if resolved == Some(body_a_field) {
+            Some(PendingJointBodyField::BodyA)
+        } else if resolved == Some(body_b_field) {
+            Some(PendingJointBodyField::BodyB)
+        } else {
+            None
+        };
+        if let Some(field) = field
+            && let Some(target) = as_str(&value)
+        {
+            out.push((field, target.to_string()));
+        }
+    }
+    out
+}
+
+fn joint_body_fields_for(ty: &str) -> Option<(NodeField, NodeField)> {
+    match ty {
+        "PinJoint2D" => Some((
+            NodeField::PinJoint2D(Joint2DField::BodyA),
+            NodeField::PinJoint2D(Joint2DField::BodyB),
+        )),
+        "DistanceJoint2D" => Some((
+            NodeField::DistanceJoint2D(DistanceJoint2DField::Common(Joint2DField::BodyA)),
+            NodeField::DistanceJoint2D(DistanceJoint2DField::Common(Joint2DField::BodyB)),
+        )),
+        "FixedJoint2D" => Some((
+            NodeField::FixedJoint2D(Joint2DField::BodyA),
+            NodeField::FixedJoint2D(Joint2DField::BodyB),
+        )),
+        "BallJoint3D" => Some((
+            NodeField::BallJoint3D(Joint3DField::BodyA),
+            NodeField::BallJoint3D(Joint3DField::BodyB),
+        )),
+        "HingeJoint3D" => Some((
+            NodeField::HingeJoint3D(HingeJoint3DField::Common(Joint3DField::BodyA)),
+            NodeField::HingeJoint3D(HingeJoint3DField::Common(Joint3DField::BodyB)),
+        )),
+        "FixedJoint3D" => Some((
+            NodeField::FixedJoint3D(Joint3DField::BodyA),
+            NodeField::FixedJoint3D(Joint3DField::BodyB),
+        )),
+        _ => None,
+    }
+}
+
+fn scene_node_data_from(
+    data: &SceneDefNodeData,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) -> Result<SceneNodeData, String> {
     match data.ty.as_ref() {
         "Node" => Ok(SceneNodeData::Node),
         "Node2D" => Ok(SceneNodeData::Node2D(build_node_2d(data))),
@@ -745,6 +845,9 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "ParticleEmitter2D" => Ok(SceneNodeData::ParticleEmitter2D(build_particle_emitter_2d(
             data,
         ))),
+        "TileMap2D" => Ok(SceneNodeData::TileMap2D(build_tilemap_2d(data))),
+        "Skeleton2D" => Ok(SceneNodeData::Skeleton2D(build_skeleton_2d(data))),
+        "Bone2D" => Ok(SceneNodeData::Bone2D(build_bone_2d(data))),
         "Camera2D" => Ok(SceneNodeData::Camera2D(build_camera_2d(data))),
         "CollisionShape2D" => Ok(SceneNodeData::CollisionShape2D(build_collision_shape_2d(
             data,
@@ -752,6 +855,9 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "StaticBody2D" => Ok(SceneNodeData::StaticBody2D(build_static_body_2d(data))),
         "Area2D" => Ok(SceneNodeData::Area2D(build_area_2d(data))),
         "RigidBody2D" => Ok(SceneNodeData::RigidBody2D(build_rigid_body_2d(data))),
+        "PinJoint2D" => Ok(SceneNodeData::PinJoint2D(build_pin_joint_2d(data))),
+        "DistanceJoint2D" => Ok(SceneNodeData::DistanceJoint2D(build_distance_joint_2d(data))),
+        "FixedJoint2D" => Ok(SceneNodeData::FixedJoint2D(build_fixed_joint_2d(data))),
         "Node3D" => Ok(SceneNodeData::Node3D(build_node_3d(data))),
         "MeshInstance3D" => Ok(SceneNodeData::MeshInstance3D(build_mesh_instance_3d(data))),
         "MultiMeshInstance3D" => Ok(SceneNodeData::MultiMeshInstance3D(
@@ -763,6 +869,9 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "StaticBody3D" => Ok(SceneNodeData::StaticBody3D(build_static_body_3d(data))),
         "Area3D" => Ok(SceneNodeData::Area3D(build_area_3d(data))),
         "RigidBody3D" => Ok(SceneNodeData::RigidBody3D(build_rigid_body_3d(data))),
+        "BallJoint3D" => Ok(SceneNodeData::BallJoint3D(build_ball_joint_3d(data))),
+        "HingeJoint3D" => Ok(SceneNodeData::HingeJoint3D(build_hinge_joint_3d(data))),
+        "FixedJoint3D" => Ok(SceneNodeData::FixedJoint3D(build_fixed_joint_3d(data))),
         "Skeleton3D" => Ok(SceneNodeData::Skeleton3D(build_skeleton_3d(data))),
         "BoneAttachment3D" => Ok(SceneNodeData::BoneAttachment3D(
             build_bone_attachment_3d(data),
@@ -784,12 +893,18 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "PointLight3D" => Ok(SceneNodeData::PointLight3D(build_point_light_3d(data))),
         "SpotLight3D" => Ok(SceneNodeData::SpotLight3D(build_spot_light_3d(data))),
         "UiBox" => Ok(SceneNodeData::UiBox(build_ui_box(data))),
-        "UiPanel" => Ok(SceneNodeData::UiPanel(build_ui_panel(data))),
-        "UiButton" => Ok(SceneNodeData::UiButton(build_ui_button(data))),
+        "UiPanel" => Ok(SceneNodeData::UiPanel(build_ui_panel(data, static_ui_style_lookup))),
+        "UiButton" => Ok(SceneNodeData::UiButton(build_ui_button(data, static_ui_style_lookup))),
         "UiImage" => Ok(SceneNodeData::UiImage(build_ui_image(data))),
         "UiLabel" => Ok(SceneNodeData::UiLabel(build_ui_label(data))),
-        "UiTextBox" => Ok(SceneNodeData::UiTextBox(build_ui_text_box(data))),
-        "UiTextBlock" => Ok(SceneNodeData::UiTextBlock(build_ui_text_block(data))),
+        "UiTextBox" => Ok(SceneNodeData::UiTextBox(build_ui_text_box(
+            data,
+            static_ui_style_lookup,
+        ))),
+        "UiTextBlock" => Ok(SceneNodeData::UiTextBlock(build_ui_text_block(
+            data,
+            static_ui_style_lookup,
+        ))),
         "UiScrollContainer" | "UiScroll" => {
             Ok(SceneNodeData::UiScrollContainer(build_ui_scroll_container(data)))
         }

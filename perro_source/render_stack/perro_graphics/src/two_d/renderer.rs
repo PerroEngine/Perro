@@ -5,10 +5,11 @@ use perro_ids::NodeID;
 use perro_particle_math::{ParticleEvalInput, eval_ops_particle};
 use perro_render_bridge::{
     Camera2DState, DrawShape2DCommand, ParticlePath2D, PointParticles2DState, Rect2DCommand,
-    Sprite2DCommand,
+    Sprite2DCommand, TileMap2DCommand,
 };
 use perro_structs::DrawShape2D;
 use std::ops::Range;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy)]
 struct SpritePacket {
@@ -74,6 +75,7 @@ pub struct Renderer2D {
     rect_dirty_ranges: Vec<Range<usize>>,
     rect_structure_dirty: bool,
     retained_sprites: AHashMap<NodeID, Sprite2DCommand>,
+    retained_tilemaps: AHashMap<NodeID, Arc<[Sprite2DCommand]>>,
     retained_point_particles: AHashMap<NodeID, PointParticles2DState>,
     retained_sprites_revision: u64,
     frame_shapes: Vec<RectInstanceGpu>,
@@ -95,6 +97,7 @@ impl Renderer2D {
             rect_dirty_ranges: Vec::new(),
             rect_structure_dirty: false,
             retained_sprites: AHashMap::new(),
+            retained_tilemaps: AHashMap::new(),
             retained_point_particles: AHashMap::new(),
             retained_sprites_revision: 0,
             frame_shapes: Vec::new(),
@@ -150,9 +153,19 @@ impl Renderer2D {
         self.retained_point_particles.insert(node, particles);
     }
 
+    pub fn upsert_tilemap(&mut self, node: NodeID, tilemap: TileMap2DCommand) {
+        if self.retained_tilemaps.get(&node) != Some(&tilemap.sprites) {
+            self.retained_tilemaps.insert(node, tilemap.sprites);
+            self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
+        }
+    }
+
     pub fn remove_node(&mut self, node: NodeID) {
         self.remove_retained_rect(node);
         self.retained_point_particles.remove(&node);
+        if self.retained_tilemaps.remove(&node).is_some() {
+            self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
+        }
         if self.retained_sprites.remove(&node).is_some() {
             self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
         }
@@ -325,10 +338,19 @@ impl Renderer2D {
 
     pub fn retained_sprite_count(&self) -> usize {
         self.retained_sprites.len()
+            + self
+                .retained_tilemaps
+                .values()
+                .map(|sprites| sprites.len())
+                .sum::<usize>()
     }
 
     pub fn retained_sprites(&self) -> impl Iterator<Item = Sprite2DCommand> + '_ {
-        self.retained_sprites.values().copied()
+        self.retained_sprites.values().copied().chain(
+            self.retained_tilemaps
+                .values()
+                .flat_map(|sprites| sprites.iter().copied()),
+        )
     }
 
     pub fn camera(&self) -> Camera2DState {

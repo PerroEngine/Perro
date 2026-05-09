@@ -37,6 +37,19 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Active 2D camera (position/rotation/zoom).
 - Supports camera post-processing via `post_processing` (see "Camera Post-Processing" below).
 
+`Skeleton2D`
+
+- 2D rig root.
+- Author `Bone2D` nodes as children under it.
+- Inspired by Godot's `Skeleton2D` hierarchy model: bones are scene nodes, not entries in a `Vec`.
+
+`Bone2D`
+
+- Child `Node2D` used as a 2D bone.
+- Uses normal `Node2D` fields: `position`, `rotation`, `scale`, `z_index`, `visible`.
+- Adds `rest`, `pose`, and `inv_bind` transform data for rig tooling/runtime use.
+- `.panim` can animate `position`, `rotation`, and `scale` like any other `Node2D`.
+
 Physics 2D:
 
 - `CollisionShape2D`
@@ -44,6 +57,25 @@ Physics 2D:
 - `RigidBody2D`
 - `Area2D`
 - `CollisionShape2D` should be authored as a child of `StaticBody2D` or `RigidBody2D`.
+
+2D physics layer/mask fields:
+
+- `collision_layer`
+- `collision_mask`
+
+2D joint nodes:
+
+- `PinJoint2D`
+- `DistanceJoint2D`
+- `FixedJoint2D`
+
+Joint common fields are `body_a`, `body_b`, `anchor_a`, `anchor_b`, `enabled`, and `collide_connected`.
+`DistanceJoint2D` also uses `min_distance` and `max_distance`.
+Anchors are local to each connected body.
+
+`TileMap2D` is planned as the tile map node.
+It uses `.ptileset` data and can emit static 2D colliders from `collision_shape = "auto"`.
+See [TileMap2D](tilemap.md).
 
 ## 3D Nodes
 
@@ -124,6 +156,21 @@ Physics 3D:
 - `CollisionShape3D` supports primitive `shape` and mesh-backed `trimesh` source.
 - Trimesh source format: `res://path/to/model.glb:mesh[0]` (mesh index optional, default `0`).
 
+3D physics layer/mask fields:
+
+- `collision_layer`
+- `collision_mask`
+
+3D joint nodes:
+
+- `BallJoint3D`
+- `HingeJoint3D`
+- `FixedJoint3D`
+
+Joint common fields are `body_a`, `body_b`, `anchor_a`, `anchor_b`, `enabled`, and `collide_connected`.
+`HingeJoint3D` also uses `axis`.
+Anchors are local to each connected body.
+
 `Skeleton3D`
 
 - Holds `Vec<Bone3D>` (data-only).
@@ -181,6 +228,7 @@ UI nodes inherit from `UiBox` in the node registry:
 - `UiBox`
 - `UiPanel`
 - `UiButton`
+- `UiImage`
 - `UiLabel`
 - `UiTextBox`
 - `UiTextBlock`
@@ -197,6 +245,7 @@ All UI nodes can have children.
 `UiBox` is the invisible generic container.
 `UiPanel` draws a styled box.
 `UiButton` draws an interactive styled box and emits configured signals.
+`UiImage` draws a texture region with tint and scale mode.
 `UiLabel` draws text.
 `UiTextBox` edits one line of text.
 `UiTextBlock` edits multi-line text.
@@ -204,6 +253,13 @@ All UI nodes can have children.
 `UiTreeList` adds hierarchical row placement from referenced UI node ids.
 
 See [UI Nodes](ui.md).
+
+Planned 1.0 UI style resources:
+
+- Inline `style = { ... }` stays valid.
+- Resource `style = "res://ui/panel.uistyle"` loads the same `UiStyle` schema.
+- Button `hover` / `pressed` and text edit `focused_style` accept `.uistyle` paths.
+- `.uistyle` is visual-only; layout stays on UI nodes.
 
 ## Scene Authoring Templates
 
@@ -230,6 +286,51 @@ See [Visual Accessibility](../resources/visual_accessibility.md).
 - `parent`: parent bone index (`-1` for root)
 - `rest`: rest transform (local)
 - `inv_bind`: inverse bind transform
+
+## Skeleton2D And Bone2D
+
+`Skeleton2D` is a `Node2D` container for `Bone2D` children.
+Unlike `Skeleton3D`, it does not store bones in `Skeleton2D.bones`.
+Each `Bone2D` is a real scene node, so normal parent/child transforms and `Node2D` animation tracks drive the rig.
+
+Scene:
+
+```text
+[Rig2D]
+    [Skeleton2D]
+    [/Skeleton2D]
+[/Rig2D]
+
+[UpperArm]
+parent = @Rig2D
+    [Bone2D]
+        position = (8, 0)
+        rotation = 0.0
+        scale = (1, 1)
+        rest = { position = (8, 0), rotation = 0.0, scale = (1, 1) }
+    [/Bone2D]
+[/UpperArm]
+```
+
+Animation:
+
+```text
+[Objects]
+UpperArm = Bone2D
+[/Objects]
+
+[Frame0]
+@UpperArm {
+    rotation = 0.0
+}
+[/Frame0]
+
+[Frame12]
+@UpperArm {
+    rotation = 0.7
+}
+[/Frame12]
+```
 
 ## Skeleton Load Patterns
 

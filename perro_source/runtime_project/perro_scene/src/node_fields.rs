@@ -9,10 +9,16 @@ pub enum NodeField {
     Sprite2D(Sprite2DField),
     AnimatedSprite2D(AnimatedSprite2DField),
     ParticleEmitter2D(ParticleEmitter2DField),
+    TileMap2D(TileMap2DField),
+    Skeleton2D(Skeleton2DField),
+    Bone2D(Bone2DField),
     CollisionShape2D(CollisionShape2DField),
     StaticBody2D(StaticBody2DField),
     RigidBody2D(RigidBody2DField),
     Area2D(Area2DField),
+    PinJoint2D(Joint2DField),
+    DistanceJoint2D(DistanceJoint2DField),
+    FixedJoint2D(Joint2DField),
     MeshInstance3D(MeshInstance3DField),
     Skeleton3D(Skeleton3DField),
     BoneAttachment3D(BoneAttachment3DField),
@@ -32,6 +38,9 @@ pub enum NodeField {
     StaticBody3D(StaticBody3DField),
     RigidBody3D(RigidBody3DField),
     Area3D(Area3DField),
+    BallJoint3D(Joint3DField),
+    HingeJoint3D(HingeJoint3DField),
+    FixedJoint3D(Joint3DField),
     UiImage(UiImageField),
 }
 
@@ -89,6 +98,30 @@ pub enum ParticleEmitter2DField {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TileMap2DField {
+    Tileset,
+    Width,
+    Height,
+    EmptyTile,
+    Tiles,
+    CollisionEnabled,
+    CollisionLayer,
+    CollisionMask,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Skeleton2DField {
+    Skeleton,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Bone2DField {
+    Rest,
+    Pose,
+    InvBind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollisionShape2DField {
     Shape,
 }
@@ -96,6 +129,8 @@ pub enum CollisionShape2DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StaticBody2DField {
     Enabled,
+    CollisionLayer,
+    CollisionMask,
     Friction,
     Restitution,
     Density,
@@ -104,6 +139,8 @@ pub enum StaticBody2DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RigidBody2DField {
     Enabled,
+    CollisionLayer,
+    CollisionMask,
     ContinuousCollisionDetection,
     LinearVelocity,
     AngularVelocity,
@@ -120,6 +157,25 @@ pub enum RigidBody2DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Area2DField {
     Enabled,
+    CollisionLayer,
+    CollisionMask,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Joint2DField {
+    BodyA,
+    BodyB,
+    AnchorA,
+    AnchorB,
+    Enabled,
+    CollideConnected,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DistanceJoint2DField {
+    Common(Joint2DField),
+    MinDistance,
+    MaxDistance,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -283,6 +339,8 @@ pub enum CollisionShape3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StaticBody3DField {
     Enabled,
+    CollisionLayer,
+    CollisionMask,
     Friction,
     Restitution,
     Density,
@@ -291,6 +349,8 @@ pub enum StaticBody3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RigidBody3DField {
     Enabled,
+    CollisionLayer,
+    CollisionMask,
     ContinuousCollisionDetection,
     Mass,
     LinearVelocity,
@@ -307,6 +367,24 @@ pub enum RigidBody3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Area3DField {
     Enabled,
+    CollisionLayer,
+    CollisionMask,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Joint3DField {
+    BodyA,
+    BodyB,
+    AnchorA,
+    AnchorB,
+    Enabled,
+    CollideConnected,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HingeJoint3DField {
+    Common(Joint3DField),
+    Axis,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -375,12 +453,33 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             )),
             _ => None,
         },
+        NodeType::TileMap2D => match field {
+            "tileset" => Some(NodeField::TileMap2D(TileMap2DField::Tileset)),
+            "width" => Some(NodeField::TileMap2D(TileMap2DField::Width)),
+            "height" => Some(NodeField::TileMap2D(TileMap2DField::Height)),
+            "empty_tile" => Some(NodeField::TileMap2D(TileMap2DField::EmptyTile)),
+            "tiles" => Some(NodeField::TileMap2D(TileMap2DField::Tiles)),
+            "collision_enabled" | "collision" => {
+                Some(NodeField::TileMap2D(TileMap2DField::CollisionEnabled))
+            }
+            "collision_layer" | "layer" => {
+                Some(NodeField::TileMap2D(TileMap2DField::CollisionLayer))
+            }
+            "collision_mask" | "mask" => Some(NodeField::TileMap2D(TileMap2DField::CollisionMask)),
+            _ => None,
+        },
         NodeType::CollisionShape2D => match field {
             "shape" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Shape)),
             _ => None,
         },
         NodeType::StaticBody2D => match field {
             "enabled" => Some(NodeField::StaticBody2D(StaticBody2DField::Enabled)),
+            "collision_layer" | "layer" => {
+                Some(NodeField::StaticBody2D(StaticBody2DField::CollisionLayer))
+            }
+            "collision_mask" | "mask" => {
+                Some(NodeField::StaticBody2D(StaticBody2DField::CollisionMask))
+            }
             "friction" => Some(NodeField::StaticBody2D(StaticBody2DField::Friction)),
             "restitution" => Some(NodeField::StaticBody2D(StaticBody2DField::Restitution)),
             "density" => Some(NodeField::StaticBody2D(StaticBody2DField::Density)),
@@ -388,6 +487,12 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::RigidBody2D => match field {
             "enabled" => Some(NodeField::RigidBody2D(RigidBody2DField::Enabled)),
+            "collision_layer" | "layer" => {
+                Some(NodeField::RigidBody2D(RigidBody2DField::CollisionLayer))
+            }
+            "collision_mask" | "mask" => {
+                Some(NodeField::RigidBody2D(RigidBody2DField::CollisionMask))
+            }
             "continuous_collision_detection" | "ccd" => Some(NodeField::RigidBody2D(
                 RigidBody2DField::ContinuousCollisionDetection,
             )),
@@ -407,6 +512,31 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::Area2D => match field {
             "enabled" => Some(NodeField::Area2D(Area2DField::Enabled)),
+            "collision_layer" | "layer" => Some(NodeField::Area2D(Area2DField::CollisionLayer)),
+            "collision_mask" | "mask" => Some(NodeField::Area2D(Area2DField::CollisionMask)),
+            _ => None,
+        },
+        NodeType::PinJoint2D => resolve_joint2d_common(field).map(NodeField::PinJoint2D),
+        NodeType::FixedJoint2D => resolve_joint2d_common(field).map(NodeField::FixedJoint2D),
+        NodeType::DistanceJoint2D => match field {
+            "min_distance" | "min" => Some(NodeField::DistanceJoint2D(
+                DistanceJoint2DField::MinDistance,
+            )),
+            "max_distance" | "max" | "distance" => Some(NodeField::DistanceJoint2D(
+                DistanceJoint2DField::MaxDistance,
+            )),
+            _ => resolve_joint2d_common(field)
+                .map(DistanceJoint2DField::Common)
+                .map(NodeField::DistanceJoint2D),
+        },
+        NodeType::Skeleton2D => match field {
+            "skeleton" => Some(NodeField::Skeleton2D(Skeleton2DField::Skeleton)),
+            _ => None,
+        },
+        NodeType::Bone2D => match field {
+            "rest" => Some(NodeField::Bone2D(Bone2DField::Rest)),
+            "pose" => Some(NodeField::Bone2D(Bone2DField::Pose)),
+            "inv_bind" | "inverse_bind" => Some(NodeField::Bone2D(Bone2DField::InvBind)),
             _ => None,
         },
         NodeType::MeshInstance3D => match field {
@@ -579,6 +709,12 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::StaticBody3D => match field {
             "enabled" => Some(NodeField::StaticBody3D(StaticBody3DField::Enabled)),
+            "collision_layer" | "layer" => {
+                Some(NodeField::StaticBody3D(StaticBody3DField::CollisionLayer))
+            }
+            "collision_mask" | "mask" => {
+                Some(NodeField::StaticBody3D(StaticBody3DField::CollisionMask))
+            }
             "friction" => Some(NodeField::StaticBody3D(StaticBody3DField::Friction)),
             "restitution" => Some(NodeField::StaticBody3D(StaticBody3DField::Restitution)),
             "density" => Some(NodeField::StaticBody3D(StaticBody3DField::Density)),
@@ -586,6 +722,12 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::RigidBody3D => match field {
             "enabled" => Some(NodeField::RigidBody3D(RigidBody3DField::Enabled)),
+            "collision_layer" | "layer" => {
+                Some(NodeField::RigidBody3D(RigidBody3DField::CollisionLayer))
+            }
+            "collision_mask" | "mask" => {
+                Some(NodeField::RigidBody3D(RigidBody3DField::CollisionMask))
+            }
             "continuous_collision_detection" | "ccd" => Some(NodeField::RigidBody3D(
                 RigidBody3DField::ContinuousCollisionDetection,
             )),
@@ -605,7 +747,17 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::Area3D => match field {
             "enabled" => Some(NodeField::Area3D(Area3DField::Enabled)),
+            "collision_layer" | "layer" => Some(NodeField::Area3D(Area3DField::CollisionLayer)),
+            "collision_mask" | "mask" => Some(NodeField::Area3D(Area3DField::CollisionMask)),
             _ => None,
+        },
+        NodeType::BallJoint3D => resolve_joint3d_common(field).map(NodeField::BallJoint3D),
+        NodeType::FixedJoint3D => resolve_joint3d_common(field).map(NodeField::FixedJoint3D),
+        NodeType::HingeJoint3D => match field {
+            "axis" => Some(NodeField::HingeJoint3D(HingeJoint3DField::Axis)),
+            _ => resolve_joint3d_common(field)
+                .map(HingeJoint3DField::Common)
+                .map(NodeField::HingeJoint3D),
         },
         NodeType::UiImage => match field {
             "texture" | "image" | "source" | "src" => {
@@ -616,6 +768,30 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             }
             _ => None,
         },
+        _ => None,
+    }
+}
+
+fn resolve_joint2d_common(field: &str) -> Option<Joint2DField> {
+    match field {
+        "body_a" | "a" => Some(Joint2DField::BodyA),
+        "body_b" | "b" => Some(Joint2DField::BodyB),
+        "anchor_a" => Some(Joint2DField::AnchorA),
+        "anchor_b" => Some(Joint2DField::AnchorB),
+        "enabled" => Some(Joint2DField::Enabled),
+        "collide_connected" | "collision" => Some(Joint2DField::CollideConnected),
+        _ => None,
+    }
+}
+
+fn resolve_joint3d_common(field: &str) -> Option<Joint3DField> {
+    match field {
+        "body_a" | "a" => Some(Joint3DField::BodyA),
+        "body_b" | "b" => Some(Joint3DField::BodyB),
+        "anchor_a" => Some(Joint3DField::AnchorA),
+        "anchor_b" => Some(Joint3DField::AnchorB),
+        "enabled" => Some(Joint3DField::Enabled),
+        "collide_connected" | "collision" => Some(Joint3DField::CollideConnected),
         _ => None,
     }
 }

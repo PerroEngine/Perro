@@ -768,6 +768,12 @@ pub struct Sprite2DCommand {
     pub z_index: i32,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct TileMap2DCommand {
+    pub texture: TextureID,
+    pub sprites: Arc<[Sprite2DCommand]>,
+}
+
 impl Default for Sprite2DCommand {
     fn default() -> Self {
         Self {
@@ -891,6 +897,10 @@ pub enum Command2D {
     UpsertSprite {
         node: NodeID,
         sprite: Sprite2DCommand,
+    },
+    UpsertTileMap {
+        node: NodeID,
+        tilemap: TileMap2DCommand,
     },
     UpsertRect {
         node: NodeID,

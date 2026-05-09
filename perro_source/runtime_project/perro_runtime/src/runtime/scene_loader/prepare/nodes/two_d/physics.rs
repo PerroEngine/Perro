@@ -38,6 +38,36 @@ fn build_area_2d(data: &SceneDefNodeData) -> Area2D {
     node
 }
 
+fn build_pin_joint_2d(data: &SceneDefNodeData) -> PinJoint2D {
+    let mut node = PinJoint2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_pin_joint_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_distance_joint_2d(data: &SceneDefNodeData) -> DistanceJoint2D {
+    let mut node = DistanceJoint2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_distance_joint_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_fixed_joint_2d(data: &SceneDefNodeData) -> FixedJoint2D {
+    let mut node = FixedJoint2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_fixed_joint_2d_fields(&mut node, &data.fields);
+    node
+}
+
 fn apply_collision_shape_2d_fields(node: &mut CollisionShape2D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         if let Some(NodeField::CollisionShape2D(CollisionShape2DField::Shape)) =
@@ -51,26 +81,39 @@ fn apply_collision_shape_2d_fields(node: &mut CollisionShape2D, fields: &[SceneO
 
 fn apply_static_body_2d_fields(node: &mut StaticBody2D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
-        if resolve_node_field("StaticBody2D", name)
-            == Some(NodeField::StaticBody2D(StaticBody2DField::Enabled))
-            && let Some(enabled) = as_bool(value) {
+        match resolve_node_field("StaticBody2D", name) {
+            Some(NodeField::StaticBody2D(StaticBody2DField::Enabled))
+                if let Some(enabled) = as_bool(value) =>
+            {
                 node.enabled = enabled;
-            } else if resolve_node_field("StaticBody2D", name)
-            == Some(NodeField::StaticBody2D(StaticBody2DField::Friction))
-                && let Some(v) = as_f32(value)
+            }
+            Some(NodeField::StaticBody2D(StaticBody2DField::CollisionLayer))
+                if let Some(v) = as_u32(value) =>
+            {
+                node.collision_layer = v;
+            }
+            Some(NodeField::StaticBody2D(StaticBody2DField::CollisionMask))
+                if let Some(v) = as_u32(value) =>
+            {
+                node.collision_mask = v;
+            }
+            Some(NodeField::StaticBody2D(StaticBody2DField::Friction))
+                if let Some(v) = as_f32(value) =>
             {
                 node.friction = v;
-            } else if resolve_node_field("StaticBody2D", name)
-                == Some(NodeField::StaticBody2D(StaticBody2DField::Restitution))
-                && let Some(v) = as_f32(value)
+            }
+            Some(NodeField::StaticBody2D(StaticBody2DField::Restitution))
+                if let Some(v) = as_f32(value) =>
             {
                 node.restitution = v;
-            } else if resolve_node_field("StaticBody2D", name)
-                == Some(NodeField::StaticBody2D(StaticBody2DField::Density))
-                && let Some(v) = as_f32(value)
+            }
+            Some(NodeField::StaticBody2D(StaticBody2DField::Density))
+                if let Some(v) = as_f32(value) =>
             {
                 node.density = v;
             }
+            _ => {}
+        }
     });
 }
 
@@ -80,6 +123,16 @@ fn apply_rigid_body_2d_fields(node: &mut RigidBody2D, fields: &[SceneObjectField
             Some(NodeField::RigidBody2D(RigidBody2DField::Enabled)) => {
                 if let Some(enabled) = as_bool(value) {
                     node.enabled = enabled;
+                }
+            }
+            Some(NodeField::RigidBody2D(RigidBody2DField::CollisionLayer)) => {
+                if let Some(v) = as_u32(value) {
+                    node.collision_layer = v;
+                }
+            }
+            Some(NodeField::RigidBody2D(RigidBody2DField::CollisionMask)) => {
+                if let Some(v) = as_u32(value) {
+                    node.collision_mask = v;
                 }
             }
             Some(NodeField::RigidBody2D(
@@ -146,10 +199,146 @@ fn apply_rigid_body_2d_fields(node: &mut RigidBody2D, fields: &[SceneObjectField
 
 fn apply_area_2d_fields(node: &mut Area2D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
-        if resolve_node_field("Area2D", name) == Some(NodeField::Area2D(Area2DField::Enabled))
-            && let Some(enabled) = as_bool(value) {
-                node.enabled = enabled;
+        match resolve_node_field("Area2D", name) {
+            Some(NodeField::Area2D(Area2DField::Enabled)) => {
+                if let Some(enabled) = as_bool(value) {
+                    node.enabled = enabled;
+                }
             }
+            Some(NodeField::Area2D(Area2DField::CollisionLayer)) => {
+                if let Some(v) = as_u32(value) {
+                    node.collision_layer = v;
+                }
+            }
+            Some(NodeField::Area2D(Area2DField::CollisionMask)) => {
+                if let Some(v) = as_u32(value) {
+                    node.collision_mask = v;
+                }
+            }
+            _ => {}
+        }
+    });
+}
+
+struct Joint2DCommonMut<'a> {
+    body_a: &'a mut NodeID,
+    body_b: &'a mut NodeID,
+    anchor_a: &'a mut Vector2,
+    anchor_b: &'a mut Vector2,
+    enabled: &'a mut bool,
+    collide_connected: &'a mut bool,
+}
+
+fn apply_joint_2d_common(
+    node: Joint2DCommonMut<'_>,
+    ty: &str,
+    name: &str,
+    value: &SceneValue,
+) {
+    let common = match resolve_node_field(ty, name) {
+        Some(NodeField::PinJoint2D(field)) => Some(field),
+        Some(NodeField::FixedJoint2D(field)) => Some(field),
+        Some(NodeField::DistanceJoint2D(DistanceJoint2DField::Common(field))) => Some(field),
+        _ => None,
+    };
+    match common {
+        Some(Joint2DField::BodyA) => {
+            if let Some(v) = as_node_id(value) {
+                *node.body_a = v;
+            }
+        }
+        Some(Joint2DField::BodyB) => {
+            if let Some(v) = as_node_id(value) {
+                *node.body_b = v;
+            }
+        }
+        Some(Joint2DField::AnchorA) => {
+            if let Some(v) = as_vec2(value) {
+                *node.anchor_a = v;
+            }
+        }
+        Some(Joint2DField::AnchorB) => {
+            if let Some(v) = as_vec2(value) {
+                *node.anchor_b = v;
+            }
+        }
+        Some(Joint2DField::Enabled) => {
+            if let Some(v) = as_bool(value) {
+                *node.enabled = v;
+            }
+        }
+        Some(Joint2DField::CollideConnected) => {
+            if let Some(v) = as_bool(value) {
+                *node.collide_connected = v;
+            }
+        }
+        None => {}
+    }
+}
+
+fn apply_pin_joint_2d_fields(node: &mut PinJoint2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        apply_joint_2d_common(
+            Joint2DCommonMut {
+                body_a: &mut node.body_a,
+                body_b: &mut node.body_b,
+                anchor_a: &mut node.anchor_a,
+                anchor_b: &mut node.anchor_b,
+                enabled: &mut node.enabled,
+                collide_connected: &mut node.collide_connected,
+            },
+            "PinJoint2D",
+            name,
+            value,
+        );
+    });
+}
+
+fn apply_fixed_joint_2d_fields(node: &mut FixedJoint2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        apply_joint_2d_common(
+            Joint2DCommonMut {
+                body_a: &mut node.body_a,
+                body_b: &mut node.body_b,
+                anchor_a: &mut node.anchor_a,
+                anchor_b: &mut node.anchor_b,
+                enabled: &mut node.enabled,
+                collide_connected: &mut node.collide_connected,
+            },
+            "FixedJoint2D",
+            name,
+            value,
+        );
+    });
+}
+
+fn apply_distance_joint_2d_fields(node: &mut DistanceJoint2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("DistanceJoint2D", name) {
+            Some(NodeField::DistanceJoint2D(DistanceJoint2DField::MinDistance)) => {
+                if let Some(v) = as_f32(value) {
+                    node.min_distance = v.max(0.0);
+                }
+            }
+            Some(NodeField::DistanceJoint2D(DistanceJoint2DField::MaxDistance)) => {
+                if let Some(v) = as_f32(value) {
+                    node.max_distance = v.max(0.0);
+                }
+            }
+            _ => apply_joint_2d_common(
+                Joint2DCommonMut {
+                    body_a: &mut node.body_a,
+                    body_b: &mut node.body_b,
+                    anchor_a: &mut node.anchor_a,
+                    anchor_b: &mut node.anchor_b,
+                    enabled: &mut node.enabled,
+                    collide_connected: &mut node.collide_connected,
+                },
+                "DistanceJoint2D",
+                name,
+                value,
+            ),
+        }
     });
 }
 

@@ -4,7 +4,7 @@ use ahash::{AHashMap, AHashSet};
 use perro_ids::{NodeID, SignalID, parse_hashed_source_uri, string_to_u64};
 use perro_io::{decompress_zlib, load_asset};
 use perro_nodes::{
-    CollisionShape2D, CollisionShape3D, SceneNodeData, Shape2D, Shape3D, Triangle2DKind,
+    CollisionShape2D, CollisionShape3D, SceneNodeData, Shape2D, Shape3D, TileMap2D, Triangle2DKind,
 };
 use perro_runtime_context::sub_apis::{NodeAPI, PhysicsRayHit3D, SignalAPI};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
@@ -38,6 +38,8 @@ struct ShapeDesc2D {
     local: Transform2D,
     shape: Shape2D,
     sensor: bool,
+    collision_layer: u32,
+    collision_mask: u32,
     friction: f32,
     restitution: f32,
 }
@@ -47,6 +49,8 @@ struct ShapeDesc3D {
     local: Transform3D,
     shape: ShapeKind3D,
     sensor: bool,
+    collision_layer: u32,
+    collision_mask: u32,
     friction: f32,
     restitution: f32,
 }
@@ -77,6 +81,46 @@ struct BodyDesc3D {
     rigid: Option<RigidProps3D>,
     shape_signature: u64,
     shapes: Vec<ShapeDesc3D>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum JointKind2D {
+    Pin,
+    Distance { min: f32, max: f32 },
+    Fixed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum JointKind3D {
+    Ball,
+    Hinge { axis: Vector3 },
+    Fixed,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct JointDesc2D {
+    id: NodeID,
+    body_a: NodeID,
+    body_b: NodeID,
+    anchor_a: Vector2,
+    anchor_b: Vector2,
+    enabled: bool,
+    collide_connected: bool,
+    kind: JointKind2D,
+    signature: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct JointDesc3D {
+    id: NodeID,
+    body_a: NodeID,
+    body_b: NodeID,
+    anchor_a: Vector3,
+    anchor_b: Vector3,
+    enabled: bool,
+    collide_connected: bool,
+    kind: JointKind3D,
+    signature: u64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -121,6 +165,18 @@ struct BodyState3D {
     kind: BodyKind,
     shape_signature: u64,
     opaque_handle: u64,
+}
+
+#[derive(Clone, Debug)]
+struct JointState2D {
+    handle: r2::ImpulseJointHandle,
+    signature: u64,
+}
+
+#[derive(Clone, Debug)]
+struct JointState3D {
+    handle: r3::ImpulseJointHandle,
+    signature: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -201,6 +257,7 @@ struct PhysicsWorld2D {
     ccd_solver: r2::CCDSolver,
     collider_owners: AHashMap<r2::ColliderHandle, NodeID>,
     body_map: AHashMap<NodeID, BodyState2D>,
+    joint_map: AHashMap<NodeID, JointState2D>,
 }
 
 struct PhysicsWorld3D {
@@ -217,6 +274,7 @@ struct PhysicsWorld3D {
     ccd_solver: r3::CCDSolver,
     collider_owners: AHashMap<r3::ColliderHandle, NodeID>,
     body_map: AHashMap<NodeID, BodyState3D>,
+    joint_map: AHashMap<NodeID, JointState3D>,
 }
 
 impl PhysicsState {
@@ -290,6 +348,7 @@ impl PhysicsWorld2D {
             ccd_solver: r2::CCDSolver::new(),
             collider_owners: AHashMap::default(),
             body_map: AHashMap::default(),
+            joint_map: AHashMap::default(),
         }
     }
 }
@@ -314,6 +373,7 @@ impl PhysicsWorld3D {
             ccd_solver: r3::CCDSolver::new(),
             collider_owners: AHashMap::default(),
             body_map: AHashMap::default(),
+            joint_map: AHashMap::default(),
         }
     }
 }
@@ -338,11 +398,15 @@ impl Runtime {
         let collect_start = std::time::Instant::now();
         let bodies_2d = self.collect_body_descs_2d();
         let bodies_3d = self.collect_body_descs_3d();
+        let joints_2d = self.collect_joint_descs_2d();
+        let joints_3d = self.collect_joint_descs_3d();
         let collect = collect_start.elapsed();
 
         let sync_world_start = std::time::Instant::now();
         self.sync_world_2d(&bodies_2d);
         self.sync_world_3d(&bodies_3d);
+        self.sync_joints_2d(&joints_2d);
+        self.sync_joints_3d(&joints_3d);
         let sync_world = sync_world_start.elapsed();
 
         if self.physics.paused {
@@ -490,7 +554,7 @@ impl Runtime {
         let mut out = Vec::with_capacity(node_count);
         for i in 0..node_count {
             let id = self.internal_updates.physics_body_nodes_2d[i];
-            let (kind, enabled, rigid, material) = {
+            let (kind, enabled, rigid, material, groups) = {
                 let Some(node) = self.nodes.get(id) else {
                     continue;
                 };
@@ -500,8 +564,15 @@ impl Runtime {
                         body.enabled,
                         None,
                         (body.friction, body.restitution),
+                        (body.collision_layer, body.collision_mask),
                     ),
-                    SceneNodeData::Area2D(body) => (BodyKind::Area, body.enabled, None, (0.7, 0.0)),
+                    SceneNodeData::Area2D(body) => (
+                        BodyKind::Area,
+                        body.enabled,
+                        None,
+                        (0.7, 0.0),
+                        (body.collision_layer, body.collision_mask),
+                    ),
                     SceneNodeData::RigidBody2D(body) => (
                         BodyKind::Rigid,
                         body.enabled,
@@ -517,6 +588,14 @@ impl Runtime {
                             angular_damping: body.angular_damping,
                         }),
                         (body.friction, body.restitution),
+                        (body.collision_layer, body.collision_mask),
+                    ),
+                    SceneNodeData::TileMap2D(tilemap) => (
+                        BodyKind::Static,
+                        tilemap.collision_enabled,
+                        None,
+                        (0.7, 0.0),
+                        (tilemap.collision_layer, tilemap.collision_mask),
                     ),
                     _ => continue,
                 }
@@ -524,8 +603,23 @@ impl Runtime {
             let Some(global) = self.get_global_transform_2d(id) else {
                 continue;
             };
+            let tilemap_for_body = self.nodes.get(id).and_then(|node| match &node.data {
+                SceneNodeData::TileMap2D(tilemap) => Some(tilemap.clone()),
+                _ => None,
+            });
             let mut shape_signature = body_signature_seed(kind);
-            if let Some(node) = self.nodes.get(id) {
+            if let Some(tilemap) = tilemap_for_body.as_ref() {
+                shape_signature = hash_tilemap_2d(shape_signature, tilemap);
+                if let Some(tileset) =
+                    crate::runtime::render_2d::resolve_tileset_2d(self, &tilemap.tileset)
+                {
+                    for (tile_id, tile) in &tileset.tiles {
+                        if tile.collision {
+                            shape_signature = hash_u64(shape_signature, *tile_id as u64);
+                        }
+                    }
+                }
+            } else if let Some(node) = self.nodes.get(id) {
                 for &child_id in node.children_slice() {
                     let Some(child) = self.nodes.get(child_id) else {
                         continue;
@@ -535,6 +629,8 @@ impl Runtime {
                     }
                 }
             }
+            shape_signature = hash_u32(shape_signature, groups.0);
+            shape_signature = hash_u32(shape_signature, groups.1);
 
             let needs_shape_rebuild = self
                 .physics
@@ -545,19 +641,34 @@ impl Runtime {
                 .unwrap_or(true);
 
             let mut shapes = Vec::new();
-            if needs_shape_rebuild && let Some(node) = self.nodes.get(id) {
-                let child_count = node.children_slice().len();
-                if shapes.capacity() < child_count {
-                    shapes.reserve(child_count - shapes.capacity());
-                }
-                for &child_id in node.children_slice() {
-                    let Some(child) = self.nodes.get(child_id) else {
-                        continue;
-                    };
-                    if let SceneNodeData::CollisionShape2D(shape) = &child.data {
-                        let mut desc = shape_desc_2d(shape, material.0, material.1);
-                        desc.sensor = kind == BodyKind::Area;
-                        shapes.push(desc);
+            if needs_shape_rebuild {
+                if let Some(tilemap) = tilemap_for_body.as_ref() {
+                    let tileset =
+                        crate::runtime::render_2d::resolve_tileset_2d(self, &tilemap.tileset);
+                    shapes.extend(tilemap_shape_descs_2d(
+                        tilemap,
+                        groups.0,
+                        groups.1,
+                        material.0,
+                        material.1,
+                        tileset.as_ref(),
+                    ));
+                } else if let Some(node) = self.nodes.get(id) {
+                    let child_count = node.children_slice().len();
+                    if shapes.capacity() < child_count {
+                        shapes.reserve(child_count - shapes.capacity());
+                    }
+                    for &child_id in node.children_slice() {
+                        let Some(child) = self.nodes.get(child_id) else {
+                            continue;
+                        };
+                        if let SceneNodeData::CollisionShape2D(shape) = &child.data {
+                            let mut desc = shape_desc_2d(shape, material.0, material.1);
+                            desc.sensor = kind == BodyKind::Area;
+                            desc.collision_layer = groups.0;
+                            desc.collision_mask = groups.1;
+                            shapes.push(desc);
+                        }
                     }
                 }
             }
@@ -580,7 +691,7 @@ impl Runtime {
         let mut out = Vec::with_capacity(node_count);
         for i in 0..node_count {
             let id = self.internal_updates.physics_body_nodes_3d[i];
-            let (kind, enabled, rigid, material) = {
+            let (kind, enabled, rigid, material, groups) = {
                 let Some(node) = self.nodes.get(id) else {
                     continue;
                 };
@@ -590,8 +701,15 @@ impl Runtime {
                         body.enabled,
                         None,
                         (body.friction, body.restitution),
+                        (body.collision_layer, body.collision_mask),
                     ),
-                    SceneNodeData::Area3D(body) => (BodyKind::Area, body.enabled, None, (0.7, 0.0)),
+                    SceneNodeData::Area3D(body) => (
+                        BodyKind::Area,
+                        body.enabled,
+                        None,
+                        (0.7, 0.0),
+                        (body.collision_layer, body.collision_mask),
+                    ),
                     SceneNodeData::RigidBody3D(body) => (
                         BodyKind::Rigid,
                         body.enabled,
@@ -607,6 +725,7 @@ impl Runtime {
                             angular_damping: body.angular_damping,
                         }),
                         (body.friction, body.restitution),
+                        (body.collision_layer, body.collision_mask),
                     ),
                     _ => continue,
                 }
@@ -619,6 +738,8 @@ impl Runtime {
             shape_signature = hash_f32(shape_signature, global.scale.x.to_bits());
             shape_signature = hash_f32(shape_signature, global.scale.y.to_bits());
             shape_signature = hash_f32(shape_signature, global.scale.z.to_bits());
+            shape_signature = hash_u32(shape_signature, groups.0);
+            shape_signature = hash_u32(shape_signature, groups.1);
 
             if let Some(node) = self.nodes.get(id) {
                 for &child_id in node.children_slice() {
@@ -659,6 +780,8 @@ impl Runtime {
                             desc.local.scale.z * global.scale.z,
                         );
                         desc.sensor = kind == BodyKind::Area;
+                        desc.collision_layer = groups.0;
+                        desc.collision_mask = groups.1;
                         shapes.push(desc);
                     }
                 }
@@ -672,6 +795,133 @@ impl Runtime {
                 rigid,
                 shape_signature,
                 shapes,
+            });
+        }
+        out
+    }
+
+    fn collect_joint_descs_2d(&self) -> Vec<JointDesc2D> {
+        let mut out = Vec::new();
+        for i in 0..self.internal_updates.internal_fixed_update_nodes.len() {
+            let id = self.internal_updates.internal_fixed_update_nodes[i];
+            let Some(node) = self.nodes.get(id) else {
+                continue;
+            };
+            let (body_a, body_b, anchor_a, anchor_b, enabled, collide_connected, kind) =
+                match &node.data {
+                    SceneNodeData::PinJoint2D(joint) => (
+                        joint.body_a,
+                        joint.body_b,
+                        joint.anchor_a,
+                        joint.anchor_b,
+                        joint.enabled,
+                        joint.collide_connected,
+                        JointKind2D::Pin,
+                    ),
+                    SceneNodeData::DistanceJoint2D(joint) => (
+                        joint.body_a,
+                        joint.body_b,
+                        joint.anchor_a,
+                        joint.anchor_b,
+                        joint.enabled,
+                        joint.collide_connected,
+                        JointKind2D::Distance {
+                            min: joint.min_distance,
+                            max: joint.max_distance,
+                        },
+                    ),
+                    SceneNodeData::FixedJoint2D(joint) => (
+                        joint.body_a,
+                        joint.body_b,
+                        joint.anchor_a,
+                        joint.anchor_b,
+                        joint.enabled,
+                        joint.collide_connected,
+                        JointKind2D::Fixed,
+                    ),
+                    _ => continue,
+                };
+            let signature = joint_signature_2d(
+                body_a,
+                body_b,
+                anchor_a,
+                anchor_b,
+                enabled,
+                collide_connected,
+                kind,
+            );
+            out.push(JointDesc2D {
+                id,
+                body_a,
+                body_b,
+                anchor_a,
+                anchor_b,
+                enabled,
+                collide_connected,
+                kind,
+                signature,
+            });
+        }
+        out
+    }
+
+    fn collect_joint_descs_3d(&self) -> Vec<JointDesc3D> {
+        let mut out = Vec::new();
+        for i in 0..self.internal_updates.internal_fixed_update_nodes.len() {
+            let id = self.internal_updates.internal_fixed_update_nodes[i];
+            let Some(node) = self.nodes.get(id) else {
+                continue;
+            };
+            let (body_a, body_b, anchor_a, anchor_b, enabled, collide_connected, kind) =
+                match &node.data {
+                    SceneNodeData::BallJoint3D(joint) => (
+                        joint.body_a,
+                        joint.body_b,
+                        joint.anchor_a,
+                        joint.anchor_b,
+                        joint.enabled,
+                        joint.collide_connected,
+                        JointKind3D::Ball,
+                    ),
+                    SceneNodeData::HingeJoint3D(joint) => (
+                        joint.body_a,
+                        joint.body_b,
+                        joint.anchor_a,
+                        joint.anchor_b,
+                        joint.enabled,
+                        joint.collide_connected,
+                        JointKind3D::Hinge { axis: joint.axis },
+                    ),
+                    SceneNodeData::FixedJoint3D(joint) => (
+                        joint.body_a,
+                        joint.body_b,
+                        joint.anchor_a,
+                        joint.anchor_b,
+                        joint.enabled,
+                        joint.collide_connected,
+                        JointKind3D::Fixed,
+                    ),
+                    _ => continue,
+                };
+            let signature = joint_signature_3d(
+                body_a,
+                body_b,
+                anchor_a,
+                anchor_b,
+                enabled,
+                collide_connected,
+                kind,
+            );
+            out.push(JointDesc3D {
+                id,
+                body_a,
+                body_b,
+                anchor_a,
+                anchor_b,
+                enabled,
+                collide_connected,
+                kind,
+                signature,
             });
         }
         out
@@ -1014,6 +1264,106 @@ impl Runtime {
         stale.clear();
         self.physics.stale_ids_3d = stale;
         self.physics.world_3d = Some(world);
+    }
+
+    fn sync_joints_2d(&mut self, joints: &[JointDesc2D]) {
+        let Some(world) = self.physics.world_2d.as_mut() else {
+            return;
+        };
+        let mut alive = AHashSet::default();
+        for joint in joints {
+            alive.insert(joint.id);
+            if !joint.enabled || joint.body_a.is_nil() || joint.body_b.is_nil() {
+                remove_joint_2d(world, joint.id);
+                continue;
+            }
+            let Some(body_a) = world.body_map.get(&joint.body_a).map(|state| state.handle) else {
+                remove_joint_2d(world, joint.id);
+                continue;
+            };
+            let Some(body_b) = world.body_map.get(&joint.body_b).map(|state| state.handle) else {
+                remove_joint_2d(world, joint.id);
+                continue;
+            };
+            if world
+                .joint_map
+                .get(&joint.id)
+                .map(|state| state.signature == joint.signature)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            remove_joint_2d(world, joint.id);
+            let data = build_joint_2d(joint);
+            let handle = world.impulse_joints.insert(body_a, body_b, data, true);
+            world.joint_map.insert(
+                joint.id,
+                JointState2D {
+                    handle,
+                    signature: joint.signature,
+                },
+            );
+        }
+
+        let stale = world
+            .joint_map
+            .keys()
+            .copied()
+            .filter(|id| !alive.contains(id))
+            .collect::<Vec<_>>();
+        for id in stale {
+            remove_joint_2d(world, id);
+        }
+    }
+
+    fn sync_joints_3d(&mut self, joints: &[JointDesc3D]) {
+        let Some(world) = self.physics.world_3d.as_mut() else {
+            return;
+        };
+        let mut alive = AHashSet::default();
+        for joint in joints {
+            alive.insert(joint.id);
+            if !joint.enabled || joint.body_a.is_nil() || joint.body_b.is_nil() {
+                remove_joint_3d(world, joint.id);
+                continue;
+            }
+            let Some(body_a) = world.body_map.get(&joint.body_a).map(|state| state.handle) else {
+                remove_joint_3d(world, joint.id);
+                continue;
+            };
+            let Some(body_b) = world.body_map.get(&joint.body_b).map(|state| state.handle) else {
+                remove_joint_3d(world, joint.id);
+                continue;
+            };
+            if world
+                .joint_map
+                .get(&joint.id)
+                .map(|state| state.signature == joint.signature)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            remove_joint_3d(world, joint.id);
+            let data = build_joint_3d(joint);
+            let handle = world.impulse_joints.insert(body_a, body_b, data, true);
+            world.joint_map.insert(
+                joint.id,
+                JointState3D {
+                    handle,
+                    signature: joint.signature,
+                },
+            );
+        }
+
+        let stale = world
+            .joint_map
+            .keys()
+            .copied()
+            .filter(|id| !alive.contains(id))
+            .collect::<Vec<_>>();
+        for id in stale {
+            remove_joint_3d(world, id);
+        }
     }
 
     fn step_world_2d(&mut self) {
@@ -1529,6 +1879,10 @@ fn hash_f32(state: u64, bits: u32) -> u64 {
     hash_u64(state, bits as u64)
 }
 
+fn hash_u32(state: u64, value: u32) -> u64 {
+    hash_u64(state, value as u64)
+}
+
 fn hash_transform_2d(mut state: u64, transform: Transform2D) -> u64 {
     state = hash_f32(state, transform.position.x.to_bits());
     state = hash_f32(state, transform.position.y.to_bits());
@@ -1649,6 +2003,99 @@ fn hash_collision_shape_2d(state: u64, shape: &CollisionShape2D, kind: BodyKind)
     hash_shape_2d(state, shape.shape)
 }
 
+fn hash_tilemap_2d(mut state: u64, tilemap: &TileMap2D) -> u64 {
+    state = hash_u32(state, tilemap.width);
+    state = hash_u32(state, tilemap.height);
+    state = hash_u64(state, tilemap.empty_tile as u64);
+    for tile in &tilemap.tiles {
+        state = hash_u64(state, *tile as u64);
+    }
+    for b in tilemap.tileset.as_bytes() {
+        state = hash_u64(state, *b as u64);
+    }
+    state
+}
+
+fn tilemap_shape_descs_2d(
+    tilemap: &TileMap2D,
+    layer: u32,
+    mask: u32,
+    friction: f32,
+    restitution: f32,
+    tileset: Option<&crate::runtime::render_2d::ParsedTileset2D>,
+) -> Vec<ShapeDesc2D> {
+    let Some(tileset) = tileset else {
+        return Vec::new();
+    };
+    let width = tilemap.width as usize;
+    let height = tilemap.height as usize;
+    if width == 0 || height == 0 {
+        return Vec::new();
+    }
+    let tw = tileset.tile_size[0];
+    let th = tileset.tile_size[1];
+    let mut solid = vec![false; width.saturating_mul(height)];
+    for (idx, tile_id) in tilemap.tiles.iter().take(solid.len()).copied().enumerate() {
+        if tile_id == tilemap.empty_tile {
+            continue;
+        }
+        solid[idx] = tileset
+            .tiles
+            .get(&tile_id)
+            .map(|tile| tile.collision)
+            .unwrap_or(false);
+    }
+
+    let mut out = Vec::new();
+    let mut used = vec![false; solid.len()];
+    for y in 0..height {
+        for x in 0..width {
+            let idx = y * width + x;
+            if !solid[idx] || used[idx] {
+                continue;
+            }
+            let mut run_w = 1usize;
+            while x + run_w < width && solid[idx + run_w] && !used[idx + run_w] {
+                run_w += 1;
+            }
+            let mut run_h = 1usize;
+            'grow: while y + run_h < height {
+                for ox in 0..run_w {
+                    let n = (y + run_h) * width + x + ox;
+                    if !solid[n] || used[n] {
+                        break 'grow;
+                    }
+                }
+                run_h += 1;
+            }
+            for yy in y..(y + run_h) {
+                for xx in x..(x + run_w) {
+                    used[yy * width + xx] = true;
+                }
+            }
+            let w = run_w as f32 * tw;
+            let h = run_h as f32 * th;
+            out.push(ShapeDesc2D {
+                local: Transform2D::new(
+                    Vector2::new(x as f32 * tw + w * 0.5, -(y as f32 * th + h * 0.5)),
+                    0.0,
+                    Vector2::ONE,
+                ),
+                shape: Shape2D::Quad {
+                    width: w,
+                    height: h,
+                },
+                sensor: false,
+                collision_layer: layer,
+                collision_mask: mask,
+                friction,
+                restitution,
+            });
+        }
+    }
+    out
+}
+
 fn hash_collision_shape_3d(
     state: u64,
     shape: &CollisionShape3D,
@@ -1671,6 +2118,8 @@ fn shape_desc_2d(shape: &CollisionShape2D, friction: f32, restitution: f32) -> S
         local: shape.base.transform,
         shape: shape.shape,
         sensor: false,
+        collision_layer: 1,
+        collision_mask: u32::MAX,
         friction,
         restitution,
     }
@@ -1686,6 +2135,8 @@ fn shape_desc_3d(shape: &CollisionShape3D, friction: f32, restitution: f32) -> S
             _ => ShapeKind3D::Primitive(shape.shape.clone()),
         },
         sensor: false,
+        collision_layer: 1,
+        collision_mask: u32::MAX,
         friction,
         restitution,
     }
@@ -1815,6 +2266,10 @@ fn collider_builder_2d(desc: &ShapeDesc2D) -> Option<r2::Collider> {
                 desc.local.rotation,
             ))
             .sensor(desc.sensor)
+            .collision_groups(interaction_groups_2d(
+                desc.collision_layer,
+                desc.collision_mask,
+            ))
             .friction(desc.friction)
             .restitution(desc.restitution)
             .build(),
@@ -1908,9 +2363,27 @@ fn collider_builder_3d(
         shape
             .position(transform_to_iso3(desc.local))
             .sensor(desc.sensor)
+            .collision_groups(interaction_groups_3d(
+                desc.collision_layer,
+                desc.collision_mask,
+            ))
             .friction(desc.friction)
             .restitution(desc.restitution)
             .build(),
+    )
+}
+
+fn interaction_groups_2d(layer: u32, mask: u32) -> r2::InteractionGroups {
+    r2::InteractionGroups::new(
+        r2::Group::from_bits_truncate(layer),
+        r2::Group::from_bits_truncate(mask),
+    )
+}
+
+fn interaction_groups_3d(layer: u32, mask: u32) -> r3::InteractionGroups {
+    r3::InteractionGroups::new(
+        r3::Group::from_bits_truncate(layer),
+        r3::Group::from_bits_truncate(mask),
     )
 }
 
@@ -2690,10 +3163,133 @@ fn transform_to_iso3(transform: Transform3D) -> na3::Isometry3<f32> {
     )
 }
 
+fn joint_signature_2d(
+    body_a: NodeID,
+    body_b: NodeID,
+    anchor_a: Vector2,
+    anchor_b: Vector2,
+    enabled: bool,
+    collide_connected: bool,
+    kind: JointKind2D,
+) -> u64 {
+    let mut hash = body_a.as_u64().wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ body_b.as_u64();
+    hash = hash_u32(hash, anchor_a.x.to_bits());
+    hash = hash_u32(hash, anchor_a.y.to_bits());
+    hash = hash_u32(hash, anchor_b.x.to_bits());
+    hash = hash_u32(hash, anchor_b.y.to_bits());
+    hash = hash_u32(hash, enabled as u32);
+    hash = hash_u32(hash, collide_connected as u32);
+    match kind {
+        JointKind2D::Pin => hash_u32(hash, 1),
+        JointKind2D::Distance { min, max } => {
+            let hash = hash_u32(hash, 2);
+            let hash = hash_u32(hash, min.to_bits());
+            hash_u32(hash, max.to_bits())
+        }
+        JointKind2D::Fixed => hash_u32(hash, 3),
+    }
+}
+
+fn joint_signature_3d(
+    body_a: NodeID,
+    body_b: NodeID,
+    anchor_a: Vector3,
+    anchor_b: Vector3,
+    enabled: bool,
+    collide_connected: bool,
+    kind: JointKind3D,
+) -> u64 {
+    let mut hash = body_a.as_u64().wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ body_b.as_u64();
+    hash = hash_u32(hash, anchor_a.x.to_bits());
+    hash = hash_u32(hash, anchor_a.y.to_bits());
+    hash = hash_u32(hash, anchor_a.z.to_bits());
+    hash = hash_u32(hash, anchor_b.x.to_bits());
+    hash = hash_u32(hash, anchor_b.y.to_bits());
+    hash = hash_u32(hash, anchor_b.z.to_bits());
+    hash = hash_u32(hash, enabled as u32);
+    hash = hash_u32(hash, collide_connected as u32);
+    match kind {
+        JointKind3D::Ball => hash_u32(hash, 1),
+        JointKind3D::Hinge { axis } => {
+            let hash = hash_u32(hash, 2);
+            let hash = hash_u32(hash, axis.x.to_bits());
+            let hash = hash_u32(hash, axis.y.to_bits());
+            hash_u32(hash, axis.z.to_bits())
+        }
+        JointKind3D::Fixed => hash_u32(hash, 3),
+    }
+}
+
+fn build_joint_2d(desc: &JointDesc2D) -> r2::GenericJoint {
+    let anchor_a = na2::Point2::new(desc.anchor_a.x, desc.anchor_a.y);
+    let anchor_b = na2::Point2::new(desc.anchor_b.x, desc.anchor_b.y);
+    match desc.kind {
+        JointKind2D::Pin => r2::RevoluteJointBuilder::new()
+            .contacts_enabled(desc.collide_connected)
+            .local_anchor1(anchor_a)
+            .local_anchor2(anchor_b)
+            .into(),
+        JointKind2D::Distance { min: _, max } => r2::RopeJointBuilder::new(max.max(0.0001))
+            .contacts_enabled(desc.collide_connected)
+            .local_anchor1(anchor_a)
+            .local_anchor2(anchor_b)
+            .into(),
+        JointKind2D::Fixed => r2::FixedJointBuilder::new()
+            .contacts_enabled(desc.collide_connected)
+            .local_anchor1(anchor_a)
+            .local_anchor2(anchor_b)
+            .into(),
+    }
+}
+
+fn build_joint_3d(desc: &JointDesc3D) -> r3::GenericJoint {
+    let anchor_a = na3::Point3::new(desc.anchor_a.x, desc.anchor_a.y, desc.anchor_a.z);
+    let anchor_b = na3::Point3::new(desc.anchor_b.x, desc.anchor_b.y, desc.anchor_b.z);
+    match desc.kind {
+        JointKind3D::Ball => r3::SphericalJointBuilder::new()
+            .contacts_enabled(desc.collide_connected)
+            .local_anchor1(anchor_a)
+            .local_anchor2(anchor_b)
+            .into(),
+        JointKind3D::Hinge { axis } => {
+            let axis = if axis.x * axis.x + axis.y * axis.y + axis.z * axis.z <= 0.000_001 {
+                na3::Vector3::y_axis()
+            } else {
+                na3::Unit::new_normalize(na3::Vector3::new(axis.x, axis.y, axis.z))
+            };
+            r3::RevoluteJointBuilder::new(axis)
+                .contacts_enabled(desc.collide_connected)
+                .local_anchor1(anchor_a)
+                .local_anchor2(anchor_b)
+                .into()
+        }
+        JointKind3D::Fixed => r3::FixedJointBuilder::new()
+            .contacts_enabled(desc.collide_connected)
+            .local_anchor1(anchor_a)
+            .local_anchor2(anchor_b)
+            .into(),
+    }
+}
+
+fn remove_joint_2d(world: &mut PhysicsWorld2D, id: NodeID) {
+    if let Some(state) = world.joint_map.remove(&id) {
+        let _ = world.impulse_joints.remove(state.handle, true);
+    }
+}
+
+fn remove_joint_3d(world: &mut PhysicsWorld3D, id: NodeID) {
+    if let Some(state) = world.joint_map.remove(&id) {
+        let _ = world.impulse_joints.remove(state.handle, true);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use perro_nodes::{Area3D, CollisionShape3D, StaticBody3D};
+    use perro_nodes::{
+        Area2D, Area3D, CollisionShape2D, CollisionShape3D, FixedJoint2D, FixedJoint3D,
+        RigidBody2D, RigidBody3D, StaticBody3D,
+    };
 
     #[test]
     fn physics_raycast_3d_hits_static_body() {
@@ -2758,5 +3354,209 @@ mod tests {
             )
             .expect("ray should skip area and hit static body");
         assert_eq!(no_area_hit.node, static_body);
+    }
+
+    #[test]
+    fn physics_2d_layers_and_masks_filter_area_overlaps() {
+        let mut runtime = Runtime::new();
+
+        let static_body = NodeAPI::create::<RigidBody2D>(&mut runtime);
+        let static_shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, static_body, static_shape));
+
+        let area = NodeAPI::create::<Area2D>(&mut runtime);
+        let area_shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, area, area_shape));
+
+        if let Some(node) = runtime.nodes.get_mut(static_body)
+            && let SceneNodeData::RigidBody2D(body) = &mut node.data
+        {
+            body.collision_layer = 1;
+            body.collision_mask = 1;
+            body.gravity_scale = 0.0;
+        }
+        if let Some(node) = runtime.nodes.get_mut(area)
+            && let SceneNodeData::Area2D(body) = &mut node.data
+        {
+            body.collision_layer = 2;
+            body.collision_mask = 2;
+        }
+
+        runtime.physics_fixed_step();
+        assert!(runtime.physics.active_area_overlaps_2d.is_empty());
+
+        if let Some(node) = runtime.nodes.get_mut(area)
+            && let SceneNodeData::Area2D(body) = &mut node.data
+        {
+            body.collision_mask = 1;
+        }
+        if let Some(node) = runtime.nodes.get_mut(static_body)
+            && let SceneNodeData::RigidBody2D(body) = &mut node.data
+        {
+            body.collision_mask = 2;
+        }
+
+        runtime.physics_fixed_step();
+        assert!(
+            runtime
+                .physics
+                .active_area_overlaps_2d
+                .contains(&AreaOverlap {
+                    area,
+                    other: static_body
+                })
+        );
+    }
+
+    #[test]
+    fn physics_3d_layers_and_masks_filter_area_overlaps() {
+        let mut runtime = Runtime::new();
+
+        let static_body = NodeAPI::create::<RigidBody3D>(&mut runtime);
+        let static_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, static_body, static_shape));
+
+        let area = NodeAPI::create::<Area3D>(&mut runtime);
+        let area_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, area, area_shape));
+
+        if let Some(node) = runtime.nodes.get_mut(static_body)
+            && let SceneNodeData::RigidBody3D(body) = &mut node.data
+        {
+            body.collision_layer = 1;
+            body.collision_mask = 1;
+            body.gravity_scale = 0.0;
+        }
+        if let Some(node) = runtime.nodes.get_mut(area)
+            && let SceneNodeData::Area3D(body) = &mut node.data
+        {
+            body.collision_layer = 4;
+            body.collision_mask = 4;
+        }
+
+        runtime.physics_fixed_step();
+        assert!(runtime.physics.active_area_overlaps_3d.is_empty());
+
+        if let Some(node) = runtime.nodes.get_mut(area)
+            && let SceneNodeData::Area3D(body) = &mut node.data
+        {
+            body.collision_mask = 1;
+        }
+        if let Some(node) = runtime.nodes.get_mut(static_body)
+            && let SceneNodeData::RigidBody3D(body) = &mut node.data
+        {
+            body.collision_mask = 4;
+        }
+
+        runtime.physics_fixed_step();
+        assert!(
+            runtime
+                .physics
+                .active_area_overlaps_3d
+                .contains(&AreaOverlap {
+                    area,
+                    other: static_body
+                })
+        );
+    }
+
+    #[test]
+    fn physics_2d_fixed_joint_syncs_and_disables() {
+        let mut runtime = Runtime::new();
+
+        let body_a = NodeAPI::create::<RigidBody2D>(&mut runtime);
+        let body_b = NodeAPI::create::<RigidBody2D>(&mut runtime);
+        let joint = NodeAPI::create::<FixedJoint2D>(&mut runtime);
+
+        if let Some(node) = runtime.nodes.get_mut(body_a)
+            && let SceneNodeData::RigidBody2D(body) = &mut node.data
+        {
+            body.gravity_scale = 0.0;
+        }
+        if let Some(node) = runtime.nodes.get_mut(body_b)
+            && let SceneNodeData::RigidBody2D(body) = &mut node.data
+        {
+            body.gravity_scale = 0.0;
+        }
+        if let Some(node) = runtime.nodes.get_mut(joint)
+            && let SceneNodeData::FixedJoint2D(joint_data) = &mut node.data
+        {
+            joint_data.body_a = body_a;
+            joint_data.body_b = body_b;
+        }
+
+        runtime.physics_fixed_step();
+        assert!(
+            runtime
+                .physics
+                .world_2d
+                .as_ref()
+                .is_some_and(|world| world.joint_map.contains_key(&joint))
+        );
+
+        if let Some(node) = runtime.nodes.get_mut(joint)
+            && let SceneNodeData::FixedJoint2D(joint_data) = &mut node.data
+        {
+            joint_data.enabled = false;
+        }
+
+        runtime.physics_fixed_step();
+        assert!(
+            runtime
+                .physics
+                .world_2d
+                .as_ref()
+                .is_none_or(|world| !world.joint_map.contains_key(&joint))
+        );
+    }
+
+    #[test]
+    fn physics_3d_fixed_joint_syncs_and_disables() {
+        let mut runtime = Runtime::new();
+
+        let body_a = NodeAPI::create::<RigidBody3D>(&mut runtime);
+        let body_b = NodeAPI::create::<RigidBody3D>(&mut runtime);
+        let joint = NodeAPI::create::<FixedJoint3D>(&mut runtime);
+
+        if let Some(node) = runtime.nodes.get_mut(body_a)
+            && let SceneNodeData::RigidBody3D(body) = &mut node.data
+        {
+            body.gravity_scale = 0.0;
+        }
+        if let Some(node) = runtime.nodes.get_mut(body_b)
+            && let SceneNodeData::RigidBody3D(body) = &mut node.data
+        {
+            body.gravity_scale = 0.0;
+        }
+        if let Some(node) = runtime.nodes.get_mut(joint)
+            && let SceneNodeData::FixedJoint3D(joint_data) = &mut node.data
+        {
+            joint_data.body_a = body_a;
+            joint_data.body_b = body_b;
+        }
+
+        runtime.physics_fixed_step();
+        assert!(
+            runtime
+                .physics
+                .world_3d
+                .as_ref()
+                .is_some_and(|world| world.joint_map.contains_key(&joint))
+        );
+
+        if let Some(node) = runtime.nodes.get_mut(joint)
+            && let SceneNodeData::FixedJoint3D(joint_data) = &mut node.data
+        {
+            joint_data.enabled = false;
+        }
+
+        runtime.physics_fixed_step();
+        assert!(
+            runtime
+                .physics
+                .world_3d
+                .as_ref()
+                .is_none_or(|world| !world.joint_map.contains_key(&joint))
+        );
     }
 }

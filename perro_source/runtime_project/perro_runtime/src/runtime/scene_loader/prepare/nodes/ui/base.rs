@@ -4,23 +4,47 @@ fn build_ui_box(data: &SceneDefNodeData) -> UiBox {
     node
 }
 
-fn build_ui_panel(data: &SceneDefNodeData) -> UiPanel {
+fn load_ui_style_source(
+    source: &str,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) -> Option<perro_ui::UiStyle> {
+    let source = source.trim();
+    if source.is_empty() {
+        return None;
+    }
+    if let Some(lookup) = static_ui_style_lookup {
+        let hash = perro_ids::parse_hashed_source_uri(source)
+            .unwrap_or_else(|| perro_ids::string_to_u64(source));
+        return Some(lookup(hash).clone());
+    }
+    let bytes = load_asset(source).ok()?;
+    let text = std::str::from_utf8(&bytes).ok()?;
+    parse_ui_style_source(text)
+}
+
+fn build_ui_panel(
+    data: &SceneDefNodeData,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) -> UiPanel {
     let mut node = UiPanel::new();
     if let Some(base) = data.base_ref() {
         apply_ui_root_data(&mut node.base, base);
     }
     apply_ui_root_fields(&mut node.base, &data.fields);
-    apply_ui_panel_fields(&mut node, &data.fields);
+    apply_ui_panel_fields(&mut node, &data.fields, static_ui_style_lookup);
     node
 }
 
-fn build_ui_button(data: &SceneDefNodeData) -> UiButton {
+fn build_ui_button(
+    data: &SceneDefNodeData,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) -> UiButton {
     let mut node = UiButton::new();
     if let Some(base) = data.base_ref() {
         apply_ui_root_data(&mut node.base, base);
     }
     apply_ui_root_fields(&mut node.base, &data.fields);
-    apply_ui_button_fields(&mut node, &data.fields);
+    apply_ui_button_fields(&mut node, &data.fields, static_ui_style_lookup);
     node
 }
 
@@ -44,25 +68,31 @@ fn build_ui_image(data: &SceneDefNodeData) -> UiImage {
     node
 }
 
-fn build_ui_text_box(data: &SceneDefNodeData) -> UiTextBox {
+fn build_ui_text_box(
+    data: &SceneDefNodeData,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) -> UiTextBox {
     let mut node = UiTextBox::new();
     if let Some(base) = data.base_ref() {
         apply_ui_root_data(&mut node.inner.base, base);
     }
     apply_ui_root_fields(&mut node.inner.base, &data.fields);
-    apply_ui_text_edit_fields(&mut node.inner, &data.fields);
+    apply_ui_text_edit_fields(&mut node.inner, &data.fields, static_ui_style_lookup);
     node.inner.multiline = false;
     node
 }
 
-fn build_ui_text_block(data: &SceneDefNodeData) -> UiTextBlock {
+fn build_ui_text_block(
+    data: &SceneDefNodeData,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) -> UiTextBlock {
     let mut node = UiTextBlock::new();
     node.inner.multiline = true;
     if let Some(base) = data.base_ref() {
         apply_ui_root_data(&mut node.inner.base, base);
     }
     apply_ui_root_fields(&mut node.inner.base, &data.fields);
-    apply_ui_text_edit_fields(&mut node.inner, &data.fields);
+    apply_ui_text_edit_fields(&mut node.inner, &data.fields, static_ui_style_lookup);
     node
 }
 
@@ -306,11 +336,20 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
     });
 }
 
-fn apply_ui_panel_fields(node: &mut UiPanel, fields: &[SceneObjectField]) {
+fn apply_ui_panel_fields(
+    node: &mut UiPanel,
+    fields: &[SceneObjectField],
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) {
     apply_ui_style_fields(&mut node.style, fields, "");
+    apply_ui_style_object_fields(&mut node.style, fields, "style", static_ui_style_lookup);
 }
 
-fn apply_ui_button_fields(node: &mut UiButton, fields: &[SceneObjectField]) {
+fn apply_ui_button_fields(
+    node: &mut UiButton,
+    fields: &[SceneObjectField],
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "disabled" => {
             if let Some(v) = as_bool(value) {
@@ -340,13 +379,13 @@ fn apply_ui_button_fields(node: &mut UiButton, fields: &[SceneObjectField]) {
         _ => {}
     });
     apply_ui_style_fields(&mut node.style, fields, "");
-    apply_ui_style_object_fields(&mut node.style, fields, "style");
+    apply_ui_style_object_fields(&mut node.style, fields, "style", static_ui_style_lookup);
     node.hover_style = node.style.clone();
     node.pressed_style = node.style.clone();
     apply_ui_style_fields(&mut node.hover_style, fields, "hover_");
     apply_ui_style_fields(&mut node.pressed_style, fields, "pressed_");
-    apply_ui_button_state_fields(node, fields, "hover");
-    apply_ui_button_state_fields(node, fields, "pressed");
+    apply_ui_button_state_fields(node, fields, "hover", static_ui_style_lookup);
+    apply_ui_button_state_fields(node, fields, "pressed", static_ui_style_lookup);
 }
 
 fn apply_ui_label_fields(node: &mut UiLabel, fields: &[SceneObjectField]) {
@@ -434,7 +473,11 @@ fn apply_ui_image_fields(node: &mut UiImage, fields: &[SceneObjectField]) {
     });
 }
 
-fn apply_ui_text_edit_fields(node: &mut perro_ui::UiTextEdit, fields: &[SceneObjectField]) {
+fn apply_ui_text_edit_fields(
+    node: &mut perro_ui::UiTextEdit,
+    fields: &[SceneObjectField],
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "text" => {
             if let Some(v) = as_str(value) {
@@ -520,8 +563,13 @@ fn apply_ui_text_edit_fields(node: &mut perro_ui::UiTextEdit, fields: &[SceneObj
     });
     apply_ui_style_fields(&mut node.style, fields, "");
     apply_ui_style_fields(&mut node.focused_style, fields, "focused_");
-    apply_ui_style_object_fields(&mut node.style, fields, "style");
-    apply_ui_style_object_fields(&mut node.focused_style, fields, "focused_style");
+    apply_ui_style_object_fields(&mut node.style, fields, "style", static_ui_style_lookup);
+    apply_ui_style_object_fields(
+        &mut node.focused_style,
+        fields,
+        "focused_style",
+        static_ui_style_lookup,
+    );
 }
 
 fn decode_scene_text_literal(text: &str) -> String {
@@ -670,6 +718,63 @@ fn apply_ui_fixed_container_fields(
     });
 }
 
+fn parse_ui_style_source(source: &str) -> Option<perro_ui::UiStyle> {
+    let text = source.trim();
+    let wrapped;
+    let parse_text = if ui_style_source_looks_like_object(text) {
+        text
+    } else {
+        wrapped = format!("{{\n{text}\n}}");
+        wrapped.as_str()
+    };
+    let parsed = std::panic::catch_unwind(|| Parser::new(parse_text).parse_value_literal()).ok()?;
+    let SceneValue::Object(entries) = parsed else {
+        return None;
+    };
+    let mut style = perro_ui::UiStyle::panel();
+    apply_ui_style_fields(&mut style, entries.as_ref(), "");
+    Some(style)
+}
+
+fn ui_style_source_looks_like_object(text: &str) -> bool {
+    text.lines()
+        .map(strip_ui_style_line_comment)
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .is_some_and(|line| line.starts_with('{'))
+}
+
+fn strip_ui_style_line_comment(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    let mut in_string = false;
+    let mut escape = false;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_string {
+            if escape {
+                escape = false;
+            } else if b == b'\\' {
+                escape = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'"' {
+            in_string = true;
+            i += 1;
+            continue;
+        }
+        if b == b'#' || (b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/') {
+            return &line[..i];
+        }
+        i += 1;
+    }
+    line
+}
+
 fn apply_ui_style_fields(style: &mut perro_ui::UiStyle, fields: &[SceneObjectField], prefix: &str) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         let Some(field) = name.strip_prefix(prefix) else {
@@ -765,19 +870,32 @@ fn apply_ui_style_object_fields(
     style: &mut perro_ui::UiStyle,
     fields: &[SceneObjectField],
     object_name: &str,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
 ) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         if name != object_name {
             return;
         }
-        let SceneValue::Object(entries) = value else {
-            return;
-        };
-        apply_ui_style_fields(style, entries.as_ref(), "");
+        match value {
+            SceneValue::Object(entries) => apply_ui_style_fields(style, entries.as_ref(), ""),
+            _ => {
+                if let Some(source) = as_asset_source(value)
+                    && source.ends_with(".uistyle")
+                    && let Some(loaded) = load_ui_style_source(&source, static_ui_style_lookup)
+                {
+                    *style = loaded;
+                }
+            }
+        }
     });
 }
 
-fn apply_ui_button_state_fields(node: &mut UiButton, fields: &[SceneObjectField], state_name: &str) {
+fn apply_ui_button_state_fields(
+    node: &mut UiButton,
+    fields: &[SceneObjectField],
+    state_name: &str,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         if name != state_name {
             return;
@@ -796,7 +914,7 @@ fn apply_ui_button_state_fields(node: &mut UiButton, fields: &[SceneObjectField]
         let size_override = ui_state_has_explicit_size_override(entries.as_ref());
         apply_ui_root_fields(&mut base, entries.as_ref());
         apply_ui_style_fields(&mut style, entries.as_ref(), "");
-        apply_ui_style_object_fields(&mut style, entries.as_ref(), "style");
+        apply_ui_style_object_fields(&mut style, entries.as_ref(), "style", static_ui_style_lookup);
 
         match state_name {
             "hover" => {

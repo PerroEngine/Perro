@@ -23,6 +23,14 @@ Raycast macros:
 - `physics_raycast_3d_with_areas!(ctx, origin, direction, max_distance) -> Option<PhysicsRayHit3D>`
 - `physics_raycast_3d_without_areas!(ctx, origin, direction, max_distance) -> Option<PhysicsRayHit3D>`
 
+Planned 1.0 parity macros:
+
+- `physics_raycast_2d!(ctx, origin, direction, max_distance) -> Option<PhysicsRayHit2D>`
+- `physics_shape_cast_2d!(ctx, shape, origin, direction, max_distance, filter) -> Option<PhysicsShapeHit2D>`
+- `physics_shape_cast_3d!(ctx, shape, origin, direction, max_distance, filter) -> Option<PhysicsShapeHit3D>`
+- `physics_contacts_2d!(ctx, body_id) -> Vec<PhysicsContact2D>`
+- `physics_contacts_3d!(ctx, body_id) -> Vec<PhysicsContact3D>`
+
 Arguments:
 
 - `ctx`: `&mut RuntimeWindow<_>`
@@ -30,6 +38,7 @@ Arguments:
 - `force`/`impulse`: `Vector2` for 2D bodies, `Vector3` for 3D bodies
 - `origin`/`direction`: `Vector3` ray data in world space
 - `max_distance`: maximum 3D ray distance
+- `filter`: planned `PhysicsQueryFilter` for layer masks, area inclusion, and excluded nodes
 
 Behavior:
 
@@ -47,6 +56,87 @@ Behavior:
 - `physics_raycast_3d_with_areas!` is an explicit alias for area-inclusive raycasts.
 - `physics_raycast_3d_without_areas!` skips `Area3D` sensor colliders.
 - Raycast returns `None` for invalid direction, non-positive distance, missing world, or no hit.
+
+## Collision Layers And Masks
+
+2D and 3D body/area nodes expose:
+
+- `collision_layer: u32`
+- `collision_mask: u32`
+
+Default values:
+
+- `collision_layer = 1`
+- `collision_mask = 4294967295`
+
+Layer/mask behavior:
+
+- A collider belongs to `collision_layer`.
+- A collider checks against other layers through `collision_mask`.
+- Contacts and area overlaps use layer/mask rules.
+
+Planned 1.0 parity still needs query filters so raycasts and shape casts use the same layer/mask rules.
+
+## Planned 1.0 Physics Parity
+
+Planned query filter:
+
+```rust
+PhysicsQueryFilter {
+    mask: u32::MAX,
+    include_areas: true,
+    exclude_nodes: Vec<NodeID>,
+}
+```
+
+Planned contact hit data:
+
+- `node`: other body node.
+- `point`: world-space contact point.
+- `normal`: world-space normal.
+- `impulse`: solver impulse when available.
+
+Planned shape casts use existing collision shape kinds.
+2D uses `Shape2D`.
+3D uses primitive `Shape3D`.
+Trimesh shape casts are not part of the 1.0 target.
+
+## Joint Nodes
+
+2D:
+
+- `PinJoint2D`
+- `DistanceJoint2D`
+- `FixedJoint2D`
+
+3D:
+
+- `BallJoint3D`
+- `HingeJoint3D`
+- `FixedJoint3D`
+
+Common fields:
+
+- `body_a`
+- `body_b`
+- `anchor_a`
+- `anchor_b`
+- `enabled`
+- `collide_connected`
+
+Extra fields:
+
+- `HingeJoint3D.axis`
+- `DistanceJoint2D.min_distance`
+- `DistanceJoint2D.max_distance`
+
+Joint nodes sync during fixed step after bodies sync and before the physics world step.
+If either body is missing, the joint is skipped.
+`body_a` and `body_b` accept scene node refs like `@BodyName` in scene files.
+Anchors are local to each connected body.
+`collide_connected = false` disables contacts between connected bodies.
+`DistanceJoint2D` currently uses the Rapier rope constraint, so `max_distance` is enforced.
+`min_distance` is stored for API stability, but not enforced yet.
 
 `PhysicsRayHit3D` fields:
 

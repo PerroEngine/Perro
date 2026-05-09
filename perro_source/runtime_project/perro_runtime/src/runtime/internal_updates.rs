@@ -128,7 +128,10 @@ impl Runtime {
 
     fn register_physics_body(&mut self, id: NodeID, ty: NodeType) {
         match ty {
-            NodeType::StaticBody2D | NodeType::Area2D | NodeType::RigidBody2D => {
+            NodeType::StaticBody2D
+            | NodeType::Area2D
+            | NodeType::RigidBody2D
+            | NodeType::TileMap2D => {
                 let slot = id.index() as usize;
                 if self.internal_updates.physics_body_pos_2d.len() <= slot {
                     self.internal_updates

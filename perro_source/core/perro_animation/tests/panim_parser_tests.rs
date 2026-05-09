@@ -773,3 +773,37 @@ Player = Node2D
     assert_eq!(track.keys[0].mode, AnimationKeyMode::Open);
     assert!(track.keys[0].sampled_value().is_none());
 }
+
+#[test]
+fn parses_bone2d_base_transform_tracks() {
+    let src = r#"
+[Animation]
+name = "Bone2DPose"
+fps = 30
+[/Animation]
+
+[Objects]
+UpperArm = Bone2D
+[/Objects]
+
+[Frame0]
+@UpperArm {
+    position = (2, 3)
+    rotation = 0.25
+    scale = (1, 1)
+}
+[/Frame0]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+    let track = clip
+        .object_tracks
+        .iter()
+        .find(|t| matches!(t.field, NodeField::Node2D(Node2DField::Position)))
+        .expect("bone2d transform track");
+    assert_eq!(track.object.as_ref(), "UpperArm");
+    assert!(matches!(
+        track.keys[0].value,
+        AnimationTrackValue::Transform2D(_)
+    ));
+}

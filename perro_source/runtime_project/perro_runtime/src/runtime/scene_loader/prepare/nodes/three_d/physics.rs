@@ -38,6 +38,36 @@ fn build_area_3d(data: &SceneDefNodeData) -> Area3D {
     node
 }
 
+fn build_ball_joint_3d(data: &SceneDefNodeData) -> BallJoint3D {
+    let mut node = BallJoint3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_ball_joint_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_hinge_joint_3d(data: &SceneDefNodeData) -> HingeJoint3D {
+    let mut node = HingeJoint3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_hinge_joint_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_fixed_joint_3d(data: &SceneDefNodeData) -> FixedJoint3D {
+    let mut node = FixedJoint3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_fixed_joint_3d_fields(&mut node, &data.fields);
+    node
+}
+
 fn apply_collision_shape_3d_fields(node: &mut CollisionShape3D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         match resolve_node_field("CollisionShape3D", name) {
@@ -63,26 +93,38 @@ fn apply_collision_shape_3d_fields(node: &mut CollisionShape3D, fields: &[SceneO
 
 fn apply_static_body_3d_fields(node: &mut StaticBody3D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
-        if resolve_node_field("StaticBody3D", name)
-            == Some(NodeField::StaticBody3D(StaticBody3DField::Enabled))
-            && let Some(enabled) = as_bool(value)
-        {
-            node.enabled = enabled;
-        } else if resolve_node_field("StaticBody3D", name)
-            == Some(NodeField::StaticBody3D(StaticBody3DField::Friction))
-            && let Some(v) = as_f32(value)
-        {
-            node.friction = v;
-        } else if resolve_node_field("StaticBody3D", name)
-            == Some(NodeField::StaticBody3D(StaticBody3DField::Restitution))
-            && let Some(v) = as_f32(value)
-        {
-            node.restitution = v;
-        } else if resolve_node_field("StaticBody3D", name)
-            == Some(NodeField::StaticBody3D(StaticBody3DField::Density))
-            && let Some(v) = as_f32(value)
-        {
-            node.density = v;
+        match resolve_node_field("StaticBody3D", name) {
+            Some(NodeField::StaticBody3D(StaticBody3DField::Enabled)) => {
+                if let Some(enabled) = as_bool(value) {
+                    node.enabled = enabled;
+                }
+            }
+            Some(NodeField::StaticBody3D(StaticBody3DField::CollisionLayer)) => {
+                if let Some(v) = as_u32(value) {
+                    node.collision_layer = v;
+                }
+            }
+            Some(NodeField::StaticBody3D(StaticBody3DField::CollisionMask)) => {
+                if let Some(v) = as_u32(value) {
+                    node.collision_mask = v;
+                }
+            }
+            Some(NodeField::StaticBody3D(StaticBody3DField::Friction)) => {
+                if let Some(v) = as_f32(value) {
+                    node.friction = v;
+                }
+            }
+            Some(NodeField::StaticBody3D(StaticBody3DField::Restitution)) => {
+                if let Some(v) = as_f32(value) {
+                    node.restitution = v;
+                }
+            }
+            Some(NodeField::StaticBody3D(StaticBody3DField::Density)) => {
+                if let Some(v) = as_f32(value) {
+                    node.density = v;
+                }
+            }
+            _ => {}
         }
     });
 }
@@ -93,6 +135,16 @@ fn apply_rigid_body_3d_fields(node: &mut RigidBody3D, fields: &[SceneObjectField
             Some(NodeField::RigidBody3D(RigidBody3DField::Enabled)) => {
                 if let Some(enabled) = as_bool(value) {
                     node.enabled = enabled;
+                }
+            }
+            Some(NodeField::RigidBody3D(RigidBody3DField::CollisionLayer)) => {
+                if let Some(v) = as_u32(value) {
+                    node.collision_layer = v;
+                }
+            }
+            Some(NodeField::RigidBody3D(RigidBody3DField::CollisionMask)) => {
+                if let Some(v) = as_u32(value) {
+                    node.collision_mask = v;
                 }
             }
             Some(NodeField::RigidBody3D(
@@ -159,10 +211,141 @@ fn apply_rigid_body_3d_fields(node: &mut RigidBody3D, fields: &[SceneObjectField
 
 fn apply_area_3d_fields(node: &mut Area3D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
-        if resolve_node_field("Area3D", name) == Some(NodeField::Area3D(Area3DField::Enabled))
-            && let Some(enabled) = as_bool(value) {
-                node.enabled = enabled;
+        match resolve_node_field("Area3D", name) {
+            Some(NodeField::Area3D(Area3DField::Enabled)) => {
+                if let Some(enabled) = as_bool(value) {
+                    node.enabled = enabled;
+                }
             }
+            Some(NodeField::Area3D(Area3DField::CollisionLayer)) => {
+                if let Some(v) = as_u32(value) {
+                    node.collision_layer = v;
+                }
+            }
+            Some(NodeField::Area3D(Area3DField::CollisionMask)) => {
+                if let Some(v) = as_u32(value) {
+                    node.collision_mask = v;
+                }
+            }
+            _ => {}
+        }
+    });
+}
+
+struct Joint3DCommonMut<'a> {
+    body_a: &'a mut NodeID,
+    body_b: &'a mut NodeID,
+    anchor_a: &'a mut Vector3,
+    anchor_b: &'a mut Vector3,
+    enabled: &'a mut bool,
+    collide_connected: &'a mut bool,
+}
+
+fn apply_joint_3d_common(
+    node: Joint3DCommonMut<'_>,
+    ty: &str,
+    name: &str,
+    value: &SceneValue,
+) {
+    let common = match resolve_node_field(ty, name) {
+        Some(NodeField::BallJoint3D(field)) => Some(field),
+        Some(NodeField::FixedJoint3D(field)) => Some(field),
+        Some(NodeField::HingeJoint3D(HingeJoint3DField::Common(field))) => Some(field),
+        _ => None,
+    };
+    match common {
+        Some(Joint3DField::BodyA) => {
+            if let Some(v) = as_node_id(value) {
+                *node.body_a = v;
+            }
+        }
+        Some(Joint3DField::BodyB) => {
+            if let Some(v) = as_node_id(value) {
+                *node.body_b = v;
+            }
+        }
+        Some(Joint3DField::AnchorA) => {
+            if let Some(v) = as_vec3(value) {
+                *node.anchor_a = v;
+            }
+        }
+        Some(Joint3DField::AnchorB) => {
+            if let Some(v) = as_vec3(value) {
+                *node.anchor_b = v;
+            }
+        }
+        Some(Joint3DField::Enabled) => {
+            if let Some(v) = as_bool(value) {
+                *node.enabled = v;
+            }
+        }
+        Some(Joint3DField::CollideConnected) => {
+            if let Some(v) = as_bool(value) {
+                *node.collide_connected = v;
+            }
+        }
+        None => {}
+    }
+}
+
+fn apply_ball_joint_3d_fields(node: &mut BallJoint3D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        apply_joint_3d_common(
+            Joint3DCommonMut {
+                body_a: &mut node.body_a,
+                body_b: &mut node.body_b,
+                anchor_a: &mut node.anchor_a,
+                anchor_b: &mut node.anchor_b,
+                enabled: &mut node.enabled,
+                collide_connected: &mut node.collide_connected,
+            },
+            "BallJoint3D",
+            name,
+            value,
+        );
+    });
+}
+
+fn apply_fixed_joint_3d_fields(node: &mut FixedJoint3D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        apply_joint_3d_common(
+            Joint3DCommonMut {
+                body_a: &mut node.body_a,
+                body_b: &mut node.body_b,
+                anchor_a: &mut node.anchor_a,
+                anchor_b: &mut node.anchor_b,
+                enabled: &mut node.enabled,
+                collide_connected: &mut node.collide_connected,
+            },
+            "FixedJoint3D",
+            name,
+            value,
+        );
+    });
+}
+
+fn apply_hinge_joint_3d_fields(node: &mut HingeJoint3D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("HingeJoint3D", name) {
+            Some(NodeField::HingeJoint3D(HingeJoint3DField::Axis)) => {
+                if let Some(v) = as_vec3(value) {
+                    node.axis = v;
+                }
+            }
+            _ => apply_joint_3d_common(
+                Joint3DCommonMut {
+                    body_a: &mut node.body_a,
+                    body_b: &mut node.body_b,
+                    anchor_a: &mut node.anchor_a,
+                    anchor_b: &mut node.anchor_b,
+                    enabled: &mut node.enabled,
+                    collide_connected: &mut node.collide_connected,
+                },
+                "HingeJoint3D",
+                name,
+                value,
+            ),
+        }
     });
 }
 

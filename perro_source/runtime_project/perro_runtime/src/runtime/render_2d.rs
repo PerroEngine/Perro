@@ -1,11 +1,12 @@
 use super::Runtime;
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use perro_ids::{NodeID, TextureID, parse_hashed_source_uri, string_to_u64};
 use perro_nodes::{SceneNodeData, particle_emitter_2d::ParticleEmitterSimMode2D};
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     Camera2DState, Command2D, ParticlePath2D, ParticleProfile2D, ParticleSimulationMode2D,
     PointParticles2DState, RenderCommand, RenderRequestID, ResourceCommand, Sprite2DCommand,
+    TileMap2DCommand,
 };
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -17,6 +18,21 @@ struct Sprite2DEmit {
     texture_region: Option<[f32; 4]>,
     model: [[f32; 3]; 3],
     z_index: i32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ParsedTileset2D {
+    pub texture: String,
+    pub tile_size: [f32; 2],
+    pub columns: u32,
+    pub rows: u32,
+    pub tiles: AHashMap<i32, ParsedTile2D>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ParsedTile2D {
+    pub atlas: [u32; 2],
+    pub collision: bool,
 }
 
 impl Runtime {
@@ -230,6 +246,65 @@ impl Runtime {
                     self.render_2d.retained_sprites.remove(&node);
                 }
             }
+
+            let tilemap_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::TileMap2D(tilemap) => Some((
+                    effective_visible && tilemap.visible,
+                    tilemap.tileset.clone(),
+                    tilemap.width,
+                    tilemap.height,
+                    tilemap.empty_tile,
+                    tilemap.tiles.clone(),
+                    tilemap.transform,
+                    tilemap.z_index,
+                )),
+                _ => None,
+            });
+            if let Some((
+                visible,
+                tileset_source,
+                width,
+                height,
+                empty_tile,
+                tiles,
+                local_transform,
+                z_index,
+            )) = tilemap_data
+            {
+                if visible {
+                    if let Some(tileset) = resolve_tileset_2d(self, &tileset_source)
+                        && let Some(texture) =
+                            self.resolve_tilemap_texture(node, tileset.texture.as_str())
+                    {
+                        let global = self
+                            .get_global_transform_2d(node)
+                            .unwrap_or(local_transform)
+                            .to_mat3()
+                            .to_cols_array_2d();
+                        let sprites = build_tilemap_sprites(TilemapSpriteBuild {
+                            texture,
+                            base_model: global,
+                            z_index,
+                            width,
+                            height,
+                            empty_tile,
+                            tiles: &tiles,
+                            tileset: &tileset,
+                        });
+                        self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertTileMap {
+                            node,
+                            tilemap: TileMap2DCommand {
+                                texture,
+                                sprites: Arc::from(sprites),
+                            },
+                        }));
+                        visible_now.insert(node);
+                    }
+                } else {
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+                    self.render_2d.retained_sprites.remove(&node);
+                }
+            }
         }
         self.remove_no_longer_visible_render_2d_nodes(&visible_now);
 
@@ -332,6 +407,29 @@ impl Runtime {
         Some(texture)
     }
 
+    fn resolve_tilemap_texture(&mut self, node: NodeID, source: &str) -> Option<TextureID> {
+        let request = RenderRequestID::new((node.as_u64() << 8) | 0x71);
+        if let Some(result) = self.take_render_result(request) {
+            return match result {
+                crate::RuntimeRenderResult::Texture(id) => Some(id),
+                crate::RuntimeRenderResult::Failed(_) => None,
+                crate::RuntimeRenderResult::Mesh(_) | crate::RuntimeRenderResult::Material(_) => {
+                    None
+                }
+            };
+        }
+        if !self.render.is_inflight(request) {
+            self.render.mark_inflight(request);
+            self.queue_render_command(RenderCommand::Resource(ResourceCommand::CreateTexture {
+                request,
+                id: TextureID::nil(),
+                source: source.to_string(),
+                reserved: false,
+            }));
+        }
+        None
+    }
+
     fn remove_no_longer_visible_render_2d_nodes(&mut self, visible_now: &AHashSet<NodeID>) {
         for node in self.render_2d.prev_visible.iter().copied() {
             if !visible_now.contains(&node) {
@@ -343,6 +441,161 @@ impl Runtime {
             self.render_2d.retained_sprites.remove(&node);
         }
     }
+}
+
+pub(crate) fn resolve_tileset_2d(runtime: &mut Runtime, source: &str) -> Option<ParsedTileset2D> {
+    if let Some(tileset) = runtime.render_2d.tileset_cache.get(source) {
+        return Some(tileset.clone());
+    }
+    let bytes = perro_io::load_asset(source).ok()?;
+    let text = std::str::from_utf8(&bytes).ok()?;
+    let tileset = parse_ptileset_source(text)?;
+    runtime
+        .render_2d
+        .tileset_cache
+        .insert(source.to_string(), tileset.clone());
+    Some(tileset)
+}
+
+struct TilemapSpriteBuild<'a> {
+    texture: TextureID,
+    width: u32,
+    height: u32,
+    z_index: i32,
+    empty_tile: i32,
+    base_model: [[f32; 3]; 3],
+    tiles: &'a [i32],
+    tileset: &'a ParsedTileset2D,
+}
+
+fn build_tilemap_sprites(build: TilemapSpriteBuild<'_>) -> Vec<Sprite2DCommand> {
+    let max = (build.width as usize)
+        .saturating_mul(build.height as usize)
+        .min(build.tiles.len());
+    let mut out = Vec::with_capacity(max);
+    let [tw, th] = build.tileset.tile_size;
+    for (idx, tile_id) in build.tiles.iter().take(max).copied().enumerate() {
+        if tile_id == build.empty_tile {
+            continue;
+        }
+        let Some(tile) = build.tileset.tiles.get(&tile_id) else {
+            continue;
+        };
+        let x = (idx as u32 % build.width) as f32 * tw;
+        let y = (idx as u32 / build.width) as f32 * th;
+        let model = mul_mat3(build.base_model, translation_mat3(x, -y));
+        let atlas_x = tile.atlas[0] as f32 * tw;
+        let atlas_y = tile.atlas[1] as f32 * th;
+        out.push(Sprite2DCommand {
+            texture: build.texture,
+            model,
+            tint: [1.0, 1.0, 1.0, 1.0],
+            uv_min: [atlas_x, atlas_y],
+            uv_max: [atlas_x + tw, atlas_y + th],
+            size: [tw, th],
+            z_index: build.z_index,
+        });
+    }
+    out
+}
+
+fn parse_ptileset_source(source: &str) -> Option<ParsedTileset2D> {
+    let mut texture = String::new();
+    let mut tile_size = [0.0, 0.0];
+    let mut columns = 0u32;
+    let mut rows = 0u32;
+    let mut tiles = AHashMap::new();
+    let compact = source.replace('\n', " ");
+    for raw in source.lines() {
+        let line = raw.trim();
+        if line.starts_with("texture") {
+            texture = parse_quoted_value(line)?;
+        } else if line.starts_with("tile_size") {
+            tile_size = parse_vec2_u32(line).map(|v| [v[0] as f32, v[1] as f32])?;
+        } else if line.starts_with("columns") {
+            columns = parse_u32_after_eq(line)?;
+        } else if line.starts_with("rows") {
+            rows = parse_u32_after_eq(line)?;
+        }
+    }
+    for object in compact
+        .split('{')
+        .skip(1)
+        .filter_map(|part| part.split_once('}').map(|v| v.0))
+    {
+        let id = find_i32_field(object, "id")?;
+        let atlas = find_vec2_field(object, "atlas")?;
+        let collision = find_bool_field(object, "collision").unwrap_or(false);
+        tiles.insert(id, ParsedTile2D { atlas, collision });
+    }
+    if texture.is_empty() || tile_size[0] <= 0.0 || tile_size[1] <= 0.0 {
+        return None;
+    }
+    Some(ParsedTileset2D {
+        texture,
+        tile_size,
+        columns,
+        rows,
+        tiles,
+    })
+}
+
+fn parse_quoted_value(line: &str) -> Option<String> {
+    let (_, rest) = line.split_once('=')?;
+    let rest = rest.trim();
+    Some(rest.strip_prefix('"')?.split('"').next()?.to_string())
+}
+
+fn parse_u32_after_eq(line: &str) -> Option<u32> {
+    line.split_once('=')?.1.trim().parse().ok()
+}
+
+fn parse_vec2_u32(line: &str) -> Option<[u32; 2]> {
+    let (_, rest) = line.split_once('=')?;
+    parse_vec2_inner(rest)
+}
+
+fn find_i32_field(text: &str, key: &str) -> Option<i32> {
+    let rest = text.split(key).nth(1)?.split_once('=')?.1.trim();
+    rest.split(|c: char| c == ',' || c.is_whitespace())
+        .find(|v| !v.is_empty())?
+        .parse()
+        .ok()
+}
+
+fn find_bool_field(text: &str, key: &str) -> Option<bool> {
+    let rest = text.split(key).nth(1)?.split_once('=')?.1.trim();
+    if rest.starts_with("true") {
+        Some(true)
+    } else if rest.starts_with("false") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn find_vec2_field(text: &str, key: &str) -> Option<[u32; 2]> {
+    parse_vec2_inner(text.split(key).nth(1)?.split_once('=')?.1)
+}
+
+fn parse_vec2_inner(text: &str) -> Option<[u32; 2]> {
+    let inner = text.trim().strip_prefix('(')?.split_once(')')?.0;
+    let mut parts = inner.split(',').map(|v| v.trim().parse::<u32>().ok());
+    Some([parts.next()??, parts.next()??])
+}
+
+fn translation_mat3(x: f32, y: f32) -> [[f32; 3]; 3] {
+    [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [x, y, 1.0]]
+}
+
+fn mul_mat3(a: [[f32; 3]; 3], b: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
+    let mut out = [[0.0; 3]; 3];
+    for c in 0..3 {
+        for r in 0..3 {
+            out[c][r] = a[0][r] * b[c][0] + a[1][r] * b[c][1] + a[2][r] * b[c][2];
+        }
+    }
+    out
 }
 
 fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {

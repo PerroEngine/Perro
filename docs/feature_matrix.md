@@ -28,10 +28,11 @@ Status keys:
 | `Node2D` transform      | done    | Position, rotation, scale, z index, visibility.                                                                                  |
 | `Sprite2D`              | done    | Textured quad with optional pixel texture region for atlas frames.                                                               |
 | `Camera2D`              | done    | Active camera with zoom and camera post-processing.                                                                              |
-| 2D physics bodies       | partial | Static, rigid, area, and collision shapes exist. Raycast, shape cast, layers/masks, joints, and richer contact data are planned. |
+| 2D physics bodies       | partial | Static, rigid, area, collision shapes, layers/masks, and core joint nodes exist. 1.0 parity target still needs 2D raycast, shape cast, and contact data. See [Physics Module](scripting/contexts/runtime_modules/physics.md). |
 | Draw2D transient shapes | partial | Circle/ring/rect debug-style draws exist. Lines, polys, paths, and atlas sprites are planned.                                    |
 | `AnimatedSprite2D`      | done    | Sprite-sheet playback from normal texture paths plus named strip/grid animation definitions.                                     |
-| Tile maps               | planned | Target: one texture atlas plus tile ids, with empty tile value `-1`.                                                             |
+| Tile maps               | partial | `TileMap2D` plus `.ptileset` runtime path exists: one texture atlas, tile ids, empty tile `-1`, draw extraction, and merged runtime 2D collision bake for `collision = true` auto tiles. Static pipeline bake and explicit collision shapes remain. See [TileMap2D](scripting/tilemap.md) and [`.ptileset`](resources/ptileset.md). |
+| 2D skeleton nodes       | done    | `Skeleton2D` is a 2D transform parent. `Bone2D` is a child `Node2D` with rest/pose/inv_bind data and normal `Node2D` animation tracks. |
 | 2D particles            | done    | `ParticleEmitter2D` uses `.ppart` profiles; `z` fields are ignored.                                                              |
 | 2D lights               | planned | First target: unshadowed point/additive light pass; shadows later.                                                               |
 
@@ -45,7 +46,7 @@ Status keys:
 | 3D lights                  | done     | Ambient, sky, ray, point, and spot lights.                                                                                                                          |
 | 3D shadows                 | partial  | Shadow path exists for 3D lights/casters. More control and docs are still needed.                                                                                   |
 | 3D particles               | done     | `ParticleEmitter3D` driven by `.ppart` profiles.                                                                                                                    |
-| 3D physics                 | partial  | Bodies, areas, primitive shapes, trimesh collision, raycast, contacts, and area overlap signals exist. Layers/masks parity work remains.                            |
+| 3D physics                 | partial  | Bodies, areas, primitive shapes, trimesh collision, raycast, contacts, area overlap signals, layers/masks, and core joint nodes exist. 1.0 parity target still needs shape cast and richer contact data. See [Physics Module](scripting/contexts/runtime_modules/physics.md). |
 | Skeleton skinning          | done     | A `MeshInstance3D` can bind to a `Skeleton3D` and use mesh weights.                                                                                                 |
 | Shared-skeleton mesh reuse | done     | Works when the mesh uses the same rig contract: matching joint order/indices and compatible weights.                                                                |
 | Automatic retargeting      | research | Bone-name remap, rest-pose solve, and mismatched rig conversion are not implemented.                                                                                |
@@ -62,8 +63,8 @@ Status keys:
 | Layout nodes          | done    | H/V/grid/tree list layout nodes exist with retained invalidation. |
 | Scroll containers     | done    | `UiScrollContainer` offsets child content and clips to its rect.  |
 | Focus navigation      | partial | Text focus exists. Keyboard/controller traversal remains.         |
-| UI image node         | planned | Needed for image-heavy UI and demo hubs.                          |
-| Themes/font assets    | planned | Current UI styling is mostly per-node scene/script data.          |
+| UI image node         | done    | `UiImage` renders texture IDs with tint, region, scale mode, alignment, and aspect ratio. |
+| UI style resources    | done | Inline `style = { ... }` blocks and `res://path/to/style.uistyle` load for normal/hover/pressed/focused state styles, mirroring material resource flow. See [`.uistyle`](resources/uistyle.md). |
 
 ## Tooling And Demos
 
@@ -76,7 +77,7 @@ Status keys:
 ## Planned Work Packets
 
 1. Docs truth pass and feature matrix.
-2. `TileMap2D` plus `TileSet`.
-3. 2D physics parity: casts, layers/masks, contact details.
-4. 2D particles plus unshadowed 2D light.
-5. Demo hubs, CLI doctor, 3D LOD research, material docs.
+2. Physics parity: 2D raycast, shape cast, and contact details.
+3. `TileMap2D` plus `.ptileset`: atlas tiles, `empty_tile = -1`, `collision_shape = "auto"`, runtime bake, static pipeline bake.
+4. UI style resources: inline `style = { ... }` plus `res://path/to/style.uistyle` for normal/hover/pressed/focused state styles.
+5. 2D lights, demo hubs, 3D LOD controls, and material docs.

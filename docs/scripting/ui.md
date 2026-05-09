@@ -9,6 +9,7 @@ They use `UiBox` as their base node type.
 UiBox
 - UiPanel
 - UiButton
+- UiImage
 - UiLabel
 - UiLayout
 - UiHLayout
@@ -39,6 +40,12 @@ UiBox
 - `hover` and `pressed` can override layout / transform / style fields.
 - Add text, image, layouts, grids, or panels as children.
 - Emits `<node_name>_<event>` plus custom event signal lists.
+
+`UiImage`
+
+- Drawn image node.
+- Holds `texture`, `texture_region`, `tint`, `scale_mode`, alignment, and `aspect_ratio`.
+- Use it for icon, portrait, inventory, and image-heavy UI.
 
 `UiLabel`
 
@@ -139,6 +146,39 @@ Both accept `color`, `distance`, `falloff`, `vector`, and `size`.
 `size = 1` matches the panel/button.
 `size = 2` doubles it.
 `size = 0.5` halves it.
+
+## Planned `.uistyle` Resources
+
+Current inline style blocks remain the base schema:
+
+```text
+style = { fill = "#222" stroke = "#555" radius = 0.2 }
+```
+
+The 1.0 style resource target is to load the same schema from `.uistyle`:
+
+```text
+style = "res://ui/panel.uistyle"
+```
+
+Button states should accept style resources:
+
+```text
+hover = { style = "res://ui/button_hover.uistyle" }
+pressed = { style = "res://ui/button_down.uistyle" }
+```
+
+Text edit focus should accept:
+
+```text
+focused_style = "res://ui/input_focus.uistyle"
+```
+
+`.uistyle` is visual-only.
+It mirrors `UiStyle` fields such as `fill`, `stroke`, `stroke_width`, `radius`, `shadow`, and `highlight`.
+It does not define layout, classes, or global themes.
+
+See [`.uistyle` Format](../resources/uistyle.md).
 
 ## Coordinate Space
 

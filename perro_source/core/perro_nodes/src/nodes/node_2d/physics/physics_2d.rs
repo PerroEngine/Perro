@@ -1,4 +1,5 @@
 use crate::node_2d::Node2D;
+use perro_ids::NodeID;
 use perro_structs::Vector2;
 use std::ops::{Deref, DerefMut};
 
@@ -78,6 +79,8 @@ pub struct StaticBody2D {
     pub base: Node2D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
+    pub collision_layer: u32,
+    pub collision_mask: u32,
     pub friction: f32,
     pub restitution: f32,
     pub density: f32,
@@ -95,6 +98,8 @@ impl StaticBody2D {
             base: Node2D::new(),
             enabled: true,
             physics_handle: None,
+            collision_layer: 1,
+            collision_mask: u32::MAX,
             friction: 0.7,
             restitution: 0.0,
             density: 1.0,
@@ -121,6 +126,8 @@ pub struct Area2D {
     pub base: Node2D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
+    pub collision_layer: u32,
+    pub collision_mask: u32,
 }
 
 impl Default for Area2D {
@@ -135,6 +142,8 @@ impl Area2D {
             base: Node2D::new(),
             enabled: true,
             physics_handle: None,
+            collision_layer: 1,
+            collision_mask: u32::MAX,
         }
     }
 }
@@ -158,6 +167,8 @@ pub struct RigidBody2D {
     pub base: Node2D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
+    pub collision_layer: u32,
+    pub collision_mask: u32,
     pub continuous_collision_detection: bool,
     pub linear_velocity: Vector2,
     pub angular_velocity: f32,
@@ -183,6 +194,8 @@ impl RigidBody2D {
             base: Node2D::new(),
             enabled: true,
             physics_handle: None,
+            collision_layer: 1,
+            collision_mask: u32::MAX,
             continuous_collision_detection: true,
             linear_velocity: Vector2::ZERO,
             angular_velocity: 0.0,
@@ -207,6 +220,145 @@ impl Deref for RigidBody2D {
 }
 
 impl DerefMut for RigidBody2D {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PinJoint2D {
+    pub base: Node2D,
+    pub body_a: NodeID,
+    pub body_b: NodeID,
+    pub anchor_a: Vector2,
+    pub anchor_b: Vector2,
+    pub enabled: bool,
+    pub collide_connected: bool,
+}
+
+impl Default for PinJoint2D {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PinJoint2D {
+    pub const fn new() -> Self {
+        Self {
+            base: Node2D::new(),
+            body_a: NodeID::nil(),
+            body_b: NodeID::nil(),
+            anchor_a: Vector2::ZERO,
+            anchor_b: Vector2::ZERO,
+            enabled: true,
+            collide_connected: false,
+        }
+    }
+}
+
+impl Deref for PinJoint2D {
+    type Target = Node2D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for PinJoint2D {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DistanceJoint2D {
+    pub base: Node2D,
+    pub body_a: NodeID,
+    pub body_b: NodeID,
+    pub anchor_a: Vector2,
+    pub anchor_b: Vector2,
+    pub enabled: bool,
+    pub collide_connected: bool,
+    pub min_distance: f32,
+    pub max_distance: f32,
+}
+
+impl Default for DistanceJoint2D {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DistanceJoint2D {
+    pub const fn new() -> Self {
+        Self {
+            base: Node2D::new(),
+            body_a: NodeID::nil(),
+            body_b: NodeID::nil(),
+            anchor_a: Vector2::ZERO,
+            anchor_b: Vector2::ZERO,
+            enabled: true,
+            collide_connected: false,
+            min_distance: 0.0,
+            max_distance: 1.0,
+        }
+    }
+}
+
+impl Deref for DistanceJoint2D {
+    type Target = Node2D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for DistanceJoint2D {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FixedJoint2D {
+    pub base: Node2D,
+    pub body_a: NodeID,
+    pub body_b: NodeID,
+    pub anchor_a: Vector2,
+    pub anchor_b: Vector2,
+    pub enabled: bool,
+    pub collide_connected: bool,
+}
+
+impl Default for FixedJoint2D {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FixedJoint2D {
+    pub const fn new() -> Self {
+        Self {
+            base: Node2D::new(),
+            body_a: NodeID::nil(),
+            body_b: NodeID::nil(),
+            anchor_a: Vector2::ZERO,
+            anchor_b: Vector2::ZERO,
+            enabled: true,
+            collide_connected: false,
+        }
+    }
+}
+
+impl Deref for FixedJoint2D {
+    type Target = Node2D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for FixedJoint2D {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.base
     }

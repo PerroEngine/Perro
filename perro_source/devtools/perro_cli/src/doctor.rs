@@ -397,7 +397,7 @@ fn collect_reference_text_files_recursive(
 fn is_reference_text_extension(ext: &std::ffi::OsStr) -> bool {
     matches!(
         ext.to_string_lossy().to_ascii_lowercase().as_str(),
-        "scn" | "panim" | "panimtree" | "ppart" | "pmat" | "toml" | "ron" | "json"
+        "scn" | "panim" | "panimtree" | "ppart" | "pmat" | "uistyle" | "toml" | "ron" | "json"
     )
 }
 

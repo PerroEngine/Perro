@@ -20,6 +20,6 @@ pub use runtime_project::{
     ProviderMode, RuntimeProject, RuntimeProjectConfig, StaticAnimationLookup,
     StaticAnimationTreeLookup, StaticAudioLookup, StaticBytesLookup, StaticLocalizationLookup,
     StaticMaterialLookup, StaticParticleLookup, StaticProjectConfig, StaticSceneLookup,
-    StaticShaderLookup, StaticSkeletonLookup, default_project_toml, ensure_project_layout,
-    ensure_project_toml, load_project_toml, parse_project_toml,
+    StaticShaderLookup, StaticSkeletonLookup, StaticUiStyleLookup, default_project_toml,
+    ensure_project_layout, ensure_project_toml, load_project_toml, parse_project_toml,
 };
