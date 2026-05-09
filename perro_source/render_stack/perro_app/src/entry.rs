@@ -97,6 +97,7 @@ pub struct StaticEmbeddedProject<'a> {
     pub runtime: StaticEmbeddedRuntimeConfig,
     pub metadata: StaticEmbeddedMetadataConfig,
     pub localization: StaticEmbeddedLocalizationConfig,
+    pub steam: StaticEmbeddedSteamConfig,
     pub assets: StaticEmbeddedAssetsConfig,
 }
 
@@ -137,6 +138,11 @@ pub struct StaticEmbeddedMetadataConfig {
 
 pub struct StaticEmbeddedLocalizationConfig {
     pub default_locale: &'static str,
+}
+
+pub struct StaticEmbeddedSteamConfig {
+    pub enabled: bool,
+    pub app_id: Option<u32>,
 }
 
 pub struct StaticEmbeddedAssetsConfig {
@@ -188,6 +194,7 @@ pub fn run_static_embedded_project(
         input.metadata.trademark,
     );
     static_config = static_config.with_localization(input.localization.default_locale);
+    static_config = static_config.with_steam(input.steam.enabled, input.steam.app_id);
     let mut project =
         RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf());
 

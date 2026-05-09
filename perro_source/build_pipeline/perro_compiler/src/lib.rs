@@ -1409,6 +1409,10 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
   localization: perro_app::entry::StaticEmbeddedLocalizationConfig {{\n\
         default_locale: {localization_default_locale},\n\
   }},\n\
+  steam: perro_app::entry::StaticEmbeddedSteamConfig {{\n\
+        enabled: {steam_enabled},\n\
+        app_id: {steam_app_id},\n\
+  }},\n\
   assets: perro_app::entry::StaticEmbeddedAssetsConfig {{\n\
         perro_assets: PERRO_ASSETS,\n\
         scene_lookup: static_assets::scenes::lookup_scene,\n\
@@ -1456,6 +1460,8 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
                 .map(|loc| loc.default_locale.as_str())
                 .unwrap_or("en"),
         ),
+        steam_enabled = cfg.steam.enabled,
+        steam_app_id = emit_optional_u32(cfg.steam.app_id),
     );
     let embedded_block = indent_block(&embedded_block, 2);
 
@@ -1576,6 +1582,13 @@ fn emit_optional_f32(value: Option<f32>) -> String {
     match value {
         Some(v) if v.is_finite() => format!("Some({}f32)", v),
         _ => "None".to_string(),
+    }
+}
+
+fn emit_optional_u32(value: Option<u32>) -> String {
+    match value {
+        Some(v) => format!("Some({v}u32)"),
+        None => "None".to_string(),
     }
 }
 

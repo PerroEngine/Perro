@@ -31,6 +31,7 @@ virtual_resolution = "1280x720"
     assert_eq!(parsed.physics_gravity, -9.81);
     assert_eq!(parsed.physics_coef, 1.0);
     assert!(parsed.localization.is_none());
+    assert_eq!(parsed.steam, SteamConfig::default());
 }
 
 #[test]
@@ -115,6 +116,66 @@ coef = 0.5
     let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
     assert_eq!(parsed.physics_gravity, -4.905);
     assert_eq!(parsed.physics_coef, 0.5);
+}
+
+#[test]
+fn parse_project_toml_reads_steam_config() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+
+[steam]
+enabled = true
+app_id = 123456
+"#;
+
+    let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
+    assert!(parsed.steam.enabled);
+    assert_eq!(parsed.steam.app_id, Some(123456));
+}
+
+#[test]
+fn parse_project_toml_rejects_enabled_steam_without_app_id() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+
+[steam]
+enabled = true
+"#;
+
+    let err = parse_project_toml(toml).expect_err("expected parse failure");
+    assert!(matches!(err, ProjectError::MissingField("steam.app_id")));
+}
+
+#[test]
+fn parse_project_toml_rejects_invalid_steam_app_id() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+
+[steam]
+enabled = true
+app_id = "spacewar"
+"#;
+
+    let err = parse_project_toml(toml).expect_err("expected parse failure");
+    assert!(matches!(err, ProjectError::InvalidField("steam.app_id", _)));
 }
 
 #[test]
@@ -387,6 +448,91 @@ serde = { version = "1", features = ["derive"] }
     assert!(scripts_manifest.contains("perro_api = \"0.1.0\""));
     assert!(scripts_manifest.contains("perro_runtime = \"0.1.0\""));
     assert!(scripts_manifest.contains("serde"));
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
+fn ensure_source_overrides_adds_steamworks_when_steam_enabled() {
+    let root = unique_temp_dir("perro_steam_enabled_deps");
+    ensure_project_layout(&root).expect("layout");
+    ensure_project_scaffold(&root, "Steam Enabled").expect("scaffold");
+    fs::write(
+        root.join("project.toml"),
+        r#"[project]
+name = "Steam Enabled"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+
+[steam]
+enabled = true
+app_id = 480
+"#,
+    )
+    .expect("write project.toml");
+
+    ensure_source_overrides(&root).expect("overrides");
+
+    let scripts_manifest =
+        fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
+            .expect("read scripts manifest");
+    assert!(scripts_manifest.contains("perro_steamworks = \"0.1.0\""));
+    assert!(
+        scripts_manifest.contains("perro_steamworks = { path =")
+            || scripts_manifest.contains("perro_steamworks = {path =")
+    );
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
+fn ensure_source_overrides_removes_steamworks_when_steam_disabled() {
+    let root = unique_temp_dir("perro_steam_disabled_deps");
+    ensure_project_layout(&root).expect("layout");
+    ensure_project_scaffold(&root, "Steam Disabled").expect("scaffold");
+    fs::write(
+        root.join("project.toml"),
+        r#"[project]
+name = "Steam Disabled"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+
+[steam]
+enabled = true
+app_id = 480
+"#,
+    )
+    .expect("write enabled project.toml");
+    ensure_source_overrides(&root).expect("enabled overrides");
+    fs::write(
+        root.join("project.toml"),
+        r#"[project]
+name = "Steam Disabled"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+
+[steam]
+enabled = false
+app_id = 480
+"#,
+    )
+    .expect("write disabled project.toml");
+
+    ensure_source_overrides(&root).expect("disabled overrides");
+
+    let scripts_manifest =
+        fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
+            .expect("read scripts manifest");
+    assert!(!scripts_manifest.contains("perro_steamworks = \"0.1.0\""));
 
     fs::remove_dir_all(&root).expect("cleanup");
 }

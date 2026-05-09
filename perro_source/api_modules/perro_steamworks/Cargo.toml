@@ -1,0 +1,7 @@
+[package]
+name = "perro_steamworks"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+steamworks = "0.13.1"

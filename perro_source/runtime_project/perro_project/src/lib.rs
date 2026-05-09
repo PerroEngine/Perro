@@ -51,6 +51,12 @@ pub struct LocalizationConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SteamConfig {
+    pub enabled: bool,
+    pub app_id: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ProjectMetadata {
     pub description: Option<String>,
     pub company: Option<String>,
@@ -84,6 +90,8 @@ pub struct StaticProjectConfig {
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
     pub localization_default_locale: &'static str,
+    pub steam_enabled: bool,
+    pub steam_app_id: Option<u32>,
 }
 
 impl StaticProjectConfig {
@@ -119,6 +127,8 @@ impl StaticProjectConfig {
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
             localization_default_locale: "en",
+            steam_enabled: false,
+            steam_app_id: None,
         }
     }
 
@@ -198,6 +208,12 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_steam(mut self, enabled: bool, app_id: Option<u32>) -> Self {
+        self.steam_enabled = enabled;
+        self.steam_app_id = app_id;
+        self
+    }
+
     pub fn to_runtime(self) -> ProjectConfig {
         ProjectConfig {
             name: self.name.to_string(),
@@ -232,6 +248,10 @@ impl StaticProjectConfig {
                 key_column: "key".to_string(),
                 default_locale: self.localization_default_locale.to_string(),
             }),
+            steam: SteamConfig {
+                enabled: self.steam_enabled,
+                app_id: self.steam_app_id,
+            },
         }
     }
 }
@@ -260,6 +280,7 @@ pub struct ProjectConfig {
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
     pub localization: Option<LocalizationConfig>,
+    pub steam: SteamConfig,
 }
 
 impl ProjectConfig {
@@ -287,6 +308,7 @@ impl ProjectConfig {
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
             localization: None,
+            steam: SteamConfig::default(),
         }
     }
 }
@@ -557,6 +579,11 @@ coef = 1.0
 #
 # [localization]
 # default_locale = "en"
+
+# Optional Steam integration.
+# [steam]
+# enabled = false
+# app_id = 480
 "#
     )
 }
@@ -583,6 +610,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let physics_table = value.get("physics").and_then(Value::as_table);
     let localization_table = value.get("localization").and_then(Value::as_table);
     let metadata_table = value.get("metadata").and_then(Value::as_table);
+    let steam_table = value.get("steam").and_then(Value::as_table);
 
     let name = project_table
         .get("name")
@@ -670,6 +698,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     )?;
     let localization = parse_localization(localization_table)?;
     let metadata = parse_metadata(metadata_table)?;
+    let steam = parse_steam(steam_table)?;
 
     Ok(ProjectConfig {
         name,
@@ -694,7 +723,35 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         occlusion_culling,
         particle_sim_default,
         localization,
+        steam,
     })
+}
+
+fn parse_steam(table: Option<&toml::map::Map<String, Value>>) -> Result<SteamConfig, ProjectError> {
+    let Some(table) = table else {
+        return Ok(SteamConfig::default());
+    };
+    let enabled = match table.get("enabled") {
+        Some(value) => value.as_bool().ok_or_else(|| {
+            ProjectError::InvalidField("steam.enabled", "must be a boolean".to_string())
+        })?,
+        None => false,
+    };
+    let app_id = match table.get("app_id") {
+        Some(value) => {
+            let raw = value.as_integer().ok_or_else(|| {
+                ProjectError::InvalidField("steam.app_id", "must be an integer".to_string())
+            })?;
+            Some(u32::try_from(raw).map_err(|_| {
+                ProjectError::InvalidField("steam.app_id", "must fit in u32".to_string())
+            })?)
+        }
+        None => None,
+    };
+    if enabled && app_id.is_none() {
+        return Err(ProjectError::MissingField("steam.app_id"));
+    }
+    Ok(SteamConfig { enabled, app_id })
 }
 
 fn parse_bool_with_default(
@@ -1740,7 +1797,8 @@ fn rel_path(from: &Path, to: &Path) -> String {
     for c in &to_components[common..] {
         out.push(c.as_os_str());
     }
-    out.to_string_lossy().replace('\\', "/")
+    let path = out.to_string_lossy().replace('\\', "/");
+    path.strip_prefix("//?/").unwrap_or(&path).to_string()
 }
 
 fn default_project_main_rs(project_name: &str) -> String {
@@ -1819,6 +1877,10 @@ fn project_root() -> std::path::PathBuf {
           },
           localization: perro_app::entry::StaticEmbeddedLocalizationConfig {
               default_locale: "en",
+          },
+          steam: perro_app::entry::StaticEmbeddedSteamConfig {
+              enabled: false,
+              app_id: None,
           },
           assets: perro_app::entry::StaticEmbeddedAssetsConfig {
               perro_assets: PERRO_ASSETS,
@@ -2104,18 +2166,9 @@ fn ensure_scripts_manifest_user_deps(
     project_root: &Path,
     scripts_manifest: &Path,
 ) -> std::io::Result<()> {
-    let deps_toml = project_root.join("deps.toml");
-    if !deps_toml.exists() || !scripts_manifest.exists() {
+    if !scripts_manifest.exists() {
         return Ok(());
     }
-
-    let deps_src = fs::read_to_string(&deps_toml)?;
-    let deps_value = deps_src.parse::<Value>().map_err(|err| {
-        std::io::Error::other(format!("failed to parse {}: {err}", deps_toml.display()))
-    })?;
-    let Some(extra_deps) = deps_value.get("dependencies").and_then(Value::as_table) else {
-        return Ok(());
-    };
 
     let scripts_src = fs::read_to_string(scripts_manifest)?;
     let Ok(mut scripts_value) = scripts_src.parse::<Value>() else {
@@ -2132,10 +2185,28 @@ fn ensure_scripts_manifest_user_deps(
     };
 
     let mut desired = toml::value::Table::new();
-    for (name, spec) in extra_deps {
-        if name != "perro_api" && name != "perro_runtime" {
-            desired.insert(name.clone(), spec.clone());
+    let deps_toml = project_root.join("deps.toml");
+    if deps_toml.exists() {
+        let deps_src = fs::read_to_string(&deps_toml)?;
+        let deps_value = deps_src.parse::<Value>().map_err(|err| {
+            std::io::Error::other(format!("failed to parse {}: {err}", deps_toml.display()))
+        })?;
+        if let Some(extra_deps) = deps_value.get("dependencies").and_then(Value::as_table) {
+            for (name, spec) in extra_deps {
+                if !matches!(
+                    name.as_str(),
+                    "perro_api" | "perro_runtime" | "perro_steamworks"
+                ) {
+                    desired.insert(name.clone(), spec.clone());
+                }
+            }
         }
+    }
+    if project_steam_enabled(project_root)? {
+        desired.insert(
+            "perro_steamworks".to_string(),
+            Value::String("0.1.0".to_string()),
+        );
     }
 
     let before_len = scripts_deps_table.len();
@@ -2160,6 +2231,18 @@ fn ensure_scripts_manifest_user_deps(
     let rendered = toml::to_string(&scripts_value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
     fs::write(scripts_manifest, rendered)
+}
+
+fn project_steam_enabled(project_root: &Path) -> std::io::Result<bool> {
+    let project_toml = project_root.join("project.toml");
+    if !project_toml.exists() {
+        return Ok(false);
+    }
+    let src = fs::read_to_string(&project_toml)?;
+    let config = parse_project_toml(&src).map_err(|err| {
+        std::io::Error::other(format!("failed to parse {}: {err}", project_toml.display()))
+    })?;
+    Ok(config.steam.enabled)
 }
 
 fn ensure_scripts_target_dir_config(path: &Path) -> std::io::Result<()> {
@@ -2831,6 +2914,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_api" => Some("perro_source/api_modules/perro_api"),
         "perro_modules" => Some("perro_source/api_modules/perro_modules"),
         "perro_input" => Some("perro_source/api_modules/perro_input"),
+        "perro_steamworks" => Some("perro_source/api_modules/perro_steamworks"),
         "perro_render_bridge" => Some("perro_source/render_stack/perro_render_bridge"),
         "perro_graphics" => Some("perro_source/render_stack/perro_graphics"),
         "perro_meshlets" => Some("perro_source/render_stack/perro_meshlets"),
