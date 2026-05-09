@@ -3630,11 +3630,17 @@ fn build_joint_2d(desc: &JointDesc2D) -> r2::GenericJoint {
             .local_anchor1(anchor_a)
             .local_anchor2(anchor_b)
             .into(),
-        JointKind2D::Distance { min: _, max } => r2::RopeJointBuilder::new(max.max(0.0001))
-            .contacts_enabled(desc.collide_connected)
-            .local_anchor1(anchor_a)
-            .local_anchor2(anchor_b)
-            .into(),
+        JointKind2D::Distance { min, max } => {
+            let min = min.max(0.0);
+            let max = max.max(min).max(0.0001);
+            r2::GenericJointBuilder::new(r2::JointAxesMask::empty())
+                .coupled_axes(r2::JointAxesMask::LIN_AXES)
+                .limits(r2::JointAxis::LinX, [min, max])
+                .contacts_enabled(desc.collide_connected)
+                .local_anchor1(anchor_a)
+                .local_anchor2(anchor_b)
+                .into()
+        }
         JointKind2D::Fixed => r2::FixedJointBuilder::new()
             .contacts_enabled(desc.collide_connected)
             .local_anchor1(anchor_a)
@@ -4165,6 +4171,30 @@ mod tests {
                 .as_ref()
                 .is_none_or(|world| !world.joint_map.contains_key(&joint))
         );
+    }
+
+    #[test]
+    fn physics_2d_distance_joint_enforces_min_and_max_limits() {
+        let joint = JointDesc2D {
+            id: NodeID::new(1),
+            body_a: NodeID::new(2),
+            body_b: NodeID::new(3),
+            anchor_a: Vector2::new(-1.0, 0.0),
+            anchor_b: Vector2::new(1.0, 0.0),
+            enabled: true,
+            collide_connected: false,
+            kind: JointKind2D::Distance { min: 2.0, max: 5.0 },
+            signature: 0,
+        };
+
+        let data = build_joint_2d(&joint);
+        let limits = data
+            .limits(r2::JointAxis::LinX)
+            .expect("distance joint should set linear limits");
+
+        assert_eq!(limits.min, 2.0);
+        assert_eq!(limits.max, 5.0);
+        assert_eq!(data.coupled_axes, r2::JointAxesMask::LIN_AXES);
     }
 
     #[test]

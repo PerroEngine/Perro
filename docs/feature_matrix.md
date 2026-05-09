@@ -79,4 +79,4 @@ Status keys:
 1. Static tilemap collision chunks for fixed scene `TileMap2D` data.
 2. Tilemap polygon collision shape.
 3. 2D lights, demo hubs, 3D LOD controls, and material docs.
-4. Joint polish: enforce `DistanceJoint2D.min_distance`, plus optional limits/motors/springs if needed.
+4. Joint polish: optional limits/motors/springs if needed.

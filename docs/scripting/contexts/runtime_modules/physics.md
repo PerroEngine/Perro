@@ -132,8 +132,7 @@ If either body is missing, the joint is skipped.
 `body_a` and `body_b` accept scene node refs like `@BodyName` in scene files.
 Anchors are local to each connected body.
 `collide_connected = false` disables contacts between connected bodies.
-`DistanceJoint2D` currently uses the Rapier rope constraint, so `max_distance` is enforced.
-`min_distance` is stored for API stability, but not enforced yet.
+`DistanceJoint2D` enforces both `min_distance` and `max_distance`.
 
 `PhysicsRayHit2D` fields:
 
