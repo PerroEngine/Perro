@@ -534,6 +534,20 @@ pub trait NodeAPI {
         .is_some()
     }
 
+    /// Binds a UI text node's main text field to a localization key.
+    ///
+    /// Works on `UiLabel.text`, `UiTextBox.text`, and `UiTextBlock.text`.
+    fn bind_locale_text<S>(&mut self, node_id: NodeID, key: S) -> bool
+    where
+        S: AsRef<str>;
+
+    /// Binds a text-edit node's placeholder field to a localization key.
+    ///
+    /// Works on `UiTextBox.placeholder` and `UiTextBlock.placeholder`.
+    fn bind_locale_placeholder<S>(&mut self, node_id: NodeID, key: S) -> bool
+    where
+        S: AsRef<str>;
+
     /// Returns parent node id if node exists.
     fn get_node_parent_id(&mut self, node_id: NodeID) -> Option<NodeID>;
 
@@ -837,6 +851,20 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 
     pub fn set_ui_rotation(&mut self, node_id: NodeID, rotation: f32) -> bool {
         self.rt.set_ui_rotation(node_id, rotation)
+    }
+
+    pub fn bind_locale_text<S>(&mut self, node_id: NodeID, key: S) -> bool
+    where
+        S: AsRef<str>,
+    {
+        self.rt.bind_locale_text(node_id, key)
+    }
+
+    pub fn bind_locale_placeholder<S>(&mut self, node_id: NodeID, key: S) -> bool
+    where
+        S: AsRef<str>,
+    {
+        self.rt.bind_locale_placeholder(node_id, key)
     }
 
     pub fn get_node_parent_id(&mut self, node_id: NodeID) -> Option<NodeID> {
@@ -1474,6 +1502,20 @@ macro_rules! get_skeleton_bone_index {
 macro_rules! set_ui_rotation {
     ($ctx:expr, $id:expr, $rotation:expr) => {
         $ctx.Nodes().set_ui_rotation($id, $rotation)
+    };
+}
+
+#[macro_export]
+macro_rules! bind_locale_text {
+    ($ctx:expr, $id:expr, $key:expr) => {
+        $ctx.Nodes().bind_locale_text($id, $key)
+    };
+}
+
+#[macro_export]
+macro_rules! bind_locale_placeholder {
+    ($ctx:expr, $id:expr, $key:expr) => {
+        $ctx.Nodes().bind_locale_placeholder($id, $key)
     };
 }
 

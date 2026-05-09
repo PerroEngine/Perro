@@ -838,4 +838,77 @@ mod tests {
             .expect("label text");
         assert_eq!(label_text, "Centro");
     }
+
+    #[test]
+    fn runtime_locale_text_binding_can_switch_key() {
+        fn static_lookup(locale: Locale, key_hash: u64) -> &'static str {
+            match (locale, key_hash) {
+                (Locale::EN, hash) if hash == perro_ids::string_to_u64("ui.center") => "Center",
+                (Locale::ES, hash) if hash == perro_ids::string_to_u64("ui.center") => "Centro",
+                (Locale::EN, hash) if hash == perro_ids::string_to_u64("ui.alt") => "Alt",
+                (Locale::ES, hash) if hash == perro_ids::string_to_u64("ui.alt") => "Otro",
+                _ => "",
+            }
+        }
+
+        let scene = Parser::new(
+            r#"
+            @root = label
+            [label]
+            [UiLabel]
+                text = %loc: "ui.center"
+            [/UiLabel]
+            [/label]
+            "#,
+        )
+        .parse_scene();
+        let prepared = prepare::prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        })
+        .expect("prepare scene");
+        let mut runtime = Runtime::new();
+        runtime.resource_api = RuntimeResourceApi::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(static_lookup),
+            Some(LocalizationConfig {
+                source_csv: "locale.csv".to_string(),
+                key_column: "key".to_string(),
+                default_locale: "en".to_string(),
+            }),
+        );
+        merge::merge_prepared_scene(&mut runtime, prepared).expect("merge scene");
+        let label_id = runtime
+            .nodes
+            .iter()
+            .find_map(|(id, node)| (node.name.as_ref() == "label").then_some(id))
+            .expect("label id");
+
+        assert!(runtime.bind_locale_text(label_id, "ui.alt"));
+        assert_eq!(runtime.locale_text.bindings.len(), 1);
+        assert!(
+            runtime
+                .nodes
+                .get(label_id)
+                .is_some_and(|node| match &node.data {
+                    perro_nodes::SceneNodeData::UiLabel(label) => label.text.as_ref() == "Alt",
+                    _ => false,
+                })
+        );
+
+        assert!(runtime.resource_api.localization_set_locale(Locale::ES));
+        runtime.extract_render_ui_commands();
+        assert!(
+            runtime
+                .nodes
+                .get(label_id)
+                .is_some_and(|node| match &node.data {
+                    perro_nodes::SceneNodeData::UiLabel(label) => label.text.as_ref() == "Otro",
+                    _ => false,
+                })
+        );
+    }
 }

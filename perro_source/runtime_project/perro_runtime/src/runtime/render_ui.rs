@@ -1,7 +1,7 @@
 use super::state::{DirtyState, LocaleTextBinding, LocaleTextField, UiButtonVisualState};
 use super::{Runtime, RuntimeUiTiming};
 use ahash::AHashMap;
-use perro_ids::{NodeID, SignalID};
+use perro_ids::{NodeID, SignalID, string_to_u64};
 use perro_input::{KeyCode, MouseButton};
 use perro_nodes::SceneNodeData;
 use perro_render_bridge::{
@@ -33,7 +33,51 @@ impl Runtime {
             key,
             key_hash,
         };
+        let _ = self.insert_locale_text_binding(binding);
+    }
+
+    pub(crate) fn bind_locale_text(&mut self, node: NodeID, key: &str) -> bool {
+        let Some(field) = self
+            .nodes
+            .get(node)
+            .and_then(|scene_node| default_locale_text_field(&scene_node.data))
+        else {
+            return false;
+        };
+        self.bind_locale_text_field(node, field, key)
+    }
+
+    pub(crate) fn bind_locale_placeholder(&mut self, node: NodeID, key: &str) -> bool {
+        self.bind_locale_text_field(node, LocaleTextField::TextEditPlaceholder, key)
+    }
+
+    fn bind_locale_text_field(&mut self, node: NodeID, field: LocaleTextField, key: &str) -> bool {
+        if !self
+            .nodes
+            .get(node)
+            .is_some_and(|scene_node| locale_text_field_supported(&scene_node.data, field))
+        {
+            return false;
+        }
+        let key = key.trim();
+        if key.is_empty() {
+            return false;
+        }
+        let binding = LocaleTextBinding {
+            node,
+            field,
+            key: key.to_string(),
+            key_hash: string_to_u64(key),
+        };
+        self.insert_locale_text_binding(binding)
+    }
+
+    fn insert_locale_text_binding(&mut self, binding: LocaleTextBinding) -> bool {
+        self.locale_text
+            .bindings
+            .retain(|existing| existing.node != binding.node || existing.field != binding.field);
         let changed = self.apply_locale_text_binding(&binding);
+        let node = binding.node;
         self.locale_text.bindings.push(binding);
         self.locale_text.last_epoch = self.resource_api.localization_epoch();
         if changed {
@@ -45,6 +89,7 @@ impl Runtime {
                     | Runtime::UI_DIRTY_COMMANDS,
             );
         }
+        true
     }
 
     fn refresh_locale_text_bindings(&mut self) {
@@ -2102,6 +2147,33 @@ impl Runtime {
         }
         height
     }
+}
+
+fn default_locale_text_field(data: &SceneNodeData) -> Option<LocaleTextField> {
+    match data {
+        SceneNodeData::UiLabel(_) => Some(LocaleTextField::LabelText),
+        SceneNodeData::UiTextBox(_) | SceneNodeData::UiTextBlock(_) => {
+            Some(LocaleTextField::TextEditText)
+        }
+        _ => None,
+    }
+}
+
+fn locale_text_field_supported(data: &SceneNodeData, field: LocaleTextField) -> bool {
+    matches!(
+        (data, field),
+        (SceneNodeData::UiLabel(_), LocaleTextField::LabelText)
+            | (SceneNodeData::UiTextBox(_), LocaleTextField::TextEditText)
+            | (SceneNodeData::UiTextBlock(_), LocaleTextField::TextEditText)
+            | (
+                SceneNodeData::UiTextBox(_),
+                LocaleTextField::TextEditPlaceholder
+            )
+            | (
+                SceneNodeData::UiTextBlock(_),
+                LocaleTextField::TextEditPlaceholder
+            )
+    )
 }
 
 #[derive(Clone, Copy)]

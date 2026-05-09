@@ -81,6 +81,8 @@ Scene text binding:
   - `UiTextBox.placeholder` / `hint`
   - `UiTextBlock.text`
   - `UiTextBlock.placeholder` / `hint`
+- Runtime scripts can switch a node binding with `bind_locale_text!(ctx.run, node_id, "menu.alt")`.
+- Runtime scripts can bind placeholders with `bind_locale_placeholder!(ctx.run, node_id, "player.name.placeholder")`.
 
 Scene example:
 

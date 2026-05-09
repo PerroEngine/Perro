@@ -645,6 +645,20 @@ impl NodeAPI for Runtime {
         Some(value)
     }
 
+    fn bind_locale_text<S>(&mut self, node_id: perro_ids::NodeID, key: S) -> bool
+    where
+        S: AsRef<str>,
+    {
+        Runtime::bind_locale_text(self, node_id, key.as_ref())
+    }
+
+    fn bind_locale_placeholder<S>(&mut self, node_id: perro_ids::NodeID, key: S) -> bool
+    where
+        S: AsRef<str>,
+    {
+        Runtime::bind_locale_placeholder(self, node_id, key.as_ref())
+    }
+
     fn get_node_name(&mut self, node_id: perro_ids::NodeID) -> Option<Cow<'static, str>> {
         self.nodes.get(node_id).map(|node| node.name.clone())
     }

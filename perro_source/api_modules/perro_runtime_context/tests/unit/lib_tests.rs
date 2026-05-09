@@ -81,6 +81,20 @@ impl NodeAPI for DummyRuntime {
         false
     }
 
+    fn bind_locale_text<S>(&mut self, _node: NodeID, _key: S) -> bool
+    where
+        S: AsRef<str>,
+    {
+        false
+    }
+
+    fn bind_locale_placeholder<S>(&mut self, _node: NodeID, _key: S) -> bool
+    where
+        S: AsRef<str>,
+    {
+        false
+    }
+
     fn get_node_parent_id(&mut self, _node: NodeID) -> Option<NodeID> {
         None
     }

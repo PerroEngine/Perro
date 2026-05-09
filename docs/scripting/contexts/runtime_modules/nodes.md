@@ -67,6 +67,8 @@ Metadata/hierarchy macros:
 - `force_rerender!(ctx.run, root_id) -> bool`
 - `reparent_multi!(ctx.run, parent_id, child_ids) -> usize`
 - `remove_node!(ctx.run, node_id) -> bool`
+- `bind_locale_text!(ctx.run, node_id, "ui.key") -> bool`
+- `bind_locale_placeholder!(ctx.run, node_id, "ui.key") -> bool`
 
 Runtime node base data:
 
@@ -90,6 +92,15 @@ Runtime node base data:
 - Marks `root_id` + all descendants dirty for current extraction frame.
 - Use if you want to force rerender instead of the engine deciding.
 - Returns `false` if `root_id` is nil or missing.
+
+Runtime locale text binding:
+
+- `bind_locale_text!` binds main text to a localization key.
+- Works on `UiLabel.text`, `UiTextBox.text`, and `UiTextBlock.text`.
+- `bind_locale_placeholder!` binds placeholder text.
+- Works on `UiTextBox.placeholder` and `UiTextBlock.placeholder`.
+- Calling bind again on same node/field replaces the old key.
+- Bound text refreshes when current locale changes.
 
 Global transform macros:
 
