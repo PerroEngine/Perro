@@ -192,13 +192,14 @@ impl Runtime {
     }
 
     fn resolve_ui_image_texture(&mut self, node: NodeID) -> Option<TextureID> {
-        let mut texture = self.nodes.get(node).and_then(|scene_node| {
-            if let SceneNodeData::UiImage(image) = &scene_node.data {
-                Some(image.texture)
-            } else {
-                None
-            }
-        })?;
+        let mut texture = self
+            .nodes
+            .get(node)
+            .and_then(|scene_node| match &scene_node.data {
+                SceneNodeData::UiImage(image) => Some(image.texture),
+                SceneNodeData::UiAnimatedImage(image) => Some(image.texture),
+                _ => None,
+            })?;
 
         if texture.is_nil() {
             let request = ui_image_texture_request(node);
@@ -433,9 +434,12 @@ impl Runtime {
             let effective_visible = self.is_effectively_visible_for_ui(node);
             if let Some(texture) = self.resolve_ui_image_texture(node)
                 && let Some(scene_node) = self.nodes.get_mut(node)
-                && let SceneNodeData::UiImage(image) = &mut scene_node.data
             {
-                image.texture = texture;
+                match &mut scene_node.data {
+                    SceneNodeData::UiImage(image) => image.texture = texture,
+                    SceneNodeData::UiAnimatedImage(image) => image.texture = texture,
+                    _ => {}
+                }
             }
             let Some(scene_node) = self.nodes.get(node) else {
                 self.remove_retained_ui_node(node);
@@ -2273,6 +2277,7 @@ fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
         SceneNodeData::UiImage(node) => Some(&node.base),
+        SceneNodeData::UiAnimatedImage(node) => Some(&node.base),
         SceneNodeData::UiLabel(node) => Some(&node.base),
         SceneNodeData::UiTextBox(node) => Some(&node.inner.base),
         SceneNodeData::UiTextBlock(node) => Some(&node.inner.base),
@@ -2594,6 +2599,26 @@ fn ui_command_from_node(
             }
             let (uv_min, uv_max, aspect_ratio) =
                 ui_image_region_uv(image.texture_region, image.aspect_ratio);
+            Some(UiCommand::UpsertImage {
+                node,
+                rect,
+                clip_rect,
+                texture: image.texture,
+                tint: image.tint.to_rgba(),
+                uv_min,
+                uv_max,
+                scale_mode: ui_image_scale_state(image.scale_mode),
+                h_align: text_align_state(image.h_align),
+                v_align: text_align_state(image.v_align),
+                aspect_ratio,
+            })
+        }
+        SceneNodeData::UiAnimatedImage(image) => {
+            if image.texture.is_nil() {
+                return None;
+            }
+            let (uv_min, uv_max, aspect_ratio) =
+                ui_image_region_uv(image.current_texture_region(), image.aspect_ratio);
             Some(UiCommand::UpsertImage {
                 node,
                 rect,
@@ -3387,7 +3412,8 @@ mod tests {
     use perro_runtime_context::sub_apis::NodeAPI;
     use perro_structs::Color;
     use perro_ui::{
-        UiAnchor, UiGrid, UiHLayout, UiPanel, UiScrollContainer, UiTreeList, UiVLayout, UiVector2,
+        UiAnchor, UiAnimatedImage, UiAnimatedImageFrameSet, UiGrid, UiHLayout, UiPanel,
+        UiScrollContainer, UiTreeList, UiVLayout, UiVector2,
     };
 
     #[test]
@@ -3406,6 +3432,36 @@ mod tests {
         commands.clear();
         runtime.drain_render_commands(&mut commands);
         assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn ui_animated_image_emits_current_frame_region() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut image = UiAnimatedImage::new();
+        image.texture = TextureID::from_parts(42, 0);
+        image.layout.size = UiVector2::pixels(64.0, 64.0);
+        image.current_frame = 1;
+        image.animations.push(UiAnimatedImageFrameSet {
+            name: Cow::Borrowed("default"),
+            start: [0.0, 0.0],
+            frame_size: [16.0, 16.0],
+            frame_count: 4,
+            columns: 2,
+            fps: 12.0,
+        });
+        let node = insert_ui_node(&mut runtime, SceneNodeData::UiAnimatedImage(image));
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertImage { node: n, uv_min, uv_max, .. })
+                if *n == node && *uv_min == [16.0, 0.0] && *uv_max == [32.0, 16.0]
+        )));
     }
 
     #[test]

@@ -179,6 +179,60 @@ impl ScriptCollection {
         }
     }
 
+    pub(crate) fn set_update_enabled(&mut self, id: NodeID, enabled: bool) -> bool {
+        let Some(i) = self.instance_index_for(id) else {
+            return false;
+        };
+        if enabled && !self.instances[i].behavior.script_flags().has_update() {
+            return false;
+        }
+
+        let changed = self.set_schedule_slot(i, enabled, true);
+        if changed {
+            self.bump_schedule_epoch();
+        }
+        changed
+    }
+
+    pub(crate) fn set_fixed_update_enabled(&mut self, id: NodeID, enabled: bool) -> bool {
+        let Some(i) = self.instance_index_for(id) else {
+            return false;
+        };
+        if enabled && !self.instances[i].behavior.script_flags().has_fixed_update() {
+            return false;
+        }
+
+        let changed = self.set_schedule_slot(i, enabled, false);
+        if changed {
+            self.bump_schedule_epoch();
+        }
+        changed
+    }
+
+    #[inline]
+    pub(crate) fn is_update_scheduled_indexed(&self, instance_index: usize, id: NodeID) -> bool {
+        self.ids.get(instance_index).copied() == Some(id)
+            && self
+                .update_pos
+                .get(instance_index)
+                .copied()
+                .is_some_and(|pos| pos != NONE_SLOT)
+    }
+
+    #[inline]
+    pub(crate) fn is_fixed_update_scheduled_indexed(
+        &self,
+        instance_index: usize,
+        id: NodeID,
+    ) -> bool {
+        self.ids.get(instance_index).copied() == Some(id)
+            && self
+                .fixed_pos
+                .get(instance_index)
+                .copied()
+                .is_some_and(|pos| pos != NONE_SLOT)
+    }
+
     pub(crate) fn append_instance_ids(&self, out: &mut Vec<NodeID>) {
         out.extend(self.ids.iter().copied());
     }
@@ -300,6 +354,35 @@ impl ScriptCollection {
                 Self::set_reverse_slot(&mut self.fixed_pos, moved_idx, Some(pos));
             }
         }
+    }
+
+    fn set_schedule_slot(&mut self, i: usize, enabled: bool, update: bool) -> bool {
+        let (slots, reverse) = if update {
+            (&mut self.update, &mut self.update_pos)
+        } else {
+            (&mut self.fixed, &mut self.fixed_pos)
+        };
+
+        if enabled {
+            if reverse.get(i).copied().is_some_and(|pos| pos != NONE_SLOT) {
+                return false;
+            }
+            let pos = slots.len();
+            slots.push(i);
+            Self::set_reverse_slot(reverse, i, Some(pos));
+            return true;
+        }
+
+        let Some(pos) = Self::take_reverse_slot(reverse, i) else {
+            return false;
+        };
+        let last_pos = slots.len() - 1;
+        slots.swap_remove(pos);
+        if pos != last_pos {
+            let moved_idx = slots[pos];
+            Self::set_reverse_slot(reverse, moved_idx, Some(pos));
+        }
+        true
     }
 
     fn rebuild_schedules_for_index(&mut self, i: usize, flags: perro_scripting::ScriptFlags) {

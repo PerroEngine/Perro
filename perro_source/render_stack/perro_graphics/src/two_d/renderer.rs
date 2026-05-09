@@ -79,6 +79,7 @@ pub struct Renderer2D {
     retained_point_particles: AHashMap<NodeID, PointParticles2DState>,
     retained_sprites_revision: u64,
     frame_shapes: Vec<RectInstanceGpu>,
+    frame_sprites: Vec<Sprite2DCommand>,
     particle_eval_stack: Vec<f32>,
 }
 
@@ -101,6 +102,7 @@ impl Renderer2D {
             retained_point_particles: AHashMap::new(),
             retained_sprites_revision: 0,
             frame_shapes: Vec::new(),
+            frame_sprites: Vec::new(),
             particle_eval_stack: Vec::new(),
         }
     }
@@ -205,7 +207,9 @@ impl Renderer2D {
     }
 
     fn flush_shape_packets(&mut self) {
+        let had_frame_sprites = !self.frame_sprites.is_empty();
         self.frame_shapes.clear();
+        self.frame_sprites.clear();
         if self.frame_shapes.capacity() < self.queued_shapes.len() {
             self.frame_shapes
                 .reserve(self.queued_shapes.len() - self.frame_shapes.capacity());
@@ -261,7 +265,77 @@ impl Renderer2D {
                         filled: u32::from(filled),
                     });
                 }
+                DrawShape2D::Line {
+                    end,
+                    color,
+                    thickness,
+                } => {
+                    let end =
+                        normalized_screen_to_virtual_centered([end.x, end.y], self.virtual_size);
+                    append_line_rect(&mut self.frame_shapes, center, end, color, thickness, 900);
+                }
+                DrawShape2D::Polyline {
+                    points,
+                    color,
+                    thickness,
+                    closed,
+                } => {
+                    append_polyline_rects(
+                        &mut self.frame_shapes,
+                        points.as_ref(),
+                        color,
+                        thickness,
+                        closed,
+                        self.virtual_size,
+                        900,
+                    );
+                }
+                DrawShape2D::Path {
+                    points,
+                    color,
+                    thickness,
+                } => {
+                    append_polyline_rects(
+                        &mut self.frame_shapes,
+                        points.as_ref(),
+                        color,
+                        thickness,
+                        false,
+                        self.virtual_size,
+                        900,
+                    );
+                }
+                DrawShape2D::Sprite {
+                    texture,
+                    size,
+                    tint,
+                    texture_region,
+                } => {
+                    if texture.is_nil()
+                        || !size.x.is_finite()
+                        || !size.y.is_finite()
+                        || size.x <= 0.0
+                        || size.y <= 0.0
+                        || !tint.iter().all(|v| v.is_finite())
+                    {
+                        continue;
+                    }
+                    let (uv_min, uv_max, resolved_size) =
+                        sprite_region_uv(texture_region, [size.x, size.y]);
+                    self.frame_sprites.push(Sprite2DCommand {
+                        texture,
+                        model: translation_scale_mat3(center, resolved_size),
+                        tint,
+                        uv_min,
+                        uv_max,
+                        size: resolved_size,
+                        z_index: 900,
+                    });
+                }
             }
+        }
+        if had_frame_sprites || !self.frame_sprites.is_empty() {
+            self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
         }
         self.flush_point_particles();
     }
@@ -343,14 +417,19 @@ impl Renderer2D {
                 .values()
                 .map(|sprites| sprites.len())
                 .sum::<usize>()
+            + self.frame_sprites.len()
     }
 
     pub fn retained_sprites(&self) -> impl Iterator<Item = Sprite2DCommand> + '_ {
-        self.retained_sprites.values().copied().chain(
-            self.retained_tilemaps
-                .values()
-                .flat_map(|sprites| sprites.iter().copied()),
-        )
+        self.retained_sprites
+            .values()
+            .copied()
+            .chain(
+                self.retained_tilemaps
+                    .values()
+                    .flat_map(|sprites| sprites.iter().copied()),
+            )
+            .chain(self.frame_sprites.iter().copied())
     }
 
     pub fn camera(&self) -> Camera2DState {
@@ -502,6 +581,88 @@ fn normalized_screen_to_virtual_centered(pos: [f32; 2], virtual_size: [f32; 2]) 
     // Position is normalized screen-space: (0.5, 0.5) is the center.
     // X grows right, Y grows upward.
     [(pos[0] - 0.5) * vx, (pos[1] - 0.5) * vy]
+}
+
+fn append_polyline_rects(
+    out: &mut Vec<RectInstanceGpu>,
+    points: &[perro_structs::Vector2],
+    color: [f32; 4],
+    thickness: f32,
+    closed: bool,
+    virtual_size: [f32; 2],
+    z_index: i32,
+) {
+    if points.len() < 2 {
+        return;
+    }
+    for pair in points.windows(2) {
+        let a = normalized_screen_to_virtual_centered([pair[0].x, pair[0].y], virtual_size);
+        let b = normalized_screen_to_virtual_centered([pair[1].x, pair[1].y], virtual_size);
+        append_line_rect(out, a, b, color, thickness, z_index);
+    }
+    if closed {
+        let a = points[points.len() - 1];
+        let b = points[0];
+        append_line_rect(
+            out,
+            normalized_screen_to_virtual_centered([a.x, a.y], virtual_size),
+            normalized_screen_to_virtual_centered([b.x, b.y], virtual_size),
+            color,
+            thickness,
+            z_index,
+        );
+    }
+}
+
+fn append_line_rect(
+    out: &mut Vec<RectInstanceGpu>,
+    start: [f32; 2],
+    end: [f32; 2],
+    color: [f32; 4],
+    thickness: f32,
+    z_index: i32,
+) {
+    let dx = end[0] - start[0];
+    let dy = end[1] - start[1];
+    let len = (dx * dx + dy * dy).sqrt();
+    if !len.is_finite()
+        || len <= 0.0
+        || !thickness.is_finite()
+        || thickness <= 0.0
+        || !color.iter().all(|v| v.is_finite())
+    {
+        return;
+    }
+    out.push(RectInstanceGpu {
+        center: [(start[0] + end[0]) * 0.5, (start[1] + end[1]) * 0.5],
+        size: [dx, dy],
+        color: color_to_unorm8(color),
+        z_index,
+        shape_kind: 3,
+        thickness,
+        filled: 1,
+    });
+}
+
+fn sprite_region_uv(
+    region: Option<[f32; 4]>,
+    fallback_size: [f32; 2],
+) -> ([f32; 2], [f32; 2], [f32; 2]) {
+    let Some([x, y, w, h]) = region else {
+        return ([0.0, 0.0], [1.0, 1.0], fallback_size);
+    };
+    if !(x.is_finite() && y.is_finite() && w.is_finite() && h.is_finite()) || w <= 0.0 || h <= 0.0 {
+        return ([0.0, 0.0], [1.0, 1.0], fallback_size);
+    }
+    ([x, y], [x + w, y + h], [fallback_size[0], fallback_size[1]])
+}
+
+fn translation_scale_mat3(center: [f32; 2], size: [f32; 2]) -> [[f32; 3]; 3] {
+    [
+        [size[0], 0.0, 0.0],
+        [0.0, size[1], 0.0],
+        [center[0], center[1], 1.0],
+    ]
 }
 
 fn append_point_particles(

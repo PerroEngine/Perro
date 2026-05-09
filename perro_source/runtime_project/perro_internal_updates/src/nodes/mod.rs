@@ -6,3 +6,4 @@ pub mod ik_target_3d;
 pub mod particle_emitter_2d;
 pub mod particle_emitter_3d;
 pub mod physics_bone_chain_3d;
+pub mod ui_animated_image;

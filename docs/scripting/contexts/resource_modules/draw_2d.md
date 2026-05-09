@@ -18,11 +18,23 @@ Methods:
 - `res.Draw2D().push(shape, position)`
 - `res.Draw2D().circle(center, radius, color)`
 - `res.Draw2D().ring(center, radius, color, thickness)`
+- `res.Draw2D().rect(center, size, color)`
+- `res.Draw2D().rect_stroke(center, size, color, thickness)`
+- `res.Draw2D().line(start, end, color, thickness)`
+- `res.Draw2D().polyline(points, color, thickness)`
+- `res.Draw2D().polygon(points, color, thickness)`
+- `res.Draw2D().path(points, color, thickness)`
+- `res.Draw2D().sprite(center, texture, size, tint)`
+- `res.Draw2D().sprite_path(center, source, size, tint)`
 
 Types:
 
 - `DrawShape2D::Circle { radius, color, filled, thickness }`
 - `DrawShape2D::Rect { size, color, filled, thickness }`
+- `DrawShape2D::Line { end, color, thickness }`
+- `DrawShape2D::Polyline { points, color, thickness, closed }`
+- `DrawShape2D::Path { points, color, thickness }`
+- `DrawShape2D::Sprite { texture, size, tint, texture_region }`
 
 Behavior:
 
@@ -43,6 +55,12 @@ let center = Vector2::new(0.5, 0.5);
 
 draw!(res, DrawShape2D::circle(16.0, [1.0, 1.0, 1.0, 1.0]), center);
 draw!(res, DrawShape2D::ring(24.0, [1.0, 0.2, 0.2, 1.0], 2.0), center);
+res.Draw2D().line(
+    Vector2::new(0.1, 0.1),
+    Vector2::new(0.9, 0.1),
+    [0.2, 0.8, 1.0, 1.0],
+    3.0,
+);
 
 draw!(
     res,

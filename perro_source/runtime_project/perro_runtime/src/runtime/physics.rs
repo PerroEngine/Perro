@@ -39,12 +39,18 @@ enum BodyKind {
 #[derive(Clone, Debug)]
 struct ShapeDesc2D {
     local: Transform2D,
-    shape: Shape2D,
+    shape: ShapeKind2D,
     sensor: bool,
     collision_layer: u32,
     collision_mask: u32,
     friction: f32,
     restitution: f32,
+}
+
+#[derive(Clone, Debug)]
+enum ShapeKind2D {
+    Primitive(Shape2D),
+    Polygon(Vec<Vector2>),
 }
 
 #[derive(Clone, Debug)]
@@ -889,8 +895,10 @@ impl Runtime {
                     for (tile_id, tile) in &tileset.tiles {
                         if tile.collision {
                             shape_signature = hash_u64(shape_signature, *tile_id as u64);
-                            shape_signature =
-                                hash_tile_collision_shape_2d(shape_signature, tile.collision_shape);
+                            shape_signature = hash_tile_collision_shape_2d(
+                                shape_signature,
+                                tile.collision_shape.clone(),
+                            );
                         }
                     }
                 }
@@ -2305,6 +2313,16 @@ fn hash_tile_collision_shape_2d(
             state = hash_f32(state, offset[0].to_bits());
             hash_f32(state, offset[1].to_bits())
         }
+        ParsedTileCollisionShape2D::Polygon { points, offset } => {
+            state = hash_u32(state, 3);
+            state = hash_f32(state, offset[0].to_bits());
+            state = hash_f32(state, offset[1].to_bits());
+            for point in points.iter() {
+                state = hash_f32(state, point.x.to_bits());
+                state = hash_f32(state, point.y.to_bits());
+            }
+            state
+        }
     }
 }
 
@@ -2340,10 +2358,13 @@ fn tilemap_shape_descs_2d(
         if !tile.collision {
             continue;
         }
-        match tile.collision_shape {
+        match tile.collision_shape.clone() {
             ParsedTileCollisionShape2D::Auto => solid[idx] = true,
             ParsedTileCollisionShape2D::Shape { shape, offset } => {
-                explicit.push((idx, shape, offset));
+                explicit.push((idx, ShapeKind2D::Primitive(shape), offset));
+            }
+            ParsedTileCollisionShape2D::Polygon { points, offset } => {
+                explicit.push((idx, ShapeKind2D::Polygon(points.to_vec()), offset));
             }
         }
     }
@@ -2383,10 +2404,10 @@ fn tilemap_shape_descs_2d(
                     0.0,
                     Vector2::ONE,
                 ),
-                shape: Shape2D::Quad {
+                shape: ShapeKind2D::Primitive(Shape2D::Quad {
                     width: w,
                     height: h,
-                },
+                }),
                 sensor: false,
                 collision_layer: layer,
                 collision_mask: mask,
@@ -2438,7 +2459,7 @@ fn hash_collision_shape_3d(
 fn shape_desc_2d(shape: &CollisionShape2D, friction: f32, restitution: f32) -> ShapeDesc2D {
     ShapeDesc2D {
         local: shape.base.transform,
-        shape: shape.shape,
+        shape: ShapeKind2D::Primitive(shape.shape),
         sensor: false,
         collision_layer: 1,
         collision_mask: u32::MAX,
@@ -2562,22 +2583,30 @@ fn build_rigid_body_3d(desc: &BodyDesc3D) -> r3::RigidBody {
 fn collider_builder_2d(desc: &ShapeDesc2D) -> Option<r2::Collider> {
     let sx = desc.local.scale.x.abs().max(0.0001);
     let sy = desc.local.scale.y.abs().max(0.0001);
-    let shape = match desc.shape {
-        Shape2D::Quad { width, height } => r2::ColliderBuilder::cuboid(
+    let shape = match &desc.shape {
+        ShapeKind2D::Primitive(Shape2D::Quad { width, height }) => r2::ColliderBuilder::cuboid(
             width.abs().max(0.0001) * sx * 0.5,
             height.abs().max(0.0001) * sy * 0.5,
         ),
-        Shape2D::Circle { radius } => {
+        ShapeKind2D::Primitive(Shape2D::Circle { radius }) => {
             let scale = sx.max(sy);
             r2::ColliderBuilder::ball(radius.abs().max(0.0001) * scale)
         }
-        Shape2D::Triangle {
+        ShapeKind2D::Primitive(Shape2D::Triangle {
             kind,
             width,
             height,
-        } => {
-            let points = triangle_points_2d(kind, width * sx, height * sy)?;
+        }) => {
+            let points = triangle_points_2d(*kind, width * sx, height * sy)?;
             r2::ColliderBuilder::triangle(points[0], points[1], points[2])
+        }
+        ShapeKind2D::Polygon(points) => {
+            let points = points
+                .iter()
+                .filter(|p| p.x.is_finite() && p.y.is_finite())
+                .map(|p| na2::Point2::new(p.x * sx, p.y * sy))
+                .collect::<Vec<_>>();
+            r2::ColliderBuilder::convex_hull(&points)?
         }
     };
 
@@ -3940,8 +3969,14 @@ mod tests {
 
         let shapes = tilemap_shape_descs_2d(&tilemap, 1, u32::MAX, 0.7, 0.0, Some(&tileset));
         assert_eq!(shapes.len(), 2);
-        assert!(matches!(shapes[0].shape, Shape2D::Quad { .. }));
-        assert!(matches!(shapes[1].shape, Shape2D::Circle { radius } if radius == 3.0));
+        assert!(matches!(
+            shapes[0].shape,
+            ShapeKind2D::Primitive(Shape2D::Quad { .. })
+        ));
+        assert!(matches!(
+            shapes[1].shape,
+            ShapeKind2D::Primitive(Shape2D::Circle { radius }) if radius == 3.0
+        ));
         assert_eq!(shapes[1].local.position, Vector2::new(25.0, -7.0));
     }
 

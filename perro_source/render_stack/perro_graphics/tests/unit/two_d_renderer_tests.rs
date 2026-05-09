@@ -2,7 +2,7 @@ use super::{RectInstanceGpu, Renderer2D};
 use crate::resources::ResourceStore;
 use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{DrawShape2DCommand, Rect2DCommand, Sprite2DCommand};
-use perro_structs::DrawShape2D;
+use perro_structs::{DrawShape2D, Vector2};
 
 #[test]
 fn texture_upsert_requires_existing_resource() {
@@ -121,4 +121,39 @@ fn draw_shape_uses_top_right_for_one_one() {
     let frame_shapes = renderer.frame_shapes();
     assert_eq!(frame_shapes.len(), 1);
     assert_eq!(frame_shapes[0].center, [960.0, 540.0]);
+}
+
+#[test]
+fn draw_line_emits_line_shape_instance() {
+    let mut renderer = Renderer2D::new();
+    let resources = ResourceStore::new();
+    renderer.queue_shape(DrawShape2DCommand {
+        shape: DrawShape2D::line(Vector2::new(0.75, 0.5), [1.0, 0.0, 0.0, 1.0], 3.0),
+        position: [0.25, 0.5],
+    });
+
+    let _ = renderer.prepare_frame(&resources);
+    let frame_shapes = renderer.frame_shapes();
+    assert_eq!(frame_shapes.len(), 1);
+    assert_eq!(frame_shapes[0].shape_kind, 3);
+    assert_eq!(frame_shapes[0].thickness, 3.0);
+}
+
+#[test]
+fn draw_sprite_is_transient_sprite() {
+    let mut renderer = Renderer2D::new();
+    let resources = ResourceStore::new();
+    let texture = TextureID::from_parts(7, 0);
+    renderer.queue_shape(DrawShape2DCommand {
+        shape: DrawShape2D::sprite(texture, Vector2::new(32.0, 16.0), [1.0, 1.0, 1.0, 1.0]),
+        position: [0.5, 0.5],
+    });
+
+    let _ = renderer.prepare_frame(&resources);
+    assert_eq!(renderer.retained_sprite_count(), 1);
+    assert!(
+        renderer
+            .retained_sprites()
+            .any(|sprite| sprite.texture == texture)
+    );
 }

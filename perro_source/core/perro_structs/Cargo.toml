@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 glam = "0.31.0"
+perro_ids = { path = "../perro_ids" }

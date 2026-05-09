@@ -47,6 +47,7 @@ impl Runtime {
             SceneNodeData::UiPanel(node) => node.visible,
             SceneNodeData::UiButton(node) => node.visible,
             SceneNodeData::UiImage(node) => node.visible,
+            SceneNodeData::UiAnimatedImage(node) => node.visible,
             SceneNodeData::UiLabel(node) => node.visible,
             SceneNodeData::UiTextBox(node) => node.inner.base.visible,
             SceneNodeData::UiTextBlock(node) => node.inner.base.visible,

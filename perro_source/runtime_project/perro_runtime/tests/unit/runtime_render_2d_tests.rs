@@ -9,6 +9,7 @@ use perro_nodes::{
 };
 use perro_render_bridge::{Command2D, ParticlePath2D, RenderCommand, RenderEvent, ResourceCommand};
 use perro_runtime_context::sub_apis::{NodeAPI, NodeCreationTemplate};
+use perro_structs::Vector2;
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
@@ -53,6 +54,38 @@ fn ppart_2d_ignores_z_fields() {
     assert_eq!(parsed.force, [1.0, 2.0]);
     assert!(parsed.expr_x_ops.is_some());
     assert!(parsed.expr_y_ops.is_some());
+}
+
+#[test]
+fn ptileset_parses_polygon_collision_shape() {
+    let parsed = super::parse_ptileset_source(
+        r#"
+        texture = "res://tiles/world.png"
+        tile_size = (16, 16)
+        columns = 1
+        rows = 1
+        tiles = [
+            { id = 1 atlas = (0, 0) collision = true collision_shape = { polygon = { points = [(0, 0), (16, 0), (8, 16)] offset = (1, -2) } } },
+        ]
+        "#,
+    )
+    .expect("tileset parses");
+
+    let tile = parsed.tiles.get(&1).expect("tile exists");
+    match &tile.collision_shape {
+        super::ParsedTileCollisionShape2D::Polygon { points, offset } => {
+            assert_eq!(
+                points.as_ref(),
+                &[
+                    Vector2::new(0.0, 0.0),
+                    Vector2::new(16.0, 0.0),
+                    Vector2::new(8.0, 16.0)
+                ]
+            );
+            assert_eq!(*offset, [1.0, -2.0]);
+        }
+        other => panic!("expected polygon shape, got {other:?}"),
+    }
 }
 
 #[test]

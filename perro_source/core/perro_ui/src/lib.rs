@@ -706,6 +706,134 @@ impl UiNodeBase for UiImage {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct UiAnimatedImageFrameSet {
+    pub name: Cow<'static, str>,
+    pub start: [f32; 2],
+    pub frame_size: [f32; 2],
+    pub frame_count: u32,
+    pub columns: u32,
+    pub fps: f32,
+}
+
+impl Default for UiAnimatedImageFrameSet {
+    fn default() -> Self {
+        Self::new("default")
+    }
+}
+
+impl UiAnimatedImageFrameSet {
+    pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            name: name.into(),
+            start: [0.0, 0.0],
+            frame_size: [0.0, 0.0],
+            frame_count: 1,
+            columns: 0,
+            fps: 12.0,
+        }
+    }
+
+    pub fn texture_region_for_frame(&self, current_frame: u32) -> Option<[f32; 4]> {
+        let [w, h] = self.frame_size;
+        if !(w.is_finite() && h.is_finite()) || w <= 0.0 || h <= 0.0 {
+            return None;
+        }
+
+        let frame_count = self.frame_count.max(1);
+        let frame = current_frame.min(frame_count.saturating_sub(1));
+        let (column, row) = if self.columns > 0 {
+            (frame % self.columns, frame / self.columns)
+        } else {
+            (frame, 0)
+        };
+        let [base_x, base_y] = self.start;
+
+        Some([base_x + column as f32 * w, base_y + row as f32 * h, w, h])
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiAnimatedImage {
+    pub base: UiBox,
+    pub texture: TextureID,
+    pub animations: Vec<UiAnimatedImageFrameSet>,
+    pub current_animation: Cow<'static, str>,
+    pub current_frame: u32,
+    pub fps_scale: f32,
+    pub playing: bool,
+    pub looping: bool,
+    pub frame_accum: f32,
+    pub tint: Color,
+    pub scale_mode: UiImageScaleMode,
+    pub h_align: UiTextAlign,
+    pub v_align: UiTextAlign,
+    pub aspect_ratio: f32,
+}
+
+impl UiAnimatedImage {
+    pub const fn new() -> Self {
+        Self {
+            base: UiBox::new(),
+            texture: TextureID::nil(),
+            animations: Vec::new(),
+            current_animation: Cow::Borrowed("default"),
+            current_frame: 0,
+            fps_scale: 1.0,
+            playing: true,
+            looping: true,
+            frame_accum: 0.0,
+            tint: Color::WHITE,
+            scale_mode: UiImageScaleMode::Stretch,
+            h_align: UiTextAlign::Center,
+            v_align: UiTextAlign::Center,
+            aspect_ratio: 0.0,
+        }
+    }
+
+    pub fn current_animation_data(&self) -> Option<&UiAnimatedImageFrameSet> {
+        self.animations
+            .iter()
+            .find(|animation| animation.name.as_ref() == self.current_animation.as_ref())
+            .or_else(|| self.animations.first())
+    }
+
+    pub fn current_texture_region(&self) -> Option<[f32; 4]> {
+        self.current_animation_data()
+            .and_then(|animation| animation.texture_region_for_frame(self.current_frame))
+    }
+}
+
+impl Default for UiAnimatedImage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiAnimatedImage {
+    type Target = UiBox;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for UiAnimatedImage {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+impl UiNodeBase for UiAnimatedImage {
+    fn ui_base(&self) -> &UiBox {
+        &self.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiBox {
+        &mut self.base
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct UiLabel {
     pub base: UiBox,
     pub text: Cow<'static, str>,

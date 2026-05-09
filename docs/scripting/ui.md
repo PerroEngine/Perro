@@ -10,6 +10,7 @@ UiBox
 - UiPanel
 - UiButton
 - UiImage
+- UiAnimatedImage
 - UiLabel
 - UiLayout
 - UiHLayout
@@ -46,6 +47,13 @@ UiBox
 - Drawn image node.
 - Holds `texture`, `texture_region`, `tint`, `scale_mode`, alignment, and `aspect_ratio`.
 - Use it for icon, portrait, inventory, and image-heavy UI.
+
+`UiAnimatedImage`
+
+- Animated image node for UI space.
+- Holds `texture`, named sprite-sheet `animations`, playback fields, `tint`, `scale_mode`, alignment, and `aspect_ratio`.
+- Uses same strip/grid animation data shape as `AnimatedSprite2D`.
+- Use it for animated icons, portraits, cooldowns, indicators, and HUD effects.
 
 `UiLabel`
 
@@ -247,6 +255,24 @@ Button state example:
     }
 [/UiButton]
 [/play_button]
+```
+
+Animated image example:
+
+```text
+[coin_icon]
+[UiAnimatedImage]
+    texture = "res://ui/coin_strip.png"
+    size_ratio = (0.04, 0.07)
+    scale_mode = "fit"
+    animations = [
+        { name = "spin" start = (0, 0) frame_size = (32, 32) frame_count = 8 columns = 8 fps = 12 },
+    ]
+    animation = "spin"
+    playing = true
+    looping = true
+[/UiAnimatedImage]
+[/coin_icon]
 ```
 
 Old flat button color fields still work:

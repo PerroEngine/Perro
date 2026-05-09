@@ -1,6 +1,8 @@
 use crate::Vector2;
+use perro_ids::TextureID;
+use std::sync::Arc;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DrawShape2D {
     Circle {
         radius: f32,
@@ -13,6 +15,28 @@ pub enum DrawShape2D {
         color: [f32; 4],
         filled: bool,
         thickness: f32,
+    },
+    Line {
+        end: Vector2,
+        color: [f32; 4],
+        thickness: f32,
+    },
+    Polyline {
+        points: Arc<[Vector2]>,
+        color: [f32; 4],
+        thickness: f32,
+        closed: bool,
+    },
+    Path {
+        points: Arc<[Vector2]>,
+        color: [f32; 4],
+        thickness: f32,
+    },
+    Sprite {
+        texture: TextureID,
+        size: Vector2,
+        tint: [f32; 4],
+        texture_region: Option<[f32; 4]>,
     },
 }
 
@@ -54,6 +78,69 @@ impl DrawShape2D {
             color,
             filled: false,
             thickness,
+        }
+    }
+
+    #[inline]
+    pub const fn line(end: Vector2, color: [f32; 4], thickness: f32) -> Self {
+        Self::Line {
+            end,
+            color,
+            thickness,
+        }
+    }
+
+    #[inline]
+    pub fn polyline(points: impl Into<Arc<[Vector2]>>, color: [f32; 4], thickness: f32) -> Self {
+        Self::Polyline {
+            points: points.into(),
+            color,
+            thickness,
+            closed: false,
+        }
+    }
+
+    #[inline]
+    pub fn polygon(points: impl Into<Arc<[Vector2]>>, color: [f32; 4], thickness: f32) -> Self {
+        Self::Polyline {
+            points: points.into(),
+            color,
+            thickness,
+            closed: true,
+        }
+    }
+
+    #[inline]
+    pub fn path(points: impl Into<Arc<[Vector2]>>, color: [f32; 4], thickness: f32) -> Self {
+        Self::Path {
+            points: points.into(),
+            color,
+            thickness,
+        }
+    }
+
+    #[inline]
+    pub const fn sprite(texture: TextureID, size: Vector2, tint: [f32; 4]) -> Self {
+        Self::Sprite {
+            texture,
+            size,
+            tint,
+            texture_region: None,
+        }
+    }
+
+    #[inline]
+    pub const fn atlas_sprite(
+        texture: TextureID,
+        size: Vector2,
+        tint: [f32; 4],
+        texture_region: [f32; 4],
+    ) -> Self {
+        Self::Sprite {
+            texture,
+            size,
+            tint,
+            texture_region: Some(texture_region),
         }
     }
 }

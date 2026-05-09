@@ -53,6 +53,8 @@ pub trait ScriptAPI {
     fn script_attach_hashed(&mut self, node_id: NodeID, script_path_hash: u64) -> bool;
     fn script_detach(&mut self, node_id: NodeID) -> bool;
     fn remove_script(&mut self, script_id: NodeID) -> bool;
+    fn script_set_update_enabled(&mut self, script_id: NodeID, enabled: bool) -> bool;
+    fn script_set_fixed_update_enabled(&mut self, script_id: NodeID, enabled: bool) -> bool;
     fn get_var(&mut self, script_id: NodeID, member: ScriptMemberID) -> Variant;
     fn set_var(&mut self, script_id: NodeID, member: ScriptMemberID, value: Variant);
 
@@ -101,6 +103,14 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
 
     pub fn remove(&mut self, script_id: NodeID) -> bool {
         self.rt.remove_script(script_id)
+    }
+
+    pub fn set_update_enabled(&mut self, script_id: NodeID, enabled: bool) -> bool {
+        self.rt.script_set_update_enabled(script_id, enabled)
+    }
+
+    pub fn set_fixed_update_enabled(&mut self, script_id: NodeID, enabled: bool) -> bool {
+        self.rt.script_set_fixed_update_enabled(script_id, enabled)
     }
 
     pub fn get_var<M: IntoScriptMemberID>(&mut self, script_id: NodeID, member: M) -> Variant {
@@ -192,6 +202,26 @@ macro_rules! script_attach {
 macro_rules! script_detach {
     ($ctx:expr, $id:expr) => {
         $ctx.Scripts().script_detach($id)
+    };
+}
+
+/// Enables or disables script `on_update` scheduling.
+///
+/// Returns `true` when schedule state changed.
+#[macro_export]
+macro_rules! script_set_update_enabled {
+    ($ctx:expr, $id:expr, $enabled:expr) => {
+        $ctx.Scripts().set_update_enabled($id, $enabled)
+    };
+}
+
+/// Enables or disables script `on_fixed_update` scheduling.
+///
+/// Returns `true` when schedule state changed.
+#[macro_export]
+macro_rules! script_set_fixed_update_enabled {
+    ($ctx:expr, $id:expr, $enabled:expr) => {
+        $ctx.Scripts().set_fixed_update_enabled($id, $enabled)
     };
 }
 

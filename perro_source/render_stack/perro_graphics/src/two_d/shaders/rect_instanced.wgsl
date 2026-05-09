@@ -33,7 +33,11 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
-    let world_xy = inst.center + (v.local_pos * inst.size);
+    var draw_size = inst.size;
+    if inst.shape_kind == 3u {
+        draw_size = abs(inst.size) + vec2<f32>(inst.thickness, inst.thickness);
+    }
+    let world_xy = inst.center + (v.local_pos * draw_size);
     let world = vec4<f32>(world_xy, 0.0, 1.0);
     let view = camera.view * world;
     let ndc_xy = view.xy * camera.ndc_scale;
@@ -77,6 +81,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             if p.x < max(half_size.x - t, 0.0) && p.y < max(half_size.y - t, 0.0) {
                 discard;
             }
+        }
+    } else if in.shape_kind == 3u {
+        let t = max(in.thickness, 0.0);
+        let draw_size = abs(in.size) + vec2<f32>(t, t);
+        let p = in.local_pos * draw_size;
+        let a = -0.5 * in.size;
+        let b = 0.5 * in.size;
+        let ab = b - a;
+        let denom = max(dot(ab, ab), 0.000001);
+        let h = clamp(dot(p - a, ab) / denom, 0.0, 1.0);
+        let closest = a + ab * h;
+        if distance(p, closest) > t * 0.5 {
+            discard;
         }
     }
     return in.color;

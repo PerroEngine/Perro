@@ -751,7 +751,7 @@ pub struct Rect2DCommand {
     pub z_index: i32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DrawShape2DCommand {
     pub shape: DrawShape2D,
     pub position: [f32; 2],

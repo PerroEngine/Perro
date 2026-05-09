@@ -31,17 +31,24 @@ pub(crate) struct ParsedTileset2D {
     pub tiles: AHashMap<i32, ParsedTile2D>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ParsedTile2D {
     pub atlas: [u32; 2],
     pub collision: bool,
     pub collision_shape: ParsedTileCollisionShape2D,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ParsedTileCollisionShape2D {
     Auto,
-    Shape { shape: Shape2D, offset: [f32; 2] },
+    Shape {
+        shape: Shape2D,
+        offset: [f32; 2],
+    },
+    Polygon {
+        points: std::sync::Arc<[perro_structs::Vector2]>,
+        offset: [f32; 2],
+    },
 }
 
 impl Runtime {
@@ -681,6 +688,15 @@ fn find_collision_shape_field(text: &str) -> Option<ParsedTileCollisionShape2D> 
             offset,
         });
     }
+    if let Some(polygon) = rest.split("polygon").nth(1) {
+        let body = polygon.split_once('{')?.1.rsplit_once('}')?.0;
+        let points = find_vec2_f32_array_field(body, "points")?;
+        let offset = find_vec2_f32_field(body, "offset").unwrap_or([0.0, 0.0]);
+        return Some(ParsedTileCollisionShape2D::Polygon {
+            points: std::sync::Arc::from(points.into_boxed_slice()),
+            offset,
+        });
+    }
     None
 }
 
@@ -694,6 +710,18 @@ fn find_f32_field(text: &str, key: &str) -> Option<f32> {
 
 fn find_vec2_f32_field(text: &str, key: &str) -> Option<[f32; 2]> {
     parse_vec2_f32_inner(text.split(key).nth(1)?.split_once('=')?.1)
+}
+
+fn find_vec2_f32_array_field(text: &str, key: &str) -> Option<Vec<perro_structs::Vector2>> {
+    let rest = text.split(key).nth(1)?.split_once('=')?.1.trim();
+    let inner = rest.strip_prefix('[')?.split_once(']')?.0;
+    let mut points = Vec::new();
+    for raw in inner.split(')').filter(|part| part.contains('(')) {
+        let pair = raw.rsplit_once('(')?.1;
+        let mut it = pair.split(',').map(|v| v.trim().parse::<f32>().ok());
+        points.push(perro_structs::Vector2::new(it.next()??, it.next()??));
+    }
+    (points.len() >= 3).then_some(points)
 }
 
 fn parse_vec2_f32_inner(text: &str) -> Option<[f32; 2]> {

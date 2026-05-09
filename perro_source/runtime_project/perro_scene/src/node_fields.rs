@@ -42,6 +42,7 @@ pub enum NodeField {
     HingeJoint3D(HingeJoint3DField),
     FixedJoint3D(Joint3DField),
     UiImage(UiImageField),
+    UiAnimatedImage(UiAnimatedImageField),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -390,6 +391,18 @@ pub enum HingeJoint3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UiImageField {
     Texture,
+    TextureRegion,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UiAnimatedImageField {
+    Texture,
+    Animations,
+    CurrentAnimation,
+    CurrentFrame,
+    FpsScale,
+    Playing,
+    Looping,
     TextureRegion,
 }
 
@@ -766,6 +779,29 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "texture_region" | "region" | "atlas_region" => {
                 Some(NodeField::UiImage(UiImageField::TextureRegion))
             }
+            _ => None,
+        },
+        NodeType::UiAnimatedImage => match field {
+            "texture" | "image" | "source" | "src" => {
+                Some(NodeField::UiAnimatedImage(UiAnimatedImageField::Texture))
+            }
+            "animations" | "sprites" => {
+                Some(NodeField::UiAnimatedImage(UiAnimatedImageField::Animations))
+            }
+            "current_animation" | "animation" | "clip" => Some(NodeField::UiAnimatedImage(
+                UiAnimatedImageField::CurrentAnimation,
+            )),
+            "current_frame" | "frame" => Some(NodeField::UiAnimatedImage(
+                UiAnimatedImageField::CurrentFrame,
+            )),
+            "fps_scale" | "speed" => {
+                Some(NodeField::UiAnimatedImage(UiAnimatedImageField::FpsScale))
+            }
+            "playing" | "play" => Some(NodeField::UiAnimatedImage(UiAnimatedImageField::Playing)),
+            "looping" | "loop" => Some(NodeField::UiAnimatedImage(UiAnimatedImageField::Looping)),
+            "texture_region" | "region" | "atlas_region" => Some(NodeField::UiAnimatedImage(
+                UiAnimatedImageField::TextureRegion,
+            )),
             _ => None,
         },
         _ => None,

@@ -40,17 +40,17 @@ use perro_scene::{
     PhysicsBoneChain3DField, PointLight3DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
     SceneFieldIterRef, SceneKey, SceneNodeData as SceneDefNodeData,
     SceneNodeEntry as SceneDefNodeEntry, SceneObjectField, SceneValue, Skeleton3DField,
-    Sky3DField, SpotLight3DField, Sprite2DField, StaticBody2DField, StaticBody3DField, UiImageField,
-    resolve_node_field,
+    Sky3DField, SpotLight3DField, Sprite2DField, StaticBody2DField, StaticBody3DField,
+    UiAnimatedImageField, UiImageField, resolve_node_field,
 };
 use perro_structs::{
     Color, CustomPostParam, CustomPostParamValue, PostProcessEffect, PostProcessSet, Quaternion,
     Vector2, Vector3,
 };
 use perro_ui::{
-    UiBox, UiButton, UiGrid, UiHLayout, UiImage, UiImageScaleMode, UiLabel, UiLayout,
-    UiMouseFilter, UiPanel, UiScrollContainer, UiTextAlign, UiTextBlock, UiTextBox, UiTreeList,
-    UiVLayout,
+    UiAnimatedImage, UiAnimatedImageFrameSet, UiBox, UiButton, UiGrid, UiHLayout, UiImage,
+    UiImageScaleMode, UiLabel, UiLayout, UiMouseFilter, UiPanel, UiScrollContainer, UiTextAlign,
+    UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
 };
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -896,6 +896,7 @@ fn scene_node_data_from(
         "UiPanel" => Ok(SceneNodeData::UiPanel(build_ui_panel(data, static_ui_style_lookup))),
         "UiButton" => Ok(SceneNodeData::UiButton(build_ui_button(data, static_ui_style_lookup))),
         "UiImage" => Ok(SceneNodeData::UiImage(build_ui_image(data))),
+        "UiAnimatedImage" => Ok(SceneNodeData::UiAnimatedImage(build_ui_animated_image(data))),
         "UiLabel" => Ok(SceneNodeData::UiLabel(build_ui_label(data))),
         "UiTextBox" => Ok(SceneNodeData::UiTextBox(build_ui_text_box(
             data,

@@ -340,6 +340,8 @@ fn emit_static_node_type(ty: &str) -> Result<&'static str, StaticPipelineError> 
         "UiBox" => Ok("UiBox"),
         "UiPanel" => Ok("UiPanel"),
         "UiButton" => Ok("UiButton"),
+        "UiImage" => Ok("UiImage"),
+        "UiAnimatedImage" => Ok("UiAnimatedImage"),
         "UiLabel" => Ok("UiLabel"),
         "UiTextBox" => Ok("UiTextBox"),
         "UiTextBlock" => Ok("UiTextBlock"),
@@ -506,6 +508,8 @@ fn is_static_ui_node(node_type: &str) -> bool {
         "UiBox"
             | "UiPanel"
             | "UiButton"
+            | "UiImage"
+            | "UiAnimatedImage"
             | "UiLabel"
             | "UiTextBox"
             | "UiTextBlock"
@@ -652,6 +656,8 @@ mod tests {
             "UiBox",
             "UiPanel",
             "UiButton",
+            "UiImage",
+            "UiAnimatedImage",
             "UiLabel",
             "UiTextBox",
             "UiTextBlock",

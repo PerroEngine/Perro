@@ -16,6 +16,7 @@ tiles = [
     { id = 1 atlas = (1, 0) collision = true },
     { id = 2 atlas = (2, 0) collision = true collision_shape = "auto" },
     { id = 3 atlas = (3, 0) collision = true collision_shape = { rect = { size = (16, 8) offset = (0, -4) } } },
+    { id = 4 atlas = (4, 0) collision = true collision_shape = { polygon = { points = [(0, 0), (16, 0), (8, 16)] } } },
 ]
 ```
 
@@ -50,7 +51,11 @@ Explicit shapes:
 - `rect`
 - `circle`
 - `triangle`
-- `polygon` is planned
+- `polygon`
+
+Polygon points are local tile-space points.
+Use at least 3 points.
+Runtime builds a convex collider from the points.
 
 ## Static Bake
 

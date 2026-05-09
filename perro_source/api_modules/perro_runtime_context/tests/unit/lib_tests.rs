@@ -341,6 +341,16 @@ impl ScriptAPI for DummyRuntime {
         false
     }
 
+    fn script_set_update_enabled(&mut self, _script: NodeID, enabled: bool) -> bool {
+        self.state = Box::new(enabled);
+        true
+    }
+
+    fn script_set_fixed_update_enabled(&mut self, _script: NodeID, enabled: bool) -> bool {
+        self.state = Box::new(enabled);
+        true
+    }
+
     fn get_var(
         &mut self,
         _script: NodeID,
@@ -809,6 +819,8 @@ fn script_macros_typecheck_and_forward() {
     assert!(!physics_is_paused!(&mut ctx));
     assert!(!script_attach!(&mut ctx, id, "res://scripts/a.rs"));
     assert!(!script_detach!(&mut ctx, id));
+    assert!(script_set_update_enabled!(&mut ctx, id, false));
+    assert!(script_set_fixed_update_enabled!(&mut ctx, id, true));
     let member = var!("x");
     let member_alias = sid!("x");
     let var_member = var!("x");

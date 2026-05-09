@@ -29,9 +29,9 @@ Status keys:
 | `Sprite2D`              | done    | Textured quad with optional pixel texture region for atlas frames.                                                               |
 | `Camera2D`              | done    | Active camera with zoom and camera post-processing.                                                                              |
 | 2D physics bodies       | done | Static, rigid, area, collision shapes, layers/masks, joints, raycast, shape cast, query filters, contact data, and area/body signals exist. See [Physics Module](scripting/contexts/runtime_modules/physics.md). |
-| Draw2D transient shapes | partial | Circle/ring/rect debug-style draws exist. Lines, polys, paths, and atlas sprites are planned.                                    |
+| Draw2D transient shapes | done | Circle/ring/rect, lines, polylines, polygon outlines, paths, and transient sprites exist.                                    |
 | `AnimatedSprite2D`      | done    | Sprite-sheet playback from normal texture paths plus named strip/grid animation definitions.                                     |
-| Tile maps               | partial | `TileMap2D` plus `.ptileset` runtime/static path exists: one texture atlas, tile ids, empty tile `-1`, draw extraction, merged runtime 2D collision bake for `collision = true` auto tiles, and explicit rect/circle/triangle collision shapes. Pre-baked static collision chunks and polygon collision shapes remain. See [TileMap2D](scripting/tilemap.md) and [`.ptileset`](resources/ptileset.md). |
+| Tile maps               | partial | `TileMap2D` plus `.ptileset` runtime/static path exists: one texture atlas, tile ids, empty tile `-1`, draw extraction, merged runtime 2D collision bake for `collision = true` auto tiles, and explicit rect/circle/triangle/polygon collision shapes. Pre-baked static collision chunks remain. See [TileMap2D](scripting/tilemap.md) and [`.ptileset`](resources/ptileset.md). |
 | 2D skeleton nodes       | done    | `Skeleton2D` is a 2D transform parent. `Bone2D` is a child `Node2D` with rest/pose/inv_bind data and normal `Node2D` animation tracks. |
 | 2D particles            | done    | `ParticleEmitter2D` uses `.ppart` profiles; `z` fields are ignored.                                                              |
 | 2D lights               | planned | First target: unshadowed point/additive light pass; shadows later.                                                               |
@@ -64,6 +64,7 @@ Status keys:
 | Scroll containers     | done    | `UiScrollContainer` offsets child content and clips to its rect.  |
 | Focus navigation      | partial | Text focus exists. Keyboard/controller traversal remains.         |
 | UI image node         | done    | `UiImage` renders texture IDs with tint, region, scale mode, alignment, and aspect ratio. |
+| UI animated image node | done | `UiAnimatedImage` renders sprite-sheet animations in UI space with `UiImage` scale/alignment behavior. |
 | UI style resources    | done | Inline `style = { ... }` blocks and `res://path/to/style.uistyle` load for normal/hover/pressed/focused state styles, mirroring material resource flow. See [`.uistyle`](resources/uistyle.md). |
 
 ## Tooling And Demos
@@ -77,6 +78,5 @@ Status keys:
 ## Planned Work Packets
 
 1. Static tilemap collision chunks for fixed scene `TileMap2D` data.
-2. Tilemap polygon collision shape.
-3. 2D lights, demo hubs, 3D LOD controls, and material docs.
-4. Joint polish: optional limits/motors/springs if needed.
+2. 2D lights, demo hubs, 3D LOD controls, and material docs.
+3. Joint polish: optional limits/motors/springs if needed.

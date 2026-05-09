@@ -127,6 +127,9 @@ impl Runtime {
         res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
         ipt: &InputWindow<'_, perro_input::InputSnapshot>,
     ) {
+        if !self.scripts.is_update_scheduled_indexed(instance_index, id) {
+            return;
+        }
         let behavior = match self
             .scripts
             .get_instance_scheduled_indexed(instance_index, id)
@@ -163,6 +166,12 @@ impl Runtime {
         res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
         ipt: &InputWindow<'_, perro_input::InputSnapshot>,
     ) {
+        if !self
+            .scripts
+            .is_fixed_update_scheduled_indexed(instance_index, id)
+        {
+            return;
+        }
         let behavior = match self
             .scripts
             .get_instance_scheduled_indexed(instance_index, id)
@@ -264,6 +273,14 @@ impl ScriptAPI for Runtime {
 
     fn remove_script(&mut self, script_id: NodeID) -> bool {
         self.remove_script_instance(script_id)
+    }
+
+    fn script_set_update_enabled(&mut self, script_id: NodeID, enabled: bool) -> bool {
+        self.scripts.set_update_enabled(script_id, enabled)
+    }
+
+    fn script_set_fixed_update_enabled(&mut self, script_id: NodeID, enabled: bool) -> bool {
+        self.scripts.set_fixed_update_enabled(script_id, enabled)
     }
 
     fn get_var(&mut self, script_id: NodeID, member: ScriptMemberID) -> Variant {

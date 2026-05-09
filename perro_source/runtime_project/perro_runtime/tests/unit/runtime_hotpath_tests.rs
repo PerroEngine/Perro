@@ -4,8 +4,54 @@ use perro_ids::{NodeID, TextureID};
 use perro_nodes::{Node2D, Node3D, SceneNode, SceneNodeData, Sprite2D};
 use perro_render_bridge::{Command2D, RenderCommand};
 use perro_runtime_context::sub_apis::{NodeAPI, NodeCreationTemplate};
+use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
+use perro_variant::Variant;
+use std::any::Any;
 use std::hint::black_box;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+
+struct CountScript {
+    update_count: Arc<AtomicUsize>,
+    fixed_count: Arc<AtomicUsize>,
+}
+
+impl ScriptLifecycle<RuntimeScriptApi> for CountScript {
+    fn on_update(&self, _ctx: &mut ScriptContext<'_, RuntimeScriptApi>) {
+        self.update_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn on_fixed_update(&self, _ctx: &mut ScriptContext<'_, RuntimeScriptApi>) {
+        self.fixed_count.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+impl ScriptBehavior<RuntimeScriptApi> for CountScript {
+    fn script_flags(&self) -> ScriptFlags {
+        ScriptFlags::new(ScriptFlags::HAS_UPDATE | ScriptFlags::HAS_FIXED_UPDATE)
+    }
+
+    fn create_state(&self) -> Box<dyn Any> {
+        Box::new(())
+    }
+
+    fn get_var(&self, _state: &dyn Any, _var: perro_ids::ScriptMemberID) -> Variant {
+        Variant::Null
+    }
+
+    fn set_var(&self, _state: &mut dyn Any, _var: perro_ids::ScriptMemberID, _value: &Variant) {}
+
+    fn call_method(
+        &self,
+        _method: perro_ids::ScriptMemberID,
+        _ctx: &mut ScriptContext<'_, RuntimeScriptApi>,
+        _params: &[Variant],
+    ) -> Variant {
+        Variant::Null
+    }
+}
 
 #[test]
 fn node_arena_len_tracks_active_nodes() {
@@ -221,6 +267,54 @@ fn bench_transform_dirty_propagate_and_refresh() {
         "bench_transform_dirty_propagate_and_refresh: nodes={} rounds={} total_us={} per_round_us={:.3} acc={}",
         count, rounds, elapsed_us, per_round_us, acc
     );
+}
+
+#[test]
+fn script_update_schedules_toggle_at_runtime() {
+    let mut runtime = Runtime::new();
+    let update_count = Arc::new(AtomicUsize::new(0));
+    let fixed_count = Arc::new(AtomicUsize::new(0));
+    let a = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let b = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    for id in [a, b] {
+        runtime.scripts.insert(
+            id,
+            Arc::new(CountScript {
+                update_count: Arc::clone(&update_count),
+                fixed_count: Arc::clone(&fixed_count),
+            }),
+            Box::new(()),
+        );
+    }
+
+    runtime.schedules.snapshot_update(&runtime.scripts);
+    assert!(runtime.scripts.set_update_enabled(a, false));
+    runtime.run_update_schedule();
+    assert_eq!(update_count.load(Ordering::Relaxed), 1);
+
+    runtime.schedules.snapshot_update(&runtime.scripts);
+    runtime.run_update_schedule();
+    assert_eq!(update_count.load(Ordering::Relaxed), 2);
+
+    assert!(runtime.scripts.set_update_enabled(a, true));
+    runtime.schedules.snapshot_update(&runtime.scripts);
+    runtime.run_update_schedule();
+    assert_eq!(update_count.load(Ordering::Relaxed), 4);
+
+    runtime.schedules.snapshot_fixed(&runtime.scripts);
+    assert!(runtime.scripts.set_fixed_update_enabled(b, false));
+    runtime.run_fixed_schedule();
+    assert_eq!(fixed_count.load(Ordering::Relaxed), 1);
+
+    assert!(runtime.scripts.set_fixed_update_enabled(b, true));
+    runtime.schedules.snapshot_fixed(&runtime.scripts);
+    runtime.run_fixed_schedule();
+    assert_eq!(fixed_count.load(Ordering::Relaxed), 3);
 }
 
 #[test]

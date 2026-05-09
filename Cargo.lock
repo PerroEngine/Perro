@@ -2998,6 +2998,7 @@ name = "perro_structs"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "perro_ids",
 ]
 
 [[package]]

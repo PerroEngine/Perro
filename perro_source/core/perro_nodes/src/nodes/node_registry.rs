@@ -30,8 +30,8 @@ use crate::tilemap_2d::TileMap2D;
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
 use perro_ui::{
-    UiBox, UiButton, UiGrid, UiHLayout, UiImage, UiLabel, UiLayout, UiNodeBase, UiPanel,
-    UiScrollContainer, UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
+    UiAnimatedImage, UiBox, UiButton, UiGrid, UiHLayout, UiImage, UiLabel, UiLayout, UiNodeBase,
+    UiPanel, UiScrollContainer, UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
 };
 use std::borrow::Cow;
 
@@ -865,6 +865,7 @@ define_scene_nodes! {
         UiPanel => (UiBox, UiPanel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiButton => (UiBox, UiButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiImage => (UiBox, UiImage, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiAnimatedImage => (UiBox, UiAnimatedImage, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         UiLabel => (UiBox, UiLabel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiTextBox => (UiBox, UiTextBox, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiTextBlock => (UiBox, UiTextBlock, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

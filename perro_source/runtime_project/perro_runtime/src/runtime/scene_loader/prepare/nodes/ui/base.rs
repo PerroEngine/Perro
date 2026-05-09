@@ -68,6 +68,16 @@ fn build_ui_image(data: &SceneDefNodeData) -> UiImage {
     node
 }
 
+fn build_ui_animated_image(data: &SceneDefNodeData) -> UiAnimatedImage {
+    let mut node = UiAnimatedImage::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.base, base);
+    }
+    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_animated_image_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_ui_text_box(
     data: &SceneDefNodeData,
     static_ui_style_lookup: Option<StaticUiStyleLookup>,
@@ -471,6 +481,163 @@ fn apply_ui_image_fields(node: &mut UiImage, fields: &[SceneObjectField]) {
         }
         _ => {}
     });
+}
+
+fn apply_ui_animated_image_fields(node: &mut UiAnimatedImage, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("UiAnimatedImage", name) {
+            Some(NodeField::UiAnimatedImage(UiAnimatedImageField::Animations)) => {
+                if let Some(animations) = parse_ui_animated_image_list(value) {
+                    node.animations = animations;
+                }
+            }
+            Some(NodeField::UiAnimatedImage(UiAnimatedImageField::CurrentAnimation)) => {
+                if let Some(v) = as_str(value) {
+                    node.current_animation = Cow::Owned(v.to_string());
+                }
+            }
+            Some(NodeField::UiAnimatedImage(UiAnimatedImageField::CurrentFrame)) => {
+                if let Some(v) = as_i32(value) {
+                    node.current_frame = u32::try_from(v.max(0)).unwrap_or(0);
+                }
+            }
+            Some(NodeField::UiAnimatedImage(UiAnimatedImageField::FpsScale)) => {
+                if let Some(v) = as_f32(value) {
+                    node.fps_scale = v.max(0.0);
+                }
+            }
+            Some(NodeField::UiAnimatedImage(UiAnimatedImageField::Playing)) => {
+                if let Some(v) = as_bool(value) {
+                    node.playing = v;
+                }
+            }
+            Some(NodeField::UiAnimatedImage(UiAnimatedImageField::Looping)) => {
+                if let Some(v) = as_bool(value) {
+                    node.looping = v;
+                }
+            }
+            Some(NodeField::UiAnimatedImage(UiAnimatedImageField::TextureRegion)) => {
+                if let Some(v) = as_vec4_array(value) {
+                    node.animations = vec![UiAnimatedImageFrameSet {
+                        name: Cow::Borrowed("default"),
+                        start: [v[0], v[1]],
+                        frame_size: [v[2], v[3]],
+                        frame_count: 1,
+                        columns: 1,
+                        fps: 0.0,
+                    }];
+                }
+            }
+            _ => match name {
+                "tint" | "color" | "modulate" => {
+                    if let Some(v) = as_scene_color(value) {
+                        node.tint = v;
+                    }
+                }
+                "scale_mode" | "image_scale" | "fit" => {
+                    if let Some(v) = as_ui_image_scale_mode(value) {
+                        node.scale_mode = v;
+                    }
+                }
+                "h_align" | "image_h_align" => {
+                    if let Some(v) = as_ui_text_align(value) {
+                        node.h_align = v;
+                    }
+                }
+                "v_align" | "image_v_align" => {
+                    if let Some(v) = as_ui_text_align(value) {
+                        node.v_align = v;
+                    }
+                }
+                "aspect_ratio" | "ratio" => {
+                    if let Some(v) = as_f32(value) {
+                        node.aspect_ratio = v.max(0.0);
+                    }
+                }
+                _ => {}
+            },
+        }
+    });
+    if node.current_animation_data().is_none() {
+        node.animations.push(UiAnimatedImageFrameSet::default());
+    }
+    let max_frame = node
+        .current_animation_data()
+        .map(|animation| animation.frame_count.max(1).saturating_sub(1))
+        .unwrap_or(0);
+    node.current_frame = node.current_frame.min(max_frame);
+}
+
+fn parse_ui_animated_image_list(value: &SceneValue) -> Option<Vec<UiAnimatedImageFrameSet>> {
+    let SceneValue::Array(items) = value else {
+        return None;
+    };
+    let mut out = Vec::new();
+    for item in items.iter() {
+        if let Some(animation) = parse_ui_animated_image(item) {
+            out.push(animation);
+        }
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+fn parse_ui_animated_image(value: &SceneValue) -> Option<UiAnimatedImageFrameSet> {
+    let SceneValue::Object(fields) = value else {
+        return None;
+    };
+
+    let mut animation = UiAnimatedImageFrameSet::default();
+    for (name, value) in fields.iter() {
+        let key = name
+            .as_ref()
+            .trim()
+            .trim_start_matches(',')
+            .trim_end_matches(',')
+            .trim();
+        match key {
+            "name" => {
+                if let Some(v) = as_str(value) {
+                    animation.name = Cow::Owned(v.to_string());
+                }
+            }
+            "start" | "offset" | "origin" => {
+                if let Some(v) = as_vec2(value) {
+                    animation.start = [v.x, v.y];
+                }
+            }
+            "atlas_region" | "texture_region" | "region" => {
+                if let Some([x, y, _, _]) = as_vec4_array(value) {
+                    animation.start = [x, y];
+                }
+            }
+            "frame_size" | "cell_size" => {
+                if let Some(v) = as_vec2(value)
+                    && v.x > 0.0
+                    && v.y > 0.0
+                {
+                    animation.frame_size = [v.x, v.y];
+                }
+            }
+            "frame_count" | "frames" => {
+                if let Some(v) = as_i32(value) {
+                    animation.frame_count = u32::try_from(v.max(1)).unwrap_or(1);
+                }
+            }
+            "columns" | "cols" => {
+                if let Some(v) = as_i32(value) {
+                    animation.columns = u32::try_from(v.max(1)).unwrap_or(1);
+                }
+            }
+            "fps" => {
+                if let Some(v) = as_f32(value) {
+                    animation.fps = v.max(0.0);
+                }
+            }
+            _ => {}
+        }
+    }
+    animation.frame_count = animation.frame_count.max(1);
+    Some(animation)
 }
 
 fn apply_ui_text_edit_fields(

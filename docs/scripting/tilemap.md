@@ -46,8 +46,13 @@ Each tile decides if it wants collider generation.
 Adjacent auto tiles merge into larger rect colliders at runtime.
 
 Explicit tile shapes stay as per-tile colliders.
-Runtime supports `rect`, `circle`, and `triangle` explicit shapes.
-Polygon remains planned.
+Runtime supports `rect`, `circle`, `triangle`, and convex `polygon` explicit shapes.
+
+Polygon example:
+
+```text
+collision_shape = { polygon = { points = [(0, 0), (16, 0), (8, 16)] offset = (0, 0) } }
+```
 
 ## Runtime And Static Pipeline
 
@@ -60,7 +65,5 @@ It rebuilds only when tile content or collision metadata changes.
 Static pipeline now emits `.ptileset` source into static assets.
 Static runtime loads tilesets from that lookup before disk.
 
-Static collision chunk bake remains planned:
-
-- pre-bake fixed scene tilemap collision chunks
-- use static chunks before runtime bake
+Static release builds load `.ptileset` data from the static asset lookup.
+Dynamic or edited tilemaps still use runtime collision bake.

@@ -15,6 +15,7 @@ pub fn internal_update_node<RT, RS, IP>(
     nodes::animation_player::internal_update(ctx, res, ipt, id);
     nodes::animation_tree::internal_update(ctx, res, ipt, id);
     nodes::animated_sprite_2d::internal_update(ctx, res, ipt, id);
+    nodes::ui_animated_image::internal_update(ctx, res, ipt, id);
     nodes::ik_target_3d::internal_update(ctx, id);
     nodes::bone_attachment_3d::internal_update(ctx, id);
     nodes::particle_emitter_2d::internal_update(ctx, res, ipt, id);
@@ -34,6 +35,7 @@ pub fn internal_fixed_update_node<RT, RS, IP>(
     nodes::animation_player::internal_fixed_update(ctx, res, ipt, id);
     nodes::animation_tree::internal_fixed_update(ctx, res, ipt, id);
     nodes::animated_sprite_2d::internal_fixed_update(ctx, res, ipt, id);
+    nodes::ui_animated_image::internal_fixed_update(ctx, res, ipt, id);
     nodes::physics_bone_chain_3d::internal_fixed_update(ctx, id);
     nodes::particle_emitter_2d::internal_fixed_update(ctx, res, ipt, id);
     nodes::particle_emitter_3d::internal_fixed_update(ctx, res, ipt, id);
