@@ -22,21 +22,18 @@ Use this for your own script because:
 
 - You have the concrete Rust `StateType`.
 - You want strongly typed, compile-time checked access.
-- Typical `node_id` here is `self_id`.
+- `node_id` here is `ctx.id`, which is the value that is properly attached to your own defined state.
 
 Cross-script access (other nodes):
 
 - `get_var!(ctx.run, node_id, member) -> Variant`
 - `set_var!(ctx.run, node_id, member, value) -> ()`
 - `call_method!(ctx.run, node_id, method, params) -> Variant`
-- `attributes_of!(ctx, node_id, member) -> &'static [Attribute]`
-- `members_with!(ctx, node_id, attribute) -> &'static [Member]`
-- `has_attribute!(ctx, node_id, member, attribute) -> bool`
 
 Use this for other nodes because:
 
 - You usually know their `NodeID` (from query, parent/child traversal, stored refs, etc.).
-- You usually do not have their concrete Rust state type.
+- You usually do not have their concrete Rust state type (you can import it, but you must know ahead of time the script attached to it and it can fail)
 - The API is dynamic by member name/ID (`Variant` based).
 
 Examples:
@@ -52,4 +49,3 @@ let enemy_id = query_first!(ctx.run, all(name["Enemy1"])).unwrap();
 set_var!(ctx.run, enemy_id, var!("alert"), variant!(true));
 call_method!(ctx.run, enemy_id, method!("on_alert"), params![]);
 ```
-

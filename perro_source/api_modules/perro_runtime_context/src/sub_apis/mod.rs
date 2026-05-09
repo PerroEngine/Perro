@@ -18,6 +18,6 @@ pub use scene::{
     IntoPreloadedSceneID, IntoPreloadedSceneTarget, IntoSceneLoadSource, IntoScenePath,
     PreloadedSceneID, PreloadedSceneTarget, SceneAPI, SceneLoadSource, SceneModule,
 };
-pub use script::{Attribute, IntoScriptMemberID, Member, ScriptAPI, ScriptModule};
+pub use script::{IntoScriptMemberID, ScriptAPI, ScriptModule};
 pub use signal::{SignalAPI, SignalModule};
 pub use time::{TimeAPI, TimeModule};

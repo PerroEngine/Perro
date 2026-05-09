@@ -1,7 +1,6 @@
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_input::{InputAPI, InputWindow};
 use perro_resource_context::{ResourceWindow, api::ResourceAPI};
-use perro_runtime_context::sub_apis::{Attribute, Member};
 use perro_runtime_context::{RuntimeWindow, api::RuntimeAPI};
 use perro_variant::Variant;
 use std::any::Any;
@@ -50,9 +49,6 @@ pub trait ScriptBehavior<API: ScriptAPI + ?Sized>: ScriptLifecycle<API> {
         ctx: &mut ScriptContext<'_, API>,
         params: &[Variant],
     ) -> Variant;
-    fn attributes_of(&self, member: &str) -> &'static [Attribute];
-    fn members_with(&self, attribute: &str) -> &'static [Member];
-    fn has_attribute(&self, member: &str, attribute: &str) -> bool;
 }
 
 /// Bitflags to track which lifecycle methods are implemented by a script.

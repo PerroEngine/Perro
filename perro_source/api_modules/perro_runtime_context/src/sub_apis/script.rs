@@ -2,64 +2,6 @@ use perro_ids::{NodeID, ScriptMemberID};
 use perro_variant::Variant;
 use std::borrow::Cow;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct Attribute(&'static str);
-
-impl Attribute {
-    pub const fn new(value: &'static str) -> Self {
-        Self(value)
-    }
-
-    pub const fn as_str(&self) -> &'static str {
-        self.0
-    }
-}
-
-impl AsRef<str> for Attribute {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl From<&'static str> for Attribute {
-    fn from(value: &'static str) -> Self {
-        Self::new(value)
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct Member {
-    name: &'static str,
-    id: ScriptMemberID,
-}
-
-impl Member {
-    pub const fn new(name: &'static str) -> Self {
-        let id = ScriptMemberID::from_string(name);
-        Self { name, id }
-    }
-
-    pub const fn as_str(&self) -> &'static str {
-        self.name
-    }
-
-    pub const fn id(&self) -> ScriptMemberID {
-        self.id
-    }
-}
-
-impl AsRef<str> for Member {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl From<&'static str> for Member {
-    fn from(value: &'static str) -> Self {
-        Self::new(value)
-    }
-}
-
 pub trait IntoScriptMemberID {
     fn into_script_member(self) -> ScriptMemberID;
 }
@@ -67,18 +9,6 @@ pub trait IntoScriptMemberID {
 impl IntoScriptMemberID for ScriptMemberID {
     fn into_script_member(self) -> ScriptMemberID {
         self
-    }
-}
-
-impl IntoScriptMemberID for Member {
-    fn into_script_member(self) -> ScriptMemberID {
-        self.id
-    }
-}
-
-impl IntoScriptMemberID for &Member {
-    fn into_script_member(self) -> ScriptMemberID {
-        self.id
     }
 }
 
@@ -132,9 +62,6 @@ pub trait ScriptAPI {
         method: ScriptMemberID,
         params: &[Variant],
     ) -> Variant;
-    fn attributes_of(&mut self, script_id: NodeID, member: &str) -> &'static [Attribute];
-    fn members_with(&mut self, script_id: NodeID, attribute: &str) -> &'static [Member];
-    fn has_attribute(&mut self, script_id: NodeID, member: &str, attribute: &str) -> bool;
 }
 
 pub struct ScriptModule<'rt, R: ScriptAPI + ?Sized> {
@@ -193,32 +120,6 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
     ) -> Variant {
         self.rt
             .call_method(script_id, method.into_script_member(), params)
-    }
-
-    pub fn attributes_of<M: AsRef<str>>(
-        &mut self,
-        script_id: NodeID,
-        member: M,
-    ) -> &'static [Attribute] {
-        self.rt.attributes_of(script_id, member.as_ref())
-    }
-
-    pub fn members_with<A: AsRef<str>>(
-        &mut self,
-        script_id: NodeID,
-        attribute: A,
-    ) -> &'static [Member] {
-        self.rt.members_with(script_id, attribute.as_ref())
-    }
-
-    pub fn has_attribute<M: AsRef<str>, A: AsRef<str>>(
-        &mut self,
-        script_id: NodeID,
-        member: M,
-        attribute: A,
-    ) -> bool {
-        self.rt
-            .has_attribute(script_id, member.as_ref(), attribute.as_ref())
     }
 }
 
@@ -307,7 +208,7 @@ macro_rules! script_detach {
 /// - `get_var!(ctx, node_id, dynamic_name_string) -> Variant`
 ///
 /// Accepted member inputs:
-/// - `var!("...")`, `ScriptMemberID`, `Member`, `&str`, `String`, `Cow<str>`
+/// - `var!("...")`, `ScriptMemberID`, `&str`, `String`, `Cow<str>`
 #[macro_export]
 macro_rules! get_var {
     ($ctx:expr, $id:expr, $member:expr) => {
@@ -326,7 +227,7 @@ macro_rules! get_var {
 /// - `set_var!(ctx, node_id, dynamic_name_string, resolved_value) -> ()`
 ///
 /// Accepted member inputs:
-/// - `var!("...")`, `ScriptMemberID`, `Member`, `&str`, `String`, `Cow<str>`
+/// - `var!("...")`, `ScriptMemberID`, `&str`, `String`, `Cow<str>`
 #[macro_export]
 macro_rules! set_var {
     ($ctx:expr, $id:expr, $member:expr, $value:expr) => {
@@ -346,72 +247,10 @@ macro_rules! set_var {
 /// - `call_method!(ctx, node_id, dynamic_name_string, &values) -> Variant`
 ///
 /// Accepted method inputs:
-/// - `method!("...")`, `func!("...")`, `ScriptMemberID`, `Member`, `&str`, `String`, `Cow<str>`
+/// - `method!("...")`, `func!("...")`, `ScriptMemberID`, `&str`, `String`, `Cow<str>`
 #[macro_export]
 macro_rules! call_method {
     ($ctx:expr, $id:expr, $method:expr, $params:expr) => {
         $ctx.Scripts().call_method($id, $method, $params)
-    };
-}
-
-/// Returns attributes declared on a script member.
-///
-/// Arguments:
-/// - `ctx`: `&mut RuntimeWindow<_>`
-/// - `id`: script `NodeID`
-/// - `member`: member name or `Member`
-#[macro_export]
-macro_rules! attributes_of {
-    ($ctx:expr, $id:expr, $member:expr) => {
-        $ctx.Scripts().attributes_of($id, $member)
-    };
-}
-
-/// Returns all members with a specific attribute.
-///
-/// Arguments:
-/// - `ctx`: `&mut RuntimeWindow<_>`
-/// - `id`: script `NodeID`
-/// - `attribute`: attribute name or `Attribute`
-#[macro_export]
-macro_rules! members_with {
-    ($ctx:expr, $id:expr, $attribute:expr) => {
-        $ctx.Scripts().members_with($id, $attribute)
-    };
-}
-
-/// Checks whether a member has a specific attribute.
-///
-/// Arguments:
-/// - `ctx`: `&mut RuntimeWindow<_>`
-/// - `id`: script `NodeID`
-/// - `member`: member name or `Member`
-/// - `attribute`: attribute name or `Attribute`
-#[macro_export]
-macro_rules! has_attribute {
-    ($ctx:expr, $id:expr, $member:expr, $attribute:expr) => {
-        $ctx.Scripts().has_attribute($id, $member, $attribute)
-    };
-}
-
-/// Creates a typed `Member` descriptor from a static name.
-///
-/// Usage:
-/// - `member!("health") -> Member`
-#[macro_export]
-macro_rules! member {
-    ($name:expr) => {
-        $crate::sub_apis::Member::new($name)
-    };
-}
-
-/// Creates a typed `Attribute` descriptor from a static name.
-///
-/// Usage:
-/// - `attribute!("readonly") -> Attribute`
-#[macro_export]
-macro_rules! attribute {
-    ($value:expr) => {
-        $crate::sub_apis::Attribute::new($value)
     };
 }

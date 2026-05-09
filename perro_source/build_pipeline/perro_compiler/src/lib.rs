@@ -2,7 +2,7 @@ use perro_assets::{build_compressed_perro_archive_from_entries, build_perro_asse
 use perro_io::walkdir::walk_dir;
 use perro_project::{ensure_source_overrides, load_project_toml};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     env,
     fmt::{Display, Formatter},
     fs,
@@ -1852,7 +1852,6 @@ fn transpile_frontend_script(source: &str, source_include: &str) -> String {
         parse_struct_fields(&source, &state_ty)
     };
     let exposed_fields = supported_fields(&state_fields);
-    let attributed_fields = supported_attributed_fields(&state_fields);
 
     let mut flags = String::from("ScriptFlags::NONE");
     if has_init {
@@ -1878,9 +1877,6 @@ fn transpile_frontend_script(source: &str, source_include: &str) -> String {
     let apply_scene_injected_vars_body =
         generate_apply_scene_injected_vars_body(&state_ty, &exposed_fields);
     let call_method_body = generate_call_method_body(&user_methods);
-    let attr_of_body = generate_attributes_of_body(&attributed_fields, &user_methods);
-    let members_with_body = generate_members_with_body(&attributed_fields, &user_methods);
-    let has_attr_body = generate_has_attribute_body(&attributed_fields, &user_methods);
 
     let implicit_script_decl = if needs_implicit_script_struct {
         format!("#[derive(Default)]\nstruct {script_ty};\n\n")
@@ -1923,28 +1919,6 @@ impl<API: ScriptAPI + ?Sized> ScriptBehavior<API> for {script_ty} {{
         params: &[Variant],
     ) -> Variant {{
 {call_method_body}
-    }}
-
-    fn attributes_of(
-        &self,
-        member: &str,
-    ) -> &'static [Attribute] {{
-{attr_of_body}
-    }}
-
-    fn members_with(
-        &self,
-        attribute: &str,
-    ) -> &'static [Member] {{
-{members_with_body}
-    }}
-
-    fn has_attribute(
-        &self,
-        member: &str,
-        attribute: &str,
-    ) -> bool {{
-{has_attr_body}
     }}
 }}
 
@@ -2134,7 +2108,6 @@ fn is_unit_struct(source: &str, struct_name: &str) -> bool {
 struct ScriptField {
     name: String,
     ty: String,
-    attrs: Vec<String>,
 }
 
 fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<ScriptField> {
@@ -2154,15 +2127,9 @@ fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<ScriptField> {
     let mut depth = 0_i32;
     let mut opened = false;
     let mut i = start;
-    let mut pending_attrs: Vec<String> = Vec::new();
 
     while i < lines.len() {
         let raw_line = lines[i];
-        if let Some(attr) = parse_transpiler_attr_name(raw_line.trim()) {
-            pending_attrs.push(attr);
-            i += 1;
-            continue;
-        }
         let line = strip_line_comment(raw_line);
         if !opened {
             if let Some(pos) = line.find('{') {
@@ -2170,10 +2137,8 @@ fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<ScriptField> {
                 depth = 1;
                 let rest = &line[pos + 1..];
                 if depth == 1
-                    && let Some(mut field) = parse_field_line(rest)
+                    && let Some(field) = parse_field_line(rest)
                 {
-                    apply_field_attrs(&mut field, &pending_attrs);
-                    pending_attrs.clear();
                     fields.push(field);
                 }
                 depth += brace_delta(rest);
@@ -2186,10 +2151,8 @@ fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<ScriptField> {
         }
 
         if depth == 1
-            && let Some(mut field) = parse_field_line(line)
+            && let Some(field) = parse_field_line(line)
         {
-            apply_field_attrs(&mut field, &pending_attrs);
-            pending_attrs.clear();
             fields.push(field);
         }
         depth += brace_delta(line);
@@ -2239,12 +2202,7 @@ fn parse_field_line(line: &str) -> Option<ScriptField> {
     Some(ScriptField {
         name: name.to_string(),
         ty: ty.to_string(),
-        attrs: Vec::new(),
     })
-}
-
-fn apply_field_attrs(field: &mut ScriptField, attrs: &[String]) {
-    field.attrs = dedup_attrs(attrs);
 }
 
 fn is_ident(s: &str) -> bool {
@@ -2264,14 +2222,6 @@ fn normalize_type(ty: &str) -> String {
 
 fn supported_fields(fields: &[ScriptField]) -> Vec<ScriptField> {
     fields.to_vec()
-}
-
-fn supported_attributed_fields(fields: &[ScriptField]) -> Vec<ScriptField> {
-    fields
-        .iter()
-        .filter(|f| !f.attrs.is_empty())
-        .cloned()
-        .collect()
 }
 
 fn member_const_name(field_name: &str) -> String {
@@ -2304,7 +2254,6 @@ struct ScriptMethod {
     takes_raw_params: bool,
     params: Vec<ScriptMethodParam>,
     returns_variant: bool,
-    attrs: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -2415,26 +2364,15 @@ fn parse_inherent_methods(source: &str, struct_name: &str) -> Vec<ScriptMethod> 
 
         let mut depth = brace_delta(line);
         let mut opened = line.contains('{');
-        let mut pending_attrs: Vec<String> = Vec::new();
         i += 1;
 
         while i < lines.len() {
             let raw_line = lines[i];
-            if opened
-                && depth == 1
-                && let Some(attr) = parse_transpiler_attr_name(raw_line.trim())
-            {
-                pending_attrs.push(attr);
-                i += 1;
-                continue;
-            }
             let l = strip_line_comment(raw_line);
             if opened
                 && depth == 1
-                && let Some(mut method) = parse_script_method_signature(l.trim())
+                && let Some(method) = parse_script_method_signature(l.trim())
             {
-                method.attrs = dedup_attrs(&pending_attrs);
-                pending_attrs.clear();
                 methods.push(method);
             }
 
@@ -2752,18 +2690,11 @@ fn raw_string_start_at(bytes: &[u8], i: usize) -> Option<(usize, usize)> {
 fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
     let mut methods = Vec::new();
     let mut depth = 0_i32;
-    let mut pending_attrs: Vec<String> = Vec::new();
     let mut sig_buf: Option<String> = None;
     let mut sig_paren_depth: i32 = 0;
     let debug_methods = methods_debug_enabled();
 
     for line in body.lines() {
-        if depth == 0
-            && let Some(attr) = parse_transpiler_attr_name(line.trim())
-        {
-            pending_attrs.push(attr);
-            continue;
-        }
         let l = strip_line_comment(line);
         let trimmed = l.trim();
 
@@ -2776,11 +2707,7 @@ fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
                 sig_paren_depth += paren_delta(trimmed);
                 if sig_paren_depth <= 0 {
                     match parse_script_method_signature_detailed(buf.trim()) {
-                        Ok(mut method) => {
-                            method.attrs = dedup_attrs(&pending_attrs);
-                            pending_attrs.clear();
-                            methods.push(method);
-                        }
+                        Ok(method) => methods.push(method),
                         Err(reason) => {
                             if debug_methods {
                                 eprintln!(
@@ -2799,11 +2726,7 @@ fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
                 sig_paren_depth = paren_delta(trimmed);
                 if sig_paren_depth <= 0 {
                     match parse_script_method_signature_detailed(trimmed) {
-                        Ok(mut method) => {
-                            method.attrs = dedup_attrs(&pending_attrs);
-                            pending_attrs.clear();
-                            methods.push(method);
-                        }
+                        Ok(method) => methods.push(method),
                         Err(reason) => {
                             if debug_methods {
                                 eprintln!(
@@ -2816,9 +2739,7 @@ fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
                     sig_buf = None;
                     sig_paren_depth = 0;
                 }
-            } else if let Ok(mut method) = parse_script_method_signature_detailed(trimmed) {
-                method.attrs = dedup_attrs(&pending_attrs);
-                pending_attrs.clear();
+            } else if let Ok(method) = parse_script_method_signature_detailed(trimmed) {
                 methods.push(method);
             }
         }
@@ -2933,7 +2854,6 @@ fn parse_script_method_signature_detailed(line: &str) -> Result<ScriptMethod, St
             takes_raw_params,
             params,
             returns_variant,
-            attrs: Vec::new(),
         })
     }
 }
@@ -3051,29 +2971,6 @@ fn is_rust_attribute_name(name: &str) -> bool {
 
 fn is_transpiler_attr_line(line: &str) -> bool {
     parse_transpiler_attr_name(line).is_some()
-}
-
-fn dedup_attrs(attrs: &[String]) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut seen = BTreeSet::<String>::new();
-    for attr in attrs {
-        if seen.insert(attr.clone()) {
-            out.push(attr.clone());
-        }
-    }
-    out
-}
-
-fn sanitize_const_suffix(name: &str) -> String {
-    let mut out = String::new();
-    for c in name.chars() {
-        if c.is_ascii_alphanumeric() {
-            out.push(c.to_ascii_uppercase());
-        } else {
-            out.push('_');
-        }
-    }
-    if out.is_empty() { "X".to_string() } else { out }
 }
 
 fn extract_fn_params_segment(line: &str) -> Option<&str> {
@@ -3361,132 +3258,6 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
         ));
     }
     out.push_str("    false\n}\n");
-    out
-}
-
-fn collect_member_attributes(
-    fields: &[ScriptField],
-    methods: &[ScriptMethod],
-) -> BTreeMap<String, Vec<String>> {
-    let mut out = BTreeMap::<String, Vec<String>>::new();
-    for field in fields {
-        out.insert(field.name.clone(), dedup_attrs(&field.attrs));
-    }
-    for method in methods {
-        let attrs = dedup_attrs(&method.attrs);
-        if attrs.is_empty() {
-            continue;
-        }
-        out.insert(method.name.clone(), attrs);
-    }
-    out
-}
-
-fn generate_attributes_of_body(fields: &[ScriptField], methods: &[ScriptMethod]) -> String {
-    let member_attrs = collect_member_attributes(fields, methods);
-    if member_attrs.is_empty() {
-        return "        &[]".to_string();
-    }
-
-    let mut unique_attrs = BTreeSet::<String>::new();
-    for attrs in member_attrs.values() {
-        for attr in attrs {
-            unique_attrs.insert(attr.clone());
-        }
-    }
-
-    let mut out = String::new();
-    let mut attr_consts = BTreeMap::<String, String>::new();
-    for attr in unique_attrs {
-        let const_name = format!("__PERRO_ATTR_{}", sanitize_const_suffix(&attr));
-        attr_consts.insert(attr.clone(), const_name.clone());
-        out.push_str(&format!(
-            "        const {const_name}: Attribute = attribute!(\"{attr}\");\n"
-        ));
-    }
-
-    for (name, attrs) in &member_attrs {
-        let const_name = format!("__PERRO_MEMBER_ATTRS_{}", sanitize_const_suffix(name));
-        let values = attrs
-            .iter()
-            .filter_map(|a| attr_consts.get(a))
-            .map(|const_name| const_name.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        out.push_str(&format!(
-            "        const {const_name}: &[Attribute] = &[{values}];\n"
-        ));
-    }
-
-    out.push_str("        match member {\n");
-    for name in member_attrs.keys() {
-        let const_name = format!("__PERRO_MEMBER_ATTRS_{}", sanitize_const_suffix(name));
-        out.push_str(&format!("            \"{name}\" => {const_name},\n"));
-    }
-    out.push_str("            _ => &[],\n");
-    out.push_str("        }");
-    out
-}
-
-fn generate_members_with_body(fields: &[ScriptField], methods: &[ScriptMethod]) -> String {
-    let member_attrs = collect_member_attributes(fields, methods);
-    if member_attrs.is_empty() {
-        return "        &[]".to_string();
-    }
-
-    let mut by_attr: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (member, attrs) in &member_attrs {
-        for attr in attrs {
-            by_attr
-                .entry(attr.clone())
-                .or_default()
-                .push(member.clone());
-        }
-    }
-
-    let mut out = String::new();
-    for (attr, members) in &by_attr {
-        let const_name = format!("__PERRO_MEMBERS_WITH_{}", sanitize_const_suffix(attr));
-        out.push_str(&format!("        const {const_name}: &[Member] = &[\n"));
-        for member in members {
-            out.push_str(&format!("            member!(\"{member}\"),\n"));
-        }
-        out.push_str("        ];\n");
-    }
-    out.push_str("        match attribute {\n");
-    for attr in by_attr.keys() {
-        let const_name = format!("__PERRO_MEMBERS_WITH_{}", sanitize_const_suffix(attr));
-        out.push_str(&format!("            \"{attr}\" => {const_name},\n"));
-    }
-    out.push_str("            _ => &[],\n");
-    out.push_str("        }");
-    out
-}
-
-fn generate_has_attribute_body(fields: &[ScriptField], methods: &[ScriptMethod]) -> String {
-    let member_attrs = collect_member_attributes(fields, methods);
-    if member_attrs.is_empty() {
-        return "        false".to_string();
-    }
-
-    let mut out = String::new();
-    out.push_str("        match member {\n");
-    for (member, attrs) in &member_attrs {
-        if attrs.is_empty() {
-            out.push_str(&format!("            \"{member}\" => false,\n"));
-            continue;
-        }
-        out.push_str(&format!("            \"{member}\" => matches!(attribute, "));
-        for (i, attr) in attrs.iter().enumerate() {
-            if i > 0 {
-                out.push_str(" | ");
-            }
-            out.push_str(&format!("\"{attr}\""));
-        }
-        out.push_str("),\n");
-    }
-    out.push_str("            _ => false,\n");
-    out.push_str("        }");
     out
 }
 

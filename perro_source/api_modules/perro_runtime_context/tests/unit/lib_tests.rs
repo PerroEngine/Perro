@@ -351,18 +351,6 @@ impl ScriptAPI for DummyRuntime {
     ) -> perro_variant::Variant {
         perro_variant::Variant::Null
     }
-
-    fn attributes_of(&mut self, _script: NodeID, _member: &str) -> &'static [Attribute] {
-        &[]
-    }
-
-    fn members_with(&mut self, _script: NodeID, _attribute: &str) -> &'static [Member] {
-        &[]
-    }
-
-    fn has_attribute(&mut self, _script: NodeID, _member: &str, _attribute: &str) -> bool {
-        false
-    }
 }
 
 impl SignalAPI for DummyRuntime {
@@ -746,9 +734,6 @@ fn script_macros_typecheck_and_forward() {
     set_var!(&mut ctx, id, member, variant!(77_i32));
     let _result = call_method!(&mut ctx, id, method_member, &[]);
     let _result2 = call_method!(&mut ctx, id, member, params![1_i32, "abc"]);
-    let _attrs = attributes_of!(&mut ctx, id, "speed");
-    let _members = members_with!(&mut ctx, id, "export");
-    let _has = has_attribute!(&mut ctx, id, "speed", "export");
     assert!(signal_connect!(
         &mut ctx,
         id,
