@@ -1447,6 +1447,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
 #[path = \"static/mod.rs\"]\n\
   mod static_assets;\n\n\
 static PERRO_ASSETS: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n\
+// To show this is a Perro Engine Project, we include a specific static marker string in the binary and read it in main to prevent dead code stripping.\n\
 #[used]\n\
 #[unsafe(no_mangle)]\n\
 pub static PERRO_ENGINE_DETECT: [u8; 89] =\n\
