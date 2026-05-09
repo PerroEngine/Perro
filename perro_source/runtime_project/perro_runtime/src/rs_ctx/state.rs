@@ -80,6 +80,7 @@ pub(super) struct RuntimeLocalizationState {
     pub(super) current_locale_code: &'static str,
     pub(super) active_by_key: HashMap<&'static str, &'static str>,
     pub(super) active_by_hash: HashMap<u64, &'static str>,
+    pub(super) epoch: u64,
 }
 
 impl RuntimeLocalizationState {
@@ -99,6 +100,7 @@ impl RuntimeLocalizationState {
                 current_locale_code: locale_code,
                 active_by_key: HashMap::new(),
                 active_by_hash: HashMap::new(),
+                epoch: 0,
             };
         }
         Self::default()
@@ -114,6 +116,7 @@ impl Default for RuntimeLocalizationState {
             current_locale_code: "en",
             active_by_key: HashMap::new(),
             active_by_hash: HashMap::new(),
+            epoch: 0,
         }
     }
 }

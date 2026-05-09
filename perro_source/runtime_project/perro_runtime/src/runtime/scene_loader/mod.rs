@@ -313,6 +313,8 @@ impl Runtime {
         self.render_ui.button_states.clear();
         self.render_ui.last_ui_pointer = None;
         self.render_ui.removed_nodes.clear();
+        self.locale_text.bindings.clear();
+        self.locale_text.last_epoch = self.resource_api.localization_epoch();
         if self.provider_mode == ProviderMode::Dynamic {
             self.script_runtime.dynamic_script_registry.clear();
             self.script_runtime.base_scripts_loaded = false;
@@ -676,8 +678,11 @@ fn fmt_duration(duration: Option<Duration>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rs_ctx::RuntimeResourceApi;
     use crate::runtime_project::RuntimeProject;
-    use perro_scene::{Scene, SceneKey, SceneNodeData, SceneNodeEntry};
+    use perro_project::LocalizationConfig;
+    use perro_resource_context::sub_apis::{Locale, LocalizationAPI};
+    use perro_scene::{Parser, Scene, SceneKey, SceneNodeData, SceneNodeEntry};
     use std::{borrow::Cow, fs};
 
     const EMPTY_FIELDS: &[perro_scene::SceneObjectField] = &[];
@@ -751,5 +756,86 @@ mod tests {
 
         assert_eq!(result, Ok(()));
         assert_eq!(runtime.nodes.len(), 2);
+    }
+
+    #[test]
+    fn scene_locale_text_binding_refreshes_on_locale_change() {
+        fn static_lookup(locale: Locale, key_hash: u64) -> &'static str {
+            if key_hash != perro_ids::string_to_u64("ui.center") {
+                return "";
+            }
+            match locale {
+                Locale::EN => "Center",
+                Locale::ES => "Centro",
+                _ => "",
+            }
+        }
+
+        let scene = Parser::new(
+            r#"
+            @root = label
+            [label]
+            [UiLabel]
+                text = "%loc:\"ui.center\""
+            [/UiLabel]
+            [/label]
+
+            [missing]
+            [UiLabel]
+                text = %loc: "ui.missing"
+            [/UiLabel]
+            [/missing]
+            "#,
+        )
+        .parse_scene();
+        let prepared = prepare::prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        })
+        .expect("prepare scene");
+        let mut runtime = Runtime::new();
+        runtime.resource_api = RuntimeResourceApi::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(static_lookup),
+            Some(LocalizationConfig {
+                source_csv: "locale.csv".to_string(),
+                key_column: "key".to_string(),
+                default_locale: "en".to_string(),
+            }),
+        );
+        merge::merge_prepared_scene(&mut runtime, prepared).expect("merge scene");
+
+        let label_text = runtime
+            .nodes
+            .iter()
+            .find_map(|(_, node)| match &node.data {
+                perro_nodes::SceneNodeData::UiLabel(label) if node.name.as_ref() == "label" => {
+                    Some(label.text.as_ref().to_string())
+                }
+                _ => None,
+            })
+            .expect("label text");
+        assert_eq!(label_text, "Center");
+        assert!(runtime.nodes.iter().any(|(_, node)| match &node.data {
+            perro_nodes::SceneNodeData::UiLabel(label) => label.text.as_ref() == "ui.missing",
+            _ => false,
+        }));
+
+        assert!(runtime.resource_api.localization_set_locale(Locale::ES));
+        runtime.extract_render_ui_commands();
+        let label_text = runtime
+            .nodes
+            .iter()
+            .find_map(|(_, node)| match &node.data {
+                perro_nodes::SceneNodeData::UiLabel(label) if node.name.as_ref() == "label" => {
+                    Some(label.text.as_ref().to_string())
+                }
+                _ => None,
+            })
+            .expect("label text");
+        assert_eq!(label_text, "Centro");
     }
 }

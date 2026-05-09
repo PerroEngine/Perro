@@ -570,4 +570,100 @@ mod tests {
         assert!(target.ik_target_skeleton_target.is_some());
     }
 
+    #[test]
+    fn scene_loader_parses_locale_text_markers() {
+        let scene = Parser::new(
+            r#"
+            @root = label
+            [label]
+            [UiLabel]
+                text = "%loc:\"ui.center\""
+            [/UiLabel]
+            [/label]
+
+            [box]
+            [UiTextBox]
+                text = %loc: "ui.entry"
+                placeholder = "%loc:\"ui.placeholder\""
+            [/UiTextBox]
+            [/box]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        })
+        .expect("prepare scene");
+
+        let label = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "label")
+            .expect("label node");
+        assert_eq!(label.locale_text_bindings.len(), 1);
+        assert_eq!(label.locale_text_bindings[0].key, "ui.center");
+        assert_eq!(
+            label.locale_text_bindings[0].field,
+            crate::runtime::state::LocaleTextField::LabelText
+        );
+        match &label.node.data {
+            SceneNodeData::UiLabel(label) => assert_eq!(label.text.as_ref(), "ui.center"),
+            other => panic!("expected UiLabel node, got {other:?}"),
+        }
+
+        let text_box = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "box")
+            .expect("box node");
+        assert_eq!(text_box.locale_text_bindings.len(), 2);
+        assert!(
+            text_box
+                .locale_text_bindings
+                .iter()
+                .any(|binding| binding.key == "ui.entry"
+                    && binding.field == crate::runtime::state::LocaleTextField::TextEditText)
+        );
+        assert!(
+            text_box
+                .locale_text_bindings
+                .iter()
+                .any(|binding| binding.key == "ui.placeholder"
+                    && binding.field
+                        == crate::runtime::state::LocaleTextField::TextEditPlaceholder)
+        );
+    }
+
+    #[test]
+    fn scene_loader_escapes_locale_text_marker_prefix() {
+        let scene = Parser::new(
+            r#"
+            @root = label
+            [label]
+            [UiLabel]
+                text = "%%loc:not_key"
+            [/UiLabel]
+            [/label]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        })
+        .expect("prepare scene");
+
+        let label = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "label")
+            .expect("label node");
+        assert!(label.locale_text_bindings.is_empty());
+        match &label.node.data {
+            SceneNodeData::UiLabel(label) => assert_eq!(label.text.as_ref(), "%loc:not_key"),
+            other => panic!("expected UiLabel node, got {other:?}"),
+        }
+    }
+
 }

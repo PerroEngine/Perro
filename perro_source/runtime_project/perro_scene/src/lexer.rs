@@ -4,15 +4,16 @@ pub enum Token {
     Number(f32),
     String(String),
 
-    At,     // @
-    Dollar, // $
-    Equals, // =
-    Comma,  // ,
-    LParen, // (
-    RParen, // )
-    LBrace, // {
-    RBrace, // }
-    Colon,  // :
+    At,      // @
+    Dollar,  // $
+    Percent, // %
+    Equals,  // =
+    Comma,   // ,
+    LParen,  // (
+    RParen,  // )
+    LBrace,  // {
+    RBrace,  // }
+    Colon,   // :
 
     LBracket, // [
     RBracket, // ]
@@ -69,6 +70,7 @@ impl<'a> Lexer<'a> {
         match c {
             '@' => Token::At,
             '$' => Token::Dollar,
+            '%' => Token::Percent,
             '=' => Token::Equals,
             ',' => Token::Comma,
             '(' => Token::LParen,
@@ -96,6 +98,11 @@ impl<'a> Lexer<'a> {
             '"' => {
                 let mut s = String::new();
                 while let Some(c) = self.bump() {
+                    if c == '\\' && self.peek == Some('"') {
+                        self.bump();
+                        s.push('"');
+                        continue;
+                    }
                     if c == '"' {
                         break;
                     }

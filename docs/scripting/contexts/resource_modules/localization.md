@@ -67,6 +67,37 @@ How lookup works:
 - `locale_in!(...)` queries a specific locale without changing current locale.
 - If key is missing, macros return the key itself as fallback.
 
+Scene text binding:
+
+- Text fields in `.scn` can bind directly to a localization key.
+- Use `text = %loc: "menu.start"` for clear scene-side binding.
+- String form also works: `text = "%loc:\"menu.start\""`.
+- Literal escape: `text = "%%loc:not_a_key"` renders `%loc:not_a_key`.
+- Bound text updates when `locale_set!` changes the current locale.
+- Missing keys render the key itself.
+- Supported fields:
+  - `UiLabel.text`
+  - `UiTextBox.text`
+  - `UiTextBox.placeholder` / `hint`
+  - `UiTextBlock.text`
+  - `UiTextBlock.placeholder` / `hint`
+
+Scene example:
+
+```scn
+[title]
+[UiLabel]
+    text = %loc: "menu.title"
+[/UiLabel]
+[/title]
+
+[name_input]
+[UiTextBox]
+    placeholder = %loc: "player.name.placeholder"
+[/UiTextBox]
+[/name_input]
+```
+
 Ownership:
 
 - `locale!` returns `&str`.

@@ -333,7 +333,7 @@ fn apply_ui_label_fields(node: &mut UiLabel, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "text" => {
             if let Some(v) = as_str(value) {
-                node.text = Cow::Owned(decode_text_escapes(v));
+                node.text = Cow::Owned(decode_scene_text_literal(v));
             }
         }
         "color" | "text_color" => {
@@ -382,14 +382,14 @@ fn apply_ui_text_edit_fields(node: &mut perro_ui::UiTextEdit, fields: &[SceneObj
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "text" => {
             if let Some(v) = as_str(value) {
-                node.text = Cow::Owned(decode_text_edit_escapes(v, node.multiline));
+                node.text = Cow::Owned(decode_scene_text_edit_literal(v, node.multiline));
                 node.caret = node.text.len();
                 node.anchor = node.caret;
             }
         }
         "placeholder" | "hint" => {
             if let Some(v) = as_str(value) {
-                node.placeholder = Cow::Owned(decode_text_edit_escapes(v, node.multiline));
+                node.placeholder = Cow::Owned(decode_scene_text_edit_literal(v, node.multiline));
             }
         }
         "color" | "text_color" => {
@@ -468,13 +468,32 @@ fn apply_ui_text_edit_fields(node: &mut perro_ui::UiTextEdit, fields: &[SceneObj
     apply_ui_style_object_fields(&mut node.focused_style, fields, "focused_style");
 }
 
-fn decode_text_edit_escapes(text: &str, multiline: bool) -> String {
-    let text = decode_text_escapes(text);
+fn decode_scene_text_literal(text: &str) -> String {
+    if let Some(stripped) = text.strip_prefix("%%loc:") {
+        return decode_text_escapes(&format!("%loc:{stripped}"));
+    }
+    if let Some(key) = parse_locale_text_key(text) {
+        return key.to_string();
+    }
+    decode_text_escapes(text)
+}
+
+fn decode_scene_text_edit_literal(text: &str, multiline: bool) -> String {
+    let text = decode_scene_text_literal(text);
     if multiline {
         text
     } else {
         text.replace(['\r', '\n', '\t'], " ")
     }
+}
+
+fn parse_locale_text_key(text: &str) -> Option<&str> {
+    let raw = text.strip_prefix("%loc:")?.trim();
+    if raw.len() >= 2 && raw.starts_with('"') && raw.ends_with('"') {
+        let key = raw[1..raw.len() - 1].trim();
+        return (!key.is_empty()).then_some(key);
+    }
+    (!raw.is_empty()).then_some(raw)
 }
 
 fn decode_text_escapes(text: &str) -> String {

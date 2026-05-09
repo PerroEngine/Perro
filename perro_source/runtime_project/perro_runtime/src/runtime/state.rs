@@ -340,6 +340,35 @@ pub(crate) struct RenderUiState {
     pub(crate) removed_nodes: Vec<NodeID>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct LocaleTextBinding {
+    pub(crate) node: NodeID,
+    pub(crate) field: LocaleTextField,
+    pub(crate) key: String,
+    pub(crate) key_hash: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LocaleTextField {
+    LabelText,
+    TextEditText,
+    TextEditPlaceholder,
+}
+
+pub(crate) struct LocaleTextState {
+    pub(crate) bindings: Vec<LocaleTextBinding>,
+    pub(crate) last_epoch: u64,
+}
+
+impl LocaleTextState {
+    pub(crate) fn new() -> Self {
+        Self {
+            bindings: Vec::new(),
+            last_epoch: 0,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) enum UiButtonVisualState {
     #[default]

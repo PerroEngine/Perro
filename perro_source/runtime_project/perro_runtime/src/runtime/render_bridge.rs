@@ -118,6 +118,9 @@ impl Runtime {
         self.render_2d.removed_nodes.push(node);
         self.render_3d.removed_nodes.push(node);
         self.render_ui.removed_nodes.push(node);
+        self.locale_text
+            .bindings
+            .retain(|binding| binding.node != node);
     }
 }
 

@@ -17,6 +17,7 @@ impl LocalizationAPI for RuntimeResourceApi {
                 .expect("resource api localization rwlock poisoned");
             localization.current_locale = locale;
             localization.current_locale_code = intern_localization_str(locale.code());
+            localization.epoch = localization.epoch.wrapping_add(1);
             return true;
         }
 
@@ -28,7 +29,12 @@ impl LocalizationAPI for RuntimeResourceApi {
             .localization
             .write()
             .expect("resource api localization rwlock poisoned");
-        self.load_locale_into_state(&mut localization, &locale_code)
+        if self.load_locale_into_state(&mut localization, &locale_code) {
+            localization.epoch = localization.epoch.wrapping_add(1);
+            true
+        } else {
+            false
+        }
     }
 
     fn localization_get_locale(&self) -> Locale {
@@ -113,6 +119,19 @@ impl LocalizationAPI for RuntimeResourceApi {
 }
 
 impl RuntimeResourceApi {
+    pub(crate) fn localization_epoch(&self) -> u64 {
+        self.localization
+            .read()
+            .expect("resource api localization rwlock poisoned")
+            .epoch
+    }
+
+    pub(crate) fn localized_or_key_by_hash(&self, key: &str, key_hash: u64) -> &'static str {
+        self.localization_get_by_hash(key_hash)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| intern_localization_str(key))
+    }
+
     pub(crate) fn initialize_localization(&self) {
         if self.static_localization_lookup.is_some() {
             return;

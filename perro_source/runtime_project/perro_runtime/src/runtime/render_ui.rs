@@ -1,4 +1,4 @@
-use super::state::{DirtyState, UiButtonVisualState};
+use super::state::{DirtyState, LocaleTextBinding, LocaleTextField, UiButtonVisualState};
 use super::{Runtime, RuntimeUiTiming};
 use ahash::AHashMap;
 use perro_ids::{NodeID, SignalID};
@@ -20,6 +20,111 @@ const TEXT_EDIT_REPEAT_DELAY: f32 = 0.35;
 const TEXT_EDIT_REPEAT_RATE: f32 = 0.035;
 
 impl Runtime {
+    pub(crate) fn add_locale_text_binding(
+        &mut self,
+        node: NodeID,
+        field: LocaleTextField,
+        key: String,
+        key_hash: u64,
+    ) {
+        let binding = LocaleTextBinding {
+            node,
+            field,
+            key,
+            key_hash,
+        };
+        let changed = self.apply_locale_text_binding(&binding);
+        self.locale_text.bindings.push(binding);
+        self.locale_text.last_epoch = self.resource_api.localization_epoch();
+        if changed {
+            self.mark_ui_dirty(
+                node,
+                Runtime::UI_DIRTY_TEXT
+                    | Runtime::UI_DIRTY_LAYOUT_SELF
+                    | Runtime::UI_DIRTY_LAYOUT_PARENT
+                    | Runtime::UI_DIRTY_COMMANDS,
+            );
+        }
+    }
+
+    fn refresh_locale_text_bindings(&mut self) {
+        let epoch = self.resource_api.localization_epoch();
+        if epoch == self.locale_text.last_epoch {
+            return;
+        }
+        self.locale_text.last_epoch = epoch;
+        let bindings = self.locale_text.bindings.clone();
+        let mut live = Vec::with_capacity(bindings.len());
+        for binding in bindings {
+            if self.nodes.get(binding.node).is_none() {
+                continue;
+            }
+            let changed = self.apply_locale_text_binding(&binding);
+            if changed {
+                self.mark_ui_dirty(
+                    binding.node,
+                    Runtime::UI_DIRTY_TEXT
+                        | Runtime::UI_DIRTY_LAYOUT_SELF
+                        | Runtime::UI_DIRTY_LAYOUT_PARENT
+                        | Runtime::UI_DIRTY_COMMANDS,
+                );
+            }
+            live.push(binding);
+        }
+        self.locale_text.bindings = live;
+    }
+
+    fn apply_locale_text_binding(&mut self, binding: &LocaleTextBinding) -> bool {
+        let text = self
+            .resource_api
+            .localized_or_key_by_hash(&binding.key, binding.key_hash);
+        let Some(scene_node) = self.nodes.get_mut(binding.node) else {
+            return false;
+        };
+        match (&mut scene_node.data, binding.field) {
+            (SceneNodeData::UiLabel(label), LocaleTextField::LabelText) => {
+                if label.text.as_ref() == text {
+                    return false;
+                }
+                label.text = Cow::Borrowed(text);
+                true
+            }
+            (SceneNodeData::UiTextBox(text_box), LocaleTextField::TextEditText) => {
+                if text_box.inner.text.as_ref() == text {
+                    return false;
+                }
+                text_box.inner.text = Cow::Borrowed(text);
+                text_box.inner.caret = text_box.inner.text.len();
+                text_box.inner.anchor = text_box.inner.caret;
+                true
+            }
+            (SceneNodeData::UiTextBlock(text_block), LocaleTextField::TextEditText) => {
+                if text_block.inner.text.as_ref() == text {
+                    return false;
+                }
+                text_block.inner.text = Cow::Borrowed(text);
+                text_block.inner.caret = text_block.inner.text.len();
+                text_block.inner.anchor = text_block.inner.caret;
+                true
+            }
+            (SceneNodeData::UiTextBox(text_box), LocaleTextField::TextEditPlaceholder) => {
+                if text_box.inner.placeholder.as_ref() == text {
+                    return false;
+                }
+                text_box.inner.placeholder = Cow::Borrowed(text);
+                true
+            }
+            (SceneNodeData::UiTextBlock(text_block), LocaleTextField::TextEditPlaceholder) => {
+                if text_block.inner.placeholder.as_ref() == text {
+                    return false;
+                }
+                text_block.inner.placeholder = Cow::Borrowed(text);
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) fn mark_ui_viewport_dirty(&mut self) {
         let ids: Vec<NodeID> = self
             .nodes
@@ -47,6 +152,7 @@ impl Runtime {
     }
 
     fn extract_render_ui_commands_inner(&mut self, timing: Option<&mut RuntimeUiTiming>) {
+        self.refresh_locale_text_bindings();
         let total_start = timing.as_ref().map(|_| std::time::Instant::now());
         let bootstrap_scan = self.render_ui.prev_visible.is_empty()
             && self.render_ui.retained_commands.is_empty()

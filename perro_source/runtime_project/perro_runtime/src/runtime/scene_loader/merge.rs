@@ -68,6 +68,7 @@ pub(super) fn merge_prepared_scene(
             ik_target_skeleton_target,
             physics_bone_chain_skeleton_target,
             animation_bindings,
+            locale_text_bindings,
         } = pending;
 
         if key_to.contains_key(&key) {
@@ -78,6 +79,9 @@ pub(super) fn merge_prepared_scene(
         if let Some(inserted) = runtime.nodes.get(node) {
             let ty = inserted.node_type();
             runtime.register_internal_node_schedules(node, ty);
+        }
+        for binding in locale_text_bindings {
+            runtime.add_locale_text_binding(node, binding.field, binding.key, binding.key_hash);
         }
         if !animation_bindings.is_empty() {
             animation_player_bindings.push((node, animation_bindings));

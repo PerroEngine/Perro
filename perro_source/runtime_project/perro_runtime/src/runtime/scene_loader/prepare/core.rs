@@ -94,6 +94,14 @@ pub(super) struct PendingNode {
     pub(super) ik_target_skeleton_target: Option<u32>,
     pub(super) physics_bone_chain_skeleton_target: Option<u32>,
     pub(super) animation_bindings: Vec<(String, u32)>,
+    pub(super) locale_text_bindings: Vec<PendingLocaleTextBinding>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct PendingLocaleTextBinding {
+    pub(super) field: crate::runtime::state::LocaleTextField,
+    pub(super) key: String,
+    pub(super) key_hash: u64,
 }
 
 pub(super) struct PendingAnimationTreeAnimation {
@@ -127,6 +135,7 @@ type SceneNodeExtraction = (
     Option<String>,
     Option<String>,
     Vec<(String, String)>,
+    Vec<PendingLocaleTextBinding>,
 );
 
 pub(super) fn load_runtime_scene_from_disk(
@@ -334,6 +343,7 @@ fn push_entry_prepared(
         ik_target_skeleton_target,
         physics_bone_chain_skeleton_target,
         animation_bindings,
+        locale_text_bindings,
     ) = scene_node_from_entry(entry)?;
 
     ctx.prepared_nodes.push(PendingNode {
@@ -382,6 +392,7 @@ fn push_entry_prepared(
                     .map(|target| (object, remap_key(target, key_map)))
             })
             .collect(),
+        locale_text_bindings,
     });
 
     if let Some(script) = entry.script.as_ref() {
@@ -628,6 +639,7 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
     let physics_bone_chain_skeleton_target =
         extract_physics_bone_chain_skeleton_target(&entry.data);
     let animation_bindings = extract_animation_scene_bindings(&entry.data);
+    let locale_text_bindings = extract_locale_text_bindings(&entry.data);
     let model_source = extract_model_source(&entry.data);
     let (mesh_source, material_surfaces) = if let Some(model) = model_source.as_ref() {
         (
@@ -654,7 +666,70 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
         ik_target_skeleton_target,
         physics_bone_chain_skeleton_target,
         animation_bindings,
+        locale_text_bindings,
     ))
+}
+
+fn extract_locale_text_bindings(data: &SceneDefNodeData) -> Vec<PendingLocaleTextBinding> {
+    let mut out = Vec::new();
+    let fields = flatten_scene_node_fields(data);
+    match data.ty.as_ref() {
+        "UiLabel" => {
+            push_locale_text_binding(
+                &mut out,
+                &fields,
+                "text",
+                crate::runtime::state::LocaleTextField::LabelText,
+            );
+        }
+        "UiTextBox" | "UiTextBlock" => {
+            push_locale_text_binding(
+                &mut out,
+                &fields,
+                "text",
+                crate::runtime::state::LocaleTextField::TextEditText,
+            );
+            push_locale_text_binding(
+                &mut out,
+                &fields,
+                "placeholder",
+                crate::runtime::state::LocaleTextField::TextEditPlaceholder,
+            );
+            push_locale_text_binding(
+                &mut out,
+                &fields,
+                "hint",
+                crate::runtime::state::LocaleTextField::TextEditPlaceholder,
+            );
+        }
+        _ => {}
+    }
+    out
+}
+
+fn push_locale_text_binding(
+    out: &mut Vec<PendingLocaleTextBinding>,
+    fields: &[SceneObjectField],
+    field_name: &str,
+    field: crate::runtime::state::LocaleTextField,
+) {
+    for (name, value) in fields {
+        if name.as_ref() != field_name {
+            continue;
+        }
+        out.retain(|binding| binding.field != field);
+        let Some(raw) = as_str(value) else {
+            continue;
+        };
+        let Some(key) = parse_locale_text_key(raw) else {
+            continue;
+        };
+        out.push(PendingLocaleTextBinding {
+            key: key.to_string(),
+            key_hash: string_to_u64(key),
+            field,
+        });
+    }
 }
 
 fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String> {

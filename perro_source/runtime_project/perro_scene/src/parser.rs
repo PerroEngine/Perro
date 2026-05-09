@@ -127,6 +127,23 @@ impl<'a> Parser<'a> {
                     .unwrap_or_else(|| panic!("Unknown variable ${name}"))
             }
 
+            Token::Percent => {
+                self.advance();
+                let marker = self.expect_ident();
+                self.expect(Token::Colon);
+                if marker != "loc" {
+                    panic!("Unknown percent marker %{marker}:");
+                }
+                let key = match std::mem::replace(&mut self.current, Token::Eof) {
+                    Token::String(s) | Token::Ident(s) => {
+                        self.advance();
+                        s
+                    }
+                    other => panic!("Expected locale key after %loc:, got {:?}", other),
+                };
+                SceneValue::Str(Cow::Owned(format!("%loc:{key}")))
+            }
+
             Token::At => {
                 self.advance();
                 let key = self.expect_node_ref_key();
