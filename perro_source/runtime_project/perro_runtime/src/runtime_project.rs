@@ -24,6 +24,7 @@ pub type StaticSceneLookup = fn(u64) -> &'static Scene;
 pub type StaticLocalizationLookup = fn(Locale, u64) -> &'static str;
 pub type StaticMaterialLookup = fn(u64) -> &'static Material3D;
 pub type StaticUiStyleLookup = fn(u64) -> &'static UiStyle;
+pub type StaticTilesetLookup = fn(u64) -> &'static str;
 pub type StaticParticleLookup = fn(u64) -> &'static ParticleProfile3D;
 pub type StaticAnimationLookup = fn(u64) -> &'static AnimationClip;
 pub type StaticAnimationTreeLookup = fn(u64) -> &'static AnimationTreeAsset;
@@ -43,6 +44,7 @@ pub struct RuntimeProject {
     pub static_localization_lookup: Option<StaticLocalizationLookup>,
     pub static_material_lookup: Option<StaticMaterialLookup>,
     pub static_ui_style_lookup: Option<StaticUiStyleLookup>,
+    pub static_tileset_lookup: Option<StaticTilesetLookup>,
     pub static_particle_lookup: Option<StaticParticleLookup>,
     pub static_animation_lookup: Option<StaticAnimationLookup>,
     pub static_animation_tree_lookup: Option<StaticAnimationTreeLookup>,
@@ -67,6 +69,7 @@ impl RuntimeProject {
             static_localization_lookup: None,
             static_material_lookup: None,
             static_ui_style_lookup: None,
+            static_tileset_lookup: None,
             static_particle_lookup: None,
             static_animation_lookup: None,
             static_animation_tree_lookup: None,
@@ -91,6 +94,7 @@ impl RuntimeProject {
             static_localization_lookup: None,
             static_material_lookup: None,
             static_ui_style_lookup: None,
+            static_tileset_lookup: None,
             static_particle_lookup: None,
             static_animation_lookup: None,
             static_animation_tree_lookup: None,
@@ -124,6 +128,7 @@ impl RuntimeProject {
             static_localization_lookup: None,
             static_material_lookup: None,
             static_ui_style_lookup: None,
+            static_tileset_lookup: None,
             static_particle_lookup: None,
             static_animation_lookup: None,
             static_animation_tree_lookup: None,
@@ -159,6 +164,11 @@ impl RuntimeProject {
 
     pub fn with_static_ui_style_lookup(mut self, lookup: StaticUiStyleLookup) -> Self {
         self.static_ui_style_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_static_tileset_lookup(mut self, lookup: StaticTilesetLookup) -> Self {
+        self.static_tileset_lookup = Some(lookup);
         self
     }
 

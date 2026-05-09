@@ -11,6 +11,7 @@ mod scenes;
 mod shaders;
 mod skeletons;
 mod textures;
+mod tilesets;
 mod uistyles;
 
 pub use animation_trees::generate_static_animation_trees;
@@ -27,6 +28,7 @@ pub use scenes::generate_static_scenes;
 pub use shaders::generate_static_shaders;
 pub use skeletons::generate_static_skeletons;
 pub use textures::generate_static_textures;
+pub use tilesets::generate_static_tilesets;
 pub use uistyles::generate_static_ui_styles;
 
 use std::{
@@ -133,7 +135,7 @@ pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineErro
     fs::create_dir_all(&static_dir)?;
     fs::write(
         static_dir.join("mod.rs"),
-        "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod ui_styles;\npub mod particles;\npub mod animations;\npub mod animation_trees;\npub mod meshes;\npub mod collision_trimeshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n",
+        "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod ui_styles;\npub mod tilesets;\npub mod particles;\npub mod animations;\npub mod animation_trees;\npub mod meshes;\npub mod collision_trimeshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n",
     )?;
     Ok(())
 }

@@ -145,6 +145,7 @@ pub struct StaticEmbeddedAssetsConfig {
     pub localization_lookup: perro_runtime::StaticLocalizationLookup,
     pub material_lookup: perro_runtime::StaticMaterialLookup,
     pub ui_style_lookup: perro_runtime::StaticUiStyleLookup,
+    pub tileset_lookup: perro_runtime::StaticTilesetLookup,
     pub particle_lookup: perro_runtime::StaticParticleLookup,
     pub animation_lookup: perro_runtime::StaticAnimationLookup,
     pub animation_tree_lookup: perro_runtime::StaticAnimationTreeLookup,
@@ -195,6 +196,7 @@ pub fn run_static_embedded_project(
         .with_static_localization_lookup(input.assets.localization_lookup)
         .with_static_material_lookup(input.assets.material_lookup)
         .with_static_ui_style_lookup(input.assets.ui_style_lookup)
+        .with_static_tileset_lookup(input.assets.tileset_lookup)
         .with_static_particle_lookup(input.assets.particle_lookup)
         .with_static_animation_lookup(input.assets.animation_lookup)
         .with_static_animation_tree_lookup(input.assets.animation_tree_lookup)

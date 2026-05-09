@@ -423,6 +423,46 @@ impl PhysicsAPI for DummyRuntime {
         None
     }
 
+    fn raycast_2d(
+        &mut self,
+        _origin: Vector2,
+        _direction: Vector2,
+        _max_distance: f32,
+        _filter: crate::sub_apis::PhysicsQueryFilter,
+    ) -> Option<crate::sub_apis::PhysicsRayHit2D> {
+        None
+    }
+
+    fn shape_cast_2d(
+        &mut self,
+        _shape: perro_nodes::Shape2D,
+        _origin: Vector2,
+        _direction: Vector2,
+        _max_distance: f32,
+        _filter: crate::sub_apis::PhysicsQueryFilter,
+    ) -> Option<crate::sub_apis::PhysicsShapeHit2D> {
+        None
+    }
+
+    fn shape_cast_3d(
+        &mut self,
+        _shape: perro_nodes::Shape3D,
+        _origin: Vector3,
+        _direction: Vector3,
+        _max_distance: f32,
+        _filter: crate::sub_apis::PhysicsQueryFilter,
+    ) -> Option<crate::sub_apis::PhysicsShapeHit3D> {
+        None
+    }
+
+    fn contacts_2d(&mut self, _body_id: NodeID) -> Vec<crate::sub_apis::PhysicsContact2D> {
+        Vec::new()
+    }
+
+    fn contacts_3d(&mut self, _body_id: NodeID) -> Vec<crate::sub_apis::PhysicsContact3D> {
+        Vec::new()
+    }
+
     fn physics_pause(&mut self, _paused: bool) {}
 
     fn physics_is_paused(&mut self) -> bool {

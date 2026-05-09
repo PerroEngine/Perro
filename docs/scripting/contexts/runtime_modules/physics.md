@@ -19,13 +19,14 @@ Pause macros:
 
 Raycast macros:
 
+- `physics_raycast_2d!(ctx, origin, direction, max_distance) -> Option<PhysicsRayHit2D>`
+- `physics_raycast_2d!(ctx, origin, direction, max_distance, filter) -> Option<PhysicsRayHit2D>`
 - `physics_raycast_3d!(ctx, origin, direction, max_distance) -> Option<PhysicsRayHit3D>`
 - `physics_raycast_3d_with_areas!(ctx, origin, direction, max_distance) -> Option<PhysicsRayHit3D>`
 - `physics_raycast_3d_without_areas!(ctx, origin, direction, max_distance) -> Option<PhysicsRayHit3D>`
 
-Planned 1.0 parity macros:
+Shape/contact macros:
 
-- `physics_raycast_2d!(ctx, origin, direction, max_distance) -> Option<PhysicsRayHit2D>`
 - `physics_shape_cast_2d!(ctx, shape, origin, direction, max_distance, filter) -> Option<PhysicsShapeHit2D>`
 - `physics_shape_cast_3d!(ctx, shape, origin, direction, max_distance, filter) -> Option<PhysicsShapeHit3D>`
 - `physics_contacts_2d!(ctx, body_id) -> Vec<PhysicsContact2D>`
@@ -36,9 +37,9 @@ Arguments:
 - `ctx`: `&mut RuntimeWindow<_>`
 - `body_id`: `NodeID` of a `RigidBody2D` or `RigidBody3D`
 - `force`/`impulse`: `Vector2` for 2D bodies, `Vector3` for 3D bodies
-- `origin`/`direction`: `Vector3` ray data in world space
-- `max_distance`: maximum 3D ray distance
-- `filter`: planned `PhysicsQueryFilter` for layer masks, area inclusion, and excluded nodes
+- `origin`/`direction`: `Vector2` or `Vector3` query data in world space
+- `max_distance`: maximum query distance
+- `filter`: `PhysicsQueryFilter` for layer masks, area inclusion, and excluded nodes
 
 Behavior:
 
@@ -55,7 +56,12 @@ Behavior:
 - `physics_raycast_3d!` hits `StaticBody3D`, `RigidBody3D`, and `Area3D` colliders.
 - `physics_raycast_3d_with_areas!` is an explicit alias for area-inclusive raycasts.
 - `physics_raycast_3d_without_areas!` skips `Area3D` sensor colliders.
+- `physics_raycast_2d!` hits `StaticBody2D`, `RigidBody2D`, `Area2D`, and `TileMap2D` colliders.
 - Raycast returns `None` for invalid direction, non-positive distance, missing world, or no hit.
+- Shape casts use `Shape2D` or primitive `Shape3D` as the moving shape.
+- Shape casts return the first hit along the direction.
+- 3D `Shape3D::TriMesh` cannot be used as the moving cast shape.
+- Contact queries return current active contact points for one body.
 
 ## Collision Layers And Masks
 
@@ -75,31 +81,22 @@ Layer/mask behavior:
 - A collider checks against other layers through `collision_mask`.
 - Contacts and area overlaps use layer/mask rules.
 
-Planned 1.0 parity still needs query filters so raycasts and shape casts use the same layer/mask rules.
-
-## Planned 1.0 Physics Parity
-
-Planned query filter:
+Queries use `PhysicsQueryFilter`:
 
 ```rust
 PhysicsQueryFilter {
     mask: u32::MAX,
     include_areas: true,
-    exclude_nodes: Vec<NodeID>,
+    exclude_nodes: Vec::new(),
 }
 ```
 
-Planned contact hit data:
+Contact hit data:
 
 - `node`: other body node.
 - `point`: world-space contact point.
 - `normal`: world-space normal.
 - `impulse`: solver impulse when available.
-
-Planned shape casts use existing collision shape kinds.
-2D uses `Shape2D`.
-3D uses primitive `Shape3D`.
-Trimesh shape casts are not part of the 1.0 target.
 
 ## Joint Nodes
 
@@ -137,6 +134,13 @@ Anchors are local to each connected body.
 `collide_connected = false` disables contacts between connected bodies.
 `DistanceJoint2D` currently uses the Rapier rope constraint, so `max_distance` is enforced.
 `min_distance` is stored for API stability, but not enforced yet.
+
+`PhysicsRayHit2D` fields:
+
+- `node`: hit body `NodeID`
+- `point`: world-space hit point
+- `normal`: world-space hit normal
+- `distance`: distance from ray origin
 
 `PhysicsRayHit3D` fields:
 

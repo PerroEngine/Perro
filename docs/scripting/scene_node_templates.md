@@ -648,7 +648,7 @@ script = "res://path/to/script.rs"
 
 `UiHBox` and `UiVBox` also work as aliases for `UiHLayout` and `UiVLayout`.
 `hover` and `pressed` on `UiButton` accept any `UiBox` field plus style fields.
-Planned 1.0 `.uistyle` resources let `style`, `hover.style`, `pressed.style`, and `focused_style` use `res://path/to/style.uistyle`.
+`.uistyle` resources let `style`, `hover.style`, `pressed.style`, and `focused_style` use `res://path/to/style.uistyle`.
 
 UI templates use ratio-only sizing.
 
@@ -1338,7 +1338,7 @@ Current body layer/mask fields:
 [/fixed_link_3d]
 ```
 
-## Planned 1.0 TileMap2D Template
+## TileMap2D Template
 
 ```text
 [level]

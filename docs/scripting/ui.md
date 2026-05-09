@@ -147,7 +147,7 @@ Both accept `color`, `distance`, `falloff`, `vector`, and `size`.
 `size = 2` doubles it.
 `size = 0.5` halves it.
 
-## Planned `.uistyle` Resources
+## `.uistyle` Resources
 
 Current inline style blocks remain the base schema:
 
@@ -155,7 +155,7 @@ Current inline style blocks remain the base schema:
 style = { fill = "#222" stroke = "#555" radius = 0.2 }
 ```
 
-The 1.0 style resource target is to load the same schema from `.uistyle`:
+The same schema can load from `.uistyle`:
 
 ```text
 style = "res://ui/panel.uistyle"

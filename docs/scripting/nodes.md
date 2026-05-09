@@ -73,7 +73,7 @@ Joint common fields are `body_a`, `body_b`, `anchor_a`, `anchor_b`, `enabled`, a
 `DistanceJoint2D` also uses `min_distance` and `max_distance`.
 Anchors are local to each connected body.
 
-`TileMap2D` is planned as the tile map node.
+`TileMap2D` is the tile map node.
 It uses `.ptileset` data and can emit static 2D colliders from `collision_shape = "auto"`.
 See [TileMap2D](tilemap.md).
 
@@ -254,7 +254,7 @@ All UI nodes can have children.
 
 See [UI Nodes](ui.md).
 
-Planned 1.0 UI style resources:
+UI style resources:
 
 - Inline `style = { ... }` stays valid.
 - Resource `style = "res://ui/panel.uistyle"` loads the same `UiStyle` schema.

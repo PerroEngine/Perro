@@ -1,6 +1,6 @@
 # TileMap2D
 
-`TileMap2D` is the planned 1.0 tile map node.
+`TileMap2D` is the runtime 2D tile map node.
 It draws atlas tiles from a `.ptileset` and can emit static 2D colliders.
 
 ## Scene
@@ -43,16 +43,24 @@ Each tile decides if it wants collider generation.
 
 `collision = true` with no shape uses `collision_shape = "auto"`.
 `auto` builds a full tile bounds collider.
-Adjacent auto tiles merge into larger rect colliders.
+Adjacent auto tiles merge into larger rect colliders at runtime.
 
-Explicit tile shapes stay as per-tile compound colliders for 1.0.
-This keeps authoring simple and keeps runtime bake predictable.
+Explicit tile shapes stay as per-tile colliders.
+Runtime supports `rect`, `circle`, and `triangle` explicit shapes.
+Polygon remains planned.
 
 ## Runtime And Static Pipeline
 
 Runtime bake hashes tile grid plus tileset collision data.
 It rebuilds only when tile content or collision metadata changes.
 
-Static pipeline should pre-bake fixed scene tilemaps.
-Runtime should use static chunks when present.
-Dynamic maps and dev loads can still bake at runtime.
+Runtime bake hashes tile grid plus tileset collision data.
+It rebuilds only when tile content or collision metadata changes.
+
+Static pipeline now emits `.ptileset` source into static assets.
+Static runtime loads tilesets from that lookup before disk.
+
+Static collision chunk bake remains planned:
+
+- pre-bake fixed scene tilemap collision chunks
+- use static chunks before runtime bake

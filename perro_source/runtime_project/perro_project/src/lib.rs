@@ -459,6 +459,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         &default_static_ui_styles_rs(),
     )?;
     write_if_missing(
+        project_static_src.join("tilesets.rs"),
+        &default_static_tilesets_rs(),
+    )?;
+    write_if_missing(
         project_static_src.join("particles.rs"),
         &default_static_particles_rs(),
     )?;
@@ -1822,6 +1826,7 @@ fn project_root() -> std::path::PathBuf {
               localization_lookup: static_assets::localizations::lookup_localized_string,
               material_lookup: static_assets::materials::lookup_material,
               ui_style_lookup: static_assets::ui_styles::lookup_ui_style,
+              tileset_lookup: static_assets::tilesets::lookup_tileset,
               particle_lookup: static_assets::particles::lookup_particle,
               animation_lookup: static_assets::animations::lookup_animation,
               mesh_lookup: static_assets::meshes::lookup_mesh,
@@ -1840,7 +1845,7 @@ fn project_root() -> std::path::PathBuf {
 }
 
 fn default_static_mod_rs() -> String {
-    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod ui_styles;\npub mod particles;\npub mod animations;\npub mod meshes;\npub mod collision_trimeshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n".to_string()
+    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod ui_styles;\npub mod tilesets;\npub mod particles;\npub mod animations;\npub mod meshes;\npub mod collision_trimeshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n".to_string()
 }
 
 fn default_static_scenes_rs() -> String {
@@ -1886,6 +1891,16 @@ const EMPTY_UI_STYLE: UiStyle = UiStyle::panel();
 
 pub const fn lookup_ui_style(_path_hash: u64) -> &'static UiStyle {
     &EMPTY_UI_STYLE
+}
+"#
+    .to_string()
+}
+
+fn default_static_tilesets_rs() -> String {
+    r#"#![allow(unused_imports)]
+
+pub const fn lookup_tileset(_path_hash: u64) -> &'static str {
+    ""
 }
 "#
     .to_string()

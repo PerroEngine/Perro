@@ -951,6 +951,10 @@ fn generate_project_static_modules(
                 scope.spawn(|| perro_static_pipeline::generate_static_ui_styles(project_root)),
             ),
             (
+                "tileset",
+                scope.spawn(|| perro_static_pipeline::generate_static_tilesets(project_root)),
+            ),
+            (
                 "particle",
                 scope.spawn(|| perro_static_pipeline::generate_static_particles(project_root)),
             ),
@@ -1026,6 +1030,10 @@ fn generate_dlc_static_modules(
             (
                 "ui style",
                 scope.spawn(|| perro_static_pipeline::generate_static_ui_styles(project_root)),
+            ),
+            (
+                "tileset",
+                scope.spawn(|| perro_static_pipeline::generate_static_tilesets(project_root)),
             ),
             (
                 "particle",

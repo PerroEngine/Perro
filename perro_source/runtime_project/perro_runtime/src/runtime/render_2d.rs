@@ -1,7 +1,9 @@
 use super::Runtime;
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{NodeID, TextureID, parse_hashed_source_uri, string_to_u64};
-use perro_nodes::{SceneNodeData, particle_emitter_2d::ParticleEmitterSimMode2D};
+use perro_nodes::{
+    SceneNodeData, Shape2D, Triangle2DKind, particle_emitter_2d::ParticleEmitterSimMode2D,
+};
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     Camera2DState, Command2D, ParticlePath2D, ParticleProfile2D, ParticleSimulationMode2D,
@@ -33,6 +35,13 @@ pub(crate) struct ParsedTileset2D {
 pub(crate) struct ParsedTile2D {
     pub atlas: [u32; 2],
     pub collision: bool,
+    pub collision_shape: ParsedTileCollisionShape2D,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum ParsedTileCollisionShape2D {
+    Auto,
+    Shape { shape: Shape2D, offset: [f32; 2] },
 }
 
 impl Runtime {
@@ -447,8 +456,22 @@ pub(crate) fn resolve_tileset_2d(runtime: &mut Runtime, source: &str) -> Option<
     if let Some(tileset) = runtime.render_2d.tileset_cache.get(source) {
         return Some(tileset.clone());
     }
-    let bytes = perro_io::load_asset(source).ok()?;
-    let text = std::str::from_utf8(&bytes).ok()?;
+    let static_text = if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static {
+        runtime
+            .project()
+            .and_then(|project| project.static_tileset_lookup)
+            .map(|lookup| lookup(string_to_u64(source)))
+            .filter(|text| !text.is_empty())
+    } else {
+        None
+    };
+    let bytes;
+    let text = if let Some(text) = static_text {
+        text
+    } else {
+        bytes = perro_io::load_asset(source).ok()?;
+        std::str::from_utf8(&bytes).ok()?
+    };
     let tileset = parse_ptileset_source(text)?;
     runtime
         .render_2d
@@ -518,15 +541,20 @@ fn parse_ptileset_source(source: &str) -> Option<ParsedTileset2D> {
             rows = parse_u32_after_eq(line)?;
         }
     }
-    for object in compact
-        .split('{')
-        .skip(1)
-        .filter_map(|part| part.split_once('}').map(|v| v.0))
-    {
+    for object in extract_braced_objects(&compact) {
         let id = find_i32_field(object, "id")?;
         let atlas = find_vec2_field(object, "atlas")?;
         let collision = find_bool_field(object, "collision").unwrap_or(false);
-        tiles.insert(id, ParsedTile2D { atlas, collision });
+        let collision_shape =
+            find_collision_shape_field(object).unwrap_or(ParsedTileCollisionShape2D::Auto);
+        tiles.insert(
+            id,
+            ParsedTile2D {
+                atlas,
+                collision,
+                collision_shape,
+            },
+        );
     }
     if texture.is_empty() || tile_size[0] <= 0.0 || tile_size[1] <= 0.0 {
         return None;
@@ -538,6 +566,32 @@ fn parse_ptileset_source(source: &str) -> Option<ParsedTileset2D> {
         rows,
         tiles,
     })
+}
+
+fn extract_braced_objects(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut depth = 0usize;
+    let mut start = None;
+    for (idx, ch) in text.char_indices() {
+        match ch {
+            '{' => {
+                if depth == 0 {
+                    start = Some(idx + ch.len_utf8());
+                }
+                depth += 1;
+            }
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0
+                    && let Some(start_idx) = start.take()
+                {
+                    out.push(&text[start_idx..idx]);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 fn parse_quoted_value(line: &str) -> Option<String> {
@@ -576,6 +630,76 @@ fn find_bool_field(text: &str, key: &str) -> Option<bool> {
 
 fn find_vec2_field(text: &str, key: &str) -> Option<[u32; 2]> {
     parse_vec2_inner(text.split(key).nth(1)?.split_once('=')?.1)
+}
+
+fn find_collision_shape_field(text: &str) -> Option<ParsedTileCollisionShape2D> {
+    let rest = text
+        .split("collision_shape")
+        .nth(1)?
+        .split_once('=')?
+        .1
+        .trim();
+    if rest.starts_with("\"auto\"") || rest.starts_with("auto") {
+        return Some(ParsedTileCollisionShape2D::Auto);
+    }
+    if let Some(rect) = rest.split("rect").nth(1) {
+        let body = rect.split_once('{')?.1.rsplit_once('}')?.0;
+        let size = find_vec2_f32_field(body, "size")?;
+        let offset = find_vec2_f32_field(body, "offset").unwrap_or([0.0, 0.0]);
+        return Some(ParsedTileCollisionShape2D::Shape {
+            shape: Shape2D::Quad {
+                width: size[0],
+                height: size[1],
+            },
+            offset,
+        });
+    }
+    if let Some(circle) = rest.split("circle").nth(1) {
+        let body = circle.split_once('{')?.1.rsplit_once('}')?.0;
+        let radius = find_f32_field(body, "radius")?;
+        let offset = find_vec2_f32_field(body, "offset").unwrap_or([0.0, 0.0]);
+        return Some(ParsedTileCollisionShape2D::Shape {
+            shape: Shape2D::Circle { radius },
+            offset,
+        });
+    }
+    if let Some(triangle) = rest.split("triangle").nth(1) {
+        let body = triangle.split_once('{')?.1.rsplit_once('}')?.0;
+        let size = find_vec2_f32_field(body, "size").or_else(|| {
+            Some([
+                find_f32_field(body, "width")?,
+                find_f32_field(body, "height")?,
+            ])
+        })?;
+        let offset = find_vec2_f32_field(body, "offset").unwrap_or([0.0, 0.0]);
+        return Some(ParsedTileCollisionShape2D::Shape {
+            shape: Shape2D::Triangle {
+                kind: Triangle2DKind::Isosceles,
+                width: size[0],
+                height: size[1],
+            },
+            offset,
+        });
+    }
+    None
+}
+
+fn find_f32_field(text: &str, key: &str) -> Option<f32> {
+    let rest = text.split(key).nth(1)?.split_once('=')?.1.trim();
+    rest.split(|c: char| c == ',' || c.is_whitespace() || c == '}')
+        .find(|v| !v.is_empty())?
+        .parse()
+        .ok()
+}
+
+fn find_vec2_f32_field(text: &str, key: &str) -> Option<[f32; 2]> {
+    parse_vec2_f32_inner(text.split(key).nth(1)?.split_once('=')?.1)
+}
+
+fn parse_vec2_f32_inner(text: &str) -> Option<[f32; 2]> {
+    let inner = text.trim().strip_prefix('(')?.split_once(')')?.0;
+    let mut parts = inner.split(',').map(|v| v.trim().parse::<f32>().ok());
+    Some([parts.next()??, parts.next()??])
 }
 
 fn parse_vec2_inner(text: &str) -> Option<[u32; 2]> {

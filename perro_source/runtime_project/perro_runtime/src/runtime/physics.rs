@@ -6,7 +6,10 @@ use perro_io::{decompress_zlib, load_asset};
 use perro_nodes::{
     CollisionShape2D, CollisionShape3D, SceneNodeData, Shape2D, Shape3D, TileMap2D, Triangle2DKind,
 };
-use perro_runtime_context::sub_apis::{NodeAPI, PhysicsRayHit3D, SignalAPI};
+use perro_runtime_context::sub_apis::{
+    NodeAPI, PhysicsContact2D, PhysicsContact3D, PhysicsQueryFilter, PhysicsRayHit2D,
+    PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D, SignalAPI,
+};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use perro_variant::Variant;
 use rapier2d::{na as na2, prelude as r2};
@@ -549,6 +552,276 @@ impl Runtime {
         })
     }
 
+    pub fn physics_raycast_2d(
+        &mut self,
+        origin: Vector2,
+        direction: Vector2,
+        max_distance: f32,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsRayHit2D> {
+        if max_distance <= 0.0 || !max_distance.is_finite() {
+            return None;
+        }
+
+        let dir = na2::Vector2::new(direction.x, direction.y);
+        let dir_len = dir.norm();
+        if dir_len <= 0.000_001 || !dir_len.is_finite() {
+            return None;
+        }
+        let dir = dir / dir_len;
+
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+        let bodies_2d = self.collect_body_descs_2d();
+        self.sync_world_2d(&bodies_2d);
+
+        let world = self.physics.world_2d.as_ref()?;
+        let mut query = r2::QueryPipeline::new();
+        query.update(&world.colliders);
+
+        let ray = r2::Ray::new(na2::Point2::new(origin.x, origin.y), dir);
+        let excluded = filter.exclude_nodes.as_slice();
+        let mask = filter.mask;
+        let predicate = |handle, collider: &r2::Collider| {
+            (collider.collision_groups().memberships.bits() & mask) != 0
+                && world
+                    .collider_owners
+                    .get(&handle)
+                    .map(|node| !excluded.contains(node))
+                    .unwrap_or(true)
+        };
+        let query_filter = query_filter_2d(filter).predicate(&predicate);
+        let (collider, hit) = query.cast_ray_and_get_normal(
+            &world.bodies,
+            &world.colliders,
+            &ray,
+            max_distance,
+            true,
+            query_filter,
+        )?;
+        let node = *world.collider_owners.get(&collider)?;
+        let point = ray.point_at(hit.time_of_impact);
+
+        Some(PhysicsRayHit2D {
+            node,
+            point: Vector2::new(point.x, point.y),
+            normal: Vector2::new(hit.normal.x, hit.normal.y),
+            distance: hit.time_of_impact,
+        })
+    }
+
+    pub fn physics_shape_cast_2d(
+        &mut self,
+        shape: Shape2D,
+        origin: Vector2,
+        direction: Vector2,
+        max_distance: f32,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsShapeHit2D> {
+        if max_distance <= 0.0 || !max_distance.is_finite() {
+            return None;
+        }
+        let dir = na2::Vector2::new(direction.x, direction.y);
+        let dir_len = dir.norm();
+        if dir_len <= 0.000_001 || !dir_len.is_finite() {
+            return None;
+        }
+
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+        let bodies_2d = self.collect_body_descs_2d();
+        self.sync_world_2d(&bodies_2d);
+
+        let world = self.physics.world_2d.as_ref()?;
+        let shape = shared_shape_2d(shape)?;
+        let mut query = r2::QueryPipeline::new();
+        query.update(&world.colliders);
+
+        let shape_pos = na2::Isometry2::new(na2::Vector2::new(origin.x, origin.y), 0.0);
+        let shape_vel = dir / dir_len * max_distance;
+        let excluded = filter.exclude_nodes.as_slice();
+        let mask = filter.mask;
+        let predicate = |handle, collider: &r2::Collider| {
+            (collider.collision_groups().memberships.bits() & mask) != 0
+                && world
+                    .collider_owners
+                    .get(&handle)
+                    .map(|node| !excluded.contains(node))
+                    .unwrap_or(true)
+        };
+        let query_filter = query_filter_2d(filter).predicate(&predicate);
+        let (collider, hit) = query.cast_shape(
+            &world.bodies,
+            &world.colliders,
+            &shape_pos,
+            &shape_vel,
+            shape.as_ref(),
+            rapier2d::parry::query::ShapeCastOptions::with_max_time_of_impact(1.0),
+            query_filter,
+        )?;
+        let node = *world.collider_owners.get(&collider)?;
+        let point = hit.transform1_by(&shape_pos).witness1;
+
+        Some(PhysicsShapeHit2D {
+            node,
+            point: Vector2::new(point.x, point.y),
+            normal: Vector2::new(hit.normal1.x, hit.normal1.y),
+            distance: hit.time_of_impact * max_distance,
+        })
+    }
+
+    pub fn physics_shape_cast_3d(
+        &mut self,
+        shape: Shape3D,
+        origin: Vector3,
+        direction: Vector3,
+        max_distance: f32,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsShapeHit3D> {
+        if max_distance <= 0.0 || !max_distance.is_finite() {
+            return None;
+        }
+        let dir = na3::Vector3::new(direction.x, direction.y, direction.z);
+        let dir_len = dir.norm();
+        if dir_len <= 0.000_001 || !dir_len.is_finite() {
+            return None;
+        }
+
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+        let bodies_3d = self.collect_body_descs_3d();
+        self.sync_world_3d(&bodies_3d);
+
+        let world = self.physics.world_3d.as_ref()?;
+        let shape = shared_shape_3d(shape)?;
+        let mut query = r3::QueryPipeline::new();
+        query.update(&world.colliders);
+
+        let shape_pos = na3::Isometry3::translation(origin.x, origin.y, origin.z);
+        let shape_vel = dir / dir_len * max_distance;
+        let excluded = filter.exclude_nodes.as_slice();
+        let mask = filter.mask;
+        let predicate = |handle, collider: &r3::Collider| {
+            (collider.collision_groups().memberships.bits() & mask) != 0
+                && world
+                    .collider_owners
+                    .get(&handle)
+                    .map(|node| !excluded.contains(node))
+                    .unwrap_or(true)
+        };
+        let query_filter = query_filter_3d(filter).predicate(&predicate);
+        let (collider, hit) = query.cast_shape(
+            &world.bodies,
+            &world.colliders,
+            &shape_pos,
+            &shape_vel,
+            shape.as_ref(),
+            rapier3d::parry::query::ShapeCastOptions::with_max_time_of_impact(1.0),
+            query_filter,
+        )?;
+        let node = *world.collider_owners.get(&collider)?;
+        let point = hit.transform1_by(&shape_pos).witness1;
+
+        Some(PhysicsShapeHit3D {
+            node,
+            point: Vector3::new(point.x, point.y, point.z),
+            normal: Vector3::new(hit.normal1.x, hit.normal1.y, hit.normal1.z),
+            distance: hit.time_of_impact * max_distance,
+        })
+    }
+
+    pub fn physics_contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D> {
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+        let bodies_2d = self.collect_body_descs_2d();
+        self.sync_world_2d(&bodies_2d);
+
+        let Some(world) = self.physics.world_2d.as_ref() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for pair in world.narrow_phase.contact_pairs() {
+            if !pair.has_any_active_contact {
+                continue;
+            }
+            let Some(&a) = world.collider_owners.get(&pair.collider1) else {
+                continue;
+            };
+            let Some(&b) = world.collider_owners.get(&pair.collider2) else {
+                continue;
+            };
+            let other = if a == body_id {
+                b
+            } else if b == body_id {
+                a
+            } else {
+                continue;
+            };
+            for manifold in &pair.manifolds {
+                let normal = if a == body_id {
+                    manifold.data.normal
+                } else {
+                    -manifold.data.normal
+                };
+                for contact in &manifold.data.solver_contacts {
+                    out.push(PhysicsContact2D {
+                        node: other,
+                        point: Vector2::new(contact.point.x, contact.point.y),
+                        normal: Vector2::new(normal.x, normal.y),
+                        impulse: contact.warmstart_impulse,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    pub fn physics_contacts_3d(&mut self, body_id: NodeID) -> Vec<PhysicsContact3D> {
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+        let bodies_3d = self.collect_body_descs_3d();
+        self.sync_world_3d(&bodies_3d);
+
+        let Some(world) = self.physics.world_3d.as_ref() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for pair in world.narrow_phase.contact_pairs() {
+            if !pair.has_any_active_contact {
+                continue;
+            }
+            let Some(&a) = world.collider_owners.get(&pair.collider1) else {
+                continue;
+            };
+            let Some(&b) = world.collider_owners.get(&pair.collider2) else {
+                continue;
+            };
+            let other = if a == body_id {
+                b
+            } else if b == body_id {
+                a
+            } else {
+                continue;
+            };
+            for manifold in &pair.manifolds {
+                let normal = if a == body_id {
+                    manifold.data.normal
+                } else {
+                    -manifold.data.normal
+                };
+                for contact in &manifold.data.solver_contacts {
+                    out.push(PhysicsContact3D {
+                        node: other,
+                        point: Vector3::new(contact.point.x, contact.point.y, contact.point.z),
+                        normal: Vector3::new(normal.x, normal.y, normal.z),
+                        impulse: contact.warmstart_impulse,
+                    });
+                }
+            }
+        }
+        out
+    }
+
     fn collect_body_descs_2d(&mut self) -> Vec<BodyDesc2D> {
         let node_count = self.internal_updates.physics_body_nodes_2d.len();
         let mut out = Vec::with_capacity(node_count);
@@ -616,6 +889,8 @@ impl Runtime {
                     for (tile_id, tile) in &tileset.tiles {
                         if tile.collision {
                             shape_signature = hash_u64(shape_signature, *tile_id as u64);
+                            shape_signature =
+                                hash_tile_collision_shape_2d(shape_signature, tile.collision_shape);
                         }
                     }
                 }
@@ -2016,6 +2291,23 @@ fn hash_tilemap_2d(mut state: u64, tilemap: &TileMap2D) -> u64 {
     state
 }
 
+fn hash_tile_collision_shape_2d(
+    mut state: u64,
+    shape: crate::runtime::render_2d::ParsedTileCollisionShape2D,
+) -> u64 {
+    use crate::runtime::render_2d::ParsedTileCollisionShape2D;
+
+    match shape {
+        ParsedTileCollisionShape2D::Auto => hash_u32(state, 1),
+        ParsedTileCollisionShape2D::Shape { shape, offset } => {
+            state = hash_u32(state, 2);
+            state = hash_shape_2d(state, shape);
+            state = hash_f32(state, offset[0].to_bits());
+            hash_f32(state, offset[1].to_bits())
+        }
+    }
+}
+
 fn tilemap_shape_descs_2d(
     tilemap: &TileMap2D,
     layer: u32,
@@ -2034,16 +2326,26 @@ fn tilemap_shape_descs_2d(
     }
     let tw = tileset.tile_size[0];
     let th = tileset.tile_size[1];
+    use crate::runtime::render_2d::ParsedTileCollisionShape2D;
+
     let mut solid = vec![false; width.saturating_mul(height)];
+    let mut explicit = Vec::new();
     for (idx, tile_id) in tilemap.tiles.iter().take(solid.len()).copied().enumerate() {
         if tile_id == tilemap.empty_tile {
             continue;
         }
-        solid[idx] = tileset
-            .tiles
-            .get(&tile_id)
-            .map(|tile| tile.collision)
-            .unwrap_or(false);
+        let Some(tile) = tileset.tiles.get(&tile_id) else {
+            continue;
+        };
+        if !tile.collision {
+            continue;
+        }
+        match tile.collision_shape {
+            ParsedTileCollisionShape2D::Auto => solid[idx] = true,
+            ParsedTileCollisionShape2D::Shape { shape, offset } => {
+                explicit.push((idx, shape, offset));
+            }
+        }
     }
 
     let mut out = Vec::new();
@@ -2092,6 +2394,26 @@ fn tilemap_shape_descs_2d(
                 restitution,
             });
         }
+    }
+    for (idx, shape, offset) in explicit {
+        let x = idx % width;
+        let y = idx / width;
+        out.push(ShapeDesc2D {
+            local: Transform2D::new(
+                Vector2::new(
+                    x as f32 * tw + tw * 0.5 + offset[0],
+                    -(y as f32 * th + th * 0.5 + offset[1]),
+                ),
+                0.0,
+                Vector2::ONE,
+            ),
+            shape,
+            sensor: false,
+            collision_layer: layer,
+            collision_mask: mask,
+            friction,
+            restitution,
+        });
     }
     out
 }
@@ -2276,6 +2598,69 @@ fn collider_builder_2d(desc: &ShapeDesc2D) -> Option<r2::Collider> {
     )
 }
 
+fn shared_shape_2d(shape: Shape2D) -> Option<r2::SharedShape> {
+    match shape {
+        Shape2D::Quad { width, height } => Some(r2::SharedShape::cuboid(
+            width.abs().max(0.0001) * 0.5,
+            height.abs().max(0.0001) * 0.5,
+        )),
+        Shape2D::Circle { radius } => Some(r2::SharedShape::ball(radius.abs().max(0.0001))),
+        Shape2D::Triangle {
+            kind,
+            width,
+            height,
+        } => {
+            let points = triangle_points_2d(kind, width, height)?;
+            Some(r2::SharedShape::triangle(points[0], points[1], points[2]))
+        }
+    }
+}
+
+fn shared_shape_3d(shape: Shape3D) -> Option<r3::SharedShape> {
+    match shape {
+        Shape3D::Cube { size } => Some(r3::SharedShape::cuboid(
+            size.x.abs().max(0.0001) * 0.5,
+            size.y.abs().max(0.0001) * 0.5,
+            size.z.abs().max(0.0001) * 0.5,
+        )),
+        Shape3D::Sphere { radius } => Some(r3::SharedShape::ball(radius.abs().max(0.0001))),
+        Shape3D::Capsule {
+            radius,
+            half_height,
+        } => Some(r3::SharedShape::capsule_y(
+            half_height.abs().max(0.0001),
+            radius.abs().max(0.0001),
+        )),
+        Shape3D::Cylinder {
+            radius,
+            half_height,
+        } => Some(r3::SharedShape::cylinder(
+            half_height.abs().max(0.0001),
+            radius.abs().max(0.0001),
+        )),
+        Shape3D::Cone {
+            radius,
+            half_height,
+        } => Some(r3::SharedShape::cone(
+            half_height.abs().max(0.0001),
+            radius.abs().max(0.0001),
+        )),
+        Shape3D::TriPrism { size } => {
+            let points = tri_prism_points(size.x, size.y, size.z);
+            r3::SharedShape::convex_hull(&points)
+        }
+        Shape3D::TriangularPyramid { size } => {
+            let points = triangular_pyramid_points(size.x, size.y, size.z);
+            r3::SharedShape::convex_hull(&points)
+        }
+        Shape3D::SquarePyramid { size } => {
+            let points = square_pyramid_points(size.x, size.y, size.z);
+            r3::SharedShape::convex_hull(&points)
+        }
+        Shape3D::TriMesh { .. } => None,
+    }
+}
+
 fn collider_builder_3d(
     desc: &ShapeDesc3D,
     provider_mode: crate::runtime_project::ProviderMode,
@@ -2385,6 +2770,22 @@ fn interaction_groups_3d(layer: u32, mask: u32) -> r3::InteractionGroups {
         r3::Group::from_bits_truncate(layer),
         r3::Group::from_bits_truncate(mask),
     )
+}
+
+fn query_filter_2d(filter: &PhysicsQueryFilter) -> r2::QueryFilter<'_> {
+    let mut query_filter = r2::QueryFilter::new();
+    if !filter.include_areas {
+        query_filter = query_filter.exclude_sensors();
+    }
+    query_filter
+}
+
+fn query_filter_3d(filter: &PhysicsQueryFilter) -> r3::QueryFilter<'_> {
+    let mut query_filter = r3::QueryFilter::new();
+    if !filter.include_areas {
+        query_filter = query_filter.exclude_sensors();
+    }
+    query_filter
 }
 
 type TriMeshData = (Vec<na3::Point3<f32>>, Vec<[u32; 3]>);
@@ -3286,9 +3687,10 @@ fn remove_joint_3d(world: &mut PhysicsWorld3D, id: NodeID) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::render_2d::{ParsedTile2D, ParsedTileCollisionShape2D, ParsedTileset2D};
     use perro_nodes::{
         Area2D, Area3D, CollisionShape2D, CollisionShape3D, FixedJoint2D, FixedJoint3D,
-        RigidBody2D, RigidBody3D, StaticBody3D,
+        RigidBody2D, RigidBody3D, StaticBody2D, StaticBody3D,
     };
 
     #[test]
@@ -3354,6 +3756,261 @@ mod tests {
             )
             .expect("ray should skip area and hit static body");
         assert_eq!(no_area_hit.node, static_body);
+    }
+
+    #[test]
+    fn physics_raycast_2d_filters_areas_and_nodes() {
+        let mut runtime = Runtime::new();
+
+        let static_body = NodeAPI::create::<StaticBody2D>(&mut runtime);
+        let static_shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, static_body, static_shape));
+
+        let area = NodeAPI::create::<Area2D>(&mut runtime);
+        let area_shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, area, area_shape));
+        let _ = <Runtime as NodeAPI>::set_global_transform_2d(
+            &mut runtime,
+            area,
+            Transform2D::new(Vector2::new(-2.0, 0.0), 0.0, Vector2::ONE),
+        );
+
+        let hit = runtime
+            .physics_raycast_2d(
+                Vector2::new(-5.0, 0.0),
+                Vector2::new(1.0, 0.0),
+                10.0,
+                &PhysicsQueryFilter::default(),
+            )
+            .expect("ray should hit area first");
+        assert_eq!(hit.node, area);
+
+        let hit = runtime
+            .physics_raycast_2d(
+                Vector2::new(-5.0, 0.0),
+                Vector2::new(1.0, 0.0),
+                10.0,
+                &PhysicsQueryFilter {
+                    include_areas: false,
+                    ..PhysicsQueryFilter::default()
+                },
+            )
+            .expect("ray should skip area");
+        assert_eq!(hit.node, static_body);
+
+        let hit = runtime.physics_raycast_2d(
+            Vector2::new(-5.0, 0.0),
+            Vector2::new(1.0, 0.0),
+            10.0,
+            &PhysicsQueryFilter {
+                include_areas: false,
+                exclude_nodes: vec![static_body],
+                ..PhysicsQueryFilter::default()
+            },
+        );
+        assert!(hit.is_none());
+
+        if let Some(node) = runtime.nodes.get_mut(static_body)
+            && let SceneNodeData::StaticBody2D(body) = &mut node.data
+        {
+            body.collision_layer = 4;
+            body.collision_mask = 0;
+        }
+        let hit = runtime
+            .physics_raycast_2d(
+                Vector2::new(-5.0, 0.0),
+                Vector2::new(1.0, 0.0),
+                10.0,
+                &PhysicsQueryFilter {
+                    mask: 4,
+                    include_areas: false,
+                    exclude_nodes: Vec::new(),
+                },
+            )
+            .expect("query mask should use collider layer without collider mask coupling");
+        assert_eq!(hit.node, static_body);
+    }
+
+    #[test]
+    fn physics_shape_cast_2d_and_3d_hit_static_bodies() {
+        let mut runtime = Runtime::new();
+
+        let body_2d = NodeAPI::create::<StaticBody2D>(&mut runtime);
+        let shape_2d = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, body_2d, shape_2d));
+        let hit_2d = runtime
+            .physics_shape_cast_2d(
+                Shape2D::Circle { radius: 0.25 },
+                Vector2::new(-5.0, 0.0),
+                Vector2::new(1.0, 0.0),
+                10.0,
+                &PhysicsQueryFilter::default(),
+            )
+            .expect("2d shape cast should hit");
+        assert_eq!(hit_2d.node, body_2d);
+        assert!(hit_2d.distance > 3.0 && hit_2d.distance < 5.0);
+
+        let body_3d = NodeAPI::create::<StaticBody3D>(&mut runtime);
+        let shape_3d = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, body_3d, shape_3d));
+        let _ = <Runtime as NodeAPI>::set_global_transform_3d(
+            &mut runtime,
+            body_3d,
+            Transform3D::new(
+                Vector3::new(0.0, 0.0, 4.0),
+                Quaternion::IDENTITY,
+                Vector3::ONE,
+            ),
+        );
+        let hit_3d = runtime
+            .physics_shape_cast_3d(
+                Shape3D::Sphere { radius: 0.25 },
+                Vector3::new(0.0, 0.0, -5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                20.0,
+                &PhysicsQueryFilter::default(),
+            )
+            .expect("3d shape cast should hit");
+        assert_eq!(hit_3d.node, body_3d);
+    }
+
+    #[test]
+    fn physics_contacts_return_other_node_and_points() {
+        let mut runtime = Runtime::new();
+
+        let body_a = NodeAPI::create::<RigidBody2D>(&mut runtime);
+        let shape_a = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, body_a, shape_a));
+        let body_b = NodeAPI::create::<StaticBody2D>(&mut runtime);
+        let shape_b = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, body_b, shape_b));
+        if let Some(node) = runtime.nodes.get_mut(body_a)
+            && let SceneNodeData::RigidBody2D(body) = &mut node.data
+        {
+            body.gravity_scale = 0.0;
+        }
+
+        runtime.physics_fixed_step();
+        let contacts = runtime.physics_contacts_2d(body_a);
+        assert!(contacts.iter().any(|contact| contact.node == body_b));
+    }
+
+    #[test]
+    fn tilemap_explicit_collision_shapes_do_not_merge_with_auto() {
+        let tilemap = TileMap2D {
+            width: 2,
+            height: 1,
+            tiles: vec![1, 2],
+            collision_enabled: true,
+            ..TileMap2D::new()
+        };
+        let mut tiles = AHashMap::new();
+        tiles.insert(
+            1,
+            ParsedTile2D {
+                atlas: [0, 0],
+                collision: true,
+                collision_shape: ParsedTileCollisionShape2D::Auto,
+            },
+        );
+        tiles.insert(
+            2,
+            ParsedTile2D {
+                atlas: [1, 0],
+                collision: true,
+                collision_shape: ParsedTileCollisionShape2D::Shape {
+                    shape: Shape2D::Circle { radius: 3.0 },
+                    offset: [1.0, -1.0],
+                },
+            },
+        );
+        let tileset = ParsedTileset2D {
+            texture: "res://tiles.png".to_string(),
+            tile_size: [16.0, 16.0],
+            columns: 2,
+            rows: 1,
+            tiles,
+        };
+
+        let shapes = tilemap_shape_descs_2d(&tilemap, 1, u32::MAX, 0.7, 0.0, Some(&tileset));
+        assert_eq!(shapes.len(), 2);
+        assert!(matches!(shapes[0].shape, Shape2D::Quad { .. }));
+        assert!(matches!(shapes[1].shape, Shape2D::Circle { radius } if radius == 3.0));
+        assert_eq!(shapes[1].local.position, Vector2::new(25.0, -7.0));
+    }
+
+    #[test]
+    #[ignore]
+    fn bench_tilemap_collision_bake_128x128_auto_merge() {
+        let tile_count = 128 * 128;
+        let tilemap = TileMap2D {
+            width: 128,
+            height: 128,
+            tiles: vec![1; tile_count],
+            collision_enabled: true,
+            ..TileMap2D::new()
+        };
+        let mut tiles = AHashMap::new();
+        tiles.insert(
+            1,
+            ParsedTile2D {
+                atlas: [0, 0],
+                collision: true,
+                collision_shape: ParsedTileCollisionShape2D::Auto,
+            },
+        );
+        let tileset = ParsedTileset2D {
+            texture: "res://tiles.png".to_string(),
+            tile_size: [16.0, 16.0],
+            columns: 1,
+            rows: 1,
+            tiles,
+        };
+
+        let start = std::time::Instant::now();
+        let mut total = 0usize;
+        for _ in 0..250 {
+            total += tilemap_shape_descs_2d(&tilemap, 1, u32::MAX, 0.7, 0.0, Some(&tileset)).len();
+        }
+        let elapsed = start.elapsed();
+        assert_eq!(total, 250);
+        eprintln!("bench_tilemap_collision_bake_128x128_auto_merge: {elapsed:?}");
+    }
+
+    #[test]
+    #[ignore]
+    fn bench_physics_raycast_2d_query_filter() {
+        let mut runtime = Runtime::new();
+        for i in 0..256 {
+            let body = NodeAPI::create::<StaticBody2D>(&mut runtime);
+            let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+            assert!(NodeAPI::reparent(&mut runtime, body, shape));
+            let _ = <Runtime as NodeAPI>::set_global_transform_2d(
+                &mut runtime,
+                body,
+                Transform2D::new(Vector2::new(i as f32 * 2.0, 0.0), 0.0, Vector2::ONE),
+            );
+        }
+
+        let filter = PhysicsQueryFilter::default();
+        let start = std::time::Instant::now();
+        let mut hits = 0usize;
+        for _ in 0..10_000 {
+            if runtime
+                .physics_raycast_2d(
+                    Vector2::new(-10.0, 0.0),
+                    Vector2::new(1.0, 0.0),
+                    1_000.0,
+                    &filter,
+                )
+                .is_some()
+            {
+                hits += 1;
+            }
+        }
+        let elapsed = start.elapsed();
+        assert_eq!(hits, 10_000);
+        eprintln!("bench_physics_raycast_2d_query_filter: {elapsed:?}");
     }
 
     #[test]

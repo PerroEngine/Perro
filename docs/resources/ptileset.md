@@ -1,6 +1,6 @@
 # `.ptileset` Format
 
-`.ptileset` is the planned Perro 2D tile set resource.
+`.ptileset` is the Perro 2D tile set resource.
 It defines atlas layout and per-tile collision metadata for `TileMap2D`.
 
 ## Shape
@@ -45,15 +45,20 @@ Runtime and static pipeline bake should merge them into maximal rect chunks.
 Explicit shapes are kept per tile in 1.0.
 They are not merged.
 
-Planned explicit shapes:
+Explicit shapes:
 
 - `rect`
 - `circle`
 - `triangle`
-- `polygon`
+- `polygon` is planned
 
 ## Static Bake
 
-Static pipeline should emit parsed tilesets into `static_assets::tilesets`.
-Static scenes with fixed `TileMap2D` data should also emit baked collision chunks.
-Runtime should prefer static chunks and fall back to runtime bake for dynamic or dev-loaded maps.
+Static pipeline emits `.ptileset` source into `static_assets::tilesets`.
+Static runtime parses that source from lookup before disk.
+
+Static collision chunk bake remains planned.
+Target:
+
+- emit baked collision chunks for static `TileMap2D` scene data
+- prefer static chunks and fall back to runtime bake for dynamic or dev-loaded maps
