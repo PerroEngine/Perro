@@ -1746,6 +1746,9 @@ static PERRO_ASSETS: &[u8] = include_bytes!("../embedded/assets.perro");
 pub static PERRO_ENGINE_DETECT: [u8; 89] =
     *b"PERRO_ENGINE_DETECT:v1;engine=Perro Engine;format=.perro;site=https://www.perroengine.com";
 
+
+// To show this is a Perro Engine Project, we include a specific static marker string in the binary and read it in main to prevent dead code stripping.
+
 fn keep_perro_engine_marker() {
     unsafe {
         std::hint::black_box(std::ptr::read_volatile(PERRO_ENGINE_DETECT.as_ptr()));

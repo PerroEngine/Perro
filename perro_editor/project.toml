@@ -29,3 +29,10 @@ coef = 1.0
 
 # [localization]
 # default_locale = "en"
+
+
+[metadata]
+description = "Perro is an experimental, open-source game engine written in Rust. Built with a focus on simplicity and performance, without sacrificing either."
+company = "Open Source"
+version = "0.1.0"
+copyright = "Apache License 2.0"
