@@ -1,5 +1,5 @@
 use crate::project::collect_rs_files_recursive;
-use crate::{log_done, parse_flag_value, resolve_local_path};
+use crate::{COLOR_RESET, COLOR_YELLOW, log_done, parse_flag_value, resolve_local_path};
 use perro_project::{ProjectConfig, load_project_toml};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -31,7 +31,8 @@ struct ValidationReport {
 impl ValidationReport {
     fn warn(&mut self, msg: String) {
         self.warnings += 1;
-        self.messages.push(format!("warn: {msg}"));
+        self.messages
+            .push(format!("{COLOR_YELLOW}[WARN]{COLOR_RESET} {msg}"));
     }
 
     fn error(&mut self, msg: String) {
@@ -407,6 +408,8 @@ struct ScriptDoctorIndex {
     state_field_owners: HashMap<String, String>,
     custom_type_fields: HashMap<String, Vec<DoctorField>>,
     methods: HashSet<String>,
+    signal_emits: HashMap<String, Vec<SignalUse>>,
+    signal_connects: HashSet<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -415,15 +418,18 @@ struct DoctorField {
     ty: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SignalUse {
+    file: PathBuf,
+    line: usize,
+}
+
 fn validate_script_warnings(
     project_dir: &Path,
     report: &mut ValidationReport,
 ) -> Result<(), String> {
     let mut script_files = Vec::new();
     collect_project_script_files(project_dir, &mut script_files)?;
-    if script_files.is_empty() {
-        return Ok(());
-    }
 
     let mut sources = Vec::new();
     for file in script_files {
@@ -439,6 +445,8 @@ fn validate_script_warnings(
         index_script_source(text, &mut index);
     }
 
+    collect_resource_signal_emits(project_dir, &mut index)?;
+
     for (file, text) in &sources {
         let mut seen_refs = HashSet::new();
         for text_ref in extract_aggressive_virtual_refs(text) {
@@ -449,7 +457,10 @@ fn validate_script_warnings(
             validate_script_virtual_ref(project_dir, file, text_ref.line, &text_ref.raw, report);
         }
         validate_script_member_calls(project_dir, file, text, &index, report);
+        index_script_signal_uses(file, text, &mut index);
     }
+
+    validate_signal_emits(project_dir, &index, report);
 
     Ok(())
 }
@@ -573,6 +584,144 @@ fn index_script_source(text: &str, index: &mut ScriptDoctorIndex) {
     }
     for method in parse_script_method_names(text) {
         index.methods.insert(method);
+    }
+}
+
+fn index_script_signal_uses(file: &Path, text: &str, index: &mut ScriptDoctorIndex) {
+    for call in find_macro_calls_with_lines(text, "signal_emit") {
+        let args = split_top_level_args(&call.inner);
+        if args.len() < 2 {
+            continue;
+        }
+        if let Some(signal) = extract_member_literal(args[1], &["signal"]) {
+            index_signal_emit(index, signal, file, call.line);
+        }
+    }
+    for call in find_macro_calls_with_lines(text, "signal_connect") {
+        let args = split_top_level_args(&call.inner);
+        if args.len() < 3 {
+            continue;
+        }
+        if let Some(signal) = extract_member_literal(args[2], &["signal"]) {
+            index.signal_connects.insert(signal);
+        }
+    }
+}
+
+fn collect_resource_signal_emits(
+    project_dir: &Path,
+    index: &mut ScriptDoctorIndex,
+) -> Result<(), String> {
+    let mut files = Vec::new();
+    collect_reference_text_files(project_dir, &mut files)?;
+    for file in files {
+        let text = fs::read_to_string(&file)
+            .map_err(|err| format!("failed to read {}: {err}", file.display()))?;
+        let text = strip_comments_for_doctor(&text, true);
+        for signal_ref in extract_resource_signal_emits(&text) {
+            index_signal_emit(index, signal_ref.raw, &file, signal_ref.line);
+        }
+    }
+    Ok(())
+}
+
+fn extract_resource_signal_emits(text: &str) -> Vec<TextRef> {
+    let mut refs = Vec::new();
+    for (line_index, line) in text.lines().enumerate() {
+        let line_no = line_index + 1;
+        if line.contains("_signals")
+            && let Some((_, rhs)) = line.split_once('=')
+        {
+            refs.extend(
+                extract_string_literals_for_doctor(rhs)
+                    .into_iter()
+                    .map(|raw| TextRef { raw, line: line_no }),
+            );
+        }
+        if line.contains("emit_signal")
+            && line.contains("name")
+            && let Some(signal) = extract_named_emit_signal_for_doctor(line)
+        {
+            refs.push(TextRef {
+                raw: signal,
+                line: line_no,
+            });
+        }
+    }
+    refs
+}
+
+fn extract_named_emit_signal_for_doctor(line: &str) -> Option<String> {
+    let name_pos = line.find("name")?;
+    let eq_rel = line[name_pos..].find('=')?;
+    let rhs = &line[name_pos + eq_rel + 1..];
+    extract_string_literals_for_doctor(rhs).into_iter().next()
+}
+
+fn extract_string_literals_for_doctor(input: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let bytes = input.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'"' {
+            let start = i;
+            i += 1;
+            let mut escaped = false;
+            while i < bytes.len() {
+                let b = bytes[i];
+                if escaped {
+                    escaped = false;
+                } else if b == b'\\' {
+                    escaped = true;
+                } else if b == b'"' {
+                    if let Some(value) = parse_string_literal_value(&input[start..=i]) {
+                        out.push(value);
+                    }
+                    break;
+                }
+                i += 1;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+fn index_signal_emit(index: &mut ScriptDoctorIndex, signal: String, file: &Path, line: usize) {
+    index
+        .signal_emits
+        .entry(signal)
+        .or_default()
+        .push(SignalUse {
+            file: file.to_path_buf(),
+            line,
+        });
+}
+
+fn validate_signal_emits(
+    project_dir: &Path,
+    index: &ScriptDoctorIndex,
+    report: &mut ValidationReport,
+) {
+    let mut names: Vec<_> = index.signal_emits.keys().collect();
+    names.sort();
+    for signal in names {
+        if index.signal_connects.contains(signal) {
+            continue;
+        }
+        if let Some(uses) = index.signal_emits.get(signal) {
+            for signal_use in uses {
+                let source = format_source_location(
+                    project_dir,
+                    Some(&signal_use.file),
+                    Some(signal_use.line),
+                );
+                let source = source.trim_end_matches(": ");
+                report.warn(format!(
+                    "signal: {signal} is emitted at {source} but never connected anywhere"
+                ));
+            }
+        }
     }
 }
 
@@ -1588,5 +1737,80 @@ mod tests {
                 .iter()
                 .all(|m| !m.contains("aim.axis.dir.yaw"))
         );
+    }
+
+    #[test]
+    fn signal_emit_without_connect_warns_once_per_emit_location() {
+        let file = PathBuf::from("res/scripts/main.rs");
+        let source = r#"
+            fn run(ctx: &mut ScriptContext<'_, API>) {
+                let _ = signal_emit!(ctx, signal!("loose_signal"));
+                let _ = signal_emit!(ctx, signal!("wired_signal"), params![1_i32]);
+                let _ = signal_connect!(ctx, ctx.id, signal!("wired_signal"), func!("on_wired"));
+            }
+        "#;
+        let mut index = ScriptDoctorIndex::default();
+        index_script_signal_uses(&file, source, &mut index);
+        let mut report = ValidationReport::default();
+
+        validate_signal_emits(Path::new(""), &index, &mut report);
+
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.warnings, 1);
+        assert!(report.messages[0].contains("signal: loose_signal"));
+        assert!(report.messages[0].contains("never connected anywhere"));
+        assert!(!report.messages[0].contains("wired_signal"));
+    }
+
+    #[test]
+    fn signal_connect_without_emit_stays_clean() {
+        let file = PathBuf::from("res/scripts/main.rs");
+        let source = r#"
+            fn ready(ctx: &mut ScriptContext<'_, API>) {
+                let _ = signal_connect!(ctx, ctx.id, signal!("future_button_click"), func!("on_click"));
+            }
+        "#;
+        let mut index = ScriptDoctorIndex::default();
+        index_script_signal_uses(&file, source, &mut index);
+        let mut report = ValidationReport::default();
+
+        validate_signal_emits(Path::new(""), &index, &mut report);
+
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.warnings, 0);
+    }
+
+    #[test]
+    fn resource_signal_fields_count_as_emits() {
+        let text = r#"
+            click_signals = ["play_clicked", "any_button_clicked"]
+            emit_signal = { name="step", params=[0] }
+        "#;
+
+        let refs = extract_resource_signal_emits(text);
+
+        assert_eq!(
+            refs.iter().map(|r| r.raw.as_str()).collect::<Vec<_>>(),
+            vec!["play_clicked", "any_button_clicked", "step"]
+        );
+    }
+
+    #[test]
+    fn resource_signal_emit_warns_without_scripts() {
+        let project = temp_project();
+        fs::create_dir_all(project.join("res")).unwrap();
+        fs::write(
+            project.join("res/ui.scn"),
+            r#"click_signals = ["play_clicked"]"#,
+        )
+        .unwrap();
+
+        let mut report = ValidationReport::default();
+        validate_script_warnings(&project, &mut report).unwrap();
+
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.warnings, 1);
+        assert!(report.messages[0].contains("signal: play_clicked"));
+        assert!(report.messages[0].contains("res://ui.scn:1"));
     }
 }
